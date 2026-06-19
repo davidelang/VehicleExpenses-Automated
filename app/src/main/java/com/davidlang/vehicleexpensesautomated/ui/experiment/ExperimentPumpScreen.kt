@@ -699,6 +699,61 @@ private suspend fun runPumpExperiment(
                 // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
                 var processedScales = mutableSetOf<Int>()
 
+                // Per-column top-4 box OCR helper (complete-real-4box-per-column-wiring plan): as-is + digits on pixel rects before getFinal
+                suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): Pair<List<String>, List<String>> {
+                    val asisList = rects.map { r ->
+                        val pW = r.width(); val pH = r.height()
+                        if (pW < 2 || pH < 2) "?" else {
+                            val l = r.left.coerceIn(0, imgW - 1)
+                            val t = r.top.coerceIn(0, imgH - 1)
+                            val rr = r.right.coerceIn(l + 1, imgW)
+                            val bb = r.bottom.coerceIn(t + 1, imgH)
+                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet1024x48.p.clear()
+                            val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
+                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        }
+                    }
+                    val digitsList = rects.map { rp ->
+                        val pW = rp.width(); val pH = rp.height()
+                        if (pW < 2 || pH < 2) "?" else {
+                            val l = rp.left.coerceIn(0, imgW - 1)
+                            val t = rp.top.coerceIn(0, imgH - 1)
+                            val rr = rp.right.coerceIn(l + 1, imgW)
+                            val bb = rp.bottom.coerceIn(t + 1, imgH)
+                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet1024x48.p.clear()
+                            val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
+                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                            res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else ""
+                        }
+                    }
+                    return asisList to digitsList
+                }
+
+                suspend fun computeRetractedBluePixelRects(): List<android.graphics.Rect> {
+                    val expPixelRects = pdHunksExpTotal.map { h ->
+                        android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                    }
+                    val retractedPixel = mutableListOf<android.graphics.Rect>()
+                    for (r in expPixelRects) {
+                        val (retracted, _) = NativeImageUtils.expandByUniformity(workspace.p.mat, r)
+                        retractedPixel.add(retracted)
+                    }
+                    return retractedPixel
+                }
+
                 suspend fun doBOrDRedOnlyImage() {
                     // Red-only image for Set B/D (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now". D mirrors B.
                     val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2)
@@ -986,9 +1041,11 @@ private suspend fun runPumpExperiment(
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
                 // Updated for A: now receives integer pixel data (red snapped+pruned int Rect lists, ML direct int, expand/takeCrop int) -> direct int Rect to takeSnapshot crops for A final PathResult.
-                // Phase 5 wiring (per finish plan): real (empty-texts for A pre-ocr) candidates from local pdHunksRawTotal (top4 for this column)
-                val aAsis = List(pdHunksRawTotal.size) { "" }
-                val aDigits = List(pdHunksRawTotal.size) { "" }
+                // Phase 4 (complete-real-4box plan): real per-column top-4 red box OCR before getFinal (Set A column)
+                val aRedPixel = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val (aAsis, aDigits) = ocrPumpRectsAsisAndDigits(aRedPixel)
                 val aCands = buildRedBoxCandidates(pdHunksRawTotal, aAsis, aDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
