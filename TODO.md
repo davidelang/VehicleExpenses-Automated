@@ -3,7 +3,7 @@
 ## Active Work (Implement Varying Calculated Blue Expansion — implement-varying-calculated-blue-expansion-20260619-plan.md)
 - [x] Phase 1: Update createBlueAndOrangeHunksFromReds signature + vertFactors loop
 - [x] Phase 2: Update procD call sites + comments (2 sites)
-- [ ] Phase 3: Update procE call sites + comments (2 sites)
+- [x] Phase 3: Update procE call sites + comments (2 sites)
 - [ ] Phase 4: Update procG call sites + comments (2 sites)
 - [ ] Phase 5: Update top-level flows label convention comment
 - [ ] Phase 6: Optional PUMP_EXPERIMENT_FLOWS.md update
