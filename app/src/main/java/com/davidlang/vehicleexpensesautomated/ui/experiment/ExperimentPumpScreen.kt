@@ -517,7 +517,7 @@ private suspend fun runPumpExperiment(
 
 
 
-                // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: clean text only; probs separate for decisions
+                // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan + PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: clean text only; probs separate for decisions
                 fun pumpOcrCleanAndProbs(debugText: String, perCharProbs: String): Pair<String, String> {
                     val cleanText = debugText
                     val probStr = if (perCharProbs.isNotEmpty()) perCharProbs else ""
