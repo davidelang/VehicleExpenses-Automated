@@ -579,6 +579,7 @@ private suspend fun runPumpExperiment(
                     candidates: List<RedBoxOcrCandidate> = emptyList()
                 ): PathResult {
                     if (candidates.isNotEmpty()) {
+                        // Phase 11: ensure chosen rect used for B64 crops (per finish plan); fallback only on empty; per-column isolation via local candidates
                         val (cst, vlm) = classifyCostVolFromBoxOcr(candidates)
                         val chosen = candidates.firstOrNull { it.digits.isNotEmpty() || it.asis.isNotEmpty() } ?: candidates[0]
                         val r = chosen.rect
