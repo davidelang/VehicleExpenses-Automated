@@ -6,8 +6,8 @@
 - [x] Phase 3: Update procE call sites + comments (2 sites)
 - [x] Phase 4: Update procG call sites + comments (2 sites)
 - [x] Phase 5: Update top-level flows label convention comment
-- [ ] Phase 6: Optional PUMP_EXPERIMENT_FLOWS.md update
-- [ ] Phase 7: Cross-check + final build
+- [x] Phase 6: Optional PUMP_EXPERIMENT_FLOWS.md update (skipped — no blue-method refs in doc)
+- [x] Phase 7: Cross-check + final build
 
 ## Completed / Historical (prior plans rolled)
 - [x] fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan.md (10 phases)
