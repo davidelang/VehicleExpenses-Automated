@@ -540,14 +540,13 @@ private suspend fun runPumpExperiment(
                         val dp = if ("." in d) d.substringAfter(".").length else 0
                         return f to dp
                     }
-                    fun isGoldenLabel(c: RedBoxOcrCandidate): Boolean {
-                        if (c.asis.trim() == "$") return true
-                        return digitCount(c.digits) + digitCount(c.asis) < 2
-                    }
                     val valids = candidates.filter { digitCount(it.digits) >= 2 }
                     if (valids.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
-                    // fix-remaining-report-issues-20260619-plan: lone $ is Y-row cost indicator only, never a value field
-                    val goldenYs = candidates.filter { isGoldenLabel(it) && it.asis.contains("$") }.mapNotNull { it.rect?.top }
+                    // per this plan + user: asis only for golden words to find Y band of numeric result; values come exclusively from digits (so $ alone rule and combined handling are gone)
+                    val goldenYs = candidates.filter { c ->
+                        val a = c.asis.lowercase()
+                        a.contains("$") || a.contains("/gal") || a.contains("gal")
+                    }.mapNotNull { it.rect?.top }
                     val costScores = mutableMapOf<RedBoxOcrCandidate, Int>()
                     val volScores = mutableMapOf<RedBoxOcrCandidate, Int>()
                     for (c in valids) {
