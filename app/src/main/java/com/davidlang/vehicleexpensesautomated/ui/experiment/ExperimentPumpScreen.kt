@@ -1820,7 +1820,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
                 val (eAsis, eDigits) = ocrPumpRectsAsisAndDigits(customBluePixelE)
-                val eCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, eAsis, eDigits)
+                val eCands = buildRedBoxCandidates(customBluePixelE, eAsis, eDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, eCands)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
