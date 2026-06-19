@@ -1,5 +1,21 @@
 # TODO
 
+- [ ] Active: fix-4box-report-issues-20260619-plan.md
+  - [ ] Phase 1: Hygiene + baseline forensic
+  - [ ] Phase 2: Forensic read of classify + build (baseline)
+  - [ ] Phase 3: Update classifyCostVolFromBoxOcr for min digits + distinct + $ handling
+  - [ ] Phase 4: Update buildRedBoxCandidates to accept ocr rect list
+  - [ ] Phase 5: Wire correct ocr rects for Set A (procA)
+  - [ ] Phase 6: Wire correct ocr rects for Set B (procB)
+  - [ ] Phase 7: Wire correct ocr rects for Set C (procC)
+  - [ ] Phase 8: Wire correct ocr rects for Set D (procD)
+  - [ ] Phase 9: Wire correct ocr rects for Set E (procE)
+  - [ ] Phase 10: Wire correct ocr rects for Set F (procF)
+  - [ ] Phase 11: Wire correct ocr rects for Set G (procG)
+  - [ ] Phase 12: Ensure per-cand rects for crops in getFull classify path
+  - [ ] Phase 13: Reduce datadump in first column of pBuildHtmlRowDynamic
+  - [ ] Phase 14: Update spec + comments for new rules
+  - [ ] Phase 15: Final forensic + verification build
 - [x] Active: complete-real-4box-per-column-wiring-20260619-plan.md (all 15 phases complete; tag fix-pump-experiment/builds)
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
