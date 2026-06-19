@@ -1708,7 +1708,7 @@ private suspend fun runPumpExperiment(
                 
                 // fix-remaining-report-issues-20260619-plan: Set D — buildRedBoxCandidates uses customBluePixelD ocr rects
                 val (customBlueDPre, _) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, (0.1f..0.8f step 0.1f).toList(), 0.5f)
+                    pdHunksRawTotal, imgW, imgH, ((0.1f..0.8f) step 0.1f).toList(), 0.5f)
                 val customBluePixelD = customBlueDPre.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
@@ -1719,7 +1719,7 @@ private suspend fun runPumpExperiment(
                 doBOrDRedOnlyImage()
                 // D custom blue/orange (no valley) via createBlueAndOrangeHunksFromReds (calculated blue expansions +10% to +80% vert step 10%, horiz 50%)
                 val (customBlueD, customOrangeD) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, (0.1f..0.8f step 0.1f).toList(), 0.5f)
+                    pdHunksRawTotal, imgW, imgH, ((0.1f..0.8f) step 0.1f).toList(), 0.5f)
                 val aPdD = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueD, Color.BLUE, 4) + getAnns(customOrangeD, Color.rgb(255, 165, 0), 2)
                 val baseB64D = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdD, null, workspace).first
                 branch.images["PD"] = baseB64D
