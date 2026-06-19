@@ -984,8 +984,12 @@ private suspend fun runPumpExperiment(
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
                 // Updated for A: now receives integer pixel data (red snapped+pruned int Rect lists, ML direct int, expand/takeCrop int) -> direct int Rect to takeSnapshot crops for A final PathResult.
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
-                    branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
+                // Phase 5 wiring (per finish plan): real (empty-texts for A pre-ocr) candidates from local pdHunksRawTotal (top4 for this column)
+                val aAsis = List(pdHunksRawTotal.size) { "" }
+                val aDigits = List(pdHunksRawTotal.size) { "" }
+                val aCands = buildRedBoxCandidates(pdHunksRawTotal, aAsis, aDigits)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
+                    branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
 
                 // 5. Visualization
                     val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
