@@ -5,7 +5,7 @@
   - [x] Phase 2: Forensic read of classify + build (baseline)
   - [x] Phase 3: Update classifyCostVolFromBoxOcr for min digits + distinct + $ handling
   - [x] Phase 4: Update buildRedBoxCandidates to accept ocr rect list
-  - [ ] Phase 5: Wire correct ocr rects for Set A (procA)
+  - [x] Phase 5: Wire correct ocr rects for Set A (procA)
   - [ ] Phase 6: Wire correct ocr rects for Set B (procB)
   - [ ] Phase 7: Wire correct ocr rects for Set C (procC)
   - [ ] Phase 8: Wire correct ocr rects for Set D (procD)
