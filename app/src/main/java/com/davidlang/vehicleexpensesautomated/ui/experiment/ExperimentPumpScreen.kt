@@ -1732,7 +1732,11 @@ private suspend fun runPumpExperiment(
                 // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH)
+                // Phase 8 wiring (per finish plan): eCands before getFinal for Set E
+                val eAsis = List(pdHunksRawTotal.size) { "" }
+                val eDigits = List(pdHunksRawTotal.size) { "" }
+                val eCands = buildRedBoxCandidates(pdHunksRawTotal, eAsis, eDigits)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, eCands)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
