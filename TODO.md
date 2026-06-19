@@ -1,6 +1,17 @@
 # TODO
 
-- [ ] Active: fix-4box-report-issues-20260619-plan.md
+- [ ] Active: fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan.md
+  - [x] Phase 1: Hygiene + baseline reads + build
+  - [x] Phase 2: Baseline forensic confirm
+  - [x] Phase 3: valids filter digits-only
+  - [ ] Phase 4: Remove asis fallback in parse loop
+  - [ ] Phase 5: Remove asis fallback for cst/vlm
+  - [ ] Phase 6: Post-selection N/A digits-only confirm
+  - [ ] Phase 7: Simplify golden Y + remove isGoldenLabel
+  - [ ] Phase 8: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
+  - [ ] Phase 9: Narrow cross-ref comments
+  - [ ] Phase 10: Final forensic + build
+- [x] Active: fix-4box-report-issues-20260619-plan.md
   - [x] Phase 1: Hygiene + baseline forensic
   - [x] Phase 2: Forensic read of classify + build (baseline)
   - [x] Phase 3: Update classifyCostVolFromBoxOcr for min digits + distinct + $ handling
