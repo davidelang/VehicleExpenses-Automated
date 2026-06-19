@@ -531,19 +531,26 @@ private suspend fun runPumpExperiment(
                 
                 data class CostVolClassifyResult(val cost: String, val vol: String, val costCand: RedBoxOcrCandidate, val volCand: RedBoxOcrCandidate)
 
+                // fix-4box-report-issues-20260619-plan: min 2 digits, distinct cost/vol, $ as Y-indicator only
                 fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): CostVolClassifyResult {
                     if (candidates.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+                    fun digitCount(s: String) = s.count { it.isDigit() }
                     fun parse(s: String): Pair<Float, Int> {
                         val d = s.filter { it.isDigit() || it == '.'}
                         val f = d.toFloatOrNull() ?: 0f
                         val dp = if ("." in d) d.substringAfter(".").length else 0
                         return f to dp
                     }
-                    var costCand = candidates[0]
-                    var volCand = candidates.getOrNull(1) ?: candidates[0]
-                    var bestCostScore = -1
-                    var bestVolScore = -1
-                    for (c in candidates) {
+                    fun isGoldenLabel(c: RedBoxOcrCandidate): Boolean {
+                        if (c.asis.trim() == "$") return true
+                        return digitCount(c.digits) + digitCount(c.asis) < 2
+                    }
+                    val valids = candidates.filter { digitCount(it.digits) + digitCount(it.asis) >= 2 }
+                    if (valids.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+                    val goldenYs = candidates.filter { isGoldenLabel(it) && it.asis.contains("$") }.mapNotNull { it.rect?.top }
+                    val costScores = mutableMapOf<RedBoxOcrCandidate, Int>()
+                    val volScores = mutableMapOf<RedBoxOcrCandidate, Int>()
+                    for (c in valids) {
                         val (v, dp) = parse(c.digits.ifEmpty { c.asis })
                         var cs = 0; var vs = 0
                         if (dp == 2) cs += 12
@@ -551,8 +558,17 @@ private suspend fun runPumpExperiment(
                         if (v > 20) cs += 8
                         if (v < 60 && v > 0) vs += 6
                         if (dp > 0) { cs += 2; vs += 2 }
-                        if (cs > bestCostScore) { bestCostScore = cs; costCand = c }
-                        if (vs > bestVolScore) { bestVolScore = vs; volCand = c }
+                        if (goldenYs.isNotEmpty() && c.rect != null) {
+                            val minDist = goldenYs.minOf { kotlin.math.abs(it - c.rect.top) }
+                            cs += 20 - minOf(minDist / 10, 20)
+                        }
+                        costScores[c] = cs
+                        volScores[c] = vs
+                    }
+                    var costCand = valids.maxByOrNull { costScores[it] ?: -1 }!!
+                    var volCand = valids.maxByOrNull { volScores[it] ?: -1 }!!
+                    if (costCand == volCand && valids.size > 1) {
+                        volCand = valids.filter { it != costCand }.maxByOrNull { volScores[it] ?: -1 } ?: volCand
                     }
                     var cst = costCand.digits.ifEmpty { costCand.asis }
                     var vlm = volCand.digits.ifEmpty { volCand.asis }
