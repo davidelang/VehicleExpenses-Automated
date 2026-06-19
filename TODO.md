@@ -11,8 +11,8 @@
 - [x] Phase 8: Update getFinal comment + ensure cands path uses clean values
 - [x] Phase 9: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
 - [x] Phase 10: Add/refresh narrow plan cross-ref comments
-- [ ] Phase 11: TODO hygiene + current-state pointer
-- [ ] Phase 12: Full forensic + final build
+- [x] Phase 11: TODO hygiene + current-state pointer
+- [x] Phase 12: Full forensic + final build
 
 ## Completed / Historical (prior plans rolled)
 - [x] fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan.md (10 phases)
