@@ -1708,7 +1708,7 @@ private suspend fun runPumpExperiment(
                 
                 // fix-remaining-report-issues-20260619-plan: Set D — buildRedBoxCandidates uses customBluePixelD ocr rects
                 val (customBlueDPre, _) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
+                    pdHunksRawTotal, imgW, imgH, listOf(0.2f), 0.5f)
                 val customBluePixelD = customBlueDPre.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
@@ -1719,7 +1719,7 @@ private suspend fun runPumpExperiment(
                 doBOrDRedOnlyImage()
                 // D custom blue/orange (no valley) via createBlueAndOrangeHunksFromReds (fixed 20% vert, horiz 50%)
                 val (customBlueD, customOrangeD) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
+                    pdHunksRawTotal, imgW, imgH, listOf(0.2f), 0.5f)
                 val aPdD = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueD, Color.BLUE, 4) + getAnns(customOrangeD, Color.rgb(255, 165, 0), 2)
                 val baseB64D = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdD, null, workspace).first
                 branch.images["PD"] = baseB64D
@@ -1999,7 +1999,7 @@ private suspend fun runPumpExperiment(
                 // for the best path result using the valley versions).
                 // fix-remaining-report-issues-20260619-plan: Set E — buildRedBoxCandidates uses customBluePixelE ocr rects
                 val (customBlueEPre, _) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
+                    pdHunksRawTotal, imgW, imgH, listOf(0.2f), 0.5f)
                 val customBluePixelE = customBlueEPre.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
@@ -2012,7 +2012,7 @@ private suspend fun runPumpExperiment(
                 doBOrDRedOnlyImage()
                 // E custom blue/orange (matching D, no valley) via createBlueAndOrangeHunksFromReds (fixed 20% vert, horiz 50%)
                 val (customBlueE, customOrangeE) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
+                    pdHunksRawTotal, imgW, imgH, listOf(0.2f), 0.5f)
                 val aPdE = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueE, Color.BLUE, 4) + getAnns(customOrangeE, Color.rgb(255, 165, 0), 2)
                 val baseB64E = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdE, null, workspace).first
                 branch.images["PD"] = baseB64E
@@ -2345,7 +2345,7 @@ private suspend fun runPumpExperiment(
                 // for the best path result using the valley versions).
                 // fix-remaining-report-issues-20260619-plan: Set G — buildRedBoxCandidates uses customBluePixelG ocr rects
                 val (customBlueGPre, _) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
+                    pdHunksRawTotal, imgW, imgH, listOf(0.2f), 0.5f)
                 val customBluePixelG = customBlueGPre.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
@@ -2356,7 +2356,7 @@ private suspend fun runPumpExperiment(
                 doBOrDRedOnlyImage()
                 // G custom blue/orange (raw clone of D, no stretch) via createBlueAndOrangeHunksFromReds (fixed 20% vert, horiz 50%)
                 val (customBlueG, customOrangeG) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
+                    pdHunksRawTotal, imgW, imgH, listOf(0.2f), 0.5f)
                 val aPdG = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
                 val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdG, null, workspace).first
                 branch.images["PD"] = baseB64G
