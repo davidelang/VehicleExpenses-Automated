@@ -2,7 +2,7 @@
 
 **Authority:** `docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md`  
 **Implementation:** `ExperimentPumpScreen.kt` — `classifyCostVolFromBoxOcr`, `buildRedBoxCandidates`, `getFinal`  
-**Related plans:** `complete-real-4box-per-column-wiring-20260619-plan.md`, `fix-4box-report-issues-20260619-plan.md`, `fix-remaining-report-issues-20260619-plan.md`, `fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan.md`
+**Related plans:** `complete-real-4box-per-column-wiring-20260619-plan.md`, `fix-4box-report-issues-20260619-plan.md`, `fix-remaining-report-issues-20260619-plan.md`, `fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan.md`, `fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan.md`
 
 ## Purpose
 
@@ -62,18 +62,22 @@ For each eligible candidate, parse `digits` only:
 **Volume score:**
 - +12 if decimalPlaces == 3
 - +6 if 0 < value < 60
+- +1 if 3.0 ≤ value ≤ 30.0 (light bias for typical gallon range)
 - +2 if decimalPlaces > 0
 
-Select highest-scoring eligible candidate for cost and separately for volume.
+**Selection:** highest cost-score candidate for cost; highest volume-score among **remaining candidates ≠ cost candidate** for volume (fallback to sole candidate when only one valid).
 
 ### Distinct cost/volume (mandatory)
 
-If the same candidate wins both cost and volume and more than one eligible candidate exists, volume is reassigned to the next-best **different** candidate.
+When ≥2 eligible candidates exist:
+1. Cost and volume must come from **different** `RedBoxOcrCandidate` objects (different OCR rects).
+2. Volume is chosen from `valids.filter { it != costCand }`, not independent argmax over all valids.
+3. **Post-formation guard:** after decimal repair, if `cost` and `vol` strings are equal, re-pick volume from a different candidate; if still equal, set `vol` to `"N/A"`.
 
 ### Output strings
 
-- `cost` = chosen cost candidate's `digits` string only
-- `vol` = chosen volume candidate's `digits` string only
+- `cost` and `vol` = **clean pure digit strings** from chosen candidates' `digits` (strip any ` [probs:...]` debug suffix before return)
+- Full OCR text with probs remains in `pd_ocr_html` / debug dumps only — not in `PathResult` cost/vol
 - **Post-selection enforcement:** if final `cost` or `vol` string has fewer than 2 digits, set that field to `"N/A"`
 
 ### Decimal repair (volume)
@@ -96,7 +100,8 @@ When cost candidate has exactly 2 decimal places and volume digits string length
 
 - Grep: `digitCount` / `valids` filter with `>= 2` in `classifyCostVolFromBoxOcr`
 - Grep: `buildRedBoxCandidates` called with ocr rect lists (not `pdHunksRawTotal`)
-- Grep: distinct cost/vol enforcement when same candidate wins both
+- Grep: `remainingForVol` / different-cand vol selection; `cst == vlm` post-formation guard
+- Grep: `substringBefore(" [")` for clean cost/vol output (no probs suffix in PathResult)
 - Grep: `htmlMetaWhitelist` / `t_total_flow_ms` whitelist in `pBuildHtmlRowDynamic`
 - Grep: post-selection `digitCount(cst) < 2` → `"N/A"` in `classifyCostVolFromBoxOcr`
 - `pathResults` populated via classify path when candidates non-empty

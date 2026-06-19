@@ -9,7 +9,7 @@
 - [x] Phase 6: Clean final cost/vol strings (strip probs debug suffix)
 - [x] Phase 7: Light scoring differentiation to help distinct
 - [x] Phase 8: Update getFinal comment + ensure cands path uses clean values
-- [ ] Phase 9: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
+- [x] Phase 9: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
 - [ ] Phase 10: Add/refresh narrow plan cross-ref comments
 - [ ] Phase 11: TODO hygiene + current-state pointer
 - [ ] Phase 12: Full forensic + final build
