@@ -1354,6 +1354,7 @@ private suspend fun runPumpExperiment(
                 })
                 branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
                 captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for F (redboxData + n_per_red_hists)
+                captureBinPeakSnapshotsFromRedbox(branch, workspace)
 
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
