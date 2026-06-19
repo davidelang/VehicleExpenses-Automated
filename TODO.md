@@ -4,7 +4,7 @@
 - [x] Phase 1: Hygiene + baseline reads + report duplicate analysis (no functional edit)
 - [x] Phase 2: Confirm current weak distinct + string pollution
 - [x] Phase 3: Update valids filter comment and golden for clarity (prep)
-- [ ] Phase 4: Replace independent argmax + weak if with explicit different-cand selection
+- [x] Phase 4: Replace independent argmax + weak if with explicit different-cand selection
 - [ ] Phase 5: Add post-formation string equality guard for distinct
 - [ ] Phase 6: Clean final cost/vol strings (strip probs debug suffix)
 - [ ] Phase 7: Light scoring differentiation to help distinct
