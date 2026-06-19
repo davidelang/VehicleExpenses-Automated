@@ -10,7 +10,7 @@
   - [x] Phase 7: Simplify golden Y + remove isGoldenLabel
   - [x] Phase 8: Update PUMP_COST_VOLUME_CLASSIFIER_SPEC.md
   - [x] Phase 9: Narrow cross-ref comments
-  - [ ] Phase 10: Final forensic + build
+  - [x] Phase 10: Final forensic + build
 - [x] Active: fix-4box-report-issues-20260619-plan.md
   - [x] Phase 1: Hygiene + baseline forensic
   - [x] Phase 2: Forensic read of classify + build (baseline)
