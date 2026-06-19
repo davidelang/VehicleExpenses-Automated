@@ -2553,8 +2553,10 @@ private fun pBuildHtmlRowDynamic(
     deskewHtml: String,
     diagnostic: String = ""
 ): String = buildString {
-    // Phase 2: filter verbose redboxData* (now for all sets) from column 2 / meta dump (too much detail)
-    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) -> !k.contains("redboxData") }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
+    // fix-4box-report-issues-20260619-plan: strict meta filter — small essentials only; full data stays in JSON
+    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) ->
+        !k.contains("redbox", ignoreCase = true) && !k.contains("Data", ignoreCase = true) && !k.contains("json", ignoreCase = true) && v.length <= 100
+    }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
     val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
@@ -2587,8 +2589,9 @@ private fun pBuildHtmlRowDynamic(
             // (Removed outdated "YUV direct jpeg visuals per plan" / "YUV direct is the target" note.)
             val rdataStr = br.metadata["redboxDataC"] ?: "[]"
             val rdata = try { org.json.JSONArray(rdataStr) } catch (e: Exception) { org.json.JSONArray() }
+            // fix-4box-report-issues-20260619-plan: summary-only per-red text in HTML (full base64 in JSON metadata)
             val perRedHtml = StringBuilder()
-            perRedHtml.append("<div style='margin-top:4px;'><b>Per Red Box Hists (sorted by area desc, 3 wide, stacked h/w/area; rect + hist images):</b></div>")
+            perRedHtml.append("<div style='margin-top:4px;'><b>Per Red Box Summary (${rdata.length()} boxes; see JSON for full data):</b></div>")
             val sortedData = (0 until rdata.length()).map { rdata.getJSONObject(it) }.sortedByDescending { it.getInt("area") }
             val numCols = 3
             perRedHtml.append("<table style='width:100%; border:none; font-size:10px;'><tr>")
@@ -2598,9 +2601,7 @@ private fun pBuildHtmlRowDynamic(
                 val hh = s.getInt("h")
                 val ww = s.getInt("w")
                 val aa = s.getInt("area")
-                val rectb = br.images["redboxRectC_${ii}"] ?: ""
-                val hb = br.images["redboxHistC_${ii}"] ?: ""
-                perRedHtml.append("<td style='border:none; padding:2px; vertical-align:top; width:33%; text-align:center;'><img src='data:image/jpeg;base64,$rectb' style='max-width:95%;'><br><img src='data:image/jpeg;base64,$hb' style='max-width:95%;'><br><small>Red${ii}:<br>h=${hh}<br>w=${ww}<br>area=${aa}</small></td>")
+                perRedHtml.append("<td style='border:none; padding:2px; vertical-align:top; width:33%; text-align:center;'><small>Red${ii}: h=${hh} w=${ww} area=${aa}</small></td>")
                 if ((j + 1) % numCols == 0 && j < sortedData.size - 1) {
                     perRedHtml.append("</tr><tr>")
                 }
