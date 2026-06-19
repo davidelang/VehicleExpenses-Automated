@@ -540,9 +540,10 @@ private suspend fun runPumpExperiment(
                         val dp = if ("." in d) d.substringAfter(".").length else 0
                         return f to dp
                     }
+                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: digits-only valids (>=2); distinct cost/vol candidates required when >=2 valids
                     val valids = candidates.filter { digitCount(it.digits) >= 2 }
                     if (valids.isEmpty()) return CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
-                    // per this plan + user: asis only for golden words to find Y band of numeric result; values come exclusively from digits (so $ alone rule and combined handling are gone)
+                    // fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan: asis only for golden Y-band ($/gal); distinct candidates from digits scoring
                     val goldenYs = candidates.filter { c ->
                         val a = c.asis.lowercase()
                         a.contains("$") || a.contains("/gal") || a.contains("gal")
