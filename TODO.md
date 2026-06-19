@@ -1,8 +1,8 @@
 # TODO
 
 - [ ] Active: fix-4box-report-issues-20260619-plan.md
-  - [ ] Phase 1: Hygiene + baseline forensic
-  - [ ] Phase 2: Forensic read of classify + build (baseline)
+  - [x] Phase 1: Hygiene + baseline forensic
+  - [x] Phase 2: Forensic read of classify + build (baseline)
   - [ ] Phase 3: Update classifyCostVolFromBoxOcr for min digits + distinct + $ handling
   - [ ] Phase 4: Update buildRedBoxCandidates to accept ocr rect list
   - [ ] Phase 5: Wire correct ocr rects for Set A (procA)
