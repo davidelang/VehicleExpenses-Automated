@@ -1385,7 +1385,7 @@ private suspend fun runPumpExperiment(
                 // Phase 10 (complete-real-4box plan): explicit Set C wiring — retracted blue OCR before getFinal
                 val cRetractedPixel = computeRetractedBluePixelRects()
                 val (cAsis, cDigits) = ocrPumpRectsAsisAndDigits(cRetractedPixel)
-                val cCands = buildRedBoxCandidates(pdHunksRawTotal.map { h -> android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt()) }, cAsis, cDigits)
+                val cCands = buildRedBoxCandidates(cRetractedPixel, cAsis, cDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, cCands)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
