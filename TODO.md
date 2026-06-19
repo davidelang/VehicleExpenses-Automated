@@ -12,7 +12,7 @@
   - [x] Phase 9: Wire correct ocr rects for Set E (procE)
   - [x] Phase 10: Wire correct ocr rects for Set F (procF)
   - [x] Phase 11: Wire correct ocr rects for Set G (procG)
-  - [ ] Phase 12: Ensure per-cand rects for crops in getFull classify path
+  - [x] Phase 12: Ensure per-cand rects for crops in getFull classify path
   - [ ] Phase 13: Reduce datadump in first column of pBuildHtmlRowDynamic
   - [ ] Phase 14: Update spec + comments for new rules
   - [ ] Phase 15: Final forensic + verification build
