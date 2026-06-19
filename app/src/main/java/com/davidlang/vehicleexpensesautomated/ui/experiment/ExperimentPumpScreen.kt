@@ -1795,9 +1795,13 @@ private suspend fun runPumpExperiment(
                 // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
-                // Phase 8 wiring (per finish plan): eCands before getFinal for Set E
-                val eAsis = List(pdHunksRawTotal.size) { "" }
-                val eDigits = List(pdHunksRawTotal.size) { "" }
+                // Phase 7 (complete-real-4box plan): hoist custom blue OCR before getFinal (Set E column)
+                val (customBlueEPre, _) = createBlueAndOrangeHunksFromReds(
+                    pdHunksRawTotal, imgW, imgH, 0.2f, 0.5f)
+                val customBluePixelE = customBlueEPre.map { bh ->
+                    android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                }
+                val (eAsis, eDigits) = ocrPumpRectsAsisAndDigits(customBluePixelE)
                 val eCands = buildRedBoxCandidates(pdHunksRawTotal, eAsis, eDigits)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, eCands)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
