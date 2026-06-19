@@ -719,7 +719,7 @@ private suspend fun runPumpExperiment(
                 // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
                 var processedScales = mutableSetOf<Int>()
 
-                // Per-column top-4 box OCR (docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is + digits on pixel rects before getFinal per proc
+                // Per-column top-4 box OCR (docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is (golden Y-band only) + digits (cost/vol values) on pixel rects before getFinal per proc
                 suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): Pair<List<String>, List<String>> {
                     val asisList = rects.map { r ->
                         val pW = r.width(); val pH = r.height()
