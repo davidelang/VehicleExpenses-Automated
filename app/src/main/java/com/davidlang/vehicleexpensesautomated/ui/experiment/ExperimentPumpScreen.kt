@@ -1364,11 +1364,11 @@ private suspend fun runPumpExperiment(
                 // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
-                // Phase 7 wiring (per finish plan): dCands for Set D before getFinal using local pd
-                val dAsis = List(pdHunksRawTotal.size) { "" }
-                val dDigits = List(pdHunksRawTotal.size) { "" }
-                val dCands = buildRedBoxCandidates(pdHunksRawTotal, dAsis, dDigits)
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, dCands)
+                // Phase 10 (complete-real-4box plan): explicit Set C wiring — retracted blue OCR before getFinal
+                val cRetractedPixel = computeRetractedBluePixelRects()
+                val (cAsis, cDigits) = ocrPumpRectsAsisAndDigits(cRetractedPixel)
+                val cCands = buildRedBoxCandidates(pdHunksRawTotal, cAsis, cDigits)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, cCands)
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
