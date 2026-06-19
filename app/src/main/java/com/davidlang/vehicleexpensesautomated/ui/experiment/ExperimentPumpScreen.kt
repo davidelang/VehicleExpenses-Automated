@@ -2553,9 +2553,10 @@ private fun pBuildHtmlRowDynamic(
     deskewHtml: String,
     diagnostic: String = ""
 ): String = buildString {
-    // fix-4box-report-issues-20260619-plan: strict meta filter — small essentials only; full data stays in JSON
+    // fix-remaining-report-issues-20260619-plan: whitelist t_total_flow_ms + minimal essentials only; full timing stays in JSON
+    val htmlMetaWhitelist = setOf("t_total_flow_ms", "img_w", "img_h")
     val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) ->
-        !k.contains("redbox", ignoreCase = true) && !k.contains("Data", ignoreCase = true) && !k.contains("json", ignoreCase = true) && v.length <= 100
+        k in htmlMetaWhitelist && v.length <= 100
     }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
     val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
