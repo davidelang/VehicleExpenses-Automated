@@ -528,6 +528,43 @@ private suspend fun runPumpExperiment(
                     }
                 }
 
+                
+                fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): Pair<String, String> {
+                    if (candidates.isEmpty()) return "N/A" to "N/A"
+                    fun parse(s: String): Pair<Float, Int> {
+                        val d = s.filter { it.isDigit() || it == '.'}
+                        val f = d.toFloatOrNull() ?: 0f
+                        val dp = if ("." in d) d.substringAfter(".").length else 0
+                        return f to dp
+                    }
+                    var costCand = candidates[0]
+                    var volCand = candidates.getOrNull(1) ?: candidates[0]
+                    var bestCostScore = -1
+                    var bestVolScore = -1
+                    for (c in candidates) {
+                        val (v, dp) = parse(c.digits.ifEmpty { c.asis })
+                        var cs = 0; var vs = 0
+                        if (dp == 2) cs += 12
+                        if (dp == 3) vs += 12
+                        if (v > 20) cs += 8
+                        if (v < 60 && v > 0) vs += 6
+                        if (dp > 0) { cs += 2; vs += 2 }
+                        if (cs > bestCostScore) { bestCostScore = cs; costCand = c }
+                        if (vs > bestVolScore) { bestVolScore = vs; volCand = c }
+                    }
+                    var cst = costCand.digits.ifEmpty { costCand.asis }
+                    var vlm = volCand.digits.ifEmpty { volCand.asis }
+                    // decimal repair for vol when cost confident (dplaces 2)
+                    val costDp = parse(costCand.digits.ifEmpty { costCand.asis }).second
+                    val dstr = volCand.digits.filter { it.isDigit() }
+                    if (costDp == 2 && dstr.length >= 4) {
+                        val n = dstr.length
+                        vlm = dstr.substring(0, n-3) + "." + dstr.substring(n-3)
+                    }
+                    return cst to vlm
+                }
+
+
                 suspend fun getFinal(
                     hunks: List<PumpHunk>,
                     engine: String,
@@ -538,8 +575,19 @@ private suspend fun runPumpExperiment(
                     paddleEng: NativePaddleEngine,
                     ctx: Context,
                     imgW: Int,
-                    imgH: Int
+                    imgH: Int,
+                    candidates: List<RedBoxOcrCandidate> = emptyList()
                 ): PathResult {
+                    if (candidates.isNotEmpty()) {
+                        val (cst, vlm) = classifyCostVolFromBoxOcr(candidates)
+                        val chosen = candidates.firstOrNull { it.digits.isNotEmpty() || it.asis.isNotEmpty() } ?: candidates[0]
+                        val r = chosen.rect
+                        val crop = if (r != null) {
+                            OcrUtils.takeSnapshot(ws.p, r, 300, 100, emptyList(), null, ws).first
+                        } else ""
+                        return PathResult(cst, vlm, crop, crop)
+                    }
+                    // legacy fallback
                     val stitched = stitchHunksHorizontally(hunks)
                     val (top, bottom) = groupLanesByVerticalGap(stitched)
                     val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
