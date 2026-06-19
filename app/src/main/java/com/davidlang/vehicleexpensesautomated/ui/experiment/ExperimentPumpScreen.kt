@@ -1951,6 +1951,7 @@ private suspend fun runPumpExperiment(
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 4 for builder column + redboxDataC in JSON (no more 30).
                     // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
                     captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData (all sets); E visuals/redboxDataC follow
+                    captureBinPeakSnapshotsFromRedbox(branch, workspace)
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val rw = (hunk.rect.right - hunk.rect.left).toInt()
@@ -2199,6 +2200,8 @@ private suspend fun runPumpExperiment(
                     PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                 })
                 branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for F (redboxData + n_per_red_hists)
+                captureBinPeakSnapshotsFromRedbox(branch, workspace)
 
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
