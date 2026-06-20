@@ -23,7 +23,7 @@ Explicitly permitted and encouraged for understanding the system and device beha
 - All standard safe read-oriented commands.
 
 The ONLY hard restrictions during planning:
-- NO edits (search_replace, write, etc.) to tracked source files outside the dev-ai-interaction/ sandbox and the local per-worktree current-state.md / .agent-state/.
+- NO edits (search_replace, write, etc.) to tracked source files outside the dev-ai-interaction/ sandbox and the local per-worktree project-facts.md / .agent-state/.
 - The sandbox (dev-ai-interaction/) is explicitly exempt; you may freely create/edit plans, notes, and artifacts there.
 - Stay in plan mode. Do not propose or perform source changes to the main app until the user gives explicit magic approval of a written sandbox plan file.
 

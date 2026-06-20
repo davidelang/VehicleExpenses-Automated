@@ -3,6 +3,15 @@
 # Usage: ./deploy [alias1 alias2 ...]
 # If no arguments are provided, it deploys to all connected devices.
 
+# Ensure group-writable creation for build artifacts and Gradle caches (660/770)
+umask 007
+
+# Ensure ai-code group is active in credentials (for worktree perms)
+if ! id -nG | grep -qw ai-code; then
+  echo "Re-executing under ai-code group for correct file permissions..."
+  exec sg ai-code "$0" "$@"
+fi
+
 declare -A DEVICE_MAP
 DEVICE_MAP=(
     ["tablet"]="emulator-5554"
@@ -14,10 +23,17 @@ OVERALL_SUCCESS=true
 
 if [ "$#" -eq 0 ]; then
     echo "Deploying to all connected devices..."
-    ./gradlew installDebug
-    if [ $? -ne 0 ]; then
-        echo "Deployment failed."
+    if [ ! -x ./gradlew ]; then
+        echo "Error: ./gradlew not found or not executable here."
+        echo "Run from inside an app worktree, e.g.: cd master && ../deploy   or cd agent-1 && ../deploy"
+        echo "See README-multi-agent.md for the proper workflow."
         OVERALL_SUCCESS=false
+    else
+        (umask 007; ./gradlew installDebug)
+        if [ $? -ne 0 ]; then
+            echo "Deployment failed."
+            OVERALL_SUCCESS=false
+        fi
     fi
 else
     for TARGET in "$@"; do
@@ -25,7 +41,13 @@ else
         DEVICE_ID="${DEVICE_MAP[$TARGET]:-$TARGET}"
         
         echo "Deploying to $TARGET ($DEVICE_ID)..."
-        ANDROID_SERIAL="$DEVICE_ID" ./gradlew installDebug
+        if [ ! -x ./gradlew ]; then
+            echo "Error: ./gradlew not found or not executable here."
+            echo "cd into the worktree containing the app/ first."
+            OVERALL_SUCCESS=false
+            continue
+        fi
+        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew installDebug)
         
         if [ $? -ne 0 ]; then
             echo "Deployment to $TARGET ($DEVICE_ID) failed."

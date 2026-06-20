@@ -3,6 +3,15 @@
 # Enhanced build_app: Explicit Integrity & Detailed Summaries
 # Usage: ./build_app ["Commit Message" | "@msg_file.txt"] [file1 file2 ...]
 
+# Ensure group-writable creation for build artifacts and Gradle caches (660/770)
+umask 007
+
+# Ensure ai-code group is active in credentials (for worktree perms)
+if ! id -nG | grep -qw ai-code; then
+  echo "Re-executing under ai-code group for correct file permissions..."
+  exec sg ai-code "$0" "$@"
+fi
+
 if [ "$#" -ge 1 ]; then
     MSG_ARG="$1"
     shift
@@ -70,19 +79,34 @@ if [ -n "$DIRTY_FILES" ]; then
 fi
 
 # 5. Build Phase
-./gradlew assembleDebug
-if [ $? -eq 0 ]; then
+if [ ! -x ./gradlew ]; then
+    echo "Info: No ./gradlew here (orchestration root or non-app tree). Skipping Gradle build."
+    echo "If this is the app tree, cd into it first (e.g. cd master)."
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
     if [ "$CURRENT_BRANCH" == "master" ]; then
         TAG_NAME="builds"
     else
         TAG_NAME="${CURRENT_BRANCH}/builds"
     fi
-    echo "Build successful. Updating '$TAG_NAME' tag."
+    echo "Updating '$TAG_NAME' tag (no compile performed)."
     git tag -f "$TAG_NAME"
     git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
     exit 0
 else
-    echo "Build failed."
-    exit 1
+    (umask 007; ./gradlew assembleDebug)
+    if [ $? -eq 0 ]; then
+        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$CURRENT_BRANCH" == "master" ]; then
+            TAG_NAME="builds"
+        else
+            TAG_NAME="${CURRENT_BRANCH}/builds"
+        fi
+        echo "Build successful. Updating '$TAG_NAME' tag."
+        git tag -f "$TAG_NAME"
+        git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
+        exit 0
+    else
+        echo "Build failed."
+        exit 1
+    fi
 fi

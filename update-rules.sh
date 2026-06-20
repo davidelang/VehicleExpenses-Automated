@@ -24,6 +24,23 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 # 3. Defined Shared Infrastructure Files
+#
+# CRITICAL RULE (language-agnostic):
+# The FILES list below defines the complete set of orchestration-infra /
+# shared brain that may be copied into worktree directories.
+#
+# Orchestration-infra changes must ONLY affect these explicitly listed items.
+# They must NEVER touch actual application source content (whatever directory
+# or tree contains the real program code for the project).
+#
+# Application source must remain completely independent of
+# orchestration-infra syncs.
+#
+# You may update infra files such as:
+#   update-rules.sh, set-worktree-perms, set-sandbox-perms, launchers,
+#   mandates, .grok/, filters, setup-project, etc.
+# (i.e. things installed at setup-agent or setup-project time, or maintained
+# as part of the development environment).
 FILES=(
     ".gemini/policies/plans.toml"
     ".gemini/policies/auto-saved.toml"
@@ -74,6 +91,14 @@ FILES=(
     # into each agent-N/ and master/ worktree and can be `cat`'d reliably.
     # This makes drift immediately visible to the user.
     "standard-plan-compliance-block.md"
+    # Permission bootstrap infrastructure (added for Unix user/group separation)
+    "setup-project"
+    "filter-apply-config"
+    "filter-clean-config"
+    "set-worktree-perms"
+    "set-sandbox-perms"
+    "project.config.example"
+    ".gitattributes"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
@@ -90,7 +115,9 @@ for WT in $WORKTREES; do
 
     echo ">>> Syncing rules to worktree: $WT"
     
-    # Ensure target directories exist and copy files
+    # Ensure target directories exist and copy files.
+    # Only the explicitly listed FILES (see definition above) are ever touched.
+    # Application source content must never be overwritten by infra sync.
     for FILE in "${FILES[@]}"; do
         if [ -f "$SOURCE_DIR/$FILE" ]; then
             TARGET_FILE="$WT/$FILE"

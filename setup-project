@@ -29,9 +29,50 @@ useradd -m -g @@SANDBOX_GROUP@@ @@PLANNING_USER@@ || true
 useradd -m -g @@CODE_GROUP@@ @@CODE_GROUP@@r || true
 useradd -m -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@ || true
 usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@ || true
-echo "Users created (if not exist). Add to sudoers if needed for run-grok-*."
+usermod -aG @@CODE_GROUP@@,@@SHARED_GROUP@@ @@PLANNING_USER@@ || true
+usermod -aG @@SANDBOX_GROUP@@,@@SHARED_GROUP@@ @@CODE_GROUP@@r || true
+usermod -aG @@SANDBOX_GROUP@@ @@ORCHESTRATOR_USER@@ || true
+# Add the primary human/developer user (the one running setup) to @@CODE_GROUP@@ so they can access worktree files via group
+# Replace 'dlang' with your username if different
+usermod -aG @@CODE_GROUP@@ dlang || true
+echo "Users created (if not exist)."
+echo "IMPORTANT: If you are dlang (or the developer), run 'newgrp @@CODE_GROUP@@' or log out/in so your current shell sees the group."
+
+# Git safe.directory (critical for modern git >= 2.35.2)
+# Git refuses to operate in a repo "owned by someone else" unless the path is whitelisted.
+# Use the wildcard form so any subdirectory, worktree, or sandbox created under the project is trusted.
+# These must be executed as each relevant user (the human + the ai-* users).
+echo "# For each user who will use git in this project (run the command as that user):"
+echo "git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo ""
+echo "# Examples (as root you can use sudo -u):"
+echo "#   sudo -u dlang            git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u @@ORCHESTRATOR_USER@@  git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u @@CODE_GROUP@@r         git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u @@PLANNING_USER@@       git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo ""
+echo "This wildcard is the recommended form because it will automatically cover any future worktrees or sandboxes."
+
+# Passwordless sudo for launchers (so no password prompt for sudo -u ai-*)
+cat <<'SUDOERS'
+# Run as root to set up passwordless sudo:
+cat > /etc/sudoers.d/vehicle-permissions << 'EOF'
+dlang ALL=(@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@) NOPASSWD: /home/dlang/git/grok/bin/grok
+EOF
+chmod 440 /etc/sudoers.d/vehicle-permissions
+visudo -c   # validate
+SUDOERS
+echo "Review and run the sudoers setup above as root. Then no password for sudo in launchers."
 USERCMDS
 echo "Review above. Do NOT run automatically."
+
+# As a convenience, configure safe.directory for the *current* user right now
+# (the human running the bootstrap). We compute the current git root + wildcard.
+CURRENT_USER=$(id -un)
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+git config --global --add safe.directory "$PROJECT_ROOT/*" 2>/dev/null || true
+echo "Automatically added safe.directory wildcard for current user ($CURRENT_USER) on $PROJECT_ROOT/*"
+echo "You still need to do the equivalent for the ai-* users (see the USERCMDS above, adapting the path)."
 
 # 2. Config
 echo ""

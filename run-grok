@@ -1,22 +1,23 @@
 #!/bin/bash
 # run-grok
 # Launch Grok CLI in the current agent worktree.
-# Sandbox is provided via the ./dev-ai-interaction symlink (created by setup_agent) + absolute path in mandates.
+# Sandbox is provided via the ./@@SANDBOX_PATH@@ symlink (created by setup_agent) + absolute path in mandates.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
-GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
+SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"
+GROK_BIN="${GROK_BIN:-@@GROK_BIN_DEFAULT@@}"
 
 echo "Launching Grok CLI in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
+echo "Tip: For easier multi-line plans and prompts, focus the input and press Ctrl+M (or type /multiline or /ml) to enable multiline input mode (Enter inserts newline; Shift+Enter or Alt+Enter sends)."
 
 # Post-handoff / new cycle: relaunching this script (from inside an agent worktree) always injects the full
 # fresh-session instruction (see the long string below + new_grok_agent_prompt). This forces the Mandate
 # report + enter_plan_mode + STOP for a clean boundary. The primary planning deliverable the agent must
-# produce is a fresh plan file under dev-ai-interaction/plans/ (never treat the harness session plan.md as the
+# produce is a fresh plan file under @@SANDBOX_PATH@@/plans/ (never treat the harness session plan.md as the
 # approved work plan; see AGENT_MANDATES "Sandbox Plan File..." + MULTI_AGENT_USER_INSTRUCTIONS.md).
-# The agent is required to write dev-ai-interaction/.post-handoff-gate.txt at every handoff for the
+# The agent is required to write @@SANDBOX_PATH@@/.post-handoff-gate.txt at every handoff for the
 # low-friction in-session fallback ritual.
 #
 # Note on models: The companion script `run-grok-planner` (used for dedicated Planning Agent sessions)
@@ -34,7 +35,7 @@ fi
 # --no-alt-screen prevents the CLI from switching to the alternate screen buffer
 # (helps with scrollback, EBADF issues, and visibility in some terminal setups).
 exec "$GROK_BIN" \
-    "You are starting a fresh session in this multi-agent project. As your very first action, read the file new_grok_agent_prompt in the current working directory (use your Read tool if needed) and follow its instructions to the letter. This includes immediately reading AGENT_CONTEXT.md and GROK.md, providing the required brief Mandate Acknowledgment report (overrides, barrier, verification, geography with your current Role+Branch, plans directory rule, etc.), and then entering plan mode (using SwitchMode or enter_plan_mode) and STOPPING. Do not read TODO.md, search for other files, or begin any other task until the user provides a specific directive after your report. Your only mission right now is to introduce yourself via the report and wait in plan mode." \
+    "You are starting a fresh session in this multi-agent project. As your very first action, read the file new_grok_agent_prompt in the current working directory (use your Read tool if needed) and follow its instructions to the letter. This includes immediately reading AGENT_CONTEXT.md and GROK.md, providing the required brief Mandate Acknowledgment report (overrides, barrier, verification, geography with your current Role+Branch, plans directory rule, etc.), and then entering plan mode (using SwitchMode or enter_plan_mode) and STOPPING. Do not read TODO.md, search for other files, or begin any other task until the user provides a specific directive after your report. Your only mission right now is to introduce yourself via the report and wait in plan mode. In your report, also remind the user about enabling multiline input (Ctrl+M or /multiline) for comfortable entry of detailed plans." \
     $TODO_GATE_FLAGS \
     --no-alt-screen \
     "$@"
