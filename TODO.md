@@ -12,7 +12,7 @@
 - [x] Phase 8: Minimal comment update near histogram/plot code
 - [x] Phase 9: Verify captureBinPeakSnapshotsFromRedbox loop only sees real peaks
 - [x] Phase 10: Verify buildBinPeakHtmlForBranch only emits real peaks
-- [ ] Phase 11: Cross-check call sites and no other producers
+- [x] Phase 11: Cross-check call sites and no other producers
 - [ ] Phase 12: Final pre-build greps + narrow reads of changed sites
 - [ ] Phase 13: Post-build verification + state update
 
