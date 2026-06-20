@@ -15,8 +15,39 @@ echo "Setting worktree perms (@@CODE_GROUP@@ focused) for group $CODE_GROUP..."
 
 # Main tree
 chown -R :$CODE_GROUP . 2>/dev/null || true
-find . -type f -exec chmod 640 {} + 2>/dev/null || true
-find . -type d -exec chmod 2775 {} + 2>/dev/null || true
+
+# Modify r/w permissions only, without altering the execute bit.
+# Use +r / +w and -r / -w etc. instead of = modes like 640.
+find . -type f -exec chmod u+rw,g+r,o-rwx {} + 2>/dev/null || true
+find . -type d -exec chmod u+rwx,g+rwxs,o+rx {} + 2>/dev/null || true
+
+# Preserve/ensure execute on critical management/launcher scripts.
+# (The chmod above preserves existing x bits; this ensures them.)
+EXECUTABLES=(
+  update-rules.sh
+  setup-project
+  filter-apply-config
+  filter-clean-config
+  set-worktree-perms
+  set-sandbox-perms
+  run-grok
+  run-grok-master
+  run-grok-planner
+  run-gemini
+  run-antigravity
+  grok-install.sh
+  get-builds-tag.sh
+  build_app
+  deploy
+  setup_agent.sh
+  sync_infrastructure.sh
+  remove_worktree.sh
+  generate_pr.sh
+  cleanup_pr.sh
+)
+for f in "${EXECUTABLES[@]}"; do
+  [ -f "$f" ] && chmod +x "$f"
+done
 
 # Ensure orchestrator has access
 usermod -aG $CODE_GROUP $ORCHESTRATOR_USER 2>/dev/null || true
