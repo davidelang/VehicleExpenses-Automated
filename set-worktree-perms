@@ -56,6 +56,9 @@ for wt in "${WORKTREES[@]}"; do
   chmod g+rw "$wt/project-facts.md" 2>/dev/null || true
   find "$wt" -name .agent-state -type d -exec chmod g+rwX {} + 2>/dev/null || true
 
+  # TODO.md is tracked but is an explicit exception: planners may modify it (to record approved plan, update checklist) without a separate sandbox copy
+  chmod g+rw "$wt/TODO.md" 2>/dev/null || true
+
   # Preserve/ensure execute on critical management/launcher scripts.
   for f in "${EXECUTABLES[@]}"; do
     [ -f "$wt/$f" ] && chmod +x "$wt/$f"
