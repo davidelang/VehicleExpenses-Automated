@@ -69,3 +69,4 @@
   - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
   - Execution in progress (user: "approved, implement this plan"). First action per plan: this TODO.md update (no app/ source touched; language-agnostic; only orchestration-infra + docs).
   - Follows 7-phase plan with per-phase forensic narrow read/grep + git add (TODO.md + changed) + ./build_app gate.
+  - Phase 1 (inventory+docs) + Phase 2 (stamp explicit in setup-project) completed with gates.
