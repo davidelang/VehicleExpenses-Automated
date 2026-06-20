@@ -6,7 +6,7 @@
 - [x] Phase 3: Wire capture for Set A (Paddle path)
 - [x] Phase 4: Wire capture for Set A ML path
 - [x] Phase 5: Wire capture for Set B
-- [ ] Phase 6: Wire capture for Set C
+- [x] Phase 6: Wire capture for Set C
 - [ ] Phase 7: Wire cands capture for Set D (Paddle)
 - [ ] Phase 8: Capture oranges + assembly for Set D
 - [ ] Phase 9: Wire capture for Set E
