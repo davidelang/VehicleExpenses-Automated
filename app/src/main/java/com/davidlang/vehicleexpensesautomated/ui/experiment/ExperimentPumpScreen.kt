@@ -2596,11 +2596,15 @@ private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>
 
 private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, workspace: BufferSet, delta: Int = BIN_PEAK_BINARIZE_DELTA) {
     val combinedBinsJson = branch.metadata["combinedRedboxHistBins"] ?: return
+    val binsArr = JSONArray(combinedBinsJson)
+    val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
+    val numNz = (0..63).count { bins[it] > 0f }
     val peaks = findPeaksFromHistBins(combinedBinsJson)
+    val d = if (numNz <= 10) 0 else delta
     for ((peak, height) in peaks) {
         val b = workspace.s
         b.mat.setTo(org.opencv.core.Scalar(0.0))
-        NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, peak - delta, peak + delta)
+        NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, peak - d, peak + d)
         // Direct Mat snapshot (not Slice/YUV path); null scratchYuv so we do not clear the b we just binarized into
         val binB64 = OcrUtils.takeSnapshot(b.mat, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, emptyList(), null, null).first
         branch.images["binPeak_$peak"] = binB64
