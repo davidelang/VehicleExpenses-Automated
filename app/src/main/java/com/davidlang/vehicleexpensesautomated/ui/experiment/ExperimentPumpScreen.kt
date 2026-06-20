@@ -2689,14 +2689,14 @@ private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>
 }
 
 private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, workspace: BufferSet, delta: Int = 2) {
-    val redboxDataJson = branch.metadata["redboxData"] ?: return
-    val peaks = findPeaksFromHistBins(redboxDataJson)
-    for ((peak, count) in peaks) {
+    val combinedBinsJson = branch.metadata["combinedRedboxHistBins"] ?: return
+    val peaks = findPeaksFromHistBins(combinedBinsJson)
+    for ((peak, height) in peaks) {
         workspace.s.mat.setTo(org.opencv.core.Scalar(0.0))
         NativeImageUtils.binarizeRange(workspace.p.mat, workspace.s.mat, peak - delta, peak + delta)
         val binB64 = OcrUtils.takeSnapshot(workspace.s, null, 600, 450, emptyList(), null, workspace).first
         branch.images["binPeak_$peak"] = binB64
-        branch.metadata["binPeak_${peak}_count"] = count.toString()
+        branch.metadata["binPeak_${peak}_count"] = height.toString()
     }
 }
 
