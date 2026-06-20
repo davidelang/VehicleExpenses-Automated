@@ -1,15 +1,23 @@
 # Vehicle Expenses Automated — TODO Updated
 
-## Active Work (Implement Varying Calculated Blue Expansion — implement-varying-calculated-blue-expansion-20260619-plan.md)
-- [x] Phase 1: Update createBlueAndOrangeHunksFromReds signature + vertFactors loop
-- [x] Phase 2: Update procD call sites + comments (2 sites)
-- [x] Phase 3: Update procE call sites + comments (2 sites)
-- [x] Phase 4: Update procG call sites + comments (2 sites)
-- [x] Phase 5: Update top-level flows label convention comment
-- [x] Phase 6: Optional PUMP_EXPERIMENT_FLOWS.md update (skipped — no blue-method refs in doc)
-- [x] Phase 7: Cross-check + final build
+## Active Work (Persist pump decision data red/blue/orange OCR JSON — persist-pump-decision-data-red-blue-orange-ocr-json-20260620-plan.md)
+- [x] Phase 1: Add rectToJson and redBoxOcrCandidateToJson helpers
+- [ ] Phase 2: Add buildCostVolDecisionDataJson helper skeleton
+- [ ] Phase 3: Wire capture for Set A (Paddle path)
+- [ ] Phase 4: Wire capture for Set A ML path
+- [ ] Phase 5: Wire capture for Set B
+- [ ] Phase 6: Wire capture for Set C
+- [ ] Phase 7: Wire cands capture for Set D (Paddle)
+- [ ] Phase 8: Capture oranges + assembly for Set D
+- [ ] Phase 9: Wire capture for Set E
+- [ ] Phase 10: Capture oranges for Set E
+- [ ] Phase 11: Wire capture for Set F
+- [ ] Phase 12: Wire cands capture for Set G
+- [ ] Phase 13: Capture oranges for Set G
+- [ ] Phase 14: Cross-check all capture sites + final build
 
 ## Completed / Historical (prior plans rolled)
+- [x] fix-peak-detection-and-snapshot-call-for-binarized-redbox-images-20260619-plan.md (4 phases)
 - [x] fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan.md (10 phases)
 - [x] fix-pump-distinct-cost-volume-candidates-and-clean-values-20260619-plan.md (12 phases)
 - [x] fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan.md (10 phases)
