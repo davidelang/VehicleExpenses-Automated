@@ -3071,6 +3071,7 @@ private const val PUMP_CROP_TARGET_W = 150
 private const val PUMP_CROP_TARGET_H = 75
 private const val PUMP_C_VISUAL_TARGET_W = 340
 private const val PUMP_SMALL_TARGET_W = 180
+private const val PUMP_PER_RED_TARGET_W = 120
 
 private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
