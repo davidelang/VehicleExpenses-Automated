@@ -2577,7 +2577,7 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 }
 
 
-/** Extract significant brightness peaks (0-255) + union bar heights from combinedRedboxHistBins (local-max + drop-off, adapted from valleyPushToPeaks). */
+/** Extract significant brightness peaks (0-255) + union bar heights from combinedRedboxHistBins (local-max + drop-off, adapted from valleyPushToPeaks). Only bins with positive pixel count (>0) are returned as peaks. */
 private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>> {
     val binsArr = JSONArray(combinedBinsJson)
     val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
