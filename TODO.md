@@ -4,7 +4,7 @@
 - [x] Phase 1: Add rectToJson and redBoxOcrCandidateToJson helpers
 - [x] Phase 2: Add buildCostVolDecisionDataJson helper skeleton
 - [x] Phase 3: Wire capture for Set A (Paddle path)
-- [ ] Phase 4: Wire capture for Set A ML path
+- [x] Phase 4: Wire capture for Set A ML path
 - [ ] Phase 5: Wire capture for Set B
 - [ ] Phase 6: Wire capture for Set C
 - [ ] Phase 7: Wire cands capture for Set D (Paddle)
