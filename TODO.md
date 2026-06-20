@@ -72,3 +72,4 @@
   - Phase 1 (inventory+docs) + Phase 2 (stamp explicit in setup-project) completed with gates.
   - Phase 3 (bootstrap): added enable-full-orchestration.sh (thin opt-in from plain master: detection, git worktree add guidance + --apply, dev-ai symlink, reverse note); referenced from setup-project + READMEs.
   - Phase 4 (update-rules): added STAMP_FILES + TARGET_USES_FULL/COPY_LIST logic (full only for targets with brain markers or agent-*; stamp for plain; echo mode; updated critical comments; language-agnostic no app/ paths).
+  - Phase 5 (launchers/docs): small updates to project-facts + run-grok comments documenting dual modes + enable opt-in; plain master usable. TODO item for separation updated.
