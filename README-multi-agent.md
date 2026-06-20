@@ -9,6 +9,9 @@ This repository uses a **Container/Worktree** layout designed for multiple AI ag
 - **`agent-N/`**: Transient worktrees for feature development (e.g., `agent-1`, `agent-2`).
 - **`dev-ai-interaction/`**: Shared sandbox repository.
 
+## Modes (separation in progress)
+The layout above is the full orchestration layout. A plain checkout of the `master` branch (standalone app view) contains primarily the app sources plus minimal bootstrap docs and stamp files (setup-project etc.) for optionally enabling the full model. The goal of the active separation plan (dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md) is to reduce mixing of heavy brain files into plain `master` views while preserving the worktree + physical copy + update-rules model. All syncs remain language-agnostic and never touch application source directories.
+
 ---
 
 ## 2. User Workflows
