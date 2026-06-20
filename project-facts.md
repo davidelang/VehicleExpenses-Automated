@@ -30,7 +30,7 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
   - IcrsMath.kt and related
 - Data/UI: Vehicle.kt (data/model/), VehicleViewModel.kt (ui/vehicle/)
 - Experiment UI when present: `ui/experiment/`
-- Pump experiment: `ui/experiment/ExperimentPumpScreen.kt` — display snapshot targets via `PUMP_*` consts (~2720); selection OCR JSON via `costVolDecisionData_*` metadata from `ocrPumpRectsAsisAndDigits` + `buildCostVolDecisionDataJson`; binPeak debug images gated by `findPeaksFromHistBins` (~2581) which returns only positive-count union-hist bins
+- Pump experiment: `ui/experiment/ExperimentPumpScreen.kt` — display snapshot targets via `PUMP_*` consts (~2720); binPeak binarization window via `BIN_PEAK_BINARIZE_DELTA` const (~2728, default for `captureBinPeakSnapshotsFromRedbox`); selection OCR JSON via `costVolDecisionData_*` metadata from `ocrPumpRectsAsisAndDigits` + `buildCostVolDecisionDataJson`; binPeak debug images gated by `findPeaksFromHistBins` (~2581) which returns only positive-count union-hist bins
 - Specs: `docs/specs/` (ISOTROPIC_COORDINATE_SPEC.md)
 
 Update only with new stable location facts valid for future unrelated work. Current-effort details go in the active plan or ENGINEERING_LOG.md.
