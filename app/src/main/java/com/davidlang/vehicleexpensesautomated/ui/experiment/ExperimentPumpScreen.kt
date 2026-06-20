@@ -2577,7 +2577,7 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 }
 
 
-/** Extract significant brightness peaks (0-255) + union bar heights from combinedRedboxHistBins using the exact same peak discovery as valleyPushToPeaks (findPeakBinsFromHistogram). Only bins with positive pixel count (>0) are returned as peaks; #peaks should be comparable for raw greyscale vs valley-push on the same content. */
+/** Extract brightness peaks (0-255) + union bar heights from combinedRedboxHistBins for binPeak debug images (expanded B/C/F only; calculated D/E/G skip capture entirely). Valley-push quantized hists (<=10 positive bins): return all exact 1-bin positive peaks, no smoothing. Raw/others: findPeakBinsFromHistogram + positive-count filter. */
 private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>> {
     val binsArr = JSONArray(combinedBinsJson)
     val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
