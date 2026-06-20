@@ -16,8 +16,9 @@ CODER_USER=${coder_user:-@@CODE_GROUP@@r}
 ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
 
 # If run via sudo, determine target owner for chowns and configs
-if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
-  TARGET_OWNER="$SUDO_USER"
+SUDO_USER_VAL="${SUDO_USER:-}"
+if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+  TARGET_OWNER="$SUDO_USER_VAL"
 else
   TARGET_OWNER=""
 fi
