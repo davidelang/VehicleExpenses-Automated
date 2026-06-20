@@ -1,5 +1,16 @@
 # TODO
 
+# Active plan (approved 2026-06-20, branch fix-pump-experiment)
+- [ ] fix-pump-remove-duplicate-html-ocr-debug-audit-snapshots-ensure-selection-data-json-20260620-plan.md
+  - Plan path: `dev-ai-interaction/plans/fix-pump-remove-duplicate-html-ocr-debug-audit-snapshots-ensure-selection-data-json-20260620-plan.md`
+  - Scope: ExperimentPumpScreen.kt only — remove duplicate HTML OCR debug (pumpOcrDumpText, extraOcr, ocrLinesB/D/E/G, pd_ocr_html, blueOcr/orangeOcr debug blocks); re-audit snapshot target sizes; keep selection path (ocrPumpRectsAsisAndDigits, costVolDecisionData_*) intact
+  - Starting tag: fix-pump-experiment/builds
+  - [ ] Phase 1: Pre-execution hygiene + audit snapshot producers
+  - [ ] Phases 2-9: Snapshot audit/verify/fix
+  - [ ] Phases 10-14: Remove pumpOcrDumpText + extraOcr
+  - [ ] Phases 15-22: Remove ocrLines/pd_ocr_html + blue/orange debug blocks
+  - [ ] Phases 23-24: Comments cleanup + final verification
+
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
