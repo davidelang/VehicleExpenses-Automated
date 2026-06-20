@@ -51,6 +51,11 @@ for wt in "${WORKTREES[@]}"; do
   find "$wt" -type f -exec chmod u+rw,g+r,o-rwx {} + 2>/dev/null || true
   find "$wt" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + 2>/dev/null || true
 
+  # project-facts.md (and .agent-state if present) must be writable by the agent using this worktree
+  # (planner/coder run as @@PLANNING_USER@@/@@CODE_GROUP@@r which are in @@CODE_GROUP@@ group)
+  chmod g+rw "$wt/project-facts.md" 2>/dev/null || true
+  find "$wt" -name .agent-state -type d -exec chmod g+rwX {} + 2>/dev/null || true
+
   # Preserve/ensure execute on critical management/launcher scripts.
   for f in "${EXECUTABLES[@]}"; do
     [ -f "$wt/$f" ] && chmod +x "$wt/$f"
