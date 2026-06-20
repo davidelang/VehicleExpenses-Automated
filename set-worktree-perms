@@ -4,8 +4,9 @@
 
 set -euo pipefail
 
-if [ -f project.config ]; then
-  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(code_group|orchestrator_user)')
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/project.config" ]; then
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|orchestrator_user)')
 fi
 
 CODE_GROUP=${code_group:-@@CODE_GROUP@@}

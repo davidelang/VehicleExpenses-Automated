@@ -19,11 +19,11 @@ Keep two terminals open:
    ```
    or
    ```
-   New planning cycle. [one short sentence: goal or feedback from last test / current-state.md]
+   New planning cycle. [one short sentence: goal or feedback from last test / project-facts.md]
    ```
 
 2. The master (automation is built into its initial prompt) will:
-   - Read current-state.md + latest `standard-plan-compliance-block.md`
+   - Read project-facts.md + latest `standard-plan-compliance-block.md`
    - Write a complete narrow prompt file to `dev-ai-interaction/.planning-agent-prompt.txt` (full planner template + embedded current guardrails block + your context)
    - Tell you: "New planning cycle. Please restart your planner terminal now with the updated prompt file (run `./run-grok-planner` or `exec ./run-grok-planner`)."
    - Stop (it will not plan or research)
@@ -98,7 +98,7 @@ See AGENT_MANDATES.md "No Loophole Hunting or Rationalization (CRITICAL)" and "E
 
 ## 4. Quick Checklist for Every New Request or Post-Handoff Message
 1. If this follows a handoff/END marker: prefer relaunch (`../run-grok`). Fallback: `cat dev-ai-interaction/.post-handoff-gate.txt` then your text.
-2. In planning the agent must create a *new* plan file under dev-ai-interaction/plans/ (not supersede or continue an old one in the harness session plan.md). Read (and help maintain) the local untracked `current-state.md` in the worktree root for per-branch continuity.
+2. In planning the agent must create a *new* plan file under dev-ai-interaction/plans/ (not supersede or continue an old one in the harness session plan.md). Read (and help maintain) the local untracked `project-facts.md` in the worktree root for per-branch continuity.
 3. When ready to execute: use one of the magic approval phrases in section 2 that names the *exact* sandbox plan path.
 4. After the agent says results are ready + END marker + has run `./build_app`: the turn for that plan is over. Treat your next input as a new cycle (relaunch or short gate ritual).
 5. Never read or let the agent rely on historical plans/ or the harness session plan.md as the approved contract for work.
@@ -131,7 +131,7 @@ This launches the Master Orchestrator with a role prompt that makes it fully awa
 
 When you start a new planning cycle with a question about the code ("how does the current dispatch work?", "where is the valley logic?"), the dedicated planner is instructed to treat this as pure research: it should investigate with tools and answer you directly in the conversation. It should **not** spend time creating a formal plan file in `dev-ai-interaction/plans/` or spawning sub-agents unless you later say the work involves making changes and you want a plan for implementation. 
 
-A formal plan is required for *any* work that will touch tracked files outside the sandbox (i.e. real source code in the main app directories that will be committed and built). The planner is free to work inside the sandbox (`dev-ai-interaction/`) and on local untracked files (`current-state.md` etc.) without needing its own plan document for every small step.
+A formal plan is required for *any* work that will touch tracked files outside the sandbox (i.e. real source code in the main app directories that will be committed and built). The planner is free to work inside the sandbox (`dev-ai-interaction/`) and on local untracked files (`project-facts.md` etc.) without needing its own plan document for every small step.
 
 Formal sandbox plans are for cycles that involve code changes / refactoring that will need approval and execution. Research questions (or pure sandbox work) do not require one unless you explicitly ask for a plan.
 
@@ -141,10 +141,10 @@ Keep one master terminal (`./run-grok-master`) and one dedicated planning termin
 - In the *master* terminal say exactly (or very close):
   `New planning cycle` 
   or
-  `New planning cycle. [one short sentence of goal or feedback from the last test / current-state.md]`
+  `New planning cycle. [one short sentence of goal or feedback from the last test / project-facts.md]`
 
 - The master (whose prompt now contains the full automation) will:
-  - Read current-state.md + the latest `standard-plan-compliance-block.md`.
+  - Read project-facts.md + the latest `standard-plan-compliance-block.md`.
   - Write a complete, ready-to-use narrow prompt (including the full dedicated planner template + embedded current guardrails block + your context) to `dev-ai-interaction/.planning-agent-prompt.txt`.
   - Tell you the single line: "New planning cycle. Please restart your planner terminal now with the updated prompt file (run `./run-grok-planner` again in that terminal, or use `exec ./run-grok-planner` to replace the process in place)."
   - Then stop. It will not do research or planning itself.
@@ -157,7 +157,7 @@ Keep one master terminal (`./run-grok-master`) and one dedicated planning termin
 
 This is the expected primary mode. The detailed "what to say" logic has been moved into the master's initial prompt so you have less ritual to remember.
 
-This is the expected primary mode of operation for most users. The same hygiene rules (aggressive pruning of `current-state.md`, facts-and-pointers only, light reporting during mechanical steps) remain mandatory on every cycle even though the terminals are long-lived.
+This is the expected primary mode of operation for most users. The same hygiene rules (aggressive pruning of `project-facts.md`, facts-and-pointers only, light reporting during mechanical steps) remain mandatory on every cycle even though the terminals are long-lived.
 
 For lighter or one-off work you can still use the ordinary `run-grok` (or ask the master for an in-session Planning Sub-agent via tool). All feedback in that case still routes through the main agent.
 
@@ -168,11 +168,11 @@ For lighter or one-off work you can still use the ordinary `run-grok` (or ask th
 This gives you direct, unmediated conversation with the "planning sub-agent" until you explicitly approve and exit. The main agent only gets involved for orchestration, final approval handoff, and execution.
 
 To keep re-familiarization cheap across cycles in long-lived terminals:
-- Each worktree maintains a local untracked `current-state.md` (or `.agent-state/current-state.md`) directly in the worktree root (gitignored, per-branch by nature). It holds *only codebase facts and pointers* (files, structures, locations, current impl details). No plan references or "working on" (see revised AGENT_MANDATES "current-state.md Content and Hygiene Rules").
-- On every new planning cycle, include language such as: "Continue strategic planning for the work described in current-state.md (this worktree) and the previous plan at dev-ai-interaction/plans/xxx-plan.md. New feedback: [details]. Produce a revised plan at dev-ai-interaction/plans/yyy-plan.md." (You may also say "prune current-state.md to codebase facts only before updating" if it has grown.)
-- The Planning Agent (in its long-lived terminal) and the master are both required to read the local current-state.md first at the start of each new cycle (for branch-specific codebase facts and pointers) + the designated plan file (in dev-ai-interaction/plans/). **current-state.md must hold *facts and pointers only about the codebase*** — no plan text, execution steps, "I'm working on", or re-derivations. See AGENT_MANDATES.md "current-state.md Content and Hygiene Rules" (revised for codebase facts only). Detailed effort and cycle narrative go to ENGINEERING_LOG.md.
-- **Canned hygiene ritual agents must follow before any append to current-state.md**: (1) read the *entire* file (read_file with no offset/limit — never tail or partial read, as that misses critical data), (2) if large report the exact size (wc -l or equivalent) for separate work to address bloat, (3) remove any non-codebase-fact items, (4) keep total small (target <8KB). Append only new stable facts/pointers about files, structures, locations. Roll anything else to ENGINEERING_LOG.md.
-- For long mechanical execution plans, use *light reporting* in visible responses and put step details + "I'm on step X" into ENGINEERING_LOG.md (dated). current-state.md only gets new codebase facts if discovered.
+- Each worktree maintains a local untracked `project-facts.md` (or `.agent-state/project-facts.md`) directly in the worktree root (gitignored, per-branch by nature). It holds *only codebase facts and pointers* (files, structures, locations, current impl details). No plan references or "working on" (see revised AGENT_MANDATES "project-facts.md Content and Hygiene Rules").
+- On every new planning cycle, include language such as: "Continue strategic planning for the work described in project-facts.md (this worktree) and the previous plan at dev-ai-interaction/plans/xxx-plan.md. New feedback: [details]. Produce a revised plan at dev-ai-interaction/plans/yyy-plan.md." (You may also say "prune project-facts.md to codebase facts only before updating" if it has grown.)
+- The Planning Agent (in its long-lived terminal) and the master are both required to read the local project-facts.md first at the start of each new cycle (for branch-specific codebase facts and pointers) + the designated plan file (in dev-ai-interaction/plans/). **project-facts.md must hold *facts and pointers only about the codebase*** — no plan text, execution steps, "I'm working on", or re-derivations. See AGENT_MANDATES.md "project-facts.md Content and Hygiene Rules" (revised for codebase facts only). Detailed effort and cycle narrative go to ENGINEERING_LOG.md.
+- **Canned hygiene ritual agents must follow before any append to project-facts.md**: (1) read the *entire* file (read_file with no offset/limit — never tail or partial read, as that misses critical data), (2) if large report the exact size (wc -l or equivalent) for separate work to address bloat, (3) remove any non-codebase-fact items, (4) keep total small (target <8KB). Append only new stable facts/pointers about files, structures, locations. Roll anything else to ENGINEERING_LOG.md.
+- For long mechanical execution plans, use *light reporting* in visible responses and put step details + "I'm on step X" into ENGINEERING_LOG.md (dated). project-facts.md only gets new codebase facts if discovered.
 
 This gives you low-cost interactive guidance without paying full re-derivation cost on every turn, while the safety rules (written sandbox plan + explicit magic approval) remain in force. The local state file travels with the branch/worktree and is never treated as a substitute for the approved plan document. Long verbose state or response bloat is now a violation of the content/hygiene rules.
 
