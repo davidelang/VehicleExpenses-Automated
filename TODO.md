@@ -8,9 +8,8 @@
   - [x] Phase 1: Pre-execution hygiene + audit snapshot producers (tag: fix-pump-experiment-start-569-g32614b00)
   - [x] Phase 2: Add PUMP_PER_RED_TARGET_W const (tag: fix-pump-experiment-start-570-g8cc210e7)
   - [x] Phases 3-7: Snapshot audit verified (PD/ML/crops/binPeak/C use PUMP_*; no resize needed)
-  - [ ] Phase 8-9: Per-red const usage + HTML verify
-  - [ ] Phases 10-14: Remove pumpOcrDumpText + extraOcr
-  - [ ] Phases 15-22: Remove ocrLines/pd_ocr_html + blue/orange debug blocks
+  - [x] Phase 8-9: Per-red const usage + HTML verify (tag: fix-pump-experiment-start-571-g4dac7de1)
+  - [x] Phases 10-22: Remove duplicate HTML OCR debug (pumpOcrDumpText, extraOcr, ocrLines, blueOcr blocks B/D/E/G)
   - [ ] Phases 23-24: Comments cleanup + final verification
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
