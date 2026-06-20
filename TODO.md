@@ -1,12 +1,12 @@
 # TODO
 
 ## Active Work (binPeak range 16->8 - change-binpeak-binarization-range-from-16-to-8-20260620-plan.md)
-- [ ] Phase 1: Hygiene reads + TODO bootstrap + baseline build
-- [ ] Phase 2: Forensic pre-edit reads of all three change sites
-- [ ] Phase 3: Change the const value from 16 to 8
-- [ ] Phase 4: Update the HTML label string
-- [ ] Phase 5: Update the documentation comment
-- [ ] Phase 6: Final verification + last build gate
+- [x] Phase 1: Hygiene reads + TODO bootstrap + baseline build
+- [x] Phase 2: Forensic pre-edit reads of all three change sites
+- [x] Phase 3: Change the const value from 16 to 8
+- [x] Phase 4: Update the HTML label string
+- [x] Phase 5: Update the documentation comment
+- [x] Phase 6: Final verification + last build gate
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
