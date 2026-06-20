@@ -263,7 +263,7 @@ private suspend fun runPumpExperiment(
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBuffer.p)
 
             val root = PumpBranch("Root")
-            val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(masterBuffer.p, null, 225, 0, emptyList(), null, masterBuffer)
+            val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(masterBuffer.p, null, PUMP_SMALL_TARGET_W, 0, emptyList(), null, masterBuffer)
             root.images["before"] = beforeB64
             root.images["hist1"] = generateHistogramB64(masterBuffer.p.mat, 0.40f)
 
@@ -1164,7 +1164,7 @@ private suspend fun runPumpExperiment(
                     val imgH = h
                     val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
                     originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
-                    root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
+                    root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_SMALL_TARGET_W, 0, emptyList(), null, workspace).first
                     root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     val tDeskewStart = System.currentTimeMillis()
                     val deskewRes = OdometerOcrUtils.calculateDeskewAngleMlOnly(workspace.p)
