@@ -2202,6 +2202,26 @@ private suspend fun runPumpExperiment(
                 // E custom blue/orange (matching D, no valley) via createBlueAndOrangeHunksFromReds (calculated blue expansions +10% to +80% vert step 10%, horiz 50%)
                 val (customBlueE, customOrangeE) = createBlueAndOrangeHunksFromReds(
                     pdHunksRawTotal, imgW, imgH, (1..8).map { it / 10f }, 0.5f)
+                val orangePixelE = customOrangeE.map { bh ->
+                    android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                }
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelE,
+                    ocrSourceRects = customBluePixelE,
+                    candidates = eCands,
+                    costCand = cvE.costCand,
+                    volCand = cvE.volCand,
+                    finalCost = cvE.cost,
+                    finalVol = cvE.vol,
+                    assembly = mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to eVertFactors,
+                        "horizFactor" to 0.5f,
+                        "orangeSideExt" to 0.1,
+                        "note" to "createBlueAndOrangeHunksFromReds (viz second create includes oranges)"
+                    ),
+                    oranges = orangePixelE
+                )
                 val aPdE = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueE, Color.BLUE, 4) + getAnns(customOrangeE, Color.rgb(255, 165, 0), 2)
                 val baseB64E = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdE, null, workspace).first
                 branch.images["PD"] = baseB64E

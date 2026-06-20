@@ -10,7 +10,7 @@
 - [x] Phase 7: Wire cands capture for Set D (Paddle)
 - [x] Phase 8: Capture oranges + assembly for Set D
 - [x] Phase 9: Wire capture for Set E
-- [ ] Phase 10: Capture oranges for Set E
+- [x] Phase 10: Capture oranges for Set E
 - [ ] Phase 11: Wire capture for Set F
 - [ ] Phase 12: Wire cands capture for Set G
 - [ ] Phase 13: Capture oranges for Set G
