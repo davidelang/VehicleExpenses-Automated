@@ -26,8 +26,11 @@ fi
 # 3. Defined Shared Infrastructure Files
 #
 # CRITICAL RULE (language-agnostic):
-# The FILES list below defines the complete set of orchestration-infra /
-# shared brain that may be copied into worktree directories.
+# The FILES list (plus STAMP_FILES) defines the orchestration-infra /
+# shared brain or stampable bootstrap that may be copied into worktree directories.
+#
+# Dual mode: stamp subset is safe for plain/standalone checkouts; full set only
+# for targets participating in the full layout (see detection in the sync loop).
 #
 # Orchestration-infra changes must ONLY affect these explicitly listed items.
 # They must NEVER touch actual application source content (whatever directory
@@ -99,9 +102,29 @@ FILES=(
     "set-sandbox-perms"
     "project.config.example"
     ".gitattributes"
+    # Opt-in bootstrap helper (stampable + full layout)
+    "enable-full-orchestration.sh"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
+
+# Dual-mode / separation support (Phase 4+):
+# STAMP_FILES are the minimal one-time permission/bootstrap artifacts that may
+# legitimately be present (and updated) even in a plain "standalone app" master
+# checkout after the user has run the opt-in stamp.
+# FULL_FILES (or the main FILES) are the active brain and only synced when the
+# target worktree is participating in the full orchestration layout.
+# Detection below is deliberately language-agnostic (no hard-coded "app/" etc.).
+STAMP_FILES=(
+    "setup-project"
+    "filter-apply-config"
+    "filter-clean-config"
+    "set-worktree-perms"
+    "set-sandbox-perms"
+    "project.config.example"
+    ".gitattributes"
+    "enable-full-orchestration.sh"
+)
 
 # 4. Push updates to all other worktrees
 CURRENT_WT=$(git rev-parse --show-toplevel)
@@ -114,11 +137,28 @@ for WT in $WORKTREES; do
     fi
 
     echo ">>> Syncing rules to worktree: $WT"
-    
+
+    # Dual-mode decision (language-agnostic, no hard-coded app/ paths):
+    # If the target already has full brain markers (launchers or is agent-* style)
+    # then push the full FILES list; otherwise only the stamp subset.
+    # This keeps heavy orchestration files out of pristine plain master views
+    # while still supporting opt-in and physical copy model within the repo.
+    TARGET_USES_FULL=0
+    if [ -f "$WT/run-grok-master" ] || [ -f "$WT/update-rules.sh" ] || [[ "$(basename "$WT")" == agent-* ]]; then
+        TARGET_USES_FULL=1
+    fi
+
+    COPY_LIST=("${STAMP_FILES[@]}")
+    if [ "$TARGET_USES_FULL" -eq 1 ]; then
+        COPY_LIST=("${FILES[@]}")
+    fi
+
+    echo "    (mode: $( [ "$TARGET_USES_FULL" -eq 1 ] && echo full || echo stamp-only ))"
+
     # Ensure target directories exist and copy files.
-    # Only the explicitly listed FILES (see definition above) are ever touched.
+    # Only the decided COPY_LIST (stamp or full) are touched for this target.
     # Application source content must never be overwritten by infra sync.
-    for FILE in "${FILES[@]}"; do
+    for FILE in "${COPY_LIST[@]}"; do
         if [ -f "$SOURCE_DIR/$FILE" ]; then
             TARGET_FILE="$WT/$FILE"
             TARGET_DIR_PATH=$(dirname "$TARGET_FILE")
@@ -135,16 +175,16 @@ for WT in $WORKTREES; do
         
         # Clean up any legacy protections first to ensure git can see/modify them
         # Re-enable index tracking if it was skipped
-        git update-index --no-skip-worktree "${FILES[@]}" 2>/dev/null
+        git update-index --no-skip-worktree "${COPY_LIST[@]}" 2>/dev/null
         # Restore write permissions
-        chmod +w "${FILES[@]}" 2>/dev/null
+        chmod +w "${COPY_LIST[@]}" 2>/dev/null
 
         # Stage the files we just copied. Use -f for the infrastructure launchers
         # and block (robust against any transient ignore rules or new-file edge
         # cases during the batch). Do not blanket-suppress errors on the add;
         # surface problems so we can see why a sync would fail to commit.
         git add -f standard-plan-compliance-block.md get-builds-tag.sh run-grok-planner run-grok-master 2>&1 | cat
-        git add "${FILES[@]}" 2>&1 | cat
+        git add "${COPY_LIST[@]}" 2>&1 | cat
 
         if ! git diff --staged --quiet; then
             echo "Changes detected in $WT, committing..."
