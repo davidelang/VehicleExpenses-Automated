@@ -14,3 +14,18 @@
 - Builds tag: orchestration/builds updated (via get-builds-tag.sh + build_app meta path).
 - Next phases will continue ultra-micro with per-edit forensic + build gates.
 
+## 2026-06-20 - Phase 7 verification + plan completion
+
+- End-to-end simulation (no side-effecting clones):
+  1. Simulated plain master clone dir + copied stamp files (setup-project, enable-full-orchestration.sh, set-*-perms, filters, .gitattributes, project.config.example).
+  2. enable-full-orchestration.sh in plain dir: correctly detected "standalone", printed guidance (worktree add, remote notes, symlink, reverse note), syntax clean.
+  3. Dual-mode in update-rules.sh exercised (master/agent-1 -> full; absent/plain -> stamp); echo mode line confirmed.
+  4. project-facts.md full read: clean stable facts only; mentions both managing root and app worktree usage + launchers + separation note.
+  5. Launchers present and executable; small mode comments added.
+  6. build_app (meta, no gradlew) path works at orchestration root; get-builds-tag.sh used for verification.
+  7. setup-project stamp language and dry-run greps previously verified.
+- All 7 plan criteria exercised in sim or prior phases.
+- update-rules.sh, enable-*.sh, setup-project etc. remain language-agnostic (no app/ hardcodes in logic or new docs).
+- ENGINEERING_LOG append-only discipline followed.
+- Next: final TODO update + build gate + END marker.
+

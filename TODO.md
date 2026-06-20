@@ -65,12 +65,10 @@
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
 
 # Future work
-- [ ] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
+- [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
   - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
-  - Execution in progress (user: "approved, implement this plan"). First action per plan: this TODO.md update (no app/ source touched; language-agnostic; only orchestration-infra + docs).
-  - Follows 7-phase plan with per-phase forensic narrow read/grep + git add (TODO.md + changed) + ./build_app gate.
-  - Phase 1 (inventory+docs) + Phase 2 (stamp explicit in setup-project) completed with gates.
-  - Phase 3 (bootstrap): added enable-full-orchestration.sh (thin opt-in from plain master: detection, git worktree add guidance + --apply, dev-ai symlink, reverse note); referenced from setup-project + READMEs.
-  - Phase 4 (update-rules): added STAMP_FILES + TARGET_USES_FULL/COPY_LIST logic (full only for targets with brain markers or agent-*; stamp for plain; echo mode; updated critical comments; language-agnostic no app/ paths).
-  - Phase 5 (launchers/docs): small updates to project-facts + run-grok comments documenting dual modes + enable opt-in; plain master usable. TODO item for separation updated.
-  - Phase 6 (migration): documented compat for existing agent-1/master (markers => full sync); re-create from clean tip + stamp/enable for cleaned view.
+  - Execution completed (user: "approved, implement this plan"). All 7 phases + forensic gates + sim verification.
+  - No app/ source touched; language-agnostic; only orchestration-infra + docs + bootstrap.
+  - New: enable-full-orchestration.sh (stampable opt-in); dual-mode update-rules (stamp vs full); explicit one-time stamp comments in setup-project; docs + migration notes.
+  - See ENGINEERING_LOG.md and dev-ai-interaction/orchestration-layer-inventory-phase1.md for details.
+  - Results ready to test (new tag via final build).
