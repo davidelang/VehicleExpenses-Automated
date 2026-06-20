@@ -2174,6 +2174,27 @@ private suspend fun runPumpExperiment(
                 val ocrE = ocrPumpRectsAsisAndDigits(customBluePixelE)
                 val eCands = buildRedBoxCandidates(customBluePixelE, ocrE.asis, ocrE.digits, ocrE.asisProbs, ocrE.digitsProbs)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, eCands)
+                val redPixelE = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val eVertFactors = (1..8).map { it / 10f }
+                val cvE = classifyCostVolFromBoxOcr(eCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelE,
+                    ocrSourceRects = customBluePixelE,
+                    candidates = eCands,
+                    costCand = cvE.costCand,
+                    volCand = cvE.volCand,
+                    finalCost = cvE.cost,
+                    finalVol = cvE.vol,
+                    assembly = mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to eVertFactors,
+                        "horizFactor" to 0.5f,
+                        "orangeSideExt" to 0.1,
+                        "note" to "createBlueAndOrangeHunksFromReds (Pre blues for OCR cands)"
+                    )
+                )
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
