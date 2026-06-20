@@ -2713,7 +2713,7 @@ private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Floa
     canvas.drawColor(Color.BLACK)
     val paint = Paint()
 
-    // Ignore bins 0 and 63 for scaling to see the peaks clearly
+    // Display-only: ignore bins 0 and 63 for scaling/readability (binPeak selection uses all 64 combined bins via findPeaksFromHistBins).
     val maxVal = (1..62).maxOf { bins[it] }.toDouble().coerceAtLeast(1.0)
 
     for (i in 1..62) {
