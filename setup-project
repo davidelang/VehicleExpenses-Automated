@@ -32,7 +32,11 @@ usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@ || true
 usermod -aG @@CODE_GROUP@@,@@SHARED_GROUP@@ @@PLANNING_USER@@ || true
 usermod -aG @@SANDBOX_GROUP@@,@@SHARED_GROUP@@ @@CODE_GROUP@@r || true
 usermod -aG @@SANDBOX_GROUP@@ @@ORCHESTRATOR_USER@@ || true
+# Add the primary human/developer user (the one running setup) to @@CODE_GROUP@@ so they can access worktree files via group
+# Replace 'dlang' with your username if different
+usermod -aG @@CODE_GROUP@@ dlang || true
 echo "Users created (if not exist)."
+echo "IMPORTANT: If you are dlang (or the developer), run 'newgrp @@CODE_GROUP@@' or log out/in so your current shell sees the group."
 
 # Passwordless sudo for launchers (so no password prompt for sudo -u ai-*)
 cat <<'SUDOERS'
