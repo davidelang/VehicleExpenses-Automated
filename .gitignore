@@ -92,3 +92,7 @@ alignment_results_*.json
 
 .gemini/
 gha-creds-*.json
+
+# Permission config (real values, gitignored)
+project.config
+

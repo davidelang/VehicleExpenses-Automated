@@ -1,0 +1,29 @@
+# project.config.example
+# Committed template. Copy to project.config (gitignored) and fill real values.
+# Used by clean/smudge filters (manage-configs) and setup-project.
+
+sandbox_path=dev-ai-interaction
+planning_user=ai-planner
+coder_user=ai-coder
+orchestrator_user=ai-orchestrator
+code_group=ai-code
+sandbox_group=ai-sandbox
+shared_group=ai-shared
+
+# Example paths (will be @@ substituted in scripts)
+grok_bin_default=$HOME/git/grok/bin/grok
+gemini_bin_default=$HOME/git/gemini/bin/gemini
+
+# Special sandbox paths (for setup-project to create)
+sandbox_special_paths=plans,historical-plans,implementation-failure-logs
+
+# Users/groups creation (for reference in setup-project, emitted only)
+# groupadd ai-code
+# groupadd ai-sandbox
+# groupadd ai-shared
+# useradd -g ai-sandbox ai-planner
+# useradd -g ai-code ai-coder
+# useradd -g ai-code -G ai-shared ai-orchestrator
+# usermod -aG ai-code ai-orchestrator
+
+# Notes for filters: use @@VAR@@ in source scripts for substitution.

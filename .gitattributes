@@ -1,0 +1,8 @@
+
+# Permission filters
+setup-project filter=manage-configs
+filter-apply-config filter=manage-configs
+filter-clean-config filter=manage-configs
+set-worktree-perms filter=manage-configs
+set-sandbox-perms filter=manage-configs
+project.config.example filter=manage-configs
