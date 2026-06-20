@@ -8,9 +8,9 @@
 
 - **Mandatory ultra-micro phased execution with per-phase success gates**: The plan's "Phased Small-Step Execution" section must decompose the work into as many explicitly named, ultra-small phases as needed to keep each phase the smallest practical observable unit of work that can be forensically verified in isolation and completed with a successful `./build_app`. There is no target number of phases — the goal is maximum safe granularity (more smaller phases is better than fewer larger ones, as long as each is a meaningful, independently verifiable and buildable step). Each phase performs the smallest observable edit, followed **immediately** by narrow forensic `read_file` (offset/limit) + targeted grep before/after + `git add` (changed tracked sources + TODO.md) + a **confirmed successful `./build_app`** (new branch-scoped builds tag recorded and noted in current-state.md). No edits for the next phase may begin until the current phase's `./build_app` has succeeded. On any failure, trouble, or partial reset, only the tag from the most recent successful phase's `./build_app` (obtained via the mandatory `./get-builds-tag.sh` preflight) may be used.
 
-- Before each `./build_app`: `git add` the changed tracked source file(s) + `TODO.md`. (current-state.md is updated as required by the plan but is deliberately untracked/gitignored and must never be `git add`ed.)
+- Before each `./build_app`: `git add` the changed tracked source file(s) + `TODO.md`. (current-state.md is deliberately untracked/gitignored and must never be `git add`ed.)
 
-- current-state.md updates: 1-2 concise facts/pointers per step only (after pruning older completed items to a rolled summary line).
+- current-state.md updates: only new stable codebase facts or pointers (no plan or execution tracking).
 
 - All sandbox writes use the absolute path `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`. Never use `..`.
 
