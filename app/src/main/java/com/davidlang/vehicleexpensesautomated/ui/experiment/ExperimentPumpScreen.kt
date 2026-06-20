@@ -2679,12 +2679,44 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 }
 
 
-/** Extract significant brightness peaks (0-255) + match counts from per-red redbox histBins (adapted from valleyPushToPeaks). */
+/** Extract significant brightness peaks (0-255) + union bar heights from combinedRedboxHistBins (local-max + drop-off, adapted from valleyPushToPeaks). */
 private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>> {
     val binsArr = JSONArray(combinedBinsJson)
     val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
-    return (0..63).map { j -> (j * 4 + 2).coerceIn(0, 255) to bins[j].toInt() }
-        .filter { it.second > 0 }
+    val smoothed = FloatArray(64)
+    for (i in 0..63) {
+        val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
+        smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+    }
+    val totalPixels = bins.sum().toDouble().coerceAtLeast(1.0)
+    val dropOffThreshold = totalPixels * 0.003
+    val peakBins = mutableListOf<Int>()
+    // left-to-right (interior + edge bin 0)
+    for (i in 0..61) {
+        val isLocalMax = if (i == 0) smoothed[i] >= smoothed[i + 1]
+        else smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1]
+        if (!isLocalMax) continue
+        var peakConfirmed = false
+        for (j in i + 1..63) {
+            if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
+            if (smoothed[j] > smoothed[i]) break
+        }
+        if (peakConfirmed) peakBins.add(i)
+    }
+    // right-to-left (interior + edge bin 63)
+    for (i in 63 downTo 2) {
+        val isLocalMax = if (i == 63) smoothed[i] >= smoothed[i - 1]
+        else smoothed[i] > smoothed[i + 1] && smoothed[i] >= smoothed[i - 1]
+        if (!isLocalMax) continue
+        var peakConfirmed = false
+        for (j in i - 1 downTo 0) {
+            if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
+            if (smoothed[j] > smoothed[i]) break
+        }
+        if (peakConfirmed) peakBins.add(i)
+    }
+    return peakBins.distinct()
+        .map { j -> (j * 4 + 2).coerceIn(0, 255) to bins[j].toInt() }
         .sortedByDescending { it.second }
 }
 
