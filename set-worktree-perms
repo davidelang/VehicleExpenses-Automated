@@ -76,6 +76,21 @@ for wt in "${WORKTREES[@]}"; do
   for f in "${EXECUTABLES[@]}"; do
     [ -f "$wt/$f" ] && chmod +x "$wt/$f"
   done
+
+  # Special handling for .gradle (project build cache).
+  # Use 660 for files, 2770 for directories (group writable, setgid) so that
+  # @@CODE_GROUP@@ group members can access even across different owners (dlang vs ai- users).
+  # This is enforced on every perms run, and combined with umask 007 at gradle
+  # invocation time, new cache entries created by Gradle will also get 660/2770.
+  if [ -d "$wt/.gradle" ]; then
+    if [ -n "$TARGET_OWNER" ]; then
+      chown -R "$TARGET_OWNER:$CODE_GROUP" "$wt/.gradle" 2>/dev/null || true
+    fi
+    # Dirs: 2770 (rwxrws--- + setgid)
+    find "$wt/.gradle" -type d -exec chmod 2770 {} + 2>/dev/null || true
+    # Files: 660 (rw-rw----), preserve execute if any (e.g. 770)
+    find "$wt/.gradle" -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
+  fi
 done
 
 # Ensure orchestrator and the invoking human (if sudo) have access to the @@CODE_GROUP@@ group
