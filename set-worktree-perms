@@ -82,6 +82,22 @@ for wt in "${WORKTREES[@]}"; do
   chmod 666 "$wt/TODO.md" 2>/dev/null || true
   find "$wt" -name .agent-state -type d -exec chmod g+rwX {} + 2>/dev/null || true
 
+  # Unix-level defense for planning user (separate from any Grok hooks):
+  # Use ACLs (available here) to ensure @@PLANNING_USER@@ has read (r--) on source files
+  # and no write, even if temporarily still listed in @@CODE_GROUP@@ group.
+  # Full rw only inside sandbox + the two explicit exceptions.
+  if id "$PLANNING_USER" >/dev/null 2>&1; then
+    echo "  ACL enforcement: read-only for $PLANNING_USER outside sandbox..."
+    find "$wt" -path '*/@@SANDBOX_PATH@@/*' -prune -o \
+      \( -type f ! -name project-facts.md ! -name TODO.md \
+         -exec setfacl -m "u:$PLANNING_USER:r--" {} + \) 2>/dev/null || true
+    find "$wt" -path '*/@@SANDBOX_PATH@@/*' -prune -o -type d \
+      -exec setfacl -m "u:$PLANNING_USER:r-x" {} + 2>/dev/null || true
+    for sp in project-facts.md TODO.md; do
+      [ -f "$wt/$sp" ] && setfacl -m "u:$PLANNING_USER:rw-" "$wt/$sp" 2>/dev/null || true
+    done
+  fi
+
   # Preserve/ensure execute on critical management/launcher scripts.
   for f in "${EXECUTABLES[@]}"; do
     [ -f "$wt/$f" ] && chmod +x "$wt/$f"
