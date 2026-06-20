@@ -2607,6 +2607,7 @@ private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>
         val isLocalMax = if (i == 63) smoothed[i] >= smoothed[i - 1]
         else smoothed[i] > smoothed[i + 1] && smoothed[i] >= smoothed[i - 1]
         if (!isLocalMax) continue
+        if (bins[i] <= 0f) continue
         var peakConfirmed = false
         for (j in i - 1 downTo 0) {
             if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
