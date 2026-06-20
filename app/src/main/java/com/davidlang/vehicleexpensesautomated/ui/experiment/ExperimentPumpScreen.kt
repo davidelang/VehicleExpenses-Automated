@@ -243,7 +243,7 @@ private suspend fun runPumpExperiment(
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
     // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (display-matched 1:1 size) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan; now via createCrop + direct calcHist + dual takeSnapshot from long-lived hist BufferSet at pump start). Lot of granular t_ timings (20+ including t_setup_ms, t_deskew_ms, t_discovery_wrapper_ms, t_filter_ms, t_pd_snapshot_ms, t_ocr_ms + C probe subs t_polarity_run_ms / t_per_red_bins_calc_ms / t_per_red_loop_overhead_ms / t_polarity_decision_ms / t_invert_if_needed_ms + blue subs t_blue_native_hist_ms / t_blue_valley_expands_ms / t_blue_3sides_ms / t_blue_retract_ms + t_hist_* + kept priors + n_reds_at_probe / n_per_red_hists / img dims context) added to metadata/JSON (one run gathers all for A/B gap + C probe/blue decomposition; no extra turn needed). HISTOGRAM ANSWERS (forensic): per-red C/E now createCrop (pixel rect from hunk) + direct calcHist on crop.mat (no mask) + OcrUtils.takeSnapshot (dual rect snapshot + plot from longLived histPlotCrop); long-lived BufferSet init once at pump start for scratch + plot crop (no per-red full Mat alloc/zeros/draw/generate custom); old perMask/rectangle/generate retired for this path. Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state. Set F: raw clone of B (no automaticContrastStretch; deskew/rotate/discovery/retracted-blue/red-only/OCR/PD on raw master copy). Set G: raw clone of D (no stretch; keeps custom 10% blue/orange + red-only + OCR on raw).
-    // Label convention (added this plan): Set A exactly unchanged (baseline). B-G use "Set X (stretch-type, blue-method)" so columns are self-describing in all report output (th, tilt line, <b>$name ...); stretch=clip edges (automaticContrastStretch), valley push (valleyPushToPeaks), none (raw F/G clones); blue=expanded (doBOrDRetractedBlueAndPD + expandByUniformity+retract: B/C/F) or calculated (vert expansions +10%..+80% step 10%: D/E/G). Exact: B (clip edges, expanded), C (valley push, expanded), D (clip edges, calculated), E (valley push, calculated), F (none, expanded), G (none, calculated). B/C/D/E/F/G also emit per-peak binarized debug JPEGs (nativeBinarizeRange into workspace.s, range +-8, takeSnapshot unchanged) in HTML/JSON as binPeak_*; peaks from combinedRedboxHistBins (union OR-mask calcHist over 4 reds, no overlap double-count) with highest-bar selection on all 64 bins incl 0/63, ordered by bar height desc.
+    // Label convention (added this plan): Set A exactly unchanged (baseline). B-G use "Set X (stretch-type, blue-method)" so columns are self-describing in all report output (th, tilt line, <b>$name ...); stretch=clip edges (automaticContrastStretch), valley push (valleyPushToPeaks), none (raw F/G clones); blue=expanded (doBOrDRetractedBlueAndPD + expandByUniformity+retract: B/C/F) or calculated (vert expansions +10%..+80% step 10%: D/E/G). Exact: B (clip edges, expanded), C (valley push, expanded), D (clip edges, calculated), E (valley push, calculated), F (none, expanded), G (none, calculated). B/C/D/E/F/G also emit per-peak binarized debug JPEGs (nativeBinarizeRange into workspace.s/b, range +-8, takeSnapshot on b.mat) in HTML/JSON as binPeak_*; peaks from combinedRedboxHistBins via findPeakBinsFromHistogram (same discovery as valley push; positive-count only), ordered by bar height desc.
     val flows = listOf("Set A", "Set B (clip edges, expanded)", "Set C (valley push, expanded)", "Set D (clip edges, calculated)", "Set E (valley push, calculated)", "Set F (none, expanded)", "Set G (none, calculated)")
 
     fun pStartNewFile(): File {
@@ -2577,45 +2577,12 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 }
 
 
-/** Extract significant brightness peaks (0-255) + union bar heights from combinedRedboxHistBins (local-max + drop-off, adapted from valleyPushToPeaks). Only bins with positive pixel count (>0) are returned as peaks. */
+/** Extract significant brightness peaks (0-255) + union bar heights from combinedRedboxHistBins using the exact same peak discovery as valleyPushToPeaks (findPeakBinsFromHistogram). Only bins with positive pixel count (>0) are returned as peaks; #peaks should be comparable for raw greyscale vs valley-push on the same content. */
 private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>> {
     val binsArr = JSONArray(combinedBinsJson)
     val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
-    val smoothed = FloatArray(64)
-    for (i in 0..63) {
-        val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
-        smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
-    }
-    val totalPixels = bins.sum().toDouble().coerceAtLeast(1.0)
-    val dropOffThreshold = totalPixels * 0.003
-    val peakBins = mutableListOf<Int>()
-    // left-to-right (interior + edge bin 0)
-    for (i in 0..61) {
-        val isLocalMax = if (i == 0) smoothed[i] >= smoothed[i + 1]
-        else smoothed[i] > smoothed[i - 1] && smoothed[i] >= smoothed[i + 1]
-        if (!isLocalMax) continue
-        if (bins[i] <= 0f) continue
-        var peakConfirmed = false
-        for (j in i + 1..63) {
-            if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
-            if (smoothed[j] > smoothed[i]) break
-        }
-        if (peakConfirmed) peakBins.add(i)
-    }
-    // right-to-left (interior + edge bin 63)
-    for (i in 63 downTo 2) {
-        val isLocalMax = if (i == 63) smoothed[i] >= smoothed[i - 1]
-        else smoothed[i] > smoothed[i + 1] && smoothed[i] >= smoothed[i - 1]
-        if (!isLocalMax) continue
-        if (bins[i] <= 0f) continue
-        var peakConfirmed = false
-        for (j in i - 1 downTo 0) {
-            if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
-            if (smoothed[j] > smoothed[i]) break
-        }
-        if (peakConfirmed) peakBins.add(i)
-    }
-    return peakBins.distinct()
+    val peakBins = OdometerOcrUtils.findPeakBinsFromHistogram(bins)
+    return peakBins
         .map { j -> (j * 4 + 2).coerceIn(0, 255) to bins[j].toInt() }
         .filter { it.second > 0 }
         .sortedByDescending { it.second }

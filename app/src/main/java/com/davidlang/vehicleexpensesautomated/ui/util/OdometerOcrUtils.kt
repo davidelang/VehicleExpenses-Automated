@@ -791,26 +791,18 @@ object OdometerOcrUtils {
         return bins
     }
 
-    fun valleyPushToPeaks(mat: Mat): FloatArray {
-        // New for Set C per approved plan: histogram valley centers -> push values outward to peaks.
-        // Result: image with only a *small number* of brightness values (quantized to peaks/modes).
-        // Not binarization. Reuses findValleyMidpoints + 64-bin/smooth/peak patterns from automaticContrastStretch.
-        // In-place mutate like the stretch funcs. Returns before-bins (caller makes after-hist from mutated mat).
-        val hist = Mat()
-        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-
-        val bins = FloatArray(64); hist.get(0, 0, bins)
+    /**
+     * Robust peak bin indices from a 64-bin histogram (the logic valley push uses after finding valleys).
+     * Uses 3-bin smoothing + left-to-right and right-to-left local-max with drop-off confirmation.
+     * Returns sorted list of bin indices (0-63).
+     */
+    fun findPeakBinsFromHistogram(bins: FloatArray, totalPixels: Double = bins.sum().toDouble()): List<Int> {
         val smoothed = FloatArray(64)
         for (i in 0..63) {
             val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
             smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
         }
-
-        val valleys = findValleyMidpoints(bins)  // centers of valleys (bin indices)
-
-        // Robust peaks (adapt left-to-right + right-to-left with drop-off confirmation from automaticContrastStretch)
         val peakBins = mutableListOf<Int>()
-        val totalPixels = mat.rows() * mat.cols().toDouble()
         val dropOffThreshold = totalPixels * 0.003
         // left-to-right
         for (i in 1..61) {
@@ -834,7 +826,23 @@ object OdometerOcrUtils {
                 if (peakConfirmed) peakBins.add(i)
             }
         }
-        val peakList = peakBins.distinct().sorted()
+        return peakBins.distinct().sorted()
+    }
+
+    fun valleyPushToPeaks(mat: Mat): FloatArray {
+        // New for Set C per approved plan: histogram valley centers -> push values outward to peaks.
+        // Result: image with only a *small number* of brightness values (quantized to peaks/modes).
+        // Not binarization. Reuses findValleyMidpoints + findPeakBinsFromHistogram (same peak discovery as binPeak).
+        // In-place mutate like the stretch funcs. Returns before-bins (caller makes after-hist from mutated mat).
+        val hist = Mat()
+        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
+
+        val bins = FloatArray(64); hist.get(0, 0, bins)
+
+        val valleys = findValleyMidpoints(bins)  // centers of valleys (bin indices)
+
+        val totalPixels = mat.rows() * mat.cols().toDouble()
+        val peakList = findPeakBinsFromHistogram(bins, totalPixels)
 
         if (peakList.size < 2 || valleys.isEmpty()) {
             // fallback: no meaningful valleys/peaks -> identity (return bins, no mutate)
