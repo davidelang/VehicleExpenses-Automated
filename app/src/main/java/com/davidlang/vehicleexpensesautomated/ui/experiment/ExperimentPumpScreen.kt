@@ -591,6 +591,20 @@ private suspend fun runPumpExperiment(
                     val rect: android.graphics.Rect? = null
                 )
 
+                fun rectToJson(r: android.graphics.Rect): JSONObject =
+                    JSONObject().put("l", r.left).put("t", r.top).put("r", r.right).put("b", r.bottom)
+
+                fun redBoxOcrCandidateToJson(c: RedBoxOcrCandidate): JSONObject {
+                    val j = JSONObject()
+                        .put("label", c.label)
+                        .put("asis", c.asis)
+                        .put("digits", c.digits)
+                        .put("asisProbs", c.asisProbs)
+                        .put("digitsProbs", c.digitsProbs)
+                    c.rect?.let { j.put("rect", rectToJson(it)) }
+                    return j
+                }
+
                 // fix-remaining-report-issues-20260619-plan: cand.rect from ocr rect list (blue/orange/retracted), not pdHunksRawTotal reds
                 // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: probs stored separately from clean text
                 fun buildRedBoxCandidates(
