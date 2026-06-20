@@ -13,30 +13,49 @@ SANDBOX_GROUP=${sandbox_group:-@@SANDBOX_GROUP@@}
 SHARED_GROUP=${shared_group:-@@SHARED_GROUP@@}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"
+
+# Discover sandbox locations: main one + any from worktrees (symlinks)
+mapfile -t SANDBOX_CANDIDATES < <(echo "$SCRIPT_DIR/@@SANDBOX_PATH@@")
+mapfile -t WORKTREES < <(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {print $2}')
+for wt in "${WORKTREES[@]}"; do
+  if [ -L "$wt/@@SANDBOX_PATH@@" ]; then
+    target=$(readlink -f "$wt/@@SANDBOX_PATH@@")
+    [ -d "$target" ] && SANDBOX_CANDIDATES+=("$target")
+  fi
+done
+
+# Unique
+SANDBOX_DIRS=()
+for dir in "${SANDBOX_CANDIDATES[@]}"; do
+  [[ " ${SANDBOX_DIRS[*]} " != *" $dir "* ]] && SANDBOX_DIRS+=("$dir")
+done
 
 echo "Setting sandbox perms (2770 setgid for $SANDBOX_GROUP)..."
 
-chown -R :$SANDBOX_GROUP "$SANDBOX_DIR" || true
+for SANDBOX_DIR in "${SANDBOX_DIRS[@]}"; do
+  if [ ! -d "$SANDBOX_DIR" ]; then continue; fi
+  echo "  Applying to sandbox: $SANDBOX_DIR"
+  chown -R :$SANDBOX_GROUP "$SANDBOX_DIR" || true
 
-# Modify r/w only, preserve exe bit.
-chmod -R g+rwX "$SANDBOX_DIR" || true
-find "$SANDBOX_DIR" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + || true
+  # Modify r/w only, preserve exe bit.
+  chmod -R g+rwX "$SANDBOX_DIR" || true
+  find "$SANDBOX_DIR" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + || true
 
-# Preserve x on any critical scripts that might be inside the sandbox dir (e.g. template)
-EXECUTABLES=(
-  setup-project
-  filter-apply-config
-  filter-clean-config
-  set-worktree-perms
-  set-sandbox-perms
-  post-checkout
-)
-for f in "${EXECUTABLES[@]}"; do
-  find "$SANDBOX_DIR" -name "$f" -type f -exec chmod +x {} + 2>/dev/null || true
+  # Preserve x on any critical scripts that might be inside the sandbox dir (e.g. template)
+  EXECUTABLES=(
+    setup-project
+    filter-apply-config
+    filter-clean-config
+    set-worktree-perms
+    set-sandbox-perms
+    post-checkout
+  )
+  for f in "${EXECUTABLES[@]}"; do
+    find "$SANDBOX_DIR" -name "$f" -type f -exec chmod +x {} + 2>/dev/null || true
+  done
+
+  # Also allow shared group if needed
+  chown -R :$SHARED_GROUP "$SANDBOX_DIR" 2>/dev/null || true
 done
-
-# Also allow shared group if needed
-chown -R :$SHARED_GROUP "$SANDBOX_DIR" 2>/dev/null || true
 
 echo "Sandbox perms applied."
