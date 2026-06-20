@@ -30,7 +30,7 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
   - IcrsMath.kt and related
 - Data/UI: Vehicle.kt (data/model/), VehicleViewModel.kt (ui/vehicle/)
 - Experiment UI when present: `ui/experiment/`
-- Pump experiment: `ui/experiment/ExperimentPumpScreen.kt` — display snapshot targets via `PUMP_*` consts (~2720); binPeak binarization window via `BIN_PEAK_BINARIZE_DELTA` const (~2728, default for `captureBinPeakSnapshotsFromRedbox`); selection OCR JSON via `costVolDecisionData_*` metadata from `ocrPumpRectsAsisAndDigits` + `buildCostVolDecisionDataJson`; binPeak debug images gated by `findPeaksFromHistBins` (~2581) which calls `OdometerOcrUtils.findPeakBinsFromHistogram` (~799) and returns only positive-count union-hist bins; binPeak snapshots use `takeSnapshot(b.mat)` on workspace.s binary scratch
+- Pump experiment: `ui/experiment/ExperimentPumpScreen.kt` — display snapshot targets via `PUMP_*` consts (~2720); binPeak binarization window via `BIN_PEAK_BINARIZE_DELTA` const (~2728, default for `captureBinPeakSnapshotsFromRedbox`, d=0 when valley quantized hist has <=10 positive bins); selection OCR JSON via `costVolDecisionData_*` metadata from `ocrPumpRectsAsisAndDigits` + `buildCostVolDecisionDataJson`; binPeak debug images only on expanded B/C/F (`captureBinPeakSnapshotsFromRedbox` call sites); `findPeaksFromHistBins` (~2578) uses exact all-positive 1-bin peaks for valley (<=10 nz), else `OdometerOcrUtils.findPeakBinsFromHistogram` (~799); binPeak snapshots use `takeSnapshot(b.mat)` on workspace.s binary scratch
 - Specs: `docs/specs/` (ISOTROPIC_COORDINATE_SPEC.md)
 
 Update only with new stable location facts valid for future unrelated work. Current-effort details go in the active plan or ENGINEERING_LOG.md.
