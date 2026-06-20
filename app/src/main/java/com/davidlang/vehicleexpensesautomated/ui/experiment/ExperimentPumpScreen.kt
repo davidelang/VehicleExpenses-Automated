@@ -2578,6 +2578,27 @@ private suspend fun runPumpExperiment(
                 val ocrG = ocrPumpRectsAsisAndDigits(customBluePixelG)
                 val gCands = buildRedBoxCandidates(customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, gCands)
+                val redPixelG = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val gVertFactors = (1..8).map { it / 10f }
+                val cvG = classifyCostVolFromBoxOcr(gCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelG,
+                    ocrSourceRects = customBluePixelG,
+                    candidates = gCands,
+                    costCand = cvG.costCand,
+                    volCand = cvG.volCand,
+                    finalCost = cvG.cost,
+                    finalVol = cvG.vol,
+                    assembly = mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to gVertFactors,
+                        "horizFactor" to 0.5f,
+                        "orangeSideExt" to 0.1,
+                        "note" to "createBlueAndOrangeHunksFromReds (Pre blues for OCR cands)"
+                    )
+                )
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
                 // G custom blue/orange (raw clone of D, no stretch) via createBlueAndOrangeHunksFromReds (calculated blue expansions +10% to +80% vert step 10%, horiz 50%)
