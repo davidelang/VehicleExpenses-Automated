@@ -14,7 +14,7 @@
 - [x] Phase 10: Verify buildBinPeakHtmlForBranch only emits real peaks
 - [x] Phase 11: Cross-check call sites and no other producers
 - [x] Phase 12: Final pre-build greps + narrow reads of changed sites
-- [ ] Phase 13: Post-build verification + state update
+- [x] Phase 13: Post-build verification + state update
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
