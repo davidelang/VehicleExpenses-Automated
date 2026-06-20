@@ -2601,7 +2601,14 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, worksp
     for ((peak, height) in peaks) {
         val b = workspace.s
         b.mat.setTo(org.opencv.core.Scalar(0.0))
-        NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, peak - d, peak + d)
+        // Valley (numNz<=10): LUT stretching places mass anywhere in the bin; binarize full 1-bin width, not center±d.
+        val (low, high) = if (numNz <= 10) {
+            val j = (peak / 4).coerceIn(0, 63)
+            (j * 4) to ((j + 1) * 4 - 1)
+        } else {
+            (peak - d) to (peak + d)
+        }
+        NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
         // Direct Mat snapshot (not Slice/YUV path); null scratchYuv so we do not clear the b we just binarized into
         val binB64 = OcrUtils.takeSnapshot(b.mat, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, emptyList(), null, null).first
         branch.images["binPeak_$peak"] = binB64
