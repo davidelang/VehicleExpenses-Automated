@@ -1459,6 +1459,20 @@ private suspend fun runPumpExperiment(
                 val ocrB = ocrPumpRectsAsisAndDigits(bRetractedPixel)
                 val bCands = buildRedBoxCandidates(bRetractedPixel, ocrB.asis, ocrB.digits, ocrB.asisProbs, ocrB.digitsProbs)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, bCands)
+                val redPixelB = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val cvB = classifyCostVolFromBoxOcr(bCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelB,
+                    ocrSourceRects = bRetractedPixel,
+                    candidates = bCands,
+                    costCand = cvB.costCand,
+                    volCand = cvB.volCand,
+                    finalCost = cvB.cost,
+                    finalVol = cvB.vol,
+                    assembly = mapOf("method" to "retracted", "note" to "per-red expandByUniformity (content-aware retract)")
+                )
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                     doBOrDRedOnlyImage()
