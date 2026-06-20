@@ -1329,6 +1329,17 @@ private suspend fun runPumpExperiment(
                     assembly = mapOf("method" to "raw", "note" to "raw reds as ocr rects (no blue expansion)")
                 )
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
+                val cvAML = classifyCostVolFromBoxOcr(aCands)
+                branch.metadata["costVolDecisionData_ML"] = buildCostVolDecisionDataJson(
+                    reds = aRedPixel,
+                    ocrSourceRects = aRedPixel,
+                    candidates = aCands,
+                    costCand = cvAML.costCand,
+                    volCand = cvAML.volCand,
+                    finalCost = cvAML.cost,
+                    finalVol = cvAML.vol,
+                    assembly = mapOf("method" to "raw", "note" to "raw reds as ocr rects (no blue expansion)")
+                )
 
                 // 5. Visualization
                     val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
