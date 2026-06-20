@@ -1,10 +1,15 @@
 #!/bin/bash
 # setup-project
-# One-time bootstrap for permissions model.
+# ONE-TIME PERMISSION STAMP / bootstrap for permissions model.
+# This is a stamp: copy the emitted artifacts + stampable files (set-*-perms,
+# project.config.example, filter-*-config, .gitattributes snippets, etc.) into a
+# target project ONCE. After stamping, the target project OWNS the files with
+# no permanent back-references to the source orchestration tree or any other project.
 # Walks user through: users (emit only, NEVER auto), config, filters, hook, perms, sandbox.
 # Mechanism not policy: flexible for dirs + unzip skeleton.
 # Sandbox only mode: all work here; manual apply later.
 # Always use absolute sandbox path for writes.
+# Language-agnostic: adapt for any project layout; do not assume app/ paths.
 
 set -euo pipefail
 
@@ -13,8 +18,9 @@ CONFIG_EXAMPLE="$SANDBOX/project.config.example"
 CONFIG_REAL="$SANDBOX/project.config"
 EXEC_DIR="$SANDBOX/permissions-bootstrap-execution"
 
-echo "=== setup-project: Unix Permissions Bootstrap (sandbox-only) ==="
+echo "=== setup-project: Unix Permissions Bootstrap (sandbox-only, ONE-TIME STAMP) ==="
 echo "All artifacts prepared in $EXEC_DIR for manual apply to trees."
+echo "This is a ONE-TIME stamp. Target project owns the resulting files thereafter."
 echo "Never auto-executes user creation."
 
 # 1. Users (emit only)
@@ -38,6 +44,24 @@ usermod -aG @@CODE_GROUP@@ dlang || true
 echo "Users created (if not exist)."
 echo "IMPORTANT: If you are dlang (or the developer), run 'newgrp @@CODE_GROUP@@' or log out/in so your current shell sees the group."
 
+# Git safe.directory (critical for modern git >= 2.35.2)
+# Git refuses to operate in a repo "owned by someone else" unless the path is whitelisted.
+# Use the wildcard form so any subdirectory, worktree, or sandbox created under the project is trusted.
+# These must be executed as each relevant user (the human + the ai-* users).
+echo "# For each user who will use git in this project (run the command as that user):"
+echo "git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo ""
+echo "# Examples (as root you can use sudo -u):"
+echo "#   sudo -u dlang            git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u @@ORCHESTRATOR_USER@@  git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u @@CODE_GROUP@@r         git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u @@PLANNING_USER@@       git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo ""
+echo "This wildcard is the recommended form because it will automatically cover any future worktrees or sandboxes."
+echo "# STAMP NOTE: These paths are for the CURRENT project. When stamping a different"
+echo "# clone/project, replace the paths with the target's root. The stamped files become"
+echo "# owned by the target; no link back to this orchestration source is required."
+
 # Passwordless sudo for launchers (so no password prompt for sudo -u ai-*)
 cat <<'SUDOERS'
 # Run as root to set up passwordless sudo:
@@ -48,8 +72,20 @@ chmod 440 /etc/sudoers.d/vehicle-permissions
 visudo -c   # validate
 SUDOERS
 echo "Review and run the sudoers setup above as root. Then no password for sudo in launchers."
+echo "# ONE-TIME STAMP: After applying to the target tree, the permission files (set-*-perms etc.)"
+echo "# are owned by that tree. Edit the generated sudoers for the actual target location."
 USERCMDS
 echo "Review above. Do NOT run automatically."
+
+# As a convenience, configure safe.directory for the *current* user right now
+# (the human running the bootstrap). We compute the current git root + wildcard.
+# STAMP: this auto-add is a helper for the running user on this tree; when stamping
+# a brand new independent project, the receiver will run equivalent for their paths.
+CURRENT_USER=$(id -un)
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+git config --global --add safe.directory "$PROJECT_ROOT/*" 2>/dev/null || true
+echo "Automatically added safe.directory wildcard for current user ($CURRENT_USER) on $PROJECT_ROOT/*"
+echo "You still need to do the equivalent for the ai-* users (see the USERCMDS above, adapting the path for the target project)."
 
 # 2. Config
 echo ""
@@ -120,9 +156,12 @@ echo "Unzip support prepared. Example: unzip skeleton.zip -d $sandbox_path"
 
 echo ""
 echo "=== Bootstrap complete in sandbox. ==="
-echo "All files in $EXEC_DIR/staged/ ready for manual copy to orchestration/master/agent-1."
-echo "Then extract bundle."
-echo "Re-run pump or other after apply."
+echo "All files in $EXEC_DIR/staged/ ready for ONE-TIME manual copy into the TARGET project tree."
+echo "After copy, the stamped files (set-worktree-perms, setup-project, filters, .gitattributes, project.config*, enable-full-orchestration.sh*) are OWNED by the target project."
+echo "No permanent reference back to the stamp source is needed or created for other projects."
+echo "Then apply (users, sudoers, filters, perms, hooks)."
+echo "In the stamped tree run ./enable-full-orchestration.sh (or --apply after review) to opt into full layout from plain master."
+echo "Adapt paths for the target tree location. Re-run any project steps after apply."
 
 # Log
 echo "setup-project ran at $(date)" >> "$EXEC_DIR/setup-project.log"

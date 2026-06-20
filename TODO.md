@@ -1,20 +1,5 @@
 # TODO
 
-## Active Work (fix binpeak for valley sets - fix-binpeak-layer-selection-and-snapshot-for-valley-push-sets-20260620-plan.md)
-- [x] Phase 1: Hygiene + TODO + baseline build
-- [x] Phase 2: Forensic reads of selection and call sites + cross-set validation
-- [x] Phase 3: Extract shared peak-finding logic (findPeakBinsFromHistogram)
-- [x] Phase 4: Change binary dest + takeSnapshot source to use direct mat
-- [x] Phase 5: Final verification + last build + marker
-
-## Active Work (binPeak range 16->8 - change-binpeak-binarization-range-from-16-to-8-20260620-plan.md)
-- [x] Phase 1: Hygiene reads + TODO bootstrap + baseline build
-- [x] Phase 2: Forensic pre-edit reads of all three change sites
-- [x] Phase 3: Change the const value from 16 to 8
-- [x] Phase 4: Update the HTML label string
-- [x] Phase 5: Update the documentation comment
-- [x] Phase 6: Final verification + last build gate
-
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
@@ -80,4 +65,10 @@
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
 
 # Future work
-- [ ] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
+- [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
+  - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
+  - Execution completed (user: "approved, implement this plan"). All 7 phases + forensic gates + sim verification.
+  - No app/ source touched; language-agnostic; only orchestration-infra + docs + bootstrap.
+  - New: enable-full-orchestration.sh (stampable opt-in); dual-mode update-rules (stamp vs full); explicit one-time stamp comments in setup-project; docs + migration notes.
+  - See ENGINEERING_LOG.md and dev-ai-interaction/orchestration-layer-inventory-phase1.md for details.
+  - Results ready to test (new tag via final build).
