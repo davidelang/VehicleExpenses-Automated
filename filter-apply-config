@@ -7,8 +7,8 @@
 
 set -euo pipefail
 
-SANDBOX="/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction"
-CONFIG="$SANDBOX/project.config"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG="$SCRIPT_DIR/project.config"
 
 if [ ! -f "$CONFIG" ]; then
   echo "WARNING: project.config not found; leaving tokens as-is (dumb pass-through)" >&2
