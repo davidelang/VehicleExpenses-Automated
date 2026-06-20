@@ -8,7 +8,7 @@ Plan: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/change
 - [x] Phase 4: Update function default to use the const
 - [x] Phase 5: Update the HTML description string
 - [x] Phase 6: Update the documentation comment mentioning the range
-- [ ] Phase 7: Verify no other hard-coded +-2 range remains for binPeak
+- [x] Phase 7: Verify no other hard-coded +-2 range remains for binPeak
 - [ ] Phase 8: Final cross-check of binarize call site
 - [ ] Phase 9: Post-change verification greps and reads
 - [ ] Phase 10: Hygiene close-out + state update
