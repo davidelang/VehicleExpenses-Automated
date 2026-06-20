@@ -1493,13 +1493,13 @@ private suspend fun runPumpExperiment(
                     branch.metadata["tilt"] = "%.2f".format(tilt)
                     branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
 
-                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
+                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, PUMP_C_VISUAL_TARGET_W, 0, emptyList(), null, workspace)
                     branch.images["rawC"] = rawForC
                     val tG0 = System.currentTimeMillis()
                     branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     branch.metadata["t_hist_before_c_ms"] = (System.currentTimeMillis() - tG0).toString()
                     val rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)
-                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
+                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, PUMP_C_VISUAL_TARGET_W, 0, emptyList(), null, workspace)
                     branch.images["pushedC"] = pushedForC
                     val tG1 = System.currentTimeMillis()
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
@@ -1989,13 +1989,13 @@ private suspend fun runPumpExperiment(
                     branch.metadata["tilt"] = "%.2f".format(tilt)
                     branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
 
-                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
+                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, PUMP_C_VISUAL_TARGET_W, 0, emptyList(), null, workspace)
                     branch.images["rawC"] = rawForC
                     val tG0 = System.currentTimeMillis()
                     branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
                     branch.metadata["t_hist_before_c_ms"] = (System.currentTimeMillis() - tG0).toString()
                     val rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)
-                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, 675, 0, emptyList(), null, workspace)
+                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, PUMP_C_VISUAL_TARGET_W, 0, emptyList(), null, workspace)
                     branch.images["pushedC"] = pushedForC
                     val tG1 = System.currentTimeMillis()
                     branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
