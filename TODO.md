@@ -6,7 +6,7 @@ Plan: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/change
 - [x] Phase 2: Forensic pre-read of const area and function signature
 - [x] Phase 3: Add BIN_PEAK_BINARIZE_DELTA const
 - [x] Phase 4: Update function default to use the const
-- [ ] Phase 5: Update the HTML description string
+- [x] Phase 5: Update the HTML description string
 - [ ] Phase 6: Update the documentation comment mentioning the range
 - [ ] Phase 7: Verify no other hard-coded +-2 range remains for binPeak
 - [ ] Phase 8: Final cross-check of binarize call site
