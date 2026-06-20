@@ -2617,6 +2617,7 @@ private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>
     }
     return peakBins.distinct()
         .map { j -> (j * 4 + 2).coerceIn(0, 255) to bins[j].toInt() }
+        .filter { it.second > 0 }
         .sortedByDescending { it.second }
 }
 
