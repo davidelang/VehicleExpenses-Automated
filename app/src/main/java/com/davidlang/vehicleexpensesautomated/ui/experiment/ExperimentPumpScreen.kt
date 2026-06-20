@@ -2581,6 +2581,12 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>> {
     val binsArr = JSONArray(combinedBinsJson)
     val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
+    val numNz = (0..63).count { bins[it] > 0f }
+    if (numNz <= 10) {
+        return (0..63).filter { bins[it] > 0f }
+            .map { j -> (j * 4 + 2).coerceIn(0, 255) to bins[j].toInt() }
+            .sortedByDescending { it.second }
+    }
     val peakBins = OdometerOcrUtils.findPeakBinsFromHistogram(bins)
     return peakBins
         .map { j -> (j * 4 + 2).coerceIn(0, 255) to bins[j].toInt() }
