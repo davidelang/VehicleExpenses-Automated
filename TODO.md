@@ -13,7 +13,7 @@
 - [x] Phase 9: Verify captureBinPeakSnapshotsFromRedbox loop only sees real peaks
 - [x] Phase 10: Verify buildBinPeakHtmlForBranch only emits real peaks
 - [x] Phase 11: Cross-check call sites and no other producers
-- [ ] Phase 12: Final pre-build greps + narrow reads of changed sites
+- [x] Phase 12: Final pre-build greps + narrow reads of changed sites
 - [ ] Phase 13: Post-build verification + state update
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
