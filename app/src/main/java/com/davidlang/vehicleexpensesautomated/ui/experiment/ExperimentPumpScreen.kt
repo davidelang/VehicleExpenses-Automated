@@ -1317,6 +1317,17 @@ private suspend fun runPumpExperiment(
                 val ocrA = ocrPumpRectsAsisAndDigits(aRedPixel)
                 val aCands = buildRedBoxCandidates(aRedPixel, ocrA.asis, ocrA.digits, ocrA.asisProbs, ocrA.digitsProbs)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
+                val cvAPaddle = classifyCostVolFromBoxOcr(aCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = aRedPixel,
+                    ocrSourceRects = aRedPixel,
+                    candidates = aCands,
+                    costCand = cvAPaddle.costCand,
+                    volCand = cvAPaddle.volCand,
+                    finalCost = cvAPaddle.cost,
+                    finalVol = cvAPaddle.vol,
+                    assembly = mapOf("method" to "raw", "note" to "raw reds as ocr rects (no blue expansion)")
+                )
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
 
                 // 5. Visualization

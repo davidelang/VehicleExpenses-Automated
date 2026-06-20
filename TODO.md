@@ -3,7 +3,7 @@
 ## Active Work (Persist pump decision data red/blue/orange OCR JSON — persist-pump-decision-data-red-blue-orange-ocr-json-20260620-plan.md)
 - [x] Phase 1: Add rectToJson and redBoxOcrCandidateToJson helpers
 - [x] Phase 2: Add buildCostVolDecisionDataJson helper skeleton
-- [ ] Phase 3: Wire capture for Set A (Paddle path)
+- [x] Phase 3: Wire capture for Set A (Paddle path)
 - [ ] Phase 4: Wire capture for Set A ML path
 - [ ] Phase 5: Wire capture for Set B
 - [ ] Phase 6: Wire capture for Set C
