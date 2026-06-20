@@ -270,7 +270,7 @@ object OcrUtils {
         finalW = ((finalW + 1) / 2) * 2
         finalH = ((finalH + 1) / 2) * 2
 
-        // Safety cap
+        // Safety cap. Display images for pump reports must use the PUMP_*_TARGET consts from ExperimentPumpScreen to match CSS containers.
         finalW = finalW.coerceIn(2, 4000)
         finalH = finalH.coerceIn(2, 3072)
 
