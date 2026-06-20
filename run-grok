@@ -1,7 +1,8 @@
 #!/bin/bash
 # run-grok
 # Launch Grok CLI in the current agent worktree.
-# Sandbox is provided via the ./@@SANDBOX_PATH@@ symlink (created by setup_agent) + absolute path in mandates.
+# Sandbox is provided via the ./@@SANDBOX_PATH@@ symlink (created by setup_agent or enable-full-orchestration.sh) + absolute path in mandates.
+# Full orchestration layout expected (see enable-full-orchestration.sh for opt-in from plain master checkout). Plain standalone master remains usable independently.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"

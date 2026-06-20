@@ -24,5 +24,6 @@ Read in full early on startup/new cycle to avoid discovery searches.
 - App worktrees: `app/` + gradle bits + root scripts/launchers + symlink `dev-ai-interaction -> ../dev-ai-interaction`
 - This root (orchestration) is source for shared scripts/brain; use update-rules.sh to push
 - At managing orchestration root: app/ source tree is absent (only in dedicated worktrees); project-facts.md and facts remain stable for both managing root and app worktree usage.
+- Launchers (run-grok*) and setup assume full layout with dev-ai symlink (created by setup_agent or enable-full-orchestration in stamped plain trees). Plain master remains independently usable.
 
 Update only with new stable location facts valid for future unrelated work. Effort/plan details belong in the active plan or ENGINEERING_LOG.md.
