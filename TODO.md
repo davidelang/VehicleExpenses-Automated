@@ -1,21 +1,5 @@
 # TODO
 
-## Active Work (eliminate-false-zero-height-peaks-binpeak-binarized-images-20260620-plan.md)
-
-- [x] Phase 1: Full hygiene reads + TODO bootstrap
-- [x] Phase 2: Forensic read of findPeaksFromHistBins (pre-edit)
-- [x] Phase 3: Add zero-count guard in left-to-right peak scan
-- [x] Phase 4: Add zero-count guard in right-to-left peak scan
-- [x] Phase 5: Add post-map filter (belt-and-suspenders)
-- [x] Phase 6: Forensic verification that finder now excludes zeros
-- [x] Phase 7: Minimal comment update in findPeaksFromHistBins
-- [x] Phase 8: Minimal comment update near histogram/plot code
-- [x] Phase 9: Verify captureBinPeakSnapshotsFromRedbox loop only sees real peaks
-- [x] Phase 10: Verify buildBinPeakHtmlForBranch only emits real peaks
-- [x] Phase 11: Cross-check call sites and no other producers
-- [x] Phase 12: Final pre-build greps + narrow reads of changed sites
-- [x] Phase 13: Post-build verification + state update
-
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
