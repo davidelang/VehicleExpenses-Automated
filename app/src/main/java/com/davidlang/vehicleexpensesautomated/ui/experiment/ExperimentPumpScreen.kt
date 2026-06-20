@@ -885,6 +885,18 @@ private suspend fun runPumpExperiment(
                     }
                     branch.metadata["redboxData"] = redboxData.toString()
                     branch.metadata["n_per_red_hists"] = reds.size.toString()
+                    // Combined union histogram over all red rects (OR mask, no double-counting overlaps).
+                    val unionMask = org.opencv.core.Mat.zeros(workspace.p.mat.rows(), workspace.p.mat.cols(), org.opencv.core.CvType.CV_8UC1)
+                    reds.forEach { hunk ->
+                        val pt1 = org.opencv.core.Point(hunk.rect.left.toDouble(), hunk.rect.top.toDouble())
+                        val pt2 = org.opencv.core.Point(hunk.rect.right.toDouble(), hunk.rect.bottom.toDouble())
+                        org.opencv.imgproc.Imgproc.rectangle(unionMask, pt1, pt2, org.opencv.core.Scalar(255.0), -1)
+                    }
+                    val combinedHist = org.opencv.core.Mat()
+                    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), unionMask, combinedHist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                    val combinedBins = FloatArray(64); combinedHist.get(0, 0, combinedBins); combinedHist.release(); unionMask.release()
+                    val combinedArr = JSONArray(); combinedBins.forEach { combinedArr.put(it.toDouble()) }
+                    branch.metadata["combinedRedboxHistBins"] = combinedArr.toString()
                 }
 
                 // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
