@@ -111,18 +111,20 @@ rules = [
 
   # Granular edit permissions for designated safe locations only.
   # This allows search_replace / write on the sandbox (for plans, artifacts, logs)
-  # and on the local per-worktree untracked state files (current-state.md etc.)
-  # without prompting for *every* edit, while still gating everything else.
+  # and on project-facts.md (stable tracked facts file, planner-writable in plan mode like TODO.md)
+  # and legacy current-state.md without prompting for every edit.
   # Add more specific patterns here as needed instead of a blanket "allow all edits".
   # These are merged with ~/.grok/config.toml (project rules take precedence).
   { action = "allow", tool = "search_replace", pattern = "dev-ai-interaction/**" },
   { action = "allow", tool = "search_replace", pattern = "dev-ai-interaction/plans/**" },
   { action = "allow", tool = "search_replace", pattern = "dev-ai*/plans/**" },
+  { action = "allow", tool = "search_replace", pattern = "**/project-facts.md" },
   { action = "allow", tool = "search_replace", pattern = "**/current-state.md" },
   { action = "allow", tool = "search_replace", pattern = "**/.agent-state/**" },
   { action = "allow", tool = "write", pattern = "dev-ai-interaction/**" },
   { action = "allow", tool = "write", pattern = "dev-ai-interaction/plans/**" },
   { action = "allow", tool = "write", pattern = "dev-ai*/plans/**" },
+  { action = "allow", tool = "write", pattern = "**/project-facts.md" },
   { action = "allow", tool = "write", pattern = "**/current-state.md" },
   { action = "allow", tool = "write", pattern = "**/.agent-state/**" },
 
@@ -135,11 +137,13 @@ rules = [
   { action = "allow", tool = "search_replace" },
   { action = "allow", tool = "write" },
 
-  # Explicit safety net for the local per-worktree state file (used for
-  # continuity even while in planning). The hook also has an early allow
-  # for this path.
+  # Explicit safety net for the (now tracked) stable project facts file and legacy state files.
+  # These are planner-editable even in plan mode (alongside the TODO.md exception).
+  # project-facts.md is deliberately kept to stable layout/"where things live" facts only.
+  { action = "allow", tool = "search_replace", pattern = "**/project-facts.md" },
   { action = "allow", tool = "search_replace", pattern = "**/current-state.md" },
   { action = "allow", tool = "search_replace", pattern = "**/.agent-state/**" },
+  { action = "allow", tool = "write", pattern = "**/project-facts.md" },
   { action = "allow", tool = "write", pattern = "**/current-state.md" },
   { action = "allow", tool = "write", pattern = "**/.agent-state/**" },
 ]

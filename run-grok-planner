@@ -9,7 +9,7 @@
 #
 # When you tell the master "New planning cycle" (optionally + one short sentence
 # of context or feedback), the master's built-in prompt automates the rest:
-# it reads current-state.md + the latest standard-plan-compliance-block.md,
+# it reads project-facts.md + the latest standard-plan-compliance-block.md,
 # writes a complete narrow prompt (full dedicated planner template + embedded
 # guardrails + your context) to `@@SANDBOX_PATH@@/.planning-agent-prompt.txt`,
 # and tells you the exact one-line restart command.
@@ -32,14 +32,14 @@
 # - Zero write access to tracked source outside the sandbox.
 # - High-signal / low-boilerplate plans; always include the exact standard
 #   block verbatim.
-# - Aggressive current-state.md hygiene and light reporting.
+# - project-facts.md hygiene (stable facts only) and light reporting.
 # - Only call exit_plan_mode (or signal readiness) when the user explicitly says
 #   a phrase like "this plan is good, exit planning mode" or the exact magic
 #   approval phrasing.
 #
 # Even in a long-lived session the planner must treat each new cycle (after
 # restart or after being told a new cycle has begun) as a fresh planning phase:
-# re-read current-state.md (with required prune), start a new high-signal plan,
+# re-read project-facts.md (full read + hygiene), start a new high-signal plan,
 # etc.
 #
 # This workflow gives you direct, unmediated back-and-forth with the Planning

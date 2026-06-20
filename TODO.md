@@ -1,17 +1,5 @@
 # TODO
 
-# Active plan (approved 2026-06-20, branch fix-pump-experiment)
-- [ ] fix-pump-remove-duplicate-html-ocr-debug-audit-snapshots-ensure-selection-data-json-20260620-plan.md
-  - Plan path: `dev-ai-interaction/plans/fix-pump-remove-duplicate-html-ocr-debug-audit-snapshots-ensure-selection-data-json-20260620-plan.md`
-  - Scope: ExperimentPumpScreen.kt only — remove duplicate HTML OCR debug (pumpOcrDumpText, extraOcr, ocrLinesB/D/E/G, pd_ocr_html, blueOcr/orangeOcr debug blocks); re-audit snapshot target sizes; keep selection path (ocrPumpRectsAsisAndDigits, costVolDecisionData_*) intact
-  - Starting tag: fix-pump-experiment/builds
-  - [x] Phase 1: Pre-execution hygiene + audit snapshot producers (tag: fix-pump-experiment-start-569-g32614b00)
-  - [x] Phase 2: Add PUMP_PER_RED_TARGET_W const (tag: fix-pump-experiment-start-570-g8cc210e7)
-  - [x] Phases 3-7: Snapshot audit verified (PD/ML/crops/binPeak/C use PUMP_*; no resize needed)
-  - [x] Phase 8-9: Per-red const usage + HTML verify (tag: fix-pump-experiment-start-571-g4dac7de1)
-  - [x] Phases 10-22: Remove duplicate HTML OCR debug (pumpOcrDumpText, extraOcr, ocrLines, blueOcr blocks B/D/E/G) (tag: fix-pump-experiment-start-572-g1c5f40eb)
-  - [x] Phases 23-24: Comments cleanup + final verification
-
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
@@ -70,8 +58,11 @@
 - See approved plan (this session's harness plan.md + the produced MULTI_AGENT_USER_INSTRUCTIONS.md) for full details, critical files, and verification. Pre-turn state: orchestration branch; session plan at /home/dlang/.grok/sessions/%2Fhome%2Fdlang%2Fgit%2FVehicleExpenses-automated/019ebbe2-611e-77e1-a312-f7cd1412096e/plan.md; no app source changes in scope.
 
 # Meta plan (approved 2026-06-12 on orchestration branch): Interactive Strategic Planning + Continuity
-- State files must be **per-branch** and live **in the local worktree directory** as **untracked** files (e.g. `current-state.md` or `.agent-state/current-state.md` at the worktree root, not in the shared dev-ai-interaction/ sandbox). Agent instructions require reading the local current-state.md first on every fresh launch or new cycle + the user-designated sandbox plan file.
+- Stable orientation facts live in the tracked `project-facts.md` at each worktree root. It must contain only layout / "where things live" facts that remain true after branch merge + new worktree for different effort. Agents read it first on launch/new cycle (in addition to the user-designated sandbox plan).
 - Planning phase is the **interactive strategic layer**: user may give rich problem descriptions, direction, and iterative feedback. Agent responds by revising the *plan document* in dev-ai-interaction/ (not source). Only after the user issues the exact magic approval phrasing naming a specific sandbox plan path does mechanical execution begin.
-- Update bootstrap files (new_grok_agent_prompt point 5 + Sandbox Plan File paragraph, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md) + .gitignore so that when the user explicitly directs a current-turn plan, agents create/revise fresh plan files under dev-ai-interaction/ and use the local untracked per-worktree state file for continuity. The "historical reference only" rule applies only to old/abandoned plans from other agents/cycles.
-- Demo during execution: create local untracked current-state.md in the current worktree root with minimal structure. Primary plan documents stay in the sandbox.
+- Update bootstrap files, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .grok/config.toml, and .gitignore to reflect that `project-facts.md` is now tracked, planners may edit it in plan mode (alongside TODO.md), and it is strictly limited to stable facts (no branch/tag/current-plan). The untracked current-state.md name is legacy.
+- Primary plan documents stay in the sandbox; project-facts.md is for enduring location facts only.
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
+
+# Future work
+- [ ] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
