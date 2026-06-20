@@ -6,3 +6,8 @@ filter-clean-config filter=manage-configs
 set-worktree-perms filter=manage-configs
 set-sandbox-perms filter=manage-configs
 project.config.example filter=manage-configs
+
+# Launcher and bootstrap for smudge (config values)
+run-grok-master filter=manage-configs
+run-grok-planner filter=manage-configs
+run-grok filter=manage-configs

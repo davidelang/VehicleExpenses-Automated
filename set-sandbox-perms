@@ -12,7 +12,8 @@ fi
 SANDBOX_GROUP=${sandbox_group:-@@SANDBOX_GROUP@@}
 SHARED_GROUP=${shared_group:-@@SHARED_GROUP@@}
 
-SANDBOX_DIR="@@SANDBOX_PATH@@"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"
 
 echo "Setting sandbox perms (2770 setgid for $SANDBOX_GROUP)..."
 
