@@ -71,3 +71,4 @@
   - Follows 7-phase plan with per-phase forensic narrow read/grep + git add (TODO.md + changed) + ./build_app gate.
   - Phase 1 (inventory+docs) + Phase 2 (stamp explicit in setup-project) completed with gates.
   - Phase 3 (bootstrap): added enable-full-orchestration.sh (thin opt-in from plain master: detection, git worktree add guidance + --apply, dev-ai symlink, reverse note); referenced from setup-project + READMEs.
+  - Phase 4 (update-rules): added STAMP_FILES + TARGET_USES_FULL/COPY_LIST logic (full only for targets with brain markers or agent-*; stamp for plain; echo mode; updated critical comments; language-agnostic no app/ paths).
