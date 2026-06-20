@@ -1637,7 +1637,7 @@ private suspend fun runPumpExperiment(
                         // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
                         // Red box crop must be done by caller only (createCrop on the red rect pixel coords after pump optimization), then pass crop[id] (Slice) as source to takeSnapshot. This pattern is required. The pixel-vs-ICRS / ICRS-at-boundary optimization is pump red box only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops. takeSnapshot's internal output crop creation (snapCropId) is unchanged from alignment-tested behavior.
                         val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
-                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = longLivedHistogramBuffer)
+                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = PUMP_PER_RED_TARGET_W, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxRectC_${i}"] = rectB64
 
                         val hmat = org.opencv.core.Mat()
@@ -1656,7 +1656,7 @@ private suspend fun runPumpExperiment(
                             val xx = (k - 1) * 3
                             org.opencv.imgproc.Imgproc.rectangle(plotMat, org.opencv.core.Rect(xx, 240 - hh, 3, hh), org.opencv.core.Scalar(255.0), -1)
                         }
-                        val (histB64, _) = OcrUtils.takeSnapshot(source = longLivedHistogramBuffer.c[histPlotCrop], targetW = 120, scratchYuv = longLivedHistogramBuffer)
+                        val (histB64, _) = OcrUtils.takeSnapshot(source = longLivedHistogramBuffer.c[histPlotCrop], targetW = PUMP_PER_RED_TARGET_W, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxHistC_${i}"] = histB64
 
                         workspace.c[cropId].release()  // only rect crop; longLived + histPlotCrop held lifetime, never released in per-red path
@@ -2131,7 +2131,7 @@ private suspend fun runPumpExperiment(
                         // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
                         // Red box crop must be done by caller only (createCrop on the red rect pixel coords after pump optimization), then pass crop[id] (Slice) as source to takeSnapshot. This pattern is required. The pixel-vs-ICRS / ICRS-at-boundary optimization is pump red box only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops. takeSnapshot's internal output crop creation (snapCropId) is unchanged from alignment-tested behavior.
                         val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
-                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = 120, scratchYuv = longLivedHistogramBuffer)
+                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = PUMP_PER_RED_TARGET_W, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxRectC_${i}"] = rectB64
 
                         val hmat = org.opencv.core.Mat()
@@ -2150,7 +2150,7 @@ private suspend fun runPumpExperiment(
                             val xx = (k - 1) * 3
                             org.opencv.imgproc.Imgproc.rectangle(plotMat, org.opencv.core.Rect(xx, 240 - hh, 3, hh), org.opencv.core.Scalar(255.0), -1)
                         }
-                        val (histB64, _) = OcrUtils.takeSnapshot(source = longLivedHistogramBuffer.c[histPlotCrop], targetW = 120, scratchYuv = longLivedHistogramBuffer)
+                        val (histB64, _) = OcrUtils.takeSnapshot(source = longLivedHistogramBuffer.c[histPlotCrop], targetW = PUMP_PER_RED_TARGET_W, scratchYuv = longLivedHistogramBuffer)
                         branch.images["redboxHistC_${i}"] = histB64
 
                         workspace.c[cropId].release()  // only rect crop; longLived + histPlotCrop held lifetime, never released in per-red path

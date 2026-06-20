@@ -6,8 +6,9 @@
   - Scope: ExperimentPumpScreen.kt only — remove duplicate HTML OCR debug (pumpOcrDumpText, extraOcr, ocrLinesB/D/E/G, pd_ocr_html, blueOcr/orangeOcr debug blocks); re-audit snapshot target sizes; keep selection path (ocrPumpRectsAsisAndDigits, costVolDecisionData_*) intact
   - Starting tag: fix-pump-experiment/builds
   - [x] Phase 1: Pre-execution hygiene + audit snapshot producers (tag: fix-pump-experiment-start-569-g32614b00)
-  - [x] Phase 2: Add PUMP_PER_RED_TARGET_W const
-  - [ ] Phases 3-9: Snapshot audit/verify/fix
+  - [x] Phase 2: Add PUMP_PER_RED_TARGET_W const (tag: fix-pump-experiment-start-570-g8cc210e7)
+  - [x] Phases 3-7: Snapshot audit verified (PD/ML/crops/binPeak/C use PUMP_*; no resize needed)
+  - [ ] Phase 8-9: Per-red const usage + HTML verify
   - [ ] Phases 10-14: Remove pumpOcrDumpText + extraOcr
   - [ ] Phases 15-22: Remove ocrLines/pd_ocr_html + blue/orange debug blocks
   - [ ] Phases 23-24: Comments cleanup + final verification
