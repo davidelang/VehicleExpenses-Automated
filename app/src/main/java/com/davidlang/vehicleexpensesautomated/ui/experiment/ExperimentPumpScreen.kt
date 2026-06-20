@@ -2680,46 +2680,12 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 
 
 /** Extract significant brightness peaks (0-255) + match counts from per-red redbox histBins (adapted from valleyPushToPeaks). */
-private fun findPeaksFromHistBins(redboxDataJson: String): List<Pair<Int, Int>> {
-    val arr = JSONArray(redboxDataJson)
-    val peakCounts = mutableMapOf<Int, Int>()
-    for (i in 0 until arr.length()) {
-        val stat = arr.getJSONObject(i)
-        val binsArr = stat.getJSONArray("histBins")
-        val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
-        val totalPixels = bins.sum().toDouble()
-        if (totalPixels <= 0) continue
-        val smoothed = FloatArray(64)
-        for (j in 0..63) {
-            val start = (j - 1).coerceAtLeast(0)
-            val end = (j + 1).coerceAtMost(63)
-            smoothed[j] = (start..end).map { bins[it] }.average().toFloat()
-        }
-        val dropOffThreshold = totalPixels * 0.003
-        val redPeaks = mutableSetOf<Int>()
-        for (j in 1..61) {
-            if (smoothed[j] > smoothed[j - 1] && smoothed[j] >= smoothed[j + 1]) {
-                var peakConfirmed = false
-                for (k in j + 1..62) {
-                    if (smoothed[k] < smoothed[j] - dropOffThreshold) { peakConfirmed = true; break }
-                    if (smoothed[k] > smoothed[j]) break
-                }
-                if (peakConfirmed) redPeaks.add((j * 4 + 2).coerceIn(0, 255))
-            }
-        }
-        for (j in 62 downTo 2) {
-            if (smoothed[j] > smoothed[j + 1] && smoothed[j] >= smoothed[j - 1]) {
-                var peakConfirmed = false
-                for (k in j - 1 downTo 1) {
-                    if (smoothed[k] < smoothed[j] - dropOffThreshold) { peakConfirmed = true; break }
-                    if (smoothed[k] > smoothed[j]) break
-                }
-                if (peakConfirmed) redPeaks.add((j * 4 + 2).coerceIn(0, 255))
-            }
-        }
-        redPeaks.forEach { peak -> peakCounts[peak] = (peakCounts[peak] ?: 0) + 1 }
-    }
-    return peakCounts.entries.map { it.key to it.value }.sortedByDescending { it.first }
+private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>> {
+    val binsArr = JSONArray(combinedBinsJson)
+    val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
+    return (0..63).map { j -> (j * 4 + 2).coerceIn(0, 255) to bins[j].toInt() }
+        .filter { it.second > 0 }
+        .sortedByDescending { it.second }
 }
 
 private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, workspace: BufferSet, delta: Int = 2) {
