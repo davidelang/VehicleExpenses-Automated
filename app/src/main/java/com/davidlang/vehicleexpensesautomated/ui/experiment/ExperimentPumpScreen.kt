@@ -2771,15 +2771,15 @@ private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String 
     if (binPeaks.isEmpty()) return ""
     val sorted = binPeaks.mapNotNull { key ->
         val peak = key.removePrefix("binPeak_").toIntOrNull() ?: return@mapNotNull null
-        val count = br.metadata["binPeak_${peak}_count"] ?: "0"
+        val height = br.metadata["binPeak_${peak}_count"]?.toIntOrNull() ?: 0
         val b64 = br.images[key] ?: return@mapNotNull null
-        Triple(peak, count, b64)
-    }.sortedByDescending { it.first }
+        Triple(peak, height, b64)
+    }.sortedByDescending { it.second }
     return buildString {
-        append("<br><div style='margin-top:4px;'><b>Binarized by redbox peaks (range +-2, highest to lowest):</b></div>")
-        sorted.forEach { (peak, count, b64) ->
+        append("<br><div style='margin-top:4px;'><b>Binarized by redbox peaks (range +-2, highest bar to lowest):</b></div>")
+        sorted.forEach { (peak, height, b64) ->
             append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
-            append("<br><small>peak=$peak (matched by $count/4 reds)</small><br>")
+            append("<br><small>peak=$peak (union bar height: $height px)</small><br>")
         }
     }
 }
