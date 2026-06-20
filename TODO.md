@@ -4,8 +4,8 @@
 - [x] Phase 1: Hygiene + TODO + baseline build
 - [x] Phase 2: Forensic reads of selection and call sites + cross-set validation
 - [x] Phase 3: Extract shared peak-finding logic (findPeakBinsFromHistogram)
-- [ ] Phase 4: Change binary dest + takeSnapshot source to use direct mat
-- [ ] Phase 5: Final verification + last build + marker
+- [x] Phase 4: Change binary dest + takeSnapshot source to use direct mat
+- [x] Phase 5: Final verification + last build + marker
 
 ## Active Work (binPeak range 16->8 - change-binpeak-binarization-range-from-16-to-8-20260620-plan.md)
 - [x] Phase 1: Hygiene reads + TODO bootstrap + baseline build
