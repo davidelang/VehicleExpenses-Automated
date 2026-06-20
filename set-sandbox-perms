@@ -17,8 +17,10 @@ SANDBOX_DIR="@@SANDBOX_PATH@@"
 echo "Setting sandbox perms (2770 setgid for $SANDBOX_GROUP)..."
 
 chown -R :$SANDBOX_GROUP "$SANDBOX_DIR" || true
+
+# Modify r/w only, preserve exe bit. Use + for add, - for remove.
 chmod -R g+rwX "$SANDBOX_DIR" || true
-find "$SANDBOX_DIR" -type d -exec chmod 2770 {} + || true
+find "$SANDBOX_DIR" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + || true
 
 # Also allow shared group if needed
 chown -R :$SHARED_GROUP "$SANDBOX_DIR" 2>/dev/null || true
