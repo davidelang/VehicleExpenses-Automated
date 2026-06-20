@@ -11,7 +11,7 @@ Plan: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/change
 - [x] Phase 7: Verify no other hard-coded +-2 range remains for binPeak
 - [x] Phase 8: Final cross-check of binarize call site
 - [x] Phase 9: Post-change verification greps and reads
-- [ ] Phase 10: Hygiene close-out + state update
+- [x] Phase 10: Hygiene close-out + state update
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
