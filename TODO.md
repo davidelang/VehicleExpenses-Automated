@@ -3,7 +3,7 @@
 ## Active Work (fix binpeak for valley sets - fix-binpeak-layer-selection-and-snapshot-for-valley-push-sets-20260620-plan.md)
 - [x] Phase 1: Hygiene + TODO + baseline build
 - [x] Phase 2: Forensic reads of selection and call sites + cross-set validation
-- [ ] Phase 3: Extract shared peak-finding logic (findPeakBinsFromHistogram)
+- [x] Phase 3: Extract shared peak-finding logic (findPeakBinsFromHistogram)
 - [ ] Phase 4: Change binary dest + takeSnapshot source to use direct mat
 - [ ] Phase 5: Final verification + last build + marker
 
