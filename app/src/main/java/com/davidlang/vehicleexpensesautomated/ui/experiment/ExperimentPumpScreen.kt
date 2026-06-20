@@ -913,6 +913,53 @@ private suspend fun runPumpExperiment(
                     branch.metadata["combinedRedboxHistBins"] = combinedArr.toString()
                 }
 
+                fun buildCostVolDecisionDataJson(
+                    reds: List<android.graphics.Rect>,
+                    ocrSourceRects: List<android.graphics.Rect>,
+                    candidates: List<RedBoxOcrCandidate>,
+                    costCand: RedBoxOcrCandidate,
+                    volCand: RedBoxOcrCandidate,
+                    finalCost: String,
+                    finalVol: String,
+                    assembly: Map<String, Any?> = emptyMap(),
+                    oranges: List<android.graphics.Rect> = emptyList()
+                ): String {
+                    val redsArr = JSONArray()
+                    reds.forEach { redsArr.put(rectToJson(it)) }
+                    val ocrArr = JSONArray()
+                    ocrSourceRects.forEach { ocrArr.put(rectToJson(it)) }
+                    val candsArr = JSONArray()
+                    candidates.forEach { candsArr.put(redBoxOcrCandidateToJson(it)) }
+                    val chosen = JSONObject()
+                        .put("cost", redBoxOcrCandidateToJson(costCand))
+                        .put("vol", redBoxOcrCandidateToJson(volCand))
+                    val finalObj = JSONObject()
+                        .put("cost", finalCost)
+                        .put("vol", finalVol)
+                    val assemblyObj = JSONObject()
+                    assembly.forEach { (k, v) ->
+                        when (v) {
+                            is List<*> -> {
+                                val arr = JSONArray()
+                                v.forEach { item -> arr.put(item) }
+                                assemblyObj.put(k, arr)
+                            }
+                            else -> assemblyObj.put(k, v)
+                        }
+                    }
+                    val orangesArr = JSONArray()
+                    oranges.forEach { orangesArr.put(rectToJson(it)) }
+                    return JSONObject()
+                        .put("reds", redsArr)
+                        .put("ocrSourceRects", ocrArr)
+                        .put("candidates", candsArr)
+                        .put("chosen", chosen)
+                        .put("final", finalObj)
+                        .put("assembly", assemblyObj)
+                        .put("oranges", orangesArr)
+                        .toString()
+                }
+
                 // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
                 var processedScales = mutableSetOf<Int>()
 
