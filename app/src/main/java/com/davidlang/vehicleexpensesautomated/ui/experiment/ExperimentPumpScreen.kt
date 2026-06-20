@@ -2592,10 +2592,11 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, worksp
     val combinedBinsJson = branch.metadata["combinedRedboxHistBins"] ?: return
     val peaks = findPeaksFromHistBins(combinedBinsJson)
     for ((peak, height) in peaks) {
-        workspace.s.mat.setTo(org.opencv.core.Scalar(0.0))
-        NativeImageUtils.binarizeRange(workspace.p.mat, workspace.s.mat, peak - delta, peak + delta)
-        // null scratchYuv so we do not clear the .s we just binarized into
-        val binB64 = OcrUtils.takeSnapshot(workspace.s, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, emptyList(), null, null).first
+        val b = workspace.s
+        b.mat.setTo(org.opencv.core.Scalar(0.0))
+        NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, peak - delta, peak + delta)
+        // Direct Mat snapshot (not Slice/YUV path); null scratchYuv so we do not clear the b we just binarized into
+        val binB64 = OcrUtils.takeSnapshot(b.mat, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, emptyList(), null, null).first
         branch.images["binPeak_$peak"] = binB64
         branch.metadata["binPeak_${peak}_count"] = height.toString()
     }
