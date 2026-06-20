@@ -1,3 +1,11 @@
+
+# Permission filters
+setup-project filter=manage-configs
+filter-apply-config filter=manage-configs
+filter-clean-config filter=manage-configs
+set-worktree-perms filter=manage-configs
+set-sandbox-perms filter=manage-configs
+project.config.example filter=manage-configs
 third_party/paddle/exp_det_ab_unscheduled/PP-OCRv4_server_det_armv8.nb filter=lfs diff=lfs merge=lfs -text
 third_party/paddle/exp_det_ab_unscheduled/PP-OCRv4_server_det_x86_64.nb filter=lfs diff=lfs merge=lfs -text
 third_party/paddle/exp_det_ab_unscheduled/PP-OCRv5_server_det_armv8.nb filter=lfs diff=lfs merge=lfs -text
