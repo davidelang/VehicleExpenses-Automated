@@ -1,17 +1,12 @@
 # TODO
 
-# Active: Change binPeak binarization range from +-2 to +-16 (approved 2026-06-20)
-Plan: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/change-binpeak-binarization-range-from-2-to-16-20260620-plan.md`
-- [x] Phase 1: Hygiene reads + TODO bootstrap
-- [x] Phase 2: Forensic pre-read of const area and function signature
-- [x] Phase 3: Add BIN_PEAK_BINARIZE_DELTA const
-- [x] Phase 4: Update function default to use the const
-- [x] Phase 5: Update the HTML description string
-- [x] Phase 6: Update the documentation comment mentioning the range
-- [x] Phase 7: Verify no other hard-coded +-2 range remains for binPeak
-- [x] Phase 8: Final cross-check of binarize call site
-- [x] Phase 9: Post-change verification greps and reads
-- [x] Phase 10: Hygiene close-out + state update
+## Active Work (binPeak range 16->8 - change-binpeak-binarization-range-from-16-to-8-20260620-plan.md)
+- [ ] Phase 1: Hygiene reads + TODO bootstrap + baseline build
+- [ ] Phase 2: Forensic pre-edit reads of all three change sites
+- [ ] Phase 3: Change the const value from 16 to 8
+- [ ] Phase 4: Update the HTML label string
+- [ ] Phase 5: Update the documentation comment
+- [ ] Phase 6: Final verification + last build gate
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
