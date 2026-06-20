@@ -21,8 +21,9 @@ echo "Setting worktree perms (@@CODE_GROUP@@ focused) for group $CODE_GROUP..."
 
 # If run via sudo, chown files to the invoking human user + group so the developer has direct access.
 # This prevents "no read permission" issues even if group membership not yet active in shell.
-if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
-  TARGET_OWNER="$SUDO_USER"
+SUDO_USER_VAL="${SUDO_USER:-}"
+if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+  TARGET_OWNER="$SUDO_USER_VAL"
   echo "  (sudo detected: will chown to $TARGET_OWNER:$CODE_GROUP for developer access)"
 else
   TARGET_OWNER=""
@@ -104,9 +105,9 @@ done
 
 # Ensure orchestrator and the invoking human (if sudo) have access to the @@CODE_GROUP@@ group
 usermod -aG $CODE_GROUP $ORCHESTRATOR_USER 2>/dev/null || true
-if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
-  usermod -aG $CODE_GROUP "$SUDO_USER" 2>/dev/null || true
-  echo "  Added $SUDO_USER to $CODE_GROUP (group membership will be active after new login/shell)"
+if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+  usermod -aG $CODE_GROUP "$SUDO_USER_VAL" 2>/dev/null || true
+  echo "  Added $SUDO_USER_VAL to $CODE_GROUP (group membership will be active after new login/shell)"
 fi
 
 # Compute the main repo root (works from root or inside worktree)
@@ -121,8 +122,8 @@ SAFE_WILDCARD="$REPO_ROOT/*"
 if [ -n "$TARGET_OWNER" ]; then
   sudo -u "$TARGET_OWNER" git config --global --add safe.directory "$SAFE_WILDCARD" 2>/dev/null || true
   echo "  Added safe.directory '$SAFE_WILDCARD' for $TARGET_OWNER"
-elif [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
-  sudo -u "$SUDO_USER" git config --global --add safe.directory "$SAFE_WILDCARD" 2>/dev/null || true
+elif [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER_VAL" ]; then
+  sudo -u "$SUDO_USER_VAL" git config --global --add safe.directory "$SAFE_WILDCARD" 2>/dev/null || true
 fi
 
 # Also configure for the ai-* users so they can git on dlang-owned repos
