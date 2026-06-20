@@ -44,6 +44,8 @@ FILES=(
     "new_grok_agent_prompt"
     ".grok/config.toml"
     ".grok/hooks/plan-mode-hard-stops.js"
+    ".grok/agents/plan.md"
+    ".grok/agents/explore.md"
     # Tracked human-facing ritual document (magic words, forbidden phrases, post-handoff instructions).
     # Added per approved meta-plan for plan/execute cycle enforcement; synced to all worktrees.
     "MULTI_AGENT_USER_INSTRUCTIONS.md"
@@ -63,6 +65,15 @@ FILES=(
     # resets, collects logs, and initiates recovery planning. Synced to all
     # worktrees.
     "run-grok-master"
+    # Stable canonical guardrails block that every plan must include verbatim.
+    # This is the single source of truth for the short "Compliance & Execution
+    # Guardrails (STANDARD BLOCK)" section. Placed at repo root (not under
+    # dev-ai-interaction/) so it is a regular tracked file in every worktree
+    # (dev-ai-interaction/ is gitignored and symlinked in agent worktrees for
+    # sandbox sharing). Listed in FILES so it is physically copied + committed
+    # into each agent-N/ and master/ worktree and can be `cat`'d reliably.
+    # This makes drift immediately visible to the user.
+    "standard-plan-compliance-block.md"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
@@ -101,13 +112,32 @@ for WT in $WORKTREES; do
         # Restore write permissions
         chmod +w "${FILES[@]}" 2>/dev/null
 
-        git add "${FILES[@]}" 2>/dev/null
-        
+        # Stage the files we just copied. Use -f for the infrastructure launchers
+        # and block (robust against any transient ignore rules or new-file edge
+        # cases during the batch). Do not blanket-suppress errors on the add;
+        # surface problems so we can see why a sync would fail to commit.
+        git add -f standard-plan-compliance-block.md get-builds-tag.sh run-grok-planner run-grok-master 2>&1 | cat
+        git add "${FILES[@]}" 2>&1 | cat
+
         if ! git diff --staged --quiet; then
             echo "Changes detected in $WT, committing..."
             git commit -m "chore: Synchronize agent rules and infrastructure"
         else
-            echo "No changes needed for $WT."
+            # As a final robustness measure for new files that may not have
+            # produced a visible diff in some git edge cases, explicitly check
+            # and force-add the critical new launchers + block if they are
+            # untracked in this worktree, then commit if anything is now staged.
+            for extra in standard-plan-compliance-block.md run-grok-planner run-grok-master; do
+                if [ -f "$extra" ]; then
+                    git add -f "$extra" 2>&1 | cat
+                fi
+            done
+            if ! git diff --staged --quiet; then
+                echo "Changes (including new launchers/block) detected in $WT after extra pass, committing..."
+                git commit -m "chore: Synchronize agent rules and infrastructure"
+            else
+                echo "No changes needed for $WT."
+            fi
         fi
     )
 done
