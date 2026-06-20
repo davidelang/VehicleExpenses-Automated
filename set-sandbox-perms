@@ -1,0 +1,26 @@
+#!/bin/bash
+# set-sandbox-perms
+# Applies 2770 setgid for sandbox (group write).
+
+set -euo pipefail
+
+# Load config
+if [ -f project.config ]; then
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(sandbox_group|shared_group)')
+fi
+
+SANDBOX_GROUP=${sandbox_group:-ai-sandbox}
+SHARED_GROUP=${shared_group:-ai-shared}
+
+SANDBOX_DIR="dev-ai-interaction"
+
+echo "Setting sandbox perms (2770 setgid for $SANDBOX_GROUP)..."
+
+chown -R :$SANDBOX_GROUP "$SANDBOX_DIR" || true
+chmod -R g+rwX "$SANDBOX_DIR" || true
+find "$SANDBOX_DIR" -type d -exec chmod 2770 {} + || true
+
+# Also allow shared group if needed
+chown -R :$SHARED_GROUP "$SANDBOX_DIR" 2>/dev/null || true
+
+echo "Sandbox perms applied."
