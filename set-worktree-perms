@@ -2,15 +2,20 @@
 # set-worktree-perms
 # Applies permissions for worktree (@@CODE_GROUP@@ group mainly).
 
+# Ensure any files created during perms application are group-writable
+umask 007
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/project.config" ]; then
-  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|orchestrator_user)')
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|orchestrator_user|planning_user|coder_user)')
 fi
 
 CODE_GROUP=${code_group:-@@CODE_GROUP@@}
 ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
+PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
+CODER_USER=${coder_user:-@@CODE_GROUP@@r}
 
 echo "Setting worktree perms (@@CODE_GROUP@@ focused) for group $CODE_GROUP..."
 
@@ -99,5 +104,29 @@ if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
   usermod -aG $CODE_GROUP "$SUDO_USER" 2>/dev/null || true
   echo "  Added $SUDO_USER to $CODE_GROUP (group membership will be active after new login/shell)"
 fi
+
+# Compute the main repo root (works from root or inside worktree)
+REPO_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+# Use wildcard form so it trusts the root and any subdirectories/worktrees/sandbox
+# without having to list each one individually.
+SAFE_WILDCARD="$REPO_ROOT/*"
+
+# Configure git safe.directory so that different users (dlang vs ai-*) can operate on the repos
+# without "detected dubious ownership" errors in modern git (>=2.35.2).
+if [ -n "$TARGET_OWNER" ]; then
+  sudo -u "$TARGET_OWNER" git config --global --add safe.directory "$SAFE_WILDCARD" 2>/dev/null || true
+  echo "  Added safe.directory '$SAFE_WILDCARD' for $TARGET_OWNER"
+elif [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+  sudo -u "$SUDO_USER" git config --global --add safe.directory "$SAFE_WILDCARD" 2>/dev/null || true
+fi
+
+# Also configure for the ai-* users so they can git on dlang-owned repos
+for aiuser in "$PLANNING_USER" "$CODER_USER" "$ORCHESTRATOR_USER"; do
+  if [ -n "$aiuser" ] && id "$aiuser" >/dev/null 2>&1; then
+    sudo -u "$aiuser" git config --global --add safe.directory "$SAFE_WILDCARD" 2>/dev/null || true
+    echo "  Added safe.directory '$SAFE_WILDCARD' for $aiuser"
+  fi
+done
 
 echo "Worktree perms applied."

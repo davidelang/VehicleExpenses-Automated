@@ -9,6 +9,15 @@ This repository uses a **Container/Worktree** layout designed for multiple AI ag
 - **`agent-N/`**: Transient worktrees for feature development (e.g., `agent-1`, `agent-2`).
 - **`dev-ai-interaction/`**: Shared sandbox repository.
 
+## Modes (separation in progress)
+The layout above is the full orchestration layout. A plain checkout of the `master` branch (standalone app view) contains primarily the app sources plus minimal bootstrap docs and stamp files (setup-project, enable-full-orchestration.sh, set-*-perms etc.) for optionally enabling the full model. Run ./enable-full-orchestration.sh (or --apply) in a stamped plain tree to add the managing orchestration worktree via git worktree. The goal of the active separation plan (dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md) is to reduce mixing of heavy brain files into plain `master` views while preserving the worktree + physical copy + update-rules model. All syncs remain language-agnostic and never touch application source directories.
+
+### Migration for existing clones / worktrees (agent-1/, master/)
+Existing worktrees that already received brain files via prior update-rules continue to work (they have the markers so receive full sync). To "clean" a master/ worktree view you can:
+- Leave it (it functions).
+- Or remove the worktree dir and re-add from a clean master branch tip after the separation changes are on the branch (then run the stamp + enable to reintroduce only desired files).
+Current update-rules + launchers are compatible during transition; project-facts.md facts are stable. See enable-full-orchestration.sh for opt-in on fresh or existing plain clones.
+
 ---
 
 ## 2. User Workflows
