@@ -18,9 +18,22 @@ echo "Setting sandbox perms (2770 setgid for $SANDBOX_GROUP)..."
 
 chown -R :$SANDBOX_GROUP "$SANDBOX_DIR" || true
 
-# Modify r/w only, preserve exe bit. Use + for add, - for remove.
+# Modify r/w only, preserve exe bit.
 chmod -R g+rwX "$SANDBOX_DIR" || true
 find "$SANDBOX_DIR" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + || true
+
+# Preserve x on any critical scripts that might be inside the sandbox dir (e.g. template)
+EXECUTABLES=(
+  setup-project
+  filter-apply-config
+  filter-clean-config
+  set-worktree-perms
+  set-sandbox-perms
+  post-checkout
+)
+for f in "${EXECUTABLES[@]}"; do
+  find "$SANDBOX_DIR" -name "$f" -type f -exec chmod +x {} + 2>/dev/null || true
+done
 
 # Also allow shared group if needed
 chown -R :$SHARED_GROUP "$SANDBOX_DIR" 2>/dev/null || true
