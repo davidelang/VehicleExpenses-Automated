@@ -35,7 +35,13 @@ useradd -m -g @@SANDBOX_GROUP@@ @@PLANNING_USER@@ || true
 useradd -m -g @@CODE_GROUP@@ @@CODE_GROUP@@r || true
 useradd -m -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@ || true
 usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@ || true
-usermod -aG @@CODE_GROUP@@,@@SHARED_GROUP@@ @@PLANNING_USER@@ || true
+# @@PLANNING_USER@@ gets @@SANDBOX_GROUP@@ (primary) + @@SHARED_GROUP@@.
+# Intentionally do NOT add @@PLANNING_USER@@ to @@CODE_GROUP@@.
+# This is part of the Unix permission boundary (separate from Grok plan-mode hooks):
+# @@CODE_GROUP@@ members are the only ones who get group write on source (664 files).
+# @@PLANNING_USER@@ gets read-only on app/ source via "other r", and full write inside sandbox.
+# If this is an existing install, run: gpasswd -d @@PLANNING_USER@@ @@CODE_GROUP@@
+usermod -aG @@SHARED_GROUP@@ @@PLANNING_USER@@ || true
 usermod -aG @@SANDBOX_GROUP@@,@@SHARED_GROUP@@ @@CODE_GROUP@@r || true
 usermod -aG @@SANDBOX_GROUP@@ @@ORCHESTRATOR_USER@@ || true
 # Add the primary human/developer user (the one running setup) to @@CODE_GROUP@@ so they can access worktree files via group
