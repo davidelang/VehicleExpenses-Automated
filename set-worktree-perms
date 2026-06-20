@@ -2,6 +2,9 @@
 # set-worktree-perms
 # Applies permissions for worktree (@@CODE_GROUP@@ group mainly).
 
+# Ensure any files created during perms application are group-writable
+umask 007
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
