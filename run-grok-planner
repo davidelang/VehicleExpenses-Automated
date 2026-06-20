@@ -11,11 +11,11 @@
 # of context or feedback), the master's built-in prompt automates the rest:
 # it reads current-state.md + the latest standard-plan-compliance-block.md,
 # writes a complete narrow prompt (full dedicated planner template + embedded
-# guardrails + your context) to `dev-ai-interaction/.planning-agent-prompt.txt`,
+# guardrails + your context) to `@@SANDBOX_PATH@@/.planning-agent-prompt.txt`,
 # and tells you the exact one-line restart command.
 #
 # Usage:
-#   ./run-grok-planner                  # uses dev-ai-interaction/.planning-agent-prompt.txt
+#   ./run-grok-planner                  # uses @@SANDBOX_PATH@@/.planning-agent-prompt.txt
 #   ./run-grok-planner path/to/prompt.txt
 #
 #   In an existing planner terminal you can simply re-run the command
@@ -28,7 +28,7 @@
 #
 # The prompt file contains the full strict instructions for the Planning Agent:
 # - Stay in plan mode.
-# - Only research and revise the plan document in dev-ai-interaction/plans/.
+# - Only research and revise the plan document in @@SANDBOX_PATH@@/plans/.
 # - Zero write access to tracked source outside the sandbox.
 # - High-signal / low-boilerplate plans; always include the exact standard
 #   block verbatim.
@@ -50,17 +50,17 @@
 # MULTI_AGENT_USER_INSTRUCTIONS.md for the full long-lived workflow and the
 # recommended prompt template.
 #
-# Sandbox is provided via the ./dev-ai-interaction symlink + absolute path in mandates.
+# Sandbox is provided via the ./@@SANDBOX_PATH@@ symlink + absolute path in mandates.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
-GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
+SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"
+GROK_BIN="${GROK_BIN:-@@GROK_BIN_DEFAULT@@}"
 
 # Load permission config if present (populated by smudge filter)
 if [ -f project.config ]; then
   . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(planning_user|GROK_BIN)')
 fi
-PLANNING_USER=${planning_user:-ai-planner}
+PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
 
 # === Model selection for Planning Agent ===
 #
@@ -87,13 +87,13 @@ fi
 if [ ! -f "$PROMPT_FILE" ]; then
     echo "ERROR: Planning prompt file not found: $PROMPT_FILE" >&2
     echo "In the master terminal say: 'New planning cycle' (or 'New planning cycle. [brief context]')." >&2
-    echo "The master will write the full narrow prompt to dev-ai-interaction/.planning-agent-prompt.txt and tell you the restart command." >&2
+    echo "The master will write the full narrow prompt to @@SANDBOX_PATH@@/.planning-agent-prompt.txt and tell you the restart command." >&2
     echo "Then run ./run-grok-planner (or exec it) in this terminal." >&2
     exit 1
 fi
 
 # Lightweight shell notice for failures (the planner prompt will drive the actual LLM check and user interaction)
-if ls dev-ai-interaction/implementation-failure-logs/ 2>/dev/null | grep -q . ; then
+if ls @@SANDBOX_PATH@@/implementation-failure-logs/ 2>/dev/null | grep -q . ; then
     echo "Note: implementation-failure-logs/ contains entries. The planning agent will automatically scan them on load / 'new planning cycle' and report unresolved ones (with verification), asking whether to address them."
 fi
 
