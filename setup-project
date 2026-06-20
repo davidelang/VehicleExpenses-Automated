@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-SANDBOX="/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction"
+SANDBOX="/home/dlang/git/VehicleExpenses-automated/@@SANDBOX_PATH@@"
 CONFIG_EXAMPLE="$SANDBOX/project.config.example"
 CONFIG_REAL="$SANDBOX/project.config"
 EXEC_DIR="$SANDBOX/permissions-bootstrap-execution"
@@ -22,13 +22,13 @@ echo ""
 echo "=== Step 1: Unix users/groups (EMIT ONLY - review and run manually as root) ==="
 cat <<'USERCMDS'
 # Recommended (adjust names from project.config):
-groupadd ai-code || true
-groupadd ai-sandbox || true
-groupadd ai-shared || true
-useradd -m -g ai-sandbox ai-planner || true
-useradd -m -g ai-code ai-coder || true
-useradd -m -g ai-code -G ai-shared ai-orchestrator || true
-usermod -aG ai-code ai-orchestrator || true
+groupadd @@CODE_GROUP@@ || true
+groupadd @@SANDBOX_GROUP@@ || true
+groupadd @@SHARED_GROUP@@ || true
+useradd -m -g @@SANDBOX_GROUP@@ @@PLANNING_USER@@ || true
+useradd -m -g @@CODE_GROUP@@ @@CODE_GROUP@@r || true
+useradd -m -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@ || true
+usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@ || true
 echo "Users created (if not exist). Add to sudoers if needed for run-grok-*."
 USERCMDS
 echo "Review above. Do NOT run automatically."

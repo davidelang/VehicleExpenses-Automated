@@ -2,28 +2,28 @@
 # Committed template. Copy to project.config (gitignored) and fill real values.
 # Used by clean/smudge filters (manage-configs) and setup-project.
 
-sandbox_path=dev-ai-interaction
-planning_user=ai-planner
-coder_user=ai-coder
-orchestrator_user=ai-orchestrator
-code_group=ai-code
-sandbox_group=ai-sandbox
-shared_group=ai-shared
+sandbox_path=@@SANDBOX_PATH@@
+planning_user=@@PLANNING_USER@@
+coder_user=@@CODE_GROUP@@r
+orchestrator_user=@@ORCHESTRATOR_USER@@
+code_group=@@CODE_GROUP@@
+sandbox_group=@@SANDBOX_GROUP@@
+shared_group=@@SHARED_GROUP@@
 
 # Example paths (will be @@ substituted in scripts)
-grok_bin_default=$HOME/git/grok/bin/grok
+grok_bin_default=@@GROK_BIN_DEFAULT@@
 gemini_bin_default=$HOME/git/gemini/bin/gemini
 
 # Special sandbox paths (for setup-project to create)
 sandbox_special_paths=plans,historical-plans,implementation-failure-logs
 
 # Users/groups creation (for reference in setup-project, emitted only)
-# groupadd ai-code
-# groupadd ai-sandbox
-# groupadd ai-shared
-# useradd -g ai-sandbox ai-planner
-# useradd -g ai-code ai-coder
-# useradd -g ai-code -G ai-shared ai-orchestrator
-# usermod -aG ai-code ai-orchestrator
+# groupadd @@CODE_GROUP@@
+# groupadd @@SANDBOX_GROUP@@
+# groupadd @@SHARED_GROUP@@
+# useradd -g @@SANDBOX_GROUP@@ @@PLANNING_USER@@
+# useradd -g @@CODE_GROUP@@ @@CODE_GROUP@@r
+# useradd -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@
+# usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@
 
 # Notes for filters: use @@VAR@@ in source scripts for substitution.

@@ -9,10 +9,10 @@ if [ -f project.config ]; then
   . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(sandbox_group|shared_group)')
 fi
 
-SANDBOX_GROUP=${sandbox_group:-ai-sandbox}
-SHARED_GROUP=${shared_group:-ai-shared}
+SANDBOX_GROUP=${sandbox_group:-@@SANDBOX_GROUP@@}
+SHARED_GROUP=${shared_group:-@@SHARED_GROUP@@}
 
-SANDBOX_DIR="dev-ai-interaction"
+SANDBOX_DIR="@@SANDBOX_PATH@@"
 
 echo "Setting sandbox perms (2770 setgid for $SANDBOX_GROUP)..."
 
