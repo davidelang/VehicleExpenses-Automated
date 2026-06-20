@@ -1026,7 +1026,7 @@ private suspend fun runPumpExperiment(
                 suspend fun doBOrDRedOnlyImage() {
                     // Red-only image for Set B/D (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now". D mirrors B.
                     val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2)
-                    val redOnlyB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnnsOnly, null, workspace).first
+                    val redOnlyB64 = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, redAnnsOnly, null, workspace).first
                     branch.images["PD_red_only"] = redOnlyB64
                 }
 
@@ -1049,7 +1049,7 @@ private suspend fun runPumpExperiment(
                         PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
                     }
                     val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(retractedExpForBlue, Color.BLUE, 4) + getAnns(pdHunksMaxTotal, Color.rgb(255, 165, 0), 2)
-                    val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
+                    val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPd, null, workspace).first
 
                     // run ocr recognize on *every* blue and *every* orange box; scale to 48px tall buffer with width multiple of 32 (for the recognition)
                     // (inline crop/resize/rec using experimentRecSet1024x48 dedicated + clear; 4px buffer + aspect from alignment)
@@ -1343,7 +1343,7 @@ private suspend fun runPumpExperiment(
 
                 // 5. Visualization
                     val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
-                    branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
+                    branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aMl, null, workspace).first
 
                 // (doBOrD* and doCOrE* not hoisted in Phase 0 for this A dupe per plan "if not hoisted include copies at dupe"; excised B/C branches in this repair to remove unresolved calls in procA paste while keeping full A logic (different minimal repair per anti-doom after first dupe error; see failure log scope symptoms))
                 // A (reds only)
@@ -1691,7 +1691,7 @@ private suspend fun runPumpExperiment(
                     assembly = mapOf("method" to "retracted", "note" to "per-red expandByUniformity (content-aware retract)")
                 )
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
-                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
+                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, redAnns, null, workspace).first
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
                 doBOrDRetractedBlueAndPD()
@@ -1888,7 +1888,7 @@ private suspend fun runPumpExperiment(
                     oranges = orangePixelD
                 )
                 val aPdD = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueD, Color.BLUE, 4) + getAnns(customOrangeD, Color.rgb(255, 165, 0), 2)
-                val baseB64D = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdD, null, workspace).first
+                val baseB64D = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdD, null, workspace).first
                 branch.images["PD"] = baseB64D
                 // OCR on custom for D (regular + numericdecimal, filter >=2 digits on numeric)
                 val blueOcrD = customBlueD.mapIndexed { i, bh ->
@@ -2196,7 +2196,7 @@ private suspend fun runPumpExperiment(
                     )
                 )
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
-                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, redAnns, null, workspace).first
+                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, redAnns, null, workspace).first
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
                 // E custom blue/orange (matching D, no valley) via createBlueAndOrangeHunksFromReds (calculated blue expansions +10% to +80% vert step 10%, horiz 50%)
@@ -2223,7 +2223,7 @@ private suspend fun runPumpExperiment(
                     oranges = orangePixelE
                 )
                 val aPdE = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueE, Color.BLUE, 4) + getAnns(customOrangeE, Color.rgb(255, 165, 0), 2)
-                val baseB64E = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdE, null, workspace).first
+                val baseB64E = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdE, null, workspace).first
                 branch.images["PD"] = baseB64E
                 val blueOcrE = customBlueE.mapIndexed { i, bh ->
                     val r = android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
@@ -2625,7 +2625,7 @@ private suspend fun runPumpExperiment(
                     oranges = orangePixelG
                 )
                 val aPdG = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
-                val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPdG, null, workspace).first
+                val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdG, null, workspace).first
                 branch.images["PD"] = baseB64G
                 // OCR on custom for G (regular + numericdecimal, filter >=2 digits on numeric)
                 val blueOcrG = customBlueG.mapIndexed { i, bh ->
