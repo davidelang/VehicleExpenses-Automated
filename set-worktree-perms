@@ -1,0 +1,24 @@
+#!/bin/bash
+# set-worktree-perms
+# Applies permissions for worktree (@@CODE_GROUP@@ group mainly).
+
+set -euo pipefail
+
+if [ -f project.config ]; then
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(code_group|orchestrator_user)')
+fi
+
+CODE_GROUP=${code_group:-@@CODE_GROUP@@}
+ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
+
+echo "Setting worktree perms (@@CODE_GROUP@@ focused) for group $CODE_GROUP..."
+
+# Main tree
+chown -R :$CODE_GROUP . 2>/dev/null || true
+find . -type f -exec chmod 640 {} + 2>/dev/null || true
+find . -type d -exec chmod 2775 {} + 2>/dev/null || true
+
+# Ensure orchestrator has access
+usermod -aG $CODE_GROUP $ORCHESTRATOR_USER 2>/dev/null || true
+
+echo "Worktree perms applied."

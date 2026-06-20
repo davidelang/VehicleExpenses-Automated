@@ -1,0 +1,110 @@
+#!/bin/bash
+# setup-project
+# One-time bootstrap for permissions model.
+# Walks user through: users (emit only, NEVER auto), config, filters, hook, perms, sandbox.
+# Mechanism not policy: flexible for dirs + unzip skeleton.
+# Sandbox only mode: all work here; manual apply later.
+# Always use absolute sandbox path for writes.
+
+set -euo pipefail
+
+SANDBOX="/home/dlang/git/VehicleExpenses-automated/@@SANDBOX_PATH@@"
+CONFIG_EXAMPLE="$SANDBOX/project.config.example"
+CONFIG_REAL="$SANDBOX/project.config"
+EXEC_DIR="$SANDBOX/permissions-bootstrap-execution"
+
+echo "=== setup-project: Unix Permissions Bootstrap (sandbox-only) ==="
+echo "All artifacts prepared in $EXEC_DIR for manual apply to trees."
+echo "Never auto-executes user creation."
+
+# 1. Users (emit only)
+echo ""
+echo "=== Step 1: Unix users/groups (EMIT ONLY - review and run manually as root) ==="
+cat <<'USERCMDS'
+# Recommended (adjust names from project.config):
+groupadd @@CODE_GROUP@@ || true
+groupadd @@SANDBOX_GROUP@@ || true
+groupadd @@SHARED_GROUP@@ || true
+useradd -m -g @@SANDBOX_GROUP@@ @@PLANNING_USER@@ || true
+useradd -m -g @@CODE_GROUP@@ @@CODE_GROUP@@r || true
+useradd -m -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@ || true
+usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@ || true
+echo "Users created (if not exist). Add to sudoers if needed for run-grok-*."
+USERCMDS
+echo "Review above. Do NOT run automatically."
+
+# 2. Config
+echo ""
+echo "=== Step 2: Config ==="
+if [ ! -f "$CONFIG_REAL" ]; then
+  if [ -f "$CONFIG_EXAMPLE" ]; then
+    cp "$CONFIG_EXAMPLE" "$CONFIG_REAL"
+    echo "Created $CONFIG_REAL from example. EDIT IT NOW with real values."
+    echo "Then re-run this or filters will warn."
+  else
+    echo "ERROR: No example. Create $CONFIG_REAL manually."
+  fi
+else
+  echo "$CONFIG_REAL exists."
+fi
+
+# 3. Git filters (manage-configs)
+echo ""
+echo "=== Step 3: Activate filters (run in tree root) ==="
+cat <<'FILTERS'
+git config filter.manage-configs.clean ./filter-clean-config
+git config filter.manage-configs.smudge ./filter-apply-config
+echo "Filters activated. Ensure .gitattributes has the patterns."
+FILTERS
+
+# 4. .gitattributes (prepared in staged)
+echo "See staged/.gitattributes.add for the entries to merge."
+
+# 5. Hook (post-checkout)
+echo ""
+echo "=== Step 4: Post-checkout hook (prepared) ==="
+echo "Install .git/hooks/post-checkout that calls set-*-perms and verifies filters."
+echo "Template in staged/post-checkout-hook.txt"
+
+# 6. Sandbox
+echo ""
+echo "=== Step 5: Sandbox setup ==="
+if [ -f "$CONFIG_REAL" ]; then
+  . <(grep -E 'sandbox_path|sandbox_special_paths' "$CONFIG_REAL" | sed 's/=/ /')
+  if [ -n "${sandbox_path:-}" ]; then
+    mkdir -p "$SANDBOX/$sandbox_path"
+    echo "Sandbox dir ensured: $sandbox_path"
+    # special paths
+    if [ -n "${sandbox_special_paths:-}" ]; then
+      for p in $(echo $sandbox_special_paths | tr ',' ' '); do
+        mkdir -p "$SANDBOX/$sandbox_path/$p"
+      done
+    fi
+    # Inner git if not present
+    if [ ! -d "$SANDBOX/$sandbox_path/.git" ]; then
+      (cd "$SANDBOX/$sandbox_path" && git init) || echo "git init skipped or failed"
+    else
+      echo "Sandbox already has .git (from skeleton zip?)"
+    fi
+  fi
+fi
+
+# 7. Perms
+echo ""
+echo "=== Step 6: Apply perms (use the set-* scripts) ==="
+echo "Run (with sudo if needed): ./set-worktree-perms and ./set-sandbox-perms"
+echo "Prepared in staged/"
+
+# 8. Skeleton unzip (general mechanism)
+echo ""
+echo "=== Step 7: Skeleton (if declared in config) ==="
+echo "Unzip support prepared. Example: unzip skeleton.zip -d $sandbox_path"
+
+echo ""
+echo "=== Bootstrap complete in sandbox. ==="
+echo "All files in $EXEC_DIR/staged/ ready for manual copy to orchestration/master/agent-1."
+echo "Then extract bundle."
+echo "Re-run pump or other after apply."
+
+# Log
+echo "setup-project ran at $(date)" >> "$EXEC_DIR/setup-project.log"
