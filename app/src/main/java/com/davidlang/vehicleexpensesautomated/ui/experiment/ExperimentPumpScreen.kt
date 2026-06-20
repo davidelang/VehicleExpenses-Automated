@@ -2809,7 +2809,7 @@ private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String 
         Triple(peak, height, b64)
     }.sortedByDescending { it.second }
     return buildString {
-        append("<br><div style='margin-top:4px;'><b>Binarized by redbox peaks (range +-2, highest bar to lowest):</b></div>")
+        append("<br><div style='margin-top:4px;'><b>Binarized by redbox peaks (range +-2, highest peak height to lowest):</b></div>")
         sorted.forEach { (peak, height, b64) ->
             append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
             append("<br><small>peak=$peak (union bar height: $height px)</small><br>")
