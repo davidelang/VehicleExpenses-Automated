@@ -21,7 +21,7 @@ Explicitly permitted (and the expected way to do thorough investigation):
 - Any other read-oriented shell needed to answer questions about code, builds, history, or device behavior.
 
 Restrictions (planning/research only):
-- No file edits or creation outside dev-ai-interaction/ (the sandbox) and local untracked state files (current-state.md etc.).
+- No file edits or creation outside dev-ai-interaction/ (the sandbox) and local untracked state files (project-facts.md etc.).
 - Sandbox inside dev-ai-interaction/ is fully writable for notes, plans, temporary analysis.
 - Do not call exit_plan_mode or signal implementation readiness on your own.
 
