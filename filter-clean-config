@@ -64,7 +64,8 @@ scrub_text() {
 }
 
 # Detect type
-if [[ "$1" == *.sh || "$1" == *run-grok* || "$1" == *setup* || "$1" == *filter* || "$1" == *set-* ]]; then
+filename="${1:-}"
+if [[ "$filename" == *.sh || "$filename" == *run-grok* || "$filename" == *setup* || "$filename" == *filter* || "$filename" == *set-* ]]; then
   scrub_shell
 else
   scrub_text
