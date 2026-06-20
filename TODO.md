@@ -9,7 +9,7 @@
 - [x] Phase 5: Add post-map filter (belt-and-suspenders)
 - [x] Phase 6: Forensic verification that finder now excludes zeros
 - [x] Phase 7: Minimal comment update in findPeaksFromHistBins
-- [ ] Phase 8: Minimal comment update near histogram/plot code
+- [x] Phase 8: Minimal comment update near histogram/plot code
 - [ ] Phase 9: Verify captureBinPeakSnapshotsFromRedbox loop only sees real peaks
 - [ ] Phase 10: Verify buildBinPeakHtmlForBranch only emits real peaks
 - [ ] Phase 11: Cross-check call sites and no other producers
