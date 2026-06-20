@@ -3,8 +3,8 @@
 ## Active Work (eliminate-false-zero-height-peaks-binpeak-binarized-images-20260620-plan.md)
 
 - [x] Phase 1: Full hygiene reads + TODO bootstrap
-- [ ] Phase 2: Forensic read of findPeaksFromHistBins (pre-edit)
-- [ ] Phase 3: Add zero-count guard in left-to-right peak scan
+- [x] Phase 2: Forensic read of findPeaksFromHistBins (pre-edit)
+- [x] Phase 3: Add zero-count guard in left-to-right peak scan
 - [ ] Phase 4: Add zero-count guard in right-to-left peak scan
 - [ ] Phase 5: Add post-map filter (belt-and-suspenders)
 - [ ] Phase 6: Forensic verification that finder now excludes zeros
