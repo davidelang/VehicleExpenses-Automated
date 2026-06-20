@@ -786,10 +786,10 @@ private suspend fun runPumpExperiment(
                         // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: classify returns distinct clean digit strings (probs never in PathResult); crops from each cand's ocr rect
                         val cv = classifyCostVolFromBoxOcr(candidates)
                         val costCrop = cv.costCand.rect?.let { r ->
-                            OcrUtils.takeSnapshot(ws.p, r, 300, 100, emptyList(), null, ws).first
+                            OcrUtils.takeSnapshot(ws.p, r, PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H, emptyList(), null, ws).first
                         } ?: ""
                         val volCrop = cv.volCand.rect?.let { r ->
-                            OcrUtils.takeSnapshot(ws.p, r, 300, 100, emptyList(), null, ws).first
+                            OcrUtils.takeSnapshot(ws.p, r, PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H, emptyList(), null, ws).first
                         } ?: ""
                         return PathResult(cv.cost, cv.vol, costCrop, volCrop)
                     }
@@ -814,7 +814,7 @@ private suspend fun runPumpExperiment(
                             // pdHunksExpTotal.forEach { ... BLUE }
                             // ... ORANGE for the specific
                         }
-                        return OcrUtils.takeSnapshot(ws.p, rect, 300, 100, anns, null, ws).first
+                        return OcrUtils.takeSnapshot(ws.p, rect, PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H, anns, null, ws).first
                     }
                     val cropT = takeCrop(expT, pair.first); val cropB = takeCrop(expB, pair.second)
                     return PathResult(res[0].text, res[1].text, cropT, cropB)
