@@ -2621,7 +2621,7 @@ private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>
         .sortedByDescending { it.second }
 }
 
-private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, workspace: BufferSet, delta: Int = 2) {
+private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, workspace: BufferSet, delta: Int = BIN_PEAK_BINARIZE_DELTA) {
     val combinedBinsJson = branch.metadata["combinedRedboxHistBins"] ?: return
     val peaks = findPeaksFromHistBins(combinedBinsJson)
     for ((peak, height) in peaks) {
