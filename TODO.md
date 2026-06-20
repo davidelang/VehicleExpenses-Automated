@@ -5,8 +5,9 @@
   - Plan path: `dev-ai-interaction/plans/fix-pump-remove-duplicate-html-ocr-debug-audit-snapshots-ensure-selection-data-json-20260620-plan.md`
   - Scope: ExperimentPumpScreen.kt only — remove duplicate HTML OCR debug (pumpOcrDumpText, extraOcr, ocrLinesB/D/E/G, pd_ocr_html, blueOcr/orangeOcr debug blocks); re-audit snapshot target sizes; keep selection path (ocrPumpRectsAsisAndDigits, costVolDecisionData_*) intact
   - Starting tag: fix-pump-experiment/builds
-  - [ ] Phase 1: Pre-execution hygiene + audit snapshot producers
-  - [ ] Phases 2-9: Snapshot audit/verify/fix
+  - [x] Phase 1: Pre-execution hygiene + audit snapshot producers (tag: fix-pump-experiment-start-569-g32614b00)
+  - [x] Phase 2: Add PUMP_PER_RED_TARGET_W const
+  - [ ] Phases 3-9: Snapshot audit/verify/fix
   - [ ] Phases 10-14: Remove pumpOcrDumpText + extraOcr
   - [ ] Phases 15-22: Remove ocrLines/pd_ocr_html + blue/orange debug blocks
   - [ ] Phases 23-24: Comments cleanup + final verification
