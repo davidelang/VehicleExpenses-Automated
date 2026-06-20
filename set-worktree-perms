@@ -68,13 +68,17 @@ for wt in "${WORKTREES[@]}"; do
   fi
 
   # Modify r/w permissions only, without altering the execute bit.
-  find "$wt" -type f -exec chmod u+rw,g+r,o-rwx {} + 2>/dev/null || true
+  # 664 for regular files: @@CODE_GROUP@@ group (coders + human + orchestrator) get rw,
+  # other users (e.g. @@PLANNING_USER@@) get r (read-only). This enforces at Unix level
+  # that planners cannot mutate app source even if Grok plan-mode hooks fail.
+  find "$wt" -type f -exec chmod u+rw,g+rw,o+r {} + 2>/dev/null || true
   find "$wt" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + 2>/dev/null || true
 
-  # project-facts.md and TODO.md are tracked but are explicit planner exceptions (stable facts + backlog).
-  # Ensure the @@CODE_GROUP@@ group (@@PLANNING_USER@@ / @@CODE_GROUP@@r) can write them.
-  chmod g+rw "$wt/project-facts.md" 2>/dev/null || true
-  chmod g+rw "$wt/TODO.md" 2>/dev/null || true
+  # project-facts.md and TODO.md are explicit planner-writable exceptions
+  # (stable facts + backlog). Make them world-writable (666) so @@PLANNING_USER@@
+  # (which is NOT a member of @@CODE_GROUP@@) can still edit them.
+  chmod 666 "$wt/project-facts.md" 2>/dev/null || true
+  chmod 666 "$wt/TODO.md" 2>/dev/null || true
   find "$wt" -name .agent-state -type d -exec chmod g+rwX {} + 2>/dev/null || true
 
   # Preserve/ensure execute on critical management/launcher scripts.
