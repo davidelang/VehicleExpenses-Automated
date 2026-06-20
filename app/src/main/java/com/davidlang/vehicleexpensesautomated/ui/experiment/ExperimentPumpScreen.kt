@@ -2726,7 +2726,8 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, worksp
     for ((peak, height) in peaks) {
         workspace.s.mat.setTo(org.opencv.core.Scalar(0.0))
         NativeImageUtils.binarizeRange(workspace.p.mat, workspace.s.mat, peak - delta, peak + delta)
-        val binB64 = OcrUtils.takeSnapshot(workspace.s, null, 600, 450, emptyList(), null, workspace).first
+        // null scratchYuv so we do not clear the .s we just binarized into
+        val binB64 = OcrUtils.takeSnapshot(workspace.s, null, 600, 450, emptyList(), null, null).first
         branch.images["binPeak_$peak"] = binB64
         branch.metadata["binPeak_${peak}_count"] = height.toString()
     }
