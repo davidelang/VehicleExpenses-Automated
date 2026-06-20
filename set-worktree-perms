@@ -14,6 +14,15 @@ ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
 
 echo "Setting worktree perms (@@CODE_GROUP@@ focused) for group $CODE_GROUP..."
 
+# If run via sudo, chown files to the invoking human user + group so the developer has direct access.
+# This prevents "no read permission" issues even if group membership not yet active in shell.
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+  TARGET_OWNER="$SUDO_USER"
+  echo "  (sudo detected: will chown to $TARGET_OWNER:$CODE_GROUP for developer access)"
+else
+  TARGET_OWNER=""
+fi
+
 # Discover worktrees if in orchestration layer (or always use list for completeness)
 mapfile -t WORKTREES < <(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {print $2}')
 if [ ${#WORKTREES[@]} -eq 0 ]; then
@@ -41,23 +50,27 @@ EXECUTABLES=(
   remove_worktree.sh
   generate_pr.sh
   cleanup_pr.sh
+  gradlew
+  gradlew.bat
 )
 
 for wt in "${WORKTREES[@]}"; do
   echo "  Applying to worktree: $wt"
-  chown -R :$CODE_GROUP "$wt" 2>/dev/null || true
+  if [ -n "$TARGET_OWNER" ]; then
+    chown -R "$TARGET_OWNER:$CODE_GROUP" "$wt" 2>/dev/null || true
+  else
+    chown -R :$CODE_GROUP "$wt" 2>/dev/null || true
+  fi
 
   # Modify r/w permissions only, without altering the execute bit.
   find "$wt" -type f -exec chmod u+rw,g+r,o-rwx {} + 2>/dev/null || true
   find "$wt" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + 2>/dev/null || true
 
-  # project-facts.md (and .agent-state if present) must be writable by the agent using this worktree
-  # (planner/coder run as @@PLANNING_USER@@/@@CODE_GROUP@@r which are in @@CODE_GROUP@@ group)
+  # project-facts.md and TODO.md are tracked but are explicit planner exceptions (stable facts + backlog).
+  # Ensure the @@CODE_GROUP@@ group (@@PLANNING_USER@@ / @@CODE_GROUP@@r) can write them.
   chmod g+rw "$wt/project-facts.md" 2>/dev/null || true
-  find "$wt" -name .agent-state -type d -exec chmod g+rwX {} + 2>/dev/null || true
-
-  # TODO.md is tracked but is an explicit exception: planners may modify it (to record approved plan, update checklist) without a separate sandbox copy
   chmod g+rw "$wt/TODO.md" 2>/dev/null || true
+  find "$wt" -name .agent-state -type d -exec chmod g+rwX {} + 2>/dev/null || true
 
   # Preserve/ensure execute on critical management/launcher scripts.
   for f in "${EXECUTABLES[@]}"; do
@@ -65,7 +78,11 @@ for wt in "${WORKTREES[@]}"; do
   done
 done
 
-# Ensure orchestrator has access
+# Ensure orchestrator and the invoking human (if sudo) have access to the @@CODE_GROUP@@ group
 usermod -aG $CODE_GROUP $ORCHESTRATOR_USER 2>/dev/null || true
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+  usermod -aG $CODE_GROUP "$SUDO_USER" 2>/dev/null || true
+  echo "  Added $SUDO_USER to $CODE_GROUP (group membership will be active after new login/shell)"
+fi
 
 echo "Worktree perms applied."

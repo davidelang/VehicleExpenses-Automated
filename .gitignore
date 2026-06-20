@@ -54,7 +54,9 @@ master/
 AGENT_CONTEXT.md
 **/AGENT_CONTEXT.md
 
-# Local per-worktree untracked agent state (for interactive strategic planning + low-cost continuity across cycles)
+# project-facts.md at worktree roots holds stable codebase layout facts and "where things live" pointers.
+# It is tracked so the facts travel with the branch and survive worktree creation after merges.
+# (Legacy name current-state.md may still exist in some places during transition; it remains ignored.)
 current-state.md
 .agent-state/
 
