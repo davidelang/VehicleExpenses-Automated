@@ -1,5 +1,12 @@
 # TODO
 
+## Active Work (fix binpeak for valley sets - fix-binpeak-layer-selection-and-snapshot-for-valley-push-sets-20260620-plan.md)
+- [ ] Phase 1: Hygiene + TODO + baseline build
+- [ ] Phase 2: Forensic reads of selection and call sites + cross-set validation
+- [ ] Phase 3: Extract shared peak-finding logic (findPeakBinsFromHistogram)
+- [ ] Phase 4: Change binary dest + takeSnapshot source to use direct mat
+- [ ] Phase 5: Final verification + last build + marker
+
 ## Active Work (binPeak range 16->8 - change-binpeak-binarization-range-from-16-to-8-20260620-plan.md)
 - [x] Phase 1: Hygiene reads + TODO bootstrap + baseline build
 - [x] Phase 2: Forensic pre-edit reads of all three change sites
