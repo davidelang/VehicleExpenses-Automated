@@ -1,5 +1,18 @@
 # TODO
 
+# Active: Change binPeak binarization range from +-2 to +-16 (approved 2026-06-20)
+Plan: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/plans/change-binpeak-binarization-range-from-2-to-16-20260620-plan.md`
+- [ ] Phase 1: Hygiene reads + TODO bootstrap
+- [ ] Phase 2: Forensic pre-read of const area and function signature
+- [ ] Phase 3: Add BIN_PEAK_BINARIZE_DELTA const
+- [ ] Phase 4: Update function default to use the const
+- [ ] Phase 5: Update the HTML description string
+- [ ] Phase 6: Update the documentation comment mentioning the range
+- [ ] Phase 7: Verify no other hard-coded +-2 range remains for binPeak
+- [ ] Phase 8: Final cross-check of binarize call site
+- [ ] Phase 9: Post-change verification greps and reads
+- [ ] Phase 10: Hygiene close-out + state update
+
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
