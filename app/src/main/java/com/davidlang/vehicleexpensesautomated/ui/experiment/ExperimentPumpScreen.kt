@@ -3065,6 +3065,13 @@ private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String 
     }
 }
 
+private const val PUMP_PD_TARGET_W = 340
+private const val PUMP_PD_TARGET_H = 255
+private const val PUMP_CROP_TARGET_W = 150
+private const val PUMP_CROP_TARGET_H = 75
+private const val PUMP_C_VISUAL_TARGET_W = 340
+private const val PUMP_SMALL_TARGET_W = 180
+
 private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
