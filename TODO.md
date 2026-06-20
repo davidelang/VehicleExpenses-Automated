@@ -7,7 +7,7 @@
 - [x] Phase 3: Add zero-count guard in left-to-right peak scan
 - [x] Phase 4: Add zero-count guard in right-to-left peak scan
 - [x] Phase 5: Add post-map filter (belt-and-suspenders)
-- [ ] Phase 6: Forensic verification that finder now excludes zeros
+- [x] Phase 6: Forensic verification that finder now excludes zeros
 - [ ] Phase 7: Minimal comment update in findPeaksFromHistBins
 - [ ] Phase 8: Minimal comment update near histogram/plot code
 - [ ] Phase 9: Verify captureBinPeakSnapshotsFromRedbox loop only sees real peaks
