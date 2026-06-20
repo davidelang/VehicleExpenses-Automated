@@ -56,6 +56,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
 GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
 
+# Load permission config if present (populated by smudge filter)
+if [ -f project.config ]; then
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(planning_user|GROK_BIN)')
+fi
+PLANNING_USER=${planning_user:-ai-planner}
+
 # === Model selection for Planning Agent ===
 #
 # In this grok.com environment the available models (from `grok models`) are:
@@ -112,7 +118,7 @@ fi
 # --no-alt-screen for consistency with run-grok.
 # We explicitly pass --model for the planner. Any additional --model on the command
 # line (in "$@") will override this.
-exec "$GROK_BIN" \
+exec sudo -u "$PLANNING_USER" "$GROK_BIN" \
     "$PLANNING_PROMPT" \
     --model "$PLANNER_MODEL" \
     $TODO_GATE_FLAGS \
