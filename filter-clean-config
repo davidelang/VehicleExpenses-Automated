@@ -55,7 +55,8 @@ scrub_text() {
   content=$(cat)
   for var in "${!TOKENS[@]}"; do
     token="${TOKENS[$var]}"
-    val="${!CONF_${var^^}:-}"
+    confvar="CONF_${var^^}"
+    val="${!confvar:-}"
     if [ -n "$val" ]; then
       content="${content//"$val"/$token}"
     fi
