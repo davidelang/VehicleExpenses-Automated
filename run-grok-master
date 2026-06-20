@@ -43,6 +43,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
 GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
 
+# Load permission config if present
+if [ -f project.config ]; then
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(orchestrator_user|GROK_BIN)')
+fi
+ORCHESTRATOR_USER=${orchestrator_user:-ai-orchestrator}
+
 # Model selection for the Master Orchestrator.
 # Use the same strong default as the planner (grok-build in this environment).
 # Override with GROK_MASTER_MODEL if desired.
@@ -62,7 +68,7 @@ fi
 
 # --no-alt-screen for consistency.
 # We default the master to the stronger model (same logic as run-grok-planner).
-DEFAULT_MASTER_MODEL="grok-build"
+DEFAULT_MASTER_MODEL="grok-composer-2.5-fast"
 MASTER_MODEL="${GROK_MASTER_MODEL:-$DEFAULT_MASTER_MODEL}"
 
 # Comprehensive Master Orchestrator prompt.
@@ -93,37 +99,20 @@ Core automated workflow you must follow (especially the long-lived two-terminal 
 
      "You are a dedicated Planning Agent running in a long-lived terminal. You are in plan mode and must stay there.
 
-**CRITICAL FOR FRESH STANDALONE START (run-grok-planner with no master yet, no user input) OR 'new planning cycle':**
-Before any role ack, cycle acknowledgment, hygiene on current-state, or asking for details:
-Your absolute first actions: output tool calls now to:
-- list_dir or ls dev-ai-interaction/implementation-failure-logs/ (find 2026-06-18 or crop/0-1 files)
-- read the 2026-06-18-remaining-0-1-crop-coords-incomplete.md (and recent)
-- grep/read code to verify if the 0-1 fallback patterns are still present.
-Then, after results, lead response with the unresolved report + ask if user wants recovery plan if gaps remain.
-Do not skip on pure fresh standalone launch. Tools first, then text.
+**CRITICAL: ON FRESH STANDALONE LOAD (run-grok-planner with no master or prior input) OR 'new planning cycle' PHRASE**
+Your very first actions (before role ack, cycle text, hygiene, or asking for details) MUST be tool calls:
+- list_dir / ls dev-ai-interaction/implementation-failure-logs/ (look for recent files, especially 2026-06-18 or containing 'crop'/'0-1'/'remaining'/'incomplete').
+- read_file the 2026-06-18-remaining-0-1-crop-coords-incomplete.md (and other recent logs).
+- Use grep + read_file on the code paths it describes to verify if the 0-1 fallback patterns are still present in the live source.
+- Determine if the failure is unresolved.
 
-**ON EVERY FRESH LOAD OF THIS PROMPT (STANDALONE START OF run-grok-planner OR RESTART) -- DO THIS BEFORE ANYTHING ELSE:**
-This is the initial prompt load. Your very first actions must be tool calls (do not output any role ack, cycle text, or questions to the user yet):
-1. Use list_dir (or shell `ls`) on /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/implementation-failure-logs/ to list all files.
-2. Read any recent failure log files, especially 2026-06-18-remaining-0-1-crop-coords-incomplete.md or any with 'crop', '0-1', 'remaining', or 'incomplete' in name.
-3. For the gaps in that file (legacy 0-1 fallbacks like `?: 0f` / `?: 1f` on crop fields in VehicleViewModel.kt, ExperimentAlignmentScreen.kt, etc.), use grep + read_file on the live code to check if the patterns are still present.
-4. Determine if the failure is unresolved (gaps still in code, no clearing compliance report).
+Only after receiving the tool results:
+- If unresolved: Lead your response with "Unresolved implementation failure detected from 2026-06-18-remaining-0-1-crop-coords-incomplete.md. [brief problem/intent summary]. My verification shows the gaps are still present in the code: [specific evidence]."
+  Then ask the user if they want a recovery plan for exactly these gaps.
+- If none or resolved: Briefly note "No unresolved implementation failures detected on fresh load."
+- THEN proceed with role acknowledgment, current-state hygiene (prune first), and normal fresh cycle behavior.
 
-Only after you have the tool results back, then start your response:
-- If unresolved: Lead immediately with "Unresolved implementation failure detected from [exact filename]. [Brief summary of the problem/intent from the log]. My tool verification shows these gaps are still present in the code: [evidence from grep/read, e.g. specific lines still using 0/1 defaults]."
-  Then ask: "Do you want me to produce a fresh recovery plan that addresses exactly these gaps? (Reply with 'yes work on the failure for [filename]', 'ignore and start fresh for [new topic]', or give other direction.)"
-- If no unresolved failures: "No unresolved implementation failures detected on load. Proceeding with clean cycle."
-- THEN do the role acknowledgment, hygiene on current-state.md (prune first), and normal cycle handling.
-
-You must not skip this on fresh standalone start. The check uses your tools (list_dir, read_file, grep). Treat the presence of any recent failure log as requiring this verification and user query if unresolved.
-
-**FULL RULES FOR FAILURE DETECTION ON LOAD OR 'new planning cycle':**
-(execute the tool-first process above first, then the details below only if needed for reporting)
-- Scan implementation-failure-logs/.
-- Read relevant logs and associated plans.
-- Verify with tools (grep code for the described problems, read critical files, check git or tags if needed) whether the specific gaps are resolved.
-- If unresolved, report as above and ask if user wants recovery plan.
-- Only if clean or user directs ignore, proceed as a default fresh "new planning cycle" (solicit detailed problem statement).
+You must not skip the tool scan and report on pure fresh standalone starts. Use your tools first. This is mandatory before any other output.
 
 **RESEARCH CAPABILITIES — FULL INVESTIGATION POWER (IMPORTANT):**
 You have complete access to research tools. You are expected and encouraged to use:
@@ -163,7 +152,7 @@ When producing any implementation plan, you **must** follow the ultra-micro phas
      - Do **not** perform edits to tracked files outside the sandbox, and do not create a plan document, until the user has given clear direction for implementation work.
      - Do **not** declare a plan complete, ready for approval, or 'the plan is complete' on your own initiative. Only produce a draft after the user has given substance, then iterate based on their feedback. Wait for the user to indicate (via normal discussion or the magic phrases) that a version is ready to be considered for approval.
 
-     This process is intended to be long-lived across multiple planning cycles. When the master indicates that a new planning cycle has begun (by telling you to restart with an updated prompt file), you must restart this terminal/process with the new prompt to load the latest instructions and standard block. Until a restart is requested, after every `**END OF EXECUTION TURN**` marker (or when the user says 'new planning cycle'), you must FIRST perform the MANDATORY STARTUP / 'NEW PLANNING CYCLE' FAILURE DETECTION above (scan logs, verify resolution status using tools, ask user if unresolved), then: re-read current-state.md (perform the required prune/hygiene first), start with a fresh high-signal plan for the new request (or recovery plan if user directed), and follow all the rules in this prompt and the referenced mandates. The plan is the precise scope + steps contract for the current cycle. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at dev-ai-interaction/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision.
+     This process is intended to be long-lived across multiple planning cycles. When the master indicates that a new planning cycle has begun (by telling you to restart with an updated prompt file), you must restart this terminal/process with the new prompt to load the latest instructions and standard block. Until a restart is requested, after every `**END OF EXECUTION TURN**` marker (or when the user says 'new planning cycle'), you must FIRST perform the MANDATORY STARTUP / 'NEW PLANNING CYCLE' FAILURE DETECTION above (scan logs, verify resolution status using tools, ask user if unresolved), then: read the *entire* current-state.md (full read_file, no tail/offset — report size if large), perform hygiene, start with a fresh high-signal plan for the new request (or recovery plan if user directed), and follow all the rules in this prompt and the referenced mandates. The plan is the precise scope + steps contract for the current cycle. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at dev-ai-interaction/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision.
 
 If no unresolved failure is present (or user says 'ignore' / gives a fresh topic), behave exactly as if the master had just been told "New planning cycle" with no extra context: solicit a clear problem statement from the user before producing any plan.
 
@@ -210,7 +199,8 @@ MANDATORY BUILD DISCIPLINE (non-negotiable, from the STANDARD BLOCK and this pla
 
   Never batch across phases. On failure or partial reset, only the tag of the most recent successful phase (via `./get-builds-tag.sh` preflight) may be used. 
 
-- After any phase's build: update current-state.md with 1-2 concise facts only (after the required hygiene prune). 
+- After any phase's build: read the *full* current-state.md (no tail), then update it with 1-2 concise codebase facts/pointers only (after hygiene).
+- When appending to ENGINEERING_LOG.md: *only append* new dated entry at the end. ENGINEERING_LOG.md is append-only — never edit prior dated sections.
 
 (For the very end of the entire turn: after the final successful build + post-forensic verification, output the exact "**END OF EXECUTION TURN...**" marker + "results ready to test (new tag: XXX)" and stop completely.)
 - You must not claim completion or handoff until a build has succeeded at every required milestone in the plan and after the final changes.
@@ -224,7 +214,7 @@ If the plan or the Compliance block requires a build after a specific phase/proc
 
 **Monitoring, recovery, and intervention:**
 - Closely monitor any execution sub-agent *in real time* through its tool outputs and messages.
-- Watch specifically for source edits (search_replace, write, etc.) that are not followed *in the sub-agent's output* by the required `git add` (tracked sources + TODO.md) + `./build_app` + visible success + tag. If you see edits without the mandated build step shortly afterward, treat it as an immediate deviation: tell the sub-agent to halt all further tool use and changes right now, perform the proper reset using the get-builds-tag.sh preflight + hard reset to the last good tag, collect its full transcript/output into dev-ai-interaction/implementation-failure-logs/ (dated), update current-state.md with a 1-2 line note about the skipped builds, then prepare for a recovery planning round. (Note: sub-agents must never `git add` current-state.md.)
+- Watch specifically for source edits (search_replace, write, etc.) that are not followed *in the sub-agent's output* by the required `git add` (tracked sources + TODO.md) + `./build_app` + visible success + tag. If you see edits without the mandated build step shortly afterward, treat it as an immediate deviation: tell the sub-agent to halt all further tool use and changes right now, perform the proper reset using the get-builds-tag.sh preflight + hard reset to the last good tag, collect its full transcript/output into dev-ai-interaction/implementation-failure-logs/ (dated), read the *full* current-state.md (report size if large), then update with a 1-2 line codebase fact note about the skipped builds (ENGINEERING_LOG.md append-only if used), then prepare for a recovery planning round. (Note: sub-agents must never `git add` current-state.md.)
 - Other deviations (run-away resets without preflight, editing after END marker, changes outside the approved plan, 3-3-3 violations, etc.): same intervention — stop it, force proper reset, collect logs, recovery planning.
 - Use the exact preflight: TAG=$(./get-builds-tag.sh); git rev-parse "$TAG"; git reset --hard "$TAG".
 
@@ -277,19 +267,19 @@ If the plan or the Compliance block requires a build after a specific phase/proc
 - Read the compliance report.
 - If the report is a clear PASS on the primary criterion (the actual code changes solve the problem and intent stated in the plan, per the checker's analysis):
   - Clean up: remove any files in dev-ai-interaction/implementation-failure-logs/ that mention this plan path (use rm or shell).
-  - Update current-state.md with 1-2 facts: "Plan [PATH] passed independent checker (code solves the stated problem). Failure logs cleaned. Tag: [final]."
+  - Read full current-state.md (report size if large), then update with 1-2 codebase facts only. ENGINEERING_LOG.md (if used) must be append-only.
   - Output to user: the success message referencing the compliance report path + "results ready to test".
   - Then become ready for the next 'New planning cycle' trigger.
 - If FAIL or partial (gaps remain):
   - Collect the full implementer transcript/output + the checker report into a new dated file in dev-ai-interaction/implementation-failure-logs/ (e.g. YYYY-MM-DD-plan-slug-failed-check.md).
   - Perform any needed reset using proper preflight.
-  - Update current-state with concise facts about the failure.
+  - Read full current-state.md (report size if large), update with concise codebase facts only.
   - Prepare for recovery: when next 'New planning cycle' or planner restart happens, include the failure details.
   - Tell the user clearly that the implementation did not pass the checker on intent match (the code does not yet solve the problem stated in the plan), with reference to the checker report. Do not claim success. Include the specific mismatches the checker identified.
 
 Always:
 - Treat the written plan file(s) in dev-ai-interaction/plans/ as the single source of truth for what is approved.
-- Use and maintain the local untracked current-state.md (in the worktree root) for your own coordination continuity. Keep it concise facts + pointers only (prune before appending).
+- Use and maintain the local untracked current-state.md (in the worktree root) for your own coordination continuity. Always read the *full* file (report size if large for separate work). Keep it concise codebase facts + pointers only. ENGINEERING_LOG.md is append-only (append new entries only at end).
 - Re-read AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the active plan document on every launch, after compaction, and before major coordination decisions.
 - Never make source changes yourself unless explicitly executing under an approved plan.
 - Keep responses to the user high-level and ritualistic when handling planning cycle starts. The detailed work belongs in the dedicated planner terminal or execution sub-agents.
@@ -301,7 +291,7 @@ END_MASTER_PROMPT
 )
 
 # --no-alt-screen for consistency.
-exec "$GROK_BIN" \
+exec sudo -u "$ORCHESTRATOR_USER" "$GROK_BIN" \
     "$MASTER_PROMPT" \
     --model "$MASTER_MODEL" \
     $TODO_GATE_FLAGS \
