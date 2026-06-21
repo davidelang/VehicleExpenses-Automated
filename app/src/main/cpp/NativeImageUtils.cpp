@@ -1715,23 +1715,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 
     double contentThreshold = computeThreshold(*mat, minL, minT, maxR, maxB, thresholdFactor);
 
+    const int bufW = maxR - minL;
+    const int bufH = maxB - minT;
     std::map<int,int> horizHist, vertHist;
     for (int y = minT; y < maxB; ++y) {
         const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
         int run = 0;
         for (int x = minL; x < maxR; ++x) {
             if (rowPtr[x] > contentThreshold) run++;
-            else { if (run > 0) horizHist[std::min(255,run)]++; run = 0; }
+            else { if (run > 0) { if (run < bufW) horizHist[std::min(255,run)]++; } run = 0; }
         }
-        if (run > 0) horizHist[std::min(255,run)]++;
+        if (run > 0) { if (run < bufW) horizHist[std::min(255,run)]++; }
     }
     for (int x = minL; x < maxR; ++x) {
         int run = 0;
         for (int y = minT; y < maxB; ++y) {
             if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
-            else { if (run > 0) vertHist[std::min(255,run)]++; run = 0; }
+            else { if (run > 0) { if (run < bufH) vertHist[std::min(255,run)]++; } run = 0; }
         }
-        if (run > 0) vertHist[std::min(255,run)]++;
+        if (run > 0) { if (run < bufH) vertHist[std::min(255,run)]++; }
     }
 
     // Height-bounded peak search decoupled caps
