@@ -2694,6 +2694,60 @@ private suspend fun ocrBinPeakRectsAsisAndDigits(
     )
 }
 
+/** P4 (1-bit packed PBM) base64 for binPeak plain/cleaned binary debug in JSON (alignment pattern). */
+private fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
+    val cols = mat.cols()
+    val rows = mat.rows()
+    val totalPixels = cols * rows
+    val data = ByteArray(totalPixels)
+    mat.get(0, 0, data)
+
+    val packedSize = (totalPixels + 7) / 8
+    val packed = ByteArray(packedSize)
+
+    var byteIdx = 0
+    var bitIdx = 0
+    var currentByte = 0
+
+    for (i in 0 until totalPixels) {
+        val pixelVal = data[i].toInt() and 0xFF
+        val bit = if (pixelVal <= 127) 1 else 0
+        currentByte = (currentByte shl 1) or bit
+        bitIdx++
+        if (bitIdx == 8) {
+            packed[byteIdx++] = currentByte.toByte()
+            currentByte = 0
+            bitIdx = 0
+        }
+    }
+    if (bitIdx > 0) {
+        currentByte = currentByte shl (8 - bitIdx)
+        packed[byteIdx++] = currentByte.toByte()
+    }
+
+    val header = "P4\n$cols $rows\n".toByteArray(Charsets.US_ASCII)
+    val fullData = ByteArray(header.size + packed.size)
+    System.arraycopy(header, 0, fullData, 0, header.size)
+    System.arraycopy(packed, 0, fullData, header.size, packed.size)
+
+    return Base64.encodeToString(fullData, Base64.NO_WRAP)
+}
+
+private fun componentStatsToJson(stats: List<NativeImageUtils.ComponentStats>): String {
+    val arr = JSONArray()
+    stats.forEach { s ->
+        val obj = JSONObject()
+        obj.put("index", s.index)
+        obj.put("left", s.left)
+        obj.put("top", s.top)
+        obj.put("width", s.width)
+        obj.put("height", s.height)
+        obj.put("area", s.area)
+        arr.put(obj)
+    }
+    return arr.toString()
+}
+
 /** Annotated binPeak snapshot: binarized mat + red rects + full blue union rects overlaid (JPEG base64). */
 private suspend fun takeBinPeakAnnotatedSnapshot(
     binMat: org.opencv.core.Mat,
@@ -2755,6 +2809,9 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             (peak - d) to (peak + d)
         }
         NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
+        // Plain binary debug: P4 + full CC object stats (JSON inspection only; no annotated JPEG)
+        branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
+        branch.metadata["binPeak_${peak}_plain_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
         // Direct Mat snapshot (not Slice/YUV path); null scratchYuv so we do not clear the b we just binarized into
         val binB64 = OcrUtils.takeSnapshot(b.mat, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, emptyList(), null, null).first
         branch.images["binPeak_$peak"] = binB64
@@ -2764,8 +2821,6 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
         if (vSW > 0f && hSW > 0f && redRects.isNotEmpty()) {
             val compRectsUncleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
             val blueRectsUncleaned = binPeakComputeBlueRectsPerRed(redRects, compRectsUncleaned)
-            val uncleanedB64 = takeBinPeakAnnotatedSnapshot(b.mat, redRects, blueRectsUncleaned)
-            branch.images["binPeak_${peak}_uncleaned"] = uncleanedB64
             val ocrRectsUncleaned = blueRectsUncleaned.map { shrinkBlueRectForOcr(it, imgW, imgH) }
             val ocrUncleaned = ocrBinPeakRectsAsisAndDigits(workspace, b, paddleEngine, recBuffer, ocrRectsUncleaned)
             blueRectsUncleaned.forEachIndexed { redK, fullBlue ->
@@ -2782,11 +2837,12 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
 
             // Buffer-width percentage (0.20 of the binarized image width) for pump binPeak image-wide cleaning.
             val useMaxW = 0.20f * b.mat.cols()
-            NativeImageUtils.blackOutLargeAndSmallComponentsH(b.mat, vSW, hSW, useMaxW)
+            val editedIndices = NativeImageUtils.blackOutLargeAndSmallComponentsHWithEditedIndices(b.mat, vSW, hSW, useMaxW)
+            branch.metadata["binPeak_${peak}_edited_object_indices"] = JSONArray(editedIndices.toList()).toString()
+            branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
+            branch.metadata["binPeak_${peak}_cleaned_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
             val compRectsCleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
             val blueRectsCleaned = binPeakComputeBlueRectsPerRed(redRects, compRectsCleaned)
-            val cleanedB64 = takeBinPeakAnnotatedSnapshot(b.mat, redRects, blueRectsCleaned)
-            branch.images["binPeak_${peak}_cleaned"] = cleanedB64
             val ocrRectsCleaned = blueRectsCleaned.map { shrinkBlueRectForOcr(it, imgW, imgH) }
             val ocrCleaned = ocrBinPeakRectsAsisAndDigits(workspace, b, paddleEngine, recBuffer, ocrRectsCleaned)
             blueRectsCleaned.forEachIndexed { redK, fullBlue ->
@@ -2891,14 +2947,6 @@ private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String 
             br.images["binPeak_$peak"]?.let { b64 ->
                 append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
                 append("<br><small>peak=$peak plain (union bar height: $height px)</small><br>")
-            }
-            br.images["binPeak_${peak}_uncleaned"]?.let { b64 ->
-                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
-                append("<br><small>peak=$peak uncleaned (red+blue annotated)</small><br>")
-            }
-            br.images["binPeak_${peak}_cleaned"]?.let { b64 ->
-                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
-                append("<br><small>peak=$peak cleaned (red+blue annotated)</small><br>")
             }
         }
     }
