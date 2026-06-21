@@ -2497,8 +2497,8 @@ private fun pSerializePhotoResultToJson(
 }
 
 private fun appendJsonValue(sb: StringBuilder, value: Any?, indent: Int, indentLevel: Int) {
-    if (sb.length > 64 * 1024 * 1024) {
-        throw IllegalStateException("JSON serialization exceeded the 64MB safety ceiling")
+    if (sb.length > PUMP_JSON_BUFFER_INITIAL_BYTES) {
+        throw IllegalStateException("JSON serialization exceeded the 256MB P4 buffer size")
     }
     when (value) {
         null -> sb.append("null")
