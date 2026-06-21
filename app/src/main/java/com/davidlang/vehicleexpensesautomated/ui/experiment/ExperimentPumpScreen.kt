@@ -2861,7 +2861,10 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
 
             // Buffer-width percentage (0.20 of the binarized image width) for pump binPeak image-wide cleaning.
             val useMaxW = 0.20f * b.mat.cols()
+            // timed per plan for cleaning process analysis
+            val tBlackoutStart = System.currentTimeMillis()
             val editedIndices = NativeImageUtils.blackOutLargeAndSmallComponentsHWithEditedIndices(b.mat, vSW, hSW, useMaxW)
+            branch.metadata["binPeak_${peak}_blackout_ms"] = (System.currentTimeMillis() - tBlackoutStart).toString()
             branch.metadata["binPeak_${peak}_edited_object_indices"] = JSONArray(editedIndices.toList()).toString()
             Log.d(TAG, "P4 snapshot would have stored here: cleaned peak=$peak")
             // branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
