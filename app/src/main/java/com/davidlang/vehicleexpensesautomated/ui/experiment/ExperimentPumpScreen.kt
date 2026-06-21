@@ -2574,6 +2574,22 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 }
 
 
+/** Annotated binPeak snapshot: binarized mat + red rects + full blue union rects overlaid (JPEG base64). */
+private suspend fun takeBinPeakAnnotatedSnapshot(
+    binMat: org.opencv.core.Mat,
+    redRects: List<android.graphics.Rect>,
+    blueRects: List<android.graphics.Rect>
+): String {
+    val anns = mutableListOf<SnapshotAnnotation>()
+    redRects.forEach { r ->
+        anns.add(SnapshotAnnotation(r.left, r.top, r.right, r.bottom, Shape.RECTANGLE, Color.RED, 2))
+    }
+    blueRects.forEach { r ->
+        anns.add(SnapshotAnnotation(r.left, r.top, r.right, r.bottom, Shape.RECTANGLE, Color.BLUE, 4))
+    }
+    return OcrUtils.takeSnapshot(binMat, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, anns, null, null).first
+}
+
 /** Extract brightness peaks (0-255) + union bar heights from combinedRedboxHistBins for binPeak debug images (expanded B/C/F only; calculated D/E/G skip capture entirely). Valley-push quantized hists (<=10 positive bins): return all exact 1-bin positive peaks, no smoothing. Raw/others: findPeakBinsFromHistogram + positive-count filter. */
 private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>> {
     val binsArr = JSONArray(combinedBinsJson)
