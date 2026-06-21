@@ -2411,9 +2411,9 @@ private suspend fun runPumpExperiment(
             )
             val comma = if (index < total - 1) "," else ""
 
-            // Clear/reset or re-allocate the reusable buffer to keep memory bounded
-            if (jsonCharBuffer.capacity() > 64 * 1024 * 1024) {
-                jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
+            // Clear/reset or re-allocate the reusable buffer to keep memory bounded; large initial for P4 base64 strings per photo
+            if (jsonCharBuffer.capacity() > PUMP_JSON_BUFFER_RESET_CAPACITY) {
+                jsonCharBuffer = StringBuilder(PUMP_JSON_BUFFER_INITIAL_BYTES)
             } else {
                 jsonCharBuffer.setLength(0)
             }
