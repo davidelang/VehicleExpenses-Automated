@@ -1861,20 +1861,49 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFindA
     return result;
 }
 
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGetAllComponentStatsH(
+    JNIEnv* env, jobject thiz, jlong matPtr) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    cv::Mat labels, stats, centroids;
+    int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+
+    const int nObjects = nLabels - 1;
+    std::vector<int> data;
+    data.reserve(1 + nObjects * 6);
+    data.push_back(nObjects);
+    for (int i = 1; i < nLabels; ++i) {
+        data.push_back(i);
+        data.push_back(stats.at<int>(i, cv::CC_STAT_LEFT));
+        data.push_back(stats.at<int>(i, cv::CC_STAT_TOP));
+        data.push_back(stats.at<int>(i, cv::CC_STAT_WIDTH));
+        data.push_back(stats.at<int>(i, cv::CC_STAT_HEIGHT));
+        data.push_back(stats.at<int>(i, cv::CC_STAT_AREA));
+    }
+
+    jintArray result = env->NewIntArray(data.size());
+    env->SetIntArrayRegion(result, 0, data.size(), reinterpret_cast<const jint*>(data.data()));
+    return result;
+}
 
 
-extern "C" JNIEXPORT void JNICALL
+
+extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlackOutLargeAndSmallComponentsH(
     JNIEnv* env, jobject thiz, jlong matPtr, jfloat vSW, jfloat hSW, jfloat maxWidth) {
 
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
-    if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
     // Object detection (CC): populate per-pixel labels buffer before any filters (Set J semantics).
     cv::Mat labels, stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
     bool modified = false;
+    std::vector<int> editedIndices;
 
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
@@ -1889,6 +1918,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         // On erase: blank garbage rows for the entire object across full image width, but only
         // pixels whose label matches i — other objects in the same row are untouched.
         if ((float)w > maxWidth) {
+            bool wideEdited = false;
             std::vector<bool> garbageRows(h, false);
             for (int y = minY; y < maxY; ++y) {
                 int maxRun = 0;
@@ -1926,10 +1956,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                             if (lRow[cx] == i) {
                                 rowPtr[cx] = 0;
                                 modified = true;
+                                wideEdited = true;
                             }
                         }
                     }
                 }
+            }
+            if (wideEdited) {
+                editedIndices.push_back(i);
             }
         }
 
@@ -2024,6 +2058,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
             }
         }
     }
+
+    jintArray result = env->NewIntArray(editedIndices.size());
+    if (!editedIndices.empty()) {
+        env->SetIntArrayRegion(result, 0, editedIndices.size(), reinterpret_cast<const jint*>(editedIndices.data()));
+    }
+    return result;
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
