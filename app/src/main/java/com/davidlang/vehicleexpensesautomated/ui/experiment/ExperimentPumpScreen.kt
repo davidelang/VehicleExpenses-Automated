@@ -2814,13 +2814,16 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             (peak - d) to (peak + d)
         }
         NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
-        // Plain binary debug: P4 + full CC object stats (JSON inspection only; no annotated JPEG)
-        branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
         branch.metadata["binPeak_${peak}_plain_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
         // Direct Mat snapshot (not Slice/YUV path); null scratchYuv so we do not clear the b we just binarized into
         val binB64 = OcrUtils.takeSnapshot(b.mat, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, emptyList(), null, null).first
         branch.images["binPeak_$peak"] = binB64
         branch.metadata["binPeak_${peak}_count"] = height.toString()
+        // Plain binary debug: P4 + full CC object stats (JSON inspection only; base64 string retained for output; internal P4 buffer released immediately for reuse on next peak per this plan)
+        branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
+        // P4 buffer (b.mat) cleared after base64 + objects stored in JSON path; reusable for cleaned path or next peak
+        b.mat.setTo(org.opencv.core.Scalar(0.0))
+        NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
 
         val (vSW, hSW) = binPeakComputeStrokeWidths(b.mat, redRects)
         if (vSW > 0f && hSW > 0f && redRects.isNotEmpty()) {
