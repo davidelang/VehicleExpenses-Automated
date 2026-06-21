@@ -229,7 +229,7 @@ private suspend fun runPumpExperiment(
     var jsonCharBuffer = StringBuilder(PUMP_JSON_BUFFER_INITIAL_BYTES)
 
     var partCount = 1
-    val maxSizeBytes = 50 * 1024 * 1024 // 50MB parts (for extra per-peak binarized previews in B/C/D/E/F/G)
+    val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; P4 base64 volume lives in 256M JSON buffer)
     var currentSize = 0
     val footer = "</table></body></html>"
     val experimentRecSet320x48 = BufferSet(320, 48)
