@@ -97,11 +97,10 @@ Produce a high-signal, low-boilerplate document focused on the specific work of 
 **Mandatory ultra-micro phased discipline (non-negotiable):** The approved plan will have decomposed the work into many named ultra-small phases. For each phase:
 - Perform the minimal edit for that phase only.
 - Immediately do narrow forensic `read_file` (offset/limit on the exact site) + targeted grep before and after the edit.
-- `git add` the changed tracked source(s) + TODO.md.
-- Run `./build_app` and confirm success (record the new branch-scoped builds tag).
+- Call `./build_app` (e.g. `./build_app @phase_summary.txt changed.kt TODO.md ...`) — this performs the required `git add` + rich commit internally — and confirm success (record the new branch-scoped builds tag).
 - Only after a successful `./build_app` for the current phase may you begin edits for the next phase.
 
-First action: update TODO.md. Use forensic reads before/after every edit. On any failure or partial reset, only the tag of the most recent successful phase (obtained via `./get-builds-tag.sh` preflight) may be used for recovery. At the very end, after the final successful build + post-forensic verification, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' followed by 'results ready to test (new tag: ...)' and then stop completely. Parent/main agent will review your changes for fidelity to the plan.
+First action: update TODO.md. Use forensic reads before/after every edit. After each phase's edit(s), invoke `./build_app` (with @summary file + listed changed files) and confirm the build + tag. On any failure or partial reset, only the tag of the most recent successful phase (obtained via `./get-builds-tag.sh` preflight) may be used for recovery. At the very end, after the final successful build + post-forensic verification, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' followed by 'results ready to test (new tag: ...)' and then stop completely. Parent/main agent will review your changes for fidelity to the plan.
 
 When reading project-facts.md: always read the *full* file (no offset/limit or tail). If large, report its size for separate work. When appending to ENGINEERING_LOG.md: *only append* a new dated entry at the end — never edit prior sections.
 
@@ -273,7 +272,7 @@ The filesystem mtime on the plan file is the authoritative timestamp. A date/tim
 
 - The plan must use the standard structure: Context (why this change), Recommended Approach (chosen over alternatives), Critical Files (exact paths), Existing Functions/Utilities to reuse (with file paths), Phased Small-Step Execution (forensic + build milestones), Verification (end-to-end criteria), and explicit handoff requirements (TODO first, forensic reads, ./build_app, **END OF EXECUTION TURN** marker + "results ready to test").
 
-- **Phased Small-Step Execution must be ultra-micro with per-phase success gates**: The "Phased Small-Step Execution" section **must** decompose the work into as many explicitly named, ultra-small phases as needed to keep each phase the smallest practical observable unit of work that can be forensically verified in isolation and completed with a successful `./build_app`. There is no target number of phases (more smaller phases is better than fewer larger ones, as long as each is a meaningful, verifiable step). Every phase **must terminate with** narrow forensic `read_file` (offset/limit) + targeted grep before/after the edit + `git add` (changed tracked sources + TODO.md) + a confirmed successful `./build_app` (new branch-scoped builds tag recorded) **before the next phase's edits may begin**. On trouble, user-directed partial reset, or recovery, only the tag of the most recent successful phase's `./build_app` may be used (after `./get-builds-tag.sh` preflight). This discipline is mandatory for safe, auditable execution turns.
+- **Phased Small-Step Execution must be ultra-micro with per-phase success gates**: The "Phased Small-Step Execution" section **must** decompose the work into as many explicitly named, ultra-small phases as needed to keep each phase the smallest practical observable unit of work that can be forensically verified in isolation and completed with a successful `./build_app`. There is no target number of phases (more smaller phases is better than fewer larger ones, as long as each is a meaningful, verifiable step). Every phase **must terminate with** narrow forensic `read_file` (offset/limit) + targeted grep before/after the edit + a call to `./build_app` (e.g. `./build_app @phase_summary.txt changed-file.kt TODO.md ...` — **do not** run manual `git add` or gradle commands; `./build_app` handles staging + commit for the provided files and message) + a confirmed successful build + new branch-scoped builds tag recorded **before the next phase's edits may begin**. On trouble, user-directed partial reset, or recovery, only the tag of the most recent successful phase's `./build_app` may be used (after `./get-builds-tag.sh` preflight). This discipline is mandatory for safe, auditable execution turns.
 
 Plan filenames should follow the naming guidance above (descriptive kebab-case primary; granular timestamp only when it adds real value over filesystem mtime).
 
@@ -291,7 +290,7 @@ Plan filenames should follow the naming guidance above (descriptive kebab-case p
 
 - Use narrow forensic `read_file` (offset/limit focused on the exact change site) + targeted grep verification before and after every edit.
 
-- Before each `./build_app`: `git add` the changed tracked source file(s) + `TODO.md`. Stable additions to project-facts.md may be added and `git add`ed when they qualify as enduring facts.
+- When invoking `./build_app` for a phase: pass a rich commit message (via `@phase_summary.txt` or similar containing the phase/plan excerpt) and list the changed tracked source file(s) + TODO.md. `./build_app` handles the add + commit. (Stable facts updates to project-facts.md may be included when relevant.)
 
 - project-facts.md updates: only new stable facts/locations that would be true for other work on the tree. Read the full file. ENGINEERING_LOG.md is append-only.
 
