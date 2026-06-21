@@ -37,11 +37,11 @@ useradd -m -g @@CODE_GROUP@@ @@CODE_GROUP@@r || true
 useradd -m -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@ || true
 usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@ || true
 # @@PLANNING_USER@@ gets @@SANDBOX_GROUP@@ (primary) + @@SHARED_GROUP@@.
-# Intentionally do NOT add @@PLANNING_USER@@ to @@CODE_GROUP@@.
+# Intentionally do NOT add @@PLANNING_USER@@ to @@CODE_GROUP@@. Explicitly remove if it was added previously.
 # This is part of the Unix permission boundary (separate from Grok plan-mode hooks):
 # @@CODE_GROUP@@ members are the only ones who get group write on source (664 files).
-# @@PLANNING_USER@@ gets read-only on app/ source via "other r", and full write inside sandbox.
-# If this is an existing install, run: gpasswd -d @@PLANNING_USER@@ @@CODE_GROUP@@
+# @@PLANNING_USER@@ gets read-only on app/ source via "other r" (and ACL), and full write inside sandbox.
+gpasswd -d @@PLANNING_USER@@ @@CODE_GROUP@@ 2>/dev/null || true
 usermod -aG @@SHARED_GROUP@@ @@PLANNING_USER@@ || true
 usermod -aG @@SANDBOX_GROUP@@,@@SHARED_GROUP@@ @@CODE_GROUP@@r || true
 usermod -aG @@SANDBOX_GROUP@@ @@ORCHESTRATOR_USER@@ || true
