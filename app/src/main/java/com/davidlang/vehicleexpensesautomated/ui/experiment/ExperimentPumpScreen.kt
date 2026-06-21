@@ -2826,9 +2826,6 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
         }
         NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
         branch.metadata["binPeak_${peak}_plain_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
-        // Direct Mat snapshot (not Slice/YUV path); null scratchYuv so we do not clear the b we just binarized into
-        val binB64 = OcrUtils.takeSnapshot(b.mat, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, emptyList(), null, null).first
-        branch.images["binPeak_$peak"] = binB64
         branch.metadata["binPeak_${peak}_count"] = height.toString()
         // Plain binary debug: P4 + full CC object stats (JSON inspection only; base64 string retained for output; internal P4 buffer released immediately for reuse on next peak per this plan)
         Log.d(TAG, "P4 snapshot would have stored here: plain peak=$peak")
@@ -2840,6 +2837,8 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
         val tPeakStart = System.currentTimeMillis()
 
         val (vSW, hSW) = binPeakComputeStrokeWidths(b.mat, redRects)
+        branch.metadata["binPeak_${peak}_vsw"] = vSW.toString()
+        branch.metadata["binPeak_${peak}_hsw"] = hSW.toString()
         if (vSW > 0f && hSW > 0f && redRects.isNotEmpty()) {
             val compRectsUncleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
             val blueRectsUncleaned = binPeakComputeBlueRectsPerRed(redRects, compRectsUncleaned)
@@ -2991,10 +2990,6 @@ private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String 
             br.images["binPeak_${peak}_cleaned"]?.let { b64 ->
                 append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
                 append("<br><small>peak=$peak cleaned (after blackOut)</small><br>")
-            }
-            br.images["binPeak_$peak"]?.let { b64 ->
-                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
-                append("<br><small>peak=$peak plain (union bar height: $height px)</small><br>")
             }
         }
     }
