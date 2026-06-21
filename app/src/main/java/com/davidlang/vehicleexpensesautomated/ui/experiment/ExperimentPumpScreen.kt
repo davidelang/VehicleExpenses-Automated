@@ -2780,10 +2780,8 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
                 ))
             }
 
-            // Red-local maxWidth (like Set J odo crop): 0.20 of text-area width so wide threshold
-            // does not trigger on normal digits; filter still catches garbage wider than the red boxes.
-            val maxRedW = redRects.maxOf { it.width().toFloat() }
-            val useMaxW = maxRedW * 0.20f
+            // Buffer-width percentage (0.20 of the binarized image width) for pump binPeak image-wide cleaning.
+            val useMaxW = 0.20f * b.mat.cols()
             NativeImageUtils.blackOutLargeAndSmallComponentsH(b.mat, vSW, hSW, useMaxW)
             val compRectsCleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
             val blueRectsCleaned = binPeakComputeBlueRectsPerRed(redRects, compRectsCleaned)
