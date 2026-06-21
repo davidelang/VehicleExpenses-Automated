@@ -2,7 +2,7 @@
 
 - [ ] optimize blackOut with labels/earlyout/full-run/255 + logging + sw store + P4 + remove plain (plan: dev-ai-interaction/plans/optimize-binpeak-blackout-earlyout-labels-20260621-120142-plan.md)
   - [ ] Phase 1: Baseline forensics (no source changes)
-  - [ ] Phase 2: sw/hist discard full-buffer runs
+  - [x] Phase 2: sw/hist discard full-buffer runs
   - [ ] Phase 3: Horiz early out + immediate lrow zero
   - [ ] Phase 4: Bbox-limited erases + zero labels
   - [ ] Phase 5: Final pass mat=255 from labels

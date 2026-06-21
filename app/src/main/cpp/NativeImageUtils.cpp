@@ -1923,19 +1923,31 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
             bool wideEdited = false;
             std::vector<bool> garbageRows(h, false);
             for (int y = minY; y < maxY; ++y) {
-                int maxRun = 0;
                 int currentRun = 0;
-                const int* labelRow = labels.ptr<int>(y);
+                bool isGarbage = false;
+                int* labelRow = labels.ptr<int>(y);
                 for (int x = minX; x < maxX; ++x) {
                     if (labelRow[x] == i) {
                         currentRun++;
-                        if (currentRun > maxRun) maxRun = currentRun;
+                        if ((float)currentRun > maxWidth) {
+                            isGarbage = true;
+                            break;
+                        }
                     } else {
                         currentRun = 0;
                     }
                 }
-                if ((float)maxRun > maxWidth) {
+                if (isGarbage) {
                     garbageRows[y - minY] = true;
+                    auto* rowPtr = mat->ptr<uint8_t>(y);
+                    for (int cx = minX; cx < maxX; ++cx) {
+                        if (labelRow[cx] == i) {
+                            rowPtr[cx] = 0;
+                            labelRow[cx] = 0;
+                            modified = true;
+                            wideEdited = true;
+                        }
+                    }
                 }
             }
 
