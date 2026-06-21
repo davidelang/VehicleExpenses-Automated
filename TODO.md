@@ -4,9 +4,9 @@
   - [ ] Phase 1: Baseline forensics (no source changes)
   - [x] Phase 2: sw/hist discard full-buffer runs
   - [x] Phase 3: Horiz early out + immediate lrow zero
-  - [ ] Phase 4: Bbox-limited erases + zero labels
-  - [ ] Phase 5: Final pass mat=255 from labels
-  - [ ] Phase 6: Vertical linear precompute horiz widths
+  - [x] Phase 4: Bbox-limited erases + zero labels
+  - [x] Phase 5: Final pass mat=255 from labels
+  - [x] Phase 6: Vertical linear precompute horiz widths
   - [ ] Phase 7: Sub-timings + LOGI in native
   - [ ] Phase 8: Store vSW/hSW per peak in metadata
   - [ ] Phase 9: Remove plain JPEG + HTML fallback
