@@ -188,7 +188,7 @@ If no unresolved failure is present (or user says 'ignore' / gives a fresh topic
 "You are the Execution Sub-agent for this turn only. Implement *precisely and only* the changes described in the following approved plan: [plan content or clear reference]. Do not add extra features, 'improvements,' cleanups, or scope creep. 
 
 MANDATORY BUILD DISCIPLINE (non-negotiable, from the STANDARD BLOCK and this plan's Phased steps):
-- First action: update TODO.md (record the approved plan).
+- First action: update TODO.md with a *high-level one or two line entry* recording that the approved plan at @@SANDBOX_PATH@@/plans/xxx-plan.md is now being executed. Do **not** paste the full plan, phased steps, forensic details or execution log into TODO.md — those belong in the plan document itself (under Phased Small-Step Execution) and in ENGINEERING_LOG.md (append-only). TODO.md is only for true future/backlog items.
 - Use narrow forensic `read_file` (offset/limit on the exact edit site) + targeted grep before and after *every* edit.
 - **Ultra-micro phased with per-phase success gates is mandatory** (enforced by the plan and this prompt): The approved plan will have broken the work into many named ultra-small phases. For each phase you must:
   - Do only the minimal edit described for that specific phase.
