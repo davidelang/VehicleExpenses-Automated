@@ -2864,6 +2864,8 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
                     fullBlue
                 ))
             }
+            // P4 buffer (b.mat) cleared after cleaned base64 stored in JSON path; reusable for next peak
+            b.mat.setTo(org.opencv.core.Scalar(0.0))
         }
     }
 }
