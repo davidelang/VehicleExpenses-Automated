@@ -2,7 +2,7 @@
 
 - This plan is the authoritative scope for the turn. Implement *precisely and only* the observable changes described in the "Phased Small-Step Execution" section below. No additional refactors, cleanups, "improvements," or scope creep.
 
-- Execution start (after explicit user magic approval that names *this exact sandbox plan path*): re-read this plan + project-facts.md (perform hygiene pass first). Update TODO.md as the very first action.
+- Execution start (after explicit user magic approval that names *this exact sandbox plan path*): re-read this plan + project-facts.md (perform hygiene pass first). Update TODO.md with a high-level one-line record of the plan (do not paste execution details or the full phased list here — they live in this plan document and ENGINEERING_LOG.md).
 
 - Use narrow forensic `read_file` (offset/limit focused on the exact change site) + targeted grep verification before and after every edit.
 
