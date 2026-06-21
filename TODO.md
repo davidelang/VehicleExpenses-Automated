@@ -2,7 +2,7 @@
 
 - [ ] eliminate 64MB JSON ceiling for P4 base64 (plan: dev-ai-interaction/plans/eliminate-64mb-json-ceiling-p4-20260621-123334-plan.md)
   - [x] Phase 1: Baseline forensics (no source changes)
-  - [ ] Phase 2: Raise ceiling to PUMP_JSON_BUFFER_INITIAL_BYTES
+  - [x] Phase 2: Raise ceiling to PUMP_JSON_BUFFER_INITIAL_BYTES
   - [ ] Phase 3: Update jsonCharBuffer comments for 256MB alignment
   - [ ] Phase 4: Final verification + handoff
 

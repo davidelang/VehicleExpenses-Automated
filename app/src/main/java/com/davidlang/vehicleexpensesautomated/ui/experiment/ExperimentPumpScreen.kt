@@ -225,7 +225,8 @@ private suspend fun runPumpExperiment(
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
 
-    // Pre-allocated JSON serialization buffer (256MB upfront for many P4 base64 strings per photo)
+    // Pre-allocated JSON serialization buffer (256MB upfront for many P4 base64 strings per photo;
+    // appendJsonValue safety ceiling aligns with this P4 buffer size)
     var jsonCharBuffer = StringBuilder(PUMP_JSON_BUFFER_INITIAL_BYTES)
 
     var partCount = 1
@@ -2422,7 +2423,8 @@ private suspend fun runPumpExperiment(
             )
             val comma = if (index < total - 1) "," else ""
 
-            // Clear/reset or re-allocate the reusable buffer to keep memory bounded; large initial for P4 base64 strings per photo
+            // Clear/reset or re-allocate the reusable buffer to keep memory bounded; 256MB initial
+            // matches P4 base64 volume and appendJsonValue ceiling (PUMP_JSON_BUFFER_INITIAL_BYTES)
             if (jsonCharBuffer.capacity() > PUMP_JSON_BUFFER_RESET_CAPACITY) {
                 jsonCharBuffer = StringBuilder(PUMP_JSON_BUFFER_INITIAL_BYTES)
             } else {
