@@ -135,7 +135,11 @@ for wt in "${WORKTREES[@]}"; do
   # and no write, even if temporarily still listed in @@CODE_GROUP@@ group.
   # Full rw only inside sandbox + the two explicit exceptions.
   if id "$PLANNING_USER" >/dev/null 2>&1; then
-    echo "  ACL enforcement: read-only for $PLANNING_USER outside sandbox..."
+    # Enforce planner has no write on source: remove from @@CODE_GROUP@@ group (if present)
+    # and set restrictive ACL. Group membership was the main leak allowing writes
+    # despite ACL r-- and 664 other=r.
+    gpasswd -d "$PLANNING_USER" "$CODE_GROUP" 2>/dev/null || true
+    echo "  ACL enforcement + group removal: read-only for $PLANNING_USER outside sandbox..."
     find "$wt" -path '*/@@SANDBOX_PATH@@/*' -prune -o \
       \( -type f ! -name project-facts.md ! -name TODO.md \
          -exec setfacl -m "u:$PLANNING_USER:r--" {} + \) 2>/dev/null || true
