@@ -4,7 +4,7 @@
   - [x] Phase 1: Forensic baseline (no source changes)
   - [x] Phase 2: Add uncleaned annotated store
   - [x] Phase 3: Add cleaned annotated store
-  - [ ] Phase 4: Update buildBinPeakHtmlForBranch renderer
+  - [x] Phase 4: Update buildBinPeakHtmlForBranch renderer
   - [ ] Phase 5: Final verification + handoff
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)

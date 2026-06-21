@@ -2975,6 +2975,14 @@ private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String 
     return buildString {
         append("<br><div style='margin-top:4px;'><b>Binarized by redbox peaks (range ±$BIN_PEAK_BINARIZE_DELTA, highest peak height to lowest):</b></div>")
         sorted.forEach { (peak, height) ->
+            br.images["binPeak_${peak}_uncleaned"]?.let { b64 ->
+                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
+                append("<br><small>peak=$peak original (uncleaned components)</small><br>")
+            }
+            br.images["binPeak_${peak}_cleaned"]?.let { b64 ->
+                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
+                append("<br><small>peak=$peak cleaned (after blackOut)</small><br>")
+            }
             br.images["binPeak_$peak"]?.let { b64 ->
                 append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
                 append("<br><small>peak=$peak plain (union bar height: $height px)</small><br>")
