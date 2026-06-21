@@ -6,7 +6,7 @@
 - [x] Phase 3: Fix Horizontal Wide Filter blanking to scope per-object across full width
 - [x] Phase 4: Make CC runs explicit and match Set J (beginning + before small)
 - [x] Phase 5: Update pump call site to pass red-local maxWidth
-- [ ] Phase 6: Final cross-check, verification, build + marker
+- [x] Phase 6: Final cross-check, verification, build + marker
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
