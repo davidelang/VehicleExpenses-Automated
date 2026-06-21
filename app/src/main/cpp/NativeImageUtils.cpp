@@ -1900,9 +1900,18 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
+    auto tFuncStart = std::chrono::high_resolution_clock::now();
+    long long msInitialCc = 0, msHoriz = 0, msVert = 0, msReCc = 0, msSmallFilter = 0;
+
     // Object detection (CC): populate per-pixel labels buffer before any filters (Set J semantics).
     cv::Mat labels, stats, centroids;
+    auto tCc0 = std::chrono::high_resolution_clock::now();
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+    msInitialCc = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - tCc0).count();
+
+    LOGI("blackOut: start vSW=%.1f hSW=%.1f maxW=%.1f img=%dx%d nLabels=%d",
+         vSW, hSW, maxWidth, mat->cols, mat->rows, nLabels - 1);
 
     bool modified = false;
     std::vector<int> editedIndices;
@@ -1920,6 +1929,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         // On erase: blank garbage rows for the entire object across full image width, but only
         // pixels whose label matches i — other objects in the same row are untouched.
         if ((float)w > maxWidth) {
+            auto tHoriz0 = std::chrono::high_resolution_clock::now();
             bool wideEdited = false;
             std::vector<bool> garbageRows(h, false);
             for (int y = minY; y < maxY; ++y) {
@@ -1977,13 +1987,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                     }
                 }
             }
+            long long msHorizLabel = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::high_resolution_clock::now() - tHoriz0).count();
+            msHoriz += msHorizLabel;
             if (wideEdited) {
                 editedIndices.push_back(i);
             }
+            LOGI("blackOut: label=%d horiz wide w=%d h=%d edited=%d ms=%lld",
+                 i, w, h, wideEdited ? 1 : 0, msHorizLabel);
         }
 
         // 2. Vertical Wide Filter (Thickness-over-distance is proof of garbage)
         if ((float)h >= 0.3f * mat->rows) {
+            auto tVert0 = std::chrono::high_resolution_clock::now();
+            bool vertEdited = false;
             std::vector<std::vector<int>> rowHorizRunW(h, std::vector<int>(w, 0));
             for (int y = minY; y < maxY; ++y) {
                 const int* labelRow = labels.ptr<int>(y);
@@ -2044,22 +2061,32 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                                 rowPtr[cx] = 0;
                                 lRow[cx] = 0;
                                 modified = true;
+                                vertEdited = true;
                             }
                         }
                     }
                 }
             }
+            long long msVertLabel = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::high_resolution_clock::now() - tVert0).count();
+            msVert += msVertLabel;
+            LOGI("blackOut: label=%d vert tall w=%d h=%d edited=%d ms=%lld",
+                 i, w, h, vertEdited ? 1 : 0, msVertLabel);
         }
     }
 
     // Re-run object detection (CC) before small/tooLarge filter when wide/vertical filters modified the mat (Set J semantics).
     if (modified) {
+        auto tReCc0 = std::chrono::high_resolution_clock::now();
         nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+        msReCc = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - tReCc0).count();
     }
 
     // Run small item binarization filter (and any remaining tooLarge parts) on fresh labels
     // vSW: width of vertical character strokes
     // hSW: height of horizontal character strokes
+    auto tSmall0 = std::chrono::high_resolution_clock::now();
     std::vector<int> invalidLabels;
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
@@ -2098,6 +2125,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
             rowPtr[c] = (labelPtr[c] > 0) ? 255 : 0;
         }
     }
+    msSmallFilter = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - tSmall0).count();
+
+    long long msTotal = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - tFuncStart).count();
+    LOGI("blackOut: end total=%lldms cc=%lld horiz=%lld vert=%lld reCc=%lld small=%lld edited=%zu",
+         msTotal, msInitialCc, msHoriz, msVert, msReCc, msSmallFilter, editedIndices.size());
 
     jintArray result = env->NewIntArray(editedIndices.size());
     if (!editedIndices.empty()) {
