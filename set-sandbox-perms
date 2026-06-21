@@ -6,11 +6,12 @@ set -euo pipefail
 
 # Load config
 if [ -f project.config ]; then
-  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(sandbox_group|shared_group|planning_user|coder_user|orchestrator_user)')
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(sandbox_group|shared_group|docker_group|planning_user|coder_user|orchestrator_user)')
 fi
 
 SANDBOX_GROUP=${sandbox_group:-@@SANDBOX_GROUP@@}
 SHARED_GROUP=${shared_group:-@@SHARED_GROUP@@}
+DOCKER_GROUP=${docker_group:-docker}
 PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
 CODER_USER=${coder_user:-@@CODE_GROUP@@r}
 ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
@@ -91,5 +92,13 @@ for SANDBOX_DIR in "${SANDBOX_DIRS[@]}"; do
     fi
   done
 done
+
+# Also ensure @@CODE_GROUP@@r and @@ORCHESTRATOR_USER@@ are in the docker group (for Paddle container workflows).
+# This is a no-op if already a member.
+usermod -aG $DOCKER_GROUP $CODER_USER 2>/dev/null || true
+usermod -aG $DOCKER_GROUP $ORCHESTRATOR_USER 2>/dev/null || true
+if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+  usermod -aG $DOCKER_GROUP "$SUDO_USER_VAL" 2>/dev/null || true
+fi
 
 echo "Sandbox perms applied."
