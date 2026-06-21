@@ -24,6 +24,7 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 
 ## Application source (stable layout)
 - `app/` (Android root with gradle, src/)
+- `app/src/main/AndroidManifest.xml` — `<application android:largeHeap="true">` requests larger Java heap for the process
 - Package: `app/src/main/java/com/davidlang/vehicleexpensesautomated/`
 - Core harness locations (ui/util/):
   - OcrEngine.kt, OcrHarness.kt, NativePaddleEngine.kt
