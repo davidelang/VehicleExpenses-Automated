@@ -1,28 +1,5 @@
 # TODO
 
-## Active Work (enhance-pump-binpeak-debug-storage-p4-and-object-stats-20260621-plan.md)
-- [x] Phase 1: Hygiene + TODO update + baseline build
-- [x] Phase 2: Forensic pre-reads (no edits)
-- [x] Phase 3: Native CC stats + edited indices in NativeImageUtils.cpp
-- [x] Phase 4: Java wrappers in NativeImageUtils.kt
-- [x] Phase 5: Pump capture P4/objects/edits, remove annotated JPEGs
-- [x] Phase 6: HTML builder cleanup
-- [x] Phase 7: Final cross-checks + build + marker
-
-## Active Work (fix-pump-binpeak-maxwidth-to-buffer-for-cleaning-20260621-plan.md)
-- [x] Phase 1: Hygiene reads + TODO update + baseline build
-- [x] Phase 2: Forensic pre-reads (no edits)
-- [x] Phase 3: Edit only pump binPeak cleaned maxW computation
-- [x] Phase 4: Final cross-check + build + marker
-
-## Active Work (fix-wide-cleaning-scoping-to-object-only-20260621-plan.md)
-- [x] Phase 1: Hygiene + TODO + baseline build
-- [x] Phase 2: Forensic pre-reads of wide filter and Set J usage (no edits)
-- [x] Phase 3: Fix Horizontal Wide Filter blanking to scope per-object across full width
-- [x] Phase 4: Make CC runs explicit and match Set J (beginning + before small)
-- [x] Phase 5: Update pump call site to pass red-local maxWidth
-- [x] Phase 6: Final cross-check, verification, build + marker
-
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
