@@ -1,5 +1,12 @@
 # TODO
 
+- [ ] restore missing object-based binpeak annotated original+cleaned images (plan: restore-object-based-binpeak-annotated-original-cleaned-images-20260621-plan.md)
+  - [x] Phase 1: Forensic baseline (no source changes)
+  - [x] Phase 2: Add uncleaned annotated store
+  - [ ] Phase 3: Add cleaned annotated store
+  - [ ] Phase 4: Update buildBinPeakHtmlForBranch renderer
+  - [ ] Phase 5: Final verification + handoff
+
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
