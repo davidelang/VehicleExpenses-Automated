@@ -78,6 +78,22 @@ data class PumpPhotoResultSummary(
 )
 
 data class PumpHunk(val text: String, val rect: RectF) // pixel coordinates in full workspace/photo space for this image
+
+private data class PumpRectOcrLists(
+    val asis: List<String>,
+    val digits: List<String>,
+    val asisProbs: List<String> = emptyList(),
+    val digitsProbs: List<String> = emptyList()
+)
+
+private data class RedBoxOcrCandidate(
+    val label: String,
+    val asis: String,
+    val digits: String,
+    val asisProbs: String = "",
+    val digitsProbs: String = "",
+    val rect: android.graphics.Rect? = null
+)
 data class PathResult(val cost: String, val vol: String, val costB64: String, val volB64: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -571,22 +587,6 @@ private suspend fun runPumpExperiment(
                     }
                     return clean
                 }
-
-                data class PumpRectOcrLists(
-                    val asis: List<String>,
-                    val digits: List<String>,
-                    val asisProbs: List<String> = emptyList(),
-                    val digitsProbs: List<String> = emptyList()
-                )
-
-                data class RedBoxOcrCandidate(
-                    val label: String,
-                    val asis: String,
-                    val digits: String,
-                    val asisProbs: String = "",
-                    val digitsProbs: String = "",
-                    val rect: android.graphics.Rect? = null
-                )
 
                 fun rectToJson(r: android.graphics.Rect): JSONObject =
                     JSONObject().put("l", r.left).put("t", r.top).put("r", r.right).put("b", r.bottom)
@@ -1347,7 +1347,11 @@ private suspend fun runPumpExperiment(
                 })
                 branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
                 captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for F (redboxData + n_per_red_hists)
-                captureBinPeakSnapshotsFromRedbox(branch, workspace)
+                val redPixelBForBinPeak = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val binPeakCandidatesB = mutableListOf<RedBoxOcrCandidate>()
+                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelBForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesB)
 
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
@@ -1519,7 +1523,11 @@ private suspend fun runPumpExperiment(
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 4 for builder column + redboxDataC in JSON (no more 30).
                     // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
                     captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData for JSON (all sets); C visuals/redboxDataC + n_per_red_hists below
-                    captureBinPeakSnapshotsFromRedbox(branch, workspace)
+                    val redPixelCForBinPeak = pdHunksRawTotal.map { h ->
+                        android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                    }
+                    val binPeakCandidatesC = mutableListOf<RedBoxOcrCandidate>()
+                    captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC)
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val rw = (hunk.rect.right - hunk.rect.left).toInt()
@@ -2137,7 +2145,11 @@ private suspend fun runPumpExperiment(
                 })
                 branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
                 captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for F (redboxData + n_per_red_hists)
-                captureBinPeakSnapshotsFromRedbox(branch, workspace)
+                val redPixelFForBinPeak = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val binPeakCandidatesF = mutableListOf<RedBoxOcrCandidate>()
+                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelFForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesF)
 
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
@@ -2574,6 +2586,114 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 }
 
 
+private fun binPeakRectsIntersect(a: android.graphics.Rect, b: android.graphics.Rect): Boolean =
+    a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+
+private fun binPeakYOverlapHeight(a: android.graphics.Rect, b: android.graphics.Rect): Int {
+    val interTop = maxOf(a.top, b.top)
+    val interBottom = minOf(a.bottom, b.bottom)
+    return maxOf(0, interBottom - interTop)
+}
+
+/** Per-red object-based blue: components intersecting red, then union of all comps with Y-overlap to those seeds. */
+private fun binPeakComputeBlueRectsPerRed(
+    redRects: List<android.graphics.Rect>,
+    compRects: List<android.graphics.Rect>
+): List<android.graphics.Rect> {
+    return redRects.mapNotNull { red ->
+        val intersecting = compRects.filter { binPeakRectsIntersect(it, red) }
+        if (intersecting.isEmpty()) return@mapNotNull null
+        val associated = compRects.filter { comp ->
+            intersecting.any { seed -> binPeakYOverlapHeight(comp, seed) > 0 }
+        }
+        if (associated.isEmpty()) return@mapNotNull null
+        android.graphics.Rect(
+            associated.minOf { it.left },
+            associated.minOf { it.top },
+            associated.maxOf { it.right },
+            associated.maxOf { it.bottom }
+        )
+    }
+}
+
+/** vSW/hSW from run-length histogram on red areas of binarized image (native calculateHistogramWithThresholdH). */
+private fun binPeakComputeStrokeWidths(
+    binMat: org.opencv.core.Mat,
+    redRects: List<android.graphics.Rect>
+): Pair<Float, Float> {
+    if (redRects.isEmpty()) return -1f to -1f
+    val hRes = NativeImageUtils.calculateHistogramWithThresholdH(binMat, redRects, 128f) ?: return -1f to -1f
+    val vSW = hRes.second.getOrNull(0)?.toFloat() ?: -1f
+    val hSW = hRes.second.getOrNull(1)?.toFloat() ?: -1f
+    return vSW to hSW
+}
+
+/** Shrink full blue union rect to 40px tall (centered) for OCR crop; 4px offset applied in rec buffer. */
+private fun shrinkBlueRectForOcr(fullBlue: android.graphics.Rect, imgW: Int, imgH: Int): android.graphics.Rect {
+    val targetH = 40
+    val cy = (fullBlue.top + fullBlue.bottom) / 2
+    var nt = (cy - targetH / 2).coerceIn(0, imgH - 1)
+    var nb = (nt + targetH).coerceIn(nt + 1, imgH)
+    if (nb - nt < targetH) nt = (nb - targetH).coerceAtLeast(0)
+    val nl = fullBlue.left.coerceIn(0, imgW - 1)
+    val nr = fullBlue.right.coerceIn(nl + 1, imgW)
+    return android.graphics.Rect(nl, nt.coerceIn(0, imgH - 1), nr, nb.coerceIn(nt + 1, imgH))
+}
+
+private suspend fun ocrBinPeakRectsAsisAndDigits(
+    workspace: BufferSet,
+    binSlice: BufferSet.Slice,
+    paddleEngine: NativePaddleEngine,
+    recBuffer: BufferSet,
+    rects: List<android.graphics.Rect>
+): PumpRectOcrLists {
+    val imgW = binSlice.width; val imgH = binSlice.height
+    val asisPairs = rects.map { r ->
+        val pW = r.width(); val pH = r.height()
+        if (pW < 2 || pH < 2) "?" to "" else {
+            val l = r.left.coerceIn(0, imgW - 1)
+            val t = r.top.coerceIn(0, imgH - 1)
+            val rr = r.right.coerceIn(l + 1, imgW)
+            val bb = r.bottom.coerceIn(t + 1, imgH)
+            val cropId = binSlice.createCrop(l, t, rr - l, bb - t)
+            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+            recBuffer.p.clear()
+            val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
+            val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
+            Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+            val res = paddleEngine.recognize(recBuffer.c[recCropId])
+            recBuffer.c[recCropId].release(); workspace.c[cropId].release()
+            res.debugText to (if (res.perCharProbs.isNotEmpty()) res.perCharProbs else "")
+        }
+    }
+    val digitsPairs = rects.map { rp ->
+        val pW = rp.width(); val pH = rp.height()
+        if (pW < 2 || pH < 2) "?" to "" else {
+            val l = rp.left.coerceIn(0, imgW - 1)
+            val t = rp.top.coerceIn(0, imgH - 1)
+            val rr = rp.right.coerceIn(l + 1, imgW)
+            val bb = rp.bottom.coerceIn(t + 1, imgH)
+            val cropId = binSlice.createCrop(l, t, rr - l, bb - t)
+            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+            recBuffer.p.clear()
+            val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
+            val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
+            Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+            val res = paddleEngine.recognizeNumericDecimal(recBuffer.c[recCropId])
+            recBuffer.c[recCropId].release(); workspace.c[cropId].release()
+            res.debugText to (if (res.perCharProbs.isNotEmpty()) res.perCharProbs else "")
+        }
+    }
+    return PumpRectOcrLists(
+        asis = asisPairs.map { it.first },
+        digits = digitsPairs.map { it.first },
+        asisProbs = asisPairs.map { it.second },
+        digitsProbs = digitsPairs.map { it.second }
+    )
+}
+
 /** Annotated binPeak snapshot: binarized mat + red rects + full blue union rects overlaid (JPEG base64). */
 private suspend fun takeBinPeakAnnotatedSnapshot(
     binMat: org.opencv.core.Mat,
@@ -2607,7 +2727,17 @@ private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>
         .sortedByDescending { it.second }
 }
 
-private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, workspace: BufferSet, delta: Int = BIN_PEAK_BINARIZE_DELTA) {
+private suspend fun captureBinPeakSnapshotsFromRedbox(
+    branch: PumpBranch,
+    workspace: BufferSet,
+    redRects: List<android.graphics.Rect>,
+    paddleEngine: NativePaddleEngine,
+    recBuffer: BufferSet,
+    imgW: Int,
+    imgH: Int,
+    candidatesOut: MutableList<RedBoxOcrCandidate>,
+    delta: Int = BIN_PEAK_BINARIZE_DELTA
+) {
     val combinedBinsJson = branch.metadata["combinedRedboxHistBins"] ?: return
     val binsArr = JSONArray(combinedBinsJson)
     val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
@@ -2629,6 +2759,27 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(branch: PumpBranch, worksp
         val binB64 = OcrUtils.takeSnapshot(b.mat, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, emptyList(), null, null).first
         branch.images["binPeak_$peak"] = binB64
         branch.metadata["binPeak_${peak}_count"] = height.toString()
+
+        val (vSW, hSW) = binPeakComputeStrokeWidths(b.mat, redRects)
+        if (vSW > 0f && hSW > 0f && redRects.isNotEmpty()) {
+            val compRectsUncleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
+            val blueRectsUncleaned = binPeakComputeBlueRectsPerRed(redRects, compRectsUncleaned)
+            val uncleanedB64 = takeBinPeakAnnotatedSnapshot(b.mat, redRects, blueRectsUncleaned)
+            branch.images["binPeak_${peak}_uncleaned"] = uncleanedB64
+            val ocrRectsUncleaned = blueRectsUncleaned.map { shrinkBlueRectForOcr(it, imgW, imgH) }
+            val ocrUncleaned = ocrBinPeakRectsAsisAndDigits(workspace, b, paddleEngine, recBuffer, ocrRectsUncleaned)
+            blueRectsUncleaned.forEachIndexed { redK, fullBlue ->
+                val label = "Peak${peak}-uncleaned-Red${redK + 1}"
+                candidatesOut.add(RedBoxOcrCandidate(
+                    label,
+                    ocrUncleaned.asis.getOrElse(redK) { "?" },
+                    ocrUncleaned.digits.getOrElse(redK) { "?" },
+                    ocrUncleaned.asisProbs.getOrElse(redK) { "" },
+                    ocrUncleaned.digitsProbs.getOrElse(redK) { "" },
+                    fullBlue
+                ))
+            }
+        }
     }
 }
 
