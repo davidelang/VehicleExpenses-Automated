@@ -1,9 +1,9 @@
 # TODO
 
 - [ ] pump-experiment-larger-heap-largeheap-manifest (plan: dev-ai-interaction/plans/pump-experiment-larger-heap-largeheap-manifest-20260621-plan.md)
-  - [ ] Phase 1: Baseline forensic read + grep on manifest
-  - [ ] Phase 2: Add android:largeHeap="true" to <application>
-  - [ ] Phase 3: Post-edit verification + second build gate
+  - [x] Phase 1: Baseline forensic read + grep on manifest
+  - [x] Phase 2: Add android:largeHeap="true" to <application>
+  - [x] Phase 3: Post-edit verification + second build gate
   - [ ] Phase 4: project-facts hygiene + closing build
   - [ ] Phase 5: End-of-turn verification
 
