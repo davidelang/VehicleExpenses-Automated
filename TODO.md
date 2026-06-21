@@ -1,10 +1,10 @@
 # TODO
 
 ## Active Work (fix-pump-binpeak-maxwidth-to-buffer-for-cleaning-20260621-plan.md)
-- [ ] Phase 1: Hygiene reads + TODO update + baseline build
-- [ ] Phase 2: Forensic pre-reads (no edits)
-- [ ] Phase 3: Edit only pump binPeak cleaned maxW computation
-- [ ] Phase 4: Final cross-check + build + marker
+- [x] Phase 1: Hygiene reads + TODO update + baseline build
+- [x] Phase 2: Forensic pre-reads (no edits)
+- [x] Phase 3: Edit only pump binPeak cleaned maxW computation
+- [x] Phase 4: Final cross-check + build + marker
 
 ## Active Work (fix-wide-cleaning-scoping-to-object-only-20260621-plan.md)
 - [x] Phase 1: Hygiene + TODO + baseline build
