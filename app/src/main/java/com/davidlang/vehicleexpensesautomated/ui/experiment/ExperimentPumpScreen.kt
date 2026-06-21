@@ -1030,9 +1030,17 @@ private suspend fun runPumpExperiment(
                 suspend fun doBOrDRetractedBlueAndPD() {
                     // For B blue from exp hunks (expanded from raw reds): retract to tight text fit (similar to C; using workspace.p.mat for content-aware shrink when expansion hits limit with no text).
                     // Optimization (inside split-out helper per the D/E + user pixel/sweep plan): convert input lists to pixel Rects *once* (O(N) ICRS at boundary only). Use the pixel Rects for the expandByUniformity (native pixel) and for any future per-box work. Convert back only for the final retractedExpForBlue list (used by getAnns for the annotated PD). This eliminates repeated ICRS<->pixel inside the per-box loops (even on the post-prune N=6). PumpHunk form kept only for anns/snapshot compatibility; intra red/blue working is pixel Rects (images are unique per photo, no cross-image ICRS use needed). (This pixel-vs-ICRS / ICRS-at-boundary is pump red box (and associated blue) only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops.)
+                    pdHunksExpTotal.forEach { h ->
+                        if (h.rect.left > 2f || h.rect.top > 2f || h.rect.right > 2f || h.rect.bottom > 2f) {
+                            Log.w(TAG, "ICRS-like PumpHunk rect sanity: L=${h.rect.left} T=${h.rect.top} R=${h.rect.right} B=${h.rect.bottom}")
+                        }
+                    }
                     val expPixelRects = pdHunksExpTotal.map { h ->
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }
+                    val rectMin = expPixelRects.minOfOrNull { it.left } ?: -1
+                    val rectMax = expPixelRects.maxOfOrNull { it.right } ?: -1
+                    Log.d(TAG, "BCF expand path still active: n=${expPixelRects.size} rectMin=$rectMin rectMax=$rectMax")
                     val maxPixelRects = pdHunksMaxTotal.map { h ->
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }
@@ -2820,6 +2828,7 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
         branch.images["binPeak_$peak"] = binB64
         branch.metadata["binPeak_${peak}_count"] = height.toString()
         // Plain binary debug: P4 + full CC object stats (JSON inspection only; base64 string retained for output; internal P4 buffer released immediately for reuse on next peak per this plan)
+        Log.d(TAG, "P4 snapshot would have stored here: plain peak=$peak")
         branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
         // P4 buffer (b.mat) cleared after base64 + objects stored in JSON path; reusable for cleaned path or next peak
         b.mat.setTo(org.opencv.core.Scalar(0.0))
@@ -2847,6 +2856,7 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             val useMaxW = 0.20f * b.mat.cols()
             val editedIndices = NativeImageUtils.blackOutLargeAndSmallComponentsHWithEditedIndices(b.mat, vSW, hSW, useMaxW)
             branch.metadata["binPeak_${peak}_edited_object_indices"] = JSONArray(editedIndices.toList()).toString()
+            Log.d(TAG, "P4 snapshot would have stored here: cleaned peak=$peak")
             branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
             branch.metadata["binPeak_${peak}_cleaned_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
             val compRectsCleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
