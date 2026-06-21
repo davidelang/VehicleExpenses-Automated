@@ -1,5 +1,11 @@
 # TODO
 
+- [ ] eliminate 64MB JSON ceiling for P4 base64 (plan: dev-ai-interaction/plans/eliminate-64mb-json-ceiling-p4-20260621-123334-plan.md)
+  - [x] Phase 1: Baseline forensics (no source changes)
+  - [ ] Phase 2: Raise ceiling to PUMP_JSON_BUFFER_INITIAL_BYTES
+  - [ ] Phase 3: Update jsonCharBuffer comments for 256MB alignment
+  - [ ] Phase 4: Final verification + handoff
+
 - [x] optimize blackOut with labels/earlyout/full-run/255 + logging + sw store + P4 + remove plain (plan: dev-ai-interaction/plans/optimize-binpeak-blackout-earlyout-labels-20260621-120142-plan.md)
   - [x] Phase 1: Baseline forensics (no source changes)
   - [x] Phase 2: sw/hist discard full-buffer runs
