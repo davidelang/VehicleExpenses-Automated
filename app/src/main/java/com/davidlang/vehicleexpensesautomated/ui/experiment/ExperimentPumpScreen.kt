@@ -2730,7 +2730,12 @@ private fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
     System.arraycopy(header, 0, fullData, 0, header.size)
     System.arraycopy(packed, 0, fullData, header.size, packed.size)
 
-    return Base64.encodeToString(fullData, Base64.NO_WRAP)
+    val result = Base64.encodeToString(fullData, Base64.NO_WRAP)
+    // P4 internal buffers released after base64 extraction — source mat data no longer needed for this peak; workspace.s reused by next iteration in caller
+    data.fill(0)
+    packed.fill(0)
+    fullData.fill(0)
+    return result
 }
 
 private fun componentStatsToJson(stats: List<NativeImageUtils.ComponentStats>): String {
