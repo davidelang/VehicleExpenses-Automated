@@ -1,6 +1,14 @@
 #!/bin/bash
 # set-worktree-perms
 # Applies permissions for worktree (@@CODE_GROUP@@ group mainly).
+#
+# Usage:
+#   sudo ./set-worktree-perms          # fixes *only the current worktree* (recommended after a build)
+#   sudo ./set-worktree-perms --all    # full sweep of all worktrees (orchestration root, post-checkout, etc.)
+#   sudo ./set-worktree-perms /path/to/specific/tree
+#
+# The default "only current" behavior prevents stomping other active worktrees
+# that may be compiling or doing unrelated work.
 
 # Ensure any files created during perms application are group-writable
 umask 007
@@ -30,8 +38,47 @@ else
   TARGET_OWNER=""
 fi
 
-# Discover worktrees if in orchestration layer (or always use list for completeness)
-mapfile -t WORKTREES < <(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {print $2}')
+# Determine which worktree(s) to operate on.
+# Default behavior (big improvement): only the *current* worktree unless --all is passed.
+# This avoids stomping other active worktrees that may be in the middle of builds.
+DO_ALL=false
+TARGET_PATH=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --all|--global)
+      DO_ALL=true
+      ;;
+    *)
+      if [ -z "$TARGET_PATH" ]; then
+        TARGET_PATH="$arg"
+      fi
+      ;;
+  esac
+done
+
+if [ "$DO_ALL" = true ]; then
+  mapfile -t WORKTREES < <(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {print $2}')
+  echo "  ( --all requested: operating on all worktrees )"
+elif [ -n "$TARGET_PATH" ]; then
+  WORKTREES=("$TARGET_PATH")
+  echo "  (targeting specific path: $TARGET_PATH )"
+else
+  # Smart default (the key improvement):
+  # - If we're in the orchestration root (many worktrees, no "app/" dir), do all.
+  # - Otherwise (normal case inside master/ or agent-N/ after a compile), only fix *this* tree.
+  # This stops the annoying global chown/chmod that touches trees that are busy compiling.
+  NUM_WTS=$(git worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || echo 1)
+  if [ "$NUM_WTS" -gt 2 ] && [ ! -d "app" ] && [ ! -f "gradlew" ]; then
+    mapfile -t WORKTREES < <(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {print $2}')
+    echo "  (orchestration root detected: operating on all worktrees)"
+  else
+    CURR_TOPLEVEL=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+    WORKTREES=("$CURR_TOPLEVEL")
+    echo "  (default: only current worktree - use --all for global sweep)"
+  fi
+fi
+
 if [ ${#WORKTREES[@]} -eq 0 ]; then
   WORKTREES=(".")
 fi
