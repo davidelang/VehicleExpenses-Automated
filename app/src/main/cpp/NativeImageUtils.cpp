@@ -1870,7 +1870,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
 
-    // Run first pass of CC to find extra-large components
+    // Object detection (CC): populate per-pixel labels buffer before any filters (Set J semantics).
     cv::Mat labels, stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
@@ -1885,6 +1885,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         int maxY = minY + h;
 
         // 1. Horizontal Wide Filter (Width is proof of garbage)
+        // For wide objects: mark rows with long horizontal runs of *this* object (label i).
+        // On erase: blank garbage rows for the entire object across full image width, but only
+        // pixels whose label matches i — other objects in the same row are untouched.
         if ((float)w > maxWidth) {
             std::vector<bool> garbageRows(h, false);
             for (int y = minY; y < maxY; ++y) {
@@ -1904,7 +1907,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                 }
             }
 
-            // Group marked rows into bands and erase
+            // Group marked rows into bands and erase (per-object, full width, label-scoped)
             for (int y = 0; y < h; ++y) {
                 if (garbageRows[y]) {
                     int y_start = y;
@@ -1919,7 +1922,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
                     for (int cy = y_clear_start; cy <= y_clear_end; ++cy) {
                         auto* rowPtr = mat->ptr<uint8_t>(cy);
                         const auto* lRow = labels.ptr<int>(cy);
-                        for (int cx = minX; cx < maxX; ++cx) {
+                        for (int cx = 0; cx < mat->cols; ++cx) {
                             if (lRow[cx] == i) {
                                 rowPtr[cx] = 0;
                                 modified = true;
@@ -1984,12 +1987,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         }
     }
 
-    // Refresh connected components list if we split any large object
+    // Re-run object detection (CC) before small/tooLarge filter when wide/vertical filters modified the mat (Set J semantics).
     if (modified) {
         nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
     }
 
-    // Run small item binarization filter (and any remaining tooLarge parts)
+    // Run small item binarization filter (and any remaining tooLarge parts) on fresh labels
     // vSW: width of vertical character strokes
     // hSW: height of horizontal character strokes
     std::vector<int> invalidLabels;
