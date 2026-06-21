@@ -1,26 +1,5 @@
 # TODO
 
-- [x] pump-experiment-larger-heap-largeheap-manifest (plan: dev-ai-interaction/plans/pump-experiment-larger-heap-largeheap-manifest-20260621-plan.md)
-  - [x] Phase 1: Baseline forensic read + grep on manifest
-  - [x] Phase 2: Add android:largeHeap="true" to <application>
-  - [x] Phase 3: Post-edit verification + second build gate
-  - [x] Phase 4: project-facts hygiene + closing build
-  - [x] Phase 5: End-of-turn verification
-  - Results ready to test (tag: fix-pump-experiment/builds)
-
-- [x] pump-p4-after-base64-reuse-and-json-charbuffer-256m (plan: dev-ai-interaction/plans/pump-p4-after-base64-reuse-and-json-charbuffer-256m-20260621-plan.md)
-  - [x] Phase 1: Baseline forensics + initial build gate
-  - [x] Phase 2: Add PUMP_JSON_BUFFER constants
-  - [x] Phase 3: jsonCharBuffer init 256M
-  - [x] Phase 4: Per-photo reset threshold
-  - [x] Phase 5: maxSizeBytes comment
-  - [x] Phase 6: matToPbmP4Base64 buffer release
-  - [x] Phase 7: Clear b.mat after plain_p4
-  - [x] Phase 8: Clear b.mat after cleaned_p4
-  - [x] Phase 9: plain_p4 reuse contract comment
-  - [x] Phase 10: Final grep/build + close
-  - Results ready to test (tag via final build)
-
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
