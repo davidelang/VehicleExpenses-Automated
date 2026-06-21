@@ -2065,13 +2065,22 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         }
         for (int r = 0; r < mat->rows; ++r) {
             auto* rowPtr = mat->ptr<uint8_t>(r);
-            const auto* labelPtr = labels.ptr<int>(r);
+            auto* labelPtr = labels.ptr<int>(r);
             for (int c = 0; c < mat->cols; ++c) {
                 int label = labelPtr[c];
                 if (label > 0 && isInvalid[label]) {
                     rowPtr[c] = 0;
+                    labelPtr[c] = 0;
                 }
             }
+        }
+    }
+
+    for (int r = 0; r < mat->rows; ++r) {
+        auto* rowPtr = mat->ptr<uint8_t>(r);
+        const auto* labelPtr = labels.ptr<int>(r);
+        for (int c = 0; c < mat->cols; ++c) {
+            rowPtr[c] = (labelPtr[c] > 0) ? 255 : 0;
         }
     }
 
