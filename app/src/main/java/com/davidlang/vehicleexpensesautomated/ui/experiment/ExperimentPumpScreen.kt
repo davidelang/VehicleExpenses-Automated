@@ -1579,10 +1579,9 @@ private suspend fun runPumpExperiment(
                 // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
-                // fix-remaining-report-issues-20260619-plan: Set C — buildRedBoxCandidates uses cRetractedPixel ocr rects
-                val cRetractedPixel = computeRetractedBluePixelRects()
-                val ocrC = ocrPumpRectsAsisAndDigits(cRetractedPixel)
-                val cCands = buildRedBoxCandidates(cRetractedPixel, ocrC.asis, ocrC.digits, ocrC.asisProbs, ocrC.digitsProbs)
+                // Set C — object-based blue from binPeak binaries (pre/post-clean per peak); replaces expandByUniformity path
+                val cCands = binPeakCandidatesC
+                val cOcrSourceRects = cCands.mapNotNull { it.rect }
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, cCands)
                 val redPixelC = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
@@ -1590,13 +1589,13 @@ private suspend fun runPumpExperiment(
                 val cvC = classifyCostVolFromBoxOcr(cCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelC,
-                    ocrSourceRects = cRetractedPixel,
+                    ocrSourceRects = cOcrSourceRects,
                     candidates = cCands,
                     costCand = cvC.costCand,
                     volCand = cvC.volCand,
                     finalCost = cvC.cost,
                     finalVol = cvC.vol,
-                    assembly = mapOf("method" to "retracted", "note" to "per-red expandByUniformity (content-aware retract)")
+                    assembly = mapOf("method" to "binPeak-object", "note" to "per-peak binarized object-based blue (uncleaned+cleaned)")
                 )
                 val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, redAnns, null, workspace).first
