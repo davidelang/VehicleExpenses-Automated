@@ -2837,6 +2837,7 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
         // P4 buffer (b.mat) cleared after base64 + objects stored in JSON path; reusable for cleaned path or next peak
         b.mat.setTo(org.opencv.core.Scalar(0.0))
         NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
+        val tPeakStart = System.currentTimeMillis()
 
         val (vSW, hSW) = binPeakComputeStrokeWidths(b.mat, redRects)
         if (vSW > 0f && hSW > 0f && redRects.isNotEmpty()) {
@@ -2889,6 +2890,9 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             val cleanedAnnotated = takeBinPeakAnnotatedSnapshot(b.mat, redRects, blueRectsCleaned)
             branch.images["binPeak_${peak}_cleaned"] = cleanedAnnotated
             branch.metadata["binPeak_${peak}_cleaned_phase_ms"] = (System.currentTimeMillis() - tCleanedStart).toString()
+            val peakMs = System.currentTimeMillis() - tPeakStart
+            branch.metadata["t_binpeak_peak${peak}_ms"] = peakMs.toString()
+            Log.d(TAG, "binpeak peak=$peak took ${peakMs}ms (blackout=${branch.metadata["binPeak_${peak}_blackout_ms"]}, cleaned=${branch.metadata["binPeak_${peak}_cleaned_phase_ms"]})")
 
             // P4 buffer (b.mat) cleared after cleaned base64 stored in JSON path; reusable for next peak
             b.mat.setTo(org.opencv.core.Scalar(0.0))
