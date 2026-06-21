@@ -1357,10 +1357,9 @@ private suspend fun runPumpExperiment(
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
-                // fix-remaining-report-issues-20260619-plan: Set B — buildRedBoxCandidates uses bRetractedPixel ocr rects
-                val bRetractedPixel = computeRetractedBluePixelRects()
-                val ocrB = ocrPumpRectsAsisAndDigits(bRetractedPixel)
-                val bCands = buildRedBoxCandidates(bRetractedPixel, ocrB.asis, ocrB.digits, ocrB.asisProbs, ocrB.digitsProbs)
+                // Set B — object-based blue from binPeak binaries (pre/post-clean per peak); replaces expandByUniformity path
+                val bCands = binPeakCandidatesB
+                val bOcrSourceRects = bCands.mapNotNull { it.rect }
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, bCands)
                 val redPixelB = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
@@ -1368,13 +1367,13 @@ private suspend fun runPumpExperiment(
                 val cvB = classifyCostVolFromBoxOcr(bCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelB,
-                    ocrSourceRects = bRetractedPixel,
+                    ocrSourceRects = bOcrSourceRects,
                     candidates = bCands,
                     costCand = cvB.costCand,
                     volCand = cvB.volCand,
                     finalCost = cvB.cost,
                     finalVol = cvB.vol,
-                    assembly = mapOf("method" to "retracted", "note" to "per-red expandByUniformity (content-aware retract)")
+                    assembly = mapOf("method" to "binPeak-object", "note" to "per-peak binarized object-based blue (uncleaned+cleaned)")
                 )
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -2156,10 +2155,9 @@ private suspend fun runPumpExperiment(
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
-                // fix-remaining-report-issues-20260619-plan: Set F — buildRedBoxCandidates uses fRetractedPixel ocr rects
-                val fRetractedPixel = computeRetractedBluePixelRects()
-                val ocrF = ocrPumpRectsAsisAndDigits(fRetractedPixel)
-                val fCands = buildRedBoxCandidates(fRetractedPixel, ocrF.asis, ocrF.digits, ocrF.asisProbs, ocrF.digitsProbs)
+                // Set F — object-based blue from binPeak binaries (pre/post-clean per peak); replaces expandByUniformity path
+                val fCands = binPeakCandidatesF
+                val fOcrSourceRects = fCands.mapNotNull { it.rect }
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, fCands)
                 val redPixelF = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
@@ -2167,13 +2165,13 @@ private suspend fun runPumpExperiment(
                 val cvF = classifyCostVolFromBoxOcr(fCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelF,
-                    ocrSourceRects = fRetractedPixel,
+                    ocrSourceRects = fOcrSourceRects,
                     candidates = fCands,
                     costCand = cvF.costCand,
                     volCand = cvF.volCand,
                     finalCost = cvF.cost,
                     finalVol = cvF.vol,
-                    assembly = mapOf("method" to "retracted", "note" to "per-red expandByUniformity (content-aware retract)")
+                    assembly = mapOf("method" to "binPeak-object", "note" to "per-peak binarized object-based blue (uncleaned+cleaned)")
                 )
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
