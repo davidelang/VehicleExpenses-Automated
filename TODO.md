@@ -1,5 +1,17 @@
 # TODO
 
+- [ ] pump-p4-after-base64-reuse-and-json-charbuffer-256m (plan: dev-ai-interaction/plans/pump-p4-after-base64-reuse-and-json-charbuffer-256m-20260621-plan.md)
+  - [ ] Phase 1: Baseline forensics + initial build gate
+  - [ ] Phase 2: Add PUMP_JSON_BUFFER constants
+  - [ ] Phase 3: jsonCharBuffer init 256M
+  - [ ] Phase 4: Per-photo reset threshold
+  - [ ] Phase 5: maxSizeBytes comment
+  - [ ] Phase 6: matToPbmP4Base64 buffer release
+  - [ ] Phase 7: Clear b.mat after plain_p4
+  - [ ] Phase 8: Clear b.mat after cleaned_p4
+  - [ ] Phase 9: plain_p4 reuse contract comment
+  - [ ] Phase 10: Final grep/build + close
+
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
   - [x] Add stripLeadingAssignments + getLastPipeBase + generalized early-allow logic to the hook (so prefixed forms of blessed bases like jq/ls/git/echo/find/build_app/etc. no longer prompt; blocks loopholes by checking the first non-assignment token). Python3 * deliberately never included (user confirmed too dangerous).
