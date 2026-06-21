@@ -1,16 +1,17 @@
 # TODO
 
-- [ ] pump-p4-after-base64-reuse-and-json-charbuffer-256m (plan: dev-ai-interaction/plans/pump-p4-after-base64-reuse-and-json-charbuffer-256m-20260621-plan.md)
-  - [ ] Phase 1: Baseline forensics + initial build gate
-  - [ ] Phase 2: Add PUMP_JSON_BUFFER constants
-  - [ ] Phase 3: jsonCharBuffer init 256M
-  - [ ] Phase 4: Per-photo reset threshold
-  - [ ] Phase 5: maxSizeBytes comment
-  - [ ] Phase 6: matToPbmP4Base64 buffer release
-  - [ ] Phase 7: Clear b.mat after plain_p4
-  - [ ] Phase 8: Clear b.mat after cleaned_p4
-  - [ ] Phase 9: plain_p4 reuse contract comment
-  - [ ] Phase 10: Final grep/build + close
+- [x] pump-p4-after-base64-reuse-and-json-charbuffer-256m (plan: dev-ai-interaction/plans/pump-p4-after-base64-reuse-and-json-charbuffer-256m-20260621-plan.md)
+  - [x] Phase 1: Baseline forensics + initial build gate
+  - [x] Phase 2: Add PUMP_JSON_BUFFER constants
+  - [x] Phase 3: jsonCharBuffer init 256M
+  - [x] Phase 4: Per-photo reset threshold
+  - [x] Phase 5: maxSizeBytes comment
+  - [x] Phase 6: matToPbmP4Base64 buffer release
+  - [x] Phase 7: Clear b.mat after plain_p4
+  - [x] Phase 8: Clear b.mat after cleaned_p4
+  - [x] Phase 9: plain_p4 reuse contract comment
+  - [x] Phase 10: Final grep/build + close
+  - Results ready to test (tag via final build)
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
