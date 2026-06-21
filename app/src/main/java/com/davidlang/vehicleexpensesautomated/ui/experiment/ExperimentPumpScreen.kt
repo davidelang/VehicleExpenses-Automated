@@ -2868,22 +2868,38 @@ private fun generateCdfB64(mat: org.opencv.core.Mat, floorPercentile: Float): St
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
 
+private fun parseBinPeakKeyToPeakNum(key: String): Int? {
+    if (!key.startsWith("binPeak_")) return null
+    val rest = key.removePrefix("binPeak_")
+    rest.toIntOrNull()?.let { return it }
+    if (rest.endsWith("_uncleaned")) return rest.removeSuffix("_uncleaned").toIntOrNull()
+    if (rest.endsWith("_cleaned")) return rest.removeSuffix("_cleaned").toIntOrNull()
+    return null
+}
+
 private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String {
     val blueMethodPrefixes = listOf("Set B", "Set C", "Set D", "Set E", "Set F", "Set G")
     if (blueMethodPrefixes.none { flowName.startsWith(it) }) return ""
-    val binPeaks = br.images.keys.filter { it.startsWith("binPeak_") }
-    if (binPeaks.isEmpty()) return ""
-    val sorted = binPeaks.mapNotNull { key ->
-        val peak = key.removePrefix("binPeak_").toIntOrNull() ?: return@mapNotNull null
-        val height = br.metadata["binPeak_${peak}_count"]?.toIntOrNull() ?: 0
-        val b64 = br.images[key] ?: return@mapNotNull null
-        Triple(peak, height, b64)
+    val peakNums = br.images.keys.mapNotNull { parseBinPeakKeyToPeakNum(it) }.distinct()
+    if (peakNums.isEmpty()) return ""
+    val sorted = peakNums.map { peak ->
+        peak to (br.metadata["binPeak_${peak}_count"]?.toIntOrNull() ?: 0)
     }.sortedByDescending { it.second }
     return buildString {
         append("<br><div style='margin-top:4px;'><b>Binarized by redbox peaks (range ±$BIN_PEAK_BINARIZE_DELTA, highest peak height to lowest):</b></div>")
-        sorted.forEach { (peak, height, b64) ->
-            append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
-            append("<br><small>peak=$peak (union bar height: $height px)</small><br>")
+        sorted.forEach { (peak, height) ->
+            br.images["binPeak_$peak"]?.let { b64 ->
+                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
+                append("<br><small>peak=$peak plain (union bar height: $height px)</small><br>")
+            }
+            br.images["binPeak_${peak}_uncleaned"]?.let { b64 ->
+                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
+                append("<br><small>peak=$peak uncleaned (red+blue annotated)</small><br>")
+            }
+            br.images["binPeak_${peak}_cleaned"]?.let { b64 ->
+                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
+                append("<br><small>peak=$peak cleaned (red+blue annotated)</small><br>")
+            }
         }
     }
 }
