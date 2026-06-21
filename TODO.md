@@ -1,17 +1,17 @@
 # TODO
 
-- [ ] optimize blackOut with labels/earlyout/full-run/255 + logging + sw store + P4 + remove plain (plan: dev-ai-interaction/plans/optimize-binpeak-blackout-earlyout-labels-20260621-120142-plan.md)
-  - [ ] Phase 1: Baseline forensics (no source changes)
+- [x] optimize blackOut with labels/earlyout/full-run/255 + logging + sw store + P4 + remove plain (plan: dev-ai-interaction/plans/optimize-binpeak-blackout-earlyout-labels-20260621-120142-plan.md)
+  - [x] Phase 1: Baseline forensics (no source changes)
   - [x] Phase 2: sw/hist discard full-buffer runs
   - [x] Phase 3: Horiz early out + immediate lrow zero
   - [x] Phase 4: Bbox-limited erases + zero labels
   - [x] Phase 5: Final pass mat=255 from labels
   - [x] Phase 6: Vertical linear precompute horiz widths
-  - [ ] Phase 7: Sub-timings + LOGI in native
-  - [ ] Phase 8: Store vSW/hSW per peak in metadata
-  - [ ] Phase 9: Remove plain JPEG + HTML fallback
-  - [ ] Phase 10: Add back P4 stores
-  - [ ] Phase 11: Verify + handoff
+  - [x] Phase 7: Sub-timings + LOGI in native
+  - [x] Phase 8: Store vSW/hSW per peak in metadata
+  - [x] Phase 9: Remove plain JPEG + HTML fallback
+  - [x] Phase 10: Add back P4 stores
+  - [x] Phase 11: Verify + handoff
 
 - [x] add timing for binpeak cleaning (blackout + cleaned phase) (plan: dev-ai-interaction/plans/add-timing-for-binpeak-cleaning-process-20260621-101054-plan.md)
   - [x] Phase 1: Forensic baseline (no source changes)
