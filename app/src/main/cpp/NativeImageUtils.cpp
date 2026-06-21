@@ -1984,29 +1984,44 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
 
         // 2. Vertical Wide Filter (Thickness-over-distance is proof of garbage)
         if ((float)h >= 0.3f * mat->rows) {
+            std::vector<std::vector<int>> rowHorizRunW(h, std::vector<int>(w, 0));
+            for (int y = minY; y < maxY; ++y) {
+                const int* labelRow = labels.ptr<int>(y);
+                int rowIdx = y - minY;
+                for (int x = minX; x < maxX; ) {
+                    if (labelRow[x] != i) { x++; continue; }
+                    int runStart = x;
+                    while (x < maxX && labelRow[x] == i) x++;
+                    int runLen = x - runStart;
+                    for (int rx = runStart; rx < x; ++rx) {
+                        rowHorizRunW[rowIdx][rx - minX] = runLen;
+                    }
+                }
+            }
+
             std::vector<bool> garbageCols(w, false);
             for (int x = minX; x < maxX; ++x) {
                 int maxContiguousNarrow = 0;
                 int currentContiguousNarrow = 0;
+                int colIdx = x - minX;
                 for (int y = minY; y < maxY; ++y) {
-                    if (labels.at<int>(y, x) == i) {
-                        // Check if horizontally narrow at this row
-                        int xl = x; while (xl >= 0 && labels.at<int>(y, xl) == i) xl--;
-                        int xr = x; while (xr < mat->cols && labels.at<int>(y, xr) == i) xr++;
-                        if ((float)(xr - xl - 1) < 0.75f * vSW) {
-                            currentContiguousNarrow++;
-                            if (currentContiguousNarrow > maxContiguousNarrow) {
-                                maxContiguousNarrow = currentContiguousNarrow;
-                            }
-                        } else {
-                            currentContiguousNarrow = 0;
+                    const int* labelRow = labels.ptr<int>(y);
+                    if (labelRow[x] != i) {
+                        currentContiguousNarrow = 0;
+                        continue;
+                    }
+                    int runW = rowHorizRunW[y - minY][colIdx];
+                    if ((float)runW < 0.75f * vSW) {
+                        currentContiguousNarrow++;
+                        if (currentContiguousNarrow > maxContiguousNarrow) {
+                            maxContiguousNarrow = currentContiguousNarrow;
                         }
                     } else {
                         currentContiguousNarrow = 0;
                     }
                 }
                 if ((float)maxContiguousNarrow >= 0.3f * mat->rows) {
-                    garbageCols[x - minX] = true;
+                    garbageCols[colIdx] = true;
                 }
             }
 
