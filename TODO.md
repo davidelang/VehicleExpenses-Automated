@@ -7,7 +7,7 @@
 - [x] Phase 4: Java wrappers in NativeImageUtils.kt
 - [x] Phase 5: Pump capture P4/objects/edits, remove annotated JPEGs
 - [x] Phase 6: HTML builder cleanup
-- [ ] Phase 7: Final cross-checks + build + marker
+- [x] Phase 7: Final cross-checks + build + marker
 
 ## Active Work (fix-pump-binpeak-maxwidth-to-buffer-for-cleaning-20260621-plan.md)
 - [x] Phase 1: Hygiene reads + TODO update + baseline build
