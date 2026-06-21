@@ -31,6 +31,7 @@ cat <<'USERCMDS'
 groupadd @@CODE_GROUP@@ || true
 groupadd @@SANDBOX_GROUP@@ || true
 groupadd @@SHARED_GROUP@@ || true
+groupadd docker || true
 useradd -m -g @@SANDBOX_GROUP@@ @@PLANNING_USER@@ || true
 useradd -m -g @@CODE_GROUP@@ @@CODE_GROUP@@r || true
 useradd -m -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@ || true
@@ -44,9 +45,14 @@ usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@ || true
 usermod -aG @@SHARED_GROUP@@ @@PLANNING_USER@@ || true
 usermod -aG @@SANDBOX_GROUP@@,@@SHARED_GROUP@@ @@CODE_GROUP@@r || true
 usermod -aG @@SANDBOX_GROUP@@ @@ORCHESTRATOR_USER@@ || true
-# Add the primary human/developer user (the one running setup) to @@CODE_GROUP@@ so they can access worktree files via group
+# Docker group for running/interacting with containers (required for Paddle development builds,
+# docker build, docker run --privileged -v ... etc. used in paddle-build/ and Paddle-Lite docker workflows).
+# @@CODE_GROUP@@r and @@ORCHESTRATOR_USER@@ need this to execute docker commands against the daemon socket.
+usermod -aG docker @@CODE_GROUP@@r || true
+usermod -aG docker @@ORCHESTRATOR_USER@@ || true
+# Add the primary human/developer user (the one running setup) to @@CODE_GROUP@@ and docker
 # Replace 'dlang' with your username if different
-usermod -aG @@CODE_GROUP@@ dlang || true
+usermod -aG @@CODE_GROUP@@,docker dlang || true
 echo "Users created (if not exist)."
 echo "IMPORTANT: If you are dlang (or the developer), run 'newgrp @@CODE_GROUP@@' or log out/in so your current shell sees the group."
 

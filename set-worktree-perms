@@ -9,10 +9,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/project.config" ]; then
-  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|orchestrator_user|planning_user|coder_user)')
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|docker_group|orchestrator_user|planning_user|coder_user)')
 fi
 
 CODE_GROUP=${code_group:-@@CODE_GROUP@@}
+DOCKER_GROUP=${docker_group:-docker}
 ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
 PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
 CODER_USER=${coder_user:-@@CODE_GROUP@@r}
@@ -124,6 +125,16 @@ usermod -aG $CODE_GROUP $ORCHESTRATOR_USER 2>/dev/null || true
 if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
   usermod -aG $CODE_GROUP "$SUDO_USER_VAL" 2>/dev/null || true
   echo "  Added $SUDO_USER_VAL to $CODE_GROUP (group membership will be active after new login/shell)"
+fi
+
+# Grant docker group to @@CODE_GROUP@@r and @@ORCHESTRATOR_USER@@ so they can run docker commands
+# (needed for Paddle development: docker build + docker run --privileged -v mounts in paddle-build workflows).
+# The human (via sudo) is also added for convenience.
+usermod -aG $DOCKER_GROUP $CODER_USER 2>/dev/null || true
+usermod -aG $DOCKER_GROUP $ORCHESTRATOR_USER 2>/dev/null || true
+if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
+  usermod -aG $DOCKER_GROUP "$SUDO_USER_VAL" 2>/dev/null || true
+  echo "  Added $SUDO_USER_VAL to $DOCKER_GROUP (for docker access)"
 fi
 
 # Compute the main repo root (works from root or inside worktree)
