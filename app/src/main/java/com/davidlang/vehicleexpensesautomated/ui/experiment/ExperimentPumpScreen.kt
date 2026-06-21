@@ -1352,6 +1352,7 @@ private suspend fun runPumpExperiment(
                 }
                 val binPeakCandidatesB = mutableListOf<RedBoxOcrCandidate>()
                 captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelBForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesB)
+                branch.metadata["binPeakCandidateCount"] = binPeakCandidatesB.size.toString()
 
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
@@ -1528,6 +1529,7 @@ private suspend fun runPumpExperiment(
                     }
                     val binPeakCandidatesC = mutableListOf<RedBoxOcrCandidate>()
                     captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC)
+                    branch.metadata["binPeakCandidateCount"] = binPeakCandidatesC.size.toString()
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
                         val rw = (hunk.rect.right - hunk.rect.left).toInt()
@@ -2150,6 +2152,7 @@ private suspend fun runPumpExperiment(
                 }
                 val binPeakCandidatesF = mutableListOf<RedBoxOcrCandidate>()
                 captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelFForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesF)
+                branch.metadata["binPeakCandidateCount"] = binPeakCandidatesF.size.toString()
 
                 val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
