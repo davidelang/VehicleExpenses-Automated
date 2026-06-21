@@ -209,3 +209,9 @@ for aiuser in "$PLANNING_USER" "$CODER_USER" "$ORCHESTRATOR_USER"; do
 done
 
 echo "Worktree perms applied."
+
+if [ "$DO_ALL" != true ]; then
+  echo ""
+  echo "Note: Only touched the current worktree (or the one you specified)."
+  echo "Other branches were left alone. Run with --all if you really need a full sweep."
+fi
