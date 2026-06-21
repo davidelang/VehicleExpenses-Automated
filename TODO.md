@@ -4,7 +4,7 @@
 - [x] Phase 1: Hygiene + TODO update + baseline build
 - [x] Phase 2: Forensic pre-reads (no edits)
 - [x] Phase 3: Native CC stats + edited indices in NativeImageUtils.cpp
-- [ ] Phase 4: Java wrappers in NativeImageUtils.kt
+- [x] Phase 4: Java wrappers in NativeImageUtils.kt
 - [ ] Phase 5: Pump capture P4/objects/edits, remove annotated JPEGs
 - [ ] Phase 6: HTML builder cleanup
 - [ ] Phase 7: Final cross-checks + build + marker

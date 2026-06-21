@@ -322,6 +322,30 @@ object NativeImageUtils {
         return if (res != null && res.size == 4) android.graphics.Rect(res[0], res[1], res[2], res[3]) else rect
     }
 
+    data class ComponentStats(
+        val index: Int,
+        val left: Int,
+        val top: Int,
+        val width: Int,
+        val height: Int,
+        val area: Int
+    )
+
+    fun getComponentStats(mat: Mat): List<ComponentStats> {
+        val res = nativeGetAllComponentStatsH(mat.nativeObj) ?: return emptyList()
+        if (res.isEmpty()) return emptyList()
+        val n = res[0]
+        val list = mutableListOf<ComponentStats>()
+        var i = 1
+        repeat(n) {
+            if (i + 5 < res.size) {
+                list.add(ComponentStats(res[i], res[i + 1], res[i + 2], res[i + 3], res[i + 4], res[i + 5]))
+                i += 6
+            }
+        }
+        return list
+    }
+
     fun findAllComponentsH(mat: Mat, vSW: Float, hSW: Float): List<android.graphics.Rect> {
         val res = nativeFindAllComponentsH(mat.nativeObj, vSW, hSW) ?: return emptyList()
         val list = mutableListOf<android.graphics.Rect>()
@@ -335,6 +359,10 @@ object NativeImageUtils {
 
     fun blackOutLargeAndSmallComponentsH(mat: Mat, vSW: Float, hSW: Float, maxWidth: Float) {
         nativeBlackOutLargeAndSmallComponentsH(mat.nativeObj, vSW, hSW, maxWidth)
+    }
+
+    fun blackOutLargeAndSmallComponentsHWithEditedIndices(mat: Mat, vSW: Float, hSW: Float, maxWidth: Float): IntArray {
+        return nativeBlackOutLargeAndSmallComponentsH(mat.nativeObj, vSW, hSW, maxWidth) ?: intArrayOf()
     }
 
     fun calculatePitchH(mat: Mat, bounds: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray? {
@@ -365,9 +393,10 @@ object NativeImageUtils {
     private external fun nativeCalculateHistogramWithThresholdH(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
     private external fun nativeExpandBoundsH(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
     private external fun nativeFindAllComponentsH(matPtr: Long, vSW: Float, hSW: Float): IntArray?
+    private external fun nativeGetAllComponentStatsH(matPtr: Long): IntArray?
     private external fun nativeCalculatePitchH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
     private external fun nativeAlignGridH(matPtr: Long, minX: Int, minY: Int, maxX: Int, maxY: Int, pitch: Int, bestShift: Int, anchorMode: Int, vSW: Float, hSW: Float, thresholdFactor: Float): Array<Any>?
-    private external fun nativeBlackOutLargeAndSmallComponentsH(matPtr: Long, vSW: Float, hSW: Float, maxWidth: Float)
+    private external fun nativeBlackOutLargeAndSmallComponentsH(matPtr: Long, vSW: Float, hSW: Float, maxWidth: Float): IntArray?
     private external fun nativeBlackOutRollingDigitsH(matPtr: Long, vSW: Float, hSW: Float)
 
 }
