@@ -225,8 +225,8 @@ private suspend fun runPumpExperiment(
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
 
-    // Pre-allocated JSON serialization buffer (16MB starting capacity)
-    var jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
+    // Pre-allocated JSON serialization buffer (256MB upfront for many P4 base64 strings per photo)
+    var jsonCharBuffer = StringBuilder(PUMP_JSON_BUFFER_INITIAL_BYTES)
 
     var partCount = 1
     val maxSizeBytes = 50 * 1024 * 1024 // 50MB parts (for extra per-peak binarized previews in B/C/D/E/F/G)
