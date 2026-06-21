@@ -1,10 +1,10 @@
 # TODO
 
 ## Active Work (fix-wide-cleaning-scoping-to-object-only-20260621-plan.md)
-- [ ] Phase 1: Hygiene + TODO + baseline build
-- [ ] Phase 2: Forensic pre-reads of wide filter and Set J usage (no edits)
-- [ ] Phase 3: Fix Horizontal Wide Filter blanking to scope per-object across full width
-- [ ] Phase 4: Make CC runs explicit and match Set J (beginning + before small)
+- [x] Phase 1: Hygiene + TODO + baseline build
+- [x] Phase 2: Forensic pre-reads of wide filter and Set J usage (no edits)
+- [x] Phase 3: Fix Horizontal Wide Filter blanking to scope per-object across full width
+- [x] Phase 4: Make CC runs explicit and match Set J (beginning + before small)
 - [ ] Phase 5: Update pump call site to pass red-local maxWidth
 - [ ] Phase 6: Final cross-check, verification, build + marker
 
