@@ -2779,6 +2779,25 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
                     fullBlue
                 ))
             }
+
+            NativeImageUtils.blackOutLargeAndSmallComponentsH(b.mat, vSW, hSW, 0.20f * b.mat.cols())
+            val compRectsCleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
+            val blueRectsCleaned = binPeakComputeBlueRectsPerRed(redRects, compRectsCleaned)
+            val cleanedB64 = takeBinPeakAnnotatedSnapshot(b.mat, redRects, blueRectsCleaned)
+            branch.images["binPeak_${peak}_cleaned"] = cleanedB64
+            val ocrRectsCleaned = blueRectsCleaned.map { shrinkBlueRectForOcr(it, imgW, imgH) }
+            val ocrCleaned = ocrBinPeakRectsAsisAndDigits(workspace, b, paddleEngine, recBuffer, ocrRectsCleaned)
+            blueRectsCleaned.forEachIndexed { redK, fullBlue ->
+                val label = "Peak${peak}-cleaned-Red${redK + 1}"
+                candidatesOut.add(RedBoxOcrCandidate(
+                    label,
+                    ocrCleaned.asis.getOrElse(redK) { "?" },
+                    ocrCleaned.digits.getOrElse(redK) { "?" },
+                    ocrCleaned.asisProbs.getOrElse(redK) { "" },
+                    ocrCleaned.digitsProbs.getOrElse(redK) { "" },
+                    fullBlue
+                ))
+            }
         }
     }
 }
