@@ -1965,10 +1965,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
 
                     for (int cy = y_clear_start; cy <= y_clear_end; ++cy) {
                         auto* rowPtr = mat->ptr<uint8_t>(cy);
-                        const auto* lRow = labels.ptr<int>(cy);
-                        for (int cx = 0; cx < mat->cols; ++cx) {
+                        auto* lRow = labels.ptr<int>(cy);
+                        for (int cx = minX; cx < maxX; ++cx) {
                             if (lRow[cx] == i) {
                                 rowPtr[cx] = 0;
+                                lRow[cx] = 0;
                                 modified = true;
                                 wideEdited = true;
                             }
@@ -2022,10 +2023,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
 
                     for (int cy = minY; cy < maxY; ++cy) {
                         auto* rowPtr = mat->ptr<uint8_t>(cy);
-                        const auto* lRow = labels.ptr<int>(cy);
+                        auto* lRow = labels.ptr<int>(cy);
                         for (int cx = x_clear_start; cx <= x_clear_end; ++cx) {
                             if (lRow[cx] == i) {
                                 rowPtr[cx] = 0;
+                                lRow[cx] = 0;
                                 modified = true;
                             }
                         }
