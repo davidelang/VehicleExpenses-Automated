@@ -1,11 +1,11 @@
 # TODO
 
-- [ ] add timing for binpeak cleaning (blackout + cleaned phase) (plan: dev-ai-interaction/plans/add-timing-for-binpeak-cleaning-process-20260621-101054-plan.md)
+- [x] add timing for binpeak cleaning (blackout + cleaned phase) (plan: dev-ai-interaction/plans/add-timing-for-binpeak-cleaning-process-20260621-101054-plan.md)
   - [x] Phase 1: Forensic baseline (no source changes)
   - [x] Phase 2: Add timing for blackOut cleaning call
   - [x] Phase 3: Add timing for cleaned phase (find + blue + ocr + snapshot)
   - [x] Phase 4: Add per-peak wrapper + log
-  - [ ] Phase 5: Final verification + handoff
+  - [x] Phase 5: Final verification + handoff
 
 - [x] restore missing object-based binpeak annotated original+cleaned images (plan: restore-object-based-binpeak-annotated-original-cleaned-images-20260621-plan.md)
   - [x] Phase 1: Forensic baseline (no source changes)
