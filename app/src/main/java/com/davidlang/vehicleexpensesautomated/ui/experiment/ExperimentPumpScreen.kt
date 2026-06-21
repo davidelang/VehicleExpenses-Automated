@@ -1386,7 +1386,8 @@ private suspend fun runPumpExperiment(
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                     doBOrDRedOnlyImage()
-                    doBOrDRetractedBlueAndPD()
+                    // BCF expand/retract bypassed; using object-based binPeak blue only
+                    // doBOrDRetractedBlueAndPD()
                 }
                 val procC: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val flowName = "Set C"
@@ -1608,7 +1609,8 @@ private suspend fun runPumpExperiment(
                 branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, redAnns, null, workspace).first
                 doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                 doBOrDRedOnlyImage()
-                doBOrDRetractedBlueAndPD()
+                // BCF expand/retract bypassed; using object-based binPeak blue only
+                // doBOrDRetractedBlueAndPD()
             }
                 val procD: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val flowName = "Set D"
@@ -2184,7 +2186,8 @@ private suspend fun runPumpExperiment(
 
                     doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
                     doBOrDRedOnlyImage()
-                    doBOrDRetractedBlueAndPD()
+                    // BCF expand/retract bypassed; using object-based binPeak blue only
+                    // doBOrDRetractedBlueAndPD()
                 }
                 val procG: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val flowName = "Set G"
