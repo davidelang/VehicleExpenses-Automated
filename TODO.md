@@ -1,11 +1,11 @@
 # TODO
 
-- [ ] restore missing object-based binpeak annotated original+cleaned images (plan: restore-object-based-binpeak-annotated-original-cleaned-images-20260621-plan.md)
+- [x] restore missing object-based binpeak annotated original+cleaned images (plan: restore-object-based-binpeak-annotated-original-cleaned-images-20260621-plan.md)
   - [x] Phase 1: Forensic baseline (no source changes)
   - [x] Phase 2: Add uncleaned annotated store
   - [x] Phase 3: Add cleaned annotated store
   - [x] Phase 4: Update buildBinPeakHtmlForBranch renderer
-  - [ ] Phase 5: Final verification + handoff
+  - [x] Phase 5: Final verification + handoff
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
   - [x] Forensic read of .grok/config.toml and .grok/hooks/plan-mode-hard-stops.js (before edits)
