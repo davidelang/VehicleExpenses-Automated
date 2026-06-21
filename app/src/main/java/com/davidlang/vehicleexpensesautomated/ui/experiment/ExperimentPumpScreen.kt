@@ -2856,6 +2856,9 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
                 ))
             }
 
+            val uncleanedAnnotated = takeBinPeakAnnotatedSnapshot(b.mat, redRects, blueRectsUncleaned)
+            branch.images["binPeak_${peak}_uncleaned"] = uncleanedAnnotated
+
             // Buffer-width percentage (0.20 of the binarized image width) for pump binPeak image-wide cleaning.
             val useMaxW = 0.20f * b.mat.cols()
             val editedIndices = NativeImageUtils.blackOutLargeAndSmallComponentsHWithEditedIndices(b.mat, vSW, hSW, useMaxW)
