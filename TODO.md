@@ -3,7 +3,7 @@
 - [ ] restore missing object-based binpeak annotated original+cleaned images (plan: restore-object-based-binpeak-annotated-original-cleaned-images-20260621-plan.md)
   - [x] Phase 1: Forensic baseline (no source changes)
   - [x] Phase 2: Add uncleaned annotated store
-  - [ ] Phase 3: Add cleaned annotated store
+  - [x] Phase 3: Add cleaned annotated store
   - [ ] Phase 4: Update buildBinPeakHtmlForBranch renderer
   - [ ] Phase 5: Final verification + handoff
 

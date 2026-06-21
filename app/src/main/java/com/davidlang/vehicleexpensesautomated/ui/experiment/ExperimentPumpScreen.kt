@@ -2881,6 +2881,10 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
                     fullBlue
                 ))
             }
+
+            val cleanedAnnotated = takeBinPeakAnnotatedSnapshot(b.mat, redRects, blueRectsCleaned)
+            branch.images["binPeak_${peak}_cleaned"] = cleanedAnnotated
+
             // P4 buffer (b.mat) cleared after cleaned base64 stored in JSON path; reusable for next peak
             b.mat.setTo(org.opencv.core.Scalar(0.0))
         }
