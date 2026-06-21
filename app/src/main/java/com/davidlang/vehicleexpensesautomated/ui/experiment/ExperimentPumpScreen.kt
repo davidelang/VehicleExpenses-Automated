@@ -2960,6 +2960,8 @@ private const val PUMP_C_VISUAL_TARGET_W = 340
 private const val PUMP_SMALL_TARGET_W = 180
 private const val PUMP_PER_RED_TARGET_W = 120
 private const val BIN_PEAK_BINARIZE_DELTA = 8
+private const val PUMP_JSON_BUFFER_INITIAL_BYTES = 256 * 1024 * 1024
+private const val PUMP_JSON_BUFFER_RESET_CAPACITY = 512 * 1024 * 1024
 
 private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
