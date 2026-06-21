@@ -1,11 +1,12 @@
 # TODO
 
-- [ ] pump-experiment-larger-heap-largeheap-manifest (plan: dev-ai-interaction/plans/pump-experiment-larger-heap-largeheap-manifest-20260621-plan.md)
+- [x] pump-experiment-larger-heap-largeheap-manifest (plan: dev-ai-interaction/plans/pump-experiment-larger-heap-largeheap-manifest-20260621-plan.md)
   - [x] Phase 1: Baseline forensic read + grep on manifest
   - [x] Phase 2: Add android:largeHeap="true" to <application>
   - [x] Phase 3: Post-edit verification + second build gate
-  - [ ] Phase 4: project-facts hygiene + closing build
-  - [ ] Phase 5: End-of-turn verification
+  - [x] Phase 4: project-facts hygiene + closing build
+  - [x] Phase 5: End-of-turn verification
+  - Results ready to test (tag: fix-pump-experiment/builds)
 
 - [x] pump-p4-after-base64-reuse-and-json-charbuffer-256m (plan: dev-ai-interaction/plans/pump-p4-after-base64-reuse-and-json-charbuffer-256m-20260621-plan.md)
   - [x] Phase 1: Baseline forensics + initial build gate
