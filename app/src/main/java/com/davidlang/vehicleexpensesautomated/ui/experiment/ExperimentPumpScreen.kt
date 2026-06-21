@@ -2829,7 +2829,8 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
         branch.metadata["binPeak_${peak}_count"] = height.toString()
         // Plain binary debug: P4 + full CC object stats (JSON inspection only; base64 string retained for output; internal P4 buffer released immediately for reuse on next peak per this plan)
         Log.d(TAG, "P4 snapshot would have stored here: plain peak=$peak")
-        branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
+        // P4 snapshots commented per plan; all other binpeak debug + object-based logic left active
+        // branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
         // P4 buffer (b.mat) cleared after base64 + objects stored in JSON path; reusable for cleaned path or next peak
         b.mat.setTo(org.opencv.core.Scalar(0.0))
         NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
@@ -2857,7 +2858,7 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             val editedIndices = NativeImageUtils.blackOutLargeAndSmallComponentsHWithEditedIndices(b.mat, vSW, hSW, useMaxW)
             branch.metadata["binPeak_${peak}_edited_object_indices"] = JSONArray(editedIndices.toList()).toString()
             Log.d(TAG, "P4 snapshot would have stored here: cleaned peak=$peak")
-            branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
+            // branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
             branch.metadata["binPeak_${peak}_cleaned_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
             val compRectsCleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
             val blueRectsCleaned = binPeakComputeBlueRectsPerRed(redRects, compRectsCleaned)
