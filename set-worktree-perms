@@ -2,6 +2,11 @@
 # set-worktree-perms
 # Applies permissions for worktree (@@CODE_GROUP@@ group mainly).
 #
+# This is infrastructure. After edits, commit in main tree then
+# run `sudo ./update-rules.sh` (when agents idle) to propagate copies
+# and commits into worktrees. Prevents reverts of this script (and
+# append-to-engineering-log) on git operations inside agent worktrees.
+#
 # Usage:
 #   sudo ./set-worktree-perms          # fixes *only the current worktree* (recommended after a build)
 #   sudo ./set-worktree-perms --all    # full sweep of all worktrees (orchestration root, post-checkout, etc.)
