@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-SANDBOX="/home/dlang/git/VehicleExpenses-automated/@@SANDBOX_PATH@@"
+SANDBOX="/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction"
 CONFIG_EXAMPLE="$SANDBOX/project.config.example"
 CONFIG_REAL="$SANDBOX/project.config"
 EXEC_DIR="$SANDBOX/permissions-bootstrap-execution"
@@ -28,33 +28,33 @@ echo ""
 echo "=== Step 1: Unix users/groups (EMIT ONLY - review and run manually as root) ==="
 cat <<'USERCMDS'
 # Recommended (adjust names from project.config):
-groupadd @@CODE_GROUP@@ || true
-groupadd @@SANDBOX_GROUP@@ || true
-groupadd @@SHARED_GROUP@@ || true
+groupadd ai-code || true
+groupadd ai-sandbox || true
+groupadd ai-shared || true
 groupadd docker || true
-useradd -m -g @@SANDBOX_GROUP@@ @@PLANNING_USER@@ || true
-useradd -m -g @@CODE_GROUP@@ @@CODE_GROUP@@r || true
-useradd -m -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@ || true
-usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@ || true
-# @@PLANNING_USER@@ gets @@SANDBOX_GROUP@@ (primary) + @@SHARED_GROUP@@.
-# Intentionally do NOT add @@PLANNING_USER@@ to @@CODE_GROUP@@. Explicitly remove if it was added previously.
+useradd -m -g ai-sandbox ai-planner || true
+useradd -m -g ai-code ai-coder || true
+useradd -m -g ai-code -G ai-shared ai-orchestrator || true
+usermod -aG ai-code ai-orchestrator || true
+# ai-planner gets ai-sandbox (primary) + ai-shared.
+# Intentionally do NOT add ai-planner to ai-code. Explicitly remove if it was added previously.
 # This is part of the Unix permission boundary (separate from Grok plan-mode hooks):
-# @@CODE_GROUP@@ members are the only ones who get group write on source (664 files).
-# @@PLANNING_USER@@ gets read-only on app/ source via "other r" (and ACL), and full write inside sandbox.
-gpasswd -d @@PLANNING_USER@@ @@CODE_GROUP@@ 2>/dev/null || true
-usermod -aG @@SHARED_GROUP@@ @@PLANNING_USER@@ || true
-usermod -aG @@SANDBOX_GROUP@@,@@SHARED_GROUP@@ @@CODE_GROUP@@r || true
-usermod -aG @@SANDBOX_GROUP@@ @@ORCHESTRATOR_USER@@ || true
+# ai-code members are the only ones who get group write on source (664 files).
+# ai-planner gets read-only on app/ source via "other r" (and ACL), and full write inside sandbox.
+gpasswd -d ai-planner ai-code 2>/dev/null || true
+usermod -aG ai-shared ai-planner || true
+usermod -aG ai-sandbox,ai-shared ai-coder || true
+usermod -aG ai-sandbox ai-orchestrator || true
 # Docker group for running/interacting with containers (required for Paddle development builds,
 # docker build, docker run --privileged -v ... etc. used in paddle-build/ and Paddle-Lite docker workflows).
-# @@CODE_GROUP@@r and @@ORCHESTRATOR_USER@@ need this to execute docker commands against the daemon socket.
-usermod -aG docker @@CODE_GROUP@@r || true
-usermod -aG docker @@ORCHESTRATOR_USER@@ || true
-# Add the primary human/developer user (the one running setup) to @@CODE_GROUP@@ and docker
+# ai-coder and ai-orchestrator need this to execute docker commands against the daemon socket.
+usermod -aG docker ai-coder || true
+usermod -aG docker ai-orchestrator || true
+# Add the primary human/developer user (the one running setup) to ai-code and docker
 # Replace 'dlang' with your username if different
-usermod -aG @@CODE_GROUP@@,docker dlang || true
+usermod -aG ai-code,docker dlang || true
 echo "Users created (if not exist)."
-echo "IMPORTANT: If you are dlang (or the developer), run 'newgrp @@CODE_GROUP@@' or log out/in so your current shell sees the group."
+echo "IMPORTANT: If you are dlang (or the developer), run 'newgrp ai-code' or log out/in so your current shell sees the group."
 
 # Git safe.directory (critical for modern git >= 2.35.2)
 # Git refuses to operate in a repo "owned by someone else" unless the path is whitelisted.
@@ -65,9 +65,9 @@ echo "git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-
 echo ""
 echo "# Examples (as root you can use sudo -u):"
 echo "#   sudo -u dlang            git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
-echo "#   sudo -u @@ORCHESTRATOR_USER@@  git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
-echo "#   sudo -u @@CODE_GROUP@@r         git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
-echo "#   sudo -u @@PLANNING_USER@@       git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u ai-orchestrator  git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u ai-coder         git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u ai-planner       git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
 echo ""
 echo "This wildcard is the recommended form because it will automatically cover any future worktrees or sandboxes."
 echo "# STAMP NOTE: These paths are for the CURRENT project. When stamping a different"
@@ -78,14 +78,9 @@ echo "# owned by the target; no link back to this orchestration source is requir
 cat <<'SUDOERS'
 # Run as root to set up passwordless sudo:
 cat > /etc/sudoers.d/vehicle-permissions << 'EOF'
-dlang ALL=(@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@) NOPASSWD: /home/dlang/git/grok/bin/grok
-# Allow direct sudo of management tools and append wrapper (for harnesses and manual use without tty)
+dlang ALL=(ai-planner,ai-coder,ai-orchestrator) NOPASSWD: /home/dlang/git/grok/bin/grok
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/set-worktree-perms
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/set-worktree-perms
-dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/append-to-engineering-log
-dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/append-to-engineering-log
-@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@ ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/append-to-engineering-log
-@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@ ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/append-to-engineering-log
 EOF
 chmod 440 /etc/sudoers.d/vehicle-permissions
 visudo -c   # validate

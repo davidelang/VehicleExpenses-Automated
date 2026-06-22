@@ -13,12 +13,12 @@ if [ -f project.config ]; then
   . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(sandbox_group|shared_group|docker_group|planning_user|coder_user|orchestrator_user)')
 fi
 
-SANDBOX_GROUP=${sandbox_group:-@@SANDBOX_GROUP@@}
-SHARED_GROUP=${shared_group:-@@SHARED_GROUP@@}
+SANDBOX_GROUP=${sandbox_group:-ai-sandbox}
+SHARED_GROUP=${shared_group:-ai-shared}
 DOCKER_GROUP=${docker_group:-docker}
-PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
-CODER_USER=${coder_user:-@@CODE_GROUP@@r}
-ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
+PLANNING_USER=${planning_user:-ai-planner}
+CODER_USER=${coder_user:-ai-coder}
+ORCHESTRATOR_USER=${orchestrator_user:-ai-orchestrator}
 
 # If run via sudo, determine target owner for chowns and configs
 SUDO_USER_VAL="${SUDO_USER:-}"
@@ -31,11 +31,11 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Discover sandbox locations: main one + any from worktrees (symlinks)
-mapfile -t SANDBOX_CANDIDATES < <(echo "$SCRIPT_DIR/@@SANDBOX_PATH@@")
+mapfile -t SANDBOX_CANDIDATES < <(echo "$SCRIPT_DIR/dev-ai-interaction")
 mapfile -t WORKTREES < <(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {print $2}')
 for wt in "${WORKTREES[@]}"; do
-  if [ -L "$wt/@@SANDBOX_PATH@@" ]; then
-    target=$(readlink -f "$wt/@@SANDBOX_PATH@@")
+  if [ -L "$wt/dev-ai-interaction" ]; then
+    target=$(readlink -f "$wt/dev-ai-interaction")
     [ -d "$target" ] && SANDBOX_CANDIDATES+=("$target")
   fi
 done
@@ -73,9 +73,9 @@ for SANDBOX_DIR in "${SANDBOX_DIRS[@]}"; do
   # Also allow shared group if needed
   chown -R :$SHARED_GROUP "$SANDBOX_DIR" 2>/dev/null || true
 
-  # Grant @@PLANNING_USER@@ full read/write/execute (and default ACLs for new files) inside the sandbox.
-  # This is critical because planner is not a member of @@CODE_GROUP@@ (enforced elsewhere),
-  # and group ownership may end up as @@CODE_GROUP@@/@@SHARED_GROUP@@ after other perms scripts.
+  # Grant ai-planner full read/write/execute (and default ACLs for new files) inside the sandbox.
+  # This is critical because planner is not a member of ai-code (enforced elsewhere),
+  # and group ownership may end up as ai-code/ai-shared after other perms scripts.
   # Named ACL ensures planner can freely write plans/, historical-plans/, etc.
   if id "$PLANNING_USER" >/dev/null 2>&1; then
     setfacl -R -m "u:$PLANNING_USER:rwx" "$SANDBOX_DIR" 2>/dev/null || true
@@ -106,7 +106,7 @@ for SANDBOX_DIR in "${SANDBOX_DIRS[@]}"; do
   done
 done
 
-# Also ensure @@CODE_GROUP@@r and @@ORCHESTRATOR_USER@@ are in the docker group (for Paddle container workflows).
+# Also ensure ai-coder and ai-orchestrator are in the docker group (for Paddle container workflows).
 # This is a no-op if already a member.
 usermod -aG $DOCKER_GROUP $CODER_USER 2>/dev/null || true
 usermod -aG $DOCKER_GROUP $ORCHESTRATOR_USER 2>/dev/null || true

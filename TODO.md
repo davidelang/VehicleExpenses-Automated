@@ -24,6 +24,9 @@
 # Meta plans (process / workflow improvements)
 These are documented in AGENT_MANDATES.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the relevant plan files. They are kept here for historical reference only.
 
+# Current cycle
+- [ ] Fix int8 Paddle arm JNI SONAME in Docker build — plan: `dev-ai-interaction/plans/fix-int8-paddle-arm-jni-soname-in-docker-build-20260622-plan.md` (root build fix: patchelf --set-soname post-build, rebuild arm64 int8, verify jniLibs + libnative_ocr.so DT_NEEDED)
+
 # Future work
 (Only items that are not currently active in a plan.)
 
