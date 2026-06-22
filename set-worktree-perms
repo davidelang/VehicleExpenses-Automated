@@ -17,10 +17,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/project.config" ]; then
-  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|docker_group|orchestrator_user|planning_user|coder_user)')
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|docker_group|orchestrator_user|planning_user|coder_user)')
 fi
 
 CODE_GROUP=${code_group:-@@CODE_GROUP@@}
+SHARED_GROUP=${shared_group:-@@SHARED_GROUP@@}
 DOCKER_GROUP=${docker_group:-docker}
 ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
 PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
@@ -90,6 +91,7 @@ EXECUTABLES=(
   filter-clean-config
   set-worktree-perms
   set-sandbox-perms
+  append-to-engineering-log
   run-grok
   run-grok-master
   run-grok-planner
@@ -130,6 +132,37 @@ for wt in "${WORKTREES[@]}"; do
   chmod 666 "$wt/TODO.md" 2>/dev/null || true
   find "$wt" -name .agent-state -type d -exec chmod g+rwX {} + 2>/dev/null || true
 
+  # ENGINEERING_LOG.md must be append-only. Use chattr +a to prevent
+  # modification of existing content (even with write perms, non-append
+  # writes are blocked at the kernel level). Only root can chattr -a it.
+  # Make it group-writable for the wrapper or direct append, but agents
+  # are required to use the append-to-engineering-log wrapper for
+  # formatting and to follow the "only append new dated entries" rule.
+  if [ -f "$wt/ENGINEERING_LOG.md" ]; then
+    # Use shared_group for the log so that both coders and planners can append
+    # (@@PLANNING_USER@@ is in @@SHARED_GROUP@@). 660 + chattr +a allows appends by group members
+    # but kernel prevents modifying existing content.
+    chown root:$SHARED_GROUP "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    chmod 660 "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || echo "  (chattr +a on ENGINEERING_LOG.md failed or not supported - run as root)"
+    # Wrapper: make it group-exec for @@CODE_GROUP@@/@@SHARED_GROUP@@.
+    if [ -f "$wt/append-to-engineering-log" ]; then
+      chown root:$SHARED_GROUP "$wt/append-to-engineering-log" 2>/dev/null || true
+      chmod 4755 "$wt/append-to-engineering-log" 2>/dev/null || true
+    fi
+  fi
+
+  # Make build_app and deploy setgid to the code group. When executed,
+  # they will have the @@CODE_GROUP@@ gid, helping ensure created files
+  # (build artifacts, etc.) get correct group ownership. Combined with
+  # the umask 007 + sg @@CODE_GROUP@@ inside the scripts, this reduces ownership
+  # drift that requires full set-worktree-perms runs.
+  for f in build_app deploy; do
+    if [ -f "$wt/$f" ]; then
+      chmod g+s "$wt/$f" 2>/dev/null || true
+    fi
+  done
+
   # Unix-level defense for planning user (separate from any Grok hooks):
   # Use ACLs (available here) to ensure @@PLANNING_USER@@ has read (r--) on source files
   # and no write, even if temporarily still listed in @@CODE_GROUP@@ group.
@@ -141,13 +174,15 @@ for wt in "${WORKTREES[@]}"; do
     gpasswd -d "$PLANNING_USER" "$CODE_GROUP" 2>/dev/null || true
     echo "  ACL enforcement + group removal: read-only for $PLANNING_USER outside sandbox..."
     find "$wt" -path '*/@@SANDBOX_PATH@@/*' -prune -o \
-      \( -type f ! -name project-facts.md ! -name TODO.md \
+      \( -type f ! -name project-facts.md ! -name TODO.md ! -name ENGINEERING_LOG.md \
          -exec setfacl -m "u:$PLANNING_USER:r--" {} + \) 2>/dev/null || true
     find "$wt" -path '*/@@SANDBOX_PATH@@/*' -prune -o -type d \
       -exec setfacl -m "u:$PLANNING_USER:r-x" {} + 2>/dev/null || true
-    for sp in project-facts.md TODO.md; do
+    for sp in project-facts.md TODO.md ENGINEERING_LOG.md; do
       [ -f "$wt/$sp" ] && setfacl -m "u:$PLANNING_USER:rw-" "$wt/$sp" 2>/dev/null || true
     done
+    # Ensure mask allows group write on the log (the planner ACL may have lowered it)
+    [ -f "$wt/ENGINEERING_LOG.md" ] && setfacl -m m::rw- "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
   fi
 
   # Preserve/ensure execute on critical management/launcher scripts.
