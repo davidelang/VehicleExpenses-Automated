@@ -180,10 +180,10 @@ for wt in "${WORKTREES[@]}"; do
     # despite ACL r-- and 664 other=r.
     gpasswd -d "$PLANNING_USER" "$CODE_GROUP" 2>/dev/null || true
     echo "  ACL enforcement + group removal: read-only for $PLANNING_USER outside sandbox..."
-    find "$wt" -path '*/@@SANDBOX_PATH@@/*' -prune -o \
+    find "$wt" -path '*/.git/*' -prune -o -path '*/@@SANDBOX_PATH@@/*' -prune -o \
       \( -type f ! -name project-facts.md ! -name TODO.md ! -name ENGINEERING_LOG.md ! -name append-to-engineering-log \
          -exec setfacl -m "u:$PLANNING_USER:r--" {} + \) 2>/dev/null || true
-    find "$wt" -path '*/@@SANDBOX_PATH@@/*' -prune -o -type d \
+    find "$wt" -path '*/.git/*' -prune -o -path '*/@@SANDBOX_PATH@@/*' -prune -o -type d \
       -exec setfacl -m "u:$PLANNING_USER:r-x" {} + 2>/dev/null || true
     for sp in project-facts.md TODO.md ENGINEERING_LOG.md; do
       [ -f "$wt/$sp" ] && setfacl -m "u:$PLANNING_USER:rw-" "$wt/$sp" 2>/dev/null || true
@@ -197,6 +197,16 @@ for wt in "${WORKTREES[@]}"; do
       find "$wt/@@SANDBOX_PATH@@" -type f -exec setfacl -m "u:$PLANNING_USER:rw-" {} + 2>/dev/null || true
       find "$wt/@@SANDBOX_PATH@@" -type d -exec setfacl -m "u:$PLANNING_USER:rwx" {} + 2>/dev/null || true
       find "$wt/@@SANDBOX_PATH@@" -type d -exec setfacl -m "d:u:$PLANNING_USER:rwx" {} + 2>/dev/null || true
+    fi
+
+    # Ensure .git tree is writable by ai users (including planner) so git can add objects, update refs etc.
+    # .git was previously getting only r-x from planner lockdown, causing "insufficient permission for adding an object".
+    if [ -d "$wt/.git" ]; then
+      for aiuser in "$PLANNING_USER" "$CODER_USER" "$ORCHESTRATOR_USER"; do
+        find "$wt/.git" -type d -exec setfacl -m "u:$aiuser:rwx" {} + 2>/dev/null || true
+        find "$wt/.git" -type f -exec setfacl -m "u:$aiuser:rw-" {} + 2>/dev/null || true
+        find "$wt/.git" -type d -exec setfacl -m "d:u:$aiuser:rwx" {} + 2>/dev/null || true
+      done
     fi
   fi
 
