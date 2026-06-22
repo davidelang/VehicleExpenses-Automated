@@ -1,8 +1,5 @@
 # TODO.md — Future work / backlog only
 
-- [ ] Fix pump binPeak redbox hist sampling/caps/prune limit (see dev-ai-interaction/plans/fix-pump-binpeak-redbox-hist-sampling-255-cap-discard-rule-prune-limit-6-20260622-plan.md)
-- [ ] Fix pump crash binPeak stroke hist OpenCV setSize (see dev-ai-interaction/plans/analyze-pump-crash-binpeak-stroke-hist-open cv-setsize-fix-20260622-plan.md)
-
 **Important discipline:**
 - Only record high-level future items here (things not actively being worked on in the current cycle).
 - Current cycle work: record the approved plan reference at start of execution (high-level only, 1-2 lines). Full phased steps, forensic details, and build gates belong in the plan file (`dev-ai-interaction/plans/xxx-plan.md`) and ENGINEERING_LOG.md (append-only).
@@ -29,6 +26,8 @@ These are documented in AGENT_MANDATES.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and
 
 # Future work
 (Only items that are not currently active in a plan.)
+
+- Research portable multi-user git permissions for worktrees (avoid over-reliance on ACLs + chattr + mixed group ownership that breaks object writes for ai-planner etc. in .git/objects; current hacks in set-*-perms and safe.directory). See recent "insufficient permissions for adding an object" issues.
 
 # Completed (high level only - see plans/ and ENGINEERING_LOG.md for details)
 - [x] Separate the orchestration layer (orchestration-infra vs app source) — plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
