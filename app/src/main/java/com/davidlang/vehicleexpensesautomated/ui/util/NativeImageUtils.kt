@@ -309,9 +309,11 @@ object NativeImageUtils {
 
     /** Decoupled H-variants for Set H with stroke-width aware logic */
     fun calculateHistogramWithThresholdH(mat: Mat, rects: List<android.graphics.Rect>, thresholdFactor: Float): Pair<Pair<IntArray, IntArray>, IntArray>? {
-        if (rects.isEmpty()) return null
-        val flatRects = IntArray(rects.size * 4)
-        rects.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
+        if (mat.empty() || rects.isEmpty()) return null
+        val valid = rects.filter { it.width() > 0 && it.height() > 0 }
+        if (valid.isEmpty()) return null
+        val flatRects = IntArray(valid.size * 4)
+        valid.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
         val res = nativeCalculateHistogramWithThresholdH(mat.nativeObj, flatRects, thresholdFactor)
         if (res != null && res.size == 3) return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
         return null

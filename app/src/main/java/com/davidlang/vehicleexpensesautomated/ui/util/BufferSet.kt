@@ -323,6 +323,15 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             absW = x2 - absX
             absH = y2 - absY
 
+            if (absW <= 0 || absH <= 0) {
+                Log.e("BufferSet", "ManagedCrop refresh: invalid size ${absW}x${absH} at ($absX,$absY); disarming")
+                _mat?.release()
+                _uvMat?.release()
+                _mat = null
+                _uvMat = null
+                return
+            }
+
             val curMat = _mat
             val curUvMat = _uvMat
             if (curMat == null || curUvMat == null) {
