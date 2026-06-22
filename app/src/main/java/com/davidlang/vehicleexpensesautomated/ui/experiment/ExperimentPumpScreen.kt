@@ -1537,7 +1537,7 @@ private suspend fun runPumpExperiment(
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }
                     val binPeakCandidatesC = mutableListOf<RedBoxOcrCandidate>()
-                    captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC)
+                    captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC, generateP4 = true)
                     branch.metadata["binPeakCandidateCount"] = binPeakCandidatesC.size.toString()
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
