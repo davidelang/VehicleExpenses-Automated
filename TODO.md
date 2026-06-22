@@ -27,6 +27,8 @@ These are documented in AGENT_MANDATES.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and
 # Future work
 (Only items that are not currently active in a plan.)
 
+- Research portable multi-user git permissions for worktrees (avoid over-reliance on ACLs + chattr + mixed group ownership that breaks object writes for ai-planner etc. in .git/objects; current hacks in set-*-perms and safe.directory). See recent "insufficient permissions for adding an object" issues.
+
 # Completed (high level only - see plans/ and ENGINEERING_LOG.md for details)
 - [x] Separate the orchestration layer (orchestration-infra vs app source) — plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
   - Results ready to test.
