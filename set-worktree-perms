@@ -139,18 +139,19 @@ for wt in "${WORKTREES[@]}"; do
   # are required to use the append-to-engineering-log wrapper for
   # formatting and to follow the "only append new dated entries" rule.
   if [ -f "$wt/ENGINEERING_LOG.md" ]; then
-    # Use shared_group for the log so that both coders and planners can append
-    # (@@PLANNING_USER@@ is in @@SHARED_GROUP@@). 660 + chattr +a allows appends by group members
-    # but kernel prevents modifying existing content.
+    # Use shared_group for the log so ai-* users (all in @@SHARED_GROUP@@) can append.
+    # 660 + chattr +a : group can append, but cannot modify/overwrite existing content.
     chown root:$SHARED_GROUP "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
     chmod 660 "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
-    chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || echo "  (chattr +a on ENGINEERING_LOG.md failed or not supported - run as root)"
-    # Wrapper: SUID root + group exec so the wrapper can write even if we
-    # had tighter perms. Agents should call the wrapper, not direct >> .
-    if [ -f "$wt/append-to-engineering-log" ]; then
-      chown root:$SHARED_GROUP "$wt/append-to-engineering-log" 2>/dev/null || true
-      chmod 4755 "$wt/append-to-engineering-log" 2>/dev/null || true
-    fi
+    chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || echo "  (chattr +a failed - run as root)"
+  fi
+
+  # Wrapper: make executable by group (@@SHARED_GROUP@@/@@CODE_GROUP@@). No reliance on SUID for
+  # shell scripts (kernel ignores setuid on #! scripts). Group write on log + wrapper
+  # allows ai users to append via the script.
+  if [ -f "$wt/append-to-engineering-log" ]; then
+    chown root:$SHARED_GROUP "$wt/append-to-engineering-log" 2>/dev/null || true
+    chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
   fi
 
   # Make build_app and deploy setgid to the code group. When executed,
@@ -175,7 +176,7 @@ for wt in "${WORKTREES[@]}"; do
     gpasswd -d "$PLANNING_USER" "$CODE_GROUP" 2>/dev/null || true
     echo "  ACL enforcement + group removal: read-only for $PLANNING_USER outside sandbox..."
     find "$wt" -path '*/@@SANDBOX_PATH@@/*' -prune -o \
-      \( -type f ! -name project-facts.md ! -name TODO.md ! -name ENGINEERING_LOG.md \
+      \( -type f ! -name project-facts.md ! -name TODO.md ! -name ENGINEERING_LOG.md ! -name append-to-engineering-log \
          -exec setfacl -m "u:$PLANNING_USER:r--" {} + \) 2>/dev/null || true
     find "$wt" -path '*/@@SANDBOX_PATH@@/*' -prune -o -type d \
       -exec setfacl -m "u:$PLANNING_USER:r-x" {} + 2>/dev/null || true
@@ -184,6 +185,14 @@ for wt in "${WORKTREES[@]}"; do
     done
     # Ensure mask allows group write on the log (the planner ACL may have lowered it)
     [ -f "$wt/ENGINEERING_LOG.md" ] && setfacl -m m::rw- "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+
+    # Grant full rwx (with default ACLs) inside the sandbox for planner.
+    # This ensures write access to plans/, etc. even if group ends up @@CODE_GROUP@@.
+    if [ -d "$wt/@@SANDBOX_PATH@@" ]; then
+      find "$wt/@@SANDBOX_PATH@@" -type f -exec setfacl -m "u:$PLANNING_USER:rw-" {} + 2>/dev/null || true
+      find "$wt/@@SANDBOX_PATH@@" -type d -exec setfacl -m "u:$PLANNING_USER:rwx" {} + 2>/dev/null || true
+      find "$wt/@@SANDBOX_PATH@@" -type d -exec setfacl -m "d:u:$PLANNING_USER:rwx" {} + 2>/dev/null || true
+    fi
   fi
 
   # Preserve/ensure execute on critical management/launcher scripts.
@@ -205,13 +214,57 @@ for wt in "${WORKTREES[@]}"; do
     # Files: 660 (rw-rw----), preserve execute if any (e.g. 770)
     find "$wt/.gradle" -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
   fi
+
+  # Final forced state for ENGINEERING_LOG.md and the append wrapper.
+  # This must be late so it wins over the broad chown -R at start of loop
+  # and any ACL mask lowering from the planner lockdown pass.
+  # - log: root:@@SHARED_GROUP@@ 660 + chattr +a + mask rw- + explicit rw- for planner + dlang
+  # - wrapper: root:@@SHARED_GROUP@@ 755 (no SUID - kernel ignores it on #! anyway), + r-x for planner, rwx for dlang (for exec + edit)
+  if [ -f "$wt/ENGINEERING_LOG.md" ]; then
+    # Must remove +a temporarily before any chmod or setfacl (append-only prevents mode/ACL changes).
+    chattr -a "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+
+    chown root:$SHARED_GROUP "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    chmod 660 "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+
+    # Clear any previous bad ACLs (planner r--, low mask) then re-apply
+    setfacl -b "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    setfacl -m "u:$PLANNING_USER:rw-" "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    setfacl -m "u:dlang:rw-" "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    setfacl -m m::rw- "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    # Ensure the shared group entry itself is not masked out
+    setfacl -m "g:$SHARED_GROUP:rw-" "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+
+    # Restore append-only.
+    chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || echo "  (chattr +a failed - must be root)"
+  fi
+  if [ -f "$wt/append-to-engineering-log" ]; then
+    chown root:$SHARED_GROUP "$wt/append-to-engineering-log" 2>/dev/null || true
+
+    # Remove +a if present so chmod won't fail with EPERM.
+    chattr -a "$wt/append-to-engineering-log" 2>/dev/null || true
+
+    chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
+    chmod -s "$wt/append-to-engineering-log" 2>/dev/null || true
+
+    # Clear previous ACLs (e.g. from earlier runs that set rw- without x)
+    setfacl -b "$wt/append-to-engineering-log" 2>/dev/null || true
+    chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
+
+    setfacl -m "u:$PLANNING_USER:r-x" "$wt/append-to-engineering-log" 2>/dev/null || true
+    # Maintainer (dlang) needs to run the script (x) + be able to edit it (rw)
+    setfacl -m "u:dlang:rwx" "$wt/append-to-engineering-log" 2>/dev/null || true
+    setfacl -m m::rwx "$wt/append-to-engineering-log" 2>/dev/null || true
+    setfacl -m "g:$SHARED_GROUP:r-x" "$wt/append-to-engineering-log" 2>/dev/null || true
+  fi
 done
 
 # Ensure orchestrator and the invoking human (if sudo) have access to the @@CODE_GROUP@@ group
 usermod -aG $CODE_GROUP $ORCHESTRATOR_USER 2>/dev/null || true
 if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
   usermod -aG $CODE_GROUP "$SUDO_USER_VAL" 2>/dev/null || true
-  echo "  Added $SUDO_USER_VAL to $CODE_GROUP (group membership will be active after new login/shell)"
+  usermod -aG $SHARED_GROUP "$SUDO_USER_VAL" 2>/dev/null || true
+  echo "  Added $SUDO_USER_VAL to $CODE_GROUP and $SHARED_GROUP (for log access)"
 fi
 
 # Grant docker group to @@CODE_GROUP@@r and @@ORCHESTRATOR_USER@@ so they can run docker commands
