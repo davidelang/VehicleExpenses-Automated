@@ -181,9 +181,11 @@ for wt in "${WORKTREES[@]}"; do
     gpasswd -d "$PLANNING_USER" "$CODE_GROUP" 2>/dev/null || true
     echo "  ACL enforcement + group removal: read-only for $PLANNING_USER outside sandbox..."
     find "$wt" -path '*/.git/*' -prune -o -path '*/@@SANDBOX_PATH@@/*' -prune -o \
+         -path '*/build/*' -prune -o -path '*/app/build/*' -prune -o \
       \( -type f ! -name project-facts.md ! -name TODO.md ! -name ENGINEERING_LOG.md ! -name append-to-engineering-log \
          -exec setfacl -m "u:$PLANNING_USER:r--" {} + \) 2>/dev/null || true
-    find "$wt" -path '*/.git/*' -prune -o -path '*/@@SANDBOX_PATH@@/*' -prune -o -type d \
+    find "$wt" -path '*/.git/*' -prune -o -path '*/@@SANDBOX_PATH@@/*' -prune -o \
+         -path '*/build/*' -prune -o -path '*/app/build/*' -prune -o -type d \
       -exec setfacl -m "u:$PLANNING_USER:r-x" {} + 2>/dev/null || true
     for sp in project-facts.md TODO.md ENGINEERING_LOG.md; do
       [ -f "$wt/$sp" ] && setfacl -m "u:$PLANNING_USER:rw-" "$wt/$sp" 2>/dev/null || true
@@ -229,6 +231,22 @@ for wt in "${WORKTREES[@]}"; do
     # Files: 660 (rw-rw----), preserve execute if any (e.g. 770)
     find "$wt/.gradle" -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
   fi
+
+  # Special handling for Android/Gradle build output dirs (app/build, build/, etc.).
+  # These contain generated sources (BuildConfig.java, R.java, etc.) that Gradle
+  # must be able to overwrite during builds. Use 2770 on dirs + 660 on files
+  # under @@CODE_GROUP@@ so any group member (dlang or @@CODE_GROUP@@r etc.) can build.
+  # Pruned from planner read-only lockdown above.
+  for bdir in app/build build; do
+    bpath="$wt/$bdir"
+    if [ -d "$bpath" ]; then
+      if [ -n "$TARGET_OWNER" ]; then
+        chown -R "$TARGET_OWNER:$CODE_GROUP" "$bpath" 2>/dev/null || true
+      fi
+      find "$bpath" -type d -exec chmod 2770 {} + 2>/dev/null || true
+      find "$bpath" -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
+    fi
+  done
 
   # Final forced state for ENGINEERING_LOG.md and the append wrapper.
   # This must be late so it wins over the broad chown -R at start of loop

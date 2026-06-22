@@ -79,13 +79,8 @@ cat <<'SUDOERS'
 # Run as root to set up passwordless sudo:
 cat > /etc/sudoers.d/vehicle-permissions << 'EOF'
 dlang ALL=(@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@) NOPASSWD: /home/dlang/git/grok/bin/grok
-# Allow direct sudo of management tools and append wrapper (for harnesses and manual use without tty)
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/set-worktree-perms
 dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/set-worktree-perms
-dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/append-to-engineering-log
-dlang ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/append-to-engineering-log
-@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@ ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/append-to-engineering-log
-@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@ ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/append-to-engineering-log
 EOF
 chmod 440 /etc/sudoers.d/vehicle-permissions
 visudo -c   # validate
