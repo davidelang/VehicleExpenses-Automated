@@ -4,6 +4,10 @@
 # Agents MUST use this (never direct edits or >>).
 # chattr +a on the log prevents modification of existing lines even if someone
 # has write permission.
+#
+# This file is infrastructure. After edits, commit in main tree then
+# run `sudo ./update-rules.sh` (agents idle) to sync + commit into worktrees.
+# This keeps versions consistent and prevents reverts in agent worktrees.
 
 set -euo pipefail
 
