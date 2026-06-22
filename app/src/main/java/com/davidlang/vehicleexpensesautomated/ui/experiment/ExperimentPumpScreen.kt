@@ -324,7 +324,13 @@ private suspend fun runPumpExperiment(
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name}") }
 
-            val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
+            val (probedW, probedH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
+            if (probedW <= 0 || probedH <= 0) {
+                android.util.Log.e("ExperimentPump", "Invalid probe ${probedW}x$probedH for ${file.name}; skipping photo")
+                return@forEachIndexed
+            }
+            val imgW = probedW
+            val imgH = probedH
             masterBuffer.resize(imgW, imgH)
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBuffer.p)
 
@@ -440,7 +446,10 @@ private suspend fun runPumpExperiment(
                             val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
                             val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
                             val newB = if (!insides[3]) max(cur.bottom, oth.bottom) else cur.bottom
-                            cur = android.graphics.Rect(newL, newT, newR, newB)
+                            var nl = newL; var nr = newR; var nt = newT; var nb = newB
+                            if (nl > nr) { val t = nl; nl = nr; nr = t }
+                            if (nt > nb) { val t = nt; nt = nb; nb = t }
+                            cur = android.graphics.Rect(nl, nt, nr, nb)
                         }
                     }
                     if (extended.none { it == cur }) extended.add(cur)
@@ -448,7 +457,7 @@ private suspend fun runPumpExperiment(
                 // final cleanup contains
                 val cleaned = extended.filter { b ->
                     !extended.any { o -> o != b && o.contains(b) }
-                }.toMutableList()
+                }.filter { it.width() > 0 && it.height() > 0 }.toMutableList()
                 redRects.clear()
                 redRects.addAll(cleaned)
             }
@@ -517,7 +526,10 @@ private suspend fun runPumpExperiment(
                                 val newT = if (!insides[1]) min(cur.rect.top, oth.rect.top) else cur.rect.top
                                 val newR = if (!insides[2]) max(cur.rect.right, oth.rect.right) else cur.rect.right
                                 val newB = if (!insides[3]) max(cur.rect.bottom, oth.rect.bottom) else cur.rect.bottom
-                                cur = PumpHunk(cur.text, RectF(newL, newT, newR, newB))
+                                var nl = newL; var nr = newR; var nt = newT; var nb = newB
+                                if (nl > nr) { val t = nl; nl = nr; nr = t }
+                                if (nt > nb) { val t = nt; nt = nb; nb = t }
+                                cur = PumpHunk(cur.text, RectF(nl, nt, nr, nb))
                             }
                         }
                         if (extended.none { it.rect == cur.rect }) extended.add(cur)
@@ -1405,9 +1417,9 @@ private suspend fun runPumpExperiment(
                 })
                 branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
                 captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for F (redboxData + n_per_red_hists)
-                val redPixelBForBinPeak = pdHunksRawTotal.map { h ->
+                val redPixelBForBinPeak = validBinPeakRects(pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
-                }
+                })
                 val binPeakCandidatesB = mutableListOf<RedBoxOcrCandidate>()
                 captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelBForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesB, generateP4 = false)
                 branch.metadata["binPeakCandidateCount"] = binPeakCandidatesB.size.toString()
@@ -1582,9 +1594,9 @@ private suspend fun runPumpExperiment(
                     // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 4 for builder column + redboxDataC in JSON (no more 30).
                     // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
                     captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData for JSON (all sets); C visuals/redboxDataC + n_per_red_hists below
-                    val redPixelCForBinPeak = pdHunksRawTotal.map { h ->
+                    val redPixelCForBinPeak = validBinPeakRects(pdHunksRawTotal.map { h ->
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
-                    }
+                    })
                     val binPeakCandidatesC = mutableListOf<RedBoxOcrCandidate>()
                     captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC, generateP4 = true)
                     branch.metadata["binPeakCandidateCount"] = binPeakCandidatesC.size.toString()
@@ -2205,9 +2217,9 @@ private suspend fun runPumpExperiment(
                 })
                 branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
                 captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for F (redboxData + n_per_red_hists)
-                val redPixelFForBinPeak = pdHunksRawTotal.map { h ->
+                val redPixelFForBinPeak = validBinPeakRects(pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
-                }
+                })
                 val binPeakCandidatesF = mutableListOf<RedBoxOcrCandidate>()
                 captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelFForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesF, generateP4 = false)
                 branch.metadata["binPeakCandidateCount"] = binPeakCandidatesF.size.toString()
@@ -2678,13 +2690,26 @@ private fun binPeakComputeBlueRectsPerRed(
     }
 }
 
+private fun normalizePixelRect(r: android.graphics.Rect): android.graphics.Rect {
+    val left = minOf(r.left, r.right)
+    val right = maxOf(r.left, r.right)
+    val top = minOf(r.top, r.bottom)
+    val bottom = maxOf(r.top, r.bottom)
+    return if (left == r.left && right == r.right && top == r.top && bottom == r.bottom) r
+    else android.graphics.Rect(left, top, right, bottom)
+}
+
+private fun validBinPeakRects(rects: List<android.graphics.Rect>): List<android.graphics.Rect> =
+    rects.map(::normalizePixelRect).filter { it.width() > 0 && it.height() > 0 }
+
 /** vSW/hSW from run-length histogram on red areas of binarized image (native calculateHistogramWithThresholdH). */
 private fun binPeakComputeStrokeWidths(
     binMat: org.opencv.core.Mat,
     redRects: List<android.graphics.Rect>
 ): Pair<Float, Float> {
-    if (redRects.isEmpty()) return -1f to -1f
-    val hRes = NativeImageUtils.calculateHistogramWithThresholdH(binMat, redRects, 128f) ?: return -1f to -1f
+    val valid = validBinPeakRects(redRects)
+    if (valid.isEmpty()) return -1f to -1f
+    val hRes = NativeImageUtils.calculateHistogramWithThresholdH(binMat, valid, 128f) ?: return -1f to -1f
     val vSW = hRes.second.getOrNull(0)?.toFloat() ?: -1f
     val hSW = hRes.second.getOrNull(1)?.toFloat() ?: -1f
     return vSW to hSW

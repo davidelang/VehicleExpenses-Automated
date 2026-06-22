@@ -1,5 +1,7 @@
 # TODO.md — Future work / backlog only
 
+- [ ] Fix pump crash binPeak stroke hist OpenCV setSize (see dev-ai-interaction/plans/analyze-pump-crash-binpeak-stroke-hist-open cv-setsize-fix-20260622-plan.md)
+
 **Important discipline:**
 - Only record high-level future items here (things not actively being worked on in the current cycle).
 - Current cycle work: record the approved plan reference at start of execution (high-level only, 1-2 lines). Full phased steps, forensic details, and build gates belong in the plan file (`dev-ai-interaction/plans/xxx-plan.md`) and ENGINEERING_LOG.md (append-only).
