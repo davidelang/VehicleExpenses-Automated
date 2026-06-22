@@ -90,6 +90,7 @@ EXECUTABLES=(
   filter-clean-config
   set-worktree-perms
   set-sandbox-perms
+  append-to-engineering-log
   run-grok
   run-grok-master
   run-grok-planner
@@ -129,6 +130,37 @@ for wt in "${WORKTREES[@]}"; do
   chmod 666 "$wt/project-facts.md" 2>/dev/null || true
   chmod 666 "$wt/TODO.md" 2>/dev/null || true
   find "$wt" -name .agent-state -type d -exec chmod g+rwX {} + 2>/dev/null || true
+
+  # ENGINEERING_LOG.md must be append-only. Use chattr +a to prevent
+  # modification of existing content (even with write perms, non-append
+  # writes are blocked at the kernel level). Only root can chattr -a it.
+  # Make it group-writable for the wrapper or direct append, but agents
+  # are required to use the append-to-engineering-log wrapper for
+  # formatting and to follow the "only append new dated entries" rule.
+  if [ -f "$wt/ENGINEERING_LOG.md" ]; then
+    # Make the log readable by group but not directly writable by agents (640).
+    # Append only via the SUID wrapper + chattr +a for strong protection against
+    # editing history.
+    chown root:$CODE_GROUP "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    chmod 640 "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || echo "  (chattr +a on ENGINEERING_LOG.md failed or not supported - run as root)"
+    # Wrapper: SUID root + group exec so it can write the protected log.
+    if [ -f "$wt/append-to-engineering-log" ]; then
+      chown root:$CODE_GROUP "$wt/append-to-engineering-log" 2>/dev/null || true
+      chmod 4755 "$wt/append-to-engineering-log" 2>/dev/null || true
+    fi
+  fi
+
+  # Make build_app and deploy setgid to the code group. When executed,
+  # they will have the @@CODE_GROUP@@ gid, helping ensure created files
+  # (build artifacts, etc.) get correct group ownership. Combined with
+  # the umask 007 + sg @@CODE_GROUP@@ inside the scripts, this reduces ownership
+  # drift that requires full set-worktree-perms runs.
+  for f in build_app deploy; do
+    if [ -f "$wt/$f" ]; then
+      chmod g+s "$wt/$f" 2>/dev/null || true
+    fi
+  done
 
   # Unix-level defense for planning user (separate from any Grok hooks):
   # Use ACLs (available here) to ensure @@PLANNING_USER@@ has read (r--) on source files

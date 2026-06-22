@@ -48,6 +48,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.zip.ZipInputStream
@@ -57,13 +58,38 @@ import kotlin.math.min
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentPump"
 
-private fun saveP4ToFile(reportDir: File, timestamp: String, photoName: String, peak: Int, variant: String, p4Base64: String): String {
-    val p4Dir = File(reportDir, "p4")
-    if (!p4Dir.exists()) p4Dir.mkdirs()
-    val safePhoto = photoName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-    val fileName = "pump_results_${timestamp}_${safePhoto}_peak${peak}_${variant}.p4"
-    File(p4Dir, fileName).writeText(p4Base64)
-    return "file:p4/$fileName"
+private fun getPhotoFragmentFile(reportDir: File, ts: String, idx: Int): File {
+    val fragDir = File(reportDir, "fragments")
+    if (!fragDir.exists()) fragDir.mkdirs()
+    return File(fragDir, "photo_${ts}_${String.format(Locale.US, "%04d", idx)}.jsonfrag")
+}
+
+private fun combinePhotoFragmentsIntoJson(jsonFile: File, header: String, fragments: List<File>, footer: String) {
+    jsonFile.outputStream().buffered().use { out ->
+        out.write(header.toByteArray(Charsets.UTF_8))
+        fragments.forEachIndexed { i, frag ->
+            frag.inputStream().use { it.copyTo(out) }
+            val sep = if (i < fragments.lastIndex) ",\n" else "\n"
+            out.write(sep.toByteArray(Charsets.UTF_8))
+        }
+        out.write(footer.toByteArray(Charsets.UTF_8))
+    }
+}
+
+private fun Appendable.jsonAppend(s: String) {
+    try {
+        append(s)
+    } catch (e: IOException) {
+        throw RuntimeException(e)
+    }
+}
+
+private fun Appendable.jsonAppend(c: Char) {
+    try {
+        append(c)
+    } catch (e: IOException) {
+        throw RuntimeException(e)
+    }
 }
 
 private fun logHeapState(context: Context, label: String) {
@@ -247,14 +273,11 @@ private suspend fun runPumpExperiment(
     val paddleEngine = NativePaddleEngine(context)
 
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
-    jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
-
-    // Pre-allocated JSON serialization buffer (512MB upfront; P4 base64 externalized to reportDir/p4/ for Set C)
-    var jsonCharBuffer = StringBuilder(PUMP_JSON_BUFFER_INITIAL_BYTES)
-    logHeapState(context, "after-buffer-alloc")
+    val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n"
+    val photoFragments = mutableListOf<File>()
 
     var partCount = 1
-    val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; P4 written to reportDir/p4/, not embedded in JSON)
+    val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; JSON via per-photo fragment staging)
     var currentSize = 0
     val footer = "</table></body></html>"
     val experimentRecSet320x48 = BufferSet(320, 48)
@@ -284,7 +307,7 @@ private suspend fun runPumpExperiment(
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
     // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (display-matched 1:1 size) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan; now via createCrop + direct calcHist + dual takeSnapshot from long-lived hist BufferSet at pump start). Lot of granular t_ timings (20+ including t_setup_ms, t_deskew_ms, t_discovery_wrapper_ms, t_filter_ms, t_pd_snapshot_ms, t_ocr_ms + C probe subs t_polarity_run_ms / t_per_red_bins_calc_ms / t_per_red_loop_overhead_ms / t_polarity_decision_ms / t_invert_if_needed_ms + blue subs t_blue_native_hist_ms / t_blue_valley_expands_ms / t_blue_3sides_ms / t_blue_retract_ms + t_hist_* + kept priors + n_reds_at_probe / n_per_red_hists / img dims context) added to metadata/JSON (one run gathers all for A/B gap + C probe/blue decomposition; no extra turn needed). HISTOGRAM ANSWERS (forensic): per-red C/E now createCrop (pixel rect from hunk) + direct calcHist on crop.mat (no mask) + OcrUtils.takeSnapshot (dual rect snapshot + plot from longLived histPlotCrop); long-lived BufferSet init once at pump start for scratch + plot crop (no per-red full Mat alloc/zeros/draw/generate custom); old perMask/rectangle/generate retired for this path. Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state. Set F: raw clone of B (no automaticContrastStretch; deskew/rotate/discovery/retracted-blue/red-only/OCR/PD on raw master copy). Set G: raw clone of D (no stretch; keeps custom 10% blue/orange + red-only + OCR on raw).
-    // Label convention (added this plan): Set A exactly unchanged (baseline). B-G use "Set X (stretch-type, blue-method)" so columns are self-describing in all report output (th, tilt line, <b>$name ...); stretch=clip edges (automaticContrastStretch), valley push (valleyPushToPeaks), none (raw F/G clones); blue=expanded (doBOrDRetractedBlueAndPD + expandByUniformity+retract: B/C/F) or calculated (vert expansions +10%..+80% step 10%: D/E/G). Exact: B (clip edges, expanded), C (valley push, expanded), D (clip edges, calculated), E (valley push, calculated), F (none, expanded), G (none, calculated). B/C/F (expanded columns only) perform per-peak binPeak object-based blue in HTML/JSON as binPeak_*; P4 debug binaries written as external .p4 files under reportDir/p4/ (small file: refs in JSON, not full base64) for Set C only; peaks from combinedRedboxHistBins; for C (valley expanded) uses exact 1-bin peaks from quantized combined hist (no range/smoothing, d=0); calculated columns D/E/G skip binPeak work entirely (results identical to expanded, saves processing + report size).
+    // Label convention (added this plan): Set A exactly unchanged (baseline). B-G use "Set X (stretch-type, blue-method)" so columns are self-describing in all report output (th, tilt line, <b>$name ...); stretch=clip edges (automaticContrastStretch), valley push (valleyPushToPeaks), none (raw F/G clones); blue=expanded (doBOrDRetractedBlueAndPD + expandByUniformity+retract: B/C/F) or calculated (vert expansions +10%..+80% step 10%: D/E/G). Exact: B (clip edges, expanded), C (valley push, expanded), D (clip edges, calculated), E (valley push, calculated), F (none, expanded), G (none, calculated). B/C/F (expanded columns only) perform per-peak binPeak object-based blue in HTML/JSON as binPeak_*; P4 debug images (inline base64) generated only for Set C; report JSON built via per-photo fragments staged to disk then streamed/combined into final self-contained inline JSON; peaks from combinedRedboxHistBins; for C (valley expanded) uses exact 1-bin peaks from quantized combined hist (no range/smoothing, d=0); calculated columns D/E/G skip binPeak work entirely (results identical to expanded, saves processing + report size).
     val flows = listOf("Set A", "Set B (clip edges, expanded)", "Set C (valley push, expanded)", "Set D (clip edges, calculated)", "Set E (valley push, calculated)", "Set F (none, expanded)", "Set G (none, calculated)")
 
     fun pStartNewFile(): File {
@@ -1384,7 +1407,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
                 val binPeakCandidatesB = mutableListOf<RedBoxOcrCandidate>()
-                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelBForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesB, reportDir, timestamp, file.name, generateP4 = false)
+                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelBForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesB, generateP4 = false)
                 branch.metadata["binPeakCandidateCount"] = binPeakCandidatesB.size.toString()
 
                 val mlHunks = emptyList<PumpHunk>()
@@ -1561,7 +1584,7 @@ private suspend fun runPumpExperiment(
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }
                     val binPeakCandidatesC = mutableListOf<RedBoxOcrCandidate>()
-                    captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC, reportDir, timestamp, file.name, generateP4 = true)
+                    captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC, generateP4 = true)
                     branch.metadata["binPeakCandidateCount"] = binPeakCandidatesC.size.toString()
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
@@ -2184,7 +2207,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
                 val binPeakCandidatesF = mutableListOf<RedBoxOcrCandidate>()
-                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelFForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesF, reportDir, timestamp, file.name, generateP4 = false)
+                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelFForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesF, generateP4 = false)
                 branch.metadata["binPeakCandidateCount"] = binPeakCandidatesF.size.toString()
 
                 val mlHunks = emptyList<PumpHunk>()
@@ -2445,18 +2468,14 @@ private suspend fun runPumpExperiment(
             val photoJson = pSerializePhotoResultToJson(
                 index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root, originalHistogram
             )
-            val comma = if (index < total - 1) "," else ""
-
-            // Clear/reset or re-allocate the reusable buffer to keep memory bounded (512MB initial)
-            if (jsonCharBuffer.capacity() > PUMP_JSON_BUFFER_RESET_CAPACITY) {
-                jsonCharBuffer = StringBuilder(PUMP_JSON_BUFFER_INITIAL_BYTES)
-            } else {
-                jsonCharBuffer.setLength(0)
-            }
 
             logHeapState(context, "before-photo-json-serialize")
-            appendJsonObject(jsonCharBuffer, photoJson, 2, 0)
-            jsonFile.appendText(jsonCharBuffer.toString() + "$comma\n")
+            val fragFile = getPhotoFragmentFile(reportDir, timestamp, index + 1)
+            fragFile.bufferedWriter().use { writer ->
+                appendJsonObject(writer, photoJson, 2, 0)
+            }
+            photoFragments.add(fragFile)
+            logHeapState(context, "after-photo-fragment-write")
 
             val summaryText = flows.map { f ->
                 val br = root.getBranch(f)
@@ -2475,7 +2494,11 @@ private suspend fun runPumpExperiment(
         }
     }
     currentFile.appendText(footer)
-    jsonFile.appendText("\n  ]\n}")
+
+    logHeapState(context, "before-json-combine")
+    combinePhotoFragmentsIntoJson(jsonFile, jsonHeader, photoFragments, "\n  ]\n}")
+    photoFragments.forEach { it.delete() }
+    logHeapState(context, "after-json-combine")
 
     experimentRecSet320x48.release()
     experimentRecSet1024x48.release()
@@ -2522,79 +2545,79 @@ private fun pSerializePhotoResultToJson(
     return rootJson
 }
 
-private fun appendJsonValue(sb: StringBuilder, value: Any?, indent: Int, indentLevel: Int) {
-    if (sb.length > PUMP_JSON_BUFFER_INITIAL_BYTES) {
-        throw IllegalStateException("JSON serialization exceeded the 256MB P4 buffer size")
+private fun appendJsonValue(out: Appendable, value: Any?, indent: Int, indentLevel: Int) {
+    if (out is StringBuilder && out.length > PER_PHOTO_FRAGMENT_BUFFER_BYTES) {
+        throw IllegalStateException("JSON fragment exceeded ${PER_PHOTO_FRAGMENT_BUFFER_BYTES / (1024 * 1024)}MB ceiling")
     }
     when (value) {
-        null -> sb.append("null")
-        JSONObject.NULL -> sb.append("null")
-        is JSONObject -> appendJsonObject(sb, value, indent, indentLevel)
-        is JSONArray -> appendJsonArray(sb, value, indent, indentLevel)
+        null -> out.jsonAppend("null")
+        JSONObject.NULL -> out.jsonAppend("null")
+        is JSONObject -> appendJsonObject(out, value, indent, indentLevel)
+        is JSONArray -> appendJsonArray(out, value, indent, indentLevel)
         is String -> {
-            sb.append('"')
-            escapeJsonString(sb, value)
-            sb.append('"')
+            out.jsonAppend('"')
+            escapeJsonString(out, value)
+            out.jsonAppend('"')
         }
-        is Boolean -> sb.append(value.toString())
-        is Number -> sb.append(value.toString())
+        is Boolean -> out.jsonAppend(value.toString())
+        is Number -> out.jsonAppend(value.toString())
         else -> {
-            sb.append('"')
-            escapeJsonString(sb, value.toString())
-            sb.append('"')
+            out.jsonAppend('"')
+            escapeJsonString(out, value.toString())
+            out.jsonAppend('"')
         }
     }
 }
 
-private fun appendJsonObject(sb: StringBuilder, json: JSONObject, indent: Int, indentLevel: Int) {
-    sb.append("{\n")
+private fun appendJsonObject(out: Appendable, json: JSONObject, indent: Int, indentLevel: Int) {
+    out.jsonAppend("{\n")
     val keys = json.keys()
     val nextLevel = indentLevel + 1
     val indentStr = " ".repeat(nextLevel * indent)
     var first = true
     while (keys.hasNext()) {
         if (!first) {
-            sb.append(",\n")
+            out.jsonAppend(",\n")
         }
         first = false
         val key = keys.next()
         val value = json.get(key)
-        sb.append(indentStr).append('"').append(key).append("\": ")
-        appendJsonValue(sb, value, indent, nextLevel)
+        out.jsonAppend(indentStr).jsonAppend('"').jsonAppend(key).jsonAppend("\": ")
+        appendJsonValue(out, value, indent, nextLevel)
     }
-    sb.append("\n").append(" ".repeat(indentLevel * indent)).append("}")
+    out.jsonAppend("\n").jsonAppend(" ".repeat(indentLevel * indent)).jsonAppend("}")
 }
 
-private fun appendJsonArray(sb: StringBuilder, array: JSONArray, indent: Int, indentLevel: Int) {
-    sb.append("[\n")
+private fun appendJsonArray(out: Appendable, array: JSONArray, indent: Int, indentLevel: Int) {
+    out.jsonAppend("[\n")
     val nextLevel = indentLevel + 1
     val indentStr = " ".repeat(nextLevel * indent)
     for (i in 0 until array.length()) {
         if (i > 0) {
-            sb.append(",\n")
+            out.jsonAppend(",\n")
         }
-        sb.append(indentStr)
-        appendJsonValue(sb, array.get(i), indent, nextLevel)
+        out.jsonAppend(indentStr)
+        appendJsonValue(out, array.get(i), indent, nextLevel)
     }
-    sb.append("\n").append(" ".repeat(indentLevel * indent)).append("]")
+    out.jsonAppend("\n").jsonAppend(" ".repeat(indentLevel * indent)).jsonAppend("]")
 }
 
-private fun escapeJsonString(sb: StringBuilder, str: String) {
+private fun escapeJsonString(out: Appendable, str: String) {
     for (i in 0 until str.length) {
         val ch = str[i]
         when (ch) {
-            '"' -> sb.append("\\\"")
-            '\\' -> sb.append("\\\\")
-            '/' -> sb.append("\\/")
-            '\b' -> sb.append("\\b")
-            '\n' -> sb.append("\\n")
-            '\r' -> sb.append("\\r")
-            '\t' -> sb.append("\\t")
+            '"' -> out.jsonAppend("\\\"")
+            '\\' -> out.jsonAppend("\\\\")
+            '/' -> out.jsonAppend("\\/")
+            '\b' -> out.jsonAppend("\\b")
+            '\n' -> out.jsonAppend("\\n")
+            '\r' -> out.jsonAppend("\\r")
+            '\t' -> out.jsonAppend("\\t")
             else -> {
                 if (ch.code < 32 || ch.code > 126) {
-                    sb.append(String.format("\\u%04x", ch.code))
+                    out.jsonAppend(String.format("\\u%04x", ch.code))
                 } else {
-                    sb.append(ch)
+                    out.jsonAppend(ch)
                 }
             }
         }
@@ -2832,9 +2855,6 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
     imgW: Int,
     imgH: Int,
     candidatesOut: MutableList<RedBoxOcrCandidate>,
-    reportDir: File,
-    timestamp: String,
-    photoName: String,
     delta: Int = BIN_PEAK_BINARIZE_DELTA,
     generateP4: Boolean = true
 ) {
@@ -2858,10 +2878,9 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
         branch.metadata["binPeak_${peak}_plain_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
         branch.metadata["binPeak_${peak}_count"] = height.toString()
         if (generateP4) {
-            // Plain binary debug (Set C only): write P4 to reportDir/p4/; JSON holds small file: ref only
-            val p4Ref = saveP4ToFile(reportDir, timestamp, photoName, peak, "plain", matToPbmP4Base64(b.mat))
-            branch.images["binPeak_${peak}_plain_p4"] = p4Ref
-            Log.d(TAG, "stored P4 for plain peak=$peak -> $p4Ref")
+            // Plain binary debug (Set C only): inline P4 base64 in JSON via per-photo fragment staging
+            branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
+            Log.d(TAG, "stored P4 for plain peak=$peak")
         }
         // b.mat cleared after plain_objects + optional P4 (when generateP4); reusable for cleaned path or next peak
         b.mat.setTo(org.opencv.core.Scalar(0.0))
@@ -2899,10 +2918,9 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             branch.metadata["binPeak_${peak}_blackout_ms"] = (System.currentTimeMillis() - tBlackoutStart).toString()
             branch.metadata["binPeak_${peak}_edited_object_indices"] = JSONArray(editedIndices.toList()).toString()
             if (generateP4) {
-                // Cleaned binary debug (Set C only): write P4 to reportDir/p4/; JSON holds small file: ref only
-                val p4Ref = saveP4ToFile(reportDir, timestamp, photoName, peak, "cleaned", matToPbmP4Base64(b.mat))
-                branch.images["binPeak_${peak}_cleaned_p4"] = p4Ref
-                Log.d(TAG, "stored P4 for cleaned peak=$peak -> $p4Ref")
+                // Cleaned binary debug (Set C only): inline P4 base64 in JSON via per-photo fragment staging
+                branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
+                Log.d(TAG, "stored P4 for cleaned peak=$peak")
             }
             val tCleanedStart = System.currentTimeMillis()
             branch.metadata["binPeak_${peak}_cleaned_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
@@ -3039,8 +3057,7 @@ private const val PUMP_C_VISUAL_TARGET_W = 340
 private const val PUMP_SMALL_TARGET_W = 180
 private const val PUMP_PER_RED_TARGET_W = 120
 private const val BIN_PEAK_BINARIZE_DELTA = 8
-private const val PUMP_JSON_BUFFER_INITIAL_BYTES = 512 * 1024 * 1024
-private const val PUMP_JSON_BUFFER_RESET_CAPACITY = 1024 * 1024 * 1024
+private const val PER_PHOTO_FRAGMENT_BUFFER_BYTES = 4 * 1024 * 1024
 
 private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
