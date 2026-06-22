@@ -24,6 +24,9 @@
 # Meta plans (process / workflow improvements)
 These are documented in AGENT_MANDATES.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the relevant plan files. They are kept here for historical reference only.
 
+# Current cycle (execution)
+- [ ] Streaming JSON with per-photo fragment staging to disk — plan: dev-ai-interaction/plans/streaming-json-with-per-photo-fragment-staging-to-disk-20260621-223000-plan.md
+
 # Future work
 (Only items that are not currently active in a plan.)
 

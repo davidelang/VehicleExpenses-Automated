@@ -102,7 +102,7 @@ Produce a high-signal, low-boilerplate document focused on the specific work of 
 
 First action: update TODO.md with a *high-level* entry (1-2 lines) recording the approved plan. Do not dump phased steps or execution details into TODO.md (they go in the plan file and ENGINEERING_LOG.md). Use forensic reads before/after every edit. After each phase's edit(s), invoke `./build_app` (with @summary file + listed changed files) and confirm the build + tag. On any failure or partial reset, only the tag of the most recent successful phase (obtained via `./get-builds-tag.sh` preflight) may be used for recovery. At the very end, after the final successful build + post-forensic verification, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' followed by 'results ready to test (new tag: ...)' and then stop completely. Parent/main agent will review your changes for fidelity to the plan.
 
-When reading project-facts.md: always read the *full* file (no offset/limit or tail). If large, report its size for separate work. When appending to ENGINEERING_LOG.md: *only append* a new dated entry at the end — never edit prior sections.
+When reading project-facts.md: always read the *full* file (no offset/limit or tail). If large, report its size for separate work. When appending to ENGINEERING_LOG.md: *only append* a new dated entry at the end — never edit prior sections. You **must** use the controlled wrapper `./append-to-engineering-log` (e.g. `./append-to-engineering-log '## YYYY-MM-DD - Title\n\n- ...'` or with @file). The log file is protected with `chattr +a` (append-only attribute) and appropriate permissions; direct modifications or `>>` bypasses are blocked or will fail. The wrapper ensures proper format.
 
 Do not write post-execution analysis claiming success. The master *always* spawns an independent Compliance Checker afterward. The checker's primary job is to determine whether the actual delivered code solves the problem and achieves the results described in the plan (intent / functional match). Process discipline is secondary. Only on PASS for the primary intent match does the master clean implementation-failure-logs entries for this plan. Reference this in your plans.
 
@@ -254,6 +254,8 @@ Planners may edit the tracked `project-facts.md` (and `TODO.md`) as explicit exc
 
 **ENGINEERING_LOG.md Rules (append-only activity log)**
 - ENGINEERING_LOG.md is strictly **append-only**. Agents must *only* append new dated entries at the very end of the file.
+- **You must use the wrapper**: `./append-to-engineering-log '## YYYY-MM-DD - Title\n\n- ...'` (or `@file.txt`). Direct `>>`, `echo`, `cat >>`, sed, or any edit is not allowed.
+- The file is protected with `chattr +a` (append-only attribute at kernel level — non-append writes are blocked with "Operation not permitted") and restrictive permissions. Only append via the wrapper.
 - Never edit, delete, overwrite, or modify any existing dated sections, entries, or historical content.
 - All past activity must remain untouched for accurate tailing and historical review.
 - New entries go under a new `## [YYYY-MM-DD] - Title` header with bullet details of what was done, changes, results, etc.

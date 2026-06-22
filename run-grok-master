@@ -201,7 +201,7 @@ MANDATORY BUILD DISCIPLINE (non-negotiable, from the STANDARD BLOCK and this pla
   Never batch across phases. On failure or partial reset, only the tag of the most recent successful phase (via `./get-builds-tag.sh` preflight) may be used. 
 
 - After any phase's build: read the *full* project-facts.md, then (if needed) update it with 1-2 new stable facts/locations only (after hygiene).
-- When appending to ENGINEERING_LOG.md: *only append* new dated entry at the end. ENGINEERING_LOG.md is append-only — never edit prior dated sections.
+- When appending to ENGINEERING_LOG.md: *only append* new dated entry at the end using the **mandatory wrapper** `./append-to-engineering-log '## DATE - Title\n\n...' ` (or `@file`). The file uses `chattr +a` (kernel append-only) + 640 root:group perms; direct `>>`, edits, or bypasses will fail or be blocked. Never touch prior content.
 
 (For the very end of the entire turn: after the final successful build + post-forensic verification, output the exact "**END OF EXECUTION TURN...**" marker + "results ready to test (new tag: XXX)" and stop completely.)
 - You must not claim completion or handoff until a build has succeeded at every required milestone in the plan and after the final changes.
