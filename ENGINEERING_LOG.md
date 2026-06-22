@@ -215,3 +215,28 @@ New plan required for residual fixes to actually close the crash and follow proc
 - User re-approved execution; forensic verify at HEAD a2aaf5fc: all plan criteria already present from 053d8c2b (prune 6, native H OR coverage, uncapped runs, HIST_SZ=8192, per-red md discard) plus later crash hardening in b0d32a55/a2aaf5fc.
 - No additional app/src changes required this turn; TODO.md updated with plan reference.
 - Build gate via ./build_app.
+
+## 2026-06-22 - Alignment experiment crash after pump fixes + uninstall/reinstall
+
+Fetched: logcat + tombstone_07 from emulator-5554.
+
+Crash: identical OpenCV setSize s>=0 in nativeCalculateHistogramWithThresholdH (matrix.cpp:246), now from alignment path:
+- stack: runBinTrialsPaddle -> runPaddleValleyIterative -> runExperiment (in ExperimentAlignmentScreen)
+- calls use odoBuffer.createCrop(boundingBox) then crop[id].mat + Rect(0,0,cropW,cropH) passed to calculateHistogramWithThresholdH
+- happens in bin trials for paddle valley iterative.
+
+Cause: Pump-induced BufferSet changes (resize drops !icrs/pixel crops, crop refresh clamping to even 2px boundaries, submat logic, flip/rebind) make crop.submat produce Mat with absW/absH <=0 or stale header in some flows. Passed bad-sized crop mat to H-hist triggers zeros/create inside (even with rect guards added for binPeak). Alignment relies on pixel crops + relative rects on vehicleBufferSets/odoBuffer (unlike pump binPeak which moved to full .s + absolute rects).
+
+Pump images on device were empty; need redeploy full-res (exclude thumbs).
+
+No logcat Java exception visible (native abort); tombstone confirms.
+
+New plan created to harden + redeploy.
+
+## 2026-06-22 - fix-alignment-crash-hist-crop-after-bufferset-pump-changes-plus-pump-images-redeploy-20260622-plan
+
+- BufferSet ManagedCrop.refresh: abort on absW/absH <= 0 before submat.
+- ExperimentAlignmentScreen: alignmentHistogramWithThresholdH uses odoBuffer.p.mat + absolute bbox (3 bin-trial hist sites); no crop submat for H hist.
+- NativeImageUtils.calculateHistogramWithThresholdH: mat.empty + valid rect filter.
+- Native H: guard mat cols/rows <= 0.
+- Pump images redeploy to emulator-5554 pump_photos (GOLDEN_SUBSET 10, no thumbs) follows build.

@@ -1694,6 +1694,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+    if (mat->cols <= 0 || mat->rows <= 0) return nullptr;
 
     jsize len = env->GetArrayLength(rects);
     if (len % 4 != 0 || len == 0) return nullptr;
