@@ -962,6 +962,7 @@ private fun alignmentHistogramWithThresholdH(
     val r = bbox.right.coerceIn(l + 1, cols)
     val b = bbox.bottom.coerceIn(t + 1, rows)
     if (r <= l || b <= t) return null
+    Log.d("ALIGN_HIST_DIAG", "odo size: ${cols}x${rows}, bbox=(${bbox.left},${bbox.top})-(${bbox.right},${bbox.bottom}), coerced ltrb=($l,$t,$r,$b)")
     return NativeImageUtils.calculateHistogramWithThresholdH(primaryMat, listOf(Rect(l, t, r, b)), thresholdFactor)
 }
 
@@ -1007,6 +1008,7 @@ private suspend fun runBinTrialsPaddle(
         odoBuffer.p.clear()
         val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
         org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+        Log.d("ALIGN_ODO_POP", "masterCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()} -> odoTarget=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
 
         // Step 2: Binarize into .s, then flip so .p = binary, .s = original grayscale (scratchpad).
         odoBuffer.s.clear()
