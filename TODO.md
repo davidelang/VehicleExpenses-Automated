@@ -1,5 +1,6 @@
 # TODO.md — Future work / backlog only
 
+- [ ] Fix pump binPeak redbox hist sampling/caps/prune limit (see dev-ai-interaction/plans/fix-pump-binpeak-redbox-hist-sampling-255-cap-discard-rule-prune-limit-6-20260622-plan.md)
 - [ ] Fix pump crash binPeak stroke hist OpenCV setSize (see dev-ai-interaction/plans/analyze-pump-crash-binpeak-stroke-hist-open cv-setsize-fix-20260622-plan.md)
 
 **Important discipline:**
