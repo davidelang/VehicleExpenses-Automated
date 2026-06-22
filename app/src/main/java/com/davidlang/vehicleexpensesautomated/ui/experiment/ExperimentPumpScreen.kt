@@ -2808,7 +2808,8 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
     imgW: Int,
     imgH: Int,
     candidatesOut: MutableList<RedBoxOcrCandidate>,
-    delta: Int = BIN_PEAK_BINARIZE_DELTA
+    delta: Int = BIN_PEAK_BINARIZE_DELTA,
+    generateP4: Boolean = true
 ) {
     val combinedBinsJson = branch.metadata["combinedRedboxHistBins"] ?: return
     val binsArr = JSONArray(combinedBinsJson)
