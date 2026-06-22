@@ -1,7 +1,5 @@
 # TODO.md — Future work / backlog only
 
-- [ ] Fix pump binPeak redbox hist sampling/caps/prune limit (see dev-ai-interaction/plans/fix-pump-binpeak-redbox-hist-sampling-255-cap-discard-rule-prune-limit-6-20260622-plan.md)
-
 **Important discipline:**
 - Only record high-level future items here (things not actively being worked on in the current cycle).
 - Current cycle work: record the approved plan reference at start of execution (high-level only, 1-2 lines). Full phased steps, forensic details, and build gates belong in the plan file (`dev-ai-interaction/plans/xxx-plan.md`) and ENGINEERING_LOG.md (append-only).

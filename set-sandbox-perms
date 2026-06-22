@@ -1,6 +1,10 @@
 #!/bin/bash
 # set-sandbox-perms
 # Applies 2770 setgid for sandbox (group write).
+#
+# This is infrastructure. After edits, commit in main then
+# `sudo ./update-rules.sh` (agents idle) to sync to worktrees.
+# Ensures permission scripts stay committed and not reverted.
 
 set -euo pipefail
 
@@ -68,6 +72,15 @@ for SANDBOX_DIR in "${SANDBOX_DIRS[@]}"; do
 
   # Also allow shared group if needed
   chown -R :$SHARED_GROUP "$SANDBOX_DIR" 2>/dev/null || true
+
+  # Grant @@PLANNING_USER@@ full read/write/execute (and default ACLs for new files) inside the sandbox.
+  # This is critical because planner is not a member of @@CODE_GROUP@@ (enforced elsewhere),
+  # and group ownership may end up as @@CODE_GROUP@@/@@SHARED_GROUP@@ after other perms scripts.
+  # Named ACL ensures planner can freely write plans/, historical-plans/, etc.
+  if id "$PLANNING_USER" >/dev/null 2>&1; then
+    setfacl -R -m "u:$PLANNING_USER:rwx" "$SANDBOX_DIR" 2>/dev/null || true
+    setfacl -R -m "d:u:$PLANNING_USER:rwx" "$SANDBOX_DIR" 2>/dev/null || true
+  fi
 
   # Git safe.directory for the sandbox's inner git (if present)
   if [ -d "$SANDBOX_DIR/.git" ]; then
