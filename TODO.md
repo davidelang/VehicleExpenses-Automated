@@ -24,6 +24,9 @@
 # Meta plans (process / workflow improvements)
 These are documented in AGENT_MANDATES.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the relevant plan files. They are kept here for historical reference only.
 
+# Current cycle (execution)
+- [ ] Externalize P4 to files, reduce JSON bloat, add heap diagnostics — plan: dev-ai-interaction/plans/externalize-p4-to-files-reduce-json-bloat-and-add-heap-diagnostics-20260621-221000-plan.md
+
 # Future work
 (Only items that are not currently active in a plan.)
 
