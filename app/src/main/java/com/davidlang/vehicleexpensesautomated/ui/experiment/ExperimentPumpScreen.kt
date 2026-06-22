@@ -2870,8 +2870,10 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             val editedIndices = NativeImageUtils.blackOutLargeAndSmallComponentsHWithEditedIndices(b.mat, vSW, hSW, useMaxW)
             branch.metadata["binPeak_${peak}_blackout_ms"] = (System.currentTimeMillis() - tBlackoutStart).toString()
             branch.metadata["binPeak_${peak}_edited_object_indices"] = JSONArray(editedIndices.toList()).toString()
-            branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
-            Log.d(TAG, "stored P4 for cleaned peak=$peak")
+            if (generateP4) {
+                branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
+                Log.d(TAG, "stored P4 for cleaned peak=$peak")
+            }
             val tCleanedStart = System.currentTimeMillis()
             branch.metadata["binPeak_${peak}_cleaned_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
             val compRectsCleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
