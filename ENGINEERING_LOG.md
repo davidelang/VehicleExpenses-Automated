@@ -245,3 +245,40 @@ New plan created to harden + redeploy.
 
 - Pushed GOLDEN_SUBSET 10 files (no thumbs) to emulator-5554:/sdcard/Android/data/com.davidlang.vehicleexpensesautomated/files/pump_photos/
 - Verified: ls count PXL_* = 10
+
+## 2026-06-22 - Diagnosis of alignment crash per user directive: stop guessing, inspect code+logs, plan for more info if needed
+
+User correction: odoBuffer is alignment, scaled are pump. drop non-ICRS on resize is from spec (not recent pump change). Crops for odo populate supposed to be ICRS. Did that change?
+
+Inspected code:
+
+- In ExperimentAlignmentScreen.kt setup: icrsRect = from vehicle odometerCrop* or full ICRS.
+
+  Then set.p.createCrop( icrsRect.left (float), top, width(), height(), id=vehicle.id ) -- float createCrop → isIcrs=true ICRS crop on globals A/B.
+
+- Then vehicleBufferSets[id] = BufferSet( pixel target from icrsToPixel )
+
+- In runBinTrialsPaddle: resize( masterBuffer.c[vehicleId].mat (the ICRS crop view on global) to odoBuffer.p.mat )
+
+- odoBuffer is the per-vehicle pixel sized for odo.
+
+- Then after binarize + flip, alignmentHistogramWithThresholdH( odoBuffer.p.mat (binary), b.boundingBox ,.. )
+
+- b from det on scaled odo content, invScale to odo space.
+
+Crops feeding odo are ICRS based (float create on globals). No evidence of change in current code.
+
+Logs (crash-again... and tombstone_08): crash in alignmentHistogramWithThresholdH -> native H during bin trial on ~960x198 odo size buffer, after CHAR_AWARE and crop reg, after the flip to binary.
+
+No logged values for the actual primaryMat.cols/rows or the bbox or the l/r after coerce or inside native minL/roi at the failing call. Insufficient to identify exact bad numbers causing s<0 inside (zeros or roi create).
+
+Therefore, per directive, do not speculate; make plan to add instrumentation to gather the exact info.
+
+Also verified drop non-ICRS is in BufferSet as per spec.
+
+
+
+## 2026-06-22 - diagnose-alignment-odo-hist-setsize-with-instrumentation-20260622-plan
+
+- Added temporary ALIGN_HIST_DIAG (Kotlin wrapper), ALIGN_HIST_NATIVE (native H), ALIGN_ODO_POP (odo resize) logs.
+- No functional changes; instrumentation only for next alignment crash repro.

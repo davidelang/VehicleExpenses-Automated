@@ -1586,6 +1586,10 @@ static double computeThreshold(const cv::Mat& mat, int L, int T, int R, int B, f
     int safeR = std::max(safeL + 1, std::min(R, mat.cols));
     int safeB = std::max(safeT + 1, std::min(B, mat.rows));
     cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
+    if (roi.width <= 0 || roi.height <= 0) {
+        LOGE("ALIGN_HIST_NATIVE: computeThreshold bad roi L=%d T=%d R=%d B=%d mat=%dx%d roiW=%d roiH=%d",
+             L, T, R, B, mat.cols, mat.rows, roi.width, roi.height);
+    }
     cv::Scalar meanVal = cv::mean(mat(roi));
     return std::max(15.0, meanVal[0] * (double)thresholdFactor);
 }
@@ -1695,6 +1699,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
     if (mat->cols <= 0 || mat->rows <= 0) return nullptr;
+    LOGI("ALIGN_HIST_NATIVE: entry mat=%dx%d type=%d", mat->cols, mat->rows, mat->type());
 
     jsize len = env->GetArrayLength(rects);
     if (len % 4 != 0 || len == 0) return nullptr;
@@ -1715,6 +1720,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     }
     env->ReleaseIntArrayElements(rects, rData, JNI_ABORT);
     if (rectL.empty()) return nullptr;
+    LOGI("ALIGN_HIST_NATIVE: validRects=%zu rawLen=%d", rectL.size(), (int)len);
 
     int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
     for (size_t i = 0; i < rectL.size(); ++i) {
@@ -1728,9 +1734,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     minT = std::max(0, std::min(minT, mat->rows - 1));
     maxR = std::max(minL + 1, std::min(maxR, mat->cols));
     maxB = std::max(minT + 1, std::min(maxB, mat->rows));
+    LOGI("ALIGN_HIST_NATIVE: minL=%d minT=%d maxR=%d maxB=%d roiW=%d roiH=%d", minL, minT, maxR, maxB, maxR - minL, maxB - minT);
 
     const int numRects = (int)rectL.size();
     // OR coverage mask (no double-count overlaps; only pixels inside >=1 red)
+    LOGI("ALIGN_HIST_NATIVE: beforeZeros coverage size=%dx%d", mat->cols, mat->rows);
     cv::Mat coverage = cv::Mat::zeros(mat->size(), CV_8UC1);
     for (int i = 0; i < numRects; ++i) {
         int L = std::max(0, rectL[i]), T = std::max(0, rectT[i]);
