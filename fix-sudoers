@@ -12,6 +12,9 @@
 #
 # This is the authoritative place for the vehicle-permissions sudoers.
 # Re-run after any change to launchers or perms scripts.
+#
+# After editing, commit in main tree and run `sudo ./update-rules.sh`
+# (agents idle) to propagate and commit into worktrees.
 
 set -euo pipefail
 

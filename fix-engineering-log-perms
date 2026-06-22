@@ -28,6 +28,13 @@
 # If you ever only want one specific tree:
 #   sudo ./fix-engineering-log-perms /path/to/some.wt
 #
+# IMPORTANT: After editing this or related permission scripts
+# (append-to-engineering-log, set-worktree-perms, fix-*.sh), commit
+# in the main orchestration tree. Then (when agents are idle) run
+# `sudo ./update-rules.sh` so the updated versions are copied and
+# committed into each worktree. This prevents git reverts of these
+# scripts on resets/checkouts inside agent worktrees.
+#
 # Run as root (sudo). It also ensures the right users are in ai-shared.
 
 set -euo pipefail
