@@ -79,6 +79,9 @@ cat <<'SUDOERS'
 # Run as root to set up passwordless sudo:
 cat > /etc/sudoers.d/vehicle-permissions << 'EOF'
 dlang ALL=(@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@) NOPASSWD: /home/dlang/git/grok/bin/grok
+# Allow the ai users to run the controlled append wrapper as root (for ENGINEERING_LOG.md)
+# Adapt the path for the actual worktree locations.
+@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@ ALL=(root) NOPASSWD: /home/dlang/git/VehicleExpenses-automated/*/append-to-engineering-log
 EOF
 chmod 440 /etc/sudoers.d/vehicle-permissions
 visudo -c   # validate

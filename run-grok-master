@@ -268,7 +268,7 @@ If the plan or the Compliance block requires a build after a specific phase/proc
 - Read the compliance report.
 - If the report is a clear PASS on the primary criterion (the actual code changes solve the problem and intent stated in the plan, per the checker's analysis):
   - Clean up: remove any files in @@SANDBOX_PATH@@/implementation-failure-logs/ that mention this plan path (use rm or shell).
-  - Read full project-facts.md (report size if large), then update with 1-2 stable facts/locations only if newly discovered. ENGINEERING_LOG.md (if used) must be append-only.
+  - Read full project-facts.md (report size if large), then update with 1-2 stable facts/locations only if newly discovered. For ENGINEERING_LOG.md (if you append), use the wrapper `./append-to-engineering-log`. It is append-only (chattr +a).
   - Output to user: the success message referencing the compliance report path + "results ready to test".
   - Then become ready for the next 'New planning cycle' trigger.
 - If FAIL or partial (gaps remain):
@@ -280,7 +280,8 @@ If the plan or the Compliance block requires a build after a specific phase/proc
 
 Always:
 - Treat the written plan file(s) in @@SANDBOX_PATH@@/plans/ as the single source of truth for what is approved.
-- Use and maintain the local project-facts.md (in the worktree root) for stable layout and location facts. Always read the *full* file (report size if large for separate work). Keep it to facts that remain true across efforts. ENGINEERING_LOG.md is append-only.
+- Use and maintain the local project-facts.md (in the worktree root) for stable layout and location facts. Always read the *full* file (report size if large for separate work). Keep it to facts that remain true across efforts.
+- ENGINEERING_LOG.md is strictly append-only (chattr +a protected). To append, you **must** use the wrapper from the root: `./append-to-engineering-log '## YYYY-MM-DD - Title\n\n- details'` (or `@file.txt`). Never use direct bash `>>` or edits — they will fail due to perms. Only append new dated entries at the end.
 - Re-read AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the active plan document on every launch, after compaction, and before major coordination decisions.
 - Never make source changes yourself unless explicitly executing under an approved plan.
 - Keep responses to the user high-level and ritualistic when handling planning cycle starts. The detailed work belongs in the dedicated planner terminal or execution sub-agents.
