@@ -145,7 +145,8 @@ for wt in "${WORKTREES[@]}"; do
     chown root:$SHARED_GROUP "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
     chmod 660 "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
     chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || echo "  (chattr +a on ENGINEERING_LOG.md failed or not supported - run as root)"
-    # Wrapper: make it group-exec for @@CODE_GROUP@@/@@SHARED_GROUP@@.
+    # Wrapper: SUID root + group exec so the wrapper can write even if we
+    # had tighter perms. Agents should call the wrapper, not direct >> .
     if [ -f "$wt/append-to-engineering-log" ]; then
       chown root:$SHARED_GROUP "$wt/append-to-engineering-log" 2>/dev/null || true
       chmod 4755 "$wt/append-to-engineering-log" 2>/dev/null || true
