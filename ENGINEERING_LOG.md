@@ -282,3 +282,9 @@ Also verified drop non-ICRS is in BufferSet as per spec.
 
 - Added temporary ALIGN_HIST_DIAG (Kotlin wrapper), ALIGN_HIST_NATIVE (native H), ALIGN_ODO_POP (odo resize) logs.
 - No functional changes; instrumentation only for next alignment crash repro.
+
+## 2026-06-22 - diagnose-alignment instrumentation build succeeded (no deploy)
+
+- After perms fix: ./build_app succeeded; tag fix-pump-experiment-start-715-gd60f258d (d60f258d).
+- Instrumentation: ALIGN_HIST_DIAG, ALIGN_ODO_POP, ALIGN_HIST_NATIVE in tree.
+- Deploy/log capture phases 4-5 are user-only per AGENT_MANDATES (agents never deploy). User must ./deploy and repro alignment crash, then grep logcat for ALIGN_* tags.
