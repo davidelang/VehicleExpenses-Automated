@@ -76,20 +76,22 @@ private fun combinePhotoFragmentsIntoJson(jsonFile: File, header: String, fragme
     }
 }
 
-private fun Appendable.jsonAppend(s: String) {
+private fun Appendable.jsonAppend(s: String): Appendable {
     try {
         append(s)
     } catch (e: IOException) {
         throw RuntimeException(e)
     }
+    return this
 }
 
-private fun Appendable.jsonAppend(c: Char) {
+private fun Appendable.jsonAppend(c: Char): Appendable {
     try {
         append(c)
     } catch (e: IOException) {
         throw RuntimeException(e)
     }
+    return this
 }
 
 private fun logHeapState(context: Context, label: String) {
