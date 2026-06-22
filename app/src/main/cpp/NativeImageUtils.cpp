@@ -1700,11 +1700,18 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
     int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
+    const int numRects = len / 4;
+    std::vector<int> rectL(numRects), rectT(numRects), rectR(numRects), rectB(numRects);
     for (int i = 0; i < len; i += 4) {
-        minL = std::min(minL, (int)rData[i]);
-        minT = std::min(minT, (int)rData[i+1]);
-        maxR = std::max(maxR, (int)rData[i+2]);
-        maxB = std::max(maxB, (int)rData[i+3]);
+        const int idx = i / 4;
+        rectL[idx] = (int)rData[i];
+        rectT[idx] = (int)rData[i+1];
+        rectR[idx] = (int)rData[i+2];
+        rectB[idx] = (int)rData[i+3];
+        minL = std::min(minL, rectL[idx]);
+        minT = std::min(minT, rectT[idx]);
+        maxR = std::max(maxR, rectR[idx]);
+        maxB = std::max(maxB, rectB[idx]);
     }
     env->ReleaseIntArrayElements(rects, rData, JNI_ABORT);
 
@@ -1713,27 +1720,49 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     maxR = std::max(minL + 1, std::min(maxR, mat->cols));
     maxB = std::max(minT + 1, std::min(maxB, mat->rows));
 
+    // OR coverage mask (no double-count overlaps; only pixels inside >=1 red)
+    cv::Mat coverage = cv::Mat::zeros(mat->size(), CV_8UC1);
+    for (int i = 0; i < numRects; ++i) {
+        int L = std::max(0, rectL[i]), T = std::max(0, rectT[i]);
+        int R = std::min(mat->cols, rectR[i]), B = std::min(mat->rows, rectB[i]);
+        if (R > L && B > T) {
+            cv::rectangle(coverage, cv::Rect(L, T, R - L, B - T), cv::Scalar(255), -1);
+        }
+    }
+
+    // Per-row max width / per-col max height of reds covering that position (for discard rule)
+    std::vector<int> maxWRow(mat->rows, 0), maxHCol(mat->cols, 0);
+    for (int i = 0; i < numRects; ++i) {
+        const int w = rectR[i] - rectL[i];
+        const int h = rectB[i] - rectT[i];
+        const int y0 = std::max(0, rectT[i]), y1 = std::min(mat->rows, rectB[i]);
+        const int x0 = std::max(0, rectL[i]), x1 = std::min(mat->cols, rectR[i]);
+        for (int y = y0; y < y1; ++y) maxWRow[y] = std::max(maxWRow[y], w);
+        for (int x = x0; x < x1; ++x) maxHCol[x] = std::max(maxHCol[x], h);
+    }
+
     double contentThreshold = computeThreshold(*mat, minL, minT, maxR, maxB, thresholdFactor);
 
-    const int bufW = maxR - minL;
-    const int bufH = maxB - minT;
     std::map<int,int> horizHist, vertHist;
     for (int y = minT; y < maxB; ++y) {
         const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
+        const uint8_t* covPtr = coverage.ptr<uint8_t>(y);
+        const int md = maxWRow[y]; // biggest red width this horiz run fits in
         int run = 0;
         for (int x = minL; x < maxR; ++x) {
-            if (rowPtr[x] > contentThreshold) run++;
-            else { if (run > 0) { if (run < bufW) horizHist[std::min(255,run)]++; } run = 0; }
+            if (rowPtr[x] > contentThreshold && covPtr[x] != 0) run++;
+            else { if (run > 0) { if (run < md) horizHist[run]++; } run = 0; } // uncapped run lengths
         }
-        if (run > 0) { if (run < bufW) horizHist[std::min(255,run)]++; }
+        if (run > 0) { if (run < md) horizHist[run]++; }
     }
     for (int x = minL; x < maxR; ++x) {
+        const int md = maxHCol[x]; // biggest red height this vert run fits in
         int run = 0;
         for (int y = minT; y < maxB; ++y) {
-            if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
-            else { if (run > 0) { if (run < bufH) vertHist[std::min(255,run)]++; } run = 0; }
+            if (mat->at<uint8_t>(y, x) > contentThreshold && coverage.at<uint8_t>(y, x) != 0) run++;
+            else { if (run > 0) { if (run < md) vertHist[run]++; } run = 0; }
         }
-        if (run > 0) { if (run < bufH) vertHist[std::min(255,run)]++; }
+        if (run > 0) { if (run < md) vertHist[run]++; }
     }
 
     // Height-bounded peak search decoupled caps
@@ -1752,13 +1781,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     int vSWv = getPeakCappedH(horizHist, minStroke, maxStrokeV);
     int hSWv = getPeakCappedH(vertHist,  minStroke, maxStrokeH);
 
-    jintArray hArr = env->NewIntArray(256);
-    jintArray vArr = env->NewIntArray(256);
-    jint hData[256] = {0}, vData[256] = {0};
-    for (auto const& p : horizHist) { if (p.first >= 0 && p.first < 256) hData[p.first] = p.second; }
-    for (auto const& p : vertHist)  { if (p.first >= 0 && p.first < 256) vData[p.first] = p.second; }
-    env->SetIntArrayRegion(hArr, 0, 256, hData);
-    env->SetIntArrayRegion(vArr, 0, 256, vData);
+    const int HIST_SZ = 8192;
+    jintArray hArr = env->NewIntArray(HIST_SZ);
+    jintArray vArr = env->NewIntArray(HIST_SZ);
+    std::vector<jint> hData(HIST_SZ, 0), vData(HIST_SZ, 0);
+    for (auto const& p : horizHist) { if (p.first >= 0 && p.first < HIST_SZ) hData[p.first] = p.second; }
+    for (auto const& p : vertHist)  { if (p.first >= 0 && p.first < HIST_SZ) vData[p.first] = p.second; }
+    env->SetIntArrayRegion(hArr, 0, HIST_SZ, hData.data());
+    env->SetIntArrayRegion(vArr, 0, HIST_SZ, vData.data());
 
     jintArray metaArr = env->NewIntArray(4);
     jint m[4] = { (jint)vSWv, (jint)hSWv, 0, (jint)contentThreshold };
