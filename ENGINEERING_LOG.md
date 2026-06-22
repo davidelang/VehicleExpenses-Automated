@@ -165,3 +165,53 @@ This log tracks the implementation, refactoring, and deployment activities perfo
 ## 2026-06-22 - coder test
 
 ## 2026-06-22 - orch test
+
+## 2026-06-22 - Emulator crash re-investigation (binPeak stroke hist setSize)
+
+- User: "it crashed on the emulator again, fetch the logs and investigate"
+- Devices: emulator-5554 + phone present.
+- Fetched: `adb -s emulator-5554 logcat -d -b all > dev-ai-interaction/logs/emulator-crash-20260622-032844.log` (3104 lines, ~729kB; post-crash artd spam, no new Java trace - buffer rolled after abort).
+- Pump reports pulled to `dev-ai-interaction/logs/emulator-latest-pump_reports-20260622-0328/` (9 files; latest partial is pump_report_2026-06-22_03-23-10_part1.html 1248B - only <html> header table, no rows; same as 03:24 pull. Big JSONs from prior successful runs).
+- Confirmed crashing log: dev-ai-interaction/logs/emulator-crash-20260622-032407.log (29MB) produced the 03-23-10 partial.
+- Crash details (verbatim from log @03:23:15.389):
+  E cv::error(): OpenCV(4.10.0) Error: Assertion failed (s >= 0) in setSize, .../matrix.cpp:246
+  F libc : Fatal signal 6 (SIGABRT)...
+  Stack: nativeCalculateHistogramWithThresholdH+1720 -> calculateHistogramWithThresholdH -> binPeakComputeStrokeWidths -> captureBinPeakSnapshotsFromRedbox (in procB path of first photo).
+- Pre-crash sequence (from log): ... 1024-scale CHAR_AWARE/EXPAND traces (discovery), 5x "Registered crop at 1037..1041", BINARIZE_RANGE: [230,246] on 4080x3060 (twice), crash in histH.
+- No "binPeak_*_vsw" metadata emitted for the crashing peak (crashed inside first stroke call after 2nd binarize per peak loop).
+- Code cross-ref: NativePaddleEngine.kt:189 hardcodes BufferSetA/B(4000, 3072); pump does workspace.resize(actualW, actualH) from photo (4080x3060); BufferSet.resize does physicalResize on both instances but NO refreshViews() re-wrap of _mat; captureBinPeak does `val b=workspace.s; b.mat.setTo(0); binarizeRange(workspace.p.mat, b.mat, ...); binPeakCompute...(b.mat, redPixelBForBinPeak)`.
+- Red prep: top-6 area prune (for B raw/exp/max) + validBinPeakRects (normalize+filter w/h>0) + pass to hist; native H does OR coverage + per-red maxWRow/md discard + HIST_SZ=8192 uncapped (but crash before return).
+- Conclusion: same root as analyzed in analyze-pump-crash-binpeak-stroke-hist-opencv-setsize-fix-20260622-plan.md and the prune6 fix plan. The 03:23 run hit it before any of the ultra-micro fix phases were executed on device. No new distinct failure mode; buffer size/header staleness + insufficient pre-native guards on (binMat dims + red union area) when mixing initial 4000 setup with real photo + direct .s full-res hijack for binPeak.
+- Artifacts preserved for branch testing as requested previously.
+
+## 2026-06-22 - Review of claimed implementation of analyze-pump-crash plan via compliance-report
+
+Forensic check of code after implementation agent:
+
+- Native H hist (cpp ~1692): Good updates for swap, skip <=0, early empty return, coverage guard if(w>0 h>0), maxWRow/maxHCol only valid, cov gate in scans, run < md per-col/row, HIST_SZ=8192 uncapped. Matches.
+
+- Kotlin: validBinPeakRects used for ForBinPeak lists; subList(6) active in proc B/C etc red pruning. Good.
+
+- Probe defensive: added <=0 checks/logs/throws in ImageIngestionProvider and pump. Good.
+
+Defects found:
+
+1. BufferSet physicalResize still does NOT call refreshViews() (only updates native + _buffer). _mat for p/s remain from initial BufferSet(4000,3072) creation. After runtime resize to photo dims (4080x3060), b.mat in binPeak capture can have stale header -> risk of bad size() reaching zeros/Rect/mean even with rect guards. (Root cause from original crash not fully closed.)
+
+2. "n_reds_after_prune4" metadata still written in 7+ locations across procs (lines ~1262,1418,1582,...). Comments still reference prune4 in redbox context. Plan required cleanup.
+
+3. No refresh of Mat views after resize anywhere in pump flow or BufferSet. flip()/rotate may compound.
+
+4. Implementation used bulk commits, not the mandated ultra-micro phases + per-phase forensic read/grep + build_app from the plan STANDARD BLOCK. Compliance report itself notes this.
+
+5. No additional guards around binMat size vs passed rects/img dims in binPeakCompute or capture.
+
+6. "top-4" comments in classifier paths are unrelated (leave them).
+
+New plan required for residual fixes to actually close the crash and follow process.
+
+## 2026-06-22 - Re-execution verify: fix-pump-binpeak-redbox-hist-sampling-255-cap-discard-rule-prune-limit-6-20260622-plan
+
+- User re-approved execution; forensic verify at HEAD a2aaf5fc: all plan criteria already present from 053d8c2b (prune 6, native H OR coverage, uncapped runs, HIST_SZ=8192, per-red md discard) plus later crash hardening in b0d32a55/a2aaf5fc.
+- No additional app/src changes required this turn; TODO.md updated with plan reference.
+- Build gate via ./build_app.
