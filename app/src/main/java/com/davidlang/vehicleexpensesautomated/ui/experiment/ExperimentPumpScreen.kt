@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -55,6 +56,28 @@ import kotlin.math.min
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentPump"
+
+private fun saveP4ToFile(reportDir: File, timestamp: String, photoName: String, peak: Int, variant: String, p4Base64: String): String {
+    val p4Dir = File(reportDir, "p4")
+    if (!p4Dir.exists()) p4Dir.mkdirs()
+    val safePhoto = photoName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+    val fileName = "pump_results_${timestamp}_${safePhoto}_peak${peak}_${variant}.p4"
+    File(p4Dir, fileName).writeText(p4Base64)
+    return "file:p4/$fileName"
+}
+
+private fun logHeapState(context: Context, label: String) {
+    val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    val mi = ActivityManager.MemoryInfo()
+    am.getMemoryInfo(mi)
+    val runtime = Runtime.getRuntime()
+    Log.i(
+        TAG,
+        "heap[$label] memoryClass=${am.memoryClass}MB largeMemoryClass=${am.largeMemoryClass}MB " +
+            "runtime max=${runtime.maxMemory()} total=${runtime.totalMemory()} free=${runtime.freeMemory()} " +
+            "availMem=${mi.availMem} threshold=${mi.threshold} lowMemory=${mi.lowMemory}"
+    )
+}
 
 private val GOLDEN_SUBSET = listOf(
     "PXL_20260202_204443784.jpg",
@@ -210,6 +233,7 @@ private suspend fun runPumpExperiment(
     subsetNames: List<String>?,
     onProgress: (PumpPhotoResultSummary, Float) -> Unit
 ) = withContext(Dispatchers.IO) {
+    logHeapState(context, "runPumpExperiment:start")
     val allPhotos = experimentDir.listFiles { f ->
         f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
     }?.sortedBy { it.name } ?: return@withContext
@@ -225,12 +249,12 @@ private suspend fun runPumpExperiment(
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
     jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
 
-    // Pre-allocated JSON serialization buffer (256MB upfront for many P4 base64 strings per photo;
-    // appendJsonValue safety ceiling aligns with this P4 buffer size)
+    // Pre-allocated JSON serialization buffer (512MB upfront; P4 base64 externalized to reportDir/p4/ for Set C)
     var jsonCharBuffer = StringBuilder(PUMP_JSON_BUFFER_INITIAL_BYTES)
+    logHeapState(context, "after-buffer-alloc")
 
     var partCount = 1
-    val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; P4 base64 volume lives in 256M JSON buffer)
+    val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; P4 written to reportDir/p4/, not embedded in JSON)
     var currentSize = 0
     val footer = "</table></body></html>"
     val experimentRecSet320x48 = BufferSet(320, 48)
@@ -260,7 +284,7 @@ private suspend fun runPumpExperiment(
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
     // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
     // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (display-matched 1:1 size) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan; now via createCrop + direct calcHist + dual takeSnapshot from long-lived hist BufferSet at pump start). Lot of granular t_ timings (20+ including t_setup_ms, t_deskew_ms, t_discovery_wrapper_ms, t_filter_ms, t_pd_snapshot_ms, t_ocr_ms + C probe subs t_polarity_run_ms / t_per_red_bins_calc_ms / t_per_red_loop_overhead_ms / t_polarity_decision_ms / t_invert_if_needed_ms + blue subs t_blue_native_hist_ms / t_blue_valley_expands_ms / t_blue_3sides_ms / t_blue_retract_ms + t_hist_* + kept priors + n_reds_at_probe / n_per_red_hists / img dims context) added to metadata/JSON (one run gathers all for A/B gap + C probe/blue decomposition; no extra turn needed). HISTOGRAM ANSWERS (forensic): per-red C/E now createCrop (pixel rect from hunk) + direct calcHist on crop.mat (no mask) + OcrUtils.takeSnapshot (dual rect snapshot + plot from longLived histPlotCrop); long-lived BufferSet init once at pump start for scratch + plot crop (no per-red full Mat alloc/zeros/draw/generate custom); old perMask/rectangle/generate retired for this path. Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state. Set F: raw clone of B (no automaticContrastStretch; deskew/rotate/discovery/retracted-blue/red-only/OCR/PD on raw master copy). Set G: raw clone of D (no stretch; keeps custom 10% blue/orange + red-only + OCR on raw).
-    // Label convention (added this plan): Set A exactly unchanged (baseline). B-G use "Set X (stretch-type, blue-method)" so columns are self-describing in all report output (th, tilt line, <b>$name ...); stretch=clip edges (automaticContrastStretch), valley push (valleyPushToPeaks), none (raw F/G clones); blue=expanded (doBOrDRetractedBlueAndPD + expandByUniformity+retract: B/C/F) or calculated (vert expansions +10%..+80% step 10%: D/E/G). Exact: B (clip edges, expanded), C (valley push, expanded), D (clip edges, calculated), E (valley push, calculated), F (none, expanded), G (none, calculated). B/C/F (expanded columns only) perform per-peak binPeak object-based blue (P4 debug images generated only for Set C) in HTML/JSON as binPeak_*; peaks from combinedRedboxHistBins; for C (valley expanded) uses exact 1-bin peaks from quantized combined hist (no range/smoothing, d=0); calculated columns D/E/G skip binPeak work entirely (results identical to expanded, saves processing + report size).
+    // Label convention (added this plan): Set A exactly unchanged (baseline). B-G use "Set X (stretch-type, blue-method)" so columns are self-describing in all report output (th, tilt line, <b>$name ...); stretch=clip edges (automaticContrastStretch), valley push (valleyPushToPeaks), none (raw F/G clones); blue=expanded (doBOrDRetractedBlueAndPD + expandByUniformity+retract: B/C/F) or calculated (vert expansions +10%..+80% step 10%: D/E/G). Exact: B (clip edges, expanded), C (valley push, expanded), D (clip edges, calculated), E (valley push, calculated), F (none, expanded), G (none, calculated). B/C/F (expanded columns only) perform per-peak binPeak object-based blue in HTML/JSON as binPeak_*; P4 debug binaries written as external .p4 files under reportDir/p4/ (small file: refs in JSON, not full base64) for Set C only; peaks from combinedRedboxHistBins; for C (valley expanded) uses exact 1-bin peaks from quantized combined hist (no range/smoothing, d=0); calculated columns D/E/G skip binPeak work entirely (results identical to expanded, saves processing + report size).
     val flows = listOf("Set A", "Set B (clip edges, expanded)", "Set C (valley push, expanded)", "Set D (clip edges, calculated)", "Set E (valley push, calculated)", "Set F (none, expanded)", "Set G (none, calculated)")
 
     fun pStartNewFile(): File {
@@ -1360,7 +1384,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
                 val binPeakCandidatesB = mutableListOf<RedBoxOcrCandidate>()
-                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelBForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesB, generateP4 = false)
+                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelBForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesB, reportDir, timestamp, file.name, generateP4 = false)
                 branch.metadata["binPeakCandidateCount"] = binPeakCandidatesB.size.toString()
 
                 val mlHunks = emptyList<PumpHunk>()
@@ -1537,7 +1561,7 @@ private suspend fun runPumpExperiment(
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }
                     val binPeakCandidatesC = mutableListOf<RedBoxOcrCandidate>()
-                    captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC, generateP4 = true)
+                    captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC, reportDir, timestamp, file.name, generateP4 = true)
                     branch.metadata["binPeakCandidateCount"] = binPeakCandidatesC.size.toString()
                     val redboxDataC = JSONArray()
                     pdHunksRawTotal.forEachIndexed { i, hunk ->
@@ -2160,7 +2184,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
                 val binPeakCandidatesF = mutableListOf<RedBoxOcrCandidate>()
-                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelFForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesF, generateP4 = false)
+                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelFForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesF, reportDir, timestamp, file.name, generateP4 = false)
                 branch.metadata["binPeakCandidateCount"] = binPeakCandidatesF.size.toString()
 
                 val mlHunks = emptyList<PumpHunk>()
@@ -2423,14 +2447,14 @@ private suspend fun runPumpExperiment(
             )
             val comma = if (index < total - 1) "," else ""
 
-            // Clear/reset or re-allocate the reusable buffer to keep memory bounded; 256MB initial
-            // matches P4 base64 volume and appendJsonValue ceiling (PUMP_JSON_BUFFER_INITIAL_BYTES)
+            // Clear/reset or re-allocate the reusable buffer to keep memory bounded (512MB initial)
             if (jsonCharBuffer.capacity() > PUMP_JSON_BUFFER_RESET_CAPACITY) {
                 jsonCharBuffer = StringBuilder(PUMP_JSON_BUFFER_INITIAL_BYTES)
             } else {
                 jsonCharBuffer.setLength(0)
             }
 
+            logHeapState(context, "before-photo-json-serialize")
             appendJsonObject(jsonCharBuffer, photoJson, 2, 0)
             jsonFile.appendText(jsonCharBuffer.toString() + "$comma\n")
 
@@ -2808,6 +2832,9 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
     imgW: Int,
     imgH: Int,
     candidatesOut: MutableList<RedBoxOcrCandidate>,
+    reportDir: File,
+    timestamp: String,
+    photoName: String,
     delta: Int = BIN_PEAK_BINARIZE_DELTA,
     generateP4: Boolean = true
 ) {
@@ -2831,9 +2858,10 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
         branch.metadata["binPeak_${peak}_plain_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
         branch.metadata["binPeak_${peak}_count"] = height.toString()
         if (generateP4) {
-            // Plain binary debug (when generateP4): P4 + full CC object stats (JSON inspection only; base64 string retained for output; internal P4 buffer released immediately for reuse on next peak per this plan)
-            branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
-            Log.d(TAG, "stored P4 for plain peak=$peak")
+            // Plain binary debug (Set C only): write P4 to reportDir/p4/; JSON holds small file: ref only
+            val p4Ref = saveP4ToFile(reportDir, timestamp, photoName, peak, "plain", matToPbmP4Base64(b.mat))
+            branch.images["binPeak_${peak}_plain_p4"] = p4Ref
+            Log.d(TAG, "stored P4 for plain peak=$peak -> $p4Ref")
         }
         // b.mat cleared after plain_objects + optional P4 (when generateP4); reusable for cleaned path or next peak
         b.mat.setTo(org.opencv.core.Scalar(0.0))
@@ -2871,9 +2899,10 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             branch.metadata["binPeak_${peak}_blackout_ms"] = (System.currentTimeMillis() - tBlackoutStart).toString()
             branch.metadata["binPeak_${peak}_edited_object_indices"] = JSONArray(editedIndices.toList()).toString()
             if (generateP4) {
-                // Cleaned binary debug (when generateP4): P4 base64 for JSON inspection
-                branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
-                Log.d(TAG, "stored P4 for cleaned peak=$peak")
+                // Cleaned binary debug (Set C only): write P4 to reportDir/p4/; JSON holds small file: ref only
+                val p4Ref = saveP4ToFile(reportDir, timestamp, photoName, peak, "cleaned", matToPbmP4Base64(b.mat))
+                branch.images["binPeak_${peak}_cleaned_p4"] = p4Ref
+                Log.d(TAG, "stored P4 for cleaned peak=$peak -> $p4Ref")
             }
             val tCleanedStart = System.currentTimeMillis()
             branch.metadata["binPeak_${peak}_cleaned_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
@@ -3010,8 +3039,8 @@ private const val PUMP_C_VISUAL_TARGET_W = 340
 private const val PUMP_SMALL_TARGET_W = 180
 private const val PUMP_PER_RED_TARGET_W = 120
 private const val BIN_PEAK_BINARIZE_DELTA = 8
-private const val PUMP_JSON_BUFFER_INITIAL_BYTES = 256 * 1024 * 1024
-private const val PUMP_JSON_BUFFER_RESET_CAPACITY = 512 * 1024 * 1024
+private const val PUMP_JSON_BUFFER_INITIAL_BYTES = 512 * 1024 * 1024
+private const val PUMP_JSON_BUFFER_RESET_CAPACITY = 1024 * 1024 * 1024
 
 private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
