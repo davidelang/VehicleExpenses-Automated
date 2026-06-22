@@ -74,6 +74,10 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     }
 
     fun resize(w: Int, h: Int) {
+        if (w <= 0 || h <= 0) {
+            Log.e("BufferSet", "resize rejected: w=$w h=$h")
+            return
+        }
         if (w == _width && h == _height) return
         instances[0].physicalResize(w, h)
         instances[1].physicalResize(w, h)
