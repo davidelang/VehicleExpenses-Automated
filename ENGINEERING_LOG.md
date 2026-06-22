@@ -240,3 +240,8 @@ New plan created to harden + redeploy.
 - NativeImageUtils.calculateHistogramWithThresholdH: mat.empty + valid rect filter.
 - Native H: guard mat cols/rows <= 0.
 - Pump images redeploy to emulator-5554 pump_photos (GOLDEN_SUBSET 10, no thumbs) follows build.
+
+## 2026-06-22 - Pump images redeploy (alignment plan phase 7)
+
+- Pushed GOLDEN_SUBSET 10 files (no thumbs) to emulator-5554:/sdcard/Android/data/com.davidlang.vehicleexpensesautomated/files/pump_photos/
+- Verified: ls count PXL_* = 10
