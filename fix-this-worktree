@@ -1,0 +1,56 @@
+#!/bin/bash
+# fix-this-worktree
+#
+# Convenience shortcut. When you're already deep inside a worktree,
+# this lets you type one short(ish) line instead of cd'ing back to root.
+#
+# IT DELEGATES TO THE REAL SCRIPT.
+#
+# You normally only need ONE command from the main directory:
+#
+#     cd ~/git/VehicleExpenses-automated
+#     sudo ./fix-engineering-log-perms
+#
+# That single run discovers + fixes the main tree + every worktree.
+#
+# Only use this when you're already inside the tree you care about:
+#
+#     cd ~/git/.../int8-paddle-processing.wt
+#     sudo /home/dlang/git/VehicleExpenses-automated/fix-this-worktree
+
+
+set -euo pipefail
+
+if [ "$EUID" -ne 0 ]; then
+  echo "ERROR: Run with sudo, e.g.:"
+  echo "  sudo /home/dlang/git/VehicleExpenses-automated/fix-this-worktree"
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MAIN_FIXER="$SCRIPT_DIR/fix-engineering-log-perms"
+
+if [ ! -x "$MAIN_FIXER" ]; then
+  MAIN_FIXER="/home/dlang/git/VehicleExpenses-automated/fix-engineering-log-perms"
+fi
+
+if [ ! -x "$MAIN_FIXER" ]; then
+  echo "ERROR: Cannot find the main fix-engineering-log-perms script."
+  exit 1
+fi
+
+# Determine target worktree
+if [ $# -ge 1 ]; then
+  TARGET="$1"
+else
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    TARGET="$(git rev-parse --show-toplevel)"
+  else
+    TARGET="$(pwd)"
+  fi
+fi
+
+TARGET="$(cd "$TARGET" 2>/dev/null && pwd || echo "$TARGET")"
+
+echo "fix-this-worktree: delegating to $MAIN_FIXER for $TARGET"
+exec "$MAIN_FIXER" "$TARGET"
