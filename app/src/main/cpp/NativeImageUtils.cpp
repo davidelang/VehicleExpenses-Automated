@@ -1699,34 +1699,44 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     if (len % 4 != 0 || len == 0) return nullptr;
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
-    int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
-    const int numRects = len / 4;
-    std::vector<int> rectL(numRects), rectT(numRects), rectR(numRects), rectB(numRects);
+    std::vector<int> rectL, rectT, rectR, rectB;
+    rectL.reserve(len / 4);
     for (int i = 0; i < len; i += 4) {
-        const int idx = i / 4;
-        rectL[idx] = (int)rData[i];
-        rectT[idx] = (int)rData[i+1];
-        rectR[idx] = (int)rData[i+2];
-        rectB[idx] = (int)rData[i+3];
-        minL = std::min(minL, rectL[idx]);
-        minT = std::min(minT, rectT[idx]);
-        maxR = std::max(maxR, rectR[idx]);
-        maxB = std::max(maxB, rectB[idx]);
+        int L = (int)rData[i], T = (int)rData[i+1], R = (int)rData[i+2], B = (int)rData[i+3];
+        if (L > R) std::swap(L, R);
+        if (T > B) std::swap(T, B);
+        const int w = R - L, h = B - T;
+        if (w <= 0 || h <= 0) continue;
+        rectL.push_back(L);
+        rectT.push_back(T);
+        rectR.push_back(R);
+        rectB.push_back(B);
     }
     env->ReleaseIntArrayElements(rects, rData, JNI_ABORT);
+    if (rectL.empty()) return nullptr;
+
+    int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
+    for (size_t i = 0; i < rectL.size(); ++i) {
+        minL = std::min(minL, rectL[i]);
+        minT = std::min(minT, rectT[i]);
+        maxR = std::max(maxR, rectR[i]);
+        maxB = std::max(maxB, rectB[i]);
+    }
 
     minL = std::max(0, std::min(minL, mat->cols - 1));
     minT = std::max(0, std::min(minT, mat->rows - 1));
     maxR = std::max(minL + 1, std::min(maxR, mat->cols));
     maxB = std::max(minT + 1, std::min(maxB, mat->rows));
 
+    const int numRects = (int)rectL.size();
     // OR coverage mask (no double-count overlaps; only pixels inside >=1 red)
     cv::Mat coverage = cv::Mat::zeros(mat->size(), CV_8UC1);
     for (int i = 0; i < numRects; ++i) {
         int L = std::max(0, rectL[i]), T = std::max(0, rectT[i]);
         int R = std::min(mat->cols, rectR[i]), B = std::min(mat->rows, rectB[i]);
-        if (R > L && B > T) {
-            cv::rectangle(coverage, cv::Rect(L, T, R - L, B - T), cv::Scalar(255), -1);
+        const int w = R - L, h = B - T;
+        if (w > 0 && h > 0) {
+            cv::rectangle(coverage, cv::Rect(L, T, w, h), cv::Scalar(255), -1);
         }
     }
 
@@ -1735,6 +1745,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     for (int i = 0; i < numRects; ++i) {
         const int w = rectR[i] - rectL[i];
         const int h = rectB[i] - rectT[i];
+        if (w <= 0 || h <= 0) continue;
         const int y0 = std::max(0, rectT[i]), y1 = std::min(mat->rows, rectB[i]);
         const int x0 = std::max(0, rectL[i]), x1 = std::min(mat->cols, rectR[i]);
         for (int y = y0; y < y1; ++y) maxWRow[y] = std::max(maxWRow[y], w);
