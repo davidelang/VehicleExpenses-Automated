@@ -299,7 +299,7 @@ private suspend fun runPumpExperiment(
         it.s.clearChroma()
     }
 
-    // Long-lived histogram BufferSet for per-red C/E report (dual visuals: rect snapshot from workspace crop + hist plot snapshot); initialized once before photo loop, sized for per-red display (plot 186x300), held for experiment lifetime, passed as scratchYuv to takeSnapshot, never released here. Internal histPlotCrop for render from bins (replaces per-red custom generate + temp workspace plot). (C/E visuals only; redboxData hists now for all 7 sets via captureRedboxData after top-4 prune.)
+    // Long-lived histogram BufferSet for per-red C/E report (dual visuals: rect snapshot from workspace crop + hist plot snapshot); initialized once before photo loop, sized for per-red display (plot 186x300), held for experiment lifetime, passed as scratchYuv to takeSnapshot, never released here. Internal histPlotCrop for render from bins (replaces per-red custom generate + temp workspace plot). (C/E visuals only; redboxData hists now for all 7 sets via captureRedboxData after top-6 prune.)
     val longLivedHistogramBuffer = BufferSet(186, 300)
     longLivedHistogramBuffer.p.clear()
     longLivedHistogramBuffer.s.clear()
@@ -927,7 +927,7 @@ private suspend fun runPumpExperiment(
                 }
 
                 // Hoisted data-only capture for per-red redbox histograms (stat JSON with index/h/w/area/histBins) for *all 7 sets* (A/B/C/D/E/F/G).
-                // Called after the (now top-4) prune in every proc. Reuses the existing createCrop + direct calcHist + stat pattern from C/E visuals (no visuals/longLived here; data only for JSON/metadata "redboxData" + "n_per_red_hists").
+                // Called after the (now top-6) prune in every proc. Reuses the existing createCrop + direct calcHist + stat pattern from C/E visuals (no visuals/longLived here; data only for JSON/metadata "redboxData" + "n_per_red_hists").
                 // C/E continue to use their specific visual capture (redboxRectC_*/redboxHistC_* + longLived) + redboxDataC; this adds the common "redboxData" for all.
                 fun captureRedboxData(reds: List<PumpHunk>, workspace: BufferSet, branch: PumpBranch) {
                     val redboxData = JSONArray()
@@ -1253,7 +1253,7 @@ private suspend fun runPumpExperiment(
                 // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
 
                 // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
-                // After the common prune (which thins pdHunks* to the 4 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
                 // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
                 // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
                 // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
@@ -1371,9 +1371,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                if (redPixelList.size > 4) {
+                if (redPixelList.size > 6) {
                     redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    redPixelList.subList(4, redPixelList.size).clear()
+                    redPixelList.subList(6, redPixelList.size).clear()
                 }
                 pdHunksRawTotal.clear()
                 pdHunksRawTotal.addAll(redPixelList.map { r ->
@@ -1383,9 +1383,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                if (expPixel.size > 4) {
+                if (expPixel.size > 6) {
                     expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    expPixel.subList(4, expPixel.size).clear()
+                    expPixel.subList(6, expPixel.size).clear()
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
@@ -1395,9 +1395,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
-                if (maxPixel.size > 4) {
+                if (maxPixel.size > 6) {
                     maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    maxPixel.subList(4, maxPixel.size).clear()
+                    maxPixel.subList(6, maxPixel.size).clear()
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
@@ -1533,9 +1533,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                if (redPixelList.size > 4) {
+                if (redPixelList.size > 6) {
                     redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    redPixelList.subList(4, redPixelList.size).clear()
+                    redPixelList.subList(6, redPixelList.size).clear()
                 }
                 // Rebuild pdHunksRawTotal from the final <=4 (direct pixel RectF, no IcrsMath)
                 pdHunksRawTotal.clear()
@@ -1547,9 +1547,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                if (expPixel.size > 4) {
+                if (expPixel.size > 6) {
                     expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    expPixel.subList(4, expPixel.size).clear()
+                    expPixel.subList(6, expPixel.size).clear()
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
@@ -1559,9 +1559,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
-                if (maxPixel.size > 4) {
+                if (maxPixel.size > 6) {
                     maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    maxPixel.subList(4, maxPixel.size).clear()
+                    maxPixel.subList(6, maxPixel.size).clear()
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
@@ -1574,7 +1574,7 @@ private suspend fun runPumpExperiment(
                 // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
 
                 // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
-                // After the common prune (which thins pdHunks* to the 4 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
                 // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
                 // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
                 // (The capture logic updated per per-red C/E histogram cleanup plan: createCrop + direct calcHist + dual takeSnapshot from longLived.)
@@ -1738,14 +1738,14 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
                 // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
 
-                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune4 on rects; direct rebuild. Early probe sees full; post-prune 4 for all sets (C/E display only).
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for all sets (C/E display only).
                 val redPixelList = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                if (redPixelList.size > 4) {
+                if (redPixelList.size > 6) {
                     redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    redPixelList.subList(4, redPixelList.size).clear()
+                    redPixelList.subList(6, redPixelList.size).clear()
                 }
                 // Rebuild pdHunksRawTotal from the final <=4 pixel rects (full img ICRS only for kept)
                 pdHunksRawTotal.clear()
@@ -1757,9 +1757,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                if (expPixel.size > 4) {
+                if (expPixel.size > 6) {
                     expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    expPixel.subList(4, expPixel.size).clear()
+                    expPixel.subList(6, expPixel.size).clear()
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
@@ -1769,9 +1769,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
-                if (maxPixel.size > 4) {
+                if (maxPixel.size > 6) {
                     maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    maxPixel.subList(4, maxPixel.size).clear()
+                    maxPixel.subList(6, maxPixel.size).clear()
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
@@ -1784,7 +1784,7 @@ private suspend fun runPumpExperiment(
                 // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
 
                 // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
-                // After the common prune (which thins pdHunks* to the 4 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
                 // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
                 // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
                 // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
@@ -1945,14 +1945,14 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
                 // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
 
-                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune4 on rects; direct rebuild. Early probe sees full; post-prune 4 for all sets (C/E display only).
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for all sets (C/E display only).
                 val redPixelList = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                if (redPixelList.size > 4) {
+                if (redPixelList.size > 6) {
                     redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    redPixelList.subList(4, redPixelList.size).clear()
+                    redPixelList.subList(6, redPixelList.size).clear()
                 }
                 // Rebuild pdHunksRawTotal from the final <=4 pixel rects (full img ICRS only for kept)
                 pdHunksRawTotal.clear()
@@ -1964,9 +1964,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                if (expPixel.size > 4) {
+                if (expPixel.size > 6) {
                     expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    expPixel.subList(4, expPixel.size).clear()
+                    expPixel.subList(6, expPixel.size).clear()
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
@@ -1976,9 +1976,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
-                if (maxPixel.size > 4) {
+                if (maxPixel.size > 6) {
                     maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    maxPixel.subList(4, maxPixel.size).clear()
+                    maxPixel.subList(6, maxPixel.size).clear()
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
@@ -1989,7 +1989,7 @@ private suspend fun runPumpExperiment(
                 // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
 
                 // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
-                // After the common prune (which thins pdHunks* to the 4 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
                 // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
                 // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
                 // (The capture logic updated per per-red C/E histogram cleanup plan: createCrop + direct calcHist + dual takeSnapshot from longLived.)
@@ -2171,9 +2171,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                if (redPixelList.size > 4) {
+                if (redPixelList.size > 6) {
                     redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    redPixelList.subList(4, redPixelList.size).clear()
+                    redPixelList.subList(6, redPixelList.size).clear()
                 }
                 pdHunksRawTotal.clear()
                 pdHunksRawTotal.addAll(redPixelList.map { r ->
@@ -2183,9 +2183,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                if (expPixel.size > 4) {
+                if (expPixel.size > 6) {
                     expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    expPixel.subList(4, expPixel.size).clear()
+                    expPixel.subList(6, expPixel.size).clear()
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
@@ -2195,9 +2195,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
-                if (maxPixel.size > 4) {
+                if (maxPixel.size > 6) {
                     maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    maxPixel.subList(4, maxPixel.size).clear()
+                    maxPixel.subList(6, maxPixel.size).clear()
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
@@ -2314,14 +2314,14 @@ private suspend fun runPumpExperiment(
                 branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
                 // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
 
-                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune4 on rects; direct rebuild. Early probe sees full; post-prune 4 for all sets (C/E display only).
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for all sets (C/E display only).
                 val redPixelList = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                if (redPixelList.size > 4) {
+                if (redPixelList.size > 6) {
                     redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    redPixelList.subList(4, redPixelList.size).clear()
+                    redPixelList.subList(6, redPixelList.size).clear()
                 }
                 // Rebuild pdHunksRawTotal from the final <=4 pixel rects (full img ICRS only for kept)
                 pdHunksRawTotal.clear()
@@ -2333,9 +2333,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                if (expPixel.size > 4) {
+                if (expPixel.size > 6) {
                     expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    expPixel.subList(4, expPixel.size).clear()
+                    expPixel.subList(6, expPixel.size).clear()
                 }
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
@@ -2345,9 +2345,9 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
-                if (maxPixel.size > 4) {
+                if (maxPixel.size > 6) {
                     maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
-                    maxPixel.subList(4, maxPixel.size).clear()
+                    maxPixel.subList(6, maxPixel.size).clear()
                 }
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
@@ -2360,7 +2360,7 @@ private suspend fun runPumpExperiment(
                 // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
 
                 // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
-                // After the common prune (which thins pdHunks* to the 4 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
                 // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
                 // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
                 // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
