@@ -2831,11 +2831,11 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
         branch.metadata["binPeak_${peak}_plain_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
         branch.metadata["binPeak_${peak}_count"] = height.toString()
         if (generateP4) {
-            // Plain binary debug: P4 + full CC object stats (JSON inspection only; base64 string retained for output; internal P4 buffer released immediately for reuse on next peak per this plan)
+            // Plain binary debug (when generateP4): P4 + full CC object stats (JSON inspection only; base64 string retained for output; internal P4 buffer released immediately for reuse on next peak per this plan)
             branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
             Log.d(TAG, "stored P4 for plain peak=$peak")
         }
-        // P4 buffer (b.mat) cleared after base64 + objects stored in JSON path; reusable for cleaned path or next peak
+        // b.mat cleared after plain_objects + optional P4 (when generateP4); reusable for cleaned path or next peak
         b.mat.setTo(org.opencv.core.Scalar(0.0))
         NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
         val tPeakStart = System.currentTimeMillis()
@@ -2871,6 +2871,7 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             branch.metadata["binPeak_${peak}_blackout_ms"] = (System.currentTimeMillis() - tBlackoutStart).toString()
             branch.metadata["binPeak_${peak}_edited_object_indices"] = JSONArray(editedIndices.toList()).toString()
             if (generateP4) {
+                // Cleaned binary debug (when generateP4): P4 base64 for JSON inspection
                 branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
                 Log.d(TAG, "stored P4 for cleaned peak=$peak")
             }
@@ -2899,7 +2900,7 @@ private suspend fun captureBinPeakSnapshotsFromRedbox(
             branch.metadata["t_binpeak_peak${peak}_ms"] = peakMs.toString()
             Log.d(TAG, "binpeak peak=$peak took ${peakMs}ms (blackout=${branch.metadata["binPeak_${peak}_blackout_ms"]}, cleaned=${branch.metadata["binPeak_${peak}_cleaned_phase_ms"]})")
 
-            // P4 buffer (b.mat) cleared after cleaned base64 stored in JSON path; reusable for next peak
+            // b.mat cleared after cleaned work + optional P4 (when generateP4); reusable for next peak
             b.mat.setTo(org.opencv.core.Scalar(0.0))
         }
     }
