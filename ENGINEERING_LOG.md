@@ -135,3 +135,10 @@ This log tracks the implementation, refactoring, and deployment activities perfo
 
 - Merged branch `16k-pages` into `master` (--no-ff): added `docs/reference/16k-pages-compatibility-notes.md` and TODO.md future-work backlog for deferred native 16KB alignment.
 - No app-source or native migration changes in this merge.
+
+## 2026-06-23 - Merged fix-todo TODO reconstruction into master
+
+- Restored reconstructed TODO.md (109 lines) from fix-todo/builds commit b18e93fb via direct checkout on master (commit fb7e4bb4).
+- Full git-history union + 2026-06-23 user feedback markers verified (unclipBox rejected, ICRS normalization completed, Dashboard Polarity and Location Lookup Worker pending).
+- ./build_app succeeded; master builds tag updated to fb7e4bb4.
+- User handling root cause of generate_pr/sync overwriting TODO separately.
