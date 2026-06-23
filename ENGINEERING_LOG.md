@@ -459,3 +459,11 @@ The diag helps see the parameters, but the header issue causes the failure.
 - Instrumented ExperimentAlignmentScreen bin-trials: odo_p_after_flip, pre_rawHist/postFilter/failHist owner+crop dumps.
 - Long-lived hist buffer confirmation log on first H hist call (8192 bins).
 - No functional changes; purely additive MAT_HEADER diagnostics.
+
+## 2026-06-23 - replace coverage mask with direct rect run walking
+
+- Executed plan replace-mask-mat-with-direct-rect-run-walking-20260623-plan.md.
+- Removed cv::Mat coverage / zeros / rectangle / covPtr / maxWRow / maxHCol from nativeCalculateHistogramWithThresholdH.
+- Added decomposeRectsForDirectRuns (wide bias on overlap), merged interval collection, uint64_t row prefilter, exact-span discard.
+- Alignment runBinTrialsPaddle: three hist sites now pass odoBuffer.p.mat + absolute boundingBox (no per-red crop for hist).
+- Pump binPeak paths unchanged (already pass full mat + rects).
