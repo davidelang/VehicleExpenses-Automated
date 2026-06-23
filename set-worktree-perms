@@ -22,7 +22,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/project.config" ]; then
-  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|docker_group|orchestrator_user|planning_user|coder_user)')
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|docker_group|orchestrator_user|planning_user|coder_user|primary_user)')
 fi
 
 CODE_GROUP=${code_group:-@@CODE_GROUP@@}
@@ -31,6 +31,8 @@ DOCKER_GROUP=${docker_group:-docker}
 ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
 PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
 CODER_USER=${coder_user:-@@CODE_GROUP@@r}
+PRIMARY_USER=$(sed -n 's/^primary_user=//p' "$SCRIPT_DIR/project.config" 2>/dev/null | tr -d '\r' | head -1)
+PRIMARY_USER=${PRIMARY_USER:-dlang}
 
 echo "Setting worktree perms (@@CODE_GROUP@@ focused) for group $CODE_GROUP..."
 
@@ -115,7 +117,7 @@ EXECUTABLES=(
   cleanup_pr.sh
   gradlew
   gradlew.bat
-  run-as-dlang
+  run-as-primary
 )
 
 for wt in "${WORKTREES[@]}"; do
@@ -185,6 +187,25 @@ for wt in "${WORKTREES[@]}"; do
   if [ -f "$wt/append-to-engineering-log" ]; then
     chown root:$SHARED_GROUP "$wt/append-to-engineering-log" 2>/dev/null || true
     chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
+  fi
+
+  # run-as-primary: generic setuid helper (owned by primary_user, not named after any specific account).
+  # Compile from source if the binary is missing (source is synced via update-rules; binary is never committed).
+  if [ -f "$wt/run-as-primary.c" ] && [ ! -x "$wt/run-as-primary" ]; then
+    echo "  Compiling run-as-primary setuid helper in $wt ..."
+    (cd "$wt" && gcc -O2 -Wall -o run-as-primary run-as-primary.c 2>&1 | cat) || echo "  (compile of run-as-primary failed; will rely on sudo fallback)"
+  fi
+
+  # run-as-primary: generic setuid helper (owned by primary_user, not named after any specific account).
+  # Allows re-exec as the primary developer (for consistent debug keystore) without hardcoding a username.
+  # chmod 4755 + owned by PRIMARY_USER gives euid=primary on exec, for any caller (ai-* or others).
+  if [ -f "$wt/run-as-primary" ]; then
+    if [ -n "$TARGET_OWNER" ]; then
+      chown "$TARGET_OWNER:$CODE_GROUP" "$wt/run-as-primary" 2>/dev/null || true
+    else
+      chown "$PRIMARY_USER:$CODE_GROUP" "$wt/run-as-primary" 2>/dev/null || true
+    fi
+    chmod 4755 "$wt/run-as-primary" 2>/dev/null || true
   fi
 
   # Make build_app and deploy setgid to the code group. When executed,

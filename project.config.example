@@ -13,6 +13,7 @@ shared_group=@@SHARED_GROUP@@
 # Example paths (will be @@ substituted in scripts)
 grok_bin_default=@@GROK_BIN_DEFAULT@@
 gemini_bin_default=$HOME/git/gemini/bin/gemini
+primary_user=@@PRIMARY_USER@@
 
 # Special sandbox paths (for setup-project to create)
 sandbox_special_paths=plans,historical-plans,implementation-failure-logs

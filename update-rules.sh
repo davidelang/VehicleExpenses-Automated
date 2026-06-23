@@ -122,8 +122,7 @@ FILES=(
     "append-to-engineering-log"
     "todo-append"
     "todo-close"
-    "run-as-dlang"
-    "run-as-dlang.c"
+    "run-as-primary.c"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).

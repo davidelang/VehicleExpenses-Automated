@@ -9,17 +9,21 @@
 # Pass gradle options after -- (e.g. build_app "msg" file.kt -- --info --stacktrace).
 # If agents pass --info or --stacktrace, they go here — no raw gradlew ever needed.
 
-# Re-exec as dlang (not root) if we started as root. This ensures we use
-# dlang's debug keystore (~/.android/debug.keystore) for consistent APK
+# Load primary_user from project.config for portable primary developer identity (no hardcoded names).
+PRIMARY_USER=$(sed -n 's/^primary_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
+PRIMARY_USER=${PRIMARY_USER:-dlang}
+
+# Re-exec as PRIMARY_USER (not root) if we started as root. This ensures we use
+# the primary developer's debug keystore (~/.android/debug.keystore) for consistent APK
 # signatures across builds. Running as root uses /root's keystore,
 # which produces a different certificate and triggers
 # INSTALL_FAILED_UPDATE_INCOMPATIBLE on deploy.
 if [ "$EUID" -eq 0 ]; then
-  echo "Re-executing as dlang (not root) for consistent signing keystore..."
-  if [ -x ./run-as-dlang ]; then
-    exec ./run-as-dlang "$0" "$@"
+  echo "Re-executing as $PRIMARY_USER (not root) for consistent signing keystore..."
+  if [ -x ./run-as-primary ]; then
+    exec ./run-as-primary "$0" "$@"
   else
-    exec sudo -u dlang "$0" "$@"
+    exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
   fi
 fi
 

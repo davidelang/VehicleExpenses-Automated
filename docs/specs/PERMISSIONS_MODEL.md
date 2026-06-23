@@ -40,6 +40,7 @@ All code, scripts, and docs must follow this. Changes require plan + approval.
 - **append-to-engineering-log**: `dlang:ai-shared 2755` (setgid) — enforces format and only appends. Even ai-planner can use it because of setgid.
 - **TODO.md / project-facts.md**: `dlang:ai-shared 664` (not world-writable; group rw for planner + coders, other r).
 - **Launchers and scripts** (run-*, build_app, deploy, etc.): `dlang:ai-shared 755` (or 2755 setgid where they need to provide egid for children).
+- **run-as-primary** (generic setuid helper, not named after any local account): owned by primary_user (e.g. dlang), mode 4755. Any process executing it gets euid of the file owner for keystore consistency. Source run-as-primary.c is tracked; binary is built locally and ignored.
 - **No world-writable (666) anywhere** except possibly temp.
 
 New files inherit group via setgid + umask 007 enforced in all build/compile/deploy scripts.
