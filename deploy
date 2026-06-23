@@ -112,16 +112,16 @@ if [ -z "${GROUPS_ACTIVATED:-}" ]; then
     if ! id -nG | grep -qw "$grp"; then MISSING="$MISSING $grp"; fi
   done
   if [ -n "$MISSING" ]; then
-    TARGET=ai-shared
-    if ! id -nG | grep -qw ai-shared; then
-      TARGET=ai-shared
-    elif ! id -nG | grep -qw ai-code; then
-      TARGET=ai-code
-    fi
-    echo "Re-executing under $TARGET group for correct file permissions (was missing:$MISSING)..."
-    GROUPS_ACTIVATED=1 exec sg "$TARGET" -- "$0" "$@"
+    echo "Re-executing under ai-shared group for correct file permissions..."
+    q0=$(printf '%q' "$0")
+    qargs=$(printf '%q ' "$@"); qargs=${qargs% }
+    ccmd="exec /bin/bash -c 'exec \"\$1\" \"\${@:2}\"' _ $q0 $qargs"
+    exec sg ai-shared -c "$ccmd"
   fi
 fi
+# Note: ai-code is also needed for some dirs, but since uid=dlang owns most ai-code files/dirs in the worktree,
+# sg ai-shared gives the necessary group for shared git/.git metadata and sandbox; owner perms cover the rest.
+# This avoids ping-pong loops from sg only surfacing one group at a time.
 
 declare -A DEVICE_MAP
 DEVICE_MAP=(
