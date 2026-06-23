@@ -64,6 +64,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
     fun flip() {
         (p as Instance).unborrow()
         primaryIdx = 1 - primaryIdx
+        Log.i("MAT_HEADER", "flip: primaryIdx=$primaryIdx p=${p.mat.cols()}x${p.mat.rows()}")
+        NativeImageUtils.logMatHeader(p.mat, "flip_primary_p")
         managedCrops.values.forEach {
             it.rebindToOwner()
         }
@@ -299,11 +301,16 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         fun rebindToOwner() {
             val matPtr = _mat?.nativeObj ?: return
             val uvMatPtr = _uvMat?.nativeObj ?: return
+            Log.i("MAT_HEADER", "rebindToOwner: owner=${owner.mat.cols()}x${owner.mat.rows()} abs=($absX,$absY ${absW}x$absH) scratch=$isLogicalScratch")
             nativeUpdateCropMat(matPtr, owner.mat.nativeObj, absX, absY, absW, absH)
             nativeUpdateCropMat(uvMatPtr, owner.uvMat.nativeObj, absX / 2, absY / 2, absW / 2, absH / 2)
+            _mat?.let { NativeImageUtils.logMatHeader(it, "post_rebind_crop") }
+            NativeImageUtils.logMatHeader(owner.mat, "post_rebind_owner")
         }
 
         fun refresh() {
+            Log.i("MAT_HEADER", "pre_refresh: isIcrs=$isIcrs owner=${owner.mat.cols()}x${owner.mat.rows()} raw=($rawX,$rawY ${rawW}x$rawH) hadCrop=${_mat != null}")
+            _mat?.let { NativeImageUtils.logMatHeader(it, "pre_refresh_crop") }
             val (px, py, pw, ph) = if (isIcrs) {
                 val p1 = IcrsMath.icrsToPixel(rawX, rawY, _width, _height)
                 val p2 = IcrsMath.icrsToPixel(rawX + rawW, rawY + rawH, _width, _height)
@@ -324,7 +331,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             absH = y2 - absY
 
             if (absW <= 0 || absH <= 0) {
-                Log.e("BufferSet", "ManagedCrop refresh: invalid size ${absW}x${absH} at ($absX,$absY); disarming")
+                Log.e("MAT_HEADER", "refresh invalid ${absW}x${absH} at ($absX,$absY); disarming")
+                _mat?.let { NativeImageUtils.logMatHeader(it, "disarm_invalid_size") }
                 _mat?.release()
                 _uvMat?.release()
                 _mat = null
@@ -334,6 +342,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
 
             val curMat = _mat
             val curUvMat = _uvMat
+            val path = if (curMat == null || curUvMat == null) "submat" else "nativeUpdate"
             if (curMat == null || curUvMat == null) {
                 _mat = owner.mat.submat(Rect(absX, absY, absW, absH))
                 _uvMat = owner.uvMat.submat(Rect(absX / 2, absY / 2, absW / 2, absH / 2))
@@ -341,6 +350,9 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
                 nativeUpdateCropMat(curMat.nativeObj, owner.mat.nativeObj, absX, absY, absW, absH)
                 nativeUpdateCropMat(curUvMat.nativeObj, owner.uvMat.nativeObj, absX / 2, absY / 2, absW / 2, absH / 2)
             }
+            Log.i("MAT_HEADER", "post_refresh: path=$path abs=($absX,$absY ${absW}x$absH)")
+            _mat?.let { NativeImageUtils.logMatHeader(it, "post_refresh_crop") }
+            NativeImageUtils.logMatHeader(owner.mat, "post_refresh_owner")
         }
 
         override fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int?): Int {
@@ -369,7 +381,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
             _uvMat = null
         }
         internal fun disarm() {
-            Log.d("BufferSet", "Disarming crop. Mat is null: ${_mat == null}")
+            Log.i("MAT_HEADER", "disarm crop: matNull=${_mat == null} abs=($absX,$absY ${absW}x$absH)")
+            _mat?.let { NativeImageUtils.logMatHeader(it, "disarm_crop") }
             _mat?.let { nativeDisarmMat(it) }; _uvMat?.let { nativeDisarmMat(it) }; _mat = null; _uvMat = null
         }
         override fun clear() { mat.setTo(Scalar(0.0)); clearChroma() }

@@ -1019,6 +1019,7 @@ private suspend fun runBinTrialsPaddle(
         org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
         odoBuffer.flip()
         Log.i("HIST_DIAG", "after threshold+flip vehicle=$vehicleId p=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
+        NativeImageUtils.logMatHeader(odoBuffer.p.mat, "odo_p_after_flip_v$vehicleId")
 
         val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
         val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
@@ -1076,7 +1077,9 @@ private suspend fun runBinTrialsPaddle(
         val cachedRawRedBoxHists = tRawB.map { b ->
             val redBoxCropId = odoBuffer.createCrop(b.boundingBox.left, b.boundingBox.top, b.boundingBox.width(), b.boundingBox.height())
             val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-            Log.i("HIST_DIAG", "rawHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${b.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor")
+            Log.i("HIST_DIAG", "rawHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${b.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor cropId=$redBoxCropId")
+            NativeImageUtils.logMatHeader(odoBuffer.p.mat, "pre_rawHist_owner_v$vehicleId")
+            NativeImageUtils.logMatHeader(odoBuffer.crop[redBoxCropId].mat, "pre_rawHist_crop_v$vehicleId")
             val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             if (hRes != null) Log.i("HIST_DIAG", "hRes rawHist vSW=${hRes.second[0]} hSW=${hRes.second[1]}")
             val b64 = if (pipelineKey != "set_j" && hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
@@ -1151,7 +1154,9 @@ private suspend fun runBinTrialsPaddle(
             rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
             var redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
             var cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-            Log.i("HIST_DIAG", "postFilter vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor")
+            Log.i("HIST_DIAG", "postFilter vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor cropId=$redBoxCropId")
+            NativeImageUtils.logMatHeader(odoBuffer.p.mat, "pre_postFilter_owner_v$vehicleId")
+            NativeImageUtils.logMatHeader(odoBuffer.crop[redBoxCropId].mat, "pre_postFilter_crop_v$vehicleId")
             var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             if (hRes != null) Log.i("HIST_DIAG", "hRes postFilter vSW=${hRes.second[0]} hSW=${hRes.second[1]}")
             vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
@@ -1179,7 +1184,9 @@ private suspend fun runBinTrialsPaddle(
             // 2. Cleaned Red Box Histogram
             val failCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
             val failRect = android.graphics.Rect(0, 0, odoBuffer.crop[failCropId].width, odoBuffer.crop[failCropId].height)
-            Log.i("HIST_DIAG", "failHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${failRect.width()}x${failRect.height()} factor=$thresholdFactor")
+            Log.i("HIST_DIAG", "failHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${failRect.width()}x${failRect.height()} factor=$thresholdFactor cropId=$failCropId")
+            NativeImageUtils.logMatHeader(odoBuffer.p.mat, "pre_failHist_owner_v$vehicleId")
+            NativeImageUtils.logMatHeader(odoBuffer.crop[failCropId].mat, "pre_failHist_crop_v$vehicleId")
             val failRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[failCropId].mat, listOf(failRect), thresholdFactor)
             if (failRes != null) Log.i("HIST_DIAG", "hRes failHist vSW=${failRes.second[0]} hSW=${failRes.second[1]}")
             if (failRes != null) {

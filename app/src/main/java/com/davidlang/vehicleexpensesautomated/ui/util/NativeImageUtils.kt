@@ -328,11 +328,24 @@ object NativeImageUtils {
         return Pair(Pair(longLivedRunHistH, longLivedRunHistV), longLivedHistMeta)
     }
 
+    /** Dump full native cv::Mat header fields for crash forensics (MAT_HEADER tag). */
+    fun logMatHeader(mat: Mat, tag: String) {
+        if (mat.empty()) {
+            android.util.Log.i("MAT_HEADER", "$tag empty kotlin cols=${mat.cols()} rows=${mat.rows()}")
+            return
+        }
+        nativeLogMatHeader(mat.nativeObj, tag)
+    }
+
     /** Decoupled H-variants for Set H with stroke-width aware logic */
     fun calculateHistogramWithThresholdH(mat: Mat, rects: List<android.graphics.Rect>, thresholdFactor: Float): Pair<Pair<IntArray, IntArray>, IntArray>? {
         if (mat.empty() || rects.isEmpty()) return null
         val valid = rects.filter { it.width() > 0 && it.height() > 0 }
         if (valid.isEmpty()) return null
+        if (runHistReuseCount == 0L) {
+            android.util.Log.i("MAT_HEADER", "using longLivedRunHistH/V buffers (${HIST_BIN_COUNT} bins)")
+        }
+        logMatHeader(mat, "kotlin_pre_hist_H")
         val flatRects = IntArray(valid.size * 4)
         valid.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
         if (!nativeCalculateHistogramWithThresholdH(
@@ -340,7 +353,7 @@ object NativeImageUtils {
                 longLivedRunHistH, longLivedRunHistV, longLivedHistMeta
             )) return null
         runHistReuseCount++
-        android.util.Log.d("HIST_BUF", "long-lived H hist path used (count=$runHistReuseCount)")
+        android.util.Log.i("MAT_HEADER", "long-lived H hist path used (count=$runHistReuseCount)")
         return Pair(Pair(longLivedRunHistH, longLivedRunHistV), longLivedHistMeta)
     }
 
@@ -420,6 +433,7 @@ object NativeImageUtils {
         outH: IntArray, outV: IntArray, outMeta: IntArray, histBinCount: Int
     ): Boolean
 
+    private external fun nativeLogMatHeader(matPtr: Long, tag: String)
     private external fun nativeCalculateHistogramWithThresholdH(
         matPtr: Long, rects: IntArray, thresholdFactor: Float,
         outH: IntArray, outV: IntArray, outMeta: IntArray
