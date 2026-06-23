@@ -361,35 +361,26 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
             sleep 1
 
-            # Try to fix ownership pollution from previous root/sudo Gradle runs
+            # === STRONG PERM RECOVERY FOR UNREADABLE BUILD STATE ===
+            # Some previous runs (root, wrong group, daemons) leave dirs/files
+            # without read/x bits, causing Gradle to fail with "Could not stat file"
+            # and "Accessing unreadable inputs or outputs".
             if [ -d app/build ]; then
+                # First make directories traversable (x bit) so find/rm can work
+                chmod -R u+rX,g+rX app/build 2>/dev/null || true
+                # Full rw for user+group
+                chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
+                # Fix any root-owned files
                 find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
             fi
 
-            # Make readable/writable for current user + group (ai-code/ai-shared)
-            if [ -d app/build ]; then
-                find app/build -exec chmod u+rwX,g+rwX {} + 2>/dev/null || true
-            fi
+            # Aggressive removal of state that Gradle tracks and may have bad perms on
+            rm -rf app/build/intermediates app/build/generated 2>/dev/null || true
 
-            # Aggressive removal of the entire incremental state (broader than just packageDebug/tmp)
-            # to clear any stale lock files or partial state.
-            rm -rf app/build/intermediates/incremental 2>/dev/null || true
-
-            # Also nuke other common unreadable state dirs (cxx logs, res maps, etc.)
-            rm -rf app/build/intermediates/cxx app/build/intermediates/*source_set_path_map \
-                   app/build/intermediates/external_file_lib_dex_archives \
-                   app/build/intermediates/aar_metadata_check app/build/intermediates/navigation_json \
-                   app/build/intermediates/compatible_screen_manifest app/build/intermediates/merged_jni_libs \
-                   app/build/intermediates/assets app/build/intermediates/annotation_processor_list \
-                   app/build/intermediates/duplicate_classes_check app/build/intermediates/validate_signing_config \
-                   app/build/generated 2>/dev/null || true
-
-            # If still can't remove the specific problematic dir, warn.
-            if [ -d app/build/intermediates/incremental/packageDebug/tmp ]; then
-                echo "  WARNING: Still cannot delete some Gradle incremental files (permission denied or locked)."
-                echo "  You may need to run as root: sudo chown -R dlang:ai-code app/build"
-                echo "  Or manually: rm -rf app/build/intermediates"
-                echo "  Then retry."
+            # If still problems, suggest manual sudo
+            if [ -d app/build/intermediates ]; then
+                echo "  WARNING: Could not fully remove app/build/intermediates."
+                echo "  You may need: sudo chown -R dlang:ai-code app/build ; rm -rf app/build/intermediates app/build/generated"
             fi
 
             (umask 007; ./gradlew "${GRADLE_ARGS[@]}" installDebug)
@@ -476,34 +467,26 @@ else
         lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
         sleep 1
 
-        # Try to fix ownership pollution from previous root/sudo Gradle runs
+        # === STRONG PERM RECOVERY FOR UNREADABLE BUILD STATE ===
+        # Some previous runs (root, wrong group, daemons) leave dirs/files
+        # without read/x bits, causing Gradle to fail with "Could not stat file"
+        # and "Accessing unreadable inputs or outputs".
         if [ -d app/build ]; then
+            # First make directories traversable (x bit) so find/rm can work
+            chmod -R u+rX,g+rX app/build 2>/dev/null || true
+            # Full rw for user+group
+            chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
+            # Fix any root-owned files
             find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
         fi
 
-        # Make readable/writable for current user + group
-        if [ -d app/build ]; then
-            find app/build -exec chmod u+rwX,g+rwX {} + 2>/dev/null || true
-        fi
+        # Aggressive removal of state that Gradle tracks and may have bad perms on
+        rm -rf app/build/intermediates app/build/generated 2>/dev/null || true
 
-        # Aggressive removal of the entire incremental state
-        rm -rf app/build/intermediates/incremental 2>/dev/null || true
-
-        # Also nuke other common unreadable state dirs (cxx logs, res maps, etc.)
-        rm -rf app/build/intermediates/cxx app/build/intermediates/*source_set_path_map \
-               app/build/intermediates/external_file_lib_dex_archives \
-               app/build/intermediates/aar_metadata_check app/build/intermediates/navigation_json \
-               app/build/intermediates/compatible_screen_manifest app/build/intermediates/merged_jni_libs \
-               app/build/intermediates/assets app/build/intermediates/annotation_processor_list \
-               app/build/intermediates/duplicate_classes_check app/build/intermediates/validate_signing_config \
-               app/build/generated 2>/dev/null || true
-
-        # If still can't remove, warn loudly
-        if [ -d app/build/intermediates/incremental/packageDebug/tmp ]; then
-            echo "  WARNING: Still cannot delete some Gradle incremental files (permission denied or locked)."
-            echo "  You may need to run as root: sudo chown -R dlang:ai-code app/build"
-            echo "  Or manually: rm -rf app/build/intermediates"
-            echo "  Then retry."
+        # If still problems, suggest manual sudo
+        if [ -d app/build/intermediates ]; then
+            echo "  WARNING: Could not fully remove app/build/intermediates."
+            echo "  You may need: sudo chown -R dlang:ai-code app/build ; rm -rf app/build/intermediates app/build/generated"
         fi
 
         (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew "${GRADLE_ARGS[@]}" installDebug)
