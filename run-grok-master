@@ -71,6 +71,17 @@ fi
 DEFAULT_MASTER_MODEL="grok-composer-2.5-fast"
 MASTER_MODEL="${GROK_MASTER_MODEL:-$DEFAULT_MASTER_MODEL}"
 
+# Support -- to pass raw params to the inner grok (after the prompt construction).
+EXTRA_ARGS=()
+FOUND_DD=0
+for arg in "$@"; do
+  if [ "$FOUND_DD" -eq 1 ]; then
+    EXTRA_ARGS+=("$arg")
+  elif [ "$arg" = "--" ]; then
+    FOUND_DD=1
+  fi
+done
+
 # Comprehensive Master Orchestrator prompt.
 # This encodes the full scheme. The master should treat the written plan
 # documents as the persistent contract and use sub-agents or dedicated
@@ -188,19 +199,20 @@ If no unresolved failure is present (or user says 'ignore' / gives a fresh topic
 "You are the Execution Sub-agent for this turn only. Implement *precisely and only* the changes described in the following approved plan: [plan content or clear reference]. Do not add extra features, 'improvements,' cleanups, or scope creep. 
 
 MANDATORY BUILD DISCIPLINE (non-negotiable, from the STANDARD BLOCK and this plan's Phased steps):
-- First action: update TODO.md (record the approved plan).
+**CRITICAL OVERRIDE:** The plan document you were given may contain older/outdated language in its "Phased Small-Step Execution" section (e.g. "do the edit then git add the files then ./build_app"). Ignore any such language. It is superseded by this injected text and by AGENT_MANDATES.md. The *only* correct way to stage, commit, build and tag is to call `./build_app` directly (see below). Treat any "git add then build" instructions in the plan as obsolete historical text.
+
+- First action: update TODO.md with a *high-level one or two line entry* recording that the approved plan at @@SANDBOX_PATH@@/plans/xxx-plan.md is now being executed. Do **not** paste the full plan, phased steps, forensic details or execution log into TODO.md — those belong in the plan document itself (under Phased Small-Step Execution) and in ENGINEERING_LOG.md (append-only). TODO.md is only for true future/backlog items.
 - Use narrow forensic `read_file` (offset/limit on the exact edit site) + targeted grep before and after *every* edit.
 - **Ultra-micro phased with per-phase success gates is mandatory** (enforced by the plan and this prompt): The approved plan will have broken the work into many named ultra-small phases. For each phase you must:
   - Do only the minimal edit described for that specific phase.
   - Immediately perform narrow forensic `read_file` (offset/limit on the exact site) + targeted grep before and after the edit.
-  - `git add` the changed tracked source(s) + TODO.md.
-  - Run `./build_app` and obtain a confirmed success + new branch-scoped builds tag (record it).
+  - Call `./build_app` directly (preferred: `./build_app @phase_summary.txt changed-file.kt TODO.md ...`). Do **not** run manual `git add`, `git commit`, or `./gradlew` commands. `./build_app` is the single authoritative gate — it performs staging, the commit (using the @file message), the integrity check, the build (if in an app tree), and the tag. Obtain a confirmed success + new branch-scoped builds tag (record it).
   - Only after a successful `./build_app` for the current phase may you begin the next phase's edits.
 
   Never batch across phases. On failure or partial reset, only the tag of the most recent successful phase (via `./get-builds-tag.sh` preflight) may be used. 
 
 - After any phase's build: read the *full* project-facts.md, then (if needed) update it with 1-2 new stable facts/locations only (after hygiene).
-- When appending to ENGINEERING_LOG.md: *only append* new dated entry at the end. ENGINEERING_LOG.md is append-only — never edit prior dated sections.
+- When appending to ENGINEERING_LOG.md: *only append* new dated entry at the end using the **mandatory wrapper** `./append-to-engineering-log '## DATE - Title\n\n...' ` (or `@file`). The file uses `chattr +a` (kernel append-only) + 640 root:group perms; direct `>>`, edits, or bypasses will fail or be blocked. Never touch prior content.
 
 (For the very end of the entire turn: after the final successful build + post-forensic verification, output the exact "**END OF EXECUTION TURN...**" marker + "results ready to test (new tag: XXX)" and stop completely.)
 - You must not claim completion or handoff until a build has succeeded at every required milestone in the plan and after the final changes.
@@ -214,7 +226,7 @@ If the plan or the Compliance block requires a build after a specific phase/proc
 
 **Monitoring, recovery, and intervention:**
 - Closely monitor any execution sub-agent *in real time* through its tool outputs and messages.
-- Watch specifically for source edits (search_replace, write, etc.) that are not followed *in the sub-agent's output* by the required `git add` (tracked sources + TODO.md) + `./build_app` + visible success + tag. If you see edits without the mandated build step shortly afterward, treat it as an immediate deviation: tell the sub-agent to halt all further tool use and changes right now, perform the proper reset using the get-builds-tag.sh preflight + hard reset to the last good tag, collect its full transcript/output into @@SANDBOX_PATH@@/implementation-failure-logs/ (dated), read the *full* project-facts.md (report size if large), then update with a 1-2 line stable fact note if appropriate (ENGINEERING_LOG.md append-only if used), then prepare for a recovery planning round. (Sub-agents may `git add` project-facts.md when adding meaningful stable facts.)
+- Watch specifically for source edits (search_replace, write, etc.) that are not followed *in the sub-agent's output* by a direct call to `./build_app [@phase_summary.txt] changed-file.kt ...` (this is the *only* allowed way to stage/commit/build/tag). If you see edits that are followed by manual `git add`, `git commit`, or raw gradle/gradlew instead of (or before) the `./build_app` call, treat it as an immediate deviation: tell the sub-agent to halt, force proper reset using get-builds-tag.sh + hard reset, collect logs, etc. (Sub-agents may pass project-facts.md to `./build_app` when adding meaningful stable facts.)
 - Other deviations (run-away resets without preflight, editing after END marker, changes outside the approved plan, 3-3-3 violations, etc.): same intervention — stop it, force proper reset, collect logs, recovery planning.
 - Use the exact preflight: TAG=$(./get-builds-tag.sh); git rev-parse "$TAG"; git reset --hard "$TAG".
 
@@ -267,7 +279,7 @@ If the plan or the Compliance block requires a build after a specific phase/proc
 - Read the compliance report.
 - If the report is a clear PASS on the primary criterion (the actual code changes solve the problem and intent stated in the plan, per the checker's analysis):
   - Clean up: remove any files in @@SANDBOX_PATH@@/implementation-failure-logs/ that mention this plan path (use rm or shell).
-  - Read full project-facts.md (report size if large), then update with 1-2 stable facts/locations only if newly discovered. ENGINEERING_LOG.md (if used) must be append-only.
+  - Read full project-facts.md (report size if large), then update with 1-2 stable facts/locations only if newly discovered. For ENGINEERING_LOG.md (if you append), use the wrapper `./append-to-engineering-log`. It is append-only (chattr +a).
   - Output to user: the success message referencing the compliance report path + "results ready to test".
   - Then become ready for the next 'New planning cycle' trigger.
 - If FAIL or partial (gaps remain):
@@ -279,7 +291,8 @@ If the plan or the Compliance block requires a build after a specific phase/proc
 
 Always:
 - Treat the written plan file(s) in @@SANDBOX_PATH@@/plans/ as the single source of truth for what is approved.
-- Use and maintain the local project-facts.md (in the worktree root) for stable layout and location facts. Always read the *full* file (report size if large for separate work). Keep it to facts that remain true across efforts. ENGINEERING_LOG.md is append-only.
+- Use and maintain the local project-facts.md (in the worktree root) for stable layout and location facts. Always read the *full* file (report size if large for separate work). Keep it to facts that remain true across efforts.
+- ENGINEERING_LOG.md is strictly append-only (chattr +a protected). To append, you **must** use the wrapper from the root: `./append-to-engineering-log '## YYYY-MM-DD - Title\n\n- details'` (or `@file.txt`). Never use direct bash `>>` or edits — they will fail due to perms. Only append new dated entries at the end.
 - Re-read AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the active plan document on every launch, after compaction, and before major coordination decisions.
 - Never make source changes yourself unless explicitly executing under an approved plan.
 - Keep responses to the user high-level and ritualistic when handling planning cycle starts. The detailed work belongs in the dedicated planner terminal or execution sub-agents.
@@ -296,4 +309,4 @@ exec sudo -u "$ORCHESTRATOR_USER" "$GROK_BIN" \
     --model "$MASTER_MODEL" \
     $TODO_GATE_FLAGS \
     --no-alt-screen \
-    "$@"
+    "${EXTRA_ARGS[@]}"

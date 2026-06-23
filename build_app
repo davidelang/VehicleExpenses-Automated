@@ -1,7 +1,27 @@
 #!/bin/bash
 
 # Enhanced build_app: Explicit Integrity & Detailed Summaries
-# Usage: ./build_app ["Commit Message" | "@msg_file.txt"] [file1 file2 ...]
+# THE ONLY WAY TO BUILD OR COMPILE.
+# Usage: ./build_app ["Commit Message" | "@msg_file.txt"] [file1 file2 ...] [-- gradle-flag ...]
+#
+# NEVER run gradlew, gradlew.bat, or direct gradle commands (forbidden; this is the enforced gateway).
+# It handles: git commit, tag update, forensic checks, local .gradle repair, umask/sg enforcement.
+# Pass gradle options after -- (e.g. build_app "msg" file.kt -- --info --stacktrace).
+# If agents pass --info or --stacktrace, they go here — no raw gradlew ever needed.
+
+# Re-exec as dlang (not root) if we started as root. This ensures we use
+# dlang's debug keystore (~/.android/debug.keystore) for consistent APK
+# signatures across builds. Running as root uses /root's keystore,
+# which produces a different certificate and triggers
+# INSTALL_FAILED_UPDATE_INCOMPATIBLE on deploy.
+if [ "$EUID" -eq 0 ]; then
+  echo "Re-executing as dlang (not root) for consistent signing keystore..."
+  if [ -x ./run-as-dlang ]; then
+    exec ./run-as-dlang "$0" "$@"
+  else
+    exec sudo -u dlang "$0" "$@"
+  fi
+fi
 
 # Ensure group-writable creation for build artifacts and Gradle caches (660/770)
 umask 007
@@ -93,7 +113,28 @@ if [ ! -x ./gradlew ]; then
     git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
     exit 0
 else
-    (umask 007; ./gradlew assembleDebug)
+    # Separate user args from gradle flags after --
+    GRADLE_ARGS=()
+    REMAINING_ARGS=()
+    SEEN_DASHDASH=false
+    for arg in "$@"; do
+      if [ "$SEEN_DASHDASH" = true ]; then
+        GRADLE_ARGS+=("$arg")
+      elif [ "$arg" = "--" ]; then
+        SEEN_DASHDASH=true
+      else
+        REMAINING_ARGS+=("$arg")
+      fi
+    done
+    if [ ${#GRADLE_ARGS[@]} -gt 0 ]; then
+      echo "Passing gradle flags: ${GRADLE_ARGS[*]}"
+    fi
+    # Always go through build_app — direct gradlew/gradlew.bat is forbidden (breaks integrity, perms, tags).
+    GRADLE_CMD=(assembleDebug)
+    if [ ${#GRADLE_ARGS[@]} -gt 0 ]; then
+      GRADLE_CMD+=("${GRADLE_ARGS[@]}")
+    fi
+    (umask 007; ./gradlew "${GRADLE_CMD[@]}")
     if [ $? -eq 0 ]; then
         CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
         if [ "$CURRENT_BRANCH" == "master" ]; then
@@ -104,6 +145,16 @@ else
         echo "Build successful. Updating '$TAG_NAME' tag."
         git tag -f "$TAG_NAME"
         git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
+
+        # Lightweight local repair for .gradle (the most common source of "permission hell"
+        # after an agent build). This often removes the need to run the full sudo
+        # set-worktree-perms globally.
+        if [ -d .gradle ]; then
+          echo "Quick local .gradle repair (2770/660 + setgid)..."
+          find .gradle -type d -exec chmod 2770 {} + 2>/dev/null || true
+          find .gradle -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
+        fi
+
         exit 0
     else
         echo "Build failed."

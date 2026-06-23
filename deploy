@@ -2,6 +2,74 @@
 
 # Usage: ./deploy [alias1 alias2 ...]
 # If no arguments are provided, it deploys to all connected devices.
+#
+# To force uninstall first (e.g. to recover from signature mismatch after
+# switching build environments or previous release builds):
+#   UNINSTALL_FIRST=1 ./deploy
+# or
+#   ./deploy --clean
+#
+# To backup DB + test reference images the app reads (vehicle_expenses.db +
+# dash reference images (vehicle_ref_*.jpg) + pump pictures + alignment
+# experiment photos), force uninstall+install, then restore. Does NOT
+# preserve experiment outputs (html/json reports in *_reports dirs).
+#   PRESERVE_DATA=1 ./deploy
+# or
+#   ./deploy --preserve-data
+#
+# SAFETY: If PRESERVE_DATA is requested but a device has the app installed and
+# we fail to capture any backup data (DB or images), we will REFUSE to uninstall.
+# This prevents destroying your test data when backup or the subsequent build fails.
+#
+# Backups saved locally to ./test-data-backups/<device>-<timestamp>/
+# Requires debug build + run-as support on the device (typical for emulators).
+#
+# Note: Force uninstall will remove app data (DB, prefs, etc.) unless using
+# PRESERVE_DATA. Normal deploys (matching cert) update in-place without loss.
+
+PACKAGE_NAME="com.davidlang.vehicleexpensesautomated"
+
+# Parse special flags (can be mixed with device targets; consumed before the main logic).
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --preserve-data)
+      PRESERVE_DATA=true
+      shift
+      ;;
+    --clean)
+      UNINSTALL_FIRST=true
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+# Defaults (flags above take precedence; also respect env vars).
+PRESERVE_DATA=${PRESERVE_DATA:-false}
+UNINSTALL_FIRST=${UNINSTALL_FIRST:-false}
+
+# Export so values survive the dlang / ai-code re-execs that happen later.
+export PRESERVE_DATA
+export UNINSTALL_FIRST
+
+# Ensure backups dir exists (for PRESERVE_DATA)
+mkdir -p test-data-backups 2>/dev/null || true
+
+# Re-exec as dlang (not root) if we started as root. This ensures we use
+# dlang's debug keystore (~/.android/debug.keystore) for consistent APK
+# signatures across builds/deploys. Running as root uses /root's keystore,
+# which produces a different certificate and triggers
+# INSTALL_FAILED_UPDATE_INCOMPATIBLE.
+if [ "$EUID" -eq 0 ]; then
+  echo "Re-executing as dlang (not root) for consistent signing keystore..."
+  if [ -x ./run-as-dlang ]; then
+    exec ./run-as-dlang "$0" "$@"
+  else
+    exec sudo -E -u dlang "$0" "$@"
+  fi
+fi
 
 # Ensure group-writable creation for build artifacts and Gradle caches (660/770)
 umask 007
@@ -19,20 +87,261 @@ DEVICE_MAP=(
     # Add future physical devices here
 )
 
+backup_test_data() {
+  local DEV=$1
+  if [ "$PRESERVE_DATA" != "true" ]; then return; fi
+  local TS=$(date +%Y%m%d-%H%M%S)
+  local BDIR="test-data-backups/${DEV}-${TS}"
+  mkdir -p "$BDIR"
+  echo "  [preserve] Backing up test data for $DEV -> $BDIR"
+  # DB (vehicle_expenses.db from Room)
+  # Write temp copy inside private files/ (run-as can always write there), then stream via cat.
+  # This avoids /sdcard permission issues.
+  db_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    if [ -f databases/vehicle_expenses.db ]; then
+      cat databases/vehicle_expenses.db > files/ve_db.bak 2>&1 || echo __DB_WRITE_ERR__
+    else
+      echo __NO_DB__
+    fi
+  '" )
+  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db.bak" > "$BDIR/vehicle_expenses.db.bak" 2>/dev/null; then
+    if [ -s "$BDIR/vehicle_expenses.db.bak" ]; then
+      echo "    Captured DB (vehicle_expenses.db.bak)"
+    else
+      echo "    DB backup produced 0-byte file"
+    fi
+  else
+    if adb -s "$DEV" shell "pm list packages $PACKAGE_NAME" 2>/dev/null | grep -q "$PACKAGE_NAME"; then
+      echo "    DB backup FAILED (app IS installed but run-as could not read databases/ — possible bad install state or permissions)"
+      [ -n "$db_error" ] && echo "      run-as error was: $db_error"
+    else
+      echo "    DB backup skipped/failed (app may not be installed or not debuggable)"
+    fi
+  fi
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_db.bak" 2>/dev/null || true
+
+  # Dash/reference pictures the app reads (vehicle_ref_*.jpg written to context.filesDir)
+  # Write tar inside private files/ dir, then stream out with run-as cat.
+  dash_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    cd files 2>/dev/null || exit 0
+    tar czf ve_dash.tar.gz vehicle_ref_*.jpg 2>&1 || true
+  '" )
+  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_dash.tar.gz" > "$BDIR/vehicle_refs.tar.gz" 2>/dev/null ; then
+    if [ -s "$BDIR/vehicle_refs.tar.gz" ]; then
+      echo "    Captured dash/reference images (vehicle_refs.tar.gz)"
+    fi
+  else
+    if [ -n "$dash_error" ]; then
+      echo "    Dash image backup note: $dash_error"
+    fi
+  fi
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_dash.tar.gz" 2>/dev/null || true
+
+  # Pump pictures the app reads (inputs under getExternalFilesDir/pump_photos; reports live in sibling pump_reports and are excluded)
+  # Tar to private files/ dir (from external source), then stream via run-as cat.
+  pump_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
+    PDIR=\"\$EXTDIR/Android/data/$PACKAGE_NAME/files/pump_photos\"
+    mkdir -p /data/data/$PACKAGE_NAME/files
+    cd \"\$PDIR\" 2>/dev/null || exit 0
+    tar czf /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz . 2>&1 || true
+  '" )
+  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_pump.tar.gz" > "$BDIR/pump_photos.tar.gz" 2>/dev/null ; then
+    if [ -s "$BDIR/pump_photos.tar.gz" ]; then
+      echo "    Captured pump experiment photos (pump_photos.tar.gz)"
+    fi
+  else
+    if [ -n "$pump_error" ]; then
+      echo "    Pump image backup note: $pump_error"
+    fi
+  fi
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_pump.tar.gz" 2>/dev/null || true
+
+  # Alignment experiment input images the app reads (from context.filesDir/experiment_photos; reports live in sibling experiment_reports and are excluded)
+  # Tar to private files/ dir, stream via run-as cat.
+  align_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    cd files 2>/dev/null || exit 0
+    if [ -d experiment_photos ]; then
+      cd experiment_photos
+      tar czf /data/data/$PACKAGE_NAME/files/ve_align.tar.gz . 2>&1 || true
+    fi
+  '" )
+  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_align.tar.gz" > "$BDIR/alignment_photos.tar.gz" 2>/dev/null ; then
+    if [ -s "$BDIR/alignment_photos.tar.gz" ]; then
+      echo "    Captured alignment experiment photos (alignment_photos.tar.gz)"
+    fi
+  else
+    if [ -n "$align_error" ]; then
+      echo "    Alignment image backup note: $align_error"
+    fi
+  fi
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_align.tar.gz" 2>/dev/null || true
+}
+
+restore_test_data() {
+  local DEV=$1
+  if [ "$PRESERVE_DATA" != "true" ]; then return; fi
+  # Find most recent backup for this device
+  local LATEST=$(ls -td test-data-backups/"${DEV}"-* 2>/dev/null | head -1)
+  if [ -z "$LATEST" ]; then
+    echo "  [preserve] No backup found for $DEV, skipping restore"
+    return
+  fi
+  # Only announce restore if the backup dir actually has content
+  has_content=false
+  if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then has_content=true; fi
+  if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then has_content=true; fi
+  if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then has_content=true; fi
+  if [ -f "$LATEST/alignment_photos.tar.gz" ] && [ -s "$LATEST/alignment_photos.tar.gz" ]; then has_content=true; fi
+
+  if [ "$has_content" = true ]; then
+    echo "  [preserve] Restoring test data for $DEV from $LATEST"
+  fi
+
+  # Restore DB
+  if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
+    adb -s "$DEV" push "$LATEST/vehicle_expenses.db.bak" /sdcard/ve_db.bak >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && cp /sdcard/ve_db.bak databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db'" 2>/dev/null || true
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f /sdcard/ve_db.bak" 2>/dev/null || true
+  fi
+  # Restore dash/reference images (vehicle_ref_*.jpg)
+  if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then
+    adb -s "$DEV" push "$LATEST/vehicle_refs.tar.gz" /sdcard/ve_refs.tar.gz >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cd files && tar xzf /sdcard/ve_refs.tar.gz 2>/dev/null || true; cd ..; rm -f /sdcard/ve_refs.tar.gz'" 2>/dev/null || true
+  fi
+  # Restore pump pictures (input images the app reads from pump_photos)
+  if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then
+    adb -s "$DEV" push "$LATEST/pump_photos.tar.gz" /sdcard/ve_pump_photos.tar.gz >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+      EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
+      PDIR=\"\$EXTDIR/Android/data/$PACKAGE_NAME/files/pump_photos\"
+      mkdir -p \"\$PDIR\" && cd \"\$PDIR\" && tar xzf /sdcard/ve_pump_photos.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_pump_photos.tar.gz
+    '" 2>/dev/null || true
+  fi
+  # Restore alignment experiment input images (the app reads these from files/experiment_photos)
+  if [ -f "$LATEST/alignment_photos.tar.gz" ] && [ -s "$LATEST/alignment_photos.tar.gz" ]; then
+    adb -s "$DEV" push "$LATEST/alignment_photos.tar.gz" /sdcard/ve_alignment_photos.tar.gz >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+      mkdir -p files/experiment_photos && cd files/experiment_photos && tar xzf /sdcard/ve_alignment_photos.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_alignment_photos.tar.gz
+    '" 2>/dev/null || true
+  fi
+  # Optional: force-stop to make app reload DB on next launch
+  adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
+}
+
 OVERALL_SUCCESS=true
 
 if [ "$#" -eq 0 ]; then
     echo "Deploying to all connected devices..."
-    if [ ! -x ./gradlew ]; then
-        echo "Error: ./gradlew not found or not executable here."
-        echo "Run from inside an app worktree, e.g.: cd master && ../deploy   or cd agent-1 && ../deploy"
-        echo "See README-multi-agent.md for the proper workflow."
+    # Discover all connected online devices so we can clear logcat on each
+    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
+    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
+        echo "No connected devices found."
         OVERALL_SUCCESS=false
     else
-        (umask 007; ./gradlew installDebug)
-        if [ $? -ne 0 ]; then
-            echo "Deployment failed."
+        if [ ! -x ./gradlew ]; then
+            echo "Error: ./gradlew not found or not executable here."
+            echo "Run from inside an app worktree, e.g.: cd master && ../deploy   or cd agent-1 && ../deploy"
+            echo "See README-multi-agent.md for the proper workflow."
             OVERALL_SUCCESS=false
+        else
+            for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+                backup_test_data "$DEVICE_ID"
+            done
+
+            # SAFETY: When PRESERVE_DATA is requested, we must NOT uninstall if we
+            # failed to capture the data (DB + reference images for dash/pump/alignment).
+            # This prevents "told to preserve, but deleted anyway and then build failed".
+            PRESERVE_ABORT=false
+            if [ "$PRESERVE_DATA" = "true" ]; then
+                for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+                    LATEST=$(ls -td test-data-backups/"${DEVICE_ID}"-* 2>/dev/null | head -1 || true)
+                    has_backup=false
+                    if [ -n "$LATEST" ]; then
+                        if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
+                            has_backup=true
+                        fi
+                        for img in vehicle_refs.tar.gz pump_photos.tar.gz alignment_photos.tar.gz; do
+                            if [ -f "$LATEST/$img" ] && [ -s "$LATEST/$img" ]; then
+                                has_backup=true
+                                break
+                            fi
+                        done
+                    fi
+                    # Check if the package is currently installed on the device
+                    pkg_check=$(adb -s "$DEVICE_ID" shell "pm list packages $PACKAGE_NAME" 2>/dev/null || true)
+                    if echo "$pkg_check" | grep -q "$PACKAGE_NAME"; then
+                        if [ "$has_backup" != "true" ]; then
+                            echo "  [preserve] CRITICAL SAFETY ABORT: $DEVICE_ID has the app installed, but backup captured neither DB nor test images (dash refs / pump / alignment photos)."
+                            echo "  Refusing to uninstall — we will not destroy your data when backup failed."
+                            PRESERVE_ABORT=true
+                        fi
+                    fi
+                done
+            fi
+
+            if [ "${UNINSTALL_FIRST:-false}" = "1" ] || [ "${UNINSTALL_FIRST:-false}" = "true" ] || [ "$PRESERVE_DATA" = "true" ]; then
+                if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
+                    echo "  [preserve] Skipping uninstalls to protect data (see CRITICAL SAFETY ABORT above)."
+                else
+                    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+                        echo "Uninstalling existing package on $DEVICE_ID..."
+                        adb -s "$DEVICE_ID" uninstall $PACKAGE_NAME || true
+                    done
+                fi
+            fi
+
+            if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
+                echo "  [preserve] WARNING: App installed but no backup data captured (run-as couldn't read DB/images)."
+                echo "  Will still build and attempt in-place install (no uninstall was done)."
+            fi
+
+            # Mitigate a very common Gradle failure when doing fresh installs:
+            # "Unable to delete directory .../packageDebug/tmp" because a previous
+            # daemon/worker still has files open (zip-cache, dex state, etc.).
+            # Also handles cases where past root runs left files owned by root.
+            ./gradlew --stop >/dev/null 2>&1 || true
+
+            # Try to kill any lingering processes holding files in the incremental dirs.
+            # This addresses "a process has files open".
+            lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
+            sleep 1
+
+            # Try to fix ownership pollution from previous root/sudo Gradle runs
+            if [ -d app/build ]; then
+                find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
+            fi
+
+            # Make sure the dir is writable before attempting delete (in case of mixed perms).
+            chmod -R u+rwX app/build/intermediates/incremental 2>/dev/null || true
+
+            # Aggressive removal of the entire incremental state (broader than just packageDebug/tmp)
+            # to clear any stale lock files or partial state.
+            rm -rf app/build/intermediates/incremental 2>/dev/null || true
+
+            # If still can't remove the specific problematic dir, warn.
+            if [ -d app/build/intermediates/incremental/packageDebug/tmp ]; then
+                echo "  WARNING: Still cannot delete some Gradle incremental files (permission denied or locked)."
+                echo "  You may need to run as root: sudo chown -R dlang:ai-code app/build"
+                echo "  Or manually: rm -rf app/build/intermediates/incremental"
+                echo "  Then retry."
+            fi
+
+            (umask 007; ./gradlew installDebug)
+            if [ $? -ne 0 ]; then
+                echo "Deployment failed."
+                OVERALL_SUCCESS=false
+            else
+                for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+                    restore_test_data "$DEVICE_ID"
+                done
+            fi
+
+            # Clear logcat on *every* device we deployed to (important for multi-device)
+            for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+                echo "Clearing logcat on $DEVICE_ID..."
+                adb -s "$DEVICE_ID" logcat -c || echo "Warning: failed to clear logcat on $DEVICE_ID"
+            done
         fi
     fi
 else
@@ -47,13 +356,84 @@ else
             OVERALL_SUCCESS=false
             continue
         fi
+        backup_test_data "$DEVICE_ID"
+
+        # SAFETY: Same critical check as the all-devices path.
+        PRESERVE_ABORT=false
+        if [ "$PRESERVE_DATA" = "true" ]; then
+            LATEST=$(ls -td test-data-backups/"${DEVICE_ID}"-* 2>/dev/null | head -1 || true)
+            has_backup=false
+            if [ -n "$LATEST" ]; then
+                if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
+                    has_backup=true
+                fi
+                for img in vehicle_refs.tar.gz pump_photos.tar.gz alignment_photos.tar.gz; do
+                    if [ -f "$LATEST/$img" ] && [ -s "$LATEST/$img" ]; then
+                        has_backup=true
+                        break
+                    fi
+                done
+            fi
+            pkg_check=$(adb -s "$DEVICE_ID" shell "pm list packages $PACKAGE_NAME" 2>/dev/null || true)
+            if echo "$pkg_check" | grep -q "$PACKAGE_NAME"; then
+                if [ "$has_backup" != "true" ]; then
+                    echo "  [preserve] CRITICAL SAFETY ABORT: $DEVICE_ID has the app installed, but backup captured neither DB nor test images."
+                    echo "  Refusing to uninstall to protect your dash/pump/alignment data."
+                    PRESERVE_ABORT=true
+                fi
+            fi
+        fi
+
+        if [ "${UNINSTALL_FIRST:-false}" = "1" ] || [ "${UNINSTALL_FIRST:-false}" = "true" ] || [ "$PRESERVE_DATA" = "true" ]; then
+            if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
+                echo "  [preserve] Skipping uninstall for $DEVICE_ID due to backup safety."
+            else
+                echo "Uninstalling existing package on $DEVICE_ID..."
+                adb -s "$DEVICE_ID" uninstall $PACKAGE_NAME || true
+            fi
+        fi
+
+        if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
+            echo "  [preserve] WARNING: App installed but no backup data captured (run-as couldn't read DB/images)."
+            echo "  Will still build and attempt in-place install (no uninstall was done)."
+        fi
+
+        # Mitigate common Gradle "can't delete incremental tmp" failure
+        ./gradlew --stop >/dev/null 2>&1 || true
+
+        # Try to kill any lingering processes holding files in the incremental dirs.
+        lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
+        sleep 1
+
+        # Try to fix ownership pollution from previous root/sudo Gradle runs
+        if [ -d app/build ]; then
+            find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
+        fi
+
+        # Make sure the dir is writable before attempting delete (in case of mixed perms).
+        chmod -R u+rwX app/build/intermediates/incremental 2>/dev/null || true
+
+        # Aggressive removal of the entire incremental state
+        rm -rf app/build/intermediates/incremental 2>/dev/null || true
+
+        # If still can't remove, warn loudly
+        if [ -d app/build/intermediates/incremental/packageDebug/tmp ]; then
+            echo "  WARNING: Still cannot delete some Gradle incremental files (permission denied or locked)."
+            echo "  You may need to run as root: sudo chown -R dlang:ai-code app/build"
+            echo "  Or manually: rm -rf app/build/intermediates/incremental"
+            echo "  Then retry."
+        fi
+
         (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew installDebug)
         
         if [ $? -ne 0 ]; then
             echo "Deployment to $TARGET ($DEVICE_ID) failed."
             OVERALL_SUCCESS=false
+        else
+            restore_test_data "$DEVICE_ID"
         fi
-        adb -s "$DEVICE_ID" logcat -c
+        echo "Clearing logcat on $DEVICE_ID..."
+        adb -s "$DEVICE_ID" logcat -c || echo "Warning: failed to clear logcat on $DEVICE_ID"
     done
 fi
 

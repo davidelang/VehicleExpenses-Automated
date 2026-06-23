@@ -41,9 +41,12 @@ fi
 #
 # You may update infra files such as:
 #   update-rules.sh, set-worktree-perms, set-sandbox-perms, launchers,
-#   mandates, .grok/, filters, setup-project, etc.
+#   fix-*.sh (permission fixers), mandates, .grok/, filters, setup-project, etc.
 # (i.e. things installed at setup-agent or setup-project time, or maintained
 # as part of the development environment).
+# These must be added to FILES (for full worktrees) and/or STAMP_FILES so they
+# get physically copied + committed into worktrees via update-rules.sh.
+# This prevents worktrees from reverting to stale versions on git reset/checkout.
 FILES=(
     ".gemini/policies/plans.toml"
     ".gemini/policies/auto-saved.toml"
@@ -85,6 +88,9 @@ FILES=(
     # resets, collects logs, and initiates recovery planning. Synced to all
     # worktrees.
     "run-grok-master"
+    # run-antigravity: launcher for the Antigravity agent CLI. Runs as ai-coder
+    # for consistent permissions in the multi-user setup. Synced to all worktrees.
+    "run-antigravity"
     # Stable canonical guardrails block that every plan must include verbatim.
     # This is the single source of truth for the short "Compliance & Execution
     # Guardrails (STANDARD BLOCK)" section. Placed at repo root (not under
@@ -102,8 +108,22 @@ FILES=(
     "set-sandbox-perms"
     "project.config.example"
     ".gitattributes"
+    "fix-engineering-log-perms"
+    "fix-sudoers"
+    "fix-this-worktree"
+    # Permission fixers (run when agents idle; they fix ACLs/chattr/sudoers
+    # for logs, wrappers, sandbox. Must be synced via this script so that
+    # worktrees have committed versions and don't revert on git reset).
     # Opt-in bootstrap helper (stampable + full layout)
     "enable-full-orchestration.sh"
+    # Controlled wrapper to safely append only to ENGINEERING_LOG.md.
+    # Enforces format and works with chattr +a / restricted perms to stop agents
+    # from editing history.
+    "append-to-engineering-log"
+    "todo-append"
+    "todo-close"
+    "run-as-dlang"
+    "run-as-dlang.c"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
@@ -123,6 +143,9 @@ STAMP_FILES=(
     "set-sandbox-perms"
     "project.config.example"
     ".gitattributes"
+    "fix-engineering-log-perms"
+    "fix-this-worktree"
+    "fix-sudoers"
     "enable-full-orchestration.sh"
 )
 
@@ -183,7 +206,7 @@ for WT in $WORKTREES; do
         # and block (robust against any transient ignore rules or new-file edge
         # cases during the batch). Do not blanket-suppress errors on the add;
         # surface problems so we can see why a sync would fail to commit.
-        git add -f standard-plan-compliance-block.md get-builds-tag.sh run-grok-planner run-grok-master 2>&1 | cat
+        git add -f standard-plan-compliance-block.md get-builds-tag.sh run-grok-planner run-grok-master run-antigravity 2>&1 | cat
         git add "${COPY_LIST[@]}" 2>&1 | cat
 
         if ! git diff --staged --quiet; then
@@ -194,7 +217,7 @@ for WT in $WORKTREES; do
             # produced a visible diff in some git edge cases, explicitly check
             # and force-add the critical new launchers + block if they are
             # untracked in this worktree, then commit if anything is now staged.
-            for extra in standard-plan-compliance-block.md run-grok-planner run-grok-master; do
+            for extra in standard-plan-compliance-block.md run-grok-planner run-grok-master run-antigravity; do
                 if [ -f "$extra" ]; then
                     git add -f "$extra" 2>&1 | cat
                 fi
