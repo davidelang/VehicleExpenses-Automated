@@ -262,6 +262,13 @@ fix_worktree() {
     find "$wt/.git" -type f -exec chmod 660 {} + 2>/dev/null || true
   fi
 
+  # Git hooks must be executable (git ignores non-exec hooks like post-checkout)
+  for gitdir in "$wt/.git" "$WT_GITDIR"; do
+    if [ -n "$gitdir" ] && [ -d "$gitdir/hooks" ]; then
+      find "$gitdir/hooks" -type f ! -name '*.sample' -exec chmod +x {} + 2>/dev/null || true
+    fi
+  done
+
   # build run-as if needed
   if [ -f "$wt/run-as-primary.c" ] && [ ! -x "$wt/run-as-primary" ]; then
     if $VERBOSE; then echo "  Compiling run-as-primary in $wt ..."; fi
