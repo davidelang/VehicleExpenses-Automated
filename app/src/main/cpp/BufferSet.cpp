@@ -11,6 +11,14 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
+static void logMatHeader(const char* tag, const cv::Mat* m) {
+    if (!m) { LOGI("MAT_HEADER: %s null", tag); return; }
+    LOGI("MAT_HEADER: %s cols=%d rows=%d dims=%d type=%d ch=%d flags=0x%x step0=%zu step1=%zu data=%p datastart=%p dataend=%p cont=%d empty=%d",
+         tag, m->cols, m->rows, m->dims, m->type(), m->channels(), m->flags,
+         m->step[0], (m->dims > 1 ? m->step[1] : 0), (void*)m->data,
+         (void*)m->datastart, (void*)m->dataend, m->isContinuous(), m->empty());
+}
+
 static std::set<BufferSetHandle*> validHandles;
 static std::mutex registryMutex;
 
@@ -198,7 +206,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeUpdateCropMa
     auto* cropMat = reinterpret_cast<cv::Mat*>(cropMatPtr);
     auto* parentMat = reinterpret_cast<cv::Mat*>(parentMatPtr);
     if (cropMat != nullptr && parentMat != nullptr) {
+        LOGI("MAT_HEADER: nativeUpdateCropMat pre x=%d y=%d w=%d h=%d parent=%dx%d", x, y, w, h, parentMat->cols, parentMat->rows);
+        logMatHeader("pre_update_crop", cropMat);
+        logMatHeader("pre_update_parent", parentMat);
         *cropMat = (*parentMat)(cv::Rect(x, y, w, h));
+        logMatHeader("post_update_crop", cropMat);
+        logMatHeader("post_update_parent", parentMat);
     }
 }
 
