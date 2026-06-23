@@ -1689,6 +1689,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     std::map<int,int> horizHist, vertHist;
     for (int y = minT; y < maxB; ++y) {
         const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
+        // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+        if (y == minT) {
+            int nonBinary = 0;
+            for (int xx = minL; xx < std::min(minL+10, maxR); ++xx) {
+                uint8_t v = rowPtr[xx];
+                if (v != 0 && v != 255) nonBinary++;
+            }
+            LOGI("HIST_DIAG: sample y=%d nonBinaryInFirst10=%d (should be 0 for binarized)", y, nonBinary);
+        }
         int run = 0;
         for (int x = minL; x < maxR; ++x) {
             if (rowPtr[x] > contentThreshold) run++;
