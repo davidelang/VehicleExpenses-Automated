@@ -55,15 +55,26 @@ fi
 
 # 2. Create Worktree & Branch
 echo "Creating worktree for $AGENT_ID on branch $BRANCH_NAME..."
-# Temporarily disable the manage-configs filter (which runs bash ./filter-apply-config)
-# to prevent "No such file or directory" errors during initial checkout into a fresh
-# worktree dir (the filter scripts aren't present in the target yet).
-# The files in the commit are already expanded; setup_agent and post-checkout handle the rest.
+
+# Pre-create the target directory and copy project.config (and the filter scripts)
+# *before* the worktree checkout. This ensures the smudge filter (filter-apply-config)
+# can find project.config in the target dir during population, so @@ tokens are
+# properly substituted with the local values right away.
+mkdir -p "$AGENT_ID"
+if [ -f project.config ]; then
+  cp project.config "$AGENT_ID/project.config"
+fi
+for f in filter-apply-config filter-clean-config; do
+  if [ -f "$f" ]; then
+    cp "$f" "$AGENT_ID/$f"
+  fi
+done
+
 if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
-    git -c filter.manage-configs.clean=cat -c filter.manage-configs.smudge=cat worktree add "$AGENT_ID" "$BRANCH_NAME"
+    git worktree add --no-checkout "$AGENT_ID" "$BRANCH_NAME"
 else
     # Create from current master
-    git -c filter.manage-configs.clean=cat -c filter.manage-configs.smudge=cat worktree add "$AGENT_ID" -b "$BRANCH_NAME" master
+    git worktree add --no-checkout "$AGENT_ID" -b "$BRANCH_NAME" master
     # Create (or force-update) a lightweight tag for git describe to anchor on.
     # If a stale tag exists from a previously removed worktree/branch with the same name,
     # we force it to the new branch's start point. This is the correct behavior when
@@ -108,13 +119,6 @@ elif [ -f "../local.properties" ]; then
     cp ../local.properties local.properties
 fi
 
-# 5c. Copy project.config (so filters, run-grok*, setup scripts etc. find real values
-# without requiring manual copy after setup_agent). This is the local config
-# (gitignored) that drives substitution and runtime sourcing.
-if [ -f "../project.config" ]; then
-    cp ../project.config project.config
-fi
-
 # 6. Initialize AGENT_CONTEXT.md
 if [ -f "../AGENT_CONTEXT.md.template" ]; then
     cp "../AGENT_CONTEXT.md.template" AGENT_CONTEXT.md
@@ -128,6 +132,11 @@ else
 - **Status:** INITIALIZED
 EOF
 fi
+
+# Now populate the worktree contents. Because we pre-copied project.config and the
+# filter scripts, the smudge filters will run with the config available and
+# perform the proper substitutions for @@ tokens.
+git checkout .
 
 # 7. Make this a *fully working* tree with all correct permissions.
 #    Since we are always run from the orchestration root (which has the
