@@ -32,78 +32,32 @@ console.log("plan-mode-hard-stops hook loaded");
 // the interactive strategic planning phase for continuity).
 // This runs before any plan-mode deny logic.
 
-const rawTool = (typeof tool !== 'undefined' ? tool : null);
-const paramsObj = (typeof params !== 'undefined' ? params : {});
-const toolName = (rawTool || paramsObj.tool || paramsObj.name || '').toString().toLowerCase();
+const toolName = (typeof tool !== 'undefined' ? tool : (typeof params !== 'undefined' && params.tool) || '');
+const targetPath = (typeof params !== 'undefined' ? (params.path || params.file || params.target || params.url || '') : '');
 
-// Robust extraction of target file path for edit tools.
-// The harness often uses file_path (as in the project's search_replace schema).
-// Also cover common alternatives used by different harness/tool layers.
-let targetPath = '';
-if (paramsObj) {
-  targetPath = paramsObj.file_path ||
-               paramsObj.path ||
-               paramsObj.file ||
-               paramsObj.target ||
-               paramsObj.target_file ||
-               paramsObj.filename ||
-               paramsObj.url ||
-               '';
-}
-targetPath = (targetPath || '').toString();
-
-if (toolName.includes('search_replace') || toolName === 'write' || toolName === 'edit' || toolName.includes('str_replace')) {
-  const lowerPath = targetPath.toLowerCase();
-  if (lowerPath.endsWith('current-state.md') ||
-      lowerPath.includes('.agent-state/') ||
-      lowerPath.includes('current-state.md') ||
-      lowerPath.includes('project-facts.md')) {
+if (toolName === 'search_replace' || toolName === 'write' || toolName === 'edit') {
+  const lowerPath = (targetPath || '').toLowerCase();
+  if (lowerPath.endsWith('current-state.md') || lowerPath.includes('.agent-state/') || lowerPath.includes('current-state.md')) {
     console.log('plan-mode-hard-stops: allowing edit to local state file (early return):', targetPath);
     return 'allow';
   }
 }
 
 // Now apply plan mode restrictions for everything else.
-// We are intentionally conservative: planners (run-grok-planner etc.) must stay
-// in plan mode and are not allowed to mutate application source.
 function isPlanMode() {
-  // The dedicated planner launcher + new_grok_agent_prompt + harness force plan mode.
-  // For hard safety we treat "maybe planning" as plan mode for edit denials.
-  // If the harness provides a reliable mode flag in future, prefer that.
+  // Placeholder: in a full implementation this would inspect harness context/mode.
+  // For now we conservatively assume we may be in plan mode and rely on the
+  // explicit allows above + the declarative rules in .grok/config.toml.
   return true;
 }
 
-function isSandboxPath(p) {
-  if (!p) return false;
-  const s = p.toString();
-  const lower = s.toLowerCase();
-
-  // Worktree-relative symlink name (most common when agents run inside agent-N/ or master/)
-  if (lower.startsWith('dev-ai-interaction/') || lower === 'dev-ai-interaction') return true;
-
-  // Absolute or deep relative containing the sandbox
-  if (lower.includes('/dev-ai-interaction/') || lower.includes('\\dev-ai-interaction\\')) return true;
-
-  // The canonical absolute sandbox used everywhere in the project
-  if (s.includes('/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction')) return true;
-
-  // Also accept if the path is inside a dev-ai-interaction dir anywhere
-  if (lower.includes('dev-ai-interaction')) return true;
-
-  return false;
-}
-
 if (isPlanMode()) {
-  const isEditTool = toolName.includes('search_replace') ||
-                     toolName === 'write' ||
-                     toolName === 'edit' ||
-                     toolName.includes('str_replace') ||
-                     toolName.includes('edit_file');
-
-  if (isEditTool) {
-    if (!isSandboxPath(targetPath)) {
-      // Hard stop: planners must not modify anything outside the sandbox.
-      console.log('plan-mode-hard-stops: DENY edit outside sandbox in plan mode. tool=', toolName, 'path=', targetPath);
+  const inSandbox = (targetPath || '').startsWith('dev-ai-interaction/') ||
+                    (targetPath || '').includes('/dev-ai-interaction/');
+  if (!inSandbox) {
+    // Only deny non-sandbox edits/writes in plan mode (other tools may still ask).
+    if (toolName === 'search_replace' || toolName === 'write' || toolName === 'edit') {
+      console.log('plan-mode-hard-stops: denying edit to non-sandbox path in plan mode:', targetPath);
       return 'deny';
     }
   }
@@ -145,7 +99,7 @@ function getLastPipeBase(fullCmd) {
 // Explicit allow for direct (or prefixed) invocations of safe read-only / exploration commands
 // in bash even in plan mode. The strip functions above normalize prefixes for all of them.
 if (toolName === 'bash') {
-  const cmd = (paramsObj.command || paramsObj.cmd || paramsObj.args || targetPath || '').toString();
+  const cmd = (typeof params !== 'undefined' ? (params.command || params.cmd || params.args || targetPath || '') : '').toString();
   const base = stripLeadingAssignments(cmd);
   const lastBase = getLastPipeBase(cmd);
 
@@ -169,20 +123,6 @@ if (toolName === 'bash') {
   }
 }
 
-// Final safety net: if this is an edit tool and we have a non-empty non-sandbox path,
-// and we reached here, force-deny when in plan mode (belt + suspenders).
-if (isPlanMode()) {
-  const isEditTool = toolName.includes('search_replace') ||
-                     toolName === 'write' ||
-                     toolName === 'edit' ||
-                     toolName.includes('str_replace') ||
-                     toolName.includes('edit_file');
-  if (isEditTool && targetPath && !isSandboxPath(targetPath)) {
-    console.log('plan-mode-hard-stops: FINAL SAFETY DENY for edit tool on non-sandbox path:', toolName, targetPath);
-    return 'deny';
-  }
-}
-
 // Fall through to config.toml rules + native behavior (which may still prompt for ask).
 // The blanket allow for search_replace/write in non-plan mode + specific patterns
-// should prevent most prompts. The hook above is the hard stop for plan mode.
+// should prevent most prompts.
