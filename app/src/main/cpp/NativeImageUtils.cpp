@@ -1660,6 +1660,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
     jsize len = env->GetArrayLength(rects);
+    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+    LOGI("HIST_DIAG: H entry mat=%dx%d type=%d continuous=%d factor=%.1f rectsLen=%d",
+         mat->cols, mat->rows, mat->type(), mat->isContinuous(), thresholdFactor, (int)len);
     if (len % 4 != 0 || len == 0) return nullptr;
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
@@ -1671,11 +1674,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         maxB = std::max(maxB, (int)rData[i+3]);
     }
     env->ReleaseIntArrayElements(rects, rData, JNI_ABORT);
+    LOGI("HIST_DIAG: H parsed bounds minL=%d maxR=%d minT=%d maxB=%d", minL, maxR, minT, maxB);
 
     minL = std::max(0, std::min(minL, mat->cols - 1));
     minT = std::max(0, std::min(minT, mat->rows - 1));
     maxR = std::max(minL + 1, std::min(maxR, mat->cols));
     maxB = std::max(minT + 1, std::min(maxB, mat->rows));
+    LOGI("HIST_DIAG: H clamped bounds minL=%d maxR=%d minT=%d maxB=%d", minL, maxR, minT, maxB);
 
     double contentThreshold = computeThreshold(*mat, minL, minT, maxR, maxB, thresholdFactor);
 
