@@ -132,6 +132,21 @@ fi
 # sg ai-shared gives the necessary group for shared git/.git metadata and sandbox; owner perms cover the rest.
 # This avoids ping-pong loops from sg only surfacing one group at a time.
 
+# Early recovery for build dir perms/ownership (prevents "Permission denied" on cxx logs,
+# configuration cache stale outputs, etc. from previous root/wrong-group runs).
+# This runs whenever you use ./deploy (which does the group re-exec).
+fix_build_dir_perms() {
+  if [ -d app/build ]; then
+    echo "  Fixing build dir perms (traversable + group writable)..."
+    chmod -R u+rX,g+rX app/build 2>/dev/null || true
+    chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
+    find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
+    # Make sure dirs are setgid for future creations
+    find app/build -type d -exec chmod 2770 {} + 2>/dev/null || true
+  fi
+}
+fix_build_dir_perms
+
 declare -A DEVICE_MAP
 DEVICE_MAP=(
     ["tablet"]="emulator-5554"
