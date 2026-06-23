@@ -204,7 +204,7 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         override val yuv: YuvHandle get() = _yuv
 
         fun setup(w: Int, h: Int) { nativeHandle = nativeSetup(w, h); refreshViews() }
-        fun physicalResize(w: Int, h: Int) { nativeResize(nativeHandle, w, h); refreshViews() }
+        fun physicalResize(w: Int, h: Int) { nativeResize(nativeHandle, w, h); _buffer = nativeGetBuffer(nativeHandle) }
 
         fun borrow(y: ByteBuffer, u: ByteBuffer, v: ByteBuffer, yStride: Int, uvStride: Int, uPixelStride: Int, vPixelStride: Int) {
             nativeBorrowYuv(nativeHandle, y, u, v, yStride, uvStride, uPixelStride, vPixelStride)

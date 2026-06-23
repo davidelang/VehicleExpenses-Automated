@@ -425,3 +425,10 @@ The diag helps see the parameters, but the header issue causes the failure.
 - TODO.md: future-work item for Room config-driven max photo buffer size at init.
 - ExperimentAlignmentScreen: ALIGN_BUF_DIAG logs before ingest, copyTo (luma+uv), takeSnapshot, deskew, pipeline reset.
 - OdometerOcrUtils.rotate: ALIGN_BUF_DIAG logs before tempMat/tempUv copyTo set.p.
+
+## 2026-06-23 - revert-to-4f4abf16 buffer wrapper behavior (test)
+
+- Executed plan revert-to-4f4abf16-buffer-wrapper-behavior-20260623-plan.md.
+- BufferSet.physicalResize reverted to 4f4abf16: nativeResize + _buffer refresh only (removed refreshViews; Mat wrappers no longer recreated on resize).
+- ExperimentAlignmentScreen: restored late conditional bufferSetB.resize before iterative stages (pre-38a00c88 hygiene block).
+- Native alloc, default 4080 init size, pump, and other post-4f4abf16 work untouched.
