@@ -1064,6 +1064,7 @@ private suspend fun runBinTrialsPaddle(
             // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
             Log.i("HIST_DIAG", "rawHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${b.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor")
             val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            if (hRes != null) Log.i("HIST_DIAG", "hRes rawHist vSW=${hRes.second[0]} hSW=${hRes.second[1]}")
             val b64 = if (pipelineKey != "set_j" && hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
             odoBuffer.crop[redBoxCropId].release()
             Pair(hRes, b64)
@@ -1122,6 +1123,7 @@ private suspend fun runBinTrialsPaddle(
             // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
             Log.i("HIST_DIAG", "postFilter vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor")
             var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            if (hRes != null) Log.i("HIST_DIAG", "hRes postFilter vSW=${hRes.second[0]} hSW=${hRes.second[1]}")
             vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
             hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
             odoBuffer.crop[redBoxCropId].release()
@@ -1151,6 +1153,7 @@ private suspend fun runBinTrialsPaddle(
             // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
             Log.i("HIST_DIAG", "failHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${failRect.width()}x${failRect.height()} factor=$thresholdFactor")
             val failRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[failCropId].mat, listOf(failRect), thresholdFactor)
+            if (failRes != null) Log.i("HIST_DIAG", "hRes failHist vSW=${failRes.second[0]} hSW=${failRes.second[1]}")
             if (failRes != null) {
                 val b64 = generateDualHistogramB64(failRes.first.first, failRes.first.second); val meta = failRes.second
                 histsHtml.append("<br><small>Cleaned Red Box [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64'>")
