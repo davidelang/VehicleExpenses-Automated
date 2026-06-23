@@ -117,6 +117,7 @@ FILES=(
     "deploy"
     "build_app"
     "sync_infrastructure.sh"
+    "update-rules.sh"
     # Controlled wrapper to safely append only to ENGINEERING_LOG.md.
     # Enforces format and works with chattr +a / restricted perms to stop agents
     # from editing history.
@@ -148,6 +149,7 @@ STAMP_FILES=(
     "deploy"
     "build_app"
     "sync_infrastructure.sh"
+    "update-rules.sh"
 )
 
 # 4. Push updates to all other worktrees
@@ -178,6 +180,25 @@ for WT in $WORKTREES; do
     fi
 
     echo "    (mode: $( [ "$TARGET_USES_FULL" -eq 1 ] && echo full || echo stamp-only ))"
+
+    # Stash any existing staged changes before overwriting working tree files.
+    # This allows a clean add/commit of only the synced infra, then restores
+    # the previous staged state (so agent work is not lost or mixed).
+    # Only stash if there is actually something staged.
+    # Use --staged so we only set aside the index (staged files) and do not
+    # snapshot/restore dirty working-tree files for the synced items (cp must win
+    # on infra files; non-infra unstaged work remains untouched).
+    stashed=0
+    if [ -d "$WT" ]; then
+        if ( cd "$WT" && ! git diff --staged --quiet 2>/dev/null ); then
+            echo "  Stashing staged changes temporarily in $WT before sync..."
+            if ( cd "$WT" && git stash push --staged --message "update-rules temp: preserve staged work before infra sync" --quiet ); then
+                stashed=1
+            else
+                echo "  WARNING: stash failed in $WT"
+            fi
+        fi
+    fi
 
     # Ensure target directories exist and copy files.
     # Only the decided COPY_LIST (stamp or full) are touched for this target.
@@ -232,6 +253,20 @@ for WT in $WORKTREES; do
                 git commit -m "chore: Synchronize agent rules and infrastructure"
             else
                 echo "No changes needed for $WT."
+            fi
+        fi
+
+        if [ "$stashed" -eq 1 ]; then
+            echo "  Popping stash in $WT to restore previous state..."
+            # Use --index so the previously-staged items are restored to the index
+            # (staged) on top of the freshly committed infra sync. The working tree
+            # state for non-infra files is left as it was (cp already forced infra).
+            if git stash pop --index --quiet; then
+                :
+            else
+                echo "  WARNING: git stash pop failed in $WT. You may need to resolve conflicts manually."
+                echo "  Status after failed pop:"
+                git status --short | cat
             fi
         fi
     )
