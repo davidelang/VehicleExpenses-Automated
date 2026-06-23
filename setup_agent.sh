@@ -108,6 +108,13 @@ elif [ -f "../local.properties" ]; then
     cp ../local.properties local.properties
 fi
 
+# 5c. Copy project.config (so filters, run-grok*, setup scripts etc. find real values
+# without requiring manual copy after setup_agent). This is the local config
+# (gitignored) that drives substitution and runtime sourcing.
+if [ -f "../project.config" ]; then
+    cp ../project.config project.config
+fi
+
 # 6. Initialize AGENT_CONTEXT.md
 if [ -f "../AGENT_CONTEXT.md.template" ]; then
     cp "../AGENT_CONTEXT.md.template" AGENT_CONTEXT.md
