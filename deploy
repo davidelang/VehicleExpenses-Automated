@@ -115,7 +115,7 @@ if [ -z "${GROUPS_ACTIVATED:-}" ]; then
     echo "Re-executing under ai-shared group for correct file permissions..."
     q0=$(printf '%q' "$0")
     qargs=$(printf '%q ' "$@"); qargs=${qargs% }
-    ccmd="exec /bin/bash -c 'exec \"\$1\" \"\${@:2}\"' _ $q0 $qargs"
+    ccmd="GROUPS_ACTIVATED=1 exec /bin/bash -c 'exec \"\$1\" \"\${@:2}\"' _ $q0 $qargs"
     exec sg ai-shared -c "$ccmd"
   fi
 fi
