@@ -1,0 +1,3 @@
+#!/bin/bash
+export GEMINI_PROJECT_ROOT=$(pwd)
+~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions." --include-directories ~/git/VehicleExpenses-automated/dev-ai-interaction/ "$@"
