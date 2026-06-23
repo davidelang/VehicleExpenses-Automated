@@ -115,7 +115,12 @@ if [ -z "${GROUPS_ACTIVATED:-}" ]; then
     echo "Re-executing under ai-shared group for correct file permissions..."
     q0=$(printf '%q' "$0")
     qargs=$(printf '%q ' "$@"); qargs=${qargs% }
-    ccmd="GROUPS_ACTIVATED=1 exec /bin/bash -c 'exec \"\$1\" \"\${@:2}\"' _ $q0 $qargs"
+    # Embed safely; avoid injecting phantom empty arg for the no-args case
+    if [ -z "$qargs" ]; then
+      ccmd="GROUPS_ACTIVATED=1 exec $q0"
+    else
+      ccmd="GROUPS_ACTIVATED=1 exec $q0 $qargs"
+    fi
     exec sg ai-shared -c "$ccmd"
   fi
 fi
@@ -343,6 +348,8 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             # "Unable to delete directory .../packageDebug/tmp" because a previous
             # daemon/worker still has files open (zip-cache, dex state, etc.).
             # Also handles cases where past root runs left files owned by root.
+            # Extended to fix "unreadable inputs/outputs" / "Could not stat" errors
+            # in Gradle 8+/9+ (CMake/cxx, navigation, assets, aar, etc. state).
             ./gradlew --stop >/dev/null 2>&1 || true
 
             # Try to kill any lingering processes holding files in the incremental dirs.
@@ -355,18 +362,29 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
             fi
 
-            # Make sure the dir is writable before attempting delete (in case of mixed perms).
-            chmod -R u+rwX app/build/intermediates/incremental 2>/dev/null || true
+            # Make readable/writable for current user + group (ai-code/ai-shared)
+            if [ -d app/build ]; then
+                find app/build -exec chmod u+rwX,g+rwX {} + 2>/dev/null || true
+            fi
 
             # Aggressive removal of the entire incremental state (broader than just packageDebug/tmp)
             # to clear any stale lock files or partial state.
             rm -rf app/build/intermediates/incremental 2>/dev/null || true
 
+            # Also nuke other common unreadable state dirs (cxx logs, res maps, etc.)
+            rm -rf app/build/intermediates/cxx app/build/intermediates/*source_set_path_map \
+                   app/build/intermediates/external_file_lib_dex_archives \
+                   app/build/intermediates/aar_metadata_check app/build/intermediates/navigation_json \
+                   app/build/intermediates/compatible_screen_manifest app/build/intermediates/merged_jni_libs \
+                   app/build/intermediates/assets app/build/intermediates/annotation_processor_list \
+                   app/build/intermediates/duplicate_classes_check app/build/intermediates/validate_signing_config \
+                   app/build/generated 2>/dev/null || true
+
             # If still can't remove the specific problematic dir, warn.
             if [ -d app/build/intermediates/incremental/packageDebug/tmp ]; then
                 echo "  WARNING: Still cannot delete some Gradle incremental files (permission denied or locked)."
                 echo "  You may need to run as root: sudo chown -R dlang:ai-code app/build"
-                echo "  Or manually: rm -rf app/build/intermediates/incremental"
+                echo "  Or manually: rm -rf app/build/intermediates"
                 echo "  Then retry."
             fi
 
@@ -389,8 +407,13 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
     fi
 else
     for TARGET in "${TARGETS[@]}"; do
+        if [ -z "$TARGET" ]; then
+            echo "Warning: skipping empty target from args"
+            continue
+        fi
         # Resolve alias if it exists, otherwise use the target as the literal device ID
-        DEVICE_ID="${DEVICE_MAP[$TARGET]:-$TARGET}"
+        # Quote the subscript to safely handle empty TARGET (from arg parsing edge cases)
+        DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
         
         echo "Deploying to $TARGET ($DEVICE_ID)..."
         if [ ! -x ./gradlew ]; then
@@ -442,6 +465,7 @@ else
         fi
 
         # Mitigate common Gradle "can't delete incremental tmp" failure
+        # Extended for unreadable outputs in Gradle 8+/9+ (see other errors for cxx etc.)
         ./gradlew --stop >/dev/null 2>&1 || true
 
         # Try to kill any lingering processes holding files in the incremental dirs.
@@ -453,17 +477,28 @@ else
             find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
         fi
 
-        # Make sure the dir is writable before attempting delete (in case of mixed perms).
-        chmod -R u+rwX app/build/intermediates/incremental 2>/dev/null || true
+        # Make readable/writable for current user + group
+        if [ -d app/build ]; then
+            find app/build -exec chmod u+rwX,g+rwX {} + 2>/dev/null || true
+        fi
 
         # Aggressive removal of the entire incremental state
         rm -rf app/build/intermediates/incremental 2>/dev/null || true
+
+        # Also nuke other common unreadable state dirs (cxx logs, res maps, etc.)
+        rm -rf app/build/intermediates/cxx app/build/intermediates/*source_set_path_map \
+               app/build/intermediates/external_file_lib_dex_archives \
+               app/build/intermediates/aar_metadata_check app/build/intermediates/navigation_json \
+               app/build/intermediates/compatible_screen_manifest app/build/intermediates/merged_jni_libs \
+               app/build/intermediates/assets app/build/intermediates/annotation_processor_list \
+               app/build/intermediates/duplicate_classes_check app/build/intermediates/validate_signing_config \
+               app/build/generated 2>/dev/null || true
 
         # If still can't remove, warn loudly
         if [ -d app/build/intermediates/incremental/packageDebug/tmp ]; then
             echo "  WARNING: Still cannot delete some Gradle incremental files (permission denied or locked)."
             echo "  You may need to run as root: sudo chown -R dlang:ai-code app/build"
-            echo "  Or manually: rm -rf app/build/intermediates/incremental"
+            echo "  Or manually: rm -rf app/build/intermediates"
             echo "  Then retry."
         fi
 
