@@ -14,6 +14,12 @@
 static std::set<BufferSetHandle*> validHandles;
 static std::mutex registryMutex;
 
+// Grow-path Mat redirect: point Mats at a live non-zero address while old pixel
+// data is freed. Primary sentinel is &handle->allocatedByteCount (valid, accessible).
+static inline uint8_t* bufferSetSafePointer(BufferSetHandle* handle) {
+    return reinterpret_cast<uint8_t*>(&handle->allocatedByteCount);
+}
+
 extern "C" {
 
 // --- MODERN JNI BINDINGS (BufferSet) ---
@@ -30,7 +36,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeSetup(
     jobject localBuffer = env->NewDirectByteBuffer(data, totalSize);
     if (localBuffer == nullptr) { delete[] data; return 0; }
     jobject globalBuffer = env->NewGlobalRef(localBuffer);
-    auto* handle = new BufferSetHandle(data, (size_t)width, (size_t)height, totalSize, globalBuffer);
+    auto* handle = new BufferSetHandle(data, (size_t)width, (size_t)height, totalSize, totalSize, globalBuffer);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
         validHandles.insert(handle);
@@ -50,6 +56,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRelease(
     }
     if (handle != nullptr) {
         if (handle->globalBuffer != nullptr) env->DeleteGlobalRef(handle->globalBuffer);
+        // dtor delete[] data frees full backing capacity; allocatedByteCount needs no separate cleanup.
         delete handle;
     }
 }
@@ -63,22 +70,42 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
         if (validHandles.find(handle) == validHandles.end()) return;
     }
     size_t frameSize = (size_t)width * (size_t)height;
-    size_t totalSize = frameSize + (frameSize / 2);
-    uint8_t* newData = new uint8_t[totalSize];
-    if (newData == nullptr) return;
-    std::memset(newData, 0, frameSize);
-    std::memset(newData + frameSize, 128, totalSize - frameSize);
-    delete[] handle->data;
-    handle->data = newData;
-    handle->width = width;
-    handle->height = height;
-    handle->actualByteCount = totalSize;
-    *(handle->yMat) = cv::Mat((int)height, (int)width, CV_8UC1, newData, (size_t)width);
-    *(handle->uvMat) = cv::Mat((int)height / 2, (int)width / 2, CV_8UC2, newData + (width * height), (size_t)width);
-    *(handle->nv21Mat) = cv::Mat((int)height * 3 / 2, (int)width, CV_8UC1, newData, (size_t)width);
-    if (handle->globalBuffer != nullptr) env->DeleteGlobalRef(handle->globalBuffer);
-    jobject localBuffer = env->NewDirectByteBuffer(newData, totalSize);
-    handle->globalBuffer = env->NewGlobalRef(localBuffer);
+    size_t needed = frameSize + (frameSize / 2);
+    if (needed <= handle->allocatedByteCount) {
+        uint8_t* data = handle->data;
+        handle->width = width;
+        handle->height = height;
+        handle->actualByteCount = needed;
+        *(handle->yMat) = cv::Mat((int)height, (int)width, CV_8UC1, data, (size_t)width);
+        *(handle->uvMat) = cv::Mat((int)height / 2, (int)width / 2, CV_8UC2, data + (width * height), (size_t)width);
+        *(handle->nv21Mat) = cv::Mat((int)height * 3 / 2, (int)width, CV_8UC1, data, (size_t)width);
+        LOGI("BufferSet resize reused: %dx%d logical=%zu capacity=%zu", width, height, needed, handle->allocatedByteCount);
+    } else {
+        size_t oldAllocated = handle->allocatedByteCount;
+        uint8_t* safe = bufferSetSafePointer(handle);
+        *(handle->yMat) = cv::Mat(1, 1, CV_8UC1, safe, 1);
+        *(handle->uvMat) = cv::Mat(1, 1, CV_8UC2, safe, 2);
+        *(handle->nv21Mat) = cv::Mat(1, 1, CV_8UC1, safe, 1);
+        if (handle->globalBuffer != nullptr) env->DeleteGlobalRef(handle->globalBuffer);
+        handle->globalBuffer = nullptr;
+        delete[] handle->data;
+        handle->data = nullptr;
+        uint8_t* newData = new uint8_t[needed];
+        if (newData == nullptr) return;
+        std::memset(newData, 0, frameSize);
+        std::memset(newData + frameSize, 128, needed - frameSize);
+        handle->data = newData;
+        handle->width = width;
+        handle->height = height;
+        handle->actualByteCount = needed;
+        handle->allocatedByteCount = needed;
+        *(handle->yMat) = cv::Mat((int)height, (int)width, CV_8UC1, newData, (size_t)width);
+        *(handle->uvMat) = cv::Mat((int)height / 2, (int)width / 2, CV_8UC2, newData + (width * height), (size_t)width);
+        *(handle->nv21Mat) = cv::Mat((int)height * 3 / 2, (int)width, CV_8UC1, newData, (size_t)width);
+        jobject localBuffer = env->NewDirectByteBuffer(newData, needed);
+        handle->globalBuffer = env->NewGlobalRef(localBuffer);
+        LOGI("BufferSet resize grew: %dx%d to %zu bytes (was %zu)", width, height, needed, oldAllocated);
+    }
 }
 
 JNIEXPORT void JNICALL
@@ -90,6 +117,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeClear(
         if (validHandles.find(handle) == validHandles.end()) return;
     }
     if (handle != nullptr && handle->data != nullptr) {
+        // Clear only the logical used prefix (Y=0, UV=128); tail capacity stays untouched.
         size_t frameSize = handle->width * handle->height;
         std::memset(handle->data, 0, frameSize);
         std::memset(handle->data + frameSize, 128, handle->actualByteCount - frameSize);

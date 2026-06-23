@@ -1542,6 +1542,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 // If thresholdFactor > 1.0, treat it as an absolute threshold value.
 // Otherwise compute dynamically: max(15.0, meanVal * thresholdFactor).
 static double computeThreshold(const cv::Mat& mat, int L, int T, int R, int B, float thresholdFactor) {
+    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+    LOGI("HIST_DIAG: computeThreshold factor=%.1f (absolute=%s)", thresholdFactor, (thresholdFactor > 1.0f ? "true" : "false"));
     if (thresholdFactor > 1.0f) return (double)thresholdFactor;
     int safeL = std::max(0, std::min(L, mat.cols - 1));
     int safeT = std::max(0, std::min(T, mat.rows - 1));
@@ -1658,6 +1660,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
     jsize len = env->GetArrayLength(rects);
+    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+    LOGI("HIST_DIAG: H entry mat=%dx%d type=%d continuous=%d factor=%.1f rectsLen=%d",
+         mat->cols, mat->rows, mat->type(), mat->isContinuous(), thresholdFactor, (int)len);
     if (len % 4 != 0 || len == 0) return nullptr;
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
@@ -1669,17 +1674,30 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         maxB = std::max(maxB, (int)rData[i+3]);
     }
     env->ReleaseIntArrayElements(rects, rData, JNI_ABORT);
+    LOGI("HIST_DIAG: H parsed bounds minL=%d maxR=%d minT=%d maxB=%d", minL, maxR, minT, maxB);
 
     minL = std::max(0, std::min(minL, mat->cols - 1));
     minT = std::max(0, std::min(minT, mat->rows - 1));
     maxR = std::max(minL + 1, std::min(maxR, mat->cols));
     maxB = std::max(minT + 1, std::min(maxB, mat->rows));
+    LOGI("HIST_DIAG: H clamped bounds minL=%d maxR=%d minT=%d maxB=%d", minL, maxR, minT, maxB);
 
     double contentThreshold = computeThreshold(*mat, minL, minT, maxR, maxB, thresholdFactor);
+    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+    LOGI("HIST_DIAG: H content=%.1f (from factor=%.1f)", contentThreshold, thresholdFactor);
 
     std::map<int,int> horizHist, vertHist;
     for (int y = minT; y < maxB; ++y) {
         const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
+        // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+        if (y == minT) {
+            int nonBinary = 0;
+            for (int xx = minL; xx < std::min(minL+10, maxR); ++xx) {
+                uint8_t v = rowPtr[xx];
+                if (v != 0 && v != 255) nonBinary++;
+            }
+            LOGI("HIST_DIAG: sample y=%d nonBinaryInFirst10=%d (should be 0 for binarized)", y, nonBinary);
+        }
         int run = 0;
         for (int x = minL; x < maxR; ++x) {
             if (rowPtr[x] > contentThreshold) run++;
@@ -1688,6 +1706,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         if (run > 0) horizHist[std::min(255,run)]++;
     }
     for (int x = minL; x < maxR; ++x) {
+        // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+        if (x == minL) {
+            int nonBinary = 0;
+            for (int yy = minT; yy < std::min(minT+10, maxB); ++yy) {
+                uint8_t v = mat->at<uint8_t>(yy, x);
+                if (v != 0 && v != 255) nonBinary++;
+            }
+            LOGI("HIST_DIAG: sample x=%d nonBinaryInFirst10=%d (should be 0 for binarized)", x, nonBinary);
+        }
         int run = 0;
         for (int y = minT; y < maxB; ++y) {
             if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
