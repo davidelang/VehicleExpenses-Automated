@@ -19,8 +19,8 @@ struct BufferSetHandle {
     jobject globalBuffer;
     bool isBorrowed;
 
-    BufferSetHandle(uint8_t* p, size_t w, size_t h, size_t total, jobject buf) 
-        : data(p), width(w), height(h), actualByteCount(total), globalBuffer(buf), isBorrowed(false) {
+    BufferSetHandle(uint8_t* p, size_t w, size_t h, size_t total, size_t allocated, jobject buf) 
+        : data(p), width(w), height(h), actualByteCount(total), allocatedByteCount(allocated), globalBuffer(buf), isBorrowed(false) {
         yMat = new cv::Mat((int)h, (int)w, CV_8UC1, p, w);
         uvMat = new cv::Mat((int)h / 2, (int)w / 2, CV_8UC2, p + (w * h), w);
         nv21Mat = new cv::Mat((int)h * 3 / 2, (int)w, CV_8UC1, p, w);
