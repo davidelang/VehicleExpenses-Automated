@@ -22,7 +22,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/project.config" ]; then
-  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|docker_group|orchestrator_user|planning_user|coder_user)')
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|docker_group|orchestrator_user|planning_user|coder_user|primary_user)')
 fi
 
 CODE_GROUP=${code_group:-@@CODE_GROUP@@}
@@ -31,6 +31,8 @@ DOCKER_GROUP=${docker_group:-docker}
 ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
 PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
 CODER_USER=${coder_user:-@@CODE_GROUP@@r}
+PRIMARY_USER=$(sed -n 's/^primary_user=//p' "$SCRIPT_DIR/project.config" 2>/dev/null | tr -d '\r' | head -1)
+PRIMARY_USER=${PRIMARY_USER:-dlang}
 
 echo "Setting worktree perms (@@CODE_GROUP@@ focused) for group $CODE_GROUP..."
 
@@ -97,6 +99,8 @@ EXECUTABLES=(
   set-worktree-perms
   set-sandbox-perms
   append-to-engineering-log
+  todo-append
+  todo-close
   run-grok
   run-grok-master
   run-grok-planner
@@ -113,6 +117,7 @@ EXECUTABLES=(
   cleanup_pr.sh
   gradlew
   gradlew.bat
+  run-as-primary
 )
 
 for wt in "${WORKTREES[@]}"; do
@@ -122,6 +127,31 @@ for wt in "${WORKTREES[@]}"; do
   else
     chown -R :$CODE_GROUP "$wt" 2>/dev/null || true
   fi
+
+  # Post-chown fixups for critical exceptions (log, TODO, facts, wrapper, build outputs).
+  # These must keep special modes after any broad chown.
+  # log: chattr +a, 660
+  if [ -f "$wt/ENGINEERING_LOG.md" ]; then
+    chattr -a "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    chmod 660 "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+    chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+  fi
+  # TODO and facts: 666 for planner/coder access
+  # TODO.md and project-facts.md: not world-writable. 664 so group (@@SHARED_GROUP@@) can rw, other r.
+  # Additions to TODO are rare (only explicit deferrals). Use todo-append helper when created.
+  chmod 664 "$wt/TODO.md" 2>/dev/null || true
+  chmod 664 "$wt/project-facts.md" 2>/dev/null || true
+  # Wrapper: 755
+  if [ -f "$wt/append-to-engineering-log" ]; then
+    chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
+  fi
+  # Build outputs: re-apply 2770/660 + setgid so builders (@@CODE_GROUP@@r, dlang) can manage
+  for bdir in app/build build .gradle; do
+    if [ -d "$wt/$bdir" ]; then
+      find "$wt/$bdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
+      find "$wt/$bdir" -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
+    fi
+  done
 
   # Modify r/w permissions only, without altering the execute bit.
   # 664 for regular files: @@CODE_GROUP@@ group (coders + human + orchestrator) get rw,
@@ -159,6 +189,25 @@ for wt in "${WORKTREES[@]}"; do
     chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
   fi
 
+  # run-as-primary: generic setuid helper (owned by primary_user, not named after any specific account).
+  # Compile from source if the binary is missing (source is synced via update-rules; binary is never committed).
+  if [ -f "$wt/run-as-primary.c" ] && [ ! -x "$wt/run-as-primary" ]; then
+    echo "  Compiling run-as-primary setuid helper in $wt ..."
+    (cd "$wt" && gcc -O2 -Wall -o run-as-primary run-as-primary.c 2>&1 | cat) || echo "  (compile of run-as-primary failed; will rely on sudo fallback)"
+  fi
+
+  # run-as-primary: generic setuid helper (owned by primary_user, not named after any specific account).
+  # Allows re-exec as the primary developer (for consistent debug keystore) without hardcoding a username.
+  # chmod 4755 + owned by PRIMARY_USER gives euid=primary on exec, for any caller (ai-* or others).
+  if [ -f "$wt/run-as-primary" ]; then
+    if [ -n "$TARGET_OWNER" ]; then
+      chown "$TARGET_OWNER:$CODE_GROUP" "$wt/run-as-primary" 2>/dev/null || true
+    else
+      chown "$PRIMARY_USER:$CODE_GROUP" "$wt/run-as-primary" 2>/dev/null || true
+    fi
+    chmod 4755 "$wt/run-as-primary" 2>/dev/null || true
+  fi
+
   # Make build_app and deploy setgid to the code group. When executed,
   # they will have the @@CODE_GROUP@@ gid, helping ensure created files
   # (build artifacts, etc.) get correct group ownership. Combined with
@@ -170,46 +219,22 @@ for wt in "${WORKTREES[@]}"; do
     fi
   done
 
-  # Unix-level defense for planning user (separate from any Grok hooks):
-  # Use ACLs (available here) to ensure @@PLANNING_USER@@ has read (r--) on source files
-  # and no write, even if temporarily still listed in @@CODE_GROUP@@ group.
-  # Full rw only inside sandbox + the two explicit exceptions.
+  # Pure Unix enforcement for planning user (no ACLs).
+  # @@PLANNING_USER@@ is NOT in @@CODE_GROUP@@. Source dirs are 2775 dlang:@@CODE_GROUP@@ (setgid).
+  # Planner (as 'other') gets o+r-x = read source, no write.
+  # @@CODE_GROUP@@r etc in @@CODE_GROUP@@ get g+rwxs.
+  # We still remove from @@CODE_GROUP@@ group as defense in depth.
   if id "$PLANNING_USER" >/dev/null 2>&1; then
-    # Enforce planner has no write on source: remove from @@CODE_GROUP@@ group (if present)
-    # and set restrictive ACL. Group membership was the main leak allowing writes
-    # despite ACL r-- and 664 other=r.
     gpasswd -d "$PLANNING_USER" "$CODE_GROUP" 2>/dev/null || true
-    echo "  ACL enforcement + group removal: read-only for $PLANNING_USER outside sandbox..."
-    find "$wt" -path '*/.git/*' -prune -o -path '*/@@SANDBOX_PATH@@/*' -prune -o \
-         -path '*/build/*' -prune -o -path '*/app/build/*' -prune -o \
-      \( -type f ! -name project-facts.md ! -name TODO.md ! -name ENGINEERING_LOG.md ! -name append-to-engineering-log \
-         -exec setfacl -m "u:$PLANNING_USER:r--" {} + \) 2>/dev/null || true
-    find "$wt" -path '*/.git/*' -prune -o -path '*/@@SANDBOX_PATH@@/*' -prune -o \
-         -path '*/build/*' -prune -o -path '*/app/build/*' -prune -o -type d \
-      -exec setfacl -m "u:$PLANNING_USER:r-x" {} + 2>/dev/null || true
-    for sp in project-facts.md TODO.md ENGINEERING_LOG.md; do
-      [ -f "$wt/$sp" ] && setfacl -m "u:$PLANNING_USER:rw-" "$wt/$sp" 2>/dev/null || true
+    echo "  Group removal for $PLANNING_USER (not in @@CODE_GROUP@@; relies on Unix other=r-x for source read-only)"
+  fi
+
+  # Ensure .git tree is writable by ai users (including planner via @@SHARED_GROUP@@) so git can add objects.
+  if [ -d "$wt/.git" ]; then
+    for aiuser in "$PLANNING_USER" "$CODER_USER" "$ORCHESTRATOR_USER"; do
+      # These will be in @@SHARED_GROUP@@; .git 2770 allows
+      find "$wt/.git" -type d -exec chmod g+rwxs {} + 2>/dev/null || true
     done
-    # Ensure mask allows group write on the log (the planner ACL may have lowered it)
-    [ -f "$wt/ENGINEERING_LOG.md" ] && setfacl -m m::rw- "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
-
-    # Grant full rwx (with default ACLs) inside the sandbox for planner.
-    # This ensures write access to plans/, etc. even if group ends up @@CODE_GROUP@@.
-    if [ -d "$wt/@@SANDBOX_PATH@@" ]; then
-      find "$wt/@@SANDBOX_PATH@@" -type f -exec setfacl -m "u:$PLANNING_USER:rw-" {} + 2>/dev/null || true
-      find "$wt/@@SANDBOX_PATH@@" -type d -exec setfacl -m "u:$PLANNING_USER:rwx" {} + 2>/dev/null || true
-      find "$wt/@@SANDBOX_PATH@@" -type d -exec setfacl -m "d:u:$PLANNING_USER:rwx" {} + 2>/dev/null || true
-    fi
-
-    # Ensure .git tree is writable by ai users (including planner) so git can add objects, update refs etc.
-    # .git was previously getting only r-x from planner lockdown, causing "insufficient permission for adding an object".
-    if [ -d "$wt/.git" ]; then
-      for aiuser in "$PLANNING_USER" "$CODER_USER" "$ORCHESTRATOR_USER"; do
-        find "$wt/.git" -type d -exec setfacl -m "u:$aiuser:rwx" {} + 2>/dev/null || true
-        find "$wt/.git" -type f -exec setfacl -m "u:$aiuser:rw-" {} + 2>/dev/null || true
-        find "$wt/.git" -type d -exec setfacl -m "d:u:$aiuser:rwx" {} + 2>/dev/null || true
-      done
-    fi
   fi
 
   # Preserve/ensure execute on critical management/launcher scripts.
@@ -278,11 +303,13 @@ for wt in "${WORKTREES[@]}"; do
     chattr -a "$wt/append-to-engineering-log" 2>/dev/null || true
 
     chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
-    chmod -s "$wt/append-to-engineering-log" 2>/dev/null || true
+    chmod g+s "$wt/append-to-engineering-log" 2>/dev/null || true  # setgid so egid @@SHARED_GROUP@@ for append even if caller not in group
+    chmod -s "$wt/append-to-engineering-log" 2>/dev/null || true  # but keep g+s
 
     # Clear previous ACLs (e.g. from earlier runs that set rw- without x)
     setfacl -b "$wt/append-to-engineering-log" 2>/dev/null || true
     chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
+    chmod g+s "$wt/append-to-engineering-log" 2>/dev/null || true
 
     setfacl -m "u:$PLANNING_USER:r-x" "$wt/append-to-engineering-log" 2>/dev/null || true
     # Maintainer (dlang) needs to run the script (x) + be able to edit it (rw)

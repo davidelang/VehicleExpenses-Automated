@@ -3,10 +3,12 @@
 # Controlled wrapper for appending ONLY to ENGINEERING_LOG.md.
 # Agents MUST use this (never direct edits or >>).
 # chattr +a on the log prevents modification of existing lines even if someone
-# has write permission.
+# has write permission. Git reset/checkout on the log will fail for non-root.
 #
-# Direct append works for dlang + ai-* users thanks to ACLs + chattr +a + group.
-# No sudo or password prompts.
+# Owned by dlang:ai-shared 660 + chattr +a. The script should be setgid ai-shared
+# (chmod g+s) so that when executed by ai-* users, the process gets the group
+# for the append.
+# Direct append works; no sudo/password prompts in normal operation.
 #
 # This file is infrastructure. After edits, commit in main tree then
 # run `sudo ./update-rules.sh` (agents idle) to sync + commit into worktrees.

@@ -207,9 +207,19 @@ fi
 # --no-alt-screen for consistency with run-grok.
 # We explicitly pass --model for the planner. Any additional --model on the command
 # line (in "$@") will override this.
+# Support -- to pass raw params to the inner grok.
+EXTRA_ARGS=()
+FOUND_DD=0
+for arg in "$@"; do
+  if [ "$FOUND_DD" -eq 1 ]; then
+    EXTRA_ARGS+=("$arg")
+  elif [ "$arg" = "--" ]; then
+    FOUND_DD=1
+  fi
+done
 exec sudo -u "$PLANNING_USER" "$GROK_BIN" \
     "$PLANNING_PROMPT" \
     --model "$PLANNER_MODEL" \
     $TODO_GATE_FLAGS \
     --no-alt-screen \
-    "$@"
+    "${EXTRA_ARGS[@]}"
