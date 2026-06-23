@@ -14,7 +14,7 @@ struct BufferSetHandle {
     cv::Mat* nv21Mat;
     size_t width;
     size_t height;
-    size_t actualByteCount;
+    size_t actualByteCount; // logical used bytes (width*height*1.5), not backing capacity
     size_t allocatedByteCount; // capacity of the backing `data` allocation (grows only)
     jobject globalBuffer;
     bool isBorrowed;
