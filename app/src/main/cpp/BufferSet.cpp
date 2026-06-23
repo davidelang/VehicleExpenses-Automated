@@ -14,6 +14,12 @@
 static std::set<BufferSetHandle*> validHandles;
 static std::mutex registryMutex;
 
+// Grow-path Mat redirect: point Mats at a live non-zero address while old pixel
+// data is freed. Primary sentinel is &handle->allocatedByteCount (valid, accessible).
+static inline uint8_t* bufferSetSafePointer(BufferSetHandle* handle) {
+    return reinterpret_cast<uint8_t*>(&handle->allocatedByteCount);
+}
+
 extern "C" {
 
 // --- MODERN JNI BINDINGS (BufferSet) ---
