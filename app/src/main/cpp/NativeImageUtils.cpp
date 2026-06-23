@@ -10,6 +10,8 @@
 #include <map>
 #include <cmath>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
 #include "paddle/paddle_api.h"
 #include "BufferSetHandle.h"
 #include <android/log.h>
@@ -1585,6 +1587,130 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 // odoBuffer.s.mat as the scratchpad.
 // ============================================================
 
+// --- Direct rect run-walking helpers (H path; replaces coverage mask) ---
+
+static bool rectsOverlap(const cv::Rect& a, const cv::Rect& b) {
+    return a.x < b.x + b.width && b.x < a.x + a.width &&
+           a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+static std::vector<cv::Rect> subtractRect(const cv::Rect& a, const cv::Rect& b) {
+    cv::Rect inter = a & b;
+    if (inter.width <= 0 || inter.height <= 0) return {a};
+    std::vector<cv::Rect> out;
+    if (a.y < inter.y)
+        out.emplace_back(a.x, a.y, a.width, inter.y - a.y);
+    if (inter.y + inter.height < a.y + a.height)
+        out.emplace_back(a.x, inter.y + inter.height, a.width, a.y + a.height - (inter.y + inter.height));
+    if (a.x < inter.x)
+        out.emplace_back(a.x, inter.y, inter.x - a.x, inter.height);
+    if (inter.x + inter.width < a.x + a.width)
+        out.emplace_back(inter.x + inter.width, inter.y, a.x + a.width - (inter.x + inter.width), inter.height);
+    return out;
+}
+
+// De-overlap with wide bias: on overlap the wider rect keeps the shared region.
+static std::vector<cv::Rect> decomposeRectsForDirectRuns(const std::vector<cv::Rect>& input) {
+    if (input.size() <= 1) return input;
+    std::vector<cv::Rect> work = input;
+    bool changed = true;
+    int guard = 64;
+    while (changed && guard-- > 0) {
+        changed = false;
+        for (size_t i = 0; i < work.size(); ++i) {
+            for (size_t j = i + 1; j < work.size(); ++j) {
+                if (!rectsOverlap(work[i], work[j])) continue;
+                size_t wideIdx = (work[i].width >= work[j].width) ? i : j;
+                size_t narrowIdx = (wideIdx == i) ? j : i;
+                auto pieces = subtractRect(work[narrowIdx], work[wideIdx]);
+                work.erase(work.begin() + narrowIdx);
+                for (const auto& p : pieces) {
+                    if (p.width > 0 && p.height > 0) work.push_back(p);
+                }
+                changed = true;
+                break;
+            }
+            if (changed) break;
+        }
+    }
+    LOGI("ALIGN_HIST_NATIVE: decompose in=%zu out=%zu (wide bias)", input.size(), work.size());
+    return work;
+}
+
+static bool isRowSegmentAllBlack(const uint8_t* rowPtr, int x0, int x1) {
+    if (x0 >= x1) return true;
+    int x = x0;
+    while (x < x1 && ((uintptr_t)(rowPtr + x) & 7)) {
+        if (rowPtr[x]) return false;
+        ++x;
+    }
+    const uint8_t* p = rowPtr + x;
+    const int end = x1;
+    while (x + 8 <= end) {
+        uint64_t word = 0;
+        std::memcpy(&word, p, 8);
+        if (word != 0) return false;
+        p += 8;
+        x += 8;
+    }
+    while (x < end) {
+        if (rowPtr[x]) return false;
+        ++x;
+    }
+    return true;
+}
+
+static bool isColSegmentAllBlack(const cv::Mat* mat, int x, int y0, int y1) {
+    for (int y = y0; y < y1; ++y) {
+        if (mat->ptr<uint8_t>(y)[x] != 0) return false;
+    }
+    return true;
+}
+
+static std::vector<std::pair<int,int>> mergedHorizIntervals(int y, const std::vector<cv::Rect>& rects, int maxCol) {
+    std::vector<std::pair<int,int>> iv;
+    for (const auto& r : rects) {
+        if (y < r.y || y >= r.y + r.height) continue;
+        int L = std::max(0, r.x);
+        int R = std::min(maxCol, r.x + r.width);
+        if (R > L) iv.emplace_back(L, R);
+    }
+    if (iv.empty()) return iv;
+    std::sort(iv.begin(), iv.end());
+    std::vector<std::pair<int,int>> merged;
+    merged.push_back(iv[0]);
+    for (size_t k = 1; k < iv.size(); ++k) {
+        auto& last = merged.back();
+        if (iv[k].first <= last.second)
+            last.second = std::max(last.second, iv[k].second);
+        else
+            merged.push_back(iv[k]);
+    }
+    return merged;
+}
+
+static std::vector<std::pair<int,int>> mergedVertIntervals(int x, const std::vector<cv::Rect>& rects, int maxRow) {
+    std::vector<std::pair<int,int>> iv;
+    for (const auto& r : rects) {
+        if (x < r.x || x >= r.x + r.width) continue;
+        int T = std::max(0, r.y);
+        int B = std::min(maxRow, r.y + r.height);
+        if (B > T) iv.emplace_back(T, B);
+    }
+    if (iv.empty()) return iv;
+    std::sort(iv.begin(), iv.end());
+    std::vector<std::pair<int,int>> merged;
+    merged.push_back(iv[0]);
+    for (size_t k = 1; k < iv.size(); ++k) {
+        auto& last = merged.back();
+        if (iv[k].first <= last.second)
+            last.second = std::max(last.second, iv[k].second);
+        else
+            merged.push_back(iv[k]);
+    }
+    return merged;
+}
+
 // Helper: compute contentThreshold from matPtr ROI using thresholdFactor.
 // If thresholdFactor > 1.0, treat it as an absolute threshold value.
 // Otherwise compute dynamically: max(15.0, meanVal * thresholdFactor).
@@ -1742,7 +1868,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return JNI_FALSE;
     if (mat->cols <= 0 || mat->rows <= 0) return JNI_FALSE;
     LOGI("ALIGN_HIST_NATIVE: entry mat=%dx%d type=%d", mat->cols, mat->rows, mat->type());
-    logMatHeader("hist_input_crop", mat);
+    logMatHeader("hist_input_mat", mat);
 
     jsize len = env->GetArrayLength(rects);
     if (len % 4 != 0 || len == 0) return JNI_FALSE;
@@ -1782,56 +1908,83 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         LOGI("MAT_HEADER: hist_rect[%zu] L=%d T=%d R=%d B=%d", i, rectL[i], rectT[i], rectR[i], rectB[i]);
     }
 
-    const int numRects = (int)rectL.size();
-    // OR coverage mask (no double-count overlaps; only pixels inside >=1 red)
-    logMatHeader("before_zeros", mat);
-    LOGI("ALIGN_HIST_NATIVE: beforeZeros coverage size=%dx%d", mat->cols, mat->rows);
-    cv::Mat coverage = cv::Mat::zeros(mat->size(), CV_8UC1);
-    logMatHeader("after_zeros_coverage", &coverage);
-    for (int i = 0; i < numRects; ++i) {
-        int L = std::max(0, rectL[i]), T = std::max(0, rectT[i]);
-        int R = std::min(mat->cols, rectR[i]), B = std::min(mat->rows, rectB[i]);
-        const int w = R - L, h = B - T;
-        if (w > 0 && h > 0) {
-            cv::rectangle(coverage, cv::Rect(L, T, w, h), cv::Scalar(255), -1);
-        }
+    std::vector<cv::Rect> inputRects;
+    inputRects.reserve(rectL.size());
+    for (size_t i = 0; i < rectL.size(); ++i) {
+        inputRects.emplace_back(rectL[i], rectT[i], rectR[i] - rectL[i], rectB[i] - rectT[i]);
     }
-
-    // Per-row max width / per-col max height of reds covering that position (for discard rule)
-    std::vector<int> maxWRow(mat->rows, 0), maxHCol(mat->cols, 0);
-    for (int i = 0; i < numRects; ++i) {
-        const int w = rectR[i] - rectL[i];
-        const int h = rectB[i] - rectT[i];
-        if (w <= 0 || h <= 0) continue;
-        const int y0 = std::max(0, rectT[i]), y1 = std::min(mat->rows, rectB[i]);
-        const int x0 = std::max(0, rectL[i]), x1 = std::min(mat->cols, rectR[i]);
-        for (int y = y0; y < y1; ++y) maxWRow[y] = std::max(maxWRow[y], w);
-        for (int x = x0; x < x1; ++x) maxHCol[x] = std::max(maxHCol[x], h);
-    }
+    std::vector<cv::Rect> decomposed = decomposeRectsForDirectRuns(inputRects);
+    LOGI("ALIGN_HIST_NATIVE: decomposed %zu rects into %zu for direct runs", inputRects.size(), decomposed.size());
 
     double contentThreshold = computeThreshold(*mat, minL, minT, maxR, maxB, thresholdFactor);
 
     std::map<int,int> horizHist, vertHist;
+    int allBlackSkipsH = 0, allBlackSkipsV = 0;
+    int exactDiscardsH = 0, exactDiscardsV = 0;
+
+    // Horizontal: per-row merged intervals from decomposed rects, word prefilter, exact-span discard
     for (int y = minT; y < maxB; ++y) {
         const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
-        const uint8_t* covPtr = coverage.ptr<uint8_t>(y);
-        const int md = maxWRow[y]; // biggest red width this horiz run fits in
-        int run = 0;
-        for (int x = minL; x < maxR; ++x) {
-            if (rowPtr[x] > contentThreshold && covPtr[x] != 0) run++;
-            else { if (run > 0) { if (run < md) horizHist[run]++; } run = 0; } // uncapped run lengths
+        auto intervals = mergedHorizIntervals(y, decomposed, mat->cols);
+        for (const auto& iv : intervals) {
+            int L = std::max(iv.first, minL);
+            int R = std::min(iv.second, maxR);
+            if (R <= L) continue;
+            const int spanW = R - L;
+            if (isRowSegmentAllBlack(rowPtr, L, R)) {
+                allBlackSkipsH++;
+                continue;
+            }
+            int run = 0;
+            for (int x = L; x < R; ++x) {
+                if (rowPtr[x] > contentThreshold) run++;
+                else {
+                    if (run > 0) {
+                        if (run != spanW) horizHist[run]++;
+                        else exactDiscardsH++;
+                        run = 0;
+                    }
+                }
+            }
+            if (run > 0) {
+                if (run != spanW) horizHist[run]++;
+                else exactDiscardsH++;
+            }
         }
-        if (run > 0) { if (run < md) horizHist[run]++; }
     }
+
+    // Vertical: per-column merged intervals, byte prefilter, exact-span discard
     for (int x = minL; x < maxR; ++x) {
-        const int md = maxHCol[x]; // biggest red height this vert run fits in
-        int run = 0;
-        for (int y = minT; y < maxB; ++y) {
-            if (mat->at<uint8_t>(y, x) > contentThreshold && coverage.at<uint8_t>(y, x) != 0) run++;
-            else { if (run > 0) { if (run < md) vertHist[run]++; } run = 0; }
+        auto intervals = mergedVertIntervals(x, decomposed, mat->rows);
+        for (const auto& iv : intervals) {
+            int T = std::max(iv.first, minT);
+            int B = std::min(iv.second, maxB);
+            if (B <= T) continue;
+            const int spanH = B - T;
+            if (isColSegmentAllBlack(mat, x, T, B)) {
+                allBlackSkipsV++;
+                continue;
+            }
+            int run = 0;
+            for (int y = T; y < B; ++y) {
+                if (mat->ptr<uint8_t>(y)[x] > contentThreshold) run++;
+                else {
+                    if (run > 0) {
+                        if (run != spanH) vertHist[run]++;
+                        else exactDiscardsV++;
+                        run = 0;
+                    }
+                }
+            }
+            if (run > 0) {
+                if (run != spanH) vertHist[run]++;
+                else exactDiscardsV++;
+            }
         }
-        if (run > 0) { if (run < md) vertHist[run]++; }
     }
+
+    LOGI("ALIGN_HIST_NATIVE: direct walk allblack_skip H=%d V=%d exact_discard H=%d V=%d",
+         allBlackSkipsH, allBlackSkipsV, exactDiscardsH, exactDiscardsV);
 
     // Height-bounded peak search decoupled caps
     int H = maxB - minT;
