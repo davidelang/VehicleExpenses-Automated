@@ -101,6 +101,19 @@ if [ "$EUID" -eq 0 ]; then
   fi
 fi
 
+# Re-exec as PRIMARY_USER if not already running as them. This ensures all build/deploy
+# artifacts are consistently owned by the primary developer (dlang), preventing ownership
+# drift to ai-orchestrator/root and the resulting permission thrashing on cxx/logs/etc.
+CURRENT_USER=$(id -un)
+if [ "$CURRENT_USER" != "$PRIMARY_USER" ]; then
+  echo "Re-executing as $PRIMARY_USER for consistent ownership of build artifacts..."
+  if [ -x ./run-as-primary ]; then
+    exec ./run-as-primary "$0" "$@"
+  else
+    exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
+  fi
+fi
+
 # Ensure group-writable creation for build artifacts and Gradle caches (660/770)
 umask 007
 
@@ -121,9 +134,9 @@ if [ -z "${GROUPS_ACTIVATED:-}" ]; then
       qargs=$(printf '%q ' "$@"); qargs=${qargs% }
     fi
     if [ -z "$qargs" ]; then
-      ccmd="GROUPS_ACTIVATED=1 exec $q0"
+      ccmd="umask 007; GROUPS_ACTIVATED=1 exec $q0"
     else
-      ccmd="GROUPS_ACTIVATED=1 exec $q0 $qargs"
+      ccmd="umask 007; GROUPS_ACTIVATED=1 exec $q0 $qargs"
     fi
     exec sg ai-shared -c "$ccmd"
   fi
@@ -138,11 +151,14 @@ fi
 fix_build_dir_perms() {
   if [ -d app/build ]; then
     echo "  Fixing build dir perms (traversable + group writable)..."
+    # chmod parents first so we can traverse and fix deep cxx etc.
     chmod -R u+rX,g+rX app/build 2>/dev/null || true
     chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-    find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
-    # Make sure dirs are setgid for future creations
+    # chown foreign-owned (root or ai-orchestrator) back to primary:code group
+    find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
+    # setgid on dirs for proper inheritance on new files (with umask 007 -> 660/770)
     find app/build -type d -exec chmod 2770 {} + 2>/dev/null || true
+    find app/build -type f -exec chmod 660 {} + 2>/dev/null || true
   fi
 }
 fix_build_dir_perms
@@ -386,7 +402,7 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 # Full rw for user+group
                 chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
                 # Fix any root-owned files
-                find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
+                find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
             fi
 
             # Aggressive removal of state that Gradle tracks and may have bad perms on
@@ -398,7 +414,7 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             # If still problems, suggest manual sudo
             if [ -d app/build/intermediates ]; then
                 echo "  WARNING: Could not fully remove app/build/intermediates."
-                echo "  You may need: sudo chown -R dlang:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
+                echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
             fi
 
             (umask 007; ./gradlew "${GRADLE_ARGS[@]}" installDebug)
@@ -495,7 +511,7 @@ else
             # Full rw for user+group
             chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
             # Fix any root-owned files
-            find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
+            find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
         fi
 
         # Aggressive removal of state that Gradle tracks and may have bad perms on
@@ -507,7 +523,7 @@ else
         # If still problems, suggest manual sudo
         if [ -d app/build/intermediates ]; then
             echo "  WARNING: Could not fully remove app/build/intermediates."
-            echo "  You may need: sudo chown -R dlang:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
+            echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
         fi
 
         (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew "${GRADLE_ARGS[@]}" installDebug)

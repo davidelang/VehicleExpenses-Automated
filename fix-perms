@@ -282,6 +282,16 @@ fix_worktree() {
     find "$wt/.gradle" -type d -exec chmod 2770 {} + 2>/dev/null || true
     find "$wt/.gradle" -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
   fi
+
+  # app/build (gradle, cxx/CMake logs, etc.) - aggressively fix to prevent permission thrashing
+  if [ -d "$wt/app/build" ]; then
+    if $VERBOSE; then echo "    Fixing app/build for $PRIMARY_USER:$CODE_GROUP"; fi
+    chown -R "$PRIMARY_USER:$CODE_GROUP" "$wt/app/build" 2>/dev/null || true
+    find "$wt/app/build" -type d -exec chmod 2770 {} + 2>/dev/null || true
+    find "$wt/app/build" -type f -exec chmod 660 {} + 2>/dev/null || true
+    # Also clean bad cxx state if present
+    rm -rf "$wt/app/build/intermediates/cxx" 2>/dev/null || true
+  fi
 }
 
 fix_sandbox() {
