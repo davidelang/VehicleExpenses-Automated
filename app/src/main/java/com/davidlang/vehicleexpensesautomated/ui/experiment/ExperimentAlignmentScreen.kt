@@ -1073,7 +1073,9 @@ private suspend fun runBinTrialsPaddle(
             val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             val b64 = if (pipelineKey != "set_j" && hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
             odoBuffer.crop[redBoxCropId].release()
-            Pair(hRes, b64)
+            // Snapshot meta per red (long-lived hist arrays are reused across calls).
+            val snap = if (hRes != null) Pair(hRes.first, hRes.second.copyOf()) else null
+            Pair(snap, b64)
         }
 
         var rb = tRawB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: tRawB.first()
@@ -1656,6 +1658,7 @@ private fun buildHtmlRowDynamic(
 private fun generateRunLengthHistogramB64(histStr: String?): String {
     if (histStr.isNullOrEmpty()) return ""
     val counts = histStr.split(",").map { it.toIntOrNull() ?: 0 }
+    // Viz uses first 256 bins; run-length native may use up to 8192.
     if (counts.size < 256) return ""
 
     val maxVal = counts.maxOrNull()?.coerceAtLeast(1) ?: 1
@@ -1681,14 +1684,17 @@ private fun generateRunLengthHistogramB64(histStr: String?): String {
 }
 
 private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
-    if (hHist == null || vHist == null || hHist.size < 256 || vHist.size < 256) return ""
+    if (hHist == null || vHist == null || hHist.isEmpty() || vHist.isEmpty()) return ""
+    // Plot uses low bins 0..255 only; native H may supply 8192-bin long-lived arrays.
+    val plotLimit = minOf(256, hHist.size, vHist.size)
+    if (plotLimit < 256) return ""
 
     val binSize = 2
     val numBins = (256 + binSize - 1) / binSize // 128 bins
 
     val bH = IntArray(numBins)
     val bV = IntArray(numBins)
-    for (i in 0..255) {
+    for (i in 0 until plotLimit) {
         bH[i / binSize] += hHist[i]
         bV[i / binSize] += vHist[i]
     }
@@ -1786,6 +1792,8 @@ private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
 
 private fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
+    // Brightness path: OpenCV calcHist (64-bin FloatArray). Run-length stroke-width hist uses
+    // NativeImageUtils.longLivedRunHistH/V (8192 bins). longLivedBrightness reserved for future native uint8 brightness.
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
     val bins = FloatArray(64); hist.get(0, 0, bins)

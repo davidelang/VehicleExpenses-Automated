@@ -2702,7 +2702,8 @@ private fun normalizePixelRect(r: android.graphics.Rect): android.graphics.Rect 
 private fun validBinPeakRects(rects: List<android.graphics.Rect>): List<android.graphics.Rect> =
     rects.map(::normalizePixelRect).filter { it.width() > 0 && it.height() > 0 }
 
-/** vSW/hSW from run-length histogram on red areas of binarized image (native calculateHistogramWithThresholdH). */
+/** vSW/hSW from run-length histogram on red areas of binarized image (native calculateHistogramWithThresholdH).
+ *  Uses NativeImageUtils long-lived 8192-bin buffers; only meta (vSW/hSW) is consumed here. */
 private fun binPeakComputeStrokeWidths(
     binMat: org.opencv.core.Mat,
     redRects: List<android.graphics.Rect>

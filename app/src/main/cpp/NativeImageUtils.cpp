@@ -1607,19 +1607,52 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFilte
     filterComponents(*mat, vSW, hSW, (int)mode);
 }
 
+// Fill caller-provided run-length histogram output buffers in-place (avoids per-call NewIntArray).
+static bool fillRunHistOutputs(JNIEnv* env, jintArray outH, jintArray outV, jintArray outMeta,
+                               int histBinCount, const std::map<int,int>& horizHist, const std::map<int,int>& vertHist,
+                               int vSWv, int hSWv, int contentThreshold) {
+    if (!outH || !outV || !outMeta) return false;
+    const jsize outLen = env->GetArrayLength(outH);
+    const jsize outVLen = env->GetArrayLength(outV);
+    if (outLen < histBinCount || outVLen < histBinCount || env->GetArrayLength(outMeta) < 4) return false;
+    jint* hPtr = env->GetIntArrayElements(outH, nullptr);
+    jint* vPtr = env->GetIntArrayElements(outV, nullptr);
+    if (!hPtr || !vPtr) {
+        if (hPtr) env->ReleaseIntArrayElements(outH, hPtr, JNI_ABORT);
+        if (vPtr) env->ReleaseIntArrayElements(outV, vPtr, JNI_ABORT);
+        return false;
+    }
+    std::fill(hPtr, hPtr + outLen, 0);
+    std::fill(vPtr, vPtr + outVLen, 0);
+    for (auto const& p : horizHist) { if (p.first >= 0 && p.first < outLen) hPtr[p.first] = p.second; }
+    for (auto const& p : vertHist)  { if (p.first >= 0 && p.first < outVLen) vPtr[p.first] = p.second; }
+    env->ReleaseIntArrayElements(outH, hPtr, 0);
+    env->ReleaseIntArrayElements(outV, vPtr, 0);
+    jint* mPtr = env->GetIntArrayElements(outMeta, nullptr);
+    if (!mPtr) return false;
+    mPtr[0] = (jint)vSWv;
+    mPtr[1] = (jint)hSWv;
+    mPtr[2] = 0;
+    mPtr[3] = (jint)contentThreshold;
+    env->ReleaseIntArrayElements(outMeta, mPtr, 0);
+    return true;
+}
+
 // 2. nativeCalculateHistogramWithThreshold
 // Computes horizontal/vertical run-length histograms and vSW/hSW peaks
 // on odoBuffer.p.mat using the provided thresholdFactor.
-// Returns jobjectArray[3]: hArr(256), vArr(256), metaArr(4=[vSW,hSW,0,threshold])
-extern "C" JNIEXPORT jobjectArray JNICALL
+// Fills caller-provided outH/outV (histBinCount bins, typically 256 legacy) and outMeta[4].
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistogramWithThreshold(
-    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor) {
+    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor,
+    jintArray outH, jintArray outV, jintArray outMeta, jint histBinCount) {
 
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
-    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return JNI_FALSE;
+    if (histBinCount <= 0) return JNI_FALSE;
 
     jsize len = env->GetArrayLength(rects);
-    if (len % 4 != 0 || len == 0) return nullptr;
+    if (len % 4 != 0 || len == 0) return JNI_FALSE;
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
     int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
@@ -1667,24 +1700,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     int vSWv = getPeakCapped(horizHist, std::max(15, (int)((maxR - minL) * 0.35)));
     int hSWv = getPeakCapped(vertHist,  std::max(15, (int)((maxB - minT) * 0.35)));
 
-    jintArray hArr = env->NewIntArray(256);
-    jintArray vArr = env->NewIntArray(256);
-    jint hData[256] = {0}, vData[256] = {0};
-    for (auto const& p : horizHist) { if (p.first >= 0 && p.first < 256) hData[p.first] = p.second; }
-    for (auto const& p : vertHist)  { if (p.first >= 0 && p.first < 256) vData[p.first] = p.second; }
-    env->SetIntArrayRegion(hArr, 0, 256, hData);
-    env->SetIntArrayRegion(vArr, 0, 256, vData);
-
-    jintArray metaArr = env->NewIntArray(4);
-    jint m[4] = { (jint)vSWv, (jint)hSWv, 0, (jint)contentThreshold };
-    env->SetIntArrayRegion(metaArr, 0, 4, m);
-
-    jclass objClass2 = env->FindClass("java/lang/Object");
-    jobjectArray resultArr2 = env->NewObjectArray(3, objClass2, nullptr);
-    env->SetObjectArrayElement(resultArr2, 0, hArr);
-    env->SetObjectArrayElement(resultArr2, 1, vArr);
-    env->SetObjectArrayElement(resultArr2, 2, metaArr);
-    return resultArr2;
+    return fillRunHistOutputs(env, outH, outV, outMeta, (int)histBinCount, horizHist, vertHist,
+                              vSWv, hSWv, (int)contentThreshold) ? JNI_TRUE : JNI_FALSE;
 }
 
 
@@ -1692,17 +1709,18 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 
 // 3b. Decoupled H-variants for Set H with stroke-width aware logic
 
-extern "C" JNIEXPORT jobjectArray JNICALL
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistogramWithThresholdH(
-    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor) {
+    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor,
+    jintArray outH, jintArray outV, jintArray outMeta) {
 
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
-    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
-    if (mat->cols <= 0 || mat->rows <= 0) return nullptr;
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return JNI_FALSE;
+    if (mat->cols <= 0 || mat->rows <= 0) return JNI_FALSE;
     LOGI("ALIGN_HIST_NATIVE: entry mat=%dx%d type=%d", mat->cols, mat->rows, mat->type());
 
     jsize len = env->GetArrayLength(rects);
-    if (len % 4 != 0 || len == 0) return nullptr;
+    if (len % 4 != 0 || len == 0) return JNI_FALSE;
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
     std::vector<int> rectL, rectT, rectR, rectB;
@@ -1719,7 +1737,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         rectB.push_back(B);
     }
     env->ReleaseIntArrayElements(rects, rData, JNI_ABORT);
-    if (rectL.empty()) return nullptr;
+    if (rectL.empty()) return JNI_FALSE;
     LOGI("ALIGN_HIST_NATIVE: validRects=%zu rawLen=%d", rectL.size(), (int)len);
 
     int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
@@ -1801,25 +1819,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     int vSWv = getPeakCappedH(horizHist, minStroke, maxStrokeV);
     int hSWv = getPeakCappedH(vertHist,  minStroke, maxStrokeH);
 
+    // HIST_SZ = 8192 bins * 4 bytes = 32 kB per array. Sufficient for run lengths on images
+    // up to ~4G pixels in theory; practical images are far smaller (24-bit would suffice).
     const int HIST_SZ = 8192;
-    jintArray hArr = env->NewIntArray(HIST_SZ);
-    jintArray vArr = env->NewIntArray(HIST_SZ);
-    std::vector<jint> hData(HIST_SZ, 0), vData(HIST_SZ, 0);
-    for (auto const& p : horizHist) { if (p.first >= 0 && p.first < HIST_SZ) hData[p.first] = p.second; }
-    for (auto const& p : vertHist)  { if (p.first >= 0 && p.first < HIST_SZ) vData[p.first] = p.second; }
-    env->SetIntArrayRegion(hArr, 0, HIST_SZ, hData.data());
-    env->SetIntArrayRegion(vArr, 0, HIST_SZ, vData.data());
-
-    jintArray metaArr = env->NewIntArray(4);
-    jint m[4] = { (jint)vSWv, (jint)hSWv, 0, (jint)contentThreshold };
-    env->SetIntArrayRegion(metaArr, 0, 4, m);
-
-    jclass objClass2 = env->FindClass("java/lang/Object");
-    jobjectArray resultArr2 = env->NewObjectArray(3, objClass2, nullptr);
-    env->SetObjectArrayElement(resultArr2, 0, hArr);
-    env->SetObjectArrayElement(resultArr2, 1, vArr);
-    env->SetObjectArrayElement(resultArr2, 2, metaArr);
-    return resultArr2;
+    return fillRunHistOutputs(env, outH, outV, outMeta, HIST_SZ, horizHist, vertHist,
+                              vSWv, hSWv, (int)contentThreshold) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
