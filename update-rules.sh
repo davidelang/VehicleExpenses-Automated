@@ -116,6 +116,7 @@ FILES=(
     # worktrees have committed versions and don't revert on git reset).
     # Opt-in bootstrap helper (stampable + full layout)
     "enable-full-orchestration.sh"
+    "setup_agent.sh"
     # Controlled wrapper to safely append only to ENGINEERING_LOG.md.
     # Enforces format and works with chattr +a / restricted perms to stop agents
     # from editing history.
@@ -146,6 +147,7 @@ STAMP_FILES=(
     "fix-this-worktree"
     "fix-sudoers"
     "enable-full-orchestration.sh"
+    "setup_agent.sh"
 )
 
 # 4. Push updates to all other worktrees
