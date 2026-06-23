@@ -258,6 +258,8 @@ private suspend fun runExperiment(
 
                 if (targetW > 0 && targetH > 0) {
                     vehicleBufferSets[ref.vehicle.id] = BufferSet(targetW, targetH)
+                    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+                    Log.i("HIST_DIAG", "vehicleBufferSets created: id=${ref.vehicle.id} target=${targetW}x${targetH} src=${srcW}x${srcH} refBmp=${ref.bmp.width}x${ref.bmp.height}")
 
                     listOf(NativePaddleEngine.bufferSetA, NativePaddleEngine.bufferSetB).forEach { set ->
                         // DELIBERATE: We use the Vehicle ID as the explicit BufferSet crop ID here.
