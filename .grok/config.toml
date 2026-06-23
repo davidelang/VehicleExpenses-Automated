@@ -150,10 +150,4 @@ rules = [
 
 # Project .grok/hooks/ (PreToolUse) provide additional hard enforcement for plan-mode restrictions
 # (path traversal deny outside dev-ai-interaction/, sandbox-only writes in plan, etc.).
-# See .grok/hooks/plan-mode-hard-stops.js for the implementation.
-#
-# IMPORTANT: The hook is the authoritative hard stop for plan mode.
-# The blanket allow below is only intended for *after* exit_plan_mode during approved execution.
-# Planners (especially via run-grok-planner) must never be able to search_replace/write
-# outside dev-ai-interaction/ + the few explicitly allowed state files.
-# If a planner can edit app/ or other source, the hook extraction or isSandboxPath logic needs fixing.
+# See .grok/hooks/ for the actual hook implementation(s).

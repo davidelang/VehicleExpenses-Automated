@@ -71,6 +71,17 @@ fi
 DEFAULT_MASTER_MODEL="grok-composer-2.5-fast"
 MASTER_MODEL="${GROK_MASTER_MODEL:-$DEFAULT_MASTER_MODEL}"
 
+# Support -- to pass raw params to the inner grok (after the prompt construction).
+EXTRA_ARGS=()
+FOUND_DD=0
+for arg in "$@"; do
+  if [ "$FOUND_DD" -eq 1 ]; then
+    EXTRA_ARGS+=("$arg")
+  elif [ "$arg" = "--" ]; then
+    FOUND_DD=1
+  fi
+done
+
 # Comprehensive Master Orchestrator prompt.
 # This encodes the full scheme. The master should treat the written plan
 # documents as the persistent contract and use sub-agents or dedicated
@@ -298,4 +309,4 @@ exec sudo -u "$ORCHESTRATOR_USER" "$GROK_BIN" \
     --model "$MASTER_MODEL" \
     $TODO_GATE_FLAGS \
     --no-alt-screen \
-    "$@"
+    "${EXTRA_ARGS[@]}"

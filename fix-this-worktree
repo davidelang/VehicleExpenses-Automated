@@ -17,9 +17,6 @@
 #
 #     cd ~/git/.../int8-paddle-processing.wt
 #     sudo /home/dlang/git/VehicleExpenses-automated/fix-this-worktree
-#
-# After any edit to this file, commit in main + run update-rules.sh
-# (when agents idle) to keep worktree copies in sync and committed.
 
 
 set -euo pipefail
