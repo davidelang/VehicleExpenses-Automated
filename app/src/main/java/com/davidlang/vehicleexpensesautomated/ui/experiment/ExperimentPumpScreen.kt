@@ -64,6 +64,7 @@ private fun getPhotoFragmentFile(reportDir: File, ts: String, idx: Int): File {
     return File(fragDir, "photo_${ts}_${String.format(Locale.US, "%04d", idx)}.jsonfrag")
 }
 
+// Legacy batch-combine helper; main pump path streams per-row JSON directly and deletes frags immediately.
 private fun combinePhotoFragmentsIntoJson(jsonFile: File, header: String, fragments: List<File>, footer: String) {
     jsonFile.outputStream().buffered().use { out ->
         out.write(header.toByteArray(Charsets.UTF_8))
@@ -276,10 +277,15 @@ private suspend fun runPumpExperiment(
 
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
     val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n"
-    val photoFragments = mutableListOf<File>()
+    val jsonFooter = "\n  ]\n}"
+    var firstPhoto = true
+    val jsonWriter = jsonFile.bufferedWriter()
+    jsonWriter.write(jsonHeader)
+    logHeapState(context, "after-json-header-write")
+    Log.i("PUMP_JSON", "wrote header early, total_photos=$total")
 
     var partCount = 1
-    val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; JSON via per-photo fragment staging)
+    val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; JSON streamed to main file, frags deleted per row)
     var currentSize = 0
     val footer = "</table></body></html>"
     val experimentRecSet320x48 = BufferSet(320, 48)
@@ -2476,20 +2482,36 @@ private suspend fun runPumpExperiment(
                 diagnostic = meta.diagnostic
             )
 
-            if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
-            currentFile.appendText(rowHtml); currentSize += rowHtml.length
+            Log.d("PUMP_HTML", "row=${index + 1} rowHtml.len=${rowHtml.length} currentSize=$currentSize (part=$partCount)")
+            if (currentSize + rowHtml.length > maxSizeBytes) {
+                currentFile.appendText(footer)
+                Log.i("PUMP_HTML", "starting new HTML part $partCount at row ${index + 1}")
+                currentFile = pStartNewFile()
+                currentSize = 0
+            }
+            currentFile.appendText(rowHtml)
+            currentSize += rowHtml.length
 
             val photoJson = pSerializePhotoResultToJson(
                 index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root, originalHistogram
             )
 
             logHeapState(context, "before-photo-json-serialize")
+            Log.i("PUMP_FRAG", "row=${index + 1} photoJson keys=${photoJson.length()}, writing frag...")
             val fragFile = getPhotoFragmentFile(reportDir, timestamp, index + 1)
             fragFile.bufferedWriter().use { writer ->
                 appendJsonObject(writer, photoJson, 2, 0)
             }
-            photoFragments.add(fragFile)
-            logHeapState(context, "after-photo-fragment-write")
+            val fragSize = fragFile.length()
+            Log.i("PUMP_FRAG", "row=${index + 1} frag size=$fragSize bytes")
+
+            if (!firstPhoto) jsonWriter.write(",\n") else firstPhoto = false
+            appendJsonObject(jsonWriter, photoJson, 2, 0)
+            jsonWriter.flush()
+
+            fragFile.delete()
+            Log.i("PUMP_FRAG", "streamed row ${index + 1} to main JSON, deleted frag (size was $fragSize)")
+            logHeapState(context, "after-photo-json-stream")
 
             val summaryText = flows.map { f ->
                 val br = root.getBranch(f)
@@ -2504,15 +2526,16 @@ private suspend fun runPumpExperiment(
             delay(50)
 
         } catch (e: Exception) {
-            Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
+            Log.e(TAG, "FATAL: Experiment failed for row ${index + 1} (${file.name}):\n" + Log.getStackTraceString(e))
+            Log.w("PUMP_FRAG", "partial run - JSON may be incomplete (no final footer) at row ${index + 1}")
         }
     }
     currentFile.appendText(footer)
 
-    logHeapState(context, "before-json-combine")
-    combinePhotoFragmentsIntoJson(jsonFile, jsonHeader, photoFragments, "\n  ]\n}")
-    photoFragments.forEach { it.delete() }
-    logHeapState(context, "after-json-combine")
+    jsonWriter.write(jsonFooter)
+    jsonWriter.close()
+    logHeapState(context, "after-json-close")
+    Log.i("PUMP_JSON", "wrote JSON footer and closed main JSON file")
 
     experimentRecSet320x48.release()
     experimentRecSet1024x48.release()

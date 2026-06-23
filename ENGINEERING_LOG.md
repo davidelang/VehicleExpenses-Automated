@@ -473,3 +473,13 @@ The diag helps see the parameters, but the header issue causes the failure.
 - pExtractZipToPhotos (ExperimentPumpScreen.kt): zip entries use basename only so images land flat in pump_photos (listFiles is non-recursive).
 - deploy-golden-pump-photos.sh: --make-zips builds pump_photos_first10.zip (10 lexical non-thumbs) and pump_photos_all_nonthumb.zip (150); --push-zips pushes to device Download/ for Extract Downloaded ZIP button.
 - Verified: unzip -l shows flat basenames; --push-zips verify passed on device.
+
+## 2026-06-23 - clear jsonfrag per row (stream + immediate delete)
+
+- Executed plan clear-jsonfrag-per-row-20260623-plan.md.
+- runPumpExperiment: write JSON header early via persistent BufferedWriter on pump_results_*.json.
+- Per row: optional frag write (debug), stream photoJson to main JSON with comma separators, immediate fragFile.delete().
+- Removed photoFragments list and late combinePhotoFragmentsIntoJson batch path.
+- combinePhotoFragmentsIntoJson kept as legacy helper (unused by main path).
+- Added PUMP_JSON, PUMP_FRAG, PUMP_HTML diagnostic logs (header, frag sizes, HTML row lengths, part switches).
+- Partial-run catch logs warn JSON may lack footer.
