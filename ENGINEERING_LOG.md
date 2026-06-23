@@ -432,3 +432,10 @@ The diag helps see the parameters, but the header issue causes the failure.
 - BufferSet.physicalResize reverted to 4f4abf16: nativeResize + _buffer refresh only (removed refreshViews; Mat wrappers no longer recreated on resize).
 - ExperimentAlignmentScreen: restored late conditional bufferSetB.resize before iterative stages (pre-38a00c88 hygiene block).
 - Native alloc, default 4080 init size, pump, and other post-4f4abf16 work untouched.
+
+## 2026-06-23 - long-lived 32k histogram buffer optimization
+
+- Executed plan long-lived-32k-histogram-buffer-optimization-plan.md.
+- Added NativeImageUtils longLivedRunHistH/V (8192), longLivedHistMeta, longLivedBrightness with 32kB/4G-pixel design notes.
+- Native calculateHistogramWithThreshold(H) fill caller-provided arrays in-place (fillRunHistOutputs helper).
+- Pump binPeak and alignment bin-trials share wrapper path; alignment caches meta copy per red for long-lived reuse safety.

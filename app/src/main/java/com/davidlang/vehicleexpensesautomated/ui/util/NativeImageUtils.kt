@@ -14,6 +14,23 @@ object NativeImageUtils {
         System.loadLibrary("native_ocr")
     }
 
+    // Long-lived reusable buffers for run-length histogram output (H and legacy paths).
+    // 8192 bins * 4 bytes = 32 kB per array. Two arrays (h + v) for horiz/vert run counts.
+    // NOTE: 8k entries sufficient for run lengths on images up to ~4G pixels in theory.
+    // In practice images are << 4k×4k so 24 bits would suffice, but 32 kB is not large
+    // enough to justify the complication of using a 24-bit packed format.
+    // Same storage can back brightness histograms using uint8 interpretation if a
+    // native brightness path is added (or for zero-copy views). Brightness currently
+    // uses OpenCV calcHist (small 64/256-bin FloatArrays in getHistStats / generateGatedHistogramB64).
+    const val HIST_BIN_COUNT = 8192
+
+    val longLivedRunHistH = IntArray(HIST_BIN_COUNT)
+    val longLivedRunHistV = IntArray(HIST_BIN_COUNT)
+    val longLivedHistMeta = IntArray(4)
+    // Optional brightness reuse (uint8); native fast path may use this later instead of calcHist.
+    val longLivedBrightness = ByteArray(HIST_BIN_COUNT)
+    @Volatile var runHistReuseCount: Long = 0
+
     /**
      * Fast JNI linear copy from ARGB Bitmap to any 1-channel Mat of matching size.
      * Extracts the Red channel (luminance) directly into native memory.
@@ -302,9 +319,13 @@ object NativeImageUtils {
         if (rects.isEmpty()) return null
         val flatRects = IntArray(rects.size * 4)
         rects.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
-        val res = nativeCalculateHistogramWithThreshold(mat.nativeObj, flatRects, thresholdFactor)
-        if (res != null && res.size == 3) return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
-        return null
+        if (!nativeCalculateHistogramWithThreshold(
+                mat.nativeObj, flatRects, thresholdFactor,
+                longLivedRunHistH, longLivedRunHistV, longLivedHistMeta, HIST_BIN_COUNT
+            )) return null
+        runHistReuseCount++
+        android.util.Log.d("HIST_BUF", "long-lived legacy hist path used (count=$runHistReuseCount)")
+        return Pair(Pair(longLivedRunHistH, longLivedRunHistV), longLivedHistMeta)
     }
 
     /** Decoupled H-variants for Set H with stroke-width aware logic */
@@ -314,9 +335,13 @@ object NativeImageUtils {
         if (valid.isEmpty()) return null
         val flatRects = IntArray(valid.size * 4)
         valid.forEachIndexed { i, r -> flatRects[i*4]=r.left; flatRects[i*4+1]=r.top; flatRects[i*4+2]=r.right; flatRects[i*4+3]=r.bottom }
-        val res = nativeCalculateHistogramWithThresholdH(mat.nativeObj, flatRects, thresholdFactor)
-        if (res != null && res.size == 3) return Pair(Pair(res[0] as IntArray, res[1] as IntArray), res[2] as IntArray)
-        return null
+        if (!nativeCalculateHistogramWithThresholdH(
+                mat.nativeObj, flatRects, thresholdFactor,
+                longLivedRunHistH, longLivedRunHistV, longLivedHistMeta
+            )) return null
+        runHistReuseCount++
+        android.util.Log.d("HIST_BUF", "long-lived H hist path used (count=$runHistReuseCount)")
+        return Pair(Pair(longLivedRunHistH, longLivedRunHistV), longLivedHistMeta)
     }
 
     fun expandBoundsH(mat: Mat, rect: android.graphics.Rect, thresholdFactor: Float, vSW: Float, hSW: Float): android.graphics.Rect {
@@ -390,9 +415,15 @@ object NativeImageUtils {
 
     private external fun nativeConnectSegmentsH(matPtr: Long, vSW: Float, hSW: Float): Int
     private external fun nativeFilterComponents(matPtr: Long, vSW: Float, hSW: Float, mode: Int)
-    private external fun nativeCalculateHistogramWithThreshold(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
+    private external fun nativeCalculateHistogramWithThreshold(
+        matPtr: Long, rects: IntArray, thresholdFactor: Float,
+        outH: IntArray, outV: IntArray, outMeta: IntArray, histBinCount: Int
+    ): Boolean
 
-    private external fun nativeCalculateHistogramWithThresholdH(matPtr: Long, rects: IntArray, thresholdFactor: Float): Array<Any>?
+    private external fun nativeCalculateHistogramWithThresholdH(
+        matPtr: Long, rects: IntArray, thresholdFactor: Float,
+        outH: IntArray, outV: IntArray, outMeta: IntArray
+    ): Boolean
     private external fun nativeExpandBoundsH(matPtr: Long, l: Int, t: Int, r: Int, b: Int, thresholdFactor: Float, vSW: Float, hSW: Float): IntArray?
     private external fun nativeFindAllComponentsH(matPtr: Long, vSW: Float, hSW: Float): IntArray?
     private external fun nativeGetAllComponentStatsH(matPtr: Long): IntArray?
