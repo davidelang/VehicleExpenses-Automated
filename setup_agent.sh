@@ -29,7 +29,7 @@ ORCHESTRATOR_USER=${orchestrator_user:-ai-orchestrator}
 # Enforce correct creation umask for setgid inheritance
 umask 007
 
-# 0. Safety Check: Don't name a branch agent-N
+# 0. Safety Check: Don't name a branch agent-N (reserved for auto-generated dirs)
 if [[ "$BRANCH_NAME" =~ ^agent-[0-9]+$ ]]; then
     echo "Error: Branch name cannot be '$BRANCH_NAME' (reserved for directory names)."
     echo "Use a descriptive name like 'feature-x' instead."
@@ -43,21 +43,33 @@ while [ -d "agent-$N" ]; do
 done
 AGENT_ID="agent-$N"
 
+# Safety: refuse if branch name would conflict with an existing directory (other than the agent dir we chose)
+if [ -d "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "$AGENT_ID" ]; then
+    echo "Error: A directory named '$BRANCH_NAME' already exists. Choose a different branch name to avoid conflict."
+    exit 1
+fi
+if [ -e "${BRANCH_NAME}.wt" ] && [ ! -L "${BRANCH_NAME}.wt" ]; then
+    echo "Error: '${BRANCH_NAME}.wt' exists but is not a symlink. Clean it up first or choose different name."
+    exit 1
+fi
+
 # 2. Create Worktree & Branch
 echo "Creating worktree for $AGENT_ID on branch $BRANCH_NAME..."
-# If the branch doesn't exist, create it with -b
+# Temporarily disable the manage-configs filter (which runs bash ./filter-apply-config)
+# to prevent "No such file or directory" errors during initial checkout into a fresh
+# worktree dir (the filter scripts aren't present in the target yet).
+# The files in the commit are already expanded; setup_agent and post-checkout handle the rest.
 if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
-    git worktree add "$AGENT_ID" "$BRANCH_NAME"
+    git -c filter.manage-configs.clean=cat -c filter.manage-configs.smudge=cat worktree add "$AGENT_ID" "$BRANCH_NAME"
 else
     # Create from current master
-    git worktree add "$AGENT_ID" -b "$BRANCH_NAME" master
-    # Create a lightweight tag for git describe to anchor on
-    if git rev-parse "${BRANCH_NAME}-start" >/dev/null 2>&1; then
-        echo "Versioning tag ${BRANCH_NAME}-start already exists. Skipping creation."
-    else
-        echo "Creating lightweight tag ${BRANCH_NAME}-start for versioning..."
-        git tag "${BRANCH_NAME}-start" "$BRANCH_NAME"
-    fi
+    git -c filter.manage-configs.clean=cat -c filter.manage-configs.smudge=cat worktree add "$AGENT_ID" -b "$BRANCH_NAME" master
+    # Create (or force-update) a lightweight tag for git describe to anchor on.
+    # If a stale tag exists from a previously removed worktree/branch with the same name,
+    # we force it to the new branch's start point. This is the correct behavior when
+    # there is no current branch/worktree using that name.
+    echo "Creating/updating lightweight tag ${BRANCH_NAME}-start for versioning..."
+    git tag -f "${BRANCH_NAME}-start" "$BRANCH_NAME"
 fi
 
 if [ $? -ne 0 ]; then
@@ -67,7 +79,14 @@ fi
 
 # 3. Create convenience symlink for the branch
 if [ -e "${BRANCH_NAME}.wt" ]; then
-    echo "Warning: File/link '${BRANCH_NAME}.wt' already exists. Skipping symlink creation."
+    if [ -L "${BRANCH_NAME}.wt" ] && [ "$(readlink "${BRANCH_NAME}.wt")" = "$AGENT_ID" ]; then
+        echo "Symlink '${BRANCH_NAME}.wt' already points correctly. Skipping."
+    else
+        echo "Warning: '${BRANCH_NAME}.wt' exists but is not the correct symlink. Removing and recreating."
+        rm -f "${BRANCH_NAME}.wt"
+        ln -s "$AGENT_ID" "${BRANCH_NAME}.wt"
+        echo "Created symlink: ${BRANCH_NAME}.wt -> $AGENT_ID"
+    fi
 else
     ln -s "$AGENT_ID" "${BRANCH_NAME}.wt"
     echo "Created symlink: ${BRANCH_NAME}.wt -> $AGENT_ID"
