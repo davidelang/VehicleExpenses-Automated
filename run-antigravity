@@ -1,0 +1,40 @@
+#!/bin/bash
+# run-antigravity
+# Launch Antigravity CLI in the current agent worktree as the ai-coder user.
+# Sandbox is provided via the ./dev-ai-interaction symlink (created by setup_agent or enable-full-orchestration.sh).
+# Full orchestration layout expected.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+
+# Load permission config if present (populated by smudge filter / setup)
+if [ -f project.config ]; then
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(coder_user|antigravity_bin)')
+fi
+CODER_USER=${coder_user:-ai-coder}
+
+ANTIGRAVITY_BIN="${ANTIGRAVITY_BIN:-${antigravity_bin:-$HOME/git/antigravity/bin/agy}}"
+
+echo "Launching Antigravity agent in $(pwd)..."
+echo "Antigravity binary: $ANTIGRAVITY_BIN"
+echo "Sandbox path: $SANDBOX_DIR"
+echo "Running as: $CODER_USER (via sudo -u)"
+
+# Tip similar to other launchers
+echo "Tip: For easier multi-line plans and prompts, focus the input and press Ctrl+M (or type /multiline or /ml) to enable multiline input mode (Enter inserts newline; Shift+Enter or Alt+Enter sends)."
+
+# Support -- to pass raw params to antigravity.
+EXTRA_ARGS=()
+FOUND_DD=0
+for arg in "$@"; do
+  if [ "$FOUND_DD" -eq 1 ]; then
+    EXTRA_ARGS+=("$arg")
+  elif [ "$arg" = "--" ]; then
+    FOUND_DD=1
+  fi
+done
+
+exec sudo -u "$CODER_USER" "$ANTIGRAVITY_BIN" \
+    -i "You are in a multi-workspace environment. The primary workspace is the agent worktree (e.g., agent-N or master), and the second workspace is the sandbox (dev-ai-interaction). Read the file ./new_agent_prompt in the agent worktree root directory and follow its instructions." \
+    --add-dir "$SANDBOX_DIR" \
+    "${EXTRA_ARGS[@]}"
