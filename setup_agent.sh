@@ -93,18 +93,15 @@ else
 fi
 
 # 4. Setup Agent Workspace Folders
-echo "Setting up workspace metadata folders..."
 cd "$AGENT_ID"
 mkdir -p .gemini/policies
 mkdir -p .gemini/plans
 touch .gemini/plans/.gitkeep
 
 # 5. Setup Sandbox (Symlink)
-echo "Setting up sandbox symlink..."
 ln -s ../dev-ai-interaction dev-ai-interaction
 
 # 5b. Copy local.properties for Android builds
-echo "Setting up local.properties..."
 if [ -f "../master/local.properties" ]; then
     cp ../master/local.properties local.properties
 elif [ -f "../local.properties" ]; then
@@ -112,7 +109,6 @@ elif [ -f "../local.properties" ]; then
 fi
 
 # 6. Initialize AGENT_CONTEXT.md
-echo "Initializing AGENT_CONTEXT.md..."
 if [ -f "../AGENT_CONTEXT.md.template" ]; then
     cp "../AGENT_CONTEXT.md.template" AGENT_CONTEXT.md
     sed -i "s/agent-X/$AGENT_ID/" AGENT_CONTEXT.md
@@ -135,14 +131,12 @@ fi
 #      like ENGINEERING_LOG.md ownership + chattr +a, and wrapper)
 #    This ensures the new agent can immediately use append-to-engineering-log,
 #    run-as-primary re-exec, correct setgid, etc. without extra steps.
-echo "Applying full permissions to make $AGENT_ID fully working..."
-
 AGENT_ABS=$(pwd)
 PARENT_ROOT=".."
 
 # Copy latest authoritative copies of key permission/infra files from orchestration root
 # (ensures even if the branch tip was slightly behind, the tree is current)
-for f in set-worktree-perms fix-engineering-log-perms fix-sudoers fix-this-worktree append-to-engineering-log run-as-primary.c; do
+for f in append-to-engineering-log run-as-primary.c; do
   if [ -f "$PARENT_ROOT/$f" ]; then
     cp -p "$PARENT_ROOT/$f" "$AGENT_ABS/$f" 2>/dev/null || true
   fi
@@ -150,56 +144,29 @@ done
 
 # Build / ensure the setuid helper (run-as-primary) is present and correct
 if [ -f "$AGENT_ABS/run-as-primary.c" ]; then
-  echo "  Building run-as-primary setuid helper..."
-  (cd "$AGENT_ABS" && gcc -O2 -Wall -o run-as-primary run-as-primary.c && chmod 4755 run-as-primary && chown "$PRIMARY_USER:$CODE_GROUP" run-as-primary) 2>/dev/null || echo "    (Warning: run-as-primary build/chmod may need gcc or manual fix)"
+  (cd "$AGENT_ABS" && gcc -O2 -Wall -o run-as-primary run-as-primary.c && chmod 4755 run-as-primary && chown "$PRIMARY_USER:$CODE_GROUP" run-as-primary) 2>/dev/null || echo "    Warning: run-as-primary build/chmod may need gcc or manual fix"
 fi
 
 # Create log file with minimal header if missing (fixer will harden it)
 if [ ! -f "$AGENT_ABS/ENGINEERING_LOG.md" ]; then
   echo "## $(date +%Y-%m-%d) - Initial log for $AGENT_ID" > "$AGENT_ABS/ENGINEERING_LOG.md"
-fi
+fi 2>/dev/null || true
 
 cd "$PARENT_ROOT"   # return to orchestration root 
 
-# Apply permissions with *minimal* escalation.
-# Run the general worktree fixer as current user (dlang can do setgid dirs, most chowns/chmods).
-# Only use sudo for the bits that truly require root: chattr +/-a and chown root: for the log+wrapper.
-echo "  Applying worktree permissions (as current user where possible)..."
-./set-worktree-perms "$AGENT_ID" || echo "    (partial; root bits below if needed)"
+# Use unified fix-perms for the new tree (pass --skip-sudoers so sudoers rules
+# are only (re)installed at true initial setup-project time).
+# Silent on success (no output if it works).
+sudo ./fix-perms --skip-sudoers "$AGENT_ABS" 2>/dev/null || true
 
-echo "  Escalating *only* for root-required bits (chattr, root ownership on log/wrapper)..."
-sudo bash -c '
-  set -euo pipefail
-  AGENT="'"$AGENT_ABS"'"
-  SHARED="'"$SHARED_GROUP"'"
-  # Log
-  chattr -a "$AGENT/ENGINEERING_LOG.md" 2>/dev/null || true
-  chown root:"$SHARED" "$AGENT/ENGINEERING_LOG.md"
-  chmod 660 "$AGENT/ENGINEERING_LOG.md"
-  chattr +a "$AGENT/ENGINEERING_LOG.md"
-  # Wrapper
-  chattr -a "$AGENT/append-to-engineering-log" 2>/dev/null || true
-  chown root:"$SHARED" "$AGENT/append-to-engineering-log"
-  chmod 2755 "$AGENT/append-to-engineering-log"
-  # Optional: ensure no ACLs on these two (pure Unix)
-  setfacl -b "$AGENT/ENGINEERING_LOG.md" "$AGENT/append-to-engineering-log" 2>/dev/null || true
-' || echo "    (Note: may need interactive sudo for chattr/root chown; run 'sudo ./fix-engineering-log-perms' if needed)"
-
-# Re-ensure the setuid binary
+# Re-lock setuid binary silently (in case not covered).
 if [ -f "$AGENT_ABS/run-as-primary" ]; then
   chown "$PRIMARY_USER:$CODE_GROUP" "$AGENT_ABS/run-as-primary" 2>/dev/null || true
   chmod 4755 "$AGENT_ABS/run-as-primary" 2>/dev/null || true
 fi
 
-# Run the log/wrapper canonical fixer with sudo only if it will do system things (sudoers).
-# We do the file bits above with minimal sudo; the fixer also updates sudoers.
-echo "  Running fix-engineering-log-perms for sudoers + canonical (sudo only as needed)..."
-sudo ./fix-engineering-log-perms 2>/dev/null || echo "    (Note: 'sudo ./fix-engineering-log-perms' may be needed for full sudoers update)"
-
 cd "$AGENT_ABS" || true   # restore for the optional launcher exec below
-
-echo "Setup complete for $AGENT_ID (fully permissioned)."
-echo "Agent can begin work via: cd $AGENT_ID (or cd ${BRANCH_NAME}.wt)"
+# success is silent (Unix convention)
 
 # 7. Optional: Start Agent session immediately if in an interactive terminal
 if [ -t 0 ]; then

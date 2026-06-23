@@ -152,7 +152,7 @@ else
 
         # Lightweight local repair for .gradle (the most common source of "permission hell"
         # after an agent build). This often removes the need to run the full sudo
-        # set-worktree-perms globally.
+        # fix-perms globally.
         if [ -d .gradle ]; then
           echo "Quick local .gradle repair (2770/660 + setgid)..."
           find .gradle -type d -exec chmod 2770 {} + 2>/dev/null || true

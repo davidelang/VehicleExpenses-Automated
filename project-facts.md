@@ -16,7 +16,7 @@ Read in full early on startup/new cycle to avoid discovery searches.
 - `project-facts.md` (this file)
 - `TODO.md`
 - Launchers: `run-grok`, `run-grok-planner`, `run-grok-master`
-- Scripts: `update-rules.sh` (run here to sync to worktrees), `build_app`, `get-builds-tag.sh`, `set-worktree-perms`, `set-sandbox-perms`, `setup-project`, `setup_agent.sh`, `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`, `sync_infrastructure.sh`
+- Scripts: `update-rules.sh` (run here to sync to worktrees), `build_app`, `get-builds-tag.sh`, `fix-perms`, `setup-project`, `setup_agent.sh`, `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`, `sync_infrastructure.sh`
 - `.grok/config.toml` + `.grok/hooks/`
 - `project.config.example`
 

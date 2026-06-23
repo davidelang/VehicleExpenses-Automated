@@ -40,7 +40,7 @@ fi
 # orchestration-infra syncs.
 #
 # You may update infra files such as:
-#   update-rules.sh, set-worktree-perms, set-sandbox-perms, launchers,
+#   update-rules.sh, fix-perms, launchers,
 #   fix-*.sh (permission fixers), mandates, .grok/, filters, setup-project, etc.
 # (i.e. things installed at setup-agent or setup-project time, or maintained
 # as part of the development environment).
@@ -104,15 +104,10 @@ FILES=(
     "setup-project"
     "filter-apply-config"
     "filter-clean-config"
-    "set-worktree-perms"
-    "set-sandbox-perms"
     "fix-perms"
     "project.config.example"
     ".gitattributes"
-    "fix-engineering-log-perms"
-    "fix-sudoers"
-    "fix-this-worktree"
-    # Permission fixers (run when agents idle; they fix ACLs/chattr/sudoers
+    # Permission bootstrap (unified in fix-perms)
     # for logs, wrappers, sandbox. Must be synced via this script so that
     # worktrees have committed versions and don't revert on git reset).
     # Opt-in bootstrap helper (stampable + full layout)
@@ -144,14 +139,9 @@ STAMP_FILES=(
     "setup-project"
     "filter-apply-config"
     "filter-clean-config"
-    "set-worktree-perms"
-    "set-sandbox-perms"
     "fix-perms"
     "project.config.example"
     ".gitattributes"
-    "fix-engineering-log-perms"
-    "fix-this-worktree"
-    "fix-sudoers"
     "enable-full-orchestration.sh"
     "setup_agent.sh"
     "remove_worktree.sh"
@@ -250,9 +240,9 @@ for WT in $WORKTREES; do
     # and run the perms fixer on this WT (as current or via sudo if needed).
     # This makes files "end up with the right permissions" directly from update-rules.
     chmod +x "$WT"/*.sh "$WT"/deploy "$WT"/build_app 2>/dev/null || true
-    if [ -x "$WT/set-worktree-perms" ]; then
-        echo "  Ensuring perms on $WT via set-worktree-perms..."
-        "$WT/set-worktree-perms" "$WT" 2>/dev/null || sudo "$WT/set-worktree-perms" "$WT" 2>/dev/null || true
+    if [ -x "$WT/fix-perms" ]; then
+        echo "  Ensuring perms on $WT via fix-perms..."
+        "$WT/fix-perms" "$WT" 2>/dev/null || sudo "$WT/fix-perms" "$WT" 2>/dev/null || true
     fi
 done
 
