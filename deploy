@@ -443,7 +443,7 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
             fi
 
-            (umask 007; ./gradlew "${GRADLE_ARGS[@]}" installDebug)
+            (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
             if [ $? -ne 0 ]; then
                 echo "Deployment failed."
                 OVERALL_SUCCESS=false
@@ -552,7 +552,7 @@ else
             echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
         fi
 
-        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew "${GRADLE_ARGS[@]}" installDebug)
+        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
         
         if [ $? -ne 0 ]; then
             echo "Deployment to $TARGET ($DEVICE_ID) failed."
