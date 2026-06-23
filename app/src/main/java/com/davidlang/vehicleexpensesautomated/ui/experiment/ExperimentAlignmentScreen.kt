@@ -1076,6 +1076,8 @@ private suspend fun runBinTrialsPaddle(
         val hSW_red = rbCached?.first?.second?.get(1)?.toFloat() ?: -1f
 
         if (vSW_red <= 0f || hSW_red <= 0f) {
+            // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+            Log.i("HIST_DIAG", "ERR rawPeakFail vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} vSW_red=$vSW_red hSW_red=$hSW_red factor=$thresholdFactor bb=${rb.boundingBox}")
             val histsHtml = StringBuilder()
             tRawB.forEachIndexed { rIdx, b ->
                 val cached = cachedRawRedBoxHists.getOrNull(rIdx)
@@ -1126,6 +1128,8 @@ private suspend fun runBinTrialsPaddle(
         }
 
         if (pipelineKey != "set_j" && (vSW <= 0f || hSW <= 0f)) {
+            // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+            Log.i("HIST_DIAG", "ERR cleanedPeakFail vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} vSW=$vSW hSW=$hSW factor=$thresholdFactor bb=${rb.boundingBox}")
             val histsHtml = StringBuilder()
 
             // 1. Raw Red Box Histograms
