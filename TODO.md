@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] TEMP: add HIST_DIAG logging for alignment histogram crash — executing plan at dev-ai-interaction/plans/add-temporary-histogram-and-buffer-diagnostics-for-alignment-crash-20260623-plan.md
+- [x] TEMP: add HIST_DIAG logging for alignment histogram crash — executed plan at dev-ai-interaction/plans/add-temporary-histogram-and-buffer-diagnostics-for-alignment-crash-20260623-plan.md
 
 - [x] BufferSet: reuse pixel allocation on resize (no spike grow, drop old first) — executed plan at dev-ai-interaction/plans/bufferset-reuse-pixel-allocation-on-resize-no-spike-grow-drop-old-first-20260623-plan.md
 
