@@ -1010,9 +1010,12 @@ private suspend fun runBinTrialsPaddle(
         val threshold = binIdx * 4.0
 
         // Step 1: Pull fresh raw grayscale crop from masterBuffer to odoBuffer.p
+        // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+        Log.i("HIST_DIAG", "trial start vehicle=$vehicleId odoPre=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} srcCrop=${masterBuffer.c[vehicleId].mat.cols()}x${masterBuffer.c[vehicleId].mat.rows()}")
         odoBuffer.p.clear()
         val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
         org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
+        Log.i("HIST_DIAG", "after resize+clear vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
 
         // Step 2: Binarize into .s, then flip so .p = binary, .s = original grayscale (scratchpad).
         odoBuffer.s.clear()
