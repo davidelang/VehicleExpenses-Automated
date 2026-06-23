@@ -1117,6 +1117,8 @@ private suspend fun runBinTrialsPaddle(
             rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
             var redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
             var cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+            Log.i("HIST_DIAG", "postFilter vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor")
             var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
             hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
