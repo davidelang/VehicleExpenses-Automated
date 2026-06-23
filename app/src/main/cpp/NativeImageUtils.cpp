@@ -1683,6 +1683,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     LOGI("HIST_DIAG: H clamped bounds minL=%d maxR=%d minT=%d maxB=%d", minL, maxR, minT, maxB);
 
     double contentThreshold = computeThreshold(*mat, minL, minT, maxR, maxB, thresholdFactor);
+    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+    LOGI("HIST_DIAG: H content=%.1f (from factor=%.1f)", contentThreshold, thresholdFactor);
 
     std::map<int,int> horizHist, vertHist;
     for (int y = minT; y < maxB; ++y) {
