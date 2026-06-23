@@ -288,3 +288,123 @@ Also verified drop non-ICRS is in BufferSet as per spec.
 - After perms fix: ./build_app succeeded; tag fix-pump-experiment-start-715-gd60f258d (d60f258d).
 - Instrumentation: ALIGN_HIST_DIAG, ALIGN_ODO_POP, ALIGN_HIST_NATIVE in tree.
 - Deploy/log capture phases 4-5 are user-only per AGENT_MANDATES (agents never deploy). User must ./deploy and repro alignment crash, then grep logcat for ALIGN_* tags.
+
+## 2026-06-22 - Crashes on both alignment and pump experiments
+
+Fetched logs: crash-both-experiments-20260622-165533.log , tombstone_09,10,11
+
+Analysis from logs with diag:
+
+The crash is in the H hist (ALIGN_HIST_NATIVE) when doing coverage = zeros on mat=4080x3060 (full photo size), with 5 rects, union minL=582 maxR=2786 etc.
+
+The error at beforeZeros line.
+
+The mat passed is the binary for the peak in binpeak path (or similar in alignment).
+
+The size printed positive, but zeros fails with s>=0 .
+
+The root is the mat header in the cast is such that size() has negative dim (stale from initial BufferSet 4000x3072 vs photo 4080x3060, the s scratch used for binary in binpeak not having refreshed header after resize).
+
+The pump binpeak uses the scratch .s for the per peak binary (binarizeRange to b.mat = s, then hist on b.mat).
+
+The alignment uses odoBuffer.p (populated from the ICRS crop on global, after global resize).
+
+The ICRS crops on globals are used (createCrop float), as per spec.
+
+The drop non-ICRS is longstanding.
+
+The recent binpeak changes exposed/used the scratch after resize for the H call.
+
+Both experiments hit the same because they share the H and BufferSet.
+
+The diag shows the call with positive, but the internal create fails due to the header.
+
+
+
+## 2026-06-22 - Crashes on both alignment and pump
+
+Fetched: crash-both-experiments-20260622-165533.log , tombstones 10 and 11.
+
+The crash is in nativeCalculateHistogramWithThresholdH during ALIGN_HIST (the instrumentation) .
+
+From diag:
+
+entry mat=4080x3060 type=0
+
+validRects=5 rawLen=20
+
+minL=582 minT=364 maxR=2786 maxB=1738 roiW=2204 roiH=1374
+
+beforeZeros coverage size=4080x3060
+
+Then setSize error.
+
+This is during the binpeak hist call (5 rects on full photo binary mat).
+
+The size printed positive, but zeros fails.
+
+Later log shows BufferSet setups for 4000x3072 , which is the hard-coded initial in NativePaddleEngine.
+
+The root cause is the mat passed to H (the binary from scratch in binpeak) has stale or inconsistent header from the BufferSet initial 4000x3072 vs actual photo 4080x3060, because physicalResize does not refresh the _mat headers (only setup does).
+
+The pump binpeak changes (using .s scratch for per-peak binary after resize, calling H on it) exposed this.
+
+Alignment shares the H function and buffer patterns, hence also crashes.
+
+The odo crops are ICRS (float createCrop from icrsRect in setup).
+
+The drop non-ICRS is per spec.
+
+The crops for odo populate are ICRS, did not change.
+
+The scaled buffers are for pump discovery, odo for alignment.
+
+The shared H and BufferSet cause the cross impact.
+
+
+
+## 2026-06-22 - Crashes on both alignment and pump experiments
+
+Fetched logs: crash-both-experiments-20260622-165533.log and tombstones 10,11.
+
+The crash is the same OpenCV setSize s>=0 in matrix.cpp:246 in nativeCalculateHistogramWithThresholdH.
+
+In the log, it is during the binpeak hist call (ALIGN_HIST_NATIVE diag from the instrumentation, validRects=5, mat=4080x3060 full photo size, union minL=582 maxR=2786 etc, beforeZeros coverage size=4080x3060, then the error.
+
+This is the pump binpeak path (5 rects on the binary for a peak).
+
+The alignment also crashed (previous tombstones or same process).
+
+The size printed positive, but the zeros fails.
+
+The root is the mat passed to the H (the binary from the scratch s in binpeak) has a header that causes mat->size() to have negative dim in the internal setSize, despite the cols rows printed positive.
+
+This is due to the BufferSet initial 4000x3072 vs actual photo 4080x3060, the physicalResize does not refresh the _mat headers (only _buffer), so the scratch s used for the per-peak binary after resize has stale header.
+
+The pump binpeak changes (using s for the binary after the resize to photo, then calling the H on it with the reds for coverage) exposed this.
+
+The alignment path shares the H function (via its wrapper on odo.p.mat), hence also crashes.
+
+From code:
+
+- The crops for odo populate are ICRS based (createCrop with floats from icrsRect in the setup for vehicleBufferSets and globals A/B).
+
+- The odoBuffer is for alignment (per-vehicle odo size), the scaled 224/608/1024 are for pump discovery.
+
+- The drop non-ICRS on resize is per spec from the beginning.
+
+- The odo populate crops are ICRS, did not change.
+
+- The shared BufferSet and H cause the cross-effect.
+
+The diag helps see the parameters, but the header issue causes the failure.
+
+
+
+## 2026-06-22 - fix-bufferset-fullres-resize-timing-and-mat-refresh
+
+- Executed plan fix-bufferset-fullres-resize-timing-and-mat-refresh-20260622-plan.md on fix-pump-experiment.
+- BufferSet.Instance.physicalResize now calls refreshViews() after nativeResize (matches setup path; fixes stale Java Mat headers after realloc).
+- Pump: co-located NativePaddleEngine.bufferSetA.resize(imgW,imgH) with masterBuffer.resize at photo read-in; removed per-flow workspace.resize inside flows.forEachIndexed.
+- Alignment: removed late conditional bufferSetB.resize before iterative/H work (A+B already resized at photo start).
+- Forensic grep confirms full-res resize sites only at read-in for pump (master+A) and alignment (A+B).
