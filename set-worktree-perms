@@ -286,12 +286,12 @@ for wt in "${WORKTREES[@]}"; do
     chmod 660 "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
 
     # Clear any previous bad ACLs (planner r--, low mask) then re-apply
-    setfacl -b "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
-    setfacl -m "u:$PLANNING_USER:rw-" "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
-    setfacl -m "u:dlang:rw-" "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
-    setfacl -m m::rw- "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+# setfacl -b "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+# setfacl -m "u:$PLANNING_USER:rw-" "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+# setfacl -m "u:dlang:rw-" "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+# setfacl -m m::rw- "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
     # Ensure the shared group entry itself is not masked out
-    setfacl -m "g:$SHARED_GROUP:rw-" "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
+# setfacl -m "g:$SHARED_GROUP:rw-" "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
 
     # Restore append-only.
     chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || echo "  (chattr +a failed - must be root)"
@@ -307,15 +307,15 @@ for wt in "${WORKTREES[@]}"; do
     chmod -s "$wt/append-to-engineering-log" 2>/dev/null || true  # but keep g+s
 
     # Clear previous ACLs (e.g. from earlier runs that set rw- without x)
-    setfacl -b "$wt/append-to-engineering-log" 2>/dev/null || true
+# setfacl -b "$wt/append-to-engineering-log" 2>/dev/null || true
     chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
     chmod g+s "$wt/append-to-engineering-log" 2>/dev/null || true
 
-    setfacl -m "u:$PLANNING_USER:r-x" "$wt/append-to-engineering-log" 2>/dev/null || true
+# setfacl -m "u:$PLANNING_USER:r-x" "$wt/append-to-engineering-log" 2>/dev/null || true
     # Maintainer (dlang) needs to run the script (x) + be able to edit it (rw)
-    setfacl -m "u:dlang:rwx" "$wt/append-to-engineering-log" 2>/dev/null || true
-    setfacl -m m::rwx "$wt/append-to-engineering-log" 2>/dev/null || true
-    setfacl -m "g:$SHARED_GROUP:r-x" "$wt/append-to-engineering-log" 2>/dev/null || true
+# setfacl -m "u:dlang:rwx" "$wt/append-to-engineering-log" 2>/dev/null || true
+# setfacl -m m::rwx "$wt/append-to-engineering-log" 2>/dev/null || true
+# setfacl -m "g:$SHARED_GROUP:r-x" "$wt/append-to-engineering-log" 2>/dev/null || true
   fi
 done
 
