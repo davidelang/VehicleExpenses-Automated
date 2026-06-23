@@ -1,8 +1,7 @@
 
-# Permission filters
+# Permission filters (smudge/clean for @@ tokens in stamped files)
+# Do NOT apply to the filter scripts themselves to avoid circular "no such file" during initial checkout.
 setup-project filter=manage-configs
-filter-apply-config filter=manage-configs
-filter-clean-config filter=manage-configs
 set-worktree-perms filter=manage-configs
 set-sandbox-perms filter=manage-configs
 project.config.example filter=manage-configs
@@ -11,3 +10,7 @@ project.config.example filter=manage-configs
 run-grok-master filter=manage-configs
 run-grok-planner filter=manage-configs
 run-grok filter=manage-configs
+
+# Explicitly disable filters on the filter implementation scripts (prevents checkout-time "No such file" errors)
+filter-apply-config !filter
+filter-clean-config !filter
