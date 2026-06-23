@@ -943,24 +943,6 @@ private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
     return arr.toString()
 }
 
-/** Stroke-width hist on full primary mat + absolute pixel rect (matches pump binPeak; avoids bad crop submats). */
-private fun alignmentHistogramWithThresholdH(
-    primaryMat: org.opencv.core.Mat,
-    bbox: Rect,
-    thresholdFactor: Float
-): Pair<Pair<IntArray, IntArray>, IntArray>? {
-    if (primaryMat.empty() || bbox.width() <= 0 || bbox.height() <= 0) return null
-    val cols = primaryMat.cols()
-    val rows = primaryMat.rows()
-    val l = bbox.left.coerceIn(0, cols - 1)
-    val t = bbox.top.coerceIn(0, rows - 1)
-    val r = bbox.right.coerceIn(l + 1, cols)
-    val b = bbox.bottom.coerceIn(t + 1, rows)
-    if (r <= l || b <= t) return null
-    Log.d("ALIGN_HIST_DIAG", "odo size: ${cols}x${rows}, bbox=(${bbox.left},${bbox.top})-(${bbox.right},${bbox.bottom}), coerced ltrb=($l,$t,$r,$b)")
-    return NativeImageUtils.calculateHistogramWithThresholdH(primaryMat, listOf(Rect(l, t, r, b)), thresholdFactor)
-}
-
 private suspend fun runBinTrialsPaddle(
     odoBuffer: BufferSet,
     masterBuffer: BufferSet,
@@ -1064,8 +1046,11 @@ private suspend fun runBinTrialsPaddle(
 
         // Cache pre-cleaning histograms/plots (primitive types only)
         val cachedRawRedBoxHists = tRawB.map { b ->
-            val hRes = alignmentHistogramWithThresholdH(odoBuffer.p.mat, b.boundingBox, thresholdFactor)
+            val redBoxCropId = odoBuffer.createCrop(b.boundingBox.left, b.boundingBox.top, b.boundingBox.width(), b.boundingBox.height())
+            val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             val b64 = if (pipelineKey != "set_j" && hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
+            odoBuffer.crop[redBoxCropId].release()
             Pair(hRes, b64)
         }
 
@@ -1131,9 +1116,12 @@ private suspend fun runBinTrialsPaddle(
             experimentDetSet512x128.c[dCrId2].release()
 
             rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
-            val hRes = alignmentHistogramWithThresholdH(odoBuffer.p.mat, rb.boundingBox, thresholdFactor)
+            var redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+            var cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
             hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
+            odoBuffer.crop[redBoxCropId].release()
         }
 
         if (pipelineKey != "set_j" && (vSW <= 0f || hSW <= 0f)) {
@@ -1153,11 +1141,14 @@ private suspend fun runBinTrialsPaddle(
             }
 
             // 2. Cleaned Red Box Histogram
-            val failRes = alignmentHistogramWithThresholdH(odoBuffer.p.mat, rb.boundingBox, thresholdFactor)
+            val failCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
+            val failRect = android.graphics.Rect(0, 0, odoBuffer.crop[failCropId].width, odoBuffer.crop[failCropId].height)
+            val failRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[failCropId].mat, listOf(failRect), thresholdFactor)
             if (failRes != null) {
                 val b64 = generateDualHistogramB64(failRes.first.first, failRes.first.second); val meta = failRes.second
                 histsHtml.append("<br><small>Cleaned Red Box [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64'>")
             }
+            odoBuffer.crop[failCropId].release()
 
             histsHtml.append("<br>Cleaned peak detection failed (vSW_clean=$vSW, hSW_clean=$hSW).")
 

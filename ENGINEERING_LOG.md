@@ -408,3 +408,10 @@ The diag helps see the parameters, but the header issue causes the failure.
 - Pump: co-located NativePaddleEngine.bufferSetA.resize(imgW,imgH) with masterBuffer.resize at photo read-in; removed per-flow workspace.resize inside flows.forEachIndexed.
 - Alignment: removed late conditional bufferSetB.resize before iterative/H work (A+B already resized at photo start).
 - Forensic grep confirms full-res resize sites only at read-in for pump (master+A) and alignment (A+B).
+
+## 2026-06-22 - revert-ed769651 alignment bin-trials hist to crop-based
+
+- Executed plan revert-ed769651-alignment-bin-trials-hist-to-crop-based-20260622-plan.md.
+- Removed alignmentHistogramWithThresholdH wrapper from ExperimentAlignmentScreen.kt.
+- Restored pre-ed769651 crop-based hist in runBinTrialsPaddle (cachedRawRedBoxHists, rb vSW/hSW, failRes): createCrop + cropRect + calculateHistogramWithThresholdH on crop.mat + release.
+- Pump binpeak, BufferSet 38a00c88 hygiene, and ed769651 shared guards left untouched.
