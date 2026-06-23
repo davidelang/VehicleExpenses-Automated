@@ -64,9 +64,6 @@
 - Primary plan documents stay in the sandbox; project-facts.md is for enduring location facts only.
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
 
-# Current cycle
-- [ ] long-lived-32k-histogram-buffer-optimization-plan: reusable 8192-bin run-length hist buffers + native in-place fill
-
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
   - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
