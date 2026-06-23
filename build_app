@@ -32,20 +32,24 @@ umask 007
 
 # Ensure ai-shared (for .git/refs, worktree metadata, sandbox) and ai-code (for source tree setgid dirs).
 # Only re-exec once. Prefer ai-shared because it fixes git-related config (versionName etc).
+# Use sg -c + printf %q to reliably preserve $0 and all arguments (sg/newgrp do not forward args in simple form).
 if [ -z "${GROUPS_ACTIVATED:-}" ]; then
   MISSING=""
   for grp in ai-shared ai-code; do
     if ! id -nG | grep -qw "$grp"; then MISSING="$MISSING $grp"; fi
   done
   if [ -n "$MISSING" ]; then
-    TARGET=ai-shared
-    if ! id -nG | grep -qw ai-shared; then
-      TARGET=ai-shared
-    elif ! id -nG | grep -qw ai-code; then
-      TARGET=ai-code
-    fi
-    echo "Re-executing under $TARGET group for correct file permissions (was missing:$MISSING)..."
-    GROUPS_ACTIVATED=1 exec sg "$TARGET" -- "$0" "$@"
+    echo "Re-executing under ai-shared+ai-code groups for correct file permissions (was missing:$MISSING)..."
+    GROUPS_ACTIVATED=1
+    # Nested sg to activate both without ping-pong (sg to one often drops the other).
+    # Guard is exported through layers so re-entry check skips in final invocation.
+    exec sg ai-shared -c '
+      export GROUPS_ACTIVATED=1
+      exec sg ai-code -c "
+        export GROUPS_ACTIVATED=1
+        exec /bin/bash \"\$0\" \"\$@\"
+      " \"\$0\" \"\$@\"
+    ' "$0" "$@"
   fi
 fi
 
