@@ -1,0 +1,73 @@
+#!/bin/bash
+# fix-perms: Unified recovery script for permissions.
+#
+# Usage:
+#   sudo ./fix-perms                 # from orchestration root: all worktrees + sandbox
+#   sudo ./fix-perms --all           # same
+#   sudo ./fix-perms /path/to/agent-N   # specific worktree only (from anywhere)
+#
+# Run from inside a worktree with no arg: fixes only current worktree (skips sandbox).
+#
+# This is a recovery tool for when things went badly wrong.
+# Not for daily use (setup_agent.sh handles creation).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CURRENT_DIR="$(pwd)"
+
+# Detect orchestration root
+if [ -f "$SCRIPT_DIR/update-rules.sh" ]; then
+  AT_ORCHESTRATION=true
+else
+  AT_ORCHESTRATION=false
+fi
+
+TARGET_SPECIFIC=""
+
+# Parse args
+if [ $# -gt 0 ]; then
+  if [ "$1" = "--all" ]; then
+    TARGET_SPECIFIC=""
+  else
+    TARGET_SPECIFIC="$1"
+  fi
+fi
+
+echo "fix-perms recovery (orchestration-level: $AT_ORCHESTRATION)"
+
+if [ -n "$TARGET_SPECIFIC" ]; then
+  # Specific tree requested
+  echo "=== Fixing specific worktree: $TARGET_SPECIFIC ==="
+  if [ -d "$TARGET_SPECIFIC" ]; then
+    "$SCRIPT_DIR/set-worktree-perms" "$TARGET_SPECIFIC" || true
+    # Run log fixer (it will only affect if we pass, but current does all; ok for recovery)
+    "$SCRIPT_DIR/fix-engineering-log-perms" || true
+  else
+    echo "Target not found: $TARGET_SPECIFIC"
+  fi
+elif $AT_ORCHESTRATION; then
+  echo "=== Fixing all worktrees ==="
+  "$SCRIPT_DIR/set-worktree-perms" --all || true
+
+  echo "=== Fixing shared sandbox ==="
+  "$SCRIPT_DIR/set-sandbox-perms" || true
+
+  echo "=== Fixing special log/wrapper (chattr + canonical) ==="
+  "$SCRIPT_DIR/fix-engineering-log-perms" || true
+else
+  # Inside worktree, no arg: fix only this one
+  echo "=== Fixing current worktree only ==="
+  "$SCRIPT_DIR/set-worktree-perms" "$CURRENT_DIR" || true
+  "$SCRIPT_DIR/fix-engineering-log-perms" || true
+  echo "(Sandbox skipped - run from orchestration root to include it.)"
+fi
+
+echo
+echo "Recovery complete. Suggested verification:"
+echo "  ls -l ENGINEERING_LOG.md append-to-engineering-log run-as-primary"
+echo "  getfacl -s ENGINEERING_LOG.md append-to-engineering-log"
+echo "  lsattr ENGINEERING_LOG.md"
+echo "  ./append-to-engineering-log '## test entry'"
+echo
+echo "Re-run from orchestration root after major breakage."

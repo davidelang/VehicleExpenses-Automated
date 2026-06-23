@@ -140,22 +140,42 @@ if [ ! -f "$AGENT_ABS/ENGINEERING_LOG.md" ]; then
   echo "## $(date +%Y-%m-%d) - Initial log for $AGENT_ID" > "$AGENT_ABS/ENGINEERING_LOG.md"
 fi
 
-cd "$PARENT_ROOT"   # return to orchestration root for calling fixers
+cd "$PARENT_ROOT"   # return to orchestration root 
 
-# Apply the full permission model (this sets 2775/2770 setgid, 660/664, chattr +a,
-# root:ai-shared for log+wrapper, dlang:ai-code for run-as-primary, strips bad ACLs where
-# possible, etc.). The fixers are designed for this and use sudo internally where needed.
-echo "  Running set-worktree-perms for $AGENT_ID..."
-sudo ./set-worktree-perms "$AGENT_ID" 2>/dev/null || echo "    (Note: 'sudo ./set-worktree-perms $AGENT_ID' may be needed if sudo tty restricted)"
+# Apply permissions with *minimal* escalation.
+# Run the general worktree fixer as current user (dlang can do setgid dirs, most chowns/chmods).
+# Only use sudo for the bits that truly require root: chattr +/-a and chown root: for the log+wrapper.
+echo "  Applying worktree permissions (as current user where possible)..."
+./set-worktree-perms "$AGENT_ID" || echo "    (partial; root bits below if needed)"
 
-echo "  Running fix-engineering-log-perms (hardens log + wrapper + sudoers)..."
-sudo ./fix-engineering-log-perms 2>/dev/null || echo "    (Note: 'sudo ./fix-engineering-log-perms' may be needed if sudo tty restricted)"
+echo "  Escalating *only* for root-required bits (chattr, root ownership on log/wrapper)..."
+sudo bash -c '
+  set -euo pipefail
+  AGENT="'"$AGENT_ABS"'"
+  SHARED="'"$SHARED_GROUP"'"
+  # Log
+  chattr -a "$AGENT/ENGINEERING_LOG.md" 2>/dev/null || true
+  chown root:"$SHARED" "$AGENT/ENGINEERING_LOG.md"
+  chmod 660 "$AGENT/ENGINEERING_LOG.md"
+  chattr +a "$AGENT/ENGINEERING_LOG.md"
+  # Wrapper
+  chattr -a "$AGENT/append-to-engineering-log" 2>/dev/null || true
+  chown root:"$SHARED" "$AGENT/append-to-engineering-log"
+  chmod 2755 "$AGENT/append-to-engineering-log"
+  # Optional: ensure no ACLs on these two (pure Unix)
+  setfacl -b "$AGENT/ENGINEERING_LOG.md" "$AGENT/append-to-engineering-log" 2>/dev/null || true
+' || echo "    (Note: may need interactive sudo for chattr/root chown; run 'sudo ./fix-engineering-log-perms' if needed)"
 
-# Re-ensure the setuid binary (fixers may have touched modes)
+# Re-ensure the setuid binary
 if [ -f "$AGENT_ABS/run-as-primary" ]; then
   chown "$PRIMARY_USER:$CODE_GROUP" "$AGENT_ABS/run-as-primary" 2>/dev/null || true
   chmod 4755 "$AGENT_ABS/run-as-primary" 2>/dev/null || true
 fi
+
+# Run the log/wrapper canonical fixer with sudo only if it will do system things (sudoers).
+# We do the file bits above with minimal sudo; the fixer also updates sudoers.
+echo "  Running fix-engineering-log-perms for sudoers + canonical (sudo only as needed)..."
+sudo ./fix-engineering-log-perms 2>/dev/null || echo "    (Note: 'sudo ./fix-engineering-log-perms' may be needed for full sudoers update)"
 
 cd "$AGENT_ABS" || true   # restore for the optional launcher exec below
 
