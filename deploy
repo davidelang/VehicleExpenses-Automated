@@ -3,6 +3,10 @@
 # Usage: ./deploy [alias1 alias2 ...]
 # If no arguments are provided, it deploys to all connected devices.
 #
+# Pass Gradle options after -- :
+#   ./deploy -- --info --stacktrace
+#   ./deploy tablet -- --debug
+#
 # To force uninstall first (e.g. to recover from signature mismatch after
 # switching build environments or previous release builds):
 #   UNINSTALL_FIRST=1 ./deploy
@@ -46,6 +50,28 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Support passing Gradle flags after -- , e.g.:
+#   ./deploy                  # all devices
+#   ./deploy tablet           # specific alias
+#   ./deploy -- --info --stacktrace
+#   ./deploy emulator -- --debug
+# Targets (aliases or device ids) come before any -- ; everything after -- goes to gradlew.
+TARGETS=()
+GRADLE_ARGS=()
+SEEN_DD=false
+for arg in "$@"; do
+  if $SEEN_DD; then
+    GRADLE_ARGS+=("$arg")
+  elif [ "$arg" = "--" ]; then
+    SEEN_DD=true
+  else
+    TARGETS+=("$arg")
+  fi
+done
+if [ ${#GRADLE_ARGS[@]} -gt 0 ]; then
+  echo "Passing Gradle flags: ${GRADLE_ARGS[*]}"
+fi
+
 # Defaults (flags above take precedence; also respect env vars).
 PRESERVE_DATA=${PRESERVE_DATA:-false}
 UNINSTALL_FIRST=${UNINSTALL_FIRST:-false}
@@ -78,10 +104,23 @@ fi
 # Ensure group-writable creation for build artifacts and Gradle caches (660/770)
 umask 007
 
-# Ensure ai-code group is active in credentials (for worktree perms)
-if ! id -nG | grep -qw ai-code; then
-  echo "Re-executing under ai-code group for correct file permissions..."
-  exec sg ai-code "$0" "$@"
+# Ensure ai-shared (for .git/refs, worktree metadata, sandbox) and ai-code (for source tree setgid dirs).
+# Only re-exec once. Prefer ai-shared because it fixes the git providers.exec versionName issue.
+if [ -z "${GROUPS_ACTIVATED:-}" ]; then
+  MISSING=""
+  for grp in ai-shared ai-code; do
+    if ! id -nG | grep -qw "$grp"; then MISSING="$MISSING $grp"; fi
+  done
+  if [ -n "$MISSING" ]; then
+    TARGET=ai-shared
+    if ! id -nG | grep -qw ai-shared; then
+      TARGET=ai-shared
+    elif ! id -nG | grep -qw ai-code; then
+      TARGET=ai-code
+    fi
+    echo "Re-executing under $TARGET group for correct file permissions (was missing:$MISSING)..."
+    GROUPS_ACTIVATED=1 exec sg "$TARGET" -- "$0" "$@"
+  fi
 fi
 
 declare -A DEVICE_MAP
@@ -235,7 +274,7 @@ restore_test_data() {
 
 OVERALL_SUCCESS=true
 
-if [ "$#" -eq 0 ]; then
+if [ ${#TARGETS[@]} -eq 0 ]; then
     echo "Deploying to all connected devices..."
     # Discover all connected online devices so we can clear logcat on each
     mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
@@ -331,7 +370,7 @@ if [ "$#" -eq 0 ]; then
                 echo "  Then retry."
             fi
 
-            (umask 007; ./gradlew installDebug)
+            (umask 007; ./gradlew "${GRADLE_ARGS[@]}" installDebug)
             if [ $? -ne 0 ]; then
                 echo "Deployment failed."
                 OVERALL_SUCCESS=false
@@ -349,7 +388,7 @@ if [ "$#" -eq 0 ]; then
         fi
     fi
 else
-    for TARGET in "$@"; do
+    for TARGET in "${TARGETS[@]}"; do
         # Resolve alias if it exists, otherwise use the target as the literal device ID
         DEVICE_ID="${DEVICE_MAP[$TARGET]:-$TARGET}"
         
@@ -428,7 +467,7 @@ else
             echo "  Then retry."
         fi
 
-        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew installDebug)
+        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew "${GRADLE_ARGS[@]}" installDebug)
         
         if [ $? -ne 0 ]; then
             echo "Deployment to $TARGET ($DEVICE_ID) failed."

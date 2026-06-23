@@ -238,7 +238,24 @@ fix_worktree() {
   chmod 666 "$wt/TODO.md" 2>/dev/null || true
   chmod 666 "$wt/project-facts.md" 2>/dev/null || true
 
-  # .git for shared
+  # .git handling (works for both normal clones and git worktrees).
+  # In worktrees the "$wt/.git" is a *file* ("gitdir: ..."), real state is in
+  # main-repo/.git/worktrees/<wtname>/. We fix both the pointer and the admin area.
+  if [ -e "$wt/.git" ]; then
+    chown :$SHARED_GROUP "$wt/.git" 2>/dev/null || true
+    chmod 660 "$wt/.git" 2>/dev/null || true
+  fi
+  # Fix the *per-worktree* git admin area under the main .git (shared across users).
+  WT_GITDIR=""
+  if [ -f "$wt/.git" ]; then
+    WT_GITDIR=$(sed -n 's/^gitdir: //p' "$wt/.git" 2>/dev/null | head -1)
+  fi
+  if [ -n "$WT_GITDIR" ] && [ -d "$WT_GITDIR" ]; then
+    chown -R :$SHARED_GROUP "$WT_GITDIR" 2>/dev/null || true
+    find "$WT_GITDIR" -type d -exec chmod 2770 {} + 2>/dev/null || true
+    find "$WT_GITDIR" -type f -exec chmod 660 {} + 2>/dev/null || true
+  fi
+  # Fallback/old-style (bare .git dir inside wt)
   if [ -d "$wt/.git" ]; then
     chown -R :$SHARED_GROUP "$wt/.git" 2>/dev/null || true
     find "$wt/.git" -type d -exec chmod 2770 {} + 2>/dev/null || true
@@ -330,6 +347,31 @@ elif $AT_ORCHESTRATION; then
     fix_log_wrapper "$wt"
   done
   fix_sandbox
+
+  # Fix the main repository .git (and all worktree admin areas under it).
+  # This must be done from the orchestration root so that git (rev-parse, describe,
+  # tag, status ...) works reliably for dlang + all ai-* users in every worktree.
+  if [ -d "$SCRIPT_DIR/.git" ]; then
+    if $VERBOSE; then echo "  Fixing main .git + worktree metadata under ai-shared..."; fi
+    chown -R :$SHARED_GROUP "$SCRIPT_DIR/.git" 2>/dev/null || true
+    find "$SCRIPT_DIR/.git" -type d -exec chmod 2770 {} + 2>/dev/null || true
+    find "$SCRIPT_DIR/.git" -type f -exec chmod 660 {} + 2>/dev/null || true
+    if [ -d "$SCRIPT_DIR/.git/worktrees" ]; then
+      find "$SCRIPT_DIR/.git/worktrees" -type d -exec chmod 2770 {} + 2>/dev/null || true
+      find "$SCRIPT_DIR/.git/worktrees" -type f -exec chmod 660 {} + 2>/dev/null || true
+    fi
+    # Fix refs area (loose refs are frequently written by different ai-* users; broken zero-hash
+    # refs have been observed when group perms or owners drift).
+    if [ -d "$SCRIPT_DIR/.git/refs" ]; then
+      find "$SCRIPT_DIR/.git/refs" -type d -exec chmod 2770 {} + 2>/dev/null || true
+      find "$SCRIPT_DIR/.git/refs" -type f -exec chmod 660 {} + 2>/dev/null || true
+      chown -R :$SHARED_GROUP "$SCRIPT_DIR/.git/refs" 2>/dev/null || true
+    fi
+    if [ -f "$SCRIPT_DIR/.git/packed-refs" ]; then
+      chown :$SHARED_GROUP "$SCRIPT_DIR/.git/packed-refs" 2>/dev/null || true
+      chmod 660 "$SCRIPT_DIR/.git/packed-refs" 2>/dev/null || true
+    fi
+  fi
 else
   fix_worktree "$CURRENT_DIR"
   fix_log_wrapper "$CURRENT_DIR"
