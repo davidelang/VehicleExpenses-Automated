@@ -468,11 +468,6 @@ private suspend fun runExperiment(
 
                         // Refinement Loop (Always executed to provide diagnostic data)
                         if (globalWinnerRef.vehicle.id >= 0) {
-                            // Hygiene: resize B to match dims used for final icrsToPixel after alignment transform. Pump unaffected.
-                            if (NativePaddleEngine.bufferSetB.p.mat.cols() != imgW || NativePaddleEngine.bufferSetB.p.mat.rows() != imgH) {
-                                NativePaddleEngine.bufferSetB.resize(imgW, imgH)
-                            }
-
                             // For Set F and G, only run the "Raw" stage
                             val iterativeStages = listOf("Raw", "Bin-Trials")
 
