@@ -11,6 +11,8 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - `dev-ai-interaction/historical-plans/` — archived plans
 - `dev-ai-interaction/implementation-failure-logs/` — scan on startup / "new planning cycle"
 - `dev-ai-interaction/.planning-agent-prompt.txt` — planner restart prompt from master
+- `dev-ai-interaction/scripts/deploy-golden-pump-photos.sh` — push GOLDEN_SUBSET and/or flat pump zips to device
+- `dev-ai-interaction/research/photos/pump/` — pump experiment source photos; `pump-zips/` holds generated flat zips
 
 ## At worktree root
 - `ENGINEERING_LOG.md` (append-only at end)
