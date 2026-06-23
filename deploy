@@ -163,6 +163,41 @@ fix_build_dir_perms() {
 }
 fix_build_dir_perms
 
+# Best-effort fix for .git / worktree git state early (before any gradle exec that
+# computes versionName). Broken zero-SHA refs or wrong ownership (ai-orchestrator)
+# are common after permission thrashing.
+fix_git_perms() {
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    local main_git
+    main_git=$(git rev-parse --git-common-dir 2>/dev/null || echo .git)
+    echo "  Fixing .git/worktree perms (best effort, sudo ../fix-perms may still be needed for objects)..."
+    chmod -R u+rX,g+rX "$main_git" 2>/dev/null || true
+    chmod -R u+rwX,g+rwX "$main_git" 2>/dev/null || true
+    find "$main_git" \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-shared" {} + 2>/dev/null || true
+    # Repair worktree metadata too
+    if [ -f .git ]; then
+      local wt_meta
+      wt_meta=$(sed 's/gitdir: //' .git)
+      if [ -d "$wt_meta" ]; then
+        chmod -R u+rX,g+rX "$wt_meta" 2>/dev/null || true
+        find "$wt_meta" \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-shared" {} + 2>/dev/null || true
+      fi
+    fi
+    # If the current branch ref is the all-zero broken state, remove the loose ref
+    # so git falls back to packed-refs (which usually has a good value).
+    local branch
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+    if [ -n "$branch" ] && [ "$branch" != "HEAD" ]; then
+      local ref="$main_git/refs/heads/$branch"
+      if [ -f "$ref" ] && grep -q '^0\{40\}' "$ref" 2>/dev/null; then
+        echo "  Removing broken zero-SHA ref for $branch (will use packed-refs)..."
+        rm -f "$ref" 2>/dev/null || true
+      fi
+    fi
+  fi
+}
+fix_git_perms
+
 stop_gradle_daemons() {
   echo "  Stopping Gradle daemons robustly..."
   ./gradlew --stop >/dev/null 2>&1 || true
