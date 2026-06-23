@@ -15,6 +15,15 @@
 #include <android/log.h>
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "NativeImageUtils", __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "NativeImageUtils", __VA_ARGS__)
+
+static void logMatHeader(const char* tag, const cv::Mat* m) {
+    if (!m) { LOGI("MAT_HEADER: %s null", tag); return; }
+    LOGI("MAT_HEADER: %s cols=%d rows=%d dims=%d type=%d ch=%d flags=0x%x step0=%zu step1=%zu data=%p datastart=%p dataend=%p cont=%d empty=%d",
+         tag, m->cols, m->rows, m->dims, m->type(), m->channels(), m->flags,
+         m->step[0], (m->dims > 1 ? m->step[1] : 0), (void*)m->data,
+         (void*)m->datastart, (void*)m->dataend, m->isContinuous(), m->empty());
+}
+
 #include "../libraw_config.h"
 #include <libraw/libraw.h>
 
@@ -1581,15 +1590,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 // Otherwise compute dynamically: max(15.0, meanVal * thresholdFactor).
 static double computeThreshold(const cv::Mat& mat, int L, int T, int R, int B, float thresholdFactor) {
     if (thresholdFactor > 1.0f) return (double)thresholdFactor;
+    logMatHeader("compute_roi_base", &mat);
     int safeL = std::max(0, std::min(L, mat.cols - 1));
     int safeT = std::max(0, std::min(T, mat.rows - 1));
     int safeR = std::max(safeL + 1, std::min(R, mat.cols));
     int safeB = std::max(safeT + 1, std::min(B, mat.rows));
     cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
+    LOGI("MAT_HEADER: compute_roi L=%d T=%d R=%d B=%d safeL=%d safeT=%d safeR=%d safeB=%d roiW=%d roiH=%d mat=%dx%d",
+         L, T, R, B, safeL, safeT, safeR, safeB, roi.width, roi.height, mat.cols, mat.rows);
     if (roi.width <= 0 || roi.height <= 0) {
         LOGE("ALIGN_HIST_NATIVE: computeThreshold bad roi L=%d T=%d R=%d B=%d mat=%dx%d roiW=%d roiH=%d",
              L, T, R, B, mat.cols, mat.rows, roi.width, roi.height);
     }
+    logMatHeader("for_mean_pre", &mat);
     cv::Scalar meanVal = cv::mean(mat(roi));
     return std::max(15.0, meanVal[0] * (double)thresholdFactor);
 }
@@ -1709,6 +1722,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 
 // 3b. Decoupled H-variants for Set H with stroke-width aware logic
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeLogMatHeader(
+    JNIEnv* env, jobject thiz, jlong matPtr, jstring tagJ) {
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    const char* tag = env->GetStringUTFChars(tagJ, nullptr);
+    if (tag) {
+        logMatHeader(tag, mat);
+        env->ReleaseStringUTFChars(tagJ, tag);
+    }
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistogramWithThresholdH(
     JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor,
@@ -1718,6 +1742,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return JNI_FALSE;
     if (mat->cols <= 0 || mat->rows <= 0) return JNI_FALSE;
     LOGI("ALIGN_HIST_NATIVE: entry mat=%dx%d type=%d", mat->cols, mat->rows, mat->type());
+    logMatHeader("hist_input_crop", mat);
 
     jsize len = env->GetArrayLength(rects);
     if (len % 4 != 0 || len == 0) return JNI_FALSE;
@@ -1753,11 +1778,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     maxR = std::max(minL + 1, std::min(maxR, mat->cols));
     maxB = std::max(minT + 1, std::min(maxB, mat->rows));
     LOGI("ALIGN_HIST_NATIVE: minL=%d minT=%d maxR=%d maxB=%d roiW=%d roiH=%d", minL, minT, maxR, maxB, maxR - minL, maxB - minT);
+    for (size_t i = 0; i < rectL.size(); ++i) {
+        LOGI("MAT_HEADER: hist_rect[%zu] L=%d T=%d R=%d B=%d", i, rectL[i], rectT[i], rectR[i], rectB[i]);
+    }
 
     const int numRects = (int)rectL.size();
     // OR coverage mask (no double-count overlaps; only pixels inside >=1 red)
+    logMatHeader("before_zeros", mat);
     LOGI("ALIGN_HIST_NATIVE: beforeZeros coverage size=%dx%d", mat->cols, mat->rows);
     cv::Mat coverage = cv::Mat::zeros(mat->size(), CV_8UC1);
+    logMatHeader("after_zeros_coverage", &coverage);
     for (int i = 0; i < numRects; ++i) {
         int L = std::max(0, rectL[i]), T = std::max(0, rectT[i]);
         int R = std::min(mat->cols, rectR[i]), B = std::min(mat->rows, rectB[i]);
