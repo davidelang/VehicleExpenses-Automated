@@ -1706,6 +1706,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
         if (run > 0) horizHist[std::min(255,run)]++;
     }
     for (int x = minL; x < maxR; ++x) {
+        // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+        if (x == minL) {
+            int nonBinary = 0;
+            for (int yy = minT; yy < std::min(minT+10, maxB); ++yy) {
+                uint8_t v = mat->at<uint8_t>(yy, x);
+                if (v != 0 && v != 255) nonBinary++;
+            }
+            LOGI("HIST_DIAG: sample x=%d nonBinaryInFirst10=%d (should be 0 for binarized)", x, nonBinary);
+        }
         int run = 0;
         for (int y = minT; y < maxB; ++y) {
             if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
