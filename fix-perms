@@ -393,6 +393,37 @@ elif $AT_ORCHESTRATION; then
       find "$SCRIPT_DIR/.git/hooks" -type f ! -name '*.sample' -exec chmod +x {} + 2>/dev/null || true
       chown :$SHARED_GROUP "$SCRIPT_DIR/.git/hooks/"* 2>/dev/null || true
     fi
+
+    # Ensure the post-checkout hook has the correct modern content (uses git root, fix-perms)
+    HOOK="$SCRIPT_DIR/.git/hooks/post-checkout"
+    if [ -d "$SCRIPT_DIR/.git/hooks" ]; then
+      cat > "$HOOK" << 'HOOKEOF'
+#!/bin/bash
+# post-checkout hook
+# Re-apply perms and verify filters after checkout/reset.
+# Managed by fix-perms.
+
+set -euo pipefail
+
+# Use unified fix-perms (quiet on success).
+# --all for full recovery on checkout (new worktree etc.).
+if [ -x ./fix-perms ]; then
+  ./fix-perms --all 2>/dev/null || sudo ./fix-perms --all 2>/dev/null || true
+fi
+
+# Verify filters (if config present)
+# Use git root so it works from any worktree/checkout
+GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+if [ -f "$GIT_ROOT/project.config" ]; then
+  : # silent on success
+else
+  echo "WARNING: project.config missing; values may be scrubbed tokens."
+fi
+HOOKEOF
+      chmod +x "$HOOK"
+      chown :$SHARED_GROUP "$HOOK" 2>/dev/null || true
+      if $VERBOSE; then echo "  Installed/updated main post-checkout hook"; fi
+    fi
   fi
 else
   fix_worktree "$CURRENT_DIR"
