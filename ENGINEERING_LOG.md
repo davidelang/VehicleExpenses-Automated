@@ -447,3 +447,15 @@ The diag helps see the parameters, but the header issue causes the failure.
 - nativeResize: capacity reuse within allocatedByteCount; grow-drop-old-first with safe Mat redirect.
 - HIST_DIAG logs added to ExperimentAlignmentScreen bin-trials path (manual merge with long-lived hist meta-copy).
 - 32k long-lived hist buffers and fillRunHistOutputs native path preserved.
+
+## 2026-06-23 - log Mat headers to diagnose hist setSize crash
+
+- Executed plan log-mat-headers-to-diagnose-hist-setsize-crash-20260623-plan.md.
+- Added static logMatHeader() in NativeImageUtils.cpp and BufferSet.cpp (cols/rows/dims/type/ch/flags/step/data/datastart/dataend/cont/empty).
+- Exposed NativeImageUtils.logMatHeader(mat, tag) JNI wrapper for Kotlin callers.
+- Instrumented nativeCalculateHistogramWithThresholdH: hist_input_crop, hist_rect[], before_zeros, after_zeros_coverage.
+- Instrumented computeThreshold: compute_roi_base, compute_roi details, for_mean_pre.
+- Instrumented BufferSet ManagedCrop: pre/post refresh, rebindToOwner, disarm, flip; nativeUpdateCropMat pre/post dumps.
+- Instrumented ExperimentAlignmentScreen bin-trials: odo_p_after_flip, pre_rawHist/postFilter/failHist owner+crop dumps.
+- Long-lived hist buffer confirmation log on first H hist call (8192 bins).
+- No functional changes; purely additive MAT_HEADER diagnostics.
