@@ -439,3 +439,11 @@ The diag helps see the parameters, but the header issue causes the failure.
 - Added NativeImageUtils longLivedRunHistH/V (8192), longLivedHistMeta, longLivedBrightness with 32kB/4G-pixel design notes.
 - Native calculateHistogramWithThreshold(H) fill caller-provided arrays in-place (fillRunHistOutputs helper).
 - Pump binPeak and alignment bin-trials share wrapper path; alignment caches meta copy per red for long-lived reuse safety.
+
+## 2026-06-23 - integrate stop-bufferset-realloc from master
+
+- Executed plan integrate-stop-bufferset-realloc-from-master-20260623-plan.md.
+- Cherry-picked BufferSet core commits (allocatedByteCount through Phase 11 reuse/grow logging).
+- nativeResize: capacity reuse within allocatedByteCount; grow-drop-old-first with safe Mat redirect.
+- HIST_DIAG logs added to ExperimentAlignmentScreen bin-trials path (manual merge with long-lived hist meta-copy).
+- 32k long-lived hist buffers and fillRunHistOutputs native path preserved.
