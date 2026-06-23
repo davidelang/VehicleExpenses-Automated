@@ -415,3 +415,13 @@ The diag helps see the parameters, but the header issue causes the failure.
 - Removed alignmentHistogramWithThresholdH wrapper from ExperimentAlignmentScreen.kt.
 - Restored pre-ed769651 crop-based hist in runBinTrialsPaddle (cachedRawRedBoxHists, rb vSW/hSW, failRes): createCrop + cropRect + calculateHistogramWithThresholdH on crop.mat + release.
 - Pump binpeak, BufferSet 38a00c88 hygiene, and ed769651 shared guards left untouched.
+
+## 2026-06-22 - test after cleanup
+
+## 2026-06-23 - change-default-buffer-to-4080x3072 + ALIGN_BUF_DIAG
+
+- Executed plan change-default-buffer-to-4080x3072-todo-config-db-add-diagnostics-20260623-plan.md.
+- NativePaddleEngine.initializeGlobalBuffers: shared A/B BufferSet + NV21 scratch default 4080x3072 (was 4000x3072).
+- TODO.md: future-work item for Room config-driven max photo buffer size at init.
+- ExperimentAlignmentScreen: ALIGN_BUF_DIAG logs before ingest, copyTo (luma+uv), takeSnapshot, deskew, pipeline reset.
+- OdometerOcrUtils.rotate: ALIGN_BUF_DIAG logs before tempMat/tempUv copyTo set.p.

@@ -311,12 +311,16 @@ private suspend fun runExperiment(
             // Buffer hygiene comment (per plan phase 10): per-photo resize ensures shared bufferSetB is in full photo size (imgW/imgH) matching ICRS conversions used later for diagnostic crops. Pump pixel mutations of shared A/B must not break ICRS assumptions.
             NativePaddleEngine.bufferSetB.resize(imgW, imgH)
 
+            logAlignSliceDiag("ingest", NativePaddleEngine.bufferSetA, "A.p", NativePaddleEngine.bufferSetA.p)
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, NativePaddleEngine.bufferSetA.p)
 
             // Manual Distribution (A to B)
+            logAlignBufDiag("post_ingest", "A.p", NativePaddleEngine.bufferSetA.p.mat, "B.p", NativePaddleEngine.bufferSetB.p.mat)
             NativePaddleEngine.bufferSetA.p.mat.copyTo(NativePaddleEngine.bufferSetB.p.mat)
+            logAlignBufDiag("post_ingest_uv", "A.p.uv", NativePaddleEngine.bufferSetA.p.uvMat, "B.p.uv", NativePaddleEngine.bufferSetB.p.uvMat)
             NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
 
+            logAlignSliceDiag("takeSnapshot_orig", NativePaddleEngine.bufferSetA, "A.p", NativePaddleEngine.bufferSetA.p)
             val (originalBase64, tSnapOrig) = OcrUtils.takeSnapshot(
                 source = NativePaddleEngine.bufferSetA.p,
                 sourceRect = null,
@@ -329,6 +333,7 @@ private suspend fun runExperiment(
 
             try {
                 // Step 2 (Deskew): Calculate tilt independently for Set A/E
+                logAlignSliceDiag("deskew", NativePaddleEngine.bufferSetA, "A.p", NativePaddleEngine.bufferSetA.p)
                 val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
                 
                 val tilt = deskewResA.angle
@@ -381,7 +386,9 @@ private suspend fun runExperiment(
 
                 pipelines.forEach { pipeline ->
                     // Reset work buffer Set B by copying from ingested original Set A
+                    logAlignBufDiag("pipeline_reset", "A.p", NativePaddleEngine.bufferSetA.p.mat, "B.p", NativePaddleEngine.bufferSetB.p.mat)
                     NativePaddleEngine.bufferSetA.p.mat.copyTo(NativePaddleEngine.bufferSetB.p.mat)
+                    logAlignBufDiag("pipeline_reset_uv", "A.p.uv", NativePaddleEngine.bufferSetA.p.uvMat, "B.p.uv", NativePaddleEngine.bufferSetB.p.uvMat)
                     NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
 
                     val extraImages = mutableMapOf<String, String>()
@@ -925,6 +932,16 @@ private fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
     System.arraycopy(packed, 0, fullData, header.size, packed.size)
 
     return android.util.Base64.encodeToString(fullData, android.util.Base64.NO_WRAP)
+}
+
+private fun logAlignBufDiag(label: String, srcLabel: String, srcMat: org.opencv.core.Mat, dstLabel: String, dstMat: org.opencv.core.Mat) {
+    Log.d("ALIGN_BUF_DIAG", "DIAG_COPYTO_PRE [$label] from=$srcLabel empty=${srcMat.empty()} cols=${srcMat.cols()} rows=${srcMat.rows()}")
+    Log.d("ALIGN_BUF_DIAG", "DIAG_COPYTO_PRE [$label] to=$dstLabel empty=${dstMat.empty()} cols=${dstMat.cols()} rows=${dstMat.rows()}")
+}
+
+private fun logAlignSliceDiag(label: String, set: BufferSet, sliceLabel: String, slice: BufferSet.Slice) {
+    Log.d("ALIGN_BUF_DIAG", "DIAG_SLICE_PRE [$label] set=${set.width}x${set.height} $sliceLabel.mat empty=${slice.mat.empty()} cols=${slice.mat.cols()} rows=${slice.mat.rows()}")
+    Log.d("ALIGN_BUF_DIAG", "DIAG_SLICE_PRE [$label] $sliceLabel.uvMat empty=${slice.uvMat.empty()} cols=${slice.uvMat.cols()} rows=${slice.uvMat.rows()}")
 }
 
 private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {

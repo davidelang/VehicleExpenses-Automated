@@ -1198,7 +1198,12 @@ object OdometerOcrUtils {
         // Resize the set and copy
         set.resize(targetW, targetH)
 
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE src empty=${src.empty()} cols=${src.cols()} rows=${src.rows()}")
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE tempMat empty=${tempMat.empty()} cols=${tempMat.cols()} rows=${tempMat.rows()}")
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE set.p.mat empty=${set.p.mat.empty()} cols=${set.p.mat.cols()} rows=${set.p.mat.rows()}")
         tempMat.copyTo(set.p.mat)
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE tempUv empty=${tempUv.empty()} cols=${tempUv.cols()} rows=${tempUv.rows()}")
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE set.p.uvMat empty=${set.p.uvMat.empty()} cols=${set.p.uvMat.cols()} rows=${set.p.uvMat.rows()}")
         tempUv.copyTo(set.p.uvMat)
 
         tempMat.release()
