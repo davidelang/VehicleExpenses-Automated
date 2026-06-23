@@ -2,14 +2,14 @@
 # fix-engineering-log-perms
 #
 # Focused, reliable fixer for:
-#   - append-to-engineering-log  (blessed wrapper, owned root:shared, 755, no suid bit,
-#     ACLs so ai-planner can execute it and dlang can maintain it)
-#   - ENGINEERING_LOG.md         (root:shared 660, chattr +a, ACL mask rw- so that
-#     dlang + ai-coder + ai-orchestrator + ai-planner can append via the wrapper
-#     but cannot overwrite history)
+#   - append-to-engineering-log  (blessed wrapper, owned root:shared, 755/setgid, pure Unix)
+#   - ENGINEERING_LOG.md         (root:shared 660 + chattr +a for append-only protection)
 #
-# This fixes the "kernel ignores suid on scripts + ACL mask + group + ownership" problems
-# that caused Permission denied for direct runs and sudo -u ai-* runs.
+# Pure Unix model: owner/group/other + setgid where appropriate, chattr +a on log.
+# No ACLs.
+#
+# This ensures controlled append-only logging and that the wrapper works for ai-* users
+# via group/other perms + setgid.
 #
 # === IMPORTANT: You only need to run this ONCE from the main directory ===
 #
@@ -17,8 +17,8 @@
 #   sudo ./fix-engineering-log-perms
 #
 # It automatically discovers the main orchestration checkout + ALL worktrees
-# using `git worktree list` and fixes the wrapper + log (with correct ACLs,
-# chattr +a, ownership, and mask) in every single one of them.
+# using `git worktree list` and fixes the wrapper + log (ownership, modes, chattr +a)
+# in every single one of them.
 # It also installs the sudoers rules.
 #
 # You do **not** have to cd into each worktree and run it again.
@@ -268,20 +268,14 @@ for wt in "${TARGETS[@]}"; do
     # Clear any previous restrictive ACLs (e.g. old rw- without x for dlang).
     setfacl -b "$WRAPPER" 2>/dev/null || true
 
-    # Base mode for exec by group/other.
+    # Base mode for exec by group/other. (pure Unix, no ACLs)
     chmod 755 "$WRAPPER" 2>/dev/null || true
 
-    # Planner: needs to execute the blessed wrapper (r-x).
-    setfacl -m "u:$PLANNING_USER:r-x" "$WRAPPER" 2>/dev/null || true
-    # Maintainer (dlang): needs to run it directly + be able to edit it (rwx).
-    setfacl -m "u:dlang:rwx" "$WRAPPER" 2>/dev/null || true
-    # Ensure the mask allows execute for the ACL class.
-    setfacl -m m::rwx "$WRAPPER" 2>/dev/null || true
-    # Explicit group too.
-    setfacl -m "g:$SHARED_GROUP:r-x" "$WRAPPER" 2>/dev/null || true
+    # Note: previously added ACLs for planner/dlang here.
+    # Removed for pure Unix model (owner/group/other + setgid/chattr where needed).
 
     chmod +x "$WRAPPER" 2>/dev/null || true
-    echo "    wrapper: installed + root:$SHARED_GROUP 755 + ACLs (planner:r-x, dlang:rwx)"
+    echo "    wrapper: installed + root:$SHARED_GROUP 755 (pure Unix, no ACLs)"
     fixed=$((fixed+1))
   else
     echo "    (skipped - not a directory)"
@@ -306,23 +300,19 @@ for wt in "${TARGETS[@]}"; do
     chown root:"$SHARED_GROUP" "$LOG" 2>/dev/null || true
     chmod 660 "$LOG" 2>/dev/null || true
 
-    # Clear old restrictive ACLs (planner r--, mask r-- etc.) then re-apply correct ones.
+    # Clear old restrictive ACLs (for pure Unix).
     setfacl -b "$LOG" 2>/dev/null || true
-
-    # Re-apply after clear (base mode 660 + named ACLs).
-    setfacl -m "u:$PLANNING_USER:rw-" "$LOG" 2>/dev/null || true
-    setfacl -m "u:dlang:rw-" "$LOG" 2>/dev/null || true
-    setfacl -m m::rw- "$LOG" 2>/dev/null || true
-    setfacl -m "g:$SHARED_GROUP:rw-" "$LOG" 2>/dev/null || true
 
     # Restore append-only.
     chattr +a "$LOG" 2>/dev/null || echo "    (chattr +a failed or unsupported - run on XFS/ext4 etc.)"
 
-    # Make the directory traversable by planner.
-    chmod o+rx "$wt" 2>/dev/null || true
-    setfacl -m "u:$PLANNING_USER:r-x" "$wt" 2>/dev/null || true
+    # Note: previously re-applied ACLs here for planner/dlang.
+    # Removed to follow pure Unix (no ACLs) model. chattr +a + group perms provide the protection.
 
-    echo "    log: root:$SHARED_GROUP 660 + chattr +a + ACLs (planner:rw-, dlang:rw-, mask:rw-)"
+    # Make the directory traversable (for planner as other).
+    chmod o+rx "$wt" 2>/dev/null || true
+
+    echo "    log: root:$SHARED_GROUP 660 + chattr +a (pure Unix, no ACLs)"
     fixed=$((fixed+1))
   fi
 
