@@ -377,10 +377,13 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             # Aggressive removal of state that Gradle tracks and may have bad perms on
             rm -rf app/build/intermediates app/build/generated 2>/dev/null || true
 
+            # Invalidate configuration cache (reusing it often causes "could not stat" after bad previous builds)
+            rm -rf .gradle/configuration-cache* 2>/dev/null || true
+
             # If still problems, suggest manual sudo
             if [ -d app/build/intermediates ]; then
                 echo "  WARNING: Could not fully remove app/build/intermediates."
-                echo "  You may need: sudo chown -R dlang:ai-code app/build ; rm -rf app/build/intermediates app/build/generated"
+                echo "  You may need: sudo chown -R dlang:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
             fi
 
             (umask 007; ./gradlew "${GRADLE_ARGS[@]}" installDebug)
@@ -483,10 +486,13 @@ else
         # Aggressive removal of state that Gradle tracks and may have bad perms on
         rm -rf app/build/intermediates app/build/generated 2>/dev/null || true
 
+        # Invalidate configuration cache (reusing it often causes "could not stat" after bad previous builds)
+        rm -rf .gradle/configuration-cache* 2>/dev/null || true
+
         # If still problems, suggest manual sudo
         if [ -d app/build/intermediates ]; then
             echo "  WARNING: Could not fully remove app/build/intermediates."
-            echo "  You may need: sudo chown -R dlang:ai-code app/build ; rm -rf app/build/intermediates app/build/generated"
+            echo "  You may need: sudo chown -R dlang:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
         fi
 
         (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew "${GRADLE_ARGS[@]}" installDebug)
