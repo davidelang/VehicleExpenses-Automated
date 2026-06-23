@@ -71,7 +71,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
     size_t frameSize = (size_t)width * (size_t)height;
     size_t needed = frameSize + (frameSize / 2);
     if (needed <= handle->allocatedByteCount) {
-        /* reuse path (phase 6) */
+        uint8_t* data = handle->data;
+        handle->width = width;
+        handle->height = height;
+        handle->actualByteCount = needed;
+        *(handle->yMat) = cv::Mat((int)height, (int)width, CV_8UC1, data, (size_t)width);
+        *(handle->uvMat) = cv::Mat((int)height / 2, (int)width / 2, CV_8UC2, data + (width * height), (size_t)width);
+        *(handle->nv21Mat) = cv::Mat((int)height * 3 / 2, (int)width, CV_8UC1, data, (size_t)width);
     } else {
         /* grow path (phase 7) */
         uint8_t* newData = new uint8_t[needed];
