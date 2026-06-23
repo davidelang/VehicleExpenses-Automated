@@ -3202,8 +3202,14 @@ private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Cont
         if (targetDir.exists()) targetDir.deleteRecursively(); targetDir.mkdirs()
         context.contentResolver.openInputStream(uri)?.use { input ->
             ZipInputStream(input).use { zis ->
-                var entry = zis.nextEntry; while (entry != null) {
-                    val file = File(targetDir, entry.name); if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }; zis.closeEntry(); entry = zis.nextEntry
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    // use basename only so images land flat at top-level of pump_photos (listFiles is non-recursive)
+                    val baseName = entry.name.substringAfterLast('/')
+                    val file = File(targetDir, baseName)
+                    if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }
+                    zis.closeEntry()
+                    entry = zis.nextEntry
                 }
             }
         }; true
