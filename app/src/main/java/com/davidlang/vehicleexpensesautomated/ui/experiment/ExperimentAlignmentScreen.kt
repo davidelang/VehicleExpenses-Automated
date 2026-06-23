@@ -1021,6 +1021,7 @@ private suspend fun runBinTrialsPaddle(
         odoBuffer.s.clear()
         org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, threshold, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
         odoBuffer.flip()
+        Log.i("HIST_DIAG", "after threshold+flip vehicle=$vehicleId p=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
 
         val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
         val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
