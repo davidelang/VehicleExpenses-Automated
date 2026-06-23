@@ -1061,6 +1061,8 @@ private suspend fun runBinTrialsPaddle(
         val cachedRawRedBoxHists = tRawB.map { b ->
             val redBoxCropId = odoBuffer.createCrop(b.boundingBox.left, b.boundingBox.top, b.boundingBox.width(), b.boundingBox.height())
             val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
+            // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+            Log.i("HIST_DIAG", "rawHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${b.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor")
             val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
             val b64 = if (pipelineKey != "set_j" && hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
             odoBuffer.crop[redBoxCropId].release()
