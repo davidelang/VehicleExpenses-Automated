@@ -101,6 +101,19 @@ if [ "$EUID" -eq 0 ]; then
   fi
 fi
 
+# Re-exec as PRIMARY_USER if not already running as them. This ensures all build/deploy
+# artifacts are consistently owned by the primary developer (dlang), preventing ownership
+# drift to ai-orchestrator/root and the resulting permission thrashing on cxx/logs/etc.
+CURRENT_USER=$(id -un)
+if [ "$CURRENT_USER" != "$PRIMARY_USER" ]; then
+  echo "Re-executing as $PRIMARY_USER for consistent ownership of build artifacts..."
+  if [ -x ./run-as-primary ]; then
+    exec ./run-as-primary "$0" "$@"
+  else
+    exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
+  fi
+fi
+
 # Ensure group-writable creation for build artifacts and Gradle caches (660/770)
 umask 007
 
@@ -114,14 +127,67 @@ if [ -z "${GROUPS_ACTIVATED:-}" ]; then
   if [ -n "$MISSING" ]; then
     echo "Re-executing under ai-shared group for correct file permissions..."
     q0=$(printf '%q' "$0")
-    qargs=$(printf '%q ' "$@"); qargs=${qargs% }
-    ccmd="GROUPS_ACTIVATED=1 exec /bin/bash -c 'exec \"\$1\" \"\${@:2}\"' _ $q0 $qargs"
+    # Use original $# to avoid printf %q "" producing phantom "''" for zero-arg case
+    if [ $# -eq 0 ]; then
+      qargs=""
+    else
+      qargs=$(printf '%q ' "$@"); qargs=${qargs% }
+    fi
+    if [ -z "$qargs" ]; then
+      ccmd="umask 007; GROUPS_ACTIVATED=1 exec $q0"
+    else
+      ccmd="umask 007; GROUPS_ACTIVATED=1 exec $q0 $qargs"
+    fi
     exec sg ai-shared -c "$ccmd"
   fi
 fi
 # Note: ai-code is also needed for some dirs, but since uid=dlang owns most ai-code files/dirs in the worktree,
 # sg ai-shared gives the necessary group for shared git/.git metadata and sandbox; owner perms cover the rest.
 # This avoids ping-pong loops from sg only surfacing one group at a time.
+
+# Early recovery for build dir perms/ownership (prevents "Permission denied" on cxx logs,
+# configuration cache stale outputs, etc. from previous root/wrong-group runs).
+# This runs whenever you use ./deploy (which does the group re-exec).
+fix_build_dir_perms() {
+  if [ -d app/build ]; then
+    echo "  Fixing build dir perms (traversable + group writable)..."
+    # chmod parents first so we can traverse and fix deep cxx etc.
+    chmod -R u+rX,g+rX app/build 2>/dev/null || true
+    chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
+    # chown foreign-owned (root or ai-orchestrator) back to primary:code group
+    find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
+    # setgid on dirs for proper inheritance on new files (with umask 007 -> 660/770)
+    find app/build -type d -exec chmod 2770 {} + 2>/dev/null || true
+    find app/build -type f -exec chmod 660 {} + 2>/dev/null || true
+  fi
+}
+fix_build_dir_perms
+
+stop_gradle_daemons() {
+  echo "  Stopping Gradle daemons robustly..."
+  ./gradlew --stop >/dev/null 2>&1 || true
+
+  # Force-kill any BUSY or lingering daemons for the current Gradle version.
+  # --stop sometimes leaves BUSY ones or STOPPED that don't exit due to open files/locks/perm issues.
+  # We parse --status (which only shows current version) and kill the PIDs if they still exist.
+  while read -r pid status rest; do
+    case "$status" in
+      BUSY|STOPPED)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+          echo "    Killing lingering Gradle daemon PID $pid ($status)..."
+          kill -TERM "$pid" 2>/dev/null || true
+          sleep 0.5
+          kill -9 "$pid" 2>/dev/null || true
+        fi
+        ;;
+    esac
+  done < <(./gradlew --status 2>/dev/null | awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $1, $2}')
+
+  # Also kill any GradleDaemon processes that might be holding this project's build (defensive)
+  pkill -f "GradleDaemon.*$(pwd | sed 's/[][\.*^$()+?{}|]/\\&/g')" 2>/dev/null || true
+  sleep 1
+}
+stop_gradle_daemons
 
 declare -A DEVICE_MAP
 DEVICE_MAP=(
@@ -343,34 +409,41 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             # "Unable to delete directory .../packageDebug/tmp" because a previous
             # daemon/worker still has files open (zip-cache, dex state, etc.).
             # Also handles cases where past root runs left files owned by root.
-            ./gradlew --stop >/dev/null 2>&1 || true
+            # Extended to fix "unreadable inputs/outputs" / "Could not stat" errors
+            # in Gradle 8+/9+ (CMake/cxx, navigation, assets, aar, etc. state).
+            stop_gradle_daemons
 
             # Try to kill any lingering processes holding files in the incremental dirs.
             # This addresses "a process has files open".
             lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
             sleep 1
 
-            # Try to fix ownership pollution from previous root/sudo Gradle runs
+            # === STRONG PERM RECOVERY FOR UNREADABLE BUILD STATE ===
+            # Some previous runs (root, wrong group, daemons) leave dirs/files
+            # without read/x bits, causing Gradle to fail with "Could not stat file"
+            # and "Accessing unreadable inputs or outputs".
             if [ -d app/build ]; then
-                find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
+                # First make directories traversable (x bit) so find/rm can work
+                chmod -R u+rX,g+rX app/build 2>/dev/null || true
+                # Full rw for user+group
+                chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
+                # Fix any root-owned files
+                find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
             fi
 
-            # Make sure the dir is writable before attempting delete (in case of mixed perms).
-            chmod -R u+rwX app/build/intermediates/incremental 2>/dev/null || true
+            # Aggressive removal of state that Gradle tracks and may have bad perms on
+            rm -rf app/build/intermediates app/build/generated 2>/dev/null || true
 
-            # Aggressive removal of the entire incremental state (broader than just packageDebug/tmp)
-            # to clear any stale lock files or partial state.
-            rm -rf app/build/intermediates/incremental 2>/dev/null || true
+            # Invalidate configuration cache (reusing it often causes "could not stat" after bad previous builds)
+            rm -rf .gradle/configuration-cache* 2>/dev/null || true
 
-            # If still can't remove the specific problematic dir, warn.
-            if [ -d app/build/intermediates/incremental/packageDebug/tmp ]; then
-                echo "  WARNING: Still cannot delete some Gradle incremental files (permission denied or locked)."
-                echo "  You may need to run as root: sudo chown -R dlang:ai-code app/build"
-                echo "  Or manually: rm -rf app/build/intermediates/incremental"
-                echo "  Then retry."
+            # If still problems, suggest manual sudo
+            if [ -d app/build/intermediates ]; then
+                echo "  WARNING: Could not fully remove app/build/intermediates."
+                echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
             fi
 
-            (umask 007; ./gradlew "${GRADLE_ARGS[@]}" installDebug)
+            (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
             if [ $? -ne 0 ]; then
                 echo "Deployment failed."
                 OVERALL_SUCCESS=false
@@ -389,8 +462,13 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
     fi
 else
     for TARGET in "${TARGETS[@]}"; do
+        if [ -z "$TARGET" ]; then
+            echo "Warning: skipping empty target from args"
+            continue
+        fi
         # Resolve alias if it exists, otherwise use the target as the literal device ID
-        DEVICE_ID="${DEVICE_MAP[$TARGET]:-$TARGET}"
+        # Quote the subscript to safely handle empty TARGET (from arg parsing edge cases)
+        DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
         
         echo "Deploying to $TARGET ($DEVICE_ID)..."
         if [ ! -x ./gradlew ]; then
@@ -442,32 +520,39 @@ else
         fi
 
         # Mitigate common Gradle "can't delete incremental tmp" failure
-        ./gradlew --stop >/dev/null 2>&1 || true
+        # Extended for unreadable outputs in Gradle 8+/9+ (see other errors for cxx etc.)
+        stop_gradle_daemons
 
         # Try to kill any lingering processes holding files in the incremental dirs.
         lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
         sleep 1
 
-        # Try to fix ownership pollution from previous root/sudo Gradle runs
+        # === STRONG PERM RECOVERY FOR UNREADABLE BUILD STATE ===
+        # Some previous runs (root, wrong group, daemons) leave dirs/files
+        # without read/x bits, causing Gradle to fail with "Could not stat file"
+        # and "Accessing unreadable inputs or outputs".
         if [ -d app/build ]; then
-            find app/build -user root -exec chown dlang:ai-code {} + 2>/dev/null || true
+            # First make directories traversable (x bit) so find/rm can work
+            chmod -R u+rX,g+rX app/build 2>/dev/null || true
+            # Full rw for user+group
+            chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
+            # Fix any root-owned files
+            find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
         fi
 
-        # Make sure the dir is writable before attempting delete (in case of mixed perms).
-        chmod -R u+rwX app/build/intermediates/incremental 2>/dev/null || true
+        # Aggressive removal of state that Gradle tracks and may have bad perms on
+        rm -rf app/build/intermediates app/build/generated 2>/dev/null || true
 
-        # Aggressive removal of the entire incremental state
-        rm -rf app/build/intermediates/incremental 2>/dev/null || true
+        # Invalidate configuration cache (reusing it often causes "could not stat" after bad previous builds)
+        rm -rf .gradle/configuration-cache* 2>/dev/null || true
 
-        # If still can't remove, warn loudly
-        if [ -d app/build/intermediates/incremental/packageDebug/tmp ]; then
-            echo "  WARNING: Still cannot delete some Gradle incremental files (permission denied or locked)."
-            echo "  You may need to run as root: sudo chown -R dlang:ai-code app/build"
-            echo "  Or manually: rm -rf app/build/intermediates/incremental"
-            echo "  Then retry."
+        # If still problems, suggest manual sudo
+        if [ -d app/build/intermediates ]; then
+            echo "  WARNING: Could not fully remove app/build/intermediates."
+            echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
         fi
 
-        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew "${GRADLE_ARGS[@]}" installDebug)
+        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
         
         if [ $? -ne 0 ]; then
             echo "Deployment to $TARGET ($DEVICE_ID) failed."
