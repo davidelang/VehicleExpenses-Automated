@@ -388,6 +388,11 @@ elif $AT_ORCHESTRATION; then
       chown :$SHARED_GROUP "$SCRIPT_DIR/.git/packed-refs" 2>/dev/null || true
       chmod 660 "$SCRIPT_DIR/.git/packed-refs" 2>/dev/null || true
     fi
+    # Main hooks must be +x (shared .git/hooks used for all worktrees)
+    if [ -d "$SCRIPT_DIR/.git/hooks" ]; then
+      find "$SCRIPT_DIR/.git/hooks" -type f ! -name '*.sample' -exec chmod +x {} + 2>/dev/null || true
+      chown :$SHARED_GROUP "$SCRIPT_DIR/.git/hooks/"* 2>/dev/null || true
+    fi
   fi
 else
   fix_worktree "$CURRENT_DIR"
