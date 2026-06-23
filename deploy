@@ -114,8 +114,12 @@ if [ -z "${GROUPS_ACTIVATED:-}" ]; then
   if [ -n "$MISSING" ]; then
     echo "Re-executing under ai-shared group for correct file permissions..."
     q0=$(printf '%q' "$0")
-    qargs=$(printf '%q ' "$@"); qargs=${qargs% }
-    # Embed safely; avoid injecting phantom empty arg for the no-args case
+    # Use original $# to avoid printf %q "" producing phantom "''" for zero-arg case
+    if [ $# -eq 0 ]; then
+      qargs=""
+    else
+      qargs=$(printf '%q ' "$@"); qargs=${qargs% }
+    fi
     if [ -z "$qargs" ]; then
       ccmd="GROUPS_ACTIVATED=1 exec $q0"
     else
