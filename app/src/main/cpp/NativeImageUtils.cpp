@@ -1542,6 +1542,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 // If thresholdFactor > 1.0, treat it as an absolute threshold value.
 // Otherwise compute dynamically: max(15.0, meanVal * thresholdFactor).
 static double computeThreshold(const cv::Mat& mat, int L, int T, int R, int B, float thresholdFactor) {
+    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+    LOGI("HIST_DIAG: computeThreshold factor=%.1f (absolute=%s)", thresholdFactor, (thresholdFactor > 1.0f ? "true" : "false"));
     if (thresholdFactor > 1.0f) return (double)thresholdFactor;
     int safeL = std::max(0, std::min(L, mat.cols - 1));
     int safeT = std::max(0, std::min(T, mat.rows - 1));
