@@ -64,7 +64,11 @@
 - Primary plan documents stay in the sandbox; project-facts.md is for enduring location facts only.
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
 
+# Current cycle
+- [ ] change-default-buffer-to-4080x3072-todo-config-db-add-diagnostics-20260623-plan: default shared buffer 4080x3072 + Room config TODO + ALIGN_BUF_DIAG crash diagnostics
+
 # Future work
+- [ ] **2026-06-23** Persist max photo buffer size (currently 4080x3072) in Room config/settings table so default allocation in NativePaddleEngine.initializeGlobalBuffers can be driven from DB. Add migration + accessors + read at init time. See active plan change-default-buffer-to-4080x3072-todo-config-db-add-diagnostics-20260623-plan.md.
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
   - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
   - Execution completed (user: "approved, implement this plan"). All 7 phases + forensic gates + sim verification.

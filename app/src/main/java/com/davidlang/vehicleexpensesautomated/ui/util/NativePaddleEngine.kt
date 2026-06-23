@@ -186,8 +186,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tStart = System.currentTimeMillis()
             Log.i("PaddleLite", "Initializing Global Rigid Buffers")
 
-            _bufferSetA = BufferSet(4000, 3072)
-            _bufferSetB = BufferSet(4000, 3072)
+            _bufferSetA = BufferSet(4080, 3072)
+            _bufferSetB = BufferSet(4080, 3072)
             _deskewBufferSetLarge = BufferSet(2048, 2048)
             _deskewBufferSetLarge!!.p.clearChroma()
             _deskewBufferSetLarge!!.s.clearChroma()
@@ -201,7 +201,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _bufferSmall = FloatArray(1 * 512 * 128)
             _bufferRec = FloatArray(1 * 320 * 48)
 
-            _sharedNv21Buffer = ByteArray(4000 * 3072 * 3 / 2)
+            _sharedNv21Buffer = ByteArray(4080 * 3072 * 3 / 2)
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
 
             _redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
