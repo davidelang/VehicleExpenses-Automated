@@ -467,3 +467,9 @@ The diag helps see the parameters, but the header issue causes the failure.
 - Added decomposeRectsForDirectRuns (wide bias on overlap), merged interval collection, uint64_t row prefilter, exact-span discard.
 - Alignment runBinTrialsPaddle: three hist sites now pass odoBuffer.p.mat + absolute boundingBox (no per-red crop for hist).
 - Pump binPeak paths unchanged (already pass full mat + rects).
+
+## 2026-06-23 - Pump unzip flatten + flat zip deploy workflow
+
+- pExtractZipToPhotos (ExperimentPumpScreen.kt): zip entries use basename only so images land flat in pump_photos (listFiles is non-recursive).
+- deploy-golden-pump-photos.sh: --make-zips builds pump_photos_first10.zip (10 lexical non-thumbs) and pump_photos_all_nonthumb.zip (150); --push-zips pushes to device Download/ for Extract Downloaded ZIP button.
+- Verified: unzip -l shows flat basenames; --push-zips verify passed on device.
