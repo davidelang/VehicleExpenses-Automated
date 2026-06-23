@@ -15,6 +15,7 @@ struct BufferSetHandle {
     size_t width;
     size_t height;
     size_t actualByteCount;
+    size_t allocatedByteCount; // capacity of the backing `data` allocation (grows only)
     jobject globalBuffer;
     bool isBorrowed;
 
