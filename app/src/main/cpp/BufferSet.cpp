@@ -113,6 +113,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeClear(
         if (validHandles.find(handle) == validHandles.end()) return;
     }
     if (handle != nullptr && handle->data != nullptr) {
+        // Clear only the logical used prefix (Y=0, UV=128); tail capacity stays untouched.
         size_t frameSize = handle->width * handle->height;
         std::memset(handle->data, 0, frameSize);
         std::memset(handle->data + frameSize, 128, handle->actualByteCount - frameSize);
