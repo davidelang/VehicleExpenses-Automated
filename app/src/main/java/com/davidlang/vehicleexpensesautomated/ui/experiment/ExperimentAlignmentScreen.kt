@@ -1144,6 +1144,8 @@ private suspend fun runBinTrialsPaddle(
             // 2. Cleaned Red Box Histogram
             val failCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
             val failRect = android.graphics.Rect(0, 0, odoBuffer.crop[failCropId].width, odoBuffer.crop[failCropId].height)
+            // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
+            Log.i("HIST_DIAG", "failHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${failRect.width()}x${failRect.height()} factor=$thresholdFactor")
             val failRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[failCropId].mat, listOf(failRect), thresholdFactor)
             if (failRes != null) {
                 val b64 = generateDualHistogramB64(failRes.first.first, failRes.first.second); val meta = failRes.second
