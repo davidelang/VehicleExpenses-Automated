@@ -30,10 +30,27 @@ fi
 # Ensure group-writable creation for build artifacts and Gradle caches (660/770)
 umask 007
 
-# Ensure ai-code group is active in credentials (for worktree perms)
-if ! id -nG | grep -qw ai-code; then
-  echo "Re-executing under ai-code group for correct file permissions..."
-  exec sg ai-code "$0" "$@"
+# Ensure ai-shared (for .git/refs, worktree metadata, sandbox) and ai-code (for source tree setgid dirs).
+# Only re-exec once. Prefer ai-shared because it fixes git-related config (versionName etc).
+# Use sg -c + printf %q to reliably preserve $0 and all arguments (sg/newgrp do not forward args in simple form).
+if [ -z "${GROUPS_ACTIVATED:-}" ]; then
+  MISSING=""
+  for grp in ai-shared ai-code; do
+    if ! id -nG | grep -qw "$grp"; then MISSING="$MISSING $grp"; fi
+  done
+  if [ -n "$MISSING" ]; then
+    echo "Re-executing under ai-shared+ai-code groups for correct file permissions (was missing:$MISSING)..."
+    GROUPS_ACTIVATED=1
+    # Nested sg to activate both without ping-pong (sg to one often drops the other).
+    # Guard is exported through layers so re-entry check skips in final invocation.
+    exec sg ai-shared -c '
+      export GROUPS_ACTIVATED=1
+      exec sg ai-code -c "
+        export GROUPS_ACTIVATED=1
+        exec /bin/bash \"\$0\" \"\$@\"
+      " \"\$0\" \"\$@\"
+    ' "$0" "$@"
+  fi
 fi
 
 if [ "$#" -ge 1 ]; then
@@ -134,10 +151,7 @@ else
       echo "Passing gradle flags: ${GRADLE_ARGS[*]}"
     fi
     # Always go through build_app — direct gradlew/gradlew.bat is forbidden (breaks integrity, perms, tags).
-    GRADLE_CMD=(assembleDebug)
-    if [ ${#GRADLE_ARGS[@]} -gt 0 ]; then
-      GRADLE_CMD+=("${GRADLE_ARGS[@]}")
-    fi
+    GRADLE_CMD=( "${GRADLE_ARGS[@]}" assembleDebug )
     (umask 007; ./gradlew "${GRADLE_CMD[@]}")
     if [ $? -eq 0 ]; then
         CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -152,7 +166,7 @@ else
 
         # Lightweight local repair for .gradle (the most common source of "permission hell"
         # after an agent build). This often removes the need to run the full sudo
-        # set-worktree-perms globally.
+        # fix-perms globally.
         if [ -d .gradle ]; then
           echo "Quick local .gradle repair (2770/660 + setgid)..."
           find .gradle -type d -exec chmod 2770 {} + 2>/dev/null || true
