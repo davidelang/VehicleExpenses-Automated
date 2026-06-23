@@ -56,6 +56,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeRelease(
     }
     if (handle != nullptr) {
         if (handle->globalBuffer != nullptr) env->DeleteGlobalRef(handle->globalBuffer);
+        // dtor delete[] data frees full backing capacity; allocatedByteCount needs no separate cleanup.
         delete handle;
     }
 }
