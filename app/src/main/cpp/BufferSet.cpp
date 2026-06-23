@@ -79,7 +79,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
         *(handle->yMat) = cv::Mat((int)height, (int)width, CV_8UC1, data, (size_t)width);
         *(handle->uvMat) = cv::Mat((int)height / 2, (int)width / 2, CV_8UC2, data + (width * height), (size_t)width);
         *(handle->nv21Mat) = cv::Mat((int)height * 3 / 2, (int)width, CV_8UC1, data, (size_t)width);
+        LOGI("BufferSet resize reused: %dx%d logical=%zu capacity=%zu", width, height, needed, handle->allocatedByteCount);
     } else {
+        size_t oldAllocated = handle->allocatedByteCount;
         uint8_t* safe = bufferSetSafePointer(handle);
         *(handle->yMat) = cv::Mat(1, 1, CV_8UC1, safe, 1);
         *(handle->uvMat) = cv::Mat(1, 1, CV_8UC2, safe, 2);
@@ -102,6 +104,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
         *(handle->nv21Mat) = cv::Mat((int)height * 3 / 2, (int)width, CV_8UC1, newData, (size_t)width);
         jobject localBuffer = env->NewDirectByteBuffer(newData, needed);
         handle->globalBuffer = env->NewGlobalRef(localBuffer);
+        LOGI("BufferSet resize grew: %dx%d to %zu bytes (was %zu)", width, height, needed, oldAllocated);
     }
 }
 
