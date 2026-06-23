@@ -1,5 +1,7 @@
 # TODO
 
+- [ ] TEMP: add HIST_DIAG logging for alignment histogram crash — executing plan at dev-ai-interaction/plans/add-temporary-histogram-and-buffer-diagnostics-for-alignment-crash-20260623-plan.md
+
 - [x] BufferSet: reuse pixel allocation on resize (no spike grow, drop old first) — executed plan at dev-ai-interaction/plans/bufferset-reuse-pixel-allocation-on-resize-no-spike-grow-drop-old-first-20260623-plan.md
 
 - [x] Safe leading env assignment prefix support ("KEY=val cmd") for all already-allowed bash commands + promote agent-1 "don't ask again" commands to global checked-in config (plan approved 2026-06-13)
