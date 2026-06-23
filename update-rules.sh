@@ -245,6 +245,15 @@ for WT in $WORKTREES; do
             fi
         fi
     )
+
+    # Ensure the synced management/orchestration scripts have executable perms,
+    # and run the perms fixer on this WT (as current or via sudo if needed).
+    # This makes files "end up with the right permissions" directly from update-rules.
+    chmod +x "$WT"/*.sh "$WT"/deploy "$WT"/build_app 2>/dev/null || true
+    if [ -x "$WT/set-worktree-perms" ]; then
+        echo "  Ensuring perms on $WT via set-worktree-perms..."
+        "$WT/set-worktree-perms" "$WT" 2>/dev/null || sudo "$WT/set-worktree-perms" "$WT" 2>/dev/null || true
+    fi
 done
 
 # 5. Promote Policies to User-tier (ensure they are active)
