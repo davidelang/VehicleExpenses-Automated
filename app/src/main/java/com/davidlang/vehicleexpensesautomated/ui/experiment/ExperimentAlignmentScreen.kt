@@ -1075,15 +1075,11 @@ private suspend fun runBinTrialsPaddle(
 
         // Cache pre-cleaning histograms/plots (primitive types only)
         val cachedRawRedBoxHists = tRawB.map { b ->
-            val redBoxCropId = odoBuffer.createCrop(b.boundingBox.left, b.boundingBox.top, b.boundingBox.width(), b.boundingBox.height())
-            val cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-            Log.i("HIST_DIAG", "rawHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${b.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor cropId=$redBoxCropId")
-            NativeImageUtils.logMatHeader(odoBuffer.p.mat, "pre_rawHist_owner_v$vehicleId")
-            NativeImageUtils.logMatHeader(odoBuffer.crop[redBoxCropId].mat, "pre_rawHist_crop_v$vehicleId")
-            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            Log.i("HIST_DIAG", "rawHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${b.boundingBox} factor=$thresholdFactor fullMat=true")
+            NativeImageUtils.logMatHeader(odoBuffer.p.mat, "pre_rawHist_full_v$vehicleId")
+            val hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.p.mat, listOf(b.boundingBox), thresholdFactor)
             if (hRes != null) Log.i("HIST_DIAG", "hRes rawHist vSW=${hRes.second[0]} hSW=${hRes.second[1]}")
             val b64 = if (pipelineKey != "set_j" && hRes != null) generateDualHistogramB64(hRes.first.first, hRes.first.second) else null
-            odoBuffer.crop[redBoxCropId].release()
             // Snapshot meta per red (long-lived hist arrays are reused across calls).
             val snap = if (hRes != null) Pair(hRes.first, hRes.second.copyOf()) else null
             Pair(snap, b64)
@@ -1152,16 +1148,12 @@ private suspend fun runBinTrialsPaddle(
             experimentDetSet512x128.c[dCrId2].release()
 
             rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
-            var redBoxCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
-            var cropRect = android.graphics.Rect(0, 0, odoBuffer.crop[redBoxCropId].width, odoBuffer.crop[redBoxCropId].height)
-            Log.i("HIST_DIAG", "postFilter vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${cropRect.width()}x${cropRect.height()} factor=$thresholdFactor cropId=$redBoxCropId")
-            NativeImageUtils.logMatHeader(odoBuffer.p.mat, "pre_postFilter_owner_v$vehicleId")
-            NativeImageUtils.logMatHeader(odoBuffer.crop[redBoxCropId].mat, "pre_postFilter_crop_v$vehicleId")
-            var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[redBoxCropId].mat, listOf(cropRect), thresholdFactor)
+            Log.i("HIST_DIAG", "postFilter vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} factor=$thresholdFactor fullMat=true")
+            NativeImageUtils.logMatHeader(odoBuffer.p.mat, "pre_postFilter_full_v$vehicleId")
+            var hRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.p.mat, listOf(rb.boundingBox), thresholdFactor)
             if (hRes != null) Log.i("HIST_DIAG", "hRes postFilter vSW=${hRes.second[0]} hSW=${hRes.second[1]}")
             vSW = hRes?.second?.get(0)?.toFloat() ?: -1f
             hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
-            odoBuffer.crop[redBoxCropId].release()
         }
 
         if (pipelineKey != "set_j" && (vSW <= 0f || hSW <= 0f)) {
@@ -1182,18 +1174,14 @@ private suspend fun runBinTrialsPaddle(
             }
 
             // 2. Cleaned Red Box Histogram
-            val failCropId = odoBuffer.createCrop(rb.boundingBox.left, rb.boundingBox.top, rb.boundingBox.width(), rb.boundingBox.height())
-            val failRect = android.graphics.Rect(0, 0, odoBuffer.crop[failCropId].width, odoBuffer.crop[failCropId].height)
-            Log.i("HIST_DIAG", "failHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} cropRect=${failRect.width()}x${failRect.height()} factor=$thresholdFactor cropId=$failCropId")
-            NativeImageUtils.logMatHeader(odoBuffer.p.mat, "pre_failHist_owner_v$vehicleId")
-            NativeImageUtils.logMatHeader(odoBuffer.crop[failCropId].mat, "pre_failHist_crop_v$vehicleId")
-            val failRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.crop[failCropId].mat, listOf(failRect), thresholdFactor)
+            Log.i("HIST_DIAG", "failHist vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} factor=$thresholdFactor fullMat=true")
+            NativeImageUtils.logMatHeader(odoBuffer.p.mat, "pre_failHist_full_v$vehicleId")
+            val failRes = NativeImageUtils.calculateHistogramWithThresholdH(odoBuffer.p.mat, listOf(rb.boundingBox), thresholdFactor)
             if (failRes != null) Log.i("HIST_DIAG", "hRes failHist vSW=${failRes.second[0]} hSW=${failRes.second[1]}")
             if (failRes != null) {
                 val b64 = generateDualHistogramB64(failRes.first.first, failRes.first.second); val meta = failRes.second
                 histsHtml.append("<br><small>Cleaned Red Box [${rb.boundingBox.left},${rb.boundingBox.top} - ${rb.boundingBox.right},${rb.boundingBox.bottom}] (${rb.boundingBox.width()}x${rb.boundingBox.height()}) vSW=${meta[0]} hSW=${meta[1]} Pitch=0 (Peak detection failed):</small><br><img src='data:image/jpeg;base64,$b64'>")
             }
-            odoBuffer.crop[failCropId].release()
 
             histsHtml.append("<br>Cleaned peak detection failed (vSW_clean=$vSW, hSW_clean=$hSW).")
 
