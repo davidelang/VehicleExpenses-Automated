@@ -163,6 +163,32 @@ fix_build_dir_perms() {
 }
 fix_build_dir_perms
 
+stop_gradle_daemons() {
+  echo "  Stopping Gradle daemons robustly..."
+  ./gradlew --stop >/dev/null 2>&1 || true
+
+  # Force-kill any BUSY or lingering daemons for the current Gradle version.
+  # --stop sometimes leaves BUSY ones or STOPPED that don't exit due to open files/locks/perm issues.
+  # We parse --status (which only shows current version) and kill the PIDs if they still exist.
+  while read -r pid status rest; do
+    case "$status" in
+      BUSY|STOPPED)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+          echo "    Killing lingering Gradle daemon PID $pid ($status)..."
+          kill -TERM "$pid" 2>/dev/null || true
+          sleep 0.5
+          kill -9 "$pid" 2>/dev/null || true
+        fi
+        ;;
+    esac
+  done < <(./gradlew --status 2>/dev/null | awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $1, $2}')
+
+  # Also kill any GradleDaemon processes that might be holding this project's build (defensive)
+  pkill -f "GradleDaemon.*$(pwd | sed 's/[][\.*^$()+?{}|]/\\&/g')" 2>/dev/null || true
+  sleep 1
+}
+stop_gradle_daemons
+
 declare -A DEVICE_MAP
 DEVICE_MAP=(
     ["tablet"]="emulator-5554"
@@ -385,7 +411,7 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             # Also handles cases where past root runs left files owned by root.
             # Extended to fix "unreadable inputs/outputs" / "Could not stat" errors
             # in Gradle 8+/9+ (CMake/cxx, navigation, assets, aar, etc. state).
-            ./gradlew --stop >/dev/null 2>&1 || true
+            stop_gradle_daemons
 
             # Try to kill any lingering processes holding files in the incremental dirs.
             # This addresses "a process has files open".
@@ -495,7 +521,7 @@ else
 
         # Mitigate common Gradle "can't delete incremental tmp" failure
         # Extended for unreadable outputs in Gradle 8+/9+ (see other errors for cxx etc.)
-        ./gradlew --stop >/dev/null 2>&1 || true
+        stop_gradle_daemons
 
         # Try to kill any lingering processes holding files in the incremental dirs.
         lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
