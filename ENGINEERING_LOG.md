@@ -130,3 +130,8 @@ This log tracks the implementation, refactoring, and deployment activities perfo
 - [b860046] Fix: Correct HTML report file size rotation logic to accurately count bytes
 - [2f1a582] Deep Trace Phase 2d: Finalize report to include missing global discovery images, method scores/times, and tier reached
 - [9a07669] Deep Trace Phase 2c: Implement 5-step OCR trace (Raw, Gray, Bile, CLAHE, OTSU) across 3 engines with timings
+
+## 2026-06-22 - 16KB Page Compatibility Research Notes
+
+- Documented research findings, limitations, and JNI/memory architecture risks in docs/reference/16k-pages-compatibility-notes.md.
+- Registered backlog item in TODO.md # Future work pointing to the reference notes for deferred migration.

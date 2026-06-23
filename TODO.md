@@ -25,10 +25,12 @@
 These are documented in AGENT_MANDATES.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the relevant plan files. They are kept here for historical reference only.
 
 # Current cycle
-- [ ] Fix int8 Paddle arm JNI SONAME in Docker build — plan: `dev-ai-interaction/plans/fix-int8-paddle-arm-jni-soname-in-docker-build-20260622-plan.md` (root build fix: patchelf --set-soname post-build, rebuild arm64 int8, verify jniLibs + libnative_ocr.so DT_NEEDED)
+- [ ] Document 16KB page size compatibility research & backlog — plan: `dev-ai-interaction/plans/16k-doc-only-plan.md` (reference notes in docs/reference/, defer migration until upstream/OpenCV alignment)
 
 # Future work
 (Only items that are not currently active in a plan.)
+
+- Migrate native libraries to 16KB page size alignment (OpenCV source build, Rclone CGO_LDFLAGS, JNI/Mat compatibility risks). See `docs/reference/16k-pages-compatibility-notes.md` for research findings and re-evaluation criteria.
 
 - Research portable multi-user git permissions for worktrees (avoid over-reliance on ACLs + chattr + mixed group ownership that breaks object writes for ai-planner etc. in .git/objects; current hacks in set-*-perms and safe.directory). See recent "insufficient permissions for adding an object" issues.
 
