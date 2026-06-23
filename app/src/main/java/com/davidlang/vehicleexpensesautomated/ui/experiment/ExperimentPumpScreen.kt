@@ -332,6 +332,7 @@ private suspend fun runPumpExperiment(
             val imgW = probedW
             val imgH = probedH
             masterBuffer.resize(imgW, imgH)
+            NativePaddleEngine.bufferSetA.resize(imgW, imgH)
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBuffer.p)
 
             val root = PumpBranch("Root")
@@ -565,7 +566,6 @@ private suspend fun runPumpExperiment(
                 val tFlowStart = System.currentTimeMillis()
                 val tSetupStart = System.currentTimeMillis()
                 val workspace = NativePaddleEngine.bufferSetA
-                workspace.resize(imgW, imgH)
                 masterBuffer.p.mat.copyTo(workspace.p.mat)
                 masterBuffer.p.uvMat.copyTo(workspace.p.uvMat)
 
@@ -576,7 +576,7 @@ private suspend fun runPumpExperiment(
                     put("Paddle Native", mutableMapOf())
                 }
                 branch.metadata["t_setup_ms"] = (System.currentTimeMillis() - tSetupStart).toString()
-                // t_setup_ms covers buffer resize/copy + discoveryDetails map (common high-level phase for A/B/C gap analysis)
+                // t_setup_ms covers buffer copy + discoveryDetails map (common high-level phase for A/B/C gap analysis)
 
                 // Setup logic and tilt variables are now completely moved into flow processors.
                 // t_deskew_ms covers calculateAverageTextAngle + rotate + tilt metadata write (common high-level phase)
