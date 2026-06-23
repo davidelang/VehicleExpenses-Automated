@@ -30,7 +30,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeSetup(
     jobject localBuffer = env->NewDirectByteBuffer(data, totalSize);
     if (localBuffer == nullptr) { delete[] data; return 0; }
     jobject globalBuffer = env->NewGlobalRef(localBuffer);
-    auto* handle = new BufferSetHandle(data, (size_t)width, (size_t)height, totalSize, globalBuffer);
+    auto* handle = new BufferSetHandle(data, (size_t)width, (size_t)height, totalSize, totalSize, globalBuffer);
     {
         std::lock_guard<std::mutex> lock(registryMutex);
         validHandles.insert(handle);
