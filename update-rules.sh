@@ -118,6 +118,10 @@ FILES=(
     # Opt-in bootstrap helper (stampable + full layout)
     "enable-full-orchestration.sh"
     "setup_agent.sh"
+    "remove_worktree.sh"
+    "deploy"
+    "build_app"
+    "sync_infrastructure.sh"
     # Controlled wrapper to safely append only to ENGINEERING_LOG.md.
     # Enforces format and works with chattr +a / restricted perms to stop agents
     # from editing history.
@@ -150,6 +154,10 @@ STAMP_FILES=(
     "fix-sudoers"
     "enable-full-orchestration.sh"
     "setup_agent.sh"
+    "remove_worktree.sh"
+    "deploy"
+    "build_app"
+    "sync_infrastructure.sh"
 )
 
 # 4. Push updates to all other worktrees
@@ -194,6 +202,10 @@ for WT in $WORKTREES; do
             cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
         fi
     done
+
+    # Ensure management/orchestration scripts end up executable (right perms)
+    # These are run from any level; update-rules ensures they are current and +x
+    chmod +x "$WT"/*.sh "$WT"/deploy "$WT"/build_app "$WT"/gradlew 2>/dev/null || true
 
     # Commit changes in the target worktree
     (
