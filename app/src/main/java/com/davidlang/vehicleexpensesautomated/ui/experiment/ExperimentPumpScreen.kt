@@ -165,12 +165,20 @@ fun ExperimentPumpScreen(navController: NavHostController) {
     val resultsList = remember { mutableStateListOf<PumpPhotoResultSummary>() }
 
     val experimentDir = File(context.getExternalFilesDir(null), "pump_photos")
+    experimentDir.mkdirs()
     val reportDir = File(context.getExternalFilesDir(null), "pump_reports")
 
     if (!reportDir.exists()) reportDir.mkdirs()
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { scope.launch { status = "Extracting ZIP..."; val success = pExtractZipToPhotos(it, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." } }
+        uri?.let { u ->
+            try {
+                context.contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to take persistable URI permission", e)
+            }
+            scope.launch { status = "Extracting ZIP..."; val success = pExtractZipToPhotos(u, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." }
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -197,6 +205,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         Button(onClick = {
             scope.launch {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
                 totalPhotos = allFiles.size
                 isRunning = true; resultsList.clear()
                 runPumpExperiment(experimentDir, reportDir, context, { detailLog = it }, null) { res, p ->
@@ -208,6 +217,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         Button(onClick = {
             scope.launch {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                Log.d(TAG, "Run Limited listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
                 val subset = allFiles.filter { it.name in GOLDEN_SUBSET }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
@@ -266,6 +276,7 @@ private suspend fun runPumpExperiment(
     val allPhotos = experimentDir.listFiles { f ->
         f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
     }?.sortedBy { it.name } ?: return@withContext
+    Log.d(TAG, "runPumpExperiment listFiles: dir=${experimentDir.absolutePath} count=${allPhotos.size}")
 
     val photos = if (subsetNames != null) {
         allPhotos.filter { it.name in subsetNames }
