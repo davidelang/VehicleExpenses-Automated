@@ -1786,7 +1786,7 @@ private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: In
 
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
     try {
-        if (targetDir.exists()) targetDir.deleteRecursively(); targetDir.mkdirs()
+        targetDir.mkdirs() // additive extract: do not wipe prior contents
         context.contentResolver.openInputStream(uri)?.use { input ->
             ZipInputStream(input).use { zis ->
                 var entry = zis.nextEntry; while (entry != null) {
