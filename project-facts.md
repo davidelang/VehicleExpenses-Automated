@@ -15,11 +15,10 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - `dev-ai-interaction/research/photos/pump/` — pump experiment source photos; `pump-zips/` holds generated flat zips
 
 ## At worktree root
-- `ENGINEERING_LOG.md` (append-only at end)
+- `ENGINEERING_LOG.md` (append-only at end; use ONLY `./append-to-engineering-log` or `@file` wrapper to add entries)
 - `project-facts.md` (this file)
 - `TODO.md` (backlog; planner edit exception)
-- Launchers: `run-grok*` (use `../` when inside worktree)
-- `build_app`, `get-builds-tag.sh`
+- Launchers: `run-grok*` (use `../` when inside worktree), `build_app`, `get-builds-tag.sh`, `append-to-engineering-log` (required wrapper for ENGINEERING_LOG.md entries; direct edits blocked)
 - `update-rules.sh` (run from orchestration root), set-worktree-perms, set-sandbox-perms, setup-project, etc.
 - `.grok/config.toml` + `.grok/hooks/`
 - `project.config.example`
