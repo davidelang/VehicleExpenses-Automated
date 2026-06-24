@@ -65,7 +65,7 @@
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
 
 # Current cycle
-- [ ] make-zip-extract-additive-no-delete-both-pump-alignment-screens-20260624-plan: remove deleteRecursively from extract in both experiment screens (additive ZIP extract)
+- [x] make-zip-extract-additive-no-delete-both-pump-alignment-screens-20260624-plan: remove deleteRecursively from extract in both experiment screens (additive ZIP extract)
 - [x] clear-jsonfrag-per-row-20260623-plan: stream JSON per row + immediate frag delete
 - [x] pump-unzip-button-flatten-fix-and-first10-all-nonthumb-zips-to-device-20260623-plan: flatten pExtractZipToPhotos + deploy script --make-zips/--push-zips
 - [x] replace-mask-mat-with-direct-rect-run-walking-20260623-plan: direct H hist walk, no coverage mask
