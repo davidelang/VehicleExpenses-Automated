@@ -335,6 +335,26 @@ backup_test_data() {
     fi
   fi
   adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_align.tar.gz" 2>/dev/null || true
+
+  # Source zips in /sdcard/Download (amazon + pump zips for "Extract Downloaded ZIP")
+  # Tar via run-as from external Download dir, stream via run-as cat.
+  zip_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
+    DDIR=\"\$EXTDIR/Download\"
+    mkdir -p /data/data/$PACKAGE_NAME/files
+    cd \"\$DDIR\" 2>/dev/null || exit 0
+    tar czf /data/data/$PACKAGE_NAME/files/ve_zips.tar.gz *.zip 2>&1 || true
+  '" )
+  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_zips.tar.gz" > "$BDIR/ve_source_zips.tar.gz" 2>/dev/null ; then
+    if [ -s "$BDIR/ve_source_zips.tar.gz" ]; then
+      echo "    Captured source zips from Download (ve_source_zips.tar.gz)"
+    fi
+  else
+    if [ -n "$zip_error" ]; then
+      echo "    Source zip backup note: $zip_error"
+    fi
+  fi
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_zips.tar.gz" 2>/dev/null || true
 }
 
 restore_test_data() {
