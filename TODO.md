@@ -73,7 +73,7 @@
 - [x] log-mat-headers-to-diagnose-hist-setsize-crash-20260623-plan: MAT_HEADER dumps on crop/hist path
 
 - [x] Fix full ZIP extract SAF permission, dir ownership, logging on both experiment screens (plan: fix-full-zip-extract-saf-permission-dir-ownership-logging-both-experiment-screens-20260624-plan.md)
-- [ ] Execution in progress
+  - [x] Phases 1-10 complete; both experiment screens hardened
 
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
