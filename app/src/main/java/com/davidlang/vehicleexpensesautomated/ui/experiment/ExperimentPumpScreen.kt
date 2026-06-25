@@ -3234,8 +3234,9 @@ private fun pGetFullLandmarksFromJson(json: String?, engineName: String, imgW: I
 private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
     try {
         targetDir.mkdirs() // additive extract: do not wipe prior contents
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            ZipInputStream(input).use { zis ->
+        val input = context.contentResolver.openInputStream(uri) ?: return@withContext false
+        input.use {
+            ZipInputStream(it).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
                     // use basename only so images land flat at top-level of pump_photos (listFiles is non-recursive)
@@ -3247,7 +3248,7 @@ private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Cont
                 }
             }
         }; true
-    } catch (e: Exception) { false }
+    } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
 }
 
 private fun pToEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
