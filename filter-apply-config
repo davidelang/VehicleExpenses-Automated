@@ -39,8 +39,7 @@ apply() {
   content=$(cat)
   for var in "${!TOKENS[@]}"; do
     token="${TOKENS[$var]}"
-    confvar="CONF_${var^^}"
-    val="${!confvar:-}"
+    val="${!CONF_${var^^}:-}"
     if [ -n "$val" ]; then
       content="${content//$token/$val}"
     fi
