@@ -418,6 +418,32 @@ restore_test_data() {
   adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
 }
 
+if [ "$RESTORE_DATA" = "true" ]; then
+  echo "=== --restore-data: standalone restore only (no build, no uninstall) ==="
+  if [ ${#TARGETS[@]} -eq 0 ]; then
+    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
+    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
+      echo "No connected devices found."
+      exit 1
+    fi
+    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+      restore_test_data "$DEVICE_ID"
+    done
+  else
+    for TARGET in "${TARGETS[@]}"; do
+      if [ -z "$TARGET" ]; then
+        echo "Warning: skipping empty target from args"
+        continue
+      fi
+      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
+      echo "Restoring to $TARGET ($DEVICE_ID)..."
+      restore_test_data "$DEVICE_ID"
+    done
+  fi
+  echo "=== --restore-data complete ==="
+  exit 0
+fi
+
 OVERALL_SUCCESS=true
 
 if [ ${#TARGETS[@]} -eq 0 ]; then
