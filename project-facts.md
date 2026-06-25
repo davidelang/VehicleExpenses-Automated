@@ -17,6 +17,7 @@ Read in full early on startup/new cycle to avoid discovery searches.
 - `TODO.md`
 - Launchers: `run-grok`, `run-grok-planner`, `run-grok-master`
 - Scripts: `update-rules.sh` (run here to sync to worktrees), `build_app`, `get-builds-tag.sh`, `fix-perms`, `setup-project`, `setup_agent.sh`, `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`, `sync_infrastructure.sh`
+- `deploy` — `--restore-data` standalone restore (no build/uninstall); `--preserve-data` backups under `test-data-backups/<dev>-<ts>/` include `ve_source_zips.tar.gz` (device `/sdcard/Download` zips)
 - `.grok/config.toml` + `.grok/hooks/`
 - `project.config.example`
 
