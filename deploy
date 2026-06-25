@@ -339,7 +339,7 @@ backup_test_data() {
 
 restore_test_data() {
   local DEV=$1
-  if [ "$PRESERVE_DATA" != "true" ]; then return; fi
+  if [ "$PRESERVE_DATA" != "true" ] && [ "$RESTORE_DATA" != "true" ]; then return; fi
   # Find most recent backup for this device
   local LATEST=$(ls -td test-data-backups/"${DEV}"-* 2>/dev/null | head -1)
   if [ -z "$LATEST" ]; then
@@ -352,6 +352,7 @@ restore_test_data() {
   if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then has_content=true; fi
   if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then has_content=true; fi
   if [ -f "$LATEST/alignment_photos.tar.gz" ] && [ -s "$LATEST/alignment_photos.tar.gz" ]; then has_content=true; fi
+  if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then has_content=true; fi
 
   if [ "$has_content" = true ]; then
     echo "  [preserve] Restoring test data for $DEV from $LATEST"
@@ -544,6 +545,7 @@ else
                         break
                     fi
                 done
+                if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then has_backup=true; fi
             fi
             pkg_check=$(adb -s "$DEVICE_ID" shell "pm list packages $PACKAGE_NAME" 2>/dev/null || true)
             if echo "$pkg_check" | grep -q "$PACKAGE_NAME"; then
