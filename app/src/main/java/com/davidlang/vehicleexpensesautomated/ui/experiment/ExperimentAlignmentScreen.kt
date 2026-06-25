@@ -1799,14 +1799,15 @@ private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: In
 private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
     try {
         targetDir.mkdirs() // additive extract: do not wipe prior contents
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            ZipInputStream(input).use { zis ->
+        val input = context.contentResolver.openInputStream(uri) ?: return@withContext false
+        input.use {
+            ZipInputStream(it).use { zis ->
                 var entry = zis.nextEntry; while (entry != null) {
                     val file = File(targetDir, entry.name); if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }; zis.closeEntry(); entry = zis.nextEntry
                 }
             }
         }; true
-    } catch (e: Exception) { false }
+    } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
 }
 
 private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
