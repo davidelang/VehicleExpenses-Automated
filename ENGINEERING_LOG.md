@@ -483,3 +483,9 @@ The diag helps see the parameters, but the header issue causes the failure.
 - combinePhotoFragmentsIntoJson kept as legacy helper (unused by main path).
 - Added PUMP_JSON, PUMP_FRAG, PUMP_HTML diagnostic logs (header, frag sizes, HTML row lengths, part switches).
 - Partial-run catch logs warn JSON may lack footer.
+
+## 2026-06-24 - Additive ZIP extract (Pump + Alignment experiment screens)
+
+- Removed `deleteRecursively()` from `pExtractZipToPhotos` (ExperimentPumpScreen.kt ~3225) and `extractZipToPhotos` (ExperimentAlignmentScreen.kt ~1789); extract now calls `targetDir.mkdirs()` only so repeated ZIP extracts add/overwrite files without wiping prior contents.
+- Plan: dev-ai-interaction/plans/make-zip-extract-additive-no-delete-both-pump-alignment-screens-20260624-plan.md
+- Tag: fix-pump-experiment-start-779-g8046e7d5
