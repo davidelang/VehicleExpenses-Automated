@@ -105,12 +105,20 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     val resultsList = remember { mutableStateListOf<PhotoResultSummary>() }
 
     val experimentDir = File(context.filesDir, "experiment_photos")
+    experimentDir.mkdirs()
     val reportDir = File(context.filesDir, "experiment_reports")
 
     if (!reportDir.exists()) reportDir.mkdirs()
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { scope.launch { status = "Extracting ZIP..."; val success = extractZipToPhotos(it, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." } }
+        uri?.let { u ->
+            try {
+                context.contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to take persistable URI permission", e)
+            }
+            scope.launch { status = "Extracting ZIP..."; val success = extractZipToPhotos(u, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." }
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -138,6 +146,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
                 totalPhotos = allFiles.size
                 isRunning = true; resultsList.clear()
                 runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, null) { res, p ->
@@ -150,6 +159,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                Log.d(TAG, "Run Limited listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
                 val subset = allFiles.filter { it.name in GOLDEN_SUBSET.keys }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
@@ -163,6 +173,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                Log.d(TAG, "Run Failing Subset listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
                 val subset = allFiles.filter { it.name in FAILING_SUBSET.keys }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
@@ -214,6 +225,7 @@ private suspend fun runExperiment(
     val allPhotos = experimentDir.listFiles { f ->
         f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
     }?.sortedBy { it.name } ?: return@withContext
+    Log.d(TAG, "runExperiment listFiles: dir=${experimentDir.absolutePath} count=${allPhotos.size}")
 
     val photos = if (subsetMap != null) {
         allPhotos.filter { it.name in subsetMap.keys }
