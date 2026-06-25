@@ -40,6 +40,10 @@ while [ $# -gt 0 ]; do
       PRESERVE_DATA=true
       shift
       ;;
+    --restore-data)
+      RESTORE_DATA=true
+      shift
+      ;;
     --clean)
       UNINSTALL_FIRST=true
       shift
@@ -75,10 +79,12 @@ fi
 # Defaults (flags above take precedence; also respect env vars).
 PRESERVE_DATA=${PRESERVE_DATA:-false}
 UNINSTALL_FIRST=${UNINSTALL_FIRST:-false}
+RESTORE_DATA=${RESTORE_DATA:-false}
 
 # Export so values survive the primary/ai-code re-execs that happen later.
 export PRESERVE_DATA
 export UNINSTALL_FIRST
+export RESTORE_DATA
 
 # Ensure backups dir exists (for PRESERVE_DATA)
 mkdir -p test-data-backups 2>/dev/null || true
