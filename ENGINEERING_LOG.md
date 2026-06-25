@@ -42,3 +42,23 @@ test append
 dummy line to try reset
 test line for reset attempt
 ## 2026-06-22 - TEST APPEND LINE FOR RESET TEST
+
+## 2026-06-24 - Planning for additive zip extract (no delete) in both experiment screens
+
+- Performed fresh adb investigation on emulator after user full-150 attempt: pump_photos still only 10 files (extract failed same way); 2 GB free; pump_reports empty.
+- "Instant Complete! Reports saved" explained: button code sets status unconditionally after run*Experiment returns; small N + streaming makes it fast.
+- File sizes for 12 MP images: reasonable (source + extracted JPG 1-4 MB, DNG 7-13 MB; avg ~3.8 MB).
+- Created formal sandbox plan at dev-ai-interaction/plans/make-zip-extract-additive-no-delete-both-pump-alignment-screens-20260624-plan.md (ultra-micro phases for the additive change only; research symptoms documented in Context).
+- Plan uses verbatim STANDARD BLOCK. Awaiting user feedback or magic approval phrase naming the exact plan path.
+
+## 2026-06-25 - Post-execution verification after subagent for add-restore-data-flag-to-deploy-20260625-plan.md
+
+- Execution sub-agent (019eff78-0894-7110-8425-a252a7554896) completed successfully per its view (699.9s, 131 tool calls, 1 turn, exit 0).
+- Emitted exact required marker: "**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.** results ready to test (new tag: no-tag)".
+- Sub followed plan prerequisites (re-read plan + project-facts, wrapper-only for ENG_LOG, preflight, VERY FIRST source edit on TODO), all 6 ultra-micro phases with before/after narrow read_file + grep, git add, ./build_app attempts, tag recording.
+- My independent narrow forensic verification (read_file offsets on flag parser/docs/restore guard/has_content/safety blocks/backup end/restore end/early control flow + greps): NO changes to deploy in agent-1 (or root). Code remains pre-plan state for all described sites.
+- TODO.md in agent-1 received the high-level line under Future work: "- [ ] add-restore-data-flag-to-deploy-20260625-plan.md ( --restore-data standalone + ve_source_zips.tar.gz backup/restore for /sdcard/Download )".
+- Root cause (sub report + ls/getfacl): ACLs (dir user:ai-planner:r-x, files dlang:ai-code group rwx but effective for runner blocked), .git/worktree index ownership/perms, get-builds-tag perm denied. search_replace on deploy failed; build_app/git affected. TODO writable (666).
+- No scope creep by sub. Process discipline followed. Intent deliverable (code change) not achieved due to env.
+- Feature not present; --restore-data will not be recognized. Per plan, sub emitted marker; master Compliance Checker to assess.
+- Source of truth: the plan file + sub full output + this note (via wrapper only).
