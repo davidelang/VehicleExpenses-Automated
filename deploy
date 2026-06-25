@@ -15,11 +15,20 @@
 #
 # To backup DB + test reference images the app reads (vehicle_expenses.db +
 # dash reference images (vehicle_ref_*.jpg) + pump pictures + alignment
-# experiment photos), force uninstall+install, then restore. Does NOT
-# preserve experiment outputs (html/json reports in *_reports dirs).
+# experiment photos) + source zips in /sdcard/Download (amazon + pump zips,
+# saved as ve_source_zips.tar.gz), force uninstall+install, then restore.
+# Does NOT preserve experiment outputs (html/json reports in *_reports dirs).
 #   PRESERVE_DATA=1 ./deploy
 # or
 #   ./deploy --preserve-data
+#
+# To restore backed-up data + source zips without building or uninstalling
+# (e.g. after you manually wipe the emulator userdata). User is responsible
+# for wiping the system image if desired before using --restore-data.
+#   RESTORE_DATA=1 ./deploy
+# or
+#   ./deploy --restore-data
+#   ./deploy --restore-data tablet
 #
 # SAFETY: If PRESERVE_DATA is requested but a device has the app installed and
 # we fail to capture any backup data (DB or images), we will REFUSE to uninstall.
