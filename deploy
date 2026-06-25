@@ -405,6 +405,15 @@ restore_test_data() {
       mkdir -p files/experiment_photos && cd files/experiment_photos && tar xzf /sdcard/ve_alignment_photos.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_alignment_photos.tar.gz
     '" 2>/dev/null || true
   fi
+  # Restore source zips to /sdcard/Download (amazon + pump zips)
+  if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then
+    adb -s "$DEV" push "$LATEST/ve_source_zips.tar.gz" /sdcard/ve_source_zips.tar.gz >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+      EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
+      DDIR=\"\$EXTDIR/Download\"
+      mkdir -p \"\$DDIR\" && cd \"\$DDIR\" && tar xzf /sdcard/ve_source_zips.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_source_zips.tar.gz
+    '" 2>/dev/null || true
+  fi
   # Optional: force-stop to make app reload DB on next launch
   adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
 }
