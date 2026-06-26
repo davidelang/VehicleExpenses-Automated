@@ -408,7 +408,11 @@ restore_test_data() {
   if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then has_content=true; fi
 
   if [ "$has_content" = true ]; then
-    echo "  [preserve] Restoring test data for $DEV from $LATEST"
+    if [ "$INSTALL_DATA" = "true" ]; then
+      echo "  [install] Installing data for $DEV from $LATEST"
+    else
+      echo "  [preserve] Restoring test data for $DEV from $LATEST"
+    fi
   fi
 
   # Restore DB
