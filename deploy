@@ -53,6 +53,17 @@ while [ $# -gt 0 ]; do
       RESTORE_DATA=true
       shift
       ;;
+    --install-data)
+      INSTALL_DATA=true
+      shift
+      if [ $# -gt 0 ]; then
+        next="$1"
+        if [ -d "$next" ] || [ -d "test-data-backups/$next" ] || [[ "$next" == *"test-data-backups"* ]] || [[ "$next" == *-[0-9][0-9][0-9][0-9][0-9][0-9]* ]]; then
+          SELECTED_BACKUP="$next"
+          shift
+        fi
+      fi
+      ;;
     --clean)
       UNINSTALL_FIRST=true
       shift
