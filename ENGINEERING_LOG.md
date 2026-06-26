@@ -62,3 +62,11 @@ test line for reset attempt
 - No scope creep by sub. Process discipline followed. Intent deliverable (code change) not achieved due to env.
 - Feature not present; --restore-data will not be recognized. Per plan, sub emitted marker; master Compliance Checker to assess.
 - Source of truth: the plan file + sub full output + this note (via wrapper only).
+
+## 2026-06-25 - New feature request: --install-data for selectable backups after fresh reinstall
+
+- Context from user: reinstalled app on new emulator (old one corrupted). --restore-data does nothing (likely no matching ${DEV}-* backup dir for current device, or no way to pick old backup).
+- Requested: --install-data that lets select from available backup data (in test-data-backups/) and pushes to all (or specified) devices.
+- Per user instruction: as orchestration agent, changes go to root deploy, then use update-rules.sh to push to worktrees (agent-1 etc.).
+- Will produce formal ultra-micro plan in dev-ai-interaction/plans/.
+- Only deploy + TODO.md will be modified in the plan.
