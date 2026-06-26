@@ -383,12 +383,20 @@ backup_test_data() {
 }
 
 restore_test_data() {
-  local DEV=$1
-  if [ "$PRESERVE_DATA" != "true" ] && [ "$RESTORE_DATA" != "true" ]; then return; fi
-  # Find most recent backup for this device
-  local LATEST=$(ls -td test-data-backups/"${DEV}"-* 2>/dev/null | head -1)
+  local DEV=$1; local EXPLICIT_BACKUP=$2
+  if [ "$PRESERVE_DATA" != "true" ] && [ "$RESTORE_DATA" != "true" ] && [ "$INSTALL_DATA" != "true" ]; then return; fi
+  local LATEST
+  if [ -n "$EXPLICIT_BACKUP" ]; then
+    LATEST="$EXPLICIT_BACKUP"
+  else
+    LATEST=$(ls -td test-data-backups/"${DEV}"-* 2>/dev/null | head -1)
+  fi
   if [ -z "$LATEST" ]; then
-    echo "  [preserve] No backup found for $DEV, skipping restore"
+    if [ -n "$EXPLICIT_BACKUP" ]; then
+      echo "  [install] Backup directory not found or empty: $EXPLICIT_BACKUP"
+    else
+      echo "  [preserve] No backup found for $DEV, skipping restore"
+    fi
     return
   fi
   # Only announce restore if the backup dir actually has content
