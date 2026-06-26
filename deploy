@@ -30,6 +30,16 @@
 #   ./deploy --restore-data
 #   ./deploy --restore-data tablet
 #
+# To install data from any chosen backup dir (standalone; no build, no uninstall).
+# Use after a manual fresh install on a new emulator. Lists available backups if
+# no dir given. Pushes DB + refs + pump/alignment photos + source zips to all
+# devices or specified targets. User picks the backup (not tied to current DEV).
+#   INSTALL_DATA=1 ./deploy
+# or
+#   ./deploy --install-data
+#   ./deploy --install-data test-data-backups/<name>
+#   ./deploy --install-data test-data-backups/<name> tablet
+#
 # SAFETY: If PRESERVE_DATA is requested but a device has the app installed and
 # we fail to capture any backup data (DB or images), we will REFUSE to uninstall.
 # This prevents destroying your test data when backup or the subsequent build fails.
