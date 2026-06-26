@@ -481,6 +481,43 @@ if [ "$RESTORE_DATA" = "true" ]; then
   exit 0
 fi
 
+if [ "$INSTALL_DATA" = "true" ]; then
+  echo "=== --install-data: standalone data install from selected backup (no build, no uninstall) ==="
+  local BACKUP_TO_USE="$SELECTED_BACKUP"
+  if [ -z "$BACKUP_TO_USE" ]; then
+    echo "No backup specified. Available:"
+    ls -td test-data-backups/* 2>/dev/null || echo "(none)"
+    echo 'Usage: ./deploy --install-data test-data-backups/<name> [dev...]'
+    exit 1
+  fi
+  if [ ! -d "$BACKUP_TO_USE" ] && [ -d "test-data-backups/$BACKUP_TO_USE" ]; then
+    BACKUP_TO_USE="test-data-backups/$BACKUP_TO_USE"
+  fi
+  if [ ! -d "$BACKUP_TO_USE" ]; then
+    echo "Backup directory not found: $BACKUP_TO_USE"
+    exit 1
+  fi
+  if [ ${#TARGETS[@]} -eq 0 ]; then
+    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
+    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
+      echo "No connected devices found."
+      exit 1
+    fi
+    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+      restore_test_data "$DEVICE_ID" "$BACKUP_TO_USE"
+    done
+  else
+    for TARGET in "${TARGETS[@]}"; do
+      if [ -z "$TARGET" ]; then continue; fi
+      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
+      echo "Installing to $TARGET ($DEVICE_ID)..."
+      restore_test_data "$DEVICE_ID" "$BACKUP_TO_USE"
+    done
+  fi
+  echo "=== --install-data complete ==="
+  exit 0
+fi
+
 OVERALL_SUCCESS=true
 
 if [ ${#TARGETS[@]} -eq 0 ]; then
