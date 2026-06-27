@@ -82,3 +82,9 @@ test line for reset attempt
 
 - deploy: manifest on backup capture, restore cache/WAL bust, md5+DB verify, --push-vehicle-refs, push-vehicle-refs.sh
 - Plan: dev-ai-interaction/plans/reliable-vehicle-reference-dash-photo-push-and-ui-display-20260627-plan.md
+
+## 2026-06-27 - Multi-user permissions fix (orchestration)
+
+- Implemented shared .gradle-shared/ and .android-shared/ homes; build_app/deploy export GRADLE_USER_HOME and ANDROID_USER_HOME
+- deploy: removed futile chown; fix-perms: sandbox ai-sandbox group, shared dirs, planner guard, umask 007 in launchers/utilities
+- Propagated via update-rules.sh to master and agent worktrees
