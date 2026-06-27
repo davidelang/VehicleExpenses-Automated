@@ -1,4 +1,7 @@
 #!/bin/bash
+# Ensure all files created during this session are group-writable (multi-user env)
+umask 007
+
 export GEMINI_PROJECT_ROOT=$(pwd)
 # Support -- to pass raw params to gemini.
 EXTRA_ARGS=()

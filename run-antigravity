@@ -13,6 +13,9 @@ if [ -f project.config ]; then
 fi
 CODER_USER=${coder_user:-ai-coder}
 
+# Ensure all files created during this session are group-writable (multi-user env)
+umask 007
+
 ANTIGRAVITY_BIN="${ANTIGRAVITY_BIN:-${antigravity_bin:-$HOME/git/antigravity/bin/agy}}"
 
 echo "Launching Antigravity agent in $(pwd)..."
