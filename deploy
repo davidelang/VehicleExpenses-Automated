@@ -78,6 +78,10 @@ while [ $# -gt 0 ]; do
       UNINSTALL_FIRST=true
       shift
       ;;
+    --push-vehicle-refs)
+      PUSH_VEHICLE_REFS=true
+      shift
+      ;;
     *)
       break
       ;;
@@ -91,6 +95,7 @@ done
 #   ./deploy emulator -- --debug
 # Targets (aliases or device ids) come before any -- ; everything after -- goes to gradlew.
 TARGETS=()
+PUSH_REF_PATHS=()
 GRADLE_ARGS=()
 SEEN_DD=false
 for arg in "$@"; do
@@ -98,6 +103,8 @@ for arg in "$@"; do
     GRADLE_ARGS+=("$arg")
   elif [ "$arg" = "--" ]; then
     SEEN_DD=true
+  elif [ "${PUSH_VEHICLE_REFS:-false}" = "true" ] && { [ -f "$arg" ] || [ -d "$arg" ]; }; then
+    PUSH_REF_PATHS+=("$arg")
   else
     TARGETS+=("$arg")
   fi
@@ -111,6 +118,7 @@ PRESERVE_DATA=${PRESERVE_DATA:-false}
 UNINSTALL_FIRST=${UNINSTALL_FIRST:-false}
 RESTORE_DATA=${RESTORE_DATA:-false}
 INSTALL_DATA=${INSTALL_DATA:-false}
+PUSH_VEHICLE_REFS=${PUSH_VEHICLE_REFS:-false}
 SELECTED_BACKUP=${SELECTED_BACKUP:-}
 
 # Export so values survive the primary/ai-code re-execs that happen later.
@@ -118,6 +126,7 @@ export PRESERVE_DATA
 export UNINSTALL_FIRST
 export RESTORE_DATA
 export INSTALL_DATA
+export PUSH_VEHICLE_REFS
 export SELECTED_BACKUP
 
 # Ensure backups dir exists (for PRESERVE_DATA)
@@ -485,6 +494,58 @@ verify_restored_vehicle_refs() {
   rm -f "$tmpdb"
 }
 
+push_one_vehicle_ref() {
+  local DEV=$1
+  local SRC=$2
+  local bn
+  bn=$(basename "$SRC")
+  case "$bn" in
+    vehicle_ref_*.jpg) ;;
+    *)
+      echo "    Skip $bn (must be named vehicle_ref_*.jpg)"
+      return 1
+      ;;
+  esac
+  echo "    Pushing $bn -> files/$bn on $DEV"
+  adb -s "$DEV" push "$SRC" "/sdcard/$bn" >/dev/null
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cp /sdcard/$bn files/$bn && chmod 660 files/$bn && rm -f /sdcard/$bn'" 2>/dev/null || true
+}
+
+# Lightweight push of phone-updated vehicle_ref_*.jpg by exact filename (no full backup/restore).
+push_vehicle_refs_to_device() {
+  local DEV=$1
+  shift
+  local paths=("$@")
+  if [ ${#paths[@]} -eq 0 ]; then
+    echo "  [push-refs] No ref paths provided for $DEV"
+    return 1
+  fi
+  echo "  [push-refs] Pushing vehicle reference dash photos to $DEV"
+  local pushed_any=false
+  for path in "${paths[@]}"; do
+    if [ -d "$path" ]; then
+      shopt -s nullglob
+      local jpgs=("$path"/vehicle_ref_*.jpg)
+      shopt -u nullglob
+      for jpg in "${jpgs[@]}"; do
+        if push_one_vehicle_ref "$DEV" "$jpg"; then pushed_any=true; fi
+      done
+    elif [ -f "$path" ]; then
+      if push_one_vehicle_ref "$DEV" "$path"; then pushed_any=true; fi
+    else
+      echo "    Path not found: $path"
+    fi
+  done
+  if [ "$pushed_any" != true ]; then
+    echo "  [push-refs] Nothing pushed to $DEV"
+    return 1
+  fi
+  post_restore_ref_hygiene "$DEV"
+  verify_restored_vehicle_refs "$DEV" "__push_only__"
+  adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
+  adb -s "$DEV" shell "am start -n $PACKAGE_NAME/.MainActivity --activity-clear-task" 2>/dev/null || true
+}
+
 restore_test_data() {
   local DEV=$1; local EXPLICIT_BACKUP=$2
   if [ "$PRESERVE_DATA" != "true" ] && [ "$RESTORE_DATA" != "true" ] && [ "$INSTALL_DATA" != "true" ]; then return; fi
@@ -567,6 +628,38 @@ restore_test_data() {
   adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
   adb -s "$DEV" shell "am start -n $PACKAGE_NAME/.MainActivity --activity-clear-task" 2>/dev/null || true
 }
+
+if [ "$PUSH_VEHICLE_REFS" = "true" ]; then
+  echo "=== --push-vehicle-refs: push specific vehicle_ref_*.jpg only (no build, no uninstall) ==="
+  if [ ${#PUSH_REF_PATHS[@]} -eq 0 ] && [ -n "${PUSH_VEHICLE_REFS_DIR:-}" ] && [ -d "$PUSH_VEHICLE_REFS_DIR" ]; then
+    PUSH_REF_PATHS=("$PUSH_VEHICLE_REFS_DIR")
+  fi
+  if [ ${#PUSH_REF_PATHS[@]} -eq 0 ]; then
+    echo "Usage: ./deploy --push-vehicle-refs /path/to/vehicle_ref_*.jpg [/path/to/dir] [tablet...]"
+    echo "   or: PUSH_VEHICLE_REFS_DIR=/path/to/dir ./deploy --push-vehicle-refs [tablet...]"
+    echo "   or: ./push-vehicle-refs.sh /path/to/dir [tablet...]"
+    exit 1
+  fi
+  if [ ${#TARGETS[@]} -eq 0 ]; then
+    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
+    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
+      echo "No connected devices found."
+      exit 1
+    fi
+    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+      push_vehicle_refs_to_device "$DEVICE_ID" "${PUSH_REF_PATHS[@]}"
+    done
+  else
+    for TARGET in "${TARGETS[@]}"; do
+      if [ -z "$TARGET" ]; then continue; fi
+      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
+      echo "Pushing refs to $TARGET ($DEVICE_ID)..."
+      push_vehicle_refs_to_device "$DEVICE_ID" "${PUSH_REF_PATHS[@]}"
+    done
+  fi
+  echo "=== --push-vehicle-refs complete ==="
+  exit 0
+fi
 
 if [ "$RESTORE_DATA" = "true" ]; then
   echo "=== --restore-data: standalone restore only (no build, no uninstall) ==="
