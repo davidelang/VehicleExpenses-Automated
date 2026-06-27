@@ -234,8 +234,6 @@ fix_build_dir_perms() {
     # chmod parents first so we can traverse and fix deep cxx etc.
     chmod -R u+rX,g+rX app/build 2>/dev/null || true
     chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-    # chown foreign-owned (root or ai-orchestrator) back to primary:code group
-    find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
     # setgid on dirs for proper inheritance on new files (with umask 007 -> 660/770)
     find app/build -type d -exec chmod 2770 {} + 2>/dev/null || true
     find app/build -type f -exec chmod 660 {} + 2>/dev/null || true
@@ -253,14 +251,13 @@ fix_git_perms() {
     echo "  Fixing .git/worktree perms (best effort, sudo ../fix-perms may still be needed for objects)..."
     chmod -R u+rX,g+rX "$main_git" 2>/dev/null || true
     chmod -R u+rwX,g+rwX "$main_git" 2>/dev/null || true
-    find "$main_git" \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-shared" {} + 2>/dev/null || true
     # Repair worktree metadata too
     if [ -f .git ]; then
       local wt_meta
       wt_meta=$(sed 's/gitdir: //' .git)
       if [ -d "$wt_meta" ]; then
         chmod -R u+rX,g+rX "$wt_meta" 2>/dev/null || true
-        find "$wt_meta" \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-shared" {} + 2>/dev/null || true
+        chmod -R u+rwX,g+rwX "$wt_meta" 2>/dev/null || true
       fi
     fi
     # If the current branch ref is the all-zero broken state, remove the loose ref
@@ -880,8 +877,6 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 chmod -R u+rX,g+rX app/build 2>/dev/null || true
                 # Full rw for user+group
                 chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-                # Fix any root-owned files
-                find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
             fi
 
             # Aggressive removal of state that Gradle tracks and may have bad perms on
@@ -990,8 +985,6 @@ else
             chmod -R u+rX,g+rX app/build 2>/dev/null || true
             # Full rw for user+group
             chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-            # Fix any root-owned files
-            find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
         fi
 
         # Aggressive removal of state that Gradle tracks and may have bad perms on
