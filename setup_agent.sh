@@ -53,6 +53,18 @@ if [ -e "${BRANCH_NAME}.wt" ] && [ ! -L "${BRANCH_NAME}.wt" ]; then
     exit 1
 fi
 
+# Ensure main .git/config is not root-owned (breaks git for users without active ai-shared GID)
+if [ -f .git/config ] && [ "$(stat -c '%U' .git/config 2>/dev/null || echo '')" = "root" ]; then
+  echo "Repairing root-owned .git/config (requires sudo once)..."
+  if ! sudo chown "$PRIMARY_USER:$SHARED_GROUP" .git/config 2>/dev/null; then
+    echo "Error: .git/config is owned by root. Run:"
+    echo "  sudo chown $PRIMARY_USER:$SHARED_GROUP .git/config"
+    echo "  sudo ./fix-perms --verbose"
+    exit 1
+  fi
+  chmod 660 .git/config 2>/dev/null || true
+fi
+
 # 2. Create Worktree & Branch
 echo "Creating worktree for $AGENT_ID on branch $BRANCH_NAME..."
 
@@ -138,7 +150,11 @@ fi
 # perform the proper substitutions for @@ tokens.
 git checkout .
 
-git config core.sharedRepository group
+if [ "$(id -un)" != "$PRIMARY_USER" ] && [ "$EUID" -ne 0 ]; then
+  sudo -u "$PRIMARY_USER" git config core.sharedRepository group
+else
+  git config core.sharedRepository group
+fi
 
 # 7. Make this a *fully working* tree with all correct permissions.
 #    Since we are always run from the orchestration root (which has the
