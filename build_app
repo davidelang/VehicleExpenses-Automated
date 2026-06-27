@@ -19,12 +19,8 @@ PRIMARY_USER=${PRIMARY_USER:-dlang}
 # which produces a different certificate and triggers
 # INSTALL_FAILED_UPDATE_INCOMPATIBLE on deploy.
 if [ "$EUID" -eq 0 ]; then
-  echo "Re-executing as $PRIMARY_USER (not root) for consistent signing keystore..."
-  if [ -x ./run-as-primary ]; then
-    exec ./run-as-primary "$0" "$@"
-  else
-    exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
-  fi
+  echo "Re-executing as $PRIMARY_USER (not root)..."
+  exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
 fi
 
 # Ensure group-writable creation for build artifacts and Gradle caches (660/770)
@@ -141,6 +137,24 @@ else
     if [ ${#GRADLE_ARGS[@]} -gt 0 ]; then
       echo "Passing gradle flags: ${GRADLE_ARGS[*]}"
     fi
+    # Use project-local shared Gradle home (not per-user ~/.gradle).
+    # Required for multi-user builds: same users serve different projects.
+    ORCH_ROOT="$(cd "$(dirname "$0")" && pwd)"
+    # For worktrees, the orchestration root is the parent
+    [ -d "$ORCH_ROOT/../.gradle-shared" ] && ORCH_ROOT="$(cd "$ORCH_ROOT/.." && pwd)"
+    if [ -d "$ORCH_ROOT/.gradle-shared" ]; then
+      export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+    fi
+    # Shared Android home: consistent debug keystore for all builders
+    if [ -d "$ORCH_ROOT/.android-shared" ]; then
+      export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
+    fi
+    PLANNING_USER=$(sed -n 's/^planning_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
+    PLANNING_USER=${PLANNING_USER:-ai-planner}
+    if [ "$(id -un)" = "$PLANNING_USER" ]; then
+      echo "ERROR: Planning agents must not run Gradle builds. Policy violation."
+      exit 1
+    fi
     # Always go through build_app — direct gradlew/gradlew.bat is forbidden (breaks integrity, perms, tags).
     GRADLE_CMD=( "${GRADLE_ARGS[@]}" assembleDebug )
     (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_CMD[@]}")
@@ -155,14 +169,14 @@ else
         git tag -f "$TAG_NAME"
         git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
 
-        # Lightweight local repair for .gradle (the most common source of "permission hell"
-        # after an agent build). This often removes the need to run the full sudo
-        # fix-perms globally.
-        if [ -d .gradle ]; then
-          echo "Quick local .gradle repair (2770/660 + setgid)..."
-          find .gradle -type d -exec chmod 2770 {} + 2>/dev/null || true
-          find .gradle -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
-        fi
+        # Post-build permission repair for all shared build directories
+        for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
+          if [ -d "$gdir" ]; then
+            echo "Quick $gdir permission repair (setgid + 660)..."
+            find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
+            find "$gdir" -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
+          fi
+        done
 
         exit 0
     else

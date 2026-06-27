@@ -65,6 +65,9 @@ if [ -f project.config ]; then
 fi
 PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
 
+# Ensure all files created during this session are group-writable (multi-user env)
+umask 007
+
 # === Model selection for Planning Agent ===
 #
 # In this grok.com environment the available models (from `grok models`) are:

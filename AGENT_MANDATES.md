@@ -97,11 +97,11 @@ Produce a high-signal, low-boilerplate document focused on the specific work of 
 **Mandatory ultra-micro phased discipline (non-negotiable):** The approved plan will have decomposed the work into many named ultra-small phases. For each phase:
 - Perform the minimal edit for that phase only.
 - Immediately do narrow forensic `read_file` (offset/limit on the exact site) + targeted grep before and after the edit.
-- `git add` the changed tracked source(s) + TODO.md.
+- `git add` the changed tracked source(s) + TODO.md. (The TODO.md update itself MUST be performed via the `./todo-append` wrapper.)
 - Run `./build_app` and confirm success (record the new branch-scoped builds tag).
 - Only after a successful `./build_app` for the current phase may you begin edits for the next phase.
 
-First action: update TODO.md. Use forensic reads before/after every edit. On any failure or partial reset, only the tag of the most recent successful phase (obtained via `./get-builds-tag.sh` preflight) may be used for recovery. At the very end, after the final successful build + post-forensic verification, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' followed by 'results ready to test (new tag: ...)' and then stop completely. Parent/main agent will review your changes for fidelity to the plan.
+First action: use `./todo-append` to update TODO.md (high-level only). Use forensic reads before/after every edit. On any failure or partial reset, only the tag of the most recent successful phase (obtained via `./get-builds-tag.sh` preflight) may be used for recovery. At the very end, after the final successful build + post-forensic verification, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' followed by 'results ready to test (new tag: ...)' and then stop completely. Parent/main agent will review your changes for fidelity to the plan.
 
 When reading project-facts.md: always read the *full* file (no offset/limit or tail). If large, report its size for separate work. When appending to ENGINEERING_LOG.md: *only append* a new dated entry at the end — never edit prior sections.
 
@@ -155,7 +155,7 @@ Only treat a situation as full restart/abandonment if the user explicitly uses l
   The master (whose prompt is built with the full automation logic) is responsible for detecting the short "New planning cycle" trigger, reading the necessary files (project-facts.md + standard block), writing the complete narrow prompt for the dedicated planner, giving the user the exact one-line restart instruction, and then stopping so the human can immediately switch to the planner terminal.
 
 - **State Verification:** Before performing any edit, you MUST re-verify the file content. Do NOT assume your memory of a file from a previous turn is accurate.
-- **The First Action:** The very first action upon entering the Execution phase is to update `TODO.md` to reflect the newly approved plan.
+- **The First Action:** The very first action upon entering the Execution phase is to update `TODO.md` to reflect the newly approved plan. This MUST be performed via the `./todo-append` wrapper (never direct search_replace, write, or edit on TODO.md except through the approved wrapper for high-level items only).
 - **Post-Execution Validation (CRITICAL):**
     - The success return code of a write/replace tool call is **NOT evidence of integrity**.
     - You MUST perform a **Forensic Audit** via `read_file` (targeting the modified lines) after EVERY modification to verify that the change was applied correctly and did not cause unintended side effects or corruption.
@@ -246,7 +246,7 @@ Planners may edit the tracked `project-facts.md` (and `TODO.md`) as explicit exc
   - Good examples: locations of mandates, sandbox subdirectories (plans/, historical-plans/, implementation-failure-logs/), launchers, update-rules, core source directories that are unlikely to move, coordinate policy, absolute sandbox path for writes.
 - **Update discipline**:
   - Only add or correct facts about where stable things live or unchanging conventions.
-  - Detailed progress, plan references, and effort narrative go exclusively to the active plan document or (append-only) ENGINEERING_LOG.md.
+  - Detailed progress, plan references, and effort narrative go exclusively to the active plan document or (append-only) ENGINEERING_LOG.md (all appends MUST use the `./append-to-engineering-log` wrapper exclusively).
 - **Mandatory full read + hygiene**:
   - On launch, new cycle, or before any edit: read the *entire* project-facts.md (use read_file with no offset/limit).
   - Prune anything non-stable. Keep the file small and high-signal so startup re-orientation is fast.
@@ -255,10 +255,12 @@ Planners may edit the tracked `project-facts.md` (and `TODO.md`) as explicit exc
 
 **ENGINEERING_LOG.md Rules (append-only activity log)**
 - ENGINEERING_LOG.md is strictly **append-only**. Agents must *only* append new dated entries at the very end of the file.
+- **MUST exclusively use the `./append-to-engineering-log` wrapper (never direct edits, >>, echo, search_replace, or any other write on the file itself). The wrapper is the only approved mechanism.** It enforces the `## YYYY-MM-DD - Title` header format and safe append semantics (with sudo fallback if needed).
 - Never edit, delete, overwrite, or modify any existing dated sections, entries, or historical content.
 - All past activity must remain untouched for accurate tailing and historical review.
 - New entries go under a new `## [YYYY-MM-DD] - Title` header with bullet details of what was done, changes, results, etc.
 - Use this for effort tracking, "I'm working on X", cycle narrative, detailed progress, sub-agent outcomes, etc.
+- **Orchestrator/master responsibility**: The master/orchestrator MUST use the wrapper to record sub-agent outcomes, PR processing steps, cycle coordination, and any high-level progress (detailed execution transcripts stay in the sandbox plan or sub-agent logs).
 
 ## Sandbox Plan File as the Primary Approved Artifact for Feature / Implementation Work (CRITICAL)
 A formal plan document is **required** before you make *any* changes to tracked files outside the sandbox (i.e. real application source code in the main app directories that lives in git and will be built/committed).
@@ -271,9 +273,9 @@ A formal plan document is **required** before you make *any* changes to tracked 
 
 The filesystem mtime on the plan file is the authoritative timestamp. A date/time suffix in the filename (such as `-20260614-143022`) is optional and only useful for human sorting or when archiving into `historical-plans/`. When a timestamp is included in the name, use at least second-level granularity (`YYYYMMDD-HHMMSS`) so that multiple plans created on the same day remain easily distinguishable and sortable by filename. Day-only timestamps (e.g. `20260614`) add little value beyond what the filesystem already provides and should be avoided.
 
-- The plan must use the standard structure: Context (why this change), Recommended Approach (chosen over alternatives), Critical Files (exact paths), Existing Functions/Utilities to reuse (with file paths), Phased Small-Step Execution (forensic + build milestones), Verification (end-to-end criteria), and explicit handoff requirements (TODO first, forensic reads, ./build_app, **END OF EXECUTION TURN** marker + "results ready to test").
+- The plan must use the standard structure: Context (why this change), Recommended Approach (chosen over alternatives), Critical Files (exact paths), Existing Functions/Utilities to reuse (with file paths), Phased Small-Step Execution (forensic + build milestones), Verification (end-to-end criteria), and explicit handoff requirements (TODO first via `./todo-append` wrapper, forensic reads, ./build_app, **END OF EXECUTION TURN** marker + "results ready to test").
 
-- **Phased Small-Step Execution must be ultra-micro with per-phase success gates**: The "Phased Small-Step Execution" section **must** decompose the work into as many explicitly named, ultra-small phases as needed to keep each phase the smallest practical observable unit of work that can be forensically verified in isolation and completed with a successful `./build_app`. There is no target number of phases (more smaller phases is better than fewer larger ones, as long as each is a meaningful, verifiable step). Every phase **must terminate with** narrow forensic `read_file` (offset/limit) + targeted grep before/after the edit + `git add` (changed tracked sources + TODO.md) + a confirmed successful `./build_app` (new branch-scoped builds tag recorded) **before the next phase's edits may begin**. On trouble, user-directed partial reset, or recovery, only the tag of the most recent successful phase's `./build_app` may be used (after `./get-builds-tag.sh` preflight). This discipline is mandatory for safe, auditable execution turns.
+- **Phased Small-Step Execution must be ultra-micro with per-phase success gates**: The "Phased Small-Step Execution" section **must** decompose the work into as many explicitly named, ultra-small phases as needed to keep each phase the smallest practical observable unit of work that can be forensically verified in isolation and completed with a successful `./build_app`. There is no target number of phases (more smaller phases is better than fewer larger ones, as long as each is a meaningful, verifiable step). Every phase **must terminate with** narrow forensic `read_file` (offset/limit) + targeted grep before/after the edit + `git add` (changed tracked sources + TODO.md) + a confirmed successful `./build_app` (new branch-scoped builds tag recorded) **before the next phase's edits may begin**. (TODO.md updates use `./todo-append` wrapper exclusively.) On trouble, user-directed partial reset, or recovery, only the tag of the most recent successful phase's `./build_app` may be used (after `./get-builds-tag.sh` preflight). This discipline is mandatory for safe, auditable execution turns.
 
 Plan filenames should follow the naming guidance above (descriptive kebab-case primary; granular timestamp only when it adds real value over filesystem mtime).
 
