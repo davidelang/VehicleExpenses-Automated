@@ -46,9 +46,8 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 - `OdometerOcrUtils` (Object): Odometer-specific sanitization and multi-step image variation processing (Raw, Grayscale, Bilateral, etc.).
 - `DiscoveryOcrUtils` (Object): Logic for identifying "Golden Anchors" during the vehicle discovery phase.
 
-### `ImageAlignmentUtils.kt`, `PhotoAlignmentUtils.kt`, & `NativeImageUtils.kt`
+### `ImageAlignmentUtils.kt` & `NativeImageUtils.kt`
 - `ImageAlignmentUtils` (Object): Anchors-based triangulation (Zoom, Rotation, Pan) and Tier-1 Veto logic.
-- `PhotoAlignmentUtils` (Object): Utilities for aligning camera photos with reference images.
 - `NativeImageUtils` (Object): JNI-accelerated image operations (e.g., Grayscale, Bilateral filtering, Deskewing).
 
 ## Localization & Image Analysis

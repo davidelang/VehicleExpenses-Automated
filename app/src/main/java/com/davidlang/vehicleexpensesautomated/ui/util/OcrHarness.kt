@@ -3,16 +3,25 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.graphics.RectF
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.max
 
 data class AutoFillResult(
     val vehicleId: Int? = null,
     val odometer: String? = null,
+    val error: String? = null,
+    val debugJson: String? = null
+)
+
+data class PumpCostVolResult(
+    val cost: String? = null,
+    val volume: String? = null,
     val error: String? = null,
     val debugJson: String? = null
 )
@@ -122,6 +131,116 @@ object OcrHarness {
         }
     }
 
+    /**
+     * Quick Fill–only copy of Set G ("none, calculated") cost/volume extraction.
+     * Caller must deskew/rotate workspace first; no second deskew here.
+     */
+    private suspend fun extractQuickFillSetGCostVol(
+        workspace: BufferSet,
+        paddleEngine: NativePaddleEngine,
+        recBuffer: BufferSet,
+        imgW: Int,
+        imgH: Int
+    ): CostVolClassifyResult {
+        val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+
+        val scales = listOf(224, 608, 1024)
+        val pdHunksRawTotal = mutableListOf<PumpHunk>()
+        val pdHunksExpTotal = mutableListOf<PumpHunk>()
+        val pdHunksMaxTotal = mutableListOf<PumpHunk>()
+
+        scales.forEach { scale ->
+            val srcW = workspace.p.width
+            val srcH = workspace.p.height
+            val currentLongEdge = max(srcW, srcH)
+            val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+            val targetW = (srcW * scaleFactor).toInt()
+            val targetH = (srcH * scaleFactor).toInt()
+            val (outerId, innerId) = PumpCostVolUtils.prepareScale(workspace, scale)
+            val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale)
+            pdHunksRawTotal.addAll(paddleResults[1])
+            pdHunksExpTotal.addAll(paddleResults[2])
+            pdHunksMaxTotal.addAll(paddleResults[3])
+            workspace.c[innerId].release()
+            workspace.c[outerId].release()
+        }
+
+        PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+        PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+        PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+
+        val redPixelList = PumpCostVolUtils.hunksToRects(pdHunksRawTotal).toMutableList()
+        PumpCostVolUtils.pruneRectsToTopN(redPixelList, 6)
+        pdHunksRawTotal.clear()
+        pdHunksRawTotal.addAll(PumpCostVolUtils.rectsToHunks(redPixelList))
+        if (pdHunksRawTotal.isEmpty()) return na
+
+        val (customBlueGPre, _) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
+            pdHunksRawTotal, imgW, imgH, SET_G_VERT_FACTORS, SET_G_HORIZ_FACTOR
+        )
+        val customBluePixelG = PumpCostVolUtils.hunksToRects(customBlueGPre)
+        if (customBluePixelG.isEmpty()) return na
+
+        val ocrG = PumpCostVolUtils.ocrPumpRectsAsisAndDigits(
+            workspace, paddleEngine, recBuffer, customBluePixelG, imgW, imgH
+        )
+        val gCands = PumpCostVolUtils.buildRedBoxCandidates(
+            customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs
+        )
+        return PumpCostVolUtils.classifyCostVolFromBoxOcr(gCands)
+    }
+
+    /**
+     * Set G pump cost/volume pipeline for Quick Fill pump mode.
+     */
+    suspend fun runPumpCostVolPipeline(
+        context: Context,
+        masterBuffer: BufferSet,
+        debug: Boolean,
+        cameraRotationDegrees: Int = 0,
+        onStage: (suspend (String, Bitmap) -> Unit)? = null
+    ): PumpCostVolResult {
+        val t0 = System.currentTimeMillis()
+        try {
+            onStage?.invoke("Original", masterBuffer.p.toBitmap())
+
+            val (optAngle, _) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
+            val totalAngle = cameraRotationDegrees.toFloat() - optAngle
+            val imgW = masterBuffer.width
+            val imgH = masterBuffer.height
+            val targetW = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgH else imgW
+            val targetH = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgW else imgH
+            OdometerOcrUtils.rotate(masterBuffer, totalAngle, targetW, targetH)
+            onStage?.invoke("Deskewed", masterBuffer.p.toBitmap())
+
+            val paddleEngine = NativePaddleEngine(context, "Numeric")
+            val recBuffer = NativePaddleEngine.recBufferSet
+            val cv = extractQuickFillSetGCostVol(
+                masterBuffer, paddleEngine, recBuffer, masterBuffer.width, masterBuffer.height
+            )
+
+            val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }
+            val volume = cv.vol.takeIf { it != "N/A" && it.isNotBlank() }
+
+            if (cost == null && volume == null) {
+                return PumpCostVolResult(error = "Could not read pump display")
+            }
+
+            val debugJson = if (debug) {
+                JsonObject().apply {
+                    addProperty("cost", cv.cost)
+                    addProperty("volume", cv.vol)
+                    addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
+                }.toString()
+            } else null
+
+            return PumpCostVolResult(cost = cost, volume = volume, debugJson = debugJson)
+        } catch (e: Exception) {
+            Log.e("OcrHarness", "Pump cost/vol pipeline failed", e)
+            return PumpCostVolResult(error = "Pump OCR failed: ${e.message ?: "Unknown error"}")
+        }
+    }
+
     suspend fun runDiscovery(input: Any, context: Context): OcrResult {
         val rawResult = MlKitEngine().recognize(input)
 
@@ -182,9 +301,12 @@ object OcrHarness {
         onStage?.invoke("Aligned", masterBuffer.p.toBitmap())
 
         // 2. Odometer Crop
-        val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
-        val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
-        val p1 = IcrsMath.icrsToPixel(l, t, imgW, imgH); val p2 = IcrsMath.icrsToPixel(r, b, imgW, imgH)
+        val icrsRect = if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null && vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
+            RectF(vehicle.odometerCropLeft, vehicle.odometerCropTop, vehicle.odometerCropRight, vehicle.odometerCropBottom)
+        } else {
+            IcrsMath.fullImageIcrsRect(imgW, imgH)
+        }
+        val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, imgW, imgH)
         val roi = Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
         
         val odoBuffer = NativePaddleEngine.getOdoBuffer(context, vehicle)
@@ -227,7 +349,23 @@ object OcrHarness {
             val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
             org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
             val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
-            val tFullB = if (detRes != null) OdometerOcrUtils.processPaddleHeatmap(detRes.heatmap, detRes.width, detRes.height, detSc, experimentDetSet512x128.p, "Paddle", nativeBoxes = detRes.nativeBoxes) else emptyList<TextBlock>()
+            val tFullB = if (detRes != null) {
+                val invScale = 1.0f / detSc
+                detRes.nativeBoxes.map { box ->
+                    val points = box.points
+                    val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScale.toDouble()).toInt()
+                    val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScale.toDouble()).toInt()
+                    val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScale.toDouble()).toInt()
+                    val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScale.toDouble()).toInt()
+                    val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
+                    val scaledPoints = FloatArray(8)
+                    for (i in 0 until 8) {
+                        scaledPoints[i] = points[i] * invScale
+                    }
+                    val angle = 0f
+                    TextBlock("", bounds, angle, confidence = box.confidence)
+                }
+            } else emptyList<TextBlock>()
             experimentDetSet512x128.c[dCrId].release()
             
             val tRawB = tFullB.filter { b1 ->

@@ -175,6 +175,125 @@ object OdometerOcrUtils {
         )
     }
 
+    suspend fun calculateDeskewAngleMlOnly(input: Any): DeskewResult {
+        val t0 = System.currentTimeMillis()
+        val pTargetSize = 2048
+        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
+
+        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
+        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
+
+        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
+        val targetW = (srcW * pScale).toInt()
+        val targetH = (srcH * pScale).toInt()
+
+        val alignedW = ((targetW + 31) / 32) * 32
+        val alignedH = ((targetH + 31) / 32) * 32
+
+        bufferSet.p.clear()
+        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
+        bufferSet.c[outerId].clear()
+
+        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
+
+        if (input is Bitmap) {
+            val argbMat = Mat()
+            org.opencv.android.Utils.bitmapToMat(input, argbMat)
+            val gray = Mat()
+            Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
+            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+            argbMat.release(); gray.release()
+        } else {
+            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+        }
+
+        bufferSet.c[innerId].release()
+
+        val tPrep = System.currentTimeMillis() - t0
+        val results = mutableMapOf<String, EngineResult>()
+
+        val tMl0 = System.currentTimeMillis()
+        val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
+        val tMl = System.currentTimeMillis() - tMl0
+        results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
+
+        bufferSet.c[outerId].release()
+
+        return DeskewResult(
+            angle = mlRes.angle.coerceIn(-20f, 20f),
+            mlAngle = mlRes.angle,
+            mlTimeMs = results["ML Kit"]?.timesMs?.sum() ?: 0L,
+            paddleTimeMs = 0L,
+            paddleCppAngle = 0f,
+            paddleOptimizedAngle = 0f,
+            paddleOptimizedTimeMs = 0L,
+            mlBlocks = mlRes.blocks,
+            engines = results,
+            metadata = mapOf("t_prep_ms" to tPrep.toString())
+        )
+    }
+
+    suspend fun calculateDeskewAnglePaddleOnly(input: Any): DeskewResult {
+        val t0 = System.currentTimeMillis()
+        val pTargetSize = 2048
+        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
+
+        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
+        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
+
+        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
+        val targetW = (srcW * pScale).toInt()
+        val targetH = (srcH * pScale).toInt()
+
+        val alignedW = ((targetW + 31) / 32) * 32
+        val alignedH = ((targetH + 31) / 32) * 32
+
+        bufferSet.p.clear()
+        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
+        bufferSet.c[outerId].clear()
+
+        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
+
+        if (input is Bitmap) {
+            val argbMat = Mat()
+            org.opencv.android.Utils.bitmapToMat(input, argbMat)
+            val gray = Mat()
+            Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
+            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+            argbMat.release(); gray.release()
+        } else {
+            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+        }
+
+        bufferSet.c[innerId].release()
+
+        val tPrep = System.currentTimeMillis() - t0
+        val results = mutableMapOf<String, EngineResult>()
+
+        val tPd0 = System.currentTimeMillis()
+        val pdRes = deskewPaddleDual(bufferSet.c[outerId].mat, alignedW, alignedH, pScale)
+        val tPd = System.currentTimeMillis() - tPd0
+        results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
+
+        bufferSet.c[outerId].release()
+
+        val paddleCppAngle = pdRes.metadata["paddle_cpp_angle"]?.toFloatOrNull() ?: 0f
+
+        return DeskewResult(
+            angle = paddleCppAngle.coerceIn(-20f, 20f),
+            mlAngle = 0f,
+            mlTimeMs = 0L,
+            paddleTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
+            paddleCppAngle = paddleCppAngle,
+            paddleOptimizedAngle = paddleCppAngle,
+            paddleOptimizedTimeMs = results["Paddle V3"]?.timesMs?.sum() ?: 0L,
+            paddleBlocks = pdRes.blocks,
+            paddleCppBlocks = pdRes.cppBlocks,
+            engines = results,
+            metadata = mapOf("t_prep_ms" to tPrep.toString())
+        )
+    }
+
     suspend fun calculatePaddleAngleOptimized(input: Any): Pair<Float, Long> {
         val t0 = System.currentTimeMillis()
         val pTargetSize = 2048
@@ -672,6 +791,122 @@ object OdometerOcrUtils {
         return bins
     }
 
+    /**
+     * Robust peak bin indices from a 64-bin histogram (the logic valley push uses after finding valleys).
+     * Uses 3-bin smoothing + left-to-right and right-to-left local-max with drop-off confirmation.
+     * Returns sorted list of bin indices (0-63).
+     */
+    fun findPeakBinsFromHistogram(bins: FloatArray, totalPixels: Double = bins.sum().toDouble()): List<Int> {
+        val smoothed = FloatArray(64)
+        for (i in 0..63) {
+            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
+            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
+        }
+        val peakBins = mutableListOf<Int>()
+        val dropOffThreshold = totalPixels * 0.003
+        // left-to-right
+        for (i in 1..61) {
+            if (smoothed[i] > smoothed[i-1] && smoothed[i] >= smoothed[i+1]) {
+                var peakConfirmed = false
+                for (j in i+1..62) {
+                    if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
+                    if (smoothed[j] > smoothed[i]) break
+                }
+                if (peakConfirmed) peakBins.add(i)
+            }
+        }
+        // right-to-left
+        for (i in 62 downTo 2) {
+            if (smoothed[i] > smoothed[i+1] && smoothed[i] >= smoothed[i-1]) {
+                var peakConfirmed = false
+                for (j in i-1 downTo 1) {
+                    if (smoothed[j] < smoothed[i] - dropOffThreshold) { peakConfirmed = true; break }
+                    if (smoothed[j] > smoothed[i]) break
+                }
+                if (peakConfirmed) peakBins.add(i)
+            }
+        }
+        return peakBins.distinct().sorted()
+    }
+
+    fun valleyPushToPeaks(mat: Mat): FloatArray {
+        // New for Set C per approved plan: histogram valley centers -> push values outward to peaks.
+        // Result: image with only a *small number* of brightness values (quantized to peaks/modes).
+        // Not binarization. Reuses findValleyMidpoints + findPeakBinsFromHistogram (same peak discovery as binPeak).
+        // In-place mutate like the stretch funcs. Returns before-bins (caller makes after-hist from mutated mat).
+        val hist = Mat()
+        Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
+
+        val bins = FloatArray(64); hist.get(0, 0, bins)
+
+        val valleys = findValleyMidpoints(bins)  // centers of valleys (bin indices)
+
+        val totalPixels = mat.rows() * mat.cols().toDouble()
+        val peakList = findPeakBinsFromHistogram(bins, totalPixels)
+
+        if (peakList.size < 2 || valleys.isEmpty()) {
+            // fallback: no meaningful valleys/peaks -> identity (return bins, no mutate)
+            hist.release()
+            return bins
+        }
+
+        // 256-entry LUT: push values out from valley centers until they hit a (nearest) peak gray.
+        // This collapses the image to a small number of distinct brightness values (the peaks).
+        val lut = IntArray(256)
+        val peakGrays = peakList.map { (it * 4 + 2).coerceIn(0, 255) }
+        val valleyGrays = valleys.map { (it * 4 + 2).coerceIn(0, 255) }
+
+        val minPeak = peakGrays.first().toDouble()
+        val maxPeak = peakGrays.last().toDouble()
+        val peakSpan = maxPeak - minPeak
+
+        for (g in 0..255) {
+            val closestValley = valleyGrays.minByOrNull { Math.abs(g - it) }
+            val targetPeak = if (closestValley != null) {
+                if (g < closestValley) {
+                    val leftPeaks = peakGrays.filter { it < closestValley }
+                    if (leftPeaks.isNotEmpty()) {
+                        leftPeaks.minByOrNull { Math.abs(g - it) }!!
+                    } else {
+                        peakGrays.first()
+                    }
+                } else {
+                    val rightPeaks = peakGrays.filter { it >= closestValley }
+                    if (rightPeaks.isNotEmpty()) {
+                        rightPeaks.minByOrNull { Math.abs(g - it) }!!
+                    } else {
+                        peakGrays.last()
+                    }
+                }
+            } else {
+                peakGrays.minByOrNull { Math.abs(g - it) }!!
+            }
+
+            val stretched = if (peakSpan > 0.0) {
+                Math.round((targetPeak - minPeak) * 255.0 / peakSpan).toInt().coerceIn(0, 255)
+            } else {
+                targetPeak
+            }
+            lut[g] = stretched
+        }
+
+        // In-place remap on the mat using native OpenCV LUT (CV_8U single channel assumed, consistent with callers)
+        val total = mat.total().toInt()
+        if (total > 0) {
+            val lutMat = org.opencv.core.Mat(1, 256, org.opencv.core.CvType.CV_8U)
+            val lutData = ByteArray(256)
+            for (g in 0..255) {
+                lutData[g] = (lut[g] and 0xFF).toByte()
+            }
+            lutMat.put(0, 0, lutData)
+            org.opencv.core.Core.LUT(mat, lutMat, mat)
+            lutMat.release()
+        }
+
+        hist.release()
+        return bins
+    }
+
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {
         val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
             val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
@@ -841,128 +1076,6 @@ object OdometerOcrUtils {
      *   which incorrectly bypassed the aligned image scale factor, resulting in boxes 4.15x too small. We fix this
      *   here by dynamically extracting the aligned width/height from the sourceBuffer and applying scaleX/scaleY.
      */
-    fun processPaddleHeatmap(
-        heatmap: FloatArray?, w: Int, h: Int, scale: Float,
-        sourceBuffer: Any, algorithm: String = "Native",
-        nativeBoxes: List<NativePaddleEngine.DetectionBox>? = null,
-        nativePostMs: String? = null
-    ): List<TextBlock> {
-        val invScale = 1.0f / scale
-        if (nativeBoxes != null) {
-            return nativeBoxes.map { box ->
-                val points = box.points
-                val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 4.0) * invScale.toDouble()).toInt()
-                val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 4.0) * invScale.toDouble()).toInt()
-                val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 4.0) * invScale.toDouble()).toInt()
-                val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 4.0) * invScale.toDouble()).toInt()
-                val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
-
-                val scaledPoints = FloatArray(8)
-                for (i in 0 until 8) {
-                    scaledPoints[i] = points[i] * invScale
-                }
-                val angle = calculateBoxAngle(scaledPoints)
-                TextBlock("", bounds, angle, confidence = box.confidence)
-            }
-        }
-
-        if (heatmap == null) return emptyList()
-        return processPaddleHeatmapLegacy(heatmap, w, h, scale)
-    }
-
-    /**
-     * Process Paddle Heatmap Legacy (Kotlin side).
-     * Extracts contours, generates bounding boxes, and scales them.
-     * Fixed scaling logic: includes scaleX/scaleY (from 608 to target resized space) before multiplying by invScale.
-     */
-    private fun processPaddleHeatmapLegacy(
-        heatmap: FloatArray, w: Int, h: Int, scale: Float
-    ): List<TextBlock> {
-        val invScale = 1.0 / scale.toDouble()
-        val maskThreshold = 0.20f
-        val mask = Mat(h, w, CvType.CV_8U)
-        val data = ByteArray(heatmap.size)
-        var activePixels = 0
-        for (i in heatmap.indices) {
-            if (heatmap[i] > maskThreshold) {
-                data[i] = 255.toByte()
-                activePixels++
-            } else {
-                data[i] = 0.toByte()
-            }
-        }
-        Log.i("PaddleDetect", "PostProcess: Threshold=$maskThreshold, ActivePixels=$activePixels / ${heatmap.size}")
-        mask.put(0, 0, data)
-
-        val contours = mutableListOf<org.opencv.core.MatOfPoint>()
-        val hierarchy = Mat()
-        val results = mutableListOf<TextBlock>()
-
-        try {
-            Imgproc.findContours(mask, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-            Log.i("PaddleDetect", "PostProcess: Found ${contours.size} contours")
-            for (contour in contours) {
-                if (Imgproc.contourArea(contour) < 10) continue
-
-                val p2f = org.opencv.core.MatOfPoint2f(*contour.toArray())
-                val rotatedRect = Imgproc.minAreaRect(p2f)
-                val points = arrayOf(org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point(), org.opencv.core.Point())
-                rotatedRect.points(points)
-                p2f.release()
-
-                // Map raw heatmap coordinates directly using invScale (no stretch mapping needed).
-                val bounds = android.graphics.Rect(
-                    Math.floor((rotatedRect.boundingRect().x - 4.0) * invScale).toInt(),
-                    Math.floor((rotatedRect.boundingRect().y - 4.0) * invScale).toInt(),
-                    Math.ceil((rotatedRect.boundingRect().x + rotatedRect.boundingRect().width + 4.0) * invScale).toInt(),
-                    Math.ceil((rotatedRect.boundingRect().y + rotatedRect.boundingRect().height + 4.0) * invScale).toInt()
-                )
-
-                val normalizedPoints = points.map { org.opencv.core.Point(it.x * invScale, it.y * invScale) }
-                val rect = rotatedRect.boundingRect()
-                val rx = rect.x.coerceIn(0, w - 1)
-                val ry = rect.y.coerceIn(0, h - 1)
-                val rw = rect.width.coerceAtMost(w - rx)
-                val rh = rect.height.coerceAtMost(h - ry)
-
-                var confidence = 0.0f
-                if (rw > 0 && rh > 0) {
-                    val subMask = Mat.zeros(rh, rw, CvType.CV_8U)
-                    val shiftedContourPoints = contour.toArray().map { org.opencv.core.Point(it.x - rx, it.y - ry) }
-                    val localContour = org.opencv.core.MatOfPoint(*shiftedContourPoints.toTypedArray())
-                    Imgproc.drawContours(subMask, listOf(localContour), -1, org.opencv.core.Scalar(255.0), -1)
-
-                    var sum = 0.0
-                    var count = 0
-                    val maskBytes = ByteArray(rw * rh)
-                    subMask.get(0, 0, maskBytes)
-
-                    for (dy in 0 until rh) {
-                        val cy = ry + dy
-                        for (dx in 0 until rw) {
-                            val cx = rx + dx
-                            val maskVal = maskBytes[dy * rw + dx].toInt() and 0xFF
-                            if (maskVal > 0) {
-                                sum += heatmap[cy * w + cx]
-                                count++
-                            }
-                        }
-                    }
-                    if (count > 0) {
-                        confidence = (sum / count).toFloat()
-                    }
-                    localContour.release()
-                    subMask.release()
-                }
-
-                results.add(TextBlock("", bounds, rotatedRect.angle.toFloat(), points = normalizedPoints, confidence = confidence))
-            }
-        } finally {
-            mask.release(); hierarchy.release(); contours.forEach { it.release() }
-        }
-        return results
-    }
-
     fun cropBitmap(bitmap: Bitmap, rect: Rect): Bitmap {
         val left = rect.left.coerceIn(0, bitmap.width - 1)
         val top = rect.top.coerceIn(0, bitmap.height - 1)
@@ -1085,7 +1198,12 @@ object OdometerOcrUtils {
         // Resize the set and copy
         set.resize(targetW, targetH)
 
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE src empty=${src.empty()} cols=${src.cols()} rows=${src.rows()}")
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE tempMat empty=${tempMat.empty()} cols=${tempMat.cols()} rows=${tempMat.rows()}")
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE set.p.mat empty=${set.p.mat.empty()} cols=${set.p.mat.cols()} rows=${set.p.mat.rows()}")
         tempMat.copyTo(set.p.mat)
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE tempUv empty=${tempUv.empty()} cols=${tempUv.cols()} rows=${tempUv.rows()}")
+        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE set.p.uvMat empty=${set.p.uvMat.empty()} cols=${set.p.uvMat.cols()} rows=${set.p.uvMat.rows()}")
         tempUv.copyTo(set.p.uvMat)
 
         tempMat.release()
@@ -1252,20 +1370,12 @@ object OdometerOcrUtils {
         return results
     }
 
-    suspend fun extractFromPhoto(photoPath: String, cropRect: RectF? = null, context: Context? = null): OcrResult = withContext(Dispatchers.IO) {
-        val rawBitmap = if (context != null) decodeBitmapSafely(context, photoPath) else BitmapFactory.decodeFile(photoPath)
+    suspend fun extractFromPhoto(photoPath: String): OcrResult = withContext(Dispatchers.IO) {
+        val rawBitmap = BitmapFactory.decodeFile(photoPath)
         if (rawBitmap == null) return@withContext OcrResult(debugText = "Failed decode", originalPhotoPath = photoPath)
         val rotated = rotateImageIfRequired(rawBitmap, photoPath)
         val processed = applyBilateral(applyGrayscale(rotated))
-        var bitmap = processed
-        if (cropRect != null) {
-            val left = (cropRect.left * processed.width).toInt().coerceIn(0, processed.width)
-            val top = (cropRect.top * processed.height).toInt().coerceIn(0, processed.height)
-            val right = (cropRect.right * processed.width).toInt().coerceAtMost(processed.width)
-            val bottom = (cropRect.bottom * processed.height).toInt().coerceAtMost(processed.height)
-            if (right > left && bottom > top) bitmap = Bitmap.createBitmap(processed, left, top, right - left, bottom - top)
-        }
-        val res = extractFromPhotoBitmap(bitmap)
+        val res = extractFromPhotoBitmap(processed)
         res.copy(originalPhotoPath = photoPath)
     }
 

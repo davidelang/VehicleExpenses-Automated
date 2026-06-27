@@ -10,11 +10,22 @@
 #include <map>
 #include <cmath>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
 #include "paddle/paddle_api.h"
 #include "BufferSetHandle.h"
 #include <android/log.h>
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "NativeImageUtils", __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "NativeImageUtils", __VA_ARGS__)
+
+static void logMatHeader(const char* tag, const cv::Mat* m) {
+    if (!m) { LOGI("MAT_HEADER: %s null", tag); return; }
+    LOGI("MAT_HEADER: %s cols=%d rows=%d dims=%d type=%d ch=%d flags=0x%x step0=%zu step1=%zu data=%p datastart=%p dataend=%p cont=%d empty=%d",
+         tag, m->cols, m->rows, m->dims, m->type(), m->channels(), m->flags,
+         m->step[0], (m->dims > 1 ? m->step[1] : 0), (void*)m->data,
+         (void*)m->datastart, (void*)m->dataend, m->isContinuous(), m->empty());
+}
+
 #include "../libraw_config.h"
 #include <libraw/libraw.h>
 
@@ -876,6 +887,40 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     return result;
 }
 
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBinarizeRange(
+    JNIEnv* env, jobject thiz, jlong srcPtr, jlong dstPtr, jint low, jint high) {
+
+    auto* src = reinterpret_cast<cv::Mat*>(srcPtr);
+    auto* dst = reinterpret_cast<cv::Mat*>(dstPtr);
+    if (!src || !dst || src->empty() || dst->empty()) {
+        LOGE("BINARIZE_RANGE: null or empty mats");
+        return;
+    }
+    if (src->type() != CV_8UC1 || dst->type() != CV_8UC1) {
+        LOGE("BINARIZE_RANGE: expected 8UC1, got src=%d dst=%d", src->type(), dst->type());
+        return;
+    }
+    if (src->rows != dst->rows || src->cols != dst->cols) {
+        LOGE("BINARIZE_RANGE: dimension mismatch src=%dx%d dst=%dx%d",
+             src->cols, src->rows, dst->cols, dst->rows);
+        return;
+    }
+
+    const int clampedLow = std::max(0, std::min(255, (int)low));
+    const int clampedHigh = std::max(clampedLow, std::min(255, (int)high));
+    LOGI("BINARIZE_RANGE: [%d,%d] on %dx%d", clampedLow, clampedHigh, src->cols, src->rows);
+
+    for (int y = 0; y < src->rows; ++y) {
+        const uint8_t* srcRow = src->ptr<uint8_t>(y);
+        uint8_t* dstRow = dst->ptr<uint8_t>(y);
+        for (int x = 0; x < src->cols; ++x) {
+            const uint8_t v = srcRow[x];
+            dstRow[x] = (v >= clampedLow && v <= clampedHigh) ? 255 : 0;
+        }
+    }
+}
+
 JNIEXPORT jfloat JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToAngle(
     JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold) {
@@ -1067,6 +1112,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         results.push_back(avgConf);
         count++;
     }
+
+    float hist[100] = {0};
+    for(int i=0; i < h*w; i++) { int b = std::max(0, std::min(99, (int)(data[i]*100))); hist[b] += 1.0f; }
+    for(int i=0; i<100; i++) results.push_back(hist[i]);
 
     // 5. Serialization
     if (results.empty()) return nullptr;
@@ -1538,18 +1587,148 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 // odoBuffer.s.mat as the scratchpad.
 // ============================================================
 
+// --- Direct rect run-walking helpers (H path; replaces coverage mask) ---
+
+static bool rectsOverlap(const cv::Rect& a, const cv::Rect& b) {
+    return a.x < b.x + b.width && b.x < a.x + a.width &&
+           a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+static std::vector<cv::Rect> subtractRect(const cv::Rect& a, const cv::Rect& b) {
+    cv::Rect inter = a & b;
+    if (inter.width <= 0 || inter.height <= 0) return {a};
+    std::vector<cv::Rect> out;
+    if (a.y < inter.y)
+        out.emplace_back(a.x, a.y, a.width, inter.y - a.y);
+    if (inter.y + inter.height < a.y + a.height)
+        out.emplace_back(a.x, inter.y + inter.height, a.width, a.y + a.height - (inter.y + inter.height));
+    if (a.x < inter.x)
+        out.emplace_back(a.x, inter.y, inter.x - a.x, inter.height);
+    if (inter.x + inter.width < a.x + a.width)
+        out.emplace_back(inter.x + inter.width, inter.y, a.x + a.width - (inter.x + inter.width), inter.height);
+    return out;
+}
+
+// De-overlap with wide bias: on overlap the wider rect keeps the shared region.
+static std::vector<cv::Rect> decomposeRectsForDirectRuns(const std::vector<cv::Rect>& input) {
+    if (input.size() <= 1) return input;
+    std::vector<cv::Rect> work = input;
+    bool changed = true;
+    int guard = 64;
+    while (changed && guard-- > 0) {
+        changed = false;
+        for (size_t i = 0; i < work.size(); ++i) {
+            for (size_t j = i + 1; j < work.size(); ++j) {
+                if (!rectsOverlap(work[i], work[j])) continue;
+                size_t wideIdx = (work[i].width >= work[j].width) ? i : j;
+                size_t narrowIdx = (wideIdx == i) ? j : i;
+                auto pieces = subtractRect(work[narrowIdx], work[wideIdx]);
+                work.erase(work.begin() + narrowIdx);
+                for (const auto& p : pieces) {
+                    if (p.width > 0 && p.height > 0) work.push_back(p);
+                }
+                changed = true;
+                break;
+            }
+            if (changed) break;
+        }
+    }
+    LOGI("ALIGN_HIST_NATIVE: decompose in=%zu out=%zu (wide bias)", input.size(), work.size());
+    return work;
+}
+
+static bool isRowSegmentAllBlack(const uint8_t* rowPtr, int x0, int x1) {
+    if (x0 >= x1) return true;
+    int x = x0;
+    while (x < x1 && ((uintptr_t)(rowPtr + x) & 7)) {
+        if (rowPtr[x]) return false;
+        ++x;
+    }
+    const uint8_t* p = rowPtr + x;
+    const int end = x1;
+    while (x + 8 <= end) {
+        uint64_t word = 0;
+        std::memcpy(&word, p, 8);
+        if (word != 0) return false;
+        p += 8;
+        x += 8;
+    }
+    while (x < end) {
+        if (rowPtr[x]) return false;
+        ++x;
+    }
+    return true;
+}
+
+static bool isColSegmentAllBlack(const cv::Mat* mat, int x, int y0, int y1) {
+    for (int y = y0; y < y1; ++y) {
+        if (mat->ptr<uint8_t>(y)[x] != 0) return false;
+    }
+    return true;
+}
+
+static std::vector<std::pair<int,int>> mergedHorizIntervals(int y, const std::vector<cv::Rect>& rects, int maxCol) {
+    std::vector<std::pair<int,int>> iv;
+    for (const auto& r : rects) {
+        if (y < r.y || y >= r.y + r.height) continue;
+        int L = std::max(0, r.x);
+        int R = std::min(maxCol, r.x + r.width);
+        if (R > L) iv.emplace_back(L, R);
+    }
+    if (iv.empty()) return iv;
+    std::sort(iv.begin(), iv.end());
+    std::vector<std::pair<int,int>> merged;
+    merged.push_back(iv[0]);
+    for (size_t k = 1; k < iv.size(); ++k) {
+        auto& last = merged.back();
+        if (iv[k].first <= last.second)
+            last.second = std::max(last.second, iv[k].second);
+        else
+            merged.push_back(iv[k]);
+    }
+    return merged;
+}
+
+static std::vector<std::pair<int,int>> mergedVertIntervals(int x, const std::vector<cv::Rect>& rects, int maxRow) {
+    std::vector<std::pair<int,int>> iv;
+    for (const auto& r : rects) {
+        if (x < r.x || x >= r.x + r.width) continue;
+        int T = std::max(0, r.y);
+        int B = std::min(maxRow, r.y + r.height);
+        if (B > T) iv.emplace_back(T, B);
+    }
+    if (iv.empty()) return iv;
+    std::sort(iv.begin(), iv.end());
+    std::vector<std::pair<int,int>> merged;
+    merged.push_back(iv[0]);
+    for (size_t k = 1; k < iv.size(); ++k) {
+        auto& last = merged.back();
+        if (iv[k].first <= last.second)
+            last.second = std::max(last.second, iv[k].second);
+        else
+            merged.push_back(iv[k]);
+    }
+    return merged;
+}
+
 // Helper: compute contentThreshold from matPtr ROI using thresholdFactor.
 // If thresholdFactor > 1.0, treat it as an absolute threshold value.
 // Otherwise compute dynamically: max(15.0, meanVal * thresholdFactor).
 static double computeThreshold(const cv::Mat& mat, int L, int T, int R, int B, float thresholdFactor) {
-    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
-    LOGI("HIST_DIAG: computeThreshold factor=%.1f (absolute=%s)", thresholdFactor, (thresholdFactor > 1.0f ? "true" : "false"));
     if (thresholdFactor > 1.0f) return (double)thresholdFactor;
+    logMatHeader("compute_roi_base", &mat);
     int safeL = std::max(0, std::min(L, mat.cols - 1));
     int safeT = std::max(0, std::min(T, mat.rows - 1));
     int safeR = std::max(safeL + 1, std::min(R, mat.cols));
     int safeB = std::max(safeT + 1, std::min(B, mat.rows));
     cv::Rect roi(safeL, safeT, safeR - safeL, safeB - safeT);
+    LOGI("MAT_HEADER: compute_roi L=%d T=%d R=%d B=%d safeL=%d safeT=%d safeR=%d safeB=%d roiW=%d roiH=%d mat=%dx%d",
+         L, T, R, B, safeL, safeT, safeR, safeB, roi.width, roi.height, mat.cols, mat.rows);
+    if (roi.width <= 0 || roi.height <= 0) {
+        LOGE("ALIGN_HIST_NATIVE: computeThreshold bad roi L=%d T=%d R=%d B=%d mat=%dx%d roiW=%d roiH=%d",
+             L, T, R, B, mat.cols, mat.rows, roi.width, roi.height);
+    }
+    logMatHeader("for_mean_pre", &mat);
     cv::Scalar meanVal = cv::mean(mat(roi));
     return std::max(15.0, meanVal[0] * (double)thresholdFactor);
 }
@@ -1567,19 +1746,52 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFilte
     filterComponents(*mat, vSW, hSW, (int)mode);
 }
 
+// Fill caller-provided run-length histogram output buffers in-place (avoids per-call NewIntArray).
+static bool fillRunHistOutputs(JNIEnv* env, jintArray outH, jintArray outV, jintArray outMeta,
+                               int histBinCount, const std::map<int,int>& horizHist, const std::map<int,int>& vertHist,
+                               int vSWv, int hSWv, int contentThreshold) {
+    if (!outH || !outV || !outMeta) return false;
+    const jsize outLen = env->GetArrayLength(outH);
+    const jsize outVLen = env->GetArrayLength(outV);
+    if (outLen < histBinCount || outVLen < histBinCount || env->GetArrayLength(outMeta) < 4) return false;
+    jint* hPtr = env->GetIntArrayElements(outH, nullptr);
+    jint* vPtr = env->GetIntArrayElements(outV, nullptr);
+    if (!hPtr || !vPtr) {
+        if (hPtr) env->ReleaseIntArrayElements(outH, hPtr, JNI_ABORT);
+        if (vPtr) env->ReleaseIntArrayElements(outV, vPtr, JNI_ABORT);
+        return false;
+    }
+    std::fill(hPtr, hPtr + outLen, 0);
+    std::fill(vPtr, vPtr + outVLen, 0);
+    for (auto const& p : horizHist) { if (p.first >= 0 && p.first < outLen) hPtr[p.first] = p.second; }
+    for (auto const& p : vertHist)  { if (p.first >= 0 && p.first < outVLen) vPtr[p.first] = p.second; }
+    env->ReleaseIntArrayElements(outH, hPtr, 0);
+    env->ReleaseIntArrayElements(outV, vPtr, 0);
+    jint* mPtr = env->GetIntArrayElements(outMeta, nullptr);
+    if (!mPtr) return false;
+    mPtr[0] = (jint)vSWv;
+    mPtr[1] = (jint)hSWv;
+    mPtr[2] = 0;
+    mPtr[3] = (jint)contentThreshold;
+    env->ReleaseIntArrayElements(outMeta, mPtr, 0);
+    return true;
+}
+
 // 2. nativeCalculateHistogramWithThreshold
 // Computes horizontal/vertical run-length histograms and vSW/hSW peaks
 // on odoBuffer.p.mat using the provided thresholdFactor.
-// Returns jobjectArray[3]: hArr(256), vArr(256), metaArr(4=[vSW,hSW,0,threshold])
-extern "C" JNIEXPORT jobjectArray JNICALL
+// Fills caller-provided outH/outV (histBinCount bins, typically 256 legacy) and outMeta[4].
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistogramWithThreshold(
-    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor) {
+    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor,
+    jintArray outH, jintArray outV, jintArray outMeta, jint histBinCount) {
 
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
-    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return JNI_FALSE;
+    if (histBinCount <= 0) return JNI_FALSE;
 
     jsize len = env->GetArrayLength(rects);
-    if (len % 4 != 0 || len == 0) return nullptr;
+    if (len % 4 != 0 || len == 0) return JNI_FALSE;
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
     int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
@@ -1627,24 +1839,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     int vSWv = getPeakCapped(horizHist, std::max(15, (int)((maxR - minL) * 0.35)));
     int hSWv = getPeakCapped(vertHist,  std::max(15, (int)((maxB - minT) * 0.35)));
 
-    jintArray hArr = env->NewIntArray(256);
-    jintArray vArr = env->NewIntArray(256);
-    jint hData[256] = {0}, vData[256] = {0};
-    for (auto const& p : horizHist) { if (p.first >= 0 && p.first < 256) hData[p.first] = p.second; }
-    for (auto const& p : vertHist)  { if (p.first >= 0 && p.first < 256) vData[p.first] = p.second; }
-    env->SetIntArrayRegion(hArr, 0, 256, hData);
-    env->SetIntArrayRegion(vArr, 0, 256, vData);
-
-    jintArray metaArr = env->NewIntArray(4);
-    jint m[4] = { (jint)vSWv, (jint)hSWv, 0, (jint)contentThreshold };
-    env->SetIntArrayRegion(metaArr, 0, 4, m);
-
-    jclass objClass2 = env->FindClass("java/lang/Object");
-    jobjectArray resultArr2 = env->NewObjectArray(3, objClass2, nullptr);
-    env->SetObjectArrayElement(resultArr2, 0, hArr);
-    env->SetObjectArrayElement(resultArr2, 1, vArr);
-    env->SetObjectArrayElement(resultArr2, 2, metaArr);
-    return resultArr2;
+    return fillRunHistOutputs(env, outH, outV, outMeta, (int)histBinCount, horizHist, vertHist,
+                              vSWv, hSWv, (int)contentThreshold) ? JNI_TRUE : JNI_FALSE;
 }
 
 
@@ -1652,76 +1848,143 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
 
 // 3b. Decoupled H-variants for Set H with stroke-width aware logic
 
-extern "C" JNIEXPORT jobjectArray JNICALL
+extern "C" JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeLogMatHeader(
+    JNIEnv* env, jobject thiz, jlong matPtr, jstring tagJ) {
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    const char* tag = env->GetStringUTFChars(tagJ, nullptr);
+    if (tag) {
+        logMatHeader(tag, mat);
+        env->ReleaseStringUTFChars(tagJ, tag);
+    }
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalculateHistogramWithThresholdH(
-    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor) {
+    JNIEnv* env, jobject thiz, jlong matPtr, jintArray rects, jfloat thresholdFactor,
+    jintArray outH, jintArray outV, jintArray outMeta) {
 
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
-    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return JNI_FALSE;
+    if (mat->cols <= 0 || mat->rows <= 0) return JNI_FALSE;
+    LOGI("ALIGN_HIST_NATIVE: entry mat=%dx%d type=%d", mat->cols, mat->rows, mat->type());
+    logMatHeader("hist_input_mat", mat);
 
     jsize len = env->GetArrayLength(rects);
-    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
-    LOGI("HIST_DIAG: H entry mat=%dx%d type=%d continuous=%d factor=%.1f rectsLen=%d",
-         mat->cols, mat->rows, mat->type(), mat->isContinuous(), thresholdFactor, (int)len);
-    if (len % 4 != 0 || len == 0) return nullptr;
+    if (len % 4 != 0 || len == 0) return JNI_FALSE;
 
     jint* rData = env->GetIntArrayElements(rects, nullptr);
-    int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
+    std::vector<int> rectL, rectT, rectR, rectB;
+    rectL.reserve(len / 4);
     for (int i = 0; i < len; i += 4) {
-        minL = std::min(minL, (int)rData[i]);
-        minT = std::min(minT, (int)rData[i+1]);
-        maxR = std::max(maxR, (int)rData[i+2]);
-        maxB = std::max(maxB, (int)rData[i+3]);
+        int L = (int)rData[i], T = (int)rData[i+1], R = (int)rData[i+2], B = (int)rData[i+3];
+        if (L > R) std::swap(L, R);
+        if (T > B) std::swap(T, B);
+        const int w = R - L, h = B - T;
+        if (w <= 0 || h <= 0) continue;
+        rectL.push_back(L);
+        rectT.push_back(T);
+        rectR.push_back(R);
+        rectB.push_back(B);
     }
     env->ReleaseIntArrayElements(rects, rData, JNI_ABORT);
-    LOGI("HIST_DIAG: H parsed bounds minL=%d maxR=%d minT=%d maxB=%d", minL, maxR, minT, maxB);
+    if (rectL.empty()) return JNI_FALSE;
+    LOGI("ALIGN_HIST_NATIVE: validRects=%zu rawLen=%d", rectL.size(), (int)len);
+
+    int minL = mat->cols, minT = mat->rows, maxR = 0, maxB = 0;
+    for (size_t i = 0; i < rectL.size(); ++i) {
+        minL = std::min(minL, rectL[i]);
+        minT = std::min(minT, rectT[i]);
+        maxR = std::max(maxR, rectR[i]);
+        maxB = std::max(maxB, rectB[i]);
+    }
 
     minL = std::max(0, std::min(minL, mat->cols - 1));
     minT = std::max(0, std::min(minT, mat->rows - 1));
     maxR = std::max(minL + 1, std::min(maxR, mat->cols));
     maxB = std::max(minT + 1, std::min(maxB, mat->rows));
-    LOGI("HIST_DIAG: H clamped bounds minL=%d maxR=%d minT=%d maxB=%d", minL, maxR, minT, maxB);
+    LOGI("ALIGN_HIST_NATIVE: minL=%d minT=%d maxR=%d maxB=%d roiW=%d roiH=%d", minL, minT, maxR, maxB, maxR - minL, maxB - minT);
+    for (size_t i = 0; i < rectL.size(); ++i) {
+        LOGI("MAT_HEADER: hist_rect[%zu] L=%d T=%d R=%d B=%d", i, rectL[i], rectT[i], rectR[i], rectB[i]);
+    }
+
+    std::vector<cv::Rect> inputRects;
+    inputRects.reserve(rectL.size());
+    for (size_t i = 0; i < rectL.size(); ++i) {
+        inputRects.emplace_back(rectL[i], rectT[i], rectR[i] - rectL[i], rectB[i] - rectT[i]);
+    }
+    std::vector<cv::Rect> decomposed = decomposeRectsForDirectRuns(inputRects);
+    LOGI("ALIGN_HIST_NATIVE: decomposed %zu rects into %zu for direct runs", inputRects.size(), decomposed.size());
 
     double contentThreshold = computeThreshold(*mat, minL, minT, maxR, maxB, thresholdFactor);
-    // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
-    LOGI("HIST_DIAG: H content=%.1f (from factor=%.1f)", contentThreshold, thresholdFactor);
 
     std::map<int,int> horizHist, vertHist;
+    int allBlackSkipsH = 0, allBlackSkipsV = 0;
+    int exactDiscardsH = 0, exactDiscardsV = 0;
+
+    // Horizontal: per-row merged intervals from decomposed rects, word prefilter, exact-span discard
     for (int y = minT; y < maxB; ++y) {
         const uint8_t* rowPtr = mat->ptr<uint8_t>(y);
-        // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
-        if (y == minT) {
-            int nonBinary = 0;
-            for (int xx = minL; xx < std::min(minL+10, maxR); ++xx) {
-                uint8_t v = rowPtr[xx];
-                if (v != 0 && v != 255) nonBinary++;
+        auto intervals = mergedHorizIntervals(y, decomposed, mat->cols);
+        for (const auto& iv : intervals) {
+            int L = std::max(iv.first, minL);
+            int R = std::min(iv.second, maxR);
+            if (R <= L) continue;
+            const int spanW = R - L;
+            if (isRowSegmentAllBlack(rowPtr, L, R)) {
+                allBlackSkipsH++;
+                continue;
             }
-            LOGI("HIST_DIAG: sample y=%d nonBinaryInFirst10=%d (should be 0 for binarized)", y, nonBinary);
+            int run = 0;
+            for (int x = L; x < R; ++x) {
+                if (rowPtr[x] > contentThreshold) run++;
+                else {
+                    if (run > 0) {
+                        if (run != spanW) horizHist[run]++;
+                        else exactDiscardsH++;
+                        run = 0;
+                    }
+                }
+            }
+            if (run > 0) {
+                if (run != spanW) horizHist[run]++;
+                else exactDiscardsH++;
+            }
         }
-        int run = 0;
-        for (int x = minL; x < maxR; ++x) {
-            if (rowPtr[x] > contentThreshold) run++;
-            else { if (run > 0) horizHist[std::min(255,run)]++; run = 0; }
-        }
-        if (run > 0) horizHist[std::min(255,run)]++;
     }
+
+    // Vertical: per-column merged intervals, byte prefilter, exact-span discard
     for (int x = minL; x < maxR; ++x) {
-        // TEMP DIAGNOSTIC (2026-06-23) - log + crash only; remove after root cause fixed
-        if (x == minL) {
-            int nonBinary = 0;
-            for (int yy = minT; yy < std::min(minT+10, maxB); ++yy) {
-                uint8_t v = mat->at<uint8_t>(yy, x);
-                if (v != 0 && v != 255) nonBinary++;
+        auto intervals = mergedVertIntervals(x, decomposed, mat->rows);
+        for (const auto& iv : intervals) {
+            int T = std::max(iv.first, minT);
+            int B = std::min(iv.second, maxB);
+            if (B <= T) continue;
+            const int spanH = B - T;
+            if (isColSegmentAllBlack(mat, x, T, B)) {
+                allBlackSkipsV++;
+                continue;
             }
-            LOGI("HIST_DIAG: sample x=%d nonBinaryInFirst10=%d (should be 0 for binarized)", x, nonBinary);
+            int run = 0;
+            for (int y = T; y < B; ++y) {
+                if (mat->ptr<uint8_t>(y)[x] > contentThreshold) run++;
+                else {
+                    if (run > 0) {
+                        if (run != spanH) vertHist[run]++;
+                        else exactDiscardsV++;
+                        run = 0;
+                    }
+                }
+            }
+            if (run > 0) {
+                if (run != spanH) vertHist[run]++;
+                else exactDiscardsV++;
+            }
         }
-        int run = 0;
-        for (int y = minT; y < maxB; ++y) {
-            if (mat->at<uint8_t>(y, x) > contentThreshold) run++;
-            else { if (run > 0) vertHist[std::min(255,run)]++; run = 0; }
-        }
-        if (run > 0) vertHist[std::min(255,run)]++;
     }
+
+    LOGI("ALIGN_HIST_NATIVE: direct walk allblack_skip H=%d V=%d exact_discard H=%d V=%d",
+         allBlackSkipsH, allBlackSkipsV, exactDiscardsH, exactDiscardsV);
 
     // Height-bounded peak search decoupled caps
     int H = maxB - minT;
@@ -1739,24 +2002,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCalcu
     int vSWv = getPeakCappedH(horizHist, minStroke, maxStrokeV);
     int hSWv = getPeakCappedH(vertHist,  minStroke, maxStrokeH);
 
-    jintArray hArr = env->NewIntArray(256);
-    jintArray vArr = env->NewIntArray(256);
-    jint hData[256] = {0}, vData[256] = {0};
-    for (auto const& p : horizHist) { if (p.first >= 0 && p.first < 256) hData[p.first] = p.second; }
-    for (auto const& p : vertHist)  { if (p.first >= 0 && p.first < 256) vData[p.first] = p.second; }
-    env->SetIntArrayRegion(hArr, 0, 256, hData);
-    env->SetIntArrayRegion(vArr, 0, 256, vData);
-
-    jintArray metaArr = env->NewIntArray(4);
-    jint m[4] = { (jint)vSWv, (jint)hSWv, 0, (jint)contentThreshold };
-    env->SetIntArrayRegion(metaArr, 0, 4, m);
-
-    jclass objClass2 = env->FindClass("java/lang/Object");
-    jobjectArray resultArr2 = env->NewObjectArray(3, objClass2, nullptr);
-    env->SetObjectArrayElement(resultArr2, 0, hArr);
-    env->SetObjectArrayElement(resultArr2, 1, vArr);
-    env->SetObjectArrayElement(resultArr2, 2, metaArr);
-    return resultArr2;
+    // HIST_SZ = 8192 bins * 4 bytes = 32 kB per array. Sufficient for run lengths on images
+    // up to ~4G pixels in theory; practical images are far smaller (24-bit would suffice).
+    const int HIST_SZ = 8192;
+    return fillRunHistOutputs(env, outH, outV, outMeta, HIST_SZ, horizHist, vertHist,
+                              vSWv, hSWv, (int)contentThreshold) ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -1850,20 +2100,58 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFindA
     return result;
 }
 
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGetAllComponentStatsH(
+    JNIEnv* env, jobject thiz, jlong matPtr) {
+
+    auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
+
+    cv::Mat labels, stats, centroids;
+    int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+
+    const int nObjects = nLabels - 1;
+    std::vector<int> data;
+    data.reserve(1 + nObjects * 6);
+    data.push_back(nObjects);
+    for (int i = 1; i < nLabels; ++i) {
+        data.push_back(i);
+        data.push_back(stats.at<int>(i, cv::CC_STAT_LEFT));
+        data.push_back(stats.at<int>(i, cv::CC_STAT_TOP));
+        data.push_back(stats.at<int>(i, cv::CC_STAT_WIDTH));
+        data.push_back(stats.at<int>(i, cv::CC_STAT_HEIGHT));
+        data.push_back(stats.at<int>(i, cv::CC_STAT_AREA));
+    }
+
+    jintArray result = env->NewIntArray(data.size());
+    env->SetIntArrayRegion(result, 0, data.size(), reinterpret_cast<const jint*>(data.data()));
+    return result;
+}
 
 
-extern "C" JNIEXPORT void JNICALL
+
+extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlackOutLargeAndSmallComponentsH(
     JNIEnv* env, jobject thiz, jlong matPtr, jfloat vSW, jfloat hSW, jfloat maxWidth) {
 
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
-    if (!mat || mat->empty() || mat->type() != CV_8UC1) return;
+    if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
-    // Run first pass of CC to find extra-large components
+    auto tFuncStart = std::chrono::high_resolution_clock::now();
+    long long msInitialCc = 0, msHoriz = 0, msVert = 0, msReCc = 0, msSmallFilter = 0;
+
+    // Object detection (CC): populate per-pixel labels buffer before any filters (Set J semantics).
     cv::Mat labels, stats, centroids;
+    auto tCc0 = std::chrono::high_resolution_clock::now();
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+    msInitialCc = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - tCc0).count();
+
+    LOGI("blackOut: start vSW=%.1f hSW=%.1f maxW=%.1f img=%dx%d nLabels=%d",
+         vSW, hSW, maxWidth, mat->cols, mat->rows, nLabels - 1);
 
     bool modified = false;
+    std::vector<int> editedIndices;
 
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
@@ -1874,26 +2162,43 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         int maxY = minY + h;
 
         // 1. Horizontal Wide Filter (Width is proof of garbage)
+        // For wide objects: mark rows with long horizontal runs of *this* object (label i).
+        // On erase: blank garbage rows for the entire object across full image width, but only
+        // pixels whose label matches i — other objects in the same row are untouched.
         if ((float)w > maxWidth) {
+            auto tHoriz0 = std::chrono::high_resolution_clock::now();
+            bool wideEdited = false;
             std::vector<bool> garbageRows(h, false);
             for (int y = minY; y < maxY; ++y) {
-                int maxRun = 0;
                 int currentRun = 0;
-                const int* labelRow = labels.ptr<int>(y);
+                bool isGarbage = false;
+                int* labelRow = labels.ptr<int>(y);
                 for (int x = minX; x < maxX; ++x) {
                     if (labelRow[x] == i) {
                         currentRun++;
-                        if (currentRun > maxRun) maxRun = currentRun;
+                        if ((float)currentRun > maxWidth) {
+                            isGarbage = true;
+                            break;
+                        }
                     } else {
                         currentRun = 0;
                     }
                 }
-                if ((float)maxRun > maxWidth) {
+                if (isGarbage) {
                     garbageRows[y - minY] = true;
+                    auto* rowPtr = mat->ptr<uint8_t>(y);
+                    for (int cx = minX; cx < maxX; ++cx) {
+                        if (labelRow[cx] == i) {
+                            rowPtr[cx] = 0;
+                            labelRow[cx] = 0;
+                            modified = true;
+                            wideEdited = true;
+                        }
+                    }
                 }
             }
 
-            // Group marked rows into bands and erase
+            // Group marked rows into bands and erase (per-object, full width, label-scoped)
             for (int y = 0; y < h; ++y) {
                 if (garbageRows[y]) {
                     int y_start = y;
@@ -1907,43 +2212,70 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
 
                     for (int cy = y_clear_start; cy <= y_clear_end; ++cy) {
                         auto* rowPtr = mat->ptr<uint8_t>(cy);
-                        const auto* lRow = labels.ptr<int>(cy);
+                        auto* lRow = labels.ptr<int>(cy);
                         for (int cx = minX; cx < maxX; ++cx) {
                             if (lRow[cx] == i) {
                                 rowPtr[cx] = 0;
+                                lRow[cx] = 0;
                                 modified = true;
+                                wideEdited = true;
                             }
                         }
                     }
                 }
             }
+            long long msHorizLabel = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::high_resolution_clock::now() - tHoriz0).count();
+            msHoriz += msHorizLabel;
+            if (wideEdited) {
+                editedIndices.push_back(i);
+            }
+            LOGI("blackOut: label=%d horiz wide w=%d h=%d edited=%d ms=%lld",
+                 i, w, h, wideEdited ? 1 : 0, msHorizLabel);
         }
 
         // 2. Vertical Wide Filter (Thickness-over-distance is proof of garbage)
         if ((float)h >= 0.3f * mat->rows) {
+            auto tVert0 = std::chrono::high_resolution_clock::now();
+            bool vertEdited = false;
+            std::vector<std::vector<int>> rowHorizRunW(h, std::vector<int>(w, 0));
+            for (int y = minY; y < maxY; ++y) {
+                const int* labelRow = labels.ptr<int>(y);
+                int rowIdx = y - minY;
+                for (int x = minX; x < maxX; ) {
+                    if (labelRow[x] != i) { x++; continue; }
+                    int runStart = x;
+                    while (x < maxX && labelRow[x] == i) x++;
+                    int runLen = x - runStart;
+                    for (int rx = runStart; rx < x; ++rx) {
+                        rowHorizRunW[rowIdx][rx - minX] = runLen;
+                    }
+                }
+            }
+
             std::vector<bool> garbageCols(w, false);
             for (int x = minX; x < maxX; ++x) {
                 int maxContiguousNarrow = 0;
                 int currentContiguousNarrow = 0;
+                int colIdx = x - minX;
                 for (int y = minY; y < maxY; ++y) {
-                    if (labels.at<int>(y, x) == i) {
-                        // Check if horizontally narrow at this row
-                        int xl = x; while (xl >= 0 && labels.at<int>(y, xl) == i) xl--;
-                        int xr = x; while (xr < mat->cols && labels.at<int>(y, xr) == i) xr++;
-                        if ((float)(xr - xl - 1) < 0.75f * vSW) {
-                            currentContiguousNarrow++;
-                            if (currentContiguousNarrow > maxContiguousNarrow) {
-                                maxContiguousNarrow = currentContiguousNarrow;
-                            }
-                        } else {
-                            currentContiguousNarrow = 0;
+                    const int* labelRow = labels.ptr<int>(y);
+                    if (labelRow[x] != i) {
+                        currentContiguousNarrow = 0;
+                        continue;
+                    }
+                    int runW = rowHorizRunW[y - minY][colIdx];
+                    if ((float)runW < 0.75f * vSW) {
+                        currentContiguousNarrow++;
+                        if (currentContiguousNarrow > maxContiguousNarrow) {
+                            maxContiguousNarrow = currentContiguousNarrow;
                         }
                     } else {
                         currentContiguousNarrow = 0;
                     }
                 }
                 if ((float)maxContiguousNarrow >= 0.3f * mat->rows) {
-                    garbageCols[x - minX] = true;
+                    garbageCols[colIdx] = true;
                 }
             }
 
@@ -1960,27 +2292,38 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
 
                     for (int cy = minY; cy < maxY; ++cy) {
                         auto* rowPtr = mat->ptr<uint8_t>(cy);
-                        const auto* lRow = labels.ptr<int>(cy);
+                        auto* lRow = labels.ptr<int>(cy);
                         for (int cx = x_clear_start; cx <= x_clear_end; ++cx) {
                             if (lRow[cx] == i) {
                                 rowPtr[cx] = 0;
+                                lRow[cx] = 0;
                                 modified = true;
+                                vertEdited = true;
                             }
                         }
                     }
                 }
             }
+            long long msVertLabel = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::high_resolution_clock::now() - tVert0).count();
+            msVert += msVertLabel;
+            LOGI("blackOut: label=%d vert tall w=%d h=%d edited=%d ms=%lld",
+                 i, w, h, vertEdited ? 1 : 0, msVertLabel);
         }
     }
 
-    // Refresh connected components list if we split any large object
+    // Re-run object detection (CC) before small/tooLarge filter when wide/vertical filters modified the mat (Set J semantics).
     if (modified) {
+        auto tReCc0 = std::chrono::high_resolution_clock::now();
         nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
+        msReCc = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::high_resolution_clock::now() - tReCc0).count();
     }
 
-    // Run small item binarization filter (and any remaining tooLarge parts)
+    // Run small item binarization filter (and any remaining tooLarge parts) on fresh labels
     // vSW: width of vertical character strokes
     // hSW: height of horizontal character strokes
+    auto tSmall0 = std::chrono::high_resolution_clock::now();
     std::vector<int> invalidLabels;
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
@@ -2001,15 +2344,37 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
         }
         for (int r = 0; r < mat->rows; ++r) {
             auto* rowPtr = mat->ptr<uint8_t>(r);
-            const auto* labelPtr = labels.ptr<int>(r);
+            auto* labelPtr = labels.ptr<int>(r);
             for (int c = 0; c < mat->cols; ++c) {
                 int label = labelPtr[c];
                 if (label > 0 && isInvalid[label]) {
                     rowPtr[c] = 0;
+                    labelPtr[c] = 0;
                 }
             }
         }
     }
+
+    for (int r = 0; r < mat->rows; ++r) {
+        auto* rowPtr = mat->ptr<uint8_t>(r);
+        const auto* labelPtr = labels.ptr<int>(r);
+        for (int c = 0; c < mat->cols; ++c) {
+            rowPtr[c] = (labelPtr[c] > 0) ? 255 : 0;
+        }
+    }
+    msSmallFilter = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - tSmall0).count();
+
+    long long msTotal = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - tFuncStart).count();
+    LOGI("blackOut: end total=%lldms cc=%lld horiz=%lld vert=%lld reCc=%lld small=%lld edited=%zu",
+         msTotal, msInitialCc, msHoriz, msVert, msReCc, msSmallFilter, editedIndices.size());
+
+    jintArray result = env->NewIntArray(editedIndices.size());
+    if (!editedIndices.empty()) {
+        env->SetIntArrayRegion(result, 0, editedIndices.size(), reinterpret_cast<const jint*>(editedIndices.data()));
+    }
+    return result;
 }
 
 extern "C" JNIEXPORT jintArray JNICALL

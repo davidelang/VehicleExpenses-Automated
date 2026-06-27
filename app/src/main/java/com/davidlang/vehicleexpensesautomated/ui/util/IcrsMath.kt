@@ -38,14 +38,17 @@ object IcrsMath {
     }
 
     /**
-     * Convert normalized [0..1] coordinates to ICRS.
+     * Returns the ICRS rect representing the full image (no crop restriction).
+     * Computed via pixelToIcrs corners so it is always consistent with the math.
      */
-    fun normalizedToIcrs(nx: Float, ny: Float, imgW: Int, imgH: Int): PointF {
+    fun fullImageIcrsRect(imgW: Int, imgH: Int): RectF {
         val s = minOf(imgW, imgH).toFloat()
-        if (s <= 0) return PointF(0f, 0f)
-        val icrsX = (nx * imgW - (imgW / 2f)) / s
-        val icrsY = (ny * imgH - (imgH / 2f)) / s
-        return PointF(icrsX, icrsY)
+        if (s <= 0) return RectF(0f, 0f, 0f, 0f)
+        val l = (0f - imgW / 2f) / s
+        val t = (0f - imgH / 2f) / s
+        val r = (imgW.toFloat() - imgW / 2f) / s
+        val b = (imgH.toFloat() - imgH / 2f) / s
+        return RectF(l, t, r, b)
     }
 
 }
