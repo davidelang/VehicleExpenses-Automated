@@ -437,6 +437,54 @@ backup_test_data() {
   adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_zips.tar.gz" 2>/dev/null || true
 }
 
+# Post-restore hygiene for vehicle reference dash photos: bust Coil disk cache + Room WAL + mtime.
+post_restore_ref_hygiene() {
+  local DEV=$1
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    rm -f databases/vehicle_expenses.db-shm databases/vehicle_expenses.db-wal 2>/dev/null || true
+    rm -rf cache/* 2>/dev/null || true
+    touch files/vehicle_ref_*.jpg 2>/dev/null || true
+    date +%s > files/refdata_version.txt 2>/dev/null || true
+  '" 2>/dev/null || true
+}
+
+# Verify on-device vehicle_ref_*.jpg md5 vs backup manifest; echo DB rows for Honda/Ford (id 1,2).
+verify_restored_vehicle_refs() {
+  local DEV=$1
+  local LATEST=$2
+  echo "  [verify] Vehicle reference dash photos on $DEV"
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'ls -l files/vehicle_ref_*.jpg 2>/dev/null || true'" 2>/dev/null || true
+  if [ -f "$LATEST/vehicle_refs.manifest" ] && [ -s "$LATEST/vehicle_refs.manifest" ]; then
+    while IFS= read -r line; do
+      case "$line" in \#*|"") continue ;; esac
+      local sz mt expected fn actual
+      read -r sz mt expected fn <<< "$line"
+      actual=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME md5sum files/$fn 2>/dev/null" 2>/dev/null | awk '{print $1}')
+      if [ -n "$actual" ] && [ "$actual" = "$expected" ]; then
+        echo "    OK $fn md5=$actual matches backup manifest"
+      else
+        echo "    MISMATCH $fn device_md5=${actual:-missing} expected_md5=$expected"
+      fi
+    done < "$LATEST/vehicle_refs.manifest"
+  else
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'cd files 2>/dev/null && md5sum vehicle_ref_*.jpg 2>/dev/null || true'" 2>/dev/null | while read -r sum fn; do
+      [ -n "$sum" ] && echo "    ${fn##*/} md5=$sum (no manifest to compare)"
+    done
+  fi
+  local tmpdb
+  tmpdb=$(mktemp)
+  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat databases/vehicle_expenses.db" > "$tmpdb" 2>/dev/null && [ -s "$tmpdb" ]; then
+    if command -v sqlite3 >/dev/null 2>&1; then
+      while IFS='|' read -r vid vname vurl; do
+        echo "    DB id=$vid name=$vname referenceDashPhotoUrl=$vurl"
+      done < <(sqlite3 -separator '|' "$tmpdb" "SELECT id,name,referenceDashPhotoUrl FROM vehicles WHERE id IN (1,2) ORDER BY id;" 2>/dev/null || true)
+    else
+      echo "    (sqlite3 not available locally — skip DB row verify)"
+    fi
+  fi
+  rm -f "$tmpdb"
+}
+
 restore_test_data() {
   local DEV=$1; local EXPLICIT_BACKUP=$2
   if [ "$PRESERVE_DATA" != "true" ] && [ "$RESTORE_DATA" != "true" ] && [ "$INSTALL_DATA" != "true" ]; then return; fi
@@ -470,16 +518,21 @@ restore_test_data() {
     fi
   fi
 
+  local restored_db=false
+  local restored_refs=false
+
   # Restore DB
   if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
     adb -s "$DEV" push "$LATEST/vehicle_expenses.db.bak" /sdcard/ve_db.bak >/dev/null
     adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && cp /sdcard/ve_db.bak databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db'" 2>/dev/null || true
     adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f /sdcard/ve_db.bak" 2>/dev/null || true
+    restored_db=true
   fi
   # Restore dash/reference images (vehicle_ref_*.jpg)
   if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then
     adb -s "$DEV" push "$LATEST/vehicle_refs.tar.gz" /sdcard/ve_refs.tar.gz >/dev/null
     adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cd files && tar xzf /sdcard/ve_refs.tar.gz 2>/dev/null || true; cd ..; rm -f /sdcard/ve_refs.tar.gz'" 2>/dev/null || true
+    restored_refs=true
   fi
   # Restore pump pictures (input images the app reads from pump_photos)
   if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then
@@ -506,8 +559,13 @@ restore_test_data() {
       mkdir -p \"\$DDIR\" && cd \"\$DDIR\" && tar xzf /sdcard/ve_source_zips.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_source_zips.tar.gz
     '" 2>/dev/null || true
   fi
-  # Optional: force-stop to make app reload DB on next launch
+  # Post-restore cache bust + clean launch (Coil disk cache + Room WAL) when DB or refs were restored.
+  if [ "$restored_db" = true ] || [ "$restored_refs" = true ]; then
+    post_restore_ref_hygiene "$DEV"
+    verify_restored_vehicle_refs "$DEV" "$LATEST"
+  fi
   adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
+  adb -s "$DEV" shell "am start -n $PACKAGE_NAME/.MainActivity --activity-clear-task" 2>/dev/null || true
 }
 
 if [ "$RESTORE_DATA" = "true" ]; then
