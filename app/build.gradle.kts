@@ -14,8 +14,9 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        // Use orNull + fallback so a broken git state (bad refs after permission issues
-        // or worktree problems) does not fail the entire configuration with "bash exit 128".
+        // Use orNull so a broken git state (bad refs after permission issues or worktree problems)
+        // does not fail the entire configuration with "bash exit 128".
+        // We also set workingDir explicitly and use a more robust command.
         val rawVersion = providers.exec {
             workingDir = project.rootDir
             commandLine(

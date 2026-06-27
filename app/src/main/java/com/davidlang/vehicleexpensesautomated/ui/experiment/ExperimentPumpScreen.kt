@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -47,6 +48,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.zip.ZipInputStream
@@ -55,6 +57,56 @@ import kotlin.math.min
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentPump"
+
+private fun getPhotoFragmentFile(reportDir: File, ts: String, idx: Int): File {
+    val fragDir = File(reportDir, "fragments")
+    if (!fragDir.exists()) fragDir.mkdirs()
+    return File(fragDir, "photo_${ts}_${String.format(Locale.US, "%04d", idx)}.jsonfrag")
+}
+
+// Legacy batch-combine helper; main pump path streams per-row JSON directly and deletes frags immediately.
+private fun combinePhotoFragmentsIntoJson(jsonFile: File, header: String, fragments: List<File>, footer: String) {
+    jsonFile.outputStream().buffered().use { out ->
+        out.write(header.toByteArray(Charsets.UTF_8))
+        fragments.forEachIndexed { i, frag ->
+            frag.inputStream().use { it.copyTo(out) }
+            val sep = if (i < fragments.lastIndex) ",\n" else "\n"
+            out.write(sep.toByteArray(Charsets.UTF_8))
+        }
+        out.write(footer.toByteArray(Charsets.UTF_8))
+    }
+}
+
+private fun Appendable.jsonAppend(s: String): Appendable {
+    try {
+        append(s)
+    } catch (e: IOException) {
+        throw RuntimeException(e)
+    }
+    return this
+}
+
+private fun Appendable.jsonAppend(c: Char): Appendable {
+    try {
+        append(c)
+    } catch (e: IOException) {
+        throw RuntimeException(e)
+    }
+    return this
+}
+
+private fun logHeapState(context: Context, label: String) {
+    val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    val mi = ActivityManager.MemoryInfo()
+    am.getMemoryInfo(mi)
+    val runtime = Runtime.getRuntime()
+    Log.i(
+        TAG,
+        "heap[$label] memoryClass=${am.memoryClass}MB largeMemoryClass=${am.largeMemoryClass}MB " +
+            "runtime max=${runtime.maxMemory()} total=${runtime.totalMemory()} free=${runtime.freeMemory()} " +
+            "availMem=${mi.availMem} threshold=${mi.threshold} lowMemory=${mi.lowMemory}"
+    )
+}
 
 private val GOLDEN_SUBSET = listOf(
     "PXL_20260202_204443784.jpg",
@@ -77,8 +129,7 @@ data class PumpPhotoResultSummary(
     val odometer: String?
 )
 
-data class PumpHunk(val text: String, val icrs: RectF)
-data class PathResult(val cost: String, val vol: String, val costB64: String, val volB64: String)
+// PumpHunk, PumpRectOcrLists, RedBoxOcrCandidate, PathResult, CostVolClassifyResult: see PumpCostVolUtils.kt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,14 +148,20 @@ fun ExperimentPumpScreen(navController: NavHostController) {
     val resultsList = remember { mutableStateListOf<PumpPhotoResultSummary>() }
 
     val experimentDir = File(context.getExternalFilesDir(null), "pump_photos")
+    experimentDir.mkdirs()
     val reportDir = File(context.getExternalFilesDir(null), "pump_reports")
-    val debugCropDir = File(context.getExternalFilesDir(null), "pump_debug_crops")
 
     if (!reportDir.exists()) reportDir.mkdirs()
-    if (!debugCropDir.exists()) debugCropDir.mkdirs()
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { scope.launch { status = "Extracting ZIP..."; val success = pExtractZipToPhotos(it, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." } }
+        uri?.let { u ->
+            try {
+                context.contentResolver.takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to take persistable URI permission", e)
+            }
+            scope.launch { status = "Extracting ZIP..."; val success = pExtractZipToPhotos(u, experimentDir, context); status = if (success) "ZIP extracted!" else "Failed to extract ZIP." }
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
@@ -131,9 +188,10 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         Button(onClick = {
             scope.launch {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
                 totalPhotos = allFiles.size
                 isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, null) { res, p ->
+                runPumpExperiment(experimentDir, reportDir, context, { detailLog = it }, null) { res, p ->
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
                 isRunning = false; status = "Complete! Reports saved."
@@ -142,10 +200,11 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         Button(onClick = {
             scope.launch {
                 val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+                Log.d(TAG, "Run Limited listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
                 val subset = allFiles.filter { it.name in GOLDEN_SUBSET }
                 totalPhotos = subset.size
                 isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, debugCropDir, context, { detailLog = it }, GOLDEN_SUBSET) { res, p ->
+                runPumpExperiment(experimentDir, reportDir, context, { detailLog = it }, GOLDEN_SUBSET) { res, p ->
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
                 isRunning = false; status = "Complete! Limited Report saved."
@@ -188,27 +247,19 @@ data class PumpBranch(
     }
 }
 
-data class PumpReferenceCache(
-    val vehicle: Vehicle,
-    val referenceBase64: String,
-    val curatedLandmarks: List<TextBlock>,
-    val bmp: Bitmap,
-    val width: Int,
-    val height: Int
-)
-
 private suspend fun runPumpExperiment(
     experimentDir: File,
     reportDir: File,
-    debugCropDir: File,
     context: Context,
     onLog: (String) -> Unit,
     subsetNames: List<String>?,
     onProgress: (PumpPhotoResultSummary, Float) -> Unit
 ) = withContext(Dispatchers.IO) {
+    logHeapState(context, "runPumpExperiment:start")
     val allPhotos = experimentDir.listFiles { f ->
         f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
     }?.sortedBy { it.name } ?: return@withContext
+    Log.d(TAG, "runPumpExperiment listFiles: dir=${experimentDir.absolutePath} count=${allPhotos.size}")
 
     val photos = if (subsetNames != null) {
         allPhotos.filter { it.name in subsetNames }
@@ -219,16 +270,20 @@ private suspend fun runPumpExperiment(
     val paddleEngine = NativePaddleEngine(context)
 
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
-    jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n")
-
-    // Pre-allocated JSON serialization buffer (16MB starting capacity)
-    var jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
+    val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n"
+    val jsonFooter = "\n  ]\n}"
+    var firstPhoto = true
+    val jsonWriter = jsonFile.bufferedWriter()
+    jsonWriter.write(jsonHeader)
+    logHeapState(context, "after-json-header-write")
+    Log.i("PUMP_JSON", "wrote header early, total_photos=$total")
 
     var partCount = 1
-    val maxSizeBytes = 5 * 1024 * 1024 // 5MB parts
+    val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; JSON streamed to main file, frags deleted per row)
     var currentSize = 0
     val footer = "</table></body></html>"
     val experimentRecSet320x48 = BufferSet(320, 48)
+    val experimentRecSet1024x48 = BufferSet(1024, 48)  // per plan for D/E (and mirrors) OCR: larger for garbage tolerance + 4px buffer
     val experimentDetSet512x128 = BufferSet(512, 128)
     val masterBuffer = BufferSet(1, 1)
 
@@ -244,9 +299,18 @@ private suspend fun runPumpExperiment(
         it.s.clearChroma()
     }
 
+    // Long-lived histogram BufferSet for per-red C/E report (dual visuals: rect snapshot from workspace crop + hist plot snapshot); initialized once before photo loop, sized for per-red display (plot 186x300), held for experiment lifetime, passed as scratchYuv to takeSnapshot, never released here. Internal histPlotCrop for render from bins (replaces per-red custom generate + temp workspace plot). (C/E visuals only; redboxData hists now for all 7 sets via captureRedboxData after top-6 prune.)
+    val longLivedHistogramBuffer = BufferSet(186, 300)
+    longLivedHistogramBuffer.p.clear()
+    longLivedHistogramBuffer.s.clear()
+    val histPlotCrop = longLivedHistogramBuffer.createCrop(0, 0, 186, 300)
+
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
-    val flows = listOf("Set A")
+    // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
+    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (display-matched 1:1 size) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan; now via createCrop + direct calcHist + dual takeSnapshot from long-lived hist BufferSet at pump start). Lot of granular t_ timings (20+ including t_setup_ms, t_deskew_ms, t_discovery_wrapper_ms, t_filter_ms, t_pd_snapshot_ms, t_ocr_ms + C probe subs t_polarity_run_ms / t_per_red_bins_calc_ms / t_per_red_loop_overhead_ms / t_polarity_decision_ms / t_invert_if_needed_ms + blue subs t_blue_native_hist_ms / t_blue_valley_expands_ms / t_blue_3sides_ms / t_blue_retract_ms + t_hist_* + kept priors + n_reds_at_probe / n_per_red_hists / img dims context) added to metadata/JSON (one run gathers all for A/B gap + C probe/blue decomposition; no extra turn needed). HISTOGRAM ANSWERS (forensic): per-red C/E now createCrop (pixel rect from hunk) + direct calcHist on crop.mat (no mask) + OcrUtils.takeSnapshot (dual rect snapshot + plot from longLived histPlotCrop); long-lived BufferSet init once at pump start for scratch + plot crop (no per-red full Mat alloc/zeros/draw/generate custom); old perMask/rectangle/generate retired for this path. Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state. Set F: raw clone of B (no automaticContrastStretch; deskew/rotate/discovery/retracted-blue/red-only/OCR/PD on raw master copy). Set G: raw clone of D (no stretch; keeps custom 10% blue/orange + red-only + OCR on raw).
+    // Label convention (added this plan): Set A exactly unchanged (baseline). B-G use "Set X (stretch-type, blue-method)" so columns are self-describing in all report output (th, tilt line, <b>$name ...); stretch=clip edges (automaticContrastStretch), valley push (valleyPushToPeaks), none (raw F/G clones); blue=expanded (doBOrDRetractedBlueAndPD + expandByUniformity+retract: B/C/F) or calculated (vert expansions +10%..+80% step 10%: D/E/G). Exact: B (clip edges, expanded), C (valley push, expanded), D (clip edges, calculated), E (valley push, calculated), F (none, expanded), G (none, calculated). B/C/F (expanded columns only) perform per-peak binPeak object-based blue in HTML/JSON as binPeak_*; P4 debug images (inline base64) generated only for Set C; report JSON built via per-photo fragments staged to disk then streamed/combined into final self-contained inline JSON; peaks from combinedRedboxHistBins; for C (valley expanded) uses exact 1-bin peaks from quantized combined hist (no range/smoothing, d=0); calculated columns D/E/G skip binPeak work entirely (results identical to expanded, saves processing + report size).
+    val flows = listOf("Set A", "Set B (clip edges, expanded)", "Set C (valley push, expanded)", "Set D (clip edges, calculated)", "Set E (valley push, calculated)", "Set F (none, expanded)", "Set G (none, calculated)")
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
@@ -260,22 +324,248 @@ private suspend fun runPumpExperiment(
         try {
             withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name}") }
 
-            val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
+            val (probedW, probedH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
+            if (probedW <= 0 || probedH <= 0) {
+                android.util.Log.e("ExperimentPump", "Invalid probe ${probedW}x$probedH for ${file.name}; skipping photo")
+                return@forEachIndexed
+            }
+            val imgW = probedW
+            val imgH = probedH
             masterBuffer.resize(imgW, imgH)
+            NativePaddleEngine.bufferSetA.resize(imgW, imgH)
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBuffer.p)
 
             val root = PumpBranch("Root")
-            val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(masterBuffer.p, null, 225, 0, emptyList(), null, masterBuffer)
+            val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(masterBuffer.p, null, PUMP_SMALL_TARGET_W, 0, emptyList(), null, masterBuffer)
             root.images["before"] = beforeB64
             root.images["hist1"] = generateHistogramB64(masterBuffer.p.mat, 0.40f)
 
             var originalHistogram = JSONArray()
 
+
+            // --- Pure helper functions (no closure on loop variables) ---
+
+            fun stackVertically(b64List: List<String>): String {
+                if (b64List.isEmpty()) return ""
+                val bitmaps = mutableListOf<android.graphics.Bitmap>()
+                try {
+                    b64List.forEach { b64 ->
+                        val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        if (bmp != null) bitmaps.add(bmp)
+                    }
+                    if (bitmaps.isEmpty()) return ""
+                    val w = bitmaps.maxOf { it.width }
+                    val totalH = bitmaps.sumOf { it.height }
+                    val stacked = android.graphics.Bitmap.createBitmap(w, totalH, android.graphics.Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(stacked)
+                    canvas.drawColor(android.graphics.Color.BLACK)
+                    var y = 0
+                    bitmaps.forEach { bmp ->
+                        val scale = w.toFloat() / bmp.width.toFloat()
+                        val nh = (bmp.height * scale).toInt()
+                        val sb = android.graphics.Bitmap.createScaledBitmap(bmp, w, nh, true)
+                        canvas.drawBitmap(sb, 0f, y.toFloat(), null)
+                        y += nh
+                        if (sb != bmp) sb.recycle()
+                        bmp.recycle()
+                    }
+                    val res = OcrUtils.bitmapToBase64(stacked, 70)
+                    stacked.recycle()
+                    return res
+                } catch (e: Exception) {
+                    bitmaps.forEach { it.recycle() }
+                    return ""
+                }
+            }
+
+            fun qualifiesFor3SidesNearExtend(cR: android.graphics.Rect, oR: android.graphics.Rect): Boolean {
+                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
+                if (insides.count { it } != 3) return false
+                // identify protruding side + compute pixel protrusion distance + overlap on that axis
+                val (protrPx, hasOverlap) = when {
+                    !insides[0] -> (cR.left - oR.left) to (oR.right > cR.left)   // left
+                    !insides[2] -> (oR.right - cR.right) to (oR.left < cR.right) // right
+                    !insides[1] -> (cR.top - oR.top) to (oR.bottom > cR.top)     // top
+                    !insides[3] -> (oR.bottom - cR.bottom) to (oR.top < cR.bottom) // bottom
+                    else -> 0 to true
+                }
+                return protrPx <= 40 && hasOverlap
+            }
+
+            fun doCrossScaleRedboxFilterPixel(redRects: MutableList<android.graphics.Rect>) {
+                if (redRects.isEmpty()) return
+                // Exact containment pass (sequential kept, pure integer, no ICRS)
+                val kept = mutableListOf<android.graphics.Rect>()
+                for (r1 in redRects) {
+                    val isContained = kept.any { r2 ->
+                        r2.contains(r1.left, r1.top, r1.right, r1.bottom)
+                    }
+                    if (!isContained) kept.add(r1)
+                }
+                // Now 3sides + <=40px with smart sweep instead of O(n^2) pair
+                // Build intervals
+                data class Iv(val s: Int, val e: Int, val idx: Int)
+                // X sweep for overlaps
+                val xIvs = kept.withIndex().map { (i, r) -> Iv(r.left, r.right, i) }.sortedBy { it.s }
+                val xOver = mutableSetOf<Pair<Int, Int>>()
+                val activeX = mutableListOf<Iv>()
+                for (iv in xIvs) {
+                    activeX.removeAll { it.e < iv.s }
+                    for (a in activeX) {
+                        val lo = minOf(a.idx, iv.idx); val hi = maxOf(a.idx, iv.idx)
+                        xOver.add(lo to hi)
+                    }
+                    activeX.add(iv)
+                }
+                // Y sweep
+                val yIvs = kept.withIndex().map { (i, r) -> Iv(r.top, r.bottom, i) }.sortedBy { it.s }
+                val yOver = mutableSetOf<Pair<Int, Int>>()
+                val activeY = mutableListOf<Iv>()
+                for (iv in yIvs) {
+                    activeY.removeAll { it.e < iv.s }
+                    for (a in activeY) {
+                        val lo = minOf(a.idx, iv.idx); val hi = maxOf(a.idx, iv.idx)
+                        yOver.add(lo to hi)
+                    }
+                    activeY.add(iv)
+                }
+                val candidates = xOver intersect yOver
+                // 3sides only on candidates (small N)
+                val toProcess = kept.toMutableList()
+                val extended = mutableListOf<android.graphics.Rect>()
+                for (i in toProcess.indices) {
+                    var cur = toProcess[i]
+                    for (j in toProcess.indices) {
+                        if (i == j) continue
+                        val p = minOf(i, j) to maxOf(i, j)
+                        if (p !in candidates) continue
+                        val oth = toProcess[j]
+                        if (qualifiesFor3SidesNearExtend(cur, oth)) {
+                            val insides = listOf(oth.left >= cur.left, oth.top >= cur.top, oth.right <= cur.right, oth.bottom <= cur.bottom)
+                            val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
+                            val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
+                            val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
+                            val newB = if (!insides[3]) max(cur.bottom, oth.bottom) else cur.bottom
+                            var nl = newL; var nr = newR; var nt = newT; var nb = newB
+                            if (nl > nr) { val t = nl; nl = nr; nr = t }
+                            if (nt > nb) { val t = nt; nt = nb; nb = t }
+                            cur = android.graphics.Rect(nl, nt, nr, nb)
+                        }
+                    }
+                    if (extended.none { it == cur }) extended.add(cur)
+                }
+                // final cleanup contains
+                val cleaned = extended.filter { b ->
+                    !extended.any { o -> o != b && o.contains(b) }
+                }.filter { it.width() > 0 && it.height() > 0 }.toMutableList()
+                redRects.clear()
+                redRects.addAll(cleaned)
+            }
+
+            fun labelWithText(b64: String, text: String): String {
+                return try {
+                    val bytes = Base64.decode(b64, Base64.DEFAULT)
+                    var bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return b64
+                    val mutable = bmp.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                    bmp.recycle()
+                    bmp = mutable
+                    val canvas = android.graphics.Canvas(bmp)
+                    val paint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.YELLOW
+                        textSize = (bmp.height * 0.06f).coerceAtLeast(18f)
+                        isAntiAlias = true
+                        setShadowLayer(2f, 1f, 1f, android.graphics.Color.BLACK)
+                    }
+                    canvas.drawText(text, 8f, paint.textSize + 4f, paint)
+                    val baos = java.io.ByteArrayOutputStream()
+                    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, baos)
+                    val out = Base64.encodeToString(baos.toByteArray(), Base64.DEFAULT)
+                    bmp.recycle()
+                    out
+                } catch (e: Exception) {
+                    b64
+                }
+            }
+
+            fun doCrossScaleRedboxFilter(pdHunksRawTotal: MutableList<PumpHunk>, imgW: Int, imgH: Int) {
+                if (pdHunksRawTotal.isNotEmpty()) {
+                    // Remove redundant nested or duplicate red boxes (entirely contained or perfectly overlapping).
+                    // Purpose: eliminate redundant detections so they do not contribute to derived
+                    // blue/orange boxes or final results. Filtered boxes are removed completely.
+                    // Use exact containment (no artificial inset/spacing); for perfect overlaps,
+                    // keep one representative (the first in order) and drop the rest.
+                    // Sequential keep: only check against already-kept boxes to ensure at least one survives duplicates.
+                    // Also applies the corrected 3 sides enclosed + <=40px (per user): exactly 3 edge insides + protrusion on 4th <=40px in pixel space *and* the boxes still overlap on the protruding axis (no gap). Uses shared qualifiesFor3SidesNearExtend helper (same logic for blue/orange in Set C).
+                    val kept = mutableListOf<PumpHunk>()
+                    for (h1 in pdHunksRawTotal) {
+                        val r1 = android.graphics.Rect(h1.rect.left.toInt(), h1.rect.top.toInt(), h1.rect.right.toInt(), h1.rect.bottom.toInt())
+                        val isContained = kept.any { h2 ->
+                            h1 !== h2 && run {
+                                val r2 = android.graphics.Rect(h2.rect.left.toInt(), h2.rect.top.toInt(), h2.rect.right.toInt(), h2.rect.bottom.toInt())
+                                // Exact containment (no inset). Perfect overlaps/duplicates: keep the first, drop redundant.
+                                r2.contains(r1.left, r1.top, r1.right, r1.bottom)
+                            }
+                        }
+                        if (!isContained) {
+                            kept.add(h1)
+                        }
+                    }
+                    // 3 sides +40px on the exact survivors (the near-nested cases exact didn't catch)
+                    val toProcess = kept.toMutableList()
+                    val extended = mutableListOf<PumpHunk>()
+                    for (i in toProcess.indices) {
+                        var cur = toProcess[i]
+                        for (j in toProcess.indices) {
+                            if (i == j) continue
+                            val oth = toProcess[j]
+                            val cR = android.graphics.Rect(cur.rect.left.toInt(), cur.rect.top.toInt(), cur.rect.right.toInt(), cur.rect.bottom.toInt())
+                            val oR = android.graphics.Rect(oth.rect.left.toInt(), oth.rect.top.toInt(), oth.rect.right.toInt(), oth.rect.bottom.toInt())
+                            val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
+                            if (qualifiesFor3SidesNearExtend(cR, oR)) {
+                                val newL = if (!insides[0]) min(cur.rect.left, oth.rect.left) else cur.rect.left
+                                val newT = if (!insides[1]) min(cur.rect.top, oth.rect.top) else cur.rect.top
+                                val newR = if (!insides[2]) max(cur.rect.right, oth.rect.right) else cur.rect.right
+                                val newB = if (!insides[3]) max(cur.rect.bottom, oth.rect.bottom) else cur.rect.bottom
+                                var nl = newL; var nr = newR; var nt = newT; var nb = newB
+                                if (nl > nr) { val t = nl; nl = nr; nr = t }
+                                if (nt > nb) { val t = nt; nt = nb; nb = t }
+                                cur = PumpHunk(cur.text, RectF(nl, nt, nr, nb))
+                            }
+                        }
+                        if (extended.none { it.rect == cur.rect }) extended.add(cur)
+                    }
+                    val cleaned = extended.filter { b ->
+                        val bR = android.graphics.Rect(b.rect.left.toInt(), b.rect.top.toInt(), b.rect.right.toInt(), b.rect.bottom.toInt())
+                        !extended.any { o ->
+                            if (o === b) false else {
+                                val oR = android.graphics.Rect(o.rect.left.toInt(), o.rect.top.toInt(), o.rect.right.toInt(), o.rect.bottom.toInt())
+                                oR.contains(bR)
+                            }
+                        }
+                    }.toMutableList()
+                    pdHunksRawTotal.clear()
+                    pdHunksRawTotal.addAll(cleaned)
+                }
+            }
+
+
             // Dynamic Flow Processing
-            flows.forEach { flowName ->
+            // Phase 2 dispatch (approved array-of-processors refactor): iterate the flowProcessors array in lockstep
+            // with flows (forEachIndexed). Common per-flow setup + call to the processor for this index.
+            // Per-set special logic (B/D red-only + retracted+OCR/PD; C/E valley/3sides/retract/orange/PD/OCR) is in thin if calls to extracted helpers (after common filter).
+            // if (B||D) and else if (C||E) bodies are now only calls (hoists for C). Mechanical extraction for the tangled ifs complete per user directive ("between each if flowname you pretty much only have a function call").
+            // Procs via the array are the entry (stubs document the linear steps). Scaffolding comments cleaned.
+            flows.forEachIndexed { i, flowName ->
+                // (original per-flow setup follows; the call to the processor for this i will be placed after the
+                // flowProcessors list definition later in this per-flow body, so the array reference resolves and
+                // the C processor (with valley) runs after setup and after its own def in source. This activates
+                // the array-of-functions iteration per the clarification (no hard-coded per-set function names at
+                // call sites; just index into the array). Thin ifs + proc delegates now drive per-set special logic; old body scaffolding cleaned.)
                 val branch = root.getBranch(flowName)
+                val tFlowStart = System.currentTimeMillis()
+                val tSetupStart = System.currentTimeMillis()
                 val workspace = NativePaddleEngine.bufferSetA
-                workspace.resize(imgW, imgH)
                 masterBuffer.p.mat.copyTo(workspace.p.mat)
                 masterBuffer.p.uvMat.copyTo(workspace.p.uvMat)
 
@@ -285,54 +575,435 @@ private suspend fun runPumpExperiment(
                     put("Paddle Max Extent", mutableMapOf())
                     put("Paddle Native", mutableMapOf())
                 }
+                branch.metadata["t_setup_ms"] = (System.currentTimeMillis() - tSetupStart).toString()
+                // t_setup_ms covers buffer copy + discoveryDetails map (common high-level phase for A/B/C gap analysis)
 
-                // 1. Transform
-                val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
-                if (flowName == flows.first()) {
-                    originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
-                    root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, 225, 0, emptyList(), null, workspace).first
-                    root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
-                }
+                // Setup logic and tilt variables are now completely moved into flow processors.
+                // t_deskew_ms covers calculateAverageTextAngle + rotate + tilt metadata write (common high-level phase)
 
-                // 2. Deskew
-                val deskewRes = OdometerOcrUtils.calculateAverageTextAngle(workspace.p)
-                val tilt = deskewRes.angle
-
-                suspend fun pRotate(set: BufferSet, angle: Float) = withContext(Dispatchers.IO) {
-                    val src = set.p.mat; val dst = set.s.mat
-                    val matrixLocal = android.graphics.Matrix(); matrixLocal.postRotate(-angle, src.cols() / 2f, src.rows() / 2f)
-                    val values = FloatArray(9); matrixLocal.getValues(values)
-                    val rotMat = org.opencv.core.Mat(2, 3, org.opencv.core.CvType.CV_64F)
-                    rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
-                    rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
-
-                    // Rotate Luma (Y)
-                    org.opencv.imgproc.Imgproc.warpAffine(src, dst, rotMat, src.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
-
-                    // Rotate Chroma (UV)
-                    val srcUv = set.p.uvMat
-                    val dstUv = set.s.uvMat
-                    val uvScaleMat = rotMat.clone()
-                    // Shift translation for half-res UV plane
-                    uvScaleMat.put(0, 2, rotMat.get(0, 2)[0] / 2.0)
-                    uvScaleMat.put(1, 2, rotMat.get(1, 2)[0] / 2.0)
-                    org.opencv.imgproc.Imgproc.warpAffine(srcUv, dstUv, uvScaleMat, srcUv.size(), org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(128.0, 128.0))
-
-                    set.flip()
-                    rotMat.release(); uvScaleMat.release()
-                }
-                pRotate(workspace, tilt)
-
-                // 3. Discovery
-                val scales = listOf(224, 608, 1024, 2560)
+                // Hoisted decls (Phase 1 small step of approved refactor plan): declared before the local helper funs
+                // (stackVertically, runPaddleDiscovery) that close over them (and before the inline discovery).
+                // This resolves forward-ref compile issues for 'scales', the pd*Totals, mlBlocksRaw etc that the
+                // helpers reference. (The processedScales for the inline remains at its site for now.)
+                val scales = listOf(224, 608, 1024)
                 val mlBlocksRaw = mutableListOf<PumpHunk>()
                 val pdHunksRawTotal = mutableListOf<PumpHunk>()
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
                 val pdHunksMaxTotal = mutableListOf<PumpHunk>()
                 val pdHunksNativeTotal = mutableListOf<PumpHunk>()
+                val pdHunksDetectedTotal = mutableListOf<PumpHunk>()  // pre-redbox raw detected hunks (tFullB equiv); for Set C white 1px + blue/orange derivation from hunks (see alignment Set J tRawB vs tFullB)
 
-                val processedScales = mutableSetOf<Int>()
-                scales.forEach { scale ->
+
+
+                // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan + PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: clean text only; probs separate for decisions
+                fun pumpOcrCleanAndProbs(debugText: String, perCharProbs: String): Pair<String, String> {
+                    val cleanText = debugText
+                    val probStr = if (perCharProbs.isNotEmpty()) perCharProbs else ""
+                    return cleanText to probStr
+                }
+
+                // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: leading/trailing '.' is noise; >=2 internal '.' is bad OCR
+                fun cleanDecimal(s: String): String {
+                    var t = s.trim()
+                    while (t.startsWith(".")) t = t.substring(1)
+                    while (t.endsWith(".")) t = t.substring(0, t.length - 1)
+                    return t
+                }
+
+                fun hasBadInternalDecimals(s: String): Boolean = cleanDecimal(s).count { it == '.' } >= 2
+
+                // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: probs score correctness likelihood (not role)
+                fun probCorrectness(p: String): Float {
+                    if (p.isEmpty()) return 0.5f
+                    val vals = p.split(",").mapNotNull { part ->
+                        val colon = part.indexOf(':')
+                        if (colon < 0) null else part.substring(colon + 1).trim().toFloatOrNull()
+                    }
+                    return if (vals.isEmpty()) 0.5f else vals.average().toFloat()
+                }
+
+                fun yOverlapHeight(a: android.graphics.Rect, b: android.graphics.Rect): Int {
+                    val interTop = maxOf(a.top, b.top)
+                    val interBottom = minOf(a.bottom, b.bottom)
+                    return maxOf(0, interBottom - interTop)
+                }
+
+                // Significant overlap: Y-overlap height > 50% of preferred box height
+                fun significantYOverlap(preferred: android.graphics.Rect, other: android.graphics.Rect): Boolean {
+                    val overlap = yOverlapHeight(preferred, other)
+                    val prefH = preferred.height().coerceAtLeast(1)
+                    return overlap > prefH * 0.5f
+                }
+
+                // Role-based conditional decimal repair: only when clean value lacks a good decimal
+                fun repairDecimalForRole(clean: String, role: String): String {
+                    if ("." in clean) return clean
+                    val dstr = clean.filter { it.isDigit() }
+                    if (role == "cost" && dstr.length >= 3) {
+                        val n = dstr.length
+                        return dstr.substring(0, n - 2) + "." + dstr.substring(n - 2)
+                    }
+                    if (role == "vol" && dstr.length >= 4) {
+                        val n = dstr.length
+                        return dstr.substring(0, n - 3) + "." + dstr.substring(n - 3)
+                    }
+                    return clean
+                }
+
+                fun rectToJson(r: android.graphics.Rect): JSONObject =
+                    JSONObject().put("l", r.left).put("t", r.top).put("r", r.right).put("b", r.bottom)
+
+                fun redBoxOcrCandidateToJson(c: RedBoxOcrCandidate): JSONObject {
+                    val j = JSONObject()
+                        .put("label", c.label)
+                        .put("asis", c.asis)
+                        .put("digits", c.digits)
+                        .put("asisProbs", c.asisProbs)
+                        .put("digitsProbs", c.digitsProbs)
+                    c.rect?.let { j.put("rect", rectToJson(it)) }
+                    return j
+                }
+
+                // fix-remaining-report-issues-20260619-plan: cand.rect from ocr rect list (blue/orange/retracted), not pdHunksRawTotal reds
+                // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: probs stored separately from clean text
+                fun buildRedBoxCandidates(
+                    boxRects: List<android.graphics.Rect>,
+                    asisList: List<String>,
+                    digitsList: List<String>,
+                    asisProbsList: List<String> = emptyList(),
+                    digitsProbsList: List<String> = emptyList()
+                ): List<RedBoxOcrCandidate> {
+                    val n = minOf(boxRects.size, asisList.size, digitsList.size)
+                    return (0 until n).map { i ->
+                        RedBoxOcrCandidate(
+                            "Red${i+1}",
+                            asisList[i],
+                            digitsList[i],
+                            asisProbsList.getOrElse(i) { "" },
+                            digitsProbsList.getOrElse(i) { "" },
+                            boxRects[i]
+                        )
+                    }
+                }
+
+                suspend fun getFinal(
+                    hunks: List<PumpHunk>,
+                    engine: String,
+                    tilt: Float,
+                    pdRawForAnns: List<PumpHunk>,
+                    ws: BufferSet,
+                    recBuf: BufferSet,
+                    paddleEng: NativePaddleEngine,
+                    ctx: Context,
+                    imgW: Int,
+                    imgH: Int,
+                    candidates: List<RedBoxOcrCandidate> = emptyList()
+                ): PathResult {
+                    // complete-real-4box-per-column-wiring plan + docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: per-column top-4 candidates drive cost/vol (~8 independent column/engine invocations); pathResults unchanged
+                    if (candidates.isNotEmpty()) {
+                        // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: classify returns distinct clean digit strings (probs never in PathResult); crops from each cand's ocr rect
+                        val cv = PumpCostVolUtils.classifyCostVolFromBoxOcr(candidates)
+                        val costCrop = cv.costCand.rect?.let { r ->
+                            OcrUtils.takeSnapshot(ws.p, r, PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H, emptyList(), null, ws).first
+                        } ?: ""
+                        val volCrop = cv.volCand.rect?.let { r ->
+                            OcrUtils.takeSnapshot(ws.p, r, PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H, emptyList(), null, ws).first
+                        } ?: ""
+                        return PathResult(cv.cost, cv.vol, costCrop, volCrop)
+                    }
+                    // legacy fallback
+                    val stitched = stitchHunksHorizontally(hunks)
+                    val (top, bottom) = groupLanesByVerticalGap(stitched)
+                    val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
+                    val expT = expandHunkContext(pair.first, imgW, imgH); val expB = expandHunkContext(pair.second, imgW, imgH)
+                    val res = performHunkRecognition(listOf(expT, expB), ws, recBuf, engine, paddleEng, ctx, tilt)
+
+                    suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
+                        // A final crop path: direct integer Rect from (now integer-valued) exp.rect (from expand integer); no float in rect construction for takeSnapshot; anns also from A integer pdRaw
+                        val el = exp.rect.left.toInt(); val et = exp.rect.top.toInt(); val er = exp.rect.right.toInt(); val eb = exp.rect.bottom.toInt()
+                        val rect = android.graphics.Rect(el, et, er, eb)
+                        val anns = mutableListOf<SnapshotAnnotation>()
+                        if (engine == "Paddle") {
+                            // RED: Raw detections only (blue/orange removed to focus on red boxes for debugging)
+                            pdRawForAnns.forEach { h ->
+                                anns.add(SnapshotAnnotation(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt(), Shape.RECTANGLE, Color.RED, 2))
+                            }
+                            // BLUE and ORANGE temporarily disabled
+                            // pdHunksExpTotal.forEach { ... BLUE }
+                            // ... ORANGE for the specific
+                        }
+                        return OcrUtils.takeSnapshot(ws.p, rect, PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H, anns, null, ws).first
+                    }
+                    val cropT = takeCrop(expT, pair.first); val cropB = takeCrop(expB, pair.second)
+                    return PathResult(res[0].text, res[1].text, cropT, cropB)
+                }
+
+
+
+                // Phase 2 of approved refactor plan: the array of processor functions (one per flow, in same order as
+                // the flows list) that we iterate over (forEachIndexed or zip). Each is a self-contained lambda whose
+                // body is the linear list of steps for that path (no if(flowName) inside). Common setup (ws copy,
+                // discoveryDetails map) happens at the dispatch site; processors receive ws/br/det/w/h and populate
+                // only their branch (images, pathResults, metadata["tilt"]). Old tangled forEach body remains
+                // temporarily (will be removed as logic is moved into the processors in subsequent phases).
+                // Set C valley (bin-test) will be fully implemented in its processor (Phase 3).
+                // Red-box-hist polarity fix for Set C/E (after tilt/rotate, before processors/body discovery; uses runPaddleDiscovery probe which is now defined).
+                // Looks at 64-bin hist *only inside the initial red boxes* (text regions) on the (deskewed, same-hist-as-B stretched) mat to decide dark text on light bg vs light on dark.
+                // If dark text, inverts the mat (bitwise_not) so subsequent detection/rec + PD snapshot for C/E always see light text on dark bg.
+                // E mirrors C per plan (valley + per-red on the pruned 6 + blue via E).
+                /* pre-proc C/E polarity block retired (Phase 4 tiny step 2: removed per granular retirement; pre-proc C/E no longer drives; dispatch + procs sole) */
+
+                // Phase 0 hoist (per granular plan + failure lessons): timing vars referenced in remnant/procs logic hoisted to scope before proc lambdas (with initial) so visible inside proc bodies + after retirement of remnant decl sites. (tDiscoveryWrapperStart was declared inside else after proc defs.)
+                var tDiscoveryWrapperStart = 0L
+                var tProbeStart = 0L
+                var tPolDecStart = 0L
+                var tG0 = 0L
+                var tG1 = 0L
+                // (more t* for C/E valley/blue etc hoisted in later substeps or covered by early tFlowStart; assignments below use reassign or original inner vals where block scoped)
+
+                // Phase 0 hoist of getAnns (small local used by A viz + inside doBOrD*/doCOrE* helpers): moved early before proc defs so visible to proc lambdas (when full logic incl calls is duplicated into them) + do* (per plan "hoist ... getAnns, the doBOrD*/doCOrE* defs if referenced from procs"; do* large bodies left in place, copies included at dupe time per plan wording).
+                fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h ->
+                    SnapshotAnnotation(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt(), Shape.RECTANGLE, color, width)
+                }
+
+                fun createBlueAndOrangeHunksFromReds(
+                    reds: List<PumpHunk>,
+                    imgW: Int,
+                    imgH: Int,
+                    vertFactors: List<Float> = listOf(0.2f),
+                    horizFactor: Float = 0.5f
+                ): Pair<List<PumpHunk>, List<PumpHunk>> {
+                    val blues = mutableListOf<PumpHunk>()
+                    val oranges = mutableListOf<PumpHunk>()
+                    reds.forEach { h ->
+                        val r = android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                        val hgt = r.height()
+                        vertFactors.forEach { v ->
+                            var nt = (r.top - (v * hgt)).toInt().coerceIn(0, imgH - 1)
+                            var nb = (r.bottom + (v * hgt)).toInt().coerceIn(nt + 1, imgH)
+                            val newH = nb - nt
+                            val horiz = (horizFactor * newH).toInt()
+                            var nl = (r.left - horiz).toInt().coerceIn(0, imgW - 1)
+                            var nr = (r.right + horiz).toInt().coerceIn(nl + 1, imgW)
+                            val bRect = android.graphics.Rect(nl, nt, nr, nb)
+                            val oExt = (0.1 * newH).toInt()
+                            val ol = (nl - oExt).coerceIn(0, imgW - 1)
+                            val orr = (nr + oExt).coerceIn(0, imgW)
+                            val oRect = android.graphics.Rect(ol, nt, orr, nb)
+                            blues.add(PumpHunk("", RectF(bRect.left.toFloat(), bRect.top.toFloat(), bRect.right.toFloat(), bRect.bottom.toFloat())))
+                            oranges.add(PumpHunk("", RectF(oRect.left.toFloat(), oRect.top.toFloat(), oRect.right.toFloat(), oRect.bottom.toFloat())))
+                        }
+                    }
+                    return blues to oranges
+                }
+
+                // Hoisted data-only capture for per-red redbox histograms (stat JSON with index/h/w/area/histBins) for *all 7 sets* (A/B/C/D/E/F/G).
+                // Called after the (now top-6) prune in every proc. Reuses the existing createCrop + direct calcHist + stat pattern from C/E visuals (no visuals/longLived here; data only for JSON/metadata "redboxData" + "n_per_red_hists").
+                // C/E continue to use their specific visual capture (redboxRectC_*/redboxHistC_* + longLived) + redboxDataC; this adds the common "redboxData" for all.
+                fun captureRedboxData(reds: List<PumpHunk>, workspace: BufferSet, branch: PumpBranch) {
+                    val redboxData = JSONArray()
+                    reds.forEachIndexed { i, hunk ->
+                        val rw = (hunk.rect.right - hunk.rect.left).toInt()
+                        val rh = (hunk.rect.bottom - hunk.rect.top).toInt()
+                        val rarea = rw * rh
+                        val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
+                        val hmat = org.opencv.core.Mat()
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.c[cropId].mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                        val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
+                        val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
+                        redboxData.put(stat)
+                        workspace.c[cropId].release()
+                    }
+                    branch.metadata["redboxData"] = redboxData.toString()
+                    branch.metadata["n_per_red_hists"] = reds.size.toString()
+                    // Combined union histogram over all red rects (OR mask, no double-counting overlaps).
+                    val unionMask = org.opencv.core.Mat.zeros(workspace.p.mat.rows(), workspace.p.mat.cols(), org.opencv.core.CvType.CV_8UC1)
+                    reds.forEach { hunk ->
+                        val pt1 = org.opencv.core.Point(hunk.rect.left.toDouble(), hunk.rect.top.toDouble())
+                        val pt2 = org.opencv.core.Point(hunk.rect.right.toDouble(), hunk.rect.bottom.toDouble())
+                        org.opencv.imgproc.Imgproc.rectangle(unionMask, pt1, pt2, org.opencv.core.Scalar(255.0), -1)
+                    }
+                    val combinedHist = org.opencv.core.Mat()
+                    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.p.mat), org.opencv.core.MatOfInt(0), unionMask, combinedHist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                    val combinedBins = FloatArray(64); combinedHist.get(0, 0, combinedBins); combinedHist.release(); unionMask.release()
+                    val combinedArr = JSONArray(); combinedBins.forEach { combinedArr.put(it.toDouble()) }
+                    branch.metadata["combinedRedboxHistBins"] = combinedArr.toString()
+                }
+
+                fun buildCostVolDecisionDataJson(
+                    reds: List<android.graphics.Rect>,
+                    ocrSourceRects: List<android.graphics.Rect>,
+                    candidates: List<RedBoxOcrCandidate>,
+                    costCand: RedBoxOcrCandidate,
+                    volCand: RedBoxOcrCandidate,
+                    finalCost: String,
+                    finalVol: String,
+                    assembly: Map<String, Any?> = emptyMap(),
+                    oranges: List<android.graphics.Rect> = emptyList()
+                ): String {
+                    val redsArr = JSONArray()
+                    reds.forEach { redsArr.put(rectToJson(it)) }
+                    val ocrArr = JSONArray()
+                    ocrSourceRects.forEach { ocrArr.put(rectToJson(it)) }
+                    val candsArr = JSONArray()
+                    candidates.forEach { candsArr.put(redBoxOcrCandidateToJson(it)) }
+                    val chosen = JSONObject()
+                        .put("cost", redBoxOcrCandidateToJson(costCand))
+                        .put("vol", redBoxOcrCandidateToJson(volCand))
+                    val finalObj = JSONObject()
+                        .put("cost", finalCost)
+                        .put("vol", finalVol)
+                    val assemblyObj = JSONObject()
+                    assembly.forEach { (k, v) ->
+                        when (v) {
+                            is List<*> -> {
+                                val arr = JSONArray()
+                                v.forEach { item -> arr.put(item) }
+                                assemblyObj.put(k, arr)
+                            }
+                            else -> assemblyObj.put(k, v)
+                        }
+                    }
+                    val orangesArr = JSONArray()
+                    oranges.forEach { orangesArr.put(rectToJson(it)) }
+                    return JSONObject()
+                        .put("reds", redsArr)
+                        .put("ocrSourceRects", ocrArr)
+                        .put("candidates", candsArr)
+                        .put("chosen", chosen)
+                        .put("final", finalObj)
+                        .put("assembly", assemblyObj)
+                        .put("oranges", orangesArr)
+                        .toString()
+                }
+
+                // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
+                var processedScales = mutableSetOf<Int>()
+
+                // Per-column top-4 box OCR (PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is (golden Y-band only) + digits on pixel rects; fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: clean text only; probs returned separately
+                suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): PumpRectOcrLists {
+                    val asisPairs = rects.map { r ->
+                        val pW = r.width(); val pH = r.height()
+                        if (pW < 2 || pH < 2) "?" to "" else {
+                            val l = r.left.coerceIn(0, imgW - 1)
+                            val t = r.top.coerceIn(0, imgH - 1)
+                            val rr = r.right.coerceIn(l + 1, imgW)
+                            val bb = r.bottom.coerceIn(t + 1, imgH)
+                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet1024x48.p.clear()
+                            val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
+                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
+                        }
+                    }
+                    val digitsPairs = rects.map { rp ->
+                        val pW = rp.width(); val pH = rp.height()
+                        if (pW < 2 || pH < 2) "?" to "" else {
+                            val l = rp.left.coerceIn(0, imgW - 1)
+                            val t = rp.top.coerceIn(0, imgH - 1)
+                            val rr = rp.right.coerceIn(l + 1, imgW)
+                            val bb = rp.bottom.coerceIn(t + 1, imgH)
+                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
+                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            experimentRecSet1024x48.p.clear()
+                            val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
+                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
+                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
+                        }
+                    }
+                    return PumpRectOcrLists(
+                        asis = asisPairs.map { it.first },
+                        digits = digitsPairs.map { it.first },
+                        asisProbs = asisPairs.map { it.second },
+                        digitsProbs = digitsPairs.map { it.second }
+                    )
+                }
+
+                suspend fun computeRetractedBluePixelRects(): List<android.graphics.Rect> {
+                    val expPixelRects = pdHunksExpTotal.map { h ->
+                        android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                    }
+                    val retractedPixel = mutableListOf<android.graphics.Rect>()
+                    for (r in expPixelRects) {
+                        val (retracted, _) = NativeImageUtils.expandByUniformity(workspace.p.mat, r)
+                        retractedPixel.add(retracted)
+                    }
+                    return retractedPixel
+                }
+
+                suspend fun doBOrDRedOnlyImage() {
+                    // Red-only image for Set B/D (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now". D mirrors B.
+                    val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2)
+                    val redOnlyB64 = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, redAnnsOnly, null, workspace).first
+                    branch.images["PD_red_only"] = redOnlyB64
+                }
+
+                suspend fun doBOrDRetractedBlueAndPD() {
+                    // For B blue from exp hunks (expanded from raw reds): retract to tight text fit (similar to C; using workspace.p.mat for content-aware shrink when expansion hits limit with no text).
+                    // Optimization (inside split-out helper per the D/E + user pixel/sweep plan): convert input lists to pixel Rects *once* (O(N) ICRS at boundary only). Use the pixel Rects for the expandByUniformity (native pixel) and for any future per-box work. Convert back only for the final retractedExpForBlue list (used by getAnns for the annotated PD). This eliminates repeated ICRS<->pixel inside the per-box loops (even on the post-prune N=6). PumpHunk form kept only for anns/snapshot compatibility; intra red/blue working is pixel Rects (images are unique per photo, no cross-image ICRS use needed). (This pixel-vs-ICRS / ICRS-at-boundary is pump red box (and associated blue) only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops.)
+                    pdHunksExpTotal.forEach { h ->
+                        if (h.rect.left > 2f || h.rect.top > 2f || h.rect.right > 2f || h.rect.bottom > 2f) {
+                            Log.w(TAG, "ICRS-like PumpHunk rect sanity: L=${h.rect.left} T=${h.rect.top} R=${h.rect.right} B=${h.rect.bottom}")
+                        }
+                    }
+                    val expPixelRects = pdHunksExpTotal.map { h ->
+                        android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                    }
+                    val rectMin = expPixelRects.minOfOrNull { it.left } ?: -1
+                    val rectMax = expPixelRects.maxOfOrNull { it.right } ?: -1
+                    Log.d(TAG, "BCF expand path still active: n=${expPixelRects.size} rectMin=$rectMin rectMax=$rectMax")
+                    val maxPixelRects = pdHunksMaxTotal.map { h ->
+                        android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                    }
+                    val retractedPixel = mutableListOf<android.graphics.Rect>()
+                    for (r in expPixelRects) {
+                        val (retracted, _) = NativeImageUtils.expandByUniformity(workspace.p.mat, r)
+                        retractedPixel.add(retracted)
+                    }
+                    // direct pixel wrap (no ICRS at boundary; retractedPixel already full photo pixel space)
+                    val retractedExpForBlue = retractedPixel.map { r ->
+                        PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                    }
+                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(retractedExpForBlue, Color.BLUE, 4) + getAnns(pdHunksMaxTotal, Color.rgb(255, 165, 0), 2)
+                    val baseB64 = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPd, null, workspace).first
+                    branch.images["PD"] = baseB64
+                }
+
+
+
+                val procA: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    val flowName = "Set A"
+                    // aliases map params for exact dupe of per-flow logic (common setup at dispatch site; procs receive ws/br/det/w/h)
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                    originalHistogram = JSONArray().apply { rawHist.forEach { put(it.toDouble()) } }
+                    root.images["after"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_SMALL_TARGET_W, 0, emptyList(), null, workspace).first
+                    root.images["hist2"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAngleMlOnly(workspace.p)
+                    val tilt = -deskewRes.angle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+
+                    // full duplicate of the per-flow logic (from remnant discovery through end of special handling / A viz; pre-proc C/E is C/E only and remains outside for C/E paths; includes inner if(B||D)else if(C||E)else{A} + getAnns calls etc; flowName local selects A path; other closed hoisted names visible)
+                    // [exact text dupe from current remnant body after dispatch, adapted only by the 5 aliases above]
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
                     val srcW = workspace.p.width
                     val srcH = workspace.p.height
                     val currentLongEdge = max(srcW, srcH)
@@ -345,48 +1016,206 @@ private suspend fun runPumpExperiment(
                     val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
                     val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
 
-                    if (!processedScales.contains(chosenScale)) {
-                        processedScales.add(chosenScale)
-                        chosenBuffer.p.clear() // clears luma and resets chroma to 128
-                        val recCropId = chosenBuffer.createCrop(0, 0, targetW, targetH)
-                        val interp = if (srcW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                        org.opencv.imgproc.Imgproc.resize(workspace.p.mat, chosenBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+                        if (!processedScales.contains(chosenScale)) {
+                            processedScales.add(chosenScale)
+                            chosenBuffer.p.clear() // clears luma and resets chroma to 128
+                            val recCropId = chosenBuffer.createCrop(0, 0, targetW, targetH)
+                            val interp = if (srcW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
+                            org.opencv.imgproc.Imgproc.resize(workspace.p.mat, chosenBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
 
-                        val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                            chosenBuffer.p.nv21,
-                            chosenBuffer.p.width,
-                            chosenBuffer.p.height,
-                            0,
-                            com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
-                        )
-                        val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
-                        chosenBuffer.c[recCropId].release()
+                            val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
+                                chosenBuffer.p.nv21,
+                                chosenBuffer.p.width,
+                                chosenBuffer.p.height,
+                                0,
+                                com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+                            )
+                            val result = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
+                            chosenBuffer.c[recCropId].release()
 
-                        val hunks = result.textBlocks.map { block ->
-                            val ml = block.boundingBox.left.toFloat()
-                            val mt = block.boundingBox.top.toFloat()
-                            val mr = block.boundingBox.right.toFloat()
-                            val mb = block.boundingBox.bottom.toFloat()
-                            val i1 = IcrsMath.pixelToIcrs(ml, mt, targetW, targetH)
-                            val i2 = IcrsMath.pixelToIcrs(mr, mb, targetW, targetH)
-                            PumpHunk(block.text, RectF(i1.x, i1.y, i2.x, i2.y))
+                            val hunks = result.textBlocks.map { block ->
+                                // Set A ML only: direct integer pixel mapping from ML block (at target buffer size) to full imgW/imgH.
+                                // No IcrsMath, no pixelToIcrs, no ICRS roundtrip, integer arithmetic (equiv within rounding to prior).
+                                // Produces integer-valued rects (via .0 in RectF for PumpHunk compat; PumpHunk kept as-is per plan).
+                                val ml = block.boundingBox.left
+                                val mt = block.boundingBox.top
+                                val mr = block.boundingBox.right
+                                val mb = block.boundingBox.bottom
+                                val l = ml * imgW / targetW
+                                val t = mt * imgH / targetH
+                                val r = mr * imgW / targetW
+                                val b = mb * imgH / targetH
+                                PumpHunk(block.text, RectF(l.toFloat(), t.toFloat(), r.toFloat(), b.toFloat()))
+                            }
+                            mlBlocksRaw.addAll(hunks)
                         }
-                        mlBlocksRaw.addAll(hunks)
-                    }
 
                     val (outerId, innerId) = prepareScale(workspace, scale)
-                    val res = paddleEngine.detect(workspace.c[outerId])
-                    if (res != null) {
-                        branch.metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
-                        branch.metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
-                    }
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
 
-                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine)
-                    val raw = paddleResults[0]
-                    val exp = paddleResults[1]
-                    val maxExt = paddleResults[2]
-                    val native = paddleResults[3]
+                    // Set A red path only: snap rects to integer pixels on collection (re-derive integer from run results; eliminate float *fullW.toFloat()/contentW effect from shared runDiscoveryPaddle for A's pd* lists only; other sets untouched)
+                    pdHunksDetectedTotal.addAll(detected.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
+                    pdHunksRawTotal.addAll(raw.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
+                    pdHunksExpTotal.addAll(exp.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
+                    pdHunksMaxTotal.addAll(maxExt.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
+                    pdHunksNativeTotal.addAll(native.map { h -> val rr = h.rect; PumpHunk(h.text, RectF(rr.left.toInt().toFloat(), rr.top.toInt().toFloat(), rr.right.toInt().toFloat(), rr.bottom.toInt().toFloat())) })
 
+                    workspace.c[innerId].release()
+                    workspace.c[outerId].release()
+
+                    discoveryDetails["Paddle Raw"]!![scale] = raw
+                    discoveryDetails["Paddle Expanded"]!![scale] = exp
+                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                    discoveryDetails["Paddle Native"]!![scale] = native
+                }
+                branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
+                // doCrossScaleRedboxFilter hoisted earlier (before flowProcessors list) so it is visible inside the
+                // C processor lambda (the per-path valley for Set C calls the global cross-scale nested removal
+                // after each version's runPaddleDiscovery).
+
+                // Global cross-scale removal of entirely contained raw red boxes (in final image pixel space).
+                // The +1 expand + inset de-nest inside runDiscoveryPaddle (per scale) is the port from alignment Set J
+                // and cleans nesting *within* one pyramid level's detection. Because pump discovery is multi-scale
+                // (prepareScale + detect at 224/608/1024/2560), a final pass on the union (after ICRS mapping to common
+                // full-res pixels) is required to remove any raw red that is entirely contained in another across scales.
+                // This ensures the RED raw boxes shown in the PD column images (and overlaid in the cost/vol crops via
+                // takeCrop) have no entirely-contained nested boxes, matching the intent.
+                // (Now via shared helper; body unchanged.)
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                // Propagate the dedup: filter exp and max totals too, so that blue/orange boxes
+                // (derived from expansions of the raw reds) are not created from redundants that
+                // were filtered out of the raw list. Filtered reds must not "exist" for downstream
+                // blue derivation.
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()  // reuse start as approx for filter delta; finer per-phase in later granular
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
+
+                // A red prune only: stay in integer Rect throughout (build pixel lists, run filterPixel, use pruned integer rects for A data). Removed map-to-RectF rebuilds for A's red lists (no .map {r->PumpHunk RectF} in this A block; pd* fed from integer Rects for getFinal/expand/takeCrop in A path).
+                val redPixelList = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(redPixelList)
+                val expPixel = pdHunksExpTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(expPixel)
+                val maxPixel = pdHunksMaxTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(maxPixel)
+                // Sync A pd* lists from pruned integer Rects (ctor RectF(int) only for compat with PumpHunk/getFinal; A red path now integer end-to-end for this proc's data)
+                pdHunksRawTotal.clear()
+                redPixelList.forEach { r -> pdHunksRawTotal.add(PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))) }
+                pdHunksExpTotal.clear()
+                expPixel.forEach { r -> pdHunksExpTotal.add(PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))) }
+                pdHunksMaxTotal.clear()
+                maxPixel.forEach { r -> pdHunksMaxTotal.add(PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))) }
+                branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                captureRedboxData(pdHunksRawTotal, workspace, branch)  // data for all sets (redboxData + n_per_red_hists); C/E visuals/redboxDataC follow below
+                // For all sets (prune now applies in every proc A/B/C/D/E/F/G) the proc stubs + thin if calls + helpers will see the pruned <=4 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
+                // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
+
+                // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
+                // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
+                // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
+
+                val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw)
+                val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
+
+                // 4. Extraction
+                // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
+                // for name resolution inside the C processor lambda body (the array entry for Set C calls it
+                // for the best path result using the valley versions).
+                // Updated for A: now receives integer pixel data (red snapped+pruned int Rect lists, ML direct int, expand/takeCrop int) -> direct int Rect to takeSnapshot crops for A final PathResult.
+                // fix-remaining-report-issues-20260619-plan: Set A — buildRedBoxCandidates uses aRedPixel ocr rects
+                val aRedPixel = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val ocrA = ocrPumpRectsAsisAndDigits(aRedPixel)
+                val aCands = buildRedBoxCandidates(aRedPixel, ocrA.asis, ocrA.digits, ocrA.asisProbs, ocrA.digitsProbs)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
+                val cvAPaddle = PumpCostVolUtils.classifyCostVolFromBoxOcr(aCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = aRedPixel,
+                    ocrSourceRects = aRedPixel,
+                    candidates = aCands,
+                    costCand = cvAPaddle.costCand,
+                    volCand = cvAPaddle.volCand,
+                    finalCost = cvAPaddle.cost,
+                    finalVol = cvAPaddle.vol,
+                    assembly = mapOf("method" to "raw", "note" to "raw reds as ocr rects (no blue expansion)")
+                )
+                    branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
+                val cvAML = PumpCostVolUtils.classifyCostVolFromBoxOcr(aCands)
+                branch.metadata["costVolDecisionData_ML"] = buildCostVolDecisionDataJson(
+                    reds = aRedPixel,
+                    ocrSourceRects = aRedPixel,
+                    candidates = aCands,
+                    costCand = cvAML.costCand,
+                    volCand = cvAML.volCand,
+                    finalCost = cvAML.cost,
+                    finalVol = cvAML.vol,
+                    assembly = mapOf("method" to "raw", "note" to "raw reds as ocr rects (no blue expansion)")
+                )
+
+                // 5. Visualization
+                    val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
+                    branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aMl, null, workspace).first
+
+                // (doBOrD* and doCOrE* not hoisted in Phase 0 for this A dupe per plan "if not hoisted include copies at dupe"; excised B/C branches in this repair to remove unresolved calls in procA paste while keeping full A logic (different minimal repair per anti-doom after first dupe error; see failure log scope symptoms))
+                // A (reds only)
+                val aPd = getAnns(pdHunksRawTotal, Color.RED, 2)
+                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPd, null, workspace).first
+                }
+                val procB: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    val flowName = "Set B"
+                    // aliases map params for exact dupe of per-flow logic
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
+                    val srcW = workspace.p.width
+                    val srcH = workspace.p.height
+                    val currentLongEdge = max(srcW, srcH)
+                    val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+
+                    val targetW = (srcW * scaleFactor).toInt()
+                    val targetH = (srcH * scaleFactor).toInt()
+                    val targetLongEdge = max(targetW, targetH)
+
+                    val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                    val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+
+
+                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
+
+                    pdHunksDetectedTotal.addAll(detected)
                     pdHunksRawTotal.addAll(raw)
                     pdHunksExpTotal.addAll(exp)
                     pdHunksMaxTotal.addAll(maxExt)
@@ -402,63 +1231,1092 @@ private suspend fun runPumpExperiment(
                 }
                 branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
 
-                val mlHunks = mergeGeometryIntoHunks(mlBlocksRaw)
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+
+                // Direct pixel (already in .rect); no roundtrip.
+                val redPixelList = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(redPixelList)
+                if (redPixelList.size > 6) {
+                    redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    redPixelList.subList(6, redPixelList.size).clear()
+                }
+                pdHunksRawTotal.clear()
+                pdHunksRawTotal.addAll(redPixelList.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val expPixel = pdHunksExpTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(expPixel)
+                if (expPixel.size > 6) {
+                    expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    expPixel.subList(6, expPixel.size).clear()
+                }
+                pdHunksExpTotal.clear()
+                pdHunksExpTotal.addAll(expPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val maxPixel = pdHunksMaxTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(maxPixel)
+                if (maxPixel.size > 6) {
+                    maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    maxPixel.subList(6, maxPixel.size).clear()
+                }
+                pdHunksMaxTotal.clear()
+                pdHunksMaxTotal.addAll(maxPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for F (redboxData + n_per_red_hists)
+                val redPixelBForBinPeak = validBinPeakRects(pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                })
+                val binPeakCandidatesB = mutableListOf<RedBoxOcrCandidate>()
+                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelBForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesB, generateP4 = false)
+                branch.metadata["binPeakCandidateCount"] = binPeakCandidatesB.size.toString()
+
+                val mlHunks = emptyList<PumpHunk>()
+                val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
+
+                // Set B — object-based blue from binPeak binaries (pre/post-clean per peak); replaces expandByUniformity path
+                val bCands = binPeakCandidatesB
+                val bOcrSourceRects = bCands.mapNotNull { it.rect }
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, bCands)
+                val redPixelB = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val cvB = PumpCostVolUtils.classifyCostVolFromBoxOcr(bCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelB,
+                    ocrSourceRects = bOcrSourceRects,
+                    candidates = bCands,
+                    costCand = cvB.costCand,
+                    volCand = cvB.volCand,
+                    finalCost = cvB.cost,
+                    finalVol = cvB.vol,
+                    assembly = mapOf("method" to "binPeak-object", "note" to "per-peak binarized object-based blue (uncleaned+cleaned)")
+                )
+
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                    doBOrDRedOnlyImage()
+                    // BCF expand/retract bypassed; using object-based binPeak blue only
+                    // doBOrDRetractedBlueAndPD()
+                }
+                val procC: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    val flowName = "Set C"
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+
+                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, PUMP_C_VISUAL_TARGET_W, 0, emptyList(), null, workspace)
+                    branch.images["rawC"] = rawForC
+                    val tG0 = System.currentTimeMillis()
+                    branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    branch.metadata["t_hist_before_c_ms"] = (System.currentTimeMillis() - tG0).toString()
+                    val rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)
+                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, PUMP_C_VISUAL_TARGET_W, 0, emptyList(), null, workspace)
+                    branch.images["pushedC"] = pushedForC
+                    val tG1 = System.currentTimeMillis()
+                    branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
+                    branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
+                    val srcW = workspace.p.width
+                    val srcH = workspace.p.height
+                    val currentLongEdge = max(srcW, srcH)
+                    val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+
+                    val targetW = (srcW * scaleFactor).toInt()
+                    val targetH = (srcH * scaleFactor).toInt()
+                    val targetLongEdge = max(targetW, targetH)
+
+                    val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                    val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+
+
+                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
+
+                    pdHunksDetectedTotal.addAll(detected)
+                    pdHunksRawTotal.addAll(raw)
+                    pdHunksExpTotal.addAll(exp)
+                    pdHunksMaxTotal.addAll(maxExt)
+                    pdHunksNativeTotal.addAll(native)
+
+                    workspace.c[innerId].release()
+                    workspace.c[outerId].release()
+
+                    discoveryDetails["Paddle Raw"]!![scale] = raw
+                    discoveryDetails["Paddle Expanded"]!![scale] = exp
+                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                    discoveryDetails["Paddle Native"]!![scale] = native
+                }
+                branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
+                // doCrossScaleRedboxFilter hoisted earlier (before flowProcessors list) so it is visible inside the
+                // C processor lambda (the per-path valley for Set C calls the global cross-scale nested removal
+                // after each version's runPaddleDiscovery).
+
+                // Global cross-scale removal of entirely contained raw red boxes (in final image pixel space).
+                // The +1 expand + inset de-nest inside runDiscoveryPaddle (per scale) is the port from alignment Set J
+                // and cleans nesting *within* one pyramid level's detection. Because pump discovery is multi-scale
+                // (prepareScale + detect at 224/608/1024/2560), a final pass on the union (after ICRS mapping to common
+                // full-res pixels) is required to remove any raw red that is entirely contained in another across scales.
+                // This ensures the RED raw boxes shown in the PD column images (and overlaid in the cost/vol crops via
+                // takeCrop) have no entirely-contained nested boxes, matching the intent.
+                // (Now via shared helper; body unchanged.)
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                // Propagate the dedup: filter exp and max totals too, so that blue/orange boxes
+                // (derived from expansions of the raw reds) are not created from redundants that
+                // were filtered out of the raw list. Filtered reds must not "exist" for downstream
+                // blue derivation.
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()  // reuse start as approx for filter delta; finer per-phase in later granular
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
+
+                // Direct pixel (already in .rect); no roundtrip.
+                val redPixelList = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(redPixelList)
+                if (redPixelList.size > 6) {
+                    redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    redPixelList.subList(6, redPixelList.size).clear()
+                }
+                // Rebuild pdHunksRawTotal from the final <=4 (direct pixel RectF, no IcrsMath)
+                pdHunksRawTotal.clear()
+                pdHunksRawTotal.addAll(redPixelList.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                // Propagate prune to exp/max (blue/orange sources in B/C paths)
+                val expPixel = pdHunksExpTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(expPixel)
+                if (expPixel.size > 6) {
+                    expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    expPixel.subList(6, expPixel.size).clear()
+                }
+                pdHunksExpTotal.clear()
+                pdHunksExpTotal.addAll(expPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val maxPixel = pdHunksMaxTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(maxPixel)
+                if (maxPixel.size > 6) {
+                    maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    maxPixel.subList(6, maxPixel.size).clear()
+                }
+                pdHunksMaxTotal.clear()
+                pdHunksMaxTotal.addAll(maxPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                // For all sets (prune now applies in every proc A/B/C/D/E/F/G) the proc stubs + thin if calls + helpers will see the pruned <=4 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
+                captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for A (redboxData + n_per_red_hists)
+
+                // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
+
+                // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
+                // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
+                // (The capture logic updated per per-red C/E histogram cleanup plan: createCrop + direct calcHist + dual takeSnapshot from longLived.)
+                    // Post-prune (filtered 4) redbox hists for C/E *display* / JSON (updated to createCrop + dual takeSnapshot + long-lived buffer per plan).
+                    // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 4 for builder column + redboxDataC in JSON (no more 30).
+                    // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
+                    captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData for JSON (all sets); C visuals/redboxDataC + n_per_red_hists below
+                    val redPixelCForBinPeak = validBinPeakRects(pdHunksRawTotal.map { h ->
+                        android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                    })
+                    val binPeakCandidatesC = mutableListOf<RedBoxOcrCandidate>()
+                    captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelCForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesC, generateP4 = true)
+                    branch.metadata["binPeakCandidateCount"] = binPeakCandidatesC.size.toString()
+                    val redboxDataC = JSONArray()
+                    pdHunksRawTotal.forEachIndexed { i, hunk ->
+                        val rw = (hunk.rect.right - hunk.rect.left).toInt()
+                        val rh = (hunk.rect.bottom - hunk.rect.top).toInt()
+                        val rarea = rw * rh
+
+                        // Use createCrop on red rect pixel coords from hunk (for red rect image snapshot).
+                        // Bins: direct calcHist on crop's .mat (no mask).
+                        // Red rect snapshot + hist snapshot via OcrUtils.takeSnapshot (dual); scratchYuv = longLivedHistogramBuffer (init at pump start, held lifetime).
+                        // Plot render into longLived's histPlotCrop (no temp on workspace; plotCrop never released).
+                        // Only the per-red rect crop released promptly.
+                        // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
+                        // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
+                        // Red box crop must be done by caller only (createCrop on the red rect pixel coords after pump optimization), then pass crop[id] (Slice) as source to takeSnapshot. This pattern is required. The pixel-vs-ICRS / ICRS-at-boundary optimization is pump red box only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops. takeSnapshot's internal output crop creation (snapCropId) is unchanged from alignment-tested behavior.
+                        val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
+                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = PUMP_PER_RED_TARGET_W, scratchYuv = longLivedHistogramBuffer)
+                        branch.images["redboxRectC_${i}"] = rectB64
+
+                        val hmat = org.opencv.core.Mat()
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.c[cropId].mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                        val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
+                        val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
+                        redboxDataC.put(stat)
+
+                        // Histogram visual via plot render into longLived histPlotCrop + takeSnapshot (no generate, no workspace temp)
+                        val plotMat = longLivedHistogramBuffer.c[histPlotCrop].mat
+                        plotMat.setTo(org.opencv.core.Scalar(0.0))
+                        val maxVal = (1..62).maxOf { rbins[it] }.toDouble().coerceAtLeast(1.0)
+                        for (k in 1..62) {
+                            val hh = (rbins[k] / maxVal * 240.0).toInt().coerceAtMost(240)
+                            val xx = (k - 1) * 3
+                            org.opencv.imgproc.Imgproc.rectangle(plotMat, org.opencv.core.Rect(xx, 240 - hh, 3, hh), org.opencv.core.Scalar(255.0), -1)
+                        }
+                        val (histB64, _) = OcrUtils.takeSnapshot(source = longLivedHistogramBuffer.c[histPlotCrop], targetW = PUMP_PER_RED_TARGET_W, scratchYuv = longLivedHistogramBuffer)
+                        branch.images["redboxHistC_${i}"] = histB64
+
+                        workspace.c[cropId].release()  // only rect crop; longLived + histPlotCrop held lifetime, never released in per-red path
+                    }
+                    branch.metadata["redboxDataC"] = redboxDataC.toString()
+                    branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
+
+                val mlHunks = emptyList<PumpHunk>()
                 val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
 
                 // 4. Extraction
-                val minEdge = min(imgW, imgH).toFloat()
-                val maxX = imgW / (2f * minEdge); val maxY = imgH / (2f * minEdge)
-
-                suspend fun getFinal(hunks: List<PumpHunk>, engine: String): PathResult {
-                    val stitched = stitchHunksHorizontally(hunks)
-                    val (top, bottom) = groupLanesByVerticalGap(stitched)
-                    val pair = findBestLanePair(top, bottom) ?: return PathResult("N/A", "N/A", "", "")
-                    val expT = expandHunkContext(pair.first, maxX, maxY); val expB = expandHunkContext(pair.second, maxX, maxY)
-                    val res = performHunkRecognition(listOf(expT, expB), workspace, experimentRecSet320x48, engine, paddleEngine, context, tilt)
-
-                    suspend fun takeCrop(exp: PumpHunk, orig: PumpHunk): String {
-                        val p1 = IcrsMath.icrsToPixel(exp.icrs.left, exp.icrs.top, imgW, imgH)
-                        val p2 = IcrsMath.icrsToPixel(exp.icrs.right, exp.icrs.bottom, imgW, imgH)
-                        val rect = android.graphics.Rect(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt())
-                        val anns = mutableListOf<SnapshotAnnotation>()
-                        if (engine == "Paddle") {
-                            // RED: Raw detections
-                            pdHunksRawTotal.forEach { h ->
-                                val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                                val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                                anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.RED, 2))
-                            }
-                            // BLUE: Expanded (4px)
-                            pdHunksExpTotal.forEach { h ->
-                                val px1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH)
-                                val px2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                                anns.add(SnapshotAnnotation(px1.x.toInt(), px1.y.toInt(), px2.x.toInt(), px2.y.toInt(), Shape.RECTANGLE, Color.BLUE, 4))
-                            }
-                            // ORANGE: The specific merged hunk for this crop
-                            val o1 = IcrsMath.icrsToPixel(orig.icrs.left, orig.icrs.top, imgW, imgH)
-                            val o2 = IcrsMath.icrsToPixel(orig.icrs.right, orig.icrs.bottom, imgW, imgH)
-                            anns.add(SnapshotAnnotation(o1.x.toInt(), o1.y.toInt(), o2.x.toInt(), o2.y.toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2))
-                        }
-                        return OcrUtils.takeSnapshot(workspace.p, rect, 300, 100, anns, null, workspace).first
-                    }
-                    val cropT = takeCrop(expT, pair.first); val cropB = takeCrop(expB, pair.second)
-                    return PathResult(res[0].text, res[1].text, cropT, cropB)
+                // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
+                // for name resolution inside the C processor lambda body (the array entry for Set C calls it
+                // for the best path result using the valley versions).
+                // Set C — object-based blue from binPeak binaries (pre/post-clean per peak); replaces expandByUniformity path
+                val cCands = binPeakCandidatesC
+                val cOcrSourceRects = cCands.mapNotNull { it.rect }
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, cCands)
+                val redPixelC = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
-
-                branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit")
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle")
-
-                // 5. Visualization
-                fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h ->
-                    val p1 = IcrsMath.icrsToPixel(h.icrs.left, h.icrs.top, imgW, imgH); val p2 = IcrsMath.icrsToPixel(h.icrs.right, h.icrs.bottom, imgW, imgH)
-                    SnapshotAnnotation(p1.x.toInt(), p1.y.toInt(), p2.x.toInt(), p2.y.toInt(), Shape.RECTANGLE, color, width)
-                }
-
-                val aMl = getAnns(mlBlocksRaw, Color.RED, 2) + getAnns(mlHunks, Color.rgb(255, 165, 0), 4)
-                branch.images["ML"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aMl, null, workspace).first
-                val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(pdHunksExpTotal, Color.BLUE, 4) + getAnns(pdHunksMerged, Color.rgb(255, 165, 0), 2)
-                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, 600, 450, aPd, null, workspace).first
+                val cvC = PumpCostVolUtils.classifyCostVolFromBoxOcr(cCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelC,
+                    ocrSourceRects = cOcrSourceRects,
+                    candidates = cCands,
+                    costCand = cvC.costCand,
+                    volCand = cvC.volCand,
+                    finalCost = cvC.cost,
+                    finalVol = cvC.vol,
+                    assembly = mapOf("method" to "binPeak-object", "note" to "per-peak binarized object-based blue (uncleaned+cleaned)")
+                )
+                val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
+                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, redAnns, null, workspace).first
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                doBOrDRedOnlyImage()
+                // BCF expand/retract bypassed; using object-based binPeak blue only
+                // doBOrDRetractedBlueAndPD()
             }
+                val procD: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    val flowName = "Set D"
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    val rawHist = OdometerOcrUtils.automaticContrastStretch(workspace.p.mat)
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
+                    val srcW = workspace.p.width
+                    val srcH = workspace.p.height
+                    val currentLongEdge = max(srcW, srcH)
+                    val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+
+                    val targetW = (srcW * scaleFactor).toInt()
+                    val targetH = (srcH * scaleFactor).toInt()
+                    val targetLongEdge = max(targetW, targetH)
+
+                    val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                    val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+
+
+                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
+
+                    pdHunksDetectedTotal.addAll(detected)
+                    pdHunksRawTotal.addAll(raw)
+                    pdHunksExpTotal.addAll(exp)
+                    pdHunksMaxTotal.addAll(maxExt)
+                    pdHunksNativeTotal.addAll(native)
+
+                    workspace.c[innerId].release()
+                    workspace.c[outerId].release()
+
+                    discoveryDetails["Paddle Raw"]!![scale] = raw
+                    discoveryDetails["Paddle Expanded"]!![scale] = exp
+                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                    discoveryDetails["Paddle Native"]!![scale] = native
+                }
+                branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
+                // doCrossScaleRedboxFilter hoisted earlier (before flowProcessors list) so it is visible inside the
+                // C processor lambda (the per-path valley for Set C calls the global cross-scale nested removal
+                // after each version's runPaddleDiscovery).
+
+                // Global cross-scale removal of entirely contained raw red boxes (in final image pixel space).
+                // The +1 expand + inset de-nest inside runDiscoveryPaddle (per scale) is the port from alignment Set J
+                // and cleans nesting *within* one pyramid level's detection. Because pump discovery is multi-scale
+                // (prepareScale + detect at 224/608/1024/2560), a final pass on the union (after ICRS mapping to common
+                // full-res pixels) is required to remove any raw red that is entirely contained in another across scales.
+                // This ensures the RED raw boxes shown in the PD column images (and overlaid in the cost/vol crops via
+                // takeCrop) have no entirely-contained nested boxes, matching the intent.
+                // (Now via shared helper; body unchanged.)
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                // Propagate the dedup: filter exp and max totals too, so that blue/orange boxes
+                // (derived from expansions of the raw reds) are not created from redundants that
+                // were filtered out of the raw list. Filtered reds must not "exist" for downstream
+                // blue derivation.
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()  // reuse start as approx for filter delta; finer per-phase in later granular
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
+
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for all sets (C/E display only).
+                val redPixelList = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(redPixelList)
+                if (redPixelList.size > 6) {
+                    redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    redPixelList.subList(6, redPixelList.size).clear()
+                }
+                // Rebuild pdHunksRawTotal from the final <=4 pixel rects (full img ICRS only for kept)
+                pdHunksRawTotal.clear()
+                pdHunksRawTotal.addAll(redPixelList.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                // Propagate prune to exp/max (blue/orange sources in B/C paths)
+                val expPixel = pdHunksExpTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(expPixel)
+                if (expPixel.size > 6) {
+                    expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    expPixel.subList(6, expPixel.size).clear()
+                }
+                pdHunksExpTotal.clear()
+                pdHunksExpTotal.addAll(expPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val maxPixel = pdHunksMaxTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(maxPixel)
+                if (maxPixel.size > 6) {
+                    maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    maxPixel.subList(6, maxPixel.size).clear()
+                }
+                pdHunksMaxTotal.clear()
+                pdHunksMaxTotal.addAll(maxPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                // For all sets (prune now applies in every proc A/B/C/D/E/F/G) the proc stubs + thin if calls + helpers will see the pruned <=4 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
+                captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for D (redboxData + n_per_red_hists)
+
+                // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
+
+                // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
+                // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
+                // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
+
+                val mlHunks = emptyList<PumpHunk>()
+                val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
+
+                // 4. Extraction
+                // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
+                // for name resolution inside the C processor lambda body (the array entry for Set C calls it
+                // for the best path result using the valley versions).
+                
+                // fix-remaining-report-issues-20260619-plan: Set D — buildRedBoxCandidates uses customBluePixelD ocr rects
+                val (customBlueDPre, _) = createBlueAndOrangeHunksFromReds(
+                    pdHunksRawTotal, imgW, imgH, (1..8).map { it / 10f }, 0.5f)
+                val customBluePixelD = customBlueDPre.map { bh ->
+                    android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                }
+                val ocrD = ocrPumpRectsAsisAndDigits(customBluePixelD)
+                val dCands = buildRedBoxCandidates(customBluePixelD, ocrD.asis, ocrD.digits, ocrD.asisProbs, ocrD.digitsProbs)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, dCands)
+                val redPixelD = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val dVertFactors = (1..8).map { it / 10f }
+                val cvD = PumpCostVolUtils.classifyCostVolFromBoxOcr(dCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelD,
+                    ocrSourceRects = customBluePixelD,
+                    candidates = dCands,
+                    costCand = cvD.costCand,
+                    volCand = cvD.volCand,
+                    finalCost = cvD.cost,
+                    finalVol = cvD.vol,
+                    assembly = mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to dVertFactors,
+                        "horizFactor" to 0.5f,
+                        "orangeSideExt" to 0.1,
+                        "note" to "createBlueAndOrangeHunksFromReds (Pre blues for OCR cands)"
+                    )
+                )
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                doBOrDRedOnlyImage()
+                // D custom blue/orange (no valley) via createBlueAndOrangeHunksFromReds (calculated blue expansions +10% to +80% vert step 10%, horiz 50%)
+                val (customBlueD, customOrangeD) = createBlueAndOrangeHunksFromReds(
+                    pdHunksRawTotal, imgW, imgH, (1..8).map { it / 10f }, 0.5f)
+                val orangePixelD = customOrangeD.map { bh ->
+                    android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                }
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelD,
+                    ocrSourceRects = customBluePixelD,
+                    candidates = dCands,
+                    costCand = cvD.costCand,
+                    volCand = cvD.volCand,
+                    finalCost = cvD.cost,
+                    finalVol = cvD.vol,
+                    assembly = mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to dVertFactors,
+                        "horizFactor" to 0.5f,
+                        "orangeSideExt" to 0.1,
+                        "note" to "createBlueAndOrangeHunksFromReds (viz second create includes oranges)"
+                    ),
+                    oranges = orangePixelD
+                )
+                val aPdD = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueD, Color.BLUE, 4) + getAnns(customOrangeD, Color.rgb(255, 165, 0), 2)
+                val baseB64D = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdD, null, workspace).first
+                branch.images["PD"] = baseB64D
+            }
+                val procE: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    val flowName = "Set E"
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+
+                    val (rawForC, _) = OcrUtils.takeSnapshot(workspace.p, null, PUMP_C_VISUAL_TARGET_W, 0, emptyList(), null, workspace)
+                    branch.images["rawC"] = rawForC
+                    val tG0 = System.currentTimeMillis()
+                    branch.images["histBeforeC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    branch.metadata["t_hist_before_c_ms"] = (System.currentTimeMillis() - tG0).toString()
+                    val rawHist = OdometerOcrUtils.valleyPushToPeaks(workspace.p.mat)
+                    val (pushedForC, _) = OcrUtils.takeSnapshot(workspace.p, null, PUMP_C_VISUAL_TARGET_W, 0, emptyList(), null, workspace)
+                    branch.images["pushedC"] = pushedForC
+                    val tG1 = System.currentTimeMillis()
+                    branch.images["histAfterC"] = generateHistogramB64(workspace.p.mat, 0.40f)
+                    branch.metadata["t_hist_after_c_ms"] = (System.currentTimeMillis() - tG1).toString()
+                    branch.metadata["t_valley_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
+                    val srcW = workspace.p.width
+                    val srcH = workspace.p.height
+                    val currentLongEdge = max(srcW, srcH)
+                    val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+
+                    val targetW = (srcW * scaleFactor).toInt()
+                    val targetH = (srcH * scaleFactor).toInt()
+                    val targetLongEdge = max(targetW, targetH)
+
+                    val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                    val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+
+
+                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
+
+                    pdHunksDetectedTotal.addAll(detected)
+                    pdHunksRawTotal.addAll(raw)
+                    pdHunksExpTotal.addAll(exp)
+                    pdHunksMaxTotal.addAll(maxExt)
+                    pdHunksNativeTotal.addAll(native)
+
+                    workspace.c[innerId].release()
+                    workspace.c[outerId].release()
+
+                    discoveryDetails["Paddle Raw"]!![scale] = raw
+                    discoveryDetails["Paddle Expanded"]!![scale] = exp
+                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                    discoveryDetails["Paddle Native"]!![scale] = native
+                }
+                branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
+                // doCrossScaleRedboxFilter hoisted earlier (before flowProcessors list) so it is visible inside the
+                // C processor lambda (the per-path valley for Set C calls the global cross-scale nested removal
+                // after each version's runPaddleDiscovery).
+
+                // Global cross-scale removal of entirely contained raw red boxes (in final image pixel space).
+                // The +1 expand + inset de-nest inside runDiscoveryPaddle (per scale) is the port from alignment Set J
+                // and cleans nesting *within* one pyramid level's detection. Because pump discovery is multi-scale
+                // (prepareScale + detect at 224/608/1024/2560), a final pass on the union (after ICRS mapping to common
+                // full-res pixels) is required to remove any raw red that is entirely contained in another across scales.
+                // This ensures the RED raw boxes shown in the PD column images (and overlaid in the cost/vol crops via
+                // takeCrop) have no entirely-contained nested boxes, matching the intent.
+                // (Now via shared helper; body unchanged.)
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                // Propagate the dedup: filter exp and max totals too, so that blue/orange boxes
+                // (derived from expansions of the raw reds) are not created from redundants that
+                // were filtered out of the raw list. Filtered reds must not "exist" for downstream
+                // blue derivation.
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()  // reuse start as approx for filter delta; finer per-phase in later granular
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
+
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for all sets (C/E display only).
+                val redPixelList = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(redPixelList)
+                if (redPixelList.size > 6) {
+                    redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    redPixelList.subList(6, redPixelList.size).clear()
+                }
+                // Rebuild pdHunksRawTotal from the final <=4 pixel rects (full img ICRS only for kept)
+                pdHunksRawTotal.clear()
+                pdHunksRawTotal.addAll(redPixelList.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                // Propagate prune to exp/max (blue/orange sources in B/C paths)
+                val expPixel = pdHunksExpTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(expPixel)
+                if (expPixel.size > 6) {
+                    expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    expPixel.subList(6, expPixel.size).clear()
+                }
+                pdHunksExpTotal.clear()
+                pdHunksExpTotal.addAll(expPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val maxPixel = pdHunksMaxTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(maxPixel)
+                if (maxPixel.size > 6) {
+                    maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    maxPixel.subList(6, maxPixel.size).clear()
+                }
+                pdHunksMaxTotal.clear()
+                pdHunksMaxTotal.addAll(maxPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                // For all sets (prune now applies in every proc A/B/C/D/E/F/G) the proc stubs + thin if calls + helpers will see the pruned <=4 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
+                // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
+
+                // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
+                // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
+                // (The capture logic updated per per-red C/E histogram cleanup plan: createCrop + direct calcHist + dual takeSnapshot from longLived.)
+                    // Post-prune (filtered 4) redbox hists for C/E *display* / JSON (updated to createCrop + dual takeSnapshot + long-lived buffer per plan).
+                    // Early probe now only does polarity (combined mask); this capture on the pruned pdHunksRawTotal provides the 4 for builder column + redboxDataC in JSON (no more 30).
+                    // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
+                    captureRedboxData(pdHunksRawTotal, workspace, branch)  // common redboxData (all sets); E visuals/redboxDataC follow
+                    val redboxDataC = JSONArray()
+                    pdHunksRawTotal.forEachIndexed { i, hunk ->
+                        val rw = (hunk.rect.right - hunk.rect.left).toInt()
+                        val rh = (hunk.rect.bottom - hunk.rect.top).toInt()
+                        val rarea = rw * rh
+
+                        // Use createCrop on red rect pixel coords from hunk (for red rect image snapshot).
+                        // Bins: direct calcHist on crop's .mat (no mask).
+                        // Red rect snapshot + hist snapshot via OcrUtils.takeSnapshot (dual); scratchYuv = longLivedHistogramBuffer (init at pump start, held lifetime).
+                        // Plot render into longLived's histPlotCrop (no temp on workspace; plotCrop never released).
+                        // Only the per-red rect crop released promptly.
+                        // Removed all perMask / Mat.zeros / rectangle(perMask) / generateHistogramB64 for this per-red path.
+                        // (Comments cleaned of old "safe perMask", "Crop vs full-mask", "to avoid nativeObj", "manual drawRect loops"; documents crop + dual takeSnapshot + long-lived at pump start.)
+                        // Red box crop must be done by caller only (createCrop on the red rect pixel coords after pump optimization), then pass crop[id] (Slice) as source to takeSnapshot. This pattern is required. The pixel-vs-ICRS / ICRS-at-boundary optimization is pump red box only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops. takeSnapshot's internal output crop creation (snapCropId) is unchanged from alignment-tested behavior.
+                        val cropId = workspace.createCrop(hunk.rect.left.toInt(), hunk.rect.top.toInt(), (hunk.rect.right - hunk.rect.left).toInt(), (hunk.rect.bottom - hunk.rect.top).toInt())
+                        val (rectB64, _) = OcrUtils.takeSnapshot(source = workspace.c[cropId], targetW = PUMP_PER_RED_TARGET_W, scratchYuv = longLivedHistogramBuffer)
+                        branch.images["redboxRectC_${i}"] = rectB64
+
+                        val hmat = org.opencv.core.Mat()
+                        org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(workspace.c[cropId].mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hmat, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+                        val rbins = FloatArray(64); hmat.get(0, 0, rbins); hmat.release()
+                        val stat = JSONObject().put("index", i).put("h", rh).put("w", rw).put("area", rarea)
+                        val binsArr = JSONArray(); rbins.forEach { binsArr.put(it.toDouble()) }; stat.put("histBins", binsArr)
+                        redboxDataC.put(stat)
+
+                        // Histogram visual via plot render into longLived histPlotCrop + takeSnapshot (no generate, no workspace temp)
+                        val plotMat = longLivedHistogramBuffer.c[histPlotCrop].mat
+                        plotMat.setTo(org.opencv.core.Scalar(0.0))
+                        val maxVal = (1..62).maxOf { rbins[it] }.toDouble().coerceAtLeast(1.0)
+                        for (k in 1..62) {
+                            val hh = (rbins[k] / maxVal * 240.0).toInt().coerceAtMost(240)
+                            val xx = (k - 1) * 3
+                            org.opencv.imgproc.Imgproc.rectangle(plotMat, org.opencv.core.Rect(xx, 240 - hh, 3, hh), org.opencv.core.Scalar(255.0), -1)
+                        }
+                        val (histB64, _) = OcrUtils.takeSnapshot(source = longLivedHistogramBuffer.c[histPlotCrop], targetW = PUMP_PER_RED_TARGET_W, scratchYuv = longLivedHistogramBuffer)
+                        branch.images["redboxHistC_${i}"] = histB64
+
+                        workspace.c[cropId].release()  // only rect crop; longLived + histPlotCrop held lifetime, never released in per-red path
+                    }
+                    branch.metadata["redboxDataC"] = redboxDataC.toString()
+                    branch.metadata["n_per_red_hists"] = pdHunksRawTotal.size.toString()
+
+                val mlHunks = emptyList<PumpHunk>()
+                val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
+
+                // 4. Extraction
+                // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
+                // for name resolution inside the C processor lambda body (the array entry for Set C calls it
+                // for the best path result using the valley versions).
+                // fix-remaining-report-issues-20260619-plan: Set E — buildRedBoxCandidates uses customBluePixelE ocr rects
+                val (customBlueEPre, _) = createBlueAndOrangeHunksFromReds(
+                    pdHunksRawTotal, imgW, imgH, (1..8).map { it / 10f }, 0.5f)
+                val customBluePixelE = customBlueEPre.map { bh ->
+                    android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                }
+                val ocrE = ocrPumpRectsAsisAndDigits(customBluePixelE)
+                val eCands = buildRedBoxCandidates(customBluePixelE, ocrE.asis, ocrE.digits, ocrE.asisProbs, ocrE.digitsProbs)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, eCands)
+                val redPixelE = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val eVertFactors = (1..8).map { it / 10f }
+                val cvE = PumpCostVolUtils.classifyCostVolFromBoxOcr(eCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelE,
+                    ocrSourceRects = customBluePixelE,
+                    candidates = eCands,
+                    costCand = cvE.costCand,
+                    volCand = cvE.volCand,
+                    finalCost = cvE.cost,
+                    finalVol = cvE.vol,
+                    assembly = mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to eVertFactors,
+                        "horizFactor" to 0.5f,
+                        "orangeSideExt" to 0.1,
+                        "note" to "createBlueAndOrangeHunksFromReds (Pre blues for OCR cands)"
+                    )
+                )
+                val redAnns = getAnns(pdHunksRawTotal, Color.RED, 2)
+                branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, redAnns, null, workspace).first
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                doBOrDRedOnlyImage()
+                // E custom blue/orange (matching D, no valley) via createBlueAndOrangeHunksFromReds (calculated blue expansions +10% to +80% vert step 10%, horiz 50%)
+                val (customBlueE, customOrangeE) = createBlueAndOrangeHunksFromReds(
+                    pdHunksRawTotal, imgW, imgH, (1..8).map { it / 10f }, 0.5f)
+                val orangePixelE = customOrangeE.map { bh ->
+                    android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                }
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelE,
+                    ocrSourceRects = customBluePixelE,
+                    candidates = eCands,
+                    costCand = cvE.costCand,
+                    volCand = cvE.volCand,
+                    finalCost = cvE.cost,
+                    finalVol = cvE.vol,
+                    assembly = mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to eVertFactors,
+                        "horizFactor" to 0.5f,
+                        "orangeSideExt" to 0.1,
+                        "note" to "createBlueAndOrangeHunksFromReds (viz second create includes oranges)"
+                    ),
+                    oranges = orangePixelE
+                )
+                val aPdE = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueE, Color.BLUE, 4) + getAnns(customOrangeE, Color.rgb(255, 165, 0), 2)
+                val baseB64E = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdE, null, workspace).first
+                branch.images["PD"] = baseB64E
+            }
+                val procF: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    val flowName = "Set F"
+                    // aliases map params for exact dupe of per-flow logic
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
+                    val srcW = workspace.p.width
+                    val srcH = workspace.p.height
+                    val currentLongEdge = max(srcW, srcH)
+                    val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+
+                    val targetW = (srcW * scaleFactor).toInt()
+                    val targetH = (srcH * scaleFactor).toInt()
+                    val targetLongEdge = max(targetW, targetH)
+
+                    val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                    val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+
+
+                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
+
+                    pdHunksDetectedTotal.addAll(detected)
+                    pdHunksRawTotal.addAll(raw)
+                    pdHunksExpTotal.addAll(exp)
+                    pdHunksMaxTotal.addAll(maxExt)
+                    pdHunksNativeTotal.addAll(native)
+
+                    workspace.c[innerId].release()
+                    workspace.c[outerId].release()
+
+                    discoveryDetails["Paddle Raw"]!![scale] = raw
+                    discoveryDetails["Paddle Expanded"]!![scale] = exp
+                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                    discoveryDetails["Paddle Native"]!![scale] = native
+                }
+                branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+
+                // Direct pixel (already in .rect); no roundtrip.
+                val redPixelList = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(redPixelList)
+                if (redPixelList.size > 6) {
+                    redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    redPixelList.subList(6, redPixelList.size).clear()
+                }
+                pdHunksRawTotal.clear()
+                pdHunksRawTotal.addAll(redPixelList.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val expPixel = pdHunksExpTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(expPixel)
+                if (expPixel.size > 6) {
+                    expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    expPixel.subList(6, expPixel.size).clear()
+                }
+                pdHunksExpTotal.clear()
+                pdHunksExpTotal.addAll(expPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val maxPixel = pdHunksMaxTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(maxPixel)
+                if (maxPixel.size > 6) {
+                    maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    maxPixel.subList(6, maxPixel.size).clear()
+                }
+                pdHunksMaxTotal.clear()
+                pdHunksMaxTotal.addAll(maxPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for F (redboxData + n_per_red_hists)
+                val redPixelFForBinPeak = validBinPeakRects(pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                })
+                val binPeakCandidatesF = mutableListOf<RedBoxOcrCandidate>()
+                captureBinPeakSnapshotsFromRedbox(branch, workspace, redPixelFForBinPeak, paddleEngine, experimentRecSet1024x48, imgW, imgH, binPeakCandidatesF, generateP4 = false)
+                branch.metadata["binPeakCandidateCount"] = binPeakCandidatesF.size.toString()
+
+                val mlHunks = emptyList<PumpHunk>()
+                val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
+
+                // Set F — object-based blue from binPeak binaries (pre/post-clean per peak); replaces expandByUniformity path
+                val fCands = binPeakCandidatesF
+                val fOcrSourceRects = fCands.mapNotNull { it.rect }
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, fCands)
+                val redPixelF = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val cvF = PumpCostVolUtils.classifyCostVolFromBoxOcr(fCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelF,
+                    ocrSourceRects = fOcrSourceRects,
+                    candidates = fCands,
+                    costCand = cvF.costCand,
+                    volCand = cvF.volCand,
+                    finalCost = cvF.cost,
+                    finalVol = cvF.vol,
+                    assembly = mapOf("method" to "binPeak-object", "note" to "per-peak binarized object-based blue (uncleaned+cleaned)")
+                )
+
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                    doBOrDRedOnlyImage()
+                    // BCF expand/retract bypassed; using object-based binPeak blue only
+                    // doBOrDRetractedBlueAndPD()
+                }
+                val procG: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
+                    val flowName = "Set G"
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    val tDeskewStart = System.currentTimeMillis()
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val tilt = -deskewRes.paddleCppAngle
+                    OdometerOcrUtils.rotate(workspace, tilt)
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                    var processedScales = mutableSetOf<Int>()
+                    scales.forEach { scale ->
+                    val srcW = workspace.p.width
+                    val srcH = workspace.p.height
+                    val currentLongEdge = max(srcW, srcH)
+                    val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+
+                    val targetW = (srcW * scaleFactor).toInt()
+                    val targetH = (srcH * scaleFactor).toInt()
+                    val targetLongEdge = max(targetW, targetH)
+
+                    val chosenScale = mlDiscoveryBuffers.keys.sorted().firstOrNull { it >= targetLongEdge } ?: 2560
+                    val chosenBuffer = mlDiscoveryBuffers[chosenScale]!!
+
+
+                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val detected = paddleResults[0]
+                    val raw = paddleResults[1]
+                    val exp = paddleResults[2]
+                    val maxExt = paddleResults[3]
+                    val native = paddleResults[4]
+
+                    pdHunksDetectedTotal.addAll(detected)
+                    pdHunksRawTotal.addAll(raw)
+                    pdHunksExpTotal.addAll(exp)
+                    pdHunksMaxTotal.addAll(maxExt)
+                    pdHunksNativeTotal.addAll(native)
+
+                    workspace.c[innerId].release()
+                    workspace.c[outerId].release()
+
+                    discoveryDetails["Paddle Raw"]!![scale] = raw
+                    discoveryDetails["Paddle Expanded"]!![scale] = exp
+                    discoveryDetails["Paddle Max Extent"]!![scale] = maxExt
+                    discoveryDetails["Paddle Native"]!![scale] = native
+                }
+                branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
+                // doCrossScaleRedboxFilter hoisted earlier (before flowProcessors list) so it is visible inside the
+                // C processor lambda (the per-path valley for Set C calls the global cross-scale nested removal
+                // after each version's runPaddleDiscovery).
+
+                // Global cross-scale removal of entirely contained raw red boxes (in final image pixel space).
+                // The +1 expand + inset de-nest inside runDiscoveryPaddle (per scale) is the port from alignment Set J
+                // and cleans nesting *within* one pyramid level's detection. Because pump discovery is multi-scale
+                // (prepareScale + detect at 224/608/1024/2560), a final pass on the union (after ICRS mapping to common
+                // full-res pixels) is required to remove any raw red that is entirely contained in another across scales.
+                // This ensures the RED raw boxes shown in the PD column images (and overlaid in the cost/vol crops via
+                // takeCrop) have no entirely-contained nested boxes, matching the intent.
+                // (Now via shared helper; body unchanged.)
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                // Propagate the dedup: filter exp and max totals too, so that blue/orange boxes
+                // (derived from expansions of the raw reds) are not created from redundants that
+                // were filtered out of the raw list. Filtered reds must not "exist" for downstream
+                // blue derivation.
+                doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                branch.metadata["t_filter_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()  // reuse start as approx for filter delta; finer per-phase in later granular
+                branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                // t_filter_ms + n_reds_after_filter (common; for C also explicit redBoxes filter in blue path)
+
+                // Direct pixel from ingest (runDiscoveryPaddle explicit upscale); no roundtrip. Pixel filter + prune6 on rects; direct rebuild. Early probe sees full; post-prune 6 for all sets (C/E display only).
+                val redPixelList = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(redPixelList)
+                if (redPixelList.size > 6) {
+                    redPixelList.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    redPixelList.subList(6, redPixelList.size).clear()
+                }
+                // Rebuild pdHunksRawTotal from the final <=4 pixel rects (full img ICRS only for kept)
+                pdHunksRawTotal.clear()
+                pdHunksRawTotal.addAll(redPixelList.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                // Propagate prune to exp/max (blue/orange sources in B/C paths)
+                val expPixel = pdHunksExpTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(expPixel)
+                if (expPixel.size > 6) {
+                    expPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    expPixel.subList(6, expPixel.size).clear()
+                }
+                pdHunksExpTotal.clear()
+                pdHunksExpTotal.addAll(expPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                val maxPixel = pdHunksMaxTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }.toMutableList()
+                doCrossScaleRedboxFilterPixel(maxPixel)
+                if (maxPixel.size > 6) {
+                    maxPixel.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
+                    maxPixel.subList(6, maxPixel.size).clear()
+                }
+                pdHunksMaxTotal.clear()
+                pdHunksMaxTotal.addAll(maxPixel.map { r ->
+                    PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
+                })
+                branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                // For all sets (prune now applies in every proc A/B/C/D/E/F/G) the proc stubs + thin if calls + helpers will see the pruned <=4 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
+                captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for G (redboxData + n_per_red_hists)
+
+                // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
+
+                // Phase 1 fix (per approved plan for user's clarification "the current code doesn't properly filter the red boxes (histograms on line 1 still show 30 for C and E)"):
+                // After the common prune (which thins pdHunks* to the 6 largest), for C/E re-capture the *display* redboxDataC + redboxHistC_* images using only the now-pruned list.
+                // This overwrites the pre-prune data set in the early probe (~708), so the builder for C/E columns (and JSON redboxDataC for those sets) only sees the filtered 4 (sorted by area desc, 3-wide stacked in the HTML).
+                // Early probe still does polarity on initial reds + n_reds_at_probe for analysis (per plan language "early probe can see full initial").
+                // (The capture logic is duplicated here for this small mechanical fix chunk; will factor + optimize with YUV/crop in Phase 2.)
+
+                val mlHunks = emptyList<PumpHunk>()
+                val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
+
+                // 4. Extraction
+                // getFinal (the shared param'd version from Phase 1) hoisted earlier (before flowProcessors list)
+                // for name resolution inside the C processor lambda body (the array entry for Set C calls it
+                // for the best path result using the valley versions).
+                // fix-remaining-report-issues-20260619-plan: Set G — buildRedBoxCandidates uses customBluePixelG ocr rects
+                val (customBlueGPre, _) = createBlueAndOrangeHunksFromReds(
+                    pdHunksRawTotal, imgW, imgH, (1..8).map { it / 10f }, 0.5f)
+                val customBluePixelG = customBlueGPre.map { bh ->
+                    android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                }
+                val ocrG = ocrPumpRectsAsisAndDigits(customBluePixelG)
+                val gCands = buildRedBoxCandidates(customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, gCands)
+                val redPixelG = pdHunksRawTotal.map { h ->
+                    android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
+                }
+                val gVertFactors = (1..8).map { it / 10f }
+                val cvG = PumpCostVolUtils.classifyCostVolFromBoxOcr(gCands)
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelG,
+                    ocrSourceRects = customBluePixelG,
+                    candidates = gCands,
+                    costCand = cvG.costCand,
+                    volCand = cvG.volCand,
+                    finalCost = cvG.cost,
+                    finalVol = cvG.vol,
+                    assembly = mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to gVertFactors,
+                        "horizFactor" to 0.5f,
+                        "orangeSideExt" to 0.1,
+                        "note" to "createBlueAndOrangeHunksFromReds (Pre blues for OCR cands)"
+                    )
+                )
+                doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                doBOrDRedOnlyImage()
+                // G custom blue/orange (raw clone of D, no stretch) via createBlueAndOrangeHunksFromReds (calculated blue expansions +10% to +80% vert step 10%, horiz 50%)
+                val (customBlueG, customOrangeG) = createBlueAndOrangeHunksFromReds(
+                    pdHunksRawTotal, imgW, imgH, (1..8).map { it / 10f }, 0.5f)
+                val orangePixelG = customOrangeG.map { bh ->
+                    android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
+                }
+                branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                    reds = redPixelG,
+                    ocrSourceRects = customBluePixelG,
+                    candidates = gCands,
+                    costCand = cvG.costCand,
+                    volCand = cvG.volCand,
+                    finalCost = cvG.cost,
+                    finalVol = cvG.vol,
+                    assembly = mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to gVertFactors,
+                        "horizFactor" to 0.5f,
+                        "orangeSideExt" to 0.1,
+                        "note" to "createBlueAndOrangeHunksFromReds (viz second create includes oranges)"
+                    ),
+                    oranges = orangePixelG
+                )
+                val aPdG = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
+                val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdG, null, workspace).first
+                branch.images["PD"] = baseB64G
+            }
+                val flowProcessors = listOf(procA, procB, procC, procD, procE, procF, procG)
+
+                // Call the processor for this flow (i) from the array. Per-set behavior now selected by thin if calls to extracted helpers (B/C/E special after common filter) + proc index.
+                // Phase 3 post-dupe prep: all 5 procs have full dupe + local flowName; additional vis hoists done in Phase 0; remnant still present but names resolvable; ready for granular retirement (dispatch sole after).
+                tDiscoveryWrapperStart = System.currentTimeMillis()
+                flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
+                branch.metadata["t_discovery_wrapper_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
+                // t_discovery_wrapper_ms covers the main body processor / 4-scale discovery call (distinct from inner per-scale t_pd_inference_* / t_pd_native_post_*) for A/B gap attribution
+
+            branch.metadata["t_total_flow_ms"] = (System.currentTimeMillis() - tFlowStart).toString()
+            // Additional lightweight context for interpreting the granular timings (cheap, high value, no extra run needed)
+            branch.metadata["n_reds_at_probe"] = "see Set C probe for actual when flow==C (pre-filter 30 in example JSON)"
+            branch.metadata["img_w"] = imgW.toString()
+            branch.metadata["img_h"] = imgH.toString()
+            }  // end of per-flow special handling (B/C thin calls to extracted helpers; A baseline)
 
             // Final Reporting
             val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(masterBuffer.p)
@@ -477,37 +2335,63 @@ private suspend fun runPumpExperiment(
                 diagnostic = meta.diagnostic
             )
 
-            if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = pStartNewFile(); currentSize = 0 }
-            currentFile.appendText(rowHtml); currentSize += rowHtml.length
+            Log.d("PUMP_HTML", "row=${index + 1} rowHtml.len=${rowHtml.length} currentSize=$currentSize (part=$partCount)")
+            if (currentSize + rowHtml.length > maxSizeBytes) {
+                currentFile.appendText(footer)
+                Log.i("PUMP_HTML", "starting new HTML part $partCount at row ${index + 1}")
+                currentFile = pStartNewFile()
+                currentSize = 0
+            }
+            currentFile.appendText(rowHtml)
+            currentSize += rowHtml.length
 
             val photoJson = pSerializePhotoResultToJson(
                 index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root, originalHistogram
             )
-            val comma = if (index < total - 1) "," else ""
 
-            // Clear/reset or re-allocate the reusable buffer to keep memory bounded
-            if (jsonCharBuffer.capacity() > 64 * 1024 * 1024) {
-                jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
-            } else {
-                jsonCharBuffer.setLength(0)
+            logHeapState(context, "before-photo-json-serialize")
+            Log.i("PUMP_FRAG", "row=${index + 1} photoJson keys=${photoJson.length()}, writing frag...")
+            val fragFile = getPhotoFragmentFile(reportDir, timestamp, index + 1)
+            fragFile.bufferedWriter().use { writer ->
+                appendJsonObject(writer, photoJson, 2, 0)
             }
+            val fragSize = fragFile.length()
+            Log.i("PUMP_FRAG", "row=${index + 1} frag size=$fragSize bytes")
 
-            appendJsonObject(jsonCharBuffer, photoJson, 2, 0)
-            jsonFile.appendText(jsonCharBuffer.toString() + "$comma\n")
+            if (!firstPhoto) jsonWriter.write(",\n") else firstPhoto = false
+            appendJsonObject(jsonWriter, photoJson, 2, 0)
+            jsonWriter.flush()
 
-            val summaryText = flows.map { f -> "$f: ${root.getBranch(f).pathResults["ML"]?.cost ?: "F"}" }.joinToString(" | ")
+            fragFile.delete()
+            Log.i("PUMP_FRAG", "streamed row ${index + 1} to main JSON, deleted frag (size was $fragSize)")
+            logHeapState(context, "after-photo-json-stream")
+
+            val summaryText = flows.map { f ->
+                val br = root.getBranch(f)
+                if (br.pathResults.containsKey("ML")) {
+                    "$f: ${br.pathResults["ML"]?.cost ?: "F"}"
+                } else {
+                    "$f Paddle: ${br.pathResults["Paddle"]?.cost ?: "F"}"
+                }
+            }.joinToString(" | ")
             val resultSummary = PumpPhotoResultSummary(file.name, summaryText, 1.0f, "")
             withContext(Dispatchers.Main) { onProgress(resultSummary, (index + 1).toFloat() / total) }
             delay(50)
 
         } catch (e: Exception) {
-            Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
+            Log.e(TAG, "FATAL: Experiment failed for row ${index + 1} (${file.name}):\n" + Log.getStackTraceString(e))
+            Log.w("PUMP_FRAG", "partial run - JSON may be incomplete (no final footer) at row ${index + 1}")
         }
     }
     currentFile.appendText(footer)
-    jsonFile.appendText("\n  ]\n}")
+
+    jsonWriter.write(jsonFooter)
+    jsonWriter.close()
+    logHeapState(context, "after-json-close")
+    Log.i("PUMP_JSON", "wrote JSON footer and closed main JSON file")
 
     experimentRecSet320x48.release()
+    experimentRecSet1024x48.release()
     experimentDetSet512x128.release()
     masterBuffer.release()
     mlDiscoveryBuffers.values.forEach { it.release() }
@@ -551,79 +2435,79 @@ private fun pSerializePhotoResultToJson(
     return rootJson
 }
 
-private fun appendJsonValue(sb: StringBuilder, value: Any?, indent: Int, indentLevel: Int) {
-    if (sb.length > 64 * 1024 * 1024) {
-        throw IllegalStateException("JSON serialization exceeded the 64MB safety ceiling")
+private fun appendJsonValue(out: Appendable, value: Any?, indent: Int, indentLevel: Int) {
+    if (out is StringBuilder && out.length > PER_PHOTO_FRAGMENT_BUFFER_BYTES) {
+        throw IllegalStateException("JSON fragment exceeded ${PER_PHOTO_FRAGMENT_BUFFER_BYTES / (1024 * 1024)}MB ceiling")
     }
     when (value) {
-        null -> sb.append("null")
-        JSONObject.NULL -> sb.append("null")
-        is JSONObject -> appendJsonObject(sb, value, indent, indentLevel)
-        is JSONArray -> appendJsonArray(sb, value, indent, indentLevel)
+        null -> out.jsonAppend("null")
+        JSONObject.NULL -> out.jsonAppend("null")
+        is JSONObject -> appendJsonObject(out, value, indent, indentLevel)
+        is JSONArray -> appendJsonArray(out, value, indent, indentLevel)
         is String -> {
-            sb.append('"')
-            escapeJsonString(sb, value)
-            sb.append('"')
+            out.jsonAppend('"')
+            escapeJsonString(out, value)
+            out.jsonAppend('"')
         }
-        is Boolean -> sb.append(value.toString())
-        is Number -> sb.append(value.toString())
+        is Boolean -> out.jsonAppend(value.toString())
+        is Number -> out.jsonAppend(value.toString())
         else -> {
-            sb.append('"')
-            escapeJsonString(sb, value.toString())
-            sb.append('"')
+            out.jsonAppend('"')
+            escapeJsonString(out, value.toString())
+            out.jsonAppend('"')
         }
     }
 }
 
-private fun appendJsonObject(sb: StringBuilder, json: JSONObject, indent: Int, indentLevel: Int) {
-    sb.append("{\n")
+private fun appendJsonObject(out: Appendable, json: JSONObject, indent: Int, indentLevel: Int) {
+    out.jsonAppend("{\n")
     val keys = json.keys()
     val nextLevel = indentLevel + 1
     val indentStr = " ".repeat(nextLevel * indent)
     var first = true
     while (keys.hasNext()) {
         if (!first) {
-            sb.append(",\n")
+            out.jsonAppend(",\n")
         }
         first = false
         val key = keys.next()
         val value = json.get(key)
-        sb.append(indentStr).append('"').append(key).append("\": ")
-        appendJsonValue(sb, value, indent, nextLevel)
+        out.jsonAppend(indentStr).jsonAppend('"').jsonAppend(key).jsonAppend("\": ")
+        appendJsonValue(out, value, indent, nextLevel)
     }
-    sb.append("\n").append(" ".repeat(indentLevel * indent)).append("}")
+    out.jsonAppend("\n").jsonAppend(" ".repeat(indentLevel * indent)).jsonAppend("}")
 }
 
-private fun appendJsonArray(sb: StringBuilder, array: JSONArray, indent: Int, indentLevel: Int) {
-    sb.append("[\n")
+private fun appendJsonArray(out: Appendable, array: JSONArray, indent: Int, indentLevel: Int) {
+    out.jsonAppend("[\n")
     val nextLevel = indentLevel + 1
     val indentStr = " ".repeat(nextLevel * indent)
     for (i in 0 until array.length()) {
         if (i > 0) {
-            sb.append(",\n")
+            out.jsonAppend(",\n")
         }
-        sb.append(indentStr)
-        appendJsonValue(sb, array.get(i), indent, nextLevel)
+        out.jsonAppend(indentStr)
+        appendJsonValue(out, array.get(i), indent, nextLevel)
     }
-    sb.append("\n").append(" ".repeat(indentLevel * indent)).append("]")
+    out.jsonAppend("\n").jsonAppend(" ".repeat(indentLevel * indent)).jsonAppend("]")
 }
 
-private fun escapeJsonString(sb: StringBuilder, str: String) {
+private fun escapeJsonString(out: Appendable, str: String) {
     for (i in 0 until str.length) {
         val ch = str[i]
         when (ch) {
-            '"' -> sb.append("\\\"")
-            '\\' -> sb.append("\\\\")
-            '/' -> sb.append("\\/")
-            '\b' -> sb.append("\\b")
-            '\n' -> sb.append("\\n")
-            '\r' -> sb.append("\\r")
-            '\t' -> sb.append("\\t")
+            '"' -> out.jsonAppend("\\\"")
+            '\\' -> out.jsonAppend("\\\\")
+            '/' -> out.jsonAppend("\\/")
+            '\b' -> out.jsonAppend("\\b")
+            '\n' -> out.jsonAppend("\\n")
+            '\r' -> out.jsonAppend("\\r")
+            '\t' -> out.jsonAppend("\\t")
             else -> {
                 if (ch.code < 32 || ch.code > 126) {
-                    sb.append(String.format("\\u%04x", ch.code))
+                    out.jsonAppend(String.format("\\u%04x", ch.code))
                 } else {
-                    sb.append(ch)
+                    out.jsonAppend(ch)
                 }
             }
         }
@@ -639,8 +2523,8 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
             val arr = JSONArray()
             hunks.forEach { h ->
                 arr.put(JSONObject().apply {
-                    put("l", h.icrs.left.toDouble()); put("t", h.icrs.top.toDouble())
-                    put("w", h.icrs.width().toDouble()); put("h", h.icrs.height().toDouble())
+                    put("l", h.rect.left.toDouble()); put("t", h.rect.top.toDouble())
+                    put("w", h.rect.width().toDouble()); put("h", h.rect.height().toDouble())
                     put("text", h.text)
                 })
             }
@@ -652,28 +2536,350 @@ private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHun
 }
 
 
-private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Float): String {
+private fun binPeakRectsIntersect(a: android.graphics.Rect, b: android.graphics.Rect): Boolean =
+    a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+
+private fun binPeakYOverlapHeight(a: android.graphics.Rect, b: android.graphics.Rect): Int {
+    val interTop = maxOf(a.top, b.top)
+    val interBottom = minOf(a.bottom, b.bottom)
+    return maxOf(0, interBottom - interTop)
+}
+
+/** Per-red object-based blue: components intersecting red, then union of all comps with Y-overlap to those seeds. */
+private fun binPeakComputeBlueRectsPerRed(
+    redRects: List<android.graphics.Rect>,
+    compRects: List<android.graphics.Rect>
+): List<android.graphics.Rect> {
+    return redRects.mapNotNull { red ->
+        val intersecting = compRects.filter { binPeakRectsIntersect(it, red) }
+        if (intersecting.isEmpty()) return@mapNotNull null
+        val associated = compRects.filter { comp ->
+            intersecting.any { seed -> binPeakYOverlapHeight(comp, seed) > 0 }
+        }
+        if (associated.isEmpty()) return@mapNotNull null
+        android.graphics.Rect(
+            associated.minOf { it.left },
+            associated.minOf { it.top },
+            associated.maxOf { it.right },
+            associated.maxOf { it.bottom }
+        )
+    }
+}
+
+private fun normalizePixelRect(r: android.graphics.Rect): android.graphics.Rect {
+    val left = minOf(r.left, r.right)
+    val right = maxOf(r.left, r.right)
+    val top = minOf(r.top, r.bottom)
+    val bottom = maxOf(r.top, r.bottom)
+    return if (left == r.left && right == r.right && top == r.top && bottom == r.bottom) r
+    else android.graphics.Rect(left, top, right, bottom)
+}
+
+private fun validBinPeakRects(rects: List<android.graphics.Rect>): List<android.graphics.Rect> =
+    rects.map(::normalizePixelRect).filter { it.width() > 0 && it.height() > 0 }
+
+/** vSW/hSW from run-length histogram on red areas of binarized image (native calculateHistogramWithThresholdH).
+ *  Uses NativeImageUtils long-lived 8192-bin buffers; only meta (vSW/hSW) is consumed here. */
+private fun binPeakComputeStrokeWidths(
+    binMat: org.opencv.core.Mat,
+    redRects: List<android.graphics.Rect>
+): Pair<Float, Float> {
+    val valid = validBinPeakRects(redRects)
+    if (valid.isEmpty()) return -1f to -1f
+    val hRes = NativeImageUtils.calculateHistogramWithThresholdH(binMat, valid, 128f) ?: return -1f to -1f
+    val vSW = hRes.second.getOrNull(0)?.toFloat() ?: -1f
+    val hSW = hRes.second.getOrNull(1)?.toFloat() ?: -1f
+    return vSW to hSW
+}
+
+/** Shrink full blue union rect to 40px tall (centered) for OCR crop; 4px offset applied in rec buffer. */
+private fun shrinkBlueRectForOcr(fullBlue: android.graphics.Rect, imgW: Int, imgH: Int): android.graphics.Rect {
+    val targetH = 40
+    val cy = (fullBlue.top + fullBlue.bottom) / 2
+    var nt = (cy - targetH / 2).coerceIn(0, imgH - 1)
+    var nb = (nt + targetH).coerceIn(nt + 1, imgH)
+    if (nb - nt < targetH) nt = (nb - targetH).coerceAtLeast(0)
+    val nl = fullBlue.left.coerceIn(0, imgW - 1)
+    val nr = fullBlue.right.coerceIn(nl + 1, imgW)
+    return android.graphics.Rect(nl, nt.coerceIn(0, imgH - 1), nr, nb.coerceIn(nt + 1, imgH))
+}
+
+private suspend fun ocrBinPeakRectsAsisAndDigits(
+    workspace: BufferSet,
+    binSlice: BufferSet.Slice,
+    paddleEngine: NativePaddleEngine,
+    recBuffer: BufferSet,
+    rects: List<android.graphics.Rect>
+): PumpRectOcrLists {
+    val imgW = binSlice.width; val imgH = binSlice.height
+    val asisPairs = rects.map { r ->
+        val pW = r.width(); val pH = r.height()
+        if (pW < 2 || pH < 2) "?" to "" else {
+            val l = r.left.coerceIn(0, imgW - 1)
+            val t = r.top.coerceIn(0, imgH - 1)
+            val rr = r.right.coerceIn(l + 1, imgW)
+            val bb = r.bottom.coerceIn(t + 1, imgH)
+            val cropId = binSlice.createCrop(l, t, rr - l, bb - t)
+            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+            recBuffer.p.clear()
+            val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
+            val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
+            Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+            val res = paddleEngine.recognize(recBuffer.c[recCropId])
+            recBuffer.c[recCropId].release(); workspace.c[cropId].release()
+            res.debugText to (if (res.perCharProbs.isNotEmpty()) res.perCharProbs else "")
+        }
+    }
+    val digitsPairs = rects.map { rp ->
+        val pW = rp.width(); val pH = rp.height()
+        if (pW < 2 || pH < 2) "?" to "" else {
+            val l = rp.left.coerceIn(0, imgW - 1)
+            val t = rp.top.coerceIn(0, imgH - 1)
+            val rr = rp.right.coerceIn(l + 1, imgW)
+            val bb = rp.bottom.coerceIn(t + 1, imgH)
+            val cropId = binSlice.createCrop(l, t, rr - l, bb - t)
+            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+            recBuffer.p.clear()
+            val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
+            val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
+            Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+            val res = paddleEngine.recognizeNumericDecimal(recBuffer.c[recCropId])
+            recBuffer.c[recCropId].release(); workspace.c[cropId].release()
+            res.debugText to (if (res.perCharProbs.isNotEmpty()) res.perCharProbs else "")
+        }
+    }
+    return PumpRectOcrLists(
+        asis = asisPairs.map { it.first },
+        digits = digitsPairs.map { it.first },
+        asisProbs = asisPairs.map { it.second },
+        digitsProbs = digitsPairs.map { it.second }
+    )
+}
+
+/** P4 (1-bit packed PBM) base64 for binPeak plain/cleaned binary debug in JSON (alignment pattern). */
+private fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
+    val cols = mat.cols()
+    val rows = mat.rows()
+    val totalPixels = cols * rows
+    val data = ByteArray(totalPixels)
+    mat.get(0, 0, data)
+
+    val packedSize = (totalPixels + 7) / 8
+    val packed = ByteArray(packedSize)
+
+    var byteIdx = 0
+    var bitIdx = 0
+    var currentByte = 0
+
+    for (i in 0 until totalPixels) {
+        val pixelVal = data[i].toInt() and 0xFF
+        val bit = if (pixelVal <= 127) 1 else 0
+        currentByte = (currentByte shl 1) or bit
+        bitIdx++
+        if (bitIdx == 8) {
+            packed[byteIdx++] = currentByte.toByte()
+            currentByte = 0
+            bitIdx = 0
+        }
+    }
+    if (bitIdx > 0) {
+        currentByte = currentByte shl (8 - bitIdx)
+        packed[byteIdx++] = currentByte.toByte()
+    }
+
+    val header = "P4\n$cols $rows\n".toByteArray(Charsets.US_ASCII)
+    val fullData = ByteArray(header.size + packed.size)
+    System.arraycopy(header, 0, fullData, 0, header.size)
+    System.arraycopy(packed, 0, fullData, header.size, packed.size)
+
+    val result = Base64.encodeToString(fullData, Base64.NO_WRAP)
+    // P4 internal buffers released after base64 extraction — source mat data no longer needed for this peak; workspace.s reused by next iteration in caller
+    data.fill(0)
+    packed.fill(0)
+    fullData.fill(0)
+    return result
+}
+
+private fun componentStatsToJson(stats: List<NativeImageUtils.ComponentStats>): String {
+    val arr = JSONArray()
+    stats.forEach { s ->
+        val obj = JSONObject()
+        obj.put("index", s.index)
+        obj.put("left", s.left)
+        obj.put("top", s.top)
+        obj.put("width", s.width)
+        obj.put("height", s.height)
+        obj.put("area", s.area)
+        arr.put(obj)
+    }
+    return arr.toString()
+}
+
+/** Annotated binPeak snapshot: binarized mat + red rects + full blue union rects overlaid (JPEG base64). */
+private suspend fun takeBinPeakAnnotatedSnapshot(
+    binMat: org.opencv.core.Mat,
+    redRects: List<android.graphics.Rect>,
+    blueRects: List<android.graphics.Rect>
+): String {
+    val anns = mutableListOf<SnapshotAnnotation>()
+    redRects.forEach { r ->
+        anns.add(SnapshotAnnotation(r.left, r.top, r.right, r.bottom, Shape.RECTANGLE, Color.RED, 2))
+    }
+    blueRects.forEach { r ->
+        anns.add(SnapshotAnnotation(r.left, r.top, r.right, r.bottom, Shape.RECTANGLE, Color.BLUE, 4))
+    }
+    return OcrUtils.takeSnapshot(binMat, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, anns, null, null).first
+}
+
+/** Extract brightness peaks (0-255) + union bar heights from combinedRedboxHistBins for binPeak debug images (expanded B/C/F only; calculated D/E/G skip capture entirely). Valley-push quantized hists (<=10 positive bins): return all exact 1-bin positive peaks, no smoothing. Raw/others: findPeakBinsFromHistogram + positive-count filter. */
+private fun findPeaksFromHistBins(combinedBinsJson: String): List<Pair<Int, Int>> {
+    val binsArr = JSONArray(combinedBinsJson)
+    val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
+    val numNz = (0..63).count { bins[it] > 0f }
+    if (numNz <= 10) {
+        return (0..63).filter { bins[it] > 0f }
+            .map { j -> (j * 4 + 2).coerceIn(0, 255) to bins[j].toInt() }
+            .sortedByDescending { it.second }
+    }
+    val peakBins = OdometerOcrUtils.findPeakBinsFromHistogram(bins)
+    return peakBins
+        .map { j -> (j * 4 + 2).coerceIn(0, 255) to bins[j].toInt() }
+        .filter { it.second > 0 }
+        .sortedByDescending { it.second }
+}
+
+private suspend fun captureBinPeakSnapshotsFromRedbox(
+    branch: PumpBranch,
+    workspace: BufferSet,
+    redRects: List<android.graphics.Rect>,
+    paddleEngine: NativePaddleEngine,
+    recBuffer: BufferSet,
+    imgW: Int,
+    imgH: Int,
+    candidatesOut: MutableList<RedBoxOcrCandidate>,
+    delta: Int = BIN_PEAK_BINARIZE_DELTA,
+    generateP4: Boolean = true
+) {
+    val combinedBinsJson = branch.metadata["combinedRedboxHistBins"] ?: return
+    val binsArr = JSONArray(combinedBinsJson)
+    val bins = FloatArray(64) { j -> binsArr.getDouble(j).toFloat() }
+    val numNz = (0..63).count { bins[it] > 0f }
+    val peaks = findPeaksFromHistBins(combinedBinsJson)
+    val d = if (numNz <= 10) 0 else delta
+    for ((peak, height) in peaks) {
+        val b = workspace.s
+        b.mat.setTo(org.opencv.core.Scalar(0.0))
+        // Valley (numNz<=10): LUT stretching places mass anywhere in the bin; binarize full 1-bin width, not center±d.
+        val (low, high) = if (numNz <= 10) {
+            val j = (peak / 4).coerceIn(0, 63)
+            (j * 4) to ((j + 1) * 4 - 1)
+        } else {
+            (peak - d) to (peak + d)
+        }
+        NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
+        branch.metadata["binPeak_${peak}_plain_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
+        branch.metadata["binPeak_${peak}_count"] = height.toString()
+        if (generateP4) {
+            // Plain binary debug (Set C only): inline P4 base64 in JSON via per-photo fragment staging
+            branch.images["binPeak_${peak}_plain_p4"] = matToPbmP4Base64(b.mat)
+            Log.d(TAG, "stored P4 for plain peak=$peak")
+        }
+        // b.mat cleared after plain_objects + optional P4 (when generateP4); reusable for cleaned path or next peak
+        b.mat.setTo(org.opencv.core.Scalar(0.0))
+        NativeImageUtils.binarizeRange(workspace.p.mat, b.mat, low, high)
+        val tPeakStart = System.currentTimeMillis()
+
+        val (vSW, hSW) = binPeakComputeStrokeWidths(b.mat, redRects)
+        branch.metadata["binPeak_${peak}_vsw"] = vSW.toString()
+        branch.metadata["binPeak_${peak}_hsw"] = hSW.toString()
+        if (vSW > 0f && hSW > 0f && redRects.isNotEmpty()) {
+            val compRectsUncleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
+            val blueRectsUncleaned = binPeakComputeBlueRectsPerRed(redRects, compRectsUncleaned)
+            val ocrRectsUncleaned = blueRectsUncleaned.map { shrinkBlueRectForOcr(it, imgW, imgH) }
+            val ocrUncleaned = ocrBinPeakRectsAsisAndDigits(workspace, b, paddleEngine, recBuffer, ocrRectsUncleaned)
+            blueRectsUncleaned.forEachIndexed { redK, fullBlue ->
+                val label = "Peak${peak}-uncleaned-Red${redK + 1}"
+                candidatesOut.add(RedBoxOcrCandidate(
+                    label,
+                    ocrUncleaned.asis.getOrElse(redK) { "?" },
+                    ocrUncleaned.digits.getOrElse(redK) { "?" },
+                    ocrUncleaned.asisProbs.getOrElse(redK) { "" },
+                    ocrUncleaned.digitsProbs.getOrElse(redK) { "" },
+                    fullBlue
+                ))
+            }
+
+            val uncleanedAnnotated = takeBinPeakAnnotatedSnapshot(b.mat, redRects, blueRectsUncleaned)
+            branch.images["binPeak_${peak}_uncleaned"] = uncleanedAnnotated
+
+            // Buffer-width percentage (0.20 of the binarized image width) for pump binPeak image-wide cleaning.
+            val useMaxW = 0.20f * b.mat.cols()
+            // timed per plan for cleaning process analysis
+            val tBlackoutStart = System.currentTimeMillis()
+            val editedIndices = NativeImageUtils.blackOutLargeAndSmallComponentsHWithEditedIndices(b.mat, vSW, hSW, useMaxW)
+            branch.metadata["binPeak_${peak}_blackout_ms"] = (System.currentTimeMillis() - tBlackoutStart).toString()
+            branch.metadata["binPeak_${peak}_edited_object_indices"] = JSONArray(editedIndices.toList()).toString()
+            if (generateP4) {
+                // Cleaned binary debug (Set C only): inline P4 base64 in JSON via per-photo fragment staging
+                branch.images["binPeak_${peak}_cleaned_p4"] = matToPbmP4Base64(b.mat)
+                Log.d(TAG, "stored P4 for cleaned peak=$peak")
+            }
+            val tCleanedStart = System.currentTimeMillis()
+            branch.metadata["binPeak_${peak}_cleaned_objects"] = componentStatsToJson(NativeImageUtils.getComponentStats(b.mat))
+            val compRectsCleaned = NativeImageUtils.findAllComponentsH(b.mat, vSW, hSW)
+            val blueRectsCleaned = binPeakComputeBlueRectsPerRed(redRects, compRectsCleaned)
+            val ocrRectsCleaned = blueRectsCleaned.map { shrinkBlueRectForOcr(it, imgW, imgH) }
+            val ocrCleaned = ocrBinPeakRectsAsisAndDigits(workspace, b, paddleEngine, recBuffer, ocrRectsCleaned)
+            blueRectsCleaned.forEachIndexed { redK, fullBlue ->
+                val label = "Peak${peak}-cleaned-Red${redK + 1}"
+                candidatesOut.add(RedBoxOcrCandidate(
+                    label,
+                    ocrCleaned.asis.getOrElse(redK) { "?" },
+                    ocrCleaned.digits.getOrElse(redK) { "?" },
+                    ocrCleaned.asisProbs.getOrElse(redK) { "" },
+                    ocrCleaned.digitsProbs.getOrElse(redK) { "" },
+                    fullBlue
+                ))
+            }
+
+            val cleanedAnnotated = takeBinPeakAnnotatedSnapshot(b.mat, redRects, blueRectsCleaned)
+            branch.images["binPeak_${peak}_cleaned"] = cleanedAnnotated
+            branch.metadata["binPeak_${peak}_cleaned_phase_ms"] = (System.currentTimeMillis() - tCleanedStart).toString()
+            val peakMs = System.currentTimeMillis() - tPeakStart
+            branch.metadata["t_binpeak_peak${peak}_ms"] = peakMs.toString()
+            Log.d(TAG, "binpeak peak=$peak took ${peakMs}ms (blackout=${branch.metadata["binPeak_${peak}_blackout_ms"]}, cleaned=${branch.metadata["binPeak_${peak}_cleaned_phase_ms"]})")
+
+            // b.mat cleared after cleaned work + optional P4 (when generateP4); reusable for next peak
+            b.mat.setTo(org.opencv.core.Scalar(0.0))
+        }
+    }
+}
+
+private fun generateHistogramB64(mat: org.opencv.core.Mat, floorPercentile: Float, mask: org.opencv.core.Mat? = null): String {
     if (mat.empty()) return ""
     val hist = org.opencv.core.Mat()
-    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
+    // Support optional mask for red-box histograms (per approved plan for Set C). When mask provided, calc is restricted to those pixels (exact reuse of polarity probe pattern).
+    org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), mask ?: org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
 
     val bins = FloatArray(64); hist.get(0, 0, bins)
 
-    // 62px wide to exclude 0 and 63 bins
-    val bmp = Bitmap.createBitmap(62, 100, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
+    // 186px wide to exclude 0 and 63 bins
+    val bmp = Bitmap.createBitmap(186, 300, Bitmap.Config.ARGB_8888); val canvas = Canvas(bmp)
     canvas.drawColor(Color.BLACK)
     val paint = Paint()
 
-    // Ignore bins 0 and 63 for scaling to see the peaks clearly
+    // Display-only: ignore bins 0 and 63 for scaling/readability (binPeak selection scans all 64 combined bins via findPeaksFromHistBins but filters to positive-count bins).
     val maxVal = (1..62).maxOf { bins[it] }.toDouble().coerceAtLeast(1.0)
 
     for (i in 1..62) {
-        val h = (bins[i] / maxVal * 80.0).toInt().coerceAtMost(80)
-        val x = (i - 1).toFloat()
-        paint.color = Color.WHITE; canvas.drawRect(x, (80 - h).toFloat(), x + 1f, 80f, paint)
+        val h = (bins[i] / maxVal * 240.0).toInt().coerceAtMost(240)
+        val x = ((i - 1) * 3).toFloat()
+        paint.color = Color.WHITE; canvas.drawRect(x, (240 - h).toFloat(), x + 3f, 240f, paint)
 
-        if (i % 8 == 0) { paint.color = Color.RED; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
-        if (i == (floorPercentile * 63).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(x, 82f, x + 1f, 90f, paint) }
+        if (i % 8 == 0) { paint.color = Color.RED; canvas.drawRect(x, 246f, x + 3f, 270f, paint) }
+        if (i == (floorPercentile * 63).toInt()) { paint.color = Color.YELLOW; canvas.drawRect(x, 246f, x + 3f, 270f, paint) }
     }
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
@@ -715,12 +2921,56 @@ private fun generateCdfB64(mat: org.opencv.core.Mat, floorPercentile: Float): St
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
 
+private fun parseBinPeakKeyToPeakNum(key: String): Int? {
+    if (!key.startsWith("binPeak_")) return null
+    val rest = key.removePrefix("binPeak_")
+    rest.toIntOrNull()?.let { return it }
+    if (rest.endsWith("_uncleaned")) return rest.removeSuffix("_uncleaned").toIntOrNull()
+    if (rest.endsWith("_cleaned")) return rest.removeSuffix("_cleaned").toIntOrNull()
+    return null
+}
+
+private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String {
+    val blueMethodPrefixes = listOf("Set B", "Set C", "Set D", "Set E", "Set F", "Set G")
+    if (blueMethodPrefixes.none { flowName.startsWith(it) }) return ""
+    val peakNums = br.images.keys.mapNotNull { parseBinPeakKeyToPeakNum(it) }.distinct()
+    if (peakNums.isEmpty()) return ""
+    val sorted = peakNums.map { peak ->
+        peak to (br.metadata["binPeak_${peak}_count"]?.toIntOrNull() ?: 0)
+    }.sortedByDescending { it.second }
+    return buildString {
+        append("<br><div style='margin-top:4px;'><b>Binarized by redbox peaks (range ±$BIN_PEAK_BINARIZE_DELTA, highest peak height to lowest):</b></div>")
+        sorted.forEach { (peak, height) ->
+            br.images["binPeak_${peak}_uncleaned"]?.let { b64 ->
+                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
+                append("<br><small>peak=$peak original (uncleaned components)</small><br>")
+            }
+            br.images["binPeak_${peak}_cleaned"]?.let { b64 ->
+                append("<img src='data:image/jpeg;base64,$b64' style='max-width:100%;'>")
+                append("<br><small>peak=$peak cleaned (after blackOut)</small><br>")
+            }
+        }
+    }
+}
+
+private const val PUMP_PD_TARGET_W = 340
+private const val PUMP_PD_TARGET_H = 255
+private const val PUMP_CROP_TARGET_W = 150
+private const val PUMP_CROP_TARGET_H = 75
+private const val PUMP_C_VISUAL_TARGET_W = 340
+private const val PUMP_SMALL_TARGET_W = 180
+private const val PUMP_PER_RED_TARGET_W = 120
+private const val BIN_PEAK_BINARIZE_DELTA = 8
+private const val PER_PHOTO_FRAGMENT_BUFFER_BYTES = 4 * 1024 * 1024
+
 private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
     appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
-    flows.toSortedSet().forEach { flow ->
-        appendLine("<th style='width:350px;'>$flow ML</th>")
+    val sorted = flows.toSortedSet()
+    val hasML = if (sorted.isNotEmpty()) setOf(sorted.first()) else emptySet()  // data-driven from subBranches presence (ML only on first/A); no name if; matches row hasML intent
+    sorted.forEach { flow ->
+        if (flow in hasML) appendLine("<th style='width:350px;'>$flow ML</th>")
         appendLine("<th style='width:350px;'>$flow Paddle</th>")
     }
     appendLine("<th style='width:600px;'>Final Comparison</th></tr>")
@@ -738,15 +2988,63 @@ private fun pBuildHtmlRowDynamic(
     deskewHtml: String,
     diagnostic: String = ""
 ): String = buildString {
-    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
+    // fix-remaining-report-issues-20260619-plan: whitelist t_total_flow_ms + minimal essentials only; full timing stays in JSON
+    val htmlMetaWhitelist = setOf("t_total_flow_ms", "img_w", "img_h")
+    val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) ->
+        k in htmlMetaWhitelist && v.length <= 100
+    }.joinToString("<br>") { (k, v) -> "<small>$k: $v</small>" }
     val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt:</b> $tilt<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:14px;'><small>$deskewHtml</small></td></tr></table></td>")
 
+    val perSetTilts = root.subBranches.toSortedMap().entries
+        .joinToString(" | ") { (name, br) -> "$name: ${br.metadata["tilt"] ?: "?"}°" }
+    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><span style=\"font-size:6px\"><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span></td>")
+
+    val hasML = root.subBranches.filter { (_, br) -> br.images.containsKey("ML") && br.images["ML"]?.isNotEmpty() == true }.keys.toSet()  // data-driven from subBranches presence, no name if
     root.subBranches.toSortedMap().forEach { (name, br) ->
-        appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
-        appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,${br.images["PD"]}'></td>")
+        if (name in hasML) {
+            appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
+        }
+        val pdB64 = br.images["PD"] ?: ""
+        val binPeakHtml = buildBinPeakHtmlForBranch(name, br)
+        if (br.images.containsKey("PD_red_only")) {
+            // red-only + full PD pair (when branch populates the key from explicit helper call)
+            val redOnly = br.images["PD_red_only"] ?: ""
+            val full = br.images["PD"] ?: ""
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small>$binPeakHtml</td>")
+        } else if (br.images.containsKey("rawC")) {
+            val raw = br.images["rawC"] ?: ""
+            val pushed = br.images["pushedC"] ?: ""
+            val hB = br.images["histBeforeC"] ?: ""
+            val hA = br.images["histAfterC"] ?: ""
+            // Per-redbox hists + labels from redboxDataC (h/w/area pixels + bins for analysis)
+            // Dual visuals per red entry (red rect snapshot from crop + histogram snapshot from plot); 3-wide table, stacked h/w/area labels.
+            // (Removed outdated "YUV direct jpeg visuals per plan" / "YUV direct is the target" note.)
+            val rdataStr = br.metadata["redboxDataC"] ?: "[]"
+            val rdata = try { org.json.JSONArray(rdataStr) } catch (e: Exception) { org.json.JSONArray() }
+            // fix-4box-report-issues-20260619-plan: summary-only per-red text in HTML (full base64 in JSON metadata)
+            val perRedHtml = StringBuilder()
+            perRedHtml.append("<div style='margin-top:4px;'><b>Per Red Box Summary (${rdata.length()} boxes; see JSON for full data):</b></div>")
+            val sortedData = (0 until rdata.length()).map { rdata.getJSONObject(it) }.sortedByDescending { it.getInt("area") }
+            val numCols = 3
+            perRedHtml.append("<table style='width:100%; border:none; font-size:10px;'><tr>")
+            for (j in sortedData.indices) {
+                val s = sortedData[j]
+                val ii = s.getInt("index")
+                val hh = s.getInt("h")
+                val ww = s.getInt("w")
+                val aa = s.getInt("area")
+                perRedHtml.append("<td style='border:none; padding:2px; vertical-align:top; width:33%; text-align:center;'><small>Red${ii}: h=${hh} w=${ww} area=${aa}</small></td>")
+                if ((j + 1) % numCols == 0 && j < sortedData.size - 1) {
+                    perRedHtml.append("</tr><tr>")
+                }
+            }
+            perRedHtml.append("</tr></table>")
+            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:100%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:100%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:100%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:100%;'><br><small>After</small></td></tr></table>$perRedHtml<img src='data:image/jpeg;base64,$pdB64'>$binPeakHtml</td>")
+        } else {
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$binPeakHtml</td>")
+        }
     }
 
     appendLine("<td><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
@@ -777,15 +3075,15 @@ private fun pGetFullLandmarksFromJson(json: String?, engineName: String, imgW: I
 
 private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
     try {
-        if (targetDir.exists()) targetDir.deleteRecursively(); targetDir.mkdirs()
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            ZipInputStream(input).use { zis ->
-                var entry = zis.nextEntry; while (entry != null) {
-                    val file = File(targetDir, entry.name); if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }; zis.closeEntry(); entry = zis.nextEntry
-                }
+        targetDir.mkdirs() // additive extract: do not wipe prior contents
+        val input = context.contentResolver.openInputStream(uri) ?: return@withContext false
+        input.use {
+            ZipInputStream(it).use { zis ->
+                // flattenToBasename: images land flat at top-level of pump_photos (listFiles is non-recursive)
+                ZipExtractUtils.extractZipStreamToDir(zis, targetDir, flattenToBasename = true)
             }
-        }; true
-    } catch (e: Exception) { false }
+        }
+    } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
 }
 
 private fun pToEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
@@ -814,66 +3112,146 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int>
 }
 
 
-private suspend fun runDiscoveryPaddle(buffer: BufferSet, id: Int, paddleEngine: NativePaddleEngine): List<List<PumpHunk>> {
-    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList())
+private suspend fun runDiscoveryPaddle(
+    buffer: BufferSet,
+    id: Int,
+    paddleEngine: NativePaddleEngine,
+    contentW: Int,
+    contentH: Int,
+    scale: Int,
+    metadata: MutableMap<String, String>? = null
+): List<List<PumpHunk>> {
+    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+    if (metadata != null) {
+        metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
+        metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
+    }
 
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
 
-    val rawBlocks = OdometerOcrUtils.processPaddleHeatmap(res.heatmap, res.width, res.height, 1.0f, buffer.c[id])
-    val rawRects = rawBlocks.map { it.boundingBox }
+    val hist = res.heatmapHist ?: IntArray(0)
+    if (metadata != null && hist.isNotEmpty()) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
+    val rawRects = res.nativeBoxes.map { box ->
+        val p = box.points
+        val minX = minOf(p[0], p[2], p[4], p[6]).toInt()
+        val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
+        val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
+        val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
+        android.graphics.Rect(minX, minY, maxX, maxY)
+    }
 
-    // 1. Consolidate Raw Character Fragments (75% overlap rule)
-    val consolidated = OdometerOcrUtils.consolidateRects(rawRects, 0.75f)
+    // Pre-redbox detected hunks (tFullB equivalent from alignment Set J runBinTrialsPaddle).
+    // These are the raw objects from the detector (pre +1/denest/nonNested that produce the "raw red" tRawB-equivalent level).
+    // Used only for Set C: 1px white anns (to show each detected hunk) + as the "hunks" source for per-red overlap + Y-extend derivation of blue/orange.
+    // (The pdHunksRawTotal level remains the post-redbox "RED raw boxes" for display/anns/crops/mask.)
+    val hunksDetected = mutableListOf<PumpHunk>()
+    // Explicit pixel upscale once at ingest to full workspace/photo pixel space (using buffer full dims vs content/detect size).
+    // Replaces the prior worthless ICRS roundtrip (content for pixelToIcrs + full for later icrsToPixel); direct scale here.
+    // All pd* hunks now hold full pixel values in .rect from the start.
+    val fullW = buffer.p.width; val fullH = buffer.p.height
+    rawRects.forEach { r ->
+        val ml = r.left.toInt().coerceIn(0, masterW - 1)
+        val mt = r.top.toInt().coerceIn(0, masterH - 1)
+        val mr = r.right.toInt().coerceIn(0, masterW - 1)
+        val mb = r.bottom.toInt().coerceIn(0, masterH - 1)
+        val fl = ml * fullW.toFloat() / contentW
+        val ft = mt * fullH.toFloat() / contentH
+        val fr = mr * fullW.toFloat() / contentW
+        val fb = mb * fullH.toFloat() / contentH
+        hunksDetected.add(PumpHunk("", RectF(fl, ft, fr, fb)))
+    }
+
+    // Redbox improvement from Set J (alignment experiment) - first item per user directive.
+    // Move sides of detected box out by 1 pixel in low-res (this crop/detect-input space) before
+    // the explicit upscale to full (and before doing anything more: consolidate, native expand, hunks).
+    // Then remove nested red boxes (inset contains filter, matching alignment tRawB logic in runBinTrialsPaddle).
+    //
+    // Pump note (variable scale vs fixed in alignment): scaleFactor computed in caller scales.forEach
+    // (currentLongEdge vs target/scale + prepareScale 32-align outer/inner + process 1.0f on crop).
+    // Explicit upscale (full/content ratio) applied once here to produce full photo pixel rects for PumpHunk.rect.
+    // No ICRS roundtrip or erosion chain in the pd path.
+    // +1 here (in the post-process rect space) + nested removal is the ported math.
+    // Per clarification: the lowest level does the +1 adjustment; layers above (scale/prepare) apply the
+    // scale factor from there. Buffer sizes are multiples of 32x2 (for alignment), but the boxes themselves
+    // do not need to be.
+    val expandedRects = rawRects.map { r ->
+        android.graphics.Rect(
+            (r.left - 1).coerceAtLeast(0),
+            (r.top - 1).coerceAtLeast(0),
+            (r.right + 1).coerceAtMost(masterW - 1),
+            (r.bottom + 1).coerceAtMost(masterH - 1)
+        )
+    }
+    val nonNestedRects = expandedRects.filter { r1 ->
+        expandedRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
+    }
+
+    // 1. Consolidate Raw Character Fragments (75% overlap rule) -- now on improved (expanded + de-nested) raw redboxes
+    val consolidated = OdometerOcrUtils.consolidateRects(nonNestedRects, 0.75f)
 
     val hunksRaw = mutableListOf<PumpHunk>()
     val hunksExpanded = mutableListOf<PumpHunk>()
     val hunksMaxExtent = mutableListOf<PumpHunk>()
     val hunksNative = mutableListOf<PumpHunk>()
 
-    consolidated.forEach { rect ->
-        // Convert to absolute master pixels
+    // Build raw hunks from the non-nested expanded rects (pre-consolidate) so the RED raw boxes in reports
+    // show the individual +1 expanded and de-nested detections. Explicit upscale (full/content) once for full photo pixels.
+    nonNestedRects.forEach { rect ->
         val ml = rect.left.toInt().coerceIn(0, masterW - 1)
         val mt = rect.top.toInt().coerceIn(0, masterH - 1)
         val mr = rect.right.toInt().coerceIn(0, masterW - 1)
         val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
         val rawRect = android.graphics.Rect(ml, mt, mr, mb)
 
-        // Capture Consolidated Raw in ICRS
-        val ri1 = IcrsMath.pixelToIcrs(ml.toFloat(), mt.toFloat(), masterW, masterH)
-        val ri2 = IcrsMath.pixelToIcrs(mr.toFloat(), mb.toFloat(), masterW, masterH)
-        hunksRaw.add(PumpHunk("", RectF(ri1.x, ri1.y, ri2.x, ri2.y)))
+        val fl = ml * fullW.toFloat() / contentW
+        val ft = mt * fullH.toFloat() / contentH
+        val fr = mr * fullW.toFloat() / contentW
+        val fb = mb * fullH.toFloat() / contentH
+        hunksRaw.add(PumpHunk("", RectF(fl, ft, fr, fb)))
+    }
+
+    consolidated.forEach { rect ->
+        // Convert to absolute master pixels (coords still in the outer/crop space)
+        val ml = rect.left.toInt().coerceIn(0, masterW - 1)
+        val mt = rect.top.toInt().coerceIn(0, masterH - 1)
+        val mr = rect.right.toInt().coerceIn(0, masterW - 1)
+        val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
+        val rawRect = android.graphics.Rect(ml, mt, mr, mb)
 
         // 2. Perform Native Expansion (with Height-Relative Jump-Out and Retraction)
         val (retractedRect, maxExtentRect) = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
 
-        // Capture Expanded/Retracted result
-        val i1 = IcrsMath.pixelToIcrs(retractedRect.left.toFloat(), retractedRect.top.toFloat(), masterW, masterH)
-        val i2 = IcrsMath.pixelToIcrs(retractedRect.right.toFloat(), retractedRect.bottom.toFloat(), masterW, masterH)
-        hunksExpanded.add(PumpHunk("", RectF(i1.x, i1.y, i2.x, i2.y)))
+        // Capture Expanded/Retracted result -- explicit upscale to full pixel space (no content-size ICRS).
+        val fl = retractedRect.left * fullW.toFloat() / contentW
+        val ft = retractedRect.top * fullH.toFloat() / contentH
+        val fr = retractedRect.right * fullW.toFloat() / contentW
+        val fb = retractedRect.bottom * fullH.toFloat() / contentH
+        hunksExpanded.add(PumpHunk("", RectF(fl, ft, fr, fb)))
 
         // Capture Max Extent reach (Yellow tier)
-        val y1 = IcrsMath.pixelToIcrs(maxExtentRect.left.toFloat(), maxExtentRect.top.toFloat(), masterW, masterH)
-        val y2 = IcrsMath.pixelToIcrs(maxExtentRect.right.toFloat(), maxExtentRect.bottom.toFloat(), masterW, masterH)
-        hunksMaxExtent.add(PumpHunk("", RectF(y1.x, y1.y, y2.x, y2.y)))
+        val yfl = maxExtentRect.left * fullW.toFloat() / contentW
+        val yft = maxExtentRect.top * fullH.toFloat() / contentH
+        val yfr = maxExtentRect.right * fullW.toFloat() / contentW
+        val yfb = maxExtentRect.bottom * fullH.toFloat() / contentH
+        hunksMaxExtent.add(PumpHunk("", RectF(yfl, yft, yfr, yfb)))
     }
 
-    // Capture Native Results (Phase 2 A/B)
+    // Capture Native Results (Phase 2 A/B) -- explicit upscale using full/content ratio (no ICRS).
     res.nativeBoxes.forEach { box ->
         // Points are in input Mat pixels (crop-relative)
-        val icrsPoints = box.points.toList().chunked(2).map { (px, py) ->
-            IcrsMath.pixelToIcrs(px, py, masterW, masterH)
-        }
-
+        val scaleX = fullW.toFloat() / contentW
+        val scaleY = fullH.toFloat() / contentH
         var minX = Float.MAX_VALUE; var maxX = Float.MIN_VALUE
         var minY = Float.MAX_VALUE; var maxY = Float.MIN_VALUE
-        icrsPoints.forEach { p ->
-            if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x
-            if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y
+        box.points.toList().chunked(2).forEach { (px, py) ->
+            val sx = px * scaleX; val sy = py * scaleY
+            if (sx < minX) minX = sx; if (sx > maxX) maxX = sx
+            if (sy < minY) minY = sy; if (sy > maxY) maxY = sy
         }
         hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
     }
 
-    return listOf(hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
+    return listOf(hunksDetected, hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
 }
 
 
@@ -890,24 +3268,24 @@ private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
             val iterator = remaining.iterator()
             while (iterator.hasNext()) {
                 val next = iterator.next()
-                val interL = max(current.icrs.left, next.icrs.left); val interT = max(current.icrs.top, next.icrs.top)
-                val interR = min(current.icrs.right, next.icrs.right); val interB = min(current.icrs.bottom, next.icrs.bottom)
+                val interL = max(current.rect.left, next.rect.left); val interT = max(current.rect.top, next.rect.top)
+                val interR = min(current.rect.right, next.rect.right); val interB = min(current.rect.bottom, next.rect.bottom)
 
                 val overlapH = if (interB > interT) interB - interT else 0f
-                val minH = min(current.icrs.height(), next.icrs.height())
+                val minH = min(current.rect.height(), next.rect.height())
                 val significantOverlap = overlapH >= (minH * 0.3f)
 
-                val isNested = current.icrs.contains(next.icrs) || next.icrs.contains(current.icrs)
+                val isNested = current.rect.contains(next.rect) || next.rect.contains(current.rect)
 
                 if (significantOverlap || isNested) {
-                    val newIcrs = RectF(
-                        min(current.icrs.left, next.icrs.left),
-                        min(current.icrs.top, next.icrs.top),
-                        max(current.icrs.right, next.icrs.right),
-                        max(current.icrs.bottom, next.icrs.bottom)
+                    val newRect = RectF(
+                        min(current.rect.left, next.rect.left),
+                        min(current.rect.top, next.rect.top),
+                        max(current.rect.right, next.rect.right),
+                        max(current.rect.bottom, next.rect.bottom)
                     )
                     val bestText = if (current.text.count { it.isDigit() } >= next.text.count { it.isDigit() }) current.text else next.text
-                    current = PumpHunk(bestText, newIcrs)
+                    current = PumpHunk(bestText, newRect)
                     iterator.remove()
                     changed = true
                 }
@@ -920,23 +3298,22 @@ private fun mergeGeometryIntoHunks(allBlocks: List<PumpHunk>): List<PumpHunk> {
 
 private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: BufferSet, recBuffer: BufferSet, engine: String, paddleEngine: NativePaddleEngine, context: Context, angle: Float = 0f): List<PumpHunk> {
     val masterW = buffer.p.width; val masterH = buffer.p.height
-    val minEdge = Math.min(masterW, masterH).toFloat()
-    val maxX = masterW / (2f * minEdge); val maxY = masterH / (2f * minEdge)
-
+    // full pixel .rect already in master space (explicit upscale at ingest); no ICRS range/minEdge calc needed (relative math in callees equivalent)
     return hunks.map { hunk ->
-        val l = hunk.icrs.left.coerceIn(-maxX, maxX - 0.001f)
-        val t = hunk.icrs.top.coerceIn(-maxY, maxY - 0.001f)
-        val r = hunk.icrs.right.coerceIn(l + 0.001f, maxX)
-        val b = hunk.icrs.bottom.coerceIn(t + 0.001f, maxY)
+        val l = hunk.rect.left
+        val t = hunk.rect.top
+        val r = hunk.rect.right
+        val b = hunk.rect.bottom
 
-        val p1 = IcrsMath.icrsToPixel(l, t, masterW, masterH); val p2 = IcrsMath.icrsToPixel(r, b, masterW, masterH)
-        val pW = (p2.x - p1.x).toInt(); val pH = (p2.y - p1.y).toInt()
+        val pW = (r - l).toInt(); val pH = (b - t).toInt()
 
         if (pW < 2 || pH < 2) return@map hunk
 
-        val cropId = buffer.createCrop(l, t, r - l, b - t)
+        val cropId = buffer.createCrop(l.toInt(), t.toInt(), (r - l).toInt(), (b - t).toInt())
 
         val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
+        if (targetW <= 0 || targetH <= 0) return@map hunk  // guard for bad aspect / tiny derived box after prune to 4 largest (prevents OpenCV resize assertion inv_scale_x > 0 and NPE in downstream OCR for C/E on first/some photos)
+
         recBuffer.p.clear()
         val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
         val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
@@ -959,23 +3336,23 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
         }
 
         recBuffer.c[recCropId].release(); buffer.c[cropId].release()
-        PumpHunk(res.debugText, hunk.icrs)
+        PumpHunk(res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else "", hunk.rect)
     }
 }
 
 
 private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
     if (hunks.isEmpty()) return emptyList()
-    val sorted = hunks.sortedBy { it.icrs.left }
+    val sorted = hunks.sortedBy { it.rect.left }
     val result = mutableListOf<MutableList<PumpHunk>>()
 
     for (hunk in sorted) {
         var merged = false
         for (line in result) {
             val last = line.last()
-            val h = min(hunk.icrs.height(), last.icrs.height())
-            val vOverlap = max(0f, min(hunk.icrs.bottom, last.icrs.bottom) - max(hunk.icrs.top, last.icrs.top))
-            val hGap = hunk.icrs.left - last.icrs.right
+            val h = min(hunk.rect.height(), last.rect.height())
+            val vOverlap = max(0f, min(hunk.rect.bottom, last.rect.bottom) - max(hunk.rect.top, last.rect.top))
+            val hGap = hunk.rect.left - last.rect.right
 
             if (vOverlap > 0.7f * h && hGap < 1.0f * h) {
                 line.add(hunk)
@@ -987,13 +3364,13 @@ private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
     }
 
     return result.map { line ->
-        val l = line.minOf { it.icrs.left }
-        val t = line.minOf { it.icrs.top }
-        val r = line.maxOf { it.icrs.right }
-        val b = line.maxOf { it.icrs.bottom }
+        val l = line.minOf { it.rect.left }
+        val t = line.minOf { it.rect.top }
+        val r = line.maxOf { it.rect.right }
+        val b = line.maxOf { it.rect.bottom }
         val widest = r - l
-        val shortest = line.minOf { it.icrs.height() }
-        val centerY = line.map { it.icrs.centerY() }.average().toFloat()
+        val shortest = line.minOf { it.rect.height() }
+        val centerY = line.map { it.rect.centerY() }.average().toFloat()
 
         // Spec: inherit string with highest digit count
         val bestText = line.maxByOrNull { it.text.count { c -> c.isDigit() } }?.text ?: ""
@@ -1005,15 +3382,15 @@ private fun stitchHunksHorizontally(hunks: List<PumpHunk>): List<PumpHunk> {
 
 private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>, List<PumpHunk>> {
     if (hunks.isEmpty()) return Pair(emptyList(), emptyList())
-    val sortedY = hunks.sortedBy { it.icrs.centerY() }
+    val sortedY = hunks.sortedBy { it.rect.centerY() }
 
     val lanes = mutableListOf<MutableList<PumpHunk>>()
     for (hunk in sortedY) {
         var found = false
         for (lane in lanes) {
             val anchor = lane.first()
-            val h = anchor.icrs.height()
-            if (Math.abs(hunk.icrs.centerY() - anchor.icrs.centerY()) < 0.3f * h) {
+            val h = anchor.rect.height()
+            if (Math.abs(hunk.rect.centerY() - anchor.rect.centerY()) < 0.3f * h) {
                 lane.add(hunk)
                 found = true
                 break
@@ -1025,13 +3402,13 @@ private fun groupLanesByVerticalGap(hunks: List<PumpHunk>): Pair<List<PumpHunk>,
     if (lanes.size < 2) return Pair(hunks, emptyList())
 
     // Sort lanes by centerY
-    val sortedLanes = lanes.sortedBy { it.first().icrs.centerY() }
+    val sortedLanes = lanes.sortedBy { it.first().rect.centerY() }
 
     // Find largest gap between adjacent lanes
     var maxGap = -1f
     var splitIdx = 0
     for (i in 0 until sortedLanes.size - 1) {
-        val gap = sortedLanes[i+1].first().icrs.centerY() - sortedLanes[i].first().icrs.centerY()
+        val gap = sortedLanes[i+1].first().rect.centerY() - sortedLanes[i].first().rect.centerY()
         if (gap > maxGap) {
             maxGap = gap
             splitIdx = i
@@ -1048,15 +3425,18 @@ private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHun
 
     for (top in topLanes) {
         for (bottom in bottomLanes) {
-            val hB = bottom.icrs.height()
-            val gap = bottom.icrs.top - top.icrs.bottom
-            val vOverlap = max(0f, min(top.icrs.bottom, bottom.icrs.bottom) - max(top.icrs.top, bottom.icrs.top))
-            val xOverlap = max(0f, min(top.icrs.right, bottom.icrs.right) - max(top.icrs.left, bottom.icrs.left))
+            // integer pixel math for A exercised path (A data now has integer rects from prior Set A phases; no float height()/1.25f* etc here)
+            val hB = (bottom.rect.bottom.toInt() - bottom.rect.top.toInt()).coerceAtLeast(1)
+            val gap = (bottom.rect.top.toInt() - top.rect.bottom.toInt())
+            val vO = min(top.rect.bottom.toInt(), bottom.rect.bottom.toInt()) - max(top.rect.top.toInt(), bottom.rect.top.toInt())
+            val vOverlap = max(0, vO)
+            val xO = min(top.rect.right.toInt(), bottom.rect.right.toInt()) - max(top.rect.left.toInt(), bottom.rect.left.toInt())
+            val xOverlap = max(0, xO)
 
             val digitTop = top.text.count { it.isDigit() }
             val digitBottom = bottom.text.count { it.isDigit() }
 
-            if (gap < 1.25f * hB && vOverlap < 0.2f * hB && xOverlap > 0 && digitTop >= 2 && digitBottom >= 2) {
+            if (gap < (hB * 5) / 4 && vOverlap < (hB / 5) && xOverlap > 0 && digitTop >= 2 && digitBottom >= 2) {
                 pairs.add(Pair(top, bottom))
             }
         }
@@ -1073,18 +3453,21 @@ private fun findBestLanePair(topLanes: List<PumpHunk>, bottomLanes: List<PumpHun
     }
 }
 
-private fun expandHunkContext(hunk: PumpHunk, maxX: Float, maxY: Float): PumpHunk {
-    val h = hunk.icrs.height()
-    val newH = h * 1.5f
-    val dy = (newH - h) / 2f
-    val dx = newH // Horizontal expansion is value of NEW height on EACH side
-
-    val l = (hunk.icrs.left - dx).coerceIn(-maxX, maxX - 0.001f)
-    val t = (hunk.icrs.top - dy).coerceIn(-maxY, maxY - 0.001f)
-    val r = (hunk.icrs.right + dx).coerceIn(l + 0.001f, maxX)
-    val b = (hunk.icrs.bottom + dy).coerceIn(t + 0.001f, maxY)
-
-    return PumpHunk(hunk.text, RectF(l, t, r, b))
+private fun expandHunkContext(hunk: PumpHunk, imgW: Int, imgH: Int): PumpHunk {
+    // Set A exercised path only: integer pixel 1.5x expand (no float math, no 1.5f /2f, no .toFloat roundtrips in expand; direct int arith + clamp for min size; produces integer-valued rect for takeCrop/snapshot in A final crops)
+    val l = hunk.rect.left.toInt()
+    val t = hunk.rect.top.toInt()
+    val r = hunk.rect.right.toInt()
+    val b = hunk.rect.bottom.toInt()
+    val h = (b - t).coerceAtLeast(1)
+    val newH = (h * 3 + 1) / 2  // integer 1.5x
+    val dy = newH / 2
+    val dx = newH
+    val nl = (l - dx).coerceIn(0, imgW - 1)
+    val nt = (t - dy).coerceIn(0, imgH - 1)
+    val nr = (r + dx).coerceIn(nl + 1, imgW)
+    val nb = (b + dy).coerceIn(nt + 1, imgH)
+    return PumpHunk(hunk.text, RectF(nl.toFloat(), nt.toFloat(), nr.toFloat(), nb.toFloat()))
 }
 
 private fun applyRecognitionHeuristics(text: String): String {
@@ -1098,9 +3481,7 @@ private fun drawHunksOnBitmap(bmp: Bitmap, hunks: List<PumpHunk>, color: Int, ex
     val canvas = existingCanvas ?: Canvas(out)
     val paint = Paint().apply { this.color = color; style = Paint.Style.STROKE; strokeWidth = 10f }
     hunks.forEach { hunk ->
-        val p1 = IcrsMath.icrsToPixel(hunk.icrs.left, hunk.icrs.top, bmp.width, bmp.height)
-        val p2 = IcrsMath.icrsToPixel(hunk.icrs.right, hunk.icrs.bottom, bmp.width, bmp.height)
-        canvas.drawRect(p1.x, p1.y, p2.x, p2.y, paint)
+        canvas.drawRect(hunk.rect.left, hunk.rect.top, hunk.rect.right, hunk.rect.bottom, paint)
     }
     return out
 }
@@ -1117,97 +3498,6 @@ private fun pumpCreateScaledBase64(bitmap: Bitmap, targetWidth: Int, quality: In
 private fun JSONObject.pPutSafe(key: String, value: Double, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentPump", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 private fun JSONObject.pPutSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentPump", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
-private suspend fun pRunMLKitIterative(
-    displayName: String,
-    masterBuffer: Any,
-    mWidth: Int,
-    mHeight: Int,
-    winnerRef: PumpReferenceCache,
-    vehicleBufferSets: Map<Int, BufferSet>,
-    experimentRecSet320x48: BufferSet,
-    report: MutableMap<String, OcrHarnessResult>,
-    targetRefMap: MutableMap<String, RefinementTrace>
-) {
-    val tH0 = System.currentTimeMillis()
-    val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
-    val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
-    val jsonStages = com.google.gson.JsonObject()
-    val allOdo = mutableListOf<String>()
 
-    val l = winnerRef.vehicle.odometerCropLeft ?: 0f
-    val t = winnerRef.vehicle.odometerCropTop ?: 0f
-    val r = winnerRef.vehicle.odometerCropRight ?: 1f
-    val b = winnerRef.vehicle.odometerCropBottom ?: 1f
-
-    val icrsRect = RectF(l, t, r, b)
-    val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, mWidth, mHeight)
-    val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, mWidth, mHeight)
-
-    val roiW = (p2.x - p1.x).toInt().coerceAtMost(mWidth)
-    val roiH = (p2.y - p1.y).toInt().coerceAtMost(mHeight)
-    val sX = p1.x.toInt().coerceIn(0, mWidth - 1)
-    val sY = p1.y.toInt().coerceIn(0, mHeight - 1)
-
-    val stages = listOf("Raw", "80% Stretch Only", "78% Stretch")
-    var lastThumb = ""
-    var tSnTotal = 0L
-    val steps = mutableListOf<OcrStepResult>()
-
-    stages.forEach { stage ->
-        val tS0 = System.currentTimeMillis()
-        when (masterBuffer) {
-            is BufferSet -> {
-                odoBuffer.p.clear()
-                val interp = if (masterBuffer.c[winnerRef.vehicle.id].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                org.opencv.imgproc.Imgproc.resize(masterBuffer.c[winnerRef.vehicle.id].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
-            }
-        }
-
-        if (stage.contains("80%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.75f)
-        else if (stage.contains("78%")) OdometerOcrUtils.applyContrastStretch(odoBuffer.p.mat, 0.78f)
-
-        experimentRecSet320x48.p.clear()
-        val rSc = minOf(320f / odoBuffer.p.mat.cols(), 48f / odoBuffer.p.mat.rows())
-        val ew = ((odoBuffer.p.mat.cols() * rSc + 1).toInt() / 2) * 2
-        val eh = ((odoBuffer.p.mat.rows() * rSc + 1).toInt() / 2) * 2
-        val rCrId = experimentRecSet320x48.createCrop(0, 0, ew, eh)
-        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-
-        val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(experimentRecSet320x48.p.nv21, 320, 48, 0, com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21)
-        val vText = com.google.mlkit.vision.text.TextRecognition.getClient(com.google.mlkit.vision.text.latin.TextRecognizerOptions.DEFAULT_OPTIONS).process(img).await()
-        experimentRecSet320x48.c[rCrId].release()
-
-        val odoB = StringBuilder()
-        vText.textBlocks.forEach { blk ->
-            blk.lines.forEach { line ->
-                val cleaned = OdometerOcrUtils.clean7SegmentDigits(line.text, Math.abs(line.angle) > 135f).filter { it.isDigit() }
-                if (cleaned.isNotBlank()) odoB.append(cleaned)
-            }
-        }
-
-        val odoStr = odoB.toString()
-        allOdo.add(odoStr)
-        val tL = System.currentTimeMillis() - tS0
-        steps.add(OcrStepResult(stage, "", null, odoStr, emptyList(), emptyList(), null, null, emptyMap()))
-
-        val anns = mutableListOf<SnapshotAnnotation>()
-        val snX = odoBuffer.p.mat.cols().toFloat() / ew.toFloat()
-        val snY = odoBuffer.p.mat.rows().toFloat() / eh.toFloat()
-        vText.textBlocks.forEach { b ->
-            b.boundingBox?.let { anns.add(SnapshotAnnotation((it.left * snX).toInt(), (it.top * snY).toInt(), (it.right * snX).toInt(), (it.bottom * snY).toInt(), Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
-        }
-
-        val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
-        lastThumb = sB64
-        tSnTotal += ts
-        htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br><img src='data:image/jpeg;base64,$lastThumb'><br>$odoStr</div>")
-        val sObj = com.google.gson.JsonObject()
-        sObj.addProperty("text", odoStr)
-        sObj.addProperty("time", tL)
-        jsonStages.add(stage, sObj)
-    }
-
-    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, allOdo.firstOrNull { it.isNotBlank() }, lastThumb, System.currentTimeMillis() - tH0, tSnTotal)
-    report[displayName] = result
-    targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
-}
+                    // h/w/area kept from rect; collection to redboxDataC / redboxHistC_* / metadata unchanged.
+                    val redboxDataC = JSONArray()

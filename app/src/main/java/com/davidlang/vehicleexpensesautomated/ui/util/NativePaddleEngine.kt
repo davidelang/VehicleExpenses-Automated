@@ -7,6 +7,7 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.os.Build
 import android.util.Log
 import com.baidu.paddle.lite.MobileConfig
@@ -34,7 +35,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val height: Int,
         val metadata: Map<String, String> = emptyMap(),
         val nativeBoxes: List<DetectionBox> = emptyList(),
-        val outputTensor: Any? = null
+        val outputTensor: Any? = null,
+        val heatmapHist: IntArray? = null
     )
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
@@ -136,17 +138,19 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
 
         fun getOdoBuffer(context: Context, vehicle: com.davidlang.vehicleexpensesautomated.data.model.Vehicle): BufferSet {
-            val l = vehicle.odometerCropLeft ?: 0f; val t = vehicle.odometerCropTop ?: 0f
-            val r = vehicle.odometerCropRight ?: 1f; val b = vehicle.odometerCropBottom ?: 1f
-            
             val (refW, refH) = if (!vehicle.referenceDashPhotoUrl.isNullOrEmpty()) {
                 getReferenceDimensions(context, vehicle.referenceDashPhotoUrl)
             } else {
                 Pair(4000, 3072)
             }
 
-            val p1 = IcrsMath.icrsToPixel(l, t, refW, refH)
-            val p2 = IcrsMath.icrsToPixel(r, b, refW, refH)
+            val icrsRect = if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null && vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {
+                RectF(vehicle.odometerCropLeft, vehicle.odometerCropTop, vehicle.odometerCropRight, vehicle.odometerCropBottom)
+            } else {
+                IcrsMath.fullImageIcrsRect(refW, refH)
+            }
+            val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, refW, refH)
+            val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, refW, refH)
             val srcW = (p2.x - p1.x).toInt()
             val srcH = (p2.y - p1.y).toInt()
 
@@ -182,8 +186,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tStart = System.currentTimeMillis()
             Log.i("PaddleLite", "Initializing Global Rigid Buffers")
 
-            _bufferSetA = BufferSet(4000, 3072)
-            _bufferSetB = BufferSet(4000, 3072)
+            _bufferSetA = BufferSet(4080, 3072)
+            _bufferSetB = BufferSet(4080, 3072)
             _deskewBufferSetLarge = BufferSet(2048, 2048)
             _deskewBufferSetLarge!!.p.clearChroma()
             _deskewBufferSetLarge!!.s.clearChroma()
@@ -197,7 +201,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _bufferSmall = FloatArray(1 * 512 * 128)
             _bufferRec = FloatArray(1 * 320 * 48)
 
-            _sharedNv21Buffer = ByteArray(4000 * 3072 * 3 / 2)
+            _sharedNv21Buffer = ByteArray(4080 * 3072 * 3 / 2)
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
 
             _redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
@@ -324,12 +328,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // Zero-Copy Native Post-Processing (Phase 2) — MUST run before floatData
             // to avoid tensor pointer invalidation from Java-side copy
             val tNativePost0 = System.nanoTime()
-            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
+            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
+            var hist: IntArray? = null
             if (nativeRes != null) {
-                for (i in 0 until (nativeRes.size / 9)) {
+                val boxFloats = nativeRes.size - 100
+                val nboxes = boxFloats / 9
+                for (i in 0 until nboxes) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)
                     for (p in 0 until 4) {
@@ -339,6 +346,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
+                hist = IntArray(100)
+                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
             }
 
             val tCopy0 = System.nanoTime()
@@ -356,7 +365,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor, hist)
 
         } catch (t: Throwable) {
             Log.e("PaddleDetect", "Detection failed", t); return null
@@ -396,12 +405,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // Zero-Copy Native Post-Processing (Phase 2) — MUST run before floatData
             // to avoid tensor pointer invalidation from Java-side copy
             val tNativePost0 = System.nanoTime()
-            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.20f, 10f)
+            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
+            var hist: IntArray? = null
             if (nativeRes != null) {
-                for (i in 0 until (nativeRes.size / 9)) {
+                val boxFloats = nativeRes.size - 100
+                val nboxes = boxFloats / 9
+                for (i in 0 until nboxes) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)
                     for (p in 0 until 4) {
@@ -411,6 +423,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
+                hist = IntArray(100)
+                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
             }
             val tCopy0 = System.nanoTime()
             val heatmap = if (copyHeatmap) outputTensor.floatData else null
@@ -427,7 +441,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h)
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor)
+            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor, hist)
         } catch (t: Throwable) {
             Log.e("PaddleDetect", "Dynamic detection failed", t)
             return null
@@ -476,19 +490,22 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_jni_out_ms" to "%.3f".format(tJniOut)
             )
 
-            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder()
+            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder(); val perCharProbsBuilder = StringBuilder()
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
 
             for (i in 0 until seqLen) {
                 var maxIdx = 0; var maxVal = -1f; val searchLimit = dictSize
                 for (j in 0 until searchLimit) { val v = data[i * dictSize + j]; if (v > maxVal) { maxVal = v; maxIdx = j } }
                 if (maxIdx > 0 && maxIdx != lastIdx && maxIdx <= dictionary.size) {
-                    result.append(dictionary[maxIdx - 1]); totalConf += maxVal; charCount++; lastConf = maxVal
+                    val ch = dictionary[maxIdx - 1]
+                    result.append(ch); totalConf += maxVal; charCount++; lastConf = maxVal
+                    if (perCharProbsBuilder.isNotEmpty()) perCharProbsBuilder.append(",")
+                    perCharProbsBuilder.append("${ch}:${"%.2f".format(maxVal)}")
                 }
                 lastIdx = maxIdx
             }
             val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
-            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()))
+            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()), perCharProbs = perCharProbsBuilder.toString())
         } catch (t: Throwable) {
             return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
         }
@@ -536,7 +553,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_jni_out_ms" to "%.3f".format(tJniOut)
             )
 
-            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder()
+            val seqLen = dims[1].toInt(); val dictSize = dims[2].toInt(); val result = StringBuilder(); val probs = StringBuilder(); val perCharProbsBuilder = StringBuilder()
             var lastIdx = -1; var totalConf = 0f; var charCount = 0; var lastConf = 1.0f
 
             for (i in 0 until seqLen) {
@@ -559,6 +576,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     if (pass) {
                         result.append(char); totalConf += maxVal; charCount++; lastConf = maxVal
                         probs.append("%s(%.3f)".format(char, maxVal))
+                        if (perCharProbsBuilder.isNotEmpty()) perCharProbsBuilder.append(",")
+                        perCharProbsBuilder.append("${char}:${"%.2f".format(maxVal)}")
                     } else {
                         Log.w("PaddleOCR", "Pruning: Confidence drop too high for '$char' (Ratio: %.3f < %.3f)".format(maxVal, ratioThr))
                         probs.append("%s(%.3f!)".format(char, maxVal))
@@ -568,13 +587,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 lastIdx = maxIdx
             }
             val finalStr = result.toString(); val finalConf = if (charCount > 0) totalConf / charCount else 0f
-            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()))
+            return@withContext RecStageResult(finalStr, System.currentTimeMillis() - tStart, finalConf, null, mapOf("ocr_probs" to probs.toString()), perCharProbs = perCharProbsBuilder.toString())
         } catch (t: Throwable) {
             return@withContext RecStageResult("(Inference Error)", 0, 0f, null)
         }
     }
 
-    data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null, val metadata: Map<String, String> = emptyMap())
+    data class RecStageResult(val text: String, val timeMs: Long, val confidence: Float, val ocrInputB64: String? = null, val metadata: Map<String, String> = emptyMap(), val perCharProbs: String = "")
 
     override suspend fun recognize(input: Any): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
@@ -596,7 +615,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h), confidence = res.confidence)),
             imageWidth = w,
             imageHeight = h,
-            metadata = res.metadata
+            metadata = res.metadata,
+            perCharProbs = res.perCharProbs
         )
     }
 
@@ -620,7 +640,37 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h), confidence = res.confidence)),
             imageWidth = w,
             imageHeight = h,
-            metadata = res.metadata
+            metadata = res.metadata,
+            perCharProbs = res.perCharProbs
+        )
+    }
+
+    /**
+     * Decimal-aware numeric recognition for pump cost/volume (includes '.').
+     * Uses the same numeric model but the ALLOWED_DIGITS_DECIMAL constrained set.
+     */
+    suspend fun recognizeNumericDecimal(input: Any): OcrResult = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        val w: Int; val h: Int
+        when (input) {
+            is Bitmap -> { w = input.width; h = input.height }
+            is BufferSet.Slice -> { w = input.width; h = input.height }
+            is Mat -> { w = input.cols(); h = input.rows() }
+            else -> throw IllegalArgumentException("Unsupported input type for recognizeNumericDecimal")
+        }
+
+        if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Decimal Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
+
+        val res = processOcrNumeric(input, sharedRecognizerV3, dictionaryV3, ALLOWED_DIGITS_DECIMAL)
+        OcrResult(
+            engineName = "Paddle Numeric Decimal Greedy",
+            executionTimeMs = System.currentTimeMillis() - t0,
+            debugText = res.text,
+            textBlocks = listOf(TextBlock(res.text, Rect(0, 0, w, h), confidence = res.confidence)),
+            imageWidth = w,
+            imageHeight = h,
+            metadata = res.metadata,
+            perCharProbs = res.perCharProbs
         )
     }
 }

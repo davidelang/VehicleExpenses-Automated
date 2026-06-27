@@ -5,11 +5,20 @@
 #include <set>
 #include <mutex>
 #include <cstring>
+#include <new>
 #include "BufferSetHandle.h"
 
 #define LOG_TAG "BufferSet"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+static void logMatHeader(const char* tag, const cv::Mat* m) {
+    if (!m) { LOGI("MAT_HEADER: %s null", tag); return; }
+    LOGI("MAT_HEADER: %s cols=%d rows=%d dims=%d type=%d ch=%d flags=0x%x step0=%zu step1=%zu data=%p datastart=%p dataend=%p cont=%d empty=%d",
+         tag, m->cols, m->rows, m->dims, m->type(), m->channels(), m->flags,
+         m->step[0], (m->dims > 1 ? m->step[1] : 0), (void*)m->data,
+         (void*)m->datastart, (void*)m->dataend, m->isContinuous(), m->empty());
+}
 
 static std::set<BufferSetHandle*> validHandles;
 static std::mutex registryMutex;
@@ -82,19 +91,29 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
         LOGI("BufferSet resize reused: %dx%d logical=%zu capacity=%zu", width, height, needed, handle->allocatedByteCount);
     } else {
         size_t oldAllocated = handle->allocatedByteCount;
-        uint8_t* safe = bufferSetSafePointer(handle);
-        *(handle->yMat) = cv::Mat(1, 1, CV_8UC1, safe, 1);
-        *(handle->uvMat) = cv::Mat(1, 1, CV_8UC2, safe, 2);
-        *(handle->nv21Mat) = cv::Mat(1, 1, CV_8UC1, safe, 1);
-        if (handle->globalBuffer != nullptr) env->DeleteGlobalRef(handle->globalBuffer);
-        handle->globalBuffer = nullptr;
-        delete[] handle->data;
-        handle->data = nullptr;
-        uint8_t* newData = new uint8_t[needed];
-        if (newData == nullptr) return;
+        uint8_t* newData = new (std::nothrow) uint8_t[needed];
+        if (newData == nullptr) {
+            LOGE("BufferSet resize grow OOM: %dx%d needs %zu bytes (capacity %zu)", width, height, needed, oldAllocated);
+            return;
+        }
         std::memset(newData, 0, frameSize);
         std::memset(newData + frameSize, 128, needed - frameSize);
+        jobject localBuffer = env->NewDirectByteBuffer(newData, needed);
+        if (localBuffer == nullptr) {
+            LOGE("BufferSet resize grow failed: NewDirectByteBuffer for %zu bytes", needed);
+            delete[] newData;
+            return;
+        }
+        jobject newGlobalBuffer = env->NewGlobalRef(localBuffer);
+        if (newGlobalBuffer == nullptr) {
+            LOGE("BufferSet resize grow failed: NewGlobalRef");
+            delete[] newData;
+            return;
+        }
+        if (handle->globalBuffer != nullptr) env->DeleteGlobalRef(handle->globalBuffer);
+        delete[] handle->data;
         handle->data = newData;
+        handle->globalBuffer = newGlobalBuffer;
         handle->width = width;
         handle->height = height;
         handle->actualByteCount = needed;
@@ -102,8 +121,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
         *(handle->yMat) = cv::Mat((int)height, (int)width, CV_8UC1, newData, (size_t)width);
         *(handle->uvMat) = cv::Mat((int)height / 2, (int)width / 2, CV_8UC2, newData + (width * height), (size_t)width);
         *(handle->nv21Mat) = cv::Mat((int)height * 3 / 2, (int)width, CV_8UC1, newData, (size_t)width);
-        jobject localBuffer = env->NewDirectByteBuffer(newData, needed);
-        handle->globalBuffer = env->NewGlobalRef(localBuffer);
         LOGI("BufferSet resize grew: %dx%d to %zu bytes (was %zu)", width, height, needed, oldAllocated);
     }
 }
@@ -198,7 +215,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeUpdateCropMa
     auto* cropMat = reinterpret_cast<cv::Mat*>(cropMatPtr);
     auto* parentMat = reinterpret_cast<cv::Mat*>(parentMatPtr);
     if (cropMat != nullptr && parentMat != nullptr) {
+        LOGI("MAT_HEADER: nativeUpdateCropMat pre x=%d y=%d w=%d h=%d parent=%dx%d", x, y, w, h, parentMat->cols, parentMat->rows);
+        logMatHeader("pre_update_crop", cropMat);
+        logMatHeader("pre_update_parent", parentMat);
         *cropMat = (*parentMat)(cv::Rect(x, y, w, h));
+        logMatHeader("post_update_crop", cropMat);
+        logMatHeader("post_update_parent", parentMat);
     }
 }
 

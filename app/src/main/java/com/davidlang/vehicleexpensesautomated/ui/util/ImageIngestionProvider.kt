@@ -63,7 +63,12 @@ object ImageIngestionProvider {
         }
         val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeFile(path, options)
-        return Pair(options.outWidth, options.outHeight)
+        val w = options.outWidth
+        val h = options.outHeight
+        if (w <= 0 || h <= 0) {
+            Log.e(TAG, "probeDimensions non-positive for $path: ${w}x$h")
+        }
+        return Pair(w, h)
     }
 
     /**
@@ -95,6 +100,9 @@ object ImageIngestionProvider {
     ): IngestionMetadata {
         // We use LibRaw for dimensions as it's the source of truth for developed pixels
         val (probedW, probedH) = probeDimensions(context, path)
+        if (probedW <= 0 || probedH <= 0) {
+            throw IllegalStateException("Invalid DNG probe dimensions ${probedW}x$probedH for $path")
+        }
 
         // Step 1: Native Ingestion (Direct LibRaw -> YUV)
         NativeImageUtils.ingestDngToYuv(path, target)

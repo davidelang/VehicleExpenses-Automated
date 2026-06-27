@@ -7,6 +7,8 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.PorterDuff
 import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.Paint
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,38 +22,6 @@ import org.opencv.core.*
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
 
-import android.graphics.Paint
-
-/**
- * Simple Rect implementation for Float normalized coordinates.
- */
-data class RectF(val left: Float, val top: Float, val right: Float, val bottom: Float)
-
-/**
- * Represents a detected text region with both rotated points and axis-aligned bounds.
- * Mandated: All coordinates (points and boundingBox) are NORMALIZED (0.0 to 1.0).
- */
-data class DetectedBox(
-    val points: List<Point>,
-    val boundingBox: RectF,
-    val angle: Float
-)
-
-/**
- * Result of a DBNet discovery pass, containing raw suspicion and refined regions.
- */
-data class DbNetResult(
-    val rawBoxes: List<DetectedBox>,
-    val refinedBoxes: List<DetectedBox>,
-    val discoveryTimeMs: Long = 0,
-    val suspectCrops: List<RectF> = emptyList() // Phase 43: High-Res Sub-Window Targets
-)
-
-/**
- * Mandated: Normalized Rectangle (0.0 to 1.0)
- */
-data class NormalizedRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
-
 /**
  * Represents a single hunk of text found by an OCR engine.
  */
@@ -60,8 +30,6 @@ data class TextBlock(
     val boundingBox: Rect, // Final Crop Pixel coordinates
     val angle: Float = 0f,
     val points: List<org.opencv.core.Point> = emptyList(),
-    val rawDiscoveryBox: RectF? = null,    // RED tier
-    val refinedDiscoveryBox: RectF? = null, // ORANGE tier
     val metadata: Map<String, String> = emptyMap(),
     /**
      * Phase 109: Instance tracking for landmark disambiguation.
@@ -143,14 +111,14 @@ data class OcrResult(
     val heatmapWidth: Int = 0,
     val heatmapHeight: Int = 0,
     val discoveryHeatmap: FloatArray? = null,
-    val rawDiscoveryBoxes: List<RectF> = emptyList(),
     val scaleFactor: Float = 1.0f,
     val textBlocks: List<TextBlock> = emptyList(),
     val imageWidth: Int = 0,
     val imageHeight: Int = 0,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val metadata: Map<String, String> = emptyMap()
+    val metadata: Map<String, String> = emptyMap(),
+    val perCharProbs: String = ""
 ) {
     fun filterByCrops(odoCrop: android.graphics.RectF?, otherCrop: android.graphics.RectF?): OcrResult {
         val filteredBlocks = textBlocks.filter { block ->
@@ -222,6 +190,17 @@ class MlKitEngine : OcrEngine {
 }
 
 object OcrUtils {
+    fun icrsRectToSnapshotAnnotation(icrs: android.graphics.RectF, srcW: Int, srcH: Int): SnapshotAnnotation? {
+        val p1 = IcrsMath.icrsToPixel(icrs.left, icrs.top, srcW, srcH)
+        val p2 = IcrsMath.icrsToPixel(icrs.right, icrs.bottom, srcW, srcH)
+        val x1 = min(p1.x, p2.x).toInt().coerceIn(0, srcW)
+        val y1 = min(p1.y, p2.y).toInt().coerceIn(0, srcH)
+        val x2 = max(p1.x, p2.x).toInt().coerceIn(0, srcW)
+        val y2 = max(p1.y, p2.y).toInt().coerceIn(0, srcH)
+        return if (x1 < x2 && y1 < y2) SnapshotAnnotation(x1, y1, x2, y2, Shape.RECTANGLE, android.graphics.Color.RED, 2) else null
+    }
+
+
     /**
      * Stateless Native Snapshot Utility: Produces a high-fidelity Base64 JPEG thumbnail.
      * Supports Bitmap, Mat, and BufferSet.Slice sources.
@@ -230,7 +209,7 @@ object OcrUtils {
      * @param sourceRect Optional ROI within the source.
      * @param targetW Requested width for the thumbnail (aspect ratio preserved).
      * @param targetH Requested height for the thumbnail (aspect ratio preserved).
-     * @param annotations List of colored boxes/lines to draw.
+     * @param annotations List of SnapshotAnnotation (pixel Int coords) or RectF (ICRS Float coords). ICRS entries are converted internally using the actual srcW/srcH of the source buffer.
      * @param scratchArgb Optional reusable Bitmap for ARGB workspace.
      * @param scratchYuv Optional reusable BufferSet for YUV processing.
      */
@@ -239,7 +218,7 @@ object OcrUtils {
         sourceRect: Rect? = null,
         targetW: Int = 0,
         targetH: Int = 0,
-        annotations: List<SnapshotAnnotation> = emptyList(),
+        annotations: List<Any> = emptyList(),
         scratchArgb: Bitmap? = null,
         scratchYuv: BufferSet? = null
     ): Pair<String, Long> = withContext(Dispatchers.IO) {
@@ -285,11 +264,13 @@ object OcrUtils {
             finalW = roiW; finalH = roiH
         }
 
+        Log.d("ExperimentPump", "takeSnapshot: buffer pointed at ${srcW}x${srcH} (roi ${roiW}x${roiH}) target size ${targetW}x${targetH} (0=unlimited) final ${finalW}x${finalH}")
+
         // 2-pixel alignment for YUV
         finalW = ((finalW + 1) / 2) * 2
         finalH = ((finalH + 1) / 2) * 2
 
-        // Safety cap
+        // Safety cap. Display images for pump reports must use the PUMP_*_TARGET consts from ExperimentPumpScreen to match CSS containers.
         finalW = finalW.coerceIn(2, 4000)
         finalH = finalH.coerceIn(2, 3072)
 
@@ -302,6 +283,7 @@ object OcrUtils {
 
         workspace.clear()
         val snapCropId = workspace.createCrop(0, 0, finalW, finalH)
+        // Red box crop must be done by caller only (createCrop on the red rect pixel coords after pump optimization), then pass crop[id] (Slice) as source to takeSnapshot. This pattern is required. The pixel-vs-ICRS / ICRS-at-boundary optimization is pump red box only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops. takeSnapshot's internal output crop creation (snapCropId) is unchanged from alignment-tested behavior.
 
         try {
             when (source) {
@@ -316,7 +298,11 @@ object OcrUtils {
                     if (scratchArgb == null) localScratch.recycle()
                 }
                 is org.opencv.core.Mat -> {
-                    val sub = source.submat(org.opencv.core.Rect(roi.left, roi.top, roiW, roiH))
+                    val safeLeft = max(0, min(roi.left, srcW - 1))
+                    val safeTop = max(0, min(roi.top, srcH - 1))
+                    val safeW = min(roiW, srcW - safeLeft).coerceAtLeast(1)
+                    val safeH = min(roiH, srcH - safeTop).coerceAtLeast(1)
+                    val sub = source.submat(org.opencv.core.Rect(safeLeft, safeTop, safeW, safeH))
                     val graySub = if (sub.channels() == 4) {
                         val g = org.opencv.core.Mat()
                         Imgproc.cvtColor(sub, g, Imgproc.COLOR_RGBA2GRAY)
@@ -327,20 +313,36 @@ object OcrUtils {
                     sub.release()
                 }
                 is BufferSet.Slice -> {
-                    val subY = source.mat.submat(org.opencv.core.Rect(roi.left, roi.top, roiW, roiH))
+                    val safeLeft = max(0, min(roi.left, srcW - 1))
+                    val safeTop = max(0, min(roi.top, srcH - 1))
+                    val safeW = min(roiW, srcW - safeLeft).coerceAtLeast(1)
+                    val safeH = min(roiH, srcH - safeTop).coerceAtLeast(1)
+                    val subY = source.mat.submat(org.opencv.core.Rect(safeLeft, safeTop, safeW, safeH))
                     Imgproc.resize(subY, bufferSet.c[snapCropId].mat, bufferSet.c[snapCropId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
 
-                    val subUV = source.uvMat.submat(org.opencv.core.Rect(roi.left / 2, roi.top / 2, roiW / 2, roiH / 2))
+                    val subUV = source.uvMat.submat(org.opencv.core.Rect(safeLeft / 2, safeTop / 2, safeW / 2, safeH / 2))
                     Imgproc.resize(subUV, bufferSet.c[snapCropId].uvMat, bufferSet.c[snapCropId].uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
 
                     subY.release(); subUV.release()
                 }
             }
 
+            val pixelAnns = mutableListOf<SnapshotAnnotation>()
+            for (item in annotations) {
+                when (item) {
+                    is SnapshotAnnotation -> pixelAnns.add(item)
+                    is android.graphics.RectF -> {
+                        val conv = icrsRectToSnapshotAnnotation(item, srcW, srcH)
+                        if (conv != null) pixelAnns.add(conv)
+                    }
+                }
+            }
+            val allAnnsForScale = pixelAnns
+
             // Annotation scaling
             val scaleX = finalW.toFloat() / roiW.toFloat()
             val scaleY = finalH.toFloat() / roiH.toFloat()
-            val scaledAnns = annotations.map { ann ->
+            val scaledAnns = allAnnsForScale.map { ann ->
                 ann.copy(
                     x1 = ((ann.x1 - roi.left) * scaleX).toInt(),
                     y1 = ((ann.y1 - roi.top) * scaleY).toInt(),
