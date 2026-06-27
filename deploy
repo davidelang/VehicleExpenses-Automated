@@ -40,6 +40,24 @@
 #   ./deploy --install-data test-data-backups/<name>
 #   ./deploy --install-data test-data-backups/<name> tablet
 #
+# --restore-data and --install-data now bust Coil image cache (rm cache/*),
+# clear Room WAL/shm, touch vehicle_ref_*.jpg mtimes, write files/refdata_version.txt,
+# force-stop, and launch MainActivity with --activity-clear-task so ManageVehicles
+# shows the correct distinct Honda/Ford dash photos after a push (not stale Coil bitmaps).
+# Post-restore verify prints on-device md5 vs vehicle_refs.manifest and DB rows for id 1/2.
+#
+# To push specific phone-updated reference dash photos without a full backup (Honda/Ford):
+#   ./deploy --push-vehicle-refs /path/to/vehicle_ref_1778726321661.jpg /path/to/vehicle_ref_1778726533320.jpg
+#   ./deploy --push-vehicle-refs /path/to/dir/with/vehicle_ref_*.jpg tablet
+#   ./push-vehicle-refs.sh /path/to/dir tablet
+#   PUSH_VEHICLE_REFS_DIR=/path/to/dir ./deploy --push-vehicle-refs emulator
+# Expected md5 (phone refs): Honda vehicle_ref_1778726321661.jpg = 89912f28791fbbec046e62aedd9f474c;
+# Ford vehicle_ref_1778726533320.jpg = a077932aaa38780e404475cd1012ade8.
+# Crop coordinates in DB should be ICRS (raw pixels); legacy 0-1 values may still display if consistent.
+#
+# When capturing backups, optional VEHICLE_REFS_SOURCE_DIR=/local/dir skips device tar capture
+# and packages vehicle_ref_*.jpg from that dir (with vehicle_refs.manifest: size, mtime, md5).
+#
 # SAFETY: If PRESERVE_DATA is requested but a device has the app installed and
 # we fail to capture any backup data (DB or images), we will REFUSE to uninstall.
 # This prevents destroying your test data when backup or the subsequent build fails.
