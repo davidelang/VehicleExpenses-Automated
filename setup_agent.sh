@@ -135,10 +135,58 @@ else
     echo "Created symlink: ${BRANCH_NAME}.wt -> $AGENT_ID"
 fi
 
+# Files that use filter=manage-configs (see .gitattributes). Smudge substitutes @@ tokens.
+STAMPED_FILES=(
+  run-grok run-grok-master run-grok-planner
+  setup-project set-worktree-perms set-sandbox-perms
+)
+
+seed_smudge_inputs() {
+  local orch_root="$1"
+  if [ -f "$orch_root/project.config" ]; then
+    cp "$orch_root/project.config" ./project.config
+  fi
+  for f in filter-apply-config filter-clean-config; do
+    if [ -f "$orch_root/$f" ]; then
+      cp "$orch_root/$f" "./$f"
+    fi
+  done
+}
+
+re_smudge_stamped_files() {
+  local to_checkout=()
+  local f
+  for f in "${STAMPED_FILES[@]}"; do
+    if git cat-file -e "HEAD:$f" 2>/dev/null; then
+      to_checkout+=("$f")
+    fi
+  done
+  if [ "${#to_checkout[@]}" -gt 0 ]; then
+    git checkout HEAD -- "${to_checkout[@]}"
+  fi
+}
+
+verify_smudge() {
+  local failed=0
+  if [ ! -f project.config ]; then
+    echo "Error: project.config missing (smudge filters cannot run without it)."
+    return 1
+  fi
+  for f in "${STAMPED_FILES[@]}"; do
+    [ -f "$f" ] || continue
+    if grep -q '@@' "$f" 2>/dev/null; then
+      echo "Error: Unsubstituted @@ tokens remain in $f (smudge filter did not run correctly)."
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
 # 4. Populate worktree from branch tip (smudge runs during this step).
 cd "$AGENT_ID"
+ORCH_ROOT=".."
 # After --no-checkout the index is empty; 'git checkout .' matches nothing.
-# Checkout from HEAD tree so project.config + filter scripts are present for smudge.
+seed_smudge_inputs "$ORCH_ROOT"
 if ! git checkout HEAD -- .; then
   echo "Error: Failed to populate worktree (git checkout HEAD -- .)."
   cd ..
@@ -146,26 +194,18 @@ if ! git checkout HEAD -- .; then
   exit 1
 fi
 
-# Verify smudge filters ran (project.config must exist before checkout; @@ tokens must be gone after).
-SMUDGE_CHECK_FAILED=0
-if [ ! -f project.config ]; then
-  echo "Error: project.config missing after checkout (smudge filters cannot run without it)."
-  SMUDGE_CHECK_FAILED=1
-else
-  STAMPED_FILES=(
-    run-grok run-grok-master run-grok-planner
-    setup-project set-worktree-perms set-sandbox-perms
-  )
-  for f in "${STAMPED_FILES[@]}"; do
-    [ -f "$f" ] || continue
-    if grep -q '@@' "$f" 2>/dev/null; then
-      echo "Error: Unsubstituted @@ tokens remain in $f (smudge filter did not run correctly)."
-      SMUDGE_CHECK_FAILED=1
-    fi
-  done
+# Feature branches may predate filter fixes on orchestration; re-seed filters from
+# orchestration root and re-checkout stamped files so smudge uses the latest scripts.
+seed_smudge_inputs "$ORCH_ROOT"
+if ! re_smudge_stamped_files; then
+  echo "Error: Failed to re-smudge stamped files after seeding orchestration filters."
+  cd ..
+  git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
+  exit 1
 fi
-if [ "$SMUDGE_CHECK_FAILED" -ne 0 ]; then
-  echo "Hint: ensure project.config and filter-apply-config were copied before 'git checkout HEAD -- .'."
+
+if ! verify_smudge; then
+  echo "Hint: ensure orchestration root has project.config and working filter-apply-config."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
   exit 1
