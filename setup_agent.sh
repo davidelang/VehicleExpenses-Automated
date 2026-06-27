@@ -88,6 +88,9 @@ if [ -f .git/config ] && [ "$(stat -c '%U' .git/config 2>/dev/null || echo '')" 
   chmod 660 .git/config 2>/dev/null || true
 fi
 
+# Orchestration root (absolute) — used after cd into agent-N for seeding filters/config.
+ORCH_ROOT="$(pwd)"
+
 # 2. Create Worktree & Branch
 echo "Creating worktree for $AGENT_ID on branch $BRANCH_NAME..."
 
@@ -108,17 +111,6 @@ if [ "$WORKTREE_ERR" -ne 0 ]; then
     echo "Error: Failed to create worktree."
     exit 1
 fi
-
-# Copy project.config and filter scripts before checkout so smudge filters can
-# substitute @@ tokens during population.
-if [ -f project.config ]; then
-  cp project.config "$AGENT_ID/project.config"
-fi
-for f in filter-apply-config filter-clean-config; do
-  if [ -f "$f" ]; then
-    cp "$f" "$AGENT_ID/$f"
-  fi
-done
 
 # 3. Create convenience symlink for the branch
 if [ -e "${BRANCH_NAME}.wt" ]; then
@@ -154,16 +146,34 @@ seed_smudge_inputs() {
 }
 
 re_smudge_stamped_files() {
-  local to_checkout=()
-  local f
-  for f in "${STAMPED_FILES[@]}"; do
-    if git cat-file -e "HEAD:$f" 2>/dev/null; then
-      to_checkout+=("$f")
-    fi
-  done
-  if [ "${#to_checkout[@]}" -gt 0 ]; then
-    git checkout HEAD -- "${to_checkout[@]}"
+  # Apply orchestration's filter script directly (do not use git checkout smudge:
+  # the branch may ship an older broken filter-apply-config that git would invoke).
+  local f mode tmp
+  if [ ! -f ./filter-apply-config ]; then
+    echo "Error: filter-apply-config missing after seeding from $ORCH_ROOT"
+    return 1
   fi
+  if grep -q '\${!CONF_\${' ./filter-apply-config 2>/dev/null; then
+    echo "Error: filter-apply-config at $ORCH_ROOT still has broken indirect expansion."
+    echo "  Commit the fix on orchestration, then retry."
+    return 1
+  fi
+  for f in "${STAMPED_FILES[@]}"; do
+    if ! git cat-file -e "HEAD:$f" 2>/dev/null; then
+      continue
+    fi
+    tmp=".$f.smudged"
+    if ! git show "HEAD:$f" | bash ./filter-apply-config > "$tmp"; then
+      echo "Error: manual smudge failed for $f"
+      rm -f "$tmp"
+      return 1
+    fi
+    mv "$tmp" "$f"
+    mode=$(git ls-tree HEAD "$f" | awk '{print $1}')
+    case "$mode" in
+      100755|100775) chmod +x "$f" ;;
+    esac
+  done
 }
 
 verify_smudge() {
@@ -182,23 +192,21 @@ verify_smudge() {
   return "$failed"
 }
 
-# 4. Populate worktree from branch tip (smudge runs during this step).
+# 4. Populate worktree from branch tip, then manually smudge stamped files.
 cd "$AGENT_ID"
-ORCH_ROOT=".."
 # After --no-checkout the index is empty; 'git checkout .' matches nothing.
-seed_smudge_inputs "$ORCH_ROOT"
-if ! git checkout HEAD -- .; then
+# Bypass git smudge on bulk checkout — feature branches may carry broken filter scripts.
+if ! git -c filter.manage-configs.smudge=cat -c filter.manage-configs.clean=cat checkout HEAD -- .; then
   echo "Error: Failed to populate worktree (git checkout HEAD -- .)."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
   exit 1
 fi
 
-# Feature branches may predate filter fixes on orchestration; re-seed filters from
-# orchestration root and re-checkout stamped files so smudge uses the latest scripts.
+# Seed orchestration's project.config + filter scripts, then smudge stamped paths locally.
 seed_smudge_inputs "$ORCH_ROOT"
 if ! re_smudge_stamped_files; then
-  echo "Error: Failed to re-smudge stamped files after seeding orchestration filters."
+  echo "Error: Failed to smudge stamped files using orchestration filter scripts."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
   exit 1
