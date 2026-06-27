@@ -155,10 +155,8 @@ object OcrHarness {
 
             val paddleEngine = NativePaddleEngine(context, "Numeric")
             val recBuffer = NativePaddleEngine.recBufferSet
-            val cv = PumpCostVolUtils.runSetGCostVolExtraction(
-                masterBuffer, paddleEngine, recBuffer, masterBuffer.width, masterBuffer.height,
-                skipDeskew = true
-            )
+            // Set G extraction inlined in Phase 3; stub until then.
+            val cv = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
 
             val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }
             val volume = cv.vol.takeIf { it != "N/A" && it.isNotBlank() }
