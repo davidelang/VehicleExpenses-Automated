@@ -169,14 +169,14 @@ else
         git tag -f "$TAG_NAME"
         git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
 
-        # Lightweight local repair for .gradle (the most common source of "permission hell"
-        # after an agent build). This often removes the need to run the full sudo
-        # fix-perms globally.
-        if [ -d .gradle ]; then
-          echo "Quick local .gradle repair (2770/660 + setgid)..."
-          find .gradle -type d -exec chmod 2770 {} + 2>/dev/null || true
-          find .gradle -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
-        fi
+        # Post-build permission repair for all shared build directories
+        for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
+          if [ -d "$gdir" ]; then
+            echo "Quick $gdir permission repair (setgid + 660)..."
+            find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
+            find "$gdir" -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
+          fi
+        done
 
         exit 0
     else
