@@ -11,6 +11,10 @@ Read in full early on startup/new cycle to avoid discovery searches.
 - `dev-ai-interaction/implementation-failure-logs/` — scan on planner startup and "new planning cycle"
 - `dev-ai-interaction/.planning-agent-prompt.txt` — prompt written by master for planner restarts
 
+## At orchestration root (shared build homes)
+- `.gradle-shared/` — project-local `GRADLE_USER_HOME` for all builders (not per-user `~/.gradle`; created by `fix-perms`)
+- `.android-shared/` — project-local `ANDROID_USER_HOME` with canonical debug keystore (created by `fix-perms`)
+
 ## At worktree root
 - `ENGINEERING_LOG.md` (append-only at end)
 - `project-facts.md` (this file)
