@@ -78,3 +78,5 @@
   - New: enable-full-orchestration.sh (stampable opt-in); dual-mode update-rules (stamp vs full); explicit one-time stamp comments in setup-project; docs + migration notes.
   - See ENGINEERING_LOG.md and dev-ai-interaction/orchestration-layer-inventory-phase1.md for details.
   - Results ready to test (new tag via final build).
+
+Fix reference dash photo not displaying correctly for selected vehicle (Honda shows Ford dash) despite correct DB/files: update LaunchedEffect to react to vehicles list + force fresh disk load in EditCropsView by disabling Coil cache for reference photos
