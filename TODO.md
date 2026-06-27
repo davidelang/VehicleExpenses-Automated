@@ -66,6 +66,8 @@
 
 - [x] Executing plan dev-ai-interaction/plans/add-restore-data-flag-to-deploy-20260625-plan.md: add `--restore-data` standalone restore + source-zip backup/restore in `deploy`.
 
+- [x] Fix PR review blockers: single deskew in Quick Fill pump path, zip-slip on alignment/pump extractors, BufferSet OOM grow path (plan: dev-ai-interaction/plans/fix-pr-review-blockers-pump-quickfill-20260626-plan.md)
+
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
   - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md

@@ -1802,11 +1802,9 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
         val input = context.contentResolver.openInputStream(uri) ?: return@withContext false
         input.use {
             ZipInputStream(it).use { zis ->
-                var entry = zis.nextEntry; while (entry != null) {
-                    val file = File(targetDir, entry.name); if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }; zis.closeEntry(); entry = zis.nextEntry
-                }
+                ZipExtractUtils.extractZipStreamToDir(zis, targetDir, flattenToBasename = false)
             }
-        }; true
+        }
     } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
 }
 
