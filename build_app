@@ -149,6 +149,12 @@ else
     if [ -d "$ORCH_ROOT/.android-shared" ]; then
       export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
     fi
+    PLANNING_USER=$(sed -n 's/^planning_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
+    PLANNING_USER=${PLANNING_USER:-ai-planner}
+    if [ "$(id -un)" = "$PLANNING_USER" ]; then
+      echo "ERROR: Planning agents must not run Gradle builds. Policy violation."
+      exit 1
+    fi
     # Always go through build_app — direct gradlew/gradlew.bat is forbidden (breaks integrity, perms, tags).
     GRADLE_CMD=( "${GRADLE_ARGS[@]}" assembleDebug )
     (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_CMD[@]}")
