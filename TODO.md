@@ -64,16 +64,9 @@
 - Primary plan documents stay in the sandbox; project-facts.md is for enduring location facts only.
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
 
-# Current cycle
-- [x] make-zip-extract-additive-no-delete-both-pump-alignment-screens-20260624-plan: remove deleteRecursively from extract in both experiment screens (additive ZIP extract)
-- [x] clear-jsonfrag-per-row-20260623-plan: stream JSON per row + immediate frag delete
-- [x] pump-unzip-button-flatten-fix-and-first10-all-nonthumb-zips-to-device-20260623-plan: flatten pExtractZipToPhotos + deploy script --make-zips/--push-zips
-- [x] replace-mask-mat-with-direct-rect-run-walking-20260623-plan: direct H hist walk, no coverage mask
-- [x] integrate-stop-bufferset-realloc-from-master-20260623-plan: cherry-pick capacity-reuse nativeResize + HIST_DIAG from master
-- [x] log-mat-headers-to-diagnose-hist-setsize-crash-20260623-plan: MAT_HEADER dumps on crop/hist path
+- [x] Executing plan dev-ai-interaction/plans/add-restore-data-flag-to-deploy-20260625-plan.md: add `--restore-data` standalone restore + source-zip backup/restore in `deploy`.
 
-- [x] Fix full ZIP extract SAF permission, dir ownership, logging on both experiment screens (plan: fix-full-zip-extract-saf-permission-dir-ownership-logging-both-experiment-screens-20260624-plan.md)
-  - [x] Phases 1-10 complete; both experiment screens hardened
+- [ ] Integrate Set G pump cost/volume pipeline into Quick Fill pump mode (plan: dev-ai-interaction/plans/integrate-set-g-pump-cost-volume-into-quick-fill-20260625-plan.md)
 
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
