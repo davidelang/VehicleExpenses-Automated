@@ -10,6 +10,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.max
 
 data class AutoFillResult(
     val vehicleId: Int? = null,
@@ -131,6 +132,65 @@ object OcrHarness {
     }
 
     /**
+     * Quick Fill–only copy of Set G ("none, calculated") cost/volume extraction.
+     * Caller must deskew/rotate workspace first; no second deskew here.
+     */
+    private suspend fun extractQuickFillSetGCostVol(
+        workspace: BufferSet,
+        paddleEngine: NativePaddleEngine,
+        recBuffer: BufferSet,
+        imgW: Int,
+        imgH: Int
+    ): CostVolClassifyResult {
+        val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+
+        val scales = listOf(224, 608, 1024)
+        val pdHunksRawTotal = mutableListOf<PumpHunk>()
+        val pdHunksExpTotal = mutableListOf<PumpHunk>()
+        val pdHunksMaxTotal = mutableListOf<PumpHunk>()
+
+        scales.forEach { scale ->
+            val srcW = workspace.p.width
+            val srcH = workspace.p.height
+            val currentLongEdge = max(srcW, srcH)
+            val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+            val targetW = (srcW * scaleFactor).toInt()
+            val targetH = (srcH * scaleFactor).toInt()
+            val (outerId, innerId) = PumpCostVolUtils.prepareScale(workspace, scale)
+            val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale)
+            pdHunksRawTotal.addAll(paddleResults[1])
+            pdHunksExpTotal.addAll(paddleResults[2])
+            pdHunksMaxTotal.addAll(paddleResults[3])
+            workspace.c[innerId].release()
+            workspace.c[outerId].release()
+        }
+
+        PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+        PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+        PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+
+        val redPixelList = PumpCostVolUtils.hunksToRects(pdHunksRawTotal).toMutableList()
+        PumpCostVolUtils.pruneRectsToTopN(redPixelList, 6)
+        pdHunksRawTotal.clear()
+        pdHunksRawTotal.addAll(PumpCostVolUtils.rectsToHunks(redPixelList))
+        if (pdHunksRawTotal.isEmpty()) return na
+
+        val (customBlueGPre, _) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
+            pdHunksRawTotal, imgW, imgH, SET_G_VERT_FACTORS, SET_G_HORIZ_FACTOR
+        )
+        val customBluePixelG = PumpCostVolUtils.hunksToRects(customBlueGPre)
+        if (customBluePixelG.isEmpty()) return na
+
+        val ocrG = PumpCostVolUtils.ocrPumpRectsAsisAndDigits(
+            workspace, paddleEngine, recBuffer, customBluePixelG, imgW, imgH
+        )
+        val gCands = PumpCostVolUtils.buildRedBoxCandidates(
+            customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs
+        )
+        return PumpCostVolUtils.classifyCostVolFromBoxOcr(gCands)
+    }
+
+    /**
      * Set G pump cost/volume pipeline for Quick Fill pump mode.
      */
     suspend fun runPumpCostVolPipeline(
@@ -155,9 +215,8 @@ object OcrHarness {
 
             val paddleEngine = NativePaddleEngine(context, "Numeric")
             val recBuffer = NativePaddleEngine.recBufferSet
-            val cv = PumpCostVolUtils.runSetGCostVolExtraction(
-                masterBuffer, paddleEngine, recBuffer, masterBuffer.width, masterBuffer.height,
-                skipDeskew = true
+            val cv = extractQuickFillSetGCostVol(
+                masterBuffer, paddleEngine, recBuffer, masterBuffer.width, masterBuffer.height
             )
 
             val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }

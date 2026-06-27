@@ -664,15 +664,12 @@ object PumpCostVolUtils {
         paddleEngine: NativePaddleEngine,
         recBuffer: BufferSet,
         imgW: Int,
-        imgH: Int,
-        skipDeskew: Boolean = false
+        imgH: Int
     ): CostVolClassifyResult {
         val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
-        if (!skipDeskew) {
-            val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
-            val tilt = -deskewRes.paddleCppAngle
-            OdometerOcrUtils.rotate(workspace, tilt)
-        }
+        val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+        val tilt = -deskewRes.paddleCppAngle
+        OdometerOcrUtils.rotate(workspace, tilt)
 
         val scales = listOf(224, 608, 1024)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
