@@ -654,4 +654,62 @@ object PumpCostVolUtils {
             digitsProbs = digitsPairs.map { it.second }
         )
     }
+
+    /**
+     * Set G ("none, calculated") cost/volume extraction: multi-scale red discovery,
+     * cross-scale filter, prune to top 6, calculated blue expansion, OCR, classify.
+     */
+    suspend fun runSetGCostVolExtraction(
+        workspace: BufferSet,
+        paddleEngine: NativePaddleEngine,
+        recBuffer: BufferSet,
+        imgW: Int,
+        imgH: Int
+    ): CostVolClassifyResult {
+        val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+        val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+        val tilt = -deskewRes.paddleCppAngle
+        OdometerOcrUtils.rotate(workspace, tilt)
+
+        val scales = listOf(224, 608, 1024)
+        val pdHunksRawTotal = mutableListOf<PumpHunk>()
+        val pdHunksExpTotal = mutableListOf<PumpHunk>()
+        val pdHunksMaxTotal = mutableListOf<PumpHunk>()
+
+        scales.forEach { scale ->
+            val srcW = workspace.p.width
+            val srcH = workspace.p.height
+            val currentLongEdge = max(srcW, srcH)
+            val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+            val targetW = (srcW * scaleFactor).toInt()
+            val targetH = (srcH * scaleFactor).toInt()
+            val (outerId, innerId) = prepareScale(workspace, scale)
+            val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale)
+            pdHunksRawTotal.addAll(paddleResults[1])
+            pdHunksExpTotal.addAll(paddleResults[2])
+            pdHunksMaxTotal.addAll(paddleResults[3])
+            workspace.c[innerId].release()
+            workspace.c[outerId].release()
+        }
+
+        doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+        doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+        doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+
+        val redPixelList = hunksToRects(pdHunksRawTotal).toMutableList()
+        pruneRectsToTopN(redPixelList, 6)
+        pdHunksRawTotal.clear()
+        pdHunksRawTotal.addAll(rectsToHunks(redPixelList))
+        if (pdHunksRawTotal.isEmpty()) return na
+
+        val (customBlueGPre, _) = createBlueAndOrangeHunksFromReds(pdHunksRawTotal, imgW, imgH)
+        val customBluePixelG = hunksToRects(customBlueGPre)
+        if (customBluePixelG.isEmpty()) return na
+
+        val ocrG = ocrPumpRectsAsisAndDigits(workspace, paddleEngine, recBuffer, customBluePixelG, imgW, imgH)
+        val gCands = buildRedBoxCandidates(
+            customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs
+        )
+        return classifyCostVolFromBoxOcr(gCands)
+    }
 }

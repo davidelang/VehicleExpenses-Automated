@@ -231,9 +231,61 @@ fun QuickFillupScreen(
                                     }
                                 }
                             } else {
-                                scope.launch(Dispatchers.Main) {
-                                    isProcessing = false
-                                    Toast.makeText(context, "Pump photo captured!", Toast.LENGTH_SHORT).show()
+                                scope.launch(Dispatchers.Default) {
+                                    try {
+                                        val result = OcrHarness.runPumpCostVolPipeline(
+                                            context = context,
+                                            masterBuffer = bufferSet,
+                                            debug = debugMode,
+                                            cameraRotationDegrees = rotation,
+                                            onStage = { stage, bmp ->
+                                                scope.launch(Dispatchers.Main) {
+                                                    stageLabel = stage
+                                                    displayBitmap = bmp
+                                                }
+                                            }
+                                        )
+                                        scope.launch(Dispatchers.Main) {
+                                            if (result.error != null) {
+                                                Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
+                                            } else {
+                                                result.volume?.let { gallons = it }
+                                                result.cost?.let { cost = it }
+                                                val filled = listOfNotNull(result.volume, result.cost)
+                                                if (filled.isNotEmpty()) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        "Pump: ${filled.joinToString(", ")}",
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                } else {
+                                                    Toast.makeText(context, "Pump photo captured!", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                            if (debugMode && result.debugJson != null) {
+                                                val timestamp = System.currentTimeMillis()
+                                                val file = File(
+                                                    context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS),
+                                                    "debug_ocr_pump_$timestamp.json"
+                                                )
+                                                file.writeText(result.debugJson)
+                                                Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("QuickFill", "Pump OCR Pipeline failed", e)
+                                        scope.launch(Dispatchers.Main) {
+                                            Toast.makeText(
+                                                context,
+                                                "Pump OCR failed: ${e.localizedMessage ?: "Unknown error"}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    } finally {
+                                        scope.launch(Dispatchers.Main) {
+                                            isProcessing = false
+                                        }
+                                    }
                                 }
                             }
                         } else {

@@ -67,6 +67,12 @@
 - [x] Executing plan dev-ai-interaction/plans/add-restore-data-flag-to-deploy-20260625-plan.md: add `--restore-data` standalone restore + source-zip backup/restore in `deploy`.
 
 - [ ] Integrate Set G pump cost/volume pipeline into Quick Fill pump mode (plan: dev-ai-interaction/plans/integrate-set-g-pump-cost-volume-into-quick-fill-20260625-plan.md)
+    - [x] Phase 1: Forensic reads
+    - [x] Phase 2: PumpCostVolUtils.kt (Set G classifier extracted)
+    - [x] Phase 3: ExperimentPumpScreen minimal delegation (top-level types + getFinal classify)
+    - [x] Phase 4: OcrHarness.runPumpCostVolPipeline + runSetGCostVolExtraction
+    - [x] Phase 5: QuickFillupScreen pump branch wiring
+    - [ ] Phase 6: Polish + final build verification
 
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.

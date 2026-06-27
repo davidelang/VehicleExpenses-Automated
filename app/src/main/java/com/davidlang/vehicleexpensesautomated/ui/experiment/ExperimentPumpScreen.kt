@@ -129,24 +129,7 @@ data class PumpPhotoResultSummary(
     val odometer: String?
 )
 
-data class PumpHunk(val text: String, val rect: RectF) // pixel coordinates in full workspace/photo space for this image
-
-private data class PumpRectOcrLists(
-    val asis: List<String>,
-    val digits: List<String>,
-    val asisProbs: List<String> = emptyList(),
-    val digitsProbs: List<String> = emptyList()
-)
-
-private data class RedBoxOcrCandidate(
-    val label: String,
-    val asis: String,
-    val digits: String,
-    val asisProbs: String = "",
-    val digitsProbs: String = "",
-    val rect: android.graphics.Rect? = null
-)
-data class PathResult(val cost: String, val vol: String, val costB64: String, val volB64: String)
+// PumpHunk, PumpRectOcrLists, RedBoxOcrCandidate, PathResult, CostVolClassifyResult: see PumpCostVolUtils.kt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -860,7 +843,7 @@ private suspend fun runPumpExperiment(
                     // complete-real-4box-per-column-wiring plan + docs/specs/PUMP_COST_VOLUME_CLASSIFIER_SPEC.md: per-column top-4 candidates drive cost/vol (~8 independent column/engine invocations); pathResults unchanged
                     if (candidates.isNotEmpty()) {
                         // fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: classify returns distinct clean digit strings (probs never in PathResult); crops from each cand's ocr rect
-                        val cv = classifyCostVolFromBoxOcr(candidates)
+                        val cv = PumpCostVolUtils.classifyCostVolFromBoxOcr(candidates)
                         val costCrop = cv.costCand.rect?.let { r ->
                             OcrUtils.takeSnapshot(ws.p, r, PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H, emptyList(), null, ws).first
                         } ?: ""
