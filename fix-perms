@@ -239,12 +239,12 @@ fix_worktree() {
   fi
 
   # Re-apply sandbox if present
-  if [ -d "$wt/$SANDBOX" ] && [ -x "$SCRIPT_DIR/fix-perms" ]; then
-    # avoid recursion, do minimal
+  if [ -d "$wt/$SANDBOX" ]; then
     chown -R :$SANDBOX_GROUP "$wt/$SANDBOX" 2>/dev/null || true
-    chown -R :$SHARED_GROUP "$wt/$SANDBOX" 2>/dev/null || true
     find "$wt/$SANDBOX" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + 2>/dev/null || true
   fi
+
+  git -C "$wt" config core.sharedRepository group 2>/dev/null || true
 
   # Log
   if [ -f "$wt/ENGINEERING_LOG.md" ]; then
@@ -306,6 +306,9 @@ fix_worktree() {
   for f in build_app deploy; do
     [ -f "$wt/$f" ] && chmod g+s "$wt/$f" 2>/dev/null || true
   done
+
+  # gradlew executable only by ai-code group (prevents planner)
+  [ -f "$wt/gradlew" ] && chmod 2750 "$wt/gradlew" 2>/dev/null || true
 
   # .gradle etc (basic)
   if [ -d "$wt/.gradle" ]; then
