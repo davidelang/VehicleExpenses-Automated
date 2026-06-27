@@ -19,12 +19,8 @@ PRIMARY_USER=${PRIMARY_USER:-dlang}
 # which produces a different certificate and triggers
 # INSTALL_FAILED_UPDATE_INCOMPATIBLE on deploy.
 if [ "$EUID" -eq 0 ]; then
-  echo "Re-executing as $PRIMARY_USER (not root) for consistent signing keystore..."
-  if [ -x ./run-as-primary ]; then
-    exec ./run-as-primary "$0" "$@"
-  else
-    exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
-  fi
+  echo "Re-executing as $PRIMARY_USER (not root)..."
+  exec sudo -E -u "$PRIMARY_USER" "$0" "$@"
 fi
 
 # Ensure group-writable creation for build artifacts and Gradle caches (660/770)
