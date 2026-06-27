@@ -36,12 +36,27 @@ if [[ "$BRANCH_NAME" =~ ^agent-[0-9]+$ ]]; then
     exit 1
 fi
 
-# 1. Determine next available agent-N ID
+is_valid_worktree_dir() {
+  local p="$1"
+  [ -f "$p/.git" ] && grep -q '^gitdir: ' "$p/.git" 2>/dev/null
+}
+
+# 1. Determine next available agent-N ID (reuse slot if prior setup left a non-worktree stub)
 N=1
-while [ -d "agent-$N" ]; do
+while true; do
+  if [ ! -d "agent-$N" ]; then
+    AGENT_ID="agent-$N"
+    break
+  fi
+  if is_valid_worktree_dir "agent-$N"; then
     N=$((N + 1))
+    continue
+  fi
+  echo "Removing stale non-worktree directory agent-$N (failed prior setup_agent run)..."
+  rm -rf "agent-$N"
+  AGENT_ID="agent-$N"
+  break
 done
-AGENT_ID="agent-$N"
 
 # Safety: refuse if branch name would conflict with an existing directory (other than the agent dir we chose)
 if [ -d "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "$AGENT_ID" ]; then
@@ -68,11 +83,26 @@ fi
 # 2. Create Worktree & Branch
 echo "Creating worktree for $AGENT_ID on branch $BRANCH_NAME..."
 
-# Pre-create the target directory and copy project.config (and the filter scripts)
-# *before* the worktree checkout. This ensures the smudge filter (filter-apply-config)
-# can find project.config in the target dir during population, so @@ tokens are
-# properly substituted with the local values right away.
-mkdir -p "$AGENT_ID"
+WORKTREE_ERR=0
+if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
+    git worktree add --no-checkout "$AGENT_ID" "$BRANCH_NAME" || WORKTREE_ERR=$?
+else
+    # Create from current master
+    git worktree add --no-checkout "$AGENT_ID" -b "$BRANCH_NAME" master || WORKTREE_ERR=$?
+    if [ "$WORKTREE_ERR" -eq 0 ]; then
+      # Create (or force-update) a lightweight tag for git describe to anchor on.
+      echo "Creating/updating lightweight tag ${BRANCH_NAME}-start for versioning..."
+      git tag -f "${BRANCH_NAME}-start" "$BRANCH_NAME" || WORKTREE_ERR=$?
+    fi
+fi
+
+if [ "$WORKTREE_ERR" -ne 0 ]; then
+    echo "Error: Failed to create worktree."
+    exit 1
+fi
+
+# Copy project.config and filter scripts before checkout so smudge filters can
+# substitute @@ tokens during population.
 if [ -f project.config ]; then
   cp project.config "$AGENT_ID/project.config"
 fi
@@ -81,24 +111,6 @@ for f in filter-apply-config filter-clean-config; do
     cp "$f" "$AGENT_ID/$f"
   fi
 done
-
-if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
-    git worktree add --no-checkout "$AGENT_ID" "$BRANCH_NAME"
-else
-    # Create from current master
-    git worktree add --no-checkout "$AGENT_ID" -b "$BRANCH_NAME" master
-    # Create (or force-update) a lightweight tag for git describe to anchor on.
-    # If a stale tag exists from a previously removed worktree/branch with the same name,
-    # we force it to the new branch's start point. This is the correct behavior when
-    # there is no current branch/worktree using that name.
-    echo "Creating/updating lightweight tag ${BRANCH_NAME}-start for versioning..."
-    git tag -f "${BRANCH_NAME}-start" "$BRANCH_NAME"
-fi
-
-if [ $? -ne 0 ]; then
-    echo "Error: Failed to create worktree."
-    exit 1
-fi
 
 # 3. Create convenience symlink for the branch
 if [ -e "${BRANCH_NAME}.wt" ]; then
@@ -148,7 +160,12 @@ fi
 # Now populate the worktree contents. Because we pre-copied project.config and the
 # filter scripts, the smudge filters will run with the config available and
 # perform the proper substitutions for @@ tokens.
-git checkout .
+if ! git checkout .; then
+  echo "Error: Failed to populate worktree (git checkout .)."
+  cd ..
+  git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
+  exit 1
+fi
 
 if [ "$(id -un)" != "$PRIMARY_USER" ] && [ "$EUID" -ne 0 ]; then
   sudo -u "$PRIMARY_USER" git config core.sharedRepository group
