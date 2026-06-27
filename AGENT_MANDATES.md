@@ -246,7 +246,7 @@ Planners may edit the tracked `project-facts.md` (and `TODO.md`) as explicit exc
   - Good examples: locations of mandates, sandbox subdirectories (plans/, historical-plans/, implementation-failure-logs/), launchers, update-rules, core source directories that are unlikely to move, coordinate policy, absolute sandbox path for writes.
 - **Update discipline**:
   - Only add or correct facts about where stable things live or unchanging conventions.
-  - Detailed progress, plan references, and effort narrative go exclusively to the active plan document or (append-only) ENGINEERING_LOG.md.
+  - Detailed progress, plan references, and effort narrative go exclusively to the active plan document or (append-only) ENGINEERING_LOG.md (all appends MUST use the `./append-to-engineering-log` wrapper exclusively).
 - **Mandatory full read + hygiene**:
   - On launch, new cycle, or before any edit: read the *entire* project-facts.md (use read_file with no offset/limit).
   - Prune anything non-stable. Keep the file small and high-signal so startup re-orientation is fast.
@@ -255,10 +255,12 @@ Planners may edit the tracked `project-facts.md` (and `TODO.md`) as explicit exc
 
 **ENGINEERING_LOG.md Rules (append-only activity log)**
 - ENGINEERING_LOG.md is strictly **append-only**. Agents must *only* append new dated entries at the very end of the file.
+- **MUST exclusively use the `./append-to-engineering-log` wrapper (never direct edits, >>, echo, search_replace, or any other write on the file itself). The wrapper is the only approved mechanism.** It enforces the `## YYYY-MM-DD - Title` header format and safe append semantics (with sudo fallback if needed).
 - Never edit, delete, overwrite, or modify any existing dated sections, entries, or historical content.
 - All past activity must remain untouched for accurate tailing and historical review.
 - New entries go under a new `## [YYYY-MM-DD] - Title` header with bullet details of what was done, changes, results, etc.
 - Use this for effort tracking, "I'm working on X", cycle narrative, detailed progress, sub-agent outcomes, etc.
+- **Orchestrator/master responsibility**: The master/orchestrator MUST use the wrapper to record sub-agent outcomes, PR processing steps, cycle coordination, and any high-level progress (detailed execution transcripts stay in the sandbox plan or sub-agent logs).
 
 ## Sandbox Plan File as the Primary Approved Artifact for Feature / Implementation Work (CRITICAL)
 A formal plan document is **required** before you make *any* changes to tracked files outside the sandbox (i.e. real application source code in the main app directories that lives in git and will be built/committed).

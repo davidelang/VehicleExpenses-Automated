@@ -1,0 +1,5 @@
+Phase 2: Update AGENT_MANDATES.md — ENGINEERING_LOG rules + related hygiene.
+- Added explicit MUST use `./append-to-engineering-log` wrapper exclusively (no direct edits etc.).
+- Added orchestrator/master responsibility bullet for using wrapper on sub-agent/PR/cycle entries.
+- Updated surrounding "Detailed progress..." hygiene text to cross-reference wrapper.
+Forensic read/grep before/after. git add + build.
