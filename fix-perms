@@ -163,6 +163,15 @@ ensure_groups() {
     fi
   done
   gpasswd -d "$PLANNING_USER" "$CODE_GROUP" 2>/dev/null || true
+  # dlang needs sandbox access too (for reading/interacting with plans)
+  if id "$PRIMARY_USER" >/dev/null 2>&1; then
+    usermod -aG "$SANDBOX_GROUP" "$PRIMARY_USER" 2>/dev/null || true
+  fi
+  # Clean up rogue build caches from planner (should never build)
+  if [ -d "/home/$PLANNING_USER/.gradle" ]; then
+    echo "WARNING: $PLANNING_USER has ~/.gradle (should never build). Removing."
+    rm -rf "/home/$PLANNING_USER/.gradle"
+  fi
 }
 
 install_sudoers_if_needed() {
