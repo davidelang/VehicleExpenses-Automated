@@ -1,0 +1,4 @@
+Phase 5: Light cross-reference updates in MULTI_AGENT_USER_INSTRUCTIONS.md (orchestrator/master sections).
+- Updated "update TODO.md (first execution action)" to note ./todo-append and master ensures wrappers for TODO and ENG_LOG.
+- Updated "Detailed effort goes to ENGINEERING_LOG.md (append-only)" and light reporting line to specify wrapper exclusively.
+Minimal changes only. Forensic + build.
