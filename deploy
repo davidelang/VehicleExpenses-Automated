@@ -271,6 +271,36 @@ DEVICE_MAP=(
     # Add future physical devices here
 )
 
+# Build vehicle_refs.tar.gz + manifest from a local dir of vehicle_ref_*.jpg (e.g. phone-pulled refs).
+package_vehicle_refs_from_dir() {
+  local SRC=$1
+  local BDIR=$2
+  if [ ! -d "$SRC" ]; then
+    echo "    vehicle_refs source dir not found: $SRC"
+    return 1
+  fi
+  shopt -s nullglob
+  local refs=("$SRC"/vehicle_ref_*.jpg)
+  shopt -u nullglob
+  if [ ${#refs[@]} -eq 0 ]; then
+    echo "    No vehicle_ref_*.jpg in $SRC"
+    return 1
+  fi
+  {
+    echo "# vehicle_ref manifest: size_bytes mtime_epoch md5 filename"
+    for f in "${refs[@]}"; do
+      local bn sz mt sum
+      bn=$(basename "$f")
+      sz=$(wc -c < "$f" | tr -d ' ')
+      mt=$(stat -c %Y "$f" 2>/dev/null || echo 0)
+      sum=$(md5sum "$f" | awk '{print $1}')
+      echo "$sz $mt $sum $bn"
+    done
+  } > "$BDIR/vehicle_refs.manifest"
+  (cd "$SRC" && tar czf "$BDIR/vehicle_refs.tar.gz" vehicle_ref_*.jpg)
+  return 0
+}
+
 backup_test_data() {
   local DEV=$1
   if [ "$PRESERVE_DATA" != "true" ]; then return; fi
@@ -305,21 +335,46 @@ backup_test_data() {
   adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_db.bak" 2>/dev/null || true
 
   # Dash/reference pictures the app reads (vehicle_ref_*.jpg written to context.filesDir)
-  # Write tar inside private files/ dir, then stream out with run-as cat.
-  dash_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-    cd files 2>/dev/null || exit 0
-    tar czf ve_dash.tar.gz vehicle_ref_*.jpg 2>&1 || true
-  '" )
-  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_dash.tar.gz" > "$BDIR/vehicle_refs.tar.gz" 2>/dev/null ; then
-    if [ -s "$BDIR/vehicle_refs.tar.gz" ]; then
-      echo "    Captured dash/reference images (vehicle_refs.tar.gz)"
+  # Optional: VEHICLE_REFS_SOURCE_DIR=/path/to/dir with phone-pulled vehicle_ref_*.jpg (skips device capture).
+  if [ -n "${VEHICLE_REFS_SOURCE_DIR:-}" ] && [ -d "$VEHICLE_REFS_SOURCE_DIR" ]; then
+    echo "    Using VEHICLE_REFS_SOURCE_DIR for dash/reference images: $VEHICLE_REFS_SOURCE_DIR"
+    if package_vehicle_refs_from_dir "$VEHICLE_REFS_SOURCE_DIR" "$BDIR"; then
+      echo "    Packaged dash/reference images from local dir (vehicle_refs.tar.gz + manifest)"
     fi
   else
-    if [ -n "$dash_error" ]; then
-      echo "    Dash image backup note: $dash_error"
+    # Write tar + manifest inside private files/ dir, then stream out with run-as cat.
+    dash_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+      cd files 2>/dev/null || exit 0
+      if ls vehicle_ref_*.jpg >/dev/null 2>&1; then
+        {
+          echo \"# vehicle_ref manifest: size_bytes mtime_epoch md5 filename\"
+          for f in vehicle_ref_*.jpg; do
+            [ -f \"\$f\" ] || continue
+            sz=\$(wc -c < \"\$f\" | tr -d \" \")
+            mt=\$(stat -c %Y \"\$f\" 2>/dev/null || echo 0)
+            sum=\$(md5sum \"\$f\" 2>/dev/null | awk \"{print \\\$1}\")
+            echo \"\$sz \$mt \$sum \$f\"
+          done
+        } > ve_dash.manifest
+        tar czf ve_dash.tar.gz vehicle_ref_*.jpg 2>&1
+      fi
+    '" )
+    if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_dash.manifest" > "$BDIR/vehicle_refs.manifest" 2>/dev/null; then
+      if [ -s "$BDIR/vehicle_refs.manifest" ]; then
+        echo "    Captured dash/reference manifest (vehicle_refs.manifest)"
+      fi
     fi
+    if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_dash.tar.gz" > "$BDIR/vehicle_refs.tar.gz" 2>/dev/null ; then
+      if [ -s "$BDIR/vehicle_refs.tar.gz" ]; then
+        echo "    Captured dash/reference images (vehicle_refs.tar.gz)"
+      fi
+    else
+      if [ -n "$dash_error" ]; then
+        echo "    Dash image backup note: $dash_error"
+      fi
+    fi
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_dash.tar.gz files/ve_dash.manifest" 2>/dev/null || true
   fi
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_dash.tar.gz" 2>/dev/null || true
 
   # Pump pictures the app reads (inputs under getExternalFilesDir/pump_photos; reports live in sibling pump_reports and are excluded)
   # Tar to private files/ dir (from external source), then stream via run-as cat.
