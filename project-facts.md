@@ -17,7 +17,8 @@ Read in full early on startup/new cycle to avoid discovery searches.
 - `TODO.md`
 - Launchers: `run-grok`, `run-grok-planner`, `run-grok-master`
 - Scripts: `update-rules.sh` (run here to sync to worktrees), `build_app`, `get-builds-tag.sh`, `fix-perms`, `setup-project`, `setup_agent.sh`, `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`, `sync_infrastructure.sh`
-- `deploy` — `--restore-data` standalone restore (no build/uninstall); `--preserve-data` backups under `test-data-backups/<dev>-<ts>/` include `ve_source_zips.tar.gz` (device `/sdcard/Download` zips)
+- `deploy` — `--restore-data` / `--install-data` standalone restore (no build/uninstall); `--push-vehicle-refs` pushes `vehicle_ref_*.jpg` with cache bust + clean launch; `--preserve-data` backups under `test-data-backups/<dev>-<ts>/` include `vehicle_refs.tar.gz` + `vehicle_refs.manifest` and `ve_source_zips.tar.gz` (device `/sdcard/Download` zips)
+- `push-vehicle-refs.sh` — thin wrapper calling `deploy --push-vehicle-refs` for phone-pulled Honda/Ford dash reference photos
 - `.grok/config.toml` + `.grok/hooks/`
 - `project.config.example`
 

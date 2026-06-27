@@ -475,27 +475,62 @@ post_restore_ref_hygiene() {
   '" 2>/dev/null || true
 }
 
+# Human label for known phone reference dash photos (Honda / Ford Van).
+ref_label_for_filename() {
+  case "$1" in
+    *1778726321661*) echo "Honda" ;;
+    *1778726533320*) echo "Ford Van" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Known phone md5 for Honda/Ford reference dash jpgs (verification smoke).
+known_md5_for_filename() {
+  case "$1" in
+    *1778726321661*) echo "89912f28791fbbec046e62aedd9f474c" ;;
+    *1778726533320*) echo "a077932aaa38780e404475cd1012ade8" ;;
+    *) echo "" ;;
+  esac
+}
+
 # Verify on-device vehicle_ref_*.jpg md5 vs backup manifest; echo DB rows for Honda/Ford (id 1,2).
 verify_restored_vehicle_refs() {
   local DEV=$1
   local LATEST=$2
   echo "  [verify] Vehicle reference dash photos on $DEV"
+  echo "  [smoke] ls -l files/vehicle_ref_*.jpg:"
   adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'ls -l files/vehicle_ref_*.jpg 2>/dev/null || true'" 2>/dev/null || true
   if [ -f "$LATEST/vehicle_refs.manifest" ] && [ -s "$LATEST/vehicle_refs.manifest" ]; then
     while IFS= read -r line; do
       case "$line" in \#*|"") continue ;; esac
-      local sz mt expected fn actual
+      local sz mt expected fn actual label
       read -r sz mt expected fn <<< "$line"
+      label=$(ref_label_for_filename "$fn")
       actual=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME md5sum files/$fn 2>/dev/null" 2>/dev/null | awk '{print $1}')
       if [ -n "$actual" ] && [ "$actual" = "$expected" ]; then
-        echo "    OK $fn md5=$actual matches backup manifest"
+        if [ -n "$label" ]; then
+          echo "    OK ${label} ref md5=$actual matches backup manifest ($fn)"
+        else
+          echo "    OK $fn md5=$actual matches backup manifest"
+        fi
       else
-        echo "    MISMATCH $fn device_md5=${actual:-missing} expected_md5=$expected"
+        echo "    MISMATCH ${label:+$label }$fn device_md5=${actual:-missing} expected_md5=$expected"
       fi
     done < "$LATEST/vehicle_refs.manifest"
   else
     adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'cd files 2>/dev/null && md5sum vehicle_ref_*.jpg 2>/dev/null || true'" 2>/dev/null | while read -r sum fn; do
-      [ -n "$sum" ] && echo "    ${fn##*/} md5=$sum (no manifest to compare)"
+      [ -z "$sum" ] && continue
+      local bn label known
+      bn="${fn##*/}"
+      label=$(ref_label_for_filename "$bn")
+      known=$(known_md5_for_filename "$bn")
+      if [ -n "$known" ] && [ "$sum" = "$known" ]; then
+        echo "    OK ${label} ref md5=$sum matches expected phone ref ($bn)"
+      elif [ -n "$known" ]; then
+        echo "    MISMATCH ${label} ref device_md5=$sum expected_phone_md5=$known ($bn)"
+      else
+        echo "    $bn md5=$sum (no manifest to compare)"
+      fi
     done
   fi
   local tmpdb
@@ -510,6 +545,7 @@ verify_restored_vehicle_refs() {
     fi
   fi
   rm -f "$tmpdb"
+  echo "  [smoke] Vehicle ref listing + md5/DB verify complete for $DEV"
 }
 
 push_one_vehicle_ref() {

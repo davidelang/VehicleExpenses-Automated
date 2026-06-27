@@ -77,3 +77,8 @@ test line for reset attempt
 
 - Started implementation of dev-ai-interaction/plans/reliable-vehicle-reference-dash-photo-push-and-ui-display-20260627-plan.md
 - Scope: deploy script + optional push-vehicle-refs.sh (orchestration branch); no app/src changes
+
+## 2026-06-27 - Reliable vehicle reference dash photo push (deploy) complete
+
+- deploy: manifest on backup capture, restore cache/WAL bust, md5+DB verify, --push-vehicle-refs, push-vehicle-refs.sh
+- Plan: dev-ai-interaction/plans/reliable-vehicle-reference-dash-photo-push-and-ui-display-20260627-plan.md
