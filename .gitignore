@@ -3,6 +3,8 @@ crash-log.txt
 
 # Gradle
 .gradle
+.gradle-shared/
+.android-shared/
 build/
 local.properties
 *.iml
