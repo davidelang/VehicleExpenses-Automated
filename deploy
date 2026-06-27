@@ -212,6 +212,19 @@ fi
 # sg ai-shared gives the necessary group for shared git/.git metadata and sandbox; owner perms cover the rest.
 # This avoids ping-pong loops from sg only surfacing one group at a time.
 
+# Use project-local shared Gradle home (not per-user ~/.gradle).
+# Required for multi-user builds: same users serve different projects.
+ORCH_ROOT="$(cd "$(dirname "$0")" && pwd)"
+# For worktrees, the orchestration root is the parent
+[ -d "$ORCH_ROOT/../.gradle-shared" ] && ORCH_ROOT="$(cd "$ORCH_ROOT/.." && pwd)"
+if [ -d "$ORCH_ROOT/.gradle-shared" ]; then
+  export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+fi
+# Shared Android home: consistent debug keystore for all builders
+if [ -d "$ORCH_ROOT/.android-shared" ]; then
+  export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
+fi
+
 # Early recovery for build dir perms/ownership (prevents "Permission denied" on cxx logs,
 # configuration cache stale outputs, etc. from previous root/wrong-group runs).
 # This runs whenever you use ./deploy (which does the group re-exec).
