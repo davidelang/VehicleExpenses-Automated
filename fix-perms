@@ -329,11 +329,12 @@ fix_worktree() {
 
 fix_sandbox() {
   if [ ! -d "$SCRIPT_DIR/$SANDBOX" ]; then return; fi
-  if $VERBOSE; then echo "  Applying to sandbox: $SANDBOX"; fi
+  if $VERBOSE; then echo "  Applying to sandbox: $SANDBOX (group=$SANDBOX_GROUP)"; fi
   chown -R :$SANDBOX_GROUP "$SCRIPT_DIR/$SANDBOX" 2>/dev/null || true
   chmod -R g+rwX "$SCRIPT_DIR/$SANDBOX" 2>/dev/null || true
   find "$SCRIPT_DIR/$SANDBOX" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + 2>/dev/null || true
-  chown -R :$SHARED_GROUP "$SCRIPT_DIR/$SANDBOX" 2>/dev/null || true
+  # NOTE: Do NOT chown to ai-shared here. The sandbox group is ai-sandbox.
+  # ai-shared is for AI engine configs (.gemini/, .grok/), not for sandbox files.
 }
 
 fix_log_wrapper() {
