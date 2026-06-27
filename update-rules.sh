@@ -10,6 +10,9 @@
 #
 # Shared brain uses physical copies (no hard links, no skip-worktree).
 
+# Ensure group-writable files in multi-user environment
+umask 007
+
 # 1. Identify the repository root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(pwd)"

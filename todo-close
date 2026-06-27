@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Ensure group-writable files in multi-user environment
+umask 007
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TODOFILE="$SCRIPT_DIR/TODO.md"
 
