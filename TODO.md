@@ -67,6 +67,8 @@
 - [x] Executing plan dev-ai-interaction/plans/add-restore-data-flag-to-deploy-20260625-plan.md: add `--restore-data` standalone restore + source-zip backup/restore in `deploy`.
 - [x] Executing plan add-install-data-for-selectable-backup-restore-20260625-plan.md: `--install-data` for picking any backup dir + push to devices.
 
+- [x] De-abstract Set G for Quick Fill: copy pump cost/vol logic inline into OcrHarness.runPumpCostVolPipeline (no runSetGCostVolExtraction / skipDeskew); plan: dev-ai-interaction/plans/de-abstract-set-g-for-quick-fill-copy-logic-20260627-plan.md
+
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
   - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
@@ -75,3 +77,5 @@
   - New: enable-full-orchestration.sh (stampable opt-in); dual-mode update-rules (stamp vs full); explicit one-time stamp comments in setup-project; docs + migration notes.
   - See ENGINEERING_LOG.md and dev-ai-interaction/orchestration-layer-inventory-phase1.md for details.
   - Results ready to test (new tag via final build).
+
+- Approved execution of update-rules-eng-log-todo-wrapper-mandates-20260627-plan.md (special rules for ENGINEERING_LOG and TODO file type handling via wrappers)

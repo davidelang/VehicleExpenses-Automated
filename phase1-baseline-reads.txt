@@ -1,0 +1,6 @@
+Phase 1: Baseline forensic reads focused on current ENG LOG and TODO rule text.
+- Re-read approved plan + full project-facts.md (hygiene).
+- First action: ./todo-append for high-level plan approval entry.
+- Narrow reads on ENGINEERING_LOG Rules section (lines ~250-265) and TODO instructions in AGENT_MANDATES.md and standard-plan-compliance-block.md.
+- Targeted greps across AGENT_MANDATES.md, standard-plan-compliance-block.md, MULTI_AGENT_USER_INSTRUCTIONS.md for wrappers, append-only, TODO update language (none for specific wrappers found).
+No edits to rules yet. Baseline captured: orchestration/builds
