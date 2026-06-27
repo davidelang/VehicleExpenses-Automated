@@ -175,6 +175,31 @@ if ! git checkout .; then
   exit 1
 fi
 
+# Verify smudge filters ran (project.config must exist before checkout; @@ tokens must be gone after).
+SMUDGE_CHECK_FAILED=0
+if [ ! -f project.config ]; then
+  echo "Error: project.config missing after checkout (smudge filters cannot run without it)."
+  SMUDGE_CHECK_FAILED=1
+else
+  STAMPED_FILES=(
+    run-grok run-grok-master run-grok-planner
+    setup-project set-worktree-perms set-sandbox-perms
+  )
+  for f in "${STAMPED_FILES[@]}"; do
+    [ -f "$f" ] || continue
+    if grep -q '@@' "$f" 2>/dev/null; then
+      echo "Error: Unsubstituted @@ tokens remain in $f (smudge filter did not run correctly)."
+      SMUDGE_CHECK_FAILED=1
+    fi
+  done
+fi
+if [ "$SMUDGE_CHECK_FAILED" -ne 0 ]; then
+  echo "Hint: ensure project.config and filter-apply-config were copied before 'git checkout .'."
+  cd ..
+  git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
+  exit 1
+fi
+
 if [ "$(id -un)" != "$PRIMARY_USER" ] && [ "$EUID" -ne 0 ]; then
   sudo -u "$PRIMARY_USER" git config core.sharedRepository group
 else
