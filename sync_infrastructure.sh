@@ -11,6 +11,9 @@
 # The list may only contain infra, orchestration scripts, agent support
 # files, etc.
 
+# Ensure group-writable files in multi-user environment
+umask 007
+
 FILES=(
     ".gemini/policies/plans.toml"
     ".gemini/policies/auto-saved.toml"

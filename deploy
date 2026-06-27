@@ -30,6 +30,34 @@
 #   ./deploy --restore-data
 #   ./deploy --restore-data tablet
 #
+# To install data from any chosen backup dir (standalone; no build, no uninstall).
+# Use after a manual fresh install on a new emulator. Lists available backups if
+# no dir given. Pushes DB + refs + pump/alignment photos + source zips to all
+# devices or specified targets. User picks the backup (not tied to current DEV).
+#   INSTALL_DATA=1 ./deploy
+# or
+#   ./deploy --install-data
+#   ./deploy --install-data test-data-backups/<name>
+#   ./deploy --install-data test-data-backups/<name> tablet
+#
+# --restore-data and --install-data now bust Coil image cache (rm cache/*),
+# clear Room WAL/shm, touch vehicle_ref_*.jpg mtimes, write files/refdata_version.txt,
+# force-stop, and launch MainActivity with --activity-clear-task so ManageVehicles
+# shows the correct distinct Honda/Ford dash photos after a push (not stale Coil bitmaps).
+# Post-restore verify prints on-device md5 vs vehicle_refs.manifest and DB rows for id 1/2.
+#
+# To push specific phone-updated reference dash photos without a full backup (Honda/Ford):
+#   ./deploy --push-vehicle-refs /path/to/vehicle_ref_1778726321661.jpg /path/to/vehicle_ref_1778726533320.jpg
+#   ./deploy --push-vehicle-refs /path/to/dir/with/vehicle_ref_*.jpg tablet
+#   ./push-vehicle-refs.sh /path/to/dir tablet
+#   PUSH_VEHICLE_REFS_DIR=/path/to/dir ./deploy --push-vehicle-refs emulator
+# Expected md5 (phone refs): Honda vehicle_ref_1778726321661.jpg = 89912f28791fbbec046e62aedd9f474c;
+# Ford vehicle_ref_1778726533320.jpg = a077932aaa38780e404475cd1012ade8.
+# Crop coordinates in DB should be ICRS (raw pixels); legacy 0-1 values may still display if consistent.
+#
+# When capturing backups, optional VEHICLE_REFS_SOURCE_DIR=/local/dir skips device tar capture
+# and packages vehicle_ref_*.jpg from that dir (with vehicle_refs.manifest: size, mtime, md5).
+#
 # SAFETY: If PRESERVE_DATA is requested but a device has the app installed and
 # we fail to capture any backup data (DB or images), we will REFUSE to uninstall.
 # This prevents destroying your test data when backup or the subsequent build fails.
@@ -53,8 +81,23 @@ while [ $# -gt 0 ]; do
       RESTORE_DATA=true
       shift
       ;;
+    --install-data)
+      INSTALL_DATA=true
+      shift
+      if [ $# -gt 0 ]; then
+        next="$1"
+        if [ -d "$next" ] || [ -d "test-data-backups/$next" ] || [[ "$next" == *"test-data-backups"* ]] || [[ "$next" == *-[0-9][0-9][0-9][0-9][0-9][0-9]* ]]; then
+          SELECTED_BACKUP="$next"
+          shift
+        fi
+      fi
+      ;;
     --clean)
       UNINSTALL_FIRST=true
+      shift
+      ;;
+    --push-vehicle-refs)
+      PUSH_VEHICLE_REFS=true
       shift
       ;;
     *)
@@ -70,6 +113,7 @@ done
 #   ./deploy emulator -- --debug
 # Targets (aliases or device ids) come before any -- ; everything after -- goes to gradlew.
 TARGETS=()
+PUSH_REF_PATHS=()
 GRADLE_ARGS=()
 SEEN_DD=false
 for arg in "$@"; do
@@ -77,6 +121,8 @@ for arg in "$@"; do
     GRADLE_ARGS+=("$arg")
   elif [ "$arg" = "--" ]; then
     SEEN_DD=true
+  elif [ "${PUSH_VEHICLE_REFS:-false}" = "true" ] && { [ -f "$arg" ] || [ -d "$arg" ]; }; then
+    PUSH_REF_PATHS+=("$arg")
   else
     TARGETS+=("$arg")
   fi
@@ -89,11 +135,17 @@ fi
 PRESERVE_DATA=${PRESERVE_DATA:-false}
 UNINSTALL_FIRST=${UNINSTALL_FIRST:-false}
 RESTORE_DATA=${RESTORE_DATA:-false}
+INSTALL_DATA=${INSTALL_DATA:-false}
+PUSH_VEHICLE_REFS=${PUSH_VEHICLE_REFS:-false}
+SELECTED_BACKUP=${SELECTED_BACKUP:-}
 
 # Export so values survive the primary/ai-code re-execs that happen later.
 export PRESERVE_DATA
 export UNINSTALL_FIRST
 export RESTORE_DATA
+export INSTALL_DATA
+export PUSH_VEHICLE_REFS
+export SELECTED_BACKUP
 
 # Ensure backups dir exists (for PRESERVE_DATA)
 mkdir -p test-data-backups 2>/dev/null || true
@@ -160,6 +212,19 @@ fi
 # sg ai-shared gives the necessary group for shared git/.git metadata and sandbox; owner perms cover the rest.
 # This avoids ping-pong loops from sg only surfacing one group at a time.
 
+# Use project-local shared Gradle home (not per-user ~/.gradle).
+# Required for multi-user builds: same users serve different projects.
+ORCH_ROOT="$(cd "$(dirname "$0")" && pwd)"
+# For worktrees, the orchestration root is the parent
+[ -d "$ORCH_ROOT/../.gradle-shared" ] && ORCH_ROOT="$(cd "$ORCH_ROOT/.." && pwd)"
+if [ -d "$ORCH_ROOT/.gradle-shared" ]; then
+  export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+fi
+# Shared Android home: consistent debug keystore for all builders
+if [ -d "$ORCH_ROOT/.android-shared" ]; then
+  export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
+fi
+
 # Early recovery for build dir perms/ownership (prevents "Permission denied" on cxx logs,
 # configuration cache stale outputs, etc. from previous root/wrong-group runs).
 # This runs whenever you use ./deploy (which does the group re-exec).
@@ -169,8 +234,6 @@ fix_build_dir_perms() {
     # chmod parents first so we can traverse and fix deep cxx etc.
     chmod -R u+rX,g+rX app/build 2>/dev/null || true
     chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-    # chown foreign-owned (root or ai-orchestrator) back to primary:code group
-    find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
     # setgid on dirs for proper inheritance on new files (with umask 007 -> 660/770)
     find app/build -type d -exec chmod 2770 {} + 2>/dev/null || true
     find app/build -type f -exec chmod 660 {} + 2>/dev/null || true
@@ -188,14 +251,13 @@ fix_git_perms() {
     echo "  Fixing .git/worktree perms (best effort, sudo ../fix-perms may still be needed for objects)..."
     chmod -R u+rX,g+rX "$main_git" 2>/dev/null || true
     chmod -R u+rwX,g+rwX "$main_git" 2>/dev/null || true
-    find "$main_git" \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-shared" {} + 2>/dev/null || true
     # Repair worktree metadata too
     if [ -f .git ]; then
       local wt_meta
       wt_meta=$(sed 's/gitdir: //' .git)
       if [ -d "$wt_meta" ]; then
         chmod -R u+rX,g+rX "$wt_meta" 2>/dev/null || true
-        find "$wt_meta" \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-shared" {} + 2>/dev/null || true
+        chmod -R u+rwX,g+rwX "$wt_meta" 2>/dev/null || true
       fi
     fi
     # If the current branch ref is the all-zero broken state, remove the loose ref
@@ -246,6 +308,36 @@ DEVICE_MAP=(
     # Add future physical devices here
 )
 
+# Build vehicle_refs.tar.gz + manifest from a local dir of vehicle_ref_*.jpg (e.g. phone-pulled refs).
+package_vehicle_refs_from_dir() {
+  local SRC=$1
+  local BDIR=$2
+  if [ ! -d "$SRC" ]; then
+    echo "    vehicle_refs source dir not found: $SRC"
+    return 1
+  fi
+  shopt -s nullglob
+  local refs=("$SRC"/vehicle_ref_*.jpg)
+  shopt -u nullglob
+  if [ ${#refs[@]} -eq 0 ]; then
+    echo "    No vehicle_ref_*.jpg in $SRC"
+    return 1
+  fi
+  {
+    echo "# vehicle_ref manifest: size_bytes mtime_epoch md5 filename"
+    for f in "${refs[@]}"; do
+      local bn sz mt sum
+      bn=$(basename "$f")
+      sz=$(wc -c < "$f" | tr -d ' ')
+      mt=$(stat -c %Y "$f" 2>/dev/null || echo 0)
+      sum=$(md5sum "$f" | awk '{print $1}')
+      echo "$sz $mt $sum $bn"
+    done
+  } > "$BDIR/vehicle_refs.manifest"
+  (cd "$SRC" && tar czf "$BDIR/vehicle_refs.tar.gz" vehicle_ref_*.jpg)
+  return 0
+}
+
 backup_test_data() {
   local DEV=$1
   if [ "$PRESERVE_DATA" != "true" ]; then return; fi
@@ -280,21 +372,46 @@ backup_test_data() {
   adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_db.bak" 2>/dev/null || true
 
   # Dash/reference pictures the app reads (vehicle_ref_*.jpg written to context.filesDir)
-  # Write tar inside private files/ dir, then stream out with run-as cat.
-  dash_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-    cd files 2>/dev/null || exit 0
-    tar czf ve_dash.tar.gz vehicle_ref_*.jpg 2>&1 || true
-  '" )
-  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_dash.tar.gz" > "$BDIR/vehicle_refs.tar.gz" 2>/dev/null ; then
-    if [ -s "$BDIR/vehicle_refs.tar.gz" ]; then
-      echo "    Captured dash/reference images (vehicle_refs.tar.gz)"
+  # Optional: VEHICLE_REFS_SOURCE_DIR=/path/to/dir with phone-pulled vehicle_ref_*.jpg (skips device capture).
+  if [ -n "${VEHICLE_REFS_SOURCE_DIR:-}" ] && [ -d "$VEHICLE_REFS_SOURCE_DIR" ]; then
+    echo "    Using VEHICLE_REFS_SOURCE_DIR for dash/reference images: $VEHICLE_REFS_SOURCE_DIR"
+    if package_vehicle_refs_from_dir "$VEHICLE_REFS_SOURCE_DIR" "$BDIR"; then
+      echo "    Packaged dash/reference images from local dir (vehicle_refs.tar.gz + manifest)"
     fi
   else
-    if [ -n "$dash_error" ]; then
-      echo "    Dash image backup note: $dash_error"
+    # Write tar + manifest inside private files/ dir, then stream out with run-as cat.
+    dash_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+      cd files 2>/dev/null || exit 0
+      if ls vehicle_ref_*.jpg >/dev/null 2>&1; then
+        {
+          echo \"# vehicle_ref manifest: size_bytes mtime_epoch md5 filename\"
+          for f in vehicle_ref_*.jpg; do
+            [ -f \"\$f\" ] || continue
+            sz=\$(wc -c < \"\$f\" | tr -d \" \")
+            mt=\$(stat -c %Y \"\$f\" 2>/dev/null || echo 0)
+            sum=\$(md5sum \"\$f\" 2>/dev/null | awk \"{print \\\$1}\")
+            echo \"\$sz \$mt \$sum \$f\"
+          done
+        } > ve_dash.manifest
+        tar czf ve_dash.tar.gz vehicle_ref_*.jpg 2>&1
+      fi
+    '" )
+    if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_dash.manifest" > "$BDIR/vehicle_refs.manifest" 2>/dev/null; then
+      if [ -s "$BDIR/vehicle_refs.manifest" ]; then
+        echo "    Captured dash/reference manifest (vehicle_refs.manifest)"
+      fi
     fi
+    if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_dash.tar.gz" > "$BDIR/vehicle_refs.tar.gz" 2>/dev/null ; then
+      if [ -s "$BDIR/vehicle_refs.tar.gz" ]; then
+        echo "    Captured dash/reference images (vehicle_refs.tar.gz)"
+      fi
+    else
+      if [ -n "$dash_error" ]; then
+        echo "    Dash image backup note: $dash_error"
+      fi
+    fi
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_dash.tar.gz files/ve_dash.manifest" 2>/dev/null || true
   fi
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_dash.tar.gz" 2>/dev/null || true
 
   # Pump pictures the app reads (inputs under getExternalFilesDir/pump_photos; reports live in sibling pump_reports and are excluded)
   # Tar to private files/ dir (from external source), then stream via run-as cat.
@@ -357,13 +474,157 @@ backup_test_data() {
   adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_zips.tar.gz" 2>/dev/null || true
 }
 
-restore_test_data() {
+# Post-restore hygiene for vehicle reference dash photos: bust Coil disk cache + Room WAL + mtime.
+post_restore_ref_hygiene() {
   local DEV=$1
-  if [ "$PRESERVE_DATA" != "true" ] && [ "$RESTORE_DATA" != "true" ]; then return; fi
-  # Find most recent backup for this device
-  local LATEST=$(ls -td test-data-backups/"${DEV}"-* 2>/dev/null | head -1)
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    rm -f databases/vehicle_expenses.db-shm databases/vehicle_expenses.db-wal 2>/dev/null || true
+    rm -rf cache/* 2>/dev/null || true
+    touch files/vehicle_ref_*.jpg 2>/dev/null || true
+    date +%s > files/refdata_version.txt 2>/dev/null || true
+  '" 2>/dev/null || true
+}
+
+# Human label for known phone reference dash photos (Honda / Ford Van).
+ref_label_for_filename() {
+  case "$1" in
+    *1778726321661*) echo "Honda" ;;
+    *1778726533320*) echo "Ford Van" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Known phone md5 for Honda/Ford reference dash jpgs (verification smoke).
+known_md5_for_filename() {
+  case "$1" in
+    *1778726321661*) echo "89912f28791fbbec046e62aedd9f474c" ;;
+    *1778726533320*) echo "a077932aaa38780e404475cd1012ade8" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Verify on-device vehicle_ref_*.jpg md5 vs backup manifest; echo DB rows for Honda/Ford (id 1,2).
+verify_restored_vehicle_refs() {
+  local DEV=$1
+  local LATEST=$2
+  echo "  [verify] Vehicle reference dash photos on $DEV"
+  echo "  [smoke] ls -l files/vehicle_ref_*.jpg:"
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'ls -l files/vehicle_ref_*.jpg 2>/dev/null || true'" 2>/dev/null || true
+  if [ -f "$LATEST/vehicle_refs.manifest" ] && [ -s "$LATEST/vehicle_refs.manifest" ]; then
+    while IFS= read -r line; do
+      case "$line" in \#*|"") continue ;; esac
+      local sz mt expected fn actual label
+      read -r sz mt expected fn <<< "$line"
+      label=$(ref_label_for_filename "$fn")
+      actual=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME md5sum files/$fn 2>/dev/null" 2>/dev/null | awk '{print $1}')
+      if [ -n "$actual" ] && [ "$actual" = "$expected" ]; then
+        if [ -n "$label" ]; then
+          echo "    OK ${label} ref md5=$actual matches backup manifest ($fn)"
+        else
+          echo "    OK $fn md5=$actual matches backup manifest"
+        fi
+      else
+        echo "    MISMATCH ${label:+$label }$fn device_md5=${actual:-missing} expected_md5=$expected"
+      fi
+    done < "$LATEST/vehicle_refs.manifest"
+  else
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'cd files 2>/dev/null && md5sum vehicle_ref_*.jpg 2>/dev/null || true'" 2>/dev/null | while read -r sum fn; do
+      [ -z "$sum" ] && continue
+      local bn label known
+      bn="${fn##*/}"
+      label=$(ref_label_for_filename "$bn")
+      known=$(known_md5_for_filename "$bn")
+      if [ -n "$known" ] && [ "$sum" = "$known" ]; then
+        echo "    OK ${label} ref md5=$sum matches expected phone ref ($bn)"
+      elif [ -n "$known" ]; then
+        echo "    MISMATCH ${label} ref device_md5=$sum expected_phone_md5=$known ($bn)"
+      else
+        echo "    $bn md5=$sum (no manifest to compare)"
+      fi
+    done
+  fi
+  local tmpdb
+  tmpdb=$(mktemp)
+  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat databases/vehicle_expenses.db" > "$tmpdb" 2>/dev/null && [ -s "$tmpdb" ]; then
+    if command -v sqlite3 >/dev/null 2>&1; then
+      while IFS='|' read -r vid vname vurl; do
+        echo "    DB id=$vid name=$vname referenceDashPhotoUrl=$vurl"
+      done < <(sqlite3 -separator '|' "$tmpdb" "SELECT id,name,referenceDashPhotoUrl FROM vehicles WHERE id IN (1,2) ORDER BY id;" 2>/dev/null || true)
+    else
+      echo "    (sqlite3 not available locally — skip DB row verify)"
+    fi
+  fi
+  rm -f "$tmpdb"
+  echo "  [smoke] Vehicle ref listing + md5/DB verify complete for $DEV"
+}
+
+push_one_vehicle_ref() {
+  local DEV=$1
+  local SRC=$2
+  local bn
+  bn=$(basename "$SRC")
+  case "$bn" in
+    vehicle_ref_*.jpg) ;;
+    *)
+      echo "    Skip $bn (must be named vehicle_ref_*.jpg)"
+      return 1
+      ;;
+  esac
+  echo "    Pushing $bn -> files/$bn on $DEV"
+  adb -s "$DEV" push "$SRC" "/sdcard/$bn" >/dev/null
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cp /sdcard/$bn files/$bn && chmod 660 files/$bn && rm -f /sdcard/$bn'" 2>/dev/null || true
+}
+
+# Lightweight push of phone-updated vehicle_ref_*.jpg by exact filename (no full backup/restore).
+push_vehicle_refs_to_device() {
+  local DEV=$1
+  shift
+  local paths=("$@")
+  if [ ${#paths[@]} -eq 0 ]; then
+    echo "  [push-refs] No ref paths provided for $DEV"
+    return 1
+  fi
+  echo "  [push-refs] Pushing vehicle reference dash photos to $DEV"
+  local pushed_any=false
+  for path in "${paths[@]}"; do
+    if [ -d "$path" ]; then
+      shopt -s nullglob
+      local jpgs=("$path"/vehicle_ref_*.jpg)
+      shopt -u nullglob
+      for jpg in "${jpgs[@]}"; do
+        if push_one_vehicle_ref "$DEV" "$jpg"; then pushed_any=true; fi
+      done
+    elif [ -f "$path" ]; then
+      if push_one_vehicle_ref "$DEV" "$path"; then pushed_any=true; fi
+    else
+      echo "    Path not found: $path"
+    fi
+  done
+  if [ "$pushed_any" != true ]; then
+    echo "  [push-refs] Nothing pushed to $DEV"
+    return 1
+  fi
+  post_restore_ref_hygiene "$DEV"
+  verify_restored_vehicle_refs "$DEV" "__push_only__"
+  adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
+  adb -s "$DEV" shell "am start -n $PACKAGE_NAME/.MainActivity --activity-clear-task" 2>/dev/null || true
+}
+
+restore_test_data() {
+  local DEV=$1; local EXPLICIT_BACKUP=$2
+  if [ "$PRESERVE_DATA" != "true" ] && [ "$RESTORE_DATA" != "true" ] && [ "$INSTALL_DATA" != "true" ]; then return; fi
+  local LATEST
+  if [ -n "$EXPLICIT_BACKUP" ]; then
+    LATEST="$EXPLICIT_BACKUP"
+  else
+    LATEST=$(ls -td test-data-backups/"${DEV}"-* 2>/dev/null | head -1)
+  fi
   if [ -z "$LATEST" ]; then
-    echo "  [preserve] No backup found for $DEV, skipping restore"
+    if [ -n "$EXPLICIT_BACKUP" ]; then
+      echo "  [install] Backup directory not found or empty: $EXPLICIT_BACKUP"
+    else
+      echo "  [preserve] No backup found for $DEV, skipping restore"
+    fi
     return
   fi
   # Only announce restore if the backup dir actually has content
@@ -375,19 +636,28 @@ restore_test_data() {
   if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then has_content=true; fi
 
   if [ "$has_content" = true ]; then
-    echo "  [preserve] Restoring test data for $DEV from $LATEST"
+    if [ "$INSTALL_DATA" = "true" ]; then
+      echo "  [install] Installing data for $DEV from $LATEST"
+    else
+      echo "  [preserve] Restoring test data for $DEV from $LATEST"
+    fi
   fi
+
+  local restored_db=false
+  local restored_refs=false
 
   # Restore DB
   if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
     adb -s "$DEV" push "$LATEST/vehicle_expenses.db.bak" /sdcard/ve_db.bak >/dev/null
     adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && cp /sdcard/ve_db.bak databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db'" 2>/dev/null || true
     adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f /sdcard/ve_db.bak" 2>/dev/null || true
+    restored_db=true
   fi
   # Restore dash/reference images (vehicle_ref_*.jpg)
   if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then
     adb -s "$DEV" push "$LATEST/vehicle_refs.tar.gz" /sdcard/ve_refs.tar.gz >/dev/null
     adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cd files && tar xzf /sdcard/ve_refs.tar.gz 2>/dev/null || true; cd ..; rm -f /sdcard/ve_refs.tar.gz'" 2>/dev/null || true
+    restored_refs=true
   fi
   # Restore pump pictures (input images the app reads from pump_photos)
   if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then
@@ -414,9 +684,46 @@ restore_test_data() {
       mkdir -p \"\$DDIR\" && cd \"\$DDIR\" && tar xzf /sdcard/ve_source_zips.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_source_zips.tar.gz
     '" 2>/dev/null || true
   fi
-  # Optional: force-stop to make app reload DB on next launch
+  # Post-restore cache bust + clean launch (Coil disk cache + Room WAL) when DB or refs were restored.
+  if [ "$restored_db" = true ] || [ "$restored_refs" = true ]; then
+    post_restore_ref_hygiene "$DEV"
+    verify_restored_vehicle_refs "$DEV" "$LATEST"
+  fi
   adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
+  adb -s "$DEV" shell "am start -n $PACKAGE_NAME/.MainActivity --activity-clear-task" 2>/dev/null || true
 }
+
+if [ "$PUSH_VEHICLE_REFS" = "true" ]; then
+  echo "=== --push-vehicle-refs: push specific vehicle_ref_*.jpg only (no build, no uninstall) ==="
+  if [ ${#PUSH_REF_PATHS[@]} -eq 0 ] && [ -n "${PUSH_VEHICLE_REFS_DIR:-}" ] && [ -d "$PUSH_VEHICLE_REFS_DIR" ]; then
+    PUSH_REF_PATHS=("$PUSH_VEHICLE_REFS_DIR")
+  fi
+  if [ ${#PUSH_REF_PATHS[@]} -eq 0 ]; then
+    echo "Usage: ./deploy --push-vehicle-refs /path/to/vehicle_ref_*.jpg [/path/to/dir] [tablet...]"
+    echo "   or: PUSH_VEHICLE_REFS_DIR=/path/to/dir ./deploy --push-vehicle-refs [tablet...]"
+    echo "   or: ./push-vehicle-refs.sh /path/to/dir [tablet...]"
+    exit 1
+  fi
+  if [ ${#TARGETS[@]} -eq 0 ]; then
+    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
+    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
+      echo "No connected devices found."
+      exit 1
+    fi
+    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+      push_vehicle_refs_to_device "$DEVICE_ID" "${PUSH_REF_PATHS[@]}"
+    done
+  else
+    for TARGET in "${TARGETS[@]}"; do
+      if [ -z "$TARGET" ]; then continue; fi
+      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
+      echo "Pushing refs to $TARGET ($DEVICE_ID)..."
+      push_vehicle_refs_to_device "$DEVICE_ID" "${PUSH_REF_PATHS[@]}"
+    done
+  fi
+  echo "=== --push-vehicle-refs complete ==="
+  exit 0
+fi
 
 if [ "$RESTORE_DATA" = "true" ]; then
   echo "=== --restore-data: standalone restore only (no build, no uninstall) ==="
@@ -441,6 +748,43 @@ if [ "$RESTORE_DATA" = "true" ]; then
     done
   fi
   echo "=== --restore-data complete ==="
+  exit 0
+fi
+
+if [ "$INSTALL_DATA" = "true" ]; then
+  echo "=== --install-data: standalone data install from selected backup (no build, no uninstall) ==="
+  local BACKUP_TO_USE="$SELECTED_BACKUP"
+  if [ -z "$BACKUP_TO_USE" ]; then
+    echo "No backup specified. Available:"
+    ls -td test-data-backups/* 2>/dev/null || echo "(none)"
+    echo 'Usage: ./deploy --install-data test-data-backups/<name> [dev...]'
+    exit 1
+  fi
+  if [ ! -d "$BACKUP_TO_USE" ] && [ -d "test-data-backups/$BACKUP_TO_USE" ]; then
+    BACKUP_TO_USE="test-data-backups/$BACKUP_TO_USE"
+  fi
+  if [ ! -d "$BACKUP_TO_USE" ]; then
+    echo "Backup directory not found: $BACKUP_TO_USE"
+    exit 1
+  fi
+  if [ ${#TARGETS[@]} -eq 0 ]; then
+    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
+    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
+      echo "No connected devices found."
+      exit 1
+    fi
+    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+      restore_test_data "$DEVICE_ID" "$BACKUP_TO_USE"
+    done
+  else
+    for TARGET in "${TARGETS[@]}"; do
+      if [ -z "$TARGET" ]; then continue; fi
+      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
+      echo "Installing to $TARGET ($DEVICE_ID)..."
+      restore_test_data "$DEVICE_ID" "$BACKUP_TO_USE"
+    done
+  fi
+  echo "=== --install-data complete ==="
   exit 0
 fi
 
@@ -533,8 +877,6 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 chmod -R u+rX,g+rX app/build 2>/dev/null || true
                 # Full rw for user+group
                 chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-                # Fix any root-owned files
-                find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
             fi
 
             # Aggressive removal of state that Gradle tracks and may have bad perms on
@@ -643,8 +985,6 @@ else
             chmod -R u+rX,g+rX app/build 2>/dev/null || true
             # Full rw for user+group
             chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-            # Fix any root-owned files
-            find app/build \( -user root -o -user ai-orchestrator \) -exec chown "$PRIMARY_USER:ai-code" {} + 2>/dev/null || true
         fi
 
         # Aggressive removal of state that Gradle tracks and may have bad perms on

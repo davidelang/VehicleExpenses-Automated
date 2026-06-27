@@ -138,6 +138,8 @@ fi
 # perform the proper substitutions for @@ tokens.
 git checkout .
 
+git config core.sharedRepository group
+
 # 7. Make this a *fully working* tree with all correct permissions.
 #    Since we are always run from the orchestration root (which has the
 #    authoritative latest copies and fixers), we:

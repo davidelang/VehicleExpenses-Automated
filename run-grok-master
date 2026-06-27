@@ -49,6 +49,9 @@ if [ -f project.config ]; then
 fi
 ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
 
+# Ensure all files created during this session are group-writable (multi-user env)
+umask 007
+
 # Model selection for the Master Orchestrator.
 # Use the same strong default as the planner (grok-build in this environment).
 # Override with GROK_MASTER_MODEL if desired.
