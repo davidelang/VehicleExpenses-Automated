@@ -18,6 +18,13 @@ data class AutoFillResult(
     val debugJson: String? = null
 )
 
+data class PumpCostVolResult(
+    val cost: String? = null,
+    val volume: String? = null,
+    val error: String? = null,
+    val debugJson: String? = null
+)
+
 /**
  * Orchestrates OCR pipelines for automated data entry.
  */
@@ -120,6 +127,57 @@ object OcrHarness {
             Log.e("OcrHarness", "AutoFill Pipeline failed", e)
             jsonDebug?.addProperty("exception", e.message)
             return AutoFillResult(error = "Pipeline Error: ${e.message}", debugJson = jsonDebug?.toString())
+        }
+    }
+
+    /**
+     * Set G pump cost/volume pipeline for Quick Fill pump mode.
+     */
+    suspend fun runPumpCostVolPipeline(
+        context: Context,
+        masterBuffer: BufferSet,
+        debug: Boolean,
+        cameraRotationDegrees: Int = 0,
+        onStage: (suspend (String, Bitmap) -> Unit)? = null
+    ): PumpCostVolResult {
+        val t0 = System.currentTimeMillis()
+        try {
+            onStage?.invoke("Original", masterBuffer.p.toBitmap())
+
+            val (optAngle, _) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
+            val totalAngle = cameraRotationDegrees.toFloat() - optAngle
+            val imgW = masterBuffer.width
+            val imgH = masterBuffer.height
+            val targetW = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgH else imgW
+            val targetH = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgW else imgH
+            OdometerOcrUtils.rotate(masterBuffer, totalAngle, targetW, targetH)
+            onStage?.invoke("Deskewed", masterBuffer.p.toBitmap())
+
+            val paddleEngine = NativePaddleEngine(context, "Numeric")
+            val recBuffer = NativePaddleEngine.recBufferSet
+            val cv = PumpCostVolUtils.runSetGCostVolExtraction(
+                masterBuffer, paddleEngine, recBuffer, masterBuffer.width, masterBuffer.height
+            )
+
+            val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }
+            val volume = cv.vol.takeIf { it != "N/A" && it.isNotBlank() }
+
+            if (cost == null && volume == null) {
+                return PumpCostVolResult(error = "Could not read pump display")
+            }
+
+            val debugJson = if (debug) {
+                JsonObject().apply {
+                    addProperty("cost", cv.cost)
+                    addProperty("volume", cv.vol)
+                    addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
+                }.toString()
+            } else null
+
+            return PumpCostVolResult(cost = cost, volume = volume, debugJson = debugJson)
+        } catch (e: Exception) {
+            Log.e("OcrHarness", "Pump cost/vol pipeline failed", e)
+            return PumpCostVolResult(error = "Pump OCR failed: ${e.message ?: "Unknown error"}")
         }
     }
 
