@@ -156,7 +156,8 @@ object OcrHarness {
             val paddleEngine = NativePaddleEngine(context, "Numeric")
             val recBuffer = NativePaddleEngine.recBufferSet
             val cv = PumpCostVolUtils.runSetGCostVolExtraction(
-                masterBuffer, paddleEngine, recBuffer, masterBuffer.width, masterBuffer.height
+                masterBuffer, paddleEngine, recBuffer, masterBuffer.width, masterBuffer.height,
+                skipDeskew = true
             )
 
             val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }

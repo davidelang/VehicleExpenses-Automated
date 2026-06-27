@@ -5,6 +5,7 @@
 #include <set>
 #include <mutex>
 #include <cstring>
+#include <new>
 #include "BufferSetHandle.h"
 
 #define LOG_TAG "BufferSet"
@@ -90,19 +91,29 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
         LOGI("BufferSet resize reused: %dx%d logical=%zu capacity=%zu", width, height, needed, handle->allocatedByteCount);
     } else {
         size_t oldAllocated = handle->allocatedByteCount;
-        uint8_t* safe = bufferSetSafePointer(handle);
-        *(handle->yMat) = cv::Mat(1, 1, CV_8UC1, safe, 1);
-        *(handle->uvMat) = cv::Mat(1, 1, CV_8UC2, safe, 2);
-        *(handle->nv21Mat) = cv::Mat(1, 1, CV_8UC1, safe, 1);
-        if (handle->globalBuffer != nullptr) env->DeleteGlobalRef(handle->globalBuffer);
-        handle->globalBuffer = nullptr;
-        delete[] handle->data;
-        handle->data = nullptr;
-        uint8_t* newData = new uint8_t[needed];
-        if (newData == nullptr) return;
+        uint8_t* newData = new (std::nothrow) uint8_t[needed];
+        if (newData == nullptr) {
+            LOGE("BufferSet resize grow OOM: %dx%d needs %zu bytes (capacity %zu)", width, height, needed, oldAllocated);
+            return;
+        }
         std::memset(newData, 0, frameSize);
         std::memset(newData + frameSize, 128, needed - frameSize);
+        jobject localBuffer = env->NewDirectByteBuffer(newData, needed);
+        if (localBuffer == nullptr) {
+            LOGE("BufferSet resize grow failed: NewDirectByteBuffer for %zu bytes", needed);
+            delete[] newData;
+            return;
+        }
+        jobject newGlobalBuffer = env->NewGlobalRef(localBuffer);
+        if (newGlobalBuffer == nullptr) {
+            LOGE("BufferSet resize grow failed: NewGlobalRef");
+            delete[] newData;
+            return;
+        }
+        if (handle->globalBuffer != nullptr) env->DeleteGlobalRef(handle->globalBuffer);
+        delete[] handle->data;
         handle->data = newData;
+        handle->globalBuffer = newGlobalBuffer;
         handle->width = width;
         handle->height = height;
         handle->actualByteCount = needed;
@@ -110,8 +121,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_BufferSet_nativeResize(
         *(handle->yMat) = cv::Mat((int)height, (int)width, CV_8UC1, newData, (size_t)width);
         *(handle->uvMat) = cv::Mat((int)height / 2, (int)width / 2, CV_8UC2, newData + (width * height), (size_t)width);
         *(handle->nv21Mat) = cv::Mat((int)height * 3 / 2, (int)width, CV_8UC1, newData, (size_t)width);
-        jobject localBuffer = env->NewDirectByteBuffer(newData, needed);
-        handle->globalBuffer = env->NewGlobalRef(localBuffer);
         LOGI("BufferSet resize grew: %dx%d to %zu bytes (was %zu)", width, height, needed, oldAllocated);
     }
 }

@@ -686,147 +686,6 @@ private suspend fun runPumpExperiment(
                     }
                 }
 
-                
-                data class CostVolClassifyResult(val cost: String, val vol: String, val costCand: RedBoxOcrCandidate, val volCand: RedBoxOcrCandidate)
-
-                // fix-classifier-numeric-only-values-asis-golden-yband-20260619-plan + fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: digits-only; overlap clustering; probs for correctness; role-conditional repair
-                fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): CostVolClassifyResult {
-                    val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
-                    if (candidates.isEmpty()) return na
-                    fun digitCount(s: String) = s.count { it.isDigit() }
-                    fun parse(s: String): Pair<Float, Int> {
-                        val d = s.filter { it.isDigit() || it == '.' }
-                        val f = d.toFloatOrNull() ?: 0f
-                        val dp = if ("." in d) d.substringAfter(".").length else 0
-                        return f to dp
-                    }
-                    data class Enriched(
-                        val cand: RedBoxOcrCandidate,
-                        val cleanDigits: String,
-                        val value: Float,
-                        val dp: Int,
-                        val probScore: Float,
-                        val costScore: Int,
-                        val volScore: Int
-                    )
-                    fun correctnessScore(e: Enriched): Int {
-                        var s = (e.probScore * 100).toInt()
-                        if ("." in e.cleanDigits) s += 50
-                        return s
-                    }
-                    fun clusterOf(pool: List<Enriched>, seed: Enriched): List<Enriched> {
-                        val pref = seed.cand.rect ?: return listOf(seed)
-                        return pool.filter { e ->
-                            e.cand.rect?.let { significantYOverlap(pref, it) } == true
-                        }.ifEmpty { listOf(seed) }
-                    }
-                    fun pickClusterBest(pool: List<Enriched>, seed: Enriched): Enriched =
-                        clusterOf(pool, seed).maxByOrNull { correctnessScore(it) + maxOf(it.costScore, it.volScore) } ?: seed
-                    val goldenYs = candidates.filter { c ->
-                        val a = c.asis.lowercase()
-                        a.contains("$") || a.contains("/gal") || a.contains("gal")
-                    }.mapNotNull { it.rect?.top }
-                    val enriched = candidates.mapNotNull { c ->
-                        if (hasBadInternalDecimals(c.digits)) return@mapNotNull null
-                        val cleanDigits = cleanDecimal(c.digits)
-                        if (digitCount(cleanDigits) < 2) return@mapNotNull null
-                        val (v, dp) = parse(cleanDigits)
-                        var cs = 0; var vs = 0
-                        if (dp == 2) cs += 12
-                        if (dp == 3) vs += 12
-                        if (v > 20) cs += 8
-                        if (v < 60 && v > 0) vs += 6
-                        if (v in 3.0..30.0) vs += 1
-                        if (dp > 0) { cs += 2; vs += 2 }
-                        if ("." in cleanDigits) { cs += 5; vs += 5 }
-                        if (goldenYs.isNotEmpty() && c.rect != null) {
-                            val minDist = goldenYs.minOf { kotlin.math.abs(it - c.rect.top) }
-                            cs += 20 - minOf(minDist / 10, 20)
-                        }
-                        val prob = probCorrectness(c.digitsProbs)
-                        cs += (prob * 20).toInt()
-                        vs += (prob * 20).toInt()
-                        Enriched(c, cleanDigits, v, dp, prob, cs, vs)
-                    }
-                    if (enriched.isEmpty()) return na
-                    if (enriched.none { it.cand.rect != null }) {
-                        val costE = enriched.maxByOrNull { it.costScore }!!
-                        val volE = enriched.filter { it.cand != costE.cand }.maxByOrNull { it.volScore }
-                            ?: enriched.maxByOrNull { it.volScore }!!
-                        var cstFb = repairDecimalForRole(costE.cleanDigits, "cost")
-                        var vlmFb = repairDecimalForRole(volE.cleanDigits, "vol")
-                        if (cstFb == vlmFb && enriched.size >= 2) vlmFb = "N/A"
-                        if (digitCount(cstFb) < 2) cstFb = "N/A"
-                        if (digitCount(vlmFb) < 2) vlmFb = "N/A"
-                        return CostVolClassifyResult(cstFb, vlmFb, costE.cand, volE.cand)
-                    }
-                    val seed1 = enriched.maxByOrNull { maxOf(it.costScore, it.volScore) }!!
-                    val firstBest = pickClusterBest(enriched, seed1)
-                    val firstCluster = clusterOf(enriched, firstBest)
-                    val firstClusterIds = firstCluster.map { it.cand }.toSet()
-                    val costLikelihood = firstCluster.sumOf { it.costScore.toDouble() }.toFloat() + firstBest.probScore * 30f
-                    val volLikelihood = firstCluster.sumOf { it.volScore.toDouble() }.toFloat() + firstBest.probScore * 30f
-                    val firstIsCost = costLikelihood >= volLikelihood
-                    val prefRect1 = firstBest.cand.rect
-                    val secondPool = enriched.filter { e ->
-                        e.cand !in firstClusterIds && (prefRect1 == null || e.cand.rect == null || !significantYOverlap(prefRect1, e.cand.rect))
-                    }
-                    var costCand: RedBoxOcrCandidate
-                    var volCand: RedBoxOcrCandidate
-                    var cst: String
-                    var vlm: String
-                    if (firstIsCost) {
-                        costCand = firstBest.cand
-                        cst = firstBest.cleanDigits
-                        if (secondPool.isNotEmpty()) {
-                            val seed2 = secondPool.maxByOrNull { maxOf(it.costScore, it.volScore) }!!
-                            val secondBest = pickClusterBest(secondPool, seed2)
-                            volCand = secondBest.cand
-                            vlm = secondBest.cleanDigits
-                        } else {
-                            val alt = enriched.filter { it.cand != firstBest.cand }.maxByOrNull { it.volScore }
-                            if (alt != null) { volCand = alt.cand; vlm = alt.cleanDigits }
-                            else { volCand = firstBest.cand; vlm = "N/A" }
-                        }
-                    } else {
-                        volCand = firstBest.cand
-                        vlm = firstBest.cleanDigits
-                        if (secondPool.isNotEmpty()) {
-                            val seed2 = secondPool.maxByOrNull { maxOf(it.costScore, it.volScore) }!!
-                            val secondBest = pickClusterBest(secondPool, seed2)
-                            costCand = secondBest.cand
-                            cst = secondBest.cleanDigits
-                        } else {
-                            val alt = enriched.filter { it.cand != firstBest.cand }.maxByOrNull { it.costScore }
-                            if (alt != null) { costCand = alt.cand; cst = alt.cleanDigits }
-                            else { costCand = firstBest.cand; cst = "N/A" }
-                        }
-                    }
-                    cst = repairDecimalForRole(cst, "cost")
-                    vlm = repairDecimalForRole(vlm, "vol")
-                    if (cst == vlm && enriched.size >= 2) {
-                        if (firstIsCost) {
-                            val alt = secondPool.filter { it.cand != volCand }.maxByOrNull { it.volScore }
-                                ?: enriched.filter { it.cand != costCand && it.cand != volCand }.maxByOrNull { it.volScore }
-                            if (alt != null) {
-                                volCand = alt.cand
-                                vlm = repairDecimalForRole(alt.cleanDigits, "vol")
-                            } else vlm = "N/A"
-                        } else {
-                            val alt = secondPool.filter { it.cand != costCand }.maxByOrNull { it.costScore }
-                                ?: enriched.filter { it.cand != costCand && it.cand != volCand }.maxByOrNull { it.costScore }
-                            if (alt != null) {
-                                costCand = alt.cand
-                                cst = repairDecimalForRole(alt.cleanDigits, "cost")
-                            } else cst = "N/A"
-                        }
-                    }
-                    if (digitCount(cst) < 2) cst = "N/A"
-                    if (digitCount(vlm) < 2) vlm = "N/A"
-                    return CostVolClassifyResult(cst, vlm, costCand, volCand)
-                }
-
-
                 suspend fun getFinal(
                     hunks: List<PumpHunk>,
                     engine: String,
@@ -1285,7 +1144,7 @@ private suspend fun runPumpExperiment(
                 val ocrA = ocrPumpRectsAsisAndDigits(aRedPixel)
                 val aCands = buildRedBoxCandidates(aRedPixel, ocrA.asis, ocrA.digits, ocrA.asisProbs, ocrA.digitsProbs)
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
-                val cvAPaddle = classifyCostVolFromBoxOcr(aCands)
+                val cvAPaddle = PumpCostVolUtils.classifyCostVolFromBoxOcr(aCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = aRedPixel,
                     ocrSourceRects = aRedPixel,
@@ -1297,7 +1156,7 @@ private suspend fun runPumpExperiment(
                     assembly = mapOf("method" to "raw", "note" to "raw reds as ocr rects (no blue expansion)")
                 )
                     branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
-                val cvAML = classifyCostVolFromBoxOcr(aCands)
+                val cvAML = PumpCostVolUtils.classifyCostVolFromBoxOcr(aCands)
                 branch.metadata["costVolDecisionData_ML"] = buildCostVolDecisionDataJson(
                     reds = aRedPixel,
                     ocrSourceRects = aRedPixel,
@@ -1434,7 +1293,7 @@ private suspend fun runPumpExperiment(
                 val redPixelB = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
-                val cvB = classifyCostVolFromBoxOcr(bCands)
+                val cvB = PumpCostVolUtils.classifyCostVolFromBoxOcr(bCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelB,
                     ocrSourceRects = bOcrSourceRects,
@@ -1656,7 +1515,7 @@ private suspend fun runPumpExperiment(
                 val redPixelC = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
-                val cvC = classifyCostVolFromBoxOcr(cCands)
+                val cvC = PumpCostVolUtils.classifyCostVolFromBoxOcr(cCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelC,
                     ocrSourceRects = cOcrSourceRects,
@@ -1822,7 +1681,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
                 val dVertFactors = (1..8).map { it / 10f }
-                val cvD = classifyCostVolFromBoxOcr(dCands)
+                val cvD = PumpCostVolUtils.classifyCostVolFromBoxOcr(dCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelD,
                     ocrSourceRects = customBluePixelD,
@@ -2071,7 +1930,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
                 val eVertFactors = (1..8).map { it / 10f }
-                val cvE = classifyCostVolFromBoxOcr(eCands)
+                val cvE = PumpCostVolUtils.classifyCostVolFromBoxOcr(eCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelE,
                     ocrSourceRects = customBluePixelE,
@@ -2234,7 +2093,7 @@ private suspend fun runPumpExperiment(
                 val redPixelF = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
-                val cvF = classifyCostVolFromBoxOcr(fCands)
+                val cvF = PumpCostVolUtils.classifyCostVolFromBoxOcr(fCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelF,
                     ocrSourceRects = fOcrSourceRects,
@@ -2397,7 +2256,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
                 val gVertFactors = (1..8).map { it / 10f }
-                val cvG = classifyCostVolFromBoxOcr(gCands)
+                val cvG = PumpCostVolUtils.classifyCostVolFromBoxOcr(gCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelG,
                     ocrSourceRects = customBluePixelG,
@@ -3220,17 +3079,10 @@ private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Cont
         val input = context.contentResolver.openInputStream(uri) ?: return@withContext false
         input.use {
             ZipInputStream(it).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    // use basename only so images land flat at top-level of pump_photos (listFiles is non-recursive)
-                    val baseName = entry.name.substringAfterLast('/')
-                    val file = File(targetDir, baseName)
-                    if (entry.isDirectory) file.mkdirs() else { file.parentFile?.mkdirs(); file.outputStream().use { zis.copyTo(it) } }
-                    zis.closeEntry()
-                    entry = zis.nextEntry
-                }
+                // flattenToBasename: images land flat at top-level of pump_photos (listFiles is non-recursive)
+                ZipExtractUtils.extractZipStreamToDir(zis, targetDir, flattenToBasename = true)
             }
-        }; true
+        }
     } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
 }
 
