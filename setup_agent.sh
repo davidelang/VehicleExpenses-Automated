@@ -53,7 +53,15 @@ while true; do
     continue
   fi
   echo "Removing stale non-worktree directory agent-$N (failed prior setup_agent run)..."
-  rm -rf "agent-$N"
+  if [ -f "agent-$N/ENGINEERING_LOG.md" ]; then
+    sudo chattr -a "agent-$N/ENGINEERING_LOG.md" 2>/dev/null || true
+  fi
+  if ! rm -rf "agent-$N" 2>/dev/null; then
+    sudo rm -rf "agent-$N" 2>/dev/null || {
+      echo "Error: cannot remove stale agent-$N (try: sudo rm -rf agent-$N)"
+      exit 1
+    }
+  fi
   AGENT_ID="agent-$N"
   break
 done
