@@ -135,41 +135,12 @@ else
     echo "Created symlink: ${BRANCH_NAME}.wt -> $AGENT_ID"
 fi
 
-# 4. Setup Agent Workspace Folders
+# 4. Populate worktree from branch tip (smudge runs during this step).
 cd "$AGENT_ID"
-mkdir -p .gemini/policies
-mkdir -p .gemini/plans
-touch .gemini/plans/.gitkeep
-
-# 5. Setup Sandbox (Symlink)
-ln -s ../dev-ai-interaction dev-ai-interaction
-
-# 5b. Copy local.properties for Android builds
-if [ -f "../master/local.properties" ]; then
-    cp ../master/local.properties local.properties
-elif [ -f "../local.properties" ]; then
-    cp ../local.properties local.properties
-fi
-
-# 6. Initialize AGENT_CONTEXT.md
-if [ -f "../AGENT_CONTEXT.md.template" ]; then
-    cp "../AGENT_CONTEXT.md.template" AGENT_CONTEXT.md
-    sed -i "s/agent-X/$AGENT_ID/" AGENT_CONTEXT.md
-    sed -i "s/UNASSIGNED/$BRANCH_NAME/" AGENT_CONTEXT.md
-else
-    cat > AGENT_CONTEXT.md <<EOF
-# Agent Context: $AGENT_ID
-
-- **Current Branch:** $BRANCH_NAME
-- **Status:** INITIALIZED
-EOF
-fi
-
-# Now populate the worktree contents. Because we pre-copied project.config and the
-# filter scripts, the smudge filters will run with the config available and
-# perform the proper substitutions for @@ tokens.
-if ! git checkout .; then
-  echo "Error: Failed to populate worktree (git checkout .)."
+# After --no-checkout the index is empty; 'git checkout .' matches nothing.
+# Checkout from HEAD tree so project.config + filter scripts are present for smudge.
+if ! git checkout HEAD -- .; then
+  echo "Error: Failed to populate worktree (git checkout HEAD -- .)."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
   exit 1
@@ -194,7 +165,7 @@ else
   done
 fi
 if [ "$SMUDGE_CHECK_FAILED" -ne 0 ]; then
-  echo "Hint: ensure project.config and filter-apply-config were copied before 'git checkout .'."
+  echo "Hint: ensure project.config and filter-apply-config were copied before 'git checkout HEAD -- .'."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
   exit 1
@@ -206,7 +177,36 @@ else
   git config core.sharedRepository group
 fi
 
-# 7. Make this a *fully working* tree with all correct permissions.
+# 5. Setup Agent Workspace Folders
+mkdir -p .gemini/policies
+mkdir -p .gemini/plans
+touch .gemini/plans/.gitkeep
+
+# 6. Setup Sandbox (Symlink)
+ln -sf ../dev-ai-interaction dev-ai-interaction
+
+# 6b. Copy local.properties for Android builds
+if [ -f "../master/local.properties" ]; then
+    cp ../master/local.properties local.properties
+elif [ -f "../local.properties" ]; then
+    cp ../local.properties local.properties
+fi
+
+# 7. Initialize AGENT_CONTEXT.md
+if [ -f "../AGENT_CONTEXT.md.template" ]; then
+    cp "../AGENT_CONTEXT.md.template" AGENT_CONTEXT.md
+    sed -i "s/agent-X/$AGENT_ID/" AGENT_CONTEXT.md
+    sed -i "s/UNASSIGNED/$BRANCH_NAME/" AGENT_CONTEXT.md
+else
+    cat > AGENT_CONTEXT.md <<EOF
+# Agent Context: $AGENT_ID
+
+- **Current Branch:** $BRANCH_NAME
+- **Status:** INITIALIZED
+EOF
+fi
+
+# 8. Make this a *fully working* tree with all correct permissions.
 #    Since we are always run from the orchestration root (which has the
 #    authoritative latest copies and fixers), we:
 #    - copy latest critical infra files
