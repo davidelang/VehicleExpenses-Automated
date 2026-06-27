@@ -137,6 +137,18 @@ else
     if [ ${#GRADLE_ARGS[@]} -gt 0 ]; then
       echo "Passing gradle flags: ${GRADLE_ARGS[*]}"
     fi
+    # Use project-local shared Gradle home (not per-user ~/.gradle).
+    # Required for multi-user builds: same users serve different projects.
+    ORCH_ROOT="$(cd "$(dirname "$0")" && pwd)"
+    # For worktrees, the orchestration root is the parent
+    [ -d "$ORCH_ROOT/../.gradle-shared" ] && ORCH_ROOT="$(cd "$ORCH_ROOT/.." && pwd)"
+    if [ -d "$ORCH_ROOT/.gradle-shared" ]; then
+      export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+    fi
+    # Shared Android home: consistent debug keystore for all builders
+    if [ -d "$ORCH_ROOT/.android-shared" ]; then
+      export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
+    fi
     # Always go through build_app — direct gradlew/gradlew.bat is forbidden (breaks integrity, perms, tags).
     GRADLE_CMD=( "${GRADLE_ARGS[@]}" assembleDebug )
     (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_CMD[@]}")
