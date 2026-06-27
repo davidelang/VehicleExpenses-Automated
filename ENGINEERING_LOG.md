@@ -70,3 +70,10 @@ test line for reset attempt
 - Per user instruction: as orchestration agent, changes go to root deploy, then use update-rules.sh to push to worktrees (agent-1 etc.).
 - Will produce formal ultra-micro plan in dev-ai-interaction/plans/.
 - Only deploy + TODO.md will be modified in the plan.
+
+## 2026-06-27 - Created plan for reliable vehicle ref dash photo push (data-to-device branch, post-rebase). Plan written to dev-ai-interaction/plans/reliable-...-20260627-plan.md as primary artifact. Another agent to implement after approval. Diagnosis: Coil cache + restore hygiene. No source edits this phase.
+
+## 2026-06-27 - Executing reliable vehicle reference dash photo push plan
+
+- Started implementation of dev-ai-interaction/plans/reliable-vehicle-reference-dash-photo-push-and-ui-display-20260627-plan.md
+- Scope: deploy script + optional push-vehicle-refs.sh (orchestration branch); no app/src changes
