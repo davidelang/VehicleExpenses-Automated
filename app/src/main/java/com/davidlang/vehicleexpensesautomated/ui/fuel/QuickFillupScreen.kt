@@ -1042,6 +1042,7 @@ fun QuickFillupScreen(
                 ) {
                     fieldsAndSaveContent()
                 }
+                // Panel D — landscape non-editing only (portrait/editing unchanged)
                 if (!isEditing && zoomDWidth > 0.dp) {
                     Box(
                         modifier = Modifier
