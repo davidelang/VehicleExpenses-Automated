@@ -85,7 +85,7 @@
 
 - [x] Executing plan dev-ai-interaction/plans/quickfill-save-button-and-capture-aspect-fix-20260628-plan.md: Save visibility in B (bPanelSize 72→110.dp), 4:3 capture 2048x1536 + AspectRatioStrategy, dimension-based landscape layout (useLandscapeLayout), buffer comments. Baseline: tweak-quick-fill/builds @ 081297de. All 10 phases complete.
 
-- [ ] Executing plan dev-ai-interaction/plans/quickfill-c-content-sized-save-visible-and-warnings-fix-20260628-plan.md: C content-sized (wrapContentWidth, vehicle cap 160.dp), Save visible (bPanelSize 150.dp, button wrapContentWidth), deprecation fixes. Baseline: tweak-quick-fill/builds @ 9fefc393.
+- [x] Executing plan dev-ai-interaction/plans/quickfill-c-content-sized-save-visible-and-warnings-fix-20260628-plan.md: C content-sized (wrapContentWidth, vehicle cap 160.dp), Save visible (bPanelSize 150.dp, button wrapContentWidth), deprecation fixes. Baseline: tweak-quick-fill/builds @ 9fefc393. All 11 phases complete.
   - [x] Phase 1: Forensic C layout + fieldsContent sizing (tag: d12f8077)
   - [x] Phase 2: C Column wrapContentWidth (tag: 5c15a23c)
   - [x] Phase 3: fieldsContent wrapContentWidth (tag: c4b47199)
@@ -96,4 +96,4 @@
   - [x] Phase 8: saveButtonContent wrapContentWidth (tag: acc3543a)
   - [x] Phase 9: defaultDisplay deprecation fix (tag: 04151677)
   - [x] Phase 10: LocalLifecycleOwner → androidx.lifecycle.compose (tag: 80377596)
-  - [x] Phase 11: Final sweep + build
+  - [x] Phase 11: Final sweep + build (tag: 0b0ae8f4)
