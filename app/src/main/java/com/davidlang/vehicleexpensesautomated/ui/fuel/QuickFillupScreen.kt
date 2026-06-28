@@ -802,23 +802,23 @@ fun QuickFillupScreen(
 
             if (stackedPump) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.wrapContentWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    costField(Modifier.weight(1f), ImeAction.Next)
+                    costField(Modifier.widthIn(min = 80.dp), ImeAction.Next)
                     swapButton()
                 }
-                volumeField(Modifier.fillMaxWidth())
+                volumeField(Modifier.widthIn(min = 80.dp))
             } else {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.wrapContentWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    costField(Modifier.weight(1f), ImeAction.Next)
+                    costField(Modifier.widthIn(min = 80.dp), ImeAction.Next)
                     swapButton()
-                    volumeField(Modifier.weight(1f))
+                    volumeField(Modifier.widthIn(min = 80.dp))
                 }
             }
         }
