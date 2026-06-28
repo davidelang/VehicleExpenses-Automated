@@ -99,7 +99,36 @@ fun QuickFillupScreen(
     var isOdoFocused by remember { mutableStateOf(false) }
     var isVolumeFocused by remember { mutableStateOf(false) }
     var isCostFocused by remember { mutableStateOf(false) }
-    val isEditing = isOdoFocused || isVolumeFocused || isCostFocused
+    var editingField by rememberSaveable { mutableStateOf<String?>(null) }
+    val isEditing = isOdoFocused || isVolumeFocused || isCostFocused || editingField != null
+
+    val appendToDecimalField: (String, String) -> String = { current, digit ->
+        when (digit) {
+            "." -> if (current.contains(".")) current else if (current.isEmpty()) "0." else "$current."
+            else -> if (current.length < 10) current + digit else current
+        }
+    }
+
+    val onKeypadDigit: (String) -> Unit = { digit ->
+        when (editingField) {
+            "odo" -> if (digit.all { it.isDigit() } && odometer.length < 7) odometer += digit
+            "cost" -> cost = appendToDecimalField(cost, digit)
+            "volume" -> gallons = appendToDecimalField(gallons, digit)
+        }
+    }
+
+    val onKeypadBackspace: () -> Unit = {
+        when (editingField) {
+            "odo" -> if (odometer.isNotEmpty()) odometer = odometer.dropLast(1)
+            "cost" -> if (cost.isNotEmpty()) cost = cost.dropLast(1)
+            "volume" -> if (gallons.isNotEmpty()) gallons = gallons.dropLast(1)
+        }
+    }
+
+    val onKeypadDismiss: () -> Unit = {
+        editingField = null
+        focusManager.clearFocus()
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -484,7 +513,12 @@ fun QuickFillupScreen(
                     label = { Text("Odo") },
                     modifier = Modifier
                         .weight(1.0f)
-                        .onFocusChanged { isOdoFocused = it.isFocused },
+                        .onFocusChanged {
+                            isOdoFocused = it.isFocused
+                            if (it.isFocused) editingField = "odo"
+                            else if (editingField == "odo") editingField = null
+                        },
+                    readOnly = isLandscape,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
                         imeAction = ImeAction.Next
@@ -543,7 +577,12 @@ fun QuickFillupScreen(
                     },
                     modifier = Modifier
                         .weight(1.0f)
-                        .onFocusChanged { isCostFocused = it.isFocused },
+                        .onFocusChanged {
+                            isCostFocused = it.isFocused
+                            if (it.isFocused) editingField = "cost"
+                            else if (editingField == "cost") editingField = null
+                        },
+                    readOnly = isLandscape,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Next
@@ -581,7 +620,12 @@ fun QuickFillupScreen(
                     },
                     modifier = Modifier
                         .weight(1.0f)
-                        .onFocusChanged { isVolumeFocused = it.isFocused },
+                        .onFocusChanged {
+                            isVolumeFocused = it.isFocused
+                            if (it.isFocused) editingField = "volume"
+                            else if (editingField == "volume") editingField = null
+                        },
+                    readOnly = isLandscape,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Done
@@ -792,8 +836,22 @@ fun QuickFillupScreen(
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxSize()) {
-                // Panel A — camera/results (remaining space)
-                if (!isEditing) {
+                if (isEditing) {
+                    // Landscape editing: keypad replaces A+B space
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        NumericKeypad(
+                            onDigit = onKeypadDigit,
+                            onBackspace = onKeypadBackspace,
+                            onDismiss = onKeypadDismiss
+                        )
+                    }
+                } else {
+                    // Panel A — camera/results (remaining space)
                     Box(
                         modifier = Modifier
                             .weight(1f)
