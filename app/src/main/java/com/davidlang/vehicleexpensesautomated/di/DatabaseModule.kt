@@ -20,15 +20,15 @@ import javax.inject.Singleton
 object DatabaseModule {
 
     val MIGRATION_5_6 = object : Migration(5, 6) {
-        override fun migrate(database: SupportSQLiteDatabase) {
-            database.execSQL("ALTER TABLE expense_entries ADD COLUMN cloudManifest TEXT")
-            database.execSQL("ALTER TABLE fuel_entries ADD COLUMN cloudManifest TEXT")
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE expense_entries ADD COLUMN cloudManifest TEXT")
+            db.execSQL("ALTER TABLE fuel_entries ADD COLUMN cloudManifest TEXT")
         }
     }
 
     val MIGRATION_6_7 = object : Migration(6, 7) {
-        override fun migrate(database: SupportSQLiteDatabase) {
-            database.execSQL("ALTER TABLE vehicles ADD COLUMN isIcrs INTEGER NOT NULL DEFAULT 0")
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE vehicles ADD COLUMN isIcrs INTEGER NOT NULL DEFAULT 0")
         }
     }
 
