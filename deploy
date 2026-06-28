@@ -367,16 +367,36 @@ backup_test_data() {
   # This avoids /sdcard permission issues.
   db_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
     if [ -f databases/vehicle_expenses.db ]; then
-      cat databases/vehicle_expenses.db > files/ve_db.bak 2>&1 || echo __DB_WRITE_ERR__
+      cat databases/vehicle_expenses.db > files/ve_db.bak 2>&1
+      if [ -f databases/vehicle_expenses.db-wal ]; then
+        cat databases/vehicle_expenses.db-wal > files/ve_db-wal.bak 2>&1
+      fi
+      if [ -f databases/vehicle_expenses.db-shm ]; then
+        cat databases/vehicle_expenses.db-shm > files/ve_db-shm.bak 2>&1
+      fi
     else
       echo __NO_DB__
     fi
   '" )
-  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db.bak" > "$BDIR/vehicle_expenses.db.bak" 2>/dev/null; then
-    if [ -s "$BDIR/vehicle_expenses.db.bak" ]; then
+  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db.bak" > "$BDIR/vehicle_expenses.db" 2>/dev/null; then
+    if [ -s "$BDIR/vehicle_expenses.db" ]; then
+      # Attempt to pull WAL and SHM files
+      adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db-wal.bak" > "$BDIR/vehicle_expenses.db-wal" 2>/dev/null || true
+      adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db-shm.bak" > "$BDIR/vehicle_expenses.db-shm" 2>/dev/null || true
+
+      # Merge WAL if it exists and is non-empty on the host
+      if [ -f "$BDIR/vehicle_expenses.db-wal" ] && [ -s "$BDIR/vehicle_expenses.db-wal" ]; then
+        sqlite3 "$BDIR/vehicle_expenses.db" "PRAGMA wal_checkpoint(truncate);" >/dev/null 2>&1 || true
+      fi
+
+      # Rename to expected vehicle_expenses.db.bak and delete journal files on host
+      mv "$BDIR/vehicle_expenses.db" "$BDIR/vehicle_expenses.db.bak"
+      rm -f "$BDIR/vehicle_expenses.db-wal" "$BDIR/vehicle_expenses.db-shm"
+
       echo "    Captured DB (vehicle_expenses.db.bak)"
     else
       echo "    DB backup produced 0-byte file"
+      rm -f "$BDIR/vehicle_expenses.db"
     fi
   else
     if adb -s "$DEV" shell "pm list packages $PACKAGE_NAME" 2>/dev/null | grep -q "$PACKAGE_NAME"; then
@@ -386,7 +406,7 @@ backup_test_data() {
       echo "    DB backup skipped/failed (app may not be installed or not debuggable)"
     fi
   fi
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_db.bak" 2>/dev/null || true
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_db.bak files/ve_db-wal.bak files/ve_db-shm.bak" 2>/dev/null || true
 
   # Dash/reference pictures the app reads (vehicle_ref_*.jpg written to context.filesDir)
   # Optional: VEHICLE_REFS_SOURCE_DIR=/path/to/dir with phone-pulled vehicle_ref_*.jpg (skips device capture).
