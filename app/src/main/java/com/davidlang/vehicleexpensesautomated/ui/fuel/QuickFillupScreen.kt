@@ -40,6 +40,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
+import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
@@ -79,6 +80,7 @@ fun QuickFillupScreen(
     val hasResults = captureViewState == CaptureViewState.Results
     var stageLabel by remember { mutableStateOf("") }
     var isPhotoSaving by remember { mutableStateOf(false) }
+    var zoomControl by remember { mutableStateOf<CameraZoomControl?>(null) }
 
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val debugMode = remember { prefs.getBoolean("debug_ocr_pipeline", false) }
@@ -160,6 +162,7 @@ fun QuickFillupScreen(
                 CameraPreview(
                     modifier = Modifier.fillMaxSize(),
                     imageCapture = imageCapture,
+                    onZoomControlChanged = { zoomControl = it },
                     onImageCaptured = { imageProxy ->
                         if (capturePending) {
                             scope.launch(Dispatchers.Main.immediate) {
@@ -329,14 +332,102 @@ fun QuickFillupScreen(
                 .background(Color.Black),
             contentAlignment = Alignment.TopStart
         ) {
-            BoxWithConstraints(modifier = Modifier.align(Alignment.TopStart)) {
-                val contentModifier = if (maxWidth / maxHeight > captureAspectRatio) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val fitsByHeight = maxWidth / maxHeight > captureAspectRatio
+                val contentModifier = if (fitsByHeight) {
                     Modifier.fillMaxHeight().aspectRatio(captureAspectRatio)
                 } else {
                     Modifier.fillMaxWidth().aspectRatio(captureAspectRatio)
                 }
-                Box(modifier = contentModifier) {
+                val contentWidth = if (fitsByHeight) maxHeight * captureAspectRatio else maxWidth
+                val contentHeight = if (fitsByHeight) maxHeight else maxWidth / captureAspectRatio
+                val hasRightBlank = contentWidth < maxWidth - 1.dp
+                val hasBottomBlank = contentHeight < maxHeight - 1.dp
+
+                Box(modifier = contentModifier.align(Alignment.TopStart)) {
                     cameraOrCropArea()
+                }
+
+                zoomControl?.let { zoom ->
+                    if (zoom.availableRatios.size > 1 && displayBitmap == null) {
+                        val zoomButtons = @Composable { modifier: Modifier ->
+                            Column(
+                                modifier = modifier.padding(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                zoom.availableRatios.forEach { ratio ->
+                                    val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
+                                    FilledTonalButton(
+                                        onClick = { zoom.setZoomRatio(ratio) },
+                                        modifier = Modifier.height(32.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = if (selected) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceVariant
+                                            }
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                    ) {
+                                        Text(
+                                            text = if (ratio == ratio.toLong().toFloat()) {
+                                                "${ratio.toLong()}x"
+                                            } else {
+                                                "${ratio}x"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        when {
+                            hasRightBlank -> zoomButtons(
+                                Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .width((maxWidth - contentWidth).coerceAtLeast(40.dp))
+                            )
+                            hasBottomBlank -> {
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .fillMaxWidth()
+                                        .padding(start = 4.dp, bottom = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    zoom.availableRatios.forEach { ratio ->
+                                        val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
+                                        FilledTonalButton(
+                                            onClick = { zoom.setZoomRatio(ratio) },
+                                            modifier = Modifier.height(32.dp),
+                                            colors = ButtonDefaults.filledTonalButtonColors(
+                                                containerColor = if (selected) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceVariant
+                                                }
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        ) {
+                                            Text(
+                                                text = if (ratio == ratio.toLong().toFloat()) {
+                                                    "${ratio.toLong()}x"
+                                                } else {
+                                                    "${ratio}x"
+                                                },
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            else -> zoomButtons(
+                                Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(4.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
