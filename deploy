@@ -665,41 +665,43 @@ restore_test_data() {
 
   # Restore DB
   if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
-    adb -s "$DEV" push "$LATEST/vehicle_expenses.db.bak" /sdcard/ve_db.bak >/dev/null
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && cp /sdcard/ve_db.bak databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db'" 2>/dev/null || true
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f /sdcard/ve_db.bak" 2>/dev/null || true
+    cat "$LATEST/vehicle_expenses.db.bak" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && dd of=databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db'" >/dev/null 2>&1 || true
     restored_db=true
   fi
   # Restore dash/reference images (vehicle_ref_*.jpg)
   if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then
-    adb -s "$DEV" push "$LATEST/vehicle_refs.tar.gz" /sdcard/ve_refs.tar.gz >/dev/null
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cd files && tar xzf /sdcard/ve_refs.tar.gz 2>/dev/null || true; cd ..; rm -f /sdcard/ve_refs.tar.gz'" 2>/dev/null || true
+    cat "$LATEST/vehicle_refs.tar.gz" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && dd of=files/ve_refs.tar.gz && cd files && tar xzf ve_refs.tar.gz 2>/dev/null && rm -f ve_refs.tar.gz'" >/dev/null 2>&1 || true
     restored_refs=true
   fi
   # Restore pump pictures (input images the app reads from pump_photos)
   if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then
-    adb -s "$DEV" push "$LATEST/pump_photos.tar.gz" /sdcard/ve_pump_photos.tar.gz >/dev/null
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    cat "$LATEST/pump_photos.tar.gz" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
       EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
       PDIR=\"\$EXTDIR/Android/data/$PACKAGE_NAME/files/pump_photos\"
-      mkdir -p \"\$PDIR\" && cd \"\$PDIR\" && tar xzf /sdcard/ve_pump_photos.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_pump_photos.tar.gz
-    '" 2>/dev/null || true
+      mkdir -p \"\$PDIR\"
+      dd of=files/ve_pump.tar.gz
+      cd \"\$PDIR\" && tar xzf /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz 2>/dev/null
+      rm -f /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz
+    '" >/dev/null 2>&1 || true
   fi
   # Restore alignment experiment input images (the app reads these from files/experiment_photos)
   if [ -f "$LATEST/alignment_photos.tar.gz" ] && [ -s "$LATEST/alignment_photos.tar.gz" ]; then
-    adb -s "$DEV" push "$LATEST/alignment_photos.tar.gz" /sdcard/ve_alignment_photos.tar.gz >/dev/null
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-      mkdir -p files/experiment_photos && cd files/experiment_photos && tar xzf /sdcard/ve_alignment_photos.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_alignment_photos.tar.gz
-    '" 2>/dev/null || true
+    cat "$LATEST/alignment_photos.tar.gz" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+      mkdir -p files/experiment_photos
+      dd of=files/experiment_photos/ve_align.tar.gz
+      cd files/experiment_photos && tar xzf ve_align.tar.gz 2>/dev/null && rm -f ve_align.tar.gz
+    '" >/dev/null 2>&1 || true
   fi
   # Restore source zips to /sdcard/Download (amazon + pump zips)
   if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then
-    adb -s "$DEV" push "$LATEST/ve_source_zips.tar.gz" /sdcard/ve_source_zips.tar.gz >/dev/null
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    cat "$LATEST/ve_source_zips.tar.gz" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
       EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
       DDIR=\"\$EXTDIR/Download\"
-      mkdir -p \"\$DDIR\" && cd \"\$DDIR\" && tar xzf /sdcard/ve_source_zips.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_source_zips.tar.gz
-    '" 2>/dev/null || true
+      mkdir -p \"\$DDIR\"
+      dd of=files/ve_source_zips.tar.gz
+      cd \"\$DDIR\" && tar xzf /data/data/$PACKAGE_NAME/files/ve_source_zips.tar.gz 2>/dev/null
+      rm -f /data/data/$PACKAGE_NAME/files/ve_source_zips.tar.gz
+    '" >/dev/null 2>&1 || true
   fi
   # Post-restore cache bust + clean launch (Coil disk cache + Room WAL) when DB or refs were restored.
   if [ "$restored_db" = true ] || [ "$restored_refs" = true ]; then
