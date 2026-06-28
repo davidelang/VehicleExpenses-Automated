@@ -7,7 +7,7 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -202,13 +202,9 @@ fun QuickFillupScreen(
     }
 
     val imageCapture: ImageCapture = remember {
-        // 4:3 full sensor aspect (2048x1536 ~2000 wide fine for odo; long side wide in landscape; avoids 13:9)
+        // Use aspect strategy to prefer device's native/correct aspect (4:3 for this sensor); ~2000 wide fine for odo
         val resSelector = ResolutionSelector.Builder()
             .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-            .setResolutionStrategy(ResolutionStrategy(
-                android.util.Size(2048, 1536),
-                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER
-            ))
             .build()
         ImageCapture.Builder()
             .setResolutionSelector(resSelector)
@@ -410,8 +406,8 @@ fun QuickFillupScreen(
         }
     }
 
-    // Full sensor 4:3 aspect (~2000 wide capture); used for A-panel letterbox sizing
-    val captureAspectRatio = 2048f / 1536f
+    // 4:3 aspect for A-panel letterbox sizing (matches strategy-selected capture aspect)
+    val captureAspectRatio = 4f / 3f
 
     val zoomButtonsContent = @Composable { modifier: Modifier ->
         zoomControl?.let { zoom ->

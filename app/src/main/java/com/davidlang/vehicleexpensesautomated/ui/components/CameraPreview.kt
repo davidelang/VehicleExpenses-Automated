@@ -9,7 +9,7 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
+
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.fillMaxSize
@@ -146,13 +146,9 @@ fun CameraPreview(
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
 
-                // 4:3 full sensor aspect (2048x1536 ~2000 wide fine for odo; long side wide in landscape; avoids 13:9)
+                // Use aspect strategy to prefer device's native/correct aspect (4:3 for this sensor); ~2000 wide fine for odo
                 val resSelector = ResolutionSelector.Builder()
                     .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-                    .setResolutionStrategy(ResolutionStrategy(
-                        android.util.Size(2048, 1536),
-                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER
-                    ))
                     .build()
 
                 val imageAnalysis = ImageAnalysis.Builder()

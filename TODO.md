@@ -106,7 +106,7 @@
   - [x] Phase 5: fieldsContent wrap confirm (tag: 239d7446)
   - [x] Phase 6: Forensic Save/B (tag: 42e2c5d5)
   - [x] Phase 7: bPanelSize 160.dp (tag: a32b51c5)
-  - [ ] Phase 8: Save in C for editing
+  - [x] Phase 8: Save in C for editing (tag: 5c160967)
   - [ ] Phase 9: Aspect auto (no hardcoded Size)
   - [ ] Phase 10: DatabaseModule migration param
   - [ ] Phase 11: menuAnchor deprecation fixes
