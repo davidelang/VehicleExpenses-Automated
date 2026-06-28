@@ -104,7 +104,7 @@
   - [x] Phase 3: C wrapContentWidth (tag: 3b2b1168)
   - [x] Phase 4: Remove weight(1f) on odo (tag: 528cd082)
   - [x] Phase 5: fieldsContent wrap confirm (tag: 239d7446)
-  - [ ] Phase 6: Forensic Save/B
+  - [x] Phase 6: Forensic Save/B (tag: 42e2c5d5)
   - [ ] Phase 7: bPanelSize 160.dp
   - [ ] Phase 8: Save in C for editing
   - [ ] Phase 9: Aspect auto (no hardcoded Size)
