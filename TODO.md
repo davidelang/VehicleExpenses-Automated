@@ -102,7 +102,7 @@
   - [x] Phase 1: Forensic layout/C sizing (tag: d303d83e)
   - [x] Phase 2: isLandscape decision (tag: bc1684bf)
   - [x] Phase 3: C wrapContentWidth (tag: 3b2b1168)
-  - [ ] Phase 4: Remove weight(1f) on odo
+  - [x] Phase 4: Remove weight(1f) on odo (tag: 528cd082)
   - [ ] Phase 5: fieldsContent wrap confirm
   - [ ] Phase 6: Forensic Save/B
   - [ ] Phase 7: bPanelSize 160.dp
