@@ -10,6 +10,7 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -52,6 +53,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Currency
+import java.util.Locale
 
 private enum class CaptureViewState { Live, Processing, Results }
 
@@ -563,24 +566,28 @@ fun QuickFillupScreen(
 
         Column(modifier = Modifier.fillMaxWidth().then(pumpBorder)) {
             val costField = @Composable { modifier: Modifier, imeAction: ImeAction ->
+                var showCurrencyMenu by remember { mutableStateOf(false) }
+                val currencySymbols = remember {
+                    // TODO future: GPS-based default + local filter for symbol chooser
+                    Currency.getAvailableCurrencies()
+                        .map { it.getSymbol(Locale.getDefault()) }
+                        .distinct()
+                        .sorted()
+                }
                 OutlinedTextField(
                     value = cost,
                     onValueChange = { cost = it },
-                    label = { Text(currencySymbol) },
-                    trailingIcon = {
-                        var showCurrencyMenu by remember { mutableStateOf(false) }
+                    label = {
                         Box {
-                            IconButton(
-                                onClick = { showCurrencyMenu = true },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Text("⚙️", style = MaterialTheme.typography.labelSmall)
-                            }
+                            SymbolLabel(
+                                symbol = currencySymbol,
+                                onClick = { showCurrencyMenu = true }
+                            )
                             DropdownMenu(
                                 expanded = showCurrencyMenu,
                                 onDismissRequest = { showCurrencyMenu = false }
                             ) {
-                                listOf("$", "€", "£", "¥", "C$").forEach { symbol ->
+                                currencySymbols.forEach { symbol ->
                                     DropdownMenuItem(
                                         text = { Text(symbol) },
                                         onClick = {
@@ -629,16 +636,31 @@ fun QuickFillupScreen(
                 }
             }
             val volumeField = @Composable { modifier: Modifier ->
+                var showVolumeMenu by remember { mutableStateOf(false) }
+                val volumeSymbols = remember { listOf("G", "L") }
                 OutlinedTextField(
                     value = gallons,
                     onValueChange = { gallons = it },
-                    label = { Text(volumeUnit) },
-                    trailingIcon = {
-                        IconButton(
-                            onClick = { volumeUnit = if (volumeUnit == "G") "L" else "G" },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Text(if (volumeUnit == "G") "L" else "G", style = MaterialTheme.typography.labelSmall)
+                    label = {
+                        Box {
+                            SymbolLabel(
+                                symbol = volumeUnit,
+                                onClick = { showVolumeMenu = true }
+                            )
+                            DropdownMenu(
+                                expanded = showVolumeMenu,
+                                onDismissRequest = { showVolumeMenu = false }
+                            ) {
+                                volumeSymbols.forEach { unit ->
+                                    DropdownMenuItem(
+                                        text = { Text(unit) },
+                                        onClick = {
+                                            volumeUnit = unit
+                                            showVolumeMenu = false
+                                        }
+                                    )
+                                }
+                            }
                         }
                     },
                     modifier = modifier.onFocusChanged {
@@ -973,6 +995,19 @@ fun QuickFillupScreen(
             }
         }
     }
+}
+
+@Composable
+private fun SymbolLabel(
+    symbol: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = symbol.take(1),
+        style = MaterialTheme.typography.labelSmall,
+        modifier = modifier.clickable(onClick = onClick)
+    )
 }
 
 @Composable
