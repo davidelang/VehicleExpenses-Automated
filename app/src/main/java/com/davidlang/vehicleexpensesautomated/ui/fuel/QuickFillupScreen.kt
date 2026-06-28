@@ -759,6 +759,8 @@ fun QuickFillupScreen(
                     } else {
                         convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
                     }
+                    // TODO future: persist non-default currency on FuelEntry (DB change later).
+                    // Cost uses raw numeric value; currencySymbol is display-only this turn.
                     fuelViewModel.saveFuel(
                         FuelEntry(
                             vehicleId = vehicleId,
@@ -898,10 +900,6 @@ fun QuickFillupScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    RoundActionButton(
-                        viewState = mainButtonState,
-                        onClick = onMainButtonClick
-                    )
                     IconButton(
                         onClick = onModeSwitchClick,
                         enabled = !isProcessing,
@@ -919,16 +917,16 @@ fun QuickFillupScreen(
                             }
                         )
                     }
+                    RoundActionButton(
+                        viewState = mainButtonState,
+                        onClick = onMainButtonClick
+                    )
                 }
             } else {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    RoundActionButton(
-                        viewState = mainButtonState,
-                        onClick = onMainButtonClick
-                    )
                     IconButton(
                         onClick = onModeSwitchClick,
                         enabled = !isProcessing,
@@ -942,6 +940,10 @@ fun QuickFillupScreen(
                             tint = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
+                    RoundActionButton(
+                        viewState = mainButtonState,
+                        onClick = onMainButtonClick
+                    )
                 }
             }
         }
