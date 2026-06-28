@@ -81,7 +81,7 @@ fun QuickFillupScreen(
     val scope = rememberCoroutineScope()
 
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
-    var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
+    var selectedVehicleId by rememberSaveable { mutableStateOf<Int?>(null) }
     var odometer by rememberSaveable { mutableStateOf("") }
     var gallons by rememberSaveable { mutableStateOf("") }
     var cost by rememberSaveable { mutableStateOf("") }
