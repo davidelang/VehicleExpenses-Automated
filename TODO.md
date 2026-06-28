@@ -95,5 +95,5 @@
   - [x] Phase 7: bPanelSize 110→150.dp (tag: dae336d8)
   - [x] Phase 8: saveButtonContent wrapContentWidth (tag: acc3543a)
   - [x] Phase 9: defaultDisplay deprecation fix (tag: 04151677)
-  - [x] Phase 10: LocalLifecycleOwner → androidx.lifecycle.compose
-  - [ ] Phase 11: Final sweep + build
+  - [x] Phase 10: LocalLifecycleOwner → androidx.lifecycle.compose (tag: 80377596)
+  - [x] Phase 11: Final sweep + build
