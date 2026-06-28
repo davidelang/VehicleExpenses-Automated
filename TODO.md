@@ -103,7 +103,7 @@
   - [x] Phase 2: isLandscape decision (tag: bc1684bf)
   - [x] Phase 3: C wrapContentWidth (tag: 3b2b1168)
   - [x] Phase 4: Remove weight(1f) on odo (tag: 528cd082)
-  - [ ] Phase 5: fieldsContent wrap confirm
+  - [x] Phase 5: fieldsContent wrap confirm (tag: 239d7446)
   - [ ] Phase 6: Forensic Save/B
   - [ ] Phase 7: bPanelSize 160.dp
   - [ ] Phase 8: Save in C for editing
