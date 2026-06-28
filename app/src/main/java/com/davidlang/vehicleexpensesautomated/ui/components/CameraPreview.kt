@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
 import android.util.Log
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -26,18 +27,65 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import android.view.OrientationEventListener
 import android.view.Surface
+data class CameraZoomControl(
+    val currentRatio: Float,
+    val minRatio: Float,
+    val maxRatio: Float,
+    val availableRatios: List<Float>,
+    val setZoomRatio: (Float) -> Unit
+)
+
+private val COMMON_ZOOM_RATIOS = listOf(0.5f, 1f, 2f, 4f)
+
+private fun computeAvailableRatios(minRatio: Float, maxRatio: Float): List<Float> {
+    return COMMON_ZOOM_RATIOS.filter { it in minRatio..maxRatio }
+        .ifEmpty { listOf(minRatio.coerceAtLeast(1f)) }
+}
 
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
     imageCapture: ImageCapture,
-    onImageCaptured: (ImageProxy) -> Unit = {}
+    onImageCaptured: (ImageProxy) -> Unit = {},
+    onZoomControlChanged: (CameraZoomControl?) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
     val cameraExecutor: ExecutorService = remember { Executors.newSingleThreadExecutor() }
     var imageAnalysisState by remember { mutableStateOf<ImageAnalysis?>(null) }
+    var boundCamera by remember { mutableStateOf<Camera?>(null) }
+
+    DisposableEffect(boundCamera, lifecycleOwner) {
+        val camera = boundCamera
+        if (camera == null) {
+            onZoomControlChanged(null)
+            onDispose { }
+        } else {
+            val zoomStateLiveData = camera.cameraInfo.zoomState
+            val observer = androidx.lifecycle.Observer<androidx.camera.core.ZoomState> { zoomState ->
+                val minRatio = zoomState.minZoomRatio
+                val maxRatio = zoomState.maxZoomRatio
+                onZoomControlChanged(
+                    CameraZoomControl(
+                        currentRatio = zoomState.zoomRatio,
+                        minRatio = minRatio,
+                        maxRatio = maxRatio,
+                        availableRatios = computeAvailableRatios(minRatio, maxRatio),
+                        setZoomRatio = { ratio ->
+                            val clamped = ratio.coerceIn(minRatio, maxRatio)
+                            camera.cameraControl.setZoomRatio(clamped)
+                        }
+                    )
+                )
+            }
+            zoomStateLiveData.observe(lifecycleOwner, observer)
+            onDispose {
+                zoomStateLiveData.removeObserver(observer)
+                onZoomControlChanged(null)
+            }
+        }
+    }
 
     DisposableEffect(imageAnalysisState, imageCapture) {
         val listener = object : OrientationEventListener(context) {
@@ -79,6 +127,7 @@ fun CameraPreview(
             } catch (e: Exception) {
                 Log.e("CameraPreview", "Failed to shutdown camera executor on dispose", e)
             }
+            boundCamera = null
         }
     }
 
@@ -96,7 +145,6 @@ fun CameraPreview(
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
 
-                // Request 2048px width resolution for high-quality OCR without 12MP overhead
                 val resSelector = ResolutionSelector.Builder()
                     .setResolutionStrategy(ResolutionStrategy(
                         android.util.Size(2048, 1536),
@@ -122,13 +170,14 @@ fun CameraPreview(
 
                 try {
                     cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(
+                    val camera = cameraProvider.bindToLifecycle(
                         lifecycleOwner,
                         cameraSelector,
                         preview,
                         imageAnalysis,
                         imageCapture
                     )
+                    boundCamera = camera
                 } catch (e: Exception) {
                     Log.e("CameraPreview", "Use case binding failed", e)
                 }
