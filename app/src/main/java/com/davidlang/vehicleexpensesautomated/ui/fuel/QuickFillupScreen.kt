@@ -945,6 +945,7 @@ fun QuickFillupScreen(
                         viewState = mainButtonState,
                         onClick = onMainButtonClick
                     )
+                    // Save in B — landscape branch
                     saveButtonContent()
                 }
             } else {
@@ -978,6 +979,7 @@ fun QuickFillupScreen(
                             onClick = onMainButtonClick
                         )
                     }
+                    // Save in B — portrait branch
                     saveButtonContent()
                 }
             }
