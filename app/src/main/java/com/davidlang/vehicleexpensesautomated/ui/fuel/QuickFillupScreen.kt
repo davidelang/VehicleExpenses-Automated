@@ -58,6 +58,17 @@ import java.util.Locale
 
 private enum class CaptureViewState { Live, Processing, Results }
 
+private const val LITERS_PER_GALLON = 3.785411784
+
+private fun convertVolumeForSave(value: Double, fromUnit: String, toUnit: String): Double {
+    if (fromUnit == toUnit) return value
+    return when {
+        fromUnit == "G" && toUnit == "L" -> value * LITERS_PER_GALLON
+        fromUnit == "L" && toUnit == "G" -> value / LITERS_PER_GALLON
+        else -> value
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickFillupScreen(
@@ -735,15 +746,24 @@ fun QuickFillupScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Save Button
+        val hasAnyData = odometer.isNotBlank() || cost.isNotBlank() || gallons.isNotBlank()
+        val canSave = hasAnyData && selectedVehicleId != null && !isProcessing && !isPhotoSaving
+
+        if (hasAnyData) {
         Button(
             onClick = {
                 selectedVehicleId?.let { vehicleId ->
+                    val rawVolume = gallons.toDoubleOrNull() ?: 0.0
+                    val saveVolume = if (rawVolume == 0.0) {
+                        0.0
+                    } else {
+                        convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
+                    }
                     fuelViewModel.saveFuel(
                         FuelEntry(
                             vehicleId = vehicleId,
                             odometer = odometer.toIntOrNull() ?: 0,
-                            gallons = gallons.toDoubleOrNull() ?: 0.0,
+                            gallons = saveVolume,
                             cost = cost.toDoubleOrNull() ?: 0.0,
                             timestamp = System.currentTimeMillis(),
                             photoUrl = photoUrl,
@@ -766,10 +786,11 @@ fun QuickFillupScreen(
                     navController.popBackStack()
                 }
             },
-            enabled = !isProcessing && !isPhotoSaving,
+            enabled = canSave,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
+        }
         }
             }
         }
