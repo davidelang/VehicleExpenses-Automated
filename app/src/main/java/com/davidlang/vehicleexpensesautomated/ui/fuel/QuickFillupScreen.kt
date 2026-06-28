@@ -514,6 +514,57 @@ fun QuickFillupScreen(
         }
     }
 
+    val saveButtonContent = @Composable {
+        val hasAnyData = odometer.isNotBlank() || cost.isNotBlank() || gallons.isNotBlank()
+        val canSave = hasAnyData && selectedVehicleId != null && !isProcessing && !isPhotoSaving
+
+        if (hasAnyData) {
+            Button(
+                onClick = {
+                    selectedVehicleId?.let { vehicleId ->
+                        val rawVolume = gallons.toDoubleOrNull() ?: 0.0
+                        val saveVolume = if (rawVolume == 0.0) {
+                            0.0
+                        } else {
+                            convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
+                        }
+                        // TODO future: persist non-default currency on FuelEntry (DB change later).
+                        // Cost uses raw numeric value; currencySymbol is display-only this turn.
+                        fuelViewModel.saveFuel(
+                            FuelEntry(
+                                vehicleId = vehicleId,
+                                odometer = odometer.toIntOrNull() ?: 0,
+                                gallons = saveVolume,
+                                cost = cost.toDoubleOrNull() ?: 0.0,
+                                timestamp = System.currentTimeMillis(),
+                                photoUrl = photoUrl,
+                                latitude = lat,
+                                longitude = lon,
+                                location = loc
+                            )
+                        )
+                        NativePaddleEngine.releaseAllOdoBuffers()
+                        NativePaddleEngine.bufferSetA.unborrow()
+                        NativePaddleEngine.bufferSetA.clearCrops()
+                        NativePaddleEngine.bufferSetA.resize(4000, 3072)
+                        val oldBmp = displayBitmap
+                        displayBitmap = null
+                        oldBmp?.let {
+                            if (!it.isRecycled) {
+                                it.recycle()
+                            }
+                        }
+                        navController.popBackStack()
+                    }
+                },
+                enabled = canSave,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
+            }
+        }
+    }
+
     val fieldsAndSaveContent = @Composable {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val stackedPump = maxWidth < 340.dp
@@ -746,54 +797,7 @@ fun QuickFillupScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        val hasAnyData = odometer.isNotBlank() || cost.isNotBlank() || gallons.isNotBlank()
-        val canSave = hasAnyData && selectedVehicleId != null && !isProcessing && !isPhotoSaving
-
-        if (hasAnyData) {
-        Button(
-            onClick = {
-                selectedVehicleId?.let { vehicleId ->
-                    val rawVolume = gallons.toDoubleOrNull() ?: 0.0
-                    val saveVolume = if (rawVolume == 0.0) {
-                        0.0
-                    } else {
-                        convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
-                    }
-                    // TODO future: persist non-default currency on FuelEntry (DB change later).
-                    // Cost uses raw numeric value; currencySymbol is display-only this turn.
-                    fuelViewModel.saveFuel(
-                        FuelEntry(
-                            vehicleId = vehicleId,
-                            odometer = odometer.toIntOrNull() ?: 0,
-                            gallons = saveVolume,
-                            cost = cost.toDoubleOrNull() ?: 0.0,
-                            timestamp = System.currentTimeMillis(),
-                            photoUrl = photoUrl,
-                            latitude = lat,
-                            longitude = lon,
-                            location = loc
-                        )
-                    )
-                    NativePaddleEngine.releaseAllOdoBuffers()
-                    NativePaddleEngine.bufferSetA.unborrow()
-                    NativePaddleEngine.bufferSetA.clearCrops()
-                    NativePaddleEngine.bufferSetA.resize(4000, 3072)
-                    val oldBmp = displayBitmap
-                    displayBitmap = null
-                    oldBmp?.let {
-                        if (!it.isRecycled) {
-                            it.recycle()
-                        }
-                    }
-                    navController.popBackStack()
-                }
-            },
-            enabled = canSave,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
-        }
-        }
+        saveButtonContent()
             }
         }
     }
