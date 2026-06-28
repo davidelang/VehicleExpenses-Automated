@@ -94,3 +94,12 @@ test line for reset attempt
 - Plan addresses the exact gap: adb sees "correct" files/DB but UI on phone vs emulator differs; dump will show what the app actually loads from Room + real md5 of the pointed-to vehicle_ref_*.jpg files.
 - Follows all mandates: standard structure, verbatim compliance block, ultra-micro phases with per-phase forensic read + build_app.
 - Ready for designation by user for the implementing agent (e.g. agent-3).
+
+## 2026-06-28 - Manually pushed correct phone database and photos to emulator
+
+- Fetched fresh database and JPEGs from the Pixel 6 phone.
+- Ran wal_checkpoint(truncate) locally on host to merge WAL changes into vehicle_expenses.db.
+- Manually pushed the database and JPEGs to the emulator's private folders using adb streaming (dd in run-as).
+- Cleared the SQLite WAL/SHM files and Coil image cache on the emulator.
+- Launched the app, navigated to "Manage Vehicles", and verified that both Honda and Ford Van show the correct reference photo and crop coordinates.
+- Did not make any source code changes. Stale deploy WAL-handling bug logged in my execution findings for future work.
