@@ -14,6 +14,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -566,86 +569,69 @@ fun QuickFillupScreen(
     }
 
     val cameraControlsContent = @Composable { isLand: Boolean ->
+        val mainButtonState = when {
+            isProcessing -> CaptureViewState.Processing
+            displayBitmap != null -> CaptureViewState.Results
+            else -> CaptureViewState.Live
+        }
+        val onMainButtonClick = {
+            when (mainButtonState) {
+                CaptureViewState.Live -> onShutterClick()
+                CaptureViewState.Processing -> {
+                    capturePending = false
+                    captureViewState = CaptureViewState.Live
+                }
+                CaptureViewState.Results -> {
+                    displayBitmap = null
+                    captureViewState = CaptureViewState.Live
+                }
+            }
+        }
+
         Box(
             modifier = if (isLand) Modifier.wrapContentSize() else Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
-            if (displayBitmap != null) {
-                if (!isProcessing) {
-                    Button(
-                        onClick = { displayBitmap = null },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = if (isLand) Modifier.width(120.dp) else Modifier.fillMaxWidth()
+            if (isLand) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    RoundActionButton(
+                        viewState = mainButtonState,
+                        onClick = onMainButtonClick
+                    )
+                    IconButton(
+                        onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
                     ) {
-                        Text("Try Again", color = MaterialTheme.colorScheme.onError)
+                        UpDownArrowsIcon(
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     }
                 }
             } else {
-                if (!isProcessing) {
-                    if (isLand) {
-                        // Stacked vertically in Landscape mode
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            IconButton(
-                                onClick = onShutterClick,
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .background(Color.White, CircleShape)
-                                    .border(4.dp, Color.Gray, CircleShape)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .background(Color.White, CircleShape)
-                                )
-                            }
-                            
-                            IconButton(
-                                onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
-                            ) {
-                                UpDownArrowsIcon(
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                        }
-                    } else {
-                        // Side-by-side horizontally in Portrait mode
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            IconButton(
-                                onClick = onShutterClick,
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .background(Color.White, CircleShape)
-                                    .border(4.dp, Color.Gray, CircleShape)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .background(Color.White, CircleShape)
-                                )
-                            }
-                            
-                            IconButton(
-                                onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
-                            ) {
-                                UpDownArrowsIcon(
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                        }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    RoundActionButton(
+                        viewState = mainButtonState,
+                        onClick = onMainButtonClick
+                    )
+                    IconButton(
+                        onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                    ) {
+                        UpDownArrowsIcon(
+                            modifier = Modifier.size(24.dp),
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     }
                 }
             }
@@ -713,6 +699,50 @@ fun QuickFillupScreen(
                     cameraControlsContent(false)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RoundActionButton(
+    viewState: CaptureViewState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+            .size(64.dp)
+            .then(
+                when (viewState) {
+                    CaptureViewState.Live -> Modifier
+                        .background(Color.White, CircleShape)
+                        .border(4.dp, Color.Gray, CircleShape)
+                    CaptureViewState.Processing -> Modifier
+                        .background(MaterialTheme.colorScheme.error, CircleShape)
+                    CaptureViewState.Results -> Modifier
+                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                }
+            )
+    ) {
+        when (viewState) {
+            CaptureViewState.Live -> Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.White, CircleShape)
+            )
+            CaptureViewState.Processing -> Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Cancel processing",
+                tint = MaterialTheme.colorScheme.onError,
+                modifier = Modifier.size(32.dp)
+            )
+            CaptureViewState.Results -> Icon(
+                imageVector = Icons.Filled.Refresh,
+                contentDescription = "Retry",
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(32.dp)
+            )
         }
     }
 }
