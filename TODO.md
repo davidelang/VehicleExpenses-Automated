@@ -99,7 +99,7 @@
   - [x] Phase 11: Final sweep + build (tag: 0b0ae8f4)
 
 - [ ] Executing plan dev-ai-interaction/plans/quickfill-c-content-save-visible-aspect-auto-warnings-fix-20260628-plan.md: isLandscape layout, C content-sized, Save in B+C, aspect auto, warnings fix. Baseline: tweak-quick-fill/builds @ d8638acf.
-  - [ ] Phase 1: Forensic layout/C sizing
+  - [x] Phase 1: Forensic layout/C sizing (tag: d303d83e)
   - [ ] Phase 2: isLandscape decision
   - [ ] Phase 3: C wrapContentWidth
   - [ ] Phase 4: Remove weight(1f) on odo
