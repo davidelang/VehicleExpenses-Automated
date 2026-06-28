@@ -320,6 +320,28 @@ fun QuickFillupScreen(
         }
     }
 
+    val captureAspectRatio = 4f / 3f // matches 2048x1536 capture resolution
+
+    val panelAContent = @Composable {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black),
+            contentAlignment = Alignment.TopStart
+        ) {
+            BoxWithConstraints(modifier = Modifier.align(Alignment.TopStart)) {
+                val contentModifier = if (maxWidth / maxHeight > captureAspectRatio) {
+                    Modifier.fillMaxHeight().aspectRatio(captureAspectRatio)
+                } else {
+                    Modifier.fillMaxWidth().aspectRatio(captureAspectRatio)
+                }
+                Box(modifier = contentModifier) {
+                    cameraOrCropArea()
+                }
+            }
+        }
+    }
+
     val fieldsAndSaveContent = @Composable {
         val odoBorder = if (captureMode == "odo") {
             Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
@@ -684,7 +706,7 @@ fun QuickFillupScreen(
                             .weight(1f)
                             .fillMaxHeight()
                     ) {
-                        cameraOrCropArea()
+                        panelAContent()
                     }
                     // Panel B — navigation controls
                     Box(
@@ -725,7 +747,7 @@ fun QuickFillupScreen(
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
-                        cameraOrCropArea()
+                        panelAContent()
                     }
                     // Panel B — navigation controls
                     Box(
