@@ -1030,7 +1030,11 @@ fun QuickFillupScreen(
                     fieldsAndSaveContent()
                 }
                 if (!isEditing && zoomDWidth > 0.dp) {
-                    Box(modifier = Modifier.width(zoomDWidth)) { /* D stub */ }
+                    Box(
+                        modifier = Modifier
+                            .width(zoomDWidth)
+                            .fillMaxHeight()
+                    ) { /* Panel D — zoom placeholder */ }
                 }
             }
         } else {
