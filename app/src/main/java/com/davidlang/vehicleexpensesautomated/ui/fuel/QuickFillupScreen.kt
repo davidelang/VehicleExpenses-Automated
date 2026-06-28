@@ -576,7 +576,7 @@ fun QuickFillupScreen(
         }
     }
 
-    val fieldsAndSaveContent = @Composable {
+    val fieldsContent = @Composable {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val stackedPump = maxWidth < 340.dp
             val cScrollState = rememberScrollState()
@@ -1056,7 +1056,7 @@ fun QuickFillupScreen(
                     },
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    fieldsAndSaveContent()
+                    fieldsContent()
                 }
                 // Panel D — landscape non-editing only (portrait/editing unchanged)
                 if (!isEditing && zoomDWidth > 0.dp) {
@@ -1101,7 +1101,7 @@ fun QuickFillupScreen(
                         ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    fieldsAndSaveContent()
+                    fieldsContent()
                 }
             }
         }
