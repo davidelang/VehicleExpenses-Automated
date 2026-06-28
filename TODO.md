@@ -98,7 +98,7 @@
   - [x] Phase 10: LocalLifecycleOwner → androidx.lifecycle.compose (tag: 80377596)
   - [x] Phase 11: Final sweep + build (tag: 0b0ae8f4)
 
-- [ ] Executing plan dev-ai-interaction/plans/quickfill-c-content-save-visible-aspect-auto-warnings-fix-20260628-plan.md: isLandscape layout, C content-sized, Save in B+C, aspect auto, warnings fix. Baseline: tweak-quick-fill/builds @ d8638acf.
+- [x] Executing plan dev-ai-interaction/plans/quickfill-c-content-save-visible-aspect-auto-warnings-fix-20260628-plan.md: isLandscape layout, C content-sized, Save in B+C, aspect auto, warnings fix. Baseline: tweak-quick-fill/builds @ d8638acf.
   - [x] Phase 1: Forensic layout/C sizing (tag: d303d83e)
   - [x] Phase 2: isLandscape decision (tag: bc1684bf)
   - [x] Phase 3: C wrapContentWidth (tag: 3b2b1168)
@@ -109,5 +109,5 @@
   - [x] Phase 8: Save in C for editing (tag: 5c160967)
   - [x] Phase 9: Aspect auto (no hardcoded Size) (tag: 337039ff)
   - [x] Phase 10: DatabaseModule migration param (tag: 6317d7b4)
-  - [ ] Phase 11: menuAnchor deprecation fixes
+  - [x] Phase 11: menuAnchor deprecation fixes (tag: 33ed9873)
   - [ ] Phase 12: Final sweep
