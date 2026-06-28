@@ -568,6 +568,16 @@ fun QuickFillupScreen(
         }
     }
 
+    val onModeSwitchClick = {
+        if (!isProcessing) {
+            if (hasResults) {
+                displayBitmap = null
+                captureViewState = CaptureViewState.Live
+            }
+            captureMode = if (captureMode == "odo") "pump" else "odo"
+        }
+    }
+
     val cameraControlsContent = @Composable { isLand: Boolean ->
         val mainButtonState = when {
             isProcessing -> CaptureViewState.Processing
@@ -602,14 +612,19 @@ fun QuickFillupScreen(
                         onClick = onMainButtonClick
                     )
                     IconButton(
-                        onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
+                        onClick = onModeSwitchClick,
+                        enabled = !isProcessing,
                         modifier = Modifier
                             .size(48.dp)
                             .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
                     ) {
                         UpDownArrowsIcon(
                             modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            tint = if (isProcessing) {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            } else {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            }
                         )
                     }
                 }
@@ -623,7 +638,8 @@ fun QuickFillupScreen(
                         onClick = onMainButtonClick
                     )
                     IconButton(
-                        onClick = { captureMode = if (captureMode == "odo") "pump" else "odo" },
+                        onClick = onModeSwitchClick,
+                        enabled = !isProcessing,
                         modifier = Modifier
                             .size(48.dp)
                             .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
