@@ -986,7 +986,7 @@ fun QuickFillupScreen(
 
     // Save lives in B per spec; zoom prefers extra space after A+B+C (D) before overlay in A.
     // 3-panel layout: A (camera), B (controls), C (results), D (zoom when extra space)
-    val bPanelSize = 72.dp // icon-size guided, one button wide
+    val bPanelSize = 110.dp // wide enough for Save button text while keeping B narrow
     // Fixed estimate for volume field (6 digits + decimal + unit label); measured width deferred.
     val cPanelMinWidth = 220.dp
 
