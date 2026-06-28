@@ -97,3 +97,17 @@
   - [x] Phase 9: defaultDisplay deprecation fix (tag: 04151677)
   - [x] Phase 10: LocalLifecycleOwner → androidx.lifecycle.compose (tag: 80377596)
   - [x] Phase 11: Final sweep + build (tag: 0b0ae8f4)
+
+- [ ] Executing plan dev-ai-interaction/plans/quickfill-c-content-save-visible-aspect-auto-warnings-fix-20260628-plan.md: isLandscape layout, C content-sized, Save in B+C, aspect auto, warnings fix. Baseline: tweak-quick-fill/builds @ d8638acf.
+  - [ ] Phase 1: Forensic layout/C sizing
+  - [ ] Phase 2: isLandscape decision
+  - [ ] Phase 3: C wrapContentWidth
+  - [ ] Phase 4: Remove weight(1f) on odo
+  - [ ] Phase 5: fieldsContent wrap confirm
+  - [ ] Phase 6: Forensic Save/B
+  - [ ] Phase 7: bPanelSize 160.dp
+  - [ ] Phase 8: Save in C for editing
+  - [ ] Phase 9: Aspect auto (no hardcoded Size)
+  - [ ] Phase 10: DatabaseModule migration param
+  - [ ] Phase 11: menuAnchor deprecation fixes
+  - [ ] Phase 12: Final sweep
