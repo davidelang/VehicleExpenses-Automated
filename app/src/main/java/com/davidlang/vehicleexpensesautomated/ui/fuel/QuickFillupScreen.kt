@@ -782,7 +782,7 @@ private fun RoundActionButton(
 private enum class ArrowOrientation { Vertical, Horizontal }
 
 @Composable
-fun ArrowsIcon(
+private fun ArrowsIcon(
     orientation: ArrowOrientation,
     modifier: Modifier = Modifier,
     tint: Color = LocalContentColor.current
