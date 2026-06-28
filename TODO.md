@@ -84,3 +84,16 @@
 - [x] quickfill-3panel-consistent-recovery-20260628-plan.md: finish Save-in-B + zoom extra-space D + secondaries for checker PASS
 
 - [x] Executing plan dev-ai-interaction/plans/quickfill-save-button-and-capture-aspect-fix-20260628-plan.md: Save visibility in B (bPanelSize 72→110.dp), 4:3 capture 2048x1536 + AspectRatioStrategy, dimension-based landscape layout (useLandscapeLayout), buffer comments. Baseline: tweak-quick-fill/builds @ 081297de. All 10 phases complete.
+
+- [ ] Executing plan dev-ai-interaction/plans/quickfill-c-content-sized-save-visible-and-warnings-fix-20260628-plan.md: C content-sized (wrapContentWidth, vehicle cap 160.dp), Save visible (bPanelSize 150.dp, button wrapContentWidth), deprecation fixes. Baseline: tweak-quick-fill/builds @ 9fefc393.
+  - [ ] Phase 1: Forensic C layout + fieldsContent sizing
+  - [ ] Phase 2: C Column wrapContentWidth
+  - [ ] Phase 3: fieldsContent wrapContentWidth
+  - [ ] Phase 4: vehicle widthIn(max=160.dp), row wrapContentWidth
+  - [ ] Phase 5: pump row content sizing
+  - [ ] Phase 6: Forensic Save/bPanelSize
+  - [ ] Phase 7: bPanelSize 110→150.dp
+  - [ ] Phase 8: saveButtonContent wrapContentWidth
+  - [ ] Phase 9: defaultDisplay deprecation fix
+  - [ ] Phase 10: LocalLifecycleOwner → androidx.lifecycle.compose
+  - [ ] Phase 11: Final sweep + build
