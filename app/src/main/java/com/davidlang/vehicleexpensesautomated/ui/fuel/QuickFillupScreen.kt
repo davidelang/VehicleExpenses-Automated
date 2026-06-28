@@ -92,8 +92,35 @@ fun QuickFillupScreen(
     val debugMode = remember { prefs.getBoolean("debug_ocr_pipeline", false) }
     val saveFuelPhotos = remember { prefs.getBoolean("save_fuel_photos", true) }
 
-    val defaultCurrency = remember { prefs.getString("currency_symbol", "$") ?: "$" }
-    val defaultVolumeUnit = remember { prefs.getString("volume_unit", "G") ?: "G" }
+    // TODO: Settings should surface "use system" as the default option for currency/volume.
+    val systemCurrencySymbol = remember {
+        try {
+            Currency.getInstance(Locale.getDefault()).getSymbol(Locale.getDefault())
+        } catch (_: Exception) {
+            "$"
+        }
+    }
+    val systemVolumeUnit = remember {
+        if (Locale.getDefault().country in setOf("US", "LR", "MM")) "G" else "L"
+    }
+    val prefCurrency = remember { prefs.getString("currency_symbol", null) }
+    val prefVolume = remember { prefs.getString("volume_unit", null) }
+    val defaultCurrency = remember {
+        when {
+            prefCurrency.isNullOrBlank() || prefCurrency == "system" -> systemCurrencySymbol
+            else -> prefCurrency
+        }
+    }
+    val defaultVolumeUnit = remember {
+        when {
+            prefVolume.isNullOrBlank() || prefVolume == "system" -> systemVolumeUnit
+            else -> prefVolume
+        }
+    }
+    val preferredVolumeUnit = remember {
+        prefs.getString("volume_unit", null)?.takeIf { it.isNotBlank() && it != "system" }
+            ?: systemVolumeUnit
+    }
     var captureMode by rememberSaveable { mutableStateOf("odo") }
     var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrency) }
     var volumeUnit by rememberSaveable { mutableStateOf(defaultVolumeUnit) }
