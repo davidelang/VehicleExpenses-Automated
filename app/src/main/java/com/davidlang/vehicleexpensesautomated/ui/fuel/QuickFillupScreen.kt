@@ -26,6 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -473,12 +474,22 @@ fun QuickFillupScreen(
     }
 
     val fieldsAndSaveContent = @Composable {
-        val odoBorder = if (captureMode == "odo") {
-            Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
-        } else {
-            Modifier.padding(8.dp)
-        }
-        
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val stackedPump = maxWidth < 340.dp
+            val cScrollState = rememberScrollState()
+            val cScrollModifier = if (stackedPump) {
+                Modifier.verticalScroll(cScrollState)
+            } else {
+                Modifier
+            }
+
+            val odoBorder = if (captureMode == "odo") {
+                Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
+            } else {
+                Modifier.padding(8.dp)
+            }
+
+            Column(modifier = Modifier.fillMaxWidth().then(cScrollModifier)) {
         // Group 1: Vehicle + Odo
         Column(modifier = Modifier.fillMaxWidth().then(odoBorder)) {
             Row(
@@ -487,18 +498,22 @@ fun QuickFillupScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 var dropdownExpanded by remember { mutableStateOf(false) }
+                val vehicleName = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle"
                 ExposedDropdownMenuBox(
                     expanded = dropdownExpanded,
                     onExpandedChange = { dropdownExpanded = it },
-                    modifier = Modifier.weight(1.2f)
+                    modifier = Modifier.weight(1f)
                 ) {
                     OutlinedTextField(
-                        value = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle",
+                        value = vehicleName,
                         onValueChange = {},
                         label = { Text("Vehicle") },
                         modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                         readOnly = true,
-                        singleLine = true
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            textOverflow = TextOverflow.Ellipsis
+                        )
                     )
                     ExposedDropdownMenu(
                         expanded = dropdownExpanded,
@@ -520,7 +535,8 @@ fun QuickFillupScreen(
                     onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
                     label = { Text("Odo") },
                     modifier = Modifier
-                        .weight(1.0f)
+                        .weight(1f)
+                        .widthIn(min = 88.dp)
                         .onFocusChanged {
                             isOdoFocused = it.isFocused
                             if (it.isFocused) editingField = "odo"
@@ -549,11 +565,7 @@ fun QuickFillupScreen(
         }
 
         Column(modifier = Modifier.fillMaxWidth().then(pumpBorder)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            val costField = @Composable { modifier: Modifier, imeAction: ImeAction ->
                 OutlinedTextField(
                     value = cost,
                     onValueChange = { cost = it },
@@ -583,23 +595,27 @@ fun QuickFillupScreen(
                             }
                         }
                     },
-                    modifier = Modifier
-                        .weight(1.0f)
-                        .onFocusChanged {
-                            isCostFocused = it.isFocused
-                            if (it.isFocused) editingField = "cost"
-                            else if (editingField == "cost") editingField = null
-                        },
+                    modifier = modifier.onFocusChanged {
+                        isCostFocused = it.isFocused
+                        if (it.isFocused) editingField = "cost"
+                        else if (editingField == "cost") editingField = null
+                    },
                     readOnly = isLandscape,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Next
+                        imeAction = imeAction
                     ),
                     keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                        onNext = { focusManager.moveFocus(FocusDirection.Next) },
+                        onDone = {
+                            editingField = null
+                            focusManager.clearFocus()
+                        }
                     ),
                     singleLine = true
                 )
+            }
+            val swapButton = @Composable {
                 IconButton(
                     onClick = {
                         val temp = cost
@@ -614,6 +630,8 @@ fun QuickFillupScreen(
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
+            }
+            val volumeField = @Composable { modifier: Modifier ->
                 OutlinedTextField(
                     value = gallons,
                     onValueChange = { gallons = it },
@@ -626,13 +644,11 @@ fun QuickFillupScreen(
                             Text(if (volumeUnit == "G") "L" else "G", style = MaterialTheme.typography.labelSmall)
                         }
                     },
-                    modifier = Modifier
-                        .weight(1.0f)
-                        .onFocusChanged {
-                            isVolumeFocused = it.isFocused
-                            if (it.isFocused) editingField = "volume"
-                            else if (editingField == "volume") editingField = null
-                        },
+                    modifier = modifier.onFocusChanged {
+                        isVolumeFocused = it.isFocused
+                        if (it.isFocused) editingField = "volume"
+                        else if (editingField == "volume") editingField = null
+                    },
                     readOnly = isLandscape,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal,
@@ -646,6 +662,28 @@ fun QuickFillupScreen(
                     ),
                     singleLine = true
                 )
+            }
+
+            if (stackedPump) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    costField(Modifier.weight(1f), ImeAction.Next)
+                    swapButton()
+                }
+                volumeField(Modifier.fillMaxWidth())
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    costField(Modifier.weight(1f), ImeAction.Next)
+                    swapButton()
+                    volumeField(Modifier.weight(1f))
+                }
             }
         }
 
@@ -686,6 +724,8 @@ fun QuickFillupScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
+        }
+            }
         }
     }
 
