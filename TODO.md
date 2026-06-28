@@ -90,8 +90,8 @@
   - [x] Phase 2: C Column wrapContentWidth (tag: 5c15a23c)
   - [x] Phase 3: fieldsContent wrapContentWidth (tag: c4b47199)
   - [x] Phase 4: vehicle widthIn(max=160.dp), row wrapContentWidth (tag: 7f90cf5c)
-  - [x] Phase 5: pump row content sizing
-  - [ ] Phase 6: Forensic Save/bPanelSize
+  - [x] Phase 5: pump row content sizing (tag: fdb552de)
+  - [x] Phase 6: Forensic Save/bPanelSize
   - [ ] Phase 7: bPanelSize 110→150.dp
   - [ ] Phase 8: saveButtonContent wrapContentWidth
   - [ ] Phase 9: defaultDisplay deprecation fix
