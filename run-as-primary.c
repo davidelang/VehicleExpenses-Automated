@@ -60,8 +60,16 @@ int main(int argc, char *argv[]) {
     if (cfg) fclose(cfg);
   }
 
-  // The setuid bit on this binary (owned by primary user) ensures we run with euid=primary.
-  // No explicit setuid() call needed.
+  // Set real and effective UID/GID to the effective ones (the owner of the binary)
+  // so that child shells like bash do not drop setuid privileges.
+  uid_t euid = geteuid();
+  gid_t egid = getegid();
+  if (setregid(egid, egid) != 0) {
+    perror("setregid");
+  }
+  if (setreuid(euid, euid) != 0) {
+    perror("setreuid");
+  }
 
   execvp(cmd, &argv[1]);
   perror("execvp");
