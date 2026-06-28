@@ -406,7 +406,43 @@ fun QuickFillupScreen(
 
     val captureAspectRatio = 4f / 3f // matches 2048x1536 capture resolution
 
-    val panelAContent = @Composable {
+    val zoomButtonsContent = @Composable { modifier: Modifier ->
+        zoomControl?.let { zoom ->
+            if (zoom.availableRatios.size > 1 && displayBitmap == null) {
+                Column(
+                    modifier = modifier.padding(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    zoom.availableRatios.forEach { ratio ->
+                        val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
+                        FilledTonalButton(
+                            onClick = { zoom.setZoomRatio(ratio) },
+                            modifier = Modifier.height(32.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                }
+                            ),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Text(
+                                text = if (ratio == ratio.toLong().toFloat()) {
+                                    "${ratio.toLong()}x"
+                                } else {
+                                    "${ratio}x"
+                                },
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val panelAContent = @Composable { zoomAllocatedToPanelD: Boolean ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -429,84 +465,55 @@ fun QuickFillupScreen(
                     cameraOrCropArea()
                 }
 
-                zoomControl?.let { zoom ->
-                    if (zoom.availableRatios.size > 1 && displayBitmap == null) {
-                        val zoomButtons = @Composable { modifier: Modifier ->
-                            Column(
-                                modifier = modifier.padding(4.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                zoom.availableRatios.forEach { ratio ->
-                                    val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
-                                    FilledTonalButton(
-                                        onClick = { zoom.setZoomRatio(ratio) },
-                                        modifier = Modifier.height(32.dp),
-                                        colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = if (selected) {
-                                                MaterialTheme.colorScheme.primary
-                                            } else {
-                                                MaterialTheme.colorScheme.surfaceVariant
-                                            }
-                                        ),
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                if (!zoomAllocatedToPanelD) {
+                    zoomControl?.let { zoom ->
+                        if (zoom.availableRatios.size > 1 && displayBitmap == null) {
+                            when {
+                                hasRightBlank -> zoomButtonsContent(
+                                    Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .width((maxWidth - contentWidth).coerceAtLeast(40.dp))
+                                )
+                                hasBottomBlank -> {
+                                    Row(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .fillMaxWidth()
+                                            .padding(start = 4.dp, bottom = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        Text(
-                                            text = if (ratio == ratio.toLong().toFloat()) {
-                                                "${ratio.toLong()}x"
-                                            } else {
-                                                "${ratio}x"
-                                            },
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        when {
-                            hasRightBlank -> zoomButtons(
-                                Modifier
-                                    .align(Alignment.CenterEnd)
-                                    .width((maxWidth - contentWidth).coerceAtLeast(40.dp))
-                            )
-                            hasBottomBlank -> {
-                                Row(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomStart)
-                                        .fillMaxWidth()
-                                        .padding(start = 4.dp, bottom = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    zoom.availableRatios.forEach { ratio ->
-                                        val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
-                                        FilledTonalButton(
-                                            onClick = { zoom.setZoomRatio(ratio) },
-                                            modifier = Modifier.height(32.dp),
-                                            colors = ButtonDefaults.filledTonalButtonColors(
-                                                containerColor = if (selected) {
-                                                    MaterialTheme.colorScheme.primary
-                                                } else {
-                                                    MaterialTheme.colorScheme.surfaceVariant
-                                                }
-                                            ),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                                        ) {
-                                            Text(
-                                                text = if (ratio == ratio.toLong().toFloat()) {
-                                                    "${ratio.toLong()}x"
-                                                } else {
-                                                    "${ratio}x"
-                                                },
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
+                                        zoom.availableRatios.forEach { ratio ->
+                                            val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
+                                            FilledTonalButton(
+                                                onClick = { zoom.setZoomRatio(ratio) },
+                                                modifier = Modifier.height(32.dp),
+                                                colors = ButtonDefaults.filledTonalButtonColors(
+                                                    containerColor = if (selected) {
+                                                        MaterialTheme.colorScheme.primary
+                                                    } else {
+                                                        MaterialTheme.colorScheme.surfaceVariant
+                                                    }
+                                                ),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (ratio == ratio.toLong().toFloat()) {
+                                                        "${ratio.toLong()}x"
+                                                    } else {
+                                                        "${ratio}x"
+                                                    },
+                                                    style = MaterialTheme.typography.labelSmall
+                                                )
+                                            }
                                         }
                                     }
                                 }
+                                else -> zoomButtonsContent(
+                                    Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(4.dp)
+                                )
                             }
-                            else -> zoomButtons(
-                                Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(4.dp)
-                            )
                         }
                     }
                 }
@@ -998,7 +1005,7 @@ fun QuickFillupScreen(
                             .weight(1f)
                             .fillMaxHeight()
                     ) {
-                        panelAContent()
+                        panelAContent(zoomDWidth > 0.dp)
                     }
                     // Panel B — navigation controls + Save (bottom)
                     Box(
@@ -1033,8 +1040,11 @@ fun QuickFillupScreen(
                     Box(
                         modifier = Modifier
                             .width(zoomDWidth)
-                            .fillMaxHeight()
-                    ) { /* Panel D — zoom placeholder */ }
+                            .fillMaxHeight(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        zoomButtonsContent(Modifier.fillMaxWidth())
+                    }
                 }
             }
         } else {
@@ -1046,7 +1056,7 @@ fun QuickFillupScreen(
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
-                        panelAContent()
+                        panelAContent(false)
                     }
                     Box(
                         modifier = Modifier
