@@ -219,6 +219,7 @@ ORCH_ROOT="$(cd "$(dirname "$0")" && pwd)"
 [ -d "$ORCH_ROOT/../.gradle-shared" ] && ORCH_ROOT="$(cd "$ORCH_ROOT/.." && pwd)"
 if [ -d "$ORCH_ROOT/.gradle-shared" ]; then
   export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+  export GRADLE_OPTS="-Dorg.gradle.daemon.registry.base=/home/\$(id -un)/.gradle/daemon"
 fi
 # Shared Android home: consistent debug keystore for all builders
 if [ -d "$ORCH_ROOT/.android-shared" ]; then
@@ -245,7 +246,12 @@ repair_shared_cache() {
   # Post-build permission repair for all shared build directories
   for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
     if [ -d "$gdir" ]; then
-      echo "  Quick $gdir permission repair (setgid + ug+rwX)..."
+      echo "  Quick $gdir permission repair (group sync + setgid + ug+rwX)..."
+      local grp="ai-code"
+      if [[ "$gdir" == *".gradle-shared"* || "$gdir" == *".android-shared"* ]]; then
+        grp="ai-shared"
+      fi
+      chgrp -R "$grp" "$gdir" 2>/dev/null || true
       find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
       chmod -R ug+rwX,o-rwx "$gdir" 2>/dev/null || true
     fi

@@ -24,7 +24,7 @@ Instructions in this file take absolute precedence. Speed achieved by bypassing 
 ### Phase 3: EXECUTION (Plan -> Act -> Validate)
 - **Exclusivity:** Implement ONLY the approved plan. "Taking liberties" to refactor, clean up, or fix unapproved issues is forbidden.
 - **State Verification:** Before performing any edit, you MUST re-verify the file content. Do NOT assume your memory of a file from a previous turn is accurate.
-- **The First Action:** The very first action upon entering the Execution phase is to update `TODO.md` to reflect the newly approved plan.
+- **The First Action:** The very first action upon entering the Execution phase is to update `ENGINEERING_LOG.md` to record the execution start note.
 - **Post-Execution Validation (CRITICAL):**
     - The success return code of a `replace` or `write_file` tool call is **NOT evidence of integrity**.
     - You MUST perform a **Forensic Audit** via `read_file` (targeting the modified lines) after EVERY modification to verify that the change was applied correctly and did not cause unintended side effects or corruption.

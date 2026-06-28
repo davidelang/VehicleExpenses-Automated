@@ -88,3 +88,9 @@ test line for reset attempt
 - Implemented shared .gradle-shared/ and .android-shared/ homes; build_app/deploy export GRADLE_USER_HOME and ANDROID_USER_HOME
 - deploy: removed futile chown; fix-perms: sandbox ai-sandbox group, shared dirs, planner guard, umask 007 in launchers/utilities
 - Propagated via update-rules.sh to master and agent worktrees
+
+## 2026-06-28 - Created debug dump plan for vehicle DB + image file checksums at startup
+- Wrote fresh plan to dev-ai-interaction/plans/debug-dump-vehicle-db-and-file-checksums-20260628-plan.md
+- Plan addresses the exact gap: adb sees "correct" files/DB but UI on phone vs emulator differs; dump will show what the app actually loads from Room + real md5 of the pointed-to vehicle_ref_*.jpg files.
+- Follows all mandates: standard structure, verbatim compliance block, ultra-micro phases with per-phase forensic read + build_app.
+- Ready for designation by user for the implementing agent (e.g. agent-3).
