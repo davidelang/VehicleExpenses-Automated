@@ -997,7 +997,9 @@ fun QuickFillupScreen(
     val cPanelMinWidth = 220.dp
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val zoomDWidth = if (isLandscape && !isEditing) {
+        // Dimension-based layout: wide physical space triggers 3-panel Row regardless of config orientation
+        val useLandscapeLayout = maxWidth > maxHeight * 1.2f
+        val zoomDWidth = if (useLandscapeLayout && !isEditing) {
             val bAllocated = bPanelSize + 8.dp
             val cAllocated = cPanelMinWidth + 16.dp
             val dCandidate = 56.dp
@@ -1010,7 +1012,7 @@ fun QuickFillupScreen(
         } else {
             0.dp
         }
-        if (isLandscape) {
+        if (useLandscapeLayout) {
             Row(modifier = Modifier.fillMaxSize()) {
                 if (isEditing) {
                     // Landscape editing: keypad replaces A+B space
