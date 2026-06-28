@@ -398,30 +398,6 @@ fun QuickFillupScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
-                    value = gallons,
-                    onValueChange = { gallons = it },
-                    label = { Text(volumeUnit) },
-                    trailingIcon = {
-                        IconButton(
-                            onClick = { volumeUnit = if (volumeUnit == "G") "L" else "G" },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Text(if (volumeUnit == "G") "L" else "G", style = MaterialTheme.typography.labelSmall)
-                        }
-                    },
-                    modifier = Modifier
-                        .weight(1.0f)
-                        .onFocusChanged { isVolumeFocused = it.isFocused },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Next) }
-                    ),
-                    singleLine = true
-                )
-                OutlinedTextField(
                     value = cost,
                     onValueChange = { cost = it },
                     label = { Text(currencySymbol) },
@@ -453,6 +429,32 @@ fun QuickFillupScreen(
                     modifier = Modifier
                         .weight(1.0f)
                         .onFocusChanged { isCostFocused = it.isFocused },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                    ),
+                    singleLine = true
+                )
+                // Swap placeholder — wired in Phase 5
+                Box(modifier = Modifier.size(32.dp))
+                OutlinedTextField(
+                    value = gallons,
+                    onValueChange = { gallons = it },
+                    label = { Text(volumeUnit) },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { volumeUnit = if (volumeUnit == "G") "L" else "G" },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Text(if (volumeUnit == "G") "L" else "G", style = MaterialTheme.typography.labelSmall)
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1.0f)
+                        .onFocusChanged { isVolumeFocused = it.isFocused },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Done
