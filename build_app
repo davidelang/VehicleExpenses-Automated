@@ -144,6 +144,7 @@ else
     [ -d "$ORCH_ROOT/../.gradle-shared" ] && ORCH_ROOT="$(cd "$ORCH_ROOT/.." && pwd)"
     if [ -d "$ORCH_ROOT/.gradle-shared" ]; then
       export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+      export GRADLE_OPTS="-Dorg.gradle.daemon.registry.base=/home/\$(id -un)/.gradle/daemon"
     fi
     # Shared Android home: consistent debug keystore for all builders
     if [ -d "$ORCH_ROOT/.android-shared" ]; then
@@ -158,7 +159,23 @@ else
     # Always go through build_app — direct gradlew/gradlew.bat is forbidden (breaks integrity, perms, tags).
     GRADLE_CMD=( "${GRADLE_ARGS[@]}" assembleDebug )
     (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_CMD[@]}")
-    if [ $? -eq 0 ]; then
+    RET_VAL=$?
+
+    # Post-build permission repair for all shared build directories
+    for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
+      if [ -d "$gdir" ]; then
+        echo "Quick $gdir permission repair (group sync + setgid + ug+rwX)..."
+        grp="ai-code"
+        if [[ "$gdir" == *".gradle-shared"* || "$gdir" == *".android-shared"* ]]; then
+          grp="ai-shared"
+        fi
+        chgrp -R "$grp" "$gdir" 2>/dev/null || true
+        find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
+        chmod -R ug+rwX,o-rwx "$gdir" 2>/dev/null || true
+      fi
+    done
+
+    if [ $RET_VAL -eq 0 ]; then
         CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
         if [ "$CURRENT_BRANCH" == "master" ]; then
             TAG_NAME="builds"
@@ -168,16 +185,6 @@ else
         echo "Build successful. Updating '$TAG_NAME' tag."
         git tag -f "$TAG_NAME"
         git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe
-
-        # Post-build permission repair for all shared build directories
-        for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
-          if [ -d "$gdir" ]; then
-            echo "Quick $gdir permission repair (setgid + ug+rwX)..."
-            find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
-            chmod -R ug+rwX,o-rwx "$gdir" 2>/dev/null || true
-          fi
-        done
-
         exit 0
     else
         echo "Build failed."
