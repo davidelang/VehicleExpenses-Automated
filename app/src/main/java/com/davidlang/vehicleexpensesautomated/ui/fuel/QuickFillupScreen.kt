@@ -1104,7 +1104,7 @@ fun QuickFillupScreen(
                 }
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .wrapContentWidth()
                         .widthIn(min = cPanelMinWidth)
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .then(
