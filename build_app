@@ -144,6 +144,7 @@ else
     [ -d "$ORCH_ROOT/../.gradle-shared" ] && ORCH_ROOT="$(cd "$ORCH_ROOT/.." && pwd)"
     if [ -d "$ORCH_ROOT/.gradle-shared" ]; then
       export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+      export GRADLE_OPTS="-Dorg.gradle.daemon.registry.base=/home/\$(id -un)/.gradle/daemon"
     fi
     # Shared Android home: consistent debug keystore for all builders
     if [ -d "$ORCH_ROOT/.android-shared" ]; then
