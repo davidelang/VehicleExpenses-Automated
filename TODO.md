@@ -91,8 +91,8 @@
   - [x] Phase 3: fieldsContent wrapContentWidth (tag: c4b47199)
   - [x] Phase 4: vehicle widthIn(max=160.dp), row wrapContentWidth (tag: 7f90cf5c)
   - [x] Phase 5: pump row content sizing (tag: fdb552de)
-  - [x] Phase 6: Forensic Save/bPanelSize
-  - [ ] Phase 7: bPanelSize 110→150.dp
+  - [x] Phase 6: Forensic Save/bPanelSize (tag: bd571202)
+  - [x] Phase 7: bPanelSize 110→150.dp
   - [ ] Phase 8: saveButtonContent wrapContentWidth
   - [ ] Phase 9: defaultDisplay deprecation fix
   - [ ] Phase 10: LocalLifecycleOwner → androidx.lifecycle.compose
