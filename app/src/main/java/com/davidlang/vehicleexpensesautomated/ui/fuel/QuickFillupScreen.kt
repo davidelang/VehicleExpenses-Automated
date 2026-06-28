@@ -26,7 +26,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextOverflow
+
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -510,10 +510,7 @@ fun QuickFillupScreen(
                         label = { Text("Vehicle") },
                         modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                         readOnly = true,
-                        singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            textOverflow = TextOverflow.Ellipsis
-                        )
+                        singleLine = true
                     )
                     ExposedDropdownMenu(
                         expanded = dropdownExpanded,
