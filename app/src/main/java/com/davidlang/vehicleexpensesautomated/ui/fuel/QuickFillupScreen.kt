@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -862,6 +864,57 @@ fun QuickFillupScreen(
                     fieldsAndSaveContent()
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NumericKeypad(
+    onDigit: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    keySize: Dp = 48.dp
+) {
+    val rows = listOf(
+        listOf("1", "2", "3"),
+        listOf("4", "5", "6"),
+        listOf("7", "8", "9"),
+        listOf(".", "0", "⌫")
+    )
+    Column(
+        modifier = modifier.width(keySize * 3),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        rows.forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                row.forEach { key ->
+                    OutlinedButton(
+                        onClick = {
+                            when (key) {
+                                "⌫" -> onBackspace()
+                                else -> onDigit(key)
+                            }
+                        },
+                        modifier = Modifier.size(keySize),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(key, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+        }
+        OutlinedButton(
+            onClick = onDismiss,
+            modifier = Modifier
+                .size(keySize)
+                .align(Alignment.CenterHorizontally),
+            contentPadding = PaddingValues(0.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowDown,
+                contentDescription = "Dismiss keypad"
+            )
         }
     }
 }
