@@ -5,6 +5,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.compose.foundation.Image
@@ -200,7 +201,9 @@ fun QuickFillupScreen(
     }
 
     val imageCapture: ImageCapture = remember {
+        // 4:3 full sensor aspect (2048x1536 ~2000 wide fine for odo; long side wide in landscape; avoids 13:9)
         val resSelector = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
             .setResolutionStrategy(ResolutionStrategy(
                 android.util.Size(2048, 1536),
                 ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER
