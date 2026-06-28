@@ -438,8 +438,20 @@ fun QuickFillupScreen(
                     ),
                     singleLine = true
                 )
-                // Swap placeholder — wired in Phase 5
-                Box(modifier = Modifier.size(32.dp))
+                IconButton(
+                    onClick = {
+                        val temp = cost
+                        cost = gallons
+                        gallons = temp
+                    },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    ArrowsIcon(
+                        orientation = ArrowOrientation.Horizontal,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
                 OutlinedTextField(
                     value = gallons,
                     onValueChange = { gallons = it },
@@ -620,7 +632,8 @@ fun QuickFillupScreen(
                             .size(48.dp)
                             .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
                     ) {
-                        UpDownArrowsIcon(
+                        ArrowsIcon(
+                            orientation = ArrowOrientation.Vertical,
                             modifier = Modifier.size(24.dp),
                             tint = if (isProcessing) {
                                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -646,7 +659,8 @@ fun QuickFillupScreen(
                             .size(48.dp)
                             .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
                     ) {
-                        UpDownArrowsIcon(
+                        ArrowsIcon(
+                            orientation = ArrowOrientation.Vertical,
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSecondaryContainer
                         )
@@ -765,52 +779,89 @@ private fun RoundActionButton(
     }
 }
 
+private enum class ArrowOrientation { Vertical, Horizontal }
+
 @Composable
-fun UpDownArrowsIcon(modifier: Modifier = Modifier, tint: Color = LocalContentColor.current) {
+fun ArrowsIcon(
+    orientation: ArrowOrientation,
+    modifier: Modifier = Modifier,
+    tint: Color = LocalContentColor.current
+) {
     androidx.compose.foundation.Canvas(modifier = modifier) {
         val width = size.width
         val height = size.height
-        val arrowWidth = width * 0.15f
-        
-        // Left arrow pointing up
-        val leftX = width * 0.35f
-        // Arrow line
-        drawLine(
-            color = tint,
-            start = androidx.compose.ui.geometry.Offset(leftX, height * 0.8f),
-            end = androidx.compose.ui.geometry.Offset(leftX, height * 0.2f),
-            strokeWidth = arrowWidth
-        )
-        // Arrow head
-        drawPath(
-            path = androidx.compose.ui.graphics.Path().apply {
-                moveTo(leftX - width * 0.15f, height * 0.4f)
-                lineTo(leftX, height * 0.2f)
-                lineTo(leftX + width * 0.15f, height * 0.4f)
-            },
-            color = tint,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = arrowWidth)
-        )
+        val strokeW = width * 0.15f
 
-        // Right arrow pointing down
-        val rightX = width * 0.65f
-        // Arrow line
-        drawLine(
-            color = tint,
-            start = androidx.compose.ui.geometry.Offset(rightX, height * 0.2f),
-            end = androidx.compose.ui.geometry.Offset(rightX, height * 0.8f),
-            strokeWidth = arrowWidth
-        )
-        // Arrow head
-        drawPath(
-            path = androidx.compose.ui.graphics.Path().apply {
-                moveTo(rightX - width * 0.15f, height * 0.6f)
-                lineTo(rightX, height * 0.8f)
-                lineTo(rightX + width * 0.15f, height * 0.6f)
-            },
-            color = tint,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = arrowWidth)
-        )
+        when (orientation) {
+            ArrowOrientation.Vertical -> {
+                val leftX = width * 0.35f
+                drawLine(
+                    color = tint,
+                    start = androidx.compose.ui.geometry.Offset(leftX, height * 0.8f),
+                    end = androidx.compose.ui.geometry.Offset(leftX, height * 0.2f),
+                    strokeWidth = strokeW
+                )
+                drawPath(
+                    path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(leftX - width * 0.15f, height * 0.4f)
+                        lineTo(leftX, height * 0.2f)
+                        lineTo(leftX + width * 0.15f, height * 0.4f)
+                    },
+                    color = tint,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeW)
+                )
+                val rightX = width * 0.65f
+                drawLine(
+                    color = tint,
+                    start = androidx.compose.ui.geometry.Offset(rightX, height * 0.2f),
+                    end = androidx.compose.ui.geometry.Offset(rightX, height * 0.8f),
+                    strokeWidth = strokeW
+                )
+                drawPath(
+                    path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(rightX - width * 0.15f, height * 0.6f)
+                        lineTo(rightX, height * 0.8f)
+                        lineTo(rightX + width * 0.15f, height * 0.6f)
+                    },
+                    color = tint,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeW)
+                )
+            }
+            ArrowOrientation.Horizontal -> {
+                val topY = height * 0.35f
+                drawLine(
+                    color = tint,
+                    start = androidx.compose.ui.geometry.Offset(width * 0.8f, topY),
+                    end = androidx.compose.ui.geometry.Offset(width * 0.2f, topY),
+                    strokeWidth = strokeW
+                )
+                drawPath(
+                    path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(width * 0.4f, topY - height * 0.15f)
+                        lineTo(width * 0.2f, topY)
+                        lineTo(width * 0.4f, topY + height * 0.15f)
+                    },
+                    color = tint,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeW)
+                )
+                val bottomY = height * 0.65f
+                drawLine(
+                    color = tint,
+                    start = androidx.compose.ui.geometry.Offset(width * 0.2f, bottomY),
+                    end = androidx.compose.ui.geometry.Offset(width * 0.8f, bottomY),
+                    strokeWidth = strokeW
+                )
+                drawPath(
+                    path = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(width * 0.6f, bottomY - height * 0.15f)
+                        lineTo(width * 0.8f, bottomY)
+                        lineTo(width * 0.6f, bottomY + height * 0.15f)
+                    },
+                    color = tint,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeW)
+                )
+            }
+        }
     }
 }
 
