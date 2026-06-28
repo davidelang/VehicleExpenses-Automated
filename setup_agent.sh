@@ -36,12 +36,35 @@ if [[ "$BRANCH_NAME" =~ ^agent-[0-9]+$ ]]; then
     exit 1
 fi
 
-# 1. Determine next available agent-N ID
+is_valid_worktree_dir() {
+  local p="$1"
+  [ -f "$p/.git" ] && grep -q '^gitdir: ' "$p/.git" 2>/dev/null
+}
+
+# 1. Determine next available agent-N ID (reuse slot if prior setup left a non-worktree stub)
 N=1
-while [ -d "agent-$N" ]; do
+while true; do
+  if [ ! -d "agent-$N" ]; then
+    AGENT_ID="agent-$N"
+    break
+  fi
+  if is_valid_worktree_dir "agent-$N"; then
     N=$((N + 1))
+    continue
+  fi
+  echo "Removing stale non-worktree directory agent-$N (failed prior setup_agent run)..."
+  if [ -f "agent-$N/ENGINEERING_LOG.md" ]; then
+    sudo chattr -a "agent-$N/ENGINEERING_LOG.md" 2>/dev/null || true
+  fi
+  if ! rm -rf "agent-$N" 2>/dev/null; then
+    sudo rm -rf "agent-$N" 2>/dev/null || {
+      echo "Error: cannot remove stale agent-$N (try: sudo rm -rf agent-$N)"
+      exit 1
+    }
+  fi
+  AGENT_ID="agent-$N"
+  break
 done
-AGENT_ID="agent-$N"
 
 # Safety: refuse if branch name would conflict with an existing directory (other than the agent dir we chose)
 if [ -d "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "$AGENT_ID" ]; then
@@ -53,37 +76,38 @@ if [ -e "${BRANCH_NAME}.wt" ] && [ ! -L "${BRANCH_NAME}.wt" ]; then
     exit 1
 fi
 
+# Ensure main .git/config is not root-owned (breaks git for users without active ai-shared GID)
+if [ -f .git/config ] && [ "$(stat -c '%U' .git/config 2>/dev/null || echo '')" = "root" ]; then
+  echo "Repairing root-owned .git/config (requires sudo once)..."
+  if ! sudo chown "$PRIMARY_USER:$SHARED_GROUP" .git/config 2>/dev/null; then
+    echo "Error: .git/config is owned by root. Run:"
+    echo "  sudo chown $PRIMARY_USER:$SHARED_GROUP .git/config"
+    echo "  sudo ./fix-perms --verbose"
+    exit 1
+  fi
+  chmod 660 .git/config 2>/dev/null || true
+fi
+
+# Orchestration root (absolute) — used after cd into agent-N for seeding filters/config.
+ORCH_ROOT="$(pwd)"
+
 # 2. Create Worktree & Branch
 echo "Creating worktree for $AGENT_ID on branch $BRANCH_NAME..."
 
-# Pre-create the target directory and copy project.config (and the filter scripts)
-# *before* the worktree checkout. This ensures the smudge filter (filter-apply-config)
-# can find project.config in the target dir during population, so @@ tokens are
-# properly substituted with the local values right away.
-mkdir -p "$AGENT_ID"
-if [ -f project.config ]; then
-  cp project.config "$AGENT_ID/project.config"
-fi
-for f in filter-apply-config filter-clean-config; do
-  if [ -f "$f" ]; then
-    cp "$f" "$AGENT_ID/$f"
-  fi
-done
-
+WORKTREE_ERR=0
 if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
-    git worktree add --no-checkout "$AGENT_ID" "$BRANCH_NAME"
+    git worktree add --no-checkout "$AGENT_ID" "$BRANCH_NAME" || WORKTREE_ERR=$?
 else
     # Create from current master
-    git worktree add --no-checkout "$AGENT_ID" -b "$BRANCH_NAME" master
-    # Create (or force-update) a lightweight tag for git describe to anchor on.
-    # If a stale tag exists from a previously removed worktree/branch with the same name,
-    # we force it to the new branch's start point. This is the correct behavior when
-    # there is no current branch/worktree using that name.
-    echo "Creating/updating lightweight tag ${BRANCH_NAME}-start for versioning..."
-    git tag -f "${BRANCH_NAME}-start" "$BRANCH_NAME"
+    git worktree add --no-checkout "$AGENT_ID" -b "$BRANCH_NAME" master || WORKTREE_ERR=$?
+    if [ "$WORKTREE_ERR" -eq 0 ]; then
+      # Create (or force-update) a lightweight tag for git describe to anchor on.
+      echo "Creating/updating lightweight tag ${BRANCH_NAME}-start for versioning..."
+      git tag -f "${BRANCH_NAME}-start" "$BRANCH_NAME" || WORKTREE_ERR=$?
+    fi
 fi
 
-if [ $? -ne 0 ]; then
+if [ "$WORKTREE_ERR" -ne 0 ]; then
     echo "Error: Failed to create worktree."
     exit 1
 fi
@@ -103,23 +127,120 @@ else
     echo "Created symlink: ${BRANCH_NAME}.wt -> $AGENT_ID"
 fi
 
-# 4. Setup Agent Workspace Folders
+# Files that use filter=manage-configs (see .gitattributes). Smudge substitutes @@ tokens.
+STAMPED_FILES=(
+  run-grok run-grok-master run-grok-planner
+  setup-project set-worktree-perms set-sandbox-perms
+)
+
+seed_smudge_inputs() {
+  local orch_root="$1"
+  if [ -f "$orch_root/project.config" ]; then
+    cp "$orch_root/project.config" ./project.config
+  fi
+  for f in filter-apply-config filter-clean-config; do
+    if [ -f "$orch_root/$f" ]; then
+      cp "$orch_root/$f" "./$f"
+    fi
+  done
+}
+
+re_smudge_stamped_files() {
+  # Apply orchestration's filter script directly (do not use git checkout smudge:
+  # the branch may ship an older broken filter-apply-config that git would invoke).
+  local f mode tmp
+  if [ ! -f ./filter-apply-config ]; then
+    echo "Error: filter-apply-config missing after seeding from $ORCH_ROOT"
+    return 1
+  fi
+  if grep -q '\${!CONF_\${' ./filter-apply-config 2>/dev/null; then
+    echo "Error: filter-apply-config at $ORCH_ROOT still has broken indirect expansion."
+    echo "  Commit the fix on orchestration, then retry."
+    return 1
+  fi
+  for f in "${STAMPED_FILES[@]}"; do
+    if ! git cat-file -e "HEAD:$f" 2>/dev/null; then
+      continue
+    fi
+    tmp=".$f.smudged"
+    if ! git show "HEAD:$f" | bash ./filter-apply-config > "$tmp"; then
+      echo "Error: manual smudge failed for $f"
+      rm -f "$tmp"
+      return 1
+    fi
+    mv "$tmp" "$f"
+    mode=$(git ls-tree HEAD "$f" | awk '{print $1}')
+    case "$mode" in
+      100755|100775) chmod +x "$f" ;;
+    esac
+  done
+}
+
+verify_smudge() {
+  local failed=0
+  if [ ! -f project.config ]; then
+    echo "Error: project.config missing (smudge filters cannot run without it)."
+    return 1
+  fi
+  for f in "${STAMPED_FILES[@]}"; do
+    [ -f "$f" ] || continue
+    if grep -q '@@' "$f" 2>/dev/null; then
+      echo "Error: Unsubstituted @@ tokens remain in $f (smudge filter did not run correctly)."
+      failed=1
+    fi
+  done
+  return "$failed"
+}
+
+# 4. Populate worktree from branch tip, then manually smudge stamped files.
 cd "$AGENT_ID"
+# After --no-checkout the index is empty; 'git checkout .' matches nothing.
+# Bypass git smudge on bulk checkout — feature branches may carry broken filter scripts.
+if ! git -c filter.manage-configs.smudge=cat -c filter.manage-configs.clean=cat checkout HEAD -- .; then
+  echo "Error: Failed to populate worktree (git checkout HEAD -- .)."
+  cd ..
+  git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
+  exit 1
+fi
+
+# Seed orchestration's project.config + filter scripts, then smudge stamped paths locally.
+seed_smudge_inputs "$ORCH_ROOT"
+if ! re_smudge_stamped_files; then
+  echo "Error: Failed to smudge stamped files using orchestration filter scripts."
+  cd ..
+  git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
+  exit 1
+fi
+
+if ! verify_smudge; then
+  echo "Hint: ensure orchestration root has project.config and working filter-apply-config."
+  cd ..
+  git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
+  exit 1
+fi
+
+if [ "$(id -un)" != "$PRIMARY_USER" ] && [ "$EUID" -ne 0 ]; then
+  sudo -u "$PRIMARY_USER" git config core.sharedRepository group
+else
+  git config core.sharedRepository group
+fi
+
+# 5. Setup Agent Workspace Folders
 mkdir -p .gemini/policies
 mkdir -p .gemini/plans
 touch .gemini/plans/.gitkeep
 
-# 5. Setup Sandbox (Symlink)
-ln -s ../dev-ai-interaction dev-ai-interaction
+# 6. Setup Sandbox (Symlink)
+ln -sf ../dev-ai-interaction dev-ai-interaction
 
-# 5b. Copy local.properties for Android builds
+# 6b. Copy local.properties for Android builds
 if [ -f "../master/local.properties" ]; then
     cp ../master/local.properties local.properties
 elif [ -f "../local.properties" ]; then
     cp ../local.properties local.properties
 fi
 
-# 6. Initialize AGENT_CONTEXT.md
+# 7. Initialize AGENT_CONTEXT.md
 if [ -f "../AGENT_CONTEXT.md.template" ]; then
     cp "../AGENT_CONTEXT.md.template" AGENT_CONTEXT.md
     sed -i "s/agent-X/$AGENT_ID/" AGENT_CONTEXT.md
@@ -133,14 +254,7 @@ else
 EOF
 fi
 
-# Now populate the worktree contents. Because we pre-copied project.config and the
-# filter scripts, the smudge filters will run with the config available and
-# perform the proper substitutions for @@ tokens.
-git checkout .
-
-git config core.sharedRepository group
-
-# 7. Make this a *fully working* tree with all correct permissions.
+# 8. Make this a *fully working* tree with all correct permissions.
 #    Since we are always run from the orchestration root (which has the
 #    authoritative latest copies and fixers), we:
 #    - copy latest critical infra files
