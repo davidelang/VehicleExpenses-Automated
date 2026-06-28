@@ -508,11 +508,14 @@ fun QuickFillupScreen(
                                         }
                                     }
                                 }
-                                else -> zoomButtonsContent(
-                                    Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .padding(4.dp)
-                                )
+                                else -> {
+                                    // No letterbox blanks — overlay only when D panel was not allocated.
+                                    zoomButtonsContent(
+                                        Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(4.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -966,6 +969,7 @@ fun QuickFillupScreen(
         }
     }
 
+    // Save lives in B per spec; zoom prefers extra space after A+B+C (D) before overlay in A.
     // 3-panel layout: A (camera), B (controls), C (results), D (zoom when extra space)
     val bPanelSize = 72.dp // icon-size guided, one button wide
     val cPanelMinWidth = 220.dp // volume field 6+decimal+label estimate
@@ -974,11 +978,13 @@ fun QuickFillupScreen(
         val zoomDWidth = if (isLandscape && !isEditing) {
             val bAllocated = bPanelSize + 8.dp
             val cAllocated = cPanelMinWidth + 16.dp
+            val dCandidate = 56.dp
             val aPanelMaxWidth = (maxWidth - bAllocated - cAllocated).coerceAtLeast(0.dp)
             val fitsByHeight = aPanelMaxWidth / maxHeight > captureAspectRatio
             val aContentWidth = if (fitsByHeight) maxHeight * captureAspectRatio else aPanelMaxWidth
-            val extra = maxWidth - aContentWidth - bPanelSize - cPanelMinWidth
-            if (extra > 60.dp && zoomControl != null && displayBitmap == null) 56.dp else 0.dp
+            // Extra horizontal space after aspect-sized A content + B + C — reserve for D first.
+            val extra = maxWidth - aContentWidth - bAllocated - cAllocated
+            if (extra > dCandidate + 4.dp && zoomControl != null && displayBitmap == null) dCandidate else 0.dp
         } else {
             0.dp
         }
