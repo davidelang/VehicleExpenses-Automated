@@ -165,7 +165,7 @@ else
     for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
       if [ -d "$gdir" ]; then
         echo "Quick $gdir permission repair (group sync + setgid + ug+rwX)..."
-        local grp="ai-code"
+        grp="ai-code"
         if [[ "$gdir" == *".gradle-shared"* || "$gdir" == *".android-shared"* ]]; then
           grp="ai-shared"
         fi
