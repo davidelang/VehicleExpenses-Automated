@@ -1055,11 +1055,12 @@ fun QuickFillupScreen(
                 Column(
                     modifier = if (isEditing) {
                         Modifier
-                            .fillMaxSize()
+                            .wrapContentWidth()
                             .widthIn(min = cPanelMinWidth)
                             .padding(horizontal = 8.dp, vertical = 8.dp)
                     } else {
                         Modifier
+                            .wrapContentWidth()
                             .widthIn(min = cPanelMinWidth)
                             .fillMaxHeight()
                             .padding(horizontal = 8.dp, vertical = 8.dp)
