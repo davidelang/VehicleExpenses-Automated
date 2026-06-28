@@ -204,7 +204,7 @@ fun ManageVehiclesScreen(
             OutlinedTextField(
                 value = if (isNewVehicle) "Add New Vehicle" else (editingVehicle?.name ?: "Select vehicle"),
                 onValueChange = {}, label = { Text("Vehicle") },
-                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
                 readOnly = true
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
