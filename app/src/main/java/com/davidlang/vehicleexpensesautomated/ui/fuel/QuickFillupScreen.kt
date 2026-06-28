@@ -670,65 +670,83 @@ fun QuickFillupScreen(
         }
     }
 
-    if (isLandscape) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            if (!isEditing) {
-                Box(
-                    modifier = Modifier
-                        .weight(1.2f)
-                        .fillMaxHeight()
-                ) {
-                    cameraOrCropArea()
+    // 3-panel layout: A (camera), B (controls), C (results)
+    val bPanelSize = 72.dp // icon-size guided, one button wide
+    val cPanelMinWidth = 220.dp // volume field 6+decimal+label estimate
+
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        if (isLandscape) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                // Panel A — camera/results (remaining space)
+                if (!isEditing) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        cameraOrCropArea()
+                    }
+                    // Panel B — navigation controls
+                    Box(
+                        modifier = Modifier
+                            .width(bPanelSize)
+                            .fillMaxHeight()
+                            .padding(horizontal = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        cameraControlsContent(true)
+                    }
                 }
+                // Panel C — fields + save
+                Column(
+                    modifier = if (isEditing) {
+                        Modifier
+                            .fillMaxSize()
+                            .widthIn(min = cPanelMinWidth)
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                    } else {
+                        Modifier
+                            .widthIn(min = cPanelMinWidth)
+                            .fillMaxHeight()
+                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                            .verticalScroll(rememberScrollState())
+                    },
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    fieldsAndSaveContent()
+                }
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Panel A — camera/results
+                if (!isEditing) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        cameraOrCropArea()
+                    }
+                    // Panel B — navigation controls
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        cameraControlsContent(false)
+                    }
+                }
+                // Panel C — fields + save
                 Column(
                     modifier = Modifier
-                        .fillMaxHeight()
-                        .padding(horizontal = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    cameraControlsContent(true)
-                }
-            }
-            Column(
-                modifier = if (isEditing) {
-                    Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                } else {
-                    Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .verticalScroll(rememberScrollState())
-                },
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                fieldsAndSaveContent()
-            }
-        }
-    } else {
-        Column(modifier = Modifier.fillMaxSize()) {
-            if (!isEditing) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
                         .fillMaxWidth()
+                        .widthIn(min = cPanelMinWidth)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .then(if (isEditing) Modifier else Modifier.verticalScroll(rememberScrollState())),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    cameraOrCropArea()
-                }
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .then(if (isEditing) Modifier else Modifier.verticalScroll(rememberScrollState())),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                fieldsAndSaveContent()
-                if (!isEditing) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    cameraControlsContent(false)
+                    fieldsAndSaveContent()
                 }
             }
         }
