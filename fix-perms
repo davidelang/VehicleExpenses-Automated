@@ -152,10 +152,29 @@ WRAPPER_EOF
 
 # --- Helper functions (integrated from set-*-perms and fix-eng-log) ---
 
+git_config_as_primary() {
+  # Never run git config as root: it leaves .git/config root-owned and breaks
+  # non-root users when supplementary group membership is not active in the shell.
+  local repo_path="$1"
+  shift
+  if [ "$EUID" -eq 0 ]; then
+    sudo -u "$PRIMARY_USER" git -C "$repo_path" "$@" 2>/dev/null || true
+  else
+    git -C "$repo_path" "$@" 2>/dev/null || true
+  fi
+}
+
+fix_main_git_config_ownership() {
+  local cfg="$SCRIPT_DIR/.git/config"
+  [ -f "$cfg" ] || return 0
+  chown "$PRIMARY_USER:$SHARED_GROUP" "$cfg" 2>/dev/null || true
+  chmod 660 "$cfg" 2>/dev/null || true
+}
+
 ensure_shared_build_homes() {
   GRADLE_SHARED="$SCRIPT_DIR/.gradle-shared"
   mkdir -p "$GRADLE_SHARED"
-  chown "$PRIMARY_USER:$CODE_GROUP" "$GRADLE_SHARED" 2>/dev/null || true
+  chown "$PRIMARY_USER:$SHARED_GROUP" "$GRADLE_SHARED" 2>/dev/null || true
   chmod 2770 "$GRADLE_SHARED" 2>/dev/null || true
 
   ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
@@ -165,7 +184,7 @@ ensure_shared_build_homes() {
     cp "/home/$PRIMARY_USER/.android/debug.keystore" "$ANDROID_SHARED/"
     cp "/home/$PRIMARY_USER/.android/debug.keystore.lock" "$ANDROID_SHARED/" 2>/dev/null || true
   fi
-  chown -R "$PRIMARY_USER:$CODE_GROUP" "$ANDROID_SHARED" 2>/dev/null || true
+  chown -R "$PRIMARY_USER:$SHARED_GROUP" "$ANDROID_SHARED" 2>/dev/null || true
   chmod 2770 "$ANDROID_SHARED" 2>/dev/null || true
   find "$ANDROID_SHARED" -type f -exec chmod 660 {} + 2>/dev/null || true
 }
@@ -244,7 +263,7 @@ fix_worktree() {
     find "$wt/$SANDBOX" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + 2>/dev/null || true
   fi
 
-  git -C "$wt" config core.sharedRepository group 2>/dev/null || true
+  git_config_as_primary "$wt" config core.sharedRepository group
 
   # Log
   if [ -f "$wt/ENGINEERING_LOG.md" ]; then
@@ -416,6 +435,8 @@ elif $AT_ORCHESTRATION; then
       chown :$SHARED_GROUP "$SCRIPT_DIR/.git/packed-refs" 2>/dev/null || true
       chmod 660 "$SCRIPT_DIR/.git/packed-refs" 2>/dev/null || true
     fi
+    git_config_as_primary "$SCRIPT_DIR" config core.sharedRepository group
+    fix_main_git_config_ownership
   fi
 else
   fix_worktree "$CURRENT_DIR"
