@@ -309,6 +309,14 @@ Plan filenames should follow the naming guidance above (descriptive kebab-case p
 
 The "approved plan" for feature work is always the content of the designated sandbox file the user explicitly named, never the harness session plan.md or any historical archive. project-facts.md (at the worktree root) supplies stable "where things live" facts so agents avoid repeated searches on startup.
 
+## Logcat/Troubleshooting Policy (CRITICAL - Device Sharing & Performance)
+When debugging or troubleshooting, agents are strictly forbidden from running multiple sequential `adb logcat` queries (grabbing slices of logs directly from the device/emulator). This ties up and blocks the testing devices from being used by other agents or users.
+Instead, you MUST follow this protocol:
+1. Fetch the complete logs to a local file in the sandbox directory in a single command, e.g.:
+   `adb -s <device_id> logcat -d > /home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/device-logcat.log`
+2. Perform all analysis, log filtering, searching, and grep exploration locally on the retrieved file rather than running subsequent adb logcat commands.
+3. Be respectful of shared hardware and never block device debugging.
+
 ## Harness Session plan.md Lifecycle and Hygiene (CRITICAL)
 See the subsection immediately above. The session plan.md (harness artifact) is strictly a concise turn/process log. It must never grow with full historical execution plans or superseding sections for the work. Roll + minimal prepend is mandatory when a new cycle begins. Never treat its content as the source of the approved plan for implementation.
 
