@@ -601,7 +601,7 @@ fun QuickFillupScreen(
 
             Column(modifier = Modifier.wrapContentWidth().then(cScrollModifier)) {
         // Group 1: Vehicle + Odo
-        Column(modifier = Modifier.fillMaxWidth().then(odoBorder)) {
+        Column(modifier = Modifier.wrapContentWidth().then(odoBorder)) {
             Row(
                 modifier = Modifier.wrapContentWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -652,7 +652,6 @@ fun QuickFillupScreen(
                     onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
                     label = { Text("Odo") },
                     modifier = Modifier
-                        .weight(1f)
                         .widthIn(min = 88.dp)
                         .onFocusChanged {
                             isOdoFocused = it.isFocused
@@ -681,7 +680,7 @@ fun QuickFillupScreen(
             Modifier.padding(8.dp)
         }
 
-        Column(modifier = Modifier.fillMaxWidth().then(pumpBorder)) {
+        Column(modifier = Modifier.wrapContentWidth().then(pumpBorder)) {
             val costField = @Composable { modifier: Modifier, imeAction: ImeAction ->
                 var showCurrencyMenu by remember { mutableStateOf(false) }
                 val currencySymbols = remember {
