@@ -603,7 +603,7 @@ fun QuickFillupScreen(
         // Group 1: Vehicle + Odo
         Column(modifier = Modifier.fillMaxWidth().then(odoBorder)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.wrapContentWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -612,7 +612,7 @@ fun QuickFillupScreen(
                 ExposedDropdownMenuBox(
                     expanded = dropdownExpanded,
                     onExpandedChange = { dropdownExpanded = it },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.widthIn(max = 160.dp)
                 ) {
                     OutlinedTextField(
                         value = "",
