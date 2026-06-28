@@ -408,7 +408,8 @@ fun QuickFillupScreen(
         }
     }
 
-    val captureAspectRatio = 4f / 3f // matches 2048x1536 capture resolution
+    // Full sensor 4:3 aspect (~2000 wide capture); used for A-panel letterbox sizing
+    val captureAspectRatio = 2048f / 1536f
 
     val zoomButtonsContent = @Composable { modifier: Modifier ->
         zoomControl?.let { zoom ->
