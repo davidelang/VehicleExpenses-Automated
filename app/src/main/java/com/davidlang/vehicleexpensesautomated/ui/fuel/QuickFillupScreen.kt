@@ -924,27 +924,33 @@ fun QuickFillupScreen(
                     saveButtonContent()
                 }
             } else {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    IconButton(
-                        onClick = onModeSwitchClick,
-                        enabled = !isProcessing,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        ArrowsIcon(
-                            orientation = ArrowOrientation.Vertical,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        IconButton(
+                            onClick = onModeSwitchClick,
+                            enabled = !isProcessing,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                        ) {
+                            ArrowsIcon(
+                                orientation = ArrowOrientation.Vertical,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        RoundActionButton(
+                            viewState = mainButtonState,
+                            onClick = onMainButtonClick
                         )
                     }
-                    RoundActionButton(
-                        viewState = mainButtonState,
-                        onClick = onMainButtonClick
-                    )
+                    saveButtonContent()
                 }
             }
         }
