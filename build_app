@@ -172,9 +172,9 @@ else
         # Post-build permission repair for all shared build directories
         for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
           if [ -d "$gdir" ]; then
-            echo "Quick $gdir permission repair (setgid + 660)..."
+            echo "Quick $gdir permission repair (setgid + ug+rwX)..."
             find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
-            find "$gdir" -type f -exec chmod u+rw,g+rw,o-rwx {} + 2>/dev/null || true
+            chmod -R ug+rwX,o-rwx "$gdir" 2>/dev/null || true
           fi
         done
 
