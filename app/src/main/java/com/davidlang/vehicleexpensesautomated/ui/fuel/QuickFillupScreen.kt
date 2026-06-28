@@ -921,6 +921,7 @@ fun QuickFillupScreen(
                         viewState = mainButtonState,
                         onClick = onMainButtonClick
                     )
+                    saveButtonContent()
                 }
             } else {
                 Row(
