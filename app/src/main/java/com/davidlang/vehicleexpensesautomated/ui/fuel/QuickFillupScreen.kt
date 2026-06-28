@@ -847,6 +847,7 @@ fun QuickFillupScreen(
                 val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                     context.display
                 } else {
+                    @Suppress("DEPRECATION")
                     (context.getSystemService(android.content.Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay
                 }
                 val rotation = display?.rotation ?: android.view.Surface.ROTATION_0

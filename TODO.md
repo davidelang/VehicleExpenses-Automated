@@ -93,7 +93,7 @@
   - [x] Phase 5: pump row content sizing (tag: fdb552de)
   - [x] Phase 6: Forensic Save/bPanelSize (tag: bd571202)
   - [x] Phase 7: bPanelSize 110→150.dp (tag: dae336d8)
-  - [x] Phase 8: saveButtonContent wrapContentWidth
-  - [ ] Phase 9: defaultDisplay deprecation fix
+  - [x] Phase 8: saveButtonContent wrapContentWidth (tag: acc3543a)
+  - [x] Phase 9: defaultDisplay deprecation fix
   - [ ] Phase 10: LocalLifecycleOwner → androidx.lifecycle.compose
   - [ ] Phase 11: Final sweep + build
