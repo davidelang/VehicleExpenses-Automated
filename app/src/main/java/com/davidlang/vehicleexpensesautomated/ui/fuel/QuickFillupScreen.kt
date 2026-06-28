@@ -190,6 +190,7 @@ fun QuickFillupScreen(
             NativePaddleEngine.releaseAllOdoBuffers()
             NativePaddleEngine.bufferSetA.unborrow()
             NativePaddleEngine.bufferSetA.clearCrops()
+            // Reset buffer to 4:3 full-sensor size (4000x3072 ≈ 4080x3072 init)
             NativePaddleEngine.bufferSetA.resize(4000, 3072)
             displayBitmap?.let {
                 if (!it.isRecycled) {
@@ -266,6 +267,7 @@ fun QuickFillupScreen(
                             }
 
                             val bufferSet = NativePaddleEngine.bufferSetA
+                            // receives 4:3 ~2000w grab; resized to full sensor 4:3 buffer
                             if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
                                 bufferSet.resize(imageProxy.width, imageProxy.height)
                             }
@@ -561,6 +563,7 @@ fun QuickFillupScreen(
                         NativePaddleEngine.releaseAllOdoBuffers()
                         NativePaddleEngine.bufferSetA.unborrow()
                         NativePaddleEngine.bufferSetA.clearCrops()
+                        // Reset buffer to 4:3 full-sensor size after save
                         NativePaddleEngine.bufferSetA.resize(4000, 3072)
                         val oldBmp = displayBitmap
                         displayBitmap = null
