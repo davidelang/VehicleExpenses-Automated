@@ -584,7 +584,7 @@ fun QuickFillupScreen(
     }
 
     val fieldsContent = @Composable {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        BoxWithConstraints(modifier = Modifier.wrapContentWidth()) {
             val stackedPump = maxWidth < 340.dp
             val cScrollState = rememberScrollState()
             val cScrollModifier = if (stackedPump) {
@@ -599,7 +599,7 @@ fun QuickFillupScreen(
                 Modifier.padding(8.dp)
             }
 
-            Column(modifier = Modifier.fillMaxWidth().then(cScrollModifier)) {
+            Column(modifier = Modifier.wrapContentWidth().then(cScrollModifier)) {
         // Group 1: Vehicle + Odo
         Column(modifier = Modifier.fillMaxWidth().then(odoBorder)) {
             Row(

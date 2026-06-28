@@ -87,8 +87,8 @@
 
 - [ ] Executing plan dev-ai-interaction/plans/quickfill-c-content-sized-save-visible-and-warnings-fix-20260628-plan.md: C content-sized (wrapContentWidth, vehicle cap 160.dp), Save visible (bPanelSize 150.dp, button wrapContentWidth), deprecation fixes. Baseline: tweak-quick-fill/builds @ 9fefc393.
   - [x] Phase 1: Forensic C layout + fieldsContent sizing (tag: d12f8077)
-  - [x] Phase 2: C Column wrapContentWidth
-  - [ ] Phase 3: fieldsContent wrapContentWidth
+  - [x] Phase 2: C Column wrapContentWidth (tag: 5c15a23c)
+  - [x] Phase 3: fieldsContent wrapContentWidth
   - [ ] Phase 4: vehicle widthIn(max=160.dp), row wrapContentWidth
   - [ ] Phase 5: pump row content sizing
   - [ ] Phase 6: Forensic Save/bPanelSize
