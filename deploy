@@ -241,6 +241,17 @@ fix_build_dir_perms() {
 }
 fix_build_dir_perms
 
+repair_shared_cache() {
+  # Post-build permission repair for all shared build directories
+  for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
+    if [ -d "$gdir" ]; then
+      echo "  Quick $gdir permission repair (setgid + ug+rwX)..."
+      find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
+      chmod -R ug+rwX,o-rwx "$gdir" 2>/dev/null || true
+    fi
+  done
+}
+
 # Best-effort fix for .git / worktree git state early (before any gradle exec that
 # computes versionName). Broken zero-SHA refs or wrong ownership (ai-orchestrator)
 # are common after permission thrashing.
@@ -892,7 +903,9 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             fi
 
             (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
-            if [ $? -ne 0 ]; then
+            RET_VAL=$?
+            repair_shared_cache
+            if [ $RET_VAL -ne 0 ]; then
                 echo "Deployment failed."
                 OVERALL_SUCCESS=false
             else
@@ -1000,8 +1013,9 @@ else
         fi
 
         (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
-        
-        if [ $? -ne 0 ]; then
+        RET_VAL=$?
+        repair_shared_cache
+        if [ $RET_VAL -ne 0 ]; then
             echo "Deployment to $TARGET ($DEVICE_ID) failed."
             OVERALL_SUCCESS=false
         else
