@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalFocusManager
@@ -45,6 +46,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+private enum class CaptureViewState { Live, Processing, Results }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickFillupScreen(
@@ -58,17 +61,19 @@ fun QuickFillupScreen(
 
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
-    var odometer by remember { mutableStateOf("") }
-    var gallons by remember { mutableStateOf("") }
-    var cost by remember { mutableStateOf("") }
+    var odometer by rememberSaveable { mutableStateOf("") }
+    var gallons by rememberSaveable { mutableStateOf("") }
+    var cost by rememberSaveable { mutableStateOf("") }
     var photoUrl by remember { mutableStateOf<String?>(null) }
     var lat by remember { mutableStateOf<Double?>(null) }
     var lon by remember { mutableStateOf<Double?>(null) }
     var loc by remember { mutableStateOf<String?>(null) }
 
-    var isProcessing by remember { mutableStateOf(false) }
+    var captureViewState by rememberSaveable { mutableStateOf(CaptureViewState.Live) }
     var capturePending by remember { mutableStateOf(false) }
     var displayBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val isProcessing = captureViewState == CaptureViewState.Processing
+    val hasResults = captureViewState == CaptureViewState.Results
     var stageLabel by remember { mutableStateOf("") }
     var isPhotoSaving by remember { mutableStateOf(false) }
 
@@ -78,9 +83,10 @@ fun QuickFillupScreen(
 
     val defaultCurrency = remember { prefs.getString("currency_symbol", "$") ?: "$" }
     val defaultVolumeUnit = remember { prefs.getString("volume_unit", "G") ?: "G" }
-    var captureMode by remember { mutableStateOf("odo") }
-    var currencySymbol by remember { mutableStateOf(defaultCurrency) }
-    var volumeUnit by remember { mutableStateOf(defaultVolumeUnit) }
+    var captureMode by rememberSaveable { mutableStateOf("odo") }
+    var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrency) }
+    var volumeUnit by rememberSaveable { mutableStateOf(defaultVolumeUnit) }
+    var lastCaptureType by rememberSaveable { mutableStateOf("odo") }
 
     val focusManager = LocalFocusManager.current
     var isOdoFocused by remember { mutableStateOf(false) }
@@ -162,7 +168,7 @@ fun QuickFillupScreen(
                             if (!isDirect) {
                                 imageProxy.close()
                                 scope.launch(Dispatchers.Main) {
-                                    isProcessing = false
+                                    captureViewState = CaptureViewState.Live
                                     Toast.makeText(context, "Error: Image buffer is not direct", Toast.LENGTH_LONG).show()
                                 }
                                 return@CameraPreview
@@ -226,7 +232,11 @@ fun QuickFillupScreen(
                                         }
                                     } finally {
                                         scope.launch(Dispatchers.Main) {
-                                            isProcessing = false
+                                            captureViewState = if (displayBitmap != null) {
+                                                CaptureViewState.Results
+                                            } else {
+                                                CaptureViewState.Live
+                                            }
                                         }
                                     }
                                 }
@@ -283,7 +293,11 @@ fun QuickFillupScreen(
                                         }
                                     } finally {
                                         scope.launch(Dispatchers.Main) {
-                                            isProcessing = false
+                                            captureViewState = if (displayBitmap != null) {
+                                                CaptureViewState.Results
+                                            } else {
+                                                CaptureViewState.Live
+                                            }
                                         }
                                     }
                                 }
@@ -489,7 +503,8 @@ fun QuickFillupScreen(
     }
 
     val onShutterClick = {
-        isProcessing = true
+        lastCaptureType = captureMode
+        captureViewState = CaptureViewState.Processing
         capturePending = true
         photoUrl = null
         

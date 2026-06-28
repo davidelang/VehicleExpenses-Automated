@@ -79,3 +79,5 @@
   - Results ready to test (new tag via final build).
 
 - Approved execution of update-rules-eng-log-todo-wrapper-mandates-20260627-plan.md (special rules for ENGINEERING_LOG and TODO file type handling via wrappers)
+
+- [ ] Executing plan dev-ai-interaction/plans/quickfill-3panel-consistent-20260628-plan.md: 3-panel QuickFill layout (A camera / B nav / C results), physical zoom, rotation-safe state, landscape keypad.
