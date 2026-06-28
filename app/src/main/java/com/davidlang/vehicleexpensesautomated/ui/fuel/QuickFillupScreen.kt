@@ -821,6 +821,9 @@ fun QuickFillupScreen(
                 }
             }
         }
+
+        // Save in B per spec; also in C for editing visibility (landscape keypad replaces B)
+        saveButtonContent()
             }
         }
     }
@@ -993,7 +996,7 @@ fun QuickFillupScreen(
         }
     }
 
-    // Save lives in B per spec; zoom prefers extra space after A+B+C (D) before overlay in A.
+    // Save in B per spec; also in C for editing visibility. Zoom prefers extra space after A+B+C (D) before overlay in A.
     // 3-panel layout: A (camera), B (controls), C (results), D (zoom when extra space)
     val bPanelSize = 160.dp // 160.dp to fit Save button text readably in B for both orientations
     // C content-sized via wrapContentWidth; min floor for narrow content (digits + capped vehicle).
@@ -1050,7 +1053,7 @@ fun QuickFillupScreen(
                         cameraControlsContent(true)
                     }
                 }
-                // Panel C — content-sized fields (wrapContentWidth); Save lives in B
+                // Panel C — content-sized fields (wrapContentWidth); Save also in C for editing visibility
                 Column(
                     modifier = if (isEditing) {
                         Modifier
