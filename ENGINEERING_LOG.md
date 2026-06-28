@@ -162,3 +162,9 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 - 2026-06-24: Additive ZIP extract on pump + alignment experiment screens.
 - 2026-06-25–27: Quick Fill Set G integration; PR review blocker fixes (deskew, zip-slip, BufferSet OOM); de-abstract Quick Fill Set G into OcrHarness.extractQuickFillSetGCostVol.
 - Merged at `279a4681` with review `reviews/review-fix-pump-experiment-20260627-v2.md` (conditionally merge-ready).
+
+## 2026-06-28 - Execute quickfill-b-save-icon-no-c plan
+
+- Execution start: Save icon in B only, remove from C, compact B panel (80.dp)
+- Baseline tag: tweak-quick-fill/builds at a1f80cb6
+- Phase 1: forensic read of Save placement
