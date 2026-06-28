@@ -897,8 +897,11 @@ fun QuickFillupScreen(
         ) {
             if (isLand) {
                 Column(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     IconButton(
                         onClick = onModeSwitchClick,
@@ -986,18 +989,18 @@ fun QuickFillupScreen(
                     ) {
                         panelAContent()
                     }
-                    // Panel B — navigation controls
+                    // Panel B — navigation controls + Save (bottom)
                     Box(
                         modifier = Modifier
                             .width(bPanelSize)
                             .fillMaxHeight()
-                            .padding(horizontal = 4.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.TopCenter
                     ) {
                         cameraControlsContent(true)
                     }
                 }
-                // Panel C — fields + save
+                // Panel C — fields only (Save lives in B)
                 Column(
                     modifier = if (isEditing) {
                         Modifier
