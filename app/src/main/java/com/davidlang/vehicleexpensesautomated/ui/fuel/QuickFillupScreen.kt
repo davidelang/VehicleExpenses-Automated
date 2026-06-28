@@ -95,12 +95,23 @@ fun QuickFillupScreen(
     var volumeUnit by rememberSaveable { mutableStateOf(defaultVolumeUnit) }
     var lastCaptureType by rememberSaveable { mutableStateOf("odo") }
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
     val focusManager = LocalFocusManager.current
     var isOdoFocused by remember { mutableStateOf(false) }
     var isVolumeFocused by remember { mutableStateOf(false) }
     var isCostFocused by remember { mutableStateOf(false) }
     var editingField by rememberSaveable { mutableStateOf<String?>(null) }
-    val isEditing = isOdoFocused || isVolumeFocused || isCostFocused || editingField != null
+    val isPortraitFieldFocused = isOdoFocused || isVolumeFocused || isCostFocused
+    val isLandscapeEditing = isLandscape && (isPortraitFieldFocused || editingField != null)
+    val isEditing = if (isLandscape) isLandscapeEditing else isPortraitFieldFocused
+
+    LaunchedEffect(isOdoFocused, isVolumeFocused, isCostFocused) {
+        if (!isOdoFocused && !isVolumeFocused && !isCostFocused) {
+            editingField = null
+        }
+    }
 
     val appendToDecimalField: (String, String) -> String = { current, digit ->
         when (digit) {
@@ -163,9 +174,6 @@ fun QuickFillupScreen(
             selectedVehicleId = vehicles.first().id
         }
     }
-
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
     val cameraOrCropArea = @Composable {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -631,7 +639,10 @@ fun QuickFillupScreen(
                         imeAction = ImeAction.Done
                     ),
                     keyboardActions = KeyboardActions(
-                        onDone = { focusManager.clearFocus() }
+                        onDone = {
+                            editingField = null
+                            focusManager.clearFocus()
+                        }
                     ),
                     singleLine = true
                 )
@@ -890,9 +901,9 @@ fun QuickFillupScreen(
                 }
             }
         } else {
+            // Portrait: A+B hidden during field edit (system keyboard); restored on focus clear
             Column(modifier = Modifier.fillMaxSize()) {
-                // Panel A — camera/results
-                if (!isEditing) {
+                if (!isPortraitFieldFocused) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -900,7 +911,6 @@ fun QuickFillupScreen(
                     ) {
                         panelAContent()
                     }
-                    // Panel B — navigation controls
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -910,13 +920,15 @@ fun QuickFillupScreen(
                         cameraControlsContent(false)
                     }
                 }
-                // Panel C — fields + save
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .widthIn(min = cPanelMinWidth)
                         .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .then(if (isEditing) Modifier else Modifier.verticalScroll(rememberScrollState())),
+                        .then(
+                            if (isPortraitFieldFocused) Modifier.weight(1f, fill = false)
+                            else Modifier.verticalScroll(rememberScrollState())
+                        ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     fieldsAndSaveContent()
