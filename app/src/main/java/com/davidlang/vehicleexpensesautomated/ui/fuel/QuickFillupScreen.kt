@@ -576,7 +576,7 @@ fun QuickFillupScreen(
                     }
                 },
                 enabled = canSave,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.wrapContentWidth()
             ) {
                 Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
             }
