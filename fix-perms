@@ -176,7 +176,7 @@ ensure_shared_build_homes() {
   mkdir -p "$GRADLE_SHARED"
   chown -R "$PRIMARY_USER:$SHARED_GROUP" "$GRADLE_SHARED" 2>/dev/null || true
   find "$GRADLE_SHARED" -type d -exec chmod 2770 {} + 2>/dev/null || true
-  find "$GRADLE_SHARED" -type f -exec chmod 660 {} + 2>/dev/null || true
+  chmod -R ug+rwX,o-rwx "$GRADLE_SHARED" 2>/dev/null || true
 
   ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
   mkdir -p "$ANDROID_SHARED/cache"
@@ -186,8 +186,8 @@ ensure_shared_build_homes() {
     cp "/home/$PRIMARY_USER/.android/debug.keystore.lock" "$ANDROID_SHARED/" 2>/dev/null || true
   fi
   chown -R "$PRIMARY_USER:$SHARED_GROUP" "$ANDROID_SHARED" 2>/dev/null || true
-  chmod 2770 "$ANDROID_SHARED" 2>/dev/null || true
-  find "$ANDROID_SHARED" -type f -exec chmod 660 {} + 2>/dev/null || true
+  find "$ANDROID_SHARED" -type d -exec chmod 2770 {} + 2>/dev/null || true
+  chmod -R ug+rwX,o-rwx "$ANDROID_SHARED" 2>/dev/null || true
 }
 
 ensure_groups() {
