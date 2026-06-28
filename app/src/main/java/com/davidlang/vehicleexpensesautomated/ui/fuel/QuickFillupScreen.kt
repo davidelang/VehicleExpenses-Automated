@@ -959,11 +959,22 @@ fun QuickFillupScreen(
         }
     }
 
-    // 3-panel layout: A (camera), B (controls), C (results)
+    // 3-panel layout: A (camera), B (controls), C (results), D (zoom when extra space)
     val bPanelSize = 72.dp // icon-size guided, one button wide
     val cPanelMinWidth = 220.dp // volume field 6+decimal+label estimate
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val zoomDWidth = if (isLandscape && !isEditing) {
+            val bAllocated = bPanelSize + 8.dp
+            val cAllocated = cPanelMinWidth + 16.dp
+            val aPanelMaxWidth = (maxWidth - bAllocated - cAllocated).coerceAtLeast(0.dp)
+            val fitsByHeight = aPanelMaxWidth / maxHeight > captureAspectRatio
+            val aContentWidth = if (fitsByHeight) maxHeight * captureAspectRatio else aPanelMaxWidth
+            val extra = maxWidth - aContentWidth - bPanelSize - cPanelMinWidth
+            if (extra > 60.dp && zoomControl != null && displayBitmap == null) 56.dp else 0.dp
+        } else {
+            0.dp
+        }
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxSize()) {
                 if (isEditing) {
@@ -1017,6 +1028,9 @@ fun QuickFillupScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     fieldsAndSaveContent()
+                }
+                if (!isEditing && zoomDWidth > 0.dp) {
+                    Box(modifier = Modifier.width(zoomDWidth)) { /* D stub */ }
                 }
             }
         } else {
