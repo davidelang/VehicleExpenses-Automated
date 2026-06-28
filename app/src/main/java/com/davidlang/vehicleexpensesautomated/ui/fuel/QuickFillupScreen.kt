@@ -966,7 +966,11 @@ fun QuickFillupScreen(
                             ArrowsIcon(
                                 orientation = ArrowOrientation.Vertical,
                                 modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                tint = if (isProcessing) {
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                }
                             )
                         }
                         RoundActionButton(
