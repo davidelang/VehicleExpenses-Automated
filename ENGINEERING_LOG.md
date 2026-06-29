@@ -213,3 +213,9 @@ User symptoms: portrait Save below shutter row (extra B height); landscape D pan
 
 - Executing dev-ai-interaction/plans/cleanup-quickfill-git-history-prepare-pr-20260628-plan.md on tweak-quick-fill (baseline builds tag: tweak-quick-fill/builds).
 - Scope: interactive rebase squash of ~26 Phase micro-commits (3df48b8c..HEAD portrait/layout fixes) into 3-5 logical commits; force-push; generate PR doc. No app source edits.
+
+## 2026-06-28 - QuickFill history cleanup + PR doc
+
+- Squashed tweak-quick-fill to 4 logical commits (backup-tweak-quick-fill = 6163eaf2).
+- PR artifact: dev-ai-interaction/PRs/PR-tweak-quick-fill.md (generate_pr.sh + summary edit).
+- Builds tag refreshed on cleaned HEAD: e0faa793. Force-push still required from user environment.
