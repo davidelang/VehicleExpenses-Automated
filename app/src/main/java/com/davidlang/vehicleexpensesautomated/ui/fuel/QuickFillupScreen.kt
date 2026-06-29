@@ -533,7 +533,7 @@ fun QuickFillupScreen(
         }
     }
 
-    val saveButtonContent = @Composable {
+    val saveButtonContent = @Composable { modifier: Modifier = Modifier.wrapContentWidth() ->
         val hasAnyData = odometer.isNotBlank() || cost.isNotBlank() || gallons.isNotBlank()
         val canSave = hasAnyData && selectedVehicleId != null && !isProcessing && !isPhotoSaving
 
@@ -577,7 +577,7 @@ fun QuickFillupScreen(
                 }
             },
             enabled = canSave,
-            modifier = Modifier.wrapContentWidth()
+            modifier = modifier
         ) {
             Icon(Icons.Filled.Save, contentDescription = "Save")
         }
