@@ -168,3 +168,8 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 - Execution start: Save icon in B only, remove from C, compact B panel (80.dp)
 - Baseline tag: tweak-quick-fill/builds at a1f80cb6
 - Phase 1: forensic read of Save placement
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 2
+
+- Removed saveButtonContent() call and comment from fieldsContent (C)
+- Phase 1 tag: f0f13df1

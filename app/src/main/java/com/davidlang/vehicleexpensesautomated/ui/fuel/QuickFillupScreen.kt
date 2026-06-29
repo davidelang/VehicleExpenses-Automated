@@ -817,9 +817,6 @@ fun QuickFillupScreen(
                 }
             }
         }
-
-        // Save in B per spec; also in C for editing visibility (landscape keypad replaces B)
-        saveButtonContent()
             }
         }
     }
