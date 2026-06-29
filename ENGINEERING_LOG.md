@@ -179,3 +179,8 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 - saveButtonContent: always visible Button with Icons.Filled.Save, enabled=canSave
 - Removed outer if (hasAnyData); added Save icon import
 - Phase 2 tag: 84a481a0
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 3 fix
+
+- material-icons-core lacks Save; added local Icons.Filled.Save ImageVector extension
+- Phase 3 build retry after compile fix

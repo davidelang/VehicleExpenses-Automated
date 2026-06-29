@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,7 +36,13 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
@@ -1221,6 +1226,55 @@ private fun RoundActionButton(
         }
     }
 }
+
+// material-icons-core lacks Save; local Filled.Save matches Material disk icon (Icons.Filled.Save usage).
+private var _saveIcon: ImageVector? = null
+val Icons.Filled.Save: ImageVector
+    get() {
+        if (_saveIcon != null) return _saveIcon!!
+        _saveIcon = ImageVector.Builder(
+            name = "Save",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f
+        ).apply {
+            path(
+                fill = SolidColor(Color.Black),
+                fillAlpha = 1f,
+                strokeAlpha = 1f,
+                strokeLineWidth = 1f,
+                strokeLineCap = StrokeCap.Butt,
+                strokeLineJoin = StrokeJoin.Miter,
+                strokeLineMiter = 4f,
+                pathFillType = PathFillType.NonZero
+            ) {
+                moveTo(17f, 3f)
+                horizontalLineTo(5f)
+                curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+                verticalLineToRelative(14f)
+                curveToRelative(0f, 1.1f, 0.89f, 2f, 2f, 2f)
+                horizontalLineToRelative(14f)
+                curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+                verticalLineTo(7f)
+                lineToRelative(-4f, -4f)
+                close()
+                moveTo(12f, 19f)
+                curveToRelative(-1.66f, 0f, -3f, -1.34f, -3f, -3f)
+                reflectiveCurveToRelative(1.34f, -3f, 3f, -3f)
+                reflectiveCurveToRelative(3f, 1.34f, 3f, 3f)
+                reflectiveCurveToRelative(-1.34f, 3f, -3f, 3f)
+                close()
+                moveTo(15f, 9f)
+                horizontalLineTo(5f)
+                verticalLineTo(5f)
+                horizontalLineToRelative(10f)
+                verticalLineToRelative(4f)
+                close()
+            }
+        }.build()
+        return _saveIcon!!
+    }
 
 private enum class ArrowOrientation { Vertical, Horizontal }
 
