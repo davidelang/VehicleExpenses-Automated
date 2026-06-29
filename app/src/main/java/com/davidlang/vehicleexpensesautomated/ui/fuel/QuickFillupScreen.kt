@@ -1068,9 +1068,10 @@ fun QuickFillupScreen(
                         cameraControlsContent(false)
                     }
                 }
+                // Panel C — portrait: fields centered horizontally in available width
                 Column(
                     modifier = Modifier
-                        .wrapContentWidth()
+                        .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .then(
                             if (isPortraitFieldFocused) Modifier.weight(1f, fill = false)
@@ -1078,7 +1079,12 @@ fun QuickFillupScreen(
                         ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    fieldsContent()
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterHorizontally
+                    ) {
+                        fieldsContent()
+                    }
                 }
             }
         }
