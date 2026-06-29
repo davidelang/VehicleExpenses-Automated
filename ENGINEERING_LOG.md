@@ -190,3 +190,9 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 - bPanelSize 80.dp; landscape B Column wrapContent + spacedBy(4.dp)
 - B Box wrapContent + 2.dp padding (no fillMaxHeight)
 - Phase 3 tag: e88503b2
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 5 (final)
+
+- Stale comments cleaned (no "also in C", no Save Fill-up text)
+- All phases complete; final tag pending build
+- Phase 4 tag: d38ce0fa

@@ -993,7 +993,7 @@ fun QuickFillupScreen(
         }
     }
 
-    // Save in B per spec; also in C for editing visibility. Zoom prefers extra space after A+B+C (D) before overlay in A.
+    // Save in B only. Zoom prefers extra space after A+B+C (D) before overlay in A.
     // 3-panel layout: A (camera), B (controls), C (results), D (zoom when extra space)
     val bPanelSize = 80.dp // icon-sized narrow strip (disk icon for Save); minimal padding, compact arrangement to eliminate extra space around controls in B, giving max remainder to A.
     // C content-sized via wrapContentWidth; min floor for narrow content (digits + capped vehicle).
@@ -1050,7 +1050,7 @@ fun QuickFillupScreen(
                         cameraControlsContent(true)
                     }
                 }
-                // Panel C — content-sized fields (wrapContentWidth); Save also in C for editing visibility
+                // Panel C — content-sized fields (wrapContentWidth)
                 Column(
                     modifier = if (isEditing) {
                         Modifier
