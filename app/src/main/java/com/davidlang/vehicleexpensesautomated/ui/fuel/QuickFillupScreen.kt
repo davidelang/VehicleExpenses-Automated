@@ -947,38 +947,33 @@ fun QuickFillupScreen(
                     saveButtonContent(Modifier.wrapContentWidth())
                 }
             } else {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                // Save in B — portrait branch: single horizontal row (mode, Save, shutter)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    IconButton(
+                        onClick = onModeSwitchClick,
+                        enabled = !isProcessing,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
                     ) {
-                        IconButton(
-                            onClick = onModeSwitchClick,
-                            enabled = !isProcessing,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
-                        ) {
-                            ArrowsIcon(
-                                orientation = ArrowOrientation.Vertical,
-                                modifier = Modifier.size(24.dp),
-                                tint = if (isProcessing) {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSecondaryContainer
-                                }
-                            )
-                        }
-                        RoundActionButton(
-                            viewState = mainButtonState,
-                            onClick = onMainButtonClick
+                        ArrowsIcon(
+                            orientation = ArrowOrientation.Vertical,
+                            modifier = Modifier.size(24.dp),
+                            tint = if (isProcessing) {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            } else {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            }
                         )
                     }
-                    // Save in B — portrait branch
                     saveButtonContent(Modifier.wrapContentWidth())
+                    RoundActionButton(
+                        viewState = mainButtonState,
+                        onClick = onMainButtonClick
+                    )
                 }
             }
         }
