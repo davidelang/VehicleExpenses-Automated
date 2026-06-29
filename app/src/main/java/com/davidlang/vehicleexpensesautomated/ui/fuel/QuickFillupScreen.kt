@@ -600,8 +600,8 @@ fun QuickFillupScreen(
             val density = LocalDensity.current
             val vehicleTextWidth = with(density) {
                 textMeasurer.measure(longestVehicle, style = MaterialTheme.typography.bodyLarge).size.width.toDp()
-            } + 40.dp
-            val vehicleFieldWidth = vehicleTextWidth.coerceIn(80.dp, 160.dp)
+            } + 48.dp
+            val vehicleFieldWidth = vehicleTextWidth.coerceIn(80.dp, 172.dp)
 
             val odoBorder = if (captureMode == "odo") {
                 Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
@@ -653,7 +653,7 @@ fun QuickFillupScreen(
                     onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
                     label = { Text("Odo") },
                     modifier = Modifier
-                        .widthIn(min = 64.dp, max = 80.dp)
+                        .widthIn(min = 64.dp, max = 88.dp)
                         .onFocusChanged {
                             isOdoFocused = it.isFocused
                             if (it.isFocused) editingField = "odo"
@@ -806,19 +806,19 @@ fun QuickFillupScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    costField(Modifier.widthIn(min = 56.dp, max = 72.dp), ImeAction.Next)
+                    costField(Modifier.widthIn(min = 56.dp, max = 80.dp), ImeAction.Next)
                     swapButton()
                 }
-                volumeField(Modifier.widthIn(min = 56.dp, max = 72.dp))
+                volumeField(Modifier.widthIn(min = 56.dp, max = 76.dp))
             } else {
                 Row(
                     modifier = Modifier.wrapContentWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    costField(Modifier.widthIn(min = 56.dp, max = 72.dp), ImeAction.Next)
+                    costField(Modifier.widthIn(min = 56.dp, max = 80.dp), ImeAction.Next)
                     swapButton()
-                    volumeField(Modifier.widthIn(min = 56.dp, max = 72.dp))
+                    volumeField(Modifier.widthIn(min = 56.dp, max = 76.dp))
                 }
             }
         }
