@@ -111,6 +111,13 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         flip()
     }
 
+    /** Integer XOR remap p→s: q=(b^128). No flip — .p stays readable; .s holds int8 tensor. */
+    fun quantizeMonoInputToScratch(tensorW: Int = _width, tensorH: Int = _height) {
+        val srcHandle = (p as Instance).nativePtr
+        val dstHandle = (s as Instance).nativePtr
+        NativeImageUtils.quantizeMonoHandleToInt8(srcHandle, dstHandle, tensorW, tensorH, _width, _height)
+    }
+
     fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
     fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
 

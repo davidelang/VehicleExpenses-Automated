@@ -16,10 +16,12 @@ target_include_directories(libraw_static PUBLIC ${LIBRAW_PATH})
 # Explicitly link against the OpenCV library provided in jniLibs
 add_library(opencv_java4 SHARED IMPORTED)
 set_target_properties(opencv_java4 PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libopencv_java4.so)
+set_target_properties(opencv_java4 PROPERTIES IMPORTED_SONAME "libopencv_java4.so")
 
 # Explicitly link against the Paddle Lite library provided in jniLibs
 add_library(paddle_lite_jni SHARED IMPORTED)
 set_target_properties(paddle_lite_jni PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libpaddle_lite_jni.so)
+set_target_properties(paddle_lite_jni PROPERTIES IMPORTED_SONAME "libpaddle_lite_jni.so")
 
 # 1. buffer_set library (Isolated memory management)
 add_library(buffer_set SHARED BufferSet.cpp)

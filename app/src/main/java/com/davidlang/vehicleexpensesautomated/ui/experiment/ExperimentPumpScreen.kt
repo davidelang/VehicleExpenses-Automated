@@ -57,6 +57,8 @@ import kotlin.math.min
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentPump"
+private const val PUMP_JSON_BUFFER_INITIAL_BYTES = 256 * 1024 * 1024
+private const val PUMP_JSON_BUFFER_RESET_CAPACITY = 512 * 1024 * 1024
 
 private fun getPhotoFragmentFile(reportDir: File, ts: String, idx: Int): File {
     val fragDir = File(reportDir, "fragments")
@@ -151,6 +153,7 @@ fun ExperimentPumpScreen(navController: NavHostController) {
     experimentDir.mkdirs()
     val reportDir = File(context.getExternalFilesDir(null), "pump_reports")
 
+    if (!experimentDir.exists()) experimentDir.mkdirs()
     if (!reportDir.exists()) reportDir.mkdirs()
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->

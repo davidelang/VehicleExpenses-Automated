@@ -11,8 +11,37 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - `dev-ai-interaction/historical-plans/` — archived plans
 - `dev-ai-interaction/implementation-failure-logs/` — scan on startup / "new planning cycle"
 - `dev-ai-interaction/.planning-agent-prompt.txt` — planner restart prompt from master
+- `dev-ai-interaction/paddle-build/patches-int8/` — INT8-only Paddle-Lite deltas (`apply_int8_patches.sh`, `Dockerfile.int8`); separate from `patches/` PR branches
+- `dev-ai-interaction/paddle-build/Dockerfile.int8` — int8 arm JNI builds must run `patchelf --set-soname libpaddle_lite_jni.so` post-android-build via `/workspace/set_jni_soname.sh` (arm64/armv7 `java/so/libpaddle_lite_jni.so` lacks linker SONAME otherwise)
+- `dev-ai-interaction/research/optimize_mono_int8_models.sh` — host-side INT8 `.nb` conversion script
 - `dev-ai-interaction/scripts/deploy-golden-pump-photos.sh` — push GOLDEN_SUBSET and/or flat pump zips to device
 - `dev-ai-interaction/research/photos/pump/` — pump experiment source photos; `pump-zips/` holds generated flat zips
+
+## Tracked documentation (`docs/` in app worktrees)
+- `docs/specs/` — hard requirements; if docs and code disagree, **docs are authoritative**
+- `docs/reference/` — documents current code/artifacts; if docs and code disagree, **code is authoritative**
+- `docs/obsolete/` — retired approaches kept for possible future reuse (not current contract)
+- Sandbox (`dev-ai-interaction/`) is generally **not** git-tracked; durable docs that must survive in git belong under `docs/` (pick the subdir by authority level above), not the sandbox
+
+### Documentation layers (what belongs where)
+
+| Layer | Path | Git tracked? | Purpose |
+|-------|------|--------------|---------|
+| Build contract | `docs/specs/PADDLE_BUILD.md` | YES | Fork rebuild (images, containers, branches) |
+| Host/runtime INT8 contract | `docs/specs/HOST_PADDLE_USE.md` | YES | XOR remap, conversion scripts, BufferSet pattern |
+| Build env tags | `docs/specs/BUILD_ENVIRONMENT.md` | YES | Docker image names, output dirs |
+| Stable pointers | `project-facts.md` | YES | Where specs/sandbox/scripts live (no effort narrative) |
+| Activity log | `ENGINEERING_LOG.md` | YES | Append-only merge/effort history |
+| Fork patch sources | `dev-ai-interaction/paddle-build/patches-int8/` | Sandbox | INT8 Paddle-Lite deltas |
+| Docker build outputs | `dev-ai-interaction/paddle-build/output/` | NEVER | `.so`, `opt`, benchmarks (ephemeral) |
+| Build status | `dev-ai-interaction/paddle-build/VERIFICATION_PROGRESS.md` | Sandbox | Container run evidence |
+| Conversion script | `dev-ai-interaction/research/optimize_mono_int8_models.sh` | Sandbox | Host model conversion |
+| Deployment verification | `dev-ai-interaction/research/verify_int8_deployment.sh` | Sandbox | Forensic md5/grep gate |
+| Provenance / audits | `dev-ai-interaction/paddle-int8-provenance-*.md`, `dev-ai-interaction/research/paddle-int8-*.md` | Sandbox | Effort artifacts |
+| Compliance / failure logs | `dev-ai-interaction/compliance-report-*.md`, `dev-ai-interaction/implementation-failure-logs/` | Sandbox | Checker output until PASS |
+| Active plan | `dev-ai-interaction/plans/` | Sandbox | Turn contract |
+| Deployed models | `app/src/main/assets/paddle/*_int8_*.nb` | YES | Runtime INT8 assets |
+| Deployed jni/jar | `app/src/main/jniLibs/`, `app/libs/PaddlePredictor.jar` | YES | Runtime Paddle stack |
 
 ## At worktree root
 - `ENGINEERING_LOG.md` (append-only at end; use ONLY `./append-to-engineering-log` or `@file` wrapper to add entries)

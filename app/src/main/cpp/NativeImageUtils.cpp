@@ -27,6 +27,38 @@ static void logMatHeader(const char* tag, const cv::Mat* m) {
 }
 
 #include "../libraw_config.h"
+
+namespace {
+
+bool resolveOutputHeatmapFloatData(
+    const paddle::lite_api::Tensor* tensor, int h, int w,
+    std::vector<float>& scratch, const float** outPtr) {
+  if (!tensor || h <= 0 || w <= 0 || !outPtr) return false;
+  const size_t count = static_cast<size_t>(h) * static_cast<size_t>(w);
+  const auto prec = tensor->precision();
+
+  if (prec == paddle::lite_api::PrecisionType::kFloat) {
+    const float* data = tensor->data<float>();
+    if (!data) return false;
+    *outPtr = data;
+    return true;
+  }
+
+  scratch.resize(count);
+  if (prec == paddle::lite_api::PrecisionType::kInt8) {
+    const int8_t* src = tensor->data<int8_t>();
+    if (!src) return false;
+    for (size_t i = 0; i < count; ++i) {
+      scratch[i] = static_cast<float>(src[i]);
+    }
+  } else {
+    tensor->CopyToCpu(scratch.data());
+  }
+  *outPtr = scratch.data();
+  return true;
+}
+
+}  // namespace
 #include <libraw/libraw.h>
 
 static const char base64_chars[] = 
@@ -437,6 +469,82 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopul
     }
 
     env->ReleaseFloatArrayElements(dstTensor, dst, 0);
+}
+
+// UINT8 luma → int8 XOR remap: q = static_cast<int8_t>(b ^ 128). No float mean/std.
+static void quantizeMonoRowsToInt8(const uint8_t* srcRow, int8_t* dstRow, int w) {
+    for (int x = 0; x < w; ++x) {
+        dstRow[x] = static_cast<int8_t>(srcRow[x] ^ 128);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuantizeMonoToInt8(
+    JNIEnv* env, jobject thiz, jlong srcMatPtr, jobject dstBuffer,
+    jint tensorW, jint tensorH, jint srcW, jint srcH) {
+
+    auto* src = reinterpret_cast<cv::Mat*>(srcMatPtr);
+    if (!src || src->empty()) return;
+    void* dst = env->GetDirectBufferAddress(dstBuffer);
+    if (!dst) return;
+
+    int w = srcW > 0 ? srcW : src->cols;
+    int h = srcH > 0 ? srcH : src->rows;
+    if (w > tensorW || h > tensorH) return;
+
+    std::memset(dst, 0, static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH));
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* row = src->ptr<uint8_t>(y);
+        int8_t* dst_row = static_cast<int8_t*>(dst) + y * tensorW;
+        quantizeMonoRowsToInt8(row, dst_row, w);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuantizeMonoHandleToInt8(
+    JNIEnv* env, jobject thiz, jlong srcHandlePtr, jlong dstHandlePtr,
+    jint tensorW, jint tensorH, jint srcW, jint srcH) {
+
+    auto* srcHandle = reinterpret_cast<BufferSetHandle*>(srcHandlePtr);
+    auto* dstHandle = reinterpret_cast<BufferSetHandle*>(dstHandlePtr);
+    if (!srcHandle || !dstHandle) return;
+
+    int w = srcW > 0 ? srcW : static_cast<int>(srcHandle->width);
+    int h = srcH > 0 ? srcH : static_cast<int>(srcHandle->height);
+    if (w > tensorW || h > tensorH) return;
+
+    uint8_t* dst = dstHandle->data;
+    std::memset(dst, 0, static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH));
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* row = srcHandle->data + y * srcHandle->width;
+        int8_t* dst_row = reinterpret_cast<int8_t*>(dst) + y * tensorW;
+        quantizeMonoRowsToInt8(row, dst_row, w);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindInputInt8(
+    JNIEnv* env, jobject thiz, jobject tensor, jobject srcBuffer,
+    jint tensorW, jint tensorH) {
+
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return;
+    }
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    void* raw = env->GetDirectBufferAddress(srcBuffer);
+    if (!nativePtr || !raw) return;
+
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return;
+
+    paddle::lite_api::Tensor* lite_tensor = uptr->get();
+    lite_tensor->Resize({1, 1, tensorH, tensorW});
+    lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kInt8);
+    size_t bytes = static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH);
+    lite_tensor->ShareExternalMemory(raw, bytes, paddle::lite_api::TargetType::kHost);
 }
 
 JNIEXPORT jintArray JNICALL
@@ -944,8 +1052,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 
     int h = (int)shape[shape.size() - 2];
     int w = (int)shape[shape.size() - 1];
-    const float* data = nativeTensor->data<float>();
-    if (!data) return 0.0f;
+    std::vector<float> heatmapScratch;
+    const float* data = nullptr;
+    if (!resolveOutputHeatmapFloatData(nativeTensor, h, w, heatmapScratch, &data)) {
+        return 0.0f;
+    }
 
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
     cv::Mat mask = heatmap > threshold;
@@ -1031,11 +1142,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 
     int h = (int)shape[shape.size() - 2];
     int w = (int)shape[shape.size() - 1];
-    const float* data = nativeTensor->data<float>();
-    if (!data) return nullptr;
+    std::vector<float> heatmapScratch;
+    const float* data = nullptr;
+    if (!resolveOutputHeatmapFloatData(nativeTensor, h, w, heatmapScratch, &data)) {
+        return nullptr;
+    }
 
-    LOGI("nativeProcessHeatmap: shape=[%d dims], h=%d, w=%d, ptr=%p, first4=[%.4f,%.4f,%.4f,%.4f]",
-         (int)shape.size(), h, w, data, data[0], data[1], data[2], data[3]);
+    LOGI("nativeProcessHeatmap: prec=%d shape=[%d dims], h=%d, w=%d, ptr=%p, first4=[%.4f,%.4f,%.4f,%.4f]",
+         (int)nativeTensor->precision(), (int)shape.size(), h, w, data, data[0], data[1], data[2], data[3]);
 
     // 2. Thresholding
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));

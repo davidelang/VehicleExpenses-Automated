@@ -171,6 +171,21 @@ object NativeImageUtils {
         nativePopulateMonoTensor(src.nativeObj, dst, tensorW, tensorH, mean, std)
     }
 
+    /** UINT8 luma → int8 via q = (b ^ 128). Letterbox: top-left into tensorW×tensorH. */
+    fun quantizeMonoToInt8(src: Mat, dst: ByteBuffer, tensorW: Int, tensorH: Int, srcW: Int = 0, srcH: Int = 0) {
+        nativeQuantizeMonoToInt8(src.nativeObj, dst, tensorW, tensorH, srcW, srcH)
+    }
+
+    /** BufferSet p→s int8 quantize (handle-based zero-copy). */
+    fun quantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int = 0, srcH: Int = 0) {
+        nativeQuantizeMonoHandleToInt8(srcHandle, dstHandle, tensorW, tensorH, srcW, srcH)
+    }
+
+    /** Bind int8 NCHW backing store to Paddle input tensor (ShareExternalMemory). */
+    fun bindInputInt8(tensor: Any, src: ByteBuffer, tensorW: Int, tensorH: Int) {
+        nativeBindInputInt8(tensor, src, tensorW, tensorH)
+    }
+
     /**
      * Offloads the entire Valley Expansion algorithm to C++.
      * Reduces thousands of JNI calls to a single call.
@@ -293,6 +308,9 @@ object NativeImageUtils {
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
+    private external fun nativeQuantizeMonoToInt8(srcMatPtr: Long, dstBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
+    private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
+    private external fun nativeBindInputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?

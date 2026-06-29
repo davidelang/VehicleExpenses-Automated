@@ -1317,7 +1317,7 @@ private suspend fun runBinTrialsPaddle(
                 val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
                 val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
                 org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-                val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
+                val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p, recSet = experimentRecSet320x48)
                 if (ocrR.debugText.isNotBlank()) {
                     tOdoB.append(ocrR.debugText).append(" ")
                     ocrR.metadata["ocr_probs"]?.let { tProbsB.append(it).append(" ") }
@@ -2029,7 +2029,7 @@ private suspend fun runPaddleValleyIterative(
             odoBuffer.c[rSrcId].release()
             experimentRecSet320x48.c[rCrId].release()
 
-            val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
+            val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p, recSet = experimentRecSet320x48)
             if (ocrR.debugText.isNotBlank()) { odoB.append(ocrR.debugText).append(" "); fBoxes.add(box) }
             ocrR.metadata.forEach { (k, v) -> jMeta.addProperty("${k}_${bIdx}", v) }
             }
