@@ -113,3 +113,5 @@
   - [ ] Phase 12: Final sweep
 
 - [x] Executing plan dev-ai-interaction/plans/fix-quickfillupscreen-layout-and-vehicle-display-bugs-20260628-plan.md: QuickFill layout fixes (portrait Save left of shutter, remove D panel, tighten C, vehicle display bug). All 7 phases complete.
+
+- [ ] Executing plan dev-ai-interaction/plans/fix-quickfill-portrait-camera-fill-fields-width-button-order-c-centering-20260628-plan.md: portrait camera fill, field widths, B button order, C centering in QuickFillupScreen.kt.
