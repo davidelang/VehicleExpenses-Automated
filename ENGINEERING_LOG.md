@@ -162,3 +162,54 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 - 2026-06-24: Additive ZIP extract on pump + alignment experiment screens.
 - 2026-06-25–27: Quick Fill Set G integration; PR review blocker fixes (deskew, zip-slip, BufferSet OOM); de-abstract Quick Fill Set G into OcrHarness.extractQuickFillSetGCostVol.
 - Merged at `279a4681` with review `reviews/review-fix-pump-experiment-20260627-v2.md` (conditionally merge-ready).
+
+## 2026-06-28 - Execute quickfill-b-save-icon-no-c plan
+
+- Execution start: Save icon in B only, remove from C, compact B panel (80.dp)
+- Baseline tag: tweak-quick-fill/builds at a1f80cb6
+- Phase 1: forensic read of Save placement
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 2
+
+- Removed saveButtonContent() call and comment from fieldsContent (C)
+- Phase 1 tag: f0f13df1
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 3
+
+- saveButtonContent: always visible Button with Icons.Filled.Save, enabled=canSave
+- Removed outer if (hasAnyData); added Save icon import
+- Phase 2 tag: 84a481a0
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 3 fix
+
+- material-icons-core lacks Save; added local Icons.Filled.Save ImageVector extension
+- Phase 3 build retry after compile fix
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 4
+
+- bPanelSize 80.dp; landscape B Column wrapContent + spacedBy(4.dp)
+- B Box wrapContent + 2.dp padding (no fillMaxHeight)
+- Phase 3 tag: e88503b2
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 5 (final)
+
+- Stale comments cleaned (no "also in C", no Save Fill-up text)
+- All phases complete; final tag pending build
+- Phase 4 tag: d38ce0fa
+
+## 2026-06-28 - QuickFillup layout + vehicle display fixes execution start
+
+- Approved plan (harness session plan.md) for user-reported: portrait save below instead of left of shutter; landscape zoom in D stealing space from A (camera must win, zoom between image and B if any); C much larger than needed (content-size to longest vehicle + digits); vehicle field reverts to "vehicle" after cost keypad close.
+- First action complete. Baseline forensic reads of project-facts.md, vehicle TF (value="", prefix hack), portrait cameraControls (Column+Row save below), layout (b=80, cMin=220, zoomD), widths done.
+- Proceeding to ultra-micro phases with read/grep/build gates only.
+
+## 2026-06-28 - QuickFill layout + vehicle display bug fix (execution start)
+
+Executing approved plan fix-quickfillupscreen-layout-and-vehicle-display-bugs-20260628-plan.md on tweak-quick-fill/agent-4.
+
+User symptoms: portrait Save below shutter row (extra B height); landscape D panel steals A space; C oversized (220dp min); vehicle field shows label only after keypad dismiss (value="" + prefix hack).
+
+## 2026-06-28 - Cleanup QuickFill git history + prepare PR
+
+- Executing dev-ai-interaction/plans/cleanup-quickfill-git-history-prepare-pr-20260628-plan.md on tweak-quick-fill (baseline builds tag: tweak-quick-fill/builds).
+- Scope: interactive rebase squash of ~26 Phase micro-commits (3df48b8c..HEAD portrait/layout fixes) into 3-5 logical commits; force-push; generate PR doc. No app source edits.

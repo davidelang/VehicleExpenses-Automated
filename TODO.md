@@ -79,3 +79,55 @@
   - Results ready to test (new tag via final build).
 
 - Approved execution of update-rules-eng-log-todo-wrapper-mandates-20260627-plan.md (special rules for ENGINEERING_LOG and TODO file type handling via wrappers)
+
+- Executing plan dev-ai-interaction/plans/quickfill-3panel-consistent-20260628-plan.md: 3-panel QuickFillup redesign (CaptureViewState, RoundActionButton, mode switch, layout, zoom, keypad, symbols, save).
+- [x] quickfill-3panel-consistent-recovery-20260628-plan.md: finish Save-in-B + zoom extra-space D + secondaries for checker PASS
+
+- [x] Executing plan dev-ai-interaction/plans/quickfill-save-button-and-capture-aspect-fix-20260628-plan.md: Save visibility in B (bPanelSize 72→110.dp), 4:3 capture 2048x1536 + AspectRatioStrategy, dimension-based landscape layout (useLandscapeLayout), buffer comments. Baseline: tweak-quick-fill/builds @ 081297de. All 10 phases complete.
+
+- [x] Executing plan dev-ai-interaction/plans/quickfill-c-content-sized-save-visible-and-warnings-fix-20260628-plan.md: C content-sized (wrapContentWidth, vehicle cap 160.dp), Save visible (bPanelSize 150.dp, button wrapContentWidth), deprecation fixes. Baseline: tweak-quick-fill/builds @ 9fefc393. All 11 phases complete.
+  - [x] Phase 1: Forensic C layout + fieldsContent sizing (tag: d12f8077)
+  - [x] Phase 2: C Column wrapContentWidth (tag: 5c15a23c)
+  - [x] Phase 3: fieldsContent wrapContentWidth (tag: c4b47199)
+  - [x] Phase 4: vehicle widthIn(max=160.dp), row wrapContentWidth (tag: 7f90cf5c)
+  - [x] Phase 5: pump row content sizing (tag: fdb552de)
+  - [x] Phase 6: Forensic Save/bPanelSize (tag: bd571202)
+  - [x] Phase 7: bPanelSize 110→150.dp (tag: dae336d8)
+  - [x] Phase 8: saveButtonContent wrapContentWidth (tag: acc3543a)
+  - [x] Phase 9: defaultDisplay deprecation fix (tag: 04151677)
+  - [x] Phase 10: LocalLifecycleOwner → androidx.lifecycle.compose (tag: 80377596)
+  - [x] Phase 11: Final sweep + build (tag: 0b0ae8f4)
+
+- [x] Executing plan dev-ai-interaction/plans/quickfill-c-content-save-visible-aspect-auto-warnings-fix-20260628-plan.md: isLandscape layout, C content-sized, Save in B+C, aspect auto, warnings fix. Baseline: tweak-quick-fill/builds @ d8638acf.
+  - [x] Phase 1: Forensic layout/C sizing (tag: d303d83e)
+  - [x] Phase 2: isLandscape decision (tag: bc1684bf)
+  - [x] Phase 3: C wrapContentWidth (tag: 3b2b1168)
+  - [x] Phase 4: Remove weight(1f) on odo (tag: 528cd082)
+  - [x] Phase 5: fieldsContent wrap confirm (tag: 239d7446)
+  - [x] Phase 6: Forensic Save/B (tag: 42e2c5d5)
+  - [x] Phase 7: bPanelSize 160.dp (tag: a32b51c5)
+  - [x] Phase 8: Save in C for editing (tag: 5c160967)
+  - [x] Phase 9: Aspect auto (no hardcoded Size) (tag: 337039ff)
+  - [x] Phase 10: DatabaseModule migration param (tag: 6317d7b4)
+  - [x] Phase 11: menuAnchor deprecation fixes (tag: 33ed9873)
+  - [ ] Phase 12: Final sweep
+
+- [x] Executing plan dev-ai-interaction/plans/fix-quickfillupscreen-layout-and-vehicle-display-bugs-20260628-plan.md: QuickFill layout fixes (portrait Save left of shutter, remove D panel, tighten C, vehicle display bug). All 7 phases complete.
+
+- [x] Executing plan dev-ai-interaction/plans/fix-quickfill-portrait-camera-fill-fields-width-button-order-c-centering-20260628-plan.md: portrait camera fill, field widths, B button order, C centering in QuickFillupScreen.kt.
+  - [x] Phase 1: Forensic baseline (tag: e96f7e43)
+  - [x] Phase 2: B button order save-shutter-mode (tag: 92ef428b)
+  - [x] Phase 3: Field widths +1 char (tag: bf9c3cf3)
+  - [x] Phase 4: Camera bottom-center fill (tag: c01667c2)
+  - [x] Phase 5: Portrait C centering (tag: 6335b8dc)
+  - [x] Phase 6: Comment hygiene (tag: 6da2a15d)
+  - [x] Phase 7: Final verification build (tag: 7a0ec764)
+
+- [x] Executing plan fix-quickfill-portrait-camera-fill-volume-field-width-20260628-plan.md: portrait camera expand to sides/B + volume field +1 char (76→84.dp) in QuickFillupScreen.kt.
+  - [x] Phase 1: Forensic baseline (tag: 7d315c71)
+  - [x] Phase 2: Volume 76→84.dp (tag: 7b60f522)
+  - [x] Phase 3: Volume forensic + camera prep (tag: ba6f247e)
+  - [x] Phase 4: Portrait camera expansion in panelAContent (tag: 5fa886f6)
+  - [x] Phase 5: Portrait A container tune (tag: bf6ebd69)
+  - [x] Phase 6: Comment hygiene (tag: 768b74bc)
+  - [ ] Phase 7: Final verification build
