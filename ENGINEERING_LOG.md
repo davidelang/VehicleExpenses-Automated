@@ -202,3 +202,9 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 - Approved plan (harness session plan.md) for user-reported: portrait save below instead of left of shutter; landscape zoom in D stealing space from A (camera must win, zoom between image and B if any); C much larger than needed (content-size to longest vehicle + digits); vehicle field reverts to "vehicle" after cost keypad close.
 - First action complete. Baseline forensic reads of project-facts.md, vehicle TF (value="", prefix hack), portrait cameraControls (Column+Row save below), layout (b=80, cMin=220, zoomD), widths done.
 - Proceeding to ultra-micro phases with read/grep/build gates only.
+
+## 2026-06-28 - QuickFill layout + vehicle display bug fix (execution start)
+
+Executing approved plan fix-quickfillupscreen-layout-and-vehicle-display-bugs-20260628-plan.md on tweak-quick-fill/agent-4.
+
+User symptoms: portrait Save below shutter row (extra B height); landscape D panel steals A space; C oversized (220dp min); vehicle field shows label only after keypad dismiss (value="" + prefix hack).
