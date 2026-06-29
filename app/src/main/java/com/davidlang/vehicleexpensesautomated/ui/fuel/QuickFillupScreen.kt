@@ -979,27 +979,14 @@ fun QuickFillupScreen(
         }
     }
 
-    // Save in B only. Zoom prefers extra space after A+B+C (D) before overlay in A.
-    // 3-panel layout: A (camera), B (controls), C (results), D (zoom when extra space)
+    // Save in B only. A gets weight(1) remainder after B+C for max camera; zoom uses right-blank inside A when available.
+    // 3-panel layout: A (camera), B (controls), C (results)
     val bPanelSize = 80.dp // icon-sized narrow strip (disk icon for Save); minimal padding, compact arrangement to eliminate extra space around controls in B, giving max remainder to A.
     // C content-sized via wrapContentWidth; min floor for narrow content (digits + capped vehicle).
     val cPanelMinWidth = 220.dp
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // Config-based layout: device landscape orientation triggers 3-panel Row
-        val zoomDWidth = if (isLandscape && !isEditing) {
-            val bAllocated = bPanelSize + 8.dp
-            val cAllocated = cPanelMinWidth + 16.dp
-            val dCandidate = 56.dp
-            val aPanelMaxWidth = (maxWidth - bAllocated - cAllocated).coerceAtLeast(0.dp)
-            val fitsByHeight = aPanelMaxWidth / maxHeight > captureAspectRatio
-            val aContentWidth = if (fitsByHeight) maxHeight * captureAspectRatio else aPanelMaxWidth
-            // Extra horizontal space after aspect-sized A content + B + C — reserve for D first.
-            val extra = maxWidth - aContentWidth - bAllocated - cAllocated
-            if (extra > dCandidate + 4.dp && zoomControl != null && displayBitmap == null) dCandidate else 0.dp
-        } else {
-            0.dp
-        }
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxSize()) {
                 if (isEditing) {
@@ -1023,7 +1010,7 @@ fun QuickFillupScreen(
                             .weight(1f)
                             .fillMaxHeight()
                     ) {
-                        panelAContent(zoomDWidth > 0.dp)
+                        panelAContent(false)
                     }
                     // Panel B — navigation controls + Save (bottom)
                     Box(
@@ -1054,17 +1041,6 @@ fun QuickFillupScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     fieldsContent()
-                }
-                // Panel D — landscape non-editing only (portrait/editing unchanged)
-                if (!isEditing && zoomDWidth > 0.dp) {
-                    Box(
-                        modifier = Modifier
-                            .width(zoomDWidth)
-                            .fillMaxHeight(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        zoomButtonsContent(Modifier.fillMaxWidth())
-                    }
                 }
             }
         } else {
