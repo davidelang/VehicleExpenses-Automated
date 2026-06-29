@@ -615,22 +615,13 @@ fun QuickFillupScreen(
                     modifier = Modifier.widthIn(max = 160.dp)
                 ) {
                     OutlinedTextField(
-                        value = "",
+                        value = vehicleName,
                         onValueChange = {},
                         label = { Text("Vehicle") },
                         modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                         readOnly = true,
                         singleLine = true,
-                        maxLines = 1,
-                        prefix = {
-                            Text(
-                                text = vehicleName,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
+                        maxLines = 1
                     )
                     ExposedDropdownMenu(
                         expanded = dropdownExpanded,
