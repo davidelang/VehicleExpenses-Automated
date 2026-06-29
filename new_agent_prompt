@@ -1,20 +1,33 @@
 # Mandate Acknowledgment (Fast-Track)
 
-You are in a **Multi-Agent Orchestration** environment. Read **AGENT_CONTEXT.md** and **GEMINI.md**. (Do NOT re-read .gemini/ system files; they are already in your context).
+You are in a **Multi-Agent Orchestration** environment.
 
-Provide a brief report:
+**MANDATORY STARTUP INSTRUCTIONS:**
+1. Read `./AGENT_CONTEXT.md` if it exists in the current directory. If it does not exist (for example, if you are in the orchestration root worktree), read `./master/AGENT_CONTEXT.md` as a layout template, and determine your Role and Branch from `git status`.
+2. Read your CLI-specific thin overlay: `./GROK.md` (for Grok) or `./GEMINI.md` (for Antigravity), and `./AGENT_MANDATES.md` (the shared core mandates).
+3. Do NOT re-read system configuration files; they are already in your context.
+
+Provide a brief report addressing:
 1. **Overrides:** Confirm Sandbox and Testing exemptions.
 2. **Barrier:** Confirm Build-Integrity-Protection (Phase 1/2).
 3. **Verification:** Confirm Forensic Verification (Code audit + build).
 4. **Geography & CRITICAL Confinement:** 
-    - State your current **Role** and **Branch**.
+    - State your current **Role** and **Branch** (if in orchestration root, Role is Orchestrator / Cleanup, Branch is `orchestration`).
     - **NEVER use `..` in any path.** 
     - Use `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/` for sandbox access.
     - **UI Warning:** Large shell outputs (e.g., recursive `ls`) can crash the terminal. Use `head`, `tail`, or specific paths.
+5. **Handoff and Turn-End Rules:**
+    - Confirm you understand that `TODO.md` is strictly for future backlog items, not the current turn's active work.
+    - Confirm you understand that `ENGINEERING_LOG.md` updates must use the `./append-to-engineering-log` wrapper exclusively.
+    - Confirm that once you have completed the changes for an approved plan, run `./build_app` (creating the builds tag), and told the user the results are ready to test, that execution turn is finished. Any subsequent feedback/corrections starts a new planning cycle.
 
-# 5. STOP & WAIT (CRITICAL)
-Upon completion of this report, you **MUST** call `enter_plan_mode` and then **STOP**. 
+# 6. STOP & WAIT (CRITICAL)
+Upon completion of this report:
+- **For Grok:** Enter plan mode (using Grok's mode switch tool, e.g. `SwitchMode` or `enter_plan_mode`) and then **STOP**.
+- **For Antigravity:** Stop calling tools and **STOP** (mode is enforced logically and via harness hooks; do NOT attempt to call a mode-switch tool).
 
-**DO NOT** read `TODO.md`, search for files, or begin any task until the User provides a specific directive. Your only mission right now is to introduce yourself and wait.
+**DO NOT** read `TODO.md`, search for files, or begin any task until the User provides a specific directive. Your only mission right now is to introduce yourself via the report and wait.
 
-Do not perform any other tasks until I have approved your report.
+Do not perform any other tasks until the User has approved your report.
+
+*Tip for the User:* Remember to enable multiline input mode for comfortable plan and prompt entry: focus the prompt and press **Ctrl+M**, or type the slash command **/multiline** (alias **/ml**).
