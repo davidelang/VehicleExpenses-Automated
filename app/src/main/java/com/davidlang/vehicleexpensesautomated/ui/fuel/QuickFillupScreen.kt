@@ -1081,7 +1081,7 @@ fun QuickFillupScreen(
                 ) {
                     Box(
                         modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.CenterHorizontally
+                        contentAlignment = Alignment.TopCenter
                     ) {
                         fieldsContent()
                     }
