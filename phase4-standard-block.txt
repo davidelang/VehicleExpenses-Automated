@@ -1,5 +1,0 @@
-Phase 4: Update the canonical standard-plan-compliance-block.md.
-- Strengthened execution start to specify ./todo-append for first action.
-- Updated before build to note wrapper for TODO.
-- Added explicit bullet: Use `./append-to-engineering-log` for every ENGINEERING_LOG entry (incl. by orchestrator).
-No other text modified. Forensic + build.

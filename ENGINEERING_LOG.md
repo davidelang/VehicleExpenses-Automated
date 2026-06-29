@@ -103,3 +103,12 @@ test line for reset attempt
 - Cleared the SQLite WAL/SHM files and Coil image cache on the emulator.
 - Launched the app, navigated to "Manage Vehicles", and verified that both Honda and Ford Van show the correct reference photo and crop coordinates.
 - Did not make any source code changes. Stale deploy WAL-handling bug logged in my execution findings for future work.
+
+## 2026-06-28 14:35 - Execution start for approved plan reduce-redundancy-in-prompts-plans-rely-on-eng-log-state-20260628-plan.md (with timestamp granularity tweak to minute precision in log headers)
+
+## 2026-06-28 14:40 - Added append-to-engineering-log to approved helper scripts list (per user request). Patch created in dev-ai-interaction/add-append-to-approved-helpers.patch for config.toml and plan-mode-hard-stops.js. (Note: direct edit via search_replace blocked by fs perms in current context; patch provided for application.)
+
+## 2026-06-29 - Executing Rules and Scripts Cleanup Plan
+
+- Initiating execution of dev-ai-interaction/plans/rules-and-scripts-cleanup-plan.md.
+- Scope: Refactoring GEMINI.md, AGENTS.md, new_agent_prompt, run-grok launchers, creating run-antigravity scripts, and removing the legacy run-gemini launcher.

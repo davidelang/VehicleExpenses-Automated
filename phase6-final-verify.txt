@@ -1,5 +1,0 @@
-Phase 6: Final verification + hygiene.
-- Re-read full project-facts.md (hygiene: no non-stable changes needed).
-- Confirmed via grep/read: wrappers now required in AGENT_MANDATES.md, standard-plan-compliance-block.md, MULTI_AGENT_USER_INSTRUCTIONS.md.
-- No direct-edit language for log/todo without wrapper qualifier.
-- All phases completed with forensic, git add, successful builds.

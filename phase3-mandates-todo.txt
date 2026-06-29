@@ -1,6 +1,0 @@
-Phase 3: Update AGENT_MANDATES.md — TODO processing and execution start.
-- Strengthened "The First Action" to require ./todo-append wrapper.
-- Updated sub-agent prompt git add and first action to specify wrapper.
-- Updated phased small-step and handoff requirements text to mandate wrapper for TODO.
-- Clarified high-level only via wrapper.
-Forensic before/after + build.
