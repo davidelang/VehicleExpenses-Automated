@@ -458,7 +458,7 @@ fun QuickFillupScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black),
-            contentAlignment = Alignment.TopStart
+            contentAlignment = Alignment.BottomCenter
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val fitsByHeight = maxWidth / maxHeight > captureAspectRatio
@@ -472,7 +472,7 @@ fun QuickFillupScreen(
                 val hasRightBlank = contentWidth < maxWidth - 1.dp
                 val hasBottomBlank = contentHeight < maxHeight - 1.dp
 
-                Box(modifier = contentModifier.align(Alignment.TopStart)) {
+                Box(modifier = contentModifier.align(Alignment.BottomCenter)) {
                     cameraOrCropArea()
                 }
 
@@ -490,7 +490,7 @@ fun QuickFillupScreen(
                                         modifier = Modifier
                                             .align(Alignment.BottomStart)
                                             .fillMaxWidth()
-                                            .padding(start = 4.dp, bottom = 4.dp),
+                                            .padding(bottom = 0.dp),
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         zoom.availableRatios.forEach { ratio ->
