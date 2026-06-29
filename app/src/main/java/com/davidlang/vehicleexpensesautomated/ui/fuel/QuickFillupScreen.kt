@@ -33,6 +33,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -593,6 +595,14 @@ fun QuickFillupScreen(
                 Modifier
             }
 
+            val textMeasurer = rememberTextMeasurer()
+            val longestVehicle = vehicles.maxOfOrNull { it.name } ?: "Select vehicle"
+            val density = LocalDensity.current
+            val vehicleTextWidth = with(density) {
+                textMeasurer.measure(longestVehicle, style = MaterialTheme.typography.bodyLarge).size.width.toDp()
+            } + 40.dp
+            val vehicleFieldWidth = vehicleTextWidth.coerceIn(80.dp, 160.dp)
+
             val odoBorder = if (captureMode == "odo") {
                 Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
             } else {
@@ -612,7 +622,7 @@ fun QuickFillupScreen(
                 ExposedDropdownMenuBox(
                     expanded = dropdownExpanded,
                     onExpandedChange = { dropdownExpanded = it },
-                    modifier = Modifier.widthIn(max = 160.dp)
+                    modifier = Modifier.widthIn(max = vehicleFieldWidth)
                 ) {
                     OutlinedTextField(
                         value = vehicleName,
@@ -643,7 +653,7 @@ fun QuickFillupScreen(
                     onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
                     label = { Text("Odo") },
                     modifier = Modifier
-                        .widthIn(min = 88.dp)
+                        .widthIn(min = 64.dp, max = 80.dp)
                         .onFocusChanged {
                             isOdoFocused = it.isFocused
                             if (it.isFocused) editingField = "odo"
@@ -796,19 +806,19 @@ fun QuickFillupScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    costField(Modifier.widthIn(min = 80.dp), ImeAction.Next)
+                    costField(Modifier.widthIn(min = 56.dp, max = 72.dp), ImeAction.Next)
                     swapButton()
                 }
-                volumeField(Modifier.widthIn(min = 80.dp))
+                volumeField(Modifier.widthIn(min = 56.dp, max = 72.dp))
             } else {
                 Row(
                     modifier = Modifier.wrapContentWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    costField(Modifier.widthIn(min = 80.dp), ImeAction.Next)
+                    costField(Modifier.widthIn(min = 56.dp, max = 72.dp), ImeAction.Next)
                     swapButton()
-                    volumeField(Modifier.widthIn(min = 80.dp))
+                    volumeField(Modifier.widthIn(min = 56.dp, max = 72.dp))
                 }
             }
         }
@@ -982,8 +992,7 @@ fun QuickFillupScreen(
     // Save in B only. A gets weight(1) remainder after B+C for max camera; zoom uses right-blank inside A when available.
     // 3-panel layout: A (camera), B (controls), C (results)
     val bPanelSize = 80.dp // icon-sized narrow strip (disk icon for Save); minimal padding, compact arrangement to eliminate extra space around controls in B, giving max remainder to A.
-    // C content-sized via wrapContentWidth; min floor for narrow content (digits + capped vehicle).
-    val cPanelMinWidth = 220.dp
+    // C content-sized via wrapContentWidth; fields sized to longest vehicle name + digit inputs.
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // Config-based layout: device landscape orientation triggers 3-panel Row
@@ -1028,12 +1037,10 @@ fun QuickFillupScreen(
                     modifier = if (isEditing) {
                         Modifier
                             .wrapContentWidth()
-                            .widthIn(min = cPanelMinWidth)
                             .padding(horizontal = 8.dp, vertical = 8.dp)
                     } else {
                         Modifier
                             .wrapContentWidth()
-                            .widthIn(min = cPanelMinWidth)
                             .fillMaxHeight()
                             .padding(horizontal = 8.dp, vertical = 8.dp)
                             .verticalScroll(rememberScrollState())
@@ -1066,7 +1073,6 @@ fun QuickFillupScreen(
                 Column(
                     modifier = Modifier
                         .wrapContentWidth()
-                        .widthIn(min = cPanelMinWidth)
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .then(
                             if (isPortraitFieldFocused) Modifier.weight(1f, fill = false)
