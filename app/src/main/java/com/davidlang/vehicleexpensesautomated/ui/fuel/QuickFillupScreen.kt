@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -531,51 +532,49 @@ fun QuickFillupScreen(
         val hasAnyData = odometer.isNotBlank() || cost.isNotBlank() || gallons.isNotBlank()
         val canSave = hasAnyData && selectedVehicleId != null && !isProcessing && !isPhotoSaving
 
-        if (hasAnyData) {
-            Button(
-                onClick = {
-                    selectedVehicleId?.let { vehicleId ->
-                        val rawVolume = gallons.toDoubleOrNull() ?: 0.0
-                        val saveVolume = if (rawVolume == 0.0) {
-                            0.0
-                        } else {
-                            convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
-                        }
-                        // TODO future: persist non-default currency on FuelEntry (DB change later).
-                        // Cost uses raw numeric value; currencySymbol is display-only this turn.
-                        fuelViewModel.saveFuel(
-                            FuelEntry(
-                                vehicleId = vehicleId,
-                                odometer = odometer.toIntOrNull() ?: 0,
-                                gallons = saveVolume,
-                                cost = cost.toDoubleOrNull() ?: 0.0,
-                                timestamp = System.currentTimeMillis(),
-                                photoUrl = photoUrl,
-                                latitude = lat,
-                                longitude = lon,
-                                location = loc
-                            )
-                        )
-                        NativePaddleEngine.releaseAllOdoBuffers()
-                        NativePaddleEngine.bufferSetA.unborrow()
-                        NativePaddleEngine.bufferSetA.clearCrops()
-                        // Reset buffer to 4:3 full-sensor size after save
-                        NativePaddleEngine.bufferSetA.resize(4000, 3072)
-                        val oldBmp = displayBitmap
-                        displayBitmap = null
-                        oldBmp?.let {
-                            if (!it.isRecycled) {
-                                it.recycle()
-                            }
-                        }
-                        navController.popBackStack()
+        Button(
+            onClick = {
+                selectedVehicleId?.let { vehicleId ->
+                    val rawVolume = gallons.toDoubleOrNull() ?: 0.0
+                    val saveVolume = if (rawVolume == 0.0) {
+                        0.0
+                    } else {
+                        convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
                     }
-                },
-                enabled = canSave,
-                modifier = Modifier.wrapContentWidth()
-            ) {
-                Text(if (isPhotoSaving) "Saving Photo..." else "Save Fill-up")
-            }
+                    // TODO future: persist non-default currency on FuelEntry (DB change later).
+                    // Cost uses raw numeric value; currencySymbol is display-only this turn.
+                    fuelViewModel.saveFuel(
+                        FuelEntry(
+                            vehicleId = vehicleId,
+                            odometer = odometer.toIntOrNull() ?: 0,
+                            gallons = saveVolume,
+                            cost = cost.toDoubleOrNull() ?: 0.0,
+                            timestamp = System.currentTimeMillis(),
+                            photoUrl = photoUrl,
+                            latitude = lat,
+                            longitude = lon,
+                            location = loc
+                        )
+                    )
+                    NativePaddleEngine.releaseAllOdoBuffers()
+                    NativePaddleEngine.bufferSetA.unborrow()
+                    NativePaddleEngine.bufferSetA.clearCrops()
+                    // Reset buffer to 4:3 full-sensor size after save
+                    NativePaddleEngine.bufferSetA.resize(4000, 3072)
+                    val oldBmp = displayBitmap
+                    displayBitmap = null
+                    oldBmp?.let {
+                        if (!it.isRecycled) {
+                            it.recycle()
+                        }
+                    }
+                    navController.popBackStack()
+                }
+            },
+            enabled = canSave,
+            modifier = Modifier.wrapContentWidth()
+        ) {
+            Icon(Icons.Filled.Save, contentDescription = "Save")
         }
     }
 

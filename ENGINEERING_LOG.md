@@ -173,3 +173,9 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 
 - Removed saveButtonContent() call and comment from fieldsContent (C)
 - Phase 1 tag: f0f13df1
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 3
+
+- saveButtonContent: always visible Button with Icons.Filled.Save, enabled=canSave
+- Removed outer if (hasAnyData); added Save icon import
+- Phase 2 tag: 84a481a0
