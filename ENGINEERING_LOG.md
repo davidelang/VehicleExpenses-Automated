@@ -179,3 +179,7 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - App source: QuickFillupScreen, CameraPreview, DatabaseModule, SettingsScreen, ManageVehiclesScreen.
 - `./build_app` gate pending this commit.
 - PR reference: `dev-ai-interaction/PRs/PR-tweak-quick-fill.md`. User device test required before `works` tag.
+
+## 2026-06-28 - tweak-quick-fill merge build gate
+
+- ./build_app succeeded on merge commit; master builds tag ed1b5220.
