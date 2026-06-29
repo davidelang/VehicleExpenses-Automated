@@ -926,10 +926,10 @@ fun QuickFillupScreen(
             if (isLand) {
                 Column(
                     modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(),
+                        .wrapContentWidth()
+                        .wrapContentHeight(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     IconButton(
                         onClick = onModeSwitchClick,
@@ -995,7 +995,7 @@ fun QuickFillupScreen(
 
     // Save in B per spec; also in C for editing visibility. Zoom prefers extra space after A+B+C (D) before overlay in A.
     // 3-panel layout: A (camera), B (controls), C (results), D (zoom when extra space)
-    val bPanelSize = 160.dp // 160.dp to fit Save button text readably in B for both orientations
+    val bPanelSize = 80.dp // icon-sized narrow strip (disk icon for Save); minimal padding, compact arrangement to eliminate extra space around controls in B, giving max remainder to A.
     // C content-sized via wrapContentWidth; min floor for narrow content (digits + capped vehicle).
     val cPanelMinWidth = 220.dp
 
@@ -1042,9 +1042,9 @@ fun QuickFillupScreen(
                     // Panel B — navigation controls + Save (bottom)
                     Box(
                         modifier = Modifier
-                            .width(bPanelSize)
-                            .fillMaxHeight()
-                            .padding(horizontal = 4.dp, vertical = 8.dp),
+                            .wrapContentWidth()
+                            .wrapContentHeight()
+                            .padding(2.dp),
                         contentAlignment = Alignment.TopCenter
                     ) {
                         cameraControlsContent(true)

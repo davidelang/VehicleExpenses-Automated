@@ -184,3 +184,9 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 
 - material-icons-core lacks Save; added local Icons.Filled.Save ImageVector extension
 - Phase 3 build retry after compile fix
+
+## 2026-06-28 - quickfill-b-save-icon-no-c phase 4
+
+- bPanelSize 80.dp; landscape B Column wrapContent + spacedBy(4.dp)
+- B Box wrapContent + 2.dp padding (no fillMaxHeight)
+- Phase 3 tag: e88503b2
