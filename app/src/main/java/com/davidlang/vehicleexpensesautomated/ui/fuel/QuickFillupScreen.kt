@@ -462,7 +462,7 @@ fun QuickFillupScreen(
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val fitsByHeight = maxWidth / maxHeight > captureAspectRatio
-                // Landscape: letterbox via fitsByHeight. Portrait: full-width 4:3 down toward B (minimize side/bottom black).
+                // Landscape: letterbox via fitsByHeight. Portrait camera expand to sides/B per 2026-06-28 screenshots.
                 val contentModifier = if (isLandscape) {
                     if (fitsByHeight) {
                         Modifier.fillMaxHeight().aspectRatio(captureAspectRatio)
@@ -822,6 +822,7 @@ fun QuickFillupScreen(
                     costField(Modifier.widthIn(min = 56.dp, max = 80.dp), ImeAction.Next)
                     swapButton()
                 }
+                // One-character volume bump: 84.dp max (was 76.dp) per 2026-06-28 portrait screenshot feedback.
                 volumeField(Modifier.widthIn(min = 56.dp, max = 84.dp))
             } else {
                 Row(
@@ -831,6 +832,7 @@ fun QuickFillupScreen(
                 ) {
                     costField(Modifier.widthIn(min = 56.dp, max = 80.dp), ImeAction.Next)
                     swapButton()
+                    // One-character volume bump: 84.dp max (was 76.dp) per 2026-06-28 portrait screenshot feedback.
                     volumeField(Modifier.widthIn(min = 56.dp, max = 84.dp))
                 }
             }
