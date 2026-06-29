@@ -957,11 +957,16 @@ fun QuickFillupScreen(
                     saveButtonContent(Modifier.wrapContentWidth())
                 }
             } else {
-                // Save in B — portrait branch: single horizontal row (mode, Save, shutter)
+                // Save in B — portrait branch: single horizontal row (save, shutter, mode)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    saveButtonContent(Modifier.wrapContentWidth())
+                    RoundActionButton(
+                        viewState = mainButtonState,
+                        onClick = onMainButtonClick
+                    )
                     IconButton(
                         onClick = onModeSwitchClick,
                         enabled = !isProcessing,
@@ -979,11 +984,6 @@ fun QuickFillupScreen(
                             }
                         )
                     }
-                    saveButtonContent(Modifier.wrapContentWidth())
-                    RoundActionButton(
-                        viewState = mainButtonState,
-                        onClick = onMainButtonClick
-                    )
                 }
             }
         }
