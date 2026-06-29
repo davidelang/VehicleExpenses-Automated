@@ -520,7 +520,7 @@ fun QuickFillupScreen(
                                     }
                                 }
                                 else -> {
-                                    // No letterbox blanks — overlay only when D panel was not allocated.
+                                    // No letterbox blanks — overlay at bottom-end; camera size wins.
                                     zoomButtonsContent(
                                         Modifier
                                             .align(Alignment.BottomEnd)
@@ -990,9 +990,7 @@ fun QuickFillupScreen(
     }
 
     // Save in B only. A gets weight(1) remainder after B+C for max camera; zoom uses right-blank inside A when available.
-    // 3-panel layout: A (camera), B (controls), C (results)
-    val bPanelSize = 80.dp // icon-sized narrow strip (disk icon for Save); minimal padding, compact arrangement to eliminate extra space around controls in B, giving max remainder to A.
-    // C content-sized via wrapContentWidth; fields sized to longest vehicle name + digit inputs.
+    // 3-panel layout: A (camera), B (controls), C (results). C content-sized to fields.
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // Config-based layout: device landscape orientation triggers 3-panel Row
