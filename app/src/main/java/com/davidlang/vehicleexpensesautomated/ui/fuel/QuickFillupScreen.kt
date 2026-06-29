@@ -533,7 +533,7 @@ fun QuickFillupScreen(
         }
     }
 
-    val saveButtonContent = @Composable { modifier: Modifier = Modifier.wrapContentWidth() ->
+    val saveButtonContent: @Composable (Modifier) -> Unit = { modifier ->
         val hasAnyData = odometer.isNotBlank() || cost.isNotBlank() || gallons.isNotBlank()
         val canSave = hasAnyData && selectedVehicleId != null && !isProcessing && !isPhotoSaving
 
@@ -944,7 +944,7 @@ fun QuickFillupScreen(
                         onClick = onMainButtonClick
                     )
                     // Save in B — landscape branch
-                    saveButtonContent()
+                    saveButtonContent(Modifier.wrapContentWidth())
                 }
             } else {
                 Column(
@@ -978,7 +978,7 @@ fun QuickFillupScreen(
                         )
                     }
                     // Save in B — portrait branch
-                    saveButtonContent()
+                    saveButtonContent(Modifier.wrapContentWidth())
                 }
             }
         }
