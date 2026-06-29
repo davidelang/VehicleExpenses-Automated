@@ -196,3 +196,9 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 - Stale comments cleaned (no "also in C", no Save Fill-up text)
 - All phases complete; final tag pending build
 - Phase 4 tag: d38ce0fa
+
+## 2026-06-28 - QuickFillup layout + vehicle display fixes execution start
+
+- Approved plan (harness session plan.md) for user-reported: portrait save below instead of left of shutter; landscape zoom in D stealing space from A (camera must win, zoom between image and B if any); C much larger than needed (content-size to longest vehicle + digits); vehicle field reverts to "vehicle" after cost keypad close.
+- First action complete. Baseline forensic reads of project-facts.md, vehicle TF (value="", prefix hack), portrait cameraControls (Column+Row save below), layout (b=80, cMin=220, zoomD), widths done.
+- Proceeding to ultra-micro phases with read/grep/build gates only.
