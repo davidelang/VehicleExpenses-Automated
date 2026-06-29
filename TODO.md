@@ -123,7 +123,11 @@
   - [x] Phase 6: Comment hygiene (tag: 6da2a15d)
   - [x] Phase 7: Final verification build (tag: 7a0ec764)
 
-- [ ] Executing plan fix-quickfill-portrait-camera-fill-volume-field-width-20260628-plan.md: portrait camera expand to sides/B + volume field +1 char (76→84.dp) in QuickFillupScreen.kt.
+- [x] Executing plan fix-quickfill-portrait-camera-fill-volume-field-width-20260628-plan.md: portrait camera expand to sides/B + volume field +1 char (76→84.dp) in QuickFillupScreen.kt.
   - [x] Phase 1: Forensic baseline (tag: 7d315c71)
   - [x] Phase 2: Volume 76→84.dp (tag: 7b60f522)
-  - [x] Phase 3: Volume forensic + camera prep (in progress)
+  - [x] Phase 3: Volume forensic + camera prep (tag: ba6f247e)
+  - [x] Phase 4: Portrait camera expansion in panelAContent (tag: 5fa886f6)
+  - [x] Phase 5: Portrait A container tune (tag: bf6ebd69)
+  - [x] Phase 6: Comment hygiene (tag: 768b74bc)
+  - [ ] Phase 7: Final verification build
