@@ -121,4 +121,6 @@
   - [x] Phase 4: Camera bottom-center fill (tag: c01667c2)
   - [x] Phase 5: Portrait C centering (tag: 6335b8dc)
   - [x] Phase 6: Comment hygiene (tag: 6da2a15d)
-  - [x] Phase 7: Final verification build
+  - [x] Phase 7: Final verification build (tag: 7a0ec764)
+
+- [ ] Executing plan fix-quickfill-portrait-camera-fill-volume-field-width-20260628-plan.md: portrait camera expand to sides/B + volume field +1 char (76→84.dp) in QuickFillupScreen.kt.
