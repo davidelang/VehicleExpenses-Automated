@@ -989,8 +989,8 @@ fun QuickFillupScreen(
         }
     }
 
-    // Save in B only. A gets weight(1) remainder after B+C for max camera; zoom uses right-blank inside A when available.
-    // 3-panel layout: A (camera), B (controls), C (results). C content-sized to fields.
+    // Save in B only. A gets weight(1) remainder after B+C for max camera; zoom in right-blank or bottom-blank inside A.
+    // 3-panel layout: A (camera bottom-center fill), B (controls), C (results). Portrait C centered; landscape C content-sized.
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         // Config-based layout: device landscape orientation triggers 3-panel Row
