@@ -162,3 +162,20 @@ Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart m
 - 2026-06-24: Additive ZIP extract on pump + alignment experiment screens.
 - 2026-06-25–27: Quick Fill Set G integration; PR review blocker fixes (deskew, zip-slip, BufferSet OOM); de-abstract Quick Fill Set G into OcrHarness.extractQuickFillSetGCostVol.
 - Merged at `279a4681` with review `reviews/review-fix-pump-experiment-20260627-v2.md` (conditionally merge-ready).
+
+## 2026-06-28 - tweak-quick-fill branch work (imported at merge, append-only)
+
+Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per-phase micro-entries and duplicate execution-start notes excluded.
+
+- QuickFill 3-panel UI (`QuickFillupScreen.kt`): Save disk icon always in B; portrait B order save-shutter-mode; content-sized C with portrait centering; vehicle field `value=vehicleName` (fixes post-keypad label reversion); D-panel/zoomD removed (zoom via `panelAContent` right/bottom blanks); portrait camera fill (full-width 4:3, volume field 84.dp max).
+- `CameraPreview.kt`: `AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY`; `CameraZoomControl` + zoom state observer wired from Quick Fill.
+- `DatabaseModule.kt`: migration callback param `database` → `db`; `menuAnchor` deprecation fixes in Settings and ManageVehicles screens.
+- History squashed to 4 logical commits (`backup-tweak-quick-fill` = 6163eaf2); PR doc `dev-ai-interaction/PRs/PR-tweak-quick-fill.md`.
+- Compliance PASS: layout/vehicle-display, portrait fill/order/centering, volume-width plans.
+
+## 2026-06-28 - Merged tweak-quick-fill into master
+
+- Merged branch `tweak-quick-fill` into `master` (--no-ff, ours-strategy + selective checkout; ENGINEERING_LOG/TODO/project-facts handled per merge protocol).
+- App source: QuickFillupScreen, CameraPreview, DatabaseModule, SettingsScreen, ManageVehiclesScreen.
+- `./build_app` gate pending this commit.
+- PR reference: `dev-ai-interaction/PRs/PR-tweak-quick-fill.md`. User device test required before `works` tag.
