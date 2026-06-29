@@ -809,7 +809,7 @@ fun QuickFillupScreen(
                     costField(Modifier.widthIn(min = 56.dp, max = 80.dp), ImeAction.Next)
                     swapButton()
                 }
-                volumeField(Modifier.widthIn(min = 56.dp, max = 76.dp))
+                volumeField(Modifier.widthIn(min = 56.dp, max = 84.dp))
             } else {
                 Row(
                     modifier = Modifier.wrapContentWidth(),
@@ -818,7 +818,7 @@ fun QuickFillupScreen(
                 ) {
                     costField(Modifier.widthIn(min = 56.dp, max = 80.dp), ImeAction.Next)
                     swapButton()
-                    volumeField(Modifier.widthIn(min = 56.dp, max = 76.dp))
+                    volumeField(Modifier.widthIn(min = 56.dp, max = 84.dp))
                 }
             }
         }
