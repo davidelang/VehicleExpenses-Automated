@@ -1062,20 +1062,21 @@ fun QuickFillupScreen(
                 }
             }
         } else {
-            // Portrait: A+B hidden during field edit (system keyboard); restored on focus clear
+            // Portrait: A+B hidden during field edit (system keyboard); restored on focus clear.
+            // A uses weight remainder with fillMaxSize so camera preview expands to sides and down toward B.
             Column(modifier = Modifier.fillMaxSize()) {
                 if (!isPortraitFieldFocused) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxWidth()
+                            .fillMaxSize()
                     ) {
                         panelAContent(false)
                     }
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
+                            .padding(vertical = 2.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         cameraControlsContent(false)
