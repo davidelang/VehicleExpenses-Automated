@@ -462,14 +462,27 @@ fun QuickFillupScreen(
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val fitsByHeight = maxWidth / maxHeight > captureAspectRatio
-                val contentModifier = if (fitsByHeight) {
-                    Modifier.fillMaxHeight().aspectRatio(captureAspectRatio)
+                // Landscape: letterbox via fitsByHeight. Portrait: full-width 4:3 down toward B (minimize side/bottom black).
+                val contentModifier = if (isLandscape) {
+                    if (fitsByHeight) {
+                        Modifier.fillMaxHeight().aspectRatio(captureAspectRatio)
+                    } else {
+                        Modifier.fillMaxWidth().aspectRatio(captureAspectRatio)
+                    }
                 } else {
                     Modifier.fillMaxWidth().aspectRatio(captureAspectRatio)
                 }
-                val contentWidth = if (fitsByHeight) maxHeight * captureAspectRatio else maxWidth
-                val contentHeight = if (fitsByHeight) maxHeight else maxWidth / captureAspectRatio
-                val hasRightBlank = contentWidth < maxWidth - 1.dp
+                val contentWidth = if (isLandscape) {
+                    if (fitsByHeight) maxHeight * captureAspectRatio else maxWidth
+                } else {
+                    maxWidth
+                }
+                val contentHeight = if (isLandscape) {
+                    if (fitsByHeight) maxHeight else maxWidth / captureAspectRatio
+                } else {
+                    (maxWidth / captureAspectRatio).coerceAtMost(maxHeight)
+                }
+                val hasRightBlank = isLandscape && contentWidth < maxWidth - 1.dp
                 val hasBottomBlank = contentHeight < maxHeight - 1.dp
 
                 Box(modifier = contentModifier.align(Alignment.BottomCenter)) {
