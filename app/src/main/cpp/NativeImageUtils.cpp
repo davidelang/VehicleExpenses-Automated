@@ -44,7 +44,15 @@ bool resolveOutputHeatmapFloatData(
   if (prec == paddle::lite_api::PrecisionType::kFloat) {
     const float* fdata = tensor->data<float>();
     if (!fdata) return false;
-    // x86 float detector: C++-owned quantize→dequantize (ARM int8 semantics, no Java buffer rebind)
+    // Fallback when Java rebind did not run: short-lived int8Tmp (not caller long-lived dest)
+    LOGI(
+        "PaddleDiag: resolve kFloat fallback fdata=%p count=%zu h=%d w=%d "
+        "(caller-provided long-lived int8 dest expected after bindOutputInt8)",
+        static_cast<const void*>(fdata), count, h, w);
+    if (count >= 4) {
+      LOGI("PaddleDiag: resolve kFloat before quant f[0-3]=[%.4f,%.4f,%.4f,%.4f]",
+           fdata[0], fdata[1], fdata[2], fdata[3]);
+    }
     std::vector<int8_t> int8Tmp(count);
     quantizeFloatHeatmapToInt8Buffer(
         fdata, int8Tmp.data(), static_cast<int>(count), kHeatmapInt8Scale);
@@ -53,7 +61,15 @@ bool resolveOutputHeatmapFloatData(
       const uint8_t u_val = static_cast<uint8_t>(int8Tmp[i] ^ 128);
       scratch[i] = static_cast<float>(u_val) * kHeatmapInt8Scale;
     }
-    LOGI("PaddleDiag: resolveOutputHeatmapFloatData kFloat→int8-converted count=%zu", count);
+    if (count >= 4) {
+      LOGI(
+          "PaddleDiag: resolve kFloat after quant int8Tmp[0-3]=[%d,%d,%d,%d] "
+          "scratch[0-3]=[%.4f,%.4f,%.4f,%.4f]",
+          static_cast<int>(int8Tmp[0]), static_cast<int>(int8Tmp[1]),
+          static_cast<int>(int8Tmp[2]), static_cast<int>(int8Tmp[3]),
+          scratch[0], scratch[1], scratch[2], scratch[3]);
+    }
+    LOGI("PaddleDiag: resolveOutputHeatmapFloatData kFloat→short-int8Tmp count=%zu", count);
     *outPtr = scratch.data();
     return true;
   }
@@ -62,9 +78,19 @@ bool resolveOutputHeatmapFloatData(
   if (prec == paddle::lite_api::PrecisionType::kInt8) {
     const int8_t* src = tensor->data<int8_t>();
     if (!src) return false;
+    LOGI(
+        "PaddleDiag: resolve kInt8 long-lived bound path src=%p count=%zu h=%d w=%d",
+        static_cast<const void*>(src), count, h, w);
     for (size_t i = 0; i < count; ++i) {
       const uint8_t u_val = static_cast<uint8_t>(src[i] ^ 128);
       scratch[i] = static_cast<float>(u_val) * kHeatmapInt8Scale;
+    }
+    if (count >= 4) {
+      LOGI(
+          "PaddleDiag: resolve kInt8 int8[0-3]=[%d,%d,%d,%d] scratch[0-3]=[%.4f,%.4f,%.4f,%.4f]",
+          static_cast<int>(src[0]), static_cast<int>(src[1]),
+          static_cast<int>(src[2]), static_cast<int>(src[3]),
+          scratch[0], scratch[1], scratch[2], scratch[3]);
     }
   } else {
     tensor->CopyToCpu(scratch.data());
@@ -77,11 +103,22 @@ bool resolveOutputHeatmapFloatData(
 void quantizeFloatHeatmapToInt8Buffer(
     const float* fdata, int8_t* dst, int count, float scale) {
   if (!fdata || !dst || count <= 0 || scale <= 0.f) return;
-  LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 count=%d scale=%.5f dst=%p", count, scale, static_cast<void*>(dst));
+  LOGI(
+      "PaddleDiag: quantizeFloatHeatmapToInt8 count=%d scale=%.5f dst=%p (long-lived dest)",
+      count, scale, static_cast<void*>(dst));
+  if (count >= 4) {
+    LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 f[0-3]=[%.4f,%.4f,%.4f,%.4f]",
+         fdata[0], fdata[1], fdata[2], fdata[3]);
+  }
   for (int i = 0; i < count; ++i) {
     int q = static_cast<int>(std::lround(fdata[i] / scale));
     q = std::max(0, std::min(255, q));
     dst[i] = static_cast<int8_t>(static_cast<uint8_t>(q) ^ 128);
+  }
+  if (count >= 4) {
+    LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 dst int8[0-3]=[%d,%d,%d,%d]",
+         static_cast<int>(dst[0]), static_cast<int>(dst[1]),
+         static_cast<int>(dst[2]), static_cast<int>(dst[3]));
   }
 }
 
@@ -615,7 +652,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindO
     lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kInt8);
     size_t bytes = static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH);
     lite_tensor->ShareExternalMemory(raw, bytes, paddle::lite_api::TargetType::kHost);
-    LOGI("PaddleDiag: bindOutputInt8 w=%d h=%d bytes=%zu (kInt8 for processHeatmap)", tensorW, tensorH, bytes);
+    LOGI(
+        "PaddleDiag: bindOutputInt8 w=%d h=%d bytes=%zu long-lived=%p "
+        "int8[0-3]=[%d,%d,%d,%d] (kInt8 for processHeatmap)",
+        tensorW, tensorH, bytes, raw,
+        static_cast<int>(static_cast<int8_t*>(raw)[0]),
+        static_cast<int>(static_cast<int8_t*>(raw)[1]),
+        static_cast<int>(static_cast<int8_t*>(raw)[2]),
+        static_cast<int>(static_cast<int8_t*>(raw)[3]));
 }
 
 JNIEXPORT jintArray JNICALL
@@ -1219,12 +1263,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         return nullptr;
     }
 
-    const bool usedInt8Path = nativeTensor->precision() == paddle::lite_api::PrecisionType::kInt8
-        || nativeTensor->precision() == paddle::lite_api::PrecisionType::kFloat;
-    LOGI("PaddleDiag: nativeProcessHeatmap prec=%d h=%d w=%d usingKInt8Path=%d ptr=%p",
-         (int)nativeTensor->precision(), h, w, usedInt8Path ? 1 : 0, data);
-    LOGI("nativeProcessHeatmap: prec=%d shape=[%d dims], h=%d, w=%d, ptr=%p, first4=[%.4f,%.4f,%.4f,%.4f]",
-         (int)nativeTensor->precision(), (int)shape.size(), h, w, data, data[0], data[1], data[2], data[3]);
+    const auto postBindPrec = nativeTensor->precision();
+    const bool isKInt8Bound = postBindPrec == paddle::lite_api::PrecisionType::kInt8;
+    const bool usedInt8Path = isKInt8Bound
+        || postBindPrec == paddle::lite_api::PrecisionType::kFloat;
+    LOGI(
+        "PaddleDiag: nativeProcessHeatmap after rebind prec=%d h=%d w=%d "
+        "kInt8Bound=%d resolvePtr=%p",
+        (int)postBindPrec, h, w, isKInt8Bound ? 1 : 0, static_cast<const void*>(data));
+    LOGI(
+        "nativeProcessHeatmap: prec=%d shape=[%d dims], h=%d, w=%d, ptr=%p, "
+        "first4=[%.4f,%.4f,%.4f,%.4f]",
+        (int)postBindPrec, (int)shape.size(), h, w, static_cast<const void*>(data),
+        data[0], data[1], data[2], data[3]);
 
     // 2. Thresholding
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
