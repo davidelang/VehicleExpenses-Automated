@@ -336,11 +336,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             "PaddleDiag",
             "$site using long-lived int8 buf as dest (cap=$int8DestCap w*h=$expected; short-lived float for copyHeatmap)",
         )
-        if (tierScale != null) {
-            val int8Buf = sharedTierBuffers[tierScale]
-            if (int8Buf == null) {
-                Log.e("PaddleDiag", "$site wrapper missing sharedTierBuffers[$tierScale]")
-                return null
+        val int8Buf = when {
+            tierScale != null -> sharedTierBuffers[tierScale]
+            useMaxInt8Buffer -> sharedMaxInt8Buffer
+            else -> null
+        }
+        if (int8Buf != null) {
+            if (useMaxInt8Buffer) {
+                Log.i(
+                    "PaddleDiag",
+                    "detectMat x86 using long-lived int8 dest for ${w}x$h crop cap=${int8Buf.capacity()} w*h=$expected",
+                )
             }
             int8Buf.clear()
             NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, expected, DET_HEATMAP_INT8_SCALE)
