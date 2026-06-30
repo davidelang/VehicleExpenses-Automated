@@ -355,3 +355,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - Plan: fix-arm-direct-int8-write-no-copy-plus-proper-arm-emulator-20260630-130648
 - Goal: ARM bindOutputInt8 before run (no post-run copy); x86 helper unchanged; emulator-5556 arm64 AVD notes
+
+## 2026-06-30 - Phase 1 complete (tag 96a9855c)
+
+- ARM: bindOutputInt8 before run on sharedTierBuffers/sharedMaxInt8Buffer
+- Removed copyTensorInt8ToBuffer from detect paths entirely
+- Phases 2-3 forensic: x86 helper Unit-only; uniform processHeatmapFromInt8Buffer confirmed
