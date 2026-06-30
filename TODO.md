@@ -75,11 +75,10 @@
 
 - [x] Executing plan dev-ai-interaction/plans/fix-x86-float-to-int8-conversion-20260630-plan.md: fix x86 wrapX86DetectorOutputAsInt8 buffer lifetime + size asserts + C++ processHeatmap conversion (no Java rebind).
 
-- [ ] Executing plan dev-ai-interaction/plans/fix-x86-emulator-5554-crash-longlived-int8-dest-20260630-plan.md: long-lived int8 dest for x86 detector output (sharedTierBuffers + sharedMaxInt8Buffer), quantize+bind, C++ diags.
+- [x] Executing plan dev-ai-interaction/plans/fix-x86-emulator-5554-crash-longlived-int8-dest-20260630-plan.md: long-lived int8 dest for x86 detector output (sharedTierBuffers + sharedMaxInt8Buffer), quantize+bind, C++ diags.
 
 # Future work
 - [x] x86_64 / Android emulator ("amd64") path for detector: in detect() and detectMat() (and related post-run sites), on x86 output floats from the model to a temp buffer, then (C++ only) convert/quantize to the exact int8 buffer + format that the existing kInt8 branch in processHeatmap / nativeProcessHeatmap expects (using the same scale/remap as ARM int8 models). All conversion logic in C++. This lets the rest of the (int8-expecting) detection post-processing code stay unchanged.
-- [ ] Explore eliminating float buffer for recognition: rec input already int8 (48px quantize). If int8 decode wins on arm, add C++ float-logits → int8 conversion wrapper on x86_64 for decodeOcrV3 path only. All conversions in C++.
 
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
   - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
