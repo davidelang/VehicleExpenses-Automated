@@ -390,3 +390,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Store uint8 0-255 in long-lived buf; ARM signed→uint8 after bind write; read without ^128
 
 ## 2026-06-30 - Phase 1 commit 57e02e83; rebuild after Java 17 toolchain fix
+
+## 2026-06-30 - uint8 long-lived buffer plan complete (phases 1-3)
+
+- Phase 1 (c5665db0): quantize stores uint8 q directly
+- Phase 2 (2eea0dbe): ARM convertSignedInt8BufToUint8 after direct bind
+- Phase 3 (c362e216): process/dequant read uint8 without ^128
