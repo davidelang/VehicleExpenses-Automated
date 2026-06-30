@@ -719,7 +719,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeDequa
     if (!out) return nullptr;
     std::vector<jfloat> scratch(static_cast<size_t>(count));
     for (jint i = 0; i < count; ++i) {
-        const uint8_t u_val = static_cast<uint8_t>(src[i] ^ 128);
+        const uint8_t u_val = static_cast<uint8_t>(src[i]);
         scratch[static_cast<size_t>(i)] = static_cast<jfloat>(u_val) * scale;
     }
     env->SetFloatArrayRegion(out, 0, count, scratch.data());
@@ -1429,12 +1429,12 @@ static std::vector<float> processHeatmapFromInt8UData(
     int uMin = 255;
     int uMax = 0;
     for (size_t i = 0; i < count; ++i) {
-        const int u_val = static_cast<int>(static_cast<uint8_t>(src[i] ^ 128));
+        const int u_val = static_cast<int>(static_cast<uint8_t>(src[i]));
         uMin = std::min(uMin, u_val);
         uMax = std::max(uMax, u_val);
     }
     LOGI(
-        "PaddleDiag: processHeatmapFromInt8Buffer u_val min=%d max=%d uThreshold=%d scale=%.5f",
+        "PaddleDiag: processHeatmapFromInt8Buffer uint8 min=%d max=%d uThreshold=%d scale=%.5f",
         uMin, uMax, uThreshold, scale);
 
     if (uMax < uThreshold) {
@@ -1447,7 +1447,7 @@ static std::vector<float> processHeatmapFromInt8UData(
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
-            const int u_val = static_cast<int>(static_cast<uint8_t>(src[idx] ^ 128));
+            const int u_val = static_cast<int>(static_cast<uint8_t>(src[idx]));
             scratch[idx] = static_cast<float>(u_val) * scale;
             mask.at<uint8_t>(y, x) = u_val >= uThreshold ? 255 : 0;
         }
@@ -1555,9 +1555,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         raw, count, w, h, uThreshold);
     if (count >= 4) {
         LOGI(
-            "PaddleDiag: processHeatmapFromInt8Buffer int8[0-3]=[%d,%d,%d,%d]",
-            static_cast<int>(src[0]), static_cast<int>(src[1]),
-            static_cast<int>(src[2]), static_cast<int>(src[3]));
+            "PaddleDiag: processHeatmapFromInt8Buffer uint8[0-3]=[%d,%d,%d,%d]",
+            static_cast<int>(static_cast<uint8_t>(src[0])),
+            static_cast<int>(static_cast<uint8_t>(src[1])),
+            static_cast<int>(static_cast<uint8_t>(src[2])),
+            static_cast<int>(static_cast<uint8_t>(src[3])));
     }
 
     std::vector<float> results = processHeatmapFromInt8UData(
