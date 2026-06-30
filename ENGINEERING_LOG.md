@@ -361,3 +361,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - ARM: bindOutputInt8 before run on sharedTierBuffers/sharedMaxInt8Buffer
 - Removed copyTensorInt8ToBuffer from detect paths entirely
 - Phases 2-3 forensic: x86 helper Unit-only; uniform processHeatmapFromInt8Buffer confirmed
+
+## 2026-06-30 - Phase 3 verified (uniform int8 processing)
+
+- detect/detectMat always call processHeatmapFromInt8Buffer with DET_HEATMAP_INT8_FLOAT_THRESHOLD
+- No arch branch on post-processing call sites
