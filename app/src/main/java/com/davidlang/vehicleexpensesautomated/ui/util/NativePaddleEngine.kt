@@ -420,8 +420,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
 
-            // Zero-Copy Native Post-Processing (Phase 2) — MUST run before floatData
-            // to avoid tensor pointer invalidation from Java-side copy
+            val x86HeatmapFloats = if (!Build.SUPPORTED_ABIS[0].contains("arm")) {
+                wrapX86DetectorOutputAsInt8(outputTensor, dims)
+            } else null
+
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
@@ -445,7 +447,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
             }
             val tCopy0 = System.nanoTime()
-            val heatmap = if (copyHeatmap) outputTensor.floatData else null
+            val heatmap = when {
+                !copyHeatmap -> null
+                x86HeatmapFloats != null -> x86HeatmapFloats
+                else -> outputTensor.floatData
+            }
             val tCopy = if (copyHeatmap) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
 
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
