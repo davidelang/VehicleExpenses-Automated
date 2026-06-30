@@ -96,8 +96,73 @@ function getLastPipeBase(fullCmd) {
   return stripLeadingAssignments(lastSegment);
 }
 
+const PROJECT_MARKER = 'VehicleExpenses-automated';
+const WORKTREE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
+
+// Same sanity as run-as-primary.c: cwd/cd must stay under a VehicleExpenses-automated tree.
+function normalizeCdTarget(raw) {
+  return raw.trim().replace(/^['"]|['"]$/g, '');
+}
+
+function isAbsolutePathWithinProject(absPath) {
+  const idx = absPath.indexOf(PROJECT_MARKER);
+  if (idx === -1) return false;
+  const tail = absPath.slice(idx + PROJECT_MARKER.length);
+  const segments = tail.split('/').filter((s) => s.length > 0);
+  let depth = 0;
+  for (const seg of segments) {
+    if (seg === '..') {
+      depth--;
+      if (depth < 0) return false;
+    } else if (seg !== '.') {
+      depth++;
+    }
+  }
+  return true;
+}
+
+function isRelativeCdWithinProject(rel) {
+  if (!rel || rel.startsWith('/') || rel.startsWith('~')) return false;
+  const segments = rel.split('/').filter((s) => s.length > 0);
+  let dotdot = 0;
+  for (const seg of segments) {
+    if (seg === '..') {
+      dotdot++;
+      if (dotdot > 1) return false;
+    } else if (seg === '.') {
+      continue;
+    } else if (!WORKTREE_NAME_RE.test(seg)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isCdTargetWithinProject(cdTarget) {
+  const t = normalizeCdTarget(cdTarget);
+  if (!t) return false;
+  if (t.startsWith('/')) return isAbsolutePathWithinProject(t);
+  return isRelativeCdWithinProject(t);
+}
+
+function extractCdTargets(fullCmd) {
+  const targets = [];
+  for (const seg of fullCmd.split(/\s*&&\s*/)) {
+    const m = seg.trim().match(/^cd\s+(.+)$/);
+    if (m) targets.push(m[1]);
+  }
+  return targets;
+}
+
+function allCdTargetsWithinProject(fullCmd) {
+  const targets = extractCdTargets(fullCmd);
+  if (targets.length === 0) return false;
+  return targets.every(isCdTargetWithinProject);
+}
+
 // Agents often emit "cd /path && ./blessed-helper" even when already in the worktree.
 // Permission patterns match from the start of the string, so we must inspect each && segment.
+// cd targets are validated to stay inside VehicleExpenses-automated (no system-wide backdoor).
 function getAndChainBases(fullCmd) {
   const bases = [];
   for (const seg of fullCmd.split(/\s*&&\s*/)) {
@@ -105,6 +170,16 @@ function getAndChainBases(fullCmd) {
     if (b) bases.push(b);
   }
   return bases;
+}
+
+function hasBlessedHelperInChain(chainBases, blessedBases) {
+  const helperBases = new Set([
+    './build_app', '../build_app',
+    './get-builds-tag.sh', '../get-builds-tag.sh',
+    './update-rules.sh', '../update-rules.sh',
+    './append-to-engineering-log', '../append-to-engineering-log',
+  ]);
+  return chainBases.some((b) => helperBases.has(b));
 }
 
 // Explicit allow for direct (or prefixed) invocations of safe read-only / exploration commands
@@ -126,10 +201,22 @@ if (toolName === 'bash') {
     'true', 'adb'   // adb for read-only logcat (user confirmed reading data is allowed)
   ]);
 
-  const chainHit = chainBases.some((b) => blessedBases.has(b));
-  if (blessedBases.has(base) || blessedBases.has(lastBase) || chainHit) {
+  const directHit = blessedBases.has(base) || blessedBases.has(lastBase);
+  const chainHelperHit = cmd.includes('&&') &&
+    allCdTargetsWithinProject(cmd) &&
+    hasBlessedHelperInChain(chainBases, blessedBases);
+  const chainHit = chainHelperHit || (
+    !cmd.includes('cd') && chainBases.some((b) => blessedBases.has(b))
+  );
+
+  if (directHit || chainHit) {
     console.log('plan-mode-hard-stops: allowing bash command (possibly with leading KEY=val prefix):', cmd, 'base:', base || lastBase);
     return 'allow';
+  }
+
+  if (cmd.includes('&&') && hasBlessedHelperInChain(chainBases, blessedBases) && extractCdTargets(cmd).length > 0) {
+    console.log('plan-mode-hard-stops: denying cd&&blessed-helper — cd target outside VehicleExpenses-automated tree:', cmd);
+    return 'ask';
   }
 
   // Log (but do not auto-allow) attempts to inline forbidden patterns like tag lookup

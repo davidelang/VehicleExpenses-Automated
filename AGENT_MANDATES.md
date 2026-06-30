@@ -213,7 +213,7 @@ git reset --hard "$TAG"
 **General rule for whitelisted commands:** When using approved tools/commands (jq, get-builds-tag.sh, `./append-to-engineering-log`, `./build_app`, etc.), use direct literal invocations that match the allow patterns in `.grok/config.toml`. Two common mistakes trigger **avoidable approval prompts**:
 
 1. **Variable indirection** — `TAG=$(./get-builds-tag.sh)` may not match `./get-builds-tag.sh*`; use direct `./get-builds-tag.sh` and capture output in a separate step if needed.
-2. **`cd path && ./helper`** — permission patterns match from the **start** of the command string, so `cd /worktree && ./append-to-engineering-log` does **not** match `./append-to-engineering-log*`. Prefer: confirm cwd once (`pwd`), then run `./append-to-engineering-log` (or `../append-to-engineering-log` from a feature worktree) **without** a leading `cd &&` chain; or set the Shell tool's `working_directory` parameter instead of embedding `cd` in the command.
+2. **`cd path && ./helper`** — permission patterns match from the **start** of the command string, so `cd /worktree && ./append-to-engineering-log` does **not** match `./append-to-engineering-log*`. The hook may allow `cd && helper` **only** when every `cd` target stays inside the `VehicleExpenses-automated` tree (same rule as `run-as-primary`); `cd /tmp && ./append-to-engineering-log` is **not** auto-approved. Prefer: confirm cwd once (`pwd`), then run `./append-to-engineering-log` (or `../append-to-engineering-log` from a feature worktree) **without** a leading `cd &&` chain; or set the Shell tool's `working_directory` parameter instead of embedding `cd` in the command.
 
 Do not re-`cd` into the worktree before every blessed helper if you are already there.
 

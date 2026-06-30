@@ -68,13 +68,8 @@ rules = [
   # without repeated permission prompts. See AGENT_MANDATES.md (mandatory use via wrapper).
   { action = "allow", tool = "bash", pattern = "./append-to-engineering-log*" },
   { action = "allow", tool = "bash", pattern = "../append-to-engineering-log*" },
-  # cd && chains: agents often prefix blessed helpers; patterns must match mid-string too.
-  { action = "allow", tool = "bash", pattern = "* && ./append-to-engineering-log*" },
-  { action = "allow", tool = "bash", pattern = "* && ../append-to-engineering-log*" },
-  { action = "allow", tool = "bash", pattern = "* && ./build_app*" },
-  { action = "allow", tool = "bash", pattern = "* && ../build_app*" },
-  { action = "allow", tool = "bash", pattern = "* && ./get-builds-tag.sh*" },
-  { action = "allow", tool = "bash", pattern = "* && ../get-builds-tag.sh*" },
+  # cd && blessed-helper chains: allowed only via plan-mode-hard-stops.js with
+  # in-project cd validation (no broad * && patterns — avoids system-wide backdoor).
   # Run launchers (invoked as ./run-* from root or ../run-* from worktrees)
   { action = "allow", tool = "bash", pattern = "./run-grok*" },
   { action = "allow", tool = "bash", pattern = "./run-gemini*" },
