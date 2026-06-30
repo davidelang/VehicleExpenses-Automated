@@ -58,6 +58,17 @@ bool resolveOutputHeatmapFloatData(
   return true;
 }
 
+// Float heatmap → int8 storage matching ARM kInt8 output: round(f/scale), clamp [0,255], XOR ^128.
+void quantizeFloatHeatmapToInt8Buffer(
+    const float* fdata, int8_t* dst, int count, float scale) {
+  if (!fdata || !dst || count <= 0 || scale <= 0.f) return;
+  for (int i = 0; i < count; ++i) {
+    int q = static_cast<int>(std::lround(fdata[i] / scale));
+    q = std::max(0, std::min(255, q));
+    dst[i] = static_cast<int8_t>(static_cast<uint8_t>(q) ^ 128);
+  }
+}
+
 }  // namespace
 #include <libraw/libraw.h>
 
@@ -524,6 +535,46 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuant
 
 JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindInputInt8(
+    JNIEnv* env, jobject thiz, jobject tensor, jobject srcBuffer,
+    jint tensorW, jint tensorH) {
+
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return;
+    }
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    void* raw = env->GetDirectBufferAddress(srcBuffer);
+    if (!nativePtr || !raw) return;
+
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return;
+
+    paddle::lite_api::Tensor* lite_tensor = uptr->get();
+    lite_tensor->Resize({1, 1, tensorH, tensorW});
+    lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kInt8);
+    size_t bytes = static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH);
+    lite_tensor->ShareExternalMemory(raw, bytes, paddle::lite_api::TargetType::kHost);
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuantizeFloatHeatmapToInt8(
+    JNIEnv* env, jobject thiz, jfloatArray src, jobject dstBuffer,
+    jint count, jfloat scale) {
+
+    if (!src || count <= 0) return;
+    void* dst = env->GetDirectBufferAddress(dstBuffer);
+    if (!dst) return;
+
+    jfloat* fdata = env->GetFloatArrayElements(src, nullptr);
+    if (!fdata) return;
+    quantizeFloatHeatmapToInt8Buffer(fdata, static_cast<int8_t*>(dst), count, scale);
+    env->ReleaseFloatArrayElements(src, fdata, JNI_ABORT);
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindOutputInt8(
     JNIEnv* env, jobject thiz, jobject tensor, jobject srcBuffer,
     jint tensorW, jint tensorH) {
 

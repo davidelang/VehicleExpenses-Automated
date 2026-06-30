@@ -186,6 +186,16 @@ object NativeImageUtils {
         nativeBindInputInt8(tensor, src, tensorW, tensorH)
     }
 
+    /** Quantize float heatmap activations to int8 buffer (round(f/scale), clamp, ^128 remap). */
+    fun quantizeFloatHeatmapToInt8(src: FloatArray, dst: ByteBuffer, count: Int, scale: Float) {
+        nativeQuantizeFloatHeatmapToInt8(src, dst, count, scale)
+    }
+
+    /** Rebind detector output tensor to int8 backing store for kInt8 processHeatmap path. */
+    fun bindOutputInt8(tensor: Any, src: ByteBuffer, tensorW: Int, tensorH: Int) {
+        nativeBindOutputInt8(tensor, src, tensorW, tensorH)
+    }
+
     /**
      * Offloads the entire Valley Expansion algorithm to C++.
      * Reduces thousands of JNI calls to a single call.
@@ -311,6 +321,8 @@ object NativeImageUtils {
     private external fun nativeQuantizeMonoToInt8(srcMatPtr: Long, dstBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
     private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
     private external fun nativeBindInputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
+    private external fun nativeQuantizeFloatHeatmapToInt8(src: FloatArray, dstBuffer: java.nio.ByteBuffer, count: Int, scale: Float)
+    private external fun nativeBindOutputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
