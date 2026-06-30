@@ -210,7 +210,12 @@ git rev-parse "$TAG"
 git reset --hard "$TAG"
 ```
 
-**General rule for whitelisted commands:** When using approved tools/commands (jq, get-builds-tag.sh, cat, ls, etc.), use direct literal arguments (e.g. `jq ... file.json` or `TAG=$(./get-builds-tag.sh)`) rather than setting a variable and referencing it indirectly. Variable indirection often causes the command string seen by the permission system to no longer match the allow patterns, triggering unnecessary approval prompts. Direct forms are preferred for auditability and to stay within the blessed patterns.
+**General rule for whitelisted commands:** When using approved tools/commands (jq, get-builds-tag.sh, `./append-to-engineering-log`, `./build_app`, etc.), use direct literal invocations that match the allow patterns in `.grok/config.toml`. Two common mistakes trigger **avoidable approval prompts**:
+
+1. **Variable indirection** — `TAG=$(./get-builds-tag.sh)` may not match `./get-builds-tag.sh*`; use direct `./get-builds-tag.sh` and capture output in a separate step if needed.
+2. **`cd path && ./helper`** — permission patterns match from the **start** of the command string, so `cd /worktree && ./append-to-engineering-log` does **not** match `./append-to-engineering-log*`. Prefer: confirm cwd once (`pwd`), then run `./append-to-engineering-log` (or `../append-to-engineering-log` from a feature worktree) **without** a leading `cd &&` chain; or set the Shell tool's `working_directory` parameter instead of embedding `cd` in the command.
+
+Do not re-`cd` into the worktree before every blessed helper if you are already there.
 
 ### 1. Discard uncommitted work (same turn, unauthorized edits during planning)
 - Allowed: `git checkout .`, `git restore .`, `git reset --hard HEAD`
