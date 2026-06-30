@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -20,6 +21,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -148,40 +151,62 @@ fun LandmarkDebugDialog(
                         val imgW = bitmap.width.toFloat()
                         val imgH = bitmap.height.toFloat()
 
+                        var scale by remember { mutableStateOf(1f) }
+                        var offset by remember { mutableStateOf(Offset.Zero) }
+
                         Column(modifier = Modifier.weight(1f)) {
                             // IMAGE VIEW
                             Box(modifier = Modifier.fillMaxWidth().aspectRatio(imgW / imgH)) {
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val dw = size.width; val dh = size.height
-
-                                    drawImage(
-                                        image = bitmap.asImageBitmap(),
-                                        dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
-                                    )
-
-                                        fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color, fillAlpha: Float = 0f) {
-                                            val p1 = IcrsMath.icrsToPixel(rect.left, rect.top, imgW.toInt(), imgH.toInt())
-                                            val p2 = IcrsMath.icrsToPixel(rect.right, rect.bottom, imgW.toInt(), imgH.toInt())
-                                            val topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh)
-                                            val rectSize = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh)
-                                            if (fillAlpha > 0f) {
-                                                drawRect(color = color.copy(alpha = fillAlpha), topLeft = topLeft, size = rectSize, style = Fill)
-                                            }
-                                            drawRect(color = color, topLeft = topLeft, size = rectSize, style = Stroke(2f))
-                                        }
-
-                                        editableLandmarks.forEach { lm ->
-                                            if (lm.boundingBox.width() > 0) {
-                                                val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
-                                                val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
-                                                val topLeft = Offset(nx * dw, ny * dh)
-                                                val rectSize = Size(nw * dw, nh * dh)
-                                                drawRect(color = Color.Yellow.copy(alpha = 0.3f), topLeft = topLeft, size = rectSize, style = Fill)
-                                                drawRect(color = Color.Yellow, topLeft = topLeft, size = rectSize, style = Stroke(1f))
+                                Box(modifier = Modifier
+                                    .fillMaxSize()
+                                    .pointerInput(Unit) {
+                                        detectTransformGestures { _, pan, zoom, _ ->
+                                            if (zoom != 1f || pan != Offset.Zero) {
+                                                scale = (scale * zoom).coerceIn(1f, 10f)
+                                                offset += pan
                                             }
                                         }
-                                        odometerCrop?.let { drawIcrsRect(it, Color.Blue, fillAlpha = 0.5f) }
-                                        otherTextCrop?.let { drawIcrsRect(it, Color.Red, fillAlpha = 0.5f) }
+                                    }
+                                ) {
+                                    Box(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)) {
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val dw = size.width; val dh = size.height
+
+                                            drawImage(
+                                                image = bitmap.asImageBitmap(),
+                                                dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
+                                            )
+
+                                            fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color, fillAlpha: Float = 0f) {
+                                                val p1 = IcrsMath.icrsToPixel(rect.left, rect.top, imgW.toInt(), imgH.toInt())
+                                                val p2 = IcrsMath.icrsToPixel(rect.right, rect.bottom, imgW.toInt(), imgH.toInt())
+                                                val topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh)
+                                                val rectSize = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh)
+                                                if (fillAlpha > 0f) {
+                                                    drawRect(color = color.copy(alpha = fillAlpha), topLeft = topLeft, size = rectSize, style = Fill)
+                                                }
+                                                drawRect(color = color, topLeft = topLeft, size = rectSize, style = Stroke(2f))
+                                            }
+
+                                            editableLandmarks.forEach { lm ->
+                                                if (lm.boundingBox.width() > 0) {
+                                                    val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
+                                                    val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
+                                                    val topLeft = Offset(nx * dw, ny * dh)
+                                                    val rectSize = Size(nw * dw, nh * dh)
+                                                    drawRect(color = Color.Yellow.copy(alpha = 0.3f), topLeft = topLeft, size = rectSize, style = Fill)
+                                                    drawRect(color = Color.Yellow, topLeft = topLeft, size = rectSize, style = Stroke(1f))
+                                                }
+                                            }
+                                            odometerCrop?.let { drawIcrsRect(it, Color.Blue, fillAlpha = 0.5f) }
+                                            otherTextCrop?.let { drawIcrsRect(it, Color.Red, fillAlpha = 0.5f) }
+                                        }
+                                    }
+
+                                    Column(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        SmallFloatingActionButton(onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("+") }
+                                        SmallFloatingActionButton(onClick = { scale = (scale / 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("-") }
+                                    }
                                 }
                             }
 
