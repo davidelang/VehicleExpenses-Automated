@@ -158,7 +158,7 @@ else
     fi
     # Always go through build_app — direct gradlew/gradlew.bat is forbidden (breaks integrity, perms, tags).
     GRADLE_CMD=( "${GRADLE_ARGS[@]}" assembleDebug )
-    (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_CMD[@]}")
+    (umask 007; ./gradlew --no-configuration-cache "${GRADLE_CMD[@]}")
     RET_VAL=$?
 
     # Post-build permission repair for all shared build directories

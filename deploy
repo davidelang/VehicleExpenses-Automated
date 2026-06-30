@@ -316,7 +316,9 @@ stop_gradle_daemons() {
   pkill -f "GradleDaemon.*$(pwd | sed 's/[][\.*^$()+?{}|]/\\&/g')" 2>/dev/null || true
   sleep 1
 }
-stop_gradle_daemons
+# NOTE: stop_gradle_daemons is no longer called eagerly at startup.
+# The daemon is intentionally kept alive for performance (see gradle.properties).
+# Call stop_gradle_daemons manually if a daemon misbehaves.
 
 declare -A DEVICE_MAP
 DEVICE_MAP=(
@@ -367,36 +369,16 @@ backup_test_data() {
   # This avoids /sdcard permission issues.
   db_error=$(adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
     if [ -f databases/vehicle_expenses.db ]; then
-      cat databases/vehicle_expenses.db > files/ve_db.bak 2>&1
-      if [ -f databases/vehicle_expenses.db-wal ]; then
-        cat databases/vehicle_expenses.db-wal > files/ve_db-wal.bak 2>&1
-      fi
-      if [ -f databases/vehicle_expenses.db-shm ]; then
-        cat databases/vehicle_expenses.db-shm > files/ve_db-shm.bak 2>&1
-      fi
+      cat databases/vehicle_expenses.db > files/ve_db.bak 2>&1 || echo __DB_WRITE_ERR__
     else
       echo __NO_DB__
     fi
   '" )
-  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db.bak" > "$BDIR/vehicle_expenses.db" 2>/dev/null; then
-    if [ -s "$BDIR/vehicle_expenses.db" ]; then
-      # Attempt to pull WAL and SHM files
-      adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db-wal.bak" > "$BDIR/vehicle_expenses.db-wal" 2>/dev/null || true
-      adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db-shm.bak" > "$BDIR/vehicle_expenses.db-shm" 2>/dev/null || true
-
-      # Merge WAL if it exists and is non-empty on the host
-      if [ -f "$BDIR/vehicle_expenses.db-wal" ] && [ -s "$BDIR/vehicle_expenses.db-wal" ]; then
-        sqlite3 "$BDIR/vehicle_expenses.db" "PRAGMA wal_checkpoint(truncate);" >/dev/null 2>&1 || true
-      fi
-
-      # Rename to expected vehicle_expenses.db.bak and delete journal files on host
-      mv "$BDIR/vehicle_expenses.db" "$BDIR/vehicle_expenses.db.bak"
-      rm -f "$BDIR/vehicle_expenses.db-wal" "$BDIR/vehicle_expenses.db-shm"
-
+  if adb -s "$DEV" shell "run-as $PACKAGE_NAME cat files/ve_db.bak" > "$BDIR/vehicle_expenses.db.bak" 2>/dev/null; then
+    if [ -s "$BDIR/vehicle_expenses.db.bak" ]; then
       echo "    Captured DB (vehicle_expenses.db.bak)"
     else
       echo "    DB backup produced 0-byte file"
-      rm -f "$BDIR/vehicle_expenses.db"
     fi
   else
     if adb -s "$DEV" shell "pm list packages $PACKAGE_NAME" 2>/dev/null | grep -q "$PACKAGE_NAME"; then
@@ -406,7 +388,7 @@ backup_test_data() {
       echo "    DB backup skipped/failed (app may not be installed or not debuggable)"
     fi
   fi
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_db.bak files/ve_db-wal.bak files/ve_db-shm.bak" 2>/dev/null || true
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f files/ve_db.bak" 2>/dev/null || true
 
   # Dash/reference pictures the app reads (vehicle_ref_*.jpg written to context.filesDir)
   # Optional: VEHICLE_REFS_SOURCE_DIR=/path/to/dir with phone-pulled vehicle_ref_*.jpg (skips device capture).
@@ -685,43 +667,41 @@ restore_test_data() {
 
   # Restore DB
   if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
-    cat "$LATEST/vehicle_expenses.db.bak" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && dd of=databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db'" >/dev/null 2>&1 || true
+    adb -s "$DEV" push "$LATEST/vehicle_expenses.db.bak" /sdcard/ve_db.bak >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && cp /sdcard/ve_db.bak databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db'" 2>/dev/null || true
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f /sdcard/ve_db.bak" 2>/dev/null || true
     restored_db=true
   fi
   # Restore dash/reference images (vehicle_ref_*.jpg)
   if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then
-    cat "$LATEST/vehicle_refs.tar.gz" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && dd of=files/ve_refs.tar.gz && cd files && tar xzf ve_refs.tar.gz 2>/dev/null && rm -f ve_refs.tar.gz'" >/dev/null 2>&1 || true
+    adb -s "$DEV" push "$LATEST/vehicle_refs.tar.gz" /sdcard/ve_refs.tar.gz >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cd files && tar xzf /sdcard/ve_refs.tar.gz 2>/dev/null || true; cd ..; rm -f /sdcard/ve_refs.tar.gz'" 2>/dev/null || true
     restored_refs=true
   fi
   # Restore pump pictures (input images the app reads from pump_photos)
   if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then
-    cat "$LATEST/pump_photos.tar.gz" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    adb -s "$DEV" push "$LATEST/pump_photos.tar.gz" /sdcard/ve_pump_photos.tar.gz >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
       EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
       PDIR=\"\$EXTDIR/Android/data/$PACKAGE_NAME/files/pump_photos\"
-      mkdir -p \"\$PDIR\"
-      dd of=files/ve_pump.tar.gz
-      cd \"\$PDIR\" && tar xzf /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz 2>/dev/null
-      rm -f /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz
-    '" >/dev/null 2>&1 || true
+      mkdir -p \"\$PDIR\" && cd \"\$PDIR\" && tar xzf /sdcard/ve_pump_photos.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_pump_photos.tar.gz
+    '" 2>/dev/null || true
   fi
   # Restore alignment experiment input images (the app reads these from files/experiment_photos)
   if [ -f "$LATEST/alignment_photos.tar.gz" ] && [ -s "$LATEST/alignment_photos.tar.gz" ]; then
-    cat "$LATEST/alignment_photos.tar.gz" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-      mkdir -p files/experiment_photos
-      dd of=files/experiment_photos/ve_align.tar.gz
-      cd files/experiment_photos && tar xzf ve_align.tar.gz 2>/dev/null && rm -f ve_align.tar.gz
-    '" >/dev/null 2>&1 || true
+    adb -s "$DEV" push "$LATEST/alignment_photos.tar.gz" /sdcard/ve_alignment_photos.tar.gz >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+      mkdir -p files/experiment_photos && cd files/experiment_photos && tar xzf /sdcard/ve_alignment_photos.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_alignment_photos.tar.gz
+    '" 2>/dev/null || true
   fi
   # Restore source zips to /sdcard/Download (amazon + pump zips)
   if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then
-    cat "$LATEST/ve_source_zips.tar.gz" | adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
+    adb -s "$DEV" push "$LATEST/ve_source_zips.tar.gz" /sdcard/ve_source_zips.tar.gz >/dev/null
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
       EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
       DDIR=\"\$EXTDIR/Download\"
-      mkdir -p \"\$DDIR\"
-      dd of=files/ve_source_zips.tar.gz
-      cd \"\$DDIR\" && tar xzf /data/data/$PACKAGE_NAME/files/ve_source_zips.tar.gz 2>/dev/null
-      rm -f /data/data/$PACKAGE_NAME/files/ve_source_zips.tar.gz
-    '" >/dev/null 2>&1 || true
+      mkdir -p \"\$DDIR\" && cd \"\$DDIR\" && tar xzf /sdcard/ve_source_zips.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_source_zips.tar.gz
+    '" 2>/dev/null || true
   fi
   # Post-restore cache bust + clean launch (Coil disk cache + Room WAL) when DB or refs were restored.
   if [ "$restored_db" = true ] || [ "$restored_refs" = true ]; then
@@ -900,7 +880,8 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             # Also handles cases where past root runs left files owned by root.
             # Extended to fix "unreadable inputs/outputs" / "Could not stat" errors
             # in Gradle 8+/9+ (CMake/cxx, navigation, assets, aar, etc. state).
-            stop_gradle_daemons
+            # NOTE: daemon is intentionally kept alive (see gradle.properties).
+            # stop_gradle_daemons is available for manual recovery if needed.
 
             # Try to kill any lingering processes holding files in the incremental dirs.
             # This addresses "a process has files open".
@@ -930,7 +911,7 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
             fi
 
-            (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+            (umask 007; ./gradlew --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
             RET_VAL=$?
             repair_shared_cache
             if [ $RET_VAL -ne 0 ]; then
@@ -1011,7 +992,8 @@ else
 
         # Mitigate common Gradle "can't delete incremental tmp" failure
         # Extended for unreadable outputs in Gradle 8+/9+ (see other errors for cxx etc.)
-        stop_gradle_daemons
+        # NOTE: daemon is intentionally kept alive (see gradle.properties).
+        # stop_gradle_daemons is available for manual recovery if needed.
 
         # Try to kill any lingering processes holding files in the incremental dirs.
         lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
@@ -1040,7 +1022,7 @@ else
             echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
         fi
 
-        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
         RET_VAL=$?
         repair_shared_cache
         if [ $RET_VAL -ne 0 ]; then
