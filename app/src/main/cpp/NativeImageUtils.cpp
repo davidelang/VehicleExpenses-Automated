@@ -30,17 +30,31 @@ static void logMatHeader(const char* tag, const cv::Mat* m) {
 
 namespace {
 
+void quantizeFloatHeatmapToInt8Buffer(
+    const float* fdata, int8_t* dst, int count, float scale);
+
 bool resolveOutputHeatmapFloatData(
     const paddle::lite_api::Tensor* tensor, int h, int w,
     std::vector<float>& scratch, const float** outPtr) {
   if (!tensor || h <= 0 || w <= 0 || !outPtr) return false;
   const size_t count = static_cast<size_t>(h) * static_cast<size_t>(w);
   const auto prec = tensor->precision();
+  constexpr float kHeatmapInt8Scale = 0.00787f;
 
   if (prec == paddle::lite_api::PrecisionType::kFloat) {
-    const float* data = tensor->data<float>();
-    if (!data) return false;
-    *outPtr = data;
+    const float* fdata = tensor->data<float>();
+    if (!fdata) return false;
+    // x86 float detector: C++-owned quantize→dequantize (ARM int8 semantics, no Java buffer rebind)
+    std::vector<int8_t> int8Tmp(count);
+    quantizeFloatHeatmapToInt8Buffer(
+        fdata, int8Tmp.data(), static_cast<int>(count), kHeatmapInt8Scale);
+    scratch.resize(count);
+    for (size_t i = 0; i < count; ++i) {
+      const uint8_t u_val = static_cast<uint8_t>(int8Tmp[i] ^ 128);
+      scratch[i] = static_cast<float>(u_val) * kHeatmapInt8Scale;
+    }
+    LOGI("PaddleDiag: resolveOutputHeatmapFloatData kFloat→int8-converted count=%zu", count);
+    *outPtr = scratch.data();
     return true;
   }
 
@@ -48,7 +62,6 @@ bool resolveOutputHeatmapFloatData(
   if (prec == paddle::lite_api::PrecisionType::kInt8) {
     const int8_t* src = tensor->data<int8_t>();
     if (!src) return false;
-    constexpr float kHeatmapInt8Scale = 0.00787f;
     for (size_t i = 0; i < count; ++i) {
       const uint8_t u_val = static_cast<uint8_t>(src[i] ^ 128);
       scratch[i] = static_cast<float>(u_val) * kHeatmapInt8Scale;
@@ -1206,6 +1219,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         return nullptr;
     }
 
+    const bool usedInt8Path = nativeTensor->precision() == paddle::lite_api::PrecisionType::kInt8
+        || nativeTensor->precision() == paddle::lite_api::PrecisionType::kFloat;
+    LOGI("PaddleDiag: nativeProcessHeatmap prec=%d h=%d w=%d usingKInt8Path=%d ptr=%p",
+         (int)nativeTensor->precision(), h, w, usedInt8Path ? 1 : 0, data);
     LOGI("nativeProcessHeatmap: prec=%d shape=[%d dims], h=%d, w=%d, ptr=%p, first4=[%.4f,%.4f,%.4f,%.4f]",
          (int)nativeTensor->precision(), (int)shape.size(), h, w, data, data[0], data[1], data[2], data[3]);
 

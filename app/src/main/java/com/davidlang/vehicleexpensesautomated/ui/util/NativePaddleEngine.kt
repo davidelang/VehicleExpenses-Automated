@@ -47,9 +47,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     private var detectorLarge: PaddlePredictor? = null
     private var detectorSmall: PaddlePredictor? = null
 
-    /** Keeps x86 int8 output buffer alive while tensor holds ShareExternalMemory pointer. */
-    private var lastX86Int8Output: java.nio.ByteBuffer? = null
-
     companion object {
         var isAvailableGlobally = false; private set
         private var sharedDetectorLarge: PaddlePredictor? = null
@@ -299,7 +296,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
 
-    /** x86_64 only: read float detector output, C++ quantize to int8 buffer, rebind tensor for kInt8 processHeatmap. */
+    /** x86_64 only: retain float output for copyHeatmap; C++ processHeatmap quantizes internally (no Java rebind). */
     private fun wrapX86DetectorOutputAsInt8(outputTensor: Any, dims: LongArray, site: String): FloatArray? {
         val w = dims[3].toInt()
         val h = dims[2].toInt()
@@ -313,15 +310,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             Log.e("PaddleDiag", "$site wrapper size mismatch: floatCount=${floatData.size} expected=$expected (w=$w h=$h)")
             return null
         }
-        Log.i("PaddleDiag", "$site before wrapper outputPrec=float count=${floatData.size} w=$w h=$h expected=$expected")
-        val int8Buf = java.nio.ByteBuffer.allocateDirect(expected)
-            .order(java.nio.ByteOrder.nativeOrder())
-        NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, expected, DET_HEATMAP_INT8_SCALE)
-        Log.i("PaddleDiag", "$site after quantize int8Buf cap=${int8Buf.capacity()} addr=0x${Integer.toHexString(System.identityHashCode(int8Buf))}")
-        int8Buf.position(0)
-        lastX86Int8Output = int8Buf
-        NativeImageUtils.bindOutputInt8(outputTensor, int8Buf, w, h)
-        Log.i("PaddleDiag", "$site after bindOutput outputPrec=kInt8 w=$w h=$h scale=$DET_HEATMAP_INT8_SCALE bufHeld=true")
+        Log.i("PaddleDiag", "$site x86 float output count=$expected w=$w h=$h; C++ processHeatmap converts (no rebind)")
         return floatData
     }
 
