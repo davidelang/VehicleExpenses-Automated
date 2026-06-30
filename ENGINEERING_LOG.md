@@ -376,3 +376,10 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - Plan: fix-arm-phone-crash-after-direct-bind-plus-x86-zero-20260630-150000
 - Root cause hypothesis: tier detect() reuses same buf for input+output bind on ARM; x86 zero heatmap SEGV in CC/downstream
+
+## 2026-06-30 - ARM phone crash + x86 zero fix complete (phases 1-3)
+
+- Phase 1 (e4a47fdb): tier detect() uses temp input buf + long-lived output bind on ARM
+- Phase 2 (d450f2a7): int u_threshold CC path; safe empty result when uMax < threshold
+- Phase 3 (16d616ec): quantize u_val min/max diags; pump zero-box guards
+- Phone runtime verification pending device connection

@@ -69,6 +69,7 @@
 
 - [x] De-abstract Set G for Quick Fill: copy pump cost/vol logic inline into OcrHarness.runPumpCostVolPipeline (no runSetGCostVolExtraction / skipDeskew); plan: dev-ai-interaction/plans/de-abstract-set-g-for-quick-fill-copy-logic-20260627-plan.md
 - [x] Executing plan dev-ai-interaction/plans/fix-arm-direct-int8-write-no-copy-plus-proper-arm-emulator-20260630-130648-plan.md: ARM bindOutputInt8 before run (no copyTensor); x86 helper unchanged; emulator-5556 arm64 AVD setup doc.
+- [x] Executing plan dev-ai-interaction/plans/fix-arm-phone-crash-after-direct-bind-plus-x86-zero-20260630-150000-plan.md: separate ARM input/output buffers; int u_threshold CC; zero-safe post-process + pump guards.
 
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
