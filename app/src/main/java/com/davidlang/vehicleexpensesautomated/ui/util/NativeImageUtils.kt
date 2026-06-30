@@ -305,6 +305,17 @@ object NativeImageUtils {
         return nativeProcessHeatmap(tensor, threshold, minArea)
     }
 
+    /** x86_64: post-process heatmap from long-lived int8 buffer (no output tensor). */
+    fun processHeatmapFromInt8Buffer(
+        int8Buf: java.nio.ByteBuffer,
+        w: Int,
+        h: Int,
+        threshold: Float,
+        minArea: Float,
+    ): FloatArray? {
+        return nativeProcessHeatmapFromInt8Buffer(int8Buf, w, h, threshold, minArea)
+    }
+
     fun heatmapToAngle(tensor: Any, threshold: Float): Float {
         return nativeHeatmapToAngle(tensor, threshold)
     }
@@ -323,6 +334,13 @@ object NativeImageUtils {
     private external fun nativeBindInputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
     private external fun nativeQuantizeFloatHeatmapToInt8(src: FloatArray, dstBuffer: java.nio.ByteBuffer, count: Int, scale: Float)
     private external fun nativeBindOutputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
+    private external fun nativeProcessHeatmapFromInt8Buffer(
+        int8Buf: java.nio.ByteBuffer,
+        w: Int,
+        h: Int,
+        threshold: Float,
+        minArea: Float,
+    ): FloatArray?
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?

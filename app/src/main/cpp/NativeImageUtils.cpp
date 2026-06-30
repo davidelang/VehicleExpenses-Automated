@@ -1235,6 +1235,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 }
 
 JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmapFromInt8Buffer(
+    JNIEnv* env, jobject thiz, jobject int8Buffer, jint w, jint h,
+    jfloat threshold, jfloat minArea) {
+    (void)env;
+    (void)thiz;
+    (void)int8Buffer;
+    (void)w;
+    (void)h;
+    (void)threshold;
+    (void)minArea;
+    LOGI("PaddleDiag: processHeatmapFromInt8Buffer stub (phase 2 placeholder)");
+    return nullptr;
+}
+
+JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmap(
     JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold, jfloat minArea) {
 

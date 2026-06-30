@@ -413,13 +413,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
 
-            // x86_64: float model output → C++ int8 quant + rebind before native post-process
+            // x86_64: float model output → copy to long-lived int8; post-process from int8 buf (no output tensor)
             val x86HeatmapFloats = if (!isArm) {
                 wrapX86DetectorOutputAsInt8(outputTensor, dims, "detect tier=$tierScale", tierScale = tierScale)
             } else null
+            val x86Int8Buf = if (!isArm) sharedTierBuffers[tierScale] else null
+            val outW = dims[3].toInt()
+            val outH = dims[2].toInt()
 
             val tNativePost0 = System.nanoTime()
-            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
+            val nativeRes = if (!isArm && x86Int8Buf != null) {
+                NativeImageUtils.processHeatmapFromInt8Buffer(x86Int8Buf, outW, outH, 0.03f, 10f)
+            } else {
+                NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
+            }
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
@@ -520,9 +527,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 Log.i("PaddleDiag", "detectMat after wrapper ${w}x$h ok=${floats != null}")
                 floats
             } else null
+            val x86Int8Buf = if (!isArm) sharedMaxInt8Buffer else null
 
             val tNativePost0 = System.nanoTime()
-            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
+            val nativeRes = if (!isArm && x86Int8Buf != null) {
+                NativeImageUtils.processHeatmapFromInt8Buffer(x86Int8Buf, w, h, 0.03f, 10f)
+            } else {
+                NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
+            }
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
