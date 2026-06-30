@@ -7,6 +7,8 @@ import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -20,6 +22,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -117,24 +121,44 @@ fun LandmarkDebugDialog(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Landmarks", style = MaterialTheme.typography.headlineSmall)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         if (!isEditing) {
-                            Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 8.dp)) { Text("Edit OCR") }
+                            Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 4.dp)) { Text("Edit OCR") }
                         } else {
-                            Button(onClick = {
-                                val newList = editableLandmarks.toMutableList()
-                                newList.add(TextBlock("", android.graphics.Rect(0, 0, 0, 0)))
-                                editableLandmarks = newList
-                            }, modifier = Modifier.padding(end = 8.dp)) { Text("Add") }
-                            Button(onClick = { onLandmarksChanged(editableLandmarks); onDismiss() }, modifier = Modifier.padding(end = 8.dp)) { Text("Save Overrides") }
-                            Button(onClick = { isEditing = false; editableLandmarks = landmarks }, modifier = Modifier.padding(end = 8.dp)) { Text("Cancel") }
+                            IconButton(
+                                onClick = {
+                                    val newList = editableLandmarks.toMutableList()
+                                    newList.add(TextBlock("", android.graphics.Rect(0, 0, 0, 0)))
+                                    editableLandmarks = newList
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) { Text("+") }
+                            Text(
+                                "💾",
+                                modifier = Modifier
+                                    .clickable { onLandmarksChanged(editableLandmarks); onDismiss() }
+                                    .padding(4.dp)
+                            )
                         }
 
-                        IconButton(onClick = onDismiss) { Text("✕", style = MaterialTheme.typography.titleLarge) }
+                        IconButton(
+                            onClick = {
+                                if (isEditing) {
+                                    isEditing = false
+                                    editableLandmarks = landmarks
+                                } else {
+                                    onDismiss()
+                                }
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) { Text("✕", style = MaterialTheme.typography.titleLarge) }
                     }
                 }
 
@@ -148,41 +172,63 @@ fun LandmarkDebugDialog(
                         val imgW = bitmap.width.toFloat()
                         val imgH = bitmap.height.toFloat()
 
+                        var scale by remember { mutableStateOf(1f) }
+                        var offset by remember { mutableStateOf(Offset.Zero) }
+
                         Column(modifier = Modifier.weight(1f)) {
                             // IMAGE VIEW
                             Box(modifier = Modifier.fillMaxWidth().aspectRatio(imgW / imgH)) {
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val dw = size.width; val dh = size.height
-
-                                    drawImage(
-                                        image = bitmap.asImageBitmap(),
-                                        dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
-                                    )
-
-                                        fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color) {
-                                            val p1 = IcrsMath.icrsToPixel(rect.left, rect.top, imgW.toInt(), imgH.toInt())
-                                            val p2 = IcrsMath.icrsToPixel(rect.right, rect.bottom, imgW.toInt(), imgH.toInt())
-                                            drawRect(color = color, topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh), size = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh), style = Stroke(2f))
-                                        }
-
-                                        editableLandmarks.forEach { lm ->
-                                            if (lm.boundingBox.width() > 0) {
-                                                val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
-                                                val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
-                                                drawRect(color = Color.Yellow, topLeft = Offset(nx * dw, ny * dh), size = Size(nw * dw, nh * dh), style = Stroke(1f))
+                                Box(modifier = Modifier
+                                    .fillMaxSize()
+                                    .pointerInput(Unit) {
+                                        detectTransformGestures { _, pan, zoom, _ ->
+                                            if (zoom != 1f || pan != Offset.Zero) {
+                                                scale = (scale * zoom).coerceIn(1f, 10f)
+                                                offset += pan
                                             }
                                         }
-                                        odometerCrop?.let { drawIcrsRect(it, Color.Blue) }
-                                        otherTextCrop?.let { drawIcrsRect(it, Color.Green) }
-                                }
-                            }
+                                    }
+                                ) {
+                                    Box(modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)) {
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val dw = size.width; val dh = size.height
 
-                            // Metadata
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                                Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                                Text("Discovery: ${discoveryTimeMs}ms / Total: ${totalTimeMs.coerceAtLeast(executionTimeMs)}ms", style = MaterialTheme.typography.labelSmall)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                            drawImage(
+                                                image = bitmap.asImageBitmap(),
+                                                dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
+                                            )
+
+                                            fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color, fillAlpha: Float = 0f) {
+                                                val p1 = IcrsMath.icrsToPixel(rect.left, rect.top, imgW.toInt(), imgH.toInt())
+                                                val p2 = IcrsMath.icrsToPixel(rect.right, rect.bottom, imgW.toInt(), imgH.toInt())
+                                                val topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh)
+                                                val rectSize = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh)
+                                                if (fillAlpha > 0f) {
+                                                    drawRect(color = color.copy(alpha = fillAlpha), topLeft = topLeft, size = rectSize, style = Fill)
+                                                }
+                                                drawRect(color = color, topLeft = topLeft, size = rectSize, style = Stroke(2f))
+                                            }
+
+                                            editableLandmarks.forEach { lm ->
+                                                if (lm.boundingBox.width() > 0) {
+                                                    val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
+                                                    val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
+                                                    val topLeft = Offset(nx * dw, ny * dh)
+                                                    val rectSize = Size(nw * dw, nh * dh)
+                                                    drawRect(color = Color.Yellow.copy(alpha = 0.3f), topLeft = topLeft, size = rectSize, style = Fill)
+                                                    drawRect(color = Color.Yellow, topLeft = topLeft, size = rectSize, style = Stroke(1f))
+                                                }
+                                            }
+                                            odometerCrop?.let { drawIcrsRect(it, Color.Blue, fillAlpha = 0.5f) }
+                                            otherTextCrop?.let { drawIcrsRect(it, Color.Red, fillAlpha = 0.5f) }
+                                        }
+                                    }
+
+                                    Column(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        SmallFloatingActionButton(onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("+") }
+                                        SmallFloatingActionButton(onClick = { scale = (scale / 1.2f).coerceIn(1f, 10f) }, containerColor = Color.White.copy(alpha = 0.7f)) { Text("-") }
+                                    }
+                                }
                             }
 
                             LazyVerticalGrid(
@@ -231,7 +277,7 @@ fun LandmarkDebugDialog(
                                                             newList[index] = lm.copy(text = newText)
                                                             editableLandmarks = newList
                                                         },
-                                                        textStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                        textStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                                         modifier = Modifier
                                                             .fillMaxWidth()
                                                             .height(48.dp)
