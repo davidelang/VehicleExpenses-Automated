@@ -183,3 +183,8 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 ## 2026-06-28 - tweak-quick-fill merge build gate
 
 - ./build_app succeeded on merge commit; master builds tag ed1b5220.
+
+## 2026-06-30 - landmarks-edit-buttons-refinement execution start
+
+- Executing plan: landmarks-edit-buttons-refinement-20260630-plan.md
+- Phase 1: LandmarkDebugDialog.kt header button refinements (X edit-mode revert, remove Cancel, IconButton +, bare save icon)

@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -120,24 +121,44 @@ fun LandmarkDebugDialog(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Header
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
                     Text("Landmarks", style = MaterialTheme.typography.headlineSmall)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         if (!isEditing) {
-                            Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 8.dp)) { Text("Edit OCR") }
+                            Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 4.dp)) { Text("Edit OCR") }
                         } else {
-                            Button(onClick = {
-                                val newList = editableLandmarks.toMutableList()
-                                newList.add(TextBlock("", android.graphics.Rect(0, 0, 0, 0)))
-                                editableLandmarks = newList
-                            }, modifier = Modifier.padding(end = 8.dp)) { Text("+") }
-                            Button(onClick = { onLandmarksChanged(editableLandmarks); onDismiss() }, modifier = Modifier.padding(end = 8.dp)) { Text("💾") }
-                            Button(onClick = { isEditing = false; editableLandmarks = landmarks }, modifier = Modifier.padding(end = 8.dp)) { Text("Cancel") }
+                            IconButton(
+                                onClick = {
+                                    val newList = editableLandmarks.toMutableList()
+                                    newList.add(TextBlock("", android.graphics.Rect(0, 0, 0, 0)))
+                                    editableLandmarks = newList
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) { Text("+") }
+                            Text(
+                                "💾",
+                                modifier = Modifier
+                                    .clickable { onLandmarksChanged(editableLandmarks); onDismiss() }
+                                    .padding(4.dp)
+                            )
                         }
 
-                        IconButton(onClick = onDismiss) { Text("✕", style = MaterialTheme.typography.titleLarge) }
+                        IconButton(
+                            onClick = {
+                                if (isEditing) {
+                                    isEditing = false
+                                    editableLandmarks = landmarks
+                                } else {
+                                    onDismiss()
+                                }
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) { Text("✕", style = MaterialTheme.typography.titleLarge) }
                     }
                 }
 
