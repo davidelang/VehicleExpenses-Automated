@@ -299,7 +299,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
 
-    /** x86_64 only: short-lived float output; long-lived int8 dest wired in wrap (quantize+bind). */
+    /** x86_64 only: short-lived float output; copy/quantize into long-lived int8 (no output tensor touch). */
     private fun wrapX86DetectorOutputAsInt8(
         outputTensor: Any,
         dims: LongArray,
@@ -351,10 +351,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             int8Buf.clear()
             NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, expected, DET_HEATMAP_INT8_SCALE)
             int8Buf.position(0)
-            NativeImageUtils.bindOutputInt8(outputTensor, int8Buf, w, h)
             Log.i(
                 "PaddleDiag",
-                "$site quantized short float into long-lived int8 dest cap=${int8Buf.capacity()} (w*h=$expected)",
+                "$site copied short float to long-lived int8 dest cap=${int8Buf.capacity()} (w*h=$expected); " +
+                    "Paddle outputTensor no longer touched (paddle isn't involved after it populates the float output buffer)",
             )
         }
         return floatData
