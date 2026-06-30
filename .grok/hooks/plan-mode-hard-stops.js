@@ -108,6 +108,7 @@ if (toolName === 'bash') {
   const blessedBases = new Set([
     'jq', 'ls', 'cat', 'head', 'tail', 'git', 'echo', 'find',
     './build_app', './get-builds-tag.sh', './update-rules.sh',
+    './append-to-engineering-log',  // approved helper for ENG_LOG appends (minute granularity)
     'true', 'adb'   // adb for read-only logcat (user confirmed reading data is allowed)
   ]);
 
