@@ -26,10 +26,11 @@ This document provides the detailed procedural logic for the VehicleExpenses-aut
 - **No Deployment:** The agent is **STRICTLY FORBIDDEN** from running `./deploy` or `./gradlew installDebug`. Deployment is a manual user action.
 - **Versioning Mandate:** Because the app uses `git describe` for its version string, you MUST commit all changes (via `./build_app`) BEFORE triggering a build. This ensures the version number in the resulting build accurately reflects the state of the code.
 
-## 3. Stability & Build Policy (3-3-3 Rule)
-- **Strike 1-3:** 3 attempts to fix build errors, then `git reset --hard builds`.
-- **Strike 4-6:** 3 more attempts, then reset.
-- **Strike 7-9:** Final 3 attempts, then reset and perform a **Mandatory Forensic Analysis**.
+## 3. Stability & Build Policy (Baseball Rule)
+- **3 strikes = 1 out** (reset to last known-good build). **3 outs = end of inning** (mandatory End of Inning Report, then replan with smaller chunks for remaining work only).
+- Cumulative strikes: **3** → 1st out; **6** → 2nd out; **9** → 3rd out / inning end.
+- Egregious failure can cost an out immediately (<3 strikes).
+- Full policy: `AGENT_MANDATES.md` § Stability & Build Policy (Baseball Rule).
 
 ## 4. Git Hygiene & State Tracking
 - **Linear History:** Strict linear history is required. NO `git commit --amend`.
