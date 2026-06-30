@@ -70,6 +70,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedTiers = mutableMapOf<Int, PaddlePredictor>()
         val sharedTierBuffers = mutableMapOf<Int, java.nio.ByteBuffer>()
         val sharedTierFloatBuffers = mutableMapOf<Int, FloatArray>()
+        private var sharedMaxInt8Buffer: java.nio.ByteBuffer? = null
         private var sharedRecInt8Buffer: java.nio.ByteBuffer? = null
 
         // Phase 116: Unified Rigid Backing Fields
@@ -253,13 +254,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val p = PaddlePredictor.createPaddlePredictor(config)
                     p.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
                     sharedTiers[scale] = p
-                    if (Build.SUPPORTED_ABIS[0].contains("arm")) {
-                        sharedTierBuffers[scale] = java.nio.ByteBuffer.allocateDirect(1 * scale * scale).order(java.nio.ByteOrder.nativeOrder())
-                    } else {
+                    sharedTierBuffers[scale] = java.nio.ByteBuffer.allocateDirect(1 * scale * scale).order(java.nio.ByteOrder.nativeOrder())
+                    if (!Build.SUPPORTED_ABIS[0].contains("arm")) {
                         sharedTierFloatBuffers[scale] = FloatArray(scale * scale)
                     }
                     Log.i("PaddleLite", "Tier $scale Init: ${System.currentTimeMillis() - t0}ms")
                 }
+                val maxTier = TIER_SCALES.maxOrNull() ?: 2560
+                sharedMaxInt8Buffer = java.nio.ByteBuffer.allocateDirect(maxTier * maxTier).order(java.nio.ByteOrder.nativeOrder())
+                Log.i("PaddleDiag", "sharedMaxInt8Buffer allocated cap=${maxTier * maxTier}")
 
                 config.setModelFromFile(copy("paddle/rec_v3_mono_int8_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
                 config.setModelFromFile(copy("paddle/rec_numeric_mono_int8_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
