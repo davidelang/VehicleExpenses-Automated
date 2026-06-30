@@ -69,6 +69,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val TIER_SCALES = listOf(224, 608, 1024, 2048, 2560)
         val sharedTiers = mutableMapOf<Int, PaddlePredictor>()
         val sharedTierBuffers = mutableMapOf<Int, java.nio.ByteBuffer>()
+        val sharedTierFloatBuffers = mutableMapOf<Int, FloatArray>()
         private var sharedRecInt8Buffer: java.nio.ByteBuffer? = null
 
         // Phase 116: Unified Rigid Backing Fields
@@ -252,7 +253,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val p = PaddlePredictor.createPaddlePredictor(config)
                     p.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
                     sharedTiers[scale] = p
-                    sharedTierBuffers[scale] = java.nio.ByteBuffer.allocateDirect(1 * scale * scale).order(java.nio.ByteOrder.nativeOrder())
+                    if (Build.SUPPORTED_ABIS[0].contains("arm")) {
+                        sharedTierBuffers[scale] = java.nio.ByteBuffer.allocateDirect(1 * scale * scale).order(java.nio.ByteOrder.nativeOrder())
+                    } else {
+                        sharedTierFloatBuffers[scale] = FloatArray(scale * scale)
+                    }
                     Log.i("PaddleLite", "Tier $scale Init: ${System.currentTimeMillis() - t0}ms")
                 }
 
@@ -319,19 +324,34 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val maxEdge = max(targetW ?: w, targetH ?: h)
         val tierScale = TIER_SCALES.filter { it >= maxEdge }.minOrNull() ?: 2560
         val predictor = sharedTiers[tierScale] ?: return null
-        val buf = sharedTierBuffers[tierScale] ?: return null
+        val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
 
-        buf.clear()
-        NativeImageUtils.quantizeMonoToInt8(srcMat, buf, tierScale, tierScale, w, h)
-        buf.position(0)
+        if (isArm) {
+            val buf = sharedTierBuffers[tierScale] ?: return null
+            buf.clear()
+            NativeImageUtils.quantizeMonoToInt8(srcMat, buf, tierScale, tierScale, w, h)
+            buf.position(0)
+        } else {
+            val floatData = sharedTierFloatBuffers[tierScale] ?: return null
+            floatData.fill(0f)
+            NativeImageUtils.populateMonoTensor(srcMat, floatData, tierScale, tierScale, 0.485f, 0.229f)
+        }
 
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
-            Log.i("PaddleDiag", "before bindInput tier=$tierScale x86=${!Build.SUPPORTED_ABIS[0].contains("arm")}")
-            NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, tierScale, tierScale)
-            Log.i("PaddleDiag", "after bindInput tier=$tierScale")
+            if (isArm) {
+                val buf = sharedTierBuffers[tierScale]!!
+                Log.i("PaddleDiag", "before bindInput int8 tier=$tierScale")
+                NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, tierScale, tierScale)
+                Log.i("PaddleDiag", "after bindInput int8 tier=$tierScale")
+            } else {
+                val floatData = sharedTierFloatBuffers[tierScale]!!
+                Log.i("PaddleDiag", "before bindInput float tier=$tierScale x86=true")
+                predictor.getInput(0).setData(floatData)
+                Log.i("PaddleDiag", "after bindInput float tier=$tierScale")
+            }
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
@@ -405,16 +425,31 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val predictor = detectorLarge ?: return null
         val w = srcMat.cols(); val h = srcMat.rows()
 
+        val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
         val tPop0 = System.nanoTime()
-        val buf = java.nio.ByteBuffer.allocateDirect(w * h).order(java.nio.ByteOrder.nativeOrder())
-        NativeImageUtils.quantizeMonoToInt8(srcMat, buf, w, h)
-        buf.position(0)
+        val int8Buf = if (isArm) java.nio.ByteBuffer.allocateDirect(w * h).order(java.nio.ByteOrder.nativeOrder()) else null
+        val floatData = if (isArm) null else FloatArray(w * h)
+        if (isArm) {
+            NativeImageUtils.quantizeMonoToInt8(srcMat, int8Buf!!, w, h)
+            int8Buf.position(0)
+        } else {
+            NativeImageUtils.populateMonoTensor(srcMat, floatData!!, w, h, 0.485f, 0.229f)
+        }
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
             val inputTensor = predictor.getInput(0)
-            NativeImageUtils.bindInputInt8(inputTensor, buf, w, h)
+            if (isArm) {
+                Log.i("PaddleDiag", "detectMat before bindInput int8 ${w}x$h")
+                NativeImageUtils.bindInputInt8(inputTensor, int8Buf!!, w, h)
+                Log.i("PaddleDiag", "detectMat after bindInput int8")
+            } else {
+                Log.i("PaddleDiag", "detectMat before bindInput float ${w}x$h x86=true")
+                inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
+                inputTensor.setData(floatData!!)
+                Log.i("PaddleDiag", "detectMat after bindInput float")
+            }
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
