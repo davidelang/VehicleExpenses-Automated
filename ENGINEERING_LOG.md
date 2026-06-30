@@ -112,3 +112,7 @@ test line for reset attempt
 
 - Initiating execution of dev-ai-interaction/plans/rules-and-scripts-cleanup-plan.md.
 - Scope: Refactoring GEMINI.md, AGENTS.md, new_agent_prompt, run-grok launchers, creating run-antigravity scripts, and removing the legacy run-gemini launcher.
+
+## 2026-06-30 - Execution start: planning-policy-baseball-rule-and-block-slim
+
+Approved plan: dev-ai-interaction/plans/planning-policy-baseball-rule-and-block-slim-20260630-plan.md. Baseball Rule, slim STANDARD BLOCK v2026-06-30, plan-style guide, inning-end report template.
