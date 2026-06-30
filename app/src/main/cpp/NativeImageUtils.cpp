@@ -598,6 +598,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindO
     lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kInt8);
     size_t bytes = static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH);
     lite_tensor->ShareExternalMemory(raw, bytes, paddle::lite_api::TargetType::kHost);
+    LOGI("PaddleDiag: bindOutputInt8 w=%d h=%d bytes=%zu (kInt8 for processHeatmap)", tensorW, tensorH, bytes);
 }
 
 JNIEXPORT jintArray JNICALL
