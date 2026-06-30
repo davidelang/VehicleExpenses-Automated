@@ -120,7 +120,7 @@ fun LandmarkDebugDialog(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Reference OCR Check", style = MaterialTheme.typography.headlineSmall)
+                    Text("Landmarks", style = MaterialTheme.typography.headlineSmall)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (!isEditing) {
                             Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 8.dp)) { Text("Edit OCR") }
@@ -129,8 +129,8 @@ fun LandmarkDebugDialog(
                                 val newList = editableLandmarks.toMutableList()
                                 newList.add(TextBlock("", android.graphics.Rect(0, 0, 0, 0)))
                                 editableLandmarks = newList
-                            }, modifier = Modifier.padding(end = 8.dp)) { Text("Add") }
-                            Button(onClick = { onLandmarksChanged(editableLandmarks); onDismiss() }, modifier = Modifier.padding(end = 8.dp)) { Text("Save Overrides") }
+                            }, modifier = Modifier.padding(end = 8.dp)) { Text("+") }
+                            Button(onClick = { onLandmarksChanged(editableLandmarks); onDismiss() }, modifier = Modifier.padding(end = 8.dp)) { Text("💾") }
                             Button(onClick = { isEditing = false; editableLandmarks = landmarks }, modifier = Modifier.padding(end = 8.dp)) { Text("Cancel") }
                         }
 
@@ -175,14 +175,6 @@ fun LandmarkDebugDialog(
                                         odometerCrop?.let { drawIcrsRect(it, Color.Blue) }
                                         otherTextCrop?.let { drawIcrsRect(it, Color.Green) }
                                 }
-                            }
-
-                            // Metadata
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                                Text("Engine: $engineName", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                                Text("Discovery: ${discoveryTimeMs}ms / Total: ${totalTimeMs.coerceAtLeast(executionTimeMs)}ms", style = MaterialTheme.typography.labelSmall)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Discovery Pipeline Previews:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                             }
 
                             LazyVerticalGrid(

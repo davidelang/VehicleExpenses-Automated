@@ -79,3 +79,5 @@
   - Results ready to test (new tag via final build).
 
 - Approved execution of update-rules-eng-log-todo-wrapper-mandates-20260627-plan.md (special rules for ENGINEERING_LOG and TODO file type handling via wrappers)
+
+- [ ] Executing dev-ai-interaction/plans/landmarks-dialog-tweaks-zoom-opacities-colors-20260630-plan.md: Landmarks dialog title/+💾 buttons, metadata bar removal, zoom, fills, fonts, color swaps.
