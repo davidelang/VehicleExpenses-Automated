@@ -299,14 +299,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
 
-    /** x86_64 only: short-lived float output; copy/quantize into long-lived int8 (no output tensor touch). */
+    /** x86_64 only: short-lived float output → copy/quantize into long-lived int8 (side-effect only; no floatData returned). */
     private fun wrapX86DetectorOutputAsInt8(
         outputTensor: Any,
         dims: LongArray,
         site: String,
         tierScale: Int? = null,
         useMaxInt8Buffer: Boolean = false,
-    ): FloatArray? {
+    ) {
         val w = dims[3].toInt()
         val h = dims[2].toInt()
         val floatData = (outputTensor as com.baidu.paddle.lite.Tensor).floatData
@@ -317,11 +317,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         )
         if (floatData.isEmpty() || w <= 0 || h <= 0) {
             Log.e("PaddleDiag", "$site wrapper skipped: invalid float output count=${floatData.size} w=$w h=$h")
-            return null
+            return
         }
         if (floatData.size != expected) {
             Log.e("PaddleDiag", "$site wrapper size mismatch: floatCount=${floatData.size} expected=$expected (w=$w h=$h)")
-            return null
+            return
         }
         val int8DestCap = when {
             tierScale != null -> sharedTierBuffers[tierScale]?.capacity() ?: 0
@@ -330,11 +330,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         if (int8DestCap > 0 && int8DestCap < expected) {
             Log.e("PaddleDiag", "$site wrapper int8 dest too small: cap=$int8DestCap expected=$expected")
-            return null
+            return
         }
         Log.i(
             "PaddleDiag",
-            "$site using long-lived int8 buf as dest (cap=$int8DestCap w*h=$expected; short-lived float for copyHeatmap)",
+            "$site using long-lived int8 buf as dest (cap=$int8DestCap w*h=$expected)",
         )
         val int8Buf = when {
             tierScale != null -> sharedTierBuffers[tierScale]
@@ -353,11 +353,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             int8Buf.position(0)
             Log.i(
                 "PaddleDiag",
-                "$site copied short float to long-lived int8 dest cap=${int8Buf.capacity()} (w*h=$expected); " +
-                    "Paddle outputTensor no longer touched (paddle isn't involved after it populates the float output buffer)",
+                "$site copied short float to long-lived int8; no floatData returned; dest cap=${int8Buf.capacity()} (w*h=$expected)",
             )
         }
-        return floatData
     }
 
     fun detect(input: Any, targetW: Int? = null, targetH: Int? = null, copyHeatmap: Boolean = true): DetectionResult? {
@@ -413,10 +411,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
 
-            // x86_64: float model output → copy to long-lived int8; post-process from int8 buf (no output tensor)
-            val x86HeatmapFloats = if (!isArm) {
+            // x86_64: float model output → copy to long-lived int8 (side-effect only)
+            if (!isArm) {
                 wrapX86DetectorOutputAsInt8(outputTensor, dims, "detect tier=$tierScale", tierScale = tierScale)
-            } else null
+            }
             val x86Int8Buf = if (!isArm) sharedTierBuffers[tierScale] else null
             val outW = dims[3].toInt()
             val outH = dims[2].toInt()
@@ -453,11 +451,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
 
             val tCopy0 = System.nanoTime()
-            val heatmap = when {
-                !copyHeatmap -> null
-                x86HeatmapFloats != null -> x86HeatmapFloats
-                else -> outputTensor.floatData
-            }
+            val heatmap = if (copyHeatmap) outputTensor.floatData else null
             val tCopy = if (copyHeatmap) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
 
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
@@ -523,14 +517,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
 
-            val x86HeatmapFloats = if (!isArm) {
+            if (!isArm) {
                 Log.i("PaddleDiag", "detectMat before wrapper ${w}x$h")
-                val floats = wrapX86DetectorOutputAsInt8(
+                wrapX86DetectorOutputAsInt8(
                     outputTensor, dims, "detectMat ${w}x$h", useMaxInt8Buffer = true,
                 )
-                Log.i("PaddleDiag", "detectMat after wrapper ${w}x$h ok=${floats != null}")
-                floats
-            } else null
+                Log.i("PaddleDiag", "detectMat after wrapper ${w}x$h")
+            }
             val x86Int8Buf = if (!isArm) sharedMaxInt8Buffer else null
 
             val tNativePost0 = System.nanoTime()
@@ -564,11 +557,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
             }
             val tCopy0 = System.nanoTime()
-            val heatmap = when {
-                !copyHeatmap -> null
-                x86HeatmapFloats != null -> x86HeatmapFloats
-                else -> outputTensor.floatData
-            }
+            val heatmap = if (copyHeatmap) outputTensor.floatData else null
             val tCopy = if (copyHeatmap) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
 
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0

@@ -79,6 +79,8 @@
 
 - [x] Executing plan dev-ai-interaction/plans/fix-x86-float-output-copy-to-longlived-int8-no-paddle-involvement-20260630-102641-plan.md: x86 float output → copy to long-lived int8, no bindOutputInt8, processHeatmapFromInt8Buffer.
 
+- [ ] Executing plan dev-ai-interaction/plans/fix-x86-detect-helper-only-populates-int8-then-uniform-processing-20260630-113237-plan.md: helper side-effect only, uniform int8 processing, integer threshold.
+
 # Future work
 - [x] x86_64 / Android emulator ("amd64") path for detector: in detect() and detectMat() (and related post-run sites), on x86 output floats from the model to a temp buffer, then (C++ only) convert/quantize to the exact int8 buffer + format that the existing kInt8 branch in processHeatmap / nativeProcessHeatmap expects (using the same scale/remap as ARM int8 models). All conversion logic in C++. This lets the rest of the (int8-expecting) detection post-processing code stay unchanged.
 
