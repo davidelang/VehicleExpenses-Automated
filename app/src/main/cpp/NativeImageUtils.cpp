@@ -1234,19 +1234,135 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     return (float)bestBucket / 2.0f;
 }
 
+static std::vector<float> processHeatmapFromFloatData(
+    const float* data, int h, int w, float threshold, float minArea) {
+    std::vector<float> results;
+    if (!data || h <= 0 || w <= 0) return results;
+
+    cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
+    cv::Mat mask;
+    cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
+    mask.convertTo(mask, CV_8U);
+
+    cv::Mat labels, stats, centroids;
+    int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
+
+    int count = 0;
+    for (int l = 1; l < numLabels; ++l) {
+        if (count >= 200) break;
+
+        int area = stats.at<int>(l, cv::CC_STAT_AREA);
+        if (area < minArea) continue;
+
+        int left = stats.at<int>(l, cv::CC_STAT_LEFT);
+        int top = stats.at<int>(l, cv::CC_STAT_TOP);
+        int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
+        int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
+
+        cv::Mat points(area, 1, CV_32SC2);
+        int idx = 0;
+        for (int y = top; y < top + height; ++y) {
+            for (int x = left; x < left + width; ++x) {
+                if (labels.at<int>(y, x) == l) {
+                    if (idx < area) {
+                        points.at<cv::Point>(idx++) = cv::Point(x, y);
+                    }
+                }
+            }
+        }
+
+        if (idx < area) {
+            points = points.rowRange(0, idx);
+        }
+
+        if (points.empty()) continue;
+
+        cv::RotatedRect rect = cv::minAreaRect(points);
+        cv::Point2f vertices[4];
+        rect.points(vertices);
+
+        if (count < 3) {
+            LOGI("processHeatmapFromFloatData: box[%d] label=%d vertices=(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f) area=%d",
+                 count, l, vertices[0].x, vertices[0].y, vertices[1].x, vertices[1].y,
+                 vertices[2].x, vertices[2].y, vertices[3].x, vertices[3].y, area);
+        }
+
+        float avgConf = 0.0f;
+        int bx1 = std::max(0, left);
+        int by1 = std::max(0, top);
+        int bx2 = std::min(w, left + width);
+        int by2 = std::min(h, top + height);
+
+        if (bx2 > bx1 && by2 > by1) {
+            cv::Mat roi = heatmap(cv::Rect(bx1, by1, bx2 - bx1, by2 - by1));
+            cv::Scalar meanVal = cv::mean(roi);
+            avgConf = (float)meanVal[0];
+        }
+
+        for (int i = 0; i < 4; ++i) {
+            results.push_back(vertices[i].x);
+            results.push_back(vertices[i].y);
+        }
+        results.push_back(avgConf);
+        count++;
+    }
+
+    float hist[100] = {0};
+    for (int i = 0; i < h * w; i++) {
+        int b = std::max(0, std::min(99, (int)(data[i] * 100)));
+        hist[b] += 1.0f;
+    }
+    for (int i = 0; i < 100; i++) results.push_back(hist[i]);
+    return results;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmapFromInt8Buffer(
     JNIEnv* env, jobject thiz, jobject int8Buffer, jint w, jint h,
     jfloat threshold, jfloat minArea) {
-    (void)env;
     (void)thiz;
-    (void)int8Buffer;
-    (void)w;
-    (void)h;
-    (void)threshold;
-    (void)minArea;
-    LOGI("PaddleDiag: processHeatmapFromInt8Buffer stub (phase 2 placeholder)");
-    return nullptr;
+    void* raw = env->GetDirectBufferAddress(int8Buffer);
+    if (!raw) {
+        LOGE("processHeatmapFromInt8Buffer: null direct buffer address");
+        return nullptr;
+    }
+    const jlong cap = env->GetDirectBufferCapacity(int8Buffer);
+    const size_t count = static_cast<size_t>(w) * static_cast<size_t>(h);
+    if (w <= 0 || h <= 0 || static_cast<size_t>(cap) < count) {
+        LOGE("processHeatmapFromInt8Buffer: size guard failed w=%d h=%d cap=%lld count=%zu",
+             w, h, (long long)cap, count);
+        return nullptr;
+    }
+
+    const int8_t* src = static_cast<const int8_t*>(raw);
+    constexpr float kHeatmapInt8Scale = 0.00787f;
+    LOGI(
+        "PaddleDiag: processHeatmapFromInt8Buffer using long-lived dest ptr=%p count=%zu w=%d h=%d",
+        raw, count, w, h);
+    if (count >= 4) {
+        LOGI(
+            "PaddleDiag: processHeatmapFromInt8Buffer int8[0-3]=[%d,%d,%d,%d]",
+            static_cast<int>(src[0]), static_cast<int>(src[1]),
+            static_cast<int>(src[2]), static_cast<int>(src[3]));
+    }
+
+    std::vector<float> scratch(count);
+    for (size_t i = 0; i < count; ++i) {
+        const uint8_t u_val = static_cast<uint8_t>(src[i] ^ 128);
+        scratch[i] = static_cast<float>(u_val) * kHeatmapInt8Scale;
+    }
+    if (count >= 4) {
+        LOGI(
+            "PaddleDiag: processHeatmapFromInt8Buffer scratch[0-3]=[%.4f,%.4f,%.4f,%.4f]",
+            scratch[0], scratch[1], scratch[2], scratch[3]);
+    }
+
+    std::vector<float> results = processHeatmapFromFloatData(
+        scratch.data(), h, w, threshold, minArea);
+    if (results.empty()) return nullptr;
+    jfloatArray jres = env->NewFloatArray(results.size());
+    env->SetFloatArrayRegion(jres, 0, results.size(), results.data());
+    return jres;
 }
 
 JNIEXPORT jfloatArray JNICALL
@@ -1292,87 +1408,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         (int)postBindPrec, (int)shape.size(), h, w, static_cast<const void*>(data),
         data[0], data[1], data[2], data[3]);
 
-    // 2. Thresholding
-    cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
-    cv::Mat mask;
-    cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
-    mask.convertTo(mask, CV_8U);
-
-    // 3. Connected Components with Stats (ABI-Safe replacement for findContours)
-    cv::Mat labels, stats, centroids;
-    int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
-
-    // 4. Geometry Extraction
-    std::vector<float> results;
-    int count = 0;
-    for (int l = 1; l < numLabels; ++l) { // Start from 1 (skip background label 0)
-        if (count >= 200) break; // Hard safety limit
-        
-        int area = stats.at<int>(l, cv::CC_STAT_AREA);
-        if (area < minArea) continue;
-
-        int left = stats.at<int>(l, cv::CC_STAT_LEFT);
-        int top = stats.at<int>(l, cv::CC_STAT_TOP);
-        int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
-        int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
-
-        // Populate a flat cv::Mat of points instead of std::vector to guarantee ABI Parity
-        cv::Mat points(area, 1, CV_32SC2);
-        int idx = 0;
-        for (int y = top; y < top + height; ++y) {
-            for (int x = left; x < left + width; ++x) {
-                if (labels.at<int>(y, x) == l) {
-                    if (idx < area) {
-                        points.at<cv::Point>(idx++) = cv::Point(x, y);
-                    }
-                }
-            }
-        }
-
-        // If for some reason we gathered fewer points than expected, truncate Mat
-        if (idx < area) {
-            points = points.rowRange(0, idx);
-        }
-
-        if (points.empty()) continue;
-
-        cv::RotatedRect rect = cv::minAreaRect(points);
-        cv::Point2f vertices[4];
-        rect.points(vertices);
-
-        if (count < 3) {
-            LOGI("nativeProcessHeatmap: box[%d] label=%d vertices=(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f) area=%d",
-                 count, l, vertices[0].x, vertices[0].y, vertices[1].x, vertices[1].y,
-                 vertices[2].x, vertices[2].y, vertices[3].x, vertices[3].y, area);
-        }
-
-        // Calculate average confidence within the bounding box
-        float avgConf = 0.0f;
-        int bx1 = std::max(0, left);
-        int by1 = std::max(0, top);
-        int bx2 = std::min(w, left + width);
-        int by2 = std::min(h, top + height);
-        
-        if (bx2 > bx1 && by2 > by1) {
-            cv::Mat roi = heatmap(cv::Rect(bx1, by1, bx2 - bx1, by2 - by1));
-            cv::Scalar meanVal = cv::mean(roi);
-            avgConf = (float)meanVal[0];
-        }
-
-        // Pack [x1, y1, x2, y2, x3, y3, x4, y4, conf]
-        for (int i = 0; i < 4; ++i) {
-            results.push_back(vertices[i].x);
-            results.push_back(vertices[i].y);
-        }
-        results.push_back(avgConf);
-        count++;
-    }
-
-    float hist[100] = {0};
-    for(int i=0; i < h*w; i++) { int b = std::max(0, std::min(99, (int)(data[i]*100))); hist[b] += 1.0f; }
-    for(int i=0; i<100; i++) results.push_back(hist[i]);
-
-    // 5. Serialization
+    std::vector<float> results = processHeatmapFromFloatData(data, h, w, threshold, minArea);
     if (results.empty()) return nullptr;
     jfloatArray jres = env->NewFloatArray(results.size());
     env->SetFloatArrayRegion(jres, 0, results.size(), results.data());
