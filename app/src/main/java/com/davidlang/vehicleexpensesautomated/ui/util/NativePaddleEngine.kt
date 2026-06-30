@@ -423,6 +423,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val tNativePost0 = System.nanoTime()
             val nativeRes = if (!isArm && x86Int8Buf != null) {
+                Log.i(
+                    "PaddleDiag",
+                    "detect tier=$tierScale post-process from long-lived int8 buf cap=${x86Int8Buf.capacity()} w=$outW h=$outH; no paddle output touch",
+                )
                 NativeImageUtils.processHeatmapFromInt8Buffer(x86Int8Buf, outW, outH, 0.03f, 10f)
             } else {
                 NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
@@ -531,6 +535,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val tNativePost0 = System.nanoTime()
             val nativeRes = if (!isArm && x86Int8Buf != null) {
+                Log.i(
+                    "PaddleDiag",
+                    "detectMat ${w}x$h post-process from long-lived int8 buf cap=${x86Int8Buf.capacity()} w*h=${w * h}; no paddle output touch",
+                )
                 NativeImageUtils.processHeatmapFromInt8Buffer(x86Int8Buf, w, h, 0.03f, 10f)
             } else {
                 NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change

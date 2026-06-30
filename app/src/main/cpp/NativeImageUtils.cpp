@@ -44,10 +44,10 @@ bool resolveOutputHeatmapFloatData(
   if (prec == paddle::lite_api::PrecisionType::kFloat) {
     const float* fdata = tensor->data<float>();
     if (!fdata) return false;
-    // Fallback when Java rebind did not run: short-lived int8Tmp (not caller long-lived dest)
+    // ARM tensor path only: x86 uses processHeatmapFromInt8Buffer on long-lived dest (no output bind)
     LOGI(
         "PaddleDiag: resolve kFloat fallback fdata=%p count=%zu h=%d w=%d "
-        "(caller-provided long-lived int8 dest expected after bindOutputInt8)",
+        "(x86 should use processHeatmapFromInt8Buffer; no bindOutputInt8 on output)",
         static_cast<const void*>(fdata), count, h, w);
     if (count >= 4) {
       LOGI("PaddleDiag: resolve kFloat before quant f[0-3]=[%.4f,%.4f,%.4f,%.4f]",
