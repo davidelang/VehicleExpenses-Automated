@@ -77,7 +77,7 @@
 
 - [x] Executing plan dev-ai-interaction/plans/fix-x86-emulator-5554-crash-longlived-int8-dest-20260630-plan.md: long-lived int8 dest for x86 detector output (sharedTierBuffers + sharedMaxInt8Buffer), quantize+bind, C++ diags.
 
-- [ ] Executing plan dev-ai-interaction/plans/fix-x86-float-output-copy-to-longlived-int8-no-paddle-involvement-20260630-102641-plan.md: x86 float output → copy to long-lived int8, no bindOutputInt8, processHeatmapFromInt8Buffer.
+- [x] Executing plan dev-ai-interaction/plans/fix-x86-float-output-copy-to-longlived-int8-no-paddle-involvement-20260630-102641-plan.md: x86 float output → copy to long-lived int8, no bindOutputInt8, processHeatmapFromInt8Buffer.
 
 # Future work
 - [x] x86_64 / Android emulator ("amd64") path for detector: in detect() and detectMat() (and related post-run sites), on x86 output floats from the model to a temp buffer, then (C++ only) convert/quantize to the exact int8 buffer + format that the existing kInt8 branch in processHeatmap / nativeProcessHeatmap expects (using the same scale/remap as ARM int8 models). All conversion logic in C++. This lets the rest of the (int8-expecting) detection post-processing code stay unchanged.
