@@ -339,3 +339,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Resume after Phase 1 commit 1890ed19 (helper side-effect only)
 - JNI copyTensorInt8ToBuffer + dequantHeatmapInt8ToFloat ready in working tree
 - Next: ARM output copy, uniform int8 processing, dequant copyHeatmap
+
+## 2026-06-30 - Phase 2 complete (tag 1f0429a8)
+
+- ARM kInt8 output copy JNI + detect/detectMat population
+- x86 helper unchanged; builds tag updated

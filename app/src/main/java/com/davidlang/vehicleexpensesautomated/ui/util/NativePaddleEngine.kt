@@ -427,18 +427,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     "detect tier=$tierScale copied kInt8 output to long-lived int8 buf cap=${int8Buf.capacity()} w*h=$expected",
                 )
             }
-            val x86Int8Buf = if (!isArm) sharedTierBuffers[tierScale] else null
+            val int8Buf = sharedTierBuffers[tierScale]!!
 
             val tNativePost0 = System.nanoTime()
-            val nativeRes = if (!isArm && x86Int8Buf != null) {
-                Log.i(
-                    "PaddleDiag",
-                    "detect tier=$tierScale post-process from long-lived int8 buf cap=${x86Int8Buf.capacity()} w=$outW h=$outH; no paddle output touch",
-                )
-                NativeImageUtils.processHeatmapFromInt8Buffer(x86Int8Buf, outW, outH, 0.03f, 10f)
-            } else {
-                NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
-            }
+            Log.i(
+                "PaddleDiag",
+                "detect tier=$tierScale post-process from long-lived int8 buf cap=${int8Buf.capacity()} w=$outW h=$outH",
+            )
+            val nativeRes = NativeImageUtils.processHeatmapFromInt8Buffer(int8Buf, outW, outH, 0.03f, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
@@ -544,18 +540,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     "detectMat ${w}x$h copied kInt8 output to long-lived int8 buf cap=${longLived.capacity()} w*h=$expected",
                 )
             }
-            val x86Int8Buf = if (!isArm) sharedMaxInt8Buffer else null
+            val int8Buf = sharedMaxInt8Buffer!!
 
             val tNativePost0 = System.nanoTime()
-            val nativeRes = if (!isArm && x86Int8Buf != null) {
-                Log.i(
-                    "PaddleDiag",
-                    "detectMat ${w}x$h post-process from long-lived int8 buf cap=${x86Int8Buf.capacity()} w*h=${w * h}; no paddle output touch",
-                )
-                NativeImageUtils.processHeatmapFromInt8Buffer(x86Int8Buf, w, h, 0.03f, 10f)
-            } else {
-                NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
-            }
+            Log.i(
+                "PaddleDiag",
+                "detectMat ${w}x$h post-process from long-lived int8 buf cap=${int8Buf.capacity()} w*h=${w * h}",
+            )
+            val nativeRes = NativeImageUtils.processHeatmapFromInt8Buffer(int8Buf, w, h, 0.03f, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
