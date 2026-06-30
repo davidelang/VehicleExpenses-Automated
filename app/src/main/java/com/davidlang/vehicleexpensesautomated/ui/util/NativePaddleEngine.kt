@@ -456,9 +456,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             var hist: IntArray? = null
-            if (nativeRes != null) {
+            if (nativeRes != null && nativeRes.size >= 100) {
                 val boxFloats = nativeRes.size - 100
                 val nboxes = boxFloats / 9
+                if (nboxes == 0) {
+                    Log.i("PaddleDiag", "detect tier=$tierScale: zero detector boxes (safe empty post-process)")
+                }
                 for (i in 0 until nboxes) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)
@@ -584,9 +587,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             var hist: IntArray? = null
-            if (nativeRes != null) {
+            if (nativeRes != null && nativeRes.size >= 100) {
                 val boxFloats = nativeRes.size - 100
                 val nboxes = boxFloats / 9
+                if (nboxes == 0) {
+                    Log.i("PaddleDiag", "detectMat ${w}x$h: zero detector boxes (safe empty post-process)")
+                }
                 for (i in 0 until nboxes) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)

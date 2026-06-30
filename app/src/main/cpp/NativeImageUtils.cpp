@@ -110,11 +110,16 @@ void quantizeFloatHeatmapToInt8Buffer(
     LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 f[0-3]=[%.4f,%.4f,%.4f,%.4f]",
          fdata[0], fdata[1], fdata[2], fdata[3]);
   }
+  int uMin = 255;
+  int uMax = 0;
   for (int i = 0; i < count; ++i) {
     int q = static_cast<int>(std::lround(fdata[i] / scale));
     q = std::max(0, std::min(255, q));
     dst[i] = static_cast<int8_t>(static_cast<uint8_t>(q) ^ 128);
+    uMin = std::min(uMin, q);
+    uMax = std::max(uMax, q);
   }
+  LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 u_val min=%d max=%d count=%d", uMin, uMax, count);
   if (count >= 4) {
     LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 dst int8[0-3]=[%d,%d,%d,%d]",
          static_cast<int>(dst[0]), static_cast<int>(dst[1]),

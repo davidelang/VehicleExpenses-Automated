@@ -3134,8 +3134,16 @@ private suspend fun runDiscoveryPaddle(
 
     val hist = res.heatmapHist ?: IntArray(0)
     if (metadata != null && hist.isNotEmpty()) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
-    val rawRects = res.nativeBoxes.map { box ->
+    if (res.nativeBoxes.isEmpty()) {
+        Log.w(TAG, "runDiscoveryPaddle scale=$scale: zero detector boxes; skipping rect expansion")
+        return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+    }
+    val rawRects = res.nativeBoxes.mapNotNull { box ->
         val p = box.points
+        if (p.size < 8) {
+            Log.w(TAG, "runDiscoveryPaddle scale=$scale: skipping box with invalid points size=${p.size}")
+            return@mapNotNull null
+        }
         val minX = minOf(p[0], p[2], p[4], p[6]).toInt()
         val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
         val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
@@ -3241,6 +3249,7 @@ private suspend fun runDiscoveryPaddle(
 
     // Capture Native Results (Phase 2 A/B) -- explicit upscale using full/content ratio (no ICRS).
     res.nativeBoxes.forEach { box ->
+        if (box.points.size < 8) return@forEach
         // Points are in input Mat pixels (crop-relative)
         val scaleX = fullW.toFloat() / contentW
         val scaleY = fullH.toFloat() / contentH
