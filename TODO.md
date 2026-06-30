@@ -73,7 +73,7 @@
 
 - [x] Executing plan dev-ai-interaction/plans/fix-x86-detector-int8-input-mismatch-20260630-plan.md: x86_64 float detector input path + PaddleDiag logs (ARM int8 input unchanged).
 
-- [ ] Executing plan dev-ai-interaction/plans/fix-x86-float-to-int8-conversion-20260630-plan.md: fix x86 wrapX86DetectorOutputAsInt8 buffer lifetime + size asserts + optional C++ processHeatmap conversion.
+- [x] Executing plan dev-ai-interaction/plans/fix-x86-float-to-int8-conversion-20260630-plan.md: fix x86 wrapX86DetectorOutputAsInt8 buffer lifetime + size asserts + C++ processHeatmap conversion (no Java rebind).
 
 # Future work
 - [x] x86_64 / Android emulator ("amd64") path for detector: in detect() and detectMat() (and related post-run sites), on x86 output floats from the model to a temp buffer, then (C++ only) convert/quantize to the exact int8 buffer + format that the existing kInt8 branch in processHeatmap / nativeProcessHeatmap expects (using the same scale/remap as ARM int8 models). All conversion logic in C++. This lets the rest of the (int8-expecting) detection post-processing code stay unchanged.
