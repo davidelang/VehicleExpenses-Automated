@@ -304,14 +304,19 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val w = dims[3].toInt()
         val h = dims[2].toInt()
         val floatData = (outputTensor as com.baidu.paddle.lite.Tensor).floatData
+        val expected = w * h
         if (floatData.isEmpty() || w <= 0 || h <= 0) {
             Log.e("PaddleDiag", "$site wrapper skipped: invalid float output count=${floatData.size} w=$w h=$h")
             return null
         }
-        Log.i("PaddleDiag", "$site before wrapper outputPrec=float count=${floatData.size} w=$w h=$h")
-        val int8Buf = java.nio.ByteBuffer.allocateDirect(floatData.size)
+        if (floatData.size != expected) {
+            Log.e("PaddleDiag", "$site wrapper size mismatch: floatCount=${floatData.size} expected=$expected (w=$w h=$h)")
+            return null
+        }
+        Log.i("PaddleDiag", "$site before wrapper outputPrec=float count=${floatData.size} w=$w h=$h expected=$expected")
+        val int8Buf = java.nio.ByteBuffer.allocateDirect(expected)
             .order(java.nio.ByteOrder.nativeOrder())
-        NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, floatData.size, DET_HEATMAP_INT8_SCALE)
+        NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, expected, DET_HEATMAP_INT8_SCALE)
         Log.i("PaddleDiag", "$site after quantize int8Buf cap=${int8Buf.capacity()} addr=0x${Integer.toHexString(System.identityHashCode(int8Buf))}")
         int8Buf.position(0)
         lastX86Int8Output = int8Buf

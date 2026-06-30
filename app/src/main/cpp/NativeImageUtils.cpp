@@ -569,6 +569,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuant
     if (!src || count <= 0) return;
     void* dst = env->GetDirectBufferAddress(dstBuffer);
     if (!dst) return;
+    jlong dstCap = env->GetDirectBufferCapacity(dstBuffer);
+    LOGI("PaddleDiag: nativeQuantizeFloatHeatmapToInt8 count=%d dstCap=%lld dst=%p",
+         count, (long long)dstCap, dst);
 
     jfloat* fdata = env->GetFloatArrayElements(src, nullptr);
     if (!fdata) return;
