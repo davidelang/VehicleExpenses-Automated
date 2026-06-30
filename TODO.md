@@ -69,7 +69,12 @@
 
 - [x] De-abstract Set G for Quick Fill: copy pump cost/vol logic inline into OcrHarness.runPumpCostVolPipeline (no runSetGCostVolExtraction / skipDeskew); plan: dev-ai-interaction/plans/de-abstract-set-g-for-quick-fill-copy-logic-20260627-plan.md
 
+- [ ] Executing plan dev-ai-interaction/plans/x86_64-detector-float-output-int8-conversion-wrapper-20260630-plan.md: x86_64 float det model load + C++ float→int8 wrapper in detect/detectMat (ARM path untouched).
+
 # Future work
+- [ ] x86_64 / Android emulator ("amd64") path for detector: in detect() and detectMat() (and related post-run sites), on x86 output floats from the model to a temp buffer, then (C++ only) convert/quantize to the exact int8 buffer + format that the existing kInt8 branch in processHeatmap / nativeProcessHeatmap expects (using the same scale/remap as ARM int8 models). All conversion logic in C++. This lets the rest of the (int8-expecting) detection post-processing code stay unchanged.
+- [ ] Explore eliminating the float buffer for recognition later: rec already does int8 input quantization to the 48px buffer (same path as det). If int8 logits + native decode is a win on arm, apply the same C++ conversion wrapper on x86_64 (float logits → int8 buffer for decode). Keep conversions in C++ for speed.
+
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
   - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
   - Execution completed (user: "approved, implement this plan"). All 7 phases + forensic gates + sim verification.
