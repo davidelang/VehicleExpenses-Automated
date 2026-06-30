@@ -443,11 +443,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             val int8Buf = sharedTierBuffers[tierScale]!!
             int8Buf.position(0)
+            if (isArm) {
+                NativeImageUtils.convertSignedInt8BufToUint8(int8Buf, expected)
+                int8Buf.position(0)
+            }
 
             val tNativePost0 = System.nanoTime()
             Log.i(
                 "PaddleDiag",
-                "detect tier=$tierScale post-process from long-lived int8 buf cap=${int8Buf.capacity()} w=$outW h=$outH",
+                "detect tier=$tierScale post-process from long-lived uint8 buf cap=${int8Buf.capacity()} w=$outW h=$outH",
             )
             val nativeRes = NativeImageUtils.processHeatmapFromInt8Buffer(
                 int8Buf, outW, outH, DET_HEATMAP_INT8_U_THRESHOLD, 10f,
@@ -574,11 +578,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             val int8Buf = sharedMaxInt8Buffer!!
             int8Buf.position(0)
+            if (isArm) {
+                NativeImageUtils.convertSignedInt8BufToUint8(int8Buf, expected)
+                int8Buf.position(0)
+            }
 
             val tNativePost0 = System.nanoTime()
             Log.i(
                 "PaddleDiag",
-                "detectMat ${w}x$h post-process from long-lived int8 buf cap=${int8Buf.capacity()} w*h=${w * h}",
+                "detectMat ${w}x$h post-process from long-lived uint8 buf cap=${int8Buf.capacity()} w*h=${w * h}",
             )
             val nativeRes = NativeImageUtils.processHeatmapFromInt8Buffer(
                 int8Buf, w, h, DET_HEATMAP_INT8_U_THRESHOLD, 10f,

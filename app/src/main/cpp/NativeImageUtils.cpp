@@ -672,6 +672,38 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCopyT
     LOGI("PaddleDiag: copyTensorInt8ToBuffer copied %d bytes to long-lived dest %p", count, dst);
 }
 
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConvertSignedInt8BufToUint8(
+    JNIEnv* env, jobject thiz, jobject int8Buffer, jint count) {
+    (void)thiz;
+    if (count <= 0) return;
+    void* raw = env->GetDirectBufferAddress(int8Buffer);
+    if (!raw) return;
+    const jlong cap = env->GetDirectBufferCapacity(int8Buffer);
+    if (cap < count) return;
+
+    int8_t* buf = static_cast<int8_t*>(raw);
+    int uMin = 255;
+    int uMax = 0;
+    for (jint i = 0; i < count; ++i) {
+        buf[i] = static_cast<int8_t>(static_cast<uint8_t>(buf[i]) ^ 128);
+        const int u_val = static_cast<int>(static_cast<uint8_t>(buf[i]));
+        uMin = std::min(uMin, u_val);
+        uMax = std::max(uMax, u_val);
+    }
+    LOGI(
+        "PaddleDiag: convertSignedInt8BufToUint8 count=%d u_val min=%d max=%d (ARM direct bind post-run)",
+        count, uMin, uMax);
+    if (count >= 4) {
+        LOGI(
+            "PaddleDiag: convertSignedInt8BufToUint8 dst uint8[0-3]=[%d,%d,%d,%d]",
+            static_cast<int>(static_cast<uint8_t>(buf[0])),
+            static_cast<int>(static_cast<uint8_t>(buf[1])),
+            static_cast<int>(static_cast<uint8_t>(buf[2])),
+            static_cast<int>(static_cast<uint8_t>(buf[3])));
+    }
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeDequantHeatmapInt8ToFloat(
     JNIEnv* env, jobject thiz, jobject int8Buffer, jint count, jfloat scale) {
