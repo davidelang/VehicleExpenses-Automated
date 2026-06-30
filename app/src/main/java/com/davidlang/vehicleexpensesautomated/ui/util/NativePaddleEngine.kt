@@ -450,7 +450,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "detect tier=$tierScale post-process from long-lived int8 buf cap=${int8Buf.capacity()} w=$outW h=$outH",
             )
             val nativeRes = NativeImageUtils.processHeatmapFromInt8Buffer(
-                int8Buf, outW, outH, DET_HEATMAP_INT8_FLOAT_THRESHOLD, 10f,
+                int8Buf, outW, outH, DET_HEATMAP_INT8_U_THRESHOLD, 10f,
             )
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
@@ -578,7 +578,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "detectMat ${w}x$h post-process from long-lived int8 buf cap=${int8Buf.capacity()} w*h=${w * h}",
             )
             val nativeRes = NativeImageUtils.processHeatmapFromInt8Buffer(
-                int8Buf, w, h, DET_HEATMAP_INT8_FLOAT_THRESHOLD, 10f,
+                int8Buf, w, h, DET_HEATMAP_INT8_U_THRESHOLD, 10f,
             )
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 

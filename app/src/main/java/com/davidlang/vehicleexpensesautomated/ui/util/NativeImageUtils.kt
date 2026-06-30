@@ -315,15 +315,15 @@ object NativeImageUtils {
         return nativeProcessHeatmap(tensor, threshold, minArea)
     }
 
-    /** x86_64: post-process heatmap from long-lived int8 buffer (no output tensor). */
+    /** Post-process heatmap from long-lived int8 buffer using u_val integer threshold (both arches). */
     fun processHeatmapFromInt8Buffer(
         int8Buf: java.nio.ByteBuffer,
         w: Int,
         h: Int,
-        threshold: Float,
+        uThreshold: Int,
         minArea: Float,
     ): FloatArray? {
-        return nativeProcessHeatmapFromInt8Buffer(int8Buf, w, h, threshold, minArea)
+        return nativeProcessHeatmapFromInt8Buffer(int8Buf, w, h, uThreshold, minArea)
     }
 
     fun heatmapToAngle(tensor: Any, threshold: Float): Float {
@@ -350,7 +350,7 @@ object NativeImageUtils {
         int8Buf: java.nio.ByteBuffer,
         w: Int,
         h: Int,
-        threshold: Float,
+        uThreshold: Int,
         minArea: Float,
     ): FloatArray?
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?

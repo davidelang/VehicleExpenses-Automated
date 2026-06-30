@@ -1374,10 +1374,127 @@ static std::vector<float> processHeatmapFromFloatData(
     return results;
 }
 
+static std::vector<float> makeEmptyHeatmapPostResult() {
+    std::vector<float> results;
+    results.reserve(100);
+    for (int i = 0; i < 100; ++i) results.push_back(0.0f);
+    return results;
+}
+
+static std::vector<float> processHeatmapFromInt8UData(
+    const int8_t* src, int h, int w, int uThreshold, float scale, float minArea) {
+    std::vector<float> results;
+    if (!src || h <= 0 || w <= 0) return results;
+
+    const size_t count = static_cast<size_t>(w) * static_cast<size_t>(h);
+    int uMin = 255;
+    int uMax = 0;
+    for (size_t i = 0; i < count; ++i) {
+        const int u_val = static_cast<int>(static_cast<uint8_t>(src[i] ^ 128));
+        uMin = std::min(uMin, u_val);
+        uMax = std::max(uMax, u_val);
+    }
+    LOGI(
+        "PaddleDiag: processHeatmapFromInt8Buffer u_val min=%d max=%d uThreshold=%d scale=%.5f",
+        uMin, uMax, uThreshold, scale);
+
+    if (uMax < uThreshold) {
+        LOGI("PaddleDiag: processHeatmapFromInt8Buffer all below threshold; returning empty boxes + zero hist");
+        return makeEmptyHeatmapPostResult();
+    }
+
+    std::vector<float> scratch(count);
+    cv::Mat mask(h, w, CV_8U);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
+            const int u_val = static_cast<int>(static_cast<uint8_t>(src[idx] ^ 128));
+            scratch[idx] = static_cast<float>(u_val) * scale;
+            mask.at<uint8_t>(y, x) = u_val >= uThreshold ? 255 : 0;
+        }
+    }
+    if (count >= 4) {
+        LOGI(
+            "PaddleDiag: processHeatmapFromInt8Buffer scratch[0-3]=[%.4f,%.4f,%.4f,%.4f]",
+            scratch[0], scratch[1], scratch[2], scratch[3]);
+    }
+
+    cv::Mat labels, stats, centroids;
+    const int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
+
+    int boxCount = 0;
+    for (int l = 1; l < numLabels; ++l) {
+        if (boxCount >= 200) break;
+
+        const int area = stats.at<int>(l, cv::CC_STAT_AREA);
+        if (area < static_cast<int>(minArea)) continue;
+
+        const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
+        const int top = stats.at<int>(l, cv::CC_STAT_TOP);
+        const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
+        const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
+
+        cv::Mat points(area, 1, CV_32SC2);
+        int idx = 0;
+        for (int y = top; y < top + height; ++y) {
+            for (int x = left; x < left + width; ++x) {
+                if (labels.at<int>(y, x) == l) {
+                    if (idx < area) {
+                        points.at<cv::Point>(idx++) = cv::Point(x, y);
+                    }
+                }
+            }
+        }
+        if (idx < area) {
+            points = points.rowRange(0, idx);
+        }
+        if (points.empty()) continue;
+
+        cv::RotatedRect rect = cv::minAreaRect(points);
+        cv::Point2f vertices[4];
+        rect.points(vertices);
+
+        float avgConf = 0.0f;
+        const int bx1 = std::max(0, left);
+        const int by1 = std::max(0, top);
+        const int bx2 = std::min(w, left + width);
+        const int by2 = std::min(h, top + height);
+        if (bx2 > bx1 && by2 > by1) {
+            float sum = 0.0f;
+            int n = 0;
+            for (int y = by1; y < by2; ++y) {
+                for (int x = bx1; x < bx2; ++x) {
+                    if (labels.at<int>(y, x) == l) {
+                        const size_t flat = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
+                        sum += scratch[flat];
+                        ++n;
+                    }
+                }
+            }
+            if (n > 0) avgConf = sum / static_cast<float>(n);
+        }
+
+        for (int i = 0; i < 4; ++i) {
+            results.push_back(vertices[i].x);
+            results.push_back(vertices[i].y);
+        }
+        results.push_back(avgConf);
+        ++boxCount;
+    }
+
+    float hist[100] = {0};
+    for (size_t i = 0; i < count; ++i) {
+        const int b = std::max(0, std::min(99, static_cast<int>(scratch[i] * 100.0f)));
+        hist[b] += 1.0f;
+    }
+    for (int i = 0; i < 100; ++i) results.push_back(hist[i]);
+    return results;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmapFromInt8Buffer(
     JNIEnv* env, jobject thiz, jobject int8Buffer, jint w, jint h,
-    jfloat threshold, jfloat minArea) {
+    jint uThreshold, jfloat minArea) {
     (void)thiz;
     void* raw = env->GetDirectBufferAddress(int8Buffer);
     if (!raw) {
@@ -1395,8 +1512,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
     const int8_t* src = static_cast<const int8_t*>(raw);
     constexpr float kHeatmapInt8Scale = 0.00787f;
     LOGI(
-        "PaddleDiag: processHeatmapFromInt8Buffer using long-lived dest ptr=%p count=%zu w=%d h=%d",
-        raw, count, w, h);
+        "PaddleDiag: processHeatmapFromInt8Buffer using long-lived dest ptr=%p count=%zu w=%d h=%d uThreshold=%d",
+        raw, count, w, h, uThreshold);
     if (count >= 4) {
         LOGI(
             "PaddleDiag: processHeatmapFromInt8Buffer int8[0-3]=[%d,%d,%d,%d]",
@@ -1404,22 +1521,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
             static_cast<int>(src[2]), static_cast<int>(src[3]));
     }
 
-    std::vector<float> scratch(count);
-    for (size_t i = 0; i < count; ++i) {
-        const uint8_t u_val = static_cast<uint8_t>(src[i] ^ 128);
-        scratch[i] = static_cast<float>(u_val) * kHeatmapInt8Scale;
-    }
-    if (count >= 4) {
-        LOGI(
-            "PaddleDiag: processHeatmapFromInt8Buffer scratch[0-3]=[%.4f,%.4f,%.4f,%.4f]",
-            scratch[0], scratch[1], scratch[2], scratch[3]);
-    }
-
-    std::vector<float> results = processHeatmapFromFloatData(
-        scratch.data(), h, w, threshold, minArea);
+    std::vector<float> results = processHeatmapFromInt8UData(
+        src, h, w, uThreshold, kHeatmapInt8Scale, minArea);
     if (results.empty()) return nullptr;
-    jfloatArray jres = env->NewFloatArray(results.size());
-    env->SetFloatArrayRegion(jres, 0, results.size(), results.data());
+    jfloatArray jres = env->NewFloatArray(static_cast<jsize>(results.size()));
+    env->SetFloatArrayRegion(jres, 0, static_cast<jsize>(results.size()), results.data());
     return jres;
 }
 
