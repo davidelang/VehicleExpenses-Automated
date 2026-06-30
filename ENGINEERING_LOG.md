@@ -371,3 +371,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - detect/detectMat log arm direct-bind vs x86 float+helper paths
 - Sandbox doc: dev-ai-interaction/emulator-5556-armv8-setup.md
+
+## 2026-06-30 - Execute ARM direct-bind crash fix plan (baseline a38ae6e3)
+
+- Plan: fix-arm-phone-crash-after-direct-bind-plus-x86-zero-20260630-150000
+- Root cause hypothesis: tier detect() reuses same buf for input+output bind on ARM; x86 zero heatmap SEGV in CC/downstream

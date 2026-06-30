@@ -378,17 +378,23 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val tierScale = TIER_SCALES.filter { it >= maxEdge }.minOrNull() ?: 2560
         val predictor = sharedTiers[tierScale] ?: return null
         val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
+        val armInputBuf = if (isArm) {
+            java.nio.ByteBuffer.allocateDirect(tierScale * tierScale)
+                .order(java.nio.ByteOrder.nativeOrder())
+        } else null
         if (isArm) {
-            Log.i("PaddleDiag", "detect tier=$tierScale: arm int8 direct I/O via long-lived buf bind")
+            Log.i(
+                "PaddleDiag",
+                "detect tier=$tierScale: ARM input on temp buf, output bound directly to long-lived int8 buf (direct write)",
+            )
         } else {
             Log.i("PaddleDiag", "detect tier=$tierScale: x86 float temp I/O; helper quantizes output to int8 after run")
         }
 
         if (isArm) {
-            val buf = sharedTierBuffers[tierScale] ?: return null
-            buf.clear()
-            NativeImageUtils.quantizeMonoToInt8(srcMat, buf, tierScale, tierScale, w, h)
-            buf.position(0)
+            armInputBuf!!.clear()
+            NativeImageUtils.quantizeMonoToInt8(srcMat, armInputBuf, tierScale, tierScale, w, h)
+            armInputBuf.position(0)
         } else {
             val floatData = sharedTierFloatBuffers[tierScale] ?: return null
             floatData.fill(0f)
@@ -400,9 +406,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         try {
             val tJniIn0 = System.nanoTime()
             if (isArm) {
-                val buf = sharedTierBuffers[tierScale]!!
-                Log.i("PaddleDiag", "before bindInput int8 tier=$tierScale")
-                NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, tierScale, tierScale)
+                Log.i("PaddleDiag", "before bindInput int8 tier=$tierScale (temp input buf)")
+                NativeImageUtils.bindInputInt8(predictor.getInput(0), armInputBuf!!, tierScale, tierScale)
                 Log.i("PaddleDiag", "after bindInput int8 tier=$tierScale")
             } else {
                 val floatData = sharedTierFloatBuffers[tierScale]!!
@@ -503,16 +508,21 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
         if (isArm) {
-            Log.i("PaddleDiag", "detectMat ${w}x$h: arm int8 direct output bind to long-lived buf")
+            Log.i(
+                "PaddleDiag",
+                "detectMat ${w}x$h: ARM input on temp buf, output bound directly to long-lived int8 buf (direct write)",
+            )
         } else {
             Log.i("PaddleDiag", "detectMat ${w}x$h: x86 float temp I/O; helper quantizes output to int8 after run")
         }
         val tPop0 = System.nanoTime()
-        val int8Buf = if (isArm) java.nio.ByteBuffer.allocateDirect(w * h).order(java.nio.ByteOrder.nativeOrder()) else null
+        val armInputBuf = if (isArm) {
+            java.nio.ByteBuffer.allocateDirect(w * h).order(java.nio.ByteOrder.nativeOrder())
+        } else null
         val floatData = if (isArm) null else FloatArray(w * h)
         if (isArm) {
-            NativeImageUtils.quantizeMonoToInt8(srcMat, int8Buf!!, w, h)
-            int8Buf.position(0)
+            NativeImageUtils.quantizeMonoToInt8(srcMat, armInputBuf!!, w, h)
+            armInputBuf.position(0)
         } else {
             NativeImageUtils.populateMonoTensor(srcMat, floatData!!, w, h, 0.485f, 0.229f)
         }
@@ -522,8 +532,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniIn0 = System.nanoTime()
             val inputTensor = predictor.getInput(0)
             if (isArm) {
-                Log.i("PaddleDiag", "detectMat before bindInput int8 ${w}x$h")
-                NativeImageUtils.bindInputInt8(inputTensor, int8Buf!!, w, h)
+                Log.i("PaddleDiag", "detectMat before bindInput int8 ${w}x$h (temp input buf)")
+                NativeImageUtils.bindInputInt8(inputTensor, armInputBuf!!, w, h)
                 Log.i("PaddleDiag", "detectMat after bindInput int8")
             } else {
                 Log.i("PaddleDiag", "detectMat before bindInput float ${w}x$h x86=true")
