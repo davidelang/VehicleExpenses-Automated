@@ -238,7 +238,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     if (Build.SUPPORTED_ABIS[0].contains("arm")) "paddle/det_v4_4000_mono_int8_$arch.nb"
                     else "paddle/det_v4_4000_mono_$arch.nb"
                 )
-                Log.i("PaddleDiag", "detPath=$detPath")
+                Log.i("PaddleDiag", "detPath=$detPath modelKind=${if (Build.SUPPORTED_ABIS[0].contains("arm")) "int8" else "float"}")
                 val tCopy = System.currentTimeMillis() - tCopy0
                 Log.i("PaddleLite", "Model copying took ${tCopy}ms")
 
@@ -297,15 +297,21 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
 
     /** x86_64 only: read float detector output, C++ quantize to int8 buffer, rebind tensor for kInt8 processHeatmap. */
-    private fun wrapX86DetectorOutputAsInt8(outputTensor: Any, dims: LongArray): FloatArray {
+    private fun wrapX86DetectorOutputAsInt8(outputTensor: Any, dims: LongArray, site: String): FloatArray? {
         val w = dims[3].toInt()
         val h = dims[2].toInt()
         val floatData = (outputTensor as com.baidu.paddle.lite.Tensor).floatData
+        if (floatData.isEmpty() || w <= 0 || h <= 0) {
+            Log.e("PaddleDiag", "$site wrapper skipped: invalid float output count=${floatData.size} w=$w h=$h")
+            return null
+        }
+        Log.i("PaddleDiag", "$site before wrapper outputPrec=float count=${floatData.size} w=$w h=$h")
         val int8Buf = java.nio.ByteBuffer.allocateDirect(floatData.size)
             .order(java.nio.ByteOrder.nativeOrder())
         NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, floatData.size, DET_HEATMAP_INT8_SCALE)
         int8Buf.position(0)
         NativeImageUtils.bindOutputInt8(outputTensor, int8Buf, w, h)
+        Log.i("PaddleDiag", "$site after wrapper outputPrec=kInt8 w=$w h=$h scale=$DET_HEATMAP_INT8_SCALE")
         return floatData
     }
 
@@ -363,8 +369,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
 
             // x86_64: float model output → C++ int8 quant + rebind before native post-process
-            val x86HeatmapFloats = if (!Build.SUPPORTED_ABIS[0].contains("arm")) {
-                wrapX86DetectorOutputAsInt8(outputTensor, dims)
+            val x86HeatmapFloats = if (!isArm) {
+                wrapX86DetectorOutputAsInt8(outputTensor, dims, "detect tier=$tierScale")
             } else null
 
             val tNativePost0 = System.nanoTime()
@@ -454,14 +460,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val tInfer0 = System.nanoTime()
             predictor.run()
+            Log.i("PaddleDiag", "detectMat after run ${w}x$h")
             val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
 
-            val x86HeatmapFloats = if (!Build.SUPPORTED_ABIS[0].contains("arm")) {
-                wrapX86DetectorOutputAsInt8(outputTensor, dims)
+            val x86HeatmapFloats = if (!isArm) {
+                wrapX86DetectorOutputAsInt8(outputTensor, dims, "detectMat ${w}x$h")
             } else null
 
             val tNativePost0 = System.nanoTime()
