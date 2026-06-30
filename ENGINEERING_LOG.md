@@ -126,60 +126,216 @@ This log tracks the implementation, refactoring, and deployment activities perfo
     - `app/src/main/assets/libs_backup/` (new)
     - `app/src/main/java/com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine.kt`
 
+## [2026-06-21] - Paddle INT8 Rebuild & App Migration (plan 20260620)
+- **Activity:** Isolated INT8 patches (`patches-int8/`, `apply_int8_patches.sh`, `Dockerfile.int8`); app migration to XOR int8 input (`q=(b^128)`), BufferSet p→s, tier int8 buffers, ShareExternalMemory bind.
+- **Sandbox:** P1 `keep_quantized_weights`, P2 `analytic_input_quant_pass` on branch `pr-int8-activation-input`; `optimize_mono_int8_models.sh`; call-site audit at `dev-ai-interaction/research/paddle-int8-callsite-audit.md`.
+- **App:** `nativeQuantizeMonoToInt8`, `nativeBindInputInt8`, `BufferSet.quantizeMonoInputToScratch`, `sharedTierInt8Buffers`, `*_int8_*.nb` assets; float det/rec staging buffers removed.
+- **Build tag:** `int8-paddle-processing-start-5-gf277eb38`
+- **Pending:** Part B Docker rebuild (`paddle-build-int8-20.04`) for true INT8 kernels + jar `setKeepQuantizedWeights`; C2 full opt conversion when INT8 image available.
+
+## [2026-06-21] - Paddle INT8 Retry (Docker restored)
+- **Docker:** `paddle-build-int8-20.04` rebuilt; B3–B5 PASSED (linux opt, arm64, armv7); B6 x86_64 blocked (libc++/protobuf linker ABI).
+- **Patches-int8 fixes:** `LOD_TENSOR` in `light_api.cc`; analytic `ResetOp` copy; x86 SSE `elementwise_common_broadcast_config.h`; `prepare_thirdparty` via mounted build scripts.
+- **C2:** True INT8 `.nb` via `opt_linux_x86_int8` (models no longer float copies).
+- **D7:** Deployed arm64-v8a + armeabi-v7a `libpaddle_lite_jni.so`, `PaddlePredictor.jar` (`setKeepQuantizedWeights`), direct Kotlin call (no reflection).
+- **Build tag:** `int8-paddle-processing-start-8-g23d8e306` (D7 phase).
+
+## [2026-06-21] - Paddle INT8 Recovery & Completion
+- **Recovery plan:** `paddle-int8-recovery-and-completion-20260621-plan.md`; supersedes 20260620 migration plan execution.
+- **Artifacts:** All ABIs jni + INT8 `.nb` deployed; x86_64 build DONE (`ce3fcf60…`); `verify_int8_deployment.sh` PASS (sandbox forensic gate).
+- **Crash fix:** `nativeBindInputInt8` now derefs `cppTensorPointer` as `unique_ptr<Tensor>*` (emulator SIGSEGV on Alignment/Pump `detect()`).
+- **Docs:** `project-facts.md` documentation layers table; device validation steps in sandbox; float `.nb` retained on disk (not loaded).
+- **Build tag:** `int8-paddle-processing-start-16-ge09a3268`
+
 ## [Legacy Completion Migrated from TODO.md]
 - [b860046] Fix: Correct HTML report file size rotation logic to accurately count bytes
 - [2f1a582] Deep Trace Phase 2d: Finalize report to include missing global discovery images, method scores/times, and tier reached
 - [9a07669] Deep Trace Phase 2c: Implement 5-step OCR trace (Raw, Gray, Bile, CLAHE, OTSU) across 3 engines with timings
 
-## 2026-06-22 - Merge 16k-pages (doc-only)
+## [2026-06-21] - INT8 Tier Buffer Restore (purge pump mixes)
+- **Plan:** `restore-int8-tier-buffers-identical-to-original-float-logic-purge-extra-mixes-20260621-plan.md`
+- **Change:** Restored `sharedTierBuffers` tier selection + get/clear/quantize/bind flow identical to branch-start float logic; removed x86-608 bump, PumpCheckpoint logs, detSet special-casing, tier-4000 scale, and PumpScreen dedupe extras. Kept only JSON 256MB/512MB ceiling + `android:largeHeap=true`.
+- **Build tag:** `int8-paddle-processing/builds` → `0e353cd8`
 
-- Merged branch `16k-pages` into `master` (--no-ff): added `docs/reference/16k-pages-compatibility-notes.md` and TODO.md future-work backlog for deferred native 16KB alignment.
-- No app-source or native migration changes in this merge.
+## 2026-06-21 - test
 
-## 2026-06-23 - Merged fix-todo TODO reconstruction into master
+## 2026-06-21 - dlang sudo test2
 
-- Restored reconstructed TODO.md (109 lines) from fix-todo/builds commit b18e93fb via direct checkout on master (commit fb7e4bb4).
-- Full git-history union + 2026-06-23 user feedback markers verified (unclipBox rejected, ICRS normalization completed, Dashboard Polarity and Location Lookup Worker pending).
-- ./build_app succeeded; master builds tag updated to fb7e4bb4.
-- User handling root cause of generate_pr/sync overwriting TODO separately.
+## 2026-06-21 - dlang sudo test2
 
-## 2026-06-23 - Merged stop-bufferset-realloc into master
+## 2026-06-21 - dlang sudo test2
 
-- BufferSet capacity-reuse resize: allocatedByteCount tracking, reuse-within-capacity branch (no alloc/delete), grow-drop-old-first with Mat safe redirect.
-- Temporary HIST_DIAG logging in ExperimentAlignmentScreen.kt + NativeImageUtils.cpp for alignment histogram crash diagnosis.
-- Plans: bufferset-reuse-pixel-allocation-on-resize-no-spike-grow-drop-old-first-20260623-plan.md, add-temporary-histogram-and-buffer-diagnostics-for-alignment-crash-20260623-plan.md.
-- Compliance reports: PASS (both).
-- ./build_app succeeded; master builds tag updated.
+## 2026-06-21 - dlang sudo test2
 
-## 2026-06-27 - fix-pump-experiment branch history imported at merge
+## 2026-06-22 - Golden pump photos deploy helper
 
-Imported substantive ENGINEERING_LOG entries from `fix-pump-experiment` (smart merge, append-only). Test/planner noise and failed deploy-restore phase attempts excluded.
+- Created `dev-ai-interaction/scripts/deploy-golden-pump-photos.sh` to push the exact 10 GOLDEN_SUBSET pump photos to `getExternalFilesDir(null)/pump_photos` on device after `./deploy`.
+- Verified on Pixel wireless adb: all 10 golden files present with positive size via `run-as com.davidlang.vehicleexpensesautomated ls files/pump_photos/`.
+- No changes to `./deploy` or logcat handling.
 
-- 2026-06-18: ICRS filter unify, red-box storage, odo aligned viz, pump analysis scripts (plan cycle start).
-- 2026-06-16: Pump heatmap JNI + per-char recognition probs in JSON (partial execution cycles).
-- 2026-06-22: BinPeak stroke hist setSize crash investigation; alignment crash after pump fixes; bufferset fullres resize timing; revert alignment bin-trials hist to crop-based; golden pump redeploy; ALIGN_HIST_DIAG instrumentation plans.
-- 2026-06-23: Default buffer 4080x3072; revert 4f4abf16 wrapper test; 32k histogram buffer; integrate stop-bufferset-realloc from master; log Mat headers for hist crash; direct rect walk for H hist; pump unzip flatten + deploy script; clear jsonfrag per row streaming.
-- 2026-06-24: Additive ZIP extract on pump + alignment experiment screens.
-- 2026-06-25–27: Quick Fill Set G integration; PR review blocker fixes (deskew, zip-slip, BufferSet OOM); de-abstract Quick Fill Set G into OcrHarness.extractQuickFillSetGCostVol.
-- Merged at `279a4681` with review `reviews/review-fix-pump-experiment-20260627-v2.md` (conditionally merge-ready).
+## 2026-06-22 - INT8 arm JNI SONAME Docker build fix (in progress)
 
-## 2026-06-28 - tweak-quick-fill branch work (imported at merge, append-only)
+Executing plan fix-int8-paddle-arm-jni-soname-in-docker-build-20260622: added patchelf + set_jni_soname.sh to paddle-build Dockerfile.int8/apply_int8_patches.sh; rebuilt paddle-build-int8-20.04 image; arm64 int8 rebuild running.
 
-Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per-phase micro-entries and duplicate execution-start notes excluded.
+## 2026-06-22 - INT8 arm64 JNI SONAME Docker build fix (complete)
 
-- QuickFill 3-panel UI (`QuickFillupScreen.kt`): Save disk icon always in B; portrait B order save-shutter-mode; content-sized C with portrait centering; vehicle field `value=vehicleName` (fixes post-keypad label reversion); D-panel/zoomD removed (zoom via `panelAContent` right/bottom blanks); portrait camera fill (full-width 4:3, volume field 84.dp max).
-- `CameraPreview.kt`: `AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY`; `CameraZoomControl` + zoom state observer wired from Quick Fill.
-- `DatabaseModule.kt`: migration callback param `database` → `db`; `menuAnchor` deprecation fixes in Settings and ManageVehicles screens.
-- History squashed to 4 logical commits (`backup-tweak-quick-fill` = 6163eaf2); PR doc `dev-ai-interaction/PRs/PR-tweak-quick-fill.md`.
-- Compliance PASS: layout/vehicle-display, portrait fill/order/centering, volume-width plans.
+Rebuilt paddle-build-int8-20.04 with patchelf; arm64 int8 full_publish + set_jni_soname.sh.
+Verified output + jniLibs SONAME [libpaddle_lite_jni.so]; libnative_ocr.so DT_NEEDED now bare soname.
+Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this turn.
 
-## 2026-06-28 - Merged tweak-quick-fill into master
+## 2026-06-23 - int8 crash diagnosis after SONAME version (emulator x86_64 SIGSEGV in DefaultDispatch after crop register)
 
-- Merged branch `tweak-quick-fill` into `master` (--no-ff, ours-strategy + selective checkout; ENGINEERING_LOG/TODO/project-facts handled per merge protocol).
-- App source: QuickFillupScreen, CameraPreview, DatabaseModule, SettingsScreen, ManageVehiclesScreen.
-- `./build_app` gate pending this commit.
-- PR reference: `dev-ai-interaction/PRs/PR-tweak-quick-fill.md`. User device test required before `works` tag.
+- User reported: version from soname fix (fix-armeabi-v7a-paddle-jni-soname-and-validate-all-abis-20260623-plan.md + compliance at tag 3a7e566d) still crashes; also tracked jni .so not committed.
+- Uncommitted tracked: M app/src/main/jniLibs/{arm64,armeabi-v7a,x86_64}/libpaddle_lite_jni.so (the copies from Docker output during phases 5-7; last git commit is unrelated gradle chore).
+- get-builds-tag still requires a ./build_app to seed int8-paddle-processing/builds.
+- Fetched logs via adb (2 devices: wireless + emulator-5554; used -s to target).
+- Crash: on emulator (x86_64). Process uptime 7s. SIGSEGV (code 1 SEGV_MAPERR) fault addr 0x4a251000 in tid 16323 (DefaultDispatch). Tombstone_18 written. Backtrace only 1 frame (pc 0x123 in anon mapping; stripped libs).
+- Log sequence immediately prior (05:17:33-39):
+  - Paddle global rigid buffers + multiple BufferSet nativeSetup (4000x3072 globals from recent default-buffer change, tiers 224/608/..., small 320x48 512x128).
+  - libpaddle_lite_jni.so and libnative_ocr.so loaded successfully (no dlopen/UnsatisfiedLink — SONAME fix passed load).
+  - "Registered crop at 1", "2" then later "Registered crop at 1000", "1001".
+  - Then F libc fatal in DefaultDispatch.
+- "Registered crop" site: BufferSet.kt:153 in registerCrop (called after createCrop for odo/other or alignment crops; high cids 1000/1001 appear in pump/odo paths).
+- Loads succeeded, crash is deeper in int8 execution (quantizeMonoHandleToInt8 / nativeBindInputInt8 / predictor use on dispatch thread after crop setup).
+- x86_64 libpaddle date remains older (Jun 21) vs armv7 Jun 23.
+- No pump JSON/reports pulled (run-as/perms on device).
+- Physical arm64 device log dump did not contain matching crash (may not have been triggered or different behavior).
+- Likely why: latent bug exposed by buffer default to 4080x3072 + tier/crop registration + int8 tensor bind/quantize path (size/pointer mismatch or use of disarmed crop handle on certain inputs). Not the original SONAME load error.
+- Compliance for soname plan claimed PASS on build verification (readelf bare NEEDED), but no device logcat in that turn.
+- Recorded per mandate (used append wrapper only).
 
-## 2026-06-28 - tweak-quick-fill merge build gate
 
-- ./build_app succeeded on merge commit; master builds tag ed1b5220.
+## 2026-06-23 - Answers to user: JNI must be committed + crashing crop was ID 1001
+
+1. The new (SONAME-fixed) versions of libpaddle_lite_jni.so are in the working tree (post-fix mtimes/sizes) but show as M (modified, not committed) in git status. git diff shows binary changes vs index. They are required for builds to pick up the fixed JNI. Last relevant commits were the plan phases. To get them into the repo, they must be committed via an approved plan execution using ./build_app on the jni files + TODO.md.
+
+2. Crashing crop: nextCropId=1000 (auto when no explicit id=). In the exact repro (alignment exp on 2-item FAILING_SUBSET):
+   - Registered 1 and 2 (explicit ref vehicle.id using DB crop rects loaded with ?:0f/?:1f).
+   - Then (after 1088x358 etc buffer setups + native_ocr load on DefaultDispatch): Registered 1000, then 1001.
+   - Crash immediately after.
+   The crop requested that caused the crash was the auto-ID **1001**.
+   Coordinates: not logged at creation (only cid logged on register). The createCrop calls that consumed auto-IDs 1000/1001 in the FAILING_SUBSET alignment query-photo processing path (ExperimentAlignmentScreen + related Ocr paths) were ones like:
+   - experimentDetSet512x128.createCrop(0, 0, fw, fh) or experimentRecSet...createCrop(0/4,4, ew, eh)  -- full small buffers
+   - odoBuffer.createCrop(bbox left/top/w/h) from redbox detections
+   - odoBuffer.createCrop(sL, sT, sR-sL, sB-sT) from source sub-rects
+   The numeric values came from either fixed small rects or from the per-photo odo region (sized from the DB vehicle crop rects for the 2 photos, using the ?:0/1f loading + icrsToPixel) or detection bboxes on it.
+   See BufferSet nextCropId=1000, registerCrop, the alignment ref+query crop setup code (repeated l=Left?:0f, r=Right?:1f patterns), and the calls in ExperimentAlignmentScreen around lines 1025+, 1056+, 1103+, 1264+, 1922+, 1945+ etc.
+
+
+
+## 2026-06-29 - Execution Start: Paddle OCR Pipeline Optimizations (Stage 1)
+
+- Starting execution of Stage 1 optimizations described in dev-ai-interaction/plans/ocr-optimization-plan.md.
+- Objectives: Implement native C++ CTC greedy decoding and zero-copy INT8 thresholding.
+
+## 2026-06-29 - Revised Stage 1 OCR Execution Plan Approved
+
+- Starting implementation of revised JNI direct buffer scanning & split detect methods.
+
+## 2026-06-29 - Execute INT8 Heatmap Copying Crash Fix
+
+- Starting execution for plan `int8-heatmap-crash-fix-20260629`.
+- Baseline tag: `int8-paddle-processing-start-893-g716623f5`.
+- Objective: Default copyHeatmap to false in NativePaddleEngine.detect and return null to prevent native getFloatData() SIGSEGV on INT8 quantized tensors.
+
+## 2026-06-29 - Execute JNI IntArray Transport & 256-Bucket Histogram
+
+- Starting execution for plan `int8-heatmap-ints-histogram-20260629`.
+- Baseline tag: `int8-paddle-processing-start-894-gb70f5f3c`.
+- Objective: Convert nativeProcessHeatmap JNI output to IntArray, pack integer coordinates/scaled confidence, and implement a 256-bucket histogram.
+
+## 2026-06-29 - Execute Memory Padding & System Device Tags
+
+- Starting execution for plan `int8-remediation-padding-and-system-tag-20260629`.
+- Baseline tag: `int8-paddle-processing-start-896-g013e76a3`.
+- Objective: Implement 64-element trailing padding to JNI intArrays for safe SIMD vectorization, and add device system identification tags to JSON/HTML reports.
+
+## 2026-06-29 - Execute tempBox Elimination for SIMD Safety
+
+- Starting execution for plan `int8-loop-tempbox-elimination-20260629`.
+- Baseline tag: `int8-paddle-processing-start-897-gb0f7cc89`.
+- Objective: Eliminate intermediate tempBox allocation/copy in NativePaddleEngine.kt and loop directly over padded nativeRes to leverage memory safety cushion against JIT vectorization crashes.
+
+## 2026-06-29 - Execute Array Copy & Unrolled Coordinates Unpacker
+
+- Starting execution for plan `int8-arraycopy-unrolled-remediation-20260629`.
+- Baseline tag: `int8-paddle-processing-start-898-g23d9b11f`.
+- Objective: Implement boundary-safe System.arraycopy and unrolled float initialization in NativePaddleEngine.kt to completely bypass JIT compiler loop vectorization page-fault crashes.
+
+## 2026-06-29 - Execute Zero-Waste Multi-Exit Loop Guard
+
+- Starting execution for plan `int8-multi-exit-remediation-20260629`.
+- Baseline tag: `int8-paddle-processing-start-899-gfc6563ce`.
+- Objective: Revert JNI padding back to exactly results.size() and implement Kotlin multi-exit loop guards in NativePaddleEngine.kt to prevent JIT speculative vectorization page-fault crashes.
+
+## 2026-06-29 - Execute IntBuffer Wrapping for Safe Unpacking
+
+- Starting execution for plan `int8-intbuffer-remediation-20260629`.
+- Baseline tag: `int8-paddle-processing-start-900-ga50d06e0`.
+- Objective: Implement IntBuffer wrapping in NativePaddleEngine.kt to force scalar sequential execution and guarantee bounds-safety.
+
+## 2026-06-29 - Execute Sequential while Loop + 64-Byte Guard Padding
+
+- Starting execution for plan `int8-final-remediation-20260629`.
+- Baseline tag: `int8-paddle-processing-start-901-g2c2ade86`.
+- Objective: Implement 16-element (64-byte) JNI array padding and sequential while loop unpacking in NativePaddleEngine.kt to guarantee safe scalar execution.
+
+## 2026-06-29 - Execute Diagnostic Logging Plan
+
+- Starting execution for plan `int8-diagnostic-logging-20260629`.
+- Baseline tag: `int8-paddle-processing-start-902-gb3794767`.
+- Objective: Instrument C++ processHeatmap and Kotlin NativePaddleEngine with logging to find the exact crash location, array size, and division remainder.
+
+## 2026-06-29 - Execute Scalar-Only Histogram Copy
+
+- Starting execution for plan `int8-scalar-copy-remediation-20260629`.
+- Baseline tag: `int8-paddle-processing-start-905-g6ef1ad66`.
+- Objective: Replace System.arraycopy with a scalar sequential while loop for the histogram in NativePaddleEngine.kt to prevent JIT pre-fetching page faults.
+
+## 2026-06-29 - Execute Explicit Bounds Diagnostics Plan
+
+- Starting execution for plan `int8-explicit-bounds-diagnostics-20260629`.
+- Baseline tag: `int8-paddle-processing-start-906-g16e84c5d`.
+- Objective: Implement exhaustive boundary logging inside JNI processHeatmap (C++) and NativePaddleEngine unpack/copy loops (Kotlin) to capture raw sizes and index operations at runtime.
+
+## 2026-06-30 - Execute Explicit Diagnostics with Log Flushing Delays Plan
+
+- Starting execution for plan `int8-diagnostics-sleep-20260629`.
+- Baseline tag: `int8-paddle-processing-start-907-g0563bbd5`.
+- Objective: Implement explicit Thread.sleep delays after log statements in Kotlin to guarantee logcat flushing before process termination.
+
+## 2026-06-30 - Execute JNI Split Array Transport with VarHandle Fences Plan
+
+- Starting execution for plan `int8-jni-split-remediation-20260630`.
+- Baseline tag: `int8-paddle-processing-start-908-g8dee0d60`.
+- Objective: Implement nativeProcessHeatmapSplit returning a split Object array (jfloatArray coords, jfloatArray confs, jintArray hist) from C++ JNI, and consume it in Kotlin using VarHandle.fullFence() barriers to flush all diagnostics.
+
+## 2026-06-30 - Execute JNI C++ Diagnostics and POSIX sleeps
+
+- Starting execution for JNI C++ logs in `nativeProcessHeatmapSplit`.
+- Objective: Implement __android_log_print and POSIX usleep inside NativeImageUtils.cpp to capture exact data sizes and coordinates directly from JNI and flush them to logcat.
+
+## 2026-06-30 - Execute Kotlin-side Line-by-Line Diagnostics Plan
+
+- Starting execution for plan `int8-jni-split-remediation-20260630`.
+- Objective: Implement detailed Kotlin-side log prints, VarHandle.fullFence() barriers, and Thread.sleep(200) calls before and after every execution step in detect and detectInference to pinpoint the exact crash location and print returned array sizes.
+
+## 2026-06-30 - Execute x86 float→long-lived int8 copy (no paddle touch)
+
+- Starting execution for plan fix-x86-float-output-copy-to-longlived-int8-no-paddle-involvement-20260630-102641-plan.md
+- Baseline tag: f6b6ea8a
+- Objective: Remove bindOutputInt8 on x86; post-process from long-lived int8 via processHeatmapFromInt8Buffer
+
+## 2026-06-30 - Complete x86 long-lived int8 copy (no paddle touch)
+
+- Completed plan fix-x86-float-output-copy-to-longlived-int8-no-paddle-involvement-20260630-102641-plan.md
+- Final tag pending phase 5 build
+- Changes: removed bindOutputInt8 from x86 wrapper; detect/detectMat use processHeatmapFromInt8Buffer; C++ direct int8 consumer
+
+## 2026-06-30 - Execution start: fix-x86-detect-helper-only-populates-int8-then-uniform-processing-20260630-113237-plan.md
+
+## 2026-06-30 - Uniform int8 detect plan resume (phases 2-5)
+
+- Resume after Phase 1 commit 1890ed19 (helper side-effect only)
+- JNI copyTensorInt8ToBuffer + dequantHeatmapInt8ToFloat ready in working tree
+- Next: ARM output copy, uniform int8 processing, dequant copyHeatmap

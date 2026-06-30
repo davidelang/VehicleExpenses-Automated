@@ -630,6 +630,64 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuant
 }
 
 JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCopyTensorInt8ToBuffer(
+    JNIEnv* env, jobject thiz, jobject tensor, jobject dstBuffer, jint count) {
+    (void)thiz;
+    if (count <= 0) return;
+    void* dst = env->GetDirectBufferAddress(dstBuffer);
+    if (!dst) return;
+    const jlong dstCap = env->GetDirectBufferCapacity(dstBuffer);
+    if (dstCap < count) {
+        LOGE("copyTensorInt8ToBuffer: cap=%lld count=%d", (long long)dstCap, count);
+        return;
+    }
+
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return;
+    }
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    if (!nativePtr) return;
+
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return;
+
+    paddle::lite_api::Tensor* lite_tensor = uptr->get();
+    if (lite_tensor->precision() != paddle::lite_api::PrecisionType::kInt8) {
+        LOGE("copyTensorInt8ToBuffer: expected kInt8 prec=%d", static_cast<int>(lite_tensor->precision()));
+        return;
+    }
+    const int8_t* src = lite_tensor->data<int8_t>();
+    if (!src) return;
+    std::memcpy(dst, src, static_cast<size_t>(count));
+    LOGI("PaddleDiag: copyTensorInt8ToBuffer copied %d bytes to long-lived dest %p", count, dst);
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeDequantHeatmapInt8ToFloat(
+    JNIEnv* env, jobject thiz, jobject int8Buffer, jint count, jfloat scale) {
+    (void)thiz;
+    if (count <= 0) return nullptr;
+    void* raw = env->GetDirectBufferAddress(int8Buffer);
+    if (!raw) return nullptr;
+    const jlong cap = env->GetDirectBufferCapacity(int8Buffer);
+    if (cap < count) return nullptr;
+
+    const int8_t* src = static_cast<const int8_t*>(raw);
+    jfloatArray out = env->NewFloatArray(count);
+    if (!out) return nullptr;
+    std::vector<jfloat> scratch(static_cast<size_t>(count));
+    for (jint i = 0; i < count; ++i) {
+        const uint8_t u_val = static_cast<uint8_t>(src[i] ^ 128);
+        scratch[static_cast<size_t>(i)] = static_cast<jfloat>(u_val) * scale;
+    }
+    env->SetFloatArrayRegion(out, 0, count, scratch.data());
+    return out;
+}
+
+JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindOutputInt8(
     JNIEnv* env, jobject thiz, jobject tensor, jobject srcBuffer,
     jint tensorW, jint tensorH) {

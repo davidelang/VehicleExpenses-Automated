@@ -22,6 +22,14 @@
 # or
 #   ./deploy --preserve-data
 #
+# To capture the same backup artifacts as --preserve-data without build,
+# uninstall, install, or restore (retrieval only):
+#   BACKUP=1 ./deploy
+# or
+#   ./deploy --backup
+#   ./deploy --fetch-data tablet
+# (--backup and --fetch-data are identical.)
+#
 # To restore backed-up data + source zips without building or uninstalling
 # (e.g. after you manually wipe the emulator userdata). User is responsible
 # for wiping the system image if desired before using --restore-data.
@@ -81,6 +89,9 @@ Options:
   -h, --help              Show this help and exit
       --preserve-data     Backup app data, uninstall+reinstall, restore backup
                           (refuses uninstall if backup capture fails)
+      --backup, --fetch-data
+                          Capture test data from device(s) only (same artifacts as
+                          --preserve-data backup step; no build/uninstall/restore)
       --restore-data      Restore latest per-device backup only (no build/uninstall)
       --install-data [DIR]
                           Install data from a chosen backup dir (no build/uninstall).
@@ -88,6 +99,11 @@ Options:
                           Lists available backups if DIR is omitted.
       --clean             Force uninstall before install (signature recovery)
       --push-vehicle-refs Push specific vehicle_ref_*.jpg files/dirs only
+      --push-test-data [DIR]
+                          Stream source zips from a backup dir to device
+                          /sdcard/Download via tar pipe (no local tar file).
+                          Reads source_zips/*.zip or *.zip in the backup dir.
+                          Uses latest backup with zips if DIR is omitted.
 
 Device aliases (see DEVICE_MAP in deploy script):
   tablet, emulator        -> emulator-5554
@@ -95,6 +111,7 @@ Device aliases (see DEVICE_MAP in deploy script):
 
 Environment variables (equivalent to flags where noted):
   PRESERVE_DATA=1         Same as --preserve-data
+  BACKUP=1, FETCH_DATA=1  Same as --backup / --fetch-data
   RESTORE_DATA=1          Same as --restore-data
   INSTALL_DATA=1          Same as --install-data (set SELECTED_BACKUP=... for DIR)
   UNINSTALL_FIRST=1       Same as --clean
@@ -108,11 +125,16 @@ Examples:
   ./deploy
   ./deploy tablet
   ./deploy --preserve-data emulator-5556
+  ./deploy --backup emulator-5556
+  ./deploy --fetch-data tablet
   ./deploy --clean tablet
   ./deploy --restore-data emulator-5556
   ./deploy --install-data test-data-backups/adb-...-20260622-180409 emulator-5556
   ./deploy --install-data adb-...-20260622-180409 emulator-5556
   ./deploy --push-vehicle-refs /path/to/vehicle_ref_1778726321661.jpg tablet
+  ./deploy --push-test-data test-data-backups/emulator-5554-source-zips-... emulator-5556
+
+Environment: PUSH_TEST_DATA=1 (optional SELECTED_BACKUP=... for DIR)
 
 Backups live in ./test-data-backups/<device-or-source>-<timestamp>/ and may contain:
   vehicle_expenses.db.bak, vehicle_refs.tar.gz, pump_photos.tar.gz,
@@ -143,6 +165,75 @@ list_available_backups() {
   ls -td test-data-backups/* 2>/dev/null || echo "(none)"
 }
 
+backup_has_source_zips() {
+  local dir=$1
+  local src
+  src=$(resolve_source_zips_dir "$dir") || return 1
+  [ -n "$src" ]
+}
+
+latest_backup_with_source_zips() {
+  local dir
+  for dir in $(ls -td test-data-backups/* 2>/dev/null); do
+    if backup_has_source_zips "$dir"; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Directory whose *.zip files are streamed to the device (no local tar artifact).
+resolve_source_zips_dir() {
+  local backup_dir=$1
+  shopt -s nullglob
+  local nested=("$backup_dir/source_zips"/*.zip)
+  local top=("$backup_dir"/*.zip)
+  shopt -u nullglob
+  if [ ${#nested[@]} -gt 0 ]; then
+    printf '%s\n' "$backup_dir/source_zips"
+    return 0
+  fi
+  if [ ${#top[@]} -gt 0 ]; then
+    printf '%s\n' "$backup_dir"
+    return 0
+  fi
+  return 1
+}
+
+push_source_zips_to_device() {
+  local DEV=$1
+  local BACKUP_DIR=$2
+  local SRC_DIR
+  local zip_count
+  SRC_DIR=$(resolve_source_zips_dir "$BACKUP_DIR") || {
+    echo "  [push-test-data] No *.zip in $BACKUP_DIR/source_zips/ or $BACKUP_DIR"
+    return 1
+  }
+  shopt -s nullglob
+  local zips=("$SRC_DIR"/*.zip)
+  zip_count=${#zips[@]}
+  shopt -u nullglob
+  echo "  [push-test-data] Streaming $zip_count zip(s) from $SRC_DIR to $DEV:/sdcard/Download (tar pipe, no local tar file)"
+  # Stream gzip tar to device stdin -> extract directly into Download.
+  if tar czf - -C "$SRC_DIR" . | adb -s "$DEV" shell 'mkdir -p /sdcard/Download && cd /sdcard/Download && tar xzf -'; then
+    :
+  else
+    echo "  [push-test-data] Direct tar pipe failed; retrying via transient /sdcard/ve_source_zips.tar.gz on device"
+    if ! tar czf - -C "$SRC_DIR" . | adb -s "$DEV" shell 'cat > /sdcard/ve_source_zips.tar.gz'; then
+      echo "  [push-test-data] Failed to stream tar to $DEV"
+      return 1
+    fi
+    if ! adb -s "$DEV" shell 'mkdir -p /sdcard/Download && cd /sdcard/Download && tar xzf /sdcard/ve_source_zips.tar.gz && rm -f /sdcard/ve_source_zips.tar.gz'; then
+      echo "  [push-test-data] Failed to extract streamed tar on $DEV"
+      adb -s "$DEV" shell 'rm -f /sdcard/ve_source_zips.tar.gz' 2>/dev/null || true
+      return 1
+    fi
+  fi
+  echo "  [push-test-data] Download zips on $DEV:"
+  adb -s "$DEV" shell 'ls -la /sdcard/Download/*.zip 2>/dev/null || true' 2>/dev/null || true
+}
+
 # Parse options with GNU getopt (long options). Remaining args: optional backup name,
 # device targets, optional --, then gradle flags.
 TARGETS=()
@@ -153,9 +244,11 @@ UNINSTALL_FIRST=${UNINSTALL_FIRST:-false}
 RESTORE_DATA=${RESTORE_DATA:-false}
 INSTALL_DATA=${INSTALL_DATA:-false}
 PUSH_VEHICLE_REFS=${PUSH_VEHICLE_REFS:-false}
+PUSH_TEST_DATA=${PUSH_TEST_DATA:-false}
+BACKUP_ONLY=${BACKUP_ONLY:-false}
 SELECTED_BACKUP=${SELECTED_BACKUP:-}
 
-if ! PARSED=$(getopt -o h -l help,preserve-data,restore-data,install-data,clean,push-vehicle-refs -- "$@"); then
+if ! PARSED=$(getopt -o h -l help,preserve-data,backup,fetch-data,restore-data,install-data,clean,push-vehicle-refs,push-test-data -- "$@"); then
   deploy_usage
   exit 1
 fi
@@ -168,6 +261,10 @@ while true; do
       ;;
     --preserve-data)
       PRESERVE_DATA=true
+      shift
+      ;;
+    --backup|--fetch-data)
+      BACKUP_ONLY=true
       shift
       ;;
     --restore-data)
@@ -186,6 +283,10 @@ while true; do
       PUSH_VEHICLE_REFS=true
       shift
       ;;
+    --push-test-data)
+      PUSH_TEST_DATA=true
+      shift
+      ;;
     --)
       shift
       break
@@ -196,7 +297,7 @@ while true; do
   esac
 done
 
-if [ "$INSTALL_DATA" = "true" ] && [ $# -gt 0 ] && is_backup_arg "$1"; then
+if { [ "$INSTALL_DATA" = "true" ] || [ "$PUSH_TEST_DATA" = "true" ]; } && [ $# -gt 0 ] && is_backup_arg "$1"; then
   SELECTED_BACKUP="$1"
   shift
 fi
@@ -227,6 +328,9 @@ if truthy "${UNINSTALL_FIRST}"; then UNINSTALL_FIRST=true; fi
 if truthy "${RESTORE_DATA}"; then RESTORE_DATA=true; fi
 if truthy "${INSTALL_DATA}"; then INSTALL_DATA=true; fi
 if truthy "${PUSH_VEHICLE_REFS}"; then PUSH_VEHICLE_REFS=true; fi
+if truthy "${PUSH_TEST_DATA}"; then PUSH_TEST_DATA=true; fi
+if truthy "${BACKUP}"; then BACKUP_ONLY=true; fi
+if truthy "${FETCH_DATA}"; then BACKUP_ONLY=true; fi
 
 # Export so values survive the primary/ai-code re-execs that happen later.
 export PRESERVE_DATA
@@ -234,7 +338,17 @@ export UNINSTALL_FIRST
 export RESTORE_DATA
 export INSTALL_DATA
 export PUSH_VEHICLE_REFS
+export PUSH_TEST_DATA
+export BACKUP_ONLY
 export SELECTED_BACKUP
+
+# Data-only modes never build; skip primary-user / group re-exec (avoids run-as-primary loops).
+DATA_ONLY_MODE=false
+if [ "$PUSH_TEST_DATA" = "true" ] || [ "$RESTORE_DATA" = "true" ] || \
+   [ "$INSTALL_DATA" = "true" ] || [ "$PUSH_VEHICLE_REFS" = "true" ] || \
+   [ "$BACKUP_ONLY" = "true" ]; then
+  DATA_ONLY_MODE=true
+fi
 
 # Ensure backups dir exists (for PRESERVE_DATA)
 mkdir -p test-data-backups 2>/dev/null || true
@@ -248,7 +362,9 @@ PRIMARY_USER=${PRIMARY_USER:-dlang}
 # signatures across builds/deploys. Running as root uses /root's keystore,
 # which produces a different certificate and triggers
 # INSTALL_FAILED_UPDATE_INCOMPATIBLE.
-if [ "$EUID" -eq 0 ]; then
+if [ "$DATA_ONLY_MODE" = "true" ]; then
+  :
+elif [ "$EUID" -eq 0 ]; then
   echo "Re-executing as $PRIMARY_USER (not root) for consistent signing keystore..."
   if [ -x ./run-as-primary ]; then
     exec ./run-as-primary "$0" "$@"
@@ -261,7 +377,7 @@ fi
 # artifacts are consistently owned by the primary developer (dlang), preventing ownership
 # drift to ai-orchestrator/root and the resulting permission thrashing on cxx/logs/etc.
 CURRENT_USER=$(id -un)
-if [ "$CURRENT_USER" != "$PRIMARY_USER" ]; then
+if [ "$DATA_ONLY_MODE" != "true" ] && [ "$CURRENT_USER" != "$PRIMARY_USER" ]; then
   echo "Re-executing as $PRIMARY_USER for consistent ownership of build artifacts..."
   if [ -x ./run-as-primary ]; then
     exec ./run-as-primary "$0" "$@"
@@ -275,7 +391,7 @@ umask 007
 
 # Ensure ai-shared (for .git/refs, worktree metadata, sandbox) and ai-code (for source tree setgid dirs).
 # Only re-exec once. Prefer ai-shared because it fixes the git providers.exec versionName issue.
-if [ -z "${GROUPS_ACTIVATED:-}" ]; then
+if [ "$DATA_ONLY_MODE" != "true" ] && [ -z "${GROUPS_ACTIVATED:-}" ]; then
   MISSING=""
   for grp in ai-shared ai-code; do
     if ! id -nG | grep -qw "$grp"; then MISSING="$MISSING $grp"; fi
@@ -448,11 +564,13 @@ package_vehicle_refs_from_dir() {
 
 backup_test_data() {
   local DEV=$1
-  if [ "$PRESERVE_DATA" != "true" ]; then return; fi
+  if [ "$PRESERVE_DATA" != "true" ] && [ "$BACKUP_ONLY" != "true" ]; then return; fi
   local TS=$(date +%Y%m%d-%H%M%S)
   local BDIR="test-data-backups/${DEV}-${TS}"
+  local log_tag="[preserve]"
+  if [ "$BACKUP_ONLY" = "true" ]; then log_tag="[backup]"; fi
   mkdir -p "$BDIR"
-  echo "  [preserve] Backing up test data for $DEV -> $BDIR"
+  echo "  $log_tag Backing up test data for $DEV -> $BDIR"
   # DB (vehicle_expenses.db from Room)
   # Write temp copy inside private files/ (run-as can always write there), then stream via cat.
   # This avoids /sdcard permission issues.
@@ -588,7 +706,11 @@ post_restore_ref_hygiene() {
   adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
     rm -f databases/vehicle_expenses.db-shm databases/vehicle_expenses.db-wal 2>/dev/null || true
     rm -rf cache/* 2>/dev/null || true
-    touch files/vehicle_ref_*.jpg 2>/dev/null || true
+    if [ -f files/vehicle_ref_\*.jpg ]; then rm -f files/vehicle_ref_\*.jpg; fi
+    for f in files/vehicle_ref_*.jpg; do
+      [ -f \"\$f\" ] || continue
+      touch \"\$f\"
+    done
     date +%s > files/refdata_version.txt 2>/dev/null || true
   '" 2>/dev/null || true
 }
@@ -666,6 +788,14 @@ verify_restored_vehicle_refs() {
   echo "  [smoke] Vehicle ref listing + md5/DB verify complete for $DEV"
 }
 
+# Stream a host file into app-private files/ via run-as stdin (run-as cannot read /sdcard).
+run_as_stream_to_files() {
+  local DEV=$1
+  local REMOTE_BASENAME=$2
+  local LOCAL_PATH=$3
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cat > files/$REMOTE_BASENAME'" < "$LOCAL_PATH"
+}
+
 push_one_vehicle_ref() {
   local DEV=$1
   local SRC=$2
@@ -679,8 +809,8 @@ push_one_vehicle_ref() {
       ;;
   esac
   echo "    Pushing $bn -> files/$bn on $DEV"
-  adb -s "$DEV" push "$SRC" "/sdcard/$bn" >/dev/null
-  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cp /sdcard/$bn files/$bn && chmod 660 files/$bn && rm -f /sdcard/$bn'" 2>/dev/null || true
+  run_as_stream_to_files "$DEV" "$bn" "$SRC"
+  adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'chmod 660 files/$bn'" 2>/dev/null || true
 }
 
 # Lightweight push of phone-updated vehicle_ref_*.jpg by exact filename (no full backup/restore).
@@ -754,43 +884,42 @@ restore_test_data() {
   local restored_db=false
   local restored_refs=false
 
-  # Restore DB
+  # Restore DB (stream into app-private storage; run-as cannot read /sdcard)
   if [ -f "$LATEST/vehicle_expenses.db.bak" ] && [ -s "$LATEST/vehicle_expenses.db.bak" ]; then
-    adb -s "$DEV" push "$LATEST/vehicle_expenses.db.bak" /sdcard/ve_db.bak >/dev/null
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && cp /sdcard/ve_db.bak databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db'" 2>/dev/null || true
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME rm -f /sdcard/ve_db.bak" 2>/dev/null || true
+    run_as_stream_to_files "$DEV" "ve_db.bak" "$LATEST/vehicle_expenses.db.bak"
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p databases && cp files/ve_db.bak databases/vehicle_expenses.db && chmod 660 databases/vehicle_expenses.db && rm -f files/ve_db.bak'" 2>/dev/null || true
     restored_db=true
   fi
   # Restore dash/reference images (vehicle_ref_*.jpg)
   if [ -f "$LATEST/vehicle_refs.tar.gz" ] && [ -s "$LATEST/vehicle_refs.tar.gz" ]; then
-    adb -s "$DEV" push "$LATEST/vehicle_refs.tar.gz" /sdcard/ve_refs.tar.gz >/dev/null
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'mkdir -p files && cd files && tar xzf /sdcard/ve_refs.tar.gz 2>/dev/null || true; cd ..; rm -f /sdcard/ve_refs.tar.gz'" 2>/dev/null || true
+    run_as_stream_to_files "$DEV" "ve_refs.tar.gz" "$LATEST/vehicle_refs.tar.gz"
+    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c 'cd files && tar xzf ve_refs.tar.gz && rm -f ve_refs.tar.gz'" 2>/dev/null || true
     restored_refs=true
   fi
   # Restore pump pictures (input images the app reads from pump_photos)
   if [ -f "$LATEST/pump_photos.tar.gz" ] && [ -s "$LATEST/pump_photos.tar.gz" ]; then
-    adb -s "$DEV" push "$LATEST/pump_photos.tar.gz" /sdcard/ve_pump_photos.tar.gz >/dev/null
+    run_as_stream_to_files "$DEV" "ve_pump.tar.gz" "$LATEST/pump_photos.tar.gz"
     adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
       EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
       PDIR=\"\$EXTDIR/Android/data/$PACKAGE_NAME/files/pump_photos\"
-      mkdir -p \"\$PDIR\" && cd \"\$PDIR\" && tar xzf /sdcard/ve_pump_photos.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_pump_photos.tar.gz
+      mkdir -p \"\$PDIR\"
+      cd \"\$PDIR\" && tar xzf /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz 2>/dev/null || true
+      rm -f /data/data/$PACKAGE_NAME/files/ve_pump.tar.gz
     '" 2>/dev/null || true
   fi
   # Restore alignment experiment input images (the app reads these from files/experiment_photos)
   if [ -f "$LATEST/alignment_photos.tar.gz" ] && [ -s "$LATEST/alignment_photos.tar.gz" ]; then
-    adb -s "$DEV" push "$LATEST/alignment_photos.tar.gz" /sdcard/ve_alignment_photos.tar.gz >/dev/null
+    run_as_stream_to_files "$DEV" "ve_align.tar.gz" "$LATEST/alignment_photos.tar.gz"
     adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-      mkdir -p files/experiment_photos && cd files/experiment_photos && tar xzf /sdcard/ve_alignment_photos.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_alignment_photos.tar.gz
+      mkdir -p files/experiment_photos
+      cd files/experiment_photos && tar xzf ../ve_align.tar.gz 2>/dev/null || true
+      rm -f ../ve_align.tar.gz
     '" 2>/dev/null || true
   fi
-  # Restore source zips to /sdcard/Download (amazon + pump zips)
+  # Restore source zips to /sdcard/Download (shell user can read /sdcard; run-as cannot)
   if [ -f "$LATEST/ve_source_zips.tar.gz" ] && [ -s "$LATEST/ve_source_zips.tar.gz" ]; then
     adb -s "$DEV" push "$LATEST/ve_source_zips.tar.gz" /sdcard/ve_source_zips.tar.gz >/dev/null
-    adb -s "$DEV" shell "run-as $PACKAGE_NAME sh -c '
-      EXTDIR=\$(echo \$EXTERNAL_STORAGE 2>/dev/null || echo /sdcard)
-      DDIR=\"\$EXTDIR/Download\"
-      mkdir -p \"\$DDIR\" && cd \"\$DDIR\" && tar xzf /sdcard/ve_source_zips.tar.gz 2>/dev/null || true; rm -f /sdcard/ve_source_zips.tar.gz
-    '" 2>/dev/null || true
+    adb -s "$DEV" shell "mkdir -p /sdcard/Download && cd /sdcard/Download && tar xzf /sdcard/ve_source_zips.tar.gz 2>/dev/null; rm -f /sdcard/ve_source_zips.tar.gz" 2>/dev/null || true
   fi
   # Post-restore cache bust + clean launch (Coil disk cache + Room WAL) when DB or refs were restored.
   if [ "$restored_db" = true ] || [ "$restored_refs" = true ]; then
@@ -800,6 +929,70 @@ restore_test_data() {
   adb -s "$DEV" shell "am force-stop $PACKAGE_NAME" 2>/dev/null || true
   adb -s "$DEV" shell "am start -n $PACKAGE_NAME/.MainActivity --activity-clear-task" 2>/dev/null || true
 }
+
+run_push_test_data_mode() {
+  local BACKUP_TO_USE
+  echo "=== --push-test-data: push source zips to device Download (no build, no uninstall) ==="
+  BACKUP_TO_USE=$(resolve_backup_dir "$SELECTED_BACKUP")
+  if [ -z "$BACKUP_TO_USE" ]; then
+    BACKUP_TO_USE=$(latest_backup_with_source_zips || true)
+  fi
+  if [ -z "$BACKUP_TO_USE" ]; then
+    echo "No backup with source zips found (need source_zips/*.zip or *.zip in backup dir)."
+    list_available_backups
+    echo
+    echo "Usage: ./deploy --push-test-data [test-data-backups/<name>] [dev...]"
+    echo "Run ./deploy --help for more."
+    return 1
+  fi
+  if [ ${#TARGETS[@]} -eq 0 ]; then
+    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
+    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
+      echo "No connected devices found."
+      return 1
+    fi
+    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+      push_source_zips_to_device "$DEVICE_ID" "$BACKUP_TO_USE"
+    done
+  else
+    for TARGET in "${TARGETS[@]}"; do
+      if [ -z "$TARGET" ]; then continue; fi
+      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
+      echo "Pushing test data zips to $TARGET ($DEVICE_ID)..."
+      push_source_zips_to_device "$DEVICE_ID" "$BACKUP_TO_USE"
+    done
+  fi
+  echo "=== --push-test-data complete ==="
+  return 0
+}
+
+run_backup_only_mode() {
+  echo "=== --backup/--fetch-data: capture test data from device(s) only (no build, no uninstall) ==="
+  if [ ${#TARGETS[@]} -eq 0 ]; then
+    mapfile -t ALL_DEVICES < <(adb devices | awk '$2 == "device" {print $1}')
+    if [ ${#ALL_DEVICES[@]} -eq 0 ]; then
+      echo "No connected devices found."
+      return 1
+    fi
+    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+      backup_test_data "$DEVICE_ID"
+    done
+  else
+    for TARGET in "${TARGETS[@]}"; do
+      if [ -z "$TARGET" ]; then continue; fi
+      DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
+      echo "Backing up from $TARGET ($DEVICE_ID)..."
+      backup_test_data "$DEVICE_ID"
+    done
+  fi
+  echo "=== --backup/--fetch-data complete ==="
+  return 0
+}
+
+if [ "$PUSH_TEST_DATA" = "true" ]; then
+  run_push_test_data_mode || exit 1
+  exit 0
+fi
 
 if [ "$PUSH_VEHICLE_REFS" = "true" ]; then
   echo "=== --push-vehicle-refs: push specific vehicle_ref_*.jpg only (no build, no uninstall) ==="
@@ -895,6 +1088,11 @@ run_install_data_mode() {
 
 if [ "$INSTALL_DATA" = "true" ]; then
   run_install_data_mode || exit 1
+  exit 0
+fi
+
+if [ "$BACKUP_ONLY" = "true" ]; then
+  run_backup_only_mode || exit 1
   exit 0
 fi
 

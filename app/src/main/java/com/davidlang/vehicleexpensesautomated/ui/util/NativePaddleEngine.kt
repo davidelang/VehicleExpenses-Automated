@@ -411,13 +411,23 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
 
-            // x86_64: float model output → copy to long-lived int8 (side-effect only)
-            if (!isArm) {
-                wrapX86DetectorOutputAsInt8(outputTensor, dims, "detect tier=$tierScale", tierScale = tierScale)
-            }
-            val x86Int8Buf = if (!isArm) sharedTierBuffers[tierScale] else null
             val outW = dims[3].toInt()
             val outH = dims[2].toInt()
+            val expected = outW * outH
+            // Populate long-lived int8: ARM copies kInt8 output; x86 quantizes temp float via helper
+            if (!isArm) {
+                wrapX86DetectorOutputAsInt8(outputTensor, dims, "detect tier=$tierScale", tierScale = tierScale)
+            } else {
+                val int8Buf = sharedTierBuffers[tierScale]!!
+                int8Buf.clear()
+                NativeImageUtils.copyTensorInt8ToBuffer(outputTensor, int8Buf, expected)
+                int8Buf.position(0)
+                Log.i(
+                    "PaddleDiag",
+                    "detect tier=$tierScale copied kInt8 output to long-lived int8 buf cap=${int8Buf.capacity()} w*h=$expected",
+                )
+            }
+            val x86Int8Buf = if (!isArm) sharedTierBuffers[tierScale] else null
 
             val tNativePost0 = System.nanoTime()
             val nativeRes = if (!isArm && x86Int8Buf != null) {
@@ -517,12 +527,22 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
 
+            val expected = w * h
             if (!isArm) {
                 Log.i("PaddleDiag", "detectMat before wrapper ${w}x$h")
                 wrapX86DetectorOutputAsInt8(
                     outputTensor, dims, "detectMat ${w}x$h", useMaxInt8Buffer = true,
                 )
                 Log.i("PaddleDiag", "detectMat after wrapper ${w}x$h")
+            } else {
+                val longLived = sharedMaxInt8Buffer!!
+                longLived.clear()
+                NativeImageUtils.copyTensorInt8ToBuffer(outputTensor, longLived, expected)
+                longLived.position(0)
+                Log.i(
+                    "PaddleDiag",
+                    "detectMat ${w}x$h copied kInt8 output to long-lived int8 buf cap=${longLived.capacity()} w*h=$expected",
+                )
             }
             val x86Int8Buf = if (!isArm) sharedMaxInt8Buffer else null
 

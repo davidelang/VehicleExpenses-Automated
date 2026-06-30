@@ -191,6 +191,16 @@ object NativeImageUtils {
         nativeQuantizeFloatHeatmapToInt8(src, dst, count, scale)
     }
 
+    /** ARM: copy kInt8 detector output tensor into long-lived int8 buffer (no Paddle rebind). */
+    fun copyTensorInt8ToBuffer(tensor: Any, dst: ByteBuffer, count: Int) {
+        nativeCopyTensorInt8ToBuffer(tensor, dst, count)
+    }
+
+    /** Dequant long-lived int8 heatmap to FloatArray for copyHeatmap (both arches). */
+    fun dequantHeatmapInt8ToFloat(int8Buf: ByteBuffer, count: Int, scale: Float): FloatArray? {
+        return nativeDequantHeatmapInt8ToFloat(int8Buf, count, scale)
+    }
+
     /** Rebind detector output tensor to int8 backing store for kInt8 processHeatmap path. */
     fun bindOutputInt8(tensor: Any, src: ByteBuffer, tensorW: Int, tensorH: Int) {
         nativeBindOutputInt8(tensor, src, tensorW, tensorH)
@@ -333,6 +343,8 @@ object NativeImageUtils {
     private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
     private external fun nativeBindInputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
     private external fun nativeQuantizeFloatHeatmapToInt8(src: FloatArray, dstBuffer: java.nio.ByteBuffer, count: Int, scale: Float)
+    private external fun nativeCopyTensorInt8ToBuffer(tensor: Any, dstBuffer: java.nio.ByteBuffer, count: Int)
+    private external fun nativeDequantHeatmapInt8ToFloat(int8Buf: java.nio.ByteBuffer, count: Int, scale: Float): FloatArray?
     private external fun nativeBindOutputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
     private external fun nativeProcessHeatmapFromInt8Buffer(
         int8Buf: java.nio.ByteBuffer,
