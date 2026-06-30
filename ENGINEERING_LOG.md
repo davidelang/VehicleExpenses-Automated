@@ -350,3 +350,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Phase 3 (c66c07f4): uniform processHeatmapFromInt8Buffer both arches
 - Phase 4 (1835bd76): DET_HEATMAP_INT8_U_THRESHOLD=4; copyHeatmap via dequant
 - Phase 5: audit — no floatData/processHeatmap arch branch in detect paths; rec unchanged
+
+## 2026-06-30 - Execute ARM direct int8 output bind plan (baseline 68c9b094)
+
+- Plan: fix-arm-direct-int8-write-no-copy-plus-proper-arm-emulator-20260630-130648
+- Goal: ARM bindOutputInt8 before run (no post-run copy); x86 helper unchanged; emulator-5556 arm64 AVD notes
