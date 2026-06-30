@@ -188,3 +188,8 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 
 - Executing plan: landmarks-edit-buttons-refinement-20260630-plan.md
 - Phase 1: LandmarkDebugDialog.kt header button refinements (X edit-mode revert, remove Cancel, IconButton +, bare save icon)
+
+## 2026-06-30 - landmarks-edit-buttons-refinement Phase 2 verification
+
+- Forensic verify: X edit-mode revert, no Cancel, IconButton +, bare save icon, compact padding
+- Phase 2 final verification build
