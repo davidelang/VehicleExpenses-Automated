@@ -224,6 +224,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             try {
                 System.loadLibrary("paddle_lite_jni")
                 val arch = if (Build.SUPPORTED_ABIS[0].contains("arm")) "armv8" else "x86_64"
+                Log.i("PaddleDiag", "arch=$arch isX86=${!Build.SUPPORTED_ABIS[0].contains("arm")}")
 
                 fun copy(p: String): String {
                     val f = File(context.filesDir, p.replace("/", "_"))
@@ -236,6 +237,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     if (Build.SUPPORTED_ABIS[0].contains("arm")) "paddle/det_v4_4000_mono_int8_$arch.nb"
                     else "paddle/det_v4_4000_mono_$arch.nb"
                 )
+                Log.i("PaddleDiag", "detPath=$detPath")
                 val tCopy = System.currentTimeMillis() - tCopy0
                 Log.i("PaddleLite", "Model copying took ${tCopy}ms")
 
@@ -327,11 +329,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         try {
             val tJniIn0 = System.nanoTime()
+            Log.i("PaddleDiag", "before bindInput tier=$tierScale x86=${!Build.SUPPORTED_ABIS[0].contains("arm")}")
             NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, tierScale, tierScale)
+            Log.i("PaddleDiag", "after bindInput tier=$tierScale")
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
             predictor.run()
+            Log.i("PaddleDiag", "after run tier=$tierScale")
             val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
             val tJniOut0 = System.nanoTime()

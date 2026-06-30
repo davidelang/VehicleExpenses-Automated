@@ -71,6 +71,8 @@
 
 - [x] Executing plan dev-ai-interaction/plans/x86_64-detector-float-output-int8-conversion-wrapper-20260630-plan.md: x86_64 float det model load + C++ float→int8 wrapper in detect/detectMat (ARM path untouched).
 
+- [ ] Executing plan dev-ai-interaction/plans/fix-x86-detector-int8-input-mismatch-20260630-plan.md: x86_64 float detector input path + PaddleDiag logs (ARM int8 input unchanged).
+
 # Future work
 - [x] x86_64 / Android emulator ("amd64") path for detector: in detect() and detectMat() (and related post-run sites), on x86 output floats from the model to a temp buffer, then (C++ only) convert/quantize to the exact int8 buffer + format that the existing kInt8 branch in processHeatmap / nativeProcessHeatmap expects (using the same scale/remap as ARM int8 models). All conversion logic in C++. This lets the rest of the (int8-expecting) detection post-processing code stay unchanged.
 - [ ] Explore eliminating the float buffer for recognition later: rec already uses identical int8 input quant (to 48x320 buffer). If int8 logits + native decode is a win on arm, apply analogous C++ float->int8 conversion wrapper on x86_64 for the decodeOcrV3 path. Keep all conversions in C++.
