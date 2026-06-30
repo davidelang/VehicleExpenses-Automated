@@ -5,7 +5,7 @@ This file (AGENTS.md) is the entry point for agent CLIs in this multi-agent Vehi
 ## Immediate Reads (on every start / after /compact)
 1. Read `./AGENT_CONTEXT.md` — your identity, current branch/role, sandbox location, and agent-specific notes. (If missing, refer to `./master/AGENT_CONTEXT.md` as a template reference for variables and layout, and determine your Role/Branch from `git status`).
 2. Read your CLI-specific thin overlay: `./GROK.md` (for Grok) or `./GEMINI.md` (for Antigravity).
-3. Read `./AGENT_MANDATES.md` — the **shared core** for *all* agent CLIs (bi-modal workflow, STOP & WAIT, forensic verification + build_app, 3-3-3 strikes, three git reset contexts with preflight, ICRS or raw pixel coordinates only, no deployment + shared hardware, per-branch tags, old plans directory rule, re-read after compaction, etc.).
+3. Read `./AGENT_MANDATES.md` — the **shared core** for *all* agent CLIs (bi-modal workflow, STOP & WAIT, forensic verification + build_app, Baseball Rule, three git reset contexts with preflight, ICRS or raw pixel coordinates only, no deployment + shared hardware, per-branch tags, old plans directory rule, re-read after compaction, etc.).
 
 **Do NOT re-read system configuration files on every turn** (they are already in context via the harness).
 

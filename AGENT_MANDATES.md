@@ -83,7 +83,7 @@ The user may (and is encouraged to) provide rich problem descriptions, high-leve
 
 **Research tool power (do not self-restrict):** You may and should freely use the complete set of investigative commands: any form of git log (git log -S, git log --oneline -p, ranges, git show, git diff, git describe, etc.), adb logcat (including -d dumps and filters for device/runtime logs and reports), adb pull/shell for device inspection, cat/tail/find/jq/ls on logs, artifacts, sandbox contents, and build outputs. The project .grok/config and plan-mode-hard-stops hook whitelist these explicitly for planning. 'etc.' means the full useful shell for understanding history and device behavior — not just the minimal ls/git-status examples. Pure research questions are answered directly with tools.
 
-Produce a high-signal, low-boilerplate document focused on the specific work of *this* turn. Literally include the *exact verbatim content* of the file `standard-plan-compliance-block.md` as a section titled 'Compliance & Execution Guardrails for This Turn (STANDARD BLOCK)'. Do not modify, add to, or rephrase anything inside that block. Reference the live mandates for background rules instead of repeating policy text. The plan is the precise scope + steps contract for this turn. You have zero authority to make source changes outside the sandbox (except the explicit TODO.md exception noted above: planners may edit the tracked root TODO.md). You must **not** call exit_plan_mode or any other action that signals 'the plan is ready for approval'. As you interact with the user, update the plan file with revisions and keep project-facts.md to stable layout facts and key "where things live" locations only. Before editing, perform hygiene (full read). Do not put plan references, branch, tags, or execution details in it. Roll transient material to ENGINEERING_LOG or the plan. Output only the full path to the plan file you created/updated plus a short summary of what you changed based on the latest user feedback. Stop. When spawning, prefer capability_mode=\"execute\" for full shell access during research."
+Produce a high-signal, low-boilerplate document focused on the specific work of *this* turn. Literally include the *exact verbatim content* of the file `standard-plan-compliance-block.md` as a section titled 'Compliance & Execution Guardrails for This Turn (STANDARD BLOCK)'. Do not modify, add to, or rephrase anything inside that block. Reference the live mandates for background rules instead of repeating policy text. Use section name **Phased Execution** (not Phased Small-Step). Each phase lists what changes, which files, and observable success only — do not repeat per-phase gate checklist (STANDARD BLOCK covers gates). No Mandate Acknowledgment section in sandbox plans. See `dev-ai-interaction/research/plan-style-guide.md`. For recovery after end of inning: read `implementation-failure-logs/*-inning-end.md` first; include **Already completed (exclude)** subsection. The plan is the precise scope + steps contract for this turn. You have zero authority to make source changes outside the sandbox (except the explicit TODO.md exception noted above: planners may edit the tracked root TODO.md). You must **not** call exit_plan_mode or any other action that signals 'the plan is ready for approval'. As you interact with the user, update the plan file with revisions and keep project-facts.md to stable layout facts and key "where things live" locations only. Before editing, perform hygiene (full read). Do not put plan references, branch, tags, or execution details in it. Roll transient material to ENGINEERING_LOG or the plan. Output only the full path to the plan file you created/updated plus a short summary of what you changed based on the latest user feedback. Stop. When spawning, prefer capability_mode=\"execute\" for full shell access during research."
 
   2. The main agent receives the produced plan path, reads the plan document, and can present a summary to the user (or simply direct the user to review the file in dev-ai-interaction/plans/).
 
@@ -94,14 +94,11 @@ Produce a high-signal, low-boilerplate document focused on the specific work of 
   5. The main agent then spawns a dedicated **Execution Sub-agent** (narrow prompt) with the approved plan injected:
      "You are the Execution Sub-agent for this turn only. Implement *precisely and only* the changes described in the following approved plan: [full content or clear reference to the file]. Do not add extra features, 'improvements,' or cleanups. 
 
-**Mandatory ultra-micro phased discipline (non-negotiable):** The approved plan will have decomposed the work into many named ultra-small phases. For each phase:
-- Perform the minimal edit for that phase only.
-- Immediately do narrow forensic `read_file` (offset/limit on the exact site) + targeted grep before and after the edit.
-- `git add` the changed tracked source(s) + ENGINEERING_LOG.md. (The ENGINEERING_LOG.md update itself MUST be performed via the `./append-to-engineering-log` wrapper.)
-- Run `./build_app` and confirm success (record the new branch-scoped builds tag).
-- Only after a successful `./build_app` for the current phase may you begin edits for the next phase.
+**Mandatory phased discipline with per-phase gates (non-negotiable):** Follow the approved plan's **Phased Execution** section. Each phase is a coherent unit of work. Per-phase gates (forensic read/grep, `git add`, successful `./build_app` before next phase) are in the STANDARD BLOCK and Baseball Rule — do not skip them.
 
-First action: use `./append-to-engineering-log` to record execution start. Use forensic reads before/after every edit. On any failure or partial reset, only the tag of the most recent successful phase (obtained via `./get-builds-tag.sh` preflight) may be used for recovery. At the very end, after the final successful build + post-forensic verification, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' followed by 'results ready to test (new tag: ...)' and then stop completely. Parent/main agent will review your changes for fidelity to the plan.
+For each phase: perform the edit for that phase only; run gates; record the branch-scoped builds tag on success. On strike/out, follow Baseball Rule (3 strikes = out; 3 outs = end of inning → write inning-end report before any replan). On partial reset, only the tag of the most recent successful phase (`./get-builds-tag.sh` preflight) may be used.
+
+First action: `./append-to-engineering-log` for execution start. At the very end, after the final successful build + post-forensic verification, output the exact marker '**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**' followed by 'results ready to test (new tag: ...)' and then stop completely. Parent/main agent will review your changes for fidelity to the plan.
 
 When reading project-facts.md: always read the *full* file (no offset/limit or tail). If large, report its size for separate work. When appending to ENGINEERING_LOG.md: *only append* a new dated entry at the end — never edit prior sections.
 
@@ -126,9 +123,9 @@ The planner prompt the master writes now contains strong safeguards: the high-le
 
 **RESEARCH CAPABILITIES — FULL INVESTIGATION POWER:** Use the complete toolset for research. This explicitly includes full git history commands in any form (git log with -S/-p/ranges/etc., git show, git diff, git describe, ...), adb logcat (dumps, filters, all flags) + adb pull/shell for device logs and reports, cat/tail/find/jq on sandbox artifacts and logs, and any other shell needed to investigate code, history, or runtime behavior. The project whitelists these; do not wait for reminders.
 
-Your *only* job is research and iteratively producing/revising the highest-quality plan document in dev-ai-interaction/plans/ using the standard structure (including the exact naming guidance for plan files). Produce a high-signal, low-boilerplate document focused on the specific work of *this* turn. Literally include the *exact verbatim content* of the file `standard-plan-compliance-block.md` as a section titled 'Compliance & Execution Guardrails for This Turn (STANDARD BLOCK)'. Do not modify, add to, or rephrase anything inside that block. Reference the live mandates for background rules instead of repeating policy text.
+Your *only* job is research and iteratively producing/revising the highest-quality plan document in dev-ai-interaction/plans/ using the standard structure (including the exact naming guidance for plan files). Produce a high-signal, low-boilerplate document focused on the specific work of *this* turn. Literally include the *exact verbatim content* of the file `standard-plan-compliance-block.md` as a section titled 'Compliance & Execution Guardrails for This Turn (STANDARD BLOCK)'. Do not modify, add to, or rephrase anything inside that block. Reference the live mandates for background rules instead of repeating policy text. Use **Phased Execution** section name; phases = what + success criteria only (see `dev-ai-interaction/research/plan-style-guide.md`). No Mandate Acknowledgment in plans.
 
-  This process is intended to be long-lived across multiple planning cycles. When the master indicates that a new planning cycle has begun (by telling you to restart with an updated prompt file), you must restart this terminal/process with the new prompt to load the latest instructions and standard block. Until a restart is requested, after every `**END OF EXECUTION TURN**` marker or when the user says 'new planning cycle' (directly to the planner or via master), you must first perform the mandatory failure detection (scan implementation-failure-logs/* and .planning-agent-prompt.txt context, use tools to verify whether the specific gaps are actually resolved in the current code state, ask the user if any are unresolved), then re-read project-facts.md (full read + hygiene prune first), start with a fresh high-signal plan for the new request (or recovery if directed), and follow all the rules in this prompt and the referenced mandates. If no unresolved failure, behave as a clean default new cycle (solicit the problem as if the master had just received a bare "New planning cycle"). The plan is the precise scope + steps contract for the current cycle. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at dev-ai-interaction/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision."
+  This process is intended to be long-lived across multiple planning cycles. When the master indicates that a new planning cycle has begun (by telling you to restart with an updated prompt file), you must restart this terminal/process with the new prompt to load the latest instructions and standard block. Until a restart is requested, after every `**END OF EXECUTION TURN**` marker or when the user says 'new planning cycle' (directly to the planner or via master), you must first perform the mandatory failure detection (scan `implementation-failure-logs/*` including `*-inning-end.md`, and `.planning-agent-prompt.txt` context; use tools to verify whether gaps are resolved; ask the user if unresolved). For recovery planning, read any inning-end report first and exclude completed phases. Then re-read project-facts.md (full read + hygiene prune first), start with a fresh high-signal plan for the new request (or recovery if directed), and follow all the rules in this prompt and the referenced mandates. If no unresolved failure, behave as a clean default new cycle (solicit the problem as if the master had just received a bare "New planning cycle"). The plan is the precise scope + steps contract for the current cycle. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at dev-ai-interaction/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision."
 
   The main agent should write this prompt to the standard location `dev-ai-interaction/.planning-agent-prompt.txt`.
 
@@ -165,10 +162,32 @@ Only treat a situation as full restart/abandonment if the user explicitly uses l
 
   After a build is completed you do NOT revert to before that without explicit user approval. Instead you treat feedback/corrections as the start of the next turn. Once you have completed the build for the turn and handed the results off to the user for testing, the turn is considered finished. Reverting changes from a completed, built, and handed-off turn requires explicit user approval and is not automatic. User feedback after the handoff is treated as the start of the *next* planning turn.
 
-## Stability & Build Policy (3-3-3 Rule)
-- **Strike 1-3:** You have 3 attempts to fix a build failure. After the 3rd failure, you MUST reset using an approved context.
-- **Strike 4-6:** After reset, you have 3 more attempts. After the 6th failure, you MUST reset.
-- **Strike 7-9:** Final 3 attempts. After the 9th failure, you MUST reset and perform a **Mandatory Forensic Analysis** (analyze root cause, propose a decomposed plan).
+## Stability & Build Policy (Baseball Rule)
+
+Think baseball at the plate: a **strike** is a failed attempt on the current chunk of work. **Three strikes = one out.** An **out** requires reset to last known-good build before trying again. **Three outs = end of inning** at the current plan granularity — execution stops, an **End of Inning Report** is written, and only then may the planner produce a revised plan.
+
+### Strikes and outs (mapping from former 3-3-3 rule)
+| Strikes (cumulative) | Event |
+|----------------------|--------|
+| 1, 2 | Strikes — retry on same chunk after diagnosis |
+| **3** | **1st out** → reset, resume at current plan granularity |
+| 4, 5 | Strikes |
+| **6** | **2nd out** → reset |
+| 7, 8 | Strikes |
+| **9** | **3rd out** → **end of inning** → mandatory report + replan (no further edits on this plan) |
+
+- **Strike:** Failed `./build_app`, edit that regresses the tree, or other recoverable failure on the current phase/chunk.
+- **Out (3 strikes or egregious):** Reset using approved context (`./get-builds-tag.sh` preflight → `git reset --hard` to last successful **phase** tag, or branch `builds` tag per Git Reset Rules). Append strike/out summary to `ENGINEERING_LOG.md` via wrapper.
+- **Egregious failure (immediate out, <3 strikes):** Catastrophic or policy-breaking edit — mass deletion, wrong worktree/branch, Foundational Mandate violation, corrupting unrelated files, whole-phase revert required. Counts as one out immediately; still document in the inning report trail.
+
+### End of inning (3rd out) — mandatory before replan
+When the **3rd out** occurs, the executor (or master on its behalf) **must not** blindly split phases. First write an **End of Inning Report** to:
+
+`dev-ai-interaction/implementation-failure-logs/<date>-<short-plan-slug>-inning-end.md`
+
+Use the template in `dev-ai-interaction/research/inning-end-report-template.md`. The planner reads this file as primary input for recovery. Only after the report exists may the planner author a **new** sandbox plan path. Recovery plans must reference the report and include an **Already completed (exclude)** subsection (phases delivered before the inning ended — do not replan them).
+
+**Phasing default:** Plans start with the **fewest coherent phases** that remain independently verifiable (each phase: forensic read/grep + `git add` + successful `./build_app` before the next). Typical modest UI/feature work: **~3–8 phases**. Finer decomposition belongs in the **post–inning-end** recovery plan, informed by the report — not as the default first attempt.
 
 ## Git Reset Rules (CRITICAL — Three Distinct Contexts Only)
 **Preflight required before every non-HEAD reset** (verify the tag actually exists on the current branch).
@@ -197,7 +216,7 @@ git reset --hard "$TAG"
 - Allowed: `git checkout .`, `git restore .`, `git reset --hard HEAD`
 - Purpose: drop unstaged/staged changes without moving the branch pointer.
 
-### 2. Build-failure / 3-3-3 recovery (restore last known-good build)
+### 2. Build-failure / Baseball Rule recovery (restore last known-good build)
 - Allowed: `git reset --hard builds` (on `master`) or `git reset --hard <current-branch>/builds`
 - **Forbidden in this context:** bare `builds` from a feature worktree, `master/builds`, resetting to a different branch's tag.
 
@@ -273,39 +292,17 @@ A formal plan document is **required** before you make *any* changes to tracked 
 
 The filesystem mtime on the plan file is the authoritative timestamp. A date/time suffix in the filename (such as `-20260614-143022`) is optional and only useful for human sorting or when archiving into `historical-plans/`. When a timestamp is included in the name, use at least second-level granularity (`YYYYMMDD-HHMMSS`) so that multiple plans created on the same day remain easily distinguishable and sortable by filename. Day-only timestamps (e.g. `20260614`) add little value beyond what the filesystem already provides and should be avoided.
 
-- The plan must use the standard structure: Context (why this change), Recommended Approach (chosen over alternatives), Critical Files (exact paths), Existing Functions/Utilities to reuse (with file paths), Phased Small-Step Execution (forensic + build milestones), Verification (end-to-end criteria), and explicit handoff requirements (engineering log first via `./append-to-engineering-log` wrapper, forensic reads, ./build_app, **END OF EXECUTION TURN** marker + "results ready to test").
+- The plan must use the standard structure: Context (why this change), Recommended Approach (chosen over alternatives), Critical Files (exact paths), Existing Functions/Utilities to reuse (with file paths), **Phased Execution** (what changes per phase + observable success — not repeated gate checklists), Verification (end-to-end criteria). Per-phase forensic + `./build_app` gates are in the STANDARD BLOCK and Baseball Rule.
 
-- **Phased Small-Step Execution must be ultra-micro with per-phase success gates**: The "Phased Small-Step Execution" section **must** decompose the work into as many explicitly named, ultra-small phases as needed to keep each phase the smallest practical observable unit of work that can be forensically verified in isolation and completed with a successful `./build_app`. There is no target number of phases (more smaller phases is better than fewer larger ones, as long as each is a verifiable step). Every phase **must terminate with** narrow forensic `read_file` (offset/limit) + targeted grep before/after the edit + `git add` (changed tracked sources + ENGINEERING_LOG.md) + a confirmed successful `./build_app` (new branch-scoped builds tag recorded) **before the next phase's edits may begin**. (ENGINEERING_LOG.md updates use `./append-to-engineering-log` wrapper exclusively.) On trouble, user-directed partial reset, or recovery, only the tag of the most recent successful phase's `./build_app` may be used (after `./get-builds-tag.sh` preflight). This discipline is mandatory for safe, auditable execution turns.
+- **Phased Execution granularity:** Decompose into the **fewest coherent phases** that remain independently verifiable (~3–8 typical for modest features). Each phase names what changes, which files, and how to observe success. Do **not** repeat forensic/git add/build ritual in every phase line — the STANDARD BLOCK covers gates once. Finer micro-steps belong only in a **recovery plan after end of inning**, using the End of Inning Report as input; recovery plans must include **Already completed (exclude)**.
+
+- **Plan-writing bans:** No Mandate Acknowledgment section in sandbox plans. No `./build_app @file` syntax. No "ultra-micro" / "maximum granularity" language unless documenting post–inning-end recovery. See `dev-ai-interaction/research/plan-style-guide.md`.
 
 Plan filenames should follow the naming guidance above (descriptive kebab-case primary; granular timestamp only when it adds real value over filesystem mtime).
 
-**Important: Plans must be high-signal documents, not policy restatements.** The standard structure exists to describe the *specific work of this turn*. Do not paste long sections of AGENT_MANDATES.md, new_grok_agent_prompt, or prior plans into every Context or Phased section. Reference the live mandates for background rules. 
+**Important: Plans must be high-signal documents, not policy restatements.** The standard structure describes the *specific work of this turn*. Do not paste long sections of AGENT_MANDATES.md, new_grok_agent_prompt, or prior plans into Context or Phased Execution. Reference the live mandates for background rules.
 
-**Mandatory: Include the exact verbatim content of `standard-plan-compliance-block.md` (or the block defined below) as a section titled "Compliance & Execution Guardrails for This Turn (STANDARD BLOCK)". Do not modify the wording inside the block.** This standardized, recognizable block makes drift obvious on review. The plan is the precise scope contract for this turn; the mandates are the standing rules (re-read on launch, compaction, and new cycles as required).
-
-**Canonical "Compliance & Execution Guardrails for This Turn" (STANDARD BLOCK — this text lives in standard-plan-compliance-block.md (repo root) and must appear verbatim):**
-
-## COMPLIANCE & EXECUTION GUARDRAILS (STANDARD BLOCK v2026-06-14 — DO NOT MODIFY THIS SECTION)
-
-- This plan is the authoritative scope for the turn. Implement *precisely and only* the observable changes described in the "Phased Small-Step Execution" section below. No additional refactors, cleanups, "improvements," or scope creep.
-
-- Execution start (after explicit user magic approval that names *this exact sandbox plan path*): re-read this plan + project-facts.md (perform hygiene prune first). Use `./append-to-engineering-log` to record the execution start note as the very first action.
-
-- Use narrow forensic `read_file` (offset/limit focused on the exact change site) + targeted grep verification before and after every edit.
-
-- Before each `./build_app`: `git add` the changed tracked source file(s) + `ENGINEERING_LOG.md` (the log update itself performed via the `./append-to-engineering-log` wrapper). (Stable facts updates to project-facts.md are tracked and may be included when relevant.)
-
-- project-facts.md updates: only new stable facts/locations that would be true for other work on the tree. Read the full file. ENGINEERING_LOG.md is append-only.
-
-- All sandbox writes use the absolute path `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`. Never use `..`.
-
-- Harness `~/.grok/sessions/.../plan.md` receives *only* a minimal process log entry that references this exact sandbox plan path (roll prior bulk to historical-plans/ if needed).
-
-- At the very end, after the final successful build + post-forensic verification: output the exact marker "**END OF EXECUTION TURN. Awaiting new directive or plan approval before any further source changes or investigation that leads to edits.**" followed by "results ready to test" (include the new tag).
-
-- An independent Compliance Checker is *always* run by the master after the marker. The checker's *primary* responsibility is semantic verification: do the actual code changes solve the problem stated in the plan and deliver the required observable results? (Process rituals are secondary.) Checker PASS on the primary criterion is required before cleaning any implementation-failure-logs for this plan. Every plan must reference this.
-
-- Full standing rules (bi-modal workflow, handoff boundaries, 3-3-3 strikes, allowed reset contexts only with preflight via `./get-builds-tag.sh`, no deployment, ICRS or raw pixel coordinates, always-run checker after execution, mandatory failure detection on planner startup and on 'new planning cycle' phrase in planner, cleanup on checker success, etc.): see the live `AGENT_MANDATES.md`, `MULTI_AGENT_USER_INSTRUCTIONS.md`, and `new_grok_agent_prompt` (re-read on every fresh launch, after compaction, and at start of new cycles).
+**Mandatory: Include the exact verbatim content of `standard-plan-compliance-block.md` (repo root) as a section titled "Compliance & Execution Guardrails for This Turn (STANDARD BLOCK)". Do not modify the wording inside the block.** Single source of truth — do not duplicate the block elsewhere in mandates or plans.
 
 The "approved plan" for feature work is always the content of the designated sandbox file the user explicitly named, never the harness session plan.md or any historical archive. project-facts.md (at the worktree root) supplies stable "where things live" facts so agents avoid repeated searches on startup.
 
