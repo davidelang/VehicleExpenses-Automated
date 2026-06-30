@@ -229,7 +229,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
 
                 val tCopy0 = System.currentTimeMillis()
-                val detPath = copy("paddle/det_v4_4000_mono_int8_$arch.nb")
+                val detPath = copy(
+                    if (Build.SUPPORTED_ABIS[0].contains("arm")) "paddle/det_v4_4000_mono_int8_$arch.nb"
+                    else "paddle/det_v4_4000_mono_$arch.nb"
+                )
                 val tCopy = System.currentTimeMillis() - tCopy0
                 Log.i("PaddleLite", "Model copying took ${tCopy}ms")
 
