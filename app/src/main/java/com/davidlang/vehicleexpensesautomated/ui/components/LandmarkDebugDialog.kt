@@ -159,21 +159,29 @@ fun LandmarkDebugDialog(
                                         dstSize = androidx.compose.ui.unit.IntSize(dw.toInt(), dh.toInt())
                                     )
 
-                                        fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color) {
+                                        fun drawIcrsRect(rect: androidx.compose.ui.geometry.Rect, color: Color, fillAlpha: Float = 0f) {
                                             val p1 = IcrsMath.icrsToPixel(rect.left, rect.top, imgW.toInt(), imgH.toInt())
                                             val p2 = IcrsMath.icrsToPixel(rect.right, rect.bottom, imgW.toInt(), imgH.toInt())
-                                            drawRect(color = color, topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh), size = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh), style = Stroke(2f))
+                                            val topLeft = Offset(p1.x / imgW * dw, p1.y / imgH * dh)
+                                            val rectSize = Size((p2.x - p1.x) / imgW * dw, (p2.y - p1.y) / imgH * dh)
+                                            if (fillAlpha > 0f) {
+                                                drawRect(color = color.copy(alpha = fillAlpha), topLeft = topLeft, size = rectSize, style = Fill)
+                                            }
+                                            drawRect(color = color, topLeft = topLeft, size = rectSize, style = Stroke(2f))
                                         }
 
                                         editableLandmarks.forEach { lm ->
                                             if (lm.boundingBox.width() > 0) {
                                                 val nx = lm.boundingBox.left.toFloat() / imgW; val ny = lm.boundingBox.top.toFloat() / imgH
                                                 val nw = lm.boundingBox.width().toFloat() / imgW; val nh = lm.boundingBox.height().toFloat() / imgH
-                                                drawRect(color = Color.Yellow, topLeft = Offset(nx * dw, ny * dh), size = Size(nw * dw, nh * dh), style = Stroke(1f))
+                                                val topLeft = Offset(nx * dw, ny * dh)
+                                                val rectSize = Size(nw * dw, nh * dh)
+                                                drawRect(color = Color.Yellow.copy(alpha = 0.3f), topLeft = topLeft, size = rectSize, style = Fill)
+                                                drawRect(color = Color.Yellow, topLeft = topLeft, size = rectSize, style = Stroke(1f))
                                             }
                                         }
-                                        odometerCrop?.let { drawIcrsRect(it, Color.Blue) }
-                                        otherTextCrop?.let { drawIcrsRect(it, Color.Green) }
+                                        odometerCrop?.let { drawIcrsRect(it, Color.Blue, fillAlpha = 0.5f) }
+                                        otherTextCrop?.let { drawIcrsRect(it, Color.Red, fillAlpha = 0.5f) }
                                 }
                             }
 
@@ -223,7 +231,7 @@ fun LandmarkDebugDialog(
                                                             newList[index] = lm.copy(text = newText)
                                                             editableLandmarks = newList
                                                         },
-                                                        textStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                                        textStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                                         modifier = Modifier
                                                             .fillMaxWidth()
                                                             .height(48.dp)
