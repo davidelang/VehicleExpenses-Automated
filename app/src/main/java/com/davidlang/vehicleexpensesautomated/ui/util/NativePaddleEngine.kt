@@ -309,9 +309,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val int8Buf = java.nio.ByteBuffer.allocateDirect(floatData.size)
             .order(java.nio.ByteOrder.nativeOrder())
         NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, floatData.size, DET_HEATMAP_INT8_SCALE)
+        Log.i("PaddleDiag", "$site after quantize int8Buf cap=${int8Buf.capacity()} addr=0x${Integer.toHexString(System.identityHashCode(int8Buf))}")
         int8Buf.position(0)
         NativeImageUtils.bindOutputInt8(outputTensor, int8Buf, w, h)
-        Log.i("PaddleDiag", "$site after wrapper outputPrec=kInt8 w=$w h=$h scale=$DET_HEATMAP_INT8_SCALE")
+        Log.i("PaddleDiag", "$site after bindOutput outputPrec=kInt8 w=$w h=$h scale=$DET_HEATMAP_INT8_SCALE bufHeld=false")
         return floatData
     }
 

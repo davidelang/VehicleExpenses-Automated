@@ -64,6 +64,7 @@ bool resolveOutputHeatmapFloatData(
 void quantizeFloatHeatmapToInt8Buffer(
     const float* fdata, int8_t* dst, int count, float scale) {
   if (!fdata || !dst || count <= 0 || scale <= 0.f) return;
+  LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 count=%d scale=%.5f dst=%p", count, scale, static_cast<void*>(dst));
   for (int i = 0; i < count; ++i) {
     int q = static_cast<int>(std::lround(fdata[i] / scale));
     q = std::max(0, std::min(255, q));
