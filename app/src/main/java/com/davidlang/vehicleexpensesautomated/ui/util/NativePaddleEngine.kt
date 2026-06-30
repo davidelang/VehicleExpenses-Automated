@@ -378,6 +378,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val tierScale = TIER_SCALES.filter { it >= maxEdge }.minOrNull() ?: 2560
         val predictor = sharedTiers[tierScale] ?: return null
         val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
+        if (isArm) {
+            Log.i("PaddleDiag", "detect tier=$tierScale: arm int8 direct I/O via long-lived buf bind")
+        } else {
+            Log.i("PaddleDiag", "detect tier=$tierScale: x86 float temp I/O; helper quantizes output to int8 after run")
+        }
 
         if (isArm) {
             val buf = sharedTierBuffers[tierScale] ?: return null
@@ -497,6 +502,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val w = srcMat.cols(); val h = srcMat.rows()
 
         val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
+        if (isArm) {
+            Log.i("PaddleDiag", "detectMat ${w}x$h: arm int8 direct output bind to long-lived buf")
+        } else {
+            Log.i("PaddleDiag", "detectMat ${w}x$h: x86 float temp I/O; helper quantizes output to int8 after run")
+        }
         val tPop0 = System.nanoTime()
         val int8Buf = if (isArm) java.nio.ByteBuffer.allocateDirect(w * h).order(java.nio.ByteOrder.nativeOrder()) else null
         val floatData = if (isArm) null else FloatArray(w * h)

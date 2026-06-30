@@ -366,3 +366,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - detect/detectMat always call processHeatmapFromInt8Buffer with DET_HEATMAP_INT8_FLOAT_THRESHOLD
 - No arch branch on post-processing call sites
+
+## 2026-06-30 - Phase 4: path diags + emulator-5556 arm64 setup doc
+
+- detect/detectMat log arm direct-bind vs x86 float+helper paths
+- Sandbox doc: dev-ai-interaction/emulator-5556-armv8-setup.md
