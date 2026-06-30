@@ -73,7 +73,7 @@
 
 # Future work
 - [ ] x86_64 / Android emulator ("amd64") path for detector: in detect() and detectMat() (and related post-run sites), on x86 output floats from the model to a temp buffer, then (C++ only) convert/quantize to the exact int8 buffer + format that the existing kInt8 branch in processHeatmap / nativeProcessHeatmap expects (using the same scale/remap as ARM int8 models). All conversion logic in C++. This lets the rest of the (int8-expecting) detection post-processing code stay unchanged.
-- [ ] Explore eliminating the float buffer for recognition later: rec already does int8 input quantization to the 48px buffer (same path as det). If int8 logits + native decode is a win on arm, apply the same C++ conversion wrapper on x86_64 (float logits → int8 buffer for decode). Keep conversions in C++ for speed.
+- [ ] Explore eliminating the float buffer for recognition later: rec already uses identical int8 input quant (to 48x320 buffer). If int8 logits + native decode is a win on arm, apply analogous C++ float->int8 conversion wrapper on x86_64 for the decodeOcrV3 path. Keep all conversions in C++.
 
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
   - Approved plan: dev-ai-interaction/plans/orchestration-layer-separation-and-cleanup-plan.md
