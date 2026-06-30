@@ -383,3 +383,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Phase 2 (d450f2a7): int u_threshold CC path; safe empty result when uMax < threshold
 - Phase 3 (16d616ec): quantize u_val min/max diags; pump zero-box guards
 - Phone runtime verification pending device connection
+
+## 2026-06-30 - Execute uint8 long-lived buffer plan (baseline 9eb991dc)
+
+- Plan: fix-uint8-conversion-for-int8-buffer-20260630-151214
+- Store uint8 0-255 in long-lived buf; ARM signed→uint8 after bind write; read without ^128

@@ -99,12 +99,12 @@ bool resolveOutputHeatmapFloatData(
   return true;
 }
 
-// Float heatmap → int8 storage matching ARM kInt8 output: round(f/scale), clamp [0,255], XOR ^128.
+// Float heatmap → uint8 0-255 in long-lived buf: q = round(f/scale), clamp [0,255], store q directly.
 void quantizeFloatHeatmapToInt8Buffer(
     const float* fdata, int8_t* dst, int count, float scale) {
   if (!fdata || !dst || count <= 0 || scale <= 0.f) return;
   LOGI(
-      "PaddleDiag: quantizeFloatHeatmapToInt8 count=%d scale=%.5f dst=%p (long-lived dest)",
+      "PaddleDiag: quantizeFloatHeatmapToInt8 count=%d scale=%.5f dst=%p (long-lived uint8 dest)",
       count, scale, static_cast<void*>(dst));
   if (count >= 4) {
     LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 f[0-3]=[%.4f,%.4f,%.4f,%.4f]",
@@ -115,15 +115,17 @@ void quantizeFloatHeatmapToInt8Buffer(
   for (int i = 0; i < count; ++i) {
     int q = static_cast<int>(std::lround(fdata[i] / scale));
     q = std::max(0, std::min(255, q));
-    dst[i] = static_cast<int8_t>(static_cast<uint8_t>(q) ^ 128);
+    dst[i] = static_cast<int8_t>(q);
     uMin = std::min(uMin, q);
     uMax = std::max(uMax, q);
   }
   LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 u_val min=%d max=%d count=%d", uMin, uMax, count);
   if (count >= 4) {
-    LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 dst int8[0-3]=[%d,%d,%d,%d]",
-         static_cast<int>(dst[0]), static_cast<int>(dst[1]),
-         static_cast<int>(dst[2]), static_cast<int>(dst[3]));
+    LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 dst uint8[0-3]=[%d,%d,%d,%d]",
+         static_cast<int>(static_cast<uint8_t>(dst[0])),
+         static_cast<int>(static_cast<uint8_t>(dst[1])),
+         static_cast<int>(static_cast<uint8_t>(dst[2])),
+         static_cast<int>(static_cast<uint8_t>(dst[3])));
   }
 }
 
