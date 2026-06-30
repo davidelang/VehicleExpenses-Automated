@@ -1,48 +1,33 @@
 # Mandate Acknowledgment (Fast-Track)
 
-You are in a **Multi-Agent Orchestration** environment. Read **AGENT_CONTEXT.md** and **GROK.md**. (Do NOT re-read .grok/ system files; they are already in your context).
+You are in a **Multi-Agent Orchestration** environment.
 
-Provide a brief report:
+**MANDATORY STARTUP INSTRUCTIONS:**
+1. Read `./AGENT_CONTEXT.md` if it exists in the current directory. If it does not exist (for example, if you are in the orchestration root worktree), read `./master/AGENT_CONTEXT.md` as a layout template, and determine your Role and Branch from `git status`.
+2. Read your CLI-specific thin overlay: `./GROK.md` (for Grok) or `./GEMINI.md` (for Antigravity), and `./AGENT_MANDATES.md` (the shared core mandates).
+3. Do NOT re-read system configuration files; they are already in your context.
 
+Provide a brief report addressing:
 1. **Overrides:** Confirm Sandbox and Testing exemptions.
-
-2. **Barrier:** Confirm Build-Integrity-Protection (Phase 1/2 - research/strategy in plan mode).
-
+2. **Barrier:** Confirm Build-Integrity-Protection (Phase 1/2).
 3. **Verification:** Confirm Forensic Verification (Code audit + build).
-
 4. **Geography & CRITICAL Confinement:** 
-    - State your current **Role** and **Branch**.
+    - State your current **Role** and **Branch** (if in orchestration root, Role is Orchestrator / Cleanup, Branch is `orchestration`).
     - **NEVER use `..` in any path.** 
     - Use `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/` for sandbox access.
-    - At the orchestration layer: maintain awareness of all supported agent runtimes (Grok, Gemini CLI, Antigravity; the list is dynamic - e.g. Gemini CLI shutting down soon).
+    - **UI Warning:** Large shell outputs (e.g., recursive `ls`) can crash the terminal. Use `head`, `tail`, or specific paths.
+5. **Handoff and Turn-End Rules:**
+    - Confirm you understand that `TODO.md` is strictly for future backlog items, not the current turn's active work.
+    - Confirm you understand that `ENGINEERING_LOG.md` updates must use the `./append-to-engineering-log` wrapper exclusively.
+    - Confirm that once you have completed the changes for an approved plan, run `./build_app` (creating the builds tag), and told the user the results are ready to test, that execution turn is finished. Any subsequent feedback/corrections starts a new planning cycle.
 
-5. **Plans Directory for Current Work:** When the user gives a new task or post-handoff feedback, you must create a fresh plan document for it under `dev-ai-interaction/plans/` (use a clear name such as `<task>-<date>-plan.md`). The rule against starting new work from plans/ applies only to *old, completed, or abandoned* plans from other agents or prior cycles (see historical-plans/). You may (and should) freely read, revise, and write to the specific plan file(s) the user has explicitly designated for the *current* turn. Once the user approves a plan file for execution using the exact magic phrasing, move any prior version to `historical-plans/` at handoff or when directed.
+# 6. STOP & WAIT (CRITICAL)
+Upon completion of this report:
+- **For Grok:** Enter plan mode (using Grok's mode switch tool, e.g. `SwitchMode` or `enter_plan_mode`) and then **STOP**.
+- **For Antigravity:** Stop calling tools and **STOP** (mode is enforced logically and via harness hooks; do NOT attempt to call a mode-switch tool).
 
-In addition, each worktree root has the tracked `project-facts.md`. On every fresh launch or new cycle, **first** read the local `project-facts.md` (this worktree) + the user-designated plan file in dev-ai-interaction/plans/. Keep project-facts.md to stable layout facts and "where things live" locations only (facts that would remain true after merge + new worktree for different effort). No branch, builds tags, plans, or "working on". See AGENT_MANDATES.md "project-facts.md Content and Hygiene Rules". Perform full read + prune before edits. This file helps the planner avoid multiple discovery commands on startup.
+**DO NOT** read `TODO.md`, search for files, or begin any task until the User provides a specific directive. Your only mission right now is to introduce yourself via the report and wait.
 
-**Sandbox Plan File (Primary Artifact of Planning - non-negotiable):** In every planning phase my first concrete deliverable must be to write a fresh, clean, self-contained task plan document to a new file under dev-ai-interaction/plans/ (using a descriptive name and the standard structure from MULTI_AGENT_USER_INSTRUCTIONS.md + examples). The harness session plan.md receives *only* a short process log entry that references the exact sandbox plan path. I will roll any prior superseding/historical bulk from the harness plan.md to historical-plans/ before writing the minimal current-cycle log entry (prepending to, not even superseding). User approval will always be by explicit path to the sandbox plan file + directive (see MULTI_AGENT_USER_INSTRUCTIONS.md). I will re-read exactly that designated sandbox plan file as the very first step upon entering execution for the turn.
+Do not perform any other tasks until the User has approved your report.
 
-project-facts.md (tracked at worktree root) provides the stable locations so I do not need repeated finds. Read it fully + hygiene on every cycle start. Only record enduring facts there.
-
-6. **After Compaction (shared rule for all agent types):** After any context compaction (via `/compact` or automatic via `auto_compact_threshold_percent`), immediately re-read `AGENT_CONTEXT.md`, your agent-specific overlay (`GROK.md` or `GEMINI.md`), `AGENT_MANDATES.md`, and the current active plan (if any) to refresh your knowledge of the rules, geography, and state. This is a shared mandate for all agent types.
-
-7. **STOP & WAIT (CRITICAL)**
-Upon completion of this report, you **MUST** enter plan mode (using Grok's mode switch tool, e.g. SwitchMode or enter_plan_mode) and then **STOP**. 
-
-**DO NOT** read `TODO.md`, search for files, or begin any task until the User provides a specific directive. Your only mission right now is to introduce yourself and wait.
-
-8. **Handoff and Next-Turn Rule Affirmation (CRITICAL):** Confirm that I have read the *live* AGENT_MANDATES.md in the current worktree root (not any historical review document, session plan.md, or previous conversation). Specifically affirm: During the planning phase, "being helpful/proactive/efficient" means research, suggesting ideas, and improving the plan document — it does **not** mean making source changes or compiling. After I have completed the changes for an approved plan, run `./build_app` (creating the builds tag), and told the user the results are ready to test, that execution turn is finished. After a build is completed I do NOT revert to before that without explicit user approval. Instead I treat feedback/corrections as the start of the next turn. I must return to the Strategy phase, propose a revised plan, and get a new explicit Directive before any further source changes. I will not argue loopholes or continue editing after claiming completion and handing off for testing.
-
-Do not perform any other tasks until I have approved your report.
-
-**Grok-specific notes (for context):**
-- Planning/research phase: Enter plan mode for hard restrictions (no writes to tracked files outside the sandbox). "Being helpful," "proactive," "efficient," etc. during planning means doing research, suggesting ideas, and improving the written plan document under dev-ai-interaction/plans/ — it does **not** mean making source changes or running builds/compiles. Do not call exit_plan_mode to "present" a plan until the user has had full interactive discussion/feedback rounds on the written plan file and has indicated it is ready for presentation/approval. Rejection of an early exit_plan_mode or continued feedback is "revise the plan document in dev-ai-interaction/plans/" — not "abandon the plan." For complex work, prefer spawning a narrow Planning Sub-agent (very strict prompt: research + plan doc only, no exit_plan_mode, no source changes; capability_mode=execute for full shell/git/adb research) and later an Execution Sub-agent. The main thread acts as orchestrator/reviewer. Full git history, adb logcat device logs, and artifact inspection are expected tools in the planning/research phase — the model must not self-restrict.
-- Coordinates: ICRS or raw pixel only. Normalized 0-1 is obsolete.
-- Git reset: only the three approved contexts, with preflight (verify tag exists). Never HEAD^, arbitrary SHAs, etc. After a build is completed you do NOT revert to before that without explicit user approval. Instead you treat feedback/corrections as the start of the next turn.
-- No deployment: never ./deploy, gradlew installDebug, adb install.
-- Tool mapping: Read, Write, StrReplace, Shell, Task, SwitchMode (plan/agent).
-- Always re-read the *live* AGENT_MANDATES.md at the start of the session and after any handoff. Do not use historical review or session plan documents as your source of rules or as the "approved plan" for execution unless the user explicitly directs you to.
-- Execution handoff rule: Once you have completed the changes for an approved plan, run `./build_app` (creating the builds tag), and told the user the results are ready to test, that execution turn is finished. After a build is completed you do NOT revert to before that without explicit approval. Instead you treat feedback/corrections as the start of the next turn. You must return to the Strategy phase, propose a revised plan, and get a new explicit Directive before any further source changes.
-- Runtime CLI flags: The `run-grok` launcher passes `--todo-gate` by default (disable with `GROK_TODO_GATE=0`) to enable Grok's built-in runtime turn-end TodoGate enforcement. It also always passes `--no-alt-screen` to avoid alternate screen buffer issues. These provide harness-level enforcement of the TODO.md handoff and turn-boundary rules described above.
-- Post-handoff cycle start (per MULTI_AGENT_USER_INSTRUCTIONS.md and approved plan): After any END OF EXECUTION TURN / "results ready to test" / handoff I will either (preferred) stop and let the user relaunch via run-grok for a completely clean forced Mandate report + plan mode, or I will write the short .post-handoff-gate.txt to dev-ai-interaction/ before finishing the turn. I will follow the explicit magic approval phrases and "never say" list in the tracked MULTI_AGENT_USER_INSTRUCTIONS.md (never treat post-handoff feedback, "do you have any questions", or result descriptions as permission to continue editing the prior plan).
-- Multiline input (TUI convenience for this project): This project uses long structured plans and detailed prompts. On session start (in your opening Mandate report), remind the user to enable multiline input mode if not already active: focus the prompt and press Ctrl+M, or type the slash command /multiline (alias /ml). In multiline mode, Enter inserts a newline (great for plans) while Shift+Enter or Alt+Enter sends. The project launchers print a tip on startup; surface the reminder in your report so the user can activate it immediately for comfortable entry of detailed work.
+*Tip for the User:* Remember to enable multiline input mode for comfortable plan and prompt entry: focus the prompt and press **Ctrl+M**, or type the slash command **/multiline** (alias **/ml**).
