@@ -96,23 +96,38 @@ function getLastPipeBase(fullCmd) {
   return stripLeadingAssignments(lastSegment);
 }
 
+// Agents often emit "cd /path && ./blessed-helper" even when already in the worktree.
+// Permission patterns match from the start of the string, so we must inspect each && segment.
+function getAndChainBases(fullCmd) {
+  const bases = [];
+  for (const seg of fullCmd.split(/\s*&&\s*/)) {
+    const b = getLastPipeBase(seg);
+    if (b) bases.push(b);
+  }
+  return bases;
+}
+
 // Explicit allow for direct (or prefixed) invocations of safe read-only / exploration commands
 // in bash even in plan mode. The strip functions above normalize prefixes for all of them.
 if (toolName === 'bash') {
   const cmd = (typeof params !== 'undefined' ? (params.command || params.cmd || params.args || targetPath || '') : '').toString();
   const base = stripLeadingAssignments(cmd);
   const lastBase = getLastPipeBase(cmd);
+  const chainBases = getAndChainBases(cmd);
 
   // Blessed bases (covers existing broad rules + agent-1 pager confirmed items + common post-processors).
   // python3 * is deliberately omitted forever (user confirmation: too dangerous).
   const blessedBases = new Set([
     'jq', 'ls', 'cat', 'head', 'tail', 'git', 'echo', 'find',
-    './build_app', './get-builds-tag.sh', './update-rules.sh',
-    './append-to-engineering-log',  // approved helper for ENG_LOG appends (minute granularity)
+    './build_app', '../build_app',
+    './get-builds-tag.sh', '../get-builds-tag.sh',
+    './update-rules.sh', '../update-rules.sh',
+    './append-to-engineering-log', '../append-to-engineering-log',
     'true', 'adb'   // adb for read-only logcat (user confirmed reading data is allowed)
   ]);
 
-  if (blessedBases.has(base) || blessedBases.has(lastBase)) {
+  const chainHit = chainBases.some((b) => blessedBases.has(b));
+  if (blessedBases.has(base) || blessedBases.has(lastBase) || chainHit) {
     console.log('plan-mode-hard-stops: allowing bash command (possibly with leading KEY=val prefix):', cmd, 'base:', base || lastBase);
     return 'allow';
   }
