@@ -316,7 +316,9 @@ stop_gradle_daemons() {
   pkill -f "GradleDaemon.*$(pwd | sed 's/[][\.*^$()+?{}|]/\\&/g')" 2>/dev/null || true
   sleep 1
 }
-stop_gradle_daemons
+# NOTE: stop_gradle_daemons is no longer called eagerly at startup.
+# The daemon is intentionally kept alive for performance (see gradle.properties).
+# Call stop_gradle_daemons manually if a daemon misbehaves.
 
 declare -A DEVICE_MAP
 DEVICE_MAP=(
@@ -878,7 +880,8 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             # Also handles cases where past root runs left files owned by root.
             # Extended to fix "unreadable inputs/outputs" / "Could not stat" errors
             # in Gradle 8+/9+ (CMake/cxx, navigation, assets, aar, etc. state).
-            stop_gradle_daemons
+            # NOTE: daemon is intentionally kept alive (see gradle.properties).
+            # stop_gradle_daemons is available for manual recovery if needed.
 
             # Try to kill any lingering processes holding files in the incremental dirs.
             # This addresses "a process has files open".
@@ -908,7 +911,7 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
             fi
 
-            (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+            (umask 007; ./gradlew --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
             RET_VAL=$?
             repair_shared_cache
             if [ $RET_VAL -ne 0 ]; then
@@ -989,7 +992,8 @@ else
 
         # Mitigate common Gradle "can't delete incremental tmp" failure
         # Extended for unreadable outputs in Gradle 8+/9+ (see other errors for cxx etc.)
-        stop_gradle_daemons
+        # NOTE: daemon is intentionally kept alive (see gradle.properties).
+        # stop_gradle_daemons is available for manual recovery if needed.
 
         # Try to kill any lingering processes holding files in the incremental dirs.
         lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
@@ -1018,7 +1022,7 @@ else
             echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
         fi
 
-        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
         RET_VAL=$?
         repair_shared_cache
         if [ $RET_VAL -ne 0 ]; then
