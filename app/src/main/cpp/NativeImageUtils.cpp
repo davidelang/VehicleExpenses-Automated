@@ -48,8 +48,10 @@ bool resolveOutputHeatmapFloatData(
   if (prec == paddle::lite_api::PrecisionType::kInt8) {
     const int8_t* src = tensor->data<int8_t>();
     if (!src) return false;
+    constexpr float kHeatmapInt8Scale = 0.00787f;
     for (size_t i = 0; i < count; ++i) {
-      scratch[i] = static_cast<float>(src[i]);
+      const uint8_t u_val = static_cast<uint8_t>(src[i] ^ 128);
+      scratch[i] = static_cast<float>(u_val) * kHeatmapInt8Scale;
     }
   } else {
     tensor->CopyToCpu(scratch.data());

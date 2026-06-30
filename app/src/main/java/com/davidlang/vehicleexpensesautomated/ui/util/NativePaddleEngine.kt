@@ -62,6 +62,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val ALLOWED_DIGITS: Set<Int> = (1..10).toSet()
         val ALLOWED_DIGITS_DECIMAL: Set<Int> = (1..10).toSet() + setOf(93)
 
+        // Detector heatmap int8 output scale (matches ARM int8 model quant scale)
+        private const val DET_HEATMAP_INT8_SCALE = 0.00787f
+
         // Phase 125: Multi-Tier Predictor Array
         val TIER_SCALES = listOf(224, 608, 1024, 2048, 2560)
         val sharedTiers = mutableMapOf<Int, PaddlePredictor>()
@@ -286,6 +289,19 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
 
+    /** x86_64 only: read float detector output, C++ quantize to int8 buffer, rebind tensor for kInt8 processHeatmap. */
+    private fun wrapX86DetectorOutputAsInt8(outputTensor: Any, dims: LongArray): FloatArray {
+        val w = dims[3].toInt()
+        val h = dims[2].toInt()
+        val floatData = (outputTensor as com.baidu.paddle.lite.Tensor).floatData
+        val int8Buf = java.nio.ByteBuffer.allocateDirect(floatData.size)
+            .order(java.nio.ByteOrder.nativeOrder())
+        NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, floatData.size, DET_HEATMAP_INT8_SCALE)
+        int8Buf.position(0)
+        NativeImageUtils.bindOutputInt8(outputTensor, int8Buf, w, h)
+        return floatData
+    }
+
     fun detect(input: Any, targetW: Int? = null, targetH: Int? = null, copyHeatmap: Boolean = true): DetectionResult? {
         val tPop0 = System.nanoTime()
         val w: Int; val h: Int; val srcMat: Mat
@@ -321,8 +337,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
 
-            // Zero-Copy Native Post-Processing (Phase 2) — MUST run before floatData
-            // to avoid tensor pointer invalidation from Java-side copy
+            // x86_64: float model output → C++ int8 quant + rebind before native post-process
+            val x86HeatmapFloats = if (!Build.SUPPORTED_ABIS[0].contains("arm")) {
+                wrapX86DetectorOutputAsInt8(outputTensor, dims)
+            } else null
+
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
@@ -347,7 +366,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
 
             val tCopy0 = System.nanoTime()
-            val heatmap = if (copyHeatmap) outputTensor.floatData else null
+            val heatmap = when {
+                !copyHeatmap -> null
+                x86HeatmapFloats != null -> x86HeatmapFloats
+                else -> outputTensor.floatData
+            }
             val tCopy = if (copyHeatmap) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
 
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
