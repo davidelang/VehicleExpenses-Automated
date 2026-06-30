@@ -47,6 +47,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     private var detectorLarge: PaddlePredictor? = null
     private var detectorSmall: PaddlePredictor? = null
 
+    /** Keeps x86 int8 output buffer alive while tensor holds ShareExternalMemory pointer. */
+    private var lastX86Int8Output: java.nio.ByteBuffer? = null
+
     companion object {
         var isAvailableGlobally = false; private set
         private var sharedDetectorLarge: PaddlePredictor? = null
@@ -311,8 +314,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, floatData.size, DET_HEATMAP_INT8_SCALE)
         Log.i("PaddleDiag", "$site after quantize int8Buf cap=${int8Buf.capacity()} addr=0x${Integer.toHexString(System.identityHashCode(int8Buf))}")
         int8Buf.position(0)
+        lastX86Int8Output = int8Buf
         NativeImageUtils.bindOutputInt8(outputTensor, int8Buf, w, h)
-        Log.i("PaddleDiag", "$site after bindOutput outputPrec=kInt8 w=$w h=$h scale=$DET_HEATMAP_INT8_SCALE bufHeld=false")
+        Log.i("PaddleDiag", "$site after bindOutput outputPrec=kInt8 w=$w h=$h scale=$DET_HEATMAP_INT8_SCALE bufHeld=true")
         return floatData
     }
 
