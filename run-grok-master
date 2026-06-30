@@ -45,9 +45,9 @@ GROK_BIN="${GROK_BIN:-@@GROK_BIN_DEFAULT@@}"
 
 # Load permission config if present
 if [ -f project.config ]; then
-  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(orchestrator_user|GROK_BIN)')
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(coder_user|GROK_BIN)')
 fi
-ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
+CODER_USER=${coder_user:-@@CODE_GROUP@@r}
 
 # Ensure all files created during this session are group-writable (multi-user env)
 umask 007
@@ -307,7 +307,7 @@ END_MASTER_PROMPT
 )
 
 # --no-alt-screen for consistency.
-exec sudo -u "$ORCHESTRATOR_USER" "$GROK_BIN" \
+exec sudo -u "$CODER_USER" "$GROK_BIN" \
     "$MASTER_PROMPT" \
     --model "$MASTER_MODEL" \
     $TODO_GATE_FLAGS \
