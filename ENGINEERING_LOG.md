@@ -344,3 +344,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - ARM kInt8 output copy JNI + detect/detectMat population
 - x86 helper unchanged; builds tag updated
+
+## 2026-06-30 - Uniform int8 detect plan phases 3-5 complete
+
+- Phase 3 (c66c07f4): uniform processHeatmapFromInt8Buffer both arches
+- Phase 4 (1835bd76): DET_HEATMAP_INT8_U_THRESHOLD=4; copyHeatmap via dequant
+- Phase 5: audit — no floatData/processHeatmap arch branch in detect paths; rec unchanged
