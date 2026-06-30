@@ -334,8 +334,23 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         Log.i(
             "PaddleDiag",
-            "$site using long-lived int8 path (dest cap=$int8DestCap w*h=$expected; short-lived float retained for copyHeatmap)",
+            "$site using long-lived int8 buf as dest (cap=$int8DestCap w*h=$expected; short-lived float for copyHeatmap)",
         )
+        if (tierScale != null) {
+            val int8Buf = sharedTierBuffers[tierScale]
+            if (int8Buf == null) {
+                Log.e("PaddleDiag", "$site wrapper missing sharedTierBuffers[$tierScale]")
+                return null
+            }
+            int8Buf.clear()
+            NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, expected, DET_HEATMAP_INT8_SCALE)
+            int8Buf.position(0)
+            NativeImageUtils.bindOutputInt8(outputTensor, int8Buf, w, h)
+            Log.i(
+                "PaddleDiag",
+                "$site quantized short float into long-lived int8 dest cap=${int8Buf.capacity()} (w*h=$expected)",
+            )
+        }
         return floatData
     }
 
