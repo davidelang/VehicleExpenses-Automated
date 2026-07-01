@@ -110,6 +110,15 @@ void quantizeFloatHeatmapToInt8Buffer(
     LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 f[0-3]=[%.4f,%.4f,%.4f,%.4f]",
          fdata[0], fdata[1], fdata[2], fdata[3]);
   }
+  float fMin = 1e30f;
+  float fMax = -1e30f;
+  for (int i = 0; i < count; ++i) {
+    if (fdata[i] < fMin) fMin = fdata[i];
+    if (fdata[i] > fMax) fMax = fdata[i];
+  }
+  LOGI(
+      "PaddleDiag: quantizeFloatHeatmapToInt8 FLOAT_TENSOR_FULL min=%.6f max=%.6f count=%d (negatives? see min)",
+      fMin, fMax, count);
   int uMin = 255;
   int uMax = 0;
   for (int i = 0; i < count; ++i) {

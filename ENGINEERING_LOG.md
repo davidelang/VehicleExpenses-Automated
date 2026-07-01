@@ -396,3 +396,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Phase 1 (c5665db0): quantize stores uint8 q directly
 - Phase 2 (2eea0dbe): ARM convertSignedInt8BufToUint8 after direct bind
 - Phase 3 (c362e216): process/dequant read uint8 without ^128
+
+## 2026-06-30 - Execute full tensor minmax diags + ARM output bind fix (baseline c9dc2f99)
+
+- Plan: add-full-tensor-minmax-diagnostics-and-fix-arm-output-bind-crash-20260630-175835
+- Phase 1: FLOAT_TENSOR_FULL + INT8_TENSOR_FULL logging
+- Phase 2: remove bindOutputInt8 on detector output; copyTensorInt8ToBuffer post-run on ARM

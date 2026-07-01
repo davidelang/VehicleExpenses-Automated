@@ -315,6 +315,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val h = dims[2].toInt()
         val floatData = (outputTensor as com.baidu.paddle.lite.Tensor).floatData
         val expected = w * h
+        var fMin = Float.MAX_VALUE
+        var fMax = -Float.MAX_VALUE
+        for (f in floatData) {
+            if (f < fMin) fMin = f
+            if (f > fMax) fMax = f
+        }
+        Log.i(
+            "PaddleDiag",
+            "$site float tensor FULL min=%.6f max=%.6f count=${floatData.size} w=$w h=$h (any negatives?)".format(fMin, fMax),
+        )
         Log.i(
             "PaddleDiag",
             "$site before wrapper outputPrec=float floatCount=${floatData.size} w=$w h=$h expected=$expected",
