@@ -186,6 +186,11 @@ object NativeImageUtils {
         nativeBindInputInt8(tensor, src, tensorW, tensorH)
     }
 
+    /** Bind uint8 NCHW backing store to Paddle input tensor (ShareExternalMemory, zero-copy). */
+    fun bindInputUInt8(tensor: Any, src: ByteBuffer, tensorW: Int, tensorH: Int) {
+        nativeBindInputUInt8(tensor, src, tensorW, tensorH)
+    }
+
     /** Quantize float heatmap activations to int8 buffer (round(f/scale), clamp, ^128 remap). */
     fun quantizeFloatHeatmapToInt8(src: FloatArray, dst: ByteBuffer, count: Int, scale: Float) {
         nativeQuantizeFloatHeatmapToInt8(src, dst, count, scale)
@@ -357,6 +362,7 @@ object NativeImageUtils {
     private external fun nativeQuantizeMonoToInt8(srcMatPtr: Long, dstBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
     private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
     private external fun nativeBindInputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
+    private external fun nativeBindInputUInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
     private external fun nativeQuantizeFloatHeatmapToInt8(src: FloatArray, dstBuffer: java.nio.ByteBuffer, count: Int, scale: Float)
     private external fun nativePopulateUint8FromFloat(src: FloatArray, dstBuffer: java.nio.ByteBuffer, count: Int)
     private external fun nativeCopyTensorInt8ToBuffer(

@@ -486,3 +486,13 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - quantizeMonoInputToScratch(1024,48) preserves 1024-byte row stride in backing
 - bindInputInt8(...,256,48) declares narrow width (LIE test for float32-read hypothesis)
 - Log: LIE declare=256x48 stride=1024 backing=WxH in processOcr + processOcrNumeric
+
+## 2026-07-01 - EXEC: switch-rec-to-uint8-zero-copy-input
+
+- Phase 1 start: add JNI uint8 bind + switch rec useRecSetPs to zero-copy
+
+## 2026-07-01 - switch rec to uint8 zero-copy input
+
+- nativeBindInputUInt8: kUInt8 + ShareExternalMemory JNI
+- processOcr/Numeric useRecSetPs: recSet.p.raw + bindInputUInt8(bindW,bindH), no quantize
+- BufferSet.Slice crop path: input.raw uint8 zero-copy; Mat keeps int8 fallback

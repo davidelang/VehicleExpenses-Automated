@@ -694,10 +694,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val recBuf = sharedRecInt8Buffer ?: return@withContext RecStageResult("(Buffer Error)", 0, 0f, null)
         recBuf.clear()
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            Log.i("PaddleDiag", "processOcr useRecSetPs LIE declare=256x48 stride=1024 backing=${bindW}x${bindH}")
-            recSet.quantizeMonoInputToScratch(1024, 48)
-            val buf = recSet.s.raw
-            NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, 256, 48)
+            Log.i("PaddleDiag", "processOcr useRecSetPs uint8 zero-copy bind=${bindW}x${bindH}")
+            val buf = recSet.p.raw
+            NativeImageUtils.bindInputUInt8(predictor.getInput(0), buf, bindW, bindH)
+            buf
+        } else if (input is BufferSet.Slice) {
+            Log.i("PaddleDiag", "processOcr uint8 zero-copy crop bind=${w}x${h}")
+            val buf = input.raw
+            NativeImageUtils.bindInputUInt8(predictor.getInput(0), buf, w, h)
             buf
         } else {
             NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, bindW, bindH, w, h)
@@ -770,10 +774,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val recBuf = sharedRecInt8Buffer ?: return@withContext RecStageResult("(Buffer Error)", 0, 0f, null)
         recBuf.clear()
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            Log.i("PaddleDiag", "processOcrNumeric useRecSetPs LIE declare=256x48 stride=1024 backing=${bindW}x${bindH}")
-            recSet.quantizeMonoInputToScratch(1024, 48)
-            val buf = recSet.s.raw
-            NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, 256, 48)
+            Log.i("PaddleDiag", "processOcrNumeric useRecSetPs uint8 zero-copy bind=${bindW}x${bindH}")
+            val buf = recSet.p.raw
+            NativeImageUtils.bindInputUInt8(predictor.getInput(0), buf, bindW, bindH)
+            buf
+        } else if (input is BufferSet.Slice) {
+            Log.i("PaddleDiag", "processOcrNumeric uint8 zero-copy crop bind=${w}x${h}")
+            val buf = input.raw
+            NativeImageUtils.bindInputUInt8(predictor.getInput(0), buf, w, h)
             buf
         } else {
             NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, bindW, bindH, w, h)

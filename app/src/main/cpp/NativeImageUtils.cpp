@@ -604,6 +604,31 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindI
 }
 
 JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindInputUInt8(
+    JNIEnv* env, jobject thiz, jobject tensor, jobject srcBuffer,
+    jint tensorW, jint tensorH) {
+
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return;
+    }
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    void* raw = env->GetDirectBufferAddress(srcBuffer);
+    if (!nativePtr || !raw) return;
+
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return;
+
+    paddle::lite_api::Tensor* lite_tensor = uptr->get();
+    lite_tensor->Resize({1, 1, tensorH, tensorW});
+    lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kUInt8);
+    size_t bytes = static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH);
+    lite_tensor->ShareExternalMemory(raw, bytes, paddle::lite_api::TargetType::kHost);
+}
+
+JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuantizeFloatHeatmapToInt8(
     JNIEnv* env, jobject thiz, jfloatArray src, jobject dstBuffer,
     jint count, jfloat scale) {
