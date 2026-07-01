@@ -64,8 +64,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         // Detector heatmap int8 output scale (matches ARM int8 model quant scale)
         private const val DET_HEATMAP_INT8_SCALE = 0.00787f
-        // Integer u_val threshold corresponding to legacy 0.03f float threshold (4 * scale ≈ 0.0315f)
-        private const val DET_HEATMAP_INT8_U_THRESHOLD = 4
+        // u_val != 0 filter (threshold=1): 256-bucket hist shows mass at 0 and signal at higher
+        // buckets but no gradual ramp in buckets 1-20 (f≈0.004–0.078), so any positive uint8 counts.
+        private const val DET_HEATMAP_INT8_U_THRESHOLD = 1
         private val DET_HEATMAP_INT8_FLOAT_THRESHOLD =
             DET_HEATMAP_INT8_U_THRESHOLD * DET_HEATMAP_INT8_SCALE
 
@@ -303,6 +304,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
 
+    /** Temp diag: log hist bucket counts 1-20 to verify no low-bucket noise ramp (remove after confirm). */
+    private fun logLowBucketHistDiag(site: String, hist: IntArray) {
+        if (hist.size < 21) return
+        val counts = (1..20).joinToString(" ") { hist[it].toString() }
+        Log.i("PaddleDiag", "$site low-buckets-1-20: $counts (temp diag: no-ramp check)")
+    }
+
     /** x86_64 only: short-lived float output → direct uint8 (f*255) into long-lived buf (side-effect only). */
     private fun wrapX86DetectorOutputAsInt8(
         outputTensor: Any,
@@ -490,6 +498,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
                 hist = IntArray(256)
                 for (i in 0 until 256) hist[i] = nativeRes[boxFloats + i].toInt()
+                logLowBucketHistDiag("detect tier=$tierScale", hist)
             }
 
             val tCopy0 = System.nanoTime()
@@ -627,6 +636,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
                 hist = IntArray(256)
                 for (i in 0 until 256) hist[i] = nativeRes[boxFloats + i].toInt()
+                logLowBucketHistDiag("detectMat ${w}x$h", hist)
             }
             val tCopy0 = System.nanoTime()
             val heatmap = if (copyHeatmap) {

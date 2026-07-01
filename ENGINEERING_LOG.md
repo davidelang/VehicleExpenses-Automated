@@ -432,3 +432,12 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 ## 2026-06-30 - no-fallbacks build commit 5e07c6bd
 
 - Remaining cpp: loud kFloat errors in resolve/copy; forceOutputTensorInt8Precision JNI
+
+## 2026-06-30 - EXEC: set-detect-filter-to-nonzero-no-low-bucket-ramp
+
+- Phase 1 start: change detector uThreshold filter to nonzero (u_val > 0)
+
+## 2026-06-30 - set-detect-filter nonzero (uThreshold=1)
+
+- DET_HEATMAP_INT8_U_THRESHOLD 4→1; comment documents no-ramp in buckets 1-20
+- Temp diag logLowBucketHistDiag for hist[1..20] in detect/detectMat
