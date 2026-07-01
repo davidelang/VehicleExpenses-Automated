@@ -453,3 +453,10 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 ## 2026-07-01 - EXEC: minimal-1024-rec-processocr-plan
 
 - Phase 1 start: read plan and locate rec/processOcr paths for 1024 tier
+
+## 2026-07-01 - minimal 1024 rec processOcr pump redbox
+
+- processOcr/processOcrNumeric: recBindDimensions(bindW/H from recSet when useRecSetPs)
+- Pump redbox: crop(4,4,40h,aspect,no-320-cap), release crop, recognize(.p,recSet)
+- ExperimentPumpScreen + PumpCostVolUtils + ocrBinPeak + performHunkRecognition updated
+- Temp diag: PaddleDiag processOcr(useRecSetPs) bind=WxH
