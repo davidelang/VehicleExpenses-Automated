@@ -428,3 +428,7 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - Phase 1-3: forceOutputTensorInt8Precision before ARM run; loud errors on kFloat in copy/resolve
 - x86 populateUint8FromFloat (f*255 no clamp); processHeatmap hist 256 buckets from uint8 u_val
+
+## 2026-06-30 - no-fallbacks build commit 5e07c6bd
+
+- Remaining cpp: loud kFloat errors in resolve/copy; forceOutputTensorInt8Precision JNI
