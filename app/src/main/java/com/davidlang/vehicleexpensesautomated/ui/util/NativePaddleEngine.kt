@@ -198,10 +198,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _deskewBufferSetLarge!!.s.clearChroma()
 
             _detBufferSet = BufferSet(512, 128)
-            _recBufferSet = BufferSet(320, 48)
+            _recBufferSet = BufferSet(1024, 48)
 
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
-            sharedRecInt8Buffer = java.nio.ByteBuffer.allocateDirect(320 * 48).order(java.nio.ByteOrder.nativeOrder())
+            sharedRecInt8Buffer = java.nio.ByteBuffer.allocateDirect(1024 * 48).order(java.nio.ByteOrder.nativeOrder())
 
             _sharedNv21Buffer = ByteArray(4080 * 3072 * 3 / 2)
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
@@ -269,8 +269,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 sharedMaxInt8Buffer = java.nio.ByteBuffer.allocateDirect(maxTier * maxTier).order(java.nio.ByteOrder.nativeOrder())
                 Log.i("PaddleDiag", "sharedMaxInt8Buffer allocated cap=${maxTier * maxTier}")
 
-                config.setModelFromFile(copy("paddle/rec_v3_mono_int8_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
-                config.setModelFromFile(copy("paddle/rec_numeric_mono_int8_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
+                config.setModelFromFile(copy("paddle/rec_v3_mono_int8_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 1, 48, 1024))
+                config.setModelFromFile(copy("paddle/rec_numeric_mono_int8_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 1024))
 
                 loadDictionary(context, "paddle/en_dict.txt", dictionaryV3)
                 // digits_only.txt kept as asset but not loaded; numeric pipeline uses dictionaryV3 with ALLOWED_DIGITS
@@ -666,7 +666,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         return if (useRecSetPs && recSet != null) {
             recSet.width to recSet.height
         } else {
-            320 to 48
+            1024 to 48
         }
     }
 

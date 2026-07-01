@@ -460,3 +460,11 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Pump redbox: crop(4,4,40h,aspect,no-320-cap), release crop, recognize(.p,recSet)
 - ExperimentPumpScreen + PumpCostVolUtils + ocrBinPeak + performHunkRecognition updated
 - Temp diag: PaddleDiag processOcr(useRecSetPs) bind=WxH
+
+## 2026-07-01 - EXEC: simplify-rec-to-1024x48-everywhere-plus-256-hardcode-test
+
+- Phase 1 start: unify global rec backing to 1024x48 + model init
+
+## 2026-07-01 - Phase 1: unify global rec to 1024x48
+
+- _recBufferSet, sharedRecInt8Buffer, recBindDimensions fallback, model resize 48x1024
