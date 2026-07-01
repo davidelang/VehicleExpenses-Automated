@@ -419,3 +419,12 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - processHeatmapFromInt8UData: treat uniform uMin==uMax as empty
 - NativePaddleEngine ARM: precision-aware copy, skip separate convert step
 - PumpCostVolUtils + ExperimentPumpScreen: zero-box, invalid-point, full-image degenerate guards
+
+## 2026-06-30 - EXEC: no-fallbacks ARM force kInt8 + x86 uint8*255 + 256 hist
+
+- Phase 1 start: forceOutputTensorInt8Precision, strip kFloat fallbacks in copy/resolve
+
+## 2026-06-30 - no-fallbacks ARM force kInt8 + x86 uint8*255 + 256 hist
+
+- Phase 1-3: forceOutputTensorInt8Precision before ARM run; loud errors on kFloat in copy/resolve
+- x86 populateUint8FromFloat (f*255 no clamp); processHeatmap hist 256 buckets from uint8 u_val

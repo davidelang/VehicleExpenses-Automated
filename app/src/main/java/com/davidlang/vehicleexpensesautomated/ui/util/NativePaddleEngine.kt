@@ -303,7 +303,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
 
-    /** x86_64 only: short-lived float output → copy/quantize into long-lived int8 (side-effect only; no floatData returned). */
+    /** x86_64 only: short-lived float output → direct uint8 (f*255) into long-lived buf (side-effect only). */
     private fun wrapX86DetectorOutputAsInt8(
         outputTensor: Any,
         dims: LongArray,
@@ -363,11 +363,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 )
             }
             int8Buf.clear()
-            NativeImageUtils.quantizeFloatHeatmapToInt8(floatData, int8Buf, expected, DET_HEATMAP_INT8_SCALE)
+            NativeImageUtils.populateUint8FromFloat(floatData, int8Buf, expected)
             int8Buf.position(0)
             Log.i(
                 "PaddleDiag",
-                "$site copied short float to long-lived int8; no floatData returned; dest cap=${int8Buf.capacity()} (w*h=$expected)",
+                "$site populated uint8 (f*255) to long-lived buf; dest cap=${int8Buf.capacity()} (w*h=$expected)",
             )
         }
     }
@@ -395,10 +395,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         if (isArm) {
             Log.i(
                 "PaddleDiag",
-                "detect tier=$tierScale: ARM input on temp buf; output copied post-run (kInt8 or kFloat tensor)",
+                "detect tier=$tierScale: ARM input on temp buf; output forced kInt8 then copied post-run",
             )
         } else {
-            Log.i("PaddleDiag", "detect tier=$tierScale: x86 float temp I/O; helper quantizes output to int8 after run")
+            Log.i("PaddleDiag", "detect tier=$tierScale: x86 float temp I/O; helper populates uint8 (f*255) after run")
         }
 
         if (isArm) {
@@ -428,6 +428,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val outputTensor = predictor.getOutput(0)
+            if (isArm) {
+                NativeImageUtils.forceOutputTensorInt8Precision(outputTensor)
+            }
 
             val tInfer0 = System.nanoTime()
             predictor.run()
@@ -469,8 +472,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             var hist: IntArray? = null
-            if (nativeRes != null && nativeRes.size >= 100) {
-                val boxFloats = nativeRes.size - 100
+            if (nativeRes != null && nativeRes.size >= 256) {
+                val boxFloats = nativeRes.size - 256
                 val nboxes = boxFloats / 9
                 if (nboxes == 0) {
                     Log.i("PaddleDiag", "detect tier=$tierScale: zero detector boxes (safe empty post-process)")
@@ -485,8 +488,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
-                hist = IntArray(100)
-                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
+                hist = IntArray(256)
+                for (i in 0 until 256) hist[i] = nativeRes[boxFloats + i].toInt()
             }
 
             val tCopy0 = System.nanoTime()
@@ -526,10 +529,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         if (isArm) {
             Log.i(
                 "PaddleDiag",
-                "detectMat ${w}x$h: ARM input on temp buf; output copied post-run (kInt8 or kFloat tensor)",
+                "detectMat ${w}x$h: ARM input on temp buf; output forced kInt8 then copied post-run",
             )
         } else {
-            Log.i("PaddleDiag", "detectMat ${w}x$h: x86 float temp I/O; helper quantizes output to int8 after run")
+            Log.i("PaddleDiag", "detectMat ${w}x$h: x86 float temp I/O; helper populates uint8 (f*255) after run")
         }
         val tPop0 = System.nanoTime()
         val armInputBuf = if (isArm) {
@@ -560,6 +563,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val outputTensor = predictor.getOutput(0)
+            if (isArm) {
+                NativeImageUtils.forceOutputTensorInt8Precision(outputTensor)
+            }
 
             val tInfer0 = System.nanoTime()
             predictor.run()
@@ -603,8 +609,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             var hist: IntArray? = null
-            if (nativeRes != null && nativeRes.size >= 100) {
-                val boxFloats = nativeRes.size - 100
+            if (nativeRes != null && nativeRes.size >= 256) {
+                val boxFloats = nativeRes.size - 256
                 val nboxes = boxFloats / 9
                 if (nboxes == 0) {
                     Log.i("PaddleDiag", "detectMat ${w}x$h: zero detector boxes (safe empty post-process)")
@@ -619,8 +625,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
-                hist = IntArray(100)
-                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
+                hist = IntArray(256)
+                for (i in 0 until 256) hist[i] = nativeRes[boxFloats + i].toInt()
             }
             val tCopy0 = System.nanoTime()
             val heatmap = if (copyHeatmap) {
