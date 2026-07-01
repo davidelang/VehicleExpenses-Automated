@@ -504,3 +504,10 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 ## 2026-07-01 - uint8 zero-copy rec build gate
 
 - nativeBindInputUInt8 + recSet.p.raw bind at full bindW x bindH
+
+## 2026-07-01 - verify switch-rec-to-uint8-zero-copy plan complete
+
+- Already at ef825df7: nativeBindInputUInt8 (kUInt8 ShareExternal)
+- useRecSetPs: recSet.p.raw + bindInputUInt8(bindW,bindH), no quantize
+- crop Slice: input.raw uint8 zero-copy; Mat path int8 fallback unchanged
+- Re-execution: no further source changes required
