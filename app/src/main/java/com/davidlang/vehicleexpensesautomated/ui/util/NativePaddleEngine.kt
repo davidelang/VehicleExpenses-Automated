@@ -428,14 +428,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val outputTensor = predictor.getOutput(0)
-            if (isArm) {
-                val int8Buf = sharedTierBuffers[tierScale]!!
-                Log.i(
-                    "PaddleDiag",
-                    "detect tier=$tierScale bound output tensor directly to long-lived int8 buf (direct write by model) cap=${int8Buf.capacity()} w*h=${tierScale * tierScale}",
-                )
-                NativeImageUtils.bindOutputInt8(outputTensor, int8Buf, tierScale, tierScale)
-            }
 
             val tInfer0 = System.nanoTime()
             predictor.run()
@@ -454,6 +446,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val int8Buf = sharedTierBuffers[tierScale]!!
             int8Buf.position(0)
             if (isArm) {
+                int8Buf.clear()
+                NativeImageUtils.copyTensorInt8ToBuffer(outputTensor, int8Buf, expected)
                 NativeImageUtils.convertSignedInt8BufToUint8(int8Buf, expected)
                 int8Buf.position(0)
             }
@@ -527,7 +521,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         if (isArm) {
             Log.i(
                 "PaddleDiag",
-                "detectMat ${w}x$h: ARM input on temp buf, output bound directly to long-lived int8 buf (direct write)",
+                "detectMat ${w}x$h: ARM input on temp buf; output copied post-run from kInt8 tensor",
             )
         } else {
             Log.i("PaddleDiag", "detectMat ${w}x$h: x86 float temp I/O; helper quantizes output to int8 after run")
@@ -561,14 +555,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val outputTensor = predictor.getOutput(0)
-            if (isArm) {
-                val longLived = sharedMaxInt8Buffer!!
-                Log.i(
-                    "PaddleDiag",
-                    "detectMat ${w}x$h bound output tensor directly to long-lived int8 buf (direct write by model) cap=${longLived.capacity()} w*h=${w * h}",
-                )
-                NativeImageUtils.bindOutputInt8(outputTensor, longLived, w, h)
-            }
 
             val tInfer0 = System.nanoTime()
             predictor.run()
@@ -589,6 +575,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val int8Buf = sharedMaxInt8Buffer!!
             int8Buf.position(0)
             if (isArm) {
+                int8Buf.clear()
+                NativeImageUtils.copyTensorInt8ToBuffer(outputTensor, int8Buf, expected)
                 NativeImageUtils.convertSignedInt8BufToUint8(int8Buf, expected)
                 int8Buf.position(0)
             }

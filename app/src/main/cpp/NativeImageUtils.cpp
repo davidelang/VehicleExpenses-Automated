@@ -677,6 +677,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCopyT
     }
     const int8_t* src = lite_tensor->data<int8_t>();
     if (!src) return;
+    int signedMin = 127;
+    int signedMax = -128;
+    int uMin = 255;
+    int uMax = 0;
+    for (jint i = 0; i < count; ++i) {
+        const int s = static_cast<int>(src[i]);
+        signedMin = std::min(signedMin, s);
+        signedMax = std::max(signedMax, s);
+        const int u = static_cast<int>(static_cast<uint8_t>(src[i] ^ 128));
+        uMin = std::min(uMin, u);
+        uMax = std::max(uMax, u);
+    }
+    LOGI(
+        "PaddleDiag: copyTensorInt8ToBuffer INT8_TENSOR_FULL signed min=%d max=%d u_equiv min=%d max=%d count=%d",
+        signedMin, signedMax, uMin, uMax, count);
     std::memcpy(dst, src, static_cast<size_t>(count));
     LOGI("PaddleDiag: copyTensorInt8ToBuffer copied %d bytes to long-lived dest %p", count, dst);
 }
@@ -701,7 +716,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConve
         uMax = std::max(uMax, u_val);
     }
     LOGI(
-        "PaddleDiag: convertSignedInt8BufToUint8 count=%d u_val min=%d max=%d (ARM direct bind post-run)",
+        "PaddleDiag: convertSignedInt8BufToUint8 count=%d uint8 min=%d max=%d (ARM post-run copy path)",
         count, uMin, uMax);
     if (count >= 4) {
         LOGI(
