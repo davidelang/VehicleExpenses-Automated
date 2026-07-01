@@ -519,8 +519,16 @@ object PumpCostVolUtils {
         val masterH = buffer.c[id].height
         val hist = res.heatmapHist ?: IntArray(0)
         if (metadata != null && hist.isNotEmpty()) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
-        val rawRects = res.nativeBoxes.map { box ->
+        if (res.nativeBoxes.isEmpty()) {
+            android.util.Log.w("PumpCostVol", "runDiscoveryPaddle scale=$scale: zero detector boxes; skipping rect expansion")
+            return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+        }
+        val rawRects = res.nativeBoxes.mapNotNull { box ->
             val p = box.points
+            if (p.size < 8) {
+                android.util.Log.w("PumpCostVol", "runDiscoveryPaddle scale=$scale: skipping box with invalid points size=${p.size}")
+                return@mapNotNull null
+            }
             val minX = minOf(p[0], p[2], p[4], p[6]).toInt()
             val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
             val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
@@ -573,6 +581,19 @@ object PumpCostVolUtils {
             val mt = rect.top.toInt().coerceIn(0, masterH - 1)
             val mr = rect.right.toInt().coerceIn(0, masterW - 1)
             val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
+            val boxW = (mr - ml).coerceAtLeast(0)
+            val boxH = (mb - mt).coerceAtLeast(0)
+            if (boxW <= 0 || boxH <= 0) {
+                android.util.Log.w("PumpCostVol", "runDiscoveryPaddle scale=$scale: skipping zero-area box")
+                return@forEach
+            }
+            if (boxW >= masterW - 2 && boxH >= masterH - 2) {
+                android.util.Log.w(
+                    "PumpCostVol",
+                    "runDiscoveryPaddle scale=$scale: skipping full-image degenerate box ($ml,$mt)-($mr,$mb)",
+                )
+                return@forEach
+            }
             val rawRect = Rect(ml, mt, mr, mb)
             val (retractedRect, maxExtentRect) = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
             val fl = retractedRect.left * fullW.toFloat() / contentW

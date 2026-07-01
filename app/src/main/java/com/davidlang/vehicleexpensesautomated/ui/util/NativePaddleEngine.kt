@@ -395,7 +395,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         if (isArm) {
             Log.i(
                 "PaddleDiag",
-                "detect tier=$tierScale: ARM input on temp buf; output copied post-run from kInt8 tensor",
+                "detect tier=$tierScale: ARM input on temp buf; output copied post-run (kInt8 or kFloat tensor)",
             )
         } else {
             Log.i("PaddleDiag", "detect tier=$tierScale: x86 float temp I/O; helper quantizes output to int8 after run")
@@ -447,8 +447,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             int8Buf.position(0)
             if (isArm) {
                 int8Buf.clear()
-                NativeImageUtils.copyTensorInt8ToBuffer(outputTensor, int8Buf, expected)
-                NativeImageUtils.convertSignedInt8BufToUint8(int8Buf, expected)
+                val copied = NativeImageUtils.copyTensorInt8ToBuffer(
+                    outputTensor, int8Buf, expected, DET_HEATMAP_INT8_SCALE,
+                )
+                if (!copied) {
+                    Log.e("PaddleDiag", "detect tier=$tierScale: ARM output copy/quantize failed")
+                    return null
+                }
                 int8Buf.position(0)
             }
 
@@ -521,7 +526,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         if (isArm) {
             Log.i(
                 "PaddleDiag",
-                "detectMat ${w}x$h: ARM input on temp buf; output copied post-run from kInt8 tensor",
+                "detectMat ${w}x$h: ARM input on temp buf; output copied post-run (kInt8 or kFloat tensor)",
             )
         } else {
             Log.i("PaddleDiag", "detectMat ${w}x$h: x86 float temp I/O; helper quantizes output to int8 after run")
@@ -576,8 +581,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             int8Buf.position(0)
             if (isArm) {
                 int8Buf.clear()
-                NativeImageUtils.copyTensorInt8ToBuffer(outputTensor, int8Buf, expected)
-                NativeImageUtils.convertSignedInt8BufToUint8(int8Buf, expected)
+                val copied = NativeImageUtils.copyTensorInt8ToBuffer(
+                    outputTensor, int8Buf, expected, DET_HEATMAP_INT8_SCALE,
+                )
+                if (!copied) {
+                    Log.e("PaddleDiag", "detectMat ${w}x$h: ARM output copy/quantize failed")
+                    return null
+                }
                 int8Buf.position(0)
             }
 

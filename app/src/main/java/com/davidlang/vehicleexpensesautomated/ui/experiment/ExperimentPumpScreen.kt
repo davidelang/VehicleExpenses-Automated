@@ -3227,6 +3227,16 @@ private suspend fun runDiscoveryPaddle(
         val mt = rect.top.toInt().coerceIn(0, masterH - 1)
         val mr = rect.right.toInt().coerceIn(0, masterW - 1)
         val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
+        val boxW = (mr - ml).coerceAtLeast(0)
+        val boxH = (mb - mt).coerceAtLeast(0)
+        if (boxW <= 0 || boxH <= 0) {
+            Log.w(TAG, "runDiscoveryPaddle scale=$scale: skipping zero-area box")
+            return@forEach
+        }
+        if (boxW >= masterW - 2 && boxH >= masterH - 2) {
+            Log.w(TAG, "runDiscoveryPaddle scale=$scale: skipping full-image degenerate box ($ml,$mt)-($mr,$mb)")
+            return@forEach
+        }
         val rawRect = android.graphics.Rect(ml, mt, mr, mb)
 
         // 2. Perform Native Expansion (with Height-Relative Jump-Out and Retraction)

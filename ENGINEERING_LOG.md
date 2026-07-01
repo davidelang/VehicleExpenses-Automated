@@ -408,3 +408,14 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Phase 1 (c836b9ad): FLOAT_TENSOR_FULL + INT8_TENSOR_FULL diagnostics
 - Phase 2 (6ce783cf): remove detector bindOutputInt8; ARM copyTensorInt8ToBuffer + convert
 - Stale direct-bind comments removed; convert log updated
+
+## 2026-06-30 - EXEC: fix-uniform-128-on-arm-post-copy-plus-low-float-range-emu-segv
+
+- Phase 1 start: enhance ARM int8 copy/convert diagnostics; Phase 2: uniform/degenerate heatmap guards
+
+## 2026-06-30 - fix-uniform-128 ARM kFloat output + degenerate heatmap guards
+
+- copyTensorInt8ToBuffer: handle kFloat (prec=1) via quantize; kInt8 xor-in-place; return boolean
+- processHeatmapFromInt8UData: treat uniform uMin==uMax as empty
+- NativePaddleEngine ARM: precision-aware copy, skip separate convert step
+- PumpCostVolUtils + ExperimentPumpScreen: zero-box, invalid-point, full-image degenerate guards

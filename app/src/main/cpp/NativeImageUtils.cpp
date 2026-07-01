@@ -645,55 +645,79 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuant
     env->ReleaseFloatArrayElements(src, fdata, JNI_ABORT);
 }
 
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCopyTensorInt8ToBuffer(
-    JNIEnv* env, jobject thiz, jobject tensor, jobject dstBuffer, jint count) {
+    JNIEnv* env, jobject thiz, jobject tensor, jobject dstBuffer, jint count, jfloat scale) {
     (void)thiz;
-    if (count <= 0) return;
+    if (count <= 0 || scale <= 0.f) return JNI_FALSE;
     void* dst = env->GetDirectBufferAddress(dstBuffer);
-    if (!dst) return;
+    if (!dst) return JNI_FALSE;
     const jlong dstCap = env->GetDirectBufferCapacity(dstBuffer);
     if (dstCap < count) {
         LOGE("copyTensorInt8ToBuffer: cap=%lld count=%d", (long long)dstCap, count);
-        return;
+        return JNI_FALSE;
     }
 
     jclass cls = env->GetObjectClass(tensor);
     jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
-        return;
+        return JNI_FALSE;
     }
     jlong nativePtr = env->GetLongField(tensor, fid);
-    if (!nativePtr) return;
+    if (!nativePtr) return JNI_FALSE;
 
     auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
-    if (!uptr || !(*uptr)) return;
+    if (!uptr || !(*uptr)) return JNI_FALSE;
 
     paddle::lite_api::Tensor* lite_tensor = uptr->get();
-    if (lite_tensor->precision() != paddle::lite_api::PrecisionType::kInt8) {
-        LOGE("copyTensorInt8ToBuffer: expected kInt8 prec=%d", static_cast<int>(lite_tensor->precision()));
-        return;
+    const auto prec = lite_tensor->precision();
+    LOGI(
+        "PaddleDiag: copyTensorInt8ToBuffer output prec=%d (1=kFloat 2=kInt8) count=%d scale=%.5f",
+        static_cast<int>(prec), count, scale);
+
+    if (prec == paddle::lite_api::PrecisionType::kFloat) {
+        const float* fdata = lite_tensor->data<float>();
+        if (!fdata) {
+            LOGE("copyTensorInt8ToBuffer: kFloat output but data() null");
+            return JNI_FALSE;
+        }
+        quantizeFloatHeatmapToInt8Buffer(
+            fdata, static_cast<int8_t*>(dst), count, scale);
+        LOGI(
+            "PaddleDiag: copyTensorInt8ToBuffer kFloat→uint8 quantized to long-lived dest %p",
+            dst);
+        return JNI_TRUE;
     }
+
+    if (prec != paddle::lite_api::PrecisionType::kInt8) {
+        LOGE("copyTensorInt8ToBuffer: unsupported prec=%d", static_cast<int>(prec));
+        return JNI_FALSE;
+    }
+
     const int8_t* src = lite_tensor->data<int8_t>();
-    if (!src) return;
+    if (!src) return JNI_FALSE;
     int signedMin = 127;
     int signedMax = -128;
+    int8_t* dstBytes = static_cast<int8_t*>(dst);
     int uMin = 255;
     int uMax = 0;
     for (jint i = 0; i < count; ++i) {
         const int s = static_cast<int>(src[i]);
         signedMin = std::min(signedMin, s);
         signedMax = std::max(signedMax, s);
-        const int u = static_cast<int>(static_cast<uint8_t>(src[i] ^ 128));
+        dstBytes[i] = static_cast<int8_t>(static_cast<uint8_t>(src[i]) ^ 128);
+        const int u = static_cast<int>(static_cast<uint8_t>(dstBytes[i]));
         uMin = std::min(uMin, u);
         uMax = std::max(uMax, u);
     }
     LOGI(
-        "PaddleDiag: copyTensorInt8ToBuffer INT8_TENSOR_FULL signed min=%d max=%d u_equiv min=%d max=%d count=%d",
-        signedMin, signedMax, uMin, uMax, count);
-    std::memcpy(dst, src, static_cast<size_t>(count));
-    LOGI("PaddleDiag: copyTensorInt8ToBuffer copied %d bytes to long-lived dest %p", count, dst);
+        "PaddleDiag: copyTensorInt8ToBuffer INT8_TENSOR_FULL signed min=%d max=%d count=%d",
+        signedMin, signedMax, count);
+    LOGI(
+        "PaddleDiag: copyTensorInt8ToBuffer kInt8→uint8 min=%d max=%d copied to dest %p",
+        uMin, uMax, dst);
+    return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL
@@ -1461,8 +1485,11 @@ static std::vector<float> processHeatmapFromInt8UData(
         "PaddleDiag: processHeatmapFromInt8Buffer uint8 min=%d max=%d uThreshold=%d scale=%.5f",
         uMin, uMax, uThreshold, scale);
 
-    if (uMax < uThreshold) {
-        LOGI("PaddleDiag: processHeatmapFromInt8Buffer all below threshold; returning empty boxes + zero hist");
+    if (uMax < uThreshold || uMin == uMax) {
+        LOGI(
+            "PaddleDiag: processHeatmapFromInt8Buffer degenerate heatmap "
+            "(uniform=%d uMin=%d uMax=%d uThreshold=%d); returning empty boxes + zero hist",
+            (uMin == uMax) ? 1 : 0, uMin, uMax, uThreshold);
         return makeEmptyHeatmapPostResult();
     }
 
