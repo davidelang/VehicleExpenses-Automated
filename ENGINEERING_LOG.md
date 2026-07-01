@@ -472,3 +472,7 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 ## 2026-07-01 - Phase 2: remove pump dual 320 recset
 
 - experimentRecSet320x48 removed; getFinal paths use experimentRecSet1024x48
+
+## 2026-07-01 - Phase 3: 256 hardcode test in useRecSetPs
+
+- quantizeMonoInputToScratch(256,48) + bindInputInt8(...,256,48) literal in processOcr/Numeric useRecSetPs branches only

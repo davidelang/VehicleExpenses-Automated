@@ -695,19 +695,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         recBuf.clear()
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
             Log.i("PaddleDiag", "processOcr useRecSetPs bind=${bindW}x${bindH}")
-            recSet.quantizeMonoInputToScratch(bindW, bindH)
-            recSet.s.raw
+            recSet.quantizeMonoInputToScratch(256, 48)
+            val buf = recSet.s.raw
+            NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, 256, 48)
+            buf
         } else {
             NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, bindW, bindH, w, h)
             recBuf.position(0)
+            NativeImageUtils.bindInputInt8(predictor.getInput(0), recBuf, bindW, bindH)
             recBuf
         }
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
-            val tJniIn0 = System.nanoTime()
-            NativeImageUtils.bindInputInt8(predictor.getInput(0), bindBuf, bindW, bindH)
-            val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+            val tJniIn = 0.0
 
             val tInfer0 = System.nanoTime()
             predictor.run()
@@ -770,19 +771,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         recBuf.clear()
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
             Log.i("PaddleDiag", "processOcrNumeric useRecSetPs bind=${bindW}x${bindH}")
-            recSet.quantizeMonoInputToScratch(bindW, bindH)
-            recSet.s.raw
+            recSet.quantizeMonoInputToScratch(256, 48)
+            val buf = recSet.s.raw
+            NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, 256, 48)
+            buf
         } else {
             NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, bindW, bindH, w, h)
             recBuf.position(0)
+            NativeImageUtils.bindInputInt8(predictor.getInput(0), recBuf, bindW, bindH)
             recBuf
         }
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
-            val tJniIn0 = System.nanoTime()
-            NativeImageUtils.bindInputInt8(predictor.getInput(0), bindBuf, bindW, bindH)
-            val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+            val tJniIn = 0.0
 
             val tInfer0 = System.nanoTime()
             predictor.run()
