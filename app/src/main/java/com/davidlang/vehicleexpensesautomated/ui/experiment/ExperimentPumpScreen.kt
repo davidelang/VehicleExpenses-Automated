@@ -285,8 +285,8 @@ private suspend fun runPumpExperiment(
     val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; JSON streamed to main file, frags deleted per row)
     var currentSize = 0
     val footer = "</table></body></html>"
-    val experimentRecSet320x48 = BufferSet(320, 48)
-    val experimentRecSet1024x48 = BufferSet(1024, 48)  // per plan for D/E (and mirrors) OCR: larger for garbage tolerance + 4px buffer
+    val experimentRecSet320x48 = BufferSet(320, 48)  // odometer / legacy 320 paths
+    val experimentRecSet1024x48 = BufferSet(1024, 48)  // pump redbox rec: full 1024x48 backing, internal crop at (4,4)
     val experimentDetSet512x128 = BufferSet(512, 128)
     val masterBuffer = BufferSet(1, 1)
 
@@ -894,14 +894,14 @@ private suspend fun runPumpExperiment(
                             val rr = r.right.coerceIn(l + 1, imgW)
                             val bb = r.bottom.coerceIn(t + 1, imgH)
                             val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            val (targetW, targetH) = pumpRecTargetSize(pW, pH, experimentRecSet1024x48.width)
                             experimentRecSet1024x48.p.clear()
                             val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
                             val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
-                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                            experimentRecSet1024x48.c[recCropId].release()
+                            val res = paddleEngine.recognize(experimentRecSet1024x48.p, experimentRecSet1024x48)
+                            workspace.c[cropId].release()
                             pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                         }
                     }
@@ -913,14 +913,14 @@ private suspend fun runPumpExperiment(
                             val rr = rp.right.coerceIn(l + 1, imgW)
                             val bb = rp.bottom.coerceIn(t + 1, imgH)
                             val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                            val (targetW, targetH) = pumpRecTargetSize(pW, pH, experimentRecSet1024x48.width)
                             experimentRecSet1024x48.p.clear()
                             val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
                             val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
                             org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
-                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
+                            experimentRecSet1024x48.c[recCropId].release()
+                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.p, experimentRecSet1024x48)
+                            workspace.c[cropId].release()
                             pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
                         }
                     }
@@ -2607,6 +2607,21 @@ private fun shrinkBlueRectForOcr(fullBlue: android.graphics.Rect, imgW: Int, img
     return android.graphics.Rect(nl, nt.coerceIn(0, imgH - 1), nr, nb.coerceIn(nt + 1, imgH))
 }
 
+/** Scaled crop size for pump redbox rec: 1024 backing uses 40px height + aspect width (no 320 cap). */
+private fun pumpRecTargetSize(pW: Int, pH: Int, recBufferWidth: Int): Pair<Int, Int> {
+    return if (recBufferWidth >= 1024) {
+        val targetH = 40
+        val rawW = (pW * (40f / pH)).toInt()
+        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(recBufferWidth - 4)
+        targetW to targetH
+    } else {
+        val targetH = 48
+        val rawW = (pW * (48f / pH)).toInt()
+        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+        targetW to targetH
+    }
+}
+
 private suspend fun ocrBinPeakRectsAsisAndDigits(
     workspace: BufferSet,
     binSlice: BufferSet.Slice,
@@ -2623,14 +2638,20 @@ private suspend fun ocrBinPeakRectsAsisAndDigits(
             val rr = r.right.coerceIn(l + 1, imgW)
             val bb = r.bottom.coerceIn(t + 1, imgH)
             val cropId = binSlice.createCrop(l, t, rr - l, bb - t)
-            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+            val (targetW, targetH) = pumpRecTargetSize(pW, pH, recBuffer.width)
             recBuffer.p.clear()
             val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
             val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
             Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-            val res = paddleEngine.recognize(recBuffer.c[recCropId])
-            recBuffer.c[recCropId].release(); workspace.c[cropId].release()
+            val res = if (recBuffer.width >= 1024) {
+                recBuffer.c[recCropId].release()
+                paddleEngine.recognize(recBuffer.p, recBuffer)
+            } else {
+                val r = paddleEngine.recognize(recBuffer.c[recCropId])
+                recBuffer.c[recCropId].release()
+                r
+            }
+            workspace.c[cropId].release()
             res.debugText to (if (res.perCharProbs.isNotEmpty()) res.perCharProbs else "")
         }
     }
@@ -2642,14 +2663,20 @@ private suspend fun ocrBinPeakRectsAsisAndDigits(
             val rr = rp.right.coerceIn(l + 1, imgW)
             val bb = rp.bottom.coerceIn(t + 1, imgH)
             val cropId = binSlice.createCrop(l, t, rr - l, bb - t)
-            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+            val (targetW, targetH) = pumpRecTargetSize(pW, pH, recBuffer.width)
             recBuffer.p.clear()
             val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
             val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
             Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-            val res = paddleEngine.recognizeNumericDecimal(recBuffer.c[recCropId])
-            recBuffer.c[recCropId].release(); workspace.c[cropId].release()
+            val res = if (recBuffer.width >= 1024) {
+                recBuffer.c[recCropId].release()
+                paddleEngine.recognizeNumericDecimal(recBuffer.p, recBuffer)
+            } else {
+                val r = paddleEngine.recognizeNumericDecimal(recBuffer.c[recCropId])
+                recBuffer.c[recCropId].release()
+                r
+            }
+            workspace.c[cropId].release()
             res.debugText to (if (res.perCharProbs.isNotEmpty()) res.perCharProbs else "")
         }
     }
@@ -3333,31 +3360,38 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
 
         val cropId = buffer.createCrop(l.toInt(), t.toInt(), (r - l).toInt(), (b - t).toInt())
 
-        val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
-        if (targetW <= 0 || targetH <= 0) return@map hunk  // guard for bad aspect / tiny derived box after prune to 4 largest (prevents OpenCV resize assertion inv_scale_x > 0 and NPE in downstream OCR for C/E on first/some photos)
+        val (targetW, targetH) = pumpRecTargetSize(pW, pH, recBuffer.width)
+        if (targetW <= 0 || targetH <= 0) return@map hunk
 
         recBuffer.p.clear()
-        val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
+        val cropX = if (recBuffer.width >= 1024) 4 else 0
+        val cropY = if (recBuffer.width >= 1024) 4 else 0
+        val recCropId = recBuffer.createCrop(cropX, cropY, targetW, targetH)
         val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
         org.opencv.imgproc.Imgproc.resize(buffer.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
 
-        val res = if (engine == "ML Kit") {
+        val res = when {
+            engine == "ML Kit" -> {
                 val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
-                recBuffer.p.nv21,
-                recBuffer.p.width,
-                recBuffer.p.height,
-                0,
-                com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
+                    recBuffer.p.nv21,
+                    recBuffer.p.width,
+                    recBuffer.p.height,
+                    0,
+                    com.google.mlkit.vision.common.InputImage.IMAGE_FORMAT_NV21
                 )
                 val ocrRes = OdometerOcrUtils.extractFromPhotoBitmapRaw(img)
-            // ML Kit 7-Segment Cleanup + Upside Down detection
-            val cleaned = OdometerOcrUtils.clean7SegmentDigits(ocrRes.debugText, Math.abs(angle) > 135f)
-            ocrRes.copy(debugText = cleaned)
-        } else {
-            paddleEngine.recognize(recBuffer.c[recCropId])
+                val cleaned = OdometerOcrUtils.clean7SegmentDigits(ocrRes.debugText, Math.abs(angle) > 135f)
+                ocrRes.copy(debugText = cleaned)
+            }
+            recBuffer.width >= 1024 -> {
+                recBuffer.c[recCropId].release()
+                paddleEngine.recognize(recBuffer.p, recBuffer)
+            }
+            else -> paddleEngine.recognize(recBuffer.c[recCropId]).also { recBuffer.c[recCropId].release() }
         }
 
-        recBuffer.c[recCropId].release(); buffer.c[cropId].release()
+        if (engine == "ML Kit") recBuffer.c[recCropId].release()
+        buffer.c[cropId].release()
         PumpHunk(res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else "", hunk.rect)
     }
 }

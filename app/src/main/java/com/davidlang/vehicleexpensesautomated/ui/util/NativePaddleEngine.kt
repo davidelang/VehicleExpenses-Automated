@@ -662,6 +662,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
+    private fun recBindDimensions(useRecSetPs: Boolean, recSet: BufferSet?): Pair<Int, Int> {
+        return if (useRecSetPs && recSet != null) {
+            recSet.width to recSet.height
+        } else {
+            320 to 48
+        }
+    }
+
     private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>, recSet: BufferSet? = null): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
@@ -676,8 +684,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             else -> throw IllegalArgumentException("Unsupported input type for processOcr")
         }
 
-        if (w * h > 320 * 48) {
-            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated rec tensor capacity.")
+        val (bindW, bindH) = recBindDimensions(useRecSetPs, recSet)
+        if (w * h > bindW * bindH) {
+            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed rec tensor capacity (${bindW}x${bindH}).")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
 
@@ -685,10 +694,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val recBuf = sharedRecInt8Buffer ?: return@withContext RecStageResult("(Buffer Error)", 0, 0f, null)
         recBuf.clear()
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            recSet.quantizeMonoInputToScratch(320, 48)
+            Log.i("PaddleDiag", "processOcr useRecSetPs bind=${bindW}x${bindH}")
+            recSet.quantizeMonoInputToScratch(bindW, bindH)
             recSet.s.raw
         } else {
-            NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, 320, 48, w, h)
+            NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, bindW, bindH, w, h)
             recBuf.position(0)
             recBuf
         }
@@ -696,7 +706,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         try {
             val tJniIn0 = System.nanoTime()
-            NativeImageUtils.bindInputInt8(predictor.getInput(0), bindBuf, 320, 48)
+            NativeImageUtils.bindInputInt8(predictor.getInput(0), bindBuf, bindW, bindH)
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
@@ -749,8 +759,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             else -> throw IllegalArgumentException("Unsupported input type for processOcr")
         }
 
-        if (w * h > 320 * 48) {
-            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated rec tensor capacity.")
+        val (bindW, bindH) = recBindDimensions(useRecSetPs, recSet)
+        if (w * h > bindW * bindH) {
+            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed rec tensor capacity (${bindW}x${bindH}).")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
 
@@ -758,10 +769,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val recBuf = sharedRecInt8Buffer ?: return@withContext RecStageResult("(Buffer Error)", 0, 0f, null)
         recBuf.clear()
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            recSet.quantizeMonoInputToScratch(320, 48)
+            Log.i("PaddleDiag", "processOcrNumeric useRecSetPs bind=${bindW}x${bindH}")
+            recSet.quantizeMonoInputToScratch(bindW, bindH)
             recSet.s.raw
         } else {
-            NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, 320, 48, w, h)
+            NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, bindW, bindH, w, h)
             recBuf.position(0)
             recBuf
         }
@@ -769,7 +781,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         try {
             val tJniIn0 = System.nanoTime()
-            NativeImageUtils.bindInputInt8(predictor.getInput(0), bindBuf, 320, 48)
+            NativeImageUtils.bindInputInt8(predictor.getInput(0), bindBuf, bindW, bindH)
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
@@ -891,7 +903,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
      * Decimal-aware numeric recognition for pump cost/volume (includes '.').
      * Uses the same numeric model but the ALLOWED_DIGITS_DECIMAL constrained set.
      */
-    suspend fun recognizeNumericDecimal(input: Any): OcrResult = withContext(Dispatchers.IO) {
+    suspend fun recognizeNumericDecimal(input: Any): OcrResult = doRecognizeNumericDecimal(input, null)
+
+    suspend fun recognizeNumericDecimal(input: Any, recSet: BufferSet): OcrResult =
+        doRecognizeNumericDecimal(input, recSet)
+
+    private suspend fun doRecognizeNumericDecimal(input: Any, recSet: BufferSet?): OcrResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
         val w: Int; val h: Int
         when (input) {
@@ -903,7 +920,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Decimal Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
 
-        val res = processOcrNumeric(input, sharedRecognizerV3, dictionaryV3, ALLOWED_DIGITS_DECIMAL)
+        val res = processOcrNumeric(input, sharedRecognizerV3, dictionaryV3, ALLOWED_DIGITS_DECIMAL, recSet)
         OcrResult(
             engineName = "Paddle Numeric Decimal Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,

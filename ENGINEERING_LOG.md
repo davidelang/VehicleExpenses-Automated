@@ -449,3 +449,7 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 ## 2026-06-30 - CC measurement diags for x86 SEGV diagnosis
 
 - processHeatmapFromInt8UData: on_pixels, on_u_1_20/21_255, numLabels, comp l=1..5 bbox, OOB_BBOX/OOB_ACCESS logs
+
+## 2026-07-01 - EXEC: minimal-1024-rec-processocr-plan
+
+- Phase 1 start: read plan and locate rec/processOcr paths for 1024 tier

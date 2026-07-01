@@ -638,14 +638,20 @@ object PumpCostVolUtils {
                 val rr = r.right.coerceIn(l + 1, imgW)
                 val bb = r.bottom.coerceIn(t + 1, imgH)
                 val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                val (targetW, targetH) = pumpRecTargetSize(pW, pH, recBuffer.width)
                 recBuffer.p.clear()
                 val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
                 val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
                 Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                val res = paddleEngine.recognize(recBuffer.c[recCropId])
-                recBuffer.c[recCropId].release(); workspace.c[cropId].release()
+                val res = if (recBuffer.width >= 1024) {
+                    recBuffer.c[recCropId].release()
+                    paddleEngine.recognize(recBuffer.p, recBuffer)
+                } else {
+                    val r = paddleEngine.recognize(recBuffer.c[recCropId])
+                    recBuffer.c[recCropId].release()
+                    r
+                }
+                workspace.c[cropId].release()
                 pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
             }
         }
@@ -657,14 +663,20 @@ object PumpCostVolUtils {
                 val rr = rp.right.coerceIn(l + 1, imgW)
                 val bb = rp.bottom.coerceIn(t + 1, imgH)
                 val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+                val (targetW, targetH) = pumpRecTargetSize(pW, pH, recBuffer.width)
                 recBuffer.p.clear()
                 val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
                 val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
                 Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                val res = paddleEngine.recognizeNumericDecimal(recBuffer.c[recCropId])
-                recBuffer.c[recCropId].release(); workspace.c[cropId].release()
+                val res = if (recBuffer.width >= 1024) {
+                    recBuffer.c[recCropId].release()
+                    paddleEngine.recognizeNumericDecimal(recBuffer.p, recBuffer)
+                } else {
+                    val r = paddleEngine.recognizeNumericDecimal(recBuffer.c[recCropId])
+                    recBuffer.c[recCropId].release()
+                    r
+                }
+                workspace.c[cropId].release()
                 pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
             }
         }
@@ -732,5 +744,20 @@ object PumpCostVolUtils {
             customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs
         )
         return classifyCostVolFromBoxOcr(gCands)
+    }
+
+    /** Scaled crop size for pump redbox rec: 1024 backing uses 40px height + aspect width (no 320 cap). */
+    private fun pumpRecTargetSize(pW: Int, pH: Int, recBufferWidth: Int): Pair<Int, Int> {
+        return if (recBufferWidth >= 1024) {
+            val targetH = 40
+            val rawW = (pW * (40f / pH)).toInt()
+            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(recBufferWidth - 4)
+            targetW to targetH
+        } else {
+            val targetH = 48
+            val rawW = (pW * (48f / pH)).toInt()
+            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
+            targetW to targetH
+        }
     }
 }
