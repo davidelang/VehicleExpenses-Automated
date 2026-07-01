@@ -511,3 +511,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - useRecSetPs: recSet.p.raw + bindInputUInt8(bindW,bindH), no quantize
 - crop Slice: input.raw uint8 zero-copy; Mat path int8 fallback unchanged
 - Re-execution: no further source changes required
+
+## 2026-07-01 - Host paddle precision verification plan (phase 2)
+
+- Executing `dev-ai-interaction/plans/host-paddle-precision-verification-and-smoke-tests-20260701-plan.md`.
+- Phase 1–2: `research/opt-flags-for-precision.md` documents opt binary path, quant flags, conversion head findings (float32 heads; uint8 runtime only).
+- Baseline tag: `int8-paddle-processing/builds` at acbdc9c7; builds require `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64` (Java 25 lacks JAVA_COMPILER for Hilt).
