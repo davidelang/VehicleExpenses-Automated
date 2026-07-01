@@ -694,8 +694,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val recBuf = sharedRecInt8Buffer ?: return@withContext RecStageResult("(Buffer Error)", 0, 0f, null)
         recBuf.clear()
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            Log.i("PaddleDiag", "processOcr useRecSetPs bind=${bindW}x${bindH}")
-            recSet.quantizeMonoInputToScratch(256, 48)
+            Log.i("PaddleDiag", "processOcr useRecSetPs LIE declare=256x48 stride=1024 backing=${bindW}x${bindH}")
+            recSet.quantizeMonoInputToScratch(1024, 48)
             val buf = recSet.s.raw
             NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, 256, 48)
             buf
@@ -770,8 +770,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val recBuf = sharedRecInt8Buffer ?: return@withContext RecStageResult("(Buffer Error)", 0, 0f, null)
         recBuf.clear()
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            Log.i("PaddleDiag", "processOcrNumeric useRecSetPs bind=${bindW}x${bindH}")
-            recSet.quantizeMonoInputToScratch(256, 48)
+            Log.i("PaddleDiag", "processOcrNumeric useRecSetPs LIE declare=256x48 stride=1024 backing=${bindW}x${bindH}")
+            recSet.quantizeMonoInputToScratch(1024, 48)
             val buf = recSet.s.raw
             NativeImageUtils.bindInputInt8(predictor.getInput(0), buf, 256, 48)
             buf

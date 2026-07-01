@@ -476,3 +476,13 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 ## 2026-07-01 - Phase 3: 256 hardcode test in useRecSetPs
 
 - quantizeMonoInputToScratch(256,48) + bindInputInt8(...,256,48) literal in processOcr/Numeric useRecSetPs branches only
+
+## 2026-07-01 - EXEC: 256-lie-test-rec-int8-stride-consistent
+
+- Phase 1 start: read plan and locate rec int8 stride sites
+
+## 2026-07-01 - 256-lie rec int8 stride-consistent diagnostic
+
+- quantizeMonoInputToScratch(1024,48) preserves 1024-byte row stride in backing
+- bindInputInt8(...,256,48) declares narrow width (LIE test for float32-read hypothesis)
+- Log: LIE declare=256x48 stride=1024 backing=WxH in processOcr + processOcrNumeric
