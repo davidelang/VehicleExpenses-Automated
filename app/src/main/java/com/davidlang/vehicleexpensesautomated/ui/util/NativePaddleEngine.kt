@@ -395,7 +395,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         if (isArm) {
             Log.i(
                 "PaddleDiag",
-                "detect tier=$tierScale: ARM input on temp buf, output bound directly to long-lived int8 buf (direct write)",
+                "detect tier=$tierScale: ARM input on temp buf; output copied post-run from kInt8 tensor",
             )
         } else {
             Log.i("PaddleDiag", "detect tier=$tierScale: x86 float temp I/O; helper quantizes output to int8 after run")
