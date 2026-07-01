@@ -285,7 +285,6 @@ private suspend fun runPumpExperiment(
     val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; JSON streamed to main file, frags deleted per row)
     var currentSize = 0
     val footer = "</table></body></html>"
-    val experimentRecSet320x48 = BufferSet(320, 48)  // odometer / legacy 320 paths
     val experimentRecSet1024x48 = BufferSet(1024, 48)  // pump redbox rec: full 1024x48 backing, internal crop at (4,4)
     val experimentDetSet512x128 = BufferSet(512, 128)
     val masterBuffer = BufferSet(1, 1)
@@ -1146,7 +1145,7 @@ private suspend fun runPumpExperiment(
                 }
                 val ocrA = ocrPumpRectsAsisAndDigits(aRedPixel)
                 val aCands = buildRedBoxCandidates(aRedPixel, ocrA.asis, ocrA.digits, ocrA.asisProbs, ocrA.digitsProbs)
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet1024x48, paddleEngine, context, imgW, imgH, aCands)
                 val cvAPaddle = PumpCostVolUtils.classifyCostVolFromBoxOcr(aCands)
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = aRedPixel,
@@ -1158,7 +1157,7 @@ private suspend fun runPumpExperiment(
                     finalVol = cvAPaddle.vol,
                     assembly = mapOf("method" to "raw", "note" to "raw reds as ocr rects (no blue expansion)")
                 )
-                    branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, aCands)
+                    branch.pathResults["ML"] = getFinal(mlHunks, "ML Kit", tilt, pdHunksRawTotal, workspace, experimentRecSet1024x48, paddleEngine, context, imgW, imgH, aCands)
                 val cvAML = PumpCostVolUtils.classifyCostVolFromBoxOcr(aCands)
                 branch.metadata["costVolDecisionData_ML"] = buildCostVolDecisionDataJson(
                     reds = aRedPixel,
@@ -1292,7 +1291,7 @@ private suspend fun runPumpExperiment(
                 // Set B — object-based blue from binPeak binaries (pre/post-clean per peak); replaces expandByUniformity path
                 val bCands = binPeakCandidatesB
                 val bOcrSourceRects = bCands.mapNotNull { it.rect }
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, bCands)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet1024x48, paddleEngine, context, imgW, imgH, bCands)
                 val redPixelB = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
@@ -1514,7 +1513,7 @@ private suspend fun runPumpExperiment(
                 // Set C — object-based blue from binPeak binaries (pre/post-clean per peak); replaces expandByUniformity path
                 val cCands = binPeakCandidatesC
                 val cOcrSourceRects = cCands.mapNotNull { it.rect }
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, cCands)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet1024x48, paddleEngine, context, imgW, imgH, cCands)
                 val redPixelC = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
@@ -1679,7 +1678,7 @@ private suspend fun runPumpExperiment(
                 }
                 val ocrD = ocrPumpRectsAsisAndDigits(customBluePixelD)
                 val dCands = buildRedBoxCandidates(customBluePixelD, ocrD.asis, ocrD.digits, ocrD.asisProbs, ocrD.digitsProbs)
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, dCands)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet1024x48, paddleEngine, context, imgW, imgH, dCands)
                 val redPixelD = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
@@ -1928,7 +1927,7 @@ private suspend fun runPumpExperiment(
                 }
                 val ocrE = ocrPumpRectsAsisAndDigits(customBluePixelE)
                 val eCands = buildRedBoxCandidates(customBluePixelE, ocrE.asis, ocrE.digits, ocrE.asisProbs, ocrE.digitsProbs)
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, eCands)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet1024x48, paddleEngine, context, imgW, imgH, eCands)
                 val redPixelE = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
@@ -2092,7 +2091,7 @@ private suspend fun runPumpExperiment(
                 // Set F — object-based blue from binPeak binaries (pre/post-clean per peak); replaces expandByUniformity path
                 val fCands = binPeakCandidatesF
                 val fOcrSourceRects = fCands.mapNotNull { it.rect }
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, fCands)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet1024x48, paddleEngine, context, imgW, imgH, fCands)
                 val redPixelF = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
@@ -2254,7 +2253,7 @@ private suspend fun runPumpExperiment(
                 }
                 val ocrG = ocrPumpRectsAsisAndDigits(customBluePixelG)
                 val gCands = buildRedBoxCandidates(customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs)
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, gCands)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet1024x48, paddleEngine, context, imgW, imgH, gCands)
                 val redPixelG = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
@@ -2393,7 +2392,6 @@ private suspend fun runPumpExperiment(
     logHeapState(context, "after-json-close")
     Log.i("PUMP_JSON", "wrote JSON footer and closed main JSON file")
 
-    experimentRecSet320x48.release()
     experimentRecSet1024x48.release()
     experimentDetSet512x128.release()
     masterBuffer.release()

@@ -468,3 +468,7 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 ## 2026-07-01 - Phase 1: unify global rec to 1024x48
 
 - _recBufferSet, sharedRecInt8Buffer, recBindDimensions fallback, model resize 48x1024
+
+## 2026-07-01 - Phase 2: remove pump dual 320 recset
+
+- experimentRecSet320x48 removed; getFinal paths use experimentRecSet1024x48
