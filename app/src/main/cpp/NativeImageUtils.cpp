@@ -42,36 +42,12 @@ bool resolveOutputHeatmapFloatData(
   constexpr float kHeatmapInt8Scale = 0.00787f;
 
   if (prec == paddle::lite_api::PrecisionType::kFloat) {
-    const float* fdata = tensor->data<float>();
-    if (!fdata) return false;
-    // ARM tensor path only: x86 uses processHeatmapFromInt8Buffer on long-lived dest (no output bind)
-    LOGI(
-        "PaddleDiag: resolve kFloat fallback fdata=%p count=%zu h=%d w=%d "
-        "(x86 should use processHeatmapFromInt8Buffer; no bindOutputInt8 on output)",
-        static_cast<const void*>(fdata), count, h, w);
-    if (count >= 4) {
-      LOGI("PaddleDiag: resolve kFloat before quant f[0-3]=[%.4f,%.4f,%.4f,%.4f]",
-           fdata[0], fdata[1], fdata[2], fdata[3]);
-    }
-    std::vector<int8_t> int8Tmp(count);
-    quantizeFloatHeatmapToInt8Buffer(
-        fdata, int8Tmp.data(), static_cast<int>(count), kHeatmapInt8Scale);
-    scratch.resize(count);
-    for (size_t i = 0; i < count; ++i) {
-      const uint8_t u_val = static_cast<uint8_t>(int8Tmp[i] ^ 128);
-      scratch[i] = static_cast<float>(u_val) * kHeatmapInt8Scale;
-    }
-    if (count >= 4) {
-      LOGI(
-          "PaddleDiag: resolve kFloat after quant int8Tmp[0-3]=[%d,%d,%d,%d] "
-          "scratch[0-3]=[%.4f,%.4f,%.4f,%.4f]",
-          static_cast<int>(int8Tmp[0]), static_cast<int>(int8Tmp[1]),
-          static_cast<int>(int8Tmp[2]), static_cast<int>(int8Tmp[3]),
-          scratch[0], scratch[1], scratch[2], scratch[3]);
-    }
-    LOGI("PaddleDiag: resolveOutputHeatmapFloatData kFloat→short-int8Tmp count=%zu", count);
-    *outPtr = scratch.data();
-    return true;
+    LOGE(
+        "*** NO FALLBACKS - LOUD ERROR *** resolveOutputHeatmapFloatData: got kFloat prec=%d "
+        "on path that requires kInt8. Fallbacks disabled — fail loudly rather than NaN/garbage. "
+        "Call forceOutputTensorInt8Precision before run on ARM.",
+        static_cast<int>(prec));
+    return false;
   }
 
   scratch.resize(count);
@@ -673,25 +649,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCopyT
     paddle::lite_api::Tensor* lite_tensor = uptr->get();
     const auto prec = lite_tensor->precision();
     LOGI(
-        "PaddleDiag: copyTensorInt8ToBuffer output prec=%d (1=kFloat 2=kInt8) count=%d scale=%.5f",
-        static_cast<int>(prec), count, scale);
-
-    if (prec == paddle::lite_api::PrecisionType::kFloat) {
-        const float* fdata = lite_tensor->data<float>();
-        if (!fdata) {
-            LOGE("copyTensorInt8ToBuffer: kFloat output but data() null");
-            return JNI_FALSE;
-        }
-        quantizeFloatHeatmapToInt8Buffer(
-            fdata, static_cast<int8_t*>(dst), count, scale);
-        LOGI(
-            "PaddleDiag: copyTensorInt8ToBuffer kFloat→uint8 quantized to long-lived dest %p",
-            dst);
-        return JNI_TRUE;
-    }
+        "PaddleDiag: copyTensorInt8ToBuffer output prec=%d (expected kInt8=2) count=%d",
+        static_cast<int>(prec), count);
 
     if (prec != paddle::lite_api::PrecisionType::kInt8) {
-        LOGE("copyTensorInt8ToBuffer: unsupported prec=%d", static_cast<int>(prec));
+        LOGE(
+            "*** NO FALLBACKS - LOUD ERROR *** copyTensorInt8ToBuffer: expected kInt8 but got prec=%d. "
+            "Fallbacks (to float) disabled — better to fail loudly than produce bad/NaN/zero results. "
+            "Root cause: output tensor not forced to kInt8 before run.",
+            static_cast<int>(prec));
         return JNI_FALSE;
     }
 
@@ -805,6 +771,70 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindO
         static_cast<int>(static_cast<int8_t*>(raw)[1]),
         static_cast<int>(static_cast<int8_t*>(raw)[2]),
         static_cast<int>(static_cast<int8_t*>(raw)[3]));
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeForceOutputTensorInt8Precision(
+    JNIEnv* env, jobject thiz, jobject tensor) {
+    (void)thiz;
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return;
+    }
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    if (!nativePtr) return;
+
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return;
+
+    paddle::lite_api::Tensor* lite_tensor = uptr->get();
+    lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kInt8);
+    LOGI("PaddleDiag: forced output tensor to kInt8 before run (prevents float fallback on ARM)");
+}
+
+// x86 only: direct uint8 populate buf[i] = (uint8)(f * 255). No scale, round, or clamp.
+void populateUint8FromFloat(const float* fdata, int8_t* dst, int count) {
+    if (!fdata || !dst || count <= 0) return;
+    float fMin = 1e30f;
+    float fMax = -1e30f;
+    int uMin = 255;
+    int uMax = 0;
+    for (int i = 0; i < count; ++i) {
+        const float f = fdata[i];
+        if (f < fMin) fMin = f;
+        if (f > fMax) fMax = f;
+        const int v = static_cast<int>(f * 255.0f);
+        dst[i] = static_cast<int8_t>(v);
+        const int u = static_cast<int>(static_cast<uint8_t>(dst[i]));
+        uMin = std::min(uMin, u);
+        uMax = std::max(uMax, u);
+    }
+    LOGI(
+        "PaddleDiag: populateUint8FromFloat x86 direct *255 fMin=%.6f fMax=%.6f uMin=%d uMax=%d count=%d (no clamp)",
+        fMin, fMax, uMin, uMax, count);
+    if (count >= 4) {
+        LOGI(
+            "PaddleDiag: populateUint8FromFloat dst uint8[0-3]=[%d,%d,%d,%d]",
+            static_cast<int>(static_cast<uint8_t>(dst[0])),
+            static_cast<int>(static_cast<uint8_t>(dst[1])),
+            static_cast<int>(static_cast<uint8_t>(dst[2])),
+            static_cast<int>(static_cast<uint8_t>(dst[3])));
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopulateUint8FromFloat(
+    JNIEnv* env, jobject thiz, jfloatArray src, jobject dstBuffer, jint count) {
+    (void)thiz;
+    if (count <= 0) return;
+    void* dst = env->GetDirectBufferAddress(dstBuffer);
+    if (!dst) return;
+    jfloat* fdata = env->GetFloatArrayElements(src, nullptr);
+    if (!fdata) return;
+    populateUint8FromFloat(fdata, static_cast<int8_t*>(dst), count);
+    env->ReleaseFloatArrayElements(src, fdata, JNI_ABORT);
 }
 
 JNIEXPORT jintArray JNICALL
@@ -1463,8 +1493,8 @@ static std::vector<float> processHeatmapFromFloatData(
 
 static std::vector<float> makeEmptyHeatmapPostResult() {
     std::vector<float> results;
-    results.reserve(100);
-    for (int i = 0; i < 100; ++i) results.push_back(0.0f);
+    results.reserve(256);
+    for (int i = 0; i < 256; ++i) results.push_back(0.0f);
     return results;
 }
 
@@ -1572,12 +1602,13 @@ static std::vector<float> processHeatmapFromInt8UData(
         ++boxCount;
     }
 
-    float hist[100] = {0};
+    float hist[256] = {0};
     for (size_t i = 0; i < count; ++i) {
-        const int b = std::max(0, std::min(99, static_cast<int>(scratch[i] * 100.0f)));
+        const int u_val = static_cast<int>(static_cast<uint8_t>(src[i]));
+        const int b = std::max(0, std::min(255, u_val));
         hist[b] += 1.0f;
     }
-    for (int i = 0; i < 100; ++i) results.push_back(hist[i]);
+    for (int i = 0; i < 256; ++i) results.push_back(hist[i]);
     return results;
 }
 
