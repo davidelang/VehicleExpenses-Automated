@@ -1525,12 +1525,24 @@ static std::vector<float> processHeatmapFromInt8UData(
 
     std::vector<float> scratch(count);
     cv::Mat mask(h, w, CV_8U);
+    int on_pixels = 0;
+    int on_u_1_20 = 0;
+    int on_u_21_255 = 0;
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
             const int u_val = static_cast<int>(static_cast<uint8_t>(src[idx]));
             scratch[idx] = static_cast<float>(u_val) * scale;
-            mask.at<uint8_t>(y, x) = u_val >= uThreshold ? 255 : 0;
+            const bool on = u_val >= uThreshold;
+            mask.at<uint8_t>(y, x) = on ? 255 : 0;
+            if (on) {
+                ++on_pixels;
+                if (u_val >= 1 && u_val <= 20) {
+                    ++on_u_1_20;
+                } else if (u_val >= 21 && u_val <= 255) {
+                    ++on_u_21_255;
+                }
+            }
         }
     }
     if (count >= 4) {
@@ -1541,6 +1553,25 @@ static std::vector<float> processHeatmapFromInt8UData(
 
     cv::Mat labels, stats, centroids;
     const int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
+    LOGI(
+        "PaddleDiag: CC: numLabels=%d on_pixels=%d on_u_1_20=%d on_u_21_255=%d h=%d w=%d uThreshold=%d",
+        numLabels, on_pixels, on_u_1_20, on_u_21_255, h, w, uThreshold);
+    for (int l = 1; l < numLabels && l <= 5; ++l) {
+        const int area = stats.at<int>(l, cv::CC_STAT_AREA);
+        const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
+        const int top = stats.at<int>(l, cv::CC_STAT_TOP);
+        const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
+        const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
+        LOGI(
+            "PaddleDiag: comp l=%d area=%d left=%d top=%d width=%d height=%d",
+            l, area, left, top, width, height);
+        if (left < 0 || top < 0 || width < 0 || height < 0 ||
+            left + width > w || top + height > h) {
+            LOGE(
+                "PaddleDiag: OOB_BBOX comp l=%d left=%d top=%d width=%d height=%d image=%dx%d",
+                l, left, top, width, height, w, h);
+        }
+    }
 
     int boxCount = 0;
     for (int l = 1; l < numLabels; ++l) {
@@ -1556,15 +1587,25 @@ static std::vector<float> processHeatmapFromInt8UData(
 
         cv::Mat points(area, 1, CV_32SC2);
         int idx = 0;
+        bool oob_in_points = false;
         for (int y = top; y < top + height; ++y) {
             for (int x = left; x < left + width; ++x) {
+                if (y < 0 || y >= h || x < 0 || x >= w) {
+                    LOGE(
+                        "PaddleDiag: OOB_ACCESS in points y=%d x=%d for l=%d image=%dx%d bbox=(%d,%d,%d,%d)",
+                        y, x, l, w, h, left, top, width, height);
+                    oob_in_points = true;
+                    break;
+                }
                 if (labels.at<int>(y, x) == l) {
                     if (idx < area) {
                         points.at<cv::Point>(idx++) = cv::Point(x, y);
                     }
                 }
             }
+            if (oob_in_points) break;
         }
+        if (oob_in_points) continue;
         if (idx < area) {
             points = points.rowRange(0, idx);
         }

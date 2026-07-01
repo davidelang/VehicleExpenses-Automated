@@ -441,3 +441,11 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - DET_HEATMAP_INT8_U_THRESHOLD 4→1; comment documents no-ramp in buckets 1-20
 - Temp diag logLowBucketHistDiag for hist[1..20] in detect/detectMat
+
+## 2026-06-30 - EXEC: measure CC internals to diagnose x86 SEGV with uThreshold=1
+
+- Phase 1 start: on_pixels, numLabels, comp bbox, OOB diags in processHeatmapFromInt8UData
+
+## 2026-06-30 - CC measurement diags for x86 SEGV diagnosis
+
+- processHeatmapFromInt8UData: on_pixels, on_u_1_20/21_255, numLabels, comp l=1..5 bbox, OOB_BBOX/OOB_ACCESS logs
