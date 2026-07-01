@@ -206,7 +206,7 @@ object NativeImageUtils {
         return nativeDequantHeatmapInt8ToFloat(int8Buf, count, scale)
     }
 
-    /** Rebind detector output tensor to int8 backing store for kInt8 processHeatmap path. */
+    /** Bind output tensor to external int8 memory (detector uses copyTensorInt8ToBuffer post-run; avoids unowned-buffer abort). */
     fun bindOutputInt8(tensor: Any, src: ByteBuffer, tensorW: Int, tensorH: Int) {
         nativeBindOutputInt8(tensor, src, tensorW, tensorH)
     }
