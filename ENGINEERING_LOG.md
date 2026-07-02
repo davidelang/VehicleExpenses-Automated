@@ -735,3 +735,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - recSetPsBindBuffer(): tensorBindRaw + limit(bindW*bindH) + slice → cap==49152 for 1024x48.
 - processOcr/processOcrNumeric useRecSetPs: bind exact mono view; temp PaddleDiag cap/limit logs.
+
+## 2026-07-02 - rec match smoke test Phase 3: handoff for device validation
+
+- Tag ready: fresh int8-mono-nb rec models + int8 jni .so + exact 49k mono bind (cap=49152).
+- Temp PaddleDiag bind logs retained until user confirms pump small-10 passes on emu + phone.
+- Phase 4 conditional: only if output values bad after crash-free run.
