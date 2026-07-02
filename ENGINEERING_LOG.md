@@ -183,3 +183,11 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 ## 2026-06-28 - tweak-quick-fill merge build gate
 
 - ./build_app succeeded on merge commit; master builds tag ed1b5220.
+
+## 2026-07-02 - Phase 0: G-family migration research (agent-5 → agent-6)
+
+- Executing plan: dev-ai-interaction/plans/migrate-pump-g-family-hybrids-from-agent5-clean-history-pr-20260702-plan.md
+- agent-6 at cb5b43aa [improve_pump_calculated_expand]; agent-5 at 3ee025ec [improve-landmark-selection]
+- Confirmed agent-6 legacy: SET_G_VERT_FACTORS = (1..8).map { it/10f }; no G-/G-- consts; ExperimentPumpScreen flows end at procG; index dispatch flowProcessors[i]
+- agent-5 has 4 semantic commits (40fc0929, 5fa1363b, fb769fa4, 3ee025ec) plus 5 duplicate dispatch-fix commits to avoid importing
+- Diff stat cb5b43aa..3ee025ec: ExperimentPumpScreen +505/-117, PumpCostVolUtils +11/-, OcrHarness +6/-
