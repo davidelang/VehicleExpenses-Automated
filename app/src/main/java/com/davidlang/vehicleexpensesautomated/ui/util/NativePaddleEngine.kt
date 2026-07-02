@@ -473,6 +473,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
+    /** Exact mono-cap view for rec useRecSetPs bind (matches int8_xor smoke test buffer layout). */
+    private fun recSetPsBindBuffer(recSet: BufferSet, bindW: Int, bindH: Int): java.nio.ByteBuffer {
+        recSet.quantizeMonoInputToScratch(bindW, bindH)
+        val bindBytes = bindW * bindH
+        val fullBuf = (recSet.s as BufferSet.Instance).tensorBindRaw()
+        fullBuf.position(0)
+        fullBuf.limit(bindBytes)
+        return fullBuf.slice()
+    }
+
     private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>, recSet: BufferSet? = null): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
@@ -498,9 +508,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         recBuf.clear()
         val inputTensor = recInputTensor(predictor)
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            recSet.quantizeMonoInputToScratch(bindW, bindH)
-            val buf = (recSet.s as BufferSet.Instance).tensorBindRaw()
+            val buf = recSetPsBindBuffer(recSet, bindW, bindH)
             buf.position(0)
+            Log.i(
+                "PaddleDiag",
+                "rec useRecSetPs bind=${bindW}x${bindH} full-buf; src=recSet.s; cap=${buf.capacity()} limit=${buf.limit()} prec=int8; model=rec_v3_mono_int8; so-fresh",
+            )
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
             buf
         } else if (input is BufferSet.Slice) {
@@ -580,9 +593,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         recBuf.clear()
         val inputTensor = recInputTensor(predictor)
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            recSet.quantizeMonoInputToScratch(bindW, bindH)
-            val buf = (recSet.s as BufferSet.Instance).tensorBindRaw()
+            val buf = recSetPsBindBuffer(recSet, bindW, bindH)
             buf.position(0)
+            Log.i(
+                "PaddleDiag",
+                "rec useRecSetPs bind=${bindW}x${bindH} full-buf; src=recSet.s; cap=${buf.capacity()} limit=${buf.limit()} prec=int8; model=rec_numeric_mono_int8; so-fresh",
+            )
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
             buf
         } else if (input is BufferSet.Slice) {

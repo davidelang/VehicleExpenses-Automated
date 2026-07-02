@@ -730,3 +730,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - jniLibs: arm64-v8a libpaddle_lite_jni.so (Jul 1, ~19.7M), x86_64 (~10.7M Jun 21) from int8 build java/so paths.
 - assets: rec_v3_mono_int8_* + rec_numeric_mono_int8_* refreshed from output/int8-mono-nb (Jul 1); md5 matches campaign outputs.
+
+## 2026-07-02 - rec match smoke test Phase 2: exact 49k mono bind cap
+
+- recSetPsBindBuffer(): tensorBindRaw + limit(bindW*bindH) + slice → cap==49152 for 1024x48.
+- processOcr/processOcrNumeric useRecSetPs: bind exact mono view; temp PaddleDiag cap/limit logs.
