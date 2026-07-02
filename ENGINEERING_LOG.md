@@ -191,3 +191,10 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Confirmed agent-6 legacy: SET_G_VERT_FACTORS = (1..8).map { it/10f }; no G-/G-- consts; ExperimentPumpScreen flows end at procG; index dispatch flowProcessors[i]
 - agent-5 has 4 semantic commits (40fc0929, 5fa1363b, fb769fa4, 3ee025ec) plus 5 duplicate dispatch-fix commits to avoid importing
 - Diff stat cb5b43aa..3ee025ec: ExperimentPumpScreen +505/-117, PumpCostVolUtils +11/-, OcrHarness +6/-
+
+## 2026-07-02 - G-family migration complete (agent-5 → agent-6)
+
+- Phases 1-4 executed on improve_pump_calculated_expand
+- Key files match agent-5 3ee025ec: PumpCostVolUtils (SET_G/G-/G--), OcrHarness (Quick Fill G--), ExperimentPumpScreen (makeGProc, list-based dispatch, H/I hybrids)
+- Prerequisite: OdometerOcrUtils hybrid stretch/valley helpers ported for procH/procI
+- No agent-5 duplicate dispatch-fix commits imported
