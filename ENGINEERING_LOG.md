@@ -741,3 +741,14 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Tag ready: fresh int8-mono-nb rec models + int8 jni .so + exact 49k mono bind (cap=49152).
 - Temp PaddleDiag bind logs retained until user confirms pump small-10 passes on emu + phone.
 - Phase 4 conditional: only if output values bad after crash-free run.
+
+## 2026-07-02 - rec native kInt8 input match (regenerated int8-mono-nb)
+
+- Execution start per revised make-app-rec-input-match-successful-test plan.
+- Goal: stamped analytic_input_quant models + direct bindInputInt8 (no float promotion).
+
+## 2026-07-02 - rec native kInt8 Phase 1: stamped x86_64 models + matrix verify
+
+- Copied Jul 2 regenerated rec_v3/rec_numeric x86_64 .nb (enable_int8 + analytic_input_quant) to app assets.
+- Native matrix on emulator-5554: rec_numeric int8_xor PASS (nz≈19k); rec_v3 run_ok nz=0; det SEGV on x86 (expected per guide).
+- armv7/armv8 models unchanged (Jul 1 pre-regen; Phase 4 arm regen pending).
