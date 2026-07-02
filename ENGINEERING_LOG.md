@@ -720,3 +720,13 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Verified processOcrNumeric uses same tensorBindRaw() path as processOcr.
 - Non-useRecSetPs rec paths and det BufferSet crops unchanged (still use .raw or sharedRecInt8Buffer).
 - Fix: ShareExternalMemory gets full NV21 backing cap (73728 for 1024x48) while bytes remain bindW*bindH.
+
+## 2026-07-02 - make app rec input match successful int8_xor smoke test
+
+- Execution start: refresh int8 runtime .so + int8-mono-nb rec models; force exact 49k mono buf cap in useRecSetPs.
+- Aligns with planner-uint8-input-float32-output-models-20260702.md validated artifacts.
+
+## 2026-07-02 - rec match smoke test Phase 1: fresh int8 runtime + int8-mono-nb rec models
+
+- jniLibs: arm64-v8a libpaddle_lite_jni.so (Jul 1, ~19.7M), x86_64 (~10.7M Jun 21) from int8 build java/so paths.
+- assets: rec_v3_mono_int8_* + rec_numeric_mono_int8_* refreshed from output/int8-mono-nb (Jul 1); md5 matches campaign outputs.
