@@ -235,11 +235,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
 
                 val tCopy0 = System.currentTimeMillis()
-                val detPath = copy(
-                    if (Build.SUPPORTED_ABIS[0].contains("arm")) "paddle/det_v4_4000_mono_int8_$arch.nb"
-                    else "paddle/det_v4_4000_mono_$arch.nb"
-                )
-                Log.i("PaddleDiag", "detPath=$detPath modelKind=${if (Build.SUPPORTED_ABIS[0].contains("arm")) "int8" else "float"}")
+                val detPath = copy("paddle/det_v4_4000_mono_$arch.nb")
+                Log.i("PaddleDiag", "detPath=$detPath modelKind=float")
                 val tCopy = System.currentTimeMillis() - tCopy0
                 Log.i("PaddleLite", "Model copying took ${tCopy}ms")
 
@@ -254,15 +251,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val p = PaddlePredictor.createPaddlePredictor(config)
                     p.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
                     sharedTiers[scale] = p
-                    sharedTierBuffers[scale] = java.nio.ByteBuffer.allocateDirect(1 * scale * scale).order(java.nio.ByteOrder.nativeOrder())
-                    if (!Build.SUPPORTED_ABIS[0].contains("arm")) {
-                        sharedTierFloatBuffers[scale] = FloatArray(scale * scale)
-                    }
+                    sharedTierFloatBuffers[scale] = FloatArray(scale * scale)
                     Log.i("PaddleLite", "Tier $scale Init: ${System.currentTimeMillis() - t0}ms")
                 }
-                val maxTier = TIER_SCALES.maxOrNull() ?: 2560
-                sharedMaxInt8Buffer = java.nio.ByteBuffer.allocateDirect(maxTier * maxTier).order(java.nio.ByteOrder.nativeOrder())
-                Log.i("PaddleDiag", "sharedMaxInt8Buffer allocated cap=${maxTier * maxTier}")
 
                 config.setModelFromFile(copy("paddle/rec_v3_mono_int8_$arch.nb")); sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerV3!!.getInput(0).resize(longArrayOf(1, 1, 48, 1024))
                 config.setModelFromFile(copy("paddle/rec_numeric_mono_int8_$arch.nb")); sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config); sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 1024))
@@ -321,60 +312,24 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val maxEdge = max(targetW ?: w, targetH ?: h)
         val tierScale = TIER_SCALES.filter { it >= maxEdge }.minOrNull() ?: 2560
         val predictor = sharedTiers[tierScale] ?: return null
-        val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
-        val armInputBuf = if (isArm) {
-            java.nio.ByteBuffer.allocateDirect(tierScale * tierScale)
-                .order(java.nio.ByteOrder.nativeOrder())
-        } else null
-        Log.i(
-            "PaddleDiag",
-            "detect tier=$tierScale: int8/float input per arch; float32 output post-process at ${DET_HEATMAP_FLOAT_THRESHOLD}f",
-        )
-
-        if (isArm) {
-            armInputBuf!!.clear()
-            NativeImageUtils.quantizeMonoToInt8(srcMat, armInputBuf, tierScale, tierScale, w, h)
-            armInputBuf.position(0)
-        } else {
-            val floatData = sharedTierFloatBuffers[tierScale] ?: return null
-            floatData.fill(0f)
-            NativeImageUtils.populateMonoTensor(srcMat, floatData, tierScale, tierScale, 0.485f, 0.229f)
-        }
+        val floatData = sharedTierFloatBuffers[tierScale] ?: return null
+        floatData.fill(0f)
+        NativeImageUtils.populateMonoTensor(srcMat, floatData, tierScale, tierScale, 0.485f, 0.229f)
 
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
-            if (isArm) {
-                Log.i("PaddleDiag", "before bindInput int8 tier=$tierScale (temp input buf)")
-                NativeImageUtils.bindInputInt8(predictor.getInput(0), armInputBuf!!, tierScale, tierScale)
-                Log.i("PaddleDiag", "after bindInput int8 tier=$tierScale")
-            } else {
-                val floatData = sharedTierFloatBuffers[tierScale]!!
-                Log.i("PaddleDiag", "before bindInput float tier=$tierScale x86=true")
-                predictor.getInput(0).setData(floatData)
-                Log.i("PaddleDiag", "after bindInput float tier=$tierScale")
-            }
+            predictor.getInput(0).setData(floatData)
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
-
-            val outputTensor = predictor.getOutput(0)
 
             val tInfer0 = System.nanoTime()
             predictor.run()
-            Log.i("PaddleDiag", "after run tier=$tierScale")
             val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
             val tJniOut0 = System.nanoTime()
+            val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
-
-            val outW = dims[3].toInt()
-            val outH = dims[2].toInt()
-            val expected = outW * outH
-
-            Log.i(
-                "PaddleDiag",
-                "detect tier=$tierScale float output; box on float at ${DET_HEATMAP_FLOAT_THRESHOLD}f; no int8 output tensor",
-            )
 
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(
@@ -384,14 +339,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             var hist: IntArray? = null
-            if (nativeRes != null && nativeRes.size >= 256) {
-                val boxFloats = nativeRes.size - 256
+            if (nativeRes != null) {
+                val boxFloats = nativeRes.size - 100
                 val nboxes = boxFloats / 9
-                if (nboxes == 0) {
-                    Log.i("PaddleDiag", "detect tier=$tierScale: zero detector boxes (safe empty post-process)")
-                } else {
-                    Log.i("PaddleDiag", "detect tier=$tierScale: $nboxes detector boxes (float32 post-process)")
-                }
                 for (i in 0 until nboxes) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)
@@ -402,8 +352,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
-                hist = IntArray(256)
-                for (i in 0 until 256) hist[i] = nativeRes[boxFloats + i].toInt()
+                hist = IntArray(100)
+                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
                 logLowBucketHistDiag("detect tier=$tierScale", hist)
             }
 
@@ -438,53 +388,25 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val predictor = detectorLarge ?: return null
         val w = srcMat.cols(); val h = srcMat.rows()
 
-        val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
-        Log.i(
-            "PaddleDiag",
-            "detectMat ${w}x$h: int8/float input per arch; float32 output post-process at ${DET_HEATMAP_FLOAT_THRESHOLD}f",
-        )
         val tPop0 = System.nanoTime()
-        val armInputBuf = if (isArm) {
-            java.nio.ByteBuffer.allocateDirect(w * h).order(java.nio.ByteOrder.nativeOrder())
-        } else null
-        val floatData = if (isArm) null else FloatArray(w * h)
-        if (isArm) {
-            NativeImageUtils.quantizeMonoToInt8(srcMat, armInputBuf!!, w, h)
-            armInputBuf.position(0)
-        } else {
-            NativeImageUtils.populateMonoTensor(srcMat, floatData!!, w, h, 0.485f, 0.229f)
-        }
+        val floatData = FloatArray(w * h)
+        NativeImageUtils.populateMonoTensor(srcMat, floatData, w, h, 0.485f, 0.229f)
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
             val inputTensor = predictor.getInput(0)
-            if (isArm) {
-                Log.i("PaddleDiag", "detectMat before bindInput int8 ${w}x$h (temp input buf)")
-                NativeImageUtils.bindInputInt8(inputTensor, armInputBuf!!, w, h)
-                Log.i("PaddleDiag", "detectMat after bindInput int8")
-            } else {
-                Log.i("PaddleDiag", "detectMat before bindInput float ${w}x$h x86=true")
-                inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
-                inputTensor.setData(floatData!!)
-                Log.i("PaddleDiag", "detectMat after bindInput float")
-            }
+            inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
+            inputTensor.setData(floatData)
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
-
-            val outputTensor = predictor.getOutput(0)
 
             val tInfer0 = System.nanoTime()
             predictor.run()
-            Log.i("PaddleDiag", "detectMat after run ${w}x$h")
             val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
             val tJniOut0 = System.nanoTime()
+            val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
-
-            Log.i(
-                "PaddleDiag",
-                "detectMat ${w}x$h float output; box on float at ${DET_HEATMAP_FLOAT_THRESHOLD}f; no int8 output tensor",
-            )
 
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(
@@ -494,14 +416,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             var hist: IntArray? = null
-            if (nativeRes != null && nativeRes.size >= 256) {
-                val boxFloats = nativeRes.size - 256
+            if (nativeRes != null) {
+                val boxFloats = nativeRes.size - 100
                 val nboxes = boxFloats / 9
-                if (nboxes == 0) {
-                    Log.i("PaddleDiag", "detectMat ${w}x$h: zero detector boxes (safe empty post-process)")
-                } else {
-                    Log.i("PaddleDiag", "detectMat ${w}x$h: $nboxes detector boxes (float32 post-process)")
-                }
                 for (i in 0 until nboxes) {
                     val offset = i * 9
                     val matPixels = FloatArray(8)
@@ -512,8 +429,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                     val conf = nativeRes[offset + 8]
                     nativeBoxes.add(DetectionBox(matPixels, conf))
                 }
-                hist = IntArray(256)
-                for (i in 0 until 256) hist[i] = nativeRes[boxFloats + i].toInt()
+                hist = IntArray(100)
+                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
                 logLowBucketHistDiag("detectMat ${w}x$h", hist)
             }
             val tCopy0 = System.nanoTime()

@@ -682,3 +682,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - Replaced resolveOutputHeatmapFloatData with direct tensor->data<float>() in nativeHeatmapToAngle.
 - Matches master weighted 0.5° bucket voting path; int8-output scaffolding untouched.
+
+## 2026-07-02 - master pull Phase 3: kt parsers consume 100-bin float32 result
+
+- detect/detectMat: nativeRes.size - 100, IntArray(100), if (nativeRes != null) guard.
+- Matches master parser aligned to nativeProcessHeatmap 100-bin hist tail.
