@@ -528,7 +528,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
             Log.i("PaddleDiag", "processOcr useRecSetPs int8 b zero-copy bind=${bindW}x${bindH}")
             recSet.quantizeMonoInputToScratch(bindW, bindH)
-            val buf = recSet.s.raw
+            val buf = (recSet.s as BufferSet.Instance).tensorBindRaw()
             buf.position(0)
             logRecZeroCopyBindDiag("processOcr pre-bind", recSet, bindW, bindH, buf, inputTensor)
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
@@ -614,7 +614,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
             Log.i("PaddleDiag", "processOcrNumeric useRecSetPs int8 b zero-copy bind=${bindW}x${bindH}")
             recSet.quantizeMonoInputToScratch(bindW, bindH)
-            val buf = recSet.s.raw
+            val buf = (recSet.s as BufferSet.Instance).tensorBindRaw()
             buf.position(0)
             logRecZeroCopyBindDiag("processOcrNumeric pre-bind", recSet, bindW, bindH, buf, inputTensor)
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)

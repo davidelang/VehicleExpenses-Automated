@@ -704,3 +704,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - Execution start: fix SIGSEGV "buffer overflow accessing after secondary allocation" in useRecSetPs rec path.
 - Root cause hypothesis: s.raw view capped at w*h (49152); Paddle reads past end despite Share bytes=49152.
+
+## 2026-07-02 - rec zero-copy buffer overrun fix Phase 2: full-capacity tensorBindRaw
+
+- BufferSet.Instance.tensorBindRaw(): NV21 backing view (1.5x cap) instead of w*h-limited raw slice.
+- processOcr/processOcrNumeric useRecSetPs: bind tensorBindRaw(); Share still bytes=bindW*bindH.

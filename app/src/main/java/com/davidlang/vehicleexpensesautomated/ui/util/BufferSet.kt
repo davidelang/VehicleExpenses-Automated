@@ -184,6 +184,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         override val uvMat: Mat get() = _uvMat ?: throw IllegalStateException("Not initialized")
         override val nv21: ByteBuffer get() = _buffer?.duplicate()?.position(0) as ByteBuffer
         override val raw: ByteBuffer get() = (_buffer?.duplicate()?.position(0)?.limit(_width * _height) as ByteBuffer).slice()
+        /** Full NV21 backing capacity for tensor ShareExternalMemory (avoids w*h slice overrun). */
+        fun tensorBindRaw(): ByteBuffer = (_buffer?.duplicate()?.position(0) as ByteBuffer)
         override val nv21Mat: Mat get() = _nv21Mat ?: throw IllegalStateException("Not initialized")
         override val width: Int get() = _width
         override val height: Int get() = _height
