@@ -987,9 +987,9 @@ private suspend fun runPumpExperiment(
 
 
                 // Explicit vert-factor pass lists (individual-max for regular D/E/G; hybrid sublists for H/I)
-                val regularGVert = listOf(0.1f, 0.2f, 0.3f, 0.6f, 1.1f, 1.3f)
-                val regularDVert = listOf(0.1f, 0.2f, 0.3f, 0.5f, 0.8f, 1.0f)
-                val regularEVert = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.8f)
+                val regularGVert = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.8f, 1.3f, 2.0f)
+                val regularDVert = listOf(0.1f, 0.2f, 0.3f, 0.5f, 0.9f, 1.0f, 2.0f)
+                val regularEVert = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 1.1f, 1.3f)
                 val hGVert = listOf(0.1f, 0.3f, 1.1f)
                 val hEVert = listOf(0.4f, 0.8f)
                 val iGVert = listOf(0.1f, 0.2f, 0.3f, 1.3f)

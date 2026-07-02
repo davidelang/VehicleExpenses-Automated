@@ -41,11 +41,11 @@ data class PathResult(val cost: String, val vol: String, val costB64: String, va
  * Set G (6), G- (3), G-- (2) calculated blue expansion vert-factor lists.
  * Quick Fill live path uses G-- (SET_G_MINUS_MINUS_VERT_FACTORS). Horiz 50%.
  */
-val SET_G_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.6f, 1.1f, 1.3f)
+val SET_G_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.8f, 1.3f, 2.0f)
 /** Set G- (best 3-pass subset of G for max coverage; loss 4 vs 252) */
-val SET_G_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.3f, 1.3f)
+val SET_G_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.5f, 1.3f, 2.0f)
 /** Set G-- (best 2-pass subset of G; used for Quick Fill live path; loss 10 vs 252) */
-val SET_G_MINUS_MINUS_VERT_FACTORS: List<Float> = listOf(0.3f, 1.3f)
+val SET_G_MINUS_MINUS_VERT_FACTORS: List<Float> = listOf(0.3f, 1.2f)
 const val SET_G_HORIZ_FACTOR: Float = 0.5f
 
 private const val TAG = "PumpCostVolUtils"
