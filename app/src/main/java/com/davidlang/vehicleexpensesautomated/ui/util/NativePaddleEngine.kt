@@ -490,6 +490,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
+    /** Temp diag: log rec zero-copy buffer view vs tensor bytes (remove after confirm). */
+    private fun logRecZeroCopyBindDiag(site: String, recSet: BufferSet, bindW: Int, bindH: Int, buf: java.nio.ByteBuffer, inputTensor: Tensor?) {
+        val bindBytes = bindW * bindH
+        Log.i(
+            "PaddleDiag",
+            "$site recSet=${recSet.width}x${recSet.height} bind=${bindW}x${bindH} bytes=$bindBytes " +
+                "bufCap=${buf.capacity()} bufRem=${buf.remaining()} direct=${buf.isDirect} " +
+                "cppPtr=${NativeImageUtils.getTensorCppPointer(inputTensor)}",
+        )
+    }
+
     private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>, recSet: BufferSet? = null): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
@@ -519,11 +530,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             recSet.quantizeMonoInputToScratch(bindW, bindH)
             val buf = recSet.s.raw
             buf.position(0)
-            Log.i(
-                "PaddleDiag",
-                "processOcr bind pre cppPtr=${NativeImageUtils.getTensorCppPointer(inputTensor)} direct=${buf.isDirect}",
-            )
+            logRecZeroCopyBindDiag("processOcr pre-bind", recSet, bindW, bindH, buf, inputTensor)
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
+            logRecZeroCopyBindDiag("processOcr post-bind", recSet, bindW, bindH, buf, inputTensor)
             buf
         } else if (input is BufferSet.Slice) {
             Log.i("PaddleDiag", "processOcr int8 crop bind=${w}x${h}")
@@ -607,11 +616,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             recSet.quantizeMonoInputToScratch(bindW, bindH)
             val buf = recSet.s.raw
             buf.position(0)
-            Log.i(
-                "PaddleDiag",
-                "processOcrNumeric bind pre cppPtr=${NativeImageUtils.getTensorCppPointer(inputTensor)} direct=${buf.isDirect}",
-            )
+            logRecZeroCopyBindDiag("processOcrNumeric pre-bind", recSet, bindW, bindH, buf, inputTensor)
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
+            logRecZeroCopyBindDiag("processOcrNumeric post-bind", recSet, bindW, bindH, buf, inputTensor)
             buf
         } else if (input is BufferSet.Slice) {
             Log.i("PaddleDiag", "processOcrNumeric int8 crop bind=${w}x${h}")

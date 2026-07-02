@@ -699,3 +699,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Phase 1: nativeGetTensorCppPointer + nativeBindInputInt8 skip/success PaddleDiag logs; bind preflight in processOcr*.
 - Phase 2: Retain sharedRecognizerV3Input/sharedRecognizerNumericInput after resize; recInputTensor() for bindInputInt8 (no ephemeral getInput per run).
 - Fixes silent ShareExternalMemory skip when cppTensorPointer was 0 / tensor finalized.
+
+## 2026-07-02 - rec zero-copy buffer overrun fix (post ShareExternal success)
+
+- Execution start: fix SIGSEGV "buffer overflow accessing after secondary allocation" in useRecSetPs rec path.
+- Root cause hypothesis: s.raw view capped at w*h (49152); Paddle reads past end despite Share bytes=49152.
