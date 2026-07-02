@@ -307,28 +307,21 @@ private suspend fun runPumpExperiment(
 
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
-    // Set A: dual ML+Paddle (baseline). Set B: pump-only (Paddle recognition only, no MLKit in rec step) + improved redbox + Set E-style deskew.
-    // Set C: pump-only (copy of Set B) but uses valley-center push (replaces current histogram contrast stretch per plan); produces single image with small number of brightness values (not binarization). Raw + pushed + before/after hists (display-matched 1:1 size) displayed in the Set C column (plus PD/ocr with boxes for context). Per-redbox histograms sorted by area, 3-wide with stacked labels (from prior + this plan; now via createCrop + direct calcHist + dual takeSnapshot from long-lived hist BufferSet at pump start). Lot of granular t_ timings (20+ including t_setup_ms, t_deskew_ms, t_discovery_wrapper_ms, t_filter_ms, t_pd_snapshot_ms, t_ocr_ms + C probe subs t_polarity_run_ms / t_per_red_bins_calc_ms / t_per_red_loop_overhead_ms / t_polarity_decision_ms / t_invert_if_needed_ms + blue subs t_blue_native_hist_ms / t_blue_valley_expands_ms / t_blue_3sides_ms / t_blue_retract_ms + t_hist_* + kept priors + n_reds_at_probe / n_per_red_hists / img dims context) added to metadata/JSON (one run gathers all for A/B gap + C probe/blue decomposition; no extra turn needed). HISTOGRAM ANSWERS (forensic): per-red C/E now createCrop (pixel rect from hunk) + direct calcHist on crop.mat (no mask) + OcrUtils.takeSnapshot (dual rect snapshot + plot from longLived histPlotCrop); long-lived BufferSet init once at pump start for scratch + plot crop (no per-red full Mat alloc/zeros/draw/generate custom); old perMask/rectangle/generate retired for this path. Blue from red now via alignment Set E valley expansion (adapted) instead of CC overlapping + early expandByUniformity (to fix errors). Polarity + discovery + CC hunks (for orange) run on the pushed mat state. Set F: raw clone of B (no automaticContrastStretch; deskew/rotate/discovery/retracted-blue/red-only/OCR/PD on raw master copy). Set G: raw clone of D (no stretch; keeps custom 10% blue/orange + red-only + OCR on raw).
-    // Sets A–I (2026-07-01 restore + hybrid H/I): explicit vert-factor pass lists everywhere (no 1..8 range).
-    // Regular D/E/G individual-max minimal lists: D [0.1,0.2,0.3,0.5,0.8,1.0]; E [0.1,0.2,0.3,0.4,0.5,0.8].
+    // Active sets (2026-07-02): D, E, G, G-, G--, I — calculated paths only; each column gets a fresh master copy.
+    // Disabled for perf/noise: A (both ML+Paddle baseline), B/C/F (expanded binPeak paths), H (E+G hybrid k=5 — slower than G due to valley-push mutation on shared workspace).
+    // Explicit vert-factor pass lists everywhere (no 1..8 range).
+    // D (clip edges, calculated): [0.1,0.2,0.3,0.5,0.8,1.0]. E (valley push, calculated): [0.1,0.2,0.3,0.4,0.5,0.8].
     // G family (individual-max relaxed 252): G [0.1,0.2,0.3,0.6,1.1,1.3]; G- best 3-pass [0.1,0.3,1.3] loss 4; G-- best 2-pass [0.3,1.3] loss 10.
     // Quick-fill pump path (OcrHarness): SET_G_MINUS_MINUS_VERT_FACTORS G-- list [0.3,1.3].
-    // Set H (E+G hybrid k=5, calculated): deskew once (G-style), G stage on post-deskew raw (hGVert), valley push with shared p/v grays, E stage (hEVert); current-pass red filter per stage; one combined classify at end.
     // Set I (D+E+G hybrid k=10, calculated): deskew once, G (iGVert), clip stretch + adjust p/v grays, D (iDVert), valley push with adjusted grays, E (iEVert); current-pass filter; one combined classify.
-    // Hybrid sublists: H hGVert=[0.1,0.3,1.1] hEVert=[0.4,0.8]; I iGVert=[0.1,0.2,0.3,1.3] iDVert=[0.2,0.5,0.9] iEVert=[0.4,0.6,1.1].
-    // Each column gets a fresh master copy; H/I sequence on same workspace (no re-ingest). Final processing sees one combined ocr/candidate list.
-    // Label convention: B–I use "Set X (stretch-type, blue-method)" self-describing columns. Calculated D/E/G/H/I skip binPeak; B/C/F expanded use binPeak_*.
+    // Hybrid sublists: I iGVert=[0.1,0.2,0.3,1.3] iDVert=[0.2,0.5,0.9] iEVert=[0.4,0.6,1.1]. I sequences on same workspace (no re-ingest); final processing sees one combined ocr/candidate list.
+    // Label convention: active sets use "Set X (stretch-type, blue-method)" self-describing columns. All active sets skip binPeak (calculated paths).
     val flows = listOf(
-        "Set A",
-        "Set B (clip edges, expanded)",
-        "Set C (valley push, expanded)",
         "Set D (clip edges, calculated)",
         "Set E (valley push, calculated)",
-        "Set F (none, expanded)",
         "Set G (none, calculated)",
         "Set G- (3 pass, none, calculated)",
         "Set G-- (2 pass, none, calculated)",
-        "Set H (E+G hybrid, calculated)",
         "Set I (D+E+G hybrid, calculated)"
     )
 
