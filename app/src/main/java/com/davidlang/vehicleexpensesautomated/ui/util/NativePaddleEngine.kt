@@ -473,14 +473,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
-    /** Exact mono-cap view for rec useRecSetPs bind (matches int8_xor smoke test buffer layout). */
+    /** int8_xor contract: ^128 mangle → exact mono cap → direct kInt8 ShareExternalMemory. */
     private fun recSetPsBindBuffer(recSet: BufferSet, bindW: Int, bindH: Int): java.nio.ByteBuffer {
         recSet.quantizeMonoInputToScratch(bindW, bindH)
         val bindBytes = bindW * bindH
-        val fullBuf = (recSet.s as BufferSet.Instance).tensorBindRaw()
-        fullBuf.position(0)
-        fullBuf.limit(bindBytes)
-        return fullBuf.slice()
+        val buf = (recSet.s as BufferSet.Instance).tensorBindRaw()
+        buf.position(0)
+        buf.limit(bindBytes)
+        return buf.slice()
     }
 
     private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>, recSet: BufferSet? = null): RecStageResult = withContext(Dispatchers.IO) {
@@ -512,7 +512,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             buf.position(0)
             Log.i(
                 "PaddleDiag",
-                "rec useRecSetPs bind=${bindW}x${bindH} full-buf; src=recSet.s; cap=${buf.capacity()} limit=${buf.limit()} prec=int8; model=rec_v3_mono_int8; so-fresh",
+                "rec useRecSetPs bind=${bindW}x${bindH} native_kInt8 int8_xor; cap=${buf.capacity()} limit=${buf.limit()} model=rec_v3_mono_int8",
             )
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
             buf
@@ -597,7 +597,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             buf.position(0)
             Log.i(
                 "PaddleDiag",
-                "rec useRecSetPs bind=${bindW}x${bindH} full-buf; src=recSet.s; cap=${buf.capacity()} limit=${buf.limit()} prec=int8; model=rec_numeric_mono_int8; so-fresh",
+                "rec useRecSetPs bind=${bindW}x${bindH} native_kInt8 int8_xor; cap=${buf.capacity()} limit=${buf.limit()} model=rec_numeric_mono_int8",
             )
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
             buf

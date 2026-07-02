@@ -752,3 +752,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Copied Jul 2 regenerated rec_v3/rec_numeric x86_64 .nb (enable_int8 + analytic_input_quant) to app assets.
 - Native matrix on emulator-5554: rec_numeric int8_xor PASS (nz≈19k); rec_v3 run_ok nz=0; det SEGV on x86 (expected per guide).
 - armv7/armv8 models unchanged (Jul 1 pre-regen; Phase 4 arm regen pending).
+
+## 2026-07-02 - rec native kInt8 Phase 2: direct bindInputInt8 int8_xor path
+
+- recSetPsBindBuffer: quantizeMonoInputToScratch (^128) + limit(49152) + slice → direct bindInputInt8 (no float promotion).
+- Temp diag logs: native_kInt8 int8_xor cap/limit per model.
+- Rec paths already used bindInputInt8; aligned comments/diag to regenerated model contract.
