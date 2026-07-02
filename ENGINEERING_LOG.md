@@ -687,3 +687,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - detect/detectMat: nativeRes.size - 100, IntArray(100), if (nativeRes != null) guard.
 - Matches master parser aligned to nativeProcessHeatmap 100-bin hist tail.
+
+## 2026-07-02 - master pull Phase 4: unify det input (float mono model all arches)
+
+- det model always paddle/det_v4_4000_mono_$arch.nb + populateMonoTensor + setData.
+- Removed isArm int8 quantize/bindInput branching from detect/detectMat/init tiers.
+- Rec int8 p-to-b zero-copy paths unchanged; int8-output scaffolding untouched.
