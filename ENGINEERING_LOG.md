@@ -583,3 +583,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 ## 2026-07-01 - Phase 4: detectMat float output at 0.03f
 
 - mirror detect: processHeatmap float path, no int8 output tensor ops
+
+## 2026-07-01 - int8 p-to-b + float detect output complete (all phases)
+
+- Rec: quantizeMonoInputToScratch + bindInputInt8(s.raw) useRecSetPs; uint8 reverted
+- Detect/detectMat: processHeatmap at 0.03f on float output; no int8 output tensor copy
+- Tag: eca47b42 ready for emulator/phone test
