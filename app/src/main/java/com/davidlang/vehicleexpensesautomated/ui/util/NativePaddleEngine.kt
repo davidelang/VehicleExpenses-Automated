@@ -62,14 +62,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val ALLOWED_DIGITS: Set<Int> = (1..10).toSet()
         val ALLOWED_DIGITS_DECIMAL: Set<Int> = (1..10).toSet() + setOf(93)
 
-        // Detector heatmap int8 output scale (matches ARM int8 model quant scale)
-        private const val DET_HEATMAP_INT8_SCALE = 0.00787f
-        // u_val != 0 filter (threshold=1): 256-bucket hist shows mass at 0 and signal at higher
-        // buckets but no gradual ramp in buckets 1-20 (f≈0.004–0.078), so any positive uint8 counts.
-        private const val DET_HEATMAP_INT8_U_THRESHOLD = 1
-        private val DET_HEATMAP_INT8_FLOAT_THRESHOLD =
-            DET_HEATMAP_INT8_U_THRESHOLD * DET_HEATMAP_INT8_SCALE
-        /** Box/angle post-process threshold on float detector output (host-validated). */
+        /** Box post-process threshold on float32 detector output (host-validated; models always emit float). */
         private const val DET_HEATMAP_FLOAT_THRESHOLD = 0.03f
 
         // Phase 125: Multi-Tier Predictor Array
@@ -313,75 +306,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         Log.i("PaddleDiag", "$site low-buckets-1-20: $counts (temp diag: no-ramp check)")
     }
 
-    /** x86_64 only: short-lived float output → direct uint8 (f*255) into long-lived buf (side-effect only). */
-    private fun wrapX86DetectorOutputAsInt8(
-        outputTensor: Any,
-        dims: LongArray,
-        site: String,
-        tierScale: Int? = null,
-        useMaxInt8Buffer: Boolean = false,
-    ) {
-        val w = dims[3].toInt()
-        val h = dims[2].toInt()
-        val floatData = (outputTensor as com.baidu.paddle.lite.Tensor).floatData
-        val expected = w * h
-        var fMin = Float.MAX_VALUE
-        var fMax = -Float.MAX_VALUE
-        for (f in floatData) {
-            if (f < fMin) fMin = f
-            if (f > fMax) fMax = f
-        }
-        Log.i(
-            "PaddleDiag",
-            "$site float tensor FULL min=%.6f max=%.6f count=${floatData.size} w=$w h=$h (any negatives?)".format(fMin, fMax),
-        )
-        Log.i(
-            "PaddleDiag",
-            "$site before wrapper outputPrec=float floatCount=${floatData.size} w=$w h=$h expected=$expected",
-        )
-        if (floatData.isEmpty() || w <= 0 || h <= 0) {
-            Log.e("PaddleDiag", "$site wrapper skipped: invalid float output count=${floatData.size} w=$w h=$h")
-            return
-        }
-        if (floatData.size != expected) {
-            Log.e("PaddleDiag", "$site wrapper size mismatch: floatCount=${floatData.size} expected=$expected (w=$w h=$h)")
-            return
-        }
-        val int8DestCap = when {
-            tierScale != null -> sharedTierBuffers[tierScale]?.capacity() ?: 0
-            useMaxInt8Buffer -> sharedMaxInt8Buffer?.capacity() ?: 0
-            else -> 0
-        }
-        if (int8DestCap > 0 && int8DestCap < expected) {
-            Log.e("PaddleDiag", "$site wrapper int8 dest too small: cap=$int8DestCap expected=$expected")
-            return
-        }
-        Log.i(
-            "PaddleDiag",
-            "$site using long-lived int8 buf as dest (cap=$int8DestCap w*h=$expected)",
-        )
-        val int8Buf = when {
-            tierScale != null -> sharedTierBuffers[tierScale]
-            useMaxInt8Buffer -> sharedMaxInt8Buffer
-            else -> null
-        }
-        if (int8Buf != null) {
-            if (useMaxInt8Buffer) {
-                Log.i(
-                    "PaddleDiag",
-                    "detectMat x86 using long-lived int8 dest for ${w}x$h crop cap=${int8Buf.capacity()} w*h=$expected",
-                )
-            }
-            int8Buf.clear()
-            NativeImageUtils.populateUint8FromFloat(floatData, int8Buf, expected)
-            int8Buf.position(0)
-            Log.i(
-                "PaddleDiag",
-                "$site populated uint8 (f*255) to long-lived buf; dest cap=${int8Buf.capacity()} (w*h=$expected)",
-            )
-        }
-    }
-
     fun detect(input: Any, targetW: Int? = null, targetH: Int? = null, copyHeatmap: Boolean = true): DetectionResult? {
         val tPop0 = System.nanoTime()
         val w: Int; val h: Int; val srcMat: Mat
@@ -402,14 +326,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             java.nio.ByteBuffer.allocateDirect(tierScale * tierScale)
                 .order(java.nio.ByteOrder.nativeOrder())
         } else null
-        if (isArm) {
-            Log.i(
-                "PaddleDiag",
-                "detect tier=$tierScale: ARM input on temp buf; output forced kInt8 then copied post-run",
-            )
-        } else {
-            Log.i("PaddleDiag", "detect tier=$tierScale: x86 float temp I/O; helper populates uint8 (f*255) after run")
-        }
+        Log.i(
+            "PaddleDiag",
+            "detect tier=$tierScale: int8/float input per arch; float32 output post-process at ${DET_HEATMAP_FLOAT_THRESHOLD}f",
+        )
 
         if (isArm) {
             armInputBuf!!.clear()
@@ -517,14 +437,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val w = srcMat.cols(); val h = srcMat.rows()
 
         val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
-        if (isArm) {
-            Log.i(
-                "PaddleDiag",
-                "detectMat ${w}x$h: ARM input on temp buf; output forced kInt8 then copied post-run",
-            )
-        } else {
-            Log.i("PaddleDiag", "detectMat ${w}x$h: x86 float temp I/O; helper populates uint8 (f*255) after run")
-        }
+        Log.i(
+            "PaddleDiag",
+            "detectMat ${w}x$h: int8/float input per arch; float32 output post-process at ${DET_HEATMAP_FLOAT_THRESHOLD}f",
+        )
         val tPop0 = System.nanoTime()
         val armInputBuf = if (isArm) {
             java.nio.ByteBuffer.allocateDirect(w * h).order(java.nio.ByteOrder.nativeOrder())
