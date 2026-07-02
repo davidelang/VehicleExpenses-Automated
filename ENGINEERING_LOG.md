@@ -709,3 +709,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - BufferSet.Instance.tensorBindRaw(): NV21 backing view (1.5x cap) instead of w*h-limited raw slice.
 - processOcr/processOcrNumeric useRecSetPs: bind tensorBindRaw(); Share still bytes=bindW*bindH.
+
+## 2026-07-02 - rec zero-copy buffer overrun fix Phase 3: remove temp diag logs
+
+- Removed logRecZeroCopyBindDiag, rec init/bind PaddleDiag, low-bucket hist temp diag.
+- nativeBindInputInt8: keep LOGE skip guards only; removed recv/success LOGI.

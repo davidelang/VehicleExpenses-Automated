@@ -262,19 +262,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config)
                 sharedRecognizerV3Input = sharedRecognizerV3!!.getInput(0)
                 sharedRecognizerV3Input!!.resize(longArrayOf(1, 1, 48, 1024))
-                Log.i(
-                    "PaddleDiag",
-                    "recV3 init input cppPtr=${NativeImageUtils.getTensorCppPointer(sharedRecognizerV3Input)}",
-                )
 
                 config.setModelFromFile(copy("paddle/rec_numeric_mono_int8_$arch.nb"))
                 sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config)
                 sharedRecognizerNumericInput = sharedRecognizerNumeric!!.getInput(0)
                 sharedRecognizerNumericInput!!.resize(longArrayOf(1, 1, 48, 1024))
-                Log.i(
-                    "PaddleDiag",
-                    "recNumeric init input cppPtr=${NativeImageUtils.getTensorCppPointer(sharedRecognizerNumericInput)}",
-                )
 
                 loadDictionary(context, "paddle/en_dict.txt", dictionaryV3)
                 // digits_only.txt kept as asset but not loaded; numeric pipeline uses dictionaryV3 with ALLOWED_DIGITS
@@ -307,13 +299,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     }
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
-
-    /** Temp diag: log hist bucket counts 1-20 to verify no low-bucket noise ramp (remove after confirm). */
-    private fun logLowBucketHistDiag(site: String, hist: IntArray) {
-        if (hist.size < 21) return
-        val counts = (1..20).joinToString(" ") { hist[it].toString() }
-        Log.i("PaddleDiag", "$site low-buckets-1-20: $counts (temp diag: no-ramp check)")
-    }
 
     fun detect(input: Any, targetW: Int? = null, targetH: Int? = null, copyHeatmap: Boolean = true): DetectionResult? {
         val tPop0 = System.nanoTime()
@@ -372,7 +357,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
                 hist = IntArray(100)
                 for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
-                logLowBucketHistDiag("detect tier=$tierScale", hist)
             }
 
             val tCopy0 = System.nanoTime()
@@ -449,7 +433,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 }
                 hist = IntArray(100)
                 for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
-                logLowBucketHistDiag("detectMat ${w}x$h", hist)
             }
             val tCopy0 = System.nanoTime()
             val heatmap = if (copyHeatmap) outputTensor.floatData.copyOf() else null
@@ -490,17 +473,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
-    /** Temp diag: log rec zero-copy buffer view vs tensor bytes (remove after confirm). */
-    private fun logRecZeroCopyBindDiag(site: String, recSet: BufferSet, bindW: Int, bindH: Int, buf: java.nio.ByteBuffer, inputTensor: Tensor?) {
-        val bindBytes = bindW * bindH
-        Log.i(
-            "PaddleDiag",
-            "$site recSet=${recSet.width}x${recSet.height} bind=${bindW}x${bindH} bytes=$bindBytes " +
-                "bufCap=${buf.capacity()} bufRem=${buf.remaining()} direct=${buf.isDirect} " +
-                "cppPtr=${NativeImageUtils.getTensorCppPointer(inputTensor)}",
-        )
-    }
-
     private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>, recSet: BufferSet? = null): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
@@ -526,16 +498,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         recBuf.clear()
         val inputTensor = recInputTensor(predictor)
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            Log.i("PaddleDiag", "processOcr useRecSetPs int8 b zero-copy bind=${bindW}x${bindH}")
             recSet.quantizeMonoInputToScratch(bindW, bindH)
             val buf = (recSet.s as BufferSet.Instance).tensorBindRaw()
             buf.position(0)
-            logRecZeroCopyBindDiag("processOcr pre-bind", recSet, bindW, bindH, buf, inputTensor)
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
-            logRecZeroCopyBindDiag("processOcr post-bind", recSet, bindW, bindH, buf, inputTensor)
             buf
         } else if (input is BufferSet.Slice) {
-            Log.i("PaddleDiag", "processOcr int8 crop bind=${w}x${h}")
             NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, w, h, w, h)
             recBuf.position(0)
             NativeImageUtils.bindInputInt8(inputTensor!!, recBuf, w, h)
@@ -612,16 +580,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         recBuf.clear()
         val inputTensor = recInputTensor(predictor)
         val bindBuf: java.nio.ByteBuffer = if (useRecSetPs && recSet != null) {
-            Log.i("PaddleDiag", "processOcrNumeric useRecSetPs int8 b zero-copy bind=${bindW}x${bindH}")
             recSet.quantizeMonoInputToScratch(bindW, bindH)
             val buf = (recSet.s as BufferSet.Instance).tensorBindRaw()
             buf.position(0)
-            logRecZeroCopyBindDiag("processOcrNumeric pre-bind", recSet, bindW, bindH, buf, inputTensor)
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
-            logRecZeroCopyBindDiag("processOcrNumeric post-bind", recSet, bindW, bindH, buf, inputTensor)
             buf
         } else if (input is BufferSet.Slice) {
-            Log.i("PaddleDiag", "processOcrNumeric int8 crop bind=${w}x${h}")
             NativeImageUtils.quantizeMonoToInt8(srcMat, recBuf, w, h, w, h)
             recBuf.position(0)
             NativeImageUtils.bindInputInt8(inputTensor!!, recBuf, w, h)
