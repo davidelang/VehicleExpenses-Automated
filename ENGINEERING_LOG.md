@@ -677,3 +677,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Replaced nativeProcessHeatmap body with master extract: direct tensor->data<float>(), inline CC/minAreaRect, 100-bin hist append.
 - Removed resolveOutputHeatmapFloatData call from active heatmap-to-rects path.
 - Int8-output scaffolding left untouched per plan.
+
+## 2026-07-02 - master pull Phase 2: nativeHeatmapToAngle direct float32
+
+- Replaced resolveOutputHeatmapFloatData with direct tensor->data<float>() in nativeHeatmapToAngle.
+- Matches master weighted 0.5° bucket voting path; int8-output scaffolding untouched.

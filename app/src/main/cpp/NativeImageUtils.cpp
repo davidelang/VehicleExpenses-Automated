@@ -1369,16 +1369,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 
     int h = (int)shape[shape.size() - 2];
     int w = (int)shape[shape.size() - 1];
-    std::vector<float> heatmapScratch;
-    const float* data = nullptr;
-    if (!resolveOutputHeatmapFloatData(nativeTensor, h, w, heatmapScratch, &data)) {
-        return 0.0f;
-    }
-
-    LOGI(
-        "PaddleDiag: nativeHeatmapToAngle prec=%d h=%d w=%d threshold=%.3f ptr=%p",
-        static_cast<int>(nativeTensor->precision()), h, w, threshold,
-        static_cast<const void*>(data));
+    const float* data = nativeTensor->data<float>();
+    if (!data) return 0.0f;
 
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
     cv::Mat mask = heatmap > threshold;
@@ -1438,11 +1430,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
         }
     }
 
-    const float angleDeg = (float)bestBucket / 2.0f;
-    LOGI(
-        "PaddleDiag: nativeHeatmapToAngle result=%.2f labels=%d buckets=%zu",
-        angleDeg, numLabels - 1, buckets.size());
-    return angleDeg;
+    return (float)bestBucket / 2.0f;
 }
 
 static std::vector<float> processHeatmapFromFloatData(
