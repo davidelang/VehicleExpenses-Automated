@@ -210,3 +210,13 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 ## 2026-07-02 - Prepare PR for pump experiment: G-family sizes (G/G-/G--), disable A/B/C/F/H, hybrids kept, quick-fill on G--
 
 ## 2026-07-02 - PR preparation complete for improve_pump_calculated_expand. Generated PR doc in dev-ai-interaction/PRs/. History has phased commits for disable + G-family. Next: review on master agent.
+
+## 2026-07-02 - improve_pump_calculated_expand merge build gate
+
+- ./build_app succeeded on master after merge commit 5b3cee47 (JDK 17 required in this environment).
+- master builds tag updated.
+
+## 2026-07-02 - pump-vert-lists-max7
+
+- Expanded SET_G_VERT_FACTORS to 7 factors; G- to 5; G-- to [0.3, 1.2].
+- Aligned ExperimentPumpScreen regularGVert/DVert/EVert lists.
