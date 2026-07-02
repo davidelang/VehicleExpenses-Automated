@@ -198,3 +198,9 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Key files match agent-5 3ee025ec: PumpCostVolUtils (SET_G/G-/G--), OcrHarness (Quick Fill G--), ExperimentPumpScreen (makeGProc, list-based dispatch, H/I hybrids)
 - Prerequisite: OdometerOcrUtils hybrid stretch/valley helpers ported for procH/procI
 - No agent-5 duplicate dispatch-fix commits imported
+
+## 2026-07-02 - Disable pump experiment Sets A/B/C/F/H
+
+- Executed disable-experiment-sets-a-b-c-f-h-20260702-plan.md on improve_pump_calculated_expand.
+- flows + flowProcessors now run only D, E, G, G-, G--, I (calculated paths).
+- blueMethodPrefixes trimmed (B/C/F/H removed); procA/B/C/F/H lambdas retained as dead code for easy re-enable.
