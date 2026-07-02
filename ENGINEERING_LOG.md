@@ -589,3 +589,64 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Rec: quantizeMonoInputToScratch + bindInputInt8(s.raw) useRecSetPs; uint8 reverted
 - Detect/detectMat: processHeatmap at 0.03f on float output; no int8 output tensor copy
 - Tag: eca47b42 ready for emulator/phone test
+
+## 2026-07-02 - Planner: float16 build check + uint8 vs fp16 heatmap dump test setup
+- Checked x86_64_build_test_20260702_065809.log + fp16* logs: benchmark_bin now available for x86_64 (good). FP16 .nb produced via --enable_fp16, but all probes show output precision=float32 (head fallback, no native kFP16 tensor).
+- Parallel uint8 output work noted.
+- Created fresh research note + plan (from scratch): setup-heatmap-uint8-vs-fp16-dump-test-and-analyze-precision-loss-20260702-plan.md
+- Wrote research/dump_heatmap_precision_comparison.py (host python) to dump raw float32 heatmap from pdmodel det, simulate uint8 recon ( *255 /255 ) and float16 recon (astype float16/32), run threshold+CC+simple moments angle on each, print box count/angle diffs + hist stats.
+- Will quantify if 8-bit vs 10-mantissa loses noticeable signal for sparse text boxes/angles.
+
+## 2026-07-02 - Ran focused heatmap diff test (planner research)
+- Executed dump_heatmap_diff_test.py on PXL_20220701_020625793.dng using det_mono pdmodel.
+- Key finding: 0 < val < 0.03 contains 1,543,315 pixels (not "tens"). This is the vast majority of non-zero pixels.
+- uint8 recon: max error 0.00392, 23k+ pixels with |diff|>1e-4 (including thousands in low band).
+- float16 recon: max error 0.000244, only 6.7k diffs >1e-4, and **zero** of them in the (0,0.03) band.
+- Dumps + script saved in research/heatmap_dumps/20260702 and research/dump_heatmap_diff_test.py
+
+## 2026-07-02 - Executed and analyzed heatmap diff test (as requested)
+- Ran focused `dump_heatmap_diff_test.py` on real pump DNG using host pdmodel.
+- Result: 1.543M pixels in (0, 0.03) — not "tens".
+- float16: max error 0.000244, 0 diffs >1e-4 below 0.03.
+- uint8: max error 0.00392, thousands of diffs even in low band.
+- Full numbers + interpretation in research/heatmap_diff_results_20260702.md
+- This is pure research (no app code touched), consistent with planner role for host-based analysis.
+
+## 2026-07-02 - Histogram of low-band heatmap values (0 < val < 0.03)
+- Analyzed float32 detect heatmap on PXL_20220701_020625793.dng (1.638M pixels)
+- 1.543M pixels in (0, 0.03)
+- 99.5% of those are < 1e-8
+- Vast majority of "low" mass is numerical noise / underflow, not usable signal
+- Only a few hundred pixels in [0.01, 0.03)
+- Implication: for angle/box quality at 0.5° resolution, the precision difference between uint8 and float16 in the <0.03 band is negligible because almost nothing meaningful lives there.
+
+## 2026-07-02 - Answers to angle/box diff questions from user
+- Angle difference image: PXL_20221029_003255537.dng (batch JSONs showed f32/f16=3.5°, uint8=1.0°). Targeted re-run on same image with full-raw processing gave 1.0° for all at 0.5° bucket, raw best-component ~0.7884° for all.
+- With 0.1° or 0.01° effective resolution (raw angle or finer buckets): differences collapse to <<0.1° or identical. The 0.5° bucketing amplifies small minAreaRect noise from uint8.
+- Disappearing boxes (count 21→20 cases): the small ones in samples, areas ~150 vs ~146 and ~1526 vs ~1512 in heatmap space (tiny features).
+- DNGs: full raw via rawpy (gray.shape e.g. 3072x4080), letterboxed to *32 full-res size. Not thumbnails.
+
+## 2026-07-02 - Status assessment: rec/det input-output crash fixes (float32 output + int8 mangle input)
+- Rec input: p->s (quantizeMonoInputToScratch + s.raw bindInputInt8 "int8 b zero-copy") IS applied for useRecSetPs paths in processOcr and processOcrNumeric. Matches executed plan.
+- Previous uint8 zero-copy rec attempt (direct p.raw + bindUInt8) was the one causing SEGV_ACCERR; removed.
+- Float32 output kt: detect/detectMat use NativeImageUtils.processHeatmap(outputTensor, DET_HEATMAP_FLOAT_THRESHOLD=0.03f); direct floatData copies; logs say "float output; box on float at 0.03f; no int8 output tensor". No forceOutputTensorInt8 in active paths.
+- Cpp gap: resolveOutputHeatmapFloatData explicitly bails (LOGE + false) on kFloat (line ~44); nativeProcessHeatmap and nativeHeatmapToAngle both call it → return nullptr/0.0f. processHeatmapFromFloatData exists but unreachable for current tensors. Box/angle extraction will see empty results.
+- Detector input on ARM uses int8 bind (correct); rec input is int8-mangled (host validated), not raw uint8.
+- Plan phases complete 2026-07-01 (tag eca47b42); no emu/phone verification logs after. 07-02 activity was host heatmap precision research only.
+- Result: rec should no longer SEGV from input format. Detection (text finding) non-functional (zero boxes) until resolve supports kFloat directly.
+- No app source edits from this status query.
+
+## 2026-07-02 - PLANNING START: make plan for full float32 heatmap (box+angle) device support on current state (int8-mangle rec input + float32 det output) based on host/research test results. Will create fresh sandbox plan under dev-ai-interaction/plans/. Researching results + code gaps now. No app source edits.
+
+## 2026-07-02 - Fresh plan created: get-float32-heatmap-support-working-on-all-devices-current-state-20260702-plan.md (under absolute dev-ai-interaction/plans/). Incorporates host smoke + July 2026 low-band / diff research. Focus: complete cpp float32 support (resolve kFloat) + cleanup stale int8-output paths + multi-device (x86 emu + arm) verification so current state (float heatmaps at 0.03f + int8-mangle rec) works on all devices. Then handoff for full runs while any re-testing proceeds. STOP & WAIT for explicit approval of this exact plan file.
+
+## 2026-07-02 - Started full resolution tests (box+angle extraction on float32 heatmaps) on ALL dash (~141) + pump (~150) photos using analyze_heatmap_precision.py updated for full dirs + status prints. New outputs in full_resolution_tests_20260702/. Using monitor for live per-image status ("working on dash X/Y name"). Running in parallel conceptually while plan for float32 device support is reviewed/ executed. 
+
+## 2026-07-02 - EXEC: float32 heatmap support on all devices
+
+- Phase 1 start: fix resolveOutputHeatmapFloatData kFloat path in cpp
+
+## 2026-07-02 - Phase 1: resolve kFloat direct for heatmap post-process
+
+- resolveOutputHeatmapFloatData returns tensor->data<float>() for kFloat
+- nativeProcessHeatmap/nativeHeatmapToAngle logs updated

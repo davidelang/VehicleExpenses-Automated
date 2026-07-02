@@ -42,12 +42,14 @@ bool resolveOutputHeatmapFloatData(
   constexpr float kHeatmapInt8Scale = 0.00787f;
 
   if (prec == paddle::lite_api::PrecisionType::kFloat) {
-    LOGE(
-        "*** NO FALLBACKS - LOUD ERROR *** resolveOutputHeatmapFloatData: got kFloat prec=%d "
-        "on path that requires kInt8. Fallbacks disabled — fail loudly rather than NaN/garbage. "
-        "Call forceOutputTensorInt8Precision before run on ARM.",
-        static_cast<int>(prec));
-    return false;
+    const float* src = tensor->data<float>();
+    if (!src) return false;
+    LOGI(
+        "PaddleDiag: resolve kFloat direct path src=%p count=%zu h=%d w=%d first4=[%.4f,%.4f,%.4f,%.4f]",
+        static_cast<const void*>(src), count, h, w,
+        src[0], count > 1 ? src[1] : 0.f, count > 2 ? src[2] : 0.f, count > 3 ? src[3] : 0.f);
+    *outPtr = src;
+    return true;
   }
 
   scratch.resize(count);
@@ -1373,6 +1375,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
         return 0.0f;
     }
 
+    LOGI(
+        "PaddleDiag: nativeHeatmapToAngle prec=%d h=%d w=%d threshold=%.3f ptr=%p",
+        static_cast<int>(nativeTensor->precision()), h, w, threshold,
+        static_cast<const void*>(data));
+
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
     cv::Mat mask = heatmap > threshold;
 
@@ -1747,22 +1754,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         return nullptr;
     }
 
-    const auto postBindPrec = nativeTensor->precision();
-    const bool isKInt8Bound = postBindPrec == paddle::lite_api::PrecisionType::kInt8;
-    const bool usedInt8Path = isKInt8Bound
-        || postBindPrec == paddle::lite_api::PrecisionType::kFloat;
+    const auto prec = nativeTensor->precision();
     LOGI(
-        "PaddleDiag: nativeProcessHeatmap after rebind prec=%d h=%d w=%d "
-        "kInt8Bound=%d resolvePtr=%p",
-        (int)postBindPrec, h, w, isKInt8Bound ? 1 : 0, static_cast<const void*>(data));
-    LOGI(
-        "nativeProcessHeatmap: prec=%d shape=[%d dims], h=%d, w=%d, ptr=%p, "
+        "PaddleDiag: nativeProcessHeatmap prec=%d h=%d w=%d threshold=%.3f ptr=%p "
         "first4=[%.4f,%.4f,%.4f,%.4f]",
-        (int)postBindPrec, (int)shape.size(), h, w, static_cast<const void*>(data),
+        static_cast<int>(prec), h, w, threshold, static_cast<const void*>(data),
         data[0], data[1], data[2], data[3]);
 
     std::vector<float> results = processHeatmapFromFloatData(data, h, w, threshold, minArea);
     if (results.empty()) return nullptr;
+    const size_t boxFloats = results.size() >= 256 ? results.size() - 256 : 0;
+    LOGI(
+        "PaddleDiag: nativeProcessHeatmap boxes=%zu hist_tail=%zu",
+        boxFloats / 9, results.size());
     jfloatArray jres = env->NewFloatArray(results.size());
     env->SetFloatArrayRegion(jres, 0, results.size(), results.data());
     return jres;
