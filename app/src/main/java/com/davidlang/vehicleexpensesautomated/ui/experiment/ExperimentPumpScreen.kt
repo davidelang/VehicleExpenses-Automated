@@ -2565,16 +2565,11 @@ private suspend fun runPumpExperiment(
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdI, null, workspace).first
                 }
                 val flowProcessors = listOf(
-                    "Set A" to procA,
-                    "Set B (clip edges, expanded)" to procB,
-                    "Set C (valley push, expanded)" to procC,
                     "Set D (clip edges, calculated)" to procD,
                     "Set E (valley push, calculated)" to procE,
-                    "Set F (none, expanded)" to procF,
                     "Set G (none, calculated)" to procG,
                     "Set G- (3 pass, none, calculated)" to procGMinus,
                     "Set G-- (2 pass, none, calculated)" to procGMinusMinus,
-                    "Set H (E+G hybrid, calculated)" to procH,
                     "Set I (D+E+G hybrid, calculated)" to procI,
                 )
                 val processor = flowProcessors.firstOrNull { it.first == flowName }?.second
@@ -3205,7 +3200,7 @@ private fun parseBinPeakKeyToPeakNum(key: String): Int? {
 }
 
 private fun buildBinPeakHtmlForBranch(flowName: String, br: PumpBranch): String {
-    val blueMethodPrefixes = listOf("Set B", "Set C", "Set D", "Set E", "Set F", "Set G", "Set H", "Set I")
+    val blueMethodPrefixes = listOf("Set D", "Set E", "Set G", "Set I")
     if (blueMethodPrefixes.none { flowName.startsWith(it) }) return ""
     val peakNums = br.images.keys.mapNotNull { parseBinPeakKeyToPeakNum(it) }.distinct()
     if (peakNums.isEmpty()) return ""
