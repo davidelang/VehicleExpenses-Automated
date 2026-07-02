@@ -541,3 +541,32 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Lite armv8 (Pixel): full 3×3×12×3 matrix PASS; benchmark_bin still emits float32; `requested=` labels output mode.
 - Logs: `smoke_explicit_pdmodel.log`, `smoke_explicit_full.log`. Doc: `research/opt-flags-for-precision.md`.
 - Builds: use `JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64` (Java 25 breaks Hilt compile).
+
+## 2026-07-01 - Emulator crash investigation uint8 rec zero-copy
+- Build int8-paddle-processing-start-971-gba58fc08 installed+run on emulator-5554 crashed.
+- Exact: I PaddleDiag: processOcr useRecSetPs uint8 zero-copy bind=1024x48
+- Then: Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x7c79babbc004
+- Backtrace only #00 in anonymous:7c79da000000 (Paddle kernel map)
+- Tombstone pulled. Memory shows scudo guards near access.
+- Pre-crash: full 1024x48 owner bound as kUInt8 raw 0-255 (even for 160x40 crop).
+- Analysis + fresh plan created in sandbox (from scratch, new file only).
+- Host smoke tests for output dtypes continue independently.
+
+## 2026-07-01 - Emulator crash investigation uint8 rec zero-copy
+- Build int8-paddle-processing-start-971-gba58fc08 installed+run on emulator-5554 crashed.
+- Exact: I PaddleDiag: processOcr useRecSetPs uint8 zero-copy bind=1024x48
+- Then: Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x7c79babbc004
+- Backtrace only #00 in anonymous:7c79da000000 (Paddle kernel map)
+- Tombstone pulled. Memory shows scudo guards near access.
+- Pre-crash: full 1024x48 owner bound as kUInt8 raw 0-255 (even for 160x40 crop).
+- Analysis + fresh plan created in sandbox (from scratch, new file only).
+- Host smoke tests for output dtypes continue independently.
+
+## 2026-07-01 - EXEC: int8 p-to-b mangle zero-copy rec + float output detectors
+
+- Phase 1 start: revert uint8 rec to quantizeMonoInputToScratch + bindInputInt8
+
+## 2026-07-01 - Phase 1: processOcr int8 p-to-b zero-copy
+
+- useRecSetPs: quantizeMonoInputToScratch(bindW,bindH) + bindInputInt8(s.raw)
+- crop/mat: int8 quantize + bind; uint8 paths removed from processOcr
