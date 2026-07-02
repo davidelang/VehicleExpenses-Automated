@@ -570,3 +570,7 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - useRecSetPs: quantizeMonoInputToScratch(bindW,bindH) + bindInputInt8(s.raw)
 - crop/mat: int8 quantize + bind; uint8 paths removed from processOcr
+
+## 2026-07-01 - Phase 2: processOcrNumeric int8 p-to-b zero-copy
+
+- mirror processOcr: quantizeMonoInputToScratch + bindInputInt8(s.raw)
