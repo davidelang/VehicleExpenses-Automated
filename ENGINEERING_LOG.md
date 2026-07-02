@@ -671,3 +671,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - Phase 3 (38751b67): Box-count + nativeHeatmapToAngle result diag logs; rec int8 p-to-b zero-copy unchanged.
 - Phases 4-5 deferred: no agent deploy per user directive; user will deploy and exercise on emulator-5554 + arm device.
 - Expected log patterns after deploy: resolve kFloat direct path, nativeProcessHeatmap threshold=0.030, detect float output at 0.03f, processOcr useRecSetPs int8 b zero-copy bind=1024x48.
+
+## 2026-07-02 - master pull Phase 1: nativeProcessHeatmap direct float32 (100-bin hist)
+
+- Replaced nativeProcessHeatmap body with master extract: direct tensor->data<float>(), inline CC/minAreaRect, 100-bin hist append.
+- Removed resolveOutputHeatmapFloatData call from active heatmap-to-rects path.
+- Int8-output scaffolding left untouched per plan.
