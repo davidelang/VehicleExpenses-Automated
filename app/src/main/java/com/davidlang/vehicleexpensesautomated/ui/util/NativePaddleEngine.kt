@@ -69,6 +69,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private const val DET_HEATMAP_INT8_U_THRESHOLD = 1
         private val DET_HEATMAP_INT8_FLOAT_THRESHOLD =
             DET_HEATMAP_INT8_U_THRESHOLD * DET_HEATMAP_INT8_SCALE
+        /** Box/angle post-process threshold on float detector output (host-validated). */
+        private const val DET_HEATMAP_FLOAT_THRESHOLD = 0.03f
 
         // Phase 125: Multi-Tier Predictor Array
         val TIER_SCALES = listOf(224, 608, 1024, 2048, 2560)
@@ -436,9 +438,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val outputTensor = predictor.getOutput(0)
-            if (isArm) {
-                NativeImageUtils.forceOutputTensorInt8Precision(outputTensor)
-            }
 
             val tInfer0 = System.nanoTime()
             predictor.run()
@@ -451,30 +450,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val outW = dims[3].toInt()
             val outH = dims[2].toInt()
             val expected = outW * outH
-            if (!isArm) {
-                wrapX86DetectorOutputAsInt8(outputTensor, dims, "detect tier=$tierScale", tierScale = tierScale)
-            }
-            val int8Buf = sharedTierBuffers[tierScale]!!
-            int8Buf.position(0)
-            if (isArm) {
-                int8Buf.clear()
-                val copied = NativeImageUtils.copyTensorInt8ToBuffer(
-                    outputTensor, int8Buf, expected, DET_HEATMAP_INT8_SCALE,
-                )
-                if (!copied) {
-                    Log.e("PaddleDiag", "detect tier=$tierScale: ARM output copy/quantize failed")
-                    return null
-                }
-                int8Buf.position(0)
-            }
 
-            val tNativePost0 = System.nanoTime()
             Log.i(
                 "PaddleDiag",
-                "detect tier=$tierScale post-process from long-lived uint8 buf cap=${int8Buf.capacity()} w=$outW h=$outH",
+                "detect tier=$tierScale float output; box on float at ${DET_HEATMAP_FLOAT_THRESHOLD}f; no int8 output tensor",
             )
-            val nativeRes = NativeImageUtils.processHeatmapFromInt8Buffer(
-                int8Buf, outW, outH, DET_HEATMAP_INT8_U_THRESHOLD, 10f,
+
+            val tNativePost0 = System.nanoTime()
+            val nativeRes = NativeImageUtils.processHeatmap(
+                outputTensor, DET_HEATMAP_FLOAT_THRESHOLD, 10f,
             )
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
@@ -502,9 +486,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
 
             val tCopy0 = System.nanoTime()
-            val heatmap = if (copyHeatmap) {
-                NativeImageUtils.dequantHeatmapInt8ToFloat(int8Buf, expected, DET_HEATMAP_INT8_SCALE)
-            } else null
+            val heatmap = if (copyHeatmap) outputTensor.floatData.copyOf() else null
             val tCopy = if (copyHeatmap) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
 
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0

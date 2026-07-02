@@ -574,3 +574,8 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 ## 2026-07-01 - Phase 2: processOcrNumeric int8 p-to-b zero-copy
 
 - mirror processOcr: quantizeMonoInputToScratch + bindInputInt8(s.raw)
+
+## 2026-07-01 - Phase 3: detect float output at 0.03f
+
+- processHeatmap(outputTensor,0.03f); no forceOutput/copyTensorInt8/wrapX86
+- copyHeatmap from floatData directly
