@@ -758,3 +758,10 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - recSetPsBindBuffer: quantizeMonoInputToScratch (^128) + limit(49152) + slice → direct bindInputInt8 (no float promotion).
 - Temp diag logs: native_kInt8 int8_xor cap/limit per model.
 - Rec paths already used bindInputInt8; aligned comments/diag to regenerated model contract.
+
+## 2026-07-02 - rec native kInt8 Phase 3: handoff for pump + matrix validation
+
+- Matrix pre-check: rec_numeric int8_xor PASS on emulator (native_input_matrix_x86_64.log).
+- App: stamped x86_64 models + direct bindInputInt8 int8_xor on exact 49152 buf.
+- Phone armv8 still uses Jul 1 pre-regen models — Phase 4 arm regen needed for native kInt8 on device.
+- Temp diag logs retained until user confirms pump small-10 on emu + phone.
