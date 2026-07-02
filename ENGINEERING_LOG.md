@@ -657,3 +657,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - detect/detectMat logs now: int8/float input per arch; float32 output post-process at 0.03f.
 - Active det paths use processHeatmap(float) only; no forceOutput/int8-output tensor ops.
 - Rec int8 p-to-b zero-copy paths unchanged (processOcr/processOcrNumeric).
+
+## 2026-07-02 - float32 heatmap Phase 3: diag polish for float box + angle paths
+
+- detect/detectMat: log non-zero box counts on float32 post-process path.
+- nativeHeatmapToAngle: log result angle, label count, bucket count after float resolve.
+- Confirmed rec useRecSetPs + quantizeMonoInputToScratch + bindInputInt8 unchanged.

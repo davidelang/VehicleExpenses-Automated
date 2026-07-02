@@ -1438,7 +1438,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
         }
     }
 
-    return (float)bestBucket / 2.0f;
+    const float angleDeg = (float)bestBucket / 2.0f;
+    LOGI(
+        "PaddleDiag: nativeHeatmapToAngle result=%.2f labels=%d buckets=%zu",
+        angleDeg, numLabels - 1, buckets.size());
+    return angleDeg;
 }
 
 static std::vector<float> processHeatmapFromFloatData(

@@ -389,6 +389,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val nboxes = boxFloats / 9
                 if (nboxes == 0) {
                     Log.i("PaddleDiag", "detect tier=$tierScale: zero detector boxes (safe empty post-process)")
+                } else {
+                    Log.i("PaddleDiag", "detect tier=$tierScale: $nboxes detector boxes (float32 post-process)")
                 }
                 for (i in 0 until nboxes) {
                     val offset = i * 9
@@ -497,6 +499,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val nboxes = boxFloats / 9
                 if (nboxes == 0) {
                     Log.i("PaddleDiag", "detectMat ${w}x$h: zero detector boxes (safe empty post-process)")
+                } else {
+                    Log.i("PaddleDiag", "detectMat ${w}x$h: $nboxes detector boxes (float32 post-process)")
                 }
                 for (i in 0 until nboxes) {
                     val offset = i * 9
