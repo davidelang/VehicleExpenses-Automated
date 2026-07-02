@@ -465,6 +465,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
+    private fun recModelTag(predictor: PaddlePredictor?): String = when (predictor) {
+        sharedRecognizerNumeric -> "rec_numeric_mono_int8"
+        else -> "rec_v3_mono_int8"
+    }
+
+    private fun isArmAbi(): Boolean = Build.SUPPORTED_ABIS[0].contains("arm")
+
     private fun recBindDimensions(useRecSetPs: Boolean, recSet: BufferSet?): Pair<Int, Int> {
         return if (useRecSetPs && recSet != null) {
             recSet.width to recSet.height
@@ -512,7 +519,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             buf.position(0)
             Log.i(
                 "PaddleDiag",
-                "rec useRecSetPs bind=${bindW}x${bindH} native_kInt8 int8_xor; cap=${buf.capacity()} limit=${buf.limit()} model=rec_v3_mono_int8",
+                "rec useRecSetPs bind=${bindW}x${bindH} native_kInt8 int8_xor; cap=${buf.capacity()} limit=${buf.limit()} model=${recModelTag(predictor)}",
             )
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
             buf
@@ -597,7 +604,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             buf.position(0)
             Log.i(
                 "PaddleDiag",
-                "rec useRecSetPs bind=${bindW}x${bindH} native_kInt8 int8_xor; cap=${buf.capacity()} limit=${buf.limit()} model=rec_numeric_mono_int8",
+                "rec useRecSetPs bind=${bindW}x${bindH} native_kInt8 int8_xor; cap=${buf.capacity()} limit=${buf.limit()} model=${recModelTag(predictor)}",
             )
             NativeImageUtils.bindInputInt8(inputTensor!!, buf, bindW, bindH)
             buf
@@ -690,7 +697,12 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         if (!isAvailable) return@withContext OcrResult(engineName = name, debugText = "Not Available", imageWidth = w, imageHeight = h)
 
-        val res = processOcr(input, sharedRecognizerV3, dictionaryV3, recSet ?: recBufferSet)
+        val res = if (isArmAbi()) {
+            processOcr(input, sharedRecognizerV3, dictionaryV3, recSet ?: recBufferSet)
+        } else {
+            Log.i("PaddleDiag", "recognize: x86 uses rec_numeric (rec_v3 unreliable on emu per native-input guide)")
+            processOcrNumeric(input, sharedRecognizerNumeric, dictionaryV3, ALLOWED_DIGITS, recSet ?: recBufferSet)
+        }
         OcrResult(
             engineName = "Paddle V3 Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,
@@ -719,7 +731,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
 
-        val res = processOcrNumeric(input, sharedRecognizerV3, dictionaryV3, ALLOWED_DIGITS, recSet ?: recBufferSet)
+        val res = processOcrNumeric(input, sharedRecognizerNumeric, dictionaryV3, ALLOWED_DIGITS, recSet ?: recBufferSet)
         OcrResult(
             engineName = "Paddle Numeric Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,
@@ -753,7 +765,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         if (!isAvailable) return@withContext OcrResult(engineName = "Paddle Numeric Decimal Greedy", debugText = "Not Available", imageWidth = w, imageHeight = h)
 
-        val res = processOcrNumeric(input, sharedRecognizerV3, dictionaryV3, ALLOWED_DIGITS_DECIMAL, recSet)
+        val res = processOcrNumeric(input, sharedRecognizerNumeric, dictionaryV3, ALLOWED_DIGITS_DECIMAL, recSet)
         OcrResult(
             engineName = "Paddle Numeric Decimal Greedy",
             executionTimeMs = System.currentTimeMillis() - t0,

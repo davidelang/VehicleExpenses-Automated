@@ -765,3 +765,15 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - App: stamped x86_64 models + direct bindInputInt8 int8_xor on exact 49152 buf.
 - Phone armv8 still uses Jul 1 pre-regen models — Phase 4 arm regen needed for native kInt8 on device.
 - Temp diag logs retained until user confirms pump small-10 on emu + phone.
+
+## 2026-07-02 - rec native kInt8 Phase 4: arm regen + rec_numeric routing
+
+- Post-996 emu crash: rec_v3 SEGV after native_kInt8 bind (rec_numeric matrix PASS).
+- Phase 4: regenerate stamped arm models; wire sharedRecognizerNumeric; x86 emu uses rec_numeric for recognize().
+
+## 2026-07-02 - rec native kInt8 Phase 4: stamped arm models + rec_numeric routing
+
+- Regenerated all int8-mono-nb rec models (analytic_input_quant + enable_int8) via optimize_mono_int8_models.sh.
+- Copied stamped rec_*_int8_{armv7,armv8,x86_64}.nb + int8 arm jni .so to app.
+- Fixed doRecognizeNumeric/Decimal to use sharedRecognizerNumeric (was incorrectly V3).
+- x86 emu recognize() routes to rec_numeric (matrix PASS; rec_v3 SEGV per guide).
