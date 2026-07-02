@@ -663,3 +663,11 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - detect/detectMat: log non-zero box counts on float32 post-process path.
 - nativeHeatmapToAngle: log result angle, label count, bucket count after float resolve.
 - Confirmed rec useRecSetPs + quantizeMonoInputToScratch + bindInputInt8 unchanged.
+
+## 2026-07-02 - float32 heatmap all-devices plan: Phases 1-3 complete, ready for user deploy/test
+
+- Phase 1 (5939bdce): resolveOutputHeatmapFloatData accepts kFloat direct (zero-copy); nativeProcessHeatmap/nativeHeatmapToAngle unblocked.
+- Phase 2 (e12f6ad2): Removed wrapX86DetectorOutputAsInt8 + DET_HEATMAP_INT8_*; detect/detectMat use float32 post-process at 0.03f only.
+- Phase 3 (38751b67): Box-count + nativeHeatmapToAngle result diag logs; rec int8 p-to-b zero-copy unchanged.
+- Phases 4-5 deferred: no agent deploy per user directive; user will deploy and exercise on emulator-5554 + arm device.
+- Expected log patterns after deploy: resolve kFloat direct path, nativeProcessHeatmap threshold=0.030, detect float output at 0.03f, processOcr useRecSetPs int8 b zero-copy bind=1024x48.
