@@ -714,3 +714,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - Removed logRecZeroCopyBindDiag, rec init/bind PaddleDiag, low-bucket hist temp diag.
 - nativeBindInputInt8: keep LOGE skip guards only; removed recv/success LOGI.
+
+## 2026-07-02 - rec zero-copy buffer overrun fix Phase 4: handoff
+
+- Verified processOcrNumeric uses same tensorBindRaw() path as processOcr.
+- Non-useRecSetPs rec paths and det BufferSet crops unchanged (still use .raw or sharedRecInt8Buffer).
+- Fix: ShareExternalMemory gets full NV21 backing cap (73728 for 1024x48) while bytes remain bindW*bindH.
