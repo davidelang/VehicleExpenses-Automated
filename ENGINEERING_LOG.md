@@ -183,3 +183,30 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 ## 2026-06-28 - tweak-quick-fill merge build gate
 
 - ./build_app succeeded on merge commit; master builds tag ed1b5220.
+
+## 2026-07-02 - merge test append
+
+## 2026-07-02 - Phase 0: G-family migration research (agent-5 → agent-6)
+
+- Executing plan: dev-ai-interaction/plans/migrate-pump-g-family-hybrids-from-agent5-clean-history-pr-20260702-plan.md
+- agent-6 at cb5b43aa [improve_pump_calculated_expand]; agent-5 at 3ee025ec [improve-landmark-selection]
+- Confirmed agent-6 legacy: SET_G_VERT_FACTORS = (1..8).map { it/10f }; no G-/G-- consts; ExperimentPumpScreen flows end at procG; index dispatch flowProcessors[i]
+- agent-5 has 4 semantic commits (40fc0929, 5fa1363b, fb769fa4, 3ee025ec) plus 5 duplicate dispatch-fix commits to avoid importing
+- Diff stat cb5b43aa..3ee025ec: ExperimentPumpScreen +505/-117, PumpCostVolUtils +11/-, OcrHarness +6/-
+
+## 2026-07-02 - G-family migration complete (agent-5 → agent-6)
+
+- Phases 1-4 executed on improve_pump_calculated_expand
+- Key files match agent-5 3ee025ec: PumpCostVolUtils (SET_G/G-/G--), OcrHarness (Quick Fill G--), ExperimentPumpScreen (makeGProc, list-based dispatch, H/I hybrids)
+- Prerequisite: OdometerOcrUtils hybrid stretch/valley helpers ported for procH/procI
+- No agent-5 duplicate dispatch-fix commits imported
+
+## 2026-07-02 - Disable pump experiment Sets A/B/C/F/H
+
+- Executed disable-experiment-sets-a-b-c-f-h-20260702-plan.md on improve_pump_calculated_expand.
+- flows + flowProcessors now run only D, E, G, G-, G--, I (calculated paths).
+- blueMethodPrefixes trimmed (B/C/F/H removed); procA/B/C/F/H lambdas retained as dead code for easy re-enable.
+
+## 2026-07-02 - Prepare PR for pump experiment: G-family sizes (G/G-/G--), disable A/B/C/F/H, hybrids kept, quick-fill on G--
+
+## 2026-07-02 - PR preparation complete for improve_pump_calculated_expand. Generated PR doc in dev-ai-interaction/PRs/. History has phased commits for disable + G-family. Next: review on master agent.
