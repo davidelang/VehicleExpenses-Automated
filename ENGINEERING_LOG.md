@@ -579,3 +579,7 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 
 - processHeatmap(outputTensor,0.03f); no forceOutput/copyTensorInt8/wrapX86
 - copyHeatmap from floatData directly
+
+## 2026-07-01 - Phase 4: detectMat float output at 0.03f
+
+- mirror detect: processHeatmap float path, no int8 output tensor ops
