@@ -37,8 +37,15 @@ data class CostVolClassifyResult(
 
 data class PathResult(val cost: String, val vol: String, val costB64: String, val volB64: String)
 
-/** Set G calculated blue expansion defaults: vert 10%–80% step 10%, horiz 50%. */
-val SET_G_VERT_FACTORS: List<Float> = (1..8).map { it / 10f }
+/**
+ * Set G (6), G- (3), G-- (2) calculated blue expansion vert-factor lists.
+ * Quick Fill live path uses G-- (SET_G_MINUS_MINUS_VERT_FACTORS). Horiz 50%.
+ */
+val SET_G_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.6f, 1.1f, 1.3f)
+/** Set G- (best 3-pass subset of G for max coverage; loss 4 vs 252) */
+val SET_G_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.3f, 1.3f)
+/** Set G-- (best 2-pass subset of G; used for Quick Fill live path; loss 10 vs 252) */
+val SET_G_MINUS_MINUS_VERT_FACTORS: List<Float> = listOf(0.3f, 1.3f)
 const val SET_G_HORIZ_FACTOR: Float = 0.5f
 
 private const val TAG = "PumpCostVolUtils"
