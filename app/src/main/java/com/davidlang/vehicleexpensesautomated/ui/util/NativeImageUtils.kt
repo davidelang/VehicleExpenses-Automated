@@ -181,6 +181,12 @@ object NativeImageUtils {
         nativeQuantizeMonoHandleToInt8(srcHandle, dstHandle, tensorW, tensorH, srcW, srcH)
     }
 
+    /** Read Paddle Tensor cppTensorPointer (diag / bind preflight). */
+    fun getTensorCppPointer(tensor: Any?): Long {
+        if (tensor == null) return 0L
+        return nativeGetTensorCppPointer(tensor)
+    }
+
     /** Bind int8 NCHW backing store to Paddle input tensor (ShareExternalMemory). */
     fun bindInputInt8(tensor: Any, src: ByteBuffer, tensorW: Int, tensorH: Int) {
         nativeBindInputInt8(tensor, src, tensorW, tensorH)
@@ -361,6 +367,7 @@ object NativeImageUtils {
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     private external fun nativeQuantizeMonoToInt8(srcMatPtr: Long, dstBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
     private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
+    private external fun nativeGetTensorCppPointer(tensor: Any): Long
     private external fun nativeBindInputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
     private external fun nativeBindInputUInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
     private external fun nativeQuantizeFloatHeatmapToInt8(src: FloatArray, dstBuffer: java.nio.ByteBuffer, count: Int, scale: Float)

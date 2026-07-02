@@ -693,3 +693,9 @@ Tag: int8-paddle-processing-start-55-g120eb3a0. armv7 jniLibs not rebuilt this t
 - det model always paddle/det_v4_4000_mono_$arch.nb + populateMonoTensor + setData.
 - Removed isArm int8 quantize/bindInput branching from detect/detectMat/init tiers.
 - Rec int8 p-to-b zero-copy paths unchanged; int8-output scaffolding untouched.
+
+## 2026-07-02 - rec int8 zero-copy crash fix Phases 1-2: diag + persistent input tensors
+
+- Phase 1: nativeGetTensorCppPointer + nativeBindInputInt8 skip/success PaddleDiag logs; bind preflight in processOcr*.
+- Phase 2: Retain sharedRecognizerV3Input/sharedRecognizerNumericInput after resize; recInputTensor() for bindInputInt8 (no ephemeral getInput per run).
+- Fixes silent ShareExternalMemory skip when cppTensorPointer was 0 / tensor finalized.

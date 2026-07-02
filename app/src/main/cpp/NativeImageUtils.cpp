@@ -580,6 +580,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuant
     }
 }
 
+JNIEXPORT jlong JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGetTensorCppPointer(
+    JNIEnv* env, jobject thiz, jobject tensor) {
+    if (!tensor) return 0;
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return 0;
+    }
+    return env->GetLongField(tensor, fid);
+}
+
 JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindInputInt8(
     JNIEnv* env, jobject thiz, jobject tensor, jobject srcBuffer,
@@ -589,20 +602,32 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindI
     jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
+        LOGE("PaddleDiag: nativeBindInputInt8 cppTensorPointer field lookup failed");
         return;
     }
     jlong nativePtr = env->GetLongField(tensor, fid);
     void* raw = env->GetDirectBufferAddress(srcBuffer);
-    if (!nativePtr || !raw) return;
+    if (!nativePtr || !raw) {
+        LOGE(
+            "PaddleDiag: nativeBindInputInt8 skip nativePtr=%lld raw=%p w=%d h=%d",
+            static_cast<long long>(nativePtr), raw, tensorW, tensorH);
+        return;
+    }
 
     auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
-    if (!uptr || !(*uptr)) return;
+    if (!uptr || !(*uptr)) {
+        LOGE("PaddleDiag: nativeBindInputInt8 skip null tensor uptr=%p", static_cast<void*>(uptr));
+        return;
+    }
 
     paddle::lite_api::Tensor* lite_tensor = uptr->get();
     lite_tensor->Resize({1, 1, tensorH, tensorW});
     lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kInt8);
     size_t bytes = static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH);
     lite_tensor->ShareExternalMemory(raw, bytes, paddle::lite_api::TargetType::kHost);
+    LOGI(
+        "PaddleDiag: nativeBindInputInt8 ShareExternalMemory ok w=%d h=%d bytes=%zu ptr=%lld",
+        tensorW, tensorH, bytes, static_cast<long long>(nativePtr));
 }
 
 JNIEXPORT void JNICALL
