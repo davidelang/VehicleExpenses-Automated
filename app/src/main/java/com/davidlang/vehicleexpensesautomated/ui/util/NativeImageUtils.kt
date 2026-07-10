@@ -171,6 +171,11 @@ object NativeImageUtils {
         nativePopulateMonoTensor(src.nativeObj, dst, tensorW, tensorH, mean, std)
     }
 
+    fun quantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int = 0, srcH: Int = 0) {
+        nativeQuantizeMonoHandleToInt8(srcHandle, dstHandle, tensorW, tensorH, srcW, srcH)
+    }
+
+
     /**
      * Offloads the entire Valley Expansion algorithm to C++.
      * Reduces thousands of JNI calls to a single call.
@@ -301,6 +306,7 @@ object NativeImageUtils {
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
+    private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
     private external fun nativePopulateMonoInt8Xor(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
     private external fun nativePopulateMonoUInt8(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
 

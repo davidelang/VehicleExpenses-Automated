@@ -404,7 +404,7 @@ object OcrHarness {
                             val rCrId = recBuffer.createCrop(4, 4, ew, eh)
                             org.opencv.imgproc.Imgproc.resize(bRecMat, recBuffer.c[rCrId].mat, recBuffer.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
                             
-                            val ocrR = paddleEngine.recognizeNumeric(recBuffer.p, recSet = recBuffer)
+                            val ocrR = paddleEngine.recognizeNumeric(recBuffer.p)
                             val probsStr = ocrR.metadata["ocr_probs"] ?: ""
                             val probs = mutableListOf<Float>()
                             Regex("\\((0\\.\\d+|1\\.0+)\\)").findAll(probsStr).forEach { 
