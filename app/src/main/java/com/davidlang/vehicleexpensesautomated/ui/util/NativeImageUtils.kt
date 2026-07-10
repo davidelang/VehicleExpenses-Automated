@@ -171,67 +171,6 @@ object NativeImageUtils {
         nativePopulateMonoTensor(src.nativeObj, dst, tensorW, tensorH, mean, std)
     }
 
-    /** UINT8 luma → int8 via q = (b ^ 128). Letterbox: top-left into tensorW×tensorH. */
-    fun quantizeMonoToInt8(src: Mat, dst: ByteBuffer, tensorW: Int, tensorH: Int, srcW: Int = 0, srcH: Int = 0) {
-        nativeQuantizeMonoToInt8(src.nativeObj, dst, tensorW, tensorH, srcW, srcH)
-    }
-
-    /** BufferSet p→s int8 quantize (handle-based zero-copy). */
-    fun quantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int = 0, srcH: Int = 0) {
-        nativeQuantizeMonoHandleToInt8(srcHandle, dstHandle, tensorW, tensorH, srcW, srcH)
-    }
-
-    /** Read Paddle Tensor cppTensorPointer (diag / bind preflight). */
-    fun getTensorCppPointer(tensor: Any?): Long {
-        if (tensor == null) return 0L
-        return nativeGetTensorCppPointer(tensor)
-    }
-
-    /** Bind int8 NCHW backing store to Paddle input tensor (ShareExternalMemory). */
-    fun bindInputInt8(tensor: Any, src: ByteBuffer, tensorW: Int, tensorH: Int) {
-        nativeBindInputInt8(tensor, src, tensorW, tensorH)
-    }
-
-    /** Bind uint8 NCHW backing store to Paddle input tensor (ShareExternalMemory, zero-copy). */
-    fun bindInputUInt8(tensor: Any, src: ByteBuffer, tensorW: Int, tensorH: Int) {
-        nativeBindInputUInt8(tensor, src, tensorW, tensorH)
-    }
-
-    /** Quantize float heatmap activations to int8 buffer (round(f/scale), clamp, ^128 remap). */
-    fun quantizeFloatHeatmapToInt8(src: FloatArray, dst: ByteBuffer, count: Int, scale: Float) {
-        nativeQuantizeFloatHeatmapToInt8(src, dst, count, scale)
-    }
-
-    /** x86: direct uint8 populate buf[i] = (uint8)(f * 255), no scale/round/clamp. */
-    fun populateUint8FromFloat(src: FloatArray, dst: ByteBuffer, count: Int) {
-        nativePopulateUint8FromFloat(src, dst, count)
-    }
-
-    /** ARM: copy kInt8 detector output tensor into long-lived uint8-ready buffer (no float fallback). */
-    fun copyTensorInt8ToBuffer(tensor: Any, dst: ByteBuffer, count: Int, scale: Float): Boolean {
-        return nativeCopyTensorInt8ToBuffer(tensor, dst, count, scale)
-    }
-
-    /** ARM: force output tensor to kInt8 before run (SetPrecision only; no ShareExternal). */
-    fun forceOutputTensorInt8Precision(tensor: Any) {
-        nativeForceOutputTensorInt8Precision(tensor)
-    }
-
-    /** ARM post-run: convert Paddle signed kInt8 storage to uint8 0-255 in long-lived buf. */
-    fun convertSignedInt8BufToUint8(int8Buf: ByteBuffer, count: Int) {
-        nativeConvertSignedInt8BufToUint8(int8Buf, count)
-    }
-
-    /** Dequant long-lived uint8 heatmap to FloatArray for copyHeatmap (both arches). */
-    fun dequantHeatmapInt8ToFloat(int8Buf: ByteBuffer, count: Int, scale: Float): FloatArray? {
-        return nativeDequantHeatmapInt8ToFloat(int8Buf, count, scale)
-    }
-
-    /** Bind output tensor to external int8 memory (detector uses copyTensorInt8ToBuffer post-run; avoids unowned-buffer abort). */
-    fun bindOutputInt8(tensor: Any, src: ByteBuffer, tensorW: Int, tensorH: Int) {
-        nativeBindOutputInt8(tensor, src, tensorW, tensorH)
-    }
-
     /**
      * Offloads the entire Valley Expansion algorithm to C++.
      * Reduces thousands of JNI calls to a single call.
@@ -341,19 +280,16 @@ object NativeImageUtils {
         return nativeProcessHeatmap(tensor, threshold, minArea)
     }
 
-    /** Post-process heatmap from long-lived int8 buffer using u_val integer threshold (both arches). */
-    fun processHeatmapFromInt8Buffer(
-        int8Buf: java.nio.ByteBuffer,
-        w: Int,
-        h: Int,
-        uThreshold: Int,
-        minArea: Float,
-    ): FloatArray? {
-        return nativeProcessHeatmapFromInt8Buffer(int8Buf, w, h, uThreshold, minArea)
-    }
-
     fun heatmapToAngle(tensor: Any, threshold: Float): Float {
         return nativeHeatmapToAngle(tensor, threshold)
+    }
+
+    /**
+     * Safe float heatmap plane from det output (float32 / uint8 / fp16).
+     * Do not use Tensor.getFloatData on non-float tensors — that crashes native.
+     */
+    fun heatmapToFloatArray(tensor: Any): FloatArray? {
+        return nativeHeatmapToFloatArray(tensor)
     }
 
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
@@ -365,27 +301,17 @@ object NativeImageUtils {
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
-    private external fun nativeQuantizeMonoToInt8(srcMatPtr: Long, dstBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
-    private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
-    private external fun nativeGetTensorCppPointer(tensor: Any): Long
-    private external fun nativeBindInputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
-    private external fun nativeBindInputUInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
-    private external fun nativeQuantizeFloatHeatmapToInt8(src: FloatArray, dstBuffer: java.nio.ByteBuffer, count: Int, scale: Float)
-    private external fun nativePopulateUint8FromFloat(src: FloatArray, dstBuffer: java.nio.ByteBuffer, count: Int)
-    private external fun nativeCopyTensorInt8ToBuffer(
-        tensor: Any, dstBuffer: java.nio.ByteBuffer, count: Int, scale: Float,
-    ): Boolean
-    private external fun nativeForceOutputTensorInt8Precision(tensor: Any)
-    private external fun nativeConvertSignedInt8BufToUint8(int8Buf: java.nio.ByteBuffer, count: Int)
-    private external fun nativeDequantHeatmapInt8ToFloat(int8Buf: java.nio.ByteBuffer, count: Int, scale: Float): FloatArray?
-    private external fun nativeBindOutputInt8(tensor: Any, srcBuffer: java.nio.ByteBuffer, tensorW: Int, tensorH: Int)
-    private external fun nativeProcessHeatmapFromInt8Buffer(
-        int8Buf: java.nio.ByteBuffer,
-        w: Int,
-        h: Int,
-        uThreshold: Int,
-        minArea: Float,
-    ): FloatArray?
+    private external fun nativePopulateMonoInt8Xor(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
+    private external fun nativePopulateMonoUInt8(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
+
+    fun populateMonoInt8Xor(src: Mat, dst: ByteArray, tensorW: Int, tensorH: Int) {
+        nativePopulateMonoInt8Xor(src.nativeObj, dst, tensorW, tensorH)
+    }
+
+    /** Raw greyscale copy for kUInt8 feed (no XOR). Still copies into [dst] for setData. */
+    fun populateMonoUInt8(src: Mat, dst: ByteArray, tensorW: Int, tensorH: Int) {
+        nativePopulateMonoUInt8(src.nativeObj, dst, tensorW, tensorH)
+    }
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
@@ -394,6 +320,7 @@ object NativeImageUtils {
     private external fun nativeBinarizeRange(srcPtr: Long, dstPtr: Long, low: Int, high: Int)
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
+    private external fun nativeHeatmapToFloatArray(tensor: Any): FloatArray?
 
     // --------------------------------------------------------
     // SET H MODULAR PIPELINE — New granular JNI bindings.

@@ -37,8 +37,15 @@ data class CostVolClassifyResult(
 
 data class PathResult(val cost: String, val vol: String, val costB64: String, val volB64: String)
 
-/** Set G calculated blue expansion defaults: vert 10%–80% step 10%, horiz 50%. */
-val SET_G_VERT_FACTORS: List<Float> = (1..8).map { it / 10f }
+/**
+ * Set G (6), G- (3), G-- (2) calculated blue expansion vert-factor lists.
+ * Quick Fill live path uses G-- (SET_G_MINUS_MINUS_VERT_FACTORS). Horiz 50%.
+ */
+val SET_G_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.8f, 1.3f, 2.0f)
+/** Set G- (best 3-pass subset of G for max coverage; loss 4 vs 252) */
+val SET_G_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.5f, 1.3f, 2.0f)
+/** Set G-- (best 2-pass subset of G; used for Quick Fill live path; loss 10 vs 252) */
+val SET_G_MINUS_MINUS_VERT_FACTORS: List<Float> = listOf(0.3f, 1.2f)
 const val SET_G_HORIZ_FACTOR: Float = 0.5f
 
 private const val TAG = "PumpCostVolUtils"
@@ -100,12 +107,14 @@ object PumpCostVolUtils {
         asisList: List<String>,
         digitsList: List<String>,
         asisProbsList: List<String> = emptyList(),
-        digitsProbsList: List<String> = emptyList()
+        digitsProbsList: List<String> = emptyList(),
+        /** Label prefix: "Blue" / "Orange" / "Red" (legacy). */
+        labelPrefix: String = "Red",
     ): List<RedBoxOcrCandidate> {
         val n = minOf(boxRects.size, asisList.size, digitsList.size)
         return (0 until n).map { i ->
             RedBoxOcrCandidate(
-                "Red${i + 1}",
+                "$labelPrefix${i + 1}",
                 asisList[i],
                 digitsList[i],
                 asisProbsList.getOrElse(i) { "" },
@@ -510,7 +519,9 @@ object PumpCostVolUtils {
         scale: Int,
         metadata: MutableMap<String, String>? = null
     ): List<List<PumpHunk>> {
-        val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+        // copyHeatmap=false: campaign only needs boxes; floatData/getFloatData crashes on uint8 heatmaps
+        val res = paddleEngine.detect(buffer.c[id], copyHeatmap = false)
+            ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
         if (metadata != null) {
             metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
             metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
@@ -519,16 +530,8 @@ object PumpCostVolUtils {
         val masterH = buffer.c[id].height
         val hist = res.heatmapHist ?: IntArray(0)
         if (metadata != null && hist.isNotEmpty()) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
-        if (res.nativeBoxes.isEmpty()) {
-            android.util.Log.w("PumpCostVol", "runDiscoveryPaddle scale=$scale: zero detector boxes; skipping rect expansion")
-            return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
-        }
-        val rawRects = res.nativeBoxes.mapNotNull { box ->
+        val rawRects = res.nativeBoxes.map { box ->
             val p = box.points
-            if (p.size < 8) {
-                android.util.Log.w("PumpCostVol", "runDiscoveryPaddle scale=$scale: skipping box with invalid points size=${p.size}")
-                return@mapNotNull null
-            }
             val minX = minOf(p[0], p[2], p[4], p[6]).toInt()
             val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
             val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
@@ -581,19 +584,6 @@ object PumpCostVolUtils {
             val mt = rect.top.toInt().coerceIn(0, masterH - 1)
             val mr = rect.right.toInt().coerceIn(0, masterW - 1)
             val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
-            val boxW = (mr - ml).coerceAtLeast(0)
-            val boxH = (mb - mt).coerceAtLeast(0)
-            if (boxW <= 0 || boxH <= 0) {
-                android.util.Log.w("PumpCostVol", "runDiscoveryPaddle scale=$scale: skipping zero-area box")
-                return@forEach
-            }
-            if (boxW >= masterW - 2 && boxH >= masterH - 2) {
-                android.util.Log.w(
-                    "PumpCostVol",
-                    "runDiscoveryPaddle scale=$scale: skipping full-image degenerate box ($ml,$mt)-($mr,$mb)",
-                )
-                return@forEach
-            }
             val rawRect = Rect(ml, mt, mr, mb)
             val (retractedRect, maxExtentRect) = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
             val fl = retractedRect.left * fullW.toFloat() / contentW
@@ -638,20 +628,14 @@ object PumpCostVolUtils {
                 val rr = r.right.coerceIn(l + 1, imgW)
                 val bb = r.bottom.coerceIn(t + 1, imgH)
                 val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                val (targetW, targetH) = pumpRecTargetSize(pW, pH, recBuffer.width)
+                val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                 recBuffer.p.clear()
                 val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
                 val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
                 Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                val res = if (recBuffer.width >= 1024) {
-                    recBuffer.c[recCropId].release()
-                    paddleEngine.recognize(recBuffer.p, recBuffer)
-                } else {
-                    val r = paddleEngine.recognize(recBuffer.c[recCropId])
-                    recBuffer.c[recCropId].release()
-                    r
-                }
-                workspace.c[cropId].release()
+                val res = paddleEngine.recognize(recBuffer.c[recCropId])
+                recBuffer.c[recCropId].release(); workspace.c[cropId].release()
                 pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
             }
         }
@@ -663,20 +647,14 @@ object PumpCostVolUtils {
                 val rr = rp.right.coerceIn(l + 1, imgW)
                 val bb = rp.bottom.coerceIn(t + 1, imgH)
                 val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                val (targetW, targetH) = pumpRecTargetSize(pW, pH, recBuffer.width)
+                val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
+                val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
                 recBuffer.p.clear()
                 val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
                 val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
                 Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                val res = if (recBuffer.width >= 1024) {
-                    recBuffer.c[recCropId].release()
-                    paddleEngine.recognizeNumericDecimal(recBuffer.p, recBuffer)
-                } else {
-                    val r = paddleEngine.recognizeNumericDecimal(recBuffer.c[recCropId])
-                    recBuffer.c[recCropId].release()
-                    r
-                }
-                workspace.c[cropId].release()
+                val res = paddleEngine.recognizeNumericDecimal(recBuffer.c[recCropId])
+                recBuffer.c[recCropId].release(); workspace.c[cropId].release()
                 pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
             }
         }
@@ -688,6 +666,26 @@ object PumpCostVolUtils {
         )
     }
 
+    data class SetGRunDetail(
+        val result: CostVolClassifyResult,
+        val angleDeg: Float,
+        val redBoxes: List<Rect>,
+        val blueBoxes: List<Rect>,
+        /** Orange calculated boxes (horizontal expand of blues); OCR logged for analysis. */
+        val orangeBoxes: List<Rect> = emptyList(),
+        /** t_deskew_ms, t_redbox_ms, t_rec_ms, t_rec_blue_ms, t_rec_orange_ms, t_total_ms */
+        val timingsMs: Map<String, Long>,
+        /**
+         * Blue OCR candidates used for cost/vol classification (labels Blue1..).
+         */
+        val ocrCandidates: List<RedBoxOcrCandidate> = emptyList(),
+        /**
+         * Orange OCR candidates (labels Orange1..) — logged so we can see if GT
+         * strings appear on orange crops even when blue classification misses.
+         */
+        val ocrOrangeCandidates: List<RedBoxOcrCandidate> = emptyList(),
+    )
+
     /**
      * Set G ("none, calculated") cost/volume extraction: multi-scale red discovery,
      * cross-scale filter, prune to top 6, calculated blue expansion, OCR, classify.
@@ -698,18 +696,34 @@ object PumpCostVolUtils {
         recBuffer: BufferSet,
         imgW: Int,
         imgH: Int
-    ): CostVolClassifyResult {
+    ): CostVolClassifyResult = runSetGCostVolExtractionDetailed(workspace, paddleEngine, recBuffer, imgW, imgH).result
+
+    suspend fun runSetGCostVolExtractionDetailed(
+        workspace: BufferSet,
+        paddleEngine: NativePaddleEngine,
+        recBuffer: BufferSet,
+        imgW: Int,
+        imgH: Int
+    ): SetGRunDetail {
         val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+        val tTotal0 = System.currentTimeMillis()
+
+        NativePaddleEngine.heartbeat("deskew_begin ${imgW}x$imgH")
+        val tDeskew0 = System.currentTimeMillis()
         val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
         val tilt = -deskewRes.paddleCppAngle
         OdometerOcrUtils.rotate(workspace, tilt)
+        val tDeskew = System.currentTimeMillis() - tDeskew0
+        NativePaddleEngine.heartbeat("deskew_done ms=$tDeskew angle=$tilt")
 
+        val tRed0 = System.currentTimeMillis()
         val scales = listOf(224, 608, 1024)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
         val pdHunksExpTotal = mutableListOf<PumpHunk>()
         val pdHunksMaxTotal = mutableListOf<PumpHunk>()
 
         scales.forEach { scale ->
+            NativePaddleEngine.heartbeat("det_scale_begin scale=$scale")
             val srcW = workspace.p.width
             val srcH = workspace.p.height
             val currentLongEdge = max(srcW, srcH)
@@ -723,8 +737,10 @@ object PumpCostVolUtils {
             pdHunksMaxTotal.addAll(paddleResults[3])
             workspace.c[innerId].release()
             workspace.c[outerId].release()
+            NativePaddleEngine.heartbeat("det_scale_done scale=$scale")
         }
 
+        NativePaddleEngine.heartbeat("redbox_filter_begin")
         doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
         doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
         doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
@@ -733,31 +749,90 @@ object PumpCostVolUtils {
         pruneRectsToTopN(redPixelList, 6)
         pdHunksRawTotal.clear()
         pdHunksRawTotal.addAll(rectsToHunks(redPixelList))
-        if (pdHunksRawTotal.isEmpty()) return na
+        val tRed = System.currentTimeMillis() - tRed0
 
-        val (customBlueGPre, _) = createBlueAndOrangeHunksFromReds(pdHunksRawTotal, imgW, imgH)
-        val customBluePixelG = hunksToRects(customBlueGPre)
-        if (customBluePixelG.isEmpty()) return na
-
-        val ocrG = ocrPumpRectsAsisAndDigits(workspace, paddleEngine, recBuffer, customBluePixelG, imgW, imgH)
-        val gCands = buildRedBoxCandidates(
-            customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs
-        )
-        return classifyCostVolFromBoxOcr(gCands)
-    }
-
-    /** Scaled crop size for pump redbox rec: 1024 backing uses 40px height + aspect width (no 320 cap). */
-    private fun pumpRecTargetSize(pW: Int, pH: Int, recBufferWidth: Int): Pair<Int, Int> {
-        return if (recBufferWidth >= 1024) {
-            val targetH = 40
-            val rawW = (pW * (40f / pH)).toInt()
-            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(recBufferWidth - 4)
-            targetW to targetH
-        } else {
-            val targetH = 48
-            val rawW = (pW * (48f / pH)).toInt()
-            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
-            targetW to targetH
+        if (pdHunksRawTotal.isEmpty()) {
+            return SetGRunDetail(
+                na, tilt, emptyList(), emptyList(), emptyList(),
+                mapOf(
+                    "t_deskew_ms" to tDeskew, "t_redbox_ms" to tRed,
+                    "t_rec_ms" to 0L, "t_rec_blue_ms" to 0L, "t_rec_orange_ms" to 0L,
+                    "t_total_ms" to (System.currentTimeMillis() - tTotal0),
+                ),
+                ocrCandidates = emptyList(),
+                ocrOrangeCandidates = emptyList(),
+            )
         }
+
+        val (customBlueGPre, customOrangeGPre) =
+            createBlueAndOrangeHunksFromReds(pdHunksRawTotal, imgW, imgH)
+        val customBluePixelG = hunksToRects(customBlueGPre)
+        val customOrangePixelG = hunksToRects(customOrangeGPre)
+        if (customBluePixelG.isEmpty()) {
+            return SetGRunDetail(
+                na, tilt, redPixelList, emptyList(), customOrangePixelG,
+                mapOf(
+                    "t_deskew_ms" to tDeskew, "t_redbox_ms" to tRed,
+                    "t_rec_ms" to 0L, "t_rec_blue_ms" to 0L, "t_rec_orange_ms" to 0L,
+                    "t_total_ms" to (System.currentTimeMillis() - tTotal0),
+                ),
+                ocrCandidates = emptyList(),
+                ocrOrangeCandidates = emptyList(),
+            )
+        }
+
+        // Dual OCR: blue crops drive classification (parity with prior path);
+        // orange crops are logged so analysis can see if GT digits appear there.
+        NativePaddleEngine.heartbeat(
+            "rec_begin n_blue=${customBluePixelG.size} n_orange=${customOrangePixelG.size}"
+        )
+        val tRec0 = System.currentTimeMillis()
+        val ocrBlue = ocrPumpRectsAsisAndDigits(
+            workspace, paddleEngine, recBuffer, customBluePixelG, imgW, imgH
+        )
+        val blueCands = buildRedBoxCandidates(
+            customBluePixelG, ocrBlue.asis, ocrBlue.digits,
+            ocrBlue.asisProbs, ocrBlue.digitsProbs,
+            labelPrefix = "Blue",
+        )
+        val tRecBlue = System.currentTimeMillis() - tRec0
+        val tOrange0 = System.currentTimeMillis()
+        val ocrOrange = if (customOrangePixelG.isNotEmpty()) {
+            ocrPumpRectsAsisAndDigits(
+                workspace, paddleEngine, recBuffer, customOrangePixelG, imgW, imgH
+            )
+        } else {
+            PumpRectOcrLists(emptyList(), emptyList(), emptyList(), emptyList())
+        }
+        val orangeCands = buildRedBoxCandidates(
+            customOrangePixelG, ocrOrange.asis, ocrOrange.digits,
+            ocrOrange.asisProbs, ocrOrange.digitsProbs,
+            labelPrefix = "Orange",
+        )
+        val tRecOrange = System.currentTimeMillis() - tOrange0
+        // Classification unchanged: blue OCR only.
+        val result = classifyCostVolFromBoxOcr(blueCands)
+        val tRec = System.currentTimeMillis() - tRec0
+        NativePaddleEngine.heartbeat(
+            "rec_done ms=$tRec blue_ms=$tRecBlue orange_ms=$tRecOrange"
+        )
+
+        return SetGRunDetail(
+            result = result,
+            angleDeg = tilt,
+            redBoxes = redPixelList,
+            blueBoxes = customBluePixelG,
+            orangeBoxes = customOrangePixelG,
+            timingsMs = mapOf(
+                "t_deskew_ms" to tDeskew,
+                "t_redbox_ms" to tRed,
+                "t_rec_ms" to tRec,
+                "t_rec_blue_ms" to tRecBlue,
+                "t_rec_orange_ms" to tRecOrange,
+                "t_total_ms" to (System.currentTimeMillis() - tTotal0),
+            ),
+            ocrCandidates = blueCands,
+            ocrOrangeCandidates = orangeCands,
+        )
     }
 }

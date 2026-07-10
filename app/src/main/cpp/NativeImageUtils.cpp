@@ -27,96 +27,6 @@ static void logMatHeader(const char* tag, const cv::Mat* m) {
 }
 
 #include "../libraw_config.h"
-
-namespace {
-
-void quantizeFloatHeatmapToInt8Buffer(
-    const float* fdata, int8_t* dst, int count, float scale);
-
-bool resolveOutputHeatmapFloatData(
-    const paddle::lite_api::Tensor* tensor, int h, int w,
-    std::vector<float>& scratch, const float** outPtr) {
-  if (!tensor || h <= 0 || w <= 0 || !outPtr) return false;
-  const size_t count = static_cast<size_t>(h) * static_cast<size_t>(w);
-  const auto prec = tensor->precision();
-  constexpr float kHeatmapInt8Scale = 0.00787f;
-
-  if (prec == paddle::lite_api::PrecisionType::kFloat) {
-    const float* src = tensor->data<float>();
-    if (!src) return false;
-    LOGI(
-        "PaddleDiag: resolve kFloat direct path src=%p count=%zu h=%d w=%d first4=[%.4f,%.4f,%.4f,%.4f]",
-        static_cast<const void*>(src), count, h, w,
-        src[0], count > 1 ? src[1] : 0.f, count > 2 ? src[2] : 0.f, count > 3 ? src[3] : 0.f);
-    *outPtr = src;
-    return true;
-  }
-
-  scratch.resize(count);
-  if (prec == paddle::lite_api::PrecisionType::kInt8) {
-    const int8_t* src = tensor->data<int8_t>();
-    if (!src) return false;
-    LOGI(
-        "PaddleDiag: resolve kInt8 long-lived bound path src=%p count=%zu h=%d w=%d",
-        static_cast<const void*>(src), count, h, w);
-    for (size_t i = 0; i < count; ++i) {
-      const uint8_t u_val = static_cast<uint8_t>(src[i] ^ 128);
-      scratch[i] = static_cast<float>(u_val) * kHeatmapInt8Scale;
-    }
-    if (count >= 4) {
-      LOGI(
-          "PaddleDiag: resolve kInt8 int8[0-3]=[%d,%d,%d,%d] scratch[0-3]=[%.4f,%.4f,%.4f,%.4f]",
-          static_cast<int>(src[0]), static_cast<int>(src[1]),
-          static_cast<int>(src[2]), static_cast<int>(src[3]),
-          scratch[0], scratch[1], scratch[2], scratch[3]);
-    }
-  } else {
-    tensor->CopyToCpu(scratch.data());
-  }
-  *outPtr = scratch.data();
-  return true;
-}
-
-// Float heatmap → uint8 0-255 in long-lived buf: q = round(f/scale), clamp [0,255], store q directly.
-void quantizeFloatHeatmapToInt8Buffer(
-    const float* fdata, int8_t* dst, int count, float scale) {
-  if (!fdata || !dst || count <= 0 || scale <= 0.f) return;
-  LOGI(
-      "PaddleDiag: quantizeFloatHeatmapToInt8 count=%d scale=%.5f dst=%p (long-lived uint8 dest)",
-      count, scale, static_cast<void*>(dst));
-  if (count >= 4) {
-    LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 f[0-3]=[%.4f,%.4f,%.4f,%.4f]",
-         fdata[0], fdata[1], fdata[2], fdata[3]);
-  }
-  float fMin = 1e30f;
-  float fMax = -1e30f;
-  for (int i = 0; i < count; ++i) {
-    if (fdata[i] < fMin) fMin = fdata[i];
-    if (fdata[i] > fMax) fMax = fdata[i];
-  }
-  LOGI(
-      "PaddleDiag: quantizeFloatHeatmapToInt8 FLOAT_TENSOR_FULL min=%.6f max=%.6f count=%d (negatives? see min)",
-      fMin, fMax, count);
-  int uMin = 255;
-  int uMax = 0;
-  for (int i = 0; i < count; ++i) {
-    int q = static_cast<int>(std::lround(fdata[i] / scale));
-    q = std::max(0, std::min(255, q));
-    dst[i] = static_cast<int8_t>(q);
-    uMin = std::min(uMin, q);
-    uMax = std::max(uMax, q);
-  }
-  LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 u_val min=%d max=%d count=%d", uMin, uMax, count);
-  if (count >= 4) {
-    LOGI("PaddleDiag: quantizeFloatHeatmapToInt8 dst uint8[0-3]=[%d,%d,%d,%d]",
-         static_cast<int>(static_cast<uint8_t>(dst[0])),
-         static_cast<int>(static_cast<uint8_t>(dst[1])),
-         static_cast<int>(static_cast<uint8_t>(dst[2])),
-         static_cast<int>(static_cast<uint8_t>(dst[3])));
-  }
-}
-
-}  // namespace
 #include <libraw/libraw.h>
 
 static const char base64_chars[] = 
@@ -501,6 +411,61 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCompr
     return env->NewStringUTF(b64.c_str());
 }
 
+// Shared: read paddle tensor as float heatmap.
+// Supports float32, uint8 (u/255), and float16 (if ENABLE_ARM_FP16 / half bits).
+// Never call Java Tensor.getFloatData on non-float tensors — that SEGV/aborts.
+static bool tensorToFloatHeatmap(paddle::lite_api::Tensor* nativeTensor, int h, int w,
+                                 std::vector<float>* out) {
+    if (!nativeTensor || !out) return false;
+    out->assign(static_cast<size_t>(h) * static_cast<size_t>(w), 0.f);
+    using paddle::lite_api::PrecisionType;
+    const auto prec = nativeTensor->precision();
+    if (prec == PrecisionType::kFloat) {
+        const float* data = nativeTensor->data<float>();
+        if (!data) return false;
+        std::memcpy(out->data(), data, out->size() * sizeof(float));
+        return true;
+    }
+    if (prec == PrecisionType::kUInt8) {
+        const uint8_t* data = nativeTensor->data<uint8_t>();
+        if (!data) return false;
+        for (size_t i = 0; i < out->size(); ++i) {
+            (*out)[i] = static_cast<float>(data[i]) * (1.0f / 255.0f);
+        }
+        return true;
+    }
+    if (prec == PrecisionType::kFP16) {
+        // Store as uint16 IEEE half; convert via float bit-cast helpers when available.
+        const uint16_t* data = reinterpret_cast<const uint16_t*>(
+            nativeTensor->data<int16_t>());
+        if (!data) return false;
+        for (size_t i = 0; i < out->size(); ++i) {
+            // Simple half->float (IEEE 754 binary16), no denorm special path needed for heatmaps.
+            const uint16_t hbits = data[i];
+            const uint32_t sign = (hbits >> 15) & 1u;
+            const uint32_t exp = (hbits >> 10) & 0x1fu;
+            const uint32_t mant = hbits & 0x3ffu;
+            uint32_t fbits;
+            if (exp == 0) {
+                fbits = (sign << 31);
+            } else if (exp == 31) {
+                fbits = (sign << 31) | 0x7f800000u | (mant << 13);
+            } else {
+                fbits = (sign << 31) | ((exp + 112u) << 23) | (mant << 13);
+            }
+            float f;
+            std::memcpy(&f, &fbits, sizeof(f));
+            (*out)[i] = f;
+        }
+        return true;
+    }
+    // Fallback: try float pointer (legacy models / unknown precision)
+    const float* data = nativeTensor->data<float>();
+    if (!data) return false;
+    std::memcpy(out->data(), data, out->size() * sizeof(float));
+    return true;
+}
+
 JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopulateMonoTensor(
     JNIEnv* env, jobject thiz, jlong srcMatPtr, jfloatArray dstTensor, jint tensorW, jint tensorH, jfloat mean, jfloat std) {
@@ -529,361 +494,51 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopul
     env->ReleaseFloatArrayElements(dstTensor, dst, 0);
 }
 
-// UINT8 luma → int8 XOR remap: q = static_cast<int8_t>(b ^ 128). No float mean/std.
-static void quantizeMonoRowsToInt8(const uint8_t* srcRow, int8_t* dstRow, int w) {
-    for (int x = 0; x < w; ++x) {
-        dstRow[x] = static_cast<int8_t>(srcRow[x] ^ 128);
-    }
-}
-
+// XOR-128 int8 feed: q = (int8_t)(u8 ^ 128). Pads unused tensor region with 0.
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuantizeMonoToInt8(
-    JNIEnv* env, jobject thiz, jlong srcMatPtr, jobject dstBuffer,
-    jint tensorW, jint tensorH, jint srcW, jint srcH) {
-
-    auto* src = reinterpret_cast<cv::Mat*>(srcMatPtr);
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopulateMonoInt8Xor(
+    JNIEnv* env, jobject thiz, jlong srcMatPtr, jbyteArray dstTensor, jint tensorW, jint tensorH) {
+    cv::Mat* src = reinterpret_cast<cv::Mat*>(srcMatPtr);
     if (!src || src->empty()) return;
-    void* dst = env->GetDirectBufferAddress(dstBuffer);
+    jbyte* dst = env->GetByteArrayElements(dstTensor, nullptr);
     if (!dst) return;
-
-    int w = srcW > 0 ? srcW : src->cols;
-    int h = srcH > 0 ? srcH : src->rows;
-    if (w > tensorW || h > tensorH) return;
-
-    std::memset(dst, 0, static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH));
-    for (int y = 0; y < h; ++y) {
+    const int copyH = std::min(tensorH, src->rows);
+    const int copyW = std::min(tensorW, src->cols);
+    // Zero full buffer (includes pad region for NEON overread safety if allocated larger)
+    const jsize n = env->GetArrayLength(dstTensor);
+    std::memset(dst, 0, static_cast<size_t>(n));
+    for (int y = 0; y < copyH; ++y) {
         const uint8_t* row = src->ptr<uint8_t>(y);
-        int8_t* dst_row = static_cast<int8_t*>(dst) + y * tensorW;
-        quantizeMonoRowsToInt8(row, dst_row, w);
+        jbyte* dst_row = dst + (y * tensorW);
+        for (int x = 0; x < copyW; ++x) {
+            dst_row[x] = static_cast<jbyte>(row[x] ^ 128);
+        }
     }
+    env->ReleaseByteArrayElements(dstTensor, dst, 0);
 }
 
+// Raw uint8 greyscale feed for kUInt8 + uint8_to_fp* graphs (no XOR).
+// Still a host buffer copy into the tensor ByteArray for Tensor.setData;
+// eliminates the xor rewrite vs int8 path.
 JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuantizeMonoHandleToInt8(
-    JNIEnv* env, jobject thiz, jlong srcHandlePtr, jlong dstHandlePtr,
-    jint tensorW, jint tensorH, jint srcW, jint srcH) {
-
-    auto* srcHandle = reinterpret_cast<BufferSetHandle*>(srcHandlePtr);
-    auto* dstHandle = reinterpret_cast<BufferSetHandle*>(dstHandlePtr);
-    if (!srcHandle || !dstHandle) return;
-
-    int w = srcW > 0 ? srcW : static_cast<int>(srcHandle->width);
-    int h = srcH > 0 ? srcH : static_cast<int>(srcHandle->height);
-    if (w > tensorW || h > tensorH) return;
-
-    uint8_t* dst = dstHandle->data;
-    std::memset(dst, 0, static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH));
-    for (int y = 0; y < h; ++y) {
-        const uint8_t* row = srcHandle->data + y * srcHandle->width;
-        int8_t* dst_row = reinterpret_cast<int8_t*>(dst) + y * tensorW;
-        quantizeMonoRowsToInt8(row, dst_row, w);
-    }
-}
-
-JNIEXPORT jlong JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGetTensorCppPointer(
-    JNIEnv* env, jobject thiz, jobject tensor) {
-    if (!tensor) return 0;
-    jclass cls = env->GetObjectClass(tensor);
-    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        return 0;
-    }
-    return env->GetLongField(tensor, fid);
-}
-
-JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindInputInt8(
-    JNIEnv* env, jobject thiz, jobject tensor, jobject srcBuffer,
-    jint tensorW, jint tensorH) {
-
-    jclass cls = env->GetObjectClass(tensor);
-    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        LOGE("PaddleDiag: nativeBindInputInt8 cppTensorPointer field lookup failed");
-        return;
-    }
-    jlong nativePtr = env->GetLongField(tensor, fid);
-    void* raw = env->GetDirectBufferAddress(srcBuffer);
-    if (!nativePtr || !raw) {
-        LOGE(
-            "PaddleDiag: nativeBindInputInt8 skip nativePtr=%lld raw=%p w=%d h=%d",
-            static_cast<long long>(nativePtr), raw, tensorW, tensorH);
-        return;
-    }
-
-    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
-    if (!uptr || !(*uptr)) {
-        LOGE("PaddleDiag: nativeBindInputInt8 skip null tensor uptr=%p", static_cast<void*>(uptr));
-        return;
-    }
-
-    paddle::lite_api::Tensor* lite_tensor = uptr->get();
-    lite_tensor->Resize({1, 1, tensorH, tensorW});
-    lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kInt8);
-    size_t bytes = static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH);
-    lite_tensor->ShareExternalMemory(raw, bytes, paddle::lite_api::TargetType::kHost);
-}
-
-JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindInputUInt8(
-    JNIEnv* env, jobject thiz, jobject tensor, jobject srcBuffer,
-    jint tensorW, jint tensorH) {
-
-    jclass cls = env->GetObjectClass(tensor);
-    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        return;
-    }
-    jlong nativePtr = env->GetLongField(tensor, fid);
-    void* raw = env->GetDirectBufferAddress(srcBuffer);
-    if (!nativePtr || !raw) return;
-
-    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
-    if (!uptr || !(*uptr)) return;
-
-    paddle::lite_api::Tensor* lite_tensor = uptr->get();
-    lite_tensor->Resize({1, 1, tensorH, tensorW});
-    lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kUInt8);
-    size_t bytes = static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH);
-    lite_tensor->ShareExternalMemory(raw, bytes, paddle::lite_api::TargetType::kHost);
-}
-
-JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeQuantizeFloatHeatmapToInt8(
-    JNIEnv* env, jobject thiz, jfloatArray src, jobject dstBuffer,
-    jint count, jfloat scale) {
-
-    if (!src || count <= 0) return;
-    void* dst = env->GetDirectBufferAddress(dstBuffer);
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopulateMonoUInt8(
+    JNIEnv* env, jobject thiz, jlong srcMatPtr, jbyteArray dstTensor, jint tensorW, jint tensorH) {
+    cv::Mat* src = reinterpret_cast<cv::Mat*>(srcMatPtr);
+    if (!src || src->empty()) return;
+    jbyte* dst = env->GetByteArrayElements(dstTensor, nullptr);
     if (!dst) return;
-    jlong dstCap = env->GetDirectBufferCapacity(dstBuffer);
-    LOGI("PaddleDiag: nativeQuantizeFloatHeatmapToInt8 count=%d dstCap=%lld dst=%p",
-         count, (long long)dstCap, dst);
-
-    jfloat* fdata = env->GetFloatArrayElements(src, nullptr);
-    if (!fdata) return;
-    quantizeFloatHeatmapToInt8Buffer(fdata, static_cast<int8_t*>(dst), count, scale);
-    env->ReleaseFloatArrayElements(src, fdata, JNI_ABORT);
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCopyTensorInt8ToBuffer(
-    JNIEnv* env, jobject thiz, jobject tensor, jobject dstBuffer, jint count, jfloat scale) {
-    (void)thiz;
-    if (count <= 0 || scale <= 0.f) return JNI_FALSE;
-    void* dst = env->GetDirectBufferAddress(dstBuffer);
-    if (!dst) return JNI_FALSE;
-    const jlong dstCap = env->GetDirectBufferCapacity(dstBuffer);
-    if (dstCap < count) {
-        LOGE("copyTensorInt8ToBuffer: cap=%lld count=%d", (long long)dstCap, count);
-        return JNI_FALSE;
+    const int copyH = std::min(tensorH, src->rows);
+    const int copyW = std::min(tensorW, src->cols);
+    const jsize n = env->GetArrayLength(dstTensor);
+    std::memset(dst, 0, static_cast<size_t>(n));
+    for (int y = 0; y < copyH; ++y) {
+        const uint8_t* row = src->ptr<uint8_t>(y);
+        auto* dst_row = reinterpret_cast<uint8_t*>(dst + (y * tensorW));
+        if (copyW > 0) {
+            std::memcpy(dst_row, row, static_cast<size_t>(copyW));
+        }
     }
-
-    jclass cls = env->GetObjectClass(tensor);
-    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        return JNI_FALSE;
-    }
-    jlong nativePtr = env->GetLongField(tensor, fid);
-    if (!nativePtr) return JNI_FALSE;
-
-    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
-    if (!uptr || !(*uptr)) return JNI_FALSE;
-
-    paddle::lite_api::Tensor* lite_tensor = uptr->get();
-    const auto prec = lite_tensor->precision();
-    LOGI(
-        "PaddleDiag: copyTensorInt8ToBuffer output prec=%d (expected kInt8=2) count=%d",
-        static_cast<int>(prec), count);
-
-    if (prec != paddle::lite_api::PrecisionType::kInt8) {
-        LOGE(
-            "*** NO FALLBACKS - LOUD ERROR *** copyTensorInt8ToBuffer: expected kInt8 but got prec=%d. "
-            "Fallbacks (to float) disabled — better to fail loudly than produce bad/NaN/zero results. "
-            "Root cause: output tensor not forced to kInt8 before run.",
-            static_cast<int>(prec));
-        return JNI_FALSE;
-    }
-
-    const int8_t* src = lite_tensor->data<int8_t>();
-    if (!src) return JNI_FALSE;
-    int signedMin = 127;
-    int signedMax = -128;
-    int8_t* dstBytes = static_cast<int8_t*>(dst);
-    int uMin = 255;
-    int uMax = 0;
-    for (jint i = 0; i < count; ++i) {
-        const int s = static_cast<int>(src[i]);
-        signedMin = std::min(signedMin, s);
-        signedMax = std::max(signedMax, s);
-        dstBytes[i] = static_cast<int8_t>(static_cast<uint8_t>(src[i]) ^ 128);
-        const int u = static_cast<int>(static_cast<uint8_t>(dstBytes[i]));
-        uMin = std::min(uMin, u);
-        uMax = std::max(uMax, u);
-    }
-    LOGI(
-        "PaddleDiag: copyTensorInt8ToBuffer INT8_TENSOR_FULL signed min=%d max=%d count=%d",
-        signedMin, signedMax, count);
-    LOGI(
-        "PaddleDiag: copyTensorInt8ToBuffer kInt8→uint8 min=%d max=%d copied to dest %p",
-        uMin, uMax, dst);
-    return JNI_TRUE;
-}
-
-JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConvertSignedInt8BufToUint8(
-    JNIEnv* env, jobject thiz, jobject int8Buffer, jint count) {
-    (void)thiz;
-    if (count <= 0) return;
-    void* raw = env->GetDirectBufferAddress(int8Buffer);
-    if (!raw) return;
-    const jlong cap = env->GetDirectBufferCapacity(int8Buffer);
-    if (cap < count) return;
-
-    int8_t* buf = static_cast<int8_t*>(raw);
-    int uMin = 255;
-    int uMax = 0;
-    for (jint i = 0; i < count; ++i) {
-        buf[i] = static_cast<int8_t>(static_cast<uint8_t>(buf[i]) ^ 128);
-        const int u_val = static_cast<int>(static_cast<uint8_t>(buf[i]));
-        uMin = std::min(uMin, u_val);
-        uMax = std::max(uMax, u_val);
-    }
-    LOGI(
-        "PaddleDiag: convertSignedInt8BufToUint8 count=%d uint8 min=%d max=%d (ARM post-run copy path)",
-        count, uMin, uMax);
-    if (count >= 4) {
-        LOGI(
-            "PaddleDiag: convertSignedInt8BufToUint8 dst uint8[0-3]=[%d,%d,%d,%d]",
-            static_cast<int>(static_cast<uint8_t>(buf[0])),
-            static_cast<int>(static_cast<uint8_t>(buf[1])),
-            static_cast<int>(static_cast<uint8_t>(buf[2])),
-            static_cast<int>(static_cast<uint8_t>(buf[3])));
-    }
-}
-
-JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeDequantHeatmapInt8ToFloat(
-    JNIEnv* env, jobject thiz, jobject int8Buffer, jint count, jfloat scale) {
-    (void)thiz;
-    if (count <= 0) return nullptr;
-    void* raw = env->GetDirectBufferAddress(int8Buffer);
-    if (!raw) return nullptr;
-    const jlong cap = env->GetDirectBufferCapacity(int8Buffer);
-    if (cap < count) return nullptr;
-
-    const int8_t* src = static_cast<const int8_t*>(raw);
-    jfloatArray out = env->NewFloatArray(count);
-    if (!out) return nullptr;
-    std::vector<jfloat> scratch(static_cast<size_t>(count));
-    for (jint i = 0; i < count; ++i) {
-        const uint8_t u_val = static_cast<uint8_t>(src[i]);
-        scratch[static_cast<size_t>(i)] = static_cast<jfloat>(u_val) * scale;
-    }
-    env->SetFloatArrayRegion(out, 0, count, scratch.data());
-    return out;
-}
-
-JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBindOutputInt8(
-    JNIEnv* env, jobject thiz, jobject tensor, jobject srcBuffer,
-    jint tensorW, jint tensorH) {
-
-    jclass cls = env->GetObjectClass(tensor);
-    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        return;
-    }
-    jlong nativePtr = env->GetLongField(tensor, fid);
-    void* raw = env->GetDirectBufferAddress(srcBuffer);
-    if (!nativePtr || !raw) return;
-
-    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
-    if (!uptr || !(*uptr)) return;
-
-    paddle::lite_api::Tensor* lite_tensor = uptr->get();
-    lite_tensor->Resize({1, 1, tensorH, tensorW});
-    lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kInt8);
-    size_t bytes = static_cast<size_t>(tensorW) * static_cast<size_t>(tensorH);
-    lite_tensor->ShareExternalMemory(raw, bytes, paddle::lite_api::TargetType::kHost);
-    LOGI(
-        "PaddleDiag: bindOutputInt8 w=%d h=%d bytes=%zu long-lived=%p "
-        "int8[0-3]=[%d,%d,%d,%d] (kInt8 for processHeatmap)",
-        tensorW, tensorH, bytes, raw,
-        static_cast<int>(static_cast<int8_t*>(raw)[0]),
-        static_cast<int>(static_cast<int8_t*>(raw)[1]),
-        static_cast<int>(static_cast<int8_t*>(raw)[2]),
-        static_cast<int>(static_cast<int8_t*>(raw)[3]));
-}
-
-JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeForceOutputTensorInt8Precision(
-    JNIEnv* env, jobject thiz, jobject tensor) {
-    (void)thiz;
-    jclass cls = env->GetObjectClass(tensor);
-    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        return;
-    }
-    jlong nativePtr = env->GetLongField(tensor, fid);
-    if (!nativePtr) return;
-
-    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
-    if (!uptr || !(*uptr)) return;
-
-    paddle::lite_api::Tensor* lite_tensor = uptr->get();
-    lite_tensor->SetPrecision(paddle::lite_api::PrecisionType::kInt8);
-    LOGI("PaddleDiag: forced output tensor to kInt8 before run (prevents float fallback on ARM)");
-}
-
-// x86 only: direct uint8 populate buf[i] = (uint8)(f * 255). No scale, round, or clamp.
-void populateUint8FromFloat(const float* fdata, int8_t* dst, int count) {
-    if (!fdata || !dst || count <= 0) return;
-    float fMin = 1e30f;
-    float fMax = -1e30f;
-    int uMin = 255;
-    int uMax = 0;
-    for (int i = 0; i < count; ++i) {
-        const float f = fdata[i];
-        if (f < fMin) fMin = f;
-        if (f > fMax) fMax = f;
-        const int v = static_cast<int>(f * 255.0f);
-        dst[i] = static_cast<int8_t>(v);
-        const int u = static_cast<int>(static_cast<uint8_t>(dst[i]));
-        uMin = std::min(uMin, u);
-        uMax = std::max(uMax, u);
-    }
-    LOGI(
-        "PaddleDiag: populateUint8FromFloat x86 direct *255 fMin=%.6f fMax=%.6f uMin=%d uMax=%d count=%d (no clamp)",
-        fMin, fMax, uMin, uMax, count);
-    if (count >= 4) {
-        LOGI(
-            "PaddleDiag: populateUint8FromFloat dst uint8[0-3]=[%d,%d,%d,%d]",
-            static_cast<int>(static_cast<uint8_t>(dst[0])),
-            static_cast<int>(static_cast<uint8_t>(dst[1])),
-            static_cast<int>(static_cast<uint8_t>(dst[2])),
-            static_cast<int>(static_cast<uint8_t>(dst[3])));
-    }
-}
-
-JNIEXPORT void JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopulateUint8FromFloat(
-    JNIEnv* env, jobject thiz, jfloatArray src, jobject dstBuffer, jint count) {
-    (void)thiz;
-    if (count <= 0) return;
-    void* dst = env->GetDirectBufferAddress(dstBuffer);
-    if (!dst) return;
-    jfloat* fdata = env->GetFloatArrayElements(src, nullptr);
-    if (!fdata) return;
-    populateUint8FromFloat(fdata, static_cast<int8_t*>(dst), count);
-    env->ReleaseFloatArrayElements(src, fdata, JNI_ABORT);
+    env->ReleaseByteArrayElements(dstTensor, dst, 0);
 }
 
 JNIEXPORT jintArray JNICALL
@@ -1391,8 +1046,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 
     int h = (int)shape[shape.size() - 2];
     int w = (int)shape[shape.size() - 1];
-    const float* data = nativeTensor->data<float>();
-    if (!data) return 0.0f;
+    std::vector<float> heatBuf;
+    if (!tensorToFloatHeatmap(nativeTensor, h, w, &heatBuf)) return 0.0f;
+    const float* data = heatBuf.data();
 
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
     cv::Mat mask = heatmap > threshold;
@@ -1455,288 +1111,31 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     return (float)bestBucket / 2.0f;
 }
 
-static std::vector<float> processHeatmapFromFloatData(
-    const float* data, int h, int w, float threshold, float minArea) {
-    std::vector<float> results;
-    if (!data || h <= 0 || w <= 0) return results;
-
-    cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
-    cv::Mat mask;
-    cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
-    mask.convertTo(mask, CV_8U);
-
-    cv::Mat labels, stats, centroids;
-    int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
-
-    int count = 0;
-    for (int l = 1; l < numLabels; ++l) {
-        if (count >= 200) break;
-
-        int area = stats.at<int>(l, cv::CC_STAT_AREA);
-        if (area < minArea) continue;
-
-        int left = stats.at<int>(l, cv::CC_STAT_LEFT);
-        int top = stats.at<int>(l, cv::CC_STAT_TOP);
-        int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
-        int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
-
-        cv::Mat points(area, 1, CV_32SC2);
-        int idx = 0;
-        for (int y = top; y < top + height; ++y) {
-            for (int x = left; x < left + width; ++x) {
-                if (labels.at<int>(y, x) == l) {
-                    if (idx < area) {
-                        points.at<cv::Point>(idx++) = cv::Point(x, y);
-                    }
-                }
-            }
-        }
-
-        if (idx < area) {
-            points = points.rowRange(0, idx);
-        }
-
-        if (points.empty()) continue;
-
-        cv::RotatedRect rect = cv::minAreaRect(points);
-        cv::Point2f vertices[4];
-        rect.points(vertices);
-
-        if (count < 3) {
-            LOGI("processHeatmapFromFloatData: box[%d] label=%d vertices=(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f)(%.1f,%.1f) area=%d",
-                 count, l, vertices[0].x, vertices[0].y, vertices[1].x, vertices[1].y,
-                 vertices[2].x, vertices[2].y, vertices[3].x, vertices[3].y, area);
-        }
-
-        float avgConf = 0.0f;
-        int bx1 = std::max(0, left);
-        int by1 = std::max(0, top);
-        int bx2 = std::min(w, left + width);
-        int by2 = std::min(h, top + height);
-
-        if (bx2 > bx1 && by2 > by1) {
-            cv::Mat roi = heatmap(cv::Rect(bx1, by1, bx2 - bx1, by2 - by1));
-            cv::Scalar meanVal = cv::mean(roi);
-            avgConf = (float)meanVal[0];
-        }
-
-        for (int i = 0; i < 4; ++i) {
-            results.push_back(vertices[i].x);
-            results.push_back(vertices[i].y);
-        }
-        results.push_back(avgConf);
-        count++;
-    }
-
-    float hist[100] = {0};
-    for (int i = 0; i < h * w; i++) {
-        int b = std::max(0, std::min(99, (int)(data[i] * 100)));
-        hist[b] += 1.0f;
-    }
-    for (int i = 0; i < 100; i++) results.push_back(hist[i]);
-    return results;
-}
-
-static std::vector<float> makeEmptyHeatmapPostResult() {
-    std::vector<float> results;
-    results.reserve(256);
-    for (int i = 0; i < 256; ++i) results.push_back(0.0f);
-    return results;
-}
-
-static std::vector<float> processHeatmapFromInt8UData(
-    const int8_t* src, int h, int w, int uThreshold, float scale, float minArea) {
-    std::vector<float> results;
-    if (!src || h <= 0 || w <= 0) return results;
-
-    const size_t count = static_cast<size_t>(w) * static_cast<size_t>(h);
-    int uMin = 255;
-    int uMax = 0;
-    for (size_t i = 0; i < count; ++i) {
-        const int u_val = static_cast<int>(static_cast<uint8_t>(src[i]));
-        uMin = std::min(uMin, u_val);
-        uMax = std::max(uMax, u_val);
-    }
-    LOGI(
-        "PaddleDiag: processHeatmapFromInt8Buffer uint8 min=%d max=%d uThreshold=%d scale=%.5f",
-        uMin, uMax, uThreshold, scale);
-
-    if (uMax < uThreshold || uMin == uMax) {
-        LOGI(
-            "PaddleDiag: processHeatmapFromInt8Buffer degenerate heatmap "
-            "(uniform=%d uMin=%d uMax=%d uThreshold=%d); returning empty boxes + zero hist",
-            (uMin == uMax) ? 1 : 0, uMin, uMax, uThreshold);
-        return makeEmptyHeatmapPostResult();
-    }
-
-    std::vector<float> scratch(count);
-    cv::Mat mask(h, w, CV_8U);
-    int on_pixels = 0;
-    int on_u_1_20 = 0;
-    int on_u_21_255 = 0;
-    for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
-            const int u_val = static_cast<int>(static_cast<uint8_t>(src[idx]));
-            scratch[idx] = static_cast<float>(u_val) * scale;
-            const bool on = u_val >= uThreshold;
-            mask.at<uint8_t>(y, x) = on ? 255 : 0;
-            if (on) {
-                ++on_pixels;
-                if (u_val >= 1 && u_val <= 20) {
-                    ++on_u_1_20;
-                } else if (u_val >= 21 && u_val <= 255) {
-                    ++on_u_21_255;
-                }
-            }
-        }
-    }
-    if (count >= 4) {
-        LOGI(
-            "PaddleDiag: processHeatmapFromInt8Buffer scratch[0-3]=[%.4f,%.4f,%.4f,%.4f]",
-            scratch[0], scratch[1], scratch[2], scratch[3]);
-    }
-
-    cv::Mat labels, stats, centroids;
-    const int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
-    LOGI(
-        "PaddleDiag: CC: numLabels=%d on_pixels=%d on_u_1_20=%d on_u_21_255=%d h=%d w=%d uThreshold=%d",
-        numLabels, on_pixels, on_u_1_20, on_u_21_255, h, w, uThreshold);
-    for (int l = 1; l < numLabels && l <= 5; ++l) {
-        const int area = stats.at<int>(l, cv::CC_STAT_AREA);
-        const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
-        const int top = stats.at<int>(l, cv::CC_STAT_TOP);
-        const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
-        const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
-        LOGI(
-            "PaddleDiag: comp l=%d area=%d left=%d top=%d width=%d height=%d",
-            l, area, left, top, width, height);
-        if (left < 0 || top < 0 || width < 0 || height < 0 ||
-            left + width > w || top + height > h) {
-            LOGE(
-                "PaddleDiag: OOB_BBOX comp l=%d left=%d top=%d width=%d height=%d image=%dx%d",
-                l, left, top, width, height, w, h);
-        }
-    }
-
-    int boxCount = 0;
-    for (int l = 1; l < numLabels; ++l) {
-        if (boxCount >= 200) break;
-
-        const int area = stats.at<int>(l, cv::CC_STAT_AREA);
-        if (area < static_cast<int>(minArea)) continue;
-
-        const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
-        const int top = stats.at<int>(l, cv::CC_STAT_TOP);
-        const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
-        const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
-
-        cv::Mat points(area, 1, CV_32SC2);
-        int idx = 0;
-        bool oob_in_points = false;
-        for (int y = top; y < top + height; ++y) {
-            for (int x = left; x < left + width; ++x) {
-                if (y < 0 || y >= h || x < 0 || x >= w) {
-                    LOGE(
-                        "PaddleDiag: OOB_ACCESS in points y=%d x=%d for l=%d image=%dx%d bbox=(%d,%d,%d,%d)",
-                        y, x, l, w, h, left, top, width, height);
-                    oob_in_points = true;
-                    break;
-                }
-                if (labels.at<int>(y, x) == l) {
-                    if (idx < area) {
-                        points.at<cv::Point>(idx++) = cv::Point(x, y);
-                    }
-                }
-            }
-            if (oob_in_points) break;
-        }
-        if (oob_in_points) continue;
-        if (idx < area) {
-            points = points.rowRange(0, idx);
-        }
-        if (points.empty()) continue;
-
-        cv::RotatedRect rect = cv::minAreaRect(points);
-        cv::Point2f vertices[4];
-        rect.points(vertices);
-
-        float avgConf = 0.0f;
-        const int bx1 = std::max(0, left);
-        const int by1 = std::max(0, top);
-        const int bx2 = std::min(w, left + width);
-        const int by2 = std::min(h, top + height);
-        if (bx2 > bx1 && by2 > by1) {
-            float sum = 0.0f;
-            int n = 0;
-            for (int y = by1; y < by2; ++y) {
-                for (int x = bx1; x < bx2; ++x) {
-                    if (labels.at<int>(y, x) == l) {
-                        const size_t flat = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
-                        sum += scratch[flat];
-                        ++n;
-                    }
-                }
-            }
-            if (n > 0) avgConf = sum / static_cast<float>(n);
-        }
-
-        for (int i = 0; i < 4; ++i) {
-            results.push_back(vertices[i].x);
-            results.push_back(vertices[i].y);
-        }
-        results.push_back(avgConf);
-        ++boxCount;
-    }
-
-    float hist[256] = {0};
-    for (size_t i = 0; i < count; ++i) {
-        const int u_val = static_cast<int>(static_cast<uint8_t>(src[i]));
-        const int b = std::max(0, std::min(255, u_val));
-        hist[b] += 1.0f;
-    }
-    for (int i = 0; i < 256; ++i) results.push_back(hist[i]);
-    return results;
-}
-
+// Return full heatmap as float[] for Java (safe for float32 / uint8 / fp16).
 JNIEXPORT jfloatArray JNICALL
-Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmapFromInt8Buffer(
-    JNIEnv* env, jobject thiz, jobject int8Buffer, jint w, jint h,
-    jint uThreshold, jfloat minArea) {
-    (void)thiz;
-    void* raw = env->GetDirectBufferAddress(int8Buffer);
-    if (!raw) {
-        LOGE("processHeatmapFromInt8Buffer: null direct buffer address");
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToFloatArray(
+    JNIEnv* env, jobject thiz, jobject tensor) {
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
         return nullptr;
     }
-    const jlong cap = env->GetDirectBufferCapacity(int8Buffer);
-    const size_t count = static_cast<size_t>(w) * static_cast<size_t>(h);
-    if (w <= 0 || h <= 0 || static_cast<size_t>(cap) < count) {
-        LOGE("processHeatmapFromInt8Buffer: size guard failed w=%d h=%d cap=%lld count=%zu",
-             w, h, (long long)cap, count);
-        return nullptr;
-    }
-
-    const int8_t* src = static_cast<const int8_t*>(raw);
-    constexpr float kHeatmapInt8Scale = 0.00787f;
-    LOGI(
-        "PaddleDiag: processHeatmapFromInt8Buffer using long-lived dest ptr=%p count=%zu w=%d h=%d uThreshold=%d",
-        raw, count, w, h, uThreshold);
-    if (count >= 4) {
-        LOGI(
-            "PaddleDiag: processHeatmapFromInt8Buffer uint8[0-3]=[%d,%d,%d,%d]",
-            static_cast<int>(static_cast<uint8_t>(src[0])),
-            static_cast<int>(static_cast<uint8_t>(src[1])),
-            static_cast<int>(static_cast<uint8_t>(src[2])),
-            static_cast<int>(static_cast<uint8_t>(src[3])));
-    }
-
-    std::vector<float> results = processHeatmapFromInt8UData(
-        src, h, w, uThreshold, kHeatmapInt8Scale, minArea);
-    if (results.empty()) return nullptr;
-    jfloatArray jres = env->NewFloatArray(static_cast<jsize>(results.size()));
-    env->SetFloatArrayRegion(jres, 0, static_cast<jsize>(results.size()), results.data());
-    return jres;
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    if (nativePtr == 0) return nullptr;
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return nullptr;
+    paddle::lite_api::Tensor* nativeTensor = uptr->get();
+    auto shape = nativeTensor->shape();
+    if (shape.size() < 2) return nullptr;
+    int h = (int)shape[shape.size() - 2];
+    int w = (int)shape[shape.size() - 1];
+    std::vector<float> heatBuf;
+    if (!tensorToFloatHeatmap(nativeTensor, h, w, &heatBuf)) return nullptr;
+    jfloatArray out = env->NewFloatArray(static_cast<jsize>(heatBuf.size()));
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, static_cast<jsize>(heatBuf.size()), heatBuf.data());
+    return out;
 }
 
 JNIEXPORT jfloatArray JNICALL
@@ -1762,8 +1161,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 
     int h = (int)shape[shape.size() - 2];
     int w = (int)shape[shape.size() - 1];
-    const float* data = nativeTensor->data<float>();
-    if (!data) return nullptr;
+    std::vector<float> heatBuf;
+    if (!tensorToFloatHeatmap(nativeTensor, h, w, &heatBuf)) return nullptr;
+    const float* data = heatBuf.data();
 
     LOGI("nativeProcessHeatmap: shape=[%d dims], h=%d, w=%d, ptr=%p, first4=[%.4f,%.4f,%.4f,%.4f]",
          (int)shape.size(), h, w, data, data[0], data[1], data[2], data[3]);
@@ -1774,16 +1174,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
     cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
     mask.convertTo(mask, CV_8U);
 
-    // 3. Connected Components with Stats
+    // 3. Connected Components with Stats (ABI-Safe replacement for findContours)
     cv::Mat labels, stats, centroids;
     int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
 
     // 4. Geometry Extraction
     std::vector<float> results;
     int count = 0;
-    for (int l = 1; l < numLabels; ++l) {
-        if (count >= 200) break;
-
+    for (int l = 1; l < numLabels; ++l) { // Start from 1 (skip background label 0)
+        if (count >= 200) break; // Hard safety limit
+        
         int area = stats.at<int>(l, cv::CC_STAT_AREA);
         if (area < minArea) continue;
 
@@ -1792,6 +1192,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
         int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
 
+        // Populate a flat cv::Mat of points instead of std::vector to guarantee ABI Parity
         cv::Mat points(area, 1, CV_32SC2);
         int idx = 0;
         for (int y = top; y < top + height; ++y) {
@@ -1804,6 +1205,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
             }
         }
 
+        // If for some reason we gathered fewer points than expected, truncate Mat
         if (idx < area) {
             points = points.rowRange(0, idx);
         }
@@ -1820,18 +1222,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
                  vertices[2].x, vertices[2].y, vertices[3].x, vertices[3].y, area);
         }
 
+        // Calculate average confidence within the bounding box
         float avgConf = 0.0f;
         int bx1 = std::max(0, left);
         int by1 = std::max(0, top);
         int bx2 = std::min(w, left + width);
         int by2 = std::min(h, top + height);
-
+        
         if (bx2 > bx1 && by2 > by1) {
             cv::Mat roi = heatmap(cv::Rect(bx1, by1, bx2 - bx1, by2 - by1));
             cv::Scalar meanVal = cv::mean(roi);
             avgConf = (float)meanVal[0];
         }
 
+        // Pack [x1, y1, x2, y2, x3, y3, x4, y4, conf]
         for (int i = 0; i < 4; ++i) {
             results.push_back(vertices[i].x);
             results.push_back(vertices[i].y);
@@ -1841,12 +1245,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
     }
 
     float hist[100] = {0};
-    for (int i = 0; i < h * w; i++) {
-        int b = std::max(0, std::min(99, (int)(data[i] * 100)));
-        hist[b] += 1.0f;
-    }
-    for (int i = 0; i < 100; i++) results.push_back(hist[i]);
+    for(int i=0; i < h*w; i++) { int b = std::max(0, std::min(99, (int)(data[i]*100))); hist[b] += 1.0f; }
+    for(int i=0; i<100; i++) results.push_back(hist[i]);
 
+    // 5. Serialization
     if (results.empty()) return nullptr;
     jfloatArray jres = env->NewFloatArray(results.size());
     env->SetFloatArrayRegion(jres, 0, results.size(), results.data());
