@@ -220,3 +220,19 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 
 - Expanded SET_G_VERT_FACTORS to 7 factors; G- to 5; G-- to [0.3, 1.2].
 - Aligned ExperimentPumpScreen regularGVert/DVert/EVert lists.
+
+## 2026-07-10 - Quick Fill / Reports research (planner, plan mode)
+
+- Plan (sandbox): `dev-ai-interaction/plans/quickfill-photos-partial-camera-reliability-20260710-plan.md` (F1–F5: media permission, photo save+photoUrl, auto partial+clear fields, portrait camera parity, reports per-vehicle summary).
+- Phone artifacts: portrait/landscape Quick Fill screenshots; Reports screenshot; DB pull under `dev-ai-interaction/research/quickfill-db-*` and `reports-screenshot-*`.
+- Photos: intended path DCIM/Camera/fuel_*; only one historical fuel_* (2026-06-26); July fills have null photoUrl; media permission never requested (CAMERA only).
+- Reports UI: totals OK ($383.94 / 95.8 gal / 11 fills); Avg MPG 583.8 is cross-vehicle nonsense; takeLast(5) on DESC list shows oldest not newest.
+- Landscape camera framing accepted as OK; portrait has large 3-side black bars — F4 is portrait-only parity.
+- Deferred (not this plan): fail-email package; Paddle native abort on dash retry (tombstone 2026-07-09 17:52).
+- Note: current-cycle narrative belongs in ENGINEERING_LOG via this wrapper; backlog-only items via `./todo-append` (not direct TODO.md edits for live work).
+
+## 2026-07-10 - Execution start: quickfill-photos-partial-camera-reliability
+
+- Plan: dev-ai-interaction/plans/quickfill-photos-partial-camera-reliability-20260710-plan.md
+- Features F1-F5: media permission, photo save+photoUrl, auto partial+clear fields, portrait camera, reports per-vehicle MPG
+- Baseline: no operational-improvements/builds tag yet (first successful build_app will create it)
