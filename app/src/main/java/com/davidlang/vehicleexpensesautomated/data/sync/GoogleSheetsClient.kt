@@ -35,14 +35,71 @@ class GoogleSheetsClient(private val idToken: String?) {
 
     private suspend fun syncExpenses(sheetId: String, expenses: List<ExpenseEntry>): Int = withContext(Dispatchers.IO) {
         if (expenses.isEmpty()) return@withContext 0
-        createTabWithHeaders(sheetId, "Expenses", listOf("ID", "Vehicle ID", "Amount", "Description", "Date", "Latitude", "Longitude", "Location", "Cloud Manifest"))
-        appendRows(sheetId, "Expenses", expenses.map { listOf(it.id.toString(), it.vehicleId.toString(), it.amount.toString(), it.description, it.date.toString(), it.latitude?.toString() ?: "", it.longitude?.toString() ?: "", it.location ?: "", it.cloudManifest ?: "") })
+        // Parity with CsvManager expense export (vendor/odo/photoUrl + geo/receipt/cloud).
+        createTabWithHeaders(
+            sheetId,
+            "Expenses",
+            listOf(
+                "ID", "Vehicle ID", "Date", "Amount", "Category", "Description", "Vendor",
+                "Odometer", "Photo URL", "Receipt Image Path", "Latitude", "Longitude",
+                "Location", "Cloud Manifest"
+            )
+        )
+        appendRows(
+            sheetId,
+            "Expenses",
+            expenses.map {
+                listOf(
+                    it.id.toString(),
+                    it.vehicleId.toString(),
+                    it.date.toString(),
+                    it.amount.toString(),
+                    it.category,
+                    it.description,
+                    it.vendor,
+                    it.odometer?.toString() ?: "",
+                    it.photoUrl ?: "",
+                    it.receiptImagePath ?: "",
+                    it.latitude?.toString() ?: "",
+                    it.longitude?.toString() ?: "",
+                    it.location ?: "",
+                    it.cloudManifest ?: ""
+                )
+            }
+        )
     }
 
     private suspend fun syncFuelEntries(sheetId: String, fuelEntries: List<FuelEntry>): Int = withContext(Dispatchers.IO) {
         if (fuelEntries.isEmpty()) return@withContext 0
-        createTabWithHeaders(sheetId, "Fuel Entries", listOf("ID", "Vehicle ID", "Odometer", "Gallons", "Cost", "Timestamp", "Latitude", "Longitude", "Location", "Cloud Manifest"))
-        appendRows(sheetId, "Fuel Entries", fuelEntries.map { listOf(it.id.toString(), it.vehicleId.toString(), it.odometer.toString(), it.gallons.toString(), it.cost.toString(), it.timestamp.toString(), it.latitude?.toString() ?: "", it.longitude?.toString() ?: "", it.location ?: "", it.cloudManifest ?: "") })
+        // Parity with CsvManager fuel export (photo URL + partial fill).
+        createTabWithHeaders(
+            sheetId,
+            "Fuel Entries",
+            listOf(
+                "ID", "Vehicle ID", "Odometer", "Gallons", "Cost", "Timestamp",
+                "Photo URL", "Partial Fill", "Latitude", "Longitude", "Location", "Cloud Manifest"
+            )
+        )
+        appendRows(
+            sheetId,
+            "Fuel Entries",
+            fuelEntries.map {
+                listOf(
+                    it.id.toString(),
+                    it.vehicleId.toString(),
+                    it.odometer.toString(),
+                    it.gallons.toString(),
+                    it.cost.toString(),
+                    it.timestamp.toString(),
+                    it.photoUrl ?: "",
+                    it.isPartialFill.toString(),
+                    it.latitude?.toString() ?: "",
+                    it.longitude?.toString() ?: "",
+                    it.location ?: "",
+                    it.cloudManifest ?: ""
+                )
+            }
+        )
     }
 
     private suspend fun pullVehicles(sheetId: String): List<Vehicle> = readTab(sheetId, "Vehicles") { row ->
