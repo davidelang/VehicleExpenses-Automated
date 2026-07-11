@@ -36,3 +36,25 @@ This PR bridges the "Mobile Gap" in Paddle Lite's build system, enabling the `x8
 - **AVX2 Scoping Fix:** Fixed a bug where `-mavx2` flags were lost during the final library assembly; flags are now re-applied in the `lite/api/` scope.
 - **Protobuf & STL Isolation:** Wrapped Protobuf includes in mobile guards and stubbed the `VarType` enum to prevent crashes when Protobuf is stripped.
 - **NNAPI Stability:** Explicitly disabled NNAPI for the Android `x86_64` target to prevent initialization crashes observed in emulators.
+
+---
+
+## PR 3: Safe calib dequant + uint8 greyscale feed (Runtime correctness)
+**Branch:** `pr-calib-safe-uint8-dequant`
+
+### Description
+Fixes ARM `int8_to_fp32` reading past the end of exact-sized input buffers (SEGV with `ShareExternalMemory` on greyscale planes), adds first-class `uint8_to_fp32` / `uint8_to_fp16` calib kernels so mono camera frames need no host xor-128 copy, and registers ARM `int8_to_fp16` for direct int8→fp16 analytic input quant.
+
+### Key Changes
+- **ARM `int8_to_fp32`:** Replace software-pipelined NEON asm (speculative load of next 16 bytes on last iteration) with load→convert→store intrinsics that never overread `numel`.
+- **ARM `int8_to_fp16`:** Vectorized dequant `out = q * scale`; register `calib` / `calib_once` alias `int8_to_fp16` (ENABLE_ARM_FP16).
+- **`uint8_to_fp32` (ARM + x86):** `out = (u - 128) * scale`, equivalent to int8 after `q = (int8_t)(u ^ 128)`.
+- **`uint8_to_fp16` (ARM FP16):** Same greyscale contract to half precision; register alias `uint8_to_fp16`.
+
+### Contract (callers)
+- `Tensor.setData(byte[])` / mutable copy: buffer length **must equal** `product(shape)`.
+- `ShareExternalMemory`: exact `numel` capacity is safe after this PR (no +64 pad required).
+- Prefer raw uint8 greyscale bind when models use `uint8_to_fp*` calib.
+
+### Motivation
+Production OCR feeds exact-sized greyscale planes. Padding workarounds for the overread bug broke Java `setData` (strict size check → silent fail → null din SEGV). Fixing the kernel removes the conflict and enables zero-copy uint8.

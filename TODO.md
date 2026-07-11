@@ -68,6 +68,10 @@
 - [x] Executing plan add-install-data-for-selectable-backup-restore-20260625-plan.md: `--install-data` for picking any backup dir + push to devices.
 
 - [x] De-abstract Set G for Quick Fill: copy pump cost/vol logic inline into OcrHarness.runPumpCostVolPipeline (no runSetGCostVolExtraction / skipDeskew); plan: dev-ai-interaction/plans/de-abstract-set-g-for-quick-fill-copy-logic-20260627-plan.md
+- [x] Executing plan dev-ai-interaction/plans/fix-arm-direct-int8-write-no-copy-plus-proper-arm-emulator-20260630-130648-plan.md: ARM bindOutputInt8 before run (no copyTensor); x86 helper unchanged; emulator-5556 arm64 AVD setup doc.
+- [x] Executing plan dev-ai-interaction/plans/fix-arm-phone-crash-after-direct-bind-plus-x86-zero-20260630-150000-plan.md: separate ARM input/output buffers; int u_threshold CC; zero-safe post-process + pump guards.
+- [x] Executing plan dev-ai-interaction/plans/fix-uint8-conversion-for-int8-buffer-20260630-151214-plan.md: long-lived buf holds uint8 0-255; ARM post-run ^128 convert; read without xor.
+- [x] Executing plan dev-ai-interaction/plans/add-full-tensor-minmax-diagnostics-and-fix-arm-output-bind-crash-20260630-175835-plan.md: FLOAT/INT8_TENSOR_FULL diags; ARM copy post-run (no output bindOutputInt8).
 
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
@@ -80,5 +84,4 @@
 
 - Approved execution of update-rules-eng-log-todo-wrapper-mandates-20260627-plan.md (special rules for ENGINEERING_LOG and TODO file type handling via wrappers)
 
-- [x] Executing plan dev-ai-interaction/plans/migrate-pump-g-family-hybrids-from-agent5-clean-history-pr-20260702-plan.md: migrate G-family / Quick-Fill / hybrid pump changes from agent-5 to agent-6 with clean PR-ready history.
-- [x] Executing plan dev-ai-interaction/plans/disable-experiment-sets-a-b-c-f-h-20260702-plan.md: disable Sets A/B/C/F/H in pump experiment; keep D, E, G, G-, G--, I.
+- [ ] Executing plan dev-ai-interaction/plans/host-paddle-precision-verification-and-smoke-tests-20260701-plan.md — Phase 1 doc done; Phase 2–4: conversion verify, host_precision_smoke + explicit input×output matrix (host_precision_smoke_explicit_outputs.py).

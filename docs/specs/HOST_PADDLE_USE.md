@@ -40,3 +40,20 @@ Dynamic shapes MUST be configured via the `NNADAPTER_DYNAMIC_SHAPE_INFO` environ
 Standard host-side scripts in `app/src/main/assets/paddle/scripts/`:
 *   `convert_mono.py`: Weight averaging and graph modification for 1-channel models.
 *   `optimize_models.sh`: Orchestrates the `opt` tool for all targets.
+*   `dev-ai-interaction/research/optimize_mono_int8_models.sh`: INT8 dynamic quant (`--quant_model=true --quant_type=QUANT_INT8`) + analytic input pass; outputs parallel `*_int8_*.nb` assets.
+
+## 4. UINT8 → INT8 Runtime Contract (App)
+
+**No float mean/std at runtime.** Single-op remap per pixel:
+
+```
+int8_t q = static_cast<int8_t>(b ^ 128);  // 0→-128, 128→0, 255→+127
+```
+
+| Path | Pattern |
+|------|---------|
+| Detection tiers | `sharedTierInt8Buffers[scale]` + `NativeImageUtils.bindInputInt8` |
+| BufferSet det/rec | `quantizeMonoInputToScratch()` (p→s, no flip) → bind `.s.raw` |
+| Full-res 12 MP | Tier `4000` or `bufferSetA` p→s |
+
+Model conversion must bake the same signed-byte contract via `analytic_input_quant_pass` during `opt`.
