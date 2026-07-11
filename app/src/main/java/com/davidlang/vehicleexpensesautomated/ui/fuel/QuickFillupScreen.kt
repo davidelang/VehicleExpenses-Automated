@@ -190,27 +190,18 @@ fun QuickFillupScreen(
             "$"
         }
     }
-    val systemVolumeUnit = remember {
-        if (Locale.getDefault().country in setOf("US", "LR", "MM")) "G" else "L"
-    }
     val prefCurrency = remember { prefs.getString("currency_symbol", null) }
-    val prefVolume = remember { prefs.getString("volume_unit", null) }
     val defaultCurrency = remember {
         when {
             prefCurrency.isNullOrBlank() || prefCurrency == "system" -> systemCurrencySymbol
             else -> prefCurrency
         }
     }
-    val defaultVolumeUnit = remember {
-        when {
-            prefVolume.isNullOrBlank() || prefVolume == "system" -> systemVolumeUnit
-            else -> prefVolume
-        }
-    }
+    // DB stores volume in preferred unit; convert UI unit → preferred at save.
     val preferredVolumeUnit = remember {
-        prefs.getString("volume_unit", null)?.takeIf { it.isNotBlank() && it != "system" }
-            ?: systemVolumeUnit
+        com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.resolvedPreferredVolumeUnit(context)
     }
+    val defaultVolumeUnit = preferredVolumeUnit
     var captureMode by rememberSaveable { mutableStateOf("odo") }
     var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrency) }
     var volumeUnit by rememberSaveable { mutableStateOf(defaultVolumeUnit) }
