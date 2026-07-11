@@ -13,6 +13,7 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - `dev-ai-interaction/.planning-agent-prompt.txt` — planner restart prompt from master
 - `dev-ai-interaction/scripts/deploy-golden-pump-photos.sh` — push GOLDEN_SUBSET and/or flat pump zips to device
 - `dev-ai-interaction/research/photos/pump/` — pump experiment source photos; `pump-zips/` holds generated flat zips
+- `dev-ai-interaction/research/imagine-icon-candidate/` — launcher icon Imagine source (keep): README with Grok Imagine post URL; masters `app-icon-master-1024.png` / `app-icon-master-512.png`; density export under `android-export/`
 
 ## At worktree root
 - `ENGINEERING_LOG.md` (append-only at end; use ONLY `./append-to-engineering-log` or `@file` wrapper to add entries)
