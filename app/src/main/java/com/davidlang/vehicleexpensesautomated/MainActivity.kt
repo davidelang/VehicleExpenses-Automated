@@ -126,18 +126,19 @@ class MainActivity : ComponentActivity() {
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
-                val title = when (currentRoute) {
-                    "quickfill" -> "Quick Fill-up"
-                    "managevehicles" -> "Manage Vehicles"
-                    "expense" -> "New Expense Entry"
-                    "expenselist" -> "Expense List"
-                    "import" -> "Import Old Pictures"
-                    "reports" -> "Reports & Charts"
-                    "settings" -> "Settings"
-                    "help" -> "Help"
-                    "about" -> "About"
-                    "experiment" -> "Alignment Experiment"
-                    "experiment_pump" -> "Gas Pump Extraction Experiment"
+                val title = when {
+                    currentRoute == "quickfill" -> "Quick Fill-up"
+                    currentRoute == "managevehicles" -> "Manage Vehicles"
+                    currentRoute == "expense" -> "New Expense Entry"
+                    currentRoute?.startsWith("expense/") == true -> "Edit Expense"
+                    currentRoute == "expenselist" -> "Expense List"
+                    currentRoute == "import" -> "Import Old Pictures"
+                    currentRoute == "reports" -> "Reports & Charts"
+                    currentRoute == "settings" -> "Settings"
+                    currentRoute == "help" -> "Help"
+                    currentRoute == "about" -> "About"
+                    currentRoute == "experiment" -> "Alignment Experiment"
+                    currentRoute == "experiment_pump" -> "Gas Pump Extraction Experiment"
                     else -> "Vehicle Expenses"
                 }
 
@@ -257,8 +258,14 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 composable("quickfill") { QuickFillupScreen(navController = navController) }
                                 composable("managevehicles") { ManageVehiclesScreen(navController = navController) }
-                                composable("expense") { ExpenseEntryScreen(navController = navController) }
-                                composable("expenselist") { ExpenseListScreen() }
+                                composable("expense") {
+                                    ExpenseEntryScreen(navController = navController, expenseId = null)
+                                }
+                                composable("expense/{expenseId}") { backStackEntry ->
+                                    val id = backStackEntry.arguments?.getString("expenseId")?.toLongOrNull()
+                                    ExpenseEntryScreen(navController = navController, expenseId = id)
+                                }
+                                composable("expenselist") { ExpenseListScreen(navController = navController) }
                                 composable("import") { ImportOldPicturesScreen(navController = navController) }
                                 composable("reports") { ReportsScreen(navController = navController) }
                                 composable("settings") { SettingsScreen() }

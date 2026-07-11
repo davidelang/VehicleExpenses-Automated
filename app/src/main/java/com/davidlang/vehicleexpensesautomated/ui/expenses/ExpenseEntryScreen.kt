@@ -39,7 +39,10 @@ private const val TAG = "ExpenseEntry"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExpenseEntryScreen(navController: NavHostController? = null) {
+fun ExpenseEntryScreen(
+    navController: NavHostController? = null,
+    expenseId: Long? = null
+) {
     val viewModel: ExpenseViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val context = LocalContext.current
