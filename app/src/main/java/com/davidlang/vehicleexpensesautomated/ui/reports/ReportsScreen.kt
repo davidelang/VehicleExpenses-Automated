@@ -527,7 +527,11 @@ private fun ExpensesBlock(
             expenses.forEach { entry ->
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     Column(modifier = Modifier.padding(10.dp)) {
-                        Text("${entry.description} · ${formatMoney(entry.amount)}")
+                        val head = listOfNotNull(
+                            entry.vendor.takeIf { it.isNotBlank() },
+                            entry.description.takeIf { it.isNotBlank() }
+                        ).joinToString(" · ").ifBlank { "(no description)" }
+                        Text("$head · ${formatMoney(entry.amount)}")
                         Text(
                             "${formatEntryDate(entry.date)} · ${entry.category}",
                             style = MaterialTheme.typography.labelSmall
