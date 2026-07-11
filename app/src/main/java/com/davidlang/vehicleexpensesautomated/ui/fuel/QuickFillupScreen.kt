@@ -503,7 +503,9 @@ fun QuickFillupScreen(
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val fitsByHeight = maxWidth / maxHeight > captureAspectRatio
-                // Landscape: letterbox via fitsByHeight. Portrait camera expand to sides/B per 2026-06-28 screenshots.
+                // Landscape: keep proven letterbox path (user-accepted).
+                // Portrait: fill all of A; single-axis letterbox via FIT inside PreviewView/Image
+                // (avoids stacked 4:3 box + FIT that left broad black on three sides).
                 val contentModifier = if (isLandscape) {
                     if (fitsByHeight) {
                         Modifier.fillMaxHeight().aspectRatio(captureAspectRatio)
@@ -511,22 +513,27 @@ fun QuickFillupScreen(
                         Modifier.fillMaxWidth().aspectRatio(captureAspectRatio)
                     }
                 } else {
-                    Modifier.fillMaxWidth().aspectRatio(captureAspectRatio)
+                    Modifier.fillMaxSize()
                 }
                 val contentWidth = if (isLandscape) {
                     if (fitsByHeight) maxHeight * captureAspectRatio else maxWidth
                 } else {
-                    maxWidth
+                    // Active FIT area size (for zoom blank placement), not the full A box.
+                    if (fitsByHeight) maxHeight * captureAspectRatio else maxWidth
                 }
                 val contentHeight = if (isLandscape) {
                     if (fitsByHeight) maxHeight else maxWidth / captureAspectRatio
                 } else {
-                    (maxWidth / captureAspectRatio).coerceAtMost(maxHeight)
+                    if (fitsByHeight) maxHeight else maxWidth / captureAspectRatio
                 }
-                val hasRightBlank = isLandscape && contentWidth < maxWidth - 1.dp
+                val hasRightBlank = contentWidth < maxWidth - 1.dp
                 val hasBottomBlank = contentHeight < maxHeight - 1.dp
 
-                Box(modifier = contentModifier.align(Alignment.BottomCenter)) {
+                Box(
+                    modifier = contentModifier.align(
+                        if (isLandscape) Alignment.BottomCenter else Alignment.Center
+                    )
+                ) {
                     cameraOrCropArea()
                 }
 
