@@ -349,3 +349,21 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Plan: install-lightened-app-icon-from-master-20260710-plan.md
 - install-into-app.sh already applied (user); verify sizes + build_app commit
 - Baseline: operational-improvements/builds @ 104bfd08
+
+## 2026-07-10 - Keep icon Imagine link and masters for reference
+
+- Retained: Imagine post https://grok.com/imagine/post/c2fefde0-449d-4795-b48a-8f4d96cd0b8c
+- Masters + export: dev-ai-interaction/research/imagine-icon-candidate/ (README.md documents link, masters, install).
+- project-facts.md pointer added to that research path.
+
+## 2026-07-10 - Docs file for launcher icon (draft + plan; docs/ not writable)
+
+- Draft full doc: dev-ai-interaction/research/imagine-icon-candidate/docs-APP_LAUNCHER_ICON.md
+- Plan for execution agent to copy to docs/reference/APP_LAUNCHER_ICON.md: dev-ai-interaction/plans/add-docs-app-launcher-icon-20260710-plan.md
+- Planner cannot write worktree docs/ (permission denied).
+
+## 2026-07-10 - Execution: add docs APP_LAUNCHER_ICON
+
+- Plan: add-docs-app-launcher-icon-20260710-plan.md
+- Copy draft → docs/reference/APP_LAUNCHER_ICON.md + build_app
+- Baseline: operational-improvements/builds @ c8357785
