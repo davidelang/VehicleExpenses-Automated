@@ -1,8 +1,11 @@
 package com.davidlang.vehicleexpensesautomated
 
 import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -32,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -67,17 +71,51 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var vehicleRepository: VehicleRepository
 
+    private val mediaPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Toast.makeText(
+                this,
+                "Photos permission denied. Fuel photo saving to Camera roll may fail until Photos access is granted in system Settings.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (!isGranted) {
             Toast.makeText(this, "Camera permission denied. Photo features will be disabled.", Toast.LENGTH_LONG).show()
         }
+        // D6: request media only after camera dialog settles (granted or denied).
+        maybeRequestMediaPermissionForFuelPhotos()
+    }
+
+    private fun mediaImagesPermission(): String {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+    }
+
+    private fun maybeRequestMediaPermissionForFuelPhotos() {
+        val prefs = getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+        val saveFuelPhotos = prefs.getBoolean("save_fuel_photos", true)
+        if (!saveFuelPhotos) return
+        val permission = mediaImagesPermission()
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+        mediaPermissionLauncher.launch(permission)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Camera only here — media follows in cameraPermissionLauncher callback (no stacked dialogs).
         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
 
         setContent {
@@ -90,18 +128,19 @@ class MainActivity : ComponentActivity() {
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
-                val title = when (currentRoute) {
-                    "quickfill" -> "Quick Fill-up"
-                    "managevehicles" -> "Manage Vehicles"
-                    "expense" -> "New Expense Entry"
-                    "expenselist" -> "Expense List"
-                    "import" -> "Import Old Pictures"
-                    "reports" -> "Reports & Charts"
-                    "settings" -> "Settings"
-                    "help" -> "Help"
-                    "about" -> "About"
-                    "experiment" -> "Alignment Experiment"
-                    "experiment_pump" -> "Gas Pump Extraction Experiment"
+                val title = when {
+                    currentRoute == "quickfill" -> "Quick Fill-up"
+                    currentRoute == "managevehicles" -> "Manage Vehicles"
+                    currentRoute == "expense" -> "New Expense Entry"
+                    currentRoute?.startsWith("expense/") == true -> "Edit Expense"
+                    currentRoute == "expenselist" -> "Expense List"
+                    currentRoute == "import" -> "Import Old Pictures"
+                    currentRoute == "reports" -> "Reports & Charts"
+                    currentRoute == "settings" -> "Settings"
+                    currentRoute == "help" -> "Help"
+                    currentRoute == "about" -> "About"
+                    currentRoute == "experiment" -> "Alignment Experiment"
+                    currentRoute == "experiment_pump" -> "Gas Pump Extraction Experiment"
                     else -> "Vehicle Expenses"
                 }
 
@@ -221,8 +260,14 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 composable("quickfill") { QuickFillupScreen(navController = navController) }
                                 composable("managevehicles") { ManageVehiclesScreen(navController = navController) }
-                                composable("expense") { ExpenseEntryScreen(navController = navController) }
-                                composable("expenselist") { ExpenseListScreen() }
+                                composable("expense") {
+                                    ExpenseEntryScreen(navController = navController, expenseId = null)
+                                }
+                                composable("expense/{expenseId}") { backStackEntry ->
+                                    val id = backStackEntry.arguments?.getString("expenseId")?.toLongOrNull()
+                                    ExpenseEntryScreen(navController = navController, expenseId = id)
+                                }
+                                composable("expenselist") { ExpenseListScreen(navController = navController) }
                                 composable("import") { ImportOldPicturesScreen(navController = navController) }
                                 composable("reports") { ReportsScreen(navController = navController) }
                                 composable("settings") { SettingsScreen() }

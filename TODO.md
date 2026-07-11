@@ -75,6 +75,7 @@
 - [x] Executing plan dev-ai-interaction/plans/migrate-pump-g-family-hybrids-from-agent5-clean-history-pr-20260702-plan.md: migrate G-family / Quick-Fill / hybrid pump changes from agent-5 to agent-6 with clean PR-ready history.
 - [x] Executing plan dev-ai-interaction/plans/disable-experiment-sets-a-b-c-f-h-20260702-plan.md: disable Sets A/B/C/F/H in pump experiment; keep D, E, G, G-, G--, I.
 - [x] Merge branch `int8-paddle-processing`: production `uint8_fp16_u8` Paddle path, `prod_u8fp16` models, tailored arm64 JNI (2026-07-10).
+- [x] Merge branch `operational-improvements`: Quick Fill reliability, reports redesign, expenses entry/edit, launcher icon, volume unit policy, CSV/Sheets parity, PR review fixes (2026-07-11).
 
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.
