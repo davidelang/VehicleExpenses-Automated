@@ -33,10 +33,5 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <!-- Headless Set G precision campaign (adb-started, no UI). Keep until slim stack fully validated. -->
-        <activity
-            android:name=".ui.experiment.PrecCampaignBatchActivity"
-            android:exported="true"
-            android:process=":prec_campaign" />
     </application>
 </manifest>
