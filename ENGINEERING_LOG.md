@@ -451,3 +451,9 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - D4/D5: key(expenseId) body; suspend save + isSaving (e8c8cf60)
 - D6: camera then media permission sequence (8c52b240)
 - Builds tag: operational-improvements/builds @ 8c52b240f2a5e18ed60d55a0c865a2e16d1f6b59
+
+## 2026-07-11 - PR updated after D1-D6 execution
+
+- History reordered/cleaned: D1-D6 as logical commits after e5a9abdd three-bug fix; tree matches pre-reorder tip 68a1f37d.
+- HEAD and PR doc: dev-ai-interaction/PRs/PR-operational-improvements.md refreshed with D1-D6 section.
+- Master still ahead of merge-base 9aac4d0d — rebase before GitHub merge if needed.
