@@ -13,31 +13,40 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
-import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
-import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
-import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
 import java.io.File
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseEntryScreen(navController: NavHostController? = null) {
     val viewModel: ExpenseViewModel = hiltViewModel()
-    val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+
+    val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+    var selectedVehicleId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var vehicleDropdownExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(vehicles) {
+        if (selectedVehicleId == null && vehicles.isNotEmpty()) {
+            selectedVehicleId = vehicles.first().id
+        }
+    }
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -50,32 +59,19 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
     var description by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("Other") }
     var date by remember { mutableStateOf(System.currentTimeMillis()) }
-    var vehicleId by remember { mutableStateOf(0) }
     var photoUrl by remember { mutableStateOf<String?>(null) }
 
-    // Gallery picker (gallery-only for import old pictures)
+    // Gallery picker — set photoUrl only (no OCR; OCR later)
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
-            scope.launch {
-                val tempFile = File.createTempFile("ocr_expense", ".jpg", context.cacheDir)
-                context.contentResolver.openInputStream(selectedUri)?.use { input ->
-                    tempFile.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
-                amount = result.cost?.toDoubleOrNull() ?: amount
-                description = "Receipt (OCR)" // placeholder — can be extended later
-                photoUrl = tempFile.absolutePath // archived
-                tempFile.delete()
-                Toast.makeText(context, "OCR complete — receipt data filled", Toast.LENGTH_LONG).show()
-            }
+            photoUrl = selectedUri.toString()
+            Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
         }
     }
 
-    // Start camera immediately (camera-first flow)
+    // Start camera immediately (camera-first flow) — Feature B will replace with CameraPreview
     LaunchedEffect(Unit) {
         val provider = ProcessCameraProvider.getInstance(context).get()
         val preview = Preview.Builder().build()
@@ -86,7 +82,6 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Camera half (top)
         Box(
             modifier = Modifier
                 .weight(0.35f)
@@ -102,7 +97,6 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
             )
         }
 
-        // Controls half (scrollable)
         Column(
             modifier = Modifier
                 .weight(0.65f)
@@ -112,15 +106,48 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
             Text("New Expense — Receipt OCR", style = MaterialTheme.typography.headlineMedium)
             Spacer(modifier = Modifier.height(8.dp))
 
-            OutlinedTextField(
-                value = vehicleId.toString(),
-                onValueChange = { vehicleId = it.toIntOrNull() ?: 0 },
-                label = { Text("Vehicle") },
+            val vehicleName = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle"
+            ExposedDropdownMenuBox(
+                expanded = vehicleDropdownExpanded,
+                onExpandedChange = { vehicleDropdownExpanded = it },
                 modifier = Modifier.fillMaxWidth()
-            )
+            ) {
+                OutlinedTextField(
+                    value = vehicleName,
+                    onValueChange = {},
+                    label = { Text("Vehicle") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
+                    readOnly = true,
+                    singleLine = true,
+                    maxLines = 1
+                )
+                ExposedDropdownMenu(
+                    expanded = vehicleDropdownExpanded,
+                    onDismissRequest = { vehicleDropdownExpanded = false }
+                ) {
+                    if (vehicles.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text("No vehicles") },
+                            onClick = { vehicleDropdownExpanded = false }
+                        )
+                    } else {
+                        vehicles.forEach { vehicle ->
+                            DropdownMenuItem(
+                                text = { Text(vehicle.name) },
+                                onClick = {
+                                    selectedVehicleId = vehicle.id
+                                    vehicleDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
 
             OutlinedTextField(
-                value = amount.toString(),
+                value = if (amount == 0.0) "" else amount.toString(),
                 onValueChange = { amount = it.toDoubleOrNull() ?: 0.0 },
                 label = { Text("Amount (auto-filled by OCR)") },
                 modifier = Modifier.fillMaxWidth()
@@ -142,15 +169,14 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Take photo button (camera-first)
             Button(
                 onClick = {
                     scope.launch {
-                        // In real app this would capture to PhotoPicker; here we simulate with dummy for build
-                        val result = OdometerOcrUtils.extractFromPhoto("dummy_receipt.jpg")
+                        val result = com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+                            .extractFromPhoto("dummy_receipt.jpg")
                         amount = result.cost?.toDoubleOrNull() ?: amount
                         description = "Receipt OCR"
-                        photoUrl = "archived_receipt.jpg" // archived via PhotoPicker in full impl
+                        photoUrl = "archived_receipt.jpg"
                         Toast.makeText(context, "Receipt OCR complete — receipt data filled", Toast.LENGTH_LONG).show()
                     }
                 },
@@ -159,7 +185,6 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
                 Text("Take Receipt Photo")
             }
 
-            // Advanced gallery button (gallery-only for import old pictures)
             Button(
                 onClick = { pickImageLauncher.launch("image/*") },
                 modifier = Modifier.fillMaxWidth()
@@ -171,19 +196,26 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
 
             Button(
                 onClick = {
-                    if (photoUrl != null) {
-                        viewModel.saveExpense(
-                            ExpenseEntry(
-                                vehicleId = vehicleId,
-                                amount = amount,
-                                description = description,
-                                category = category,
-                                date = date,
-                                photoUrl = photoUrl
-                            )
-                        )
-                        navController?.navigate("reports")
+                    val vehicleId = selectedVehicleId
+                    if (vehicleId == null) {
+                        Toast.makeText(context, "Select a vehicle", Toast.LENGTH_SHORT).show()
+                        return@Button
                     }
+                    if (photoUrl == null) {
+                        Toast.makeText(context, "Take or pick a photo first", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    viewModel.saveExpense(
+                        ExpenseEntry(
+                            vehicleId = vehicleId,
+                            amount = amount,
+                            description = description,
+                            category = category,
+                            date = date,
+                            photoUrl = photoUrl
+                        )
+                    )
+                    navController?.navigate("reports")
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {

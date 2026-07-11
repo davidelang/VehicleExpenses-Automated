@@ -310,3 +310,14 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Summary: vehicle name line + adaptive stats 1–2 lines (middot split)
 - Last-5: newest valid legs only; rolled sumCost/sumVol; always mpg+bar; no first-full n/a
 - Commit 4d7fb9ad
+
+## 2026-07-10 - Remove duplicate Honda full fill
+
+- Deleted fuel_entries id 4 (duplicate of id 3: same odo 202071, gal 5.372, cost 25.03, ~8s later). Kept id 3.
+- Honda fulls remaining: 201973, 202071, 202589 (still 2 valid last-5 legs).
+
+## 2026-07-10 - Execution start: expense-entry-vehicle-dropdown-and-quickfill-camera
+
+- Plan: dev-ai-interaction/plans/expense-entry-vehicle-dropdown-and-quickfill-camera-20260710-plan.md
+- A: vehicle dropdown; B: camera/zoom/shutter/save/gallery icons
+- Baseline: operational-improvements/builds @ 8cb3260a
