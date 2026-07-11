@@ -59,7 +59,7 @@
 
 # Meta plan (approved 2026-06-12 on orchestration branch): Interactive Strategic Planning + Continuity
 - Stable orientation facts live in the tracked `project-facts.md` at each worktree root. It must contain only layout / "where things live" facts that remain true after branch merge + new worktree for different effort. Agents read it first on launch/new cycle (in addition to the user-designated sandbox plan).
-- Planning phase is the **interactive strategic layer**: user may give rich problem descriptions, direction, and iterative feedback. Agent responds by revising the *plan document* in dev-ai-interaction/ (not source). Only after the user issues the exact magic approval phrasing naming a specific sandbox plan path does mechanical execution begin.
+- Planning phase is the **interactive strategic layer**: user may give rich problem descriptions, direction, and iterative feedback. Agent responds by revising the *plan document* in dev-ai-interaction/ (not source). Only after the user issues an explicit magic approval phrasing naming a specific sandbox plan path does mechanical execution begin.
 - Update bootstrap files, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .grok/config.toml, and .gitignore to reflect that `project-facts.md` is now tracked, planners may edit it in plan mode (alongside TODO.md), and it is strictly limited to stable facts (no branch/tag/current-plan). The untracked current-state.md name is legacy.
 - Primary plan documents stay in the sandbox; project-facts.md is for enduring location facts only.
 - See the approved plan at dev-ai-interaction/interactive-strategic-planning-and-continuity-plan.md for full details, critical files (new_grok_agent_prompt, AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, .gitignore), and verification. Pre-turn state: orchestration branch; follows handoff from the previous robust cycle enforcement plan; no app source changes.
@@ -72,6 +72,9 @@
 - [x] Executing plan dev-ai-interaction/plans/fix-arm-phone-crash-after-direct-bind-plus-x86-zero-20260630-150000-plan.md: separate ARM input/output buffers; int u_threshold CC; zero-safe post-process + pump guards.
 - [x] Executing plan dev-ai-interaction/plans/fix-uint8-conversion-for-int8-buffer-20260630-151214-plan.md: long-lived buf holds uint8 0-255; ARM post-run ^128 convert; read without xor.
 - [x] Executing plan dev-ai-interaction/plans/add-full-tensor-minmax-diagnostics-and-fix-arm-output-bind-crash-20260630-175835-plan.md: FLOAT/INT8_TENSOR_FULL diags; ARM copy post-run (no output bindOutputInt8).
+- [x] Executing plan dev-ai-interaction/plans/migrate-pump-g-family-hybrids-from-agent5-clean-history-pr-20260702-plan.md: migrate G-family / Quick-Fill / hybrid pump changes from agent-5 to agent-6 with clean PR-ready history.
+- [x] Executing plan dev-ai-interaction/plans/disable-experiment-sets-a-b-c-f-h-20260702-plan.md: disable Sets A/B/C/F/H in pump experiment; keep D, E, G, G-, G--, I.
+- [x] Merge branch `int8-paddle-processing`: production `uint8_fp16_u8` Paddle path, `prod_u8fp16` models, tailored arm64 JNI (2026-07-10).
 
 # Future work
 - [x] Separate the orchestration layer (run-*, update-rules.sh, set-*-perms, setup-project, .grok/ config/hooks, permission model, worktree management, multi-agent brain) from the application source (app/, master + feature branches) into distinct trees/concerns. This will allow project-facts.md (and other facts) to be scoped appropriately per tree without overlap.

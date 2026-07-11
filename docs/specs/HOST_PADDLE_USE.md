@@ -40,7 +40,7 @@ Dynamic shapes MUST be configured via the `NNADAPTER_DYNAMIC_SHAPE_INFO` environ
 Standard host-side scripts in `app/src/main/assets/paddle/scripts/`:
 *   `convert_mono.py`: Weight averaging and graph modification for 1-channel models.
 *   `optimize_models.sh`: Orchestrates the `opt` tool for all targets.
-*   `dev-ai-interaction/research/optimize_mono_int8_models.sh`: INT8 dynamic quant (`--quant_model=true --quant_type=QUANT_INT8`) + analytic input pass; outputs parallel `*_int8_*.nb` assets.
+*   `optimize_mono_int8_models.sh`: INT8 dynamic quant (`--quant_model=true --quant_type=QUANT_INT8`) + analytic input pass; outputs `*_int8_*.nb` (set `OPT_TOOL` to host `opt_linux_x86_int8` from paddle-build output).
 
 ## 4. UINT8 → INT8 Runtime Contract (App)
 
