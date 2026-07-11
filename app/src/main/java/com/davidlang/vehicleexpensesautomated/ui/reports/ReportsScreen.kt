@@ -78,8 +78,15 @@ private fun newestValidLegs(entries: List<FuelEntry>, maxLegs: Int = 5): List<Fu
 }
 
 /**
- * $/mile = (sum fuel cost + sum expenses) / (maxOdo - minOdo)
- * over fills with odometer > 0; n/a if max ≤ min.
+ * **$/mi** = (sum of fuel cost + sum of expenses for this vehicle)
+ * / (maxOdo − minOdo) over all fuel rows with `odometer > 0`.
+ *
+ * Partial fills at the **start or end** of the odo range are acceptable noise
+ * (they still contribute min/max if odo > 0). Mid-trip partials do not need
+ * special handling: they do not change max−min when odometers still bound the range.
+ * Denominator is **not** restricted to full fills only.
+ *
+ * @return n/a (null) if fewer than two positive odometers or max ≤ min.
  */
 private fun dollarsPerMile(
     fuelEntries: List<FuelEntry>,
