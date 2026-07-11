@@ -79,6 +79,73 @@ private fun convertVolumeForSave(value: Double, fromUnit: String, toUnit: String
     }
 }
 
+/** In-memory photo pointer until FuelEntry Save (tag dash|pump). */
+private data class SessionPhoto(val uri: String, val ts: Long)
+
+/** Map captureMode odo→dash, pump→pump. */
+private fun photoTagForCaptureMode(captureMode: String): String {
+    return if (captureMode == "pump") "pump" else "dash"
+}
+
+/** Compact JSON array for FuelEntry.photoUrl; null if empty. */
+private fun sessionPhotosToJson(photos: Map<String, SessionPhoto>): String? {
+    if (photos.isEmpty()) return null
+    val arr = org.json.JSONArray()
+    // Stable order: dash then pump then any other tags
+    val keys = photos.keys.sortedWith(compareBy({ if (it == "dash") 0 else if (it == "pump") 1 else 2 }, { it }))
+    for (tag in keys) {
+        val p = photos[tag] ?: continue
+        arr.put(
+            org.json.JSONObject().apply {
+                put("tag", tag)
+                put("uri", p.uri)
+                put("ts", p.ts)
+            }
+        )
+    }
+    return arr.toString()
+}
+
+/** One-shot fallback: write a JPEG of [bitmap] into DCIM/Camera as fuel_*.jpg (same roll as stock Camera). */
+private fun saveBitmapToDcimCamera(context: android.content.Context, bitmap: Bitmap): android.net.Uri? {
+    return try {
+        val resolver = context.contentResolver
+        val contentValues = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                put(
+                    android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                    android.os.Environment.DIRECTORY_DCIM + "/Camera"
+                )
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+        }
+        val uri = resolver.insert(
+            android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            contentValues
+        ) ?: return null
+        resolver.openOutputStream(uri)?.use { out ->
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)) {
+                throw IllegalStateException("JPEG compress failed")
+            }
+        } ?: run {
+            resolver.delete(uri, null, null)
+            return null
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val done = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            resolver.update(uri, done, null, null)
+        }
+        uri
+    } catch (e: Exception) {
+        Log.e("QuickFill", "Fallback DCIM/Camera save failed", e)
+        null
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickFillupScreen(
@@ -95,7 +162,8 @@ fun QuickFillupScreen(
     var odometer by rememberSaveable { mutableStateOf("") }
     var gallons by rememberSaveable { mutableStateOf("") }
     var cost by rememberSaveable { mutableStateOf("") }
-    var photoUrl by remember { mutableStateOf<String?>(null) }
+    /** Session photos keyed by tag (dash/pump); written to DB only on Save as JSON. */
+    val sessionPhotos = remember { mutableStateMapOf<String, SessionPhoto>() }
     var lat by remember { mutableStateOf<Double?>(null) }
     var lon by remember { mutableStateOf<Double?>(null) }
     var loc by remember { mutableStateOf<String?>(null) }
@@ -107,11 +175,12 @@ fun QuickFillupScreen(
     val hasResults = captureViewState == CaptureViewState.Results
     var stageLabel by remember { mutableStateOf("") }
     var isPhotoSaving by remember { mutableStateOf(false) }
+    /** Null when idle/ok; set while saving or after a failed Camera-roll save. */
+    var photoSaveStatus by remember { mutableStateOf<String?>(null) }
     var zoomControl by remember { mutableStateOf<CameraZoomControl?>(null) }
 
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val debugMode = remember { prefs.getBoolean("debug_ocr_pipeline", false) }
-    val saveFuelPhotos = remember { prefs.getBoolean("save_fuel_photos", true) }
 
     // TODO: Settings should surface "use system" as the default option for currency/volume.
     val systemCurrencySymbol = remember {
@@ -121,27 +190,18 @@ fun QuickFillupScreen(
             "$"
         }
     }
-    val systemVolumeUnit = remember {
-        if (Locale.getDefault().country in setOf("US", "LR", "MM")) "G" else "L"
-    }
     val prefCurrency = remember { prefs.getString("currency_symbol", null) }
-    val prefVolume = remember { prefs.getString("volume_unit", null) }
     val defaultCurrency = remember {
         when {
             prefCurrency.isNullOrBlank() || prefCurrency == "system" -> systemCurrencySymbol
             else -> prefCurrency
         }
     }
-    val defaultVolumeUnit = remember {
-        when {
-            prefVolume.isNullOrBlank() || prefVolume == "system" -> systemVolumeUnit
-            else -> prefVolume
-        }
-    }
+    // DB stores volume in preferred unit; convert UI unit → preferred at save.
     val preferredVolumeUnit = remember {
-        prefs.getString("volume_unit", null)?.takeIf { it.isNotBlank() && it != "system" }
-            ?: systemVolumeUnit
+        com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.resolvedPreferredVolumeUnit(context)
     }
+    val defaultVolumeUnit = preferredVolumeUnit
     var captureMode by rememberSaveable { mutableStateOf("odo") }
     var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrency) }
     var volumeUnit by rememberSaveable { mutableStateOf(defaultVolumeUnit) }
@@ -462,7 +522,9 @@ fun QuickFillupScreen(
         ) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                 val fitsByHeight = maxWidth / maxHeight > captureAspectRatio
-                // Landscape: letterbox via fitsByHeight. Portrait camera expand to sides/B per 2026-06-28 screenshots.
+                // Landscape: keep proven letterbox path (user-accepted).
+                // Portrait: fill all of A; single-axis letterbox via FIT inside PreviewView/Image
+                // (avoids stacked 4:3 box + FIT that left broad black on three sides).
                 val contentModifier = if (isLandscape) {
                     if (fitsByHeight) {
                         Modifier.fillMaxHeight().aspectRatio(captureAspectRatio)
@@ -470,22 +532,27 @@ fun QuickFillupScreen(
                         Modifier.fillMaxWidth().aspectRatio(captureAspectRatio)
                     }
                 } else {
-                    Modifier.fillMaxWidth().aspectRatio(captureAspectRatio)
+                    Modifier.fillMaxSize()
                 }
                 val contentWidth = if (isLandscape) {
                     if (fitsByHeight) maxHeight * captureAspectRatio else maxWidth
                 } else {
-                    maxWidth
+                    // Active FIT area size (for zoom blank placement), not the full A box.
+                    if (fitsByHeight) maxHeight * captureAspectRatio else maxWidth
                 }
                 val contentHeight = if (isLandscape) {
                     if (fitsByHeight) maxHeight else maxWidth / captureAspectRatio
                 } else {
-                    (maxWidth / captureAspectRatio).coerceAtMost(maxHeight)
+                    if (fitsByHeight) maxHeight else maxWidth / captureAspectRatio
                 }
-                val hasRightBlank = isLandscape && contentWidth < maxWidth - 1.dp
+                val hasRightBlank = contentWidth < maxWidth - 1.dp
                 val hasBottomBlank = contentHeight < maxHeight - 1.dp
 
-                Box(modifier = contentModifier.align(Alignment.BottomCenter)) {
+                Box(
+                    modifier = contentModifier.align(
+                        if (isLandscape) Alignment.BottomCenter else Alignment.Center
+                    )
+                ) {
                     cameraOrCropArea()
                 }
 
@@ -552,49 +619,85 @@ fun QuickFillupScreen(
         val hasAnyData = odometer.isNotBlank() || cost.isNotBlank() || gallons.isNotBlank()
         val canSave = hasAnyData && selectedVehicleId != null && !isProcessing && !isPhotoSaving
 
-        Button(
-            onClick = {
-                selectedVehicleId?.let { vehicleId ->
-                    val rawVolume = gallons.toDoubleOrNull() ?: 0.0
-                    val saveVolume = if (rawVolume == 0.0) {
-                        0.0
-                    } else {
-                        convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
-                    }
-                    // TODO future: persist non-default currency on FuelEntry (DB change later).
-                    // Cost uses raw numeric value; currencySymbol is display-only this turn.
-                    fuelViewModel.saveFuel(
-                        FuelEntry(
-                            vehicleId = vehicleId,
-                            odometer = odometer.toIntOrNull() ?: 0,
-                            gallons = saveVolume,
-                            cost = cost.toDoubleOrNull() ?: 0.0,
-                            timestamp = System.currentTimeMillis(),
-                            photoUrl = photoUrl,
-                            latitude = lat,
-                            longitude = lon,
-                            location = loc
-                        )
-                    )
-                    NativePaddleEngine.releaseAllOdoBuffers()
-                    NativePaddleEngine.bufferSetA.unborrow()
-                    NativePaddleEngine.bufferSetA.clearCrops()
-                    // Reset buffer to 4:3 full-sensor size after save
-                    NativePaddleEngine.bufferSetA.resize(4000, 3072)
-                    val oldBmp = displayBitmap
-                    displayBitmap = null
-                    oldBmp?.let {
-                        if (!it.isRecycled) {
-                            it.recycle()
-                        }
-                    }
-                    navController.popBackStack()
-                }
-            },
-            enabled = canSave,
-            modifier = modifier
+        Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(Icons.Filled.Save, contentDescription = "Save")
+            photoSaveStatus?.let { status ->
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isPhotoSaving) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Button(
+                onClick = {
+                    selectedVehicleId?.let { vehicleId ->
+                        val odoTrim = odometer.trim()
+                        val costTrim = cost.trim()
+                        val galTrim = gallons.trim()
+                        // Auto partial: any of odo/cost/gallons blank after trim.
+                        val isPartialFill = odoTrim.isBlank() || costTrim.isBlank() || galTrim.isBlank()
+                        val rawVolume = galTrim.toDoubleOrNull() ?: 0.0
+                        val saveVolume = if (rawVolume == 0.0) {
+                            0.0
+                        } else {
+                            convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
+                        }
+                        // TODO future: persist non-default currency on FuelEntry (DB change later).
+                        // Cost uses raw numeric value; currencySymbol is display-only this turn.
+                        val photoUrlJson = sessionPhotosToJson(sessionPhotos)
+                        fuelViewModel.saveFuel(
+                            FuelEntry(
+                                vehicleId = vehicleId,
+                                odometer = odoTrim.toIntOrNull() ?: 0,
+                                gallons = saveVolume,
+                                cost = costTrim.toDoubleOrNull() ?: 0.0,
+                                timestamp = System.currentTimeMillis(),
+                                photoUrl = photoUrlJson,
+                                latitude = lat,
+                                longitude = lon,
+                                location = loc,
+                                isPartialFill = isPartialFill
+                            )
+                        )
+                        NativePaddleEngine.releaseAllOdoBuffers()
+                        NativePaddleEngine.bufferSetA.unborrow()
+                        NativePaddleEngine.bufferSetA.clearCrops()
+                        // Reset buffer to 4:3 full-sensor size after save
+                        NativePaddleEngine.bufferSetA.resize(4000, 3072)
+                        val oldBmp = displayBitmap
+                        displayBitmap = null
+                        oldBmp?.let {
+                            if (!it.isRecycled) {
+                                it.recycle()
+                            }
+                        }
+                        // Stay on Quick Fill for back-to-back fills: blank fields + live camera.
+                        odometer = ""
+                        cost = ""
+                        gallons = ""
+                        sessionPhotos.clear()
+                        photoSaveStatus = null
+                        capturePending = false
+                        captureViewState = CaptureViewState.Live
+                        Toast.makeText(
+                            context,
+                            if (isPartialFill) "Partial fill-up saved" else "Fill-up saved",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                },
+                enabled = canSave,
+            ) {
+                Icon(Icons.Filled.Save, contentDescription = "Save")
+            }
         }
     }
 
@@ -845,8 +948,10 @@ fun QuickFillupScreen(
         lastCaptureType = captureMode
         captureViewState = CaptureViewState.Processing
         capturePending = true
-        photoUrl = null
-        
+        // Do not clear other tags' session photos on shutter; re-shot tag is replaced on success.
+        photoSaveStatus = null
+        val photoTag = photoTagForCaptureMode(captureMode)
+
         val playSound = prefs.getBoolean("shutter_sounds", true)
         if (playSound) {
             try {
@@ -856,8 +961,11 @@ fun QuickFillupScreen(
             }
         }
 
-        if (saveFuelPhotos) {
+        // Live prefs each shutter so Settings toggle applies same session.
+        val saveFuelPhotosNow = prefs.getBoolean("save_fuel_photos", true)
+        if (saveFuelPhotosNow) {
             isPhotoSaving = true
+            photoSaveStatus = "Saving photo…"
             try {
                 val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                     context.display
@@ -871,37 +979,91 @@ fun QuickFillupScreen(
                 Log.e("QuickFill", "Failed to set target rotation", e)
             }
 
-            val resolver = context.contentResolver
-            val contentValues = android.content.ContentValues().apply {
-                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
-                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DCIM + "/Camera")
+            try {
+                val resolver = context.contentResolver
+                val contentValues = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "fuel_${System.currentTimeMillis()}.jpg")
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        put(
+                            android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                            android.os.Environment.DIRECTORY_DCIM + "/Camera"
+                        )
+                    }
                 }
+
+                val outputOptions = ImageCapture.OutputFileOptions.Builder(
+                    resolver,
+                    android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    contentValues
+                ).build()
+
+                imageCapture.takePicture(
+                    outputOptions,
+                    ContextCompat.getMainExecutor(context),
+                    object : ImageCapture.OnImageSavedCallback {
+                        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                            val savedUri = output.savedUri
+                            android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
+                            if (savedUri == null) {
+                                photoSaveStatus = "Photo save failed — entry will have no photo"
+                                Toast.makeText(
+                                    context,
+                                    "Could not save fuel photo to Camera roll: missing MediaStore URI",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                sessionPhotos[photoTag] = SessionPhoto(
+                                    uri = savedUri.toString(),
+                                    ts = System.currentTimeMillis()
+                                )
+                                photoSaveStatus = null
+                                Toast.makeText(context, "Photo saved to Camera", Toast.LENGTH_SHORT).show()
+                            }
+                            isPhotoSaving = false
+                        }
+                        override fun onError(exception: ImageCaptureException) {
+                            android.util.Log.e("QuickFill", "Photo capture failed", exception)
+                            // Optional reliability: one fallback JPEG encode of last analysis/display frame.
+                            val fallbackBmp = displayBitmap
+                            val fallbackUri = if (fallbackBmp != null && !fallbackBmp.isRecycled) {
+                                saveBitmapToDcimCamera(context, fallbackBmp)
+                            } else {
+                                null
+                            }
+                            if (fallbackUri != null) {
+                                sessionPhotos[photoTag] = SessionPhoto(
+                                    uri = fallbackUri.toString(),
+                                    ts = System.currentTimeMillis()
+                                )
+                                photoSaveStatus = null
+                                Toast.makeText(
+                                    context,
+                                    "Photo saved to Camera (fallback frame)",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                photoSaveStatus = "Photo save failed — entry will have no photo"
+                                Toast.makeText(
+                                    context,
+                                    "Could not save fuel photo to Camera roll: ${exception.message ?: exception}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            isPhotoSaving = false
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("QuickFill", "Photo takePicture setup failed", e)
+                photoSaveStatus = "Photo save failed — entry will have no photo"
+                isPhotoSaving = false
+                Toast.makeText(
+                    context,
+                    "Could not save fuel photo to Camera roll: ${e.message ?: e}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
-
-            val outputOptions = ImageCapture.OutputFileOptions.Builder(
-                resolver,
-                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                contentValues
-            ).build()
-
-            imageCapture.takePicture(
-                outputOptions,
-                ContextCompat.getMainExecutor(context),
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                        val savedUri = output.savedUri
-                        android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
-                        photoUrl = savedUri?.toString()
-                        isPhotoSaving = false
-                    }
-                    override fun onError(exception: ImageCaptureException) {
-                        android.util.Log.e("QuickFill", "Photo capture failed", exception)
-                        isPhotoSaving = false
-                    }
-                }
-            )
         }
     }
 

@@ -32,6 +32,13 @@ object DatabaseModule {
         }
     }
 
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE expense_entries ADD COLUMN odometer INTEGER")
+            db.execSQL("ALTER TABLE expense_entries ADD COLUMN vendor TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -40,7 +47,7 @@ object DatabaseModule {
             AppDatabase::class.java,
             "vehicle_expenses.db"
         )
-        .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
+        .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
         .fallbackToDestructiveMigration(true)
         .build()
     }
