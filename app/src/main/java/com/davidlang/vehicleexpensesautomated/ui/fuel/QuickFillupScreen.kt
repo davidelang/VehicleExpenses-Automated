@@ -613,7 +613,12 @@ fun QuickFillupScreen(
             Button(
                 onClick = {
                     selectedVehicleId?.let { vehicleId ->
-                        val rawVolume = gallons.toDoubleOrNull() ?: 0.0
+                        val odoTrim = odometer.trim()
+                        val costTrim = cost.trim()
+                        val galTrim = gallons.trim()
+                        // Auto partial: any of odo/cost/gallons blank after trim.
+                        val isPartialFill = odoTrim.isBlank() || costTrim.isBlank() || galTrim.isBlank()
+                        val rawVolume = galTrim.toDoubleOrNull() ?: 0.0
                         val saveVolume = if (rawVolume == 0.0) {
                             0.0
                         } else {
@@ -624,14 +629,15 @@ fun QuickFillupScreen(
                         fuelViewModel.saveFuel(
                             FuelEntry(
                                 vehicleId = vehicleId,
-                                odometer = odometer.toIntOrNull() ?: 0,
+                                odometer = odoTrim.toIntOrNull() ?: 0,
                                 gallons = saveVolume,
-                                cost = cost.toDoubleOrNull() ?: 0.0,
+                                cost = costTrim.toDoubleOrNull() ?: 0.0,
                                 timestamp = System.currentTimeMillis(),
                                 photoUrl = photoUrl,
                                 latitude = lat,
                                 longitude = lon,
-                                location = loc
+                                location = loc,
+                                isPartialFill = isPartialFill
                             )
                         )
                         NativePaddleEngine.releaseAllOdoBuffers()
@@ -646,7 +652,19 @@ fun QuickFillupScreen(
                                 it.recycle()
                             }
                         }
-                        navController.popBackStack()
+                        // Stay on Quick Fill for back-to-back fills: blank fields + live camera.
+                        odometer = ""
+                        cost = ""
+                        gallons = ""
+                        photoUrl = null
+                        photoSaveStatus = null
+                        capturePending = false
+                        captureViewState = CaptureViewState.Live
+                        Toast.makeText(
+                            context,
+                            if (isPartialFill) "Partial fill-up saved" else "Fill-up saved",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 },
                 enabled = canSave,
