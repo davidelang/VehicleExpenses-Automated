@@ -288,3 +288,11 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Plan: dev-ai-interaction/plans/reports-summary-compact-and-by-vehicle-last5-only-20260710-plan.md
 - Compact Summary (overall + vehicle stats); By vehicle = last-5 full fills only
 - Baseline: operational-improvements/builds @ b942548d
+
+## 2026-07-10 - Execution complete: reports-summary-compact-and-by-vehicle-last5-only
+
+- Plan: dev-ai-interaction/plans/reports-summary-compact-and-by-vehicle-last5-only-20260710-plan.md
+- Summary card: overall 1 dense line + per-vehicle 1-line stats (width-aware)
+- Last 5 full fills section: name + rows only (no Fuel/Gal/MPG/$/mi in cards)
+- MPG helpers unchanged (interim gallons)
+- Commit 22ff13b3; builds tag operational-improvements/builds
