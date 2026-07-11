@@ -441,3 +441,13 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Plan: fix-deferred-pr-review-d1-d6-20260711-plan.md
 - D1 Sheets/CSV parity; D2 preferred volume units; D3 $/mi docs; D4 edit flash; D5 await save; D6 permission sequence
 - Baseline: operational-improvements/builds @ e2e0985f
+
+## 2026-07-11 - Execution end: fix-deferred-pr-review-d1-d6
+
+- Plan: fix-deferred-pr-review-d1-d6-20260711-plan.md
+- D1: Sheets expense/fuel column parity with CSV (771ceeae); CSV already had vendor/odo/photoUrl
+- D2: VolumeUnits helper; preferred-unit storage KDoc; Settings lock; Reports/FuelList labels (2d04d572)
+- D3: dollarsPerMile KDoc + docs/reference/REPORTS_METRICS.md (32f43159)
+- D4/D5: key(expenseId) body; suspend save + isSaving (e8c8cf60)
+- D6: camera then media permission sequence (8c52b240)
+- Builds tag: operational-improvements/builds @ 8c52b240f2a5e18ed60d55a0c865a2e16d1f6b59
