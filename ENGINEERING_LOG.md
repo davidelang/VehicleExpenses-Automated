@@ -230,3 +230,14 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Updated `docs/specs/HOST_PADDLE_USE.md`, `PADDLE_BUILD.md`, `PADDLE_PR_DESCRIPTIONS.md`.
 - Added `PROBLEM_IMAGES_UINT8_U8` (26-image regression/gain set) + Problem Images button on pump experiment screen.
 - Merge hygiene: ENGINEERING_LOG append-only import; TODO smart union; `project-facts.md` full rewrite; fork-drift files reconciled to master (LandmarkDebugDialog, gradle.properties, OdometerOcrUtils, ManageVehiclesScreen).
+
+## 2026-07-11 - Merge operational-improvements into master
+
+- Merged branch `operational-improvements` (12 logical commits from `9aac4d0d`); int8 paddle stack on master preserved.
+- **Quick Fill:** media permission (camera then media); loud photo save failures; multi-photo JSON (`dash`/`pump`) on save; auto `isPartialFill`; clear fields after save; portrait camera panel A.
+- **Reports:** per-vehicle summary with interim-gallon MPG legs; last-5 full fills; expense totals/categories; `docs/reference/REPORTS_METRICS.md`.
+- **Expenses:** vehicle dropdown; QuickFill-style camera/zoom; DB v8 `vendor`+`odometer`; list→edit `expense/{id}`; zoom-pan photo; metadata preserved on edit.
+- **Assets/docs:** lightened launcher icon safe-zone padding; `docs/reference/APP_LAUNCHER_ICON.md`.
+- **Review fixes:** CSV quote/escape + parse; Sheets column parity; `VolumeUnits.kt` preferred-unit storage + Settings lock; edit flash/save await; permission sequencing.
+- Merge hygiene: ENGINEERING_LOG append; TODO smart union; `project-facts.md` full rewrite.
+- Manual device testing deferred to user post-merge.
