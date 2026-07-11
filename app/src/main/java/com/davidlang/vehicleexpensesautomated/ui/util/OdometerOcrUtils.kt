@@ -678,6 +678,9 @@ object OdometerOcrUtils {
         mat.convertTo(mat, CvType.CV_8U, alpha, beta)
     }
 
+    /**
+     * Non-mutating clip-stretch bounds from automaticContrastStretch peak-finding (robust + 2% fallback).
+     */
     fun getClipStretchLowHigh(mat: Mat): Pair<Double, Double> {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
@@ -737,70 +740,14 @@ object OdometerOcrUtils {
         return intensityLow to intensityHigh
     }
 
-
     fun automaticContrastStretch(mat: Mat): FloatArray {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-
         val bins = FloatArray(64); hist.get(0, 0, bins)
-        val smoothed = FloatArray(64)
-        for (i in 0..63) {
-            val start = (i - 1).coerceAtLeast(0); val end = (i + 1).coerceAtMost(63)
-            smoothed[i] = (start..end).map { bins[it] }.average().toFloat()
-        }
-
-        val totalPixels = mat.rows() * mat.cols()
-        val dropOffThreshold = totalPixels * 0.003 // 0.3% drop-off requirement
-
-        // Find robust peak from left
-        var pLow = 0.5
-        for (i in 1..61) {
-            if (smoothed[i] > smoothed[i-1] && smoothed[i] >= smoothed[i+1]) {
-                // Potential peak. Check for drop-off to the right
-                var peakConfirmed = false
-                for (j in i+1..62) {
-                    if (smoothed[j] < smoothed[i] - dropOffThreshold) {
-                        peakConfirmed = true; break
-                    }
-                    if (smoothed[j] > smoothed[i]) break // Found a higher point, this wasn't the peak
-                }
-                if (peakConfirmed) { pLow = i.toDouble(); break }
-            }
-        }
-
-        // Find robust peak from right
-        var pHigh = 62.5
-        for (i in 62 downTo 2) {
-            if (smoothed[i] > smoothed[i+1] && smoothed[i] >= smoothed[i-1]) {
-                // Potential peak. Check for drop-off to the left
-                var peakConfirmed = false
-                for (j in i-1 downTo 1) {
-                    if (smoothed[j] < smoothed[i] - dropOffThreshold) {
-                        peakConfirmed = true; break
-                    }
-                    if (smoothed[j] > smoothed[i]) break // Found a higher point
-                }
-                if (peakConfirmed) { pHigh = i.toDouble(); break }
-            }
-        }
-
-        val intensityLow = pLow * 4.0
-        val intensityHigh = pHigh * 4.0
-
-        if (intensityHigh - intensityLow < 20.0) {
-            var iLow = 0.0; var iHigh = 255.0; var sum = 0.0
-            for (i in 0..63) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iLow = i * 4.0; break } }
-            sum = 0.0; for (i in 63 downTo 0) { sum += bins[i]; if (sum >= totalPixels * 0.02) { iHigh = i * 4.0; break } }
-            val alpha = if (iHigh > iLow) 255.0 / (iHigh - iLow) else 1.0
-            val beta = -iLow * alpha
-            mat.convertTo(mat, CvType.CV_8U, alpha, beta)
-        } else {
-            val alpha = 255.0 / (intensityHigh - intensityLow)
-            val beta = -intensityLow * alpha
-            mat.convertTo(mat, CvType.CV_8U, alpha, beta)
-        }
-
         hist.release()
+
+        val (intensityLow, intensityHigh) = getClipStretchLowHigh(mat)
+        applyContrastStretch(mat, intensityLow, intensityHigh)
         return bins
     }
 
@@ -889,6 +836,10 @@ object OdometerOcrUtils {
         return peakBins.distinct().sorted()
     }
 
+    /**
+     * Non-mutating valley/peak gray lists from histogram (same discovery as valleyPushToPeaks).
+     * Returns (valleyGrays, peakGrays); empty lists if insufficient valleys/peaks.
+     */
     fun getValleyPeakGrays(mat: Mat): Pair<List<Int>, List<Int>> {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
@@ -909,7 +860,9 @@ object OdometerOcrUtils {
         return valleyGrays to peakGrays
     }
 
-
+    /**
+     * Apply valley-push LUT using precomputed valley/peak grays. In-place mutate; returns before-bins.
+     */
     fun applyValleyPushWithGrays(mat: Mat, valleyGrays: List<Int>, peakGrays: List<Int>): FloatArray {
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
@@ -970,7 +923,6 @@ object OdometerOcrUtils {
         return bins
     }
 
-
     fun valleyPushToPeaks(mat: Mat): FloatArray {
         // New for Set C per approved plan: histogram valley centers -> push values outward to peaks.
         // Result: image with only a *small number* of brightness values (quantized to peaks/modes).
@@ -978,75 +930,14 @@ object OdometerOcrUtils {
         // In-place mutate like the stretch funcs. Returns before-bins (caller makes after-hist from mutated mat).
         val hist = Mat()
         Imgproc.calcHist(java.util.Collections.singletonList(mat), MatOfInt(0), Mat(), hist, MatOfInt(64), MatOfFloat(0f, 256f))
-
         val bins = FloatArray(64); hist.get(0, 0, bins)
+        hist.release()
 
-        val valleys = findValleyMidpoints(bins)  // centers of valleys (bin indices)
-
-        val totalPixels = mat.rows() * mat.cols().toDouble()
-        val peakList = findPeakBinsFromHistogram(bins, totalPixels)
-
-        if (peakList.size < 2 || valleys.isEmpty()) {
-            // fallback: no meaningful valleys/peaks -> identity (return bins, no mutate)
-            hist.release()
+        val (valleyGrays, peakGrays) = getValleyPeakGrays(mat)
+        if (peakGrays.size < 2 || valleyGrays.isEmpty()) {
             return bins
         }
-
-        // 256-entry LUT: push values out from valley centers until they hit a (nearest) peak gray.
-        // This collapses the image to a small number of distinct brightness values (the peaks).
-        val lut = IntArray(256)
-        val peakGrays = peakList.map { (it * 4 + 2).coerceIn(0, 255) }
-        val valleyGrays = valleys.map { (it * 4 + 2).coerceIn(0, 255) }
-
-        val minPeak = peakGrays.first().toDouble()
-        val maxPeak = peakGrays.last().toDouble()
-        val peakSpan = maxPeak - minPeak
-
-        for (g in 0..255) {
-            val closestValley = valleyGrays.minByOrNull { Math.abs(g - it) }
-            val targetPeak = if (closestValley != null) {
-                if (g < closestValley) {
-                    val leftPeaks = peakGrays.filter { it < closestValley }
-                    if (leftPeaks.isNotEmpty()) {
-                        leftPeaks.minByOrNull { Math.abs(g - it) }!!
-                    } else {
-                        peakGrays.first()
-                    }
-                } else {
-                    val rightPeaks = peakGrays.filter { it >= closestValley }
-                    if (rightPeaks.isNotEmpty()) {
-                        rightPeaks.minByOrNull { Math.abs(g - it) }!!
-                    } else {
-                        peakGrays.last()
-                    }
-                }
-            } else {
-                peakGrays.minByOrNull { Math.abs(g - it) }!!
-            }
-
-            val stretched = if (peakSpan > 0.0) {
-                Math.round((targetPeak - minPeak) * 255.0 / peakSpan).toInt().coerceIn(0, 255)
-            } else {
-                targetPeak
-            }
-            lut[g] = stretched
-        }
-
-        // In-place remap on the mat using native OpenCV LUT (CV_8U single channel assumed, consistent with callers)
-        val total = mat.total().toInt()
-        if (total > 0) {
-            val lutMat = org.opencv.core.Mat(1, 256, org.opencv.core.CvType.CV_8U)
-            val lutData = ByteArray(256)
-            for (g in 0..255) {
-                lutData[g] = (lut[g] and 0xFF).toByte()
-            }
-            lutMat.put(0, 0, lutData)
-            org.opencv.core.Core.LUT(mat, lutMat, mat)
-            lutMat.release()
-        }
-
-        hist.release()
-        return bins
+        return applyValleyPushWithGrays(mat, valleyGrays, peakGrays)
     }
 
     fun applyContrastStretch(bitmap: Bitmap, floorPercentile: Int): Bitmap {

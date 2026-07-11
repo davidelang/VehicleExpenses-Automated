@@ -26,9 +26,13 @@ When the user asks you to review a branch (e.g., "Please review PR-feature-x"):
     *   *Tip:* If you have doubts about the cleanup, you can inspect the messy original state via `git show backup-<branch-name>`.
 4.  **Strict Enforcement:** If you find unauthorized changes (proactivity), you MUST reject the merge and instruct the Branch Agent to revert and fix.
 5. **Merge Strategy Proposal:** Your proposed Integration Strategy MUST be exactly this (copy-paste):
-    - Merge `<branch-name>` into master with `--no-ff`.
+    - Run `python3 dev-ai-interaction/audit_merge.py <branch-name>` (divergence/overlap audit).
+    - Merge `<branch-name>` into master with `--no-ff` (temp worktree if `ENGINEERING_LOG.md` append-only blocks in-place merge).
+    - **ENGINEERING_LOG.md:** NOT a simple text merge. Extract substantive new entries from the branch log; append to current master via `./append-to-engineering-log @file.md` only. Never replace master's log with the branch file.
+    - **TODO.md:** NOT a simple text merge. Smart union — add branch new/changed items; preserve master's `# Future work`; drop ritual clutter and duplicates.
+    - **project-facts.md:** NOT a simple text merge. Read both sides; keep only verifiable stable facts still true post-merge; drop obsolete paths, branch/tag/hash garbage, and effort narrative; write a fresh consolidated file.
+    - Reconcile fork-drift files at hunk level (prefer current master unless change is clearly in-scope for the merged branch).
     - Run `./build_app` to verify compilation.
-    - Update `ENGINEERING_LOG.md`.
 
     **CRITICAL:** You are strictly forbidden from proposing or executing a `works` tag update. This tag is reserved for the User.
 
