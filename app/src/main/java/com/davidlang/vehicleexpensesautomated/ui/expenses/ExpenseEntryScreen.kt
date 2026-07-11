@@ -22,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlinx.coroutines.launch
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
@@ -54,9 +55,22 @@ fun ExpenseEntryScreen(
     navController: NavHostController? = null,
     expenseId: Long? = null
 ) {
+    // D4: reset all form state when switching create ↔ edit or edit id (no flash of prior expense).
+    key(expenseId ?: 0L) {
+        ExpenseEntryScreenBody(navController = navController, expenseId = expenseId)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExpenseEntryScreenBody(
+    navController: NavHostController? = null,
+    expenseId: Long? = null
+) {
     val viewModel: ExpenseViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val isEdit = expenseId != null && expenseId > 0
 
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
@@ -65,6 +79,7 @@ fun ExpenseEntryScreen(
     var loadedId by rememberSaveable { mutableStateOf<Long?>(null) }
     /** Full row from DB on edit — preserves metadata not shown in the form. */
     var loadedExpense by remember { mutableStateOf<ExpenseEntry?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
     val editLoadReady = !isEdit || (loadedExpense != null && loadedId == expenseId)
 
     val imageCapture: ImageCapture = remember {
@@ -140,6 +155,7 @@ fun ExpenseEntryScreen(
     }
 
     fun saveExpense() {
+        if (isSaving) return
         if (isEdit && !editLoadReady) {
             Toast.makeText(context, "Still loading expense…", Toast.LENGTH_SHORT).show()
             return
@@ -169,16 +185,30 @@ fun ExpenseEntryScreen(
             date = date,
             photoUrl = photoUrl
         )
-        viewModel.saveExpense(toSave)
-        Toast.makeText(
-            context,
-            if (isEdit) "Expense updated" else "Expense saved",
-            Toast.LENGTH_SHORT
-        ).show()
-        navController?.navigate("expenselist") {
-            popUpTo("expenselist") { inclusive = false }
-            launchSingleTop = true
-        } ?: navController?.popBackStack()
+        // D5: await persistence before navigate
+        scope.launch {
+            isSaving = true
+            try {
+                viewModel.saveExpense(toSave)
+                Toast.makeText(
+                    context,
+                    if (isEdit) "Expense updated" else "Expense saved",
+                    Toast.LENGTH_SHORT
+                ).show()
+                navController?.navigate("expenselist") {
+                    popUpTo("expenselist") { inclusive = false }
+                    launchSingleTop = true
+                } ?: navController?.popBackStack()
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    "Save failed: ${e.message ?: e}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                isSaving = false
+            }
+        }
     }
 
     fun takePicture() {
@@ -372,7 +402,7 @@ fun ExpenseEntryScreen(
         ) {
             IconButton(
                 onClick = { saveExpense() },
-                enabled = !isPhotoSaving && editLoadReady
+                enabled = !isPhotoSaving && !isSaving && editLoadReady
             ) {
                 Icon(
                     imageVector = ExpenseSaveIcon,
