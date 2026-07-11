@@ -24,4 +24,6 @@ class ExpenseViewModel @Inject constructor(
             expenseEntryRepository.saveEntry(entry)
         }
     }
+
+    suspend fun getExpenseById(id: Long): ExpenseEntry? = expenseEntryRepository.getById(id)
 }
