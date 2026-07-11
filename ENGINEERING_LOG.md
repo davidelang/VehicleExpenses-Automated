@@ -220,3 +220,192 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 
 - Expanded SET_G_VERT_FACTORS to 7 factors; G- to 5; G-- to [0.3, 1.2].
 - Aligned ExperimentPumpScreen regularGVert/DVert/EVert lists.
+
+## 2026-07-10 - Quick Fill / Reports research (planner, plan mode)
+
+- Plan (sandbox): `dev-ai-interaction/plans/quickfill-photos-partial-camera-reliability-20260710-plan.md` (F1–F5: media permission, photo save+photoUrl, auto partial+clear fields, portrait camera parity, reports per-vehicle summary).
+- Phone artifacts: portrait/landscape Quick Fill screenshots; Reports screenshot; DB pull under `dev-ai-interaction/research/quickfill-db-*` and `reports-screenshot-*`.
+- Photos: intended path DCIM/Camera/fuel_*; only one historical fuel_* (2026-06-26); July fills have null photoUrl; media permission never requested (CAMERA only).
+- Reports UI: totals OK ($383.94 / 95.8 gal / 11 fills); Avg MPG 583.8 is cross-vehicle nonsense; takeLast(5) on DESC list shows oldest not newest.
+- Landscape camera framing accepted as OK; portrait has large 3-side black bars — F4 is portrait-only parity.
+- Deferred (not this plan): fail-email package; Paddle native abort on dash retry (tombstone 2026-07-09 17:52).
+- Note: current-cycle narrative belongs in ENGINEERING_LOG via this wrapper; backlog-only items via `./todo-append` (not direct TODO.md edits for live work).
+
+## 2026-07-10 - Execution start: quickfill-photos-partial-camera-reliability
+
+- Plan: dev-ai-interaction/plans/quickfill-photos-partial-camera-reliability-20260710-plan.md
+- Features F1-F5: media permission, photo save+photoUrl, auto partial+clear fields, portrait camera, reports per-vehicle MPG
+- Baseline: no operational-improvements/builds tag yet (first successful build_app will create it)
+
+## 2026-07-10 - Execution complete: quickfill-photos-partial-camera-reliability
+
+- Plan: dev-ai-interaction/plans/quickfill-photos-partial-camera-reliability-20260710-plan.md
+- F1: media permission MainActivity + Settings (commit c624e424 + prior MainActivity)
+- F2: photo MediaStore errors/Toasts/photoUrl/status/fallback (1773500c)
+- F3: auto isPartialFill + clear fields, no pop (a077e886)
+- F4: portrait panel A fillMaxSize single FIT letterbox (53cd7cd6)
+- F5: per-vehicle MPG, take(5) newest, usable fields, single scroll (ab889a33 + 5d4f3d6b fix)
+- Builds tag: operational-improvements/builds @ 5d4f3d6b
+- Note: TODO.md not updated for live work (backlog only per user/mandates)
+
+## 2026-07-10 - Post-test DB check + remove Quick Fill test rows
+
+- User validated: multi-retry no crash; portrait camera size OK; partial odo-only + pump-only saves; fuel photos saving.
+- DB before cleanup: id 12 odo-only partial=1 photoUrl set; id 13 pump-only (cost+gal) partial=1 photoUrl null; ids 1-11 historical.
+- Partial auto-flag correct for new rows (isPartialFill=1 when any of odo/cost/gal blank).
+- Removed test rows id 12 and 13 from device `vehicle_expenses.db` (force-stop, rewrite DB via run-as, clear WAL). Verified 11 rows remain, max id 11.
+- Historical rows 5-8 still partial=0 with odo=0 (pre-fix data; not rewritten).
+
+## 2026-07-10 - DB cleanup after second Quick Fill photo test
+
+- Fetched post-test DB: id 14 full fill (odo 199397, gal 13.12, cost 52.34) partial=0 with single photoUrl media/1000002795.
+- Two fuel_ files on disk at 18:18: fuel_1783732682156 (media/1000002794) and fuel_1783732691966 (media/1000002795). Entry only stores one photoUrl (schema single field; last shutter wins).
+- Deleted id 14 from device DB.
+- Marked prior partials isPartialFill=1: ids 5-8 (odo was 0); id 1 and 9 (bogus odo 28 and 122 cleared to 0, partial=1).
+- Left full fills 2,3,4,10,11 partial=0. Device verified 11 rows, no id 14.
+
+## 2026-07-10 - Execution start: quickfill-multi-photo-json-and-reports-redesign
+
+- Plan: dev-ai-interaction/plans/quickfill-multi-photo-json-and-reports-redesign-20260710-plan.md
+- Feature A: session multi-photo JSON on Save (dash/pump)
+- Feature B: reports redesign last-5 full fills + per-vehicle summary
+- Baseline: operational-improvements/builds @ 40caac5e
+
+## 2026-07-10 - Execution complete: quickfill-multi-photo-json-and-reports-redesign
+
+- Plan: dev-ai-interaction/plans/quickfill-multi-photo-json-and-reports-redesign-20260710-plan.md
+- A: sessionPhotos map dash/pump; JSON on Save only; clear after save (33ac2b24)
+- B: reports overall + per-vehicle last-5 full fills (interim gallons MPG), $/mi, no $/gal bars (2a3e5b53)
+- Builds tag: operational-improvements/builds @ 2a3e5b53
+
+## 2026-07-10 - Verify multi-photo JSON test rows then delete
+
+- Fetched DB: ids 15 pump-only partial JSON [pump]; 16 dash-only partial JSON [dash]; 17 full both JSON [dash,pump] with distinct media URIs.
+- Verified tags/uris/ts present; removed ids 15–17 from device DB (11 historical rows remain).
+
+## 2026-07-10 - Execution start: reports-summary-compact-and-by-vehicle-last5-only
+
+- Plan: dev-ai-interaction/plans/reports-summary-compact-and-by-vehicle-last5-only-20260710-plan.md
+- Compact Summary (overall + vehicle stats); By vehicle = last-5 full fills only
+- Baseline: operational-improvements/builds @ b942548d
+
+## 2026-07-10 - Execution complete: reports-summary-compact-and-by-vehicle-last5-only
+
+- Plan: dev-ai-interaction/plans/reports-summary-compact-and-by-vehicle-last5-only-20260710-plan.md
+- Summary card: overall 1 dense line + per-vehicle 1-line stats (width-aware)
+- Last 5 full fills section: name + rows only (no Fuel/Gal/MPG/$/mi in cards)
+- MPG helpers unchanged (interim gallons)
+- Commit 22ff13b3; builds tag operational-improvements/builds
+
+## 2026-07-10 - Execution start: reports-summary name-line + last-5 legs rollup
+
+- Plan: dev-ai-interaction/plans/reports-summary-compact-and-by-vehicle-last5-only-20260710-plan.md (updated)
+- Vehicle summary: name alone then stats 1–2 lines
+- Last-5: newest legs only with valid mpg + rolled cost/vol
+- Baseline: operational-improvements/builds @ 947e3783
+
+## 2026-07-10 - Execution complete: reports name-line summary + last-5 leg rollup
+
+- Plan: reports-summary-compact-and-by-vehicle-last5-only-20260710-plan.md
+- Summary: vehicle name line + adaptive stats 1–2 lines (middot split)
+- Last-5: newest valid legs only; rolled sumCost/sumVol; always mpg+bar; no first-full n/a
+- Commit 4d7fb9ad
+
+## 2026-07-10 - Remove duplicate Honda full fill
+
+- Deleted fuel_entries id 4 (duplicate of id 3: same odo 202071, gal 5.372, cost 25.03, ~8s later). Kept id 3.
+- Honda fulls remaining: 201973, 202071, 202589 (still 2 valid last-5 legs).
+
+## 2026-07-10 - Execution start: expense-entry-vehicle-dropdown-and-quickfill-camera
+
+- Plan: dev-ai-interaction/plans/expense-entry-vehicle-dropdown-and-quickfill-camera-20260710-plan.md
+- A: vehicle dropdown; B: camera/zoom/shutter/save/gallery icons
+- Baseline: operational-improvements/builds @ 8cb3260a
+
+## 2026-07-10 - Execution complete: expense-entry-vehicle-dropdown-and-quickfill-camera
+
+- Plan: expense-entry-vehicle-dropdown-and-quickfill-camera-20260710-plan.md
+- A: vehicle ExposedDropdownMenu (658de92a)
+- B: CameraPreview + zoom + MediaStore shutter + Save/Gallery icons, no OCR (2e21041c)
+- Builds: operational-improvements/builds @ 2e21041c
+
+## 2026-07-10 - Clear photo on expense id 1
+
+- expense_entries id 1 (Honda, \$800 repair starter): set photoUrl=NULL, receiptImagePath=NULL. Gallery media 1000002802 left on disk unless user deletes separately.
+
+## 2026-07-10 - Execution: expense plan delta (optional photo on save)
+
+- Plan: expense-entry-vehicle-dropdown-and-quickfill-camera-20260710-plan.md (updated: photoUrl optional)
+- A/B already landed 658de92a/2e21041c; delta: allow save without photo
+
+## 2026-07-10 - App icon lightened master → Android densities (export ready)
+
+- Source: dev-ai-interaction/research/imagine-icon-candidate/app-icon-master-1024.png (pale yellow car, pale blue van, white glass).
+- Generated full density set + round masks + adaptive foregrounds + 512 playstore PNGs + #FAFAFA adaptive background into android-export/.
+- Could not write into agent-7/app (ai-planner lacks write on dlang:ai-code res files). Install: bash android-export/install-into-app.sh <worktree> as a writable user, or execution agent after perms.
+
+## 2026-07-10 - Execution: install lightened app icon
+
+- Plan: install-lightened-app-icon-from-master-20260710-plan.md
+- install-into-app.sh already applied (user); verify sizes + build_app commit
+- Baseline: operational-improvements/builds @ 104bfd08
+
+## 2026-07-10 - Keep icon Imagine link and masters for reference
+
+- Retained: Imagine post https://grok.com/imagine/post/c2fefde0-449d-4795-b48a-8f4d96cd0b8c
+- Masters + export: dev-ai-interaction/research/imagine-icon-candidate/ (README.md documents link, masters, install).
+- project-facts.md pointer added to that research path.
+
+## 2026-07-10 - Docs file for launcher icon (draft + plan; docs/ not writable)
+
+- Draft full doc: dev-ai-interaction/research/imagine-icon-candidate/docs-APP_LAUNCHER_ICON.md
+- Plan for execution agent to copy to docs/reference/APP_LAUNCHER_ICON.md: dev-ai-interaction/plans/add-docs-app-launcher-icon-20260710-plan.md
+- Planner cannot write worktree docs/ (permission denied).
+
+## 2026-07-10 - Execution: add docs APP_LAUNCHER_ICON
+
+- Plan: add-docs-app-launcher-icon-20260710-plan.md
+- Copy draft → docs/reference/APP_LAUNCHER_ICON.md + build_app
+- Baseline: operational-improvements/builds @ c8357785
+
+## 2026-07-10 - Launcher icon crop too tight on device
+
+- Screenshot: home/search shows VehicleExpenses adaptive icon over-cropped (mostly yellow car; van/wheel/$ cut off).
+- Cause: full-bleed master used as adaptive FG; system mask shows ~center only.
+- Rebuilt android-export with ~70% safe-zone scale + padding. Re-install via install-into-app.sh when writable; rebuild APK to verify.
+
+## 2026-07-10 - Execution start: install lightened app icon safe-zone
+
+- Plan: dev-ai-interaction/plans/install-lightened-app-icon-safe-zone-20260710-plan.md
+- Intent: install adaptive safe-zone padded lightened launcher icon export into app/
+- Baseline: operational-improvements/builds @ 2b25b1b6f300cea95c04f2aa3b600ec15f7650eb
+
+## 2026-07-10 - Execution end: install lightened app icon safe-zone
+
+- Safe-zone padded lightened launcher mipmaps installed from android-export (match export SHA)
+- Full/round/foreground densities mdpi–xxxhdpi; sizes FG 432 / full 192 OK
+- Playstore/background already matched prior lightened install (no further delta)
+- Commit c6dc894d; builds tag: operational-improvements/builds @ c6dc894dbdaee551c0631025e22eacef20b3afad
+- User: reinstall APK / clear launcher cache to verify van, wheel, $ inside circular mask
+
+## 2026-07-10 - Execution start: expense-edit-date-photo-viewer
+
+- Plan: dev-ai-interaction/plans/expense-edit-date-photo-viewer-20260710-plan.md
+- Schema vendor+odometer; list/edit nav; date UI; zoom-pan; reports Exp/categories
+- Baseline: operational-improvements/builds @ 62fa444d
+
+## 2026-07-10 - Execution end: expense-edit-date-photo-viewer
+
+- Plan: expense-edit-date-photo-viewer-20260710-plan.md
+- DB v8: vendor + odometer; getById (b17dc5d8)
+- List vehicle/date/vendor + nav expense/{id} (b1735d24)
+- Entry create/edit, date, vendor/description, zoom-pan photo (05293155)
+- Reports per-vehicle Exp + categories (270d1b7f/d855c76e)
+- Builds tag: operational-improvements/builds @ d855c76e2bdd059d59c11875dc7784a51935e3db
+
+## 2026-07-10 - History cleanup + PR for operational-improvements
+
+- Backup tag: backup-operational-improvements @ d681633d (pre-squash messy history).
+- Squashed ~29 commits → 5 logical: quickfill; reports; expense; assets+docs; eng log.
+- Cleaned HEAD: 8cbcc645. PR doc: dev-ai-interaction/PRs/PR-operational-improvements.md
+- User: master agent "Please review PR-operational-improvements". Dirty jniLibs/gradlew left unstaged.
