@@ -328,3 +328,12 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - A: vehicle ExposedDropdownMenu (658de92a)
 - B: CameraPreview + zoom + MediaStore shutter + Save/Gallery icons, no OCR (2e21041c)
 - Builds: operational-improvements/builds @ 2e21041c
+
+## 2026-07-10 - Clear photo on expense id 1
+
+- expense_entries id 1 (Honda, \$800 repair starter): set photoUrl=NULL, receiptImagePath=NULL. Gallery media 1000002802 left on disk unless user deletes separately.
+
+## 2026-07-10 - Execution: expense plan delta (optional photo on save)
+
+- Plan: expense-entry-vehicle-dropdown-and-quickfill-camera-20260710-plan.md (updated: photoUrl optional)
+- A/B already landed 658de92a/2e21041c; delta: allow save without photo

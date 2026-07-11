@@ -91,10 +91,7 @@ fun ExpenseEntryScreen(navController: NavHostController? = null) {
             Toast.makeText(context, "Select a vehicle", Toast.LENGTH_SHORT).show()
             return
         }
-        if (photoUrl == null) {
-            Toast.makeText(context, "Take or pick a photo first", Toast.LENGTH_SHORT).show()
-            return
-        }
+        // photoUrl is optional — save works with or without a photo.
         val amountVal = amount.toDoubleOrNull() ?: 0.0
         viewModel.saveExpense(
             ExpenseEntry(
