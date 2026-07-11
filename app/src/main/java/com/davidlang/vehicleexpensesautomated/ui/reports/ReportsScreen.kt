@@ -106,7 +106,10 @@ private data class VehicleReportStats(
     val avgMpg: Double?,
     val dollarsPerMile: Double?,
     /** Up to 5 newest valid full-fill legs (each always has mpg). */
-    val last5Legs: List<FullFillLeg>
+    val last5Legs: List<FullFillLeg>,
+    val expenseTotal: Double,
+    /** Category → sum amount for this vehicle. */
+    val expensesByCategory: Map<String, Double>
 )
 
 private fun formatMpg(value: Double?): String {
@@ -143,6 +146,17 @@ private fun vehicleStatsOnlyLine(stats: VehicleReportStats, unitLabel: String): 
         "${"%.1f".format(stats.gallons)}$unitLabel · " +
         "${stats.fillCount}(${stats.partialCount}p) · " +
         "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · $/mi $dpm"
+}
+
+/** Exp total + category breakdown (compact). */
+private fun vehicleExpenseSummaryLine(stats: VehicleReportStats): String {
+    if (stats.expensesByCategory.isEmpty()) {
+        return "Exp ${formatMoney(stats.expenseTotal)}"
+    }
+    val cats = stats.expensesByCategory.entries
+        .sortedByDescending { it.value }
+        .joinToString(" · ") { (cat, amt) -> "${cat.ifBlank { "Other" }} ${formatMoney(amt)}" }
+    return "Exp ${formatMoney(stats.expenseTotal)} · $cats"
 }
 
 /** Split stats at middot boundaries into two roughly equal parts. */
@@ -203,7 +217,10 @@ fun ReportsScreen(navController: NavHostController) {
                 lastMpg = legsChrono.lastOrNull()?.mpg,
                 avgMpg = if (legsChrono.isEmpty()) null else legsChrono.map { it.mpg }.average(),
                 dollarsPerMile = dollarsPerMile(vFuel, vExp),
-                last5Legs = allLegsNewestFirst.take(5)
+                last5Legs = allLegsNewestFirst.take(5),
+                expenseTotal = vExp.sumOf { it.amount },
+                expensesByCategory = vExp.groupBy { it.category.ifBlank { "Other" } }
+                    .mapValues { (_, list) -> list.sumOf { it.amount } }
             )
         }
     }
@@ -364,10 +381,15 @@ private fun VehicleSummaryBlock(
     modifier: Modifier = Modifier
 ) {
     val statsLine = vehicleStatsOnlyLine(stats, unitLabel)
+    val expLine = vehicleExpenseSummaryLine(stats)
     Column(modifier = modifier) {
         Text(stats.name, style = MaterialTheme.typography.titleSmall)
         AdaptiveStatsText(
             statsLine = statsLine,
+            modifier = Modifier.fillMaxWidth()
+        )
+        AdaptiveStatsText(
+            statsLine = expLine,
             modifier = Modifier.fillMaxWidth()
         )
     }
