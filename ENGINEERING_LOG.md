@@ -393,3 +393,12 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Plan: dev-ai-interaction/plans/expense-edit-date-photo-viewer-20260710-plan.md
 - Schema vendor+odometer; list/edit nav; date UI; zoom-pan; reports Exp/categories
 - Baseline: operational-improvements/builds @ 62fa444d
+
+## 2026-07-10 - Execution end: expense-edit-date-photo-viewer
+
+- Plan: expense-edit-date-photo-viewer-20260710-plan.md
+- DB v8: vendor + odometer; getById (b17dc5d8)
+- List vehicle/date/vendor + nav expense/{id} (b1735d24)
+- Entry create/edit, date, vendor/description, zoom-pan photo (05293155)
+- Reports per-vehicle Exp + categories (270d1b7f/d855c76e)
+- Builds tag: operational-improvements/builds @ d855c76e2bdd059d59c11875dc7784a51935e3db
