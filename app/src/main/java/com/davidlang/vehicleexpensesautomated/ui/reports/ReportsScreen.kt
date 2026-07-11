@@ -182,10 +182,11 @@ fun ReportsScreen(navController: NavHostController) {
     val fuelEntries by fuelViewModel.fuelEntries.collectAsState()
     val vehicles by vehicleViewModel.vehicles.collectAsState()
 
+    // DB volumes are already in preferred unit — label only, no reconversion.
     val volumeUnitLabel = remember {
-        val prefs = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
-        val u = prefs.getString("volume_unit", "G") ?: "G"
-        if (u == "L") "L" else "G"
+        com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.shortLabel(
+            com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.resolvedPreferredVolumeUnit(context)
+        )
     }
 
     val vehicleNameById = remember(vehicles) {

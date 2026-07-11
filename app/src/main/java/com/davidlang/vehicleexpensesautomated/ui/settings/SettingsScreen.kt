@@ -20,7 +20,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import kotlinx.coroutines.launch
 
 private fun mediaImagesPermission(): String {
@@ -42,6 +44,9 @@ fun SettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val viewModel: SettingsViewModel = hiltViewModel()
+    val fuelViewModel: FuelViewModel = hiltViewModel()
+    val fuelEntries by fuelViewModel.fuelEntries.collectAsState(initial = emptyList())
+    val hasFuelData = fuelEntries.isNotEmpty()
     val csvManager = viewModel.csvManager
     val photoStorageManager = viewModel.photoStorageManager
     val scope = rememberCoroutineScope()
@@ -152,12 +157,28 @@ fun SettingsScreen() {
                 modifier = Modifier.weight(1f).padding(end = 8.dp)
             )
             Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                DropdownSetting(
-                    label = "Default Unit",
-                    selectedValue = if (volumeUnit == "G") "Gallons (G)" else "Liters (L)",
-                    options = listOf("Gallons (G)", "Liters (L)"),
-                    onValueChange = { volumeUnit = if (it.startsWith("Gallons")) "G" else "L" }
-                )
+                // Fuel DB stores volume in preferred unit; changing unit does not convert rows.
+                if (hasFuelData) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                        Text("Default Unit", style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            if (volumeUnit == VolumeUnits.LITERS) "Liters (L) — locked" else "Gallons (G) — locked",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "Unit locked after fuel data exists (values stay in preferred unit).",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    DropdownSetting(
+                        label = "Default Unit",
+                        selectedValue = if (volumeUnit == "G") "Gallons (G)" else "Liters (L)",
+                        options = listOf("Gallons (G)", "Liters (L)"),
+                        onValueChange = { volumeUnit = if (it.startsWith("Gallons")) "G" else "L" }
+                    )
+                }
             }
         }
 
