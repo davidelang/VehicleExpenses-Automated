@@ -23,7 +23,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// --- Math helpers ---
+// --- Math helpers (unchanged: interim-gallon legs) ---
 
 /** Full fill points: not partial, odometer > 0 (time-sorted ascending). */
 private fun fullFillsAscending(entries: List<FuelEntry>): List<FuelEntry> {
@@ -98,7 +98,6 @@ private data class VehicleReportStats(
     val avgMpg: Double?,
     val dollarsPerMile: Double?,
     val last5Full: List<FuelEntry>,
-    /** Leg MPG ending at each last-5 full fill id. */
     val mpgByEntryId: Map<Long, Double?>
 )
 
@@ -116,7 +115,30 @@ private fun formatVolume(gallons: Double, unitLabel: String): String {
     return "%.2f%s".format(gallons, unitLabel)
 }
 
+/** Overall summary: 1 dense line (wraps naturally if narrow). No $/gal. */
+private fun overallSummaryLine(
+    totalExpenses: Double,
+    totalFuelCost: Double,
+    totalGallons: Double,
+    unitLabel: String,
+    totalFillUps: Int,
+    partialFills: Int
+): String {
+    return "Exp ${formatMoney(totalExpenses)} · Fuel ${formatMoney(totalFuelCost)} · " +
+        "${"%.1f".format(totalGallons)}$unitLabel · fills $totalFillUps (${partialFills}p)"
+}
+
+/** Per-vehicle compact summary: 1 line preferred. */
+private fun vehicleSummaryLine(stats: VehicleReportStats, unitLabel: String): String {
+    val dpm = if (stats.dollarsPerMile == null) "n/a" else "%.3f".format(stats.dollarsPerMile)
+    return "${stats.name}: Fuel ${formatMoney(stats.fuelCost)} · " +
+        "${"%.1f".format(stats.gallons)}$unitLabel · " +
+        "${stats.fillCount}(${stats.partialCount}p) · " +
+        "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · $/mi $dpm"
+}
+
 private val vehicleColMinWidth = 156.dp
+private val vehicleSummaryMinWidth = 200.dp
 private val vehicleColMaxHeight = 280.dp
 
 @Composable
@@ -189,19 +211,73 @@ fun ReportsScreen(navController: NavHostController) {
         Text("Reports", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(12.dp))
 
+        // --- Summary: overall + per-vehicle stats (compact); no fill lists here ---
         Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("Overall", style = MaterialTheme.typography.titleMedium)
-                Text("Expenses: ${formatMoney(totalExpenses)}")
-                Text("Fuel: ${formatMoney(totalFuelCost)}")
-                Text("Gallons: ${"%.1f".format(totalGallons)}")
-                Text("Fills: $totalFillUps ($partialFills partial)")
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("Summary", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    overallSummaryLine(
+                        totalExpenses = totalExpenses,
+                        totalFuelCost = totalFuelCost,
+                        totalGallons = totalGallons,
+                        unitLabel = volumeUnitLabel,
+                        totalFillUps = totalFillUps,
+                        partialFills = partialFills
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (vehicleStats.isNotEmpty()) {
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val cols = ((maxWidth / vehicleSummaryMinWidth).toInt()).coerceAtLeast(1)
+                        if (cols <= 1) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                vehicleStats.forEach { stats ->
+                                    Text(
+                                        vehicleSummaryLine(stats, volumeUnitLabel),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        } else {
+                            val chunked = vehicleStats.chunked(cols)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                chunked.forEach { rowVehicles ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        rowVehicles.forEach { stats ->
+                                            Text(
+                                                vehicleSummaryLine(stats, volumeUnitLabel),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .widthIn(min = vehicleSummaryMinWidth)
+                                            )
+                                        }
+                                        repeat(cols - rowVehicles.size) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("By vehicle", style = MaterialTheme.typography.titleMedium)
+        // --- Last 5 full fills only (no totals/MPG/$/mi in these cards) ---
+        Text("Last 5 full fills", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
 
         if (vehicleStats.isEmpty()) {
@@ -217,7 +293,7 @@ fun ReportsScreen(navController: NavHostController) {
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             rowVehicles.forEach { stats ->
-                                VehicleColumn(
+                                VehicleLast5OnlyColumn(
                                     stats = stats,
                                     volumeUnitLabel = volumeUnitLabel,
                                     modifier = Modifier
@@ -269,8 +345,9 @@ fun ReportsScreen(navController: NavHostController) {
     }
 }
 
+/** By-vehicle card: name header + last-5 full-fill rows only. */
 @Composable
-private fun VehicleColumn(
+private fun VehicleLast5OnlyColumn(
     stats: VehicleReportStats,
     volumeUnitLabel: String,
     modifier: Modifier = Modifier
@@ -278,17 +355,7 @@ private fun VehicleColumn(
     Card(modifier = modifier) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(stats.name, style = MaterialTheme.typography.titleSmall)
-            Text("Fuel: ${formatMoney(stats.fuelCost)}")
-            Text("Gal: ${"%.1f".format(stats.gallons)}")
-            Text("Fills: ${stats.fillCount} (${stats.partialCount} partial)")
-            Text("Last MPG: ${formatMpg(stats.lastMpg)}")
-            Text("Avg MPG: ${formatMpg(stats.avgMpg)}")
-            Text(
-                "$/mi: " + if (stats.dollarsPerMile == null) "n/a"
-                else "%.3f".format(stats.dollarsPerMile)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text("Last 5 full fills", style = MaterialTheme.typography.labelLarge)
+            Spacer(modifier = Modifier.height(6.dp))
             VehicleLast5List(
                 last5 = stats.last5Full,
                 mpgByEntryId = stats.mpgByEntryId,

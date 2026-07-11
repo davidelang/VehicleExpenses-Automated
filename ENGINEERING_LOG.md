@@ -277,3 +277,14 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - A: sessionPhotos map dash/pump; JSON on Save only; clear after save (33ac2b24)
 - B: reports overall + per-vehicle last-5 full fills (interim gallons MPG), $/mi, no $/gal bars (2a3e5b53)
 - Builds tag: operational-improvements/builds @ 2a3e5b53
+
+## 2026-07-10 - Verify multi-photo JSON test rows then delete
+
+- Fetched DB: ids 15 pump-only partial JSON [pump]; 16 dash-only partial JSON [dash]; 17 full both JSON [dash,pump] with distinct media URIs.
+- Verified tags/uris/ts present; removed ids 15–17 from device DB (11 historical rows remain).
+
+## 2026-07-10 - Execution start: reports-summary-compact-and-by-vehicle-last5-only
+
+- Plan: dev-ai-interaction/plans/reports-summary-compact-and-by-vehicle-last5-only-20260710-plan.md
+- Compact Summary (overall + vehicle stats); By vehicle = last-5 full fills only
+- Baseline: operational-improvements/builds @ b942548d
