@@ -16,5 +16,9 @@ data class ExpenseEntry(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val location: String? = null,
-    val cloudManifest: String? = null
+    val cloudManifest: String? = null,
+    /** Free-text vendor / payee (separate from description notes). */
+    val vendor: String = "",
+    /** Optional odometer at expense time. */
+    val odometer: Int? = null
 )
