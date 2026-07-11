@@ -1,7 +1,10 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,10 +17,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import kotlinx.coroutines.launch
+
+private fun mediaImagesPermission(): String {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_IMAGES
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+}
+
+private fun hasMediaImagesPermission(context: Context): Boolean {
+    return ContextCompat.checkSelfPermission(context, mediaImagesPermission()) ==
+        PackageManager.PERMISSION_GRANTED
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +62,30 @@ fun SettingsScreen() {
     var volumeUnit by remember { mutableStateOf(prefs.getString("volume_unit", "G") ?: "G") }
 
     var status by remember { mutableStateOf("Ready") }
+
+    val mediaPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Toast.makeText(
+                context,
+                "Photos permission denied. Grant Photos access in App info → Permissions so fuel photos can save to Camera roll.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    fun requestMediaPermissionIfNeeded() {
+        if (hasMediaImagesPermission(context)) return
+        mediaPermissionLauncher.launch(mediaImagesPermission())
+    }
+
+    // Once when Settings opens with save-photos already on and permission missing (no spam loop).
+    LaunchedEffect(Unit) {
+        if (saveFuelPhotos && !hasMediaImagesPermission(context)) {
+            requestMediaPermissionIfNeeded()
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         uri?.let { scope.launch { csvManager.exportToZip(); status = "Exported"; Toast.makeText(context, "CSV ZIP exported", Toast.LENGTH_LONG).show() } }
@@ -88,7 +129,12 @@ fun SettingsScreen() {
         SwitchSetting("Wi-Fi Only", wifiOnly) { wifiOnly = it }
         SwitchSetting("Charging Only", chargingOnly) { chargingOnly = it }
         SliderSetting("Sync Frequency (hours)", frequencyHours.toFloat(), 1f..24f) { frequencyHours = it.toInt() }
-        SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { saveFuelPhotos = it }
+        SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { enabled ->
+            saveFuelPhotos = enabled
+            if (enabled) {
+                requestMediaPermissionIfNeeded()
+            }
+        }
         SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
         SwitchSetting("Debug OCR Pipeline", debugOcrPipeline) { debugOcrPipeline = it }
         SliderSetting("OCR Confidence Threshold", ocrConfidenceThreshold, 0.5f..1.0f) { ocrConfidenceThreshold = it }
