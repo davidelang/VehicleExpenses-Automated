@@ -9,6 +9,7 @@ class ExpenseEntryRepository @Inject constructor(private val dao: ExpenseEntryDa
     suspend fun saveEntry(entry: ExpenseEntry) = dao.insert(entry)
     fun getEntriesForVehicle(vehicleId: Int): Flow<List<ExpenseEntry>> = dao.getEntriesForVehicle(vehicleId)
     fun getAllEntries(): Flow<List<ExpenseEntry>> = dao.getAllEntries()
+    suspend fun getById(id: Long): ExpenseEntry? = dao.getById(id)
 
     // Added for ExpenseViewModel compatibility
     suspend fun insertExpenseEntry(entry: ExpenseEntry) = saveEntry(entry)

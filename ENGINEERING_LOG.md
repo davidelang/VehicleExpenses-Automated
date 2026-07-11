@@ -387,3 +387,9 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Playstore/background already matched prior lightened install (no further delta)
 - Commit c6dc894d; builds tag: operational-improvements/builds @ c6dc894dbdaee551c0631025e22eacef20b3afad
 - User: reinstall APK / clear launcher cache to verify van, wheel, $ inside circular mask
+
+## 2026-07-10 - Execution start: expense-edit-date-photo-viewer
+
+- Plan: dev-ai-interaction/plans/expense-edit-date-photo-viewer-20260710-plan.md
+- Schema vendor+odometer; list/edit nav; date UI; zoom-pan; reports Exp/categories
+- Baseline: operational-improvements/builds @ 62fa444d
