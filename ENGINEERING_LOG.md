@@ -409,3 +409,29 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Squashed ~29 commits → 5 logical: quickfill; reports; expense; assets+docs; eng log.
 - Cleaned HEAD: 8cbcc645. PR doc: dev-ai-interaction/PRs/PR-operational-improvements.md
 - User: master agent "Please review PR-operational-improvements". Dirty jniLibs/gradlew left unstaged.
+
+## 2026-07-11 - PR review three bugs: plan written (app/ not writable by planner)
+
+- Reviewer bugs: (1) expense edit REPLACE wipes metadata (2) CSV unquoted photoUrl JSON (3) missing expense silent fail on edit.
+- Plan: dev-ai-interaction/plans/fix-pr-review-three-bugs-expense-csv-20260711-plan.md
+- Planner cannot write app/src (ai-planner vs dlang:ai-code); execution agent must implement.
+
+## 2026-07-11 - Execution start: fix-pr-review-three-bugs-expense-csv
+
+- Plan: fix-pr-review-three-bugs-expense-csv-20260711-plan.md
+- Bugs: edit preserve metadata; CSV quote/parse; missing-edit toast
+- Baseline: operational-improvements/builds @ 26538437d3b703459f5b7370789dc3dec3795828
+
+## 2026-07-11 - Execution end: fix-pr-review-three-bugs-expense-csv
+
+- Plan: fix-pr-review-three-bugs-expense-csv-20260711-plan.md
+- Bug1/3: loadedExpense copy on save; Toast+back if missing; Save disabled until load (c97bdbb2)
+- Bug2: csvEscape + parseCsvLine; fuel/expense/vehicle export; expense adds vendor/odo/photoUrl (74ecb25e)
+- Builds tag: operational-improvements/builds @ 74ecb25ea8a425e1325380013501992623ca3d1e
+
+## 2026-07-11 - PR updated after three-bug fix
+
+- Squashed review-fix commits into: 95462332 fix: expense edit preserve metadata; CSV quote photoUrl; missing-edit toast
+- Logical history: 6 commits on merge-base..HEAD. backup-operational-improvements still points at pre-first-squash d681633d.
+- PR doc refreshed: dev-ai-interaction/PRs/PR-operational-improvements.md (includes review-fix section).
+- Note: master (b581a173) is ahead of merge-base 9aac4d0d — rebase onto master before GitHub merge if needed.
