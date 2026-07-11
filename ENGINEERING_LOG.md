@@ -236,3 +236,14 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Plan: dev-ai-interaction/plans/quickfill-photos-partial-camera-reliability-20260710-plan.md
 - Features F1-F5: media permission, photo save+photoUrl, auto partial+clear fields, portrait camera, reports per-vehicle MPG
 - Baseline: no operational-improvements/builds tag yet (first successful build_app will create it)
+
+## 2026-07-10 - Execution complete: quickfill-photos-partial-camera-reliability
+
+- Plan: dev-ai-interaction/plans/quickfill-photos-partial-camera-reliability-20260710-plan.md
+- F1: media permission MainActivity + Settings (commit c624e424 + prior MainActivity)
+- F2: photo MediaStore errors/Toasts/photoUrl/status/fallback (1773500c)
+- F3: auto isPartialFill + clear fields, no pop (a077e886)
+- F4: portrait panel A fillMaxSize single FIT letterbox (53cd7cd6)
+- F5: per-vehicle MPG, take(5) newest, usable fields, single scroll (ab889a33 + 5d4f3d6b fix)
+- Builds tag: operational-improvements/builds @ 5d4f3d6b
+- Note: TODO.md not updated for live work (backlog only per user/mandates)
