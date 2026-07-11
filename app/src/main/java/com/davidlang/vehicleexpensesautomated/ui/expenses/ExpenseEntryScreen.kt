@@ -9,8 +9,10 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -20,20 +22,29 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 private const val TAG = "ExpenseEntry"
 
@@ -46,16 +57,12 @@ fun ExpenseEntryScreen(
     val viewModel: ExpenseViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val context = LocalContext.current
+    val isEdit = expenseId != null && expenseId > 0
 
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     var selectedVehicleId by rememberSaveable { mutableStateOf<Int?>(null) }
     var vehicleDropdownExpanded by remember { mutableStateOf(false) }
-
-    LaunchedEffect(vehicles) {
-        if (selectedVehicleId == null && vehicles.isNotEmpty()) {
-            selectedVehicleId = vehicles.first().id
-        }
-    }
+    var loadedId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     val imageCapture: ImageCapture = remember {
         val resSelector = ResolutionSelector.Builder()
@@ -70,20 +77,54 @@ fun ExpenseEntryScreen(
     var zoomControl by remember { mutableStateOf<CameraZoomControl?>(null) }
     var isPhotoSaving by remember { mutableStateOf(false) }
     var photoStatus by remember { mutableStateOf<String?>(null) }
+    var showLiveCamera by remember { mutableStateOf(true) }
 
-    var amount by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("Other") }
-    var date by remember { mutableStateOf(System.currentTimeMillis()) }
-    var photoUrl by remember { mutableStateOf<String?>(null) }
+    var amount by rememberSaveable { mutableStateOf("") }
+    var vendor by rememberSaveable { mutableStateOf("") }
+    var description by rememberSaveable { mutableStateOf("") }
+    var category by rememberSaveable { mutableStateOf("Other") }
+    var odometerText by rememberSaveable { mutableStateOf("") }
+    var date by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
+    var photoUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var showDatePicker by remember { mutableStateOf(false) }
 
-    // Gallery: set photoUrl from content URI without OCR
+    val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+
+    // Prefill for edit; auto-select first vehicle for create
+    LaunchedEffect(expenseId, vehicles) {
+        if (isEdit && expenseId != null) {
+            if (loadedId != expenseId) {
+                val entry = viewModel.getExpenseById(expenseId)
+                if (entry != null) {
+                    selectedVehicleId = entry.vehicleId
+                    amount = if (entry.amount == 0.0) "" else entry.amount.toString()
+                    vendor = entry.vendor
+                    description = entry.description
+                    category = entry.category
+                    odometerText = entry.odometer?.toString() ?: ""
+                    date = entry.date
+                    photoUrl = entry.photoUrl
+                    showLiveCamera = entry.photoUrl == null
+                    loadedId = expenseId
+                }
+            }
+        } else {
+            if (selectedVehicleId == null && vehicles.isNotEmpty()) {
+                selectedVehicleId = vehicles.first().id
+            }
+            if (!isEdit && photoUrl == null) {
+                showLiveCamera = true
+            }
+        }
+    }
+
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
             photoUrl = uri.toString()
             photoStatus = null
+            showLiveCamera = false
             Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
         }
     }
@@ -94,26 +135,37 @@ fun ExpenseEntryScreen(
             Toast.makeText(context, "Select a vehicle", Toast.LENGTH_SHORT).show()
             return
         }
-        // photoUrl is optional — save works with or without a photo.
         val amountVal = amount.toDoubleOrNull() ?: 0.0
+        val odo = odometerText.trim().toIntOrNull()
         viewModel.saveExpense(
             ExpenseEntry(
+                id = if (isEdit) expenseId!! else 0L,
                 vehicleId = vehicleId,
                 amount = amountVal,
                 description = description,
+                vendor = vendor,
+                odometer = odo,
                 category = category,
                 date = date,
                 photoUrl = photoUrl
             )
         )
-        Toast.makeText(context, "Expense saved", Toast.LENGTH_SHORT).show()
-        navController?.navigate("reports")
+        Toast.makeText(
+            context,
+            if (isEdit) "Expense updated" else "Expense saved",
+            Toast.LENGTH_SHORT
+        ).show()
+        navController?.navigate("expenselist") {
+            popUpTo("expenselist") { inclusive = false }
+            launchSingleTop = true
+        } ?: navController?.popBackStack()
     }
 
     fun takePicture() {
         if (isPhotoSaving) return
         isPhotoSaving = true
         photoStatus = "Saving photo…"
+        showLiveCamera = true
         try {
             val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 context.display
@@ -165,6 +217,7 @@ fun ExpenseEntryScreen(
                         } else {
                             photoUrl = savedUri.toString()
                             photoStatus = null
+                            showLiveCamera = false
                             Toast.makeText(context, "Photo saved to Camera", Toast.LENGTH_SHORT).show()
                         }
                         isPhotoSaving = false
@@ -194,72 +247,110 @@ fun ExpenseEntryScreen(
         }
     }
 
+    if (showDatePicker) {
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = date
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        state.selectedDateMillis?.let { millis ->
+                            // DatePicker is UTC midnight; keep local calendar day
+                            val cal = Calendar.getInstance().apply {
+                                timeInMillis = millis
+                            }
+                            val local = Calendar.getInstance().apply {
+                                set(Calendar.YEAR, cal.get(Calendar.YEAR))
+                                set(Calendar.MONTH, cal.get(Calendar.MONTH))
+                                set(Calendar.DAY_OF_MONTH, cal.get(Calendar.DAY_OF_MONTH))
+                                set(Calendar.HOUR_OF_DAY, 12)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
+                            date = local.timeInMillis
+                        }
+                        showDatePicker = false
+                    }
+                ) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+            }
+        ) {
+            DatePicker(state = state)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        // Camera region + zoom chips
+        // Photo / camera region
         Box(
             modifier = Modifier
-                .weight(0.45f)
+                .weight(0.40f)
                 .fillMaxWidth()
                 .background(Color.Black)
         ) {
-            CameraPreview(
-                modifier = Modifier.fillMaxSize(),
-                imageCapture = imageCapture,
-                onImageCaptured = { proxy ->
-                    // No OCR on expense path this turn — close immediately
-                    proxy.close()
-                },
-                onZoomControlChanged = { zoomControl = it }
-            )
-            zoomControl?.let { zoom ->
-                if (zoom.availableRatios.size > 1) {
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        zoom.availableRatios.forEach { ratio ->
-                            val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
-                            FilledTonalButton(
-                                onClick = { zoom.setZoomRatio(ratio) },
-                                modifier = Modifier.height(32.dp),
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = if (selected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    }
-                                ),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                            ) {
-                                Text(
-                                    text = if (ratio == ratio.toLong().toFloat()) {
-                                        "${ratio.toLong()}x"
-                                    } else {
-                                        "${ratio}x"
-                                    },
-                                    style = MaterialTheme.typography.labelSmall
-                                )
+            if (showLiveCamera || photoUrl == null) {
+                CameraPreview(
+                    modifier = Modifier.fillMaxSize(),
+                    imageCapture = imageCapture,
+                    onImageCaptured = { proxy -> proxy.close() },
+                    onZoomControlChanged = { zoomControl = it }
+                )
+                zoomControl?.let { zoom ->
+                    if (zoom.availableRatios.size > 1) {
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            zoom.availableRatios.forEach { ratio ->
+                                val selected = kotlin.math.abs(zoom.currentRatio - ratio) < 0.05f
+                                FilledTonalButton(
+                                    onClick = { zoom.setZoomRatio(ratio) },
+                                    modifier = Modifier.height(32.dp),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        }
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                ) {
+                                    Text(
+                                        text = if (ratio == ratio.toLong().toFloat()) {
+                                            "${ratio.toLong()}x"
+                                        } else {
+                                            "${ratio}x"
+                                        },
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
                             }
                         }
                     }
                 }
+            } else {
+                ZoomPanPhotoViewer(
+                    photoUrl = photoUrl!!,
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
 
-        // Icon control row: Save | Shutter | Gallery
+        // Controls: Save | Shutter | Gallery | Retake when photo shown
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                onClick = { saveExpense() },
-                enabled = !isPhotoSaving
-            ) {
+            IconButton(onClick = { saveExpense() }, enabled = !isPhotoSaving) {
                 Icon(
                     imageVector = ExpenseSaveIcon,
                     contentDescription = "Save expense",
@@ -267,9 +358,11 @@ fun ExpenseEntryScreen(
                 )
             }
 
-            // Shutter (center) — Quick Fill–style white circle
             IconButton(
-                onClick = { takePicture() },
+                onClick = {
+                    showLiveCamera = true
+                    takePicture()
+                },
                 enabled = !isPhotoSaving,
                 modifier = Modifier
                     .size(64.dp)
@@ -313,27 +406,31 @@ fun ExpenseEntryScreen(
             )
         }
 
-        if (photoUrl != null) {
-            Text(
-                text = "Photo ready",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            )
-        }
-
-        // Form fields
+        // Form
         Column(
             modifier = Modifier
-                .weight(0.55f)
+                .weight(0.60f)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("New Expense", style = MaterialTheme.typography.titleLarge)
+            Text(
+                if (isEdit) "Edit Expense" else "New Expense",
+                style = MaterialTheme.typography.titleLarge
+            )
+
+            // Date display + picker
+            OutlinedTextField(
+                value = dateFmt.format(Date(date)),
+                onValueChange = {},
+                label = { Text("Date") },
+                readOnly = true,
+                modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    TextButton(onClick = { showDatePicker = true }) { Text("Change") }
+                }
+            )
 
             val vehicleName = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle"
             ExposedDropdownMenuBox(
@@ -349,31 +446,38 @@ fun ExpenseEntryScreen(
                         .fillMaxWidth()
                         .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                     readOnly = true,
-                    singleLine = true,
-                    maxLines = 1
+                    singleLine = true
                 )
                 ExposedDropdownMenu(
                     expanded = vehicleDropdownExpanded,
                     onDismissRequest = { vehicleDropdownExpanded = false }
                 ) {
-                    if (vehicles.isEmpty()) {
+                    vehicles.forEach { vehicle ->
                         DropdownMenuItem(
-                            text = { Text("No vehicles") },
-                            onClick = { vehicleDropdownExpanded = false }
+                            text = { Text(vehicle.name) },
+                            onClick = {
+                                selectedVehicleId = vehicle.id
+                                vehicleDropdownExpanded = false
+                            }
                         )
-                    } else {
-                        vehicles.forEach { vehicle ->
-                            DropdownMenuItem(
-                                text = { Text(vehicle.name) },
-                                onClick = {
-                                    selectedVehicleId = vehicle.id
-                                    vehicleDropdownExpanded = false
-                                }
-                            )
-                        }
                     }
                 }
             }
+
+            OutlinedTextField(
+                value = vendor,
+                onValueChange = { vendor = it },
+                label = { Text("Vendor") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
             OutlinedTextField(
                 value = amount,
@@ -384,16 +488,17 @@ fun ExpenseEntryScreen(
             )
 
             OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text("Description / Vendor") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
                 value = category,
                 onValueChange = { category = it },
                 label = { Text("Category") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = odometerText,
+                onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) odometerText = it },
+                label = { Text("Odometer (optional)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -401,7 +506,55 @@ fun ExpenseEntryScreen(
     }
 }
 
-// material-icons-core lacks Save / PhotoLibrary — local vectors (same idea as Quick Fill Save).
+/** View-only pinch zoom + pan (ManageVehicles-style). */
+@Composable
+private fun ZoomPanPhotoViewer(
+    photoUrl: String,
+    modifier: Modifier = Modifier
+) {
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    Box(
+        modifier = modifier
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    scale = (scale * zoom).coerceIn(1f, 10f)
+                    offset += pan
+                }
+            }
+    ) {
+        Image(
+            painter = rememberAsyncImagePainter(photoUrl),
+            contentDescription = "Expense photo",
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y
+                ),
+            contentScale = ContentScale.Fit
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            SmallFloatingActionButton(
+                onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) },
+                containerColor = Color.White.copy(alpha = 0.7f)
+            ) { Text("+") }
+            SmallFloatingActionButton(
+                onClick = { scale = (scale / 1.2f).coerceIn(1f, 10f) },
+                containerColor = Color.White.copy(alpha = 0.7f)
+            ) { Text("-") }
+        }
+    }
+}
+
 private var _expenseSaveIcon: ImageVector? = null
 private val ExpenseSaveIcon: ImageVector
     get() {
@@ -448,7 +601,6 @@ private var _expensePhotoLibraryIcon: ImageVector? = null
 private val ExpensePhotoLibraryIcon: ImageVector
     get() {
         _expensePhotoLibraryIcon?.let { return it }
-        // Stacked images / photo library silhouette
         _expensePhotoLibraryIcon = ImageVector.Builder(
             name = "ExpensePhotoLibrary",
             defaultWidth = 24.dp,
