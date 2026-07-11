@@ -435,3 +435,9 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Logical history: 6 commits on merge-base..HEAD. backup-operational-improvements still points at pre-first-squash d681633d.
 - PR doc refreshed: dev-ai-interaction/PRs/PR-operational-improvements.md (includes review-fix section).
 - Note: master (b581a173) is ahead of merge-base 9aac4d0d — rebase onto master before GitHub merge if needed.
+
+## 2026-07-11 - Execution start: fix-deferred-pr-review-d1-d6
+
+- Plan: fix-deferred-pr-review-d1-d6-20260711-plan.md
+- D1 Sheets/CSV parity; D2 preferred volume units; D3 $/mi docs; D4 edit flash; D5 await save; D6 permission sequence
+- Baseline: operational-improvements/builds @ e2e0985f
