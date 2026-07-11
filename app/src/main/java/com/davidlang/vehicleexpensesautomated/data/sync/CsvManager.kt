@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -50,29 +49,136 @@ class CsvManager @Inject constructor(
         FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
     }
 
+    /** Quote field if it contains comma, quote, or newline (RFC-style). */
+    private fun csvEscape(value: String): String {
+        return if (value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r')) {
+            "\"" + value.replace("\"", "\"\"") + "\""
+        } else {
+            value
+        }
+    }
+
+    /** Split a CSV line honoring double-quoted fields. */
+    private fun parseCsvLine(line: String): List<String> {
+        val result = mutableListOf<String>()
+        val cur = StringBuilder()
+        var i = 0
+        var inQuotes = false
+        while (i < line.length) {
+            val c = line[i]
+            when {
+                inQuotes && c == '"' -> {
+                    if (i + 1 < line.length && line[i + 1] == '"') {
+                        cur.append('"')
+                        i += 2
+                        continue
+                    } else {
+                        inQuotes = false
+                        i++
+                        continue
+                    }
+                }
+                !inQuotes && c == '"' -> {
+                    inQuotes = true
+                    i++
+                    continue
+                }
+                !inQuotes && c == ',' -> {
+                    result.add(cur.toString())
+                    cur.clear()
+                    i++
+                    continue
+                }
+                else -> {
+                    cur.append(c)
+                    i++
+                }
+            }
+        }
+        result.add(cur.toString())
+        return result
+    }
+
+    private fun csvRow(vararg fields: Any?): String {
+        return fields.joinToString(",") { f ->
+            when (f) {
+                null -> ""
+                is String -> csvEscape(f)
+                else -> f.toString()
+            }
+        } + "\n"
+    }
+
     private suspend fun getVehiclesCsv(): String {
         val vehicles = vehicleRepository.getAllVehicles().first()
         val sb = StringBuilder("ID,Name,Make,Model,Year,License Plate,VIN,Notes\n")
         vehicles.forEach {
-            sb.append("${it.id},${it.name},${it.make ?: ""},${it.model ?: ""},${it.year},${it.licensePlate},${it.vin ?: ""},${it.notes ?: ""}\n")
+            sb.append(
+                csvRow(
+                    it.id,
+                    it.name,
+                    it.make ?: "",
+                    it.model ?: "",
+                    it.year,
+                    it.licensePlate ?: "",
+                    it.vin ?: "",
+                    it.notes ?: ""
+                )
+            )
         }
         return sb.toString()
     }
 
     private suspend fun getFuelCsv(): String {
         val fuel = fuelRepository.getAllEntries().first()
-        val sb = StringBuilder("ID,Vehicle ID,Odometer,Gallons,Cost,Timestamp,Photo URL,Partial Fill,Latitude,Longitude,Location,Cloud Manifest\n")
+        val sb = StringBuilder(
+            "ID,Vehicle ID,Odometer,Gallons,Cost,Timestamp,Photo URL,Partial Fill,Latitude,Longitude,Location,Cloud Manifest\n"
+        )
         fuel.forEach {
-            sb.append("${it.id},${it.vehicleId},${it.odometer},${it.gallons},${it.cost},${it.timestamp},${it.photoUrl ?: ""},${it.isPartialFill},${it.latitude ?: ""},${it.longitude ?: ""},${it.location ?: ""},${it.cloudManifest ?: ""}\n")
+            sb.append(
+                csvRow(
+                    it.id,
+                    it.vehicleId,
+                    it.odometer,
+                    it.gallons,
+                    it.cost,
+                    it.timestamp,
+                    it.photoUrl ?: "",
+                    it.isPartialFill,
+                    it.latitude ?: "",
+                    it.longitude ?: "",
+                    it.location ?: "",
+                    it.cloudManifest ?: ""
+                )
+            )
         }
         return sb.toString()
     }
 
     private suspend fun getExpenseCsv(): String {
         val expenses = expenseRepository.getAllEntries().first()
-        val sb = StringBuilder("ID,Vehicle ID,Date,Amount,Category,Description,Receipt Image Path,Latitude,Longitude,Location,Cloud Manifest\n")
+        val sb = StringBuilder(
+            "ID,Vehicle ID,Date,Amount,Category,Description,Vendor,Odometer,Photo URL,Receipt Image Path,Latitude,Longitude,Location,Cloud Manifest\n"
+        )
         expenses.forEach {
-            sb.append("${it.id},${it.vehicleId},${it.date},${it.amount},${it.category},${it.description},${it.receiptImagePath ?: ""},${it.latitude ?: ""},${it.longitude ?: ""},${it.location ?: ""},${it.cloudManifest ?: ""}\n")
+            sb.append(
+                csvRow(
+                    it.id,
+                    it.vehicleId,
+                    it.date,
+                    it.amount,
+                    it.category,
+                    it.description,
+                    it.vendor,
+                    it.odometer ?: "",
+                    it.photoUrl ?: "",
+                    it.receiptImagePath ?: "",
+                    it.latitude ?: "",
+                    it.longitude ?: "",
+                    it.location ?: "",
+                    it.cloudManifest ?: ""
+                )
+            )
         }
         return sb.toString()
     }
@@ -106,7 +212,7 @@ class CsvManager @Inject constructor(
     private suspend fun importVehiclesCsv(csv: String) {
         val lines = csv.lines().drop(1).filter { it.isNotBlank() }
         lines.forEach { line ->
-            val parts = line.split(",")
+            val parts = parseCsvLine(line)
             if (parts.size >= 8) {
                 val vehicle = Vehicle(
                     id = parts[0].toIntOrNull() ?: 0,
@@ -126,7 +232,7 @@ class CsvManager @Inject constructor(
     private suspend fun importFuelCsv(csv: String) {
         val lines = csv.lines().drop(1).filter { it.isNotBlank() }
         lines.forEach { line ->
-            val parts = line.split(",")
+            val parts = parseCsvLine(line)
             if (parts.size >= 11) {
                 val fuel = FuelEntry(
                     id = parts[0].toLongOrNull() ?: 0,
@@ -150,8 +256,28 @@ class CsvManager @Inject constructor(
     private suspend fun importExpenseCsv(csv: String) {
         val lines = csv.lines().drop(1).filter { it.isNotBlank() }
         lines.forEach { line ->
-            val parts = line.split(",")
-            if (parts.size >= 10) {
+            val parts = parseCsvLine(line)
+            // New export: 14 cols with Vendor, Odometer, Photo URL after Description
+            // Legacy: ID,Vehicle,Date,Amount,Category,Description,Receipt,Lat,Long,Loc,Cloud (>=10)
+            if (parts.size >= 14) {
+                val expense = ExpenseEntry(
+                    id = parts[0].toLongOrNull() ?: 0,
+                    vehicleId = parts[1].toIntOrNull() ?: 0,
+                    date = parts[2].toLongOrNull() ?: System.currentTimeMillis(),
+                    amount = parts[3].toDoubleOrNull() ?: 0.0,
+                    category = parts[4],
+                    description = parts[5],
+                    vendor = parts[6],
+                    odometer = parts[7].toIntOrNull(),
+                    photoUrl = parts[8].ifBlank { null },
+                    receiptImagePath = parts[9].ifBlank { null },
+                    latitude = parts[10].toDoubleOrNull(),
+                    longitude = parts[11].toDoubleOrNull(),
+                    location = parts[12].ifBlank { null },
+                    cloudManifest = parts[13].ifBlank { null }
+                )
+                expenseRepository.insertExpenseEntry(expense)
+            } else if (parts.size >= 10) {
                 val expense = ExpenseEntry(
                     id = parts[0].toLongOrNull() ?: 0,
                     vehicleId = parts[1].toIntOrNull() ?: 0,
