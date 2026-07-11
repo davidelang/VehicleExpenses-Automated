@@ -69,7 +69,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedTiersInt8 = mutableMapOf<Int, ByteArray>()
 
         @Volatile
-        var activePrecisionPath: PrecisionPath = PrecisionPath.BASELINE
+        /** Production default: det/rec uint8 raw → fp16 compute + uint8 heatmap. */
+        var activePrecisionPath: PrecisionPath = PrecisionPath.UINT8_FP16_U8
             private set
 
         /**
@@ -88,7 +89,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         fun heartbeat(stage: String) {
             lastStage = stage
             lastStageMs = System.currentTimeMillis()
-            Log.i("PrecCampaign", "STAGE $stage")
+            Log.i("PaddleLite", "STAGE $stage")
         }
 
         /**
@@ -295,7 +296,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             try {
                 System.loadLibrary("paddle_lite_jni")
                 isNativeLibLoaded = true
-                loadModelsForPath(context, PrecisionPath.BASELINE)
+                loadModelsForPath(context, PrecisionPath.UINT8_FP16_U8)
                 loadDictionary(context, "paddle/en_dict.txt", dictionaryV3)
                 Log.i("PaddleLite", "Total Global Init: ${System.currentTimeMillis() - tStart}ms")
                 isAvailableGlobally = true
@@ -344,7 +345,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 return f.absolutePath
             }
 
-            fun resolveModel(baseName: String, assetFallback: String): String {
+            fun resolveModel(baseName: String): String {
+                // Optional device-side override (dev / A/B): filesDir/prec_paths/<id>/
                 val candidates = listOf(
                     File(context.filesDir, "prec_paths/${path.id}/${baseName}_$arch.nb"),
                     File(context.getExternalFilesDir(null), "prec_paths/${path.id}/${baseName}_$arch.nb"),
@@ -355,20 +357,28 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                         return external.absolutePath
                     }
                 }
-                if (path != PrecisionPath.BASELINE) {
-                    // Do not silently fall back to float assets for non-baseline paths.
-                    throw IllegalStateException(
-                        "Missing prec_paths model path=${path.id} base=$baseName arch=$arch " +
-                            "(looked under filesDir and externalFilesDir)"
-                    )
+                // Shipped production graphs only (float/int8 mono assets pruned).
+                if (path == PrecisionPath.UINT8_FP16_U8) {
+                    val prodAsset = "paddle/prod_u8fp16/${baseName}_$arch.nb"
+                    try {
+                        context.assets.open(prodAsset).close()
+                        Log.i("PaddleLite", "Using production asset $prodAsset")
+                        return copyAsset(prodAsset)
+                    } catch (_: Exception) {
+                        throw IllegalStateException(
+                            "Missing production model $prodAsset for path=${path.id} arch=$arch"
+                        )
+                    }
                 }
-                Log.w("PaddleLite", "baseline fallback to assets $assetFallback")
-                return copyAsset(assetFallback)
+                throw IllegalStateException(
+                    "No models for path=${path.id} base=$baseName arch=$arch " +
+                        "(assets only ship prod_u8fp16; use filesDir/prec_paths for experiments)"
+                )
             }
 
-            val detPath = resolveModel("det", "paddle/det_v4_4000_mono_$arch.nb")
-            val recV3Path = resolveModel("rec_v3", "paddle/rec_v3_mono_$arch.nb")
-            val recNumPath = resolveModel("rec_numeric", "paddle/rec_numeric_mono_$arch.nb")
+            val detPath = resolveModel("det")
+            val recV3Path = resolveModel("rec_v3")
+            val recNumPath = resolveModel("rec_numeric")
             Log.i(
                 "PaddleLite",
                 "models path=${path.id} detInt8=${path.detInt8Input} recInt8=${path.recInt8Input} " +
@@ -492,7 +502,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // to avoid tensor pointer invalidation from Java-side copy
             val tNativePost0 = System.nanoTime()
             heartbeat("det_post tier=$tierScale")
-            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
+            // uint8 heatmap models: thresh 0; float heatmap keeps 0.03 for alignment experiments
+            val hmThresh = if (activePrecisionPath.id.endsWith("_u8")) 0.0f else 0.03f
+            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, hmThresh, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
@@ -515,9 +527,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
 
             val tCopy0 = System.nanoTime()
-            // Never Tensor.floatData on uint8/fp16 heatmaps (getFloatData SEGV).
-            val heatmap = if (copyHeatmap) NativeImageUtils.heatmapToFloatArray(outputTensor) else null
-            val tCopy = if (copyHeatmap) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
+            // Never Tensor.floatData on uint8 heatmaps (getFloatData SEGV).
+            val heatmap = if (copyHeatmap && !activePrecisionPath.id.endsWith("_u8")) {
+                NativeImageUtils.heatmapToFloatArray(outputTensor)
+            } else null
+            val tCopy = if (heatmap != null) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
 
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
@@ -546,17 +560,34 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val predictor = detectorLarge ?: return null
         val t0 = System.currentTimeMillis()
         val w = srcMat.cols(); val h = srcMat.rows()
+        val useInt8 = activePrecisionPath.detInt8Input
+        val useUInt8 = activePrecisionPath.detUInt8Input
 
         val tPop0 = System.nanoTime()
-        val floatData = FloatArray(w * h)
-        NativeImageUtils.populateMonoTensor(srcMat, floatData, w, h, 0.485f, 0.229f)
+        val floatData: FloatArray?
+        val byteData: ByteArray?
+        if (useInt8 || useUInt8) {
+            floatData = null
+            byteData = ByteArray(w * h)
+            if (useInt8) NativeImageUtils.populateMonoInt8Xor(srcMat, byteData, w, h)
+            else NativeImageUtils.populateMonoUInt8(srcMat, byteData, w, h)
+        } else {
+            byteData = null
+            floatData = FloatArray(w * h)
+            NativeImageUtils.populateMonoTensor(srcMat, floatData, w, h, 0.485f, 0.229f)
+        }
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
             val inputTensor = predictor.getInput(0)
             inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
-            requireSetData(inputTensor.setData(floatData), "detectMat float ${w}x$h")
+            if (useInt8 || useUInt8) {
+                val tag = if (useUInt8) "detectMat uint8" else "detectMat int8"
+                requireSetData(inputTensor.setData(byteData!!), "$tag ${w}x$h")
+            } else {
+                requireSetData(inputTensor.setData(floatData!!), "detectMat float ${w}x$h")
+            }
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
@@ -569,8 +600,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
             // Zero-Copy Native Post-Processing (Phase 2) — MUST run before floatData
             // to avoid tensor pointer invalidation from Java-side copy
+            // uint8 heatmap models: thresh 0 (plan); float heatmap keeps 0.03
+            val hmThresh = if (activePrecisionPath.id.endsWith("_u8")) 0.0f else 0.03f
             val tNativePost0 = System.nanoTime()
-            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, 0.03f, 10f)  // 0.03f so alignment (via shared detect + runPaddleValleyIterative etc) sees the change
+            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, hmThresh, 10f)
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
 
             val nativeBoxes = mutableListOf<DetectionBox>()
@@ -592,8 +625,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
             }
             val tCopy0 = System.nanoTime()
-            val heatmap = if (copyHeatmap) NativeImageUtils.heatmapToFloatArray(outputTensor) else null
-            val tCopy = if (copyHeatmap) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
+            // Never floatData on uint8 heatmaps
+            val heatmap = if (copyHeatmap && !activePrecisionPath.id.endsWith("_u8")) {
+                NativeImageUtils.heatmapToFloatArray(outputTensor)
+            } else null
+            val tCopy = if (heatmap != null) (System.nanoTime() - tCopy0) / 1_000_000.0 else 0.0
 
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
@@ -604,7 +640,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_jni_out_ms" to "%.3f".format(tJniOut),
                 "t_native_post_ms" to "%.3f".format(tNativePost),
                 "t_copy_tensor_ms" to "%.3f".format(tCopy),
-                "dynamic_shape" to "%dx%d".format(w, h)
+                "dynamic_shape" to "%dx%d".format(w, h),
+                "path" to activePrecisionPath.id
             )
             return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor, hist)
         } catch (t: Throwable) {
