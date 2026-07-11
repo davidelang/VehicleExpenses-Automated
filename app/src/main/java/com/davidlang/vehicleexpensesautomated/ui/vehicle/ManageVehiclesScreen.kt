@@ -480,9 +480,9 @@ private fun EditCropsView(photoUrl: String, odoRect: Rect?, otherRect: Rect?, or
                         val h = ((p2.y - p1.y) / origH) * fitRect.height
                         drawRect(color, Offset(left, top), androidx.compose.ui.geometry.Size(w, h), style = Stroke(4f / scale))
                     }
-                    currentDragRect?.let { drawIcrsRect(it, Color.Green) }
+                    currentDragRect?.let { drawIcrsRect(it, Color.Red) }
                     odoRect?.let { drawIcrsRect(it, Color.Blue) }
-                    otherRect?.let { drawIcrsRect(it, Color.Red) }
+                    otherRect?.let { drawIcrsRect(it, Color.Green) }
                 }
             }
 

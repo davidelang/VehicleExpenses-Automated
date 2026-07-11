@@ -132,7 +132,7 @@ object OcrHarness {
     }
 
     /**
-     * Quick Fill–only copy of Set G-- ("none, calculated", 2-pass vert list).
+     * Quick Fill–only copy of Set G ("none, calculated") cost/volume extraction.
      * Caller must deskew/rotate workspace first; no second deskew here.
      */
     private suspend fun extractQuickFillSetGCostVol(
@@ -176,7 +176,7 @@ object OcrHarness {
         if (pdHunksRawTotal.isEmpty()) return na
 
         val (customBlueGPre, _) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
-            pdHunksRawTotal, imgW, imgH, SET_G_MINUS_MINUS_VERT_FACTORS, SET_G_HORIZ_FACTOR
+            pdHunksRawTotal, imgW, imgH, SET_G_VERT_FACTORS, SET_G_HORIZ_FACTOR
         )
         val customBluePixelG = PumpCostVolUtils.hunksToRects(customBlueGPre)
         if (customBluePixelG.isEmpty()) return na
@@ -191,7 +191,7 @@ object OcrHarness {
     }
 
     /**
-     * Set G-- (2-pass) pump cost/volume pipeline for Quick Fill pump mode.
+     * Set G pump cost/volume pipeline for Quick Fill pump mode.
      */
     suspend fun runPumpCostVolPipeline(
         context: Context,

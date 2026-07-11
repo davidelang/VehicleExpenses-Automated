@@ -411,6 +411,61 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCompr
     return env->NewStringUTF(b64.c_str());
 }
 
+// Shared: read paddle tensor as float heatmap.
+// Supports float32, uint8 (u/255), and float16 (if ENABLE_ARM_FP16 / half bits).
+// Never call Java Tensor.getFloatData on non-float tensors — that SEGV/aborts.
+static bool tensorToFloatHeatmap(paddle::lite_api::Tensor* nativeTensor, int h, int w,
+                                 std::vector<float>* out) {
+    if (!nativeTensor || !out) return false;
+    out->assign(static_cast<size_t>(h) * static_cast<size_t>(w), 0.f);
+    using paddle::lite_api::PrecisionType;
+    const auto prec = nativeTensor->precision();
+    if (prec == PrecisionType::kFloat) {
+        const float* data = nativeTensor->data<float>();
+        if (!data) return false;
+        std::memcpy(out->data(), data, out->size() * sizeof(float));
+        return true;
+    }
+    if (prec == PrecisionType::kUInt8) {
+        const uint8_t* data = nativeTensor->data<uint8_t>();
+        if (!data) return false;
+        for (size_t i = 0; i < out->size(); ++i) {
+            (*out)[i] = static_cast<float>(data[i]) * (1.0f / 255.0f);
+        }
+        return true;
+    }
+    if (prec == PrecisionType::kFP16) {
+        // Store as uint16 IEEE half; convert via float bit-cast helpers when available.
+        const uint16_t* data = reinterpret_cast<const uint16_t*>(
+            nativeTensor->data<int16_t>());
+        if (!data) return false;
+        for (size_t i = 0; i < out->size(); ++i) {
+            // Simple half->float (IEEE 754 binary16), no denorm special path needed for heatmaps.
+            const uint16_t hbits = data[i];
+            const uint32_t sign = (hbits >> 15) & 1u;
+            const uint32_t exp = (hbits >> 10) & 0x1fu;
+            const uint32_t mant = hbits & 0x3ffu;
+            uint32_t fbits;
+            if (exp == 0) {
+                fbits = (sign << 31);
+            } else if (exp == 31) {
+                fbits = (sign << 31) | 0x7f800000u | (mant << 13);
+            } else {
+                fbits = (sign << 31) | ((exp + 112u) << 23) | (mant << 13);
+            }
+            float f;
+            std::memcpy(&f, &fbits, sizeof(f));
+            (*out)[i] = f;
+        }
+        return true;
+    }
+    // Fallback: try float pointer (legacy models / unknown precision)
+    const float* data = nativeTensor->data<float>();
+    if (!data) return false;
+    std::memcpy(out->data(), data, out->size() * sizeof(float));
+    return true;
+}
+
 JNIEXPORT void JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopulateMonoTensor(
     JNIEnv* env, jobject thiz, jlong srcMatPtr, jfloatArray dstTensor, jint tensorW, jint tensorH, jfloat mean, jfloat std) {
@@ -437,6 +492,53 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopul
     }
 
     env->ReleaseFloatArrayElements(dstTensor, dst, 0);
+}
+
+// XOR-128 int8 feed: q = (int8_t)(u8 ^ 128). Pads unused tensor region with 0.
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopulateMonoInt8Xor(
+    JNIEnv* env, jobject thiz, jlong srcMatPtr, jbyteArray dstTensor, jint tensorW, jint tensorH) {
+    cv::Mat* src = reinterpret_cast<cv::Mat*>(srcMatPtr);
+    if (!src || src->empty()) return;
+    jbyte* dst = env->GetByteArrayElements(dstTensor, nullptr);
+    if (!dst) return;
+    const int copyH = std::min(tensorH, src->rows);
+    const int copyW = std::min(tensorW, src->cols);
+    // Zero full buffer (includes pad region for NEON overread safety if allocated larger)
+    const jsize n = env->GetArrayLength(dstTensor);
+    std::memset(dst, 0, static_cast<size_t>(n));
+    for (int y = 0; y < copyH; ++y) {
+        const uint8_t* row = src->ptr<uint8_t>(y);
+        jbyte* dst_row = dst + (y * tensorW);
+        for (int x = 0; x < copyW; ++x) {
+            dst_row[x] = static_cast<jbyte>(row[x] ^ 128);
+        }
+    }
+    env->ReleaseByteArrayElements(dstTensor, dst, 0);
+}
+
+// Raw uint8 greyscale feed for kUInt8 + uint8_to_fp* graphs (no XOR).
+// Still a host buffer copy into the tensor ByteArray for Tensor.setData;
+// eliminates the xor rewrite vs int8 path.
+JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativePopulateMonoUInt8(
+    JNIEnv* env, jobject thiz, jlong srcMatPtr, jbyteArray dstTensor, jint tensorW, jint tensorH) {
+    cv::Mat* src = reinterpret_cast<cv::Mat*>(srcMatPtr);
+    if (!src || src->empty()) return;
+    jbyte* dst = env->GetByteArrayElements(dstTensor, nullptr);
+    if (!dst) return;
+    const int copyH = std::min(tensorH, src->rows);
+    const int copyW = std::min(tensorW, src->cols);
+    const jsize n = env->GetArrayLength(dstTensor);
+    std::memset(dst, 0, static_cast<size_t>(n));
+    for (int y = 0; y < copyH; ++y) {
+        const uint8_t* row = src->ptr<uint8_t>(y);
+        auto* dst_row = reinterpret_cast<uint8_t*>(dst + (y * tensorW));
+        if (copyW > 0) {
+            std::memcpy(dst_row, row, static_cast<size_t>(copyW));
+        }
+    }
+    env->ReleaseByteArrayElements(dstTensor, dst, 0);
 }
 
 JNIEXPORT jintArray JNICALL
@@ -944,8 +1046,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 
     int h = (int)shape[shape.size() - 2];
     int w = (int)shape[shape.size() - 1];
-    const float* data = nativeTensor->data<float>();
-    if (!data) return 0.0f;
+    std::vector<float> heatBuf;
+    if (!tensorToFloatHeatmap(nativeTensor, h, w, &heatBuf)) return 0.0f;
+    const float* data = heatBuf.data();
 
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
     cv::Mat mask = heatmap > threshold;
@@ -1008,6 +1111,33 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     return (float)bestBucket / 2.0f;
 }
 
+// Return full heatmap as float[] for Java (safe for float32 / uint8 / fp16).
+JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToFloatArray(
+    JNIEnv* env, jobject thiz, jobject tensor) {
+    jclass cls = env->GetObjectClass(tensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    jlong nativePtr = env->GetLongField(tensor, fid);
+    if (nativePtr == 0) return nullptr;
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return nullptr;
+    paddle::lite_api::Tensor* nativeTensor = uptr->get();
+    auto shape = nativeTensor->shape();
+    if (shape.size() < 2) return nullptr;
+    int h = (int)shape[shape.size() - 2];
+    int w = (int)shape[shape.size() - 1];
+    std::vector<float> heatBuf;
+    if (!tensorToFloatHeatmap(nativeTensor, h, w, &heatBuf)) return nullptr;
+    jfloatArray out = env->NewFloatArray(static_cast<jsize>(heatBuf.size()));
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, static_cast<jsize>(heatBuf.size()), heatBuf.data());
+    return out;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmap(
     JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold, jfloat minArea) {
@@ -1031,8 +1161,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 
     int h = (int)shape[shape.size() - 2];
     int w = (int)shape[shape.size() - 1];
-    const float* data = nativeTensor->data<float>();
-    if (!data) return nullptr;
+    std::vector<float> heatBuf;
+    if (!tensorToFloatHeatmap(nativeTensor, h, w, &heatBuf)) return nullptr;
+    const float* data = heatBuf.data();
 
     LOGI("nativeProcessHeatmap: shape=[%d dims], h=%d, w=%d, ptr=%p, first4=[%.4f,%.4f,%.4f,%.4f]",
          (int)shape.size(), h, w, data, data[0], data[1], data[2], data[3]);

@@ -171,6 +171,11 @@ object NativeImageUtils {
         nativePopulateMonoTensor(src.nativeObj, dst, tensorW, tensorH, mean, std)
     }
 
+    fun quantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int = 0, srcH: Int = 0) {
+        nativeQuantizeMonoHandleToInt8(srcHandle, dstHandle, tensorW, tensorH, srcW, srcH)
+    }
+
+
     /**
      * Offloads the entire Valley Expansion algorithm to C++.
      * Reduces thousands of JNI calls to a single call.
@@ -284,6 +289,14 @@ object NativeImageUtils {
         return nativeHeatmapToAngle(tensor, threshold)
     }
 
+    /**
+     * Safe float heatmap plane from det output (float32 / uint8 / fp16).
+     * Do not use Tensor.getFloatData on non-float tensors — that crashes native.
+     */
+    fun heatmapToFloatArray(tensor: Any): FloatArray? {
+        return nativeHeatmapToFloatArray(tensor)
+    }
+
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
@@ -293,6 +306,18 @@ object NativeImageUtils {
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
+    private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
+    private external fun nativePopulateMonoInt8Xor(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
+    private external fun nativePopulateMonoUInt8(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
+
+    fun populateMonoInt8Xor(src: Mat, dst: ByteArray, tensorW: Int, tensorH: Int) {
+        nativePopulateMonoInt8Xor(src.nativeObj, dst, tensorW, tensorH)
+    }
+
+    /** Raw greyscale copy for kUInt8 feed (no XOR). Still copies into [dst] for setData. */
+    fun populateMonoUInt8(src: Mat, dst: ByteArray, tensorW: Int, tensorH: Int) {
+        nativePopulateMonoUInt8(src.nativeObj, dst, tensorW, tensorH)
+    }
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
@@ -301,6 +326,7 @@ object NativeImageUtils {
     private external fun nativeBinarizeRange(srcPtr: Long, dstPtr: Long, low: Int, high: Int)
     private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
+    private external fun nativeHeatmapToFloatArray(tensor: Any): FloatArray?
 
     // --------------------------------------------------------
     // SET H MODULAR PIPELINE — New granular JNI bindings.
