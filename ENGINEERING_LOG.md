@@ -247,3 +247,26 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - F5: per-vehicle MPG, take(5) newest, usable fields, single scroll (ab889a33 + 5d4f3d6b fix)
 - Builds tag: operational-improvements/builds @ 5d4f3d6b
 - Note: TODO.md not updated for live work (backlog only per user/mandates)
+
+## 2026-07-10 - Post-test DB check + remove Quick Fill test rows
+
+- User validated: multi-retry no crash; portrait camera size OK; partial odo-only + pump-only saves; fuel photos saving.
+- DB before cleanup: id 12 odo-only partial=1 photoUrl set; id 13 pump-only (cost+gal) partial=1 photoUrl null; ids 1-11 historical.
+- Partial auto-flag correct for new rows (isPartialFill=1 when any of odo/cost/gal blank).
+- Removed test rows id 12 and 13 from device `vehicle_expenses.db` (force-stop, rewrite DB via run-as, clear WAL). Verified 11 rows remain, max id 11.
+- Historical rows 5-8 still partial=0 with odo=0 (pre-fix data; not rewritten).
+
+## 2026-07-10 - DB cleanup after second Quick Fill photo test
+
+- Fetched post-test DB: id 14 full fill (odo 199397, gal 13.12, cost 52.34) partial=0 with single photoUrl media/1000002795.
+- Two fuel_ files on disk at 18:18: fuel_1783732682156 (media/1000002794) and fuel_1783732691966 (media/1000002795). Entry only stores one photoUrl (schema single field; last shutter wins).
+- Deleted id 14 from device DB.
+- Marked prior partials isPartialFill=1: ids 5-8 (odo was 0); id 1 and 9 (bogus odo 28 and 122 cleared to 0, partial=1).
+- Left full fills 2,3,4,10,11 partial=0. Device verified 11 rows, no id 14.
+
+## 2026-07-10 - Execution start: quickfill-multi-photo-json-and-reports-redesign
+
+- Plan: dev-ai-interaction/plans/quickfill-multi-photo-json-and-reports-redesign-20260710-plan.md
+- Feature A: session multi-photo JSON on Save (dash/pump)
+- Feature B: reports redesign last-5 full fills + per-vehicle summary
+- Baseline: operational-improvements/builds @ 40caac5e

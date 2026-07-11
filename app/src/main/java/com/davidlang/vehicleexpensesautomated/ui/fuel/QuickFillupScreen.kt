@@ -79,6 +79,33 @@ private fun convertVolumeForSave(value: Double, fromUnit: String, toUnit: String
     }
 }
 
+/** In-memory photo pointer until FuelEntry Save (tag dash|pump). */
+private data class SessionPhoto(val uri: String, val ts: Long)
+
+/** Map captureMode odo→dash, pump→pump. */
+private fun photoTagForCaptureMode(captureMode: String): String {
+    return if (captureMode == "pump") "pump" else "dash"
+}
+
+/** Compact JSON array for FuelEntry.photoUrl; null if empty. */
+private fun sessionPhotosToJson(photos: Map<String, SessionPhoto>): String? {
+    if (photos.isEmpty()) return null
+    val arr = org.json.JSONArray()
+    // Stable order: dash then pump then any other tags
+    val keys = photos.keys.sortedWith(compareBy({ if (it == "dash") 0 else if (it == "pump") 1 else 2 }, { it }))
+    for (tag in keys) {
+        val p = photos[tag] ?: continue
+        arr.put(
+            org.json.JSONObject().apply {
+                put("tag", tag)
+                put("uri", p.uri)
+                put("ts", p.ts)
+            }
+        )
+    }
+    return arr.toString()
+}
+
 /** One-shot fallback: write a JPEG of [bitmap] into DCIM/Camera as fuel_*.jpg (same roll as stock Camera). */
 private fun saveBitmapToDcimCamera(context: android.content.Context, bitmap: Bitmap): android.net.Uri? {
     return try {
@@ -135,7 +162,8 @@ fun QuickFillupScreen(
     var odometer by rememberSaveable { mutableStateOf("") }
     var gallons by rememberSaveable { mutableStateOf("") }
     var cost by rememberSaveable { mutableStateOf("") }
-    var photoUrl by remember { mutableStateOf<String?>(null) }
+    /** Session photos keyed by tag (dash/pump); written to DB only on Save as JSON. */
+    val sessionPhotos = remember { mutableStateMapOf<String, SessionPhoto>() }
     var lat by remember { mutableStateOf<Double?>(null) }
     var lon by remember { mutableStateOf<Double?>(null) }
     var loc by remember { mutableStateOf<String?>(null) }
@@ -633,6 +661,7 @@ fun QuickFillupScreen(
                         }
                         // TODO future: persist non-default currency on FuelEntry (DB change later).
                         // Cost uses raw numeric value; currencySymbol is display-only this turn.
+                        val photoUrlJson = sessionPhotosToJson(sessionPhotos)
                         fuelViewModel.saveFuel(
                             FuelEntry(
                                 vehicleId = vehicleId,
@@ -640,7 +669,7 @@ fun QuickFillupScreen(
                                 gallons = saveVolume,
                                 cost = costTrim.toDoubleOrNull() ?: 0.0,
                                 timestamp = System.currentTimeMillis(),
-                                photoUrl = photoUrl,
+                                photoUrl = photoUrlJson,
                                 latitude = lat,
                                 longitude = lon,
                                 location = loc,
@@ -663,7 +692,7 @@ fun QuickFillupScreen(
                         odometer = ""
                         cost = ""
                         gallons = ""
-                        photoUrl = null
+                        sessionPhotos.clear()
                         photoSaveStatus = null
                         capturePending = false
                         captureViewState = CaptureViewState.Live
@@ -928,8 +957,9 @@ fun QuickFillupScreen(
         lastCaptureType = captureMode
         captureViewState = CaptureViewState.Processing
         capturePending = true
-        photoUrl = null
+        // Do not clear other tags' session photos on shutter; re-shot tag is replaced on success.
         photoSaveStatus = null
+        val photoTag = photoTagForCaptureMode(captureMode)
 
         val playSound = prefs.getBoolean("shutter_sounds", true)
         if (playSound) {
@@ -985,7 +1015,6 @@ fun QuickFillupScreen(
                             val savedUri = output.savedUri
                             android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
                             if (savedUri == null) {
-                                photoUrl = null
                                 photoSaveStatus = "Photo save failed — entry will have no photo"
                                 Toast.makeText(
                                     context,
@@ -993,7 +1022,10 @@ fun QuickFillupScreen(
                                     Toast.LENGTH_LONG
                                 ).show()
                             } else {
-                                photoUrl = savedUri.toString()
+                                sessionPhotos[photoTag] = SessionPhoto(
+                                    uri = savedUri.toString(),
+                                    ts = System.currentTimeMillis()
+                                )
                                 photoSaveStatus = null
                                 Toast.makeText(context, "Photo saved to Camera", Toast.LENGTH_SHORT).show()
                             }
@@ -1009,7 +1041,10 @@ fun QuickFillupScreen(
                                 null
                             }
                             if (fallbackUri != null) {
-                                photoUrl = fallbackUri.toString()
+                                sessionPhotos[photoTag] = SessionPhoto(
+                                    uri = fallbackUri.toString(),
+                                    ts = System.currentTimeMillis()
+                                )
                                 photoSaveStatus = null
                                 Toast.makeText(
                                     context,
@@ -1017,7 +1052,6 @@ fun QuickFillupScreen(
                                     Toast.LENGTH_SHORT
                                 ).show()
                             } else {
-                                photoUrl = null
                                 photoSaveStatus = "Photo save failed — entry will have no photo"
                                 Toast.makeText(
                                     context,
@@ -1031,7 +1065,6 @@ fun QuickFillupScreen(
                 )
             } catch (e: Exception) {
                 Log.e("QuickFill", "Photo takePicture setup failed", e)
-                photoUrl = null
                 photoSaveStatus = "Photo save failed — entry will have no photo"
                 isPhotoSaving = false
                 Toast.makeText(
