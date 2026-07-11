@@ -367,3 +367,15 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Plan: add-docs-app-launcher-icon-20260710-plan.md
 - Copy draft → docs/reference/APP_LAUNCHER_ICON.md + build_app
 - Baseline: operational-improvements/builds @ c8357785
+
+## 2026-07-10 - Launcher icon crop too tight on device
+
+- Screenshot: home/search shows VehicleExpenses adaptive icon over-cropped (mostly yellow car; van/wheel/$ cut off).
+- Cause: full-bleed master used as adaptive FG; system mask shows ~center only.
+- Rebuilt android-export with ~70% safe-zone scale + padding. Re-install via install-into-app.sh when writable; rebuild APK to verify.
+
+## 2026-07-10 - Execution start: install lightened app icon safe-zone
+
+- Plan: dev-ai-interaction/plans/install-lightened-app-icon-safe-zone-20260710-plan.md
+- Intent: install adaptive safe-zone padded lightened launcher icon export into app/
+- Baseline: operational-improvements/builds @ 2b25b1b6f300cea95c04f2aa3b600ec15f7650eb
