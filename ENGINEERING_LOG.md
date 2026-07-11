@@ -303,3 +303,10 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Vehicle summary: name alone then stats 1–2 lines
 - Last-5: newest legs only with valid mpg + rolled cost/vol
 - Baseline: operational-improvements/builds @ 947e3783
+
+## 2026-07-10 - Execution complete: reports name-line summary + last-5 leg rollup
+
+- Plan: reports-summary-compact-and-by-vehicle-last5-only-20260710-plan.md
+- Summary: vehicle name line + adaptive stats 1–2 lines (middot split)
+- Last-5: newest valid legs only; rolled sumCost/sumVol; always mpg+bar; no first-full n/a
+- Commit 4d7fb9ad
