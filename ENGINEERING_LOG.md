@@ -220,3 +220,13 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 
 - Expanded SET_G_VERT_FACTORS to 7 factors; G- to 5; G-- to [0.3, 1.2].
 - Aligned ExperimentPumpScreen regularGVert/DVert/EVert lists.
+
+## 2026-07-10 - Merge int8-paddle-processing into master
+
+- Merged branch `int8-paddle-processing` (rewritten history from `9aac4d0d`); production OCR path **uint8_fp16_u8** only.
+- Shipped `assets/paddle/prod_u8fp16/` models; removed legacy multi-path assets and PrecCampaign harness.
+- arm64-v8a: model-tailored `libpaddle_lite_jni.so` (~1.6MB). x86_64: slim jni + `libpaddle_light_api_shared.so`. armeabi-v7a: fat multi-path jni (interim).
+- Restored host scripts under `app/src/main/assets/paddle/scripts/`; added `optimize_mono_int8_models.sh`.
+- Updated `docs/specs/HOST_PADDLE_USE.md`, `PADDLE_BUILD.md`, `PADDLE_PR_DESCRIPTIONS.md`.
+- Added `PROBLEM_IMAGES_UINT8_U8` (26-image regression/gain set) + Problem Images button on pump experiment screen.
+- Merge hygiene: ENGINEERING_LOG append-only import; TODO smart union; `project-facts.md` full rewrite; fork-drift files reconciled to master (LandmarkDebugDialog, gradle.properties, OdometerOcrUtils, ManageVehiclesScreen).
