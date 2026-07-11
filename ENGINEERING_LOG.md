@@ -379,3 +379,11 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Plan: dev-ai-interaction/plans/install-lightened-app-icon-safe-zone-20260710-plan.md
 - Intent: install adaptive safe-zone padded lightened launcher icon export into app/
 - Baseline: operational-improvements/builds @ 2b25b1b6f300cea95c04f2aa3b600ec15f7650eb
+
+## 2026-07-10 - Execution end: install lightened app icon safe-zone
+
+- Safe-zone padded lightened launcher mipmaps installed from android-export (match export SHA)
+- Full/round/foreground densities mdpi–xxxhdpi; sizes FG 432 / full 192 OK
+- Playstore/background already matched prior lightened install (no further delta)
+- Commit c6dc894d; builds tag: operational-improvements/builds @ c6dc894dbdaee551c0631025e22eacef20b3afad
+- User: reinstall APK / clear launcher cache to verify van, wheel, $ inside circular mask
