@@ -321,3 +321,10 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Plan: dev-ai-interaction/plans/expense-entry-vehicle-dropdown-and-quickfill-camera-20260710-plan.md
 - A: vehicle dropdown; B: camera/zoom/shutter/save/gallery icons
 - Baseline: operational-improvements/builds @ 8cb3260a
+
+## 2026-07-10 - Execution complete: expense-entry-vehicle-dropdown-and-quickfill-camera
+
+- Plan: expense-entry-vehicle-dropdown-and-quickfill-camera-20260710-plan.md
+- A: vehicle ExposedDropdownMenu (658de92a)
+- B: CameraPreview + zoom + MediaStore shutter + Save/Gallery icons, no OCR (2e21041c)
+- Builds: operational-improvements/builds @ 2e21041c
