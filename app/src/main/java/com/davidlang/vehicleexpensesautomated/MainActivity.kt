@@ -71,14 +71,6 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var vehicleRepository: VehicleRepository
 
-    private val cameraPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (!isGranted) {
-            Toast.makeText(this, "Camera permission denied. Photo features will be disabled.", Toast.LENGTH_LONG).show()
-        }
-    }
-
     private val mediaPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -89,6 +81,16 @@ class MainActivity : ComponentActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Toast.makeText(this, "Camera permission denied. Photo features will be disabled.", Toast.LENGTH_LONG).show()
+        }
+        // D6: request media only after camera dialog settles (granted or denied).
+        maybeRequestMediaPermissionForFuelPhotos()
     }
 
     private fun mediaImagesPermission(): String {
@@ -113,8 +115,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Camera only here — media follows in cameraPermissionLauncher callback (no stacked dialogs).
         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-        maybeRequestMediaPermissionForFuelPhotos()
 
         setContent {
             VehicleExpensesAutomatedTheme {
