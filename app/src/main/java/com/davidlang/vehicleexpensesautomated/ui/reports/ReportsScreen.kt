@@ -229,7 +229,7 @@ fun ReportsScreen(navController: NavHostController) {
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text("${entry.description} | $${"%.2f".format(entry.amount)} | ${entry.category}")
-                        Text(formatEntryDate(entry.timestamp), style = MaterialTheme.typography.labelSmall)
+                        Text(formatEntryDate(entry.date), style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
