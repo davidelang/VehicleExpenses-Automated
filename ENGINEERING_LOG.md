@@ -337,3 +337,15 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 
 - Plan: expense-entry-vehicle-dropdown-and-quickfill-camera-20260710-plan.md (updated: photoUrl optional)
 - A/B already landed 658de92a/2e21041c; delta: allow save without photo
+
+## 2026-07-10 - App icon lightened master → Android densities (export ready)
+
+- Source: dev-ai-interaction/research/imagine-icon-candidate/app-icon-master-1024.png (pale yellow car, pale blue van, white glass).
+- Generated full density set + round masks + adaptive foregrounds + 512 playstore PNGs + #FAFAFA adaptive background into android-export/.
+- Could not write into agent-7/app (ai-planner lacks write on dlang:ai-code res files). Install: bash android-export/install-into-app.sh <worktree> as a writable user, or execution agent after perms.
+
+## 2026-07-10 - Execution: install lightened app icon
+
+- Plan: install-lightened-app-icon-from-master-20260710-plan.md
+- install-into-app.sh already applied (user); verify sizes + build_app commit
+- Baseline: operational-improvements/builds @ 104bfd08
