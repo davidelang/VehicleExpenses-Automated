@@ -111,6 +111,13 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         flip()
     }
 
+    /** Integer XOR remap p→s: q=(b^128). No flip — .p stays readable; .s holds int8 tensor. */
+    fun quantizeMonoInputToScratch(tensorW: Int = _width, tensorH: Int = _height) {
+        val srcHandle = (p as Instance).nativePtr
+        val dstHandle = (s as Instance).nativePtr
+        NativeImageUtils.quantizeMonoHandleToInt8(srcHandle, dstHandle, tensorW, tensorH, _width, _height)
+    }
+
     fun createCrop(x: Int, y: Int, w: Int, h: Int, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
     fun createCrop(x: Float, y: Float, w: Float, h: Float, id: Int? = null): Int = p.createCrop(x, y, w, h, id)
 
@@ -177,6 +184,8 @@ class BufferSet(internal var _width: Int, internal var _height: Int) {
         override val uvMat: Mat get() = _uvMat ?: throw IllegalStateException("Not initialized")
         override val nv21: ByteBuffer get() = _buffer?.duplicate()?.position(0) as ByteBuffer
         override val raw: ByteBuffer get() = (_buffer?.duplicate()?.position(0)?.limit(_width * _height) as ByteBuffer).slice()
+        /** Full NV21 backing capacity for tensor ShareExternalMemory (avoids w*h slice overrun). */
+        fun tensorBindRaw(): ByteBuffer = (_buffer?.duplicate()?.position(0) as ByteBuffer)
         override val nv21Mat: Mat get() = _nv21Mat ?: throw IllegalStateException("Not initialized")
         override val width: Int get() = _width
         override val height: Int get() = _height

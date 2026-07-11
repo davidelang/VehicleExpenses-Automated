@@ -21,6 +21,16 @@ set_target_properties(opencv_java4 PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_D
 add_library(paddle_lite_jni SHARED IMPORTED)
 set_target_properties(paddle_lite_jni PROPERTIES IMPORTED_LOCATION ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libpaddle_lite_jni.so)
 
+# x86 split build: thin jni + fat light_api_shared (kernels live in light)
+set(PADDLE_LIGHT_SO ${CMAKE_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libpaddle_light_api_shared.so)
+if(EXISTS ${PADDLE_LIGHT_SO})
+    add_library(paddle_light_api_shared SHARED IMPORTED)
+    set_target_properties(paddle_light_api_shared PROPERTIES IMPORTED_LOCATION ${PADDLE_LIGHT_SO})
+    set(PADDLE_EXTRA_LIBS paddle_light_api_shared)
+else()
+    set(PADDLE_EXTRA_LIBS "")
+endif()
+
 # 1. buffer_set library (Isolated memory management)
 add_library(buffer_set SHARED BufferSet.cpp)
 target_link_libraries(buffer_set jnigraphics log opencv_java4)
@@ -32,6 +42,7 @@ target_link_libraries(native_ocr
     log
     opencv_java4
     paddle_lite_jni
+    ${PADDLE_EXTRA_LIBS}
     libraw_static
 )
 

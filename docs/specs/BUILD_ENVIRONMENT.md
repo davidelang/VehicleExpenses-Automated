@@ -26,6 +26,7 @@ The project uses a **custom-built** version of the Paddle-Lite library. The stan
 1.  **Dynamic Size Support:** Required for variable-resolution dashboard analysis.
 2.  **Architecture Support:** Custom builds for `amd64` (host-side testing) and `android` (device) targets.
 3.  **Symbol Conflicts:** Custom build flags are used to prevent symbol collisions with OpenCV in the `MemoryBridge` layer.
+4.  **INT8 activation input:** Rebuild from `paddle-build-int8-20.04` image (`patches-int8/`, branch `pr-int8-activation-input`). Outputs land under `dev-ai-interaction/paddle-build/output/` per target; deploy `.so` + `PaddlePredictor.jar` to `app/src/main/jniLibs/` and `app/libs/`.
 
 ## 3. Python Environment
 Required for model optimization and monochrome conversion scripts.

@@ -121,6 +121,41 @@ private val GOLDEN_SUBSET = listOf(
     "PXL_20250930_065746276.jpg"
 )
 
+/**
+ * uint8_fp16_u8 vs baseline (strict digit-subset scoring): 22 token regressions + 4 gains.
+ * Used by "Problem Images" button and prec-campaign --es photos=...
+ */
+val PROBLEM_IMAGES_UINT8_U8 = listOf(
+    // regressions (baseline hit, uint8_fp16_u8 miss)
+    "PXL_20221126_210421897.dng",
+    "PXL_20221126_210421897.jpg",
+    "PXL_20221128_172956178.dng",
+    "PXL_20221228_165217774.dng",
+    "PXL_20230101_055935720.dng",
+    "PXL_20230414_023123861.dng",
+    "PXL_20230806_235553394.jpg",
+    "PXL_20230827_000357771.jpg",
+    "PXL_20231120_002742785.dng",
+    "PXL_20240326_014922448.jpg",
+    "PXL_20240718_000403216.jpg",
+    "PXL_20250426_084222634.jpg",
+    "PXL_20250703_032207597.jpg",
+    "PXL_20250726_211343400.jpg",
+    "PXL_20250808_234426044.jpg",
+    "PXL_20250811_211835846.jpg",
+    "PXL_20250926_022815882.jpg",
+    "PXL_20251016_032043998.jpg",
+    "PXL_20251107_064636287.jpg",
+    "PXL_20260114_020053675.jpg",
+    "PXL_20260214_204206758.jpg",
+    "PXL_20260220_043453305.jpg",
+    // gains (uint8 hit, baseline miss) — 4 images
+    "PXL_20221121_195449335.jpg",
+    "PXL_20221222_211812872.jpg",
+    "PXL_20230612_180633478.jpg",
+    "PXL_20251220_040853040.jpg",
+)
+
 @Immutable
 data class PumpPhotoResultSummary(
     val photoName: String,
@@ -210,6 +245,30 @@ fun ExperimentPumpScreen(navController: NavHostController) {
                 isRunning = false; status = "Complete! Limited Report saved."
             }
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Limited Experiment (Golden Subset)") }
+        Button(onClick = {
+            scope.launch {
+                val allFiles = experimentDir.listFiles { f ->
+                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+                } ?: emptyArray()
+                Log.d(TAG, "Problem Images listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
+                val subset = allFiles.filter { it.name in PROBLEM_IMAGES_UINT8_U8 }
+                if (subset.isEmpty()) {
+                    status = "No problem images found in ${experimentDir.absolutePath}"
+                    return@launch
+                }
+                totalPhotos = subset.size
+                isRunning = true; resultsList.clear()
+                runPumpExperiment(
+                    experimentDir, reportDir, context, { detailLog = it }, PROBLEM_IMAGES_UINT8_U8
+                ) { res, p ->
+                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
+                }
+                isRunning = false
+                status = "Complete! Problem-images report saved (${subset.size} photos)."
+            }
+        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) {
+            Text("Problem Images (uint8_fp16_u8 reg/gain, ${PROBLEM_IMAGES_UINT8_U8.size})")
+        }
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->

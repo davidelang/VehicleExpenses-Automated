@@ -15,6 +15,28 @@ The custom modifications are tracked in a fork of the official Paddle-Lite repos
 *   **Active Branches (Prepared locally for PR):**
     *   `pr-upstream-cleanup`: **Foundational.** Essential bug fixes required to build Paddle-Lite for ANY platform (ARM or X86). Includes AVX-512 CRF decoding fixes and INT8 linker support.
     *   `pr-x86-android-mobile-gap`: **Platform-Specific.** Additional patches required specifically for Android Emulator support (`x86_64`). Bridges the "Mobile Gap" and fixes AVX2 scoping.
+    *   `pr-int8-activation-input`: **INT8-only.** `keep_quantized_weights` + `analytic_input_quant_pass`. Depends on merged PR patches; lives in `patches-int8/` only (never modify `patches/`).
+
+## 1b. INT8 Docker Build Matrix (Image vs Run Container)
+
+| Layer | Image tag | Dockerfile | Patches |
+|-------|-----------|------------|---------|
+| Base PR | `paddle-build-20.04` | `Dockerfile` | `apply_patches.sh` → `patches/` |
+| INT8 layer | `paddle-build-int8-20.04` | `Dockerfile.int8` | `apply_int8_patches.sh` → `patches-int8/` |
+
+```bash
+docker build -t paddle-build-20.04 -f Dockerfile .
+docker build -t paddle-build-int8-20.04 -f Dockerfile.int8 .
+```
+
+Per-target **run containers** (one named container per arch):
+
+| Container | Command |
+|-----------|---------|
+| `paddle_int8_build_linux` | `./lite/tools/build_linux.sh --arch=x86` |
+| `paddle_int8_build_arm64` | `./lite/tools/build_android.sh --arch=armv8 ...` |
+| `paddle_int8_build_arm32` | `./lite/tools/build_android.sh --arch=armv7 ...` |
+| `paddle_int8_build_x86_64` | `./lite/tools/build_android.sh --arch=x86_64 ...` |
 
 ## 2. Technical Highlights from Custom Branches
 
