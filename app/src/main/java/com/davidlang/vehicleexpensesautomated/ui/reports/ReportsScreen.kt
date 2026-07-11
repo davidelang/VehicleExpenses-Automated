@@ -11,6 +11,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -23,7 +26,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// --- Math helpers (unchanged: interim-gallon legs) ---
+// --- Math helpers (leg = interim-gallon sum between consecutive full fills) ---
 
 /** Full fill points: not partial, odometer > 0 (time-sorted ascending). */
 private fun fullFillsAscending(entries: List<FuelEntry>): List<FuelEntry> {
@@ -33,40 +36,45 @@ private fun fullFillsAscending(entries: List<FuelEntry>): List<FuelEntry> {
 }
 
 /**
- * Leg MPG between consecutive full fills F_prev → F_cur:
- * (odo_cur - odo_prev) / sum(gallons of all fills with F_prev.ts < T <= F_cur.ts and gallons > 0).
+ * One full-fill leg ending at [endFill] (must have a previous full).
+ * cost/vol are rolled sums over (prev.ts, end.ts] with gallons > 0.
  */
-private fun mpgLegsForVehicle(entries: List<FuelEntry>): List<Double> {
+private data class FullFillLeg(
+    val endFill: FuelEntry,
+    val sumCost: Double,
+    val sumVol: Double,
+    val mpg: Double
+)
+
+/**
+ * Newest valid full-fill legs (newest first). Excludes first full (no predecessor).
+ * Only legs with odo increase and volDisplay > 0 — every leg has defined mpg.
+ */
+private fun newestValidLegs(entries: List<FuelEntry>, maxLegs: Int = 5): List<FullFillLeg> {
     val full = fullFillsAscending(entries)
     if (full.size < 2) return emptyList()
-    val legs = mutableListOf<Double>()
+    val legsAsc = mutableListOf<FullFillLeg>()
     for (i in 1 until full.size) {
         val prev = full[i - 1]
         val cur = full[i]
         if (cur.odometer <= prev.odometer) continue
-        val gallonsSum = entries
-            .filter { it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp && it.gallons > 0 }
-            .sumOf { it.gallons }
-        if (gallonsSum > 0) {
-            legs.add((cur.odometer - prev.odometer) / gallonsSum)
+        val window = entries.filter {
+            it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp && it.gallons > 0
         }
+        val sumVol = window.sumOf { it.gallons }
+        if (sumVol <= 0) continue
+        val sumCost = window.sumOf { it.cost }
+        val mpg = (cur.odometer - prev.odometer) / sumVol
+        legsAsc.add(
+            FullFillLeg(
+                endFill = cur,
+                sumCost = sumCost,
+                sumVol = sumVol,
+                mpg = mpg
+            )
+        )
     }
-    return legs
-}
-
-/** MPG of the leg ending at [fullFill], or null if n/a. */
-private fun mpgForFullFill(allVehicleEntries: List<FuelEntry>, fullFill: FuelEntry): Double? {
-    val full = fullFillsAscending(allVehicleEntries)
-    val idx = full.indexOfFirst { it.id == fullFill.id }
-    if (idx <= 0) return null
-    val prev = full[idx - 1]
-    val cur = full[idx]
-    if (cur.odometer <= prev.odometer) return null
-    val gallonsSum = allVehicleEntries
-        .filter { it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp && it.gallons > 0 }
-        .sumOf { it.gallons }
-    if (gallonsSum <= 0) return null
-    return (cur.odometer - prev.odometer) / gallonsSum
+    return legsAsc.asReversed().take(maxLegs)
 }
 
 /**
@@ -97,8 +105,8 @@ private data class VehicleReportStats(
     val lastMpg: Double?,
     val avgMpg: Double?,
     val dollarsPerMile: Double?,
-    val last5Full: List<FuelEntry>,
-    val mpgByEntryId: Map<Long, Double?>
+    /** Up to 5 newest valid full-fill legs (each always has mpg). */
+    val last5Legs: List<FullFillLeg>
 )
 
 private fun formatMpg(value: Double?): String {
@@ -128,13 +136,21 @@ private fun overallSummaryLine(
         "${"%.1f".format(totalGallons)}$unitLabel · fills $totalFillUps (${partialFills}p)"
 }
 
-/** Per-vehicle compact summary: 1 line preferred. */
-private fun vehicleSummaryLine(stats: VehicleReportStats, unitLabel: String): String {
+/** Stats only (no vehicle name) for Summary L2+. */
+private fun vehicleStatsOnlyLine(stats: VehicleReportStats, unitLabel: String): String {
     val dpm = if (stats.dollarsPerMile == null) "n/a" else "%.3f".format(stats.dollarsPerMile)
-    return "${stats.name}: Fuel ${formatMoney(stats.fuelCost)} · " +
+    return "Fuel ${formatMoney(stats.fuelCost)} · " +
         "${"%.1f".format(stats.gallons)}$unitLabel · " +
         "${stats.fillCount}(${stats.partialCount}p) · " +
         "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · $/mi $dpm"
+}
+
+/** Split stats at middot boundaries into two roughly equal parts. */
+private fun splitStatsAtMiddot(stats: String): Pair<String, String> {
+    val parts = stats.split(" · ")
+    if (parts.size <= 1) return stats to ""
+    val mid = (parts.size + 1) / 2
+    return parts.take(mid).joinToString(" · ") to parts.drop(mid).joinToString(" · ")
 }
 
 private val vehicleColMinWidth = 156.dp
@@ -175,10 +191,8 @@ fun ReportsScreen(navController: NavHostController) {
         ids.map { vehicleId ->
             val vFuel = fuelByV[vehicleId].orEmpty()
             val vExp = expByV[vehicleId].orEmpty()
-            val legs = mpgLegsForVehicle(vFuel)
-            val fullDesc = fullFillsAscending(vFuel).asReversed() // newest first
-            val last5 = fullDesc.take(5)
-            val mpgMap = last5.associate { it.id to mpgForFullFill(vFuel, it) }
+            val allLegsNewestFirst = newestValidLegs(vFuel, maxLegs = Int.MAX_VALUE)
+            val legsChrono = allLegsNewestFirst.asReversed() // oldest→newest for avg/last
             VehicleReportStats(
                 vehicleId = vehicleId,
                 name = vehicleNameById[vehicleId] ?: "Vehicle $vehicleId",
@@ -186,11 +200,10 @@ fun ReportsScreen(navController: NavHostController) {
                 gallons = vFuel.sumOf { it.gallons },
                 fillCount = vFuel.size,
                 partialCount = vFuel.count { it.isPartialFill },
-                lastMpg = legs.lastOrNull(),
-                avgMpg = if (legs.isEmpty()) null else legs.average(),
+                lastMpg = legsChrono.lastOrNull()?.mpg,
+                avgMpg = if (legsChrono.isEmpty()) null else legsChrono.map { it.mpg }.average(),
                 dollarsPerMile = dollarsPerMile(vFuel, vExp),
-                last5Full = last5,
-                mpgByEntryId = mpgMap
+                last5Legs = allLegsNewestFirst.take(5)
             )
         }
     }
@@ -211,7 +224,6 @@ fun ReportsScreen(navController: NavHostController) {
         Text("Reports", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- Summary: overall + per-vehicle stats (compact); no fill lists here ---
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
@@ -236,27 +248,27 @@ fun ReportsScreen(navController: NavHostController) {
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                         val cols = ((maxWidth / vehicleSummaryMinWidth).toInt()).coerceAtLeast(1)
                         if (cols <= 1) {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 vehicleStats.forEach { stats ->
-                                    Text(
-                                        vehicleSummaryLine(stats, volumeUnitLabel),
-                                        style = MaterialTheme.typography.bodySmall,
+                                    VehicleSummaryBlock(
+                                        stats = stats,
+                                        unitLabel = volumeUnitLabel,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
                             }
                         } else {
                             val chunked = vehicleStats.chunked(cols)
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 chunked.forEach { rowVehicles ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         rowVehicles.forEach { stats ->
-                                            Text(
-                                                vehicleSummaryLine(stats, volumeUnitLabel),
-                                                style = MaterialTheme.typography.bodySmall,
+                                            VehicleSummaryBlock(
+                                                stats = stats,
+                                                unitLabel = volumeUnitLabel,
                                                 modifier = Modifier
                                                     .weight(1f)
                                                     .widthIn(min = vehicleSummaryMinWidth)
@@ -276,7 +288,6 @@ fun ReportsScreen(navController: NavHostController) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // --- Last 5 full fills only (no totals/MPG/$/mi in these cards) ---
         Text("Last 5 full fills", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -345,7 +356,53 @@ fun ReportsScreen(navController: NavHostController) {
     }
 }
 
-/** By-vehicle card: name header + last-5 full-fill rows only. */
+/** Summary: name alone, then stats (1 line if fits, else 2 at middot split). */
+@Composable
+private fun VehicleSummaryBlock(
+    stats: VehicleReportStats,
+    unitLabel: String,
+    modifier: Modifier = Modifier
+) {
+    val statsLine = vehicleStatsOnlyLine(stats, unitLabel)
+    Column(modifier = modifier) {
+        Text(stats.name, style = MaterialTheme.typography.titleSmall)
+        AdaptiveStatsText(
+            statsLine = statsLine,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun AdaptiveStatsText(
+    statsLine: String,
+    modifier: Modifier = Modifier
+) {
+    val style = MaterialTheme.typography.bodySmall
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(modifier = modifier) {
+        val maxPx = with(LocalDensity.current) { maxWidth.roundToPx() }.coerceAtLeast(0)
+        val measured = measurer.measure(
+            text = statsLine,
+            style = style,
+            constraints = Constraints(maxWidth = maxPx)
+        )
+        val overflows = measured.lineCount > 1 || measured.didOverflowWidth
+        if (!overflows) {
+            Text(statsLine, style = style, modifier = Modifier.fillMaxWidth())
+        } else {
+            val (a, b) = splitStatsAtMiddot(statsLine)
+            Column {
+                Text(a, style = style, modifier = Modifier.fillMaxWidth())
+                if (b.isNotEmpty()) {
+                    Text(b, style = style, modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+}
+
+/** By-vehicle card: name header + last-5 valid full-fill legs only. */
 @Composable
 private fun VehicleLast5OnlyColumn(
     stats: VehicleReportStats,
@@ -357,8 +414,7 @@ private fun VehicleLast5OnlyColumn(
             Text(stats.name, style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(6.dp))
             VehicleLast5List(
-                last5 = stats.last5Full,
-                mpgByEntryId = stats.mpgByEntryId,
+                legs = stats.last5Legs,
                 volumeUnitLabel = volumeUnitLabel,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -371,26 +427,19 @@ private fun VehicleLast5OnlyColumn(
 
 @Composable
 private fun VehicleLast5List(
-    last5: List<FuelEntry>,
-    mpgByEntryId: Map<Long, Double?>,
+    legs: List<FullFillLeg>,
     volumeUnitLabel: String,
     modifier: Modifier = Modifier
 ) {
-    val maxMpg = mpgByEntryId.values.filterNotNull().maxOrNull()?.takeIf { it > 0 } ?: 1.0
+    val maxMpg = legs.maxOfOrNull { it.mpg }?.takeIf { it > 0 } ?: 1.0
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (last5.isEmpty()) {
+        if (legs.isEmpty()) {
             Text("No full fills", style = MaterialTheme.typography.bodySmall)
         } else {
-            last5.forEach { entry ->
-                val mpg = mpgByEntryId[entry.id]
-                val barFrac = if (mpg != null) {
-                    (mpg / maxMpg).coerceIn(0.0, 1.0).toFloat()
-                } else {
-                    0f
-                }
-                FullFillRow(
-                    entry = entry,
-                    mpg = mpg,
+            legs.forEach { leg ->
+                val barFrac = (leg.mpg / maxMpg).coerceIn(0.0, 1.0).toFloat()
+                FullFillLegRow(
+                    leg = leg,
                     barFraction = barFrac,
                     volumeUnitLabel = volumeUnitLabel
                 )
@@ -400,12 +449,12 @@ private fun VehicleLast5List(
 }
 
 @Composable
-private fun FullFillRow(
-    entry: FuelEntry,
-    mpg: Double?,
+private fun FullFillLegRow(
+    leg: FullFillLeg,
     barFraction: Float,
     volumeUnitLabel: String
 ) {
+    val entry = leg.endFill
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             "${formatEntryDate(entry.timestamp)} · odo ${entry.odometer}",
@@ -416,7 +465,7 @@ private fun FullFillRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "${formatMoney(entry.cost)} · ${formatVolume(entry.gallons, volumeUnitLabel)}",
+                "${formatMoney(leg.sumCost)} · ${formatVolume(leg.sumVol, volumeUnitLabel)}",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f)
             )
@@ -426,16 +475,14 @@ private fun FullFillRow(
                     .height(18.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
-                if (mpg != null && barFraction > 0f) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(barFraction.coerceIn(0.05f, 1f))
-                            .fillMaxHeight()
-                            .background(Color(0xFF81C784).copy(alpha = 0.45f))
-                    )
-                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(barFraction.coerceIn(0.05f, 1f))
+                        .fillMaxHeight()
+                        .background(Color(0xFF81C784).copy(alpha = 0.45f))
+                )
                 Text(
-                    "mpg ${formatMpg(mpg)}",
+                    "mpg ${"%.1f".format(leg.mpg)}",
                     style = MaterialTheme.typography.labelSmall,
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )

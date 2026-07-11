@@ -296,3 +296,10 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Last 5 full fills section: name + rows only (no Fuel/Gal/MPG/$/mi in cards)
 - MPG helpers unchanged (interim gallons)
 - Commit 22ff13b3; builds tag operational-improvements/builds
+
+## 2026-07-10 - Execution start: reports-summary name-line + last-5 legs rollup
+
+- Plan: dev-ai-interaction/plans/reports-summary-compact-and-by-vehicle-last5-only-20260710-plan.md (updated)
+- Vehicle summary: name alone then stats 1–2 lines
+- Last-5: newest legs only with valid mpg + rolled cost/vol
+- Baseline: operational-improvements/builds @ 947e3783
