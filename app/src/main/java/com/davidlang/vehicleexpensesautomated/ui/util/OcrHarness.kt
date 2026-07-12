@@ -132,7 +132,7 @@ object OcrHarness {
     }
 
     /**
-     * Quick Fill–only copy of Set G ("none, calculated") cost/volume extraction.
+     * Quick Fill–only cost/volume extraction using G-- vert list (shared reduce k=4).
      * Caller must deskew/rotate workspace first; no second deskew here.
      */
     private suspend fun extractQuickFillSetGCostVol(
@@ -175,8 +175,9 @@ object OcrHarness {
         pdHunksRawTotal.addAll(PumpCostVolUtils.rectsToHunks(redPixelList))
         if (pdHunksRawTotal.isEmpty()) return na
 
+        // Quick Fill uses G-- (shared reduce k=4), not full G k=8
         val (customBlueGPre, _) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
-            pdHunksRawTotal, imgW, imgH, SET_G_VERT_FACTORS, SET_G_HORIZ_FACTOR
+            pdHunksRawTotal, imgW, imgH, SET_G_MINUS_MINUS_VERT_FACTORS, SET_G_HORIZ_FACTOR
         )
         val customBluePixelG = PumpCostVolUtils.hunksToRects(customBlueGPre)
         if (customBluePixelG.isEmpty()) return na
