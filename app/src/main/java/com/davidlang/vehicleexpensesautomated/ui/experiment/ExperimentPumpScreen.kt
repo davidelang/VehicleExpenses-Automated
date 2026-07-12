@@ -14,6 +14,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
 import android.util.Base64
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
@@ -329,7 +330,8 @@ private suspend fun runPumpExperiment(
     val paddleEngine = NativePaddleEngine(context)
 
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
-    val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"total_photos\": $total,\n  \"results\": [\n"
+    val deviceModel = Build.MODEL
+    val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"device\": \"$deviceModel\",\n  \"total_photos\": $total,\n  \"results\": [\n"
     val jsonFooter = "\n  ]\n}"
     var firstPhoto = true
     val jsonWriter = jsonFile.bufferedWriter()
@@ -366,27 +368,27 @@ private suspend fun runPumpExperiment(
 
     // Define flows for N-sets support
     // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
-    // Active sets (2026-07-02): D, E, G, G-, G--, I — calculated paths only; each column gets a fresh master copy.
-    // Disabled for perf/noise: A (both ML+Paddle baseline), B/C/F (expanded binPeak paths), H (E+G hybrid k=5 — slower than G due to valley-push mutation on shared workspace).
-    // Explicit vert-factor pass lists everywhere (no 1..8 range).
-    // D (clip edges, calculated): [0.1,0.2,0.3,0.5,0.8,1.0]. E (valley push, calculated): [0.1,0.2,0.3,0.4,0.5,0.8].
-    // G family (individual-max relaxed 252): G [0.1,0.2,0.3,0.6,1.1,1.3]; G- best 3-pass [0.1,0.3,1.3] loss 4; G-- best 2-pass [0.3,1.3] loss 10.
-    // Quick-fill pump path (OcrHarness): SET_G_MINUS_MINUS_VERT_FACTORS G-- list [0.3,1.3].
-    // Set I (D+E+G hybrid k=10, calculated): deskew once, G (iGVert), clip stretch + adjust p/v grays, D (iDVert), valley push with adjusted grays, E (iEVert); current-pass filter; one combined classify.
-    // Hybrid sublists: I iGVert=[0.1,0.2,0.3,1.3] iDVert=[0.2,0.5,0.9] iEVert=[0.4,0.6,1.1]. I sequences on same workspace (no re-ingest); final processing sees one combined ocr/candidate list.
-    // Label convention: active sets use "Set X (stretch-type, blue-method)" self-describing columns. All active sets skip binPeak (calculated paths).
+    // Active sets: D, E, G, G-, G--, I — calculated paths only; each column gets a fresh master copy.
+    // Disabled for perf/noise: A (both ML+Paddle baseline), B/C/F (expanded binPeak paths), H (E+G hybrid).
+    // Vert lists from 2026-07-11 dual-device full-range retest (Phone Pixel 6 Pro + Emulator Pixel Tablet), shared 0-loss / Both charts:
+    // D (clip edges, calculated): [0.1,0.2,0.3,0.5,1.0,1.3] 0-loss both. E: [0.1,0.2,0.3,0.7] 0-loss both.
+    // G (none, calculated): SET_G_VERT_FACTORS [0.1,0.2,0.3,0.4,0.6,1.1,1.3,1.7] 0-loss both (cand valid 257/252).
+    // G- / G--: shared reduce k=6 [0.1,0.2,0.3,0.4,0.6,1.3] / k=4 [0.1,0.3,0.4,1.1]. Quick Fill uses G-- (k=4).
+    // Set I (D+E+G hybrid, calculated): deskew once, G (iGVert), clip + adjust p/v grays, D (iDVert), valley push, E (iEVert); one combined classify.
+    // I Both stage lists: iGVert=[0.1,0.2,0.3,0.4,0.6,1.1,1.5] iDVert=[0.1,0.2] iEVert=[0.3,0.7] (cover 268+261).
+    // Label convention: active sets use "Set X (stretch-type, blue-method)" self-describing columns.
     val flows = listOf(
         "Set D (clip edges, calculated)",
         "Set E (valley push, calculated)",
         "Set G (none, calculated)",
-        "Set G- (3 pass, none, calculated)",
-        "Set G-- (2 pass, none, calculated)",
+        "Set G- (6 pass, none, calculated)",
+        "Set G-- (4 pass, none, calculated)",
         "Set I (D+E+G hybrid, calculated)"
     )
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
-        f.writeText(pBuildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, flows))
+        f.writeText(pBuildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, deviceModel, flows))
         return f
     }
 
@@ -1045,15 +1047,15 @@ private suspend fun runPumpExperiment(
 
 
 
-                // Explicit vert-factor pass lists (individual-max for regular D/E/G; hybrid sublists for H/I)
-                val regularGVert = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.8f, 1.3f, 2.0f)
-                val regularDVert = listOf(0.1f, 0.2f, 0.3f, 0.5f, 0.9f, 1.0f, 2.0f)
-                val regularEVert = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 1.1f, 1.3f)
+                // Explicit vert-factor pass lists (dual-device shared 0-loss D/E/G; Both I stages; see flows comment)
+                val regularGVert = SET_G_VERT_FACTORS // [0.1,0.2,0.3,0.4,0.6,1.1,1.3,1.7]
+                val regularDVert = listOf(0.1f, 0.2f, 0.3f, 0.5f, 1.0f, 1.3f)
+                val regularEVert = listOf(0.1f, 0.2f, 0.3f, 0.7f)
                 val hGVert = listOf(0.1f, 0.3f, 1.1f)
                 val hEVert = listOf(0.4f, 0.8f)
-                val iGVert = listOf(0.1f, 0.2f, 0.3f, 1.3f)
-                val iDVert = listOf(0.2f, 0.5f, 0.9f)
-                val iEVert = listOf(0.4f, 0.6f, 1.1f)
+                val iGVert = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.6f, 1.1f, 1.5f)
+                val iDVert = listOf(0.1f, 0.2f)
+                val iEVert = listOf(0.3f, 0.7f)
 
                 val procA: suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val flowName = "Set A"
@@ -2350,9 +2352,9 @@ private suspend fun runPumpExperiment(
                 val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdG, null, workspace).first
                 branch.images["PD"] = baseB64G
             }
-                val procG = makeGProc(regularGVert, "individual-max minimal G pass list (6 sizes)")
-                val procGMinus = makeGProc(SET_G_MINUS_VERT_FACTORS, "G- best 3-pass subset (0.1, 0.3, 1.3; loss 4 vs 252)")
-                val procGMinusMinus = makeGProc(SET_G_MINUS_MINUS_VERT_FACTORS, "G-- best 2-pass subset (0.3, 1.3; loss 10 vs 252); Quick Fill uses this")
+                val procG = makeGProc(regularGVert, "shared 0-loss G keep both devices (8 sizes)")
+                val procGMinus = makeGProc(SET_G_MINUS_VERT_FACTORS, "G- shared k=6 [0.1,0.2,0.3,0.4,0.6,1.3]; phone/emu loss 2")
+                val procGMinusMinus = makeGProc(SET_G_MINUS_MINUS_VERT_FACTORS, "G-- shared k=4 [0.1,0.3,0.4,1.1]; Quick Fill; phone loss 4 / emu 5")
                 // Hybrid helpers: current-pass discovery+filter+prune; append stage blue OCR to combined lists.
                 suspend fun hybridRunDiscoveryStage(
                     workspace: BufferSet,
@@ -2627,8 +2629,8 @@ private suspend fun runPumpExperiment(
                     "Set D (clip edges, calculated)" to procD,
                     "Set E (valley push, calculated)" to procE,
                     "Set G (none, calculated)" to procG,
-                    "Set G- (3 pass, none, calculated)" to procGMinus,
-                    "Set G-- (2 pass, none, calculated)" to procGMinusMinus,
+                    "Set G- (6 pass, none, calculated)" to procGMinus,
+                    "Set G-- (4 pass, none, calculated)" to procGMinusMinus,
                     "Set I (D+E+G hybrid, calculated)" to procI,
                 )
                 val processor = flowProcessors.firstOrNull { it.first == flowName }?.second
@@ -3291,10 +3293,10 @@ private const val PUMP_PER_RED_TARGET_W = 120
 private const val BIN_PEAK_BINARIZE_DELTA = 8
 private const val PER_PHOTO_FRAGMENT_BUFFER_BYTES = 4 * 1024 * 1024
 
-private fun pBuildHtmlHeader(time: String, total: Int, version: String, flows: List<String>): String = buildString {
+private fun pBuildHtmlHeader(time: String, total: Int, version: String, device: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
-    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
+    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Device:</b> $device | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
     val sorted = flows.toSortedSet()
     val hasML = if (sorted.isNotEmpty()) setOf(sorted.first()) else emptySet()  // data-driven from subBranches presence (ML only on first/A); no name if; matches row hasML intent
     sorted.forEach { flow ->
