@@ -241,3 +241,10 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - **Review fixes:** CSV quote/escape + parse; Sheets column parity; `VolumeUnits.kt` preferred-unit storage + Settings lock; edit flash/save await; permission sequencing.
 - Merge hygiene: ENGINEERING_LOG append; TODO smart union; `project-facts.md` full rewrite.
 - Manual device testing deferred to user post-merge.
+
+## 2026-07-12 - Merge improve_pump_calculated_expand into master
+
+- Dual-device shared vert lists (D/E/G/G-/G--/Set I) from 2026-07-11 Phone+Emulator retest
+- Quick Fill pump path now uses G-- k=4 [0.1,0.3,0.4,1.1]
+- Pump experiment JSON/HTML reports include Build.MODEL device field
+- Branch fast-forward merge @ 191e284b
