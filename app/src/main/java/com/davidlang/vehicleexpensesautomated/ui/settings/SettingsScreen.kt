@@ -3,14 +3,16 @@ package com.davidlang.vehicleexpensesautomated.ui.settings
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,11 +21,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
-import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
+import androidx.navigation.NavHostController
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.Currency
+import java.util.Locale
 
 private fun mediaImagesPermission(): String {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -40,7 +47,7 @@ private fun hasMediaImagesPermission(context: Context): Boolean {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(navController: NavHostController) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val viewModel: SettingsViewModel = hiltViewModel()
@@ -48,25 +55,106 @@ fun SettingsScreen() {
     val fuelEntries by fuelViewModel.fuelEntries.collectAsState(initial = emptyList())
     val hasFuelData = fuelEntries.isNotEmpty()
     val csvManager = viewModel.csvManager
-    val photoStorageManager = viewModel.photoStorageManager
     val scope = rememberCoroutineScope()
+    val syncStore = remember { SyncDestinationStore(context) }
+    var pendingBadge by remember { mutableStateOf(syncStore.pendingBadgeText()) }
+    val navBackStackEntry = navController.currentBackStackEntry
+    val destinations = remember(navBackStackEntry) { syncStore.load() }
 
-    var sheetId by remember { mutableStateOf(prefs.getString("sheet_id", "") ?: "") }
-    var syncEnabled by remember { mutableStateOf(prefs.getBoolean("sync_enabled", false)) }
-    var wifiOnly by remember { mutableStateOf(prefs.getBoolean("wifi_only", true)) }
-    var chargingOnly by remember { mutableStateOf(prefs.getBoolean("charging_only", false)) }
-    var frequencyHours by remember { mutableStateOf(prefs.getInt("frequency_hours", 6)) }
-    var driveFolder by remember { mutableStateOf(prefs.getString("drive_folder", "Vehicle Expenses Photos") ?: "") }
+    LaunchedEffect(navBackStackEntry) {
+        pendingBadge = syncStore.pendingBadgeText()
+        withContext(Dispatchers.IO) {
+            viewModel.recountPendingBadge()
+        }
+        pendingBadge = syncStore.pendingBadgeText()
+    }
+    val spreadsheetDests = destinations.spreadsheet
+    val photoDests = destinations.photo
+    val spreadsheetConfigured = syncStore.enabledSpreadsheet().isNotEmpty()
+    val photoConfigured = syncStore.enabledPhoto().isNotEmpty()
+
     var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", true)) }
-    var photoProviderPref by remember { mutableStateOf(prefs.getString("photo_storage_provider", "google_drive") ?: "google_drive") }
-    var debugOcrPipeline by remember { mutableStateOf(prefs.getBoolean("debug_ocr_pipeline", false)) }
-    var ocrConfidenceThreshold by remember { mutableStateOf(prefs.getFloat("ocr_confidence_threshold", 0.75f)) }
+    var saveExpensePhotos by remember { mutableStateOf(prefs.getBoolean("save_expense_photos", true)) }
+    var debugQuickFill by remember {
+        mutableStateOf(
+            if (prefs.contains("debug_quick_fill")) {
+                prefs.getBoolean("debug_quick_fill", false)
+            } else {
+                prefs.getBoolean("debug_ocr_pipeline", false)
+            }
+        )
+    }
+    var debugMaxSessions by remember { mutableIntStateOf(prefs.getInt("debug_quick_fill_max_sessions", 10)) }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
     var shutterSounds by remember { mutableStateOf(prefs.getBoolean("shutter_sounds", true)) }
-    var currencySymbol by remember { mutableStateOf(prefs.getString("currency_symbol", "$") ?: "$") }
-    var volumeUnit by remember { mutableStateOf(prefs.getString("volume_unit", "G") ?: "G") }
+    var currencySymbol by remember {
+        mutableStateOf(
+            if (prefs.contains("currency_symbol")) {
+                prefs.getString("currency_symbol", "system") ?: "system"
+            } else {
+                "system"
+            }
+        )
+    }
+    var showMoreCurrencies by remember { mutableStateOf(false) }
+    val systemCurrencySymbol = remember {
+        try {
+            Currency.getInstance(Locale.getDefault()).getSymbol(Locale.getDefault())
+        } catch (_: Exception) {
+            "$"
+        }
+    }
+    val shortCurrencySymbols = listOf("system", "$", "€", "£", "CA$", "A$", "¥")
+    val shortCurrencyOptions = shortCurrencySymbols.map { sym ->
+        if (sym == "system") "System default ($systemCurrencySymbol)" else sym
+    } + "See more"
+    var volumeUnit by remember {
+        mutableStateOf(
+            if (prefs.contains("volume_unit")) {
+                prefs.getString("volume_unit", "system") ?: "system"
+            } else {
+                "system"
+            }
+        )
+    }
+    var pendingVolumeUnit by remember { mutableStateOf<String?>(null) }
+    var showVolumeConvertDialog by remember { mutableStateOf(false) }
+    val systemVolumeLabel = remember {
+        if (VolumeUnits.systemDefaultUnit() == VolumeUnits.LITERS) {
+            "System default (Liters)"
+        } else {
+            "System default (Gallons)"
+        }
+    }
+    val volumeOptions = listOf(systemVolumeLabel, "Gallons (G)", "Liters (L)")
+
+    fun resolveVolumePref(pref: String): String {
+        if (pref == VolumeUnits.GALLONS || pref == VolumeUnits.LITERS) return pref
+        return VolumeUnits.systemDefaultUnit()
+    }
+
+    fun volumeDisplayLabel(pref: String): String = when (pref) {
+        "system" -> systemVolumeLabel
+        VolumeUnits.GALLONS -> "Gallons (G)"
+        VolumeUnits.LITERS -> "Liters (L)"
+        else -> systemVolumeLabel
+    }
+
+    fun volumePrefFromLabel(label: String): String = when {
+        label.startsWith("System default") -> "system"
+        label.startsWith("Gallons") -> VolumeUnits.GALLONS
+        else -> VolumeUnits.LITERS
+    }
 
     var status by remember { mutableStateOf("Ready") }
+    var showClearDebugConfirm by remember { mutableStateOf(false) }
+    var debugDataRefreshKey by remember { mutableIntStateOf(0) }
+    val debugSessions = remember(debugDataRefreshKey) { QuickFillDebugStore.listSessions(context) }
+    val crashReports = remember(debugDataRefreshKey) { QuickFillDebugStore.listCrashReports(context) }
+    val hasDebugData = debugSessions.isNotEmpty() || crashReports.isNotEmpty()
+    var showSendReportPicker by remember { mutableStateOf(false) }
+    var selectedSessionPaths by remember { mutableStateOf(setOf<String>()) }
+    var selectedCrashPaths by remember { mutableStateOf(setOf<String>()) }
 
     val mediaPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -100,18 +188,16 @@ fun SettingsScreen() {
         uri?.let { scope.launch { csvManager.importFromZip(uri); status = "Imported"; Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show() } }
     }
 
-    LaunchedEffect(sheetId, syncEnabled, wifiOnly, chargingOnly, frequencyHours, driveFolder, saveFuelPhotos, photoProviderPref, debugOcrPipeline, ocrConfidenceThreshold, darkModePref, shutterSounds, currencySymbol, volumeUnit) {
+    LaunchedEffect(debugMaxSessions) {
+        prefs.edit().putInt("debug_quick_fill_max_sessions", debugMaxSessions.coerceIn(1, 50)).apply()
+        QuickFillDebugStore.pruneToMax(context)
+    }
+
+    LaunchedEffect(saveFuelPhotos, saveExpensePhotos, debugQuickFill, darkModePref, shutterSounds, currencySymbol, volumeUnit) {
         prefs.edit().apply {
-            putString("sheet_id", sheetId)
-            putBoolean("sync_enabled", syncEnabled)
-            putBoolean("wifi_only", wifiOnly)
-            putBoolean("charging_only", chargingOnly)
-            putInt("frequency_hours", frequencyHours)
-            putString("drive_folder", driveFolder)
             putBoolean("save_fuel_photos", saveFuelPhotos)
-            putString("photo_storage_provider", photoProviderPref)
-            putBoolean("debug_ocr_pipeline", debugOcrPipeline)
-            putFloat("ocr_confidence_threshold", ocrConfidenceThreshold)
+            putBoolean("save_expense_photos", saveExpensePhotos)
+            putBoolean("debug_quick_fill", debugQuickFill)
             putString("dark_mode", darkModePref)
             putBoolean("shutter_sounds", shutterSounds)
             putString("currency_symbol", currencySymbol)
@@ -129,20 +215,239 @@ fun SettingsScreen() {
         Text("General Settings", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(value = sheetId, onValueChange = { sheetId = it }, label = { Text("Google Sheet ID") }, modifier = Modifier.fillMaxWidth())
-        SwitchSetting("Enable Background Sync", syncEnabled) { syncEnabled = it }
-        SwitchSetting("Wi-Fi Only", wifiOnly) { wifiOnly = it }
-        SwitchSetting("Charging Only", chargingOnly) { chargingOnly = it }
-        SliderSetting("Sync Frequency (hours)", frequencyHours.toFloat(), 1f..24f) { frequencyHours = it.toInt() }
+        Text("Sync & backup", style = MaterialTheme.typography.titleMedium)
+        SyncSummaryRow(
+            title = "Spreadsheet sync",
+            summary = SyncDestinationStore.spreadsheetSummaryLine(spreadsheetDests),
+            pendingBadge = pendingBadge,
+            showSyncNow = spreadsheetConfigured,
+            onRowClick = { navController.navigate("settings/spreadsheet_sync") },
+            // Phase 15: Sync now via SpreadsheetSyncCoordinator
+            onSyncNow = {
+                scope.launch {
+                    try {
+                        val result = withContext(Dispatchers.IO) { viewModel.syncSpreadsheet() }
+                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(context, e.message ?: "Sync failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+        )
+        SyncSummaryRow(
+            title = "Photo backup",
+            summary = SyncDestinationStore.photoSummaryLine(photoDests),
+            pendingBadge = pendingBadge,
+            showSyncNow = photoConfigured,
+            onRowClick = { navController.navigate("settings/photo_backup") },
+            onSyncNow = {
+                scope.launch {
+                    try {
+                        val result = withContext(Dispatchers.IO) { viewModel.syncPhotoBackup() }
+                        pendingBadge = syncStore.pendingBadgeText()
+                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(context, e.message ?: "Photo sync failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
         SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { enabled ->
             saveFuelPhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
             }
         }
+        SwitchSetting("Save Expense Photos Locally", saveExpensePhotos) { enabled ->
+            saveExpensePhotos = enabled
+            if (enabled) {
+                requestMediaPermissionIfNeeded()
+            }
+        }
         SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
-        SwitchSetting("Debug OCR Pipeline", debugOcrPipeline) { debugOcrPipeline = it }
-        SliderSetting("OCR Confidence Threshold", ocrConfidenceThreshold, 0.5f..1.0f) { ocrConfidenceThreshold = it }
+        SwitchSetting("Debug Quick Fill", debugQuickFill) { debugQuickFill = it }
+        OutlinedTextField(
+            value = debugMaxSessions.toString(),
+            onValueChange = { text ->
+                text.toIntOrNull()?.coerceIn(1, 50)?.let { debugMaxSessions = it }
+            },
+            label = { Text("Debug sessions to keep (1–50)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        Button(
+            onClick = { showClearDebugConfirm = true },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        ) {
+            Text("Clear debug data")
+        }
+        if (hasDebugData) {
+            Button(
+                onClick = {
+                    selectedSessionPaths = emptySet()
+                    selectedCrashPaths = emptySet()
+                    showSendReportPicker = true
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                Text("Send failure report")
+            }
+        }
+        if (showSendReportPicker) {
+            AlertDialog(
+                onDismissRequest = { showSendReportPicker = false },
+                title = { Text("Select items to attach") },
+                text = {
+                    LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                        if (debugSessions.isNotEmpty()) {
+                            item { Text("Quick Fill sessions", style = MaterialTheme.typography.titleSmall) }
+                            items(debugSessions, key = { it.absolutePath }) { session ->
+                                val path = session.absolutePath
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Checkbox(
+                                        checked = path in selectedSessionPaths,
+                                        onCheckedChange = { checked ->
+                                            selectedSessionPaths = if (checked) {
+                                                selectedSessionPaths + path
+                                            } else {
+                                                selectedSessionPaths - path
+                                            }
+                                        },
+                                    )
+                                    Text(
+                                        QuickFillDebugStore.readSessionSummary(session),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                        }
+                        if (crashReports.isNotEmpty()) {
+                            item { Text("Crash reports", style = MaterialTheme.typography.titleSmall) }
+                            items(crashReports, key = { it.absolutePath }) { crash ->
+                                val path = crash.absolutePath
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Checkbox(
+                                        checked = path in selectedCrashPaths,
+                                        onCheckedChange = { checked ->
+                                            selectedCrashPaths = if (checked) {
+                                                selectedCrashPaths + path
+                                            } else {
+                                                selectedCrashPaths - path
+                                            }
+                                        },
+                                    )
+                                    Text(crash.name, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val attachments = QuickFillDebugStore.collectAttachmentFiles(
+                            selectedSessionPaths,
+                            selectedCrashPaths,
+                        )
+                        if (attachments.isEmpty()) {
+                            Toast.makeText(context, "Select at least one item", Toast.LENGTH_SHORT).show()
+                            return@TextButton
+                        }
+                        val launched = QuickFillDebugStore.launchFailureReport(context, attachments)
+                        if (launched) {
+                            showSendReportPicker = false
+                        } else {
+                            Toast.makeText(
+                                context,
+                                "No email app found to send report",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                    }) {
+                        Text("Send")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSendReportPicker = false }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+        if (showVolumeConvertDialog && pendingVolumeUnit != null) {
+            val targetPref = pendingVolumeUnit!!
+            AlertDialog(
+                onDismissRequest = {
+                    pendingVolumeUnit = null
+                    showVolumeConvertDialog = false
+                },
+                title = { Text("Convert fuel volumes?") },
+                text = {
+                    Text(
+                        "Convert existing fuel volumes between G and L?\n\n" +
+                            "If you choose No, historical numbers keep their current values but " +
+                            "display labels will change without conversion.",
+                    )
+                },
+                confirmButton = {
+                    Row {
+                        TextButton(onClick = {
+                            pendingVolumeUnit = null
+                            showVolumeConvertDialog = false
+                        }) {
+                            Text("Cancel")
+                        }
+                        TextButton(onClick = {
+                            volumeUnit = targetPref
+                            pendingVolumeUnit = null
+                            showVolumeConvertDialog = false
+                        }) {
+                            Text("No")
+                        }
+                        TextButton(onClick = {
+                            val fromUnit = resolveVolumePref(volumeUnit)
+                            val toUnit = resolveVolumePref(targetPref)
+                            fuelViewModel.convertAllVolumes(fromUnit, toUnit) {
+                                volumeUnit = targetPref
+                                pendingVolumeUnit = null
+                                showVolumeConvertDialog = false
+                            }
+                        }) {
+                            Text("Yes")
+                        }
+                    }
+                },
+            )
+        }
+        if (showClearDebugConfirm) {
+            AlertDialog(
+                onDismissRequest = { showClearDebugConfirm = false },
+                title = { Text("Clear debug data?") },
+                text = { Text("Deletes all Quick Fill debug sessions and crash reports.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        QuickFillDebugStore.clearAllDebugData(context)
+                        debugDataRefreshKey++
+                        showClearDebugConfirm = false
+                        Toast.makeText(context, "Debug data cleared", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("Clear")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearDebugConfirm = false }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
         Text("Localization & Units", style = MaterialTheme.typography.titleMedium)
@@ -150,45 +455,74 @@ fun SettingsScreen() {
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedTextField(
-                value = currencySymbol,
-                onValueChange = { currencySymbol = it },
-                label = { Text("Default Currency") },
-                modifier = Modifier.weight(1f).padding(end = 8.dp)
-            )
-            Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                // Fuel DB stores volume in preferred unit; changing unit does not convert rows.
-                if (hasFuelData) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                        Text("Default Unit", style = MaterialTheme.typography.labelMedium)
-                        Text(
-                            if (volumeUnit == VolumeUnits.LITERS) "Liters (L) — locked" else "Gallons (G) — locked",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            "Unit locked after fuel data exists (values stay in preferred unit).",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    DropdownSetting(
-                        label = "Default Unit",
-                        selectedValue = if (volumeUnit == "G") "Gallons (G)" else "Liters (L)",
-                        options = listOf("Gallons (G)", "Liters (L)"),
-                        onValueChange = { volumeUnit = if (it.startsWith("Gallons")) "G" else "L" }
-                    )
-                }
+            Box(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                DropdownSetting(
+                    label = "Default Currency",
+                    selectedValue = if (currencySymbol == "system") {
+                        "System default ($systemCurrencySymbol)"
+                    } else {
+                        currencySymbol
+                    },
+                    options = shortCurrencyOptions,
+                    onValueChange = { selected ->
+                        when {
+                            selected.startsWith("System default") -> currencySymbol = "system"
+                            selected == "See more" -> showMoreCurrencies = true
+                            else -> currencySymbol = selected
+                        }
+                    },
+                )
             }
-        }
-
-        Text("Photo Storage Provider", style = MaterialTheme.typography.titleMedium)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(selected = photoProviderPref == "google_drive", onClick = { photoProviderPref = "google_drive" })
-            Text("Google Drive")
-            Spacer(modifier = Modifier.width(16.dp))
-            RadioButton(selected = photoProviderPref == "none", onClick = { photoProviderPref = "none" })
-            Text("None")
+            if (showMoreCurrencies) {
+                val allCurrencies = remember {
+                    Currency.getAvailableCurrencies().sortedBy { it.currencyCode }
+                }
+                AlertDialog(
+                    onDismissRequest = { showMoreCurrencies = false },
+                    title = { Text("All currencies") },
+                    text = {
+                        LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                            items(allCurrencies, key = { it.currencyCode }) { currency ->
+                                val sym = try {
+                                    currency.getSymbol(Locale.getDefault())
+                                } catch (_: Exception) {
+                                    currency.currencyCode
+                                }
+                                TextButton(onClick = {
+                                    currencySymbol = sym
+                                    showMoreCurrencies = false
+                                }) {
+                                    Text("${currency.currencyCode} ($sym)")
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showMoreCurrencies = false }) {
+                            Text("Close")
+                        }
+                    },
+                )
+            }
+            Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                DropdownSetting(
+                    label = "Default Unit",
+                    selectedValue = volumeDisplayLabel(volumeUnit),
+                    options = volumeOptions,
+                    onValueChange = { label ->
+                        val newPref = volumePrefFromLabel(label)
+                        if (newPref == volumeUnit) return@DropdownSetting
+                        val oldResolved = resolveVolumePref(volumeUnit)
+                        val newResolved = resolveVolumePref(newPref)
+                        if (hasFuelData && oldResolved != newResolved) {
+                            pendingVolumeUnit = newPref
+                            showVolumeConvertDialog = true
+                        } else {
+                            volumeUnit = newPref
+                        }
+                    },
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -207,9 +541,47 @@ fun SettingsScreen() {
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }, modifier = Modifier.fillMaxWidth()) { Text("Export to CSV (ZIP)") }
         Button(onClick = { importLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Text("Import from CSV ZIP") }
-        Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = { scope.launch { status = "Testing..."; val testUri = Uri.parse("content://com.davidlang.vehicleexpensesautomated.test/fake.jpg"); val url = photoStorageManager.savePhoto(testUri, "test.jpg", PhotoType.FUEL); status = if (url != null) "Upload test succeeded" else "Upload test failed" } }, modifier = Modifier.fillMaxWidth()) { Text("Test Photo Upload") }
-        Text(status, modifier = Modifier.padding(top = 8.dp))
+        if (status != "Ready") {
+            Text(status, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun SyncSummaryRow(
+    title: String,
+    summary: String,
+    pendingBadge: String,
+    showSyncNow: Boolean,
+    onRowClick: () -> Unit,
+    onSyncNow: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(onClick = onRowClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(summary, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    pendingBadge,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (showSyncNow) {
+                TextButton(onClick = onSyncNow) {
+                    Text("Sync")
+                }
+            }
+            Text("›", style = MaterialTheme.typography.titleLarge)
+        }
     }
 }
 
@@ -250,16 +622,4 @@ private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boo
     }
 }
 
-@Composable
-private fun SliderSetting(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onValueChange: (Float) -> Unit) {
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(label, style = MaterialTheme.typography.titleMedium)
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = range,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Text("%.2f".format(value), style = MaterialTheme.typography.labelSmall)
-    }
-}
+

@@ -52,7 +52,9 @@ import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.ReportsScreen
+import com.davidlang.vehicleexpensesautomated.ui.settings.PhotoBackupScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
+import com.davidlang.vehicleexpensesautomated.ui.settings.SpreadsheetSyncScreen
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -137,6 +139,8 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "import" -> "Import Old Pictures"
                     currentRoute == "reports" -> "Reports & Charts"
                     currentRoute == "settings" -> "Settings"
+                    currentRoute == "settings/spreadsheet_sync" -> "Spreadsheet Sync"
+                    currentRoute == "settings/photo_backup" -> "Photo Backup"
                     currentRoute == "help" -> "Help"
                     currentRoute == "about" -> "About"
                     currentRoute == "experiment" -> "Alignment Experiment"
@@ -245,8 +249,16 @@ class MainActivity : ComponentActivity() {
                             TopAppBar(
                                 title = { Text(if (title == "Vehicle Expenses") title else "Vehicle Expenses - $title") },
                                 navigationIcon = {
-                                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                        Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                    val isSettingsSubRoute = currentRoute == "settings/spreadsheet_sync" ||
+                                        currentRoute == "settings/photo_backup"
+                                    if (isSettingsSubRoute) {
+                                        IconButton(onClick = { navController.popBackStack() }) {
+                                            Text("←")
+                                        }
+                                    } else {
+                                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                            Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                        }
                                     }
                                 }
                             )
@@ -270,7 +282,13 @@ class MainActivity : ComponentActivity() {
                                 composable("expenselist") { ExpenseListScreen(navController = navController) }
                                 composable("import") { ImportOldPicturesScreen(navController = navController) }
                                 composable("reports") { ReportsScreen(navController = navController) }
-                                composable("settings") { SettingsScreen() }
+                                composable("settings") { SettingsScreen(navController = navController) }
+                                composable("settings/spreadsheet_sync") {
+                                    SpreadsheetSyncScreen(navController = navController)
+                                }
+                                composable("settings/photo_backup") {
+                                    PhotoBackupScreen(navController = navController)
+                                }
                                 composable("help") { HelpScreen() }
                                 composable("about") { AboutScreen() }
                                 composable("experiment") { ExperimentAlignmentScreen(navController = navController) }
