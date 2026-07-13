@@ -635,3 +635,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - All 9 phases delivered; final tag fix_syncing_and_settings/builds @ 46f7fabe
 - Docs: USER_GUIDE, SYNC_BEHAVIOR.md, self-host README recovery note
 - Bugs #1-14 + frequency hours UI + backfill splash + SyncFailureStore UX
+
+## 2026-07-13 - fix_syncing_and_settings merged into master (merge hygiene completion)
+
+- Integrated branch fix_syncing_and_settings at edad48d3 onto local master (pre-merge afe2d307).
+- Special-file protocol post-hoc: ENGINEERING_LOG via wrapper; project-facts consolidated; TODO smart union + merge line.
+- Orchestration gap plan: dev-ai-interaction/plans/orchestration-master-startup-merge-instructions-20260713-plan.md.
