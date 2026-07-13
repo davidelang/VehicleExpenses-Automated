@@ -11,6 +11,7 @@ import java.util.Locale
 object VolumeUnits {
     const val GALLONS = "G"
     const val LITERS = "L"
+    const val GALLONS_PER_LITER = 3.785411784
 
     /** Resolve prefs volume_unit → "G" or "L" (system/blank → locale default). */
     fun resolvedPreferredVolumeUnit(context: Context): String {
@@ -27,4 +28,13 @@ object VolumeUnits {
     fun shortLabel(unit: String): String = if (unit == LITERS) "L" else "G"
 
     fun longLabel(unit: String): String = if (unit == LITERS) "Liters" else "Gallons"
+
+    fun convert(value: Double, from: String, to: String): Double {
+        if (from == to) return value
+        return if (from == GALLONS && to == LITERS) {
+            value * GALLONS_PER_LITER
+        } else {
+            value / GALLONS_PER_LITER
+        }
+    }
 }
