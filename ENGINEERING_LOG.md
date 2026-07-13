@@ -614,3 +614,12 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Branch `fix_syncing_and_settings`; baseline 200 commits (`afe2d307..5792a689`).
 - Mission: squash to ~6-10 logical commits, backup tag, force-with-lease push, generate PR doc.
 - Deleted junk `eng_log_complete.txt`; committing pending ENGINEERING_LOG hygiene.
+
+## 2026-07-13 - Git history cleanup + PR prep — execution complete
+
+- Squashed `master..HEAD` from ~201 commits to **9** logical commits (soft-reset thematic rebuild).
+- Backup tag: `backup-fix_syncing_and_settings` @ `5a411a0881592668b4411ad1a66c7f96d2278bf0`.
+- Cleaned HEAD: `68106bf177e21855b8c9cf5892060057101f887b`; tree diff vs backup **empty**.
+- Build: `./build_app` SUCCESS; tag `fix_syncing_and_settings-start-9-g68106bf1`.
+- Force push: **FAILED** (`git@github.com: Permission denied (publickey)`); user must push manually: `git push --force-with-lease origin fix_syncing_and_settings`.
+- PR artifact: `dev-ai-interaction/PRs/PR-fix_syncing_and_settings.md`.
