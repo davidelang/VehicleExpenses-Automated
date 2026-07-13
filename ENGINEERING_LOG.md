@@ -641,3 +641,7 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Integrated branch fix_syncing_and_settings at edad48d3 onto local master (pre-merge afe2d307).
 - Special-file protocol post-hoc: ENGINEERING_LOG via wrapper; project-facts consolidated; TODO smart union + merge line.
 - Orchestration gap plan: dev-ai-interaction/plans/orchestration-master-startup-merge-instructions-20260713-plan.md.
+
+## 2026-07-13 - fix_syncing_and_settings merge build gate
+
+- ./build_app succeeded on master @ b04c9e68 (JDK 17); builds tag updated.
