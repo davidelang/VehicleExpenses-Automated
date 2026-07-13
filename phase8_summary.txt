@@ -1,0 +1,1 @@
+Phase 8: Clear debug data button with confirm dialog; clears sessions and crash reports.

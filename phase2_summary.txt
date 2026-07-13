@@ -1,0 +1,1 @@
+Phase 2: Rename debug toggle to Debug Quick Fill; pref debug_quick_fill with migration from debug_ocr_pipeline in Settings and QuickFill.

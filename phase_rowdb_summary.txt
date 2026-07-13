@@ -1,0 +1,11 @@
+Spreadsheet Other Tier A backends (Phases 1-8):
+
+Foundation: SpreadsheetProvider enums (BASEROW, NOCODB, POCKETBASE, SUPABASE, AIRTABLE, deferred stubs);
+TabularOtherProviderCatalog kind picker; RowDbTabularConfig; registry hooks.
+
+Implemented row-DB backends: Baserow, NocoDB, PocketBase, Supabase, Airtable with shared RowDbTabularBackend,
+HTTP clients, setup forms, Test probe contract, cheatsheet updates.
+
+Deferred (Phase 7): Firebase, Zoho Sheet, OnlyOffice, Collabora — picker shows "coming soon".
+
+OtherTabularBackendStub shrunk to unknown-subtype fallback only.

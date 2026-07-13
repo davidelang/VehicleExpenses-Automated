@@ -248,3 +248,369 @@ Imported substantive entries from `tweak-quick-fill` branch ENGINEERING_LOG. Per
 - Quick Fill pump path now uses G-- k=4 [0.1,0.3,0.4,1.1]
 - Pump experiment JSON/HTML reports include Build.MODEL device field
 - Branch fast-forward merge @ 191e284b
+
+## 2026-07-12 - post-sync-vehicle-definition-rehydration plan
+
+- Executing post-sync-vehicle-definition-rehydration-20260712-plan.md (Phases 1-7)
+- Phase 1: VehicleRepository updateVehiclePreservingTimestamp (no stamp on updatedAt)
+
+## 2026-07-12 - post-sync-vehicle-definition-rehydration Phase 2
+
+- PhotoBackupCoordinator: vehicle download/remint/manifest upload uses updateVehiclePreservingTimestamp
+
+## 2026-07-12 - post-sync-vehicle-definition-rehydration Phase 3
+
+- SpreadsheetSyncCoordinator: mergeVehicleLww with definition overlay (crops, landmarks, cloudManifest, local paths)
+
+## 2026-07-12 - post-sync-vehicle-definition-rehydration Phase 4
+
+- PhotoBackupCoordinator.downloadMissingVehicleAssets; SpreadsheetSyncCoordinator post-sync hook after vehicles tab
+
+## 2026-07-12 - post-sync-vehicle-definition-rehydration Phases 5-6
+
+- ManageVehiclesScreen: rehydrate on definition snapshot change; full download hydrate; auto discoveryResults from landmark JSON
+
+## 2026-07-12 - post-sync-vehicle-definition-rehydration Phase 7 complete
+
+- project-facts: post-sync vehicle definition merge, no-stamp asset writes, Manage Vehicles rehydrate, Quick Fill reads Room after sync
+- All 7 phases built and tagged
+
+## 2026-07-12 - background-sync-worker-hilt-reliability plan execution start
+
+- Plan: background-sync-worker-hilt-reliability-20260712-plan.md
+- Goal: fix SyncWorker/PhotoBackupWorker Hilt instantiation (NoSuchMethodException on cold start)
+- Phase 1: add androidx hilt-compiler KSP if missing
+
+## 2026-07-12 - background-sync-worker-hilt-reliability Phase 2
+
+- Removed WorkManagerModule double-init (Configuration.Provider is sole WM config path)
+- Manifest: narrow WorkManagerInitializer remove instead of entire InitializationProvider
+
+## 2026-07-12 - background-sync-worker-hilt-reliability Phase 3
+
+- Inject SyncManager + PhotoBackupManager in Application (no manual SyncManager(this))
+- Cold start: schedule periodic from destination only; removed triggerImmediateSync on launch
+
+## 2026-07-12 - background-sync-worker-hilt-reliability Phase 4
+
+- Verified existing LaunchedEffect save paths call rescheduleBackgroundSync/Backup on spreadsheet and photo config screens (no code change required)
+
+## 2026-07-12 - background-sync-worker-hilt-reliability Phase 5
+
+- SyncWorker + PhotoBackupWorker: needsRemoteConsent returns Result.failure() (no tight retry loop)
+
+## 2026-07-12 - background-sync-worker-hilt-reliability Phase 6 complete
+
+- project-facts: Hilt WM worker KSP requirement, Configuration.Provider sole init, cold-start schedule-only
+- End forensic: SyncWorker_AssistedFactory + PhotoBackupWorker_AssistedFactory generated; no WorkManagerModule; Application injects SyncManager/PhotoBackupManager
+
+## 2026-07-12 - sheet-oldest-first-and-incremental-sync plan execution
+
+- Executing plan dev-ai-interaction/plans/sheet-oldest-first-and-incremental-sync-20260712-plan.md (Phases 1-9)
+- Goals: preserve photo paths on sheet merge, FULL vs PENDING_ONLY photo modes, 15-min background interval, oldest-first + incremental sheet writes
+
+## 2026-07-12 - sheet-oldest-first-and-incremental-sync plan complete
+
+- Phases 1-9: photo path preserve + rebind, FULL/PENDING_ONLY photo modes, frequencyMinutes (15m min), oldest-first incremental sheet writes
+- Tag: fix_syncing_and_settings/builds at 2483fc62+ (Phase 9 project-facts)
+
+## 2026-07-12 - cloudmanifest-multi-dest-pending-and-remint plan start
+
+- Executing dev-ai-interaction/plans/cloudmanifest-multi-dest-pending-and-remint-20260712-plan.md (5 phases, no Room migration)
+
+## 2026-07-12 - cloudmanifest-multi-dest Phase 1 complete
+
+- Upload pending paths in PhotoBackupCoordinator now use hasEntryForDest (not hasRole fallback)
+
+## 2026-07-12 - cloudmanifest-multi-dest Phase 2 complete
+
+- Added CloudManifest.bindLocalDestAfterDownload (add-only merge); post-download uses merge not remint rewrite
+
+## 2026-07-12 - cloudmanifest-multi-dest Phase 3 complete
+
+- PENDING_ONLY rebinds all vehicle refs before pending recount/early exit; pending breakdown logging
+
+## 2026-07-12 - cloudmanifest-multi-dest Phase 4 complete
+
+- stripObsoleteRoles removes vehicle_landmarks; merge/upload paths ignore landmarks role
+
+## 2026-07-12 - cloudmanifest-multi-dest plan complete (Phases 1-5)
+
+- Multi-dest upload pending (hasEntryForDest), bindLocalDestAfterDownload, PENDING_ONLY rebind, strip landmarks; project-facts updated
+
+## 2026-07-12 - Vehicle rename fuel sheet tab migrate
+
+- Executing plan dev-ai-interaction/plans/vehicle-rename-fuel-sheet-tab-migrate-20260712-plan.md
+- Phases 1-6: GoogleSheetsClient list/rename tabs, orphan fuel tab detection, syncFuelTabs rename/merge, optional hint prefs, CSV verify + project-facts
+- Baseline tag: fix_syncing_and_settings/builds
+
+## 2026-07-12 - Vehicle rename fuel sheet tab migrate (complete)
+
+- Phases 1-6: GoogleSheetsClient listSheetTitles/renameTab; orphan fuel tab detect by Vehicle Sync ID; sync-time rename or merge+delete; FuelTabRenameHintStore for offline renames; CSV verified flat Fuel_entries.csv unaffected; project-facts updated
+
+## 2026-07-12 - CSV export/import sheet parity plan
+
+- Starting execution of csv-export-import-sheet-parity-20260712-plan.md (Phases 1-6)
+- Goals: sheet headers + row helpers, per-vehicle fuel CSVs, legacy import, Vehicle Sync ID filled, oldest-first sort, deleted rows
+
+## 2026-07-12 - CSV export/import sheet parity complete
+
+- Phases 1-6: CsvManager uses GoogleSheetsClient headers + row helpers; per-vehicle Fuel - {name}.csv; Expenses.csv; Vehicle Sync ID filled on export; header-based import + legacy filenames; oldest-first sort + deleted rows; project-facts updated
+
+## 2026-07-12 - multi-currency-row-persist-20260712-plan
+
+- Phase 0 start: persist currency on fuel/expense rows (Room v10→v11); plan dev-ai-interaction/plans/multi-currency-row-persist-20260712-plan.md
+
+## 2026-07-12 - multi-currency-row-persist Phase 1 PASS
+
+- Room v11: currency TEXT on fuel_entries + expense_entries; MIGRATION_10_11; tag e860282b
+
+## 2026-07-12 - multi-currency-row-persist Phase 2 PASS
+
+- CurrencyCodes.kt: fromSymbolOrCode, display/format helpers; tag 4870a457
+
+## 2026-07-12 - multi-currency-row-persist Phase 3 PASS
+
+- QuickFill + ExpenseEntry + FuelEntry save persist normalized currency; tag 659cc136
+
+## 2026-07-12 - multi-currency-row-persist Phase 4 PASS
+
+- FUEL/EXPENSE_HEADERS Currency column; fuelToRow/rowToFuel/expenseToRow/rowToExpense; tag 05535ae2
+
+## 2026-07-12 - multi-currency-row-persist Phase 5 PASS + plan complete
+
+- Reports/lists row currency; mixed aggregates per-currency; $/mi n/a when mixed; tag ced04b24
+
+## 2026-07-12 - Multi Google destinations (plan multi-google-destinations-20260712)
+
+- Executing plan dev-ai-interaction/plans/multi-google-destinations-20260712-plan.md
+- Phases 1-7: store multi upsert, spreadsheet/photo UI lists, coordinators loop all enabled dests, workers schedule min interval + strictest constraints
+
+## 2026-07-13 - rclone photo storage backend (plan: rclone-photo-storage-backend-20260713-plan.md)
+
+- Execution start: wire full librclone AAR; PhotoSyncBackend port; PhotoProvider.RCLONE; RcloneRuntime; upload/download via rclone RPC; coordinator dispatch for all enabled rclone dests.
+- Depends on multi-Google destinations (done). Supersedes WebDAV/SAF-first path.
+
+## 2026-07-13 - rclone photo storage backend complete (Phases 0-8)
+
+- Shipped app/libs/librclone.aar (full backends ~91MB); removed lite.
+- PhotoSyncBackend port: GoogleDrivePhotoBackend + RclonePhotoBackend via gomobile RPC.
+- PhotoProvider.RCLONE + configJson + SAF rclone.conf import UI.
+- Coordinator dispatches all enabled Drive + rclone dests; manifest provider=rclone; fileId=object key.
+- Startup smoke: RcloneLoader + rcloneInitialize + core/version.
+
+## 2026-07-13 - Google dest browse/pick/create UI (google-dest-browse-pick-create-ui-20260713-plan)
+
+- Executing Phases 1-6: remove Sheet ID field; URL+browse; create-in-dialog for Sheets and Drive folders.
+
+## 2026-07-13 - Google dest browse/pick/create UI complete
+
+- Phases 1-6: Sheet URL-only + browse/create-in-dialog; Drive folder URL + browse; GoogleDriveBrowserClient + GoogleDriveBrowserDialog; project-facts updated.
+
+## 2026-07-13 - rclone config create UI (plan rclone-config-create-ui-20260713)
+
+- Starting phased execution per plan: RPC wrappers, provider catalog, list/create/edit/delete remotes UI, OAuth handoff, polish.
+- Builds on import-only rclone photo backend; goal is in-app remote create/manage without desktop conf import.
+
+## 2026-07-13 - rclone config create UI phases 3-6
+
+- UI: list remotes dialog (browse icon), create/edit wizard, delete remote; import demoted to advanced.
+- OAuth: Chrome Custom Tabs for auth URLs from non-interactive config/create steps.
+- RcloneRuntime: config/get for edit type; PhotoBackupViewModel exposes list/create/update/delete.
+
+## 2026-07-13 - photo-backend-onedrive-and-other-label plan
+
+- Start Phase 1: rename user-facing Rclone→Other; migrate json rclone→other on load
+
+## 2026-07-13 - photo-backend-onedrive-and-other-label plan Phase 1
+
+- PhotoProvider.OTHER (migrate json rclone→other on load); user-facing Rclone→Other strings
+
+## 2026-07-13 - photo-backend-onedrive-and-other-label plan Phases 2-7 complete
+
+- PhotoProvider.ONEDRIVE + MSAL sign-in (MicrosoftOneDriveAuth.kt)
+- Managed rclone onedrive remote (RcloneOneDriveSetup.kt); OneDrive simplified form
+- Other picker (renamed from Rclone); Phase 6 folder browse skipped
+- project-facts.md updated
+
+## 2026-07-13 - Execute photo-backend-onedrive-and-other-label plan
+
+- Execution start: S3 first-class, 4-way picker, universal test contract, Other kind groups, backend prune
+
+## 2026-07-13 - Phase E: build_photo.sh curated backend prune script
+
+- Added dev-ai-interaction/rclone-build/build_photo.sh (sed-based curated imports)
+- Docker AAR rebuild attempted in background; app still ships existing librclone_full.aar until photo AAR lands
+- Catalog COMPILED_OUT_TYPES denylist filters UI regardless of binary
+
+## 2026-07-13 - Phase F: photo backend plan polish complete
+
+- project-facts.md: S3, 4-way picker, test contract, kind groups, build_photo.sh
+- TODO.md updated for full plan scope delivery
+
+## 2026-07-13 - librclone photo AAR ship: execution start
+
+- Phase 1: harden build_photo.sh (Python import rewrite + post-patch validation)
+- Baseline full AAR: 90973260 bytes (~87MB) app/libs/librclone.aar
+
+## 2026-07-13 - Phase 1: build_photo.sh hardened
+
+- Replaced fragile sed with Python import-block rewrite
+- Post-patch validation: fail if backend/all or COMPILED_OUT imports remain
+- Curated import list aligned with RcloneProviderCatalog.COMPILED_OUT_TYPES
+- Docker invocation documented in script header
+- Mirror copy to SCRIPT_DIR/librclone_photo.aar when output/ sibling exists
+
+## 2026-07-13 - Phase 2: photo AAR Docker build complete
+
+Size gate PASSED (photo strictly smaller than full):
+| Metric | Before (full) | After (photo) |
+| AAR | 90973260 bytes (87M) | 78966060 bytes (76M) |
+| arm64 libgojni.so | 92569568 bytes (89M) | 80240896 bytes (77M) |
+| armeabi-v7a libgojni.so | 87263660 bytes (84M) | 75381820 bytes (72M) |
+| x86_64 libgojni.so | 98095168 bytes (94M) | 85201248 bytes (82M) |
+Photo AAR = 86% of full (not ~100% — prune applied).
+
+## 2026-07-13 - Phase 3: ship photo AAR + app hygiene
+
+- Shipped output/librclone_photo.aar to app/libs/librclone.aar
+- Removed RcloneRuntime.smokeCreateLocalRemote (local compiled out)
+- Removed dead chunker from RcloneProviderCatalog more map
+- Removed local wizard special-case in RcloneRemoteDialogs.buildParameters
+- Updated project-facts.md with photo-curated AAR sizes
+
+## 2026-07-13 - Phase 4: absence verification + completion
+
+Absence verification (arm64 libgojni.so strings):
+- backend/hdfs, memory, local, http, googlephotos: 0 hits each
+- Keep-set: s3=519, onedrive=561, webdav=330, azureblob=372 hits
+
+build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
+
+## 2026-07-13 - Photo backend cleanup execution start
+
+- Phase 1: OneDrive coordinator refresh before test/sync/upload paths
+
+## 2026-07-13 - Photo backend cleanup Phase 2
+
+- S3 Test: skip setupS3Remote when managed conf exists and form secrets blank
+
+## 2026-07-13 - Photo backend cleanup Phase 3
+
+- Removed hubic/amazonclouddrive from RcloneProviderCatalog
+- OneDrive session-expired message in RclonePhotoBackend test path
+
+## 2026-07-13 - Photo backend cleanup Phase 4 complete
+
+- project-facts: OneDrive refresh on coordinator sync paths
+- Marked photo-backend cleanup, onedrive-label, and librclone-ship plans COMPLETE
+
+## 2026-07-13 - Spreadsheet concurrent providers execution start
+
+- Baseline tag: 2b1edcca
+- Plan: spreadsheet-concurrent-providers-product-surface-20260713-plan.md
+- Phases 1-7 execution
+
+## 2026-07-13 - TabularShareApi phases 1-7 complete
+
+- Package data/sync/tabular/: TabularShareApi, TabularSchema, backends (Google/Excel/EtherCalc/CsvZip/Other stub)
+- SpreadsheetSyncCoordinator wired through TabularShareApi (no GoogleSheetsClient import)
+- CsvManager thin wrapper over exportCsvZip/importCsvZip
+- SpreadsheetSyncScreen 4-way picker (Sheets/Excel/EtherCalc/Other)
+- Build tag: fix_syncing_and_settings-start-183-g08306f9e
+
+## 2026-07-13 - Phase 1: self-host docs promoted
+
+- Copied sandbox research to docs/reference/self-host/ (INDEX, README, photos/*, tabular/*, vendor-links)
+- README edited for tracked path (removed sandbox-only references)
+- USER_GUIDE.md: pointer to self-host/INDEX.md
+
+## 2026-07-13 - Phase 2: SyncSetupDocs + HelpScreen
+
+- Added ui/util/SyncSetupDocs.kt (BASE URL, index/photo/tabular helpers, open with toast fallback)
+- HelpScreen: Self-hosted sync setup section with tappable index link
+- Build tag ee03e6d0
+
+## 2026-07-13 - Phase 3: photo setup help links
+
+- PhotoBackupScreen: MinIO/S3 setup help + Other footer link to photos README
+- RcloneRemoteDialogs: self-host kind guide + per-type Setup help (webdav/sftp/ftp/smb/seafile)
+
+## 2026-07-13 - Phase 4: spreadsheet help links
+
+- SpreadsheetSyncScreen: Self-hosted spreadsheet servers link to tabular README
+- EtherCalc form: Setup help link to tabular/ethercalc.md
+
+## 2026-07-13 - Phase 5: self-host docs handoff
+
+- project-facts.md: docs/reference/self-host/ + SyncSetupDocs.kt location
+- Sandbox plan marked COMPLETE
+- Final build tag pending
+
+## 2026-07-13 - Self-host sync docs execution complete
+
+- All 5 phases delivered; final build tag d3292fc4 (fix_syncing_and_settings/builds)
+- Operator test: Help index, Photo Other/S3 links, Spreadsheet hub + EtherCalc links
+
+## 2026-07-13 - Expense multi-vehicle + multi-photo schema execution
+
+- Execution start: 6-phase plan expense-multi-vehicle-and-multi-photo-schema-20260713-plan.md
+- Baseline: tag d3292fc4, DB v11, branch fix_syncing_and_settings
+- Phase 1: ExpensePhotoUrls helper (parse/format/isMulti/listUris, max 20 pages, role + remote file name helpers)
+
+## 2026-07-13 - Expense multi-vehicle + multi-photo schema execution (cont.)
+
+- Phase 2: Room v12 vehicleSyncIdsJson + MIGRATION_11_12 backfill; DAO multi-vehicle query; repository single-vehicle JSON on save
+
+## 2026-07-13 - Expense multi-vehicle + multi-photo schema execution (cont.)
+
+- Phase 3: TabularSchema Vehicle Sync IDs column + multi photo/vehicle row encode/decode; GoogleSheetsClient delegates to TabularSchema
+
+## 2026-07-13 - Expense multi-vehicle + multi-photo schema execution (cont.)
+
+- Phase 4: SpreadsheetSyncCoordinator + CsvZip resolve multi vehicle sync ids; primary vehicleId from first syncId; export via TabularSchema expenseToRow
+
+## 2026-07-13 - Expense multi-vehicle + multi-photo schema execution (cont.)
+
+- Phase 5: PhotoBackupCoordinator multi-page expense upload/download/pending; roles expense_receipt / expense_receipt_k
+
+## 2026-07-13 - Expense multi-vehicle + multi-photo schema execution (complete)
+
+- Phase 6: project-facts + TODO updated; sandbox plan marked COMPLETE
+- All 6 phases built; DB v12; schema ready for future multi-vehicle/multi-page expense UI
+
+## 2026-07-13 - Execution: spreadsheet Other Tier A backends
+
+- Started execution of spreadsheet-other-tier-a-backends plan (Phases 1-8, minimum 1-4).
+- Baseline: fix_syncing_and_settings/builds (2178642c).
+
+## 2026-07-13 - Spreadsheet Other Tier A backends complete
+
+- Phases 1-6 delivered: foundation + Baserow + NocoDB + PocketBase + Supabase + Airtable.
+- Phase 7 deferred: Firebase, Zoho Sheet, OnlyOffice, Collabora (picker shows coming soon).
+- Phase 8: project-facts + stub shrink + cheatsheet updates.
+
+## 2026-07-13 - Expense multi-page pending/download consistency execution
+
+- Execution start: fix FULL sync download gate and computePendingBreakdown in PhotoBackupCoordinator.kt (plan expense-multi-page-pending-download-consistency-20260713)
+
+## 2026-07-13 - Execution: deferred Other spreadsheet backends (Phases 0-8)
+
+- Started execution on branch `fix_syncing_and_settings`; baseline `fix_syncing_and_settings/builds` (d6263042).
+- Phase 0 spike: OnlyOffice/Collabora NO-GO for headless cell/range API (see sandbox `research/self-host-sync-docs/onlyoffice-collabora-spike-20260713.md`).
+- Proceeding with Firebase (Firestore REST) + Zoho Sheet (OAuth + grid API); Phases 6-7 skipped.
+
+## 2026-07-13 - Deferred Other spreadsheet backends — execution complete
+
+- Phase 0: OnlyOffice/Collabora NO-GO (no headless cell/range REST); Phases 6-7 skipped.
+- Phases 1-2: `FirebaseTabularClient` + `FirebaseTabularBackend` (Firestore REST, RowDb pattern).
+- Phases 3-4: `ZohoSheetAuth` + `ZohoSheetClient` + `ZohoSheetTabularBackend` (OAuth + grid API).
+- Phase 5: Catalog `implemented=true` for Firebase + Zoho; setup forms + cheatsheets + INDEX/VENDOR_LINKS.
+- Phase 8: `DeferredTabularBackendStub` scoped to OnlyOffice/Collabora only; `project-facts.md` updated.
+- Build tag: `fix_syncing_and_settings/builds` → `fix_syncing_and_settings-start-200-g5792a689`.
+
+## 2026-07-13 - Git history cleanup + PR prep — execution start
+
+- Branch `fix_syncing_and_settings`; baseline 200 commits (`afe2d307..5792a689`).
+- Mission: squash to ~6-10 logical commits, backup tag, force-with-lease push, generate PR doc.
+- Deleted junk `eng_log_complete.txt`; committing pending ENGINEERING_LOG hygiene.
