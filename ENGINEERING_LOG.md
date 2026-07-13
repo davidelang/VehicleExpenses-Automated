@@ -629,3 +629,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Approved plan: post-pr-review-sync-fixes-20260713-plan.md
 - Baseline tag: 68106bf1 on fix_syncing_and_settings
 - 9 phases: docs, bugs #1-14, frequency UI, backfill splash, failure UX
+
+## 2026-07-13 - Post-PR sync fixes execution complete
+
+- All 9 phases delivered; final tag fix_syncing_and_settings/builds @ 46f7fabe
+- Docs: USER_GUIDE, SYNC_BEHAVIOR.md, self-host README recovery note
+- Bugs #1-14 + frequency hours UI + backfill splash + SyncFailureStore UX
