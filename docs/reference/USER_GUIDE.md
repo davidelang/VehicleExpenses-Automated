@@ -37,4 +37,5 @@ To achieve high OCR accuracy, the app uses **Reference Dash Photos**:
 
 ## Synchronization & Conflict Resolution
 - **Google Sheets & Drive**: Optionally sync entries to a Google Sheet and back up photos to Google Drive.
+- **Self-hosted sync**: For WebDAV, SFTP, MinIO/S3-compatible, EtherCalc, Baserow, and other self-hosted targets, see the setup index at [self-host/INDEX.md](self-host/INDEX.md).
 - **Conflict Resolution**: If the app detects a mismatch between your local data and the remote Google Sheet, it will present the **Conflict Resolution** screen to let you choose which version to keep.
