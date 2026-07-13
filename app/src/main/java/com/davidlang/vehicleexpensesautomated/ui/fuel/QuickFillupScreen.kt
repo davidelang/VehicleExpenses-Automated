@@ -56,8 +56,10 @@ import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -180,7 +182,13 @@ fun QuickFillupScreen(
     var zoomControl by remember { mutableStateOf<CameraZoomControl?>(null) }
 
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
-    val debugMode = remember { prefs.getBoolean("debug_ocr_pipeline", false) }
+    val debugMode = remember {
+        if (prefs.contains("debug_quick_fill")) {
+            prefs.getBoolean("debug_quick_fill", false)
+        } else {
+            prefs.getBoolean("debug_ocr_pipeline", false)
+        }
+    }
 
     // TODO: Settings should surface "use system" as the default option for currency/volume.
     val systemCurrencySymbol = remember {
@@ -376,10 +384,22 @@ fun QuickFillupScreen(
                                             result.odometer?.let { odometer = it }
 
                                             if (debugMode && result.debugJson != null) {
-                                                val timestamp = System.currentTimeMillis()
-                                                val file = File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS), "debug_ocr_odometer_$timestamp.json")
-                                                file.writeText(result.debugJson)
-                                                Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
+                                                val vId = result.vehicleId ?: selectedVehicleId
+                                                val vName = vehicles.find { it.id == vId }?.name
+                                                scope.launch(Dispatchers.IO) {
+                                                    QuickFillDebugStore.saveSession(
+                                                        context = context,
+                                                        mode = "odo",
+                                                        debugJson = result.debugJson,
+                                                        vehicleId = vId,
+                                                        vehicleName = vName,
+                                                        odometer = result.odometer,
+                                                        error = result.error,
+                                                    )
+                                                    scope.launch(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Debug session saved", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
                                             }
                                         }
                                     } catch (e: Exception) {
@@ -430,13 +450,23 @@ fun QuickFillupScreen(
                                                 }
                                             }
                                             if (debugMode && result.debugJson != null) {
-                                                val timestamp = System.currentTimeMillis()
-                                                val file = File(
-                                                    context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS),
-                                                    "debug_ocr_pump_$timestamp.json"
-                                                )
-                                                file.writeText(result.debugJson)
-                                                Toast.makeText(context, "Debug saved to Documents", Toast.LENGTH_SHORT).show()
+                                                val vId = selectedVehicleId
+                                                val vName = vehicles.find { it.id == vId }?.name
+                                                scope.launch(Dispatchers.IO) {
+                                                    QuickFillDebugStore.saveSession(
+                                                        context = context,
+                                                        mode = "pump",
+                                                        debugJson = result.debugJson,
+                                                        vehicleId = vId,
+                                                        vehicleName = vName,
+                                                        cost = result.cost,
+                                                        volume = result.volume,
+                                                        error = result.error,
+                                                    )
+                                                    scope.launch(Dispatchers.Main) {
+                                                        Toast.makeText(context, "Debug session saved", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
                                             }
                                         }
                                     } catch (e: Exception) {
@@ -650,15 +680,15 @@ fun QuickFillupScreen(
                         } else {
                             convertVolumeForSave(rawVolume, volumeUnit, preferredVolumeUnit)
                         }
-                        // TODO future: persist non-default currency on FuelEntry (DB change later).
-                        // Cost uses raw numeric value; currencySymbol is display-only this turn.
                         val photoUrlJson = sessionPhotosToJson(sessionPhotos)
+                        val storedCurrency = CurrencyCodes.fromSymbolOrCode(currencySymbol)
                         fuelViewModel.saveFuel(
                             FuelEntry(
                                 vehicleId = vehicleId,
                                 odometer = odoTrim.toIntOrNull() ?: 0,
                                 gallons = saveVolume,
                                 cost = costTrim.toDoubleOrNull() ?: 0.0,
+                                currency = storedCurrency,
                                 timestamp = System.currentTimeMillis(),
                                 photoUrl = photoUrlJson,
                                 latitude = lat,
