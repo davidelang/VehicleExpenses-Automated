@@ -633,8 +633,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             else -> {
                 val localTs = updatedAtOf(local!!)
                 val remoteTs = updatedAtOf(remote!!)
-                if (remoteTs > localTs) remote else local
-            } as T
+                @Suppress("UNCHECKED_CAST")
+                val winner = if (remoteTs > localTs) remote else local
+                winner as T
+            }
         }
     }
 
