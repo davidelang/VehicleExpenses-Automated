@@ -16,7 +16,7 @@ object RcloneLoader {
                 Log.i(TAG, "Loading expanded rclone library from: ${expandedSo.absolutePath}")
                 System.load(expandedSo.absolutePath)
             } else {
-                Log.i(TAG, "Loading bundled lite rclone library")
+                Log.i(TAG, "Loading bundled rclone library (full backends)")
                 System.loadLibrary("gojni")
             }
             isInitialized = true
