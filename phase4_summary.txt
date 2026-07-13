@@ -1,0 +1,1 @@
+Phase 4: Add QuickFillDebugStore skeleton with ensureDirs, listSessions, pruneToMax, clearAll.

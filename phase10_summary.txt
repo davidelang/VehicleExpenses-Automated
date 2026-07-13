@@ -1,0 +1,1 @@
+Phase 10: Build email Intent for failure report with FileProvider attachments; wire Send button.

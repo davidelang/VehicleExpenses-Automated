@@ -1,0 +1,5 @@
+## 2026-07-13 - Execution: deferred Other spreadsheet backends (Phases 0-8)
+
+- Started execution on branch `fix_syncing_and_settings`; baseline `fix_syncing_and_settings/builds` (d6263042).
+- Phase 0 spike: OnlyOffice/Collabora NO-GO for headless cell/range API (see sandbox `research/self-host-sync-docs/onlyoffice-collabora-spike-20260713.md`).
+- Proceeding with Firebase (Firestore REST) + Zoho Sheet (OAuth + grid API); Phases 6-7 skipped.

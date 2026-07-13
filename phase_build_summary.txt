@@ -1,0 +1,6 @@
+Phases 0-5 + 8: Firebase Firestore REST backend, Zoho Sheet OAuth+grid backend,
+catalog/UI/docs, OnlyOffice/Collabora spike NO-GO (deferred stub for those only).
+
+New: FirebaseTabularClient/Backend/Config, ZohoSheetClient/Backend/Config/Auth,
+FirebaseSpreadsheetForm, ZohoSheetSpreadsheetForm, ZohoOAuthRedirectActivity,
+firebase.md, zoho-sheet.md. Registry wires FIREBASE + ZOHO_SHEET.

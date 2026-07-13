@@ -93,3 +93,42 @@
 ## Backlog (paddle / not urgent)
 - [ ] True LITE_BUILD_TAILOR for **x86_64** emulator (space only; prod-path speed matches fat kernels)
 - [ ] True LITE_BUILD_TAILOR for **armeabi-v7a** or drop the ABI (space only if kept)
+
+- [x] Executing plan dev-ai-interaction/plans/settings-hygiene-debug-quickfill-localization-20260712-plan.md — Settings hygiene: remove OCR threshold, Debug Quick Fill + retention/report, currency/volume system defaults, expense local-keep toggle.
+- [x] Executing plan dev-ai-interaction/plans/settings-sync-shell-spreadsheet-photo-config-20260712-plan.md — Settings sync shell: destination model/store, spreadsheet/photo config screens, summary rows + stub Sync now.
+
+- [x] Executing plan dev-ai-interaction/plans/sync-schema-identity-timestamps-tombstones-cloudmanifest-20260712-plan.md — DB v9: SyncIdentity, originDeviceId/updatedAt/tombstones, cloudManifest, repo stamps, CSV/Sheets headers.
+- [x] Executing plan dev-ai-interaction/plans/google-sheets-bidirectional-sync-20260712-plan.md — Real Google Sheets bidirectional sync: auth, Sheets API, LWW coordinator, Sync now + background worker (photo backup out of scope).
+
+- [x] Executing plan dev-ai-interaction/plans/sync-identity-auth-dedupe-cleanup-20260712-plan.md — syncId identity, auth recovery, dedupe cleanup (Phases 1–14 complete).
+
+- [x] Executing plan dev-ai-interaction/plans/google-drive-photo-backup-cloudmanifest-20260712-plan.md — Google Drive photo backup + cloudManifest (Phases 1–19 complete).
+
+- [x] Executing plan dev-ai-interaction/plans/vehicle-sheet-crops-landmarks-and-photo-destid-fix-20260712-plan.md — Sheet sync crops/landmarks; stop Drive landmarks; CloudManifest getFileId destId fallback (Phases 1–10 complete).
+
+- [x] Executing plan dev-ai-interaction/plans/post-sync-vehicle-definition-rehydration-20260712-plan.md — Post-sync vehicle definition rehydration: no-stamp asset updates, LWW definition overlay, post-sync photo download, Manage Vehicles rehydrate (Phases 1–7 complete).
+
+- [x] Executing plan dev-ai-interaction/plans/background-sync-worker-hilt-reliability-20260712-plan.md — Hilt worker factory + WM single init + bootstrap/reschedule/consent (Phases 1–6 complete)
+
+- [x] Executing plan dev-ai-interaction/plans/sheet-oldest-first-and-incremental-sync-20260712-plan.md — sheet oldest-first + incremental sync, photo path preserve, FULL/PENDING_ONLY photo modes, 15-min background interval (Phases 1–9 complete)
+
+- [x] Executing plan dev-ai-interaction/plans/cloudmanifest-multi-dest-pending-and-remint-20260712-plan.md — Cloud Manifest multi-dest pending + remint semantics (Phases 1–5 complete)
+
+- [x] Executing plan dev-ai-interaction/plans/vehicle-rename-fuel-sheet-tab-migrate-20260712-plan.md — Vehicle rename → Fuel sheet tab rename/migrate (Phases 1–6 complete)
+
+- [x] Executing plan dev-ai-interaction/plans/multi-google-destinations-20260712-plan.md — Multiple Google Sheets + Google Drive photo destinations (Phases 1–7 complete)
+
+## Backlog (sync / settings / data model)
+- [x] Multi-currency normalization: persist currency on fuel/expense rows at save (Room v11, sheet/CSV Currency column, row-aware reports); no offline FX. Future: optional conversion at sync when rates available.
+- [x] Sheet tab rename when vehicle name changes: fuel tabs are named by vehicle name; renaming a vehicle must rename/migrate the corresponding Google Sheet tab (and any CSV export naming) without losing rows or breaking sync identity.
+- [x] Expense multi-vehicle + multi-photo **datastore/sync schema** (Room v12 `vehicleSyncIdsJson`, `ExpensePhotoUrls` / `ExpenseVehicleSyncIds`, tabular + photo backup); **UI deferred** (multi-select vehicles, multi-page camera).
+- [ ] Expense multi-vehicle picker UI + multi-page receipt capture UX (schema ready in datastore/sync).
+- [ ] Import expense receipts from email and/or file pickers (not only camera / gallery).
+- [x] Executing plan dev-ai-interaction/plans/csv-export-import-sheet-parity-20260712-plan.md — CSV export/import parity with Google Sheets layout (Vehicles + per-vehicle Fuel tabs + Expenses) (Phases 1–6 complete).
+- [x] Executing plan dev-ai-interaction/plans/multi-currency-row-persist-20260712-plan.md — persist currency on fuel/expense rows (Room v10→v11) (Phases 1–6 complete).
+- [x] ~~Find/cleanup orphaned cloud images~~ — **cancelled / no longer needed** (manifest + pending rules; not a follow-on).
+- [ ] Field-level conflict resolution UI (beyond whole-row LWW by updatedAt) for multi-device edits to different columns of the same fill.
+- [x] Executing plan dev-ai-interaction/plans/rclone-photo-storage-backend-20260713-plan.md — rclone photo storage backend (full librclone AAR, PhotoSyncBackend, RCLONE provider) (Phases 0–8 complete)
+- [x] Executing plan dev-ai-interaction/plans/google-dest-browse-pick-create-ui-20260713-plan.md — Google Sheets/Drive browse-pick-create UX (Phases 1–6 complete)
+- [x] Executing plan dev-ai-interaction/plans/rclone-config-create-ui-20260713-plan.md — in-app rclone remote create/manage UI (Phases 1–6 complete)
+- [x] Executing plan dev-ai-interaction/plans/photo-backend-onedrive-and-other-label-20260713-plan.md — Google Drive / OneDrive / S3 / Other photo destinations: 4-way picker, managed S3 remote, universal test contract, Other kind groups + denylist, build_photo.sh (AAR rebuild optional)

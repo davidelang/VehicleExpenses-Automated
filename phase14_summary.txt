@@ -1,0 +1,1 @@
+Phase 14: Save expense photos locally toggle in Settings; ExpenseEntryScreen honors pref on capture/save.
