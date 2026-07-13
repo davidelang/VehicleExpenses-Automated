@@ -17,7 +17,7 @@ object SyncIdentity {
         val existing = prefs.getString(KEY_SYNC_DEVICE_ID, null)
         if (!existing.isNullOrBlank()) return existing
         val created = UUID.randomUUID().toString()
-        prefs.edit().putString(KEY_SYNC_DEVICE_ID, created).apply()
+        prefs.edit().putString(KEY_SYNC_DEVICE_ID, created).commit()
         return created
     }
 }

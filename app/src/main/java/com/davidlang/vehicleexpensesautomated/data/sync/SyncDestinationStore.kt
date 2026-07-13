@@ -316,7 +316,7 @@ class SyncDestinationStore(context: Context) {
                 PhotoProvider.ONEDRIVE, PhotoProvider.S3, PhotoProvider.OTHER -> {
                     val config = RcloneDestConfig.parse(dest.configJson) ?: return false
                     if (config.remote.isBlank()) return false
-                    context?.let { RcloneConfStorage.hasConf(it, dest.id, config) } ?: true
+                    context?.let { RcloneConfStorage.hasConf(it, dest.id, config) } ?: false
                 }
                 PhotoProvider.NONE -> false
             }

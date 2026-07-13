@@ -29,6 +29,12 @@ class ExpenseEntryRepository @Inject constructor(
 
     suspend fun updateExpenseEntry(entry: ExpenseEntry) = dao.update(stampForWrite(entry))
 
+    /**
+     * Manifest / photoUrl bookkeeping must not bump [ExpenseEntry.updatedAt] or LWW can spuriously win.
+     */
+    suspend fun updateExpenseEntryPreservingTimestamp(entry: ExpenseEntry) =
+        dao.update(ensureSyncId(entry))
+
     suspend fun markExpenseDeleted(entry: ExpenseEntry) {
         val now = System.currentTimeMillis()
         dao.update(stampForWrite(entry).copy(deleted = true, deletedAt = now))

@@ -32,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +51,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SheetsRecoverableAuthExc
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncFrequencyUi
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherKind
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherProviderCatalog
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherProviderInfo
@@ -485,8 +487,20 @@ private fun SpreadsheetDestEditForm(
     var enabled by remember { mutableStateOf(existing?.enabled ?: false) }
     var wifiOnly by remember { mutableStateOf(existing?.wifiOnly ?: true) }
     var chargingOnly by remember { mutableStateOf(existing?.chargingOnly ?: false) }
-    var frequencyMinutes by remember { mutableIntStateOf(existing?.resolvedFrequencyMinutes() ?: 60) }
+    var frequencyHours by remember {
+        mutableFloatStateOf(
+            SyncFrequencyUi.minutesToDisplayHours(existing?.resolvedFrequencyMinutes() ?: 60),
+        )
+    }
     var statusText by remember { mutableStateOf("") }
+    val isDeferredStub = provider == SpreadsheetProvider.ONLYOFFICE ||
+        provider == SpreadsheetProvider.COLLABORA
+
+    LaunchedEffect(isDeferredStub) {
+        if (isDeferredStub && enabled) {
+            enabled = false
+        }
+    }
     var showBrowseDialog by remember { mutableStateOf(false) }
     var pendingRecoveryRetry by remember { mutableStateOf<(() -> Unit)?>(null) }
     val displayNameRequired = totalDestCount > 1
@@ -501,7 +515,7 @@ private fun SpreadsheetDestEditForm(
 
     LaunchedEffect(
         targetId, targetUrl, configJson, displayName, accountHint, enabled, wifiOnly, chargingOnly,
-        frequencyMinutes, id, provider, etherCalcBaseUrl, etherCalcRoomPrefix,
+        frequencyHours, id, provider, etherCalcBaseUrl, etherCalcRoomPrefix,
         rowDbBaseUrl, rowDbToken, rowDbDatabaseId, rowDbProjectId, rowDbBaseId,
         rowDbVehiclesTableId, rowDbExpensesTableId, rowDbFuelTableIds,
         firebaseProjectId, firebaseToken, firebaseVehiclesCollection, firebaseExpensesCollection, firebaseFuelCollections,
@@ -580,13 +594,10 @@ private fun SpreadsheetDestEditForm(
             configJson = resolvedConfig,
             displayName = displayName,
             accountHint = accountHint,
-            enabled = enabled,
+            enabled = enabled && !isDeferredStub,
             wifiOnly = wifiOnly,
             chargingOnly = chargingOnly,
-            frequencyMinutes = frequencyMinutes.coerceIn(
-                SpreadsheetDestination.MIN_FREQUENCY_MINUTES,
-                SpreadsheetDestination.MAX_FREQUENCY_MINUTES,
-            ),
+            frequencyMinutes = SyncFrequencyUi.hoursToMinutes(frequencyHours),
         )
         if (isNew && !SyncDestinationStore.isSpreadsheetConfigured(candidate)) return@LaunchedEffect
         if (displayNameRequired && displayName.isBlank()) return@LaunchedEffect
@@ -903,19 +914,28 @@ private fun SpreadsheetDestEditForm(
 
         Spacer(modifier = Modifier.height(16.dp))
         Text("Background sync", style = MaterialTheme.typography.titleMedium)
-        SpreadsheetSwitchSetting("Enable background sync", enabled) { enabled = it }
+        if (isDeferredStub) {
+            Text(
+                "${provider.displayLabel()} is not yet available — background sync cannot be enabled.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        SpreadsheetSwitchSetting(
+            "Enable background sync",
+            enabled,
+            enabled = !isDeferredStub,
+        ) { if (!isDeferredStub) enabled = it }
         SpreadsheetSwitchSetting("Wi-Fi only", wifiOnly) { wifiOnly = it }
         SpreadsheetSwitchSetting("Charging only", chargingOnly) { chargingOnly = it }
         SpreadsheetSliderSetting(
-            "Sync frequency (minutes, min 15)",
-            frequencyMinutes.toFloat(),
-            SpreadsheetDestination.MIN_FREQUENCY_MINUTES.toFloat()..
-                SpreadsheetDestination.MAX_FREQUENCY_MINUTES.toFloat(),
+            "Background sync interval (hours)",
+            frequencyHours,
+            SpreadsheetDestination.MIN_FREQUENCY_HOURS..
+                SpreadsheetDestination.MAX_FREQUENCY_HOURS,
         ) {
-            frequencyMinutes = it.toInt().coerceIn(
-                SpreadsheetDestination.MIN_FREQUENCY_MINUTES,
-                SpreadsheetDestination.MAX_FREQUENCY_MINUTES,
-            )
+            frequencyHours = SyncFrequencyUi.snapHours(it)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -1045,13 +1065,22 @@ private fun SpreadsheetDestEditForm(
 }
 
 @Composable
-private fun SpreadsheetSwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SpreadsheetSwitchSetting(
+    label: String,
+    checked: Boolean,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(vertical = 4.dp),
     ) {
         Text(label, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+        )
     }
 }
 
@@ -1065,6 +1094,6 @@ private fun SpreadsheetSliderSetting(
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text(label, style = MaterialTheme.typography.titleMedium)
         Slider(value = value, onValueChange = onValueChange, valueRange = range, modifier = Modifier.fillMaxWidth())
-        Text("%.0f".format(value), style = MaterialTheme.typography.labelSmall)
+        Text(SyncFrequencyUi.formatHoursLabel(value), style = MaterialTheme.typography.labelSmall)
     }
 }

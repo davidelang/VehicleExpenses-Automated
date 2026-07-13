@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
+import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
 import dagger.Module
 import dagger.Provides
@@ -122,7 +123,7 @@ object DatabaseModule {
             MIGRATION_10_11,
             MIGRATION_11_12,
         )
-        .fallbackToDestructiveMigration(true)
+        .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()
     }
 

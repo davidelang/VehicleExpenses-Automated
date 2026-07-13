@@ -35,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +51,8 @@ import com.davidlang.vehicleexpensesautomated.data.sync.DriveAuthRecovery
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveRecoverableAuthException
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowserClient
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoDestination
+import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncFrequencyUi
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneConfStorage
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneDestConfig
@@ -395,7 +398,11 @@ private fun PhotoDestEditForm(
     var enabled by remember { mutableStateOf(existing?.enabled ?: false) }
     var wifiOnly by remember { mutableStateOf(existing?.wifiOnly ?: true) }
     var chargingOnly by remember { mutableStateOf(existing?.chargingOnly ?: false) }
-    var frequencyMinutes by remember { mutableIntStateOf(existing?.resolvedFrequencyMinutes() ?: 60) }
+    var frequencyHours by remember {
+        mutableFloatStateOf(
+            SyncFrequencyUi.minutesToDisplayHours(existing?.resolvedFrequencyMinutes() ?: 60),
+        )
+    }
     var statusText by remember { mutableStateOf("") }
     var folderId by remember { mutableStateOf(existing?.folderId ?: "") }
     var showBrowseDialog by remember { mutableStateOf(false) }
@@ -440,7 +447,7 @@ private fun PhotoDestEditForm(
 
     LaunchedEffect(
         provider, folderName, displayName, accountHint, enabled, wifiOnly, chargingOnly,
-        frequencyMinutes, id, folderId, configJson,
+        frequencyHours, id, folderId, configJson,
     ) {
         val candidate = PhotoDestination(
             id = id,
@@ -452,10 +459,7 @@ private fun PhotoDestEditForm(
             enabled = enabled,
             wifiOnly = wifiOnly,
             chargingOnly = chargingOnly,
-            frequencyMinutes = frequencyMinutes.coerceIn(
-                PhotoDestination.MIN_FREQUENCY_MINUTES,
-                PhotoDestination.MAX_FREQUENCY_MINUTES,
-            ),
+            frequencyMinutes = SyncFrequencyUi.hoursToMinutes(frequencyHours),
             folderId = folderId,
         )
         if (isNew && !SyncDestinationStore.isPhotoConfigured(candidate)) return@LaunchedEffect
@@ -912,15 +916,12 @@ private fun PhotoDestEditForm(
         PhotoSwitchSetting("Wi-Fi only", wifiOnly) { wifiOnly = it }
         PhotoSwitchSetting("Charging only", chargingOnly) { chargingOnly = it }
         PhotoSliderSetting(
-            "Backup frequency (minutes, min 15)",
-            frequencyMinutes.toFloat(),
-            PhotoDestination.MIN_FREQUENCY_MINUTES.toFloat()..
-                PhotoDestination.MAX_FREQUENCY_MINUTES.toFloat(),
+            "Background backup interval (hours)",
+            frequencyHours,
+            SpreadsheetDestination.MIN_FREQUENCY_HOURS..
+                SpreadsheetDestination.MAX_FREQUENCY_HOURS,
         ) {
-            frequencyMinutes = it.toInt().coerceIn(
-                PhotoDestination.MIN_FREQUENCY_MINUTES,
-                PhotoDestination.MAX_FREQUENCY_MINUTES,
-            )
+            frequencyHours = SyncFrequencyUi.snapHours(it)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -1123,6 +1124,6 @@ private fun PhotoSliderSetting(
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text(label, style = MaterialTheme.typography.titleMedium)
         Slider(value = value, onValueChange = onValueChange, valueRange = range, modifier = Modifier.fillMaxWidth())
-        Text("%.0f".format(value), style = MaterialTheme.typography.labelSmall)
+        Text(SyncFrequencyUi.formatHoursLabel(value), style = MaterialTheme.typography.labelSmall)
     }
 }

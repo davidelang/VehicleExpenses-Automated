@@ -91,6 +91,8 @@ data class SpreadsheetDestination(
     companion object {
         const val MIN_FREQUENCY_MINUTES = 15
         const val MAX_FREQUENCY_MINUTES = 24 * 60
+        const val MIN_FREQUENCY_HOURS = 0.25f
+        const val MAX_FREQUENCY_HOURS = 24f
     }
 }
 
@@ -126,3 +128,35 @@ data class SyncDestinations(
     val spreadsheet: List<SpreadsheetDestination> = emptyList(),
     val photo: List<PhotoDestination> = emptyList(),
 )
+
+/** UI helpers: slider shows hours; persistence stays in minutes. */
+object SyncFrequencyUi {
+    fun minutesToDisplayHours(minutes: Int): Float =
+        (minutes / 60f).coerceIn(
+            SpreadsheetDestination.MIN_FREQUENCY_HOURS,
+            SpreadsheetDestination.MAX_FREQUENCY_HOURS,
+        )
+
+    fun snapHours(hours: Float): Float {
+        val clamped = hours.coerceIn(
+            SpreadsheetDestination.MIN_FREQUENCY_HOURS,
+            SpreadsheetDestination.MAX_FREQUENCY_HOURS,
+        )
+        return (clamped * 4f).roundToInt() / 4f
+    }
+
+    fun hoursToMinutes(hours: Float): Int =
+        (snapHours(hours) * 60f).roundToInt().coerceIn(
+            SpreadsheetDestination.MIN_FREQUENCY_MINUTES,
+            SpreadsheetDestination.MAX_FREQUENCY_MINUTES,
+        )
+
+    fun formatHoursLabel(hours: Float): String {
+        val snapped = snapHours(hours)
+        return if (snapped == snapped.toInt().toFloat()) {
+            "${snapped.toInt()} h"
+        } else {
+            String.format("%.2f h", snapped)
+        }
+    }
+}

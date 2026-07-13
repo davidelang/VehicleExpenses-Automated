@@ -12,10 +12,15 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -32,7 +37,11 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -43,6 +52,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
+import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdBackfill
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
 import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
@@ -72,6 +85,15 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var vehicleRepository: VehicleRepository
+
+    @Inject
+    lateinit var syncIdBackfill: SyncIdBackfill
+
+    @Inject
+    lateinit var syncManager: SyncManager
+
+    @Inject
+    lateinit var photoBackupManager: PhotoBackupManager
 
     private val mediaPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -126,6 +148,53 @@ class MainActivity : ComponentActivity() {
                 val drawerState = rememberDrawerState(DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
                 val context = androidx.compose.ui.platform.LocalContext.current
+                var backfillComplete by remember { mutableStateOf(syncIdBackfill.isBackfillDone()) }
+                var syncFailureVisible by remember { mutableStateOf(false) }
+
+                LaunchedEffect(backfillComplete, navController.currentBackStackEntry) {
+                    syncFailureVisible = SyncFailureStore(context).hasAnyFailure()
+                }
+
+                if (!backfillComplete) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            CircularProgressIndicator()
+                            Text(
+                                "Updating database after upgrade…",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                "This usually takes a few seconds.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    LaunchedEffect(Unit) {
+                        try {
+                            withContext(Dispatchers.IO) {
+                                syncIdBackfill.runIfNeeded()
+                                syncManager.scheduleFromDestination()
+                                photoBackupManager.scheduleFromDestination()
+                            }
+                        } catch (e: Exception) {
+                            Log.e("MainActivity", "sync-id backfill failed", e)
+                            Toast.makeText(
+                                context,
+                                "Database upgrade failed — restart the app",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        }
+                        backfillComplete = true
+                    }
+                    return@VehicleExpensesAutomatedTheme
+                }
 
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -248,6 +317,17 @@ class MainActivity : ComponentActivity() {
                         topBar = {
                             TopAppBar(
                                 title = { Text(if (title == "Vehicle Expenses") title else "Vehicle Expenses - $title") },
+                                actions = {
+                                    if (syncFailureVisible) {
+                                        IconButton(onClick = { navController.navigate("settings") }) {
+                                            Icon(
+                                                Icons.Default.Error,
+                                                contentDescription = "Sync problem — open Settings",
+                                                tint = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
+                                    }
+                                },
                                 navigationIcon = {
                                     val isSettingsSubRoute = currentRoute == "settings/spreadsheet_sync" ||
                                         currentRoute == "settings/photo_backup"

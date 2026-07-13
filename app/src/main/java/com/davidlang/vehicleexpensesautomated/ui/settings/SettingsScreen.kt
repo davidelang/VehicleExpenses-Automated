@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
@@ -57,12 +58,17 @@ fun SettingsScreen(navController: NavHostController) {
     val csvManager = viewModel.csvManager
     val scope = rememberCoroutineScope()
     val syncStore = remember { SyncDestinationStore(context) }
+    val failureStore = remember { SyncFailureStore(context) }
     var pendingBadge by remember { mutableStateOf(syncStore.pendingBadgeText()) }
+    var spreadsheetError by remember { mutableStateOf<String?>(null) }
+    var photoError by remember { mutableStateOf<String?>(null) }
     val navBackStackEntry = navController.currentBackStackEntry
     val destinations = remember(navBackStackEntry) { syncStore.load() }
 
     LaunchedEffect(navBackStackEntry) {
         pendingBadge = syncStore.pendingBadgeText()
+        spreadsheetError = failureStore.firstSpreadsheetFailure()?.message
+        photoError = failureStore.firstPhotoFailure()?.message
         withContext(Dispatchers.IO) {
             viewModel.recountPendingBadge()
         }
@@ -220,6 +226,7 @@ fun SettingsScreen(navController: NavHostController) {
             title = "Spreadsheet sync",
             summary = SyncDestinationStore.spreadsheetSummaryLine(spreadsheetDests),
             pendingBadge = pendingBadge,
+            errorText = spreadsheetError,
             showSyncNow = spreadsheetConfigured,
             onRowClick = { navController.navigate("settings/spreadsheet_sync") },
             // Phase 15: Sync now via SpreadsheetSyncCoordinator
@@ -227,6 +234,7 @@ fun SettingsScreen(navController: NavHostController) {
                 scope.launch {
                     try {
                         val result = withContext(Dispatchers.IO) { viewModel.syncSpreadsheet() }
+                        spreadsheetError = failureStore.firstSpreadsheetFailure()?.message
                         Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
                     } catch (e: Exception) {
                         Toast.makeText(context, e.message ?: "Sync failed", Toast.LENGTH_SHORT).show()
@@ -238,6 +246,7 @@ fun SettingsScreen(navController: NavHostController) {
             title = "Photo backup",
             summary = SyncDestinationStore.photoSummaryLine(photoDests),
             pendingBadge = pendingBadge,
+            errorText = photoError,
             showSyncNow = photoConfigured,
             onRowClick = { navController.navigate("settings/photo_backup") },
             onSyncNow = {
@@ -245,6 +254,7 @@ fun SettingsScreen(navController: NavHostController) {
                     try {
                         val result = withContext(Dispatchers.IO) { viewModel.syncPhotoBackup() }
                         pendingBadge = syncStore.pendingBadgeText()
+                        photoError = failureStore.firstPhotoFailure()?.message
                         Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
                     } catch (e: Exception) {
                         Toast.makeText(context, e.message ?: "Photo sync failed", Toast.LENGTH_SHORT).show()
@@ -552,6 +562,7 @@ private fun SyncSummaryRow(
     title: String,
     summary: String,
     pendingBadge: String,
+    errorText: String? = null,
     showSyncNow: Boolean,
     onRowClick: () -> Unit,
     onSyncNow: () -> Unit,
@@ -574,6 +585,13 @@ private fun SyncSummaryRow(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (!errorText.isNullOrBlank()) {
+                    Text(
+                        errorText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
             if (showSyncNow) {
                 TextButton(onClick = onSyncNow) {
