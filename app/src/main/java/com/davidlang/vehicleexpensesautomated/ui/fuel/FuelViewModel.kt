@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
+import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +14,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class FuelViewModel @Inject constructor(
-    private val fuelEntryRepository: FuelEntryRepository
+    private val fuelEntryRepository: FuelEntryRepository,
+    private val photoBackupCoordinator: PhotoBackupCoordinator,
 ) : ViewModel() {
 
     val fuelEntries: StateFlow<List<FuelEntry>> = fuelEntryRepository.getAllEntries()
@@ -22,6 +24,20 @@ class FuelViewModel @Inject constructor(
     fun saveFuel(entry: FuelEntry) {
         viewModelScope.launch {
             fuelEntryRepository.insertFuelEntry(entry)
+            photoBackupCoordinator.enqueueAfterSave()
+        }
+    }
+
+    fun convertAllVolumes(fromUnit: String, toUnit: String, onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            fuelEntryRepository.convertAllVolumes(fromUnit, toUnit)
+            onComplete()
+        }
+    }
+
+    fun deleteFuelEntry(entry: FuelEntry) {
+        viewModelScope.launch {
+            fuelEntryRepository.markFuelDeleted(entry)
         }
     }
 }

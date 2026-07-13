@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
 import kotlinx.coroutines.launch
 
@@ -27,6 +28,9 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
+    val defaultStoredCurrency = remember {
+        CurrencyCodes.settingsDefaultStored(context)
+    }
 
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
@@ -108,6 +112,7 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
                                 odometer = odometer,
                                 gallons = -1.0,
                                 cost = -1.0,
+                                currency = defaultStoredCurrency,
                                 timestamp = System.currentTimeMillis(),
                                 isPartialFill = false
                             )
@@ -151,6 +156,7 @@ fun FuelEntryScreen(vehicleId: Int = 0, navController: NavHostController? = null
                             odometer = odometer,
                             gallons = gallons,
                             cost = cost,
+                            currency = defaultStoredCurrency,
                             timestamp = System.currentTimeMillis(),
                             isPartialFill = isPartialFill
                         )

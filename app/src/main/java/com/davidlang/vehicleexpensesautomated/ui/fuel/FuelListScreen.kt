@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 
 @Composable
@@ -20,6 +21,7 @@ fun FuelListScreen(navController: NavHostController? = null) {
     val unitLabel = remember {
         VolumeUnits.longLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))
     }
+    val defaultSymbol = remember { CurrencyCodes.settingsDefaultSymbol(context) }
 
     LazyColumn(
         modifier = Modifier
@@ -43,7 +45,8 @@ fun FuelListScreen(navController: NavHostController? = null) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     // DB value is preferred unit; label matches (no reconversion).
-                    Text("Odometer: ${entry.odometer} | $unitLabel: ${entry.gallons} | Cost: $${entry.cost}")
+                    val costStr = CurrencyCodes.formatAmount(entry.cost, entry.currency, defaultSymbol)
+                    Text("Odometer: ${entry.odometer} | $unitLabel: ${entry.gallons} | Cost: $costStr")
                     Text("Partial: ${entry.isPartialFill}")
                 }
             }
