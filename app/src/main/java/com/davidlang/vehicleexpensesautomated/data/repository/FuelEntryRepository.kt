@@ -28,6 +28,12 @@ class FuelEntryRepository @Inject constructor(
 
     suspend fun updateFuelEntry(entry: FuelEntry) = fuelEntryDao.updateFuelEntry(stampForWrite(entry))
 
+    /**
+     * Manifest / photoUrl bookkeeping must not bump [FuelEntry.updatedAt] or LWW can spuriously win.
+     */
+    suspend fun updateFuelEntryPreservingTimestamp(entry: FuelEntry) =
+        fuelEntryDao.updateFuelEntry(ensureSyncId(entry))
+
     suspend fun deleteFuelEntry(entry: FuelEntry) = markFuelDeleted(entry)
 
     suspend fun markFuelDeleted(entry: FuelEntry) {

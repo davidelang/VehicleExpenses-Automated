@@ -17,6 +17,8 @@ import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareBack
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -43,59 +45,98 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     private val photoStorage: PhotoStorageManager,
 ) {
 
-    suspend fun syncNow(accountHint: String? = null): SyncResult = withContext(Dispatchers.IO) {
-        syncIdBackfill.runIfNeeded()
-        val store = SyncDestinationStore(context)
-        val enabled = store.enabledSpreadsheet()
-        if (enabled.isEmpty()) {
-            val dest = store.spreadsheetDestination()
-            val targetId = resolveTargetId(dest)
-            if (targetId.isBlank()) {
-                return@withContext SyncResult(false, "Spreadsheet not configured")
+    private val syncMutex = Mutex()
+
+    suspend fun syncNow(accountHint: String? = null): SyncResult = syncMutex.withLock {
+        withContext(Dispatchers.IO) {
+            syncIdBackfill.runIfNeeded()
+            val store = SyncDestinationStore(context)
+            val failureStore = SyncFailureStore(context)
+            val enabled = store.enabledSpreadsheet()
+            if (enabled.isEmpty()) {
+                val dest = resolveLegacyOrPrimaryDest(store)
+                val targetId = resolveTargetId(dest)
+                if (targetId.isBlank()) {
+                    return@withContext SyncResult(false, "Spreadsheet not configured")
+                }
+                val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
+                val single = syncSingleDestination(dest, hint)
+                recordSpreadsheetResult(failureStore, dest.id, single)
+                runPostSyncVehicleDownloads(hint)
+                return@withContext single
             }
-            val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest?.accountHint
-            val single = syncSingleDestination(dest!!, hint)
-            runPostSyncVehicleDownloads(hint)
-            return@withContext single
-        }
 
-        val results = mutableListOf<Pair<String, SyncResult>>()
-        var totalVehicles = 0
-        var totalExpenses = 0
-        var totalFuel = 0
-        var anyFailure = false
-        var consentResult: SyncResult? = null
+            val results = mutableListOf<Pair<String, SyncResult>>()
+            var totalVehicles = 0
+            var totalExpenses = 0
+            var totalFuel = 0
+            var anyFailure = false
+            var consentResult: SyncResult? = null
 
-        for (dest in enabled) {
-            val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
-            val label = destLabel(dest)
-            val result = syncSingleDestination(dest, hint)
-            results.add(label to result)
-            if (result.success) {
-                totalVehicles += result.vehiclesMerged
-                totalExpenses += result.expensesMerged
-                totalFuel += result.fuelMerged
-            } else {
-                anyFailure = true
-                if (result.needsRemoteConsent && consentResult == null) {
-                    consentResult = result
+            for (dest in enabled) {
+                val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
+                val label = destLabel(dest)
+                val result = syncSingleDestination(dest, hint)
+                recordSpreadsheetResult(failureStore, dest.id, result)
+                results.add(label to result)
+                if (result.success) {
+                    totalVehicles += result.vehiclesMerged
+                    totalExpenses += result.expensesMerged
+                    totalFuel += result.fuelMerged
+                } else {
+                    anyFailure = true
+                    if (result.needsRemoteConsent && consentResult == null) {
+                        consentResult = result
+                    }
                 }
             }
-        }
 
-        runPostSyncVehicleDownloads(accountHint)
+            runPostSyncVehicleDownloads(accountHint)
 
-        val message = results.joinToString("\n") { (label, result) -> "$label: ${result.message}" }
-        if (consentResult != null && anyFailure) {
-            return@withContext consentResult.copy(message = message)
+            val message = results.joinToString("\n") { (label, result) -> "$label: ${result.message}" }
+            if (consentResult != null && anyFailure) {
+                return@withContext consentResult.copy(message = message)
+            }
+            SyncResult(
+                success = !anyFailure,
+                message = message,
+                vehiclesMerged = totalVehicles,
+                expensesMerged = totalExpenses,
+                fuelMerged = totalFuel,
+            )
         }
-        SyncResult(
-            success = !anyFailure,
-            message = message,
-            vehiclesMerged = totalVehicles,
-            expensesMerged = totalExpenses,
-            fuelMerged = totalFuel,
+    }
+
+    private fun resolveLegacyOrPrimaryDest(store: SyncDestinationStore): SpreadsheetDestination {
+        store.spreadsheetDestination()?.let { return it }
+        val legacyId = legacySheetId()
+        if (legacyId.isBlank()) {
+            return SpreadsheetDestination()
+        }
+        val prefs = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
+        return SpreadsheetDestination(
+            targetId = legacyId,
+            enabled = prefs.getBoolean("sync_enabled", false),
+            wifiOnly = prefs.getBoolean("wifi_only", true),
+            chargingOnly = prefs.getBoolean("charging_only", false),
+            frequencyMinutes = (prefs.getInt("frequency_hours", 6) * 60)
+                .coerceIn(
+                    SpreadsheetDestination.MIN_FREQUENCY_MINUTES,
+                    SpreadsheetDestination.MAX_FREQUENCY_MINUTES,
+                ),
         )
+    }
+
+    private fun recordSpreadsheetResult(
+        failureStore: SyncFailureStore,
+        destId: String,
+        result: SyncResult,
+    ) {
+        if (result.success) {
+            failureStore.clearSpreadsheetFailure(destId)
+        } else {
+            failureStore.recordSpreadsheetFailure(destId, result.message)
+        }
     }
 
     private suspend fun syncSingleDestination(dest: SpreadsheetDestination, accountHint: String?): SyncResult {
@@ -592,19 +633,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             else -> {
                 val localTs = updatedAtOf(local!!)
                 val remoteTs = updatedAtOf(remote!!)
-                val localDeleted = deletedOf(local)
-                val remoteDeleted = deletedOf(remote)
-                when {
-                    localDeleted || remoteDeleted -> {
-                        val base = if (localTs >= remoteTs) local else remote
-                        val maxTs = maxOf(localTs, remoteTs)
-                        val maxDeletedAt = maxOf(deletedAtOf(local) ?: 0L, deletedAtOf(remote) ?: 0L)
-                        setDeleted(base, true, maxDeletedAt.takeIf { it > 0 } ?: maxTs, maxTs)
-                    }
-                    remoteTs > localTs -> remote
-                    else -> local
-                } as T
-            }
+                if (remoteTs > localTs) remote else local
+            } as T
         }
     }
 
@@ -613,27 +643,6 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         is FuelEntry -> item.updatedAt
         is ExpenseEntry -> item.updatedAt
         else -> 0L
-    }
-
-    private fun deletedOf(item: Any): Boolean = when (item) {
-        is Vehicle -> item.deleted
-        is FuelEntry -> item.deleted
-        is ExpenseEntry -> item.deleted
-        else -> false
-    }
-
-    private fun deletedAtOf(item: Any): Long? = when (item) {
-        is Vehicle -> item.deletedAt
-        is FuelEntry -> item.deletedAt
-        is ExpenseEntry -> item.deletedAt
-        else -> null
-    }
-
-    private fun setDeleted(item: Any, deleted: Boolean, deletedAt: Long, updatedAt: Long): Any = when (item) {
-        is Vehicle -> item.copy(deleted = deleted, deletedAt = deletedAt, updatedAt = updatedAt)
-        is FuelEntry -> item.copy(deleted = deleted, deletedAt = deletedAt, updatedAt = updatedAt)
-        is ExpenseEntry -> item.copy(deleted = deleted, deletedAt = deletedAt, updatedAt = updatedAt)
-        else -> item
     }
 
     private data class SheetWriteStats(

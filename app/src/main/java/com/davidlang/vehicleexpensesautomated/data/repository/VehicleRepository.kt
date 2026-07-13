@@ -5,7 +5,7 @@ import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.sync.FuelTabRenameHintStore
-import com.davidlang.vehicleexpensesautomated.data.sync.GoogleSheetsClient
+import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdGenerator
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdentity
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -36,8 +36,8 @@ class VehicleRepository @Inject constructor(
     suspend fun updateVehicle(vehicle: Vehicle) {
         val existing = vehicleDao.getVehicleById(vehicle.id).first()
         if (existing != null && existing.name != vehicle.name && existing.syncId.isNotBlank()) {
-            val oldTab = GoogleSheetsClient.fuelTabName(existing.name)
-            val newTab = GoogleSheetsClient.fuelTabName(vehicle.name)
+            val oldTab = TabularSchema.fuelTabName(existing.name)
+            val newTab = TabularSchema.fuelTabName(vehicle.name)
             if (oldTab != newTab) {
                 FuelTabRenameHintStore(context).recordHint(existing.syncId, oldTab)
             }

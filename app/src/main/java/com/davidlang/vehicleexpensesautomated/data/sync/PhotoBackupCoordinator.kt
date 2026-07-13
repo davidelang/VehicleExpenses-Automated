@@ -84,10 +84,12 @@ class PhotoBackupCoordinator @Inject constructor(
         mode: PhotoSyncMode = PhotoSyncMode.FULL,
     ): PhotoBackupResult = withContext(Dispatchers.IO) {
         val store = SyncDestinationStore(context)
+        val failureStore = SyncFailureStore(context)
         val enabled = store.enabledPhoto()
         if (enabled.isEmpty()) {
             val ctx = resolveContext(accountHint) ?: return@withContext notConfiguredOrAuth()
             val single = syncSingleDestination(ctx, mode, sharedRebinds = 0)
+            recordPhotoResult(failureStore, ctx.dest.id, single)
             recountPendingAll(store)
             if (single.success && (single.uploads > 0 || single.downloads > 0)) {
                 bestEffortSheetSync(accountHint)
@@ -113,11 +115,13 @@ class PhotoBackupCoordinator @Inject constructor(
             val label = photoDestLabel(dest)
             if (ctx == null) {
                 val fail = notConfiguredOrAuth(dest)
+                recordPhotoResult(failureStore, dest.id, fail)
                 results.add(label to fail)
                 anyFailure = true
                 continue
             }
             val result = syncSingleDestination(ctx, mode, sharedRebinds = sharedRebinds)
+            recordPhotoResult(failureStore, dest.id, result)
             results.add(label to result)
             if (result.success) {
                 totalUploads += result.uploads
@@ -379,11 +383,11 @@ class PhotoBackupCoordinator @Inject constructor(
 
         if (uploads > 0) {
             val newPhotoUrl = if (saveLocal) fuel.photoUrl else null
-            fuelRepository.updateFuelEntry(
+            fuelRepository.updateFuelEntryPreservingTimestamp(
                 fuel.copy(cloudManifest = manifest, photoUrl = newPhotoUrl),
             )
         } else if (manifestStrippedOnly) {
-            fuelRepository.updateFuelEntry(fuel.copy(cloudManifest = manifest))
+            fuelRepository.updateFuelEntryPreservingTimestamp(fuel.copy(cloudManifest = manifest))
         }
         return uploads
     }
@@ -398,7 +402,7 @@ class PhotoBackupCoordinator @Inject constructor(
         var manifest = CloudManifest.stripObsoleteRoles(expense.cloudManifest) ?: expense.cloudManifest
         val manifestStrippedOnly = manifest != expense.cloudManifest
         if (manifestStrippedOnly) {
-            expenseRepository.updateExpenseEntry(expense.copy(cloudManifest = manifest))
+            expenseRepository.updateExpenseEntryPreservingTimestamp(expense.copy(cloudManifest = manifest))
         }
 
         for (page in pages) {
@@ -430,14 +434,14 @@ class PhotoBackupCoordinator @Inject constructor(
         }
 
         if (uploads > 0) {
-            expenseRepository.updateExpenseEntry(
+            expenseRepository.updateExpenseEntryPreservingTimestamp(
                 expense.copy(
                     cloudManifest = manifest,
                     photoUrl = if (saveLocal) expense.photoUrl else null,
                 ),
             )
         } else if (manifestStrippedOnly) {
-            expenseRepository.updateExpenseEntry(expense.copy(cloudManifest = manifest))
+            expenseRepository.updateExpenseEntryPreservingTimestamp(expense.copy(cloudManifest = manifest))
         }
         return uploads
     }
@@ -673,7 +677,7 @@ class PhotoBackupCoordinator @Inject constructor(
                 updated = updated.copy(cloudManifest = merged)
             }
         }
-        expenseRepository.updateExpenseEntry(updated)
+        expenseRepository.updateExpenseEntryPreservingTimestamp(updated)
         newPhotoUrl
     }
 
@@ -840,6 +844,18 @@ class PhotoBackupCoordinator @Inject constructor(
         }
     }
 
+    private fun recordPhotoResult(
+        failureStore: SyncFailureStore,
+        destId: String,
+        result: PhotoBackupResult,
+    ) {
+        if (result.success) {
+            failureStore.clearPhotoFailure(destId)
+        } else {
+            failureStore.recordPhotoFailure(destId, result.message)
+        }
+    }
+
     private data class SyncContext(
         val store: SyncDestinationStore,
         val dest: PhotoDestination,
@@ -858,10 +874,11 @@ class PhotoBackupCoordinator @Inject constructor(
         ) {
             return null
         }
-        if (dest.provider.usesRcloneBackend() &&
-            !RcloneConfStorage.hasConf(context, dest.id, RcloneDestConfig.parse(dest.configJson)!!)
-        ) {
-            return null
+        if (dest.provider.usesRcloneBackend()) {
+            val config = RcloneDestConfig.parse(dest.configJson) ?: return null
+            if (!RcloneConfStorage.hasConf(context, dest.id, config)) {
+                return null
+            }
         }
         return SyncContext(store, dest, hint, backend)
     }

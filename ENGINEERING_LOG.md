@@ -623,3 +623,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Build: `./build_app` SUCCESS; tag `fix_syncing_and_settings-start-9-g68106bf1`.
 - Force push: **FAILED** (`git@github.com: Permission denied (publickey)`); user must push manually: `git push --force-with-lease origin fix_syncing_and_settings`.
 - PR artifact: `dev-ai-interaction/PRs/PR-fix_syncing_and_settings.md`.
+
+## 2026-07-13 - Post-PR sync fixes execution start
+
+- Approved plan: post-pr-review-sync-fixes-20260713-plan.md
+- Baseline tag: 68106bf1 on fix_syncing_and_settings
+- 9 phases: docs, bugs #1-14, frequency UI, backfill splash, failure UX

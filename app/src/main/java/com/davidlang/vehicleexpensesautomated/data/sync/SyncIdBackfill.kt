@@ -18,6 +18,11 @@ class SyncIdBackfill @Inject constructor(
     private val expenseEntryDao: ExpenseEntryDao,
 ) {
 
+    fun isBackfillDone(): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(PREF_SYNC_ID_BACKFILL_DONE, false)
+    }
+
     suspend fun runIfNeeded() = withContext(Dispatchers.IO) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (prefs.getBoolean(PREF_SYNC_ID_BACKFILL_DONE, false)) return@withContext

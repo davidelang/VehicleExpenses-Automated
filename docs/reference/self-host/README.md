@@ -27,6 +27,10 @@ Operator guides for **self-hosted** tabular and photo (image) sync targets in Ve
 
 Google Sheets / Drive / OneDrive / commercial S3 / Zoho / Airtable / Firebase cloud are **not** in these cheatsheets (vendor cloud UIs).
 
+## Recovery note
+
+Self-hosted tabular and photo targets often **lack** Google Sheets–style **version history**. If sync is interrupted mid-write, rely on the **next successful sync** (local Room + LWW merge) or manual edits on the server. See [../SYNC_BEHAVIOR.md](../SYNC_BEHAVIOR.md).
+
 ## In-app links
 
 Open **Help → Self-hosted sync setup** or use **Setup help** on photo/spreadsheet destination screens. Links use GitHub blob URLs under `docs/reference/self-host/`.

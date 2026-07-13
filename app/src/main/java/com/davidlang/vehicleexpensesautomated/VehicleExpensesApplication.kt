@@ -72,20 +72,20 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
         super.onCreate()
 
         copyTessdataOnce(this)
-        try {
-            kotlinx.coroutines.runBlocking {
-                syncIdBackfill.runIfNeeded()
+        if (syncIdBackfill.isBackfillDone()) {
+            try {
+                android.util.Log.i("VehicleExpensesApp", "Scheduling background sync from destination settings")
+                syncManager.scheduleFromDestination()
+                photoBackupManager.scheduleFromDestination()
+                android.util.Log.i("VehicleExpensesApp", "Background sync schedules updated")
+            } catch (e: Exception) {
+                android.util.Log.e("VehicleExpensesApp", "Failed to schedule background sync", e)
             }
-        } catch (e: Exception) {
-            android.util.Log.e("VehicleExpensesApp", "syncId backfill failed", e)
-        }
-        try {
-            android.util.Log.i("VehicleExpensesApp", "Scheduling background sync from destination settings")
-            syncManager.scheduleFromDestination()
-            photoBackupManager.scheduleFromDestination()
-            android.util.Log.i("VehicleExpensesApp", "Background sync schedules updated")
-        } catch (e: Exception) {
-            android.util.Log.e("VehicleExpensesApp", "Failed to schedule background sync", e)
+        } else {
+            android.util.Log.i(
+                "VehicleExpensesApp",
+                "Deferring background sync until sync-id backfill completes in UI",
+            )
         }
         smokeRcloneOnStartup()
     }
