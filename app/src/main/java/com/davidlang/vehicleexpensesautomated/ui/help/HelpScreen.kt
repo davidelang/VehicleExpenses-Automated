@@ -6,11 +6,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
 
 @Composable
 fun HelpScreen(navController: NavHostController? = null) {
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(scrollState)) {
@@ -43,7 +46,21 @@ fun HelpScreen(navController: NavHostController? = null) {
         Text("Data backup and sharing")
         Text("• All photos and data can be backed up to Google Drive")
         Text("• Everything can be exported/imported via CSV ZIP")
-        Text("• Full bidirectional sync with Google Sheets is available in Settings")
+        // Phase 19: accuracy fix
+        Text("• Configure bidirectional Google Sheets sync in Settings → Spreadsheet sync")
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text("Self-hosted sync setup", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Back up photos to your own WebDAV, SFTP, SMB, Seafile, or MinIO/S3-compatible server. " +
+                "Sync spreadsheets to EtherCalc, Baserow, NocoDB, and other self-hosted tabular backends.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.index()) }) {
+            Text("Open self-host setup index")
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
