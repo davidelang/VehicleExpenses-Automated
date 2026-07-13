@@ -25,6 +25,16 @@ data class Vehicle(
     val otherTextCropRight: Float? = null,
     val otherTextCropBottom: Float? = null,
     val landmarkTextBlocksJson: String? = null, // new (cleaned/filtered)
+    /** JSON multi-destination cloud image pointers (remote refs for multi-device pull). */
+    val cloudManifest: String? = null,
+    /** Stable cross-device merge key (UUID string). */
+    val syncId: String = "",
+    /** Device that created this row; blank until first save after migration. */
+    val originDeviceId: String = "",
+    /** Last-write-wins timestamp (ms). */
+    val updatedAt: Long = 0,
+    val deleted: Boolean = false,
+    val deletedAt: Long? = null,
     @Deprecated("Legacy field. All new data is ICRS.")
     val isIcrs: Boolean = true
 )

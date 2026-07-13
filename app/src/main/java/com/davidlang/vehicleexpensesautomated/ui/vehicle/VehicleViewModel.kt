@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
+import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -19,7 +20,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class VehicleViewModel @Inject constructor(
-    private val repository: VehicleRepository
+    private val repository: VehicleRepository,
+    private val photoBackupCoordinator: PhotoBackupCoordinator,
 ) : ViewModel() {
 
     val vehicles = repository.getAllVehicles().stateIn(
@@ -78,6 +80,7 @@ class VehicleViewModel @Inject constructor(
         try {
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.insert(newVehicle)
+                photoBackupCoordinator.enqueueAfterSave()
             }
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Insert failed", e)
@@ -91,6 +94,7 @@ class VehicleViewModel @Inject constructor(
         try {
             withContext(NonCancellable + Dispatchers.IO) {
                 repository.updateVehicle(vehicle)
+                photoBackupCoordinator.enqueueAfterSave()
             }
         } catch (e: Exception) {
             Log.e("VehicleReferenceCleaning", "Update failed", e)
@@ -119,6 +123,9 @@ class VehicleViewModel @Inject constructor(
         return Pair(odo, other)
     }
 
+    suspend fun ensureVehicleAssetsDownloaded(vehicleId: Int): Boolean =
+        photoBackupCoordinator.downloadVehicleIfNeeded(vehicleId)
+
     suspend fun ensureCleanedReference(vehicle: Vehicle): String? {
         val cleaned = vehicle.cleanedReferenceDashPhotoUrl
         if (cleaned != null) {
@@ -128,9 +135,10 @@ class VehicleViewModel @Inject constructor(
         return null
     }
 
+    // Phase 18: soft-delete tombstone for sync
     fun deleteVehicle(vehicle: Vehicle) {
         viewModelScope.launch {
-            repository.deleteVehicle(vehicle)
+            repository.markVehicleDeleted(vehicle)
         }
     }
 }

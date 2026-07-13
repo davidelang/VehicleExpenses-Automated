@@ -12,6 +12,7 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -39,11 +40,15 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
+import com.davidlang.vehicleexpensesautomated.data.sync.CloudManifest
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
+import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Currency
 import java.util.Date
 import java.util.Locale
 
@@ -70,6 +75,7 @@ private fun ExpenseEntryScreenBody(
     val viewModel: ExpenseViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
     val isEdit = expenseId != null && expenseId > 0
 
@@ -94,10 +100,15 @@ private fun ExpenseEntryScreenBody(
 
     var zoomControl by remember { mutableStateOf<CameraZoomControl?>(null) }
     var isPhotoSaving by remember { mutableStateOf(false) }
+    var isDownloadingCloud by remember { mutableStateOf(false) }
     var photoStatus by remember { mutableStateOf<String?>(null) }
     var showLiveCamera by remember { mutableStateOf(true) }
 
     var amount by rememberSaveable { mutableStateOf("") }
+    val defaultCurrencySymbol = remember {
+        CurrencyCodes.settingsDefaultSymbol(prefs)
+    }
+    var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrencySymbol) }
     var vendor by rememberSaveable { mutableStateOf("") }
     var description by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf("Other") }
@@ -105,6 +116,12 @@ private fun ExpenseEntryScreenBody(
     var date by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
     var photoUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var showDatePicker by remember { mutableStateOf(false) }
+    val photoDest = remember { SyncDestinationStore(context).photoDestination() }
+    val hasCloudOnlyReceipt = remember(loadedExpense, photoUrl, photoDest) {
+        val destId = photoDest?.id ?: return@remember false
+        photoUrl == null &&
+            CloudManifest.hasRole(loadedExpense?.cloudManifest, destId, CloudManifest.ROLE_EXPENSE_RECEIPT)
+    }
 
     val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
 
@@ -116,6 +133,10 @@ private fun ExpenseEntryScreenBody(
                 if (entry != null) {
                     selectedVehicleId = entry.vehicleId
                     amount = if (entry.amount == 0.0) "" else entry.amount.toString()
+                    currencySymbol = CurrencyCodes.displaySymbol(
+                        entry.currency,
+                        defaultCurrencySymbol,
+                    )
                     vendor = entry.vendor
                     description = entry.description
                     category = entry.category
@@ -147,10 +168,15 @@ private fun ExpenseEntryScreenBody(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            photoUrl = uri.toString()
-            photoStatus = null
-            showLiveCamera = false
-            Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
+            if (prefs.getBoolean("save_expense_photos", true)) {
+                photoUrl = uri.toString()
+                photoStatus = null
+                showLiveCamera = false
+                Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
+            } else {
+                photoUrl = null
+                showLiveCamera = true
+            }
         }
     }
 
@@ -166,6 +192,7 @@ private fun ExpenseEntryScreenBody(
             return
         }
         val amountVal = amount.toDoubleOrNull() ?: 0.0
+        val storedCurrency = CurrencyCodes.fromSymbolOrCode(currencySymbol)
         val odo = odometerText.trim().toIntOrNull()
         // copy() from loadedExpense preserves receiptImagePath, lat/long, location, cloudManifest
         val base = loadedExpense
@@ -178,12 +205,13 @@ private fun ExpenseEntryScreenBody(
             id = if (isEdit) expenseId!! else 0L,
             vehicleId = vehicleId,
             amount = amountVal,
+            currency = storedCurrency,
             description = description,
             vendor = vendor,
             odometer = odo,
             category = category,
             date = date,
-            photoUrl = photoUrl
+            photoUrl = if (prefs.getBoolean("save_expense_photos", true)) photoUrl else null
         )
         // D5: await persistence before navigate
         scope.launch {
@@ -213,6 +241,13 @@ private fun ExpenseEntryScreenBody(
 
     fun takePicture() {
         if (isPhotoSaving) return
+        if (!prefs.getBoolean("save_expense_photos", true)) {
+            photoUrl = null
+            photoStatus = null
+            showLiveCamera = true
+            isPhotoSaving = false
+            return
+        }
         isPhotoSaving = true
         photoStatus = "Saving photo…"
         showLiveCamera = true
@@ -342,7 +377,49 @@ private fun ExpenseEntryScreenBody(
                 .fillMaxWidth()
                 .background(Color.Black)
         ) {
-            if (showLiveCamera || photoUrl == null) {
+            if (hasCloudOnlyReceipt && photoUrl == null) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "Receipt is in cloud backup only",
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(
+                        onClick = {
+                            val entry = loadedExpense ?: return@Button
+                            scope.launch {
+                                isDownloadingCloud = true
+                                photoStatus = "Downloading receipt…"
+                                try {
+                                    val local = viewModel.downloadExpensePhoto(entry)
+                                    if (local != null) {
+                                        photoUrl = local
+                                        showLiveCamera = false
+                                        photoStatus = null
+                                        Toast.makeText(context, "Receipt downloaded", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        photoStatus = "Download failed"
+                                        Toast.makeText(context, "Could not download receipt", Toast.LENGTH_LONG).show()
+                                    }
+                                } catch (e: Exception) {
+                                    photoStatus = "Download failed"
+                                    Toast.makeText(context, e.message ?: "Download failed", Toast.LENGTH_LONG).show()
+                                } finally {
+                                    isDownloadingCloud = false
+                                }
+                            }
+                        },
+                        enabled = !isDownloadingCloud,
+                        modifier = Modifier.padding(top = 12.dp),
+                    ) {
+                        Text(if (isDownloadingCloud) "Downloading…" else "Download receipt")
+                    }
+                }
+            } else if (showLiveCamera || photoUrl == null) {
                 CameraPreview(
                     modifier = Modifier.fillMaxSize(),
                     imageCapture = imageCapture,
@@ -442,6 +519,19 @@ private fun ExpenseEntryScreenBody(
                     modifier = Modifier.size(32.dp)
                 )
             }
+
+            if (photoUrl != null) {
+                TextButton(
+                    onClick = {
+                        photoUrl = null
+                        showLiveCamera = true
+                        photoStatus = null
+                    },
+                    enabled = !isPhotoSaving,
+                ) {
+                    Text("Retake")
+                }
+            }
         }
 
         photoStatus?.let { status ->
@@ -532,10 +622,39 @@ private fun ExpenseEntryScreenBody(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            var showCurrencyMenu by remember { mutableStateOf(false) }
+            val currencySymbols = remember {
+                Currency.getAvailableCurrencies()
+                    .map { it.getSymbol(Locale.getDefault()) }
+                    .distinct()
+                    .sorted()
+            }
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("Amount") },
+                label = {
+                    Box {
+                        Text(
+                            text = currencySymbol.take(1),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.clickable { showCurrencyMenu = true }
+                        )
+                        DropdownMenu(
+                            expanded = showCurrencyMenu,
+                            onDismissRequest = { showCurrencyMenu = false }
+                        ) {
+                            currencySymbols.forEach { symbol ->
+                                DropdownMenuItem(
+                                    text = { Text(symbol) },
+                                    onClick = {
+                                        currencySymbol = symbol
+                                        showCurrencyMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )

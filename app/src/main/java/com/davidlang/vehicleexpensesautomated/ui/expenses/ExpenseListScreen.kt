@@ -7,9 +7,11 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -17,8 +19,10 @@ import java.util.Locale
 
 @Composable
 fun ExpenseListScreen(navController: NavHostController? = null) {
+    val context = LocalContext.current
     val viewModel: ExpenseViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
+    val defaultSymbol = remember { CurrencyCodes.settingsDefaultSymbol(context) }
     val expenses by viewModel.expenses.collectAsState()
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     val vehicleNameById = remember(vehicles) { vehicles.associate { it.id to it.name } }
@@ -60,7 +64,8 @@ fun ExpenseListScreen(navController: NavHostController? = null) {
                     )
                     val odoPart = expense.odometer?.let { " · odo $it" } ?: ""
                     Text(
-                        "$${ "%.2f".format(expense.amount)} · ${expense.category}$odoPart",
+                        "${CurrencyCodes.formatAmount(expense.amount, expense.currency, defaultSymbol)} · " +
+                            "${expense.category}$odoPart",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

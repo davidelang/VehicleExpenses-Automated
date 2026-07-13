@@ -8,11 +8,10 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.davidlang.vehicleexpensesautomated.data.sync.DriveAuthRecovery
+import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveAuth
+import com.davidlang.vehicleexpensesautomated.data.sync.PhotoDestination
 import com.google.api.client.http.FileContent
-import com.google.api.client.http.javanet.NetHttpTransport
-import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -20,18 +19,67 @@ import java.io.FileOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class DriveUploadResult(
+    val fileId: String,
+    val resolvedFolderId: String,
+)
+
 @Singleton
 class PhotoStorageManager @Inject constructor(
-    @param:ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context,
+    private val driveAuth: GoogleDriveAuth,
 ) {
 
-    private suspend fun getDriveService(): Drive {
-        val account = GoogleSignIn.getLastSignedInAccount(context) ?: throw IllegalStateException("No Google account signed in")
-        val credential = GoogleAccountCredential.usingOAuth2(context, listOf("https://www.googleapis.com/auth/drive.file"))
-        credential.selectedAccount = account.account
-        return Drive.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential)
-            .setApplicationName("VehicleExpenses-Automated")
-            .build()
+    private fun buildDriveService(accountHint: String?): Drive {
+        val account = driveAuth.resolveAccountFromHint(accountHint)
+            ?: throw IllegalStateException("No Google account signed in for Drive")
+        return driveAuth.buildDriveServiceForAccountName(account.name)
+    }
+
+    /**
+     * Resolve folder id for [destination]; creates folder on Drive when missing.
+     * Returns resolved folder id (caller persists on destination).
+     */
+    fun resolveFolderId(accountHint: String?, destination: PhotoDestination): String {
+        if (destination.folderId.isNotBlank()) return destination.folderId
+        val drive = buildDriveService(accountHint)
+        return findOrCreateFolder(drive, destination.folderName)
+    }
+
+    /**
+     * Upload a local file/uri to Drive under the photo destination folder.
+     * @param localSource file path, file:// URI, or content:// URI
+     */
+    suspend fun uploadToDestination(
+        accountHint: String?,
+        destination: PhotoDestination,
+        localSource: String,
+        remoteFileName: String,
+        mimeType: String,
+    ): DriveUploadResult {
+        try {
+            val drive = buildDriveService(accountHint)
+            val folderId = resolveFolderId(accountHint, destination)
+            val tempFile = materializeToTempFile(localSource, remoteFileName)
+            try {
+                val mediaContent = FileContent(mimeType, tempFile)
+                val fileMetadata = com.google.api.services.drive.model.File().apply {
+                    name = remoteFileName
+                    parents = listOf(folderId)
+                }
+                val uploaded = drive.files().create(fileMetadata, mediaContent)
+                    .setFields("id")
+                    .execute()
+                return DriveUploadResult(
+                    fileId = uploaded.id,
+                    resolvedFolderId = folderId,
+                )
+            } finally {
+                tempFile.delete()
+            }
+        } catch (e: Exception) {
+            throw DriveAuthRecovery.wrapIfRecoverable(e)
+        }
     }
 
     /**
@@ -61,16 +109,17 @@ class PhotoStorageManager @Inject constructor(
 
         return if (provider == "google_drive" && localUriString != null) {
             val localUri = Uri.parse(localUriString)
-            val driveUrl = uploadToDrive(localUri, fileName, photoType)
+            val driveUrl = uploadToDriveLegacy(localUri, fileName, photoType)
             driveUrl ?: localUriString
         } else {
             localUriString
         }
     }
 
-    private suspend fun uploadToDrive(uri: Uri, fileName: String, photoType: PhotoType): String? {
+    /** Legacy path used by PhotoPicker; destination-aware sync uses [uploadToDestination]. */
+    private suspend fun uploadToDriveLegacy(uri: Uri, fileName: String, photoType: PhotoType): String? {
         return try {
-            val drive = getDriveService()
+            val drive = buildDriveService(null)
             val folderName = context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
                 .getString("drive_folder", "Vehicle Expenses Photos") ?: "Vehicle Expenses Photos"
 
@@ -133,7 +182,7 @@ class PhotoStorageManager @Inject constructor(
                 }
                 context.contentResolver.update(destUri, contentValues, null, null)
             }
-            
+
             // Explicitly notify the MediaScanner so the photo appears in the Gallery immediately
             try {
                 val projection = arrayOf(MediaStore.MediaColumns.DATA)
@@ -162,15 +211,16 @@ class PhotoStorageManager @Inject constructor(
     }
 
     private fun findOrCreateFolder(drive: Drive, folderName: String): String {
-        val query = "mimeType='application/vnd.google-apps.folder' and name='$folderName' and trashed=false"
-        val result = drive.files().list().setQ(query).execute()
+        val escaped = folderName.replace("'", "\\'")
+        val query = "mimeType='application/vnd.google-apps.folder' and name='$escaped' and trashed=false"
+        val result = drive.files().list().setQ(query).setSpaces("drive").execute()
         if (result.files.isNotEmpty()) return result.files[0].id
 
         val folder = com.google.api.services.drive.model.File().apply {
             name = folderName
             mimeType = "application/vnd.google-apps.folder"
         }
-        val created = drive.files().create(folder).execute()
+        val created = drive.files().create(folder).setFields("id").execute()
         return created.id
     }
 
@@ -200,6 +250,24 @@ class PhotoStorageManager @Inject constructor(
         }
     }
 
+    private fun materializeToTempFile(localSource: String, fileName: String): File {
+        val tempFile = File(context.cacheDir, "drive_upload_$fileName")
+        val uri = when {
+            localSource.startsWith("content://") || localSource.startsWith("file://") -> Uri.parse(localSource)
+            else -> Uri.fromFile(File(localSource))
+        }
+        openInputStream(uri)?.use { input ->
+            FileOutputStream(tempFile).use { output -> input.copyTo(output) }
+        } ?: throw IllegalArgumentException("Cannot read local source: $localSource")
+        return tempFile
+    }
+
+    fun vehicleRefsDir(): File {
+        val dir = File(context.filesDir, "vehicle_refs")
+        if (!dir.exists()) dir.mkdirs()
+        return dir
+    }
+
     private fun getFileNameFromUri(uri: Uri): String? {
         var name: String? = null
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
@@ -211,7 +279,7 @@ class PhotoStorageManager @Inject constructor(
         return name
     }
 
-    private fun openInputStream(uri: Uri): java.io.InputStream? {
+    fun openInputStream(uri: Uri): java.io.InputStream? {
         return try {
             if (uri.scheme == "file") {
                 java.io.FileInputStream(File(uri.path ?: ""))
@@ -220,6 +288,109 @@ class PhotoStorageManager @Inject constructor(
             }
         } catch (e: Exception) {
             android.util.Log.e("PhotoStorageManager", "Failed to open input stream for URI: $uri", e)
+            null
+        }
+    }
+
+    fun isLocalReadable(localPath: String?): Boolean {
+        if (localPath.isNullOrBlank()) return false
+        return try {
+            when {
+                localPath.startsWith("content://") -> {
+                    context.contentResolver.openInputStream(Uri.parse(localPath))?.use { true } ?: false
+                }
+                localPath.startsWith("file://") -> {
+                    val path = Uri.parse(localPath).path
+                    path != null && File(path).exists()
+                }
+                else -> File(localPath).exists()
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Prefer a readable on-disk path when sheet merge would otherwise wipe local-only photo URLs. */
+    fun pickPreferredLocalPath(incoming: String?, existing: String?): String? {
+        val incomingReadable = isLocalReadable(incoming)
+        val existingReadable = isLocalReadable(existing)
+        return when {
+            incomingReadable -> incoming
+            existingReadable -> existing
+            !incoming.isNullOrBlank() -> incoming
+            !existing.isNullOrBlank() -> existing
+            else -> null
+        }
+    }
+
+    /** Deterministic vehicle ref filename under [vehicleRefsDir]. */
+    fun vehicleRefFileName(syncId: String, cleaned: Boolean = false): String =
+        if (cleaned) "vehicle_${syncId}_ref_cleaned.jpg" else "vehicle_${syncId}_ref.jpg"
+
+    /** Return absolute path when the deterministic ref file already exists on disk. */
+    fun existingVehicleRefPath(syncId: String, cleaned: Boolean = false): String? {
+        if (syncId.isBlank()) return null
+        val file = File(vehicleRefsDir(), vehicleRefFileName(syncId, cleaned))
+        return file.absolutePath.takeIf { file.exists() && file.length() > 0 }
+    }
+
+    /**
+     * Download a Drive file by [fileId] to app-private vehicle refs dir or MediaStore.
+     * @return local absolute path or content URI string
+     */
+    suspend fun downloadFromDrive(
+        accountHint: String?,
+        fileId: String,
+        localFileName: String,
+        useMediaStore: Boolean = false,
+        photoType: PhotoType = PhotoType.EXPENSE,
+    ): String {
+        return try {
+            val drive = buildDriveService(accountHint)
+            if (useMediaStore) {
+                val uri = createMediaStoreUri(localFileName, photoType)
+                    ?: throw IllegalStateException("Cannot create MediaStore URI")
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    drive.files().get(fileId).executeMediaAndDownloadTo(out)
+                } ?: throw IllegalStateException("Cannot open MediaStore output")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val contentValues = ContentValues().apply {
+                        put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    }
+                    context.contentResolver.update(uri, contentValues, null, null)
+                }
+                uri.toString()
+            } else {
+                val destFile = File(vehicleRefsDir(), localFileName)
+                destFile.parentFile?.mkdirs()
+                FileOutputStream(destFile).use { out ->
+                    drive.files().get(fileId).executeMediaAndDownloadTo(out)
+                }
+                destFile.absolutePath
+            }
+        } catch (e: Exception) {
+            throw DriveAuthRecovery.wrapIfRecoverable(e)
+        }
+    }
+
+    /** Write inline JSON/text to a temp file and upload; used for landmark JSON backup. */
+    fun writeTextToVehicleRefs(fileName: String, text: String): String {
+        val file = File(vehicleRefsDir(), fileName)
+        file.parentFile?.mkdirs()
+        file.writeText(text)
+        return file.absolutePath
+    }
+
+    /** Read text file from local path. */
+    fun readTextFile(localPath: String): String? {
+        return try {
+            val file = when {
+                localPath.startsWith("file://") -> File(Uri.parse(localPath).path ?: return null)
+                else -> File(localPath)
+            }
+            if (!file.exists()) return null
+            file.readText()
+        } catch (_: Exception) {
             null
         }
     }

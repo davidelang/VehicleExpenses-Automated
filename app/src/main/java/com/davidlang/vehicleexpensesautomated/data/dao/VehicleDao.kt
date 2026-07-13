@@ -10,8 +10,17 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface VehicleDao {
-    @Query("SELECT * FROM vehicles ORDER BY make, model")
+    @Query("SELECT * FROM vehicles WHERE deleted = 0 ORDER BY make, model")
     fun getAllVehicles(): Flow<List<Vehicle>>
+
+    @Query("SELECT * FROM vehicles ORDER BY make, model")
+    suspend fun getAllIncludingDeleted(): List<Vehicle>
+
+    @Query("SELECT * FROM vehicles WHERE originDeviceId = :originDeviceId AND id = :id LIMIT 1")
+    suspend fun findBySyncKey(originDeviceId: String, id: Int): Vehicle?
+
+    @Query("SELECT * FROM vehicles WHERE syncId = :syncId LIMIT 1")
+    suspend fun findBySyncId(syncId: String): Vehicle?
 
     @Query("SELECT * FROM vehicles WHERE id = :id")
     fun getVehicleById(id: Int): Flow<Vehicle?>
