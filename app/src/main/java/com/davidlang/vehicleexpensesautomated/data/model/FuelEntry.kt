@@ -14,11 +14,21 @@ data class FuelEntry(
      */
     val gallons: Double,
     val cost: Double,
+    /** ISO 4217 code preferred; blank = legacy / use settings default at display. */
+    val currency: String = "",
     val timestamp: Long,
     val photoUrl: String? = null,
     val isPartialFill: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val location: String? = null,
-    val cloudManifest: String? = null
+    val cloudManifest: String? = null,
+    /** Stable cross-device merge key (UUID string). */
+    val syncId: String = "",
+    /** Device that created this row; blank until first save after migration. */
+    val originDeviceId: String = "",
+    /** Last-write-wins timestamp (ms). */
+    val updatedAt: Long = 0,
+    val deleted: Boolean = false,
+    val deletedAt: Long? = null
 )

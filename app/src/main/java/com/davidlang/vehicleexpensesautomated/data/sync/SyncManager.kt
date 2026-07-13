@@ -14,31 +14,56 @@ import javax.inject.Singleton
 
 @Singleton
 class SyncManager @Inject constructor(
-    @param:ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context,
 ) {
 
-    fun schedulePeriodicSync() {
+    fun schedulePeriodicSync() = scheduleFromDestination()
+
+    /** Schedule one periodic worker: min frequency + strictest constraints across enabled spreadsheet dests. */
+    fun scheduleFromDestination() {
+        val store = SyncDestinationStore(context)
+        val enabled = store.enabledSpreadsheet()
+        val workManager = WorkManager.getInstance(context)
+
+        if (enabled.isEmpty()) {
+            workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
+            return
+        }
+
+        val wifiOnly = enabled.any { it.wifiOnly }
+        val chargingOnly = enabled.any { it.chargingOnly }
+        val networkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
         val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiredNetworkType(networkType)
+            .setRequiresCharging(chargingOnly)
             .setRequiresBatteryNotLow(true)
             .build()
 
-        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(4, TimeUnit.HOURS)
+        val periodMinutes = enabled.minOf { it.resolvedFrequencyMinutes() }.toLong()
+        val initialDelayMinutes = minOf(2L, periodMinutes)
+        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(periodMinutes, TimeUnit.MINUTES)
             .setConstraints(constraints)
-            .setInitialDelay(10, TimeUnit.MINUTES)
+            .setInitialDelay(initialDelayMinutes, TimeUnit.MINUTES)
             .build()
 
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            "vehicle_expenses_sync",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            syncRequest
+        workManager.enqueueUniquePeriodicWork(
+            UNIQUE_WORK_NAME,
+            ExistingPeriodicWorkPolicy.REPLACE,
+            syncRequest,
         )
     }
 
     fun triggerImmediateSync() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
         val oneTimeRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setConstraints(constraints)
             .build()
         WorkManager.getInstance(context).enqueue(oneTimeRequest)
+    }
+
+    companion object {
+        const val UNIQUE_WORK_NAME = "vehicle_expenses_sync"
     }
 }
