@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryRepository
+import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -14,7 +15,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class ExpenseViewModel @Inject constructor(
-    private val expenseEntryRepository: ExpenseEntryRepository
+    private val expenseEntryRepository: ExpenseEntryRepository,
+    private val photoBackupCoordinator: PhotoBackupCoordinator,
 ) : ViewModel() {
 
     val expenses: StateFlow<List<ExpenseEntry>> = expenseEntryRepository.getAllEntries()
@@ -24,8 +26,18 @@ class ExpenseViewModel @Inject constructor(
     suspend fun saveExpense(entry: ExpenseEntry) {
         withContext(Dispatchers.IO) {
             expenseEntryRepository.saveEntry(entry)
+            photoBackupCoordinator.enqueueAfterSave()
         }
     }
 
+    suspend fun downloadExpensePhoto(entry: ExpenseEntry): String? =
+        photoBackupCoordinator.downloadExpensePhoto(entry)
+
     suspend fun getExpenseById(id: Long): ExpenseEntry? = expenseEntryRepository.getById(id)
+
+    suspend fun deleteExpense(entry: ExpenseEntry) {
+        withContext(Dispatchers.IO) {
+            expenseEntryRepository.markExpenseDeleted(entry)
+        }
+    }
 }

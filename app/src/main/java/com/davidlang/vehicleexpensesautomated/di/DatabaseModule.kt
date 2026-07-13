@@ -39,6 +39,72 @@ object DatabaseModule {
         }
     }
 
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE fuel_entries ADD COLUMN originDeviceId TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE fuel_entries ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE fuel_entries ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE fuel_entries ADD COLUMN deletedAt INTEGER")
+            db.execSQL("UPDATE fuel_entries SET updatedAt = timestamp WHERE updatedAt = 0")
+            db.execSQL("ALTER TABLE expense_entries ADD COLUMN originDeviceId TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE expense_entries ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE expense_entries ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE expense_entries ADD COLUMN deletedAt INTEGER")
+            db.execSQL("UPDATE expense_entries SET updatedAt = date WHERE updatedAt = 0")
+            db.execSQL(
+                "UPDATE expense_entries SET photoUrl = receiptImagePath " +
+                    "WHERE photoUrl IS NULL AND receiptImagePath IS NOT NULL"
+            )
+            db.execSQL("ALTER TABLE vehicles ADD COLUMN cloudManifest TEXT")
+            db.execSQL("ALTER TABLE vehicles ADD COLUMN originDeviceId TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE vehicles ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE vehicles ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE vehicles ADD COLUMN deletedAt INTEGER")
+            val now = System.currentTimeMillis()
+            db.execSQL("UPDATE vehicles SET updatedAt = $now WHERE updatedAt = 0")
+        }
+    }
+
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE vehicles ADD COLUMN syncId TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE fuel_entries ADD COLUMN syncId TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE expense_entries ADD COLUMN syncId TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
+    val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE fuel_entries ADD COLUMN currency TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE expense_entries ADD COLUMN currency TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
+    val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE expense_entries ADD COLUMN vehicleSyncIdsJson TEXT NOT NULL DEFAULT ''",
+            )
+            db.execSQL(
+                """
+                UPDATE expense_entries
+                SET vehicleSyncIdsJson = (
+                    SELECT '["' || v.syncId || '"]'
+                    FROM vehicles v
+                    WHERE v.id = expense_entries.vehicleId
+                      AND v.syncId != ''
+                )
+                WHERE vehicleSyncIdsJson = ''
+                  AND vehicleId > 0
+                  AND EXISTS (
+                    SELECT 1 FROM vehicles v
+                    WHERE v.id = expense_entries.vehicleId AND v.syncId != ''
+                  )
+                """.trimIndent(),
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -47,7 +113,15 @@ object DatabaseModule {
             AppDatabase::class.java,
             "vehicle_expenses.db"
         )
-        .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+        .addMigrations(
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8,
+            MIGRATION_8_9,
+            MIGRATION_9_10,
+            MIGRATION_10_11,
+            MIGRATION_11_12,
+        )
         .fallbackToDestructiveMigration(true)
         .build()
     }

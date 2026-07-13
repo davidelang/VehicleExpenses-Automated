@@ -21,6 +21,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -41,7 +42,7 @@ private fun fullFillsAscending(entries: List<FuelEntry>): List<FuelEntry> {
  */
 private data class FullFillLeg(
     val endFill: FuelEntry,
-    val sumCost: Double,
+    val sumCostByCurrency: Map<String, Double>,
     val sumVol: Double,
     val mpg: Double
 )
@@ -50,7 +51,11 @@ private data class FullFillLeg(
  * Newest valid full-fill legs (newest first). Excludes first full (no predecessor).
  * Only legs with odo increase and volDisplay > 0 — every leg has defined mpg.
  */
-private fun newestValidLegs(entries: List<FuelEntry>, maxLegs: Int = 5): List<FullFillLeg> {
+private fun newestValidLegs(
+    entries: List<FuelEntry>,
+    defaultStored: String,
+    maxLegs: Int = 5,
+): List<FullFillLeg> {
     val full = fullFillsAscending(entries)
     if (full.size < 2) return emptyList()
     val legsAsc = mutableListOf<FullFillLeg>()
@@ -63,12 +68,17 @@ private fun newestValidLegs(entries: List<FuelEntry>, maxLegs: Int = 5): List<Fu
         }
         val sumVol = window.sumOf { it.gallons }
         if (sumVol <= 0) continue
-        val sumCost = window.sumOf { it.cost }
+        val sumCostByCurrency = CurrencyCodes.sumByCurrency(
+            window,
+            defaultStored,
+            { it.currency },
+            { it.cost },
+        )
         val mpg = (cur.odometer - prev.odometer) / sumVol
         legsAsc.add(
             FullFillLeg(
                 endFill = cur,
-                sumCost = sumCost,
+                sumCostByCurrency = sumCostByCurrency,
                 sumVol = sumVol,
                 mpg = mpg
             )
@@ -90,22 +100,38 @@ private fun newestValidLegs(entries: List<FuelEntry>, maxLegs: Int = 5): List<Fu
  */
 private fun dollarsPerMile(
     fuelEntries: List<FuelEntry>,
-    expenses: List<ExpenseEntry>
+    expenses: List<ExpenseEntry>,
+    defaultStored: String,
 ): Double? {
     val odos = fuelEntries.map { it.odometer }.filter { it > 0 }
     if (odos.size < 2) return null
     val minO = odos.minOrNull() ?: return null
     val maxO = odos.maxOrNull() ?: return null
     if (maxO <= minO) return null
-    val fuelCost = fuelEntries.sumOf { it.cost }
-    val expCost = expenses.sumOf { it.amount }
-    return (fuelCost + expCost) / (maxO - minO).toDouble()
+    val fuelSums = CurrencyCodes.sumByCurrency(
+        fuelEntries,
+        defaultStored,
+        { it.currency },
+        { it.cost },
+    )
+    val expSums = CurrencyCodes.sumByCurrency(
+        expenses,
+        defaultStored,
+        { it.currency },
+        { it.amount },
+    )
+    val combined = mutableMapOf<String, Double>()
+    for ((k, v) in fuelSums) combined[k] = combined.getOrDefault(k, 0.0) + v
+    for ((k, v) in expSums) combined[k] = combined.getOrDefault(k, 0.0) + v
+    if (combined.size != 1) return null
+    val totalCost = combined.values.first()
+    return totalCost / (maxO - minO).toDouble()
 }
 
 private data class VehicleReportStats(
     val vehicleId: Int,
     val name: String,
-    val fuelCost: Double,
+    val fuelCostByCurrency: Map<String, Double>,
     val gallons: Double,
     val fillCount: Int,
     val partialCount: Int,
@@ -114,16 +140,14 @@ private data class VehicleReportStats(
     val dollarsPerMile: Double?,
     /** Up to 5 newest valid full-fill legs (each always has mpg). */
     val last5Legs: List<FullFillLeg>,
-    val expenseTotal: Double,
-    /** Category → sum amount for this vehicle. */
-    val expensesByCategory: Map<String, Double>
+    val expenseTotalByCurrency: Map<String, Double>,
+    /** Category → currency → sum amount for this vehicle. */
+    val expensesByCategory: Map<String, Map<String, Double>>
 )
 
 private fun formatMpg(value: Double?): String {
     return if (value == null) "n/a" else "%.1f".format(value)
 }
-
-private fun formatMoney(value: Double): String = "$" + "%.2f".format(value)
 
 private fun formatEntryDate(timestamp: Long): String {
     return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestamp))
@@ -135,35 +159,47 @@ private fun formatVolume(gallons: Double, unitLabel: String): String {
 
 /** Overall summary: 1 dense line (wraps naturally if narrow). No $/gal. */
 private fun overallSummaryLine(
-    totalExpenses: Double,
-    totalFuelCost: Double,
+    totalExpensesByCurrency: Map<String, Double>,
+    totalFuelCostByCurrency: Map<String, Double>,
     totalGallons: Double,
     unitLabel: String,
     totalFillUps: Int,
-    partialFills: Int
+    partialFills: Int,
+    defaultSymbol: String,
 ): String {
-    return "Exp ${formatMoney(totalExpenses)} · Fuel ${formatMoney(totalFuelCost)} · " +
+    val exp = CurrencyCodes.formatAggregateSum(totalExpensesByCurrency, defaultSymbol)
+    val fuel = CurrencyCodes.formatAggregateSum(totalFuelCostByCurrency, defaultSymbol)
+    return "Exp $exp · Fuel $fuel · " +
         "${"%.1f".format(totalGallons)}$unitLabel · fills $totalFillUps (${partialFills}p)"
 }
 
 /** Stats only (no vehicle name) for Summary L2+. */
-private fun vehicleStatsOnlyLine(stats: VehicleReportStats, unitLabel: String): String {
+private fun vehicleStatsOnlyLine(
+    stats: VehicleReportStats,
+    unitLabel: String,
+    defaultSymbol: String,
+): String {
     val dpm = if (stats.dollarsPerMile == null) "n/a" else "%.3f".format(stats.dollarsPerMile)
-    return "Fuel ${formatMoney(stats.fuelCost)} · " +
+    val fuel = CurrencyCodes.formatAggregateSum(stats.fuelCostByCurrency, defaultSymbol)
+    return "Fuel $fuel · " +
         "${"%.1f".format(stats.gallons)}$unitLabel · " +
         "${stats.fillCount}(${stats.partialCount}p) · " +
         "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · $/mi $dpm"
 }
 
 /** Exp total + category breakdown (compact). */
-private fun vehicleExpenseSummaryLine(stats: VehicleReportStats): String {
+private fun vehicleExpenseSummaryLine(stats: VehicleReportStats, defaultSymbol: String): String {
+    val total = CurrencyCodes.formatAggregateSum(stats.expenseTotalByCurrency, defaultSymbol)
     if (stats.expensesByCategory.isEmpty()) {
-        return "Exp ${formatMoney(stats.expenseTotal)}"
+        return "Exp $total"
     }
     val cats = stats.expensesByCategory.entries
-        .sortedByDescending { it.value }
-        .joinToString(" · ") { (cat, amt) -> "${cat.ifBlank { "Other" }} ${formatMoney(amt)}" }
-    return "Exp ${formatMoney(stats.expenseTotal)} · $cats"
+        .sortedByDescending { (_, byCur) -> byCur.values.sum() }
+        .joinToString(" · ") { (cat, byCur) ->
+            val amt = CurrencyCodes.formatAggregateSum(byCur, defaultSymbol)
+            "${cat.ifBlank { "Other" }} $amt"
+        }
+    return "Exp $total · $cats"
 }
 
 /** Split stats at middot boundaries into two roughly equal parts. */
@@ -195,40 +231,63 @@ fun ReportsScreen(navController: NavHostController) {
             com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.resolvedPreferredVolumeUnit(context)
         )
     }
+    val defaultSymbol = remember { CurrencyCodes.settingsDefaultSymbol(context) }
+    val defaultStored = remember { CurrencyCodes.settingsDefaultStored(context) }
 
     val vehicleNameById = remember(vehicles) {
         vehicles.associate { it.id to it.name }
     }
 
-    val totalExpenses = expenses.sumOf { it.amount }
-    val totalFuelCost = fuelEntries.sumOf { it.cost }
+    val totalExpensesByCurrency = remember(expenses, defaultStored) {
+        CurrencyCodes.sumByCurrency(expenses, defaultStored, { it.currency }, { it.amount })
+    }
+    val totalFuelCostByCurrency = remember(fuelEntries, defaultStored) {
+        CurrencyCodes.sumByCurrency(fuelEntries, defaultStored, { it.currency }, { it.cost })
+    }
     val totalGallons = fuelEntries.sumOf { it.gallons }
     val partialFills = fuelEntries.count { it.isPartialFill }
     val totalFillUps = fuelEntries.size
 
-    val vehicleStats = remember(fuelEntries, expenses, vehicleNameById) {
+    val vehicleStats = remember(fuelEntries, expenses, vehicleNameById, defaultStored) {
         val fuelByV = fuelEntries.groupBy { it.vehicleId }
         val expByV = expenses.groupBy { it.vehicleId }
         val ids = (fuelByV.keys + expByV.keys).toSortedSet()
         ids.map { vehicleId ->
             val vFuel = fuelByV[vehicleId].orEmpty()
             val vExp = expByV[vehicleId].orEmpty()
-            val allLegsNewestFirst = newestValidLegs(vFuel, maxLegs = Int.MAX_VALUE)
+            val allLegsNewestFirst = newestValidLegs(vFuel, defaultStored, maxLegs = Int.MAX_VALUE)
             val legsChrono = allLegsNewestFirst.asReversed() // oldest→newest for avg/last
             VehicleReportStats(
                 vehicleId = vehicleId,
                 name = vehicleNameById[vehicleId] ?: "Vehicle $vehicleId",
-                fuelCost = vFuel.sumOf { it.cost },
+                fuelCostByCurrency = CurrencyCodes.sumByCurrency(
+                    vFuel,
+                    defaultStored,
+                    { it.currency },
+                    { it.cost },
+                ),
                 gallons = vFuel.sumOf { it.gallons },
                 fillCount = vFuel.size,
                 partialCount = vFuel.count { it.isPartialFill },
                 lastMpg = legsChrono.lastOrNull()?.mpg,
                 avgMpg = if (legsChrono.isEmpty()) null else legsChrono.map { it.mpg }.average(),
-                dollarsPerMile = dollarsPerMile(vFuel, vExp),
+                dollarsPerMile = dollarsPerMile(vFuel, vExp, defaultStored),
                 last5Legs = allLegsNewestFirst.take(5),
-                expenseTotal = vExp.sumOf { it.amount },
+                expenseTotalByCurrency = CurrencyCodes.sumByCurrency(
+                    vExp,
+                    defaultStored,
+                    { it.currency },
+                    { it.amount },
+                ),
                 expensesByCategory = vExp.groupBy { it.category.ifBlank { "Other" } }
-                    .mapValues { (_, list) -> list.sumOf { it.amount } }
+                    .mapValues { (_, list) ->
+                        CurrencyCodes.sumByCurrency(
+                            list,
+                            defaultStored,
+                            { it.currency },
+                            { it.amount },
+                        )
+                    }
             )
         }
     }
@@ -259,12 +318,13 @@ fun ReportsScreen(navController: NavHostController) {
                 Text("Summary", style = MaterialTheme.typography.titleMedium)
                 Text(
                     overallSummaryLine(
-                        totalExpenses = totalExpenses,
-                        totalFuelCost = totalFuelCost,
+                        totalExpensesByCurrency = totalExpensesByCurrency,
+                        totalFuelCostByCurrency = totalFuelCostByCurrency,
                         totalGallons = totalGallons,
                         unitLabel = volumeUnitLabel,
                         totalFillUps = totalFillUps,
-                        partialFills = partialFills
+                        partialFills = partialFills,
+                        defaultSymbol = defaultSymbol,
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.fillMaxWidth()
@@ -278,6 +338,7 @@ fun ReportsScreen(navController: NavHostController) {
                                     VehicleSummaryBlock(
                                         stats = stats,
                                         unitLabel = volumeUnitLabel,
+                                        defaultSymbol = defaultSymbol,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
@@ -294,6 +355,7 @@ fun ReportsScreen(navController: NavHostController) {
                                             VehicleSummaryBlock(
                                                 stats = stats,
                                                 unitLabel = volumeUnitLabel,
+                                                defaultSymbol = defaultSymbol,
                                                 modifier = Modifier
                                                     .weight(1f)
                                                     .widthIn(min = vehicleSummaryMinWidth)
@@ -332,6 +394,7 @@ fun ReportsScreen(navController: NavHostController) {
                                 VehicleLast5OnlyColumn(
                                     stats = stats,
                                     volumeUnitLabel = volumeUnitLabel,
+                                    defaultSymbol = defaultSymbol,
                                     modifier = Modifier
                                         .weight(1f)
                                         .widthIn(min = vehicleColMinWidth)
@@ -357,23 +420,30 @@ fun ReportsScreen(navController: NavHostController) {
                 ) {
                     ExpensesBlock(
                         expenses = allExpensesNewest,
+                        defaultSymbol = defaultSymbol,
                         modifier = Modifier.weight(1f)
                     )
                     FillsBlock(
                         fills = allFillsNewest,
                         vehicleNameById = vehicleNameById,
                         volumeUnitLabel = volumeUnitLabel,
+                        defaultSymbol = defaultSymbol,
                         modifier = Modifier.weight(1f)
                     )
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ExpensesBlock(expenses = allExpensesNewest, modifier = Modifier.fillMaxWidth())
+                    ExpensesBlock(
+                        expenses = allExpensesNewest,
+                        defaultSymbol = defaultSymbol,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     FillsBlock(
                         fills = allFillsNewest,
                         vehicleNameById = vehicleNameById,
                         volumeUnitLabel = volumeUnitLabel,
-                        modifier = Modifier.fillMaxWidth()
+                        defaultSymbol = defaultSymbol,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -386,10 +456,11 @@ fun ReportsScreen(navController: NavHostController) {
 private fun VehicleSummaryBlock(
     stats: VehicleReportStats,
     unitLabel: String,
+    defaultSymbol: String,
     modifier: Modifier = Modifier
 ) {
-    val statsLine = vehicleStatsOnlyLine(stats, unitLabel)
-    val expLine = vehicleExpenseSummaryLine(stats)
+    val statsLine = vehicleStatsOnlyLine(stats, unitLabel, defaultSymbol)
+    val expLine = vehicleExpenseSummaryLine(stats, defaultSymbol)
     Column(modifier = modifier) {
         Text(stats.name, style = MaterialTheme.typography.titleSmall)
         AdaptiveStatsText(
@@ -437,6 +508,7 @@ private fun AdaptiveStatsText(
 private fun VehicleLast5OnlyColumn(
     stats: VehicleReportStats,
     volumeUnitLabel: String,
+    defaultSymbol: String,
     modifier: Modifier = Modifier
 ) {
     Card(modifier = modifier) {
@@ -446,6 +518,7 @@ private fun VehicleLast5OnlyColumn(
             VehicleLast5List(
                 legs = stats.last5Legs,
                 volumeUnitLabel = volumeUnitLabel,
+                defaultSymbol = defaultSymbol,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = vehicleColMaxHeight)
@@ -459,6 +532,7 @@ private fun VehicleLast5OnlyColumn(
 private fun VehicleLast5List(
     legs: List<FullFillLeg>,
     volumeUnitLabel: String,
+    defaultSymbol: String,
     modifier: Modifier = Modifier
 ) {
     val maxMpg = legs.maxOfOrNull { it.mpg }?.takeIf { it > 0 } ?: 1.0
@@ -471,7 +545,8 @@ private fun VehicleLast5List(
                 FullFillLegRow(
                     leg = leg,
                     barFraction = barFrac,
-                    volumeUnitLabel = volumeUnitLabel
+                    volumeUnitLabel = volumeUnitLabel,
+                    defaultSymbol = defaultSymbol,
                 )
             }
         }
@@ -482,7 +557,8 @@ private fun VehicleLast5List(
 private fun FullFillLegRow(
     leg: FullFillLeg,
     barFraction: Float,
-    volumeUnitLabel: String
+    volumeUnitLabel: String,
+    defaultSymbol: String,
 ) {
     val entry = leg.endFill
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -495,7 +571,8 @@ private fun FullFillLegRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "${formatMoney(leg.sumCost)} · ${formatVolume(leg.sumVol, volumeUnitLabel)}",
+                "${CurrencyCodes.formatAggregateSum(leg.sumCostByCurrency, defaultSymbol)} · " +
+                    formatVolume(leg.sumVol, volumeUnitLabel),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f)
             )
@@ -524,6 +601,7 @@ private fun FullFillLegRow(
 @Composable
 private fun ExpensesBlock(
     expenses: List<ExpenseEntry>,
+    defaultSymbol: String,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -539,7 +617,9 @@ private fun ExpensesBlock(
                             entry.vendor.takeIf { it.isNotBlank() },
                             entry.description.takeIf { it.isNotBlank() }
                         ).joinToString(" · ").ifBlank { "(no description)" }
-                        Text("$head · ${formatMoney(entry.amount)}")
+                        Text(
+                            "$head · ${CurrencyCodes.formatAmount(entry.amount, entry.currency, defaultSymbol)}"
+                        )
                         Text(
                             "${formatEntryDate(entry.date)} · ${entry.category}",
                             style = MaterialTheme.typography.labelSmall
@@ -556,6 +636,7 @@ private fun FillsBlock(
     fills: List<FuelEntry>,
     vehicleNameById: Map<Int, String>,
     volumeUnitLabel: String,
+    defaultSymbol: String,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -571,7 +652,9 @@ private fun FillsBlock(
                     Column(modifier = Modifier.padding(10.dp)) {
                         Text("$name · ${formatEntryDate(entry.timestamp)}$partial")
                         Text(
-                            "odo ${entry.odometer} · ${formatMoney(entry.cost)} · ${formatVolume(entry.gallons, volumeUnitLabel)}",
+                            "odo ${entry.odometer} · " +
+                                "${CurrencyCodes.formatAmount(entry.cost, entry.currency, defaultSymbol)} · " +
+                                formatVolume(entry.gallons, volumeUnitLabel),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }

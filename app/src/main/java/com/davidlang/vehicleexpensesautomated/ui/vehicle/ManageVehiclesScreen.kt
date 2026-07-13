@@ -97,29 +97,86 @@ fun ManageVehiclesScreen(
         }
     }
 
-    LaunchedEffect(selectedVehicleId) {
-        editingVehicle = vehicles.find { it.id == selectedVehicleId }
-        editingVehicle?.let {
-            name = it.name; make = it.make ?: ""; model = it.model ?: ""; year = it.year?.toString() ?: ""; licensePlate = it.licensePlate ?: ""; odometerReading = ""
-            pickedPhotoUrl = it.referenceDashPhotoUrl
-            referencePhotoUrl = it.referenceDashPhotoUrl
-            landmarkTextBlocksJson = it.landmarkTextBlocksJson
-
-            referencePhotoUrl?.let { path ->
-                try {
-                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeFile(path, options)
-                    originalImageSize = Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
-                } catch (e: Exception) { Log.e("ManageVehicles", "Failed dimensions", e) }
-            }
-            // getCrops returns ICRS Rects (DB values are ICRS after re-creation). No 0-1 path.
-            val (odo, other) = vehicleViewModel.getCrops(it)
-            odometerCropRect = odo
-            otherTextCropRect = other
-
-            // Hydration handled by the "Show Landmarks" button
-            discoveryResults = null
+    val selectedVehicle = vehicles.find { it.id == selectedVehicleId }
+    val vehicleHydrationKey = selectedVehicle?.let { v ->
+        buildString {
+            append(v.updatedAt)
+            append('|')
+            append(v.landmarkTextBlocksJson?.length ?: 0)
+            append('|')
+            append(v.landmarkTextBlocksJson?.hashCode() ?: 0)
+            append('|')
+            append(v.odometerCropLeft)
+            append('|')
+            append(v.odometerCropTop)
+            append('|')
+            append(v.odometerCropRight)
+            append('|')
+            append(v.odometerCropBottom)
+            append('|')
+            append(v.otherTextCropLeft)
+            append('|')
+            append(v.otherTextCropTop)
+            append('|')
+            append(v.otherTextCropRight)
+            append('|')
+            append(v.otherTextCropBottom)
+            append('|')
+            append(v.referenceDashPhotoUrl)
+            append('|')
+            append(v.cleanedReferenceDashPhotoUrl)
+            append('|')
+            append(v.cloudManifest?.length ?: 0)
         }
+    } ?: ""
+
+    fun hydrateFormFromVehicle(v: Vehicle) {
+        editingVehicle = v
+        name = v.name
+        make = v.make ?: ""
+        model = v.model ?: ""
+        year = v.year?.toString() ?: ""
+        licensePlate = v.licensePlate ?: ""
+        odometerReading = ""
+        pickedPhotoUrl = v.referenceDashPhotoUrl
+        referencePhotoUrl = v.referenceDashPhotoUrl
+        landmarkTextBlocksJson = v.landmarkTextBlocksJson
+
+        originalImageSize = Offset.Zero
+        referencePhotoUrl?.let { path ->
+            try {
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(path, options)
+                originalImageSize = Offset(options.outWidth.toFloat(), options.outHeight.toFloat())
+            } catch (e: Exception) {
+                Log.e("ManageVehicles", "Failed dimensions", e)
+            }
+        }
+        val (odo, other) = vehicleViewModel.getCrops(v)
+        odometerCropRect = odo
+        otherTextCropRect = other
+
+        discoveryResults = if (!landmarkTextBlocksJson.isNullOrEmpty() && originalImageSize != Offset.Zero) {
+            val map = OdometerOcrUtils.deserializeMultiEngineLandmarks(
+                landmarkTextBlocksJson!!,
+                originalImageSize.x.toInt(),
+                originalImageSize.y.toInt(),
+            )
+            map["ML Kit"] ?: map.values.firstOrNull()
+        } else {
+            null
+        }
+    }
+
+    LaunchedEffect(selectedVehicleId, vehicleHydrationKey) {
+        val id = selectedVehicleId ?: return@LaunchedEffect
+        var v = vehicles.find { it.id == id } ?: return@LaunchedEffect
+        if (v.referenceDashPhotoUrl.isNullOrBlank() && !v.cloudManifest.isNullOrBlank()) {
+            if (vehicleViewModel.ensureVehicleAssetsDownloaded(id)) {
+                v = vehicleViewModel.getVehicleById(id) ?: v
+            }
+        }
+        hydrateFormFromVehicle(v)
     }
 
     fun processImportedPhoto(url: String) {
