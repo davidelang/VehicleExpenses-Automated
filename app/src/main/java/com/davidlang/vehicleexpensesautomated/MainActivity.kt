@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
@@ -320,10 +319,10 @@ class MainActivity : ComponentActivity() {
                                 actions = {
                                     if (syncFailureVisible) {
                                         IconButton(onClick = { navController.navigate("settings") }) {
-                                            Icon(
-                                                Icons.Default.Error,
-                                                contentDescription = "Sync problem — open Settings",
-                                                tint = MaterialTheme.colorScheme.error,
+                                            Text(
+                                                "!",
+                                                style = MaterialTheme.typography.titleLarge,
+                                                color = MaterialTheme.colorScheme.error,
                                             )
                                         }
                                     }
