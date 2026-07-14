@@ -136,6 +136,7 @@ FILES=(
     "git-merge-drivers/ve-special-refuse"
     "install-merge-drivers.sh"
     "merge-branch-into-master.sh"
+    "hooks/post-checkout"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
@@ -215,6 +216,14 @@ for WT in $WORKTREES; do
     # Ensure target directories exist and copy files.
     # Only the decided COPY_LIST (stamp or full) are touched for this target.
     # Application source content must never be overwritten by infra sync.
+    # Primary user/group for ownership after cp (cp creates files owned by the
+    # update-rules runner — often ai-orchestrator — which breaks dlang ./deploy
+    # when +x is missing or only owner can exec).
+    PRIMARY_USER=$(sed -n 's/^primary_user=//p' "$SOURCE_DIR/project.config" 2>/dev/null | tr -d '\r' | head -1)
+    PRIMARY_USER=${PRIMARY_USER:-dlang}
+    CODE_GROUP=$(sed -n 's/^code_group=//p' "$SOURCE_DIR/project.config" 2>/dev/null | tr -d '\r' | head -1)
+    CODE_GROUP=${CODE_GROUP:-ai-code}
+
     for FILE in "${COPY_LIST[@]}"; do
         if [ -f "$SOURCE_DIR/$FILE" ]; then
             TARGET_FILE="$WT/$FILE"
@@ -222,13 +231,33 @@ for WT in $WORKTREES; do
             mkdir -p "$TARGET_DIR_PATH"
             # Overwrite with physical copy (shared brain is physical copies on the branch, not links)
             rm -f "$TARGET_FILE"
-            cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+            # Preserve mode from source when possible (keeps 100755 scripts executable)
+            cp -p "$SOURCE_DIR/$FILE" "$TARGET_FILE" 2>/dev/null || cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+            # Prefer primary:ai-code so humans (dlang) own scripts they run
+            chown "$PRIMARY_USER:$CODE_GROUP" "$TARGET_FILE" 2>/dev/null || true
+            # If source was executable (or known launcher names), force +x for ugo
+            if [ -x "$SOURCE_DIR/$FILE" ] || [[ "$FILE" == *.sh ]] || \
+               [[ "$FILE" == deploy || "$FILE" == build_app || "$FILE" == gradlew ]] || \
+               [[ "$FILE" == git-merge-drivers/* ]]; then
+              chmod a+x "$TARGET_FILE" 2>/dev/null || true
+            fi
         fi
     done
 
-    # Ensure management/orchestration scripts end up executable (right perms)
-    # These are run from any level; update-rules ensures they are current and +x
-    chmod +x "$WT"/*.sh "$WT"/deploy "$WT"/build_app "$WT"/gradlew 2>/dev/null || true
+    # Ensure management/orchestration scripts end up executable (right perms).
+    # Avoid a single chmod with globs that can fail the whole line; set each path.
+    for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
+                "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh; do
+      [ -f "$_exe" ] || continue
+      chown "$PRIMARY_USER:$CODE_GROUP" "$_exe" 2>/dev/null || true
+      chmod a+x "$_exe" 2>/dev/null || true
+    done
+    find "$WT" -maxdepth 1 -type f -name '*.sh' -exec chown "$PRIMARY_USER:$CODE_GROUP" {} + 2>/dev/null || true
+    find "$WT" -maxdepth 1 -type f -name '*.sh' -exec chmod a+x {} + 2>/dev/null || true
+    if [ -d "$WT/git-merge-drivers" ]; then
+      find "$WT/git-merge-drivers" -type f -exec chown "$PRIMARY_USER:$CODE_GROUP" {} + 2>/dev/null || true
+      find "$WT/git-merge-drivers" -type f -exec chmod a+x {} + 2>/dev/null || true
+    fi
 
     # Commit changes in the target worktree
     (
@@ -283,11 +312,14 @@ for WT in $WORKTREES; do
         fi
     )
 
-    # Ensure the synced management/orchestration scripts have executable perms,
-    # and run the perms fixer on this WT (as current or via sudo if needed).
-    # This makes files "end up with the right permissions" directly from update-rules.
-    chmod +x "$WT"/*.sh "$WT"/deploy "$WT"/build_app 2>/dev/null || true
-    chmod +x "$WT"/git-merge-drivers/* "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh 2>/dev/null || true
+    # Re-assert executables after commit (git may not preserve all mode bits in WT)
+    for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
+                "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh; do
+      [ -f "$_exe" ] || continue
+      chown "$PRIMARY_USER:$CODE_GROUP" "$_exe" 2>/dev/null || true
+      chmod a+x "$_exe" 2>/dev/null || true
+    done
+    find "$WT" -maxdepth 1 -type f -name '*.sh' -exec chmod a+x {} + 2>/dev/null || true
     if [ -x "$WT/fix-perms" ]; then
         echo "  Ensuring perms on $WT via fix-perms..."
         "$WT/fix-perms" "$WT" 2>/dev/null || sudo "$WT/fix-perms" "$WT" 2>/dev/null || true
