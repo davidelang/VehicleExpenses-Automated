@@ -167,9 +167,21 @@ _ve_check() {
   echo "umask: $(umask)"
   echo "cwd: $(pwd)"
   if _ve_refresh_installed; then
-    echo "ve-refresh-shell: installed (setuid) at $REFRESH"
+    echo "ve-refresh-shell: OK (setuid root) at $REFRESH"
+  elif [ -x "$REFRESH" ] && [ -u "$REFRESH" ]; then
+    echo "ve-refresh-shell: BROKEN — setuid but owner=$(stat -c '%U' "$REFRESH" 2>/dev/null) (must be root)"
+    echo "  Fix:  sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH"
+    echo "  Until fixed, source ./ve-env will NOT re-exec (avoids closing the terminal)."
+    bad=1
+  elif [ -e "$REFRESH" ]; then
+    echo "ve-refresh-shell: present but not setuid-root at $REFRESH"
+    echo "  Fix:  sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH"
+    bad=1
   else
-    echo "ve-refresh-shell: NOT ready (need build + sudo chmod 4755) — group auto-fix disabled"
+    echo "ve-refresh-shell: NOT found — group auto-fix disabled"
+    echo "  Build: gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c"
+    echo "  Then:  sudo chown root:root ve-refresh-shell && sudo chmod 4755 ve-refresh-shell"
+    bad=1
   fi
 
   if [ "$(umask)" != "0002" ] && [ "$(umask)" != "002" ]; then

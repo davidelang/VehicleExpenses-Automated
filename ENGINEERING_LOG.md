@@ -242,3 +242,7 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - ve-env: require owner root for helper; refuse exec of mis-owned setuid
 - ve-refresh-shell: on failure re-exec normal user shell instead of return 1
 - fix-perms/setup_agent: only 4755 after chown root succeeds; else chmod 755
+
+## 2026-07-14 - ve-env check: report broken non-root setuid helper clearly
+
+- Distinguish OK setuid-root vs BROKEN setuid-wrong-owner vs missing
