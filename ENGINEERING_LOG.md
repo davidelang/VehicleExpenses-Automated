@@ -728,3 +728,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Merge commit ca671196 via temp worktree merge-temp-code-cleanup (ENGINEERING_LOG preserved; branch entries appended via wrapper)
 - Master forensic review approved; DB v13 + settings decomposition + auth/frequency fixes accepted
 - Post-merge: project-facts consolidated; TODO dead-code item closed; build_app gate pending
+
+## 2026-07-14 - code-cleanup merge build gate passed
+
+- ./run-as-primary ./build_app SUCCESS on master @ f0446cd7; builds tag updated
+- First ai-coder build hit processDebugJavaRes chmod 770 on foreign-owned app/build; dlang euid via run-as-primary succeeded
