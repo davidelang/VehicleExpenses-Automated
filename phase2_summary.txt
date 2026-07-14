@@ -1,1 +1,1 @@
-Phase 2: Rename debug toggle to Debug Quick Fill; pref debug_quick_fill with migration from debug_ocr_pipeline in Settings and QuickFill.
+Phase 2: fuel sort by timestamp+odometer+syncId; per-device sync jitter on periodic workers
