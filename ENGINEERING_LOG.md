@@ -134,3 +134,16 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Resume after approval + review notes (umask run-*, project-facts candidates, master=execute plan, setup_agent no antigravity, no cd&&helpers).
 - Phase 0: copy plan to sandbox; promote MASTER_AGENT_MANDATE SoT from master/.
 
+
+## 2026-07-13 - Completed core phases of startup-rules-roles-permissions-cleanup-20260713-plan v7
+
+- MASTER_AGENT_MANDATE promoted + execute-plan role + TODO close / project-facts prune at merge.
+- AGENT_MANDATES: TODO helpers only, eng-log current turn, project-facts candidates, cite STANDARD BLOCK by path, no cd&&helpers, planner owns cycles.
+- Launchers: run-grok=dlang bare; run-grok-orchestrator; run-grok-coder; planner/master umask 002 + TodoGate off.
+- setup_agent: no auto antigravity; leave user in worktree with next-step hint.
+- build_app: umask 002, gradle --no-daemon, source 2775/664 normalize; deploy umask 002.
+- ve-env; skills prepare-local-pr + master-merge; disabled pr-babysit/execute-plan/design/check-work.
+- AGENTS/README/PERMISSIONS_MODEL/project-facts/plan-style-guide updated.
+- Commit orchestration/builds @ 401cf388; update-rules attempted.
+- AGENT_CONTEXT.md created at root (may be gitignored — local orientation).
+
