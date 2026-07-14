@@ -197,3 +197,16 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Approved: git-special-file-merge-drivers (session plan)
 - ve-englog via append-to-engineering-log; ve-special-refuse; merge-branch-into-master always TODO/facts review
 - No happy-path chattr ±a
+
+## 2026-07-14 - Completed: git special-file merge drivers
+
+- Tag orchestration/builds @ acb43855
+- ve-englog + ve-special-refuse; install-merge-drivers; merge-branch-into-master
+- Fixture: third-version eng-log + refuse message OK
+- Mandate/skill/project-facts updated; update-rules next
+
+## 2026-07-14 - fix: restore executable bit on git hooks after fix-perms
+
+- Root cause: fix-perms chmod 660 all .git files stripped post-checkout +x
+- ensure_git_hooks_executable after every .git blanket chmod
+- setup_agent ensures hooks executable before worktree add and after fix-perms

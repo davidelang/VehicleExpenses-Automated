@@ -249,6 +249,20 @@ SUDOEOF
   fi
 }
 
+# Git hooks must remain executable. Blanket "chmod 660 all .git files" (group
+# sharing for multi-user) strips +x and causes: "hook was ignored because it's
+# not set as executable". Restore after every such pass. Skip *.sample.
+ensure_git_hooks_executable() {
+  local hooks_dir
+  for hooks_dir in "$@"; do
+    [ -d "$hooks_dir" ] || continue
+    if $VERBOSE; then echo "  Ensuring git hooks executable under $hooks_dir"; fi
+    # Active hooks only (not the stock *.sample templates)
+    find "$hooks_dir" -maxdepth 1 -type f ! -name '*.sample' -exec chmod 775 {} + 2>/dev/null || true
+    chown :"$SHARED_GROUP" "$hooks_dir"/* 2>/dev/null || true
+  done
+}
+
 fix_worktree() {
   local wt="$1"
   if [ ! -d "$wt" ]; then return; fi
@@ -308,12 +322,25 @@ fix_worktree() {
     chown -R :$SHARED_GROUP "$WT_GITDIR" 2>/dev/null || true
     find "$WT_GITDIR" -type d -exec chmod 2770 {} + 2>/dev/null || true
     find "$WT_GITDIR" -type f -exec chmod 660 {} + 2>/dev/null || true
+    ensure_git_hooks_executable "$WT_GITDIR/hooks"
   fi
   # Fallback/old-style (bare .git dir inside wt)
   if [ -d "$wt/.git" ]; then
     chown -R :$SHARED_GROUP "$wt/.git" 2>/dev/null || true
     find "$wt/.git" -type d -exec chmod 2770 {} + 2>/dev/null || true
     find "$wt/.git" -type f -exec chmod 660 {} + 2>/dev/null || true
+    ensure_git_hooks_executable "$wt/.git/hooks"
+  fi
+  # Common-dir hooks (shared by all worktrees) — always restore after any .git chmod
+  local common_hooks
+  common_hooks=$(git -C "$wt" rev-parse --git-common-dir 2>/dev/null || true)
+  if [ -n "$common_hooks" ]; then
+    # rev-parse may return relative path
+    case "$common_hooks" in
+      /*) ;;
+      *) common_hooks="$wt/$common_hooks" ;;
+    esac
+    ensure_git_hooks_executable "$common_hooks/hooks"
   fi
 
   # build run-as if needed
@@ -439,6 +466,10 @@ elif $AT_ORCHESTRATION; then
     if [ -d "$SCRIPT_DIR/.git/worktrees" ]; then
       find "$SCRIPT_DIR/.git/worktrees" -type d -exec chmod 2770 {} + 2>/dev/null || true
       find "$SCRIPT_DIR/.git/worktrees" -type f -exec chmod 660 {} + 2>/dev/null || true
+      # Per-worktree hooks dirs (if present) after blanket 660
+      find "$SCRIPT_DIR/.git/worktrees" -type d -name hooks 2>/dev/null | while read -r hd; do
+        ensure_git_hooks_executable "$hd"
+      done
     fi
     # Fix refs area (loose refs are frequently written by different ai-* users; broken zero-hash
     # refs have been observed when group perms or owners drift).
@@ -451,6 +482,8 @@ elif $AT_ORCHESTRATION; then
       chown :$SHARED_GROUP "$SCRIPT_DIR/.git/packed-refs" 2>/dev/null || true
       chmod 660 "$SCRIPT_DIR/.git/packed-refs" 2>/dev/null || true
     fi
+    # CRITICAL: re-apply +x on active hooks (blanket 660 above strips them)
+    ensure_git_hooks_executable "$SCRIPT_DIR/.git/hooks"
     git_config_as_primary "$SCRIPT_DIR" config core.sharedRepository group
     fix_main_git_config_ownership
   fi

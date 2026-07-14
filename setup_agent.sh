@@ -91,6 +91,37 @@ fi
 # Orchestration root (absolute) — used after cd into agent-N for seeding filters/config.
 ORCH_ROOT="$(pwd)"
 
+# Ensure shared git hooks are executable BEFORE worktree add / checkout.
+# fix-perms historically chmod 660'd all of .git (strips +x); post-checkout must run.
+ensure_common_hooks_executable() {
+  local common hooks
+  common=$(git rev-parse --git-common-dir 2>/dev/null || echo .git)
+  case "$common" in
+    /*) hooks="$common/hooks" ;;
+    *) hooks="$ORCH_ROOT/$common/hooks" ;;
+  esac
+  if [ ! -d "$hooks" ]; then
+    return 0
+  fi
+  # Install post-checkout from template if missing
+  if [ ! -f "$hooks/post-checkout" ]; then
+    if [ -f "$ORCH_ROOT/dev-ai-interaction/new-project-template/post-checkout" ]; then
+      cp "$ORCH_ROOT/dev-ai-interaction/new-project-template/post-checkout" "$hooks/post-checkout"
+    elif [ -f "$ORCH_ROOT/.git/hooks/post-checkout" ]; then
+      :
+    fi
+  fi
+  # Active hooks only (not *.sample)
+  find "$hooks" -maxdepth 1 -type f ! -name '*.sample' -exec chmod 775 {} + 2>/dev/null || true
+  if [ -f "$hooks/post-checkout" ] && [ ! -x "$hooks/post-checkout" ]; then
+    chmod 775 "$hooks/post-checkout" 2>/dev/null || true
+  fi
+  if [ -f "$hooks/post-checkout" ] && [ ! -x "$hooks/post-checkout" ]; then
+    echo "WARNING: $hooks/post-checkout is still not executable (check ownership)."
+  fi
+}
+ensure_common_hooks_executable
+
 # 2. Create Worktree & Branch
 echo "Creating worktree for $AGENT_ID on branch $BRANCH_NAME..."
 
@@ -302,6 +333,7 @@ cd "$PARENT_ROOT"   # return to orchestration root
 # Use unified fix-perms for the new tree (pass --skip-sudoers so sudoers rules
 # are only (re)installed at true initial setup-project time).
 # Silent on success (no output if it works).
+# Note: fix-perms blanket-chmods .git then restores hook +x (ensure_git_hooks_executable).
 sudo ./fix-perms --skip-sudoers "$AGENT_ABS" 2>/dev/null || true
 
 # Re-lock setuid binary silently (in case not covered).
@@ -309,6 +341,9 @@ if [ -f "$AGENT_ABS/run-as-primary" ]; then
   chown "$PRIMARY_USER:$CODE_GROUP" "$AGENT_ABS/run-as-primary" 2>/dev/null || true
   chmod 4755 "$AGENT_ABS/run-as-primary" 2>/dev/null || true
 fi
+
+# After fix-perms, re-assert hooks (defense in depth; post-checkout must stay runnable)
+ensure_common_hooks_executable
 
 # Merge drivers are repo-global (.git config); ensure installed for all worktrees
 if [ -x "$PARENT_ROOT/install-merge-drivers.sh" ]; then
