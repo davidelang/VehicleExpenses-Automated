@@ -362,11 +362,15 @@ if [ -f "$AGENT_ABS/run-as-primary" ]; then
   chown "$PRIMARY_USER:$CODE_GROUP" "$AGENT_ABS/run-as-primary" 2>/dev/null || true
   chmod 4755 "$AGENT_ABS/run-as-primary" 2>/dev/null || true
 fi
-# Prefer a working setuid helper on orch or agent for group refresh
+# Prefer a working setuid-root helper on orch or agent for group refresh.
+# Never leave setuid bit on a non-root-owned binary (kills terminals via ve-env).
 for _vrs in "$ORCH_ROOT/ve-refresh-shell" "$AGENT_ABS/ve-refresh-shell"; do
   if [ -f "$_vrs" ]; then
-    sudo chown root:root "$_vrs" 2>/dev/null || true
-    sudo chmod 4755 "$_vrs" 2>/dev/null || true
+    if sudo chown root:root "$_vrs" 2>/dev/null; then
+      sudo chmod 4755 "$_vrs" 2>/dev/null || true
+    else
+      chmod 755 "$_vrs" 2>/dev/null || true
+    fi
   fi
 done
 
@@ -393,10 +397,10 @@ echo "Entering worktree shell (umask 002 + project groups via ve-env helper)..."
 export VE_ENV_CWD="$AGENT_ABS"
 umask 002
 
-# Prefer setuid helper (orch copy first — one machine-wide install)
+# Prefer setuid-root helper only (setuid+non-root owner is unsafe — see ve-env)
 REFRESH=""
 for _vrs in "$ORCH_ROOT/ve-refresh-shell" "$AGENT_ABS/ve-refresh-shell"; do
-  if [ -x "$_vrs" ] && [ -u "$_vrs" ]; then
+  if [ -x "$_vrs" ] && [ -u "$_vrs" ] && [ "$(stat -c '%U' "$_vrs" 2>/dev/null)" = "root" ]; then
     REFRESH="$_vrs"
     break
   fi

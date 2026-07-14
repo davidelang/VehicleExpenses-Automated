@@ -30,6 +30,30 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+static void exec_user_shell(struct passwd *pw) {
+  const char *cwd = getenv("VE_ENV_CWD");
+  if (cwd != NULL && cwd[0] != '\0') {
+    if (chdir(cwd) != 0) {
+      fprintf(stderr, "ve-refresh-shell: chdir %s: %s\n", cwd, strerror(errno));
+      /* continue anyway */
+    }
+  }
+
+  umask(002);
+
+  const char *shell = getenv("SHELL");
+  if (shell == NULL || shell[0] == '\0') {
+    shell = pw->pw_shell;
+  }
+  if (shell == NULL || shell[0] == '\0') {
+    shell = "/bin/bash";
+  }
+
+  /* Interactive shell, not a full login (-l). */
+  execl(shell, shell, (char *)NULL);
+  fprintf(stderr, "ve-refresh-shell: exec %s: %s\n", shell, strerror(errno));
+}
+
 int main(int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -41,9 +65,31 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  /*
+   * Must be installed setuid *root*. A common mis-install is chmod 4755 while
+   * still owned by ai-coder/dlang — then euid is that user, initgroups fails,
+   * and a bare return closes the terminal that exec'd us. Always recover into
+   * an interactive shell so the session is not destroyed.
+   */
+  if (geteuid() != 0) {
+    fprintf(stderr,
+            "ve-refresh-shell: not running as root (euid=%d). "
+            "Binary must be: sudo chown root:root ve-refresh-shell && sudo chmod 4755 ve-refresh-shell\n",
+            (int)geteuid());
+    fprintf(stderr, "ve-refresh-shell: starting a normal shell (groups NOT refreshed).\n");
+    exec_user_shell(pw);
+    return 1;
+  }
+
   /* Full supplementary list from group database for this account only. */
   if (initgroups(pw->pw_name, pw->pw_gid) != 0) {
     perror("ve-refresh-shell: initgroups");
+    fprintf(stderr, "ve-refresh-shell: starting a normal shell (groups NOT refreshed).\n");
+    /* still root — drop to user before shell */
+    if (setgid(pw->pw_gid) == 0) {
+      (void)setuid(ruid);
+    }
+    exec_user_shell(pw);
     return 1;
   }
   if (setgid(pw->pw_gid) != 0) {
@@ -55,28 +101,6 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  const char *cwd = getenv("VE_ENV_CWD");
-  if (cwd != NULL && cwd[0] != '\0') {
-    if (chdir(cwd) != 0) {
-      fprintf(stderr, "ve-refresh-shell: chdir %s: %s\n", cwd, strerror(errno));
-      /* continue anyway */
-    }
-  }
-
-  /* Project default for multi-user trees */
-  umask(002);
-
-  const char *shell = getenv("SHELL");
-  if (shell == NULL || shell[0] == '\0') {
-    shell = pw->pw_shell;
-  }
-  if (shell == NULL || shell[0] == '\0') {
-    shell = "/bin/bash";
-  }
-
-  /* Interactive shell, not a full login (-l), so we do not re-run display/session setup.
-   * Other GUI apps stay open; only this terminal is replaced. */
-  execl(shell, shell, (char *)NULL);
-  fprintf(stderr, "ve-refresh-shell: exec %s: %s\n", shell, strerror(errno));
+  exec_user_shell(pw);
   return 1;
 }

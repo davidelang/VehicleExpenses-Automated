@@ -77,15 +77,25 @@ _ve_session_missing_stale() {
 }
 
 _ve_refresh_installed() {
+  # Must be executable, setuid, AND owned by root. setuid+owned-by-ai-coder is a
+  # common fix-perms footgun (chmod 4755 after failed chown root) — running that
+  # binary as dlang sets euid=ai-coder, initgroups fails, process exits, terminal dies.
   [ -x "$REFRESH" ] || return 1
-  # setuid root?
   [ -u "$REFRESH" ] || return 1
+  local owner
+  owner=$(stat -c '%U' "$REFRESH" 2>/dev/null || true)
+  [ "$owner" = "root" ] || return 1
   return 0
 }
 
 _ve_try_refresh_shell() {
   # Replace *this* shell with one that has full group list. No desktop logout.
   if ! _ve_refresh_installed; then
+    if [ -x "$REFRESH" ] && [ -u "$REFRESH" ]; then
+      echo "ve-env: $REFRESH is setuid but NOT owned by root (owner=$(stat -c '%U' "$REFRESH" 2>/dev/null))." >&2
+      echo "  That would kill this terminal if exec'd. Fix once:" >&2
+      echo "    sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH" >&2
+    fi
     return 1
   fi
   export VE_ENV_CWD="$(pwd)"

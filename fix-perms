@@ -392,8 +392,16 @@ fix_worktree() {
     (cd "$wt" && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c 2>/dev/null) || true
   fi
   if [ -f "$wt/ve-refresh-shell" ]; then
-    chown root:root "$wt/ve-refresh-shell" 2>/dev/null || true
-    chmod 4755 "$wt/ve-refresh-shell" 2>/dev/null || true
+    # Only setuid if chown root succeeded. chmod 4755 while owned by ai-coder/dlang
+    # makes setuid-to-wrong-user; ve-env then execs it, initgroups fails, terminal dies.
+    if chown root:root "$wt/ve-refresh-shell" 2>/dev/null; then
+      chmod 4755 "$wt/ve-refresh-shell" 2>/dev/null || true
+    else
+      chmod 755 "$wt/ve-refresh-shell" 2>/dev/null || true  # strip dangerous non-root setuid
+      if $VERBOSE; then
+        echo "  WARN: could not chown ve-refresh-shell root (need sudo); left non-setuid"
+      fi
+    fi
   fi
 
   # Critical agent/human scripts: must be executable by primary + ai-code after any

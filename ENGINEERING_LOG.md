@@ -235,3 +235,10 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Root cause: ai-coder-owned .gradle/fileHashes.lock; sg ai-shared left process without ai-code
 - deploy: fail-fast if missing groups; prepare_build_tree wipes .gradle locks/version caches
 - build_app: same fail-fast for groups
+
+## 2026-07-14 - fix: ve-env must not kill terminal on bad ve-refresh-shell
+
+- Cause: ve-refresh-shell was setuid but owned by ai-coder not root; exec then initgroups fail → shell exit
+- ve-env: require owner root for helper; refuse exec of mis-owned setuid
+- ve-refresh-shell: on failure re-exec normal user shell instead of return 1
+- fix-perms/setup_agent: only 4755 after chown root succeeds; else chmod 755
