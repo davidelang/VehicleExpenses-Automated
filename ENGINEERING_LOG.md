@@ -683,3 +683,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - settings.gradle.kts: foojay-resolver-convention 1.0.0 for jvmToolchain(17) provisioning
 - Verified ./gradlew :app:hiltJavaCompileDebug without JAVA_HOME env
 - Plan updated: Phase 5 compiler warnings/hygiene (not TODO.md); env issues = report not workaround
+
+## 2026-07-13 - Dead code Phase 3 start
+
+- Orphan utils: DiscoveryOcrUtils, ImageHashUtils, LocationUtils, MLKitMonoStrategy
+- Prune dead OcrEngineStrategy, HarnessRunDef, ReportCollector from OcrHarness.kt
