@@ -447,6 +447,25 @@ fix_build_dir_perms() {
 }
 fix_build_dir_perms
 
+# Multi-user handoff: agent (ai-coder) builds leave app/build owned by that uid.
+# chmod of foreign files often fails; wipe incremental caches before gradle instead.
+# Policy: no Gradle daemon (wrappers pass --no-daemon); clear KSP/config state that
+# causes "Permission denied" on classpath-entries.bin after cross-uid builds.
+prepare_build_tree_for_deploy() {
+  echo "  Preparing build tree for deploy (wipe KSP/incremental caches; multi-user safe)..."
+  if [ -d app/build ]; then
+    chmod -R u+rX,g+rX app/build 2>/dev/null || true
+    chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
+  fi
+  rm -rf app/build/kspCaches app/build/intermediates app/build/generated 2>/dev/null || true
+  rm -rf .gradle/configuration-cache* 2>/dev/null || true
+  if [ -d app/build/intermediates ]; then
+    echo "  WARNING: Could not fully remove app/build/intermediates."
+    echo "  You may need: sudo chown -R ${PRIMARY_USER:-dlang}:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
+  fi
+}
+prepare_build_tree_for_deploy
+
 repair_shared_cache() {
   # Post-build permission repair for all shared build directories
   for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
@@ -521,9 +540,8 @@ stop_gradle_daemons() {
   pkill -f "GradleDaemon.*$(pwd | sed 's/[][\.*^$()+?{}|]/\\&/g')" 2>/dev/null || true
   sleep 1
 }
-# NOTE: stop_gradle_daemons is no longer called eagerly at startup.
-# The daemon is intentionally kept alive for performance (see gradle.properties).
-# Call stop_gradle_daemons manually if a daemon misbehaves.
+# Policy: no Gradle daemon (build_app and deploy pass --no-daemon). stop_gradle_daemons
+# remains for recovery if a leftover daemon from old runs still holds files open.
 
 declare -A DEVICE_MAP
 DEVICE_MAP=(
@@ -1163,44 +1181,15 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 echo "  Will still build and attempt in-place install (no uninstall was done)."
             fi
 
-            # Mitigate a very common Gradle failure when doing fresh installs:
-            # "Unable to delete directory .../packageDebug/tmp" because a previous
-            # daemon/worker still has files open (zip-cache, dex state, etc.).
-            # Also handles cases where past root runs left files owned by root.
-            # Extended to fix "unreadable inputs/outputs" / "Could not stat" errors
-            # in Gradle 8+/9+ (CMake/cxx, navigation, assets, aar, etc. state).
-            # NOTE: daemon is intentionally kept alive (see gradle.properties).
-            # stop_gradle_daemons is available for manual recovery if needed.
-
-            # Try to kill any lingering processes holding files in the incremental dirs.
-            # This addresses "a process has files open".
+            # Pre-compile wipe already ran in prepare_build_tree_for_deploy (kspCaches,
+            # intermediates, generated, configuration-cache). Kill leftover file holders.
             lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
             sleep 1
+            prepare_build_tree_for_deploy
 
-            # === STRONG PERM RECOVERY FOR UNREADABLE BUILD STATE ===
-            # Some previous runs (root, wrong group, daemons) leave dirs/files
-            # without read/x bits, causing Gradle to fail with "Could not stat file"
-            # and "Accessing unreadable inputs or outputs".
-            if [ -d app/build ]; then
-                # First make directories traversable (x bit) so find/rm can work
-                chmod -R u+rX,g+rX app/build 2>/dev/null || true
-                # Full rw for user+group
-                chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-            fi
-
-            # Aggressive removal of state that Gradle tracks and may have bad perms on
-            rm -rf app/build/intermediates app/build/generated 2>/dev/null || true
-
-            # Invalidate configuration cache (reusing it often causes "could not stat" after bad previous builds)
-            rm -rf .gradle/configuration-cache* 2>/dev/null || true
-
-            # If still problems, suggest manual sudo
-            if [ -d app/build/intermediates ]; then
-                echo "  WARNING: Could not fully remove app/build/intermediates."
-                echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
-            fi
-
-            (umask 007; ./gradlew --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+            # No daemon: multi-user/agent builds (ai-coder) leave foreign-owned caches;
+            # daemon must not run (project policy; match build_app).
+            (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
             RET_VAL=$?
             repair_shared_cache
             if [ $RET_VAL -ne 0 ]; then
@@ -1279,39 +1268,13 @@ else
             echo "  Will still build and attempt in-place install (no uninstall was done)."
         fi
 
-        # Mitigate common Gradle "can't delete incremental tmp" failure
-        # Extended for unreadable outputs in Gradle 8+/9+ (see other errors for cxx etc.)
-        # NOTE: daemon is intentionally kept alive (see gradle.properties).
-        # stop_gradle_daemons is available for manual recovery if needed.
-
-        # Try to kill any lingering processes holding files in the incremental dirs.
+        # Pre-compile wipe (prepare_build_tree_for_deploy); kill leftover file holders.
         lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
         sleep 1
+        prepare_build_tree_for_deploy
 
-        # === STRONG PERM RECOVERY FOR UNREADABLE BUILD STATE ===
-        # Some previous runs (root, wrong group, daemons) leave dirs/files
-        # without read/x bits, causing Gradle to fail with "Could not stat file"
-        # and "Accessing unreadable inputs or outputs".
-        if [ -d app/build ]; then
-            # First make directories traversable (x bit) so find/rm can work
-            chmod -R u+rX,g+rX app/build 2>/dev/null || true
-            # Full rw for user+group
-            chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
-        fi
-
-        # Aggressive removal of state that Gradle tracks and may have bad perms on
-        rm -rf app/build/intermediates app/build/generated 2>/dev/null || true
-
-        # Invalidate configuration cache (reusing it often causes "could not stat" after bad previous builds)
-        rm -rf .gradle/configuration-cache* 2>/dev/null || true
-
-        # If still problems, suggest manual sudo
-        if [ -d app/build/intermediates ]; then
-            echo "  WARNING: Could not fully remove app/build/intermediates."
-            echo "  You may need: sudo chown -R $PRIMARY_USER:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
-        fi
-
-        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+        # No daemon: multi-user policy; match build_app.
+        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
         RET_VAL=$?
         repair_shared_cache
         if [ $RET_VAL -ne 0 ]; then

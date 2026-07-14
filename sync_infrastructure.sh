@@ -20,7 +20,7 @@ FILES=(
     ".gemini/system.md"
     ".gemini/system_prompt.md"
     "GEMINI.md"
-    "TODO.md"
+    # TODO.md intentionally not synced (per-branch backlog; see update-rules.sh)
     "MASTER_AGENT_MANDATE.md"
     "README-multi-agent.md"
     "agent_reminder"
