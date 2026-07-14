@@ -129,7 +129,8 @@ fi
 
 # Files that use filter=manage-configs (see .gitattributes). Smudge substitutes @@ tokens.
 STAMPED_FILES=(
-  run-grok run-grok-master run-grok-planner
+  run-grok run-grok-master run-grok-planner run-grok-coder run-grok-orchestrator
+  ve-env
   setup-project set-worktree-perms set-sandbox-perms
 )
 
@@ -268,15 +269,27 @@ PARENT_ROOT=".."
 
 # Copy latest authoritative copies of key permission/infra files from orchestration root
 # (ensures even if the branch tip was slightly behind, the tree is current)
-for f in append-to-engineering-log run-as-primary.c; do
+for f in append-to-engineering-log run-as-primary.c ve-env ve-refresh-shell.c; do
   if [ -f "$PARENT_ROOT/$f" ]; then
     cp -p "$PARENT_ROOT/$f" "$AGENT_ABS/$f" 2>/dev/null || true
+  fi
+done
+# Launchers often live only on orchestration until update-rules; seed common ones
+for f in run-grok-coder run-grok-orchestrator run-grok-master run-grok-planner; do
+  if [ -f "$PARENT_ROOT/$f" ] && [ ! -f "$AGENT_ABS/$f" ]; then
+    cp -p "$PARENT_ROOT/$f" "$AGENT_ABS/$f" 2>/dev/null || true
+    chmod +x "$AGENT_ABS/$f" 2>/dev/null || true
   fi
 done
 
 # Build / ensure the setuid helper (run-as-primary) is present and correct
 if [ -f "$AGENT_ABS/run-as-primary.c" ]; then
   (cd "$AGENT_ABS" && gcc -O2 -Wall -o run-as-primary run-as-primary.c && chmod 4755 run-as-primary && chown "$PRIMARY_USER:$CODE_GROUP" run-as-primary) 2>/dev/null || echo "    Warning: run-as-primary build/chmod may need gcc or manual fix"
+fi
+
+# ve-refresh-shell: setuid root; needs sudo for chown/chmod (fix-perms also does this)
+if [ -f "$AGENT_ABS/ve-refresh-shell.c" ]; then
+  (cd "$AGENT_ABS" && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c) 2>/dev/null || echo "    Warning: ve-refresh-shell compile failed (need gcc)"
 fi
 
 # Create log file with minimal header if missing (fixer will harden it)

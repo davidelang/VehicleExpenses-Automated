@@ -90,6 +90,7 @@ FILES=(
     "run-grok-orchestrator"
     "run-grok"
     "ve-env"
+    "ve-refresh-shell.c"
     "run-antigravity"
     ".grok/skills/prepare-local-pr/SKILL.md"
     ".grok/skills/master-merge/SKILL.md"

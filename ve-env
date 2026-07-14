@@ -1,35 +1,46 @@
 #!/bin/bash
-# ve-env — human/agent shell orientation for this multi-user project.
+# ve-env — project shell environment: umask + group credentials for this multi-user tree.
 #
-# Usage:
-#   source ./ve-env              # preferred: set umask 002 in *current* shell + check groups
-#   source ./ve-env activate     # same
-#   ./ve-env check               # diagnostic only (exit non-zero if problems)
+# Intended UX (no full desktop logout):
+#   source ./ve-env
+#     → set umask 002
+#     → if project groups are missing from *this* shell but present on the account,
+#        re-exec a new shell with full groups via ./ve-refresh-shell (setuid helper).
+#        Other GUI apps stay open; only this terminal is replaced.
+#
+#   ./ve-env check
 #   ./ve-env help
+#   ./ve-env how-to-fix-groups   # if helper not installed yet
 #
-# When executed (not sourced), default "activate" cannot change the parent shell umask;
-# we print how to source, still run group/umask diagnostics.
+# One-time install of the group refresh helper (sudo):
+#   gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c
+#   sudo chown root:root ve-refresh-shell && sudo chmod 4755 ve-refresh-shell
+#   # or: sudo ./fix-perms   (builds/installs when present)
+#
+# Do NOT use newgrp for multi-group restore — it switches primary GID and drops others.
 
-set -euo pipefail
+set +e
+set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-# shellcheck disable=SC1091
 if [ -f "$SCRIPT_DIR/project.config" ]; then
-  # shellcheck source=/dev/null
-  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|sandbox_group|primary_user|planning_user|coder_user|orchestrator_user)')
+  # shellcheck disable=SC1091
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|sandbox_group|primary_user|planning_user|coder_user|orchestrator_user)' || true)
 fi
 
 CODE_GROUP=${code_group:-ai-code}
 SHARED_GROUP=${shared_group:-ai-shared}
 SANDBOX_GROUP=${sandbox_group:-ai-sandbox}
 PRIMARY_USER=${primary_user:-dlang}
+REFRESH="$SCRIPT_DIR/ve-refresh-shell"
 
-# Detect sourced vs executed (bash/zsh)
 _VE_SOURCED=0
 if [ -n "${BASH_VERSION:-}" ]; then
   [[ "${BASH_SOURCE[0]}" != "${0}" ]] && _VE_SOURCED=1
 elif [ -n "${ZSH_VERSION:-}" ]; then
-  [[ "$ZSH_EVAL_CONTEXT" == *:file* ]] && _VE_SOURCED=1
+  case "${ZSH_EVAL_CONTEXT:-}" in
+    *:file*) _VE_SOURCED=1 ;;
+  esac
 fi
 
 _ve_expected_groups() {
@@ -44,65 +55,208 @@ _ve_expected_groups() {
   esac
 }
 
+_ve_account_groups() {
+  id -nG "$(id -un)" 2>/dev/null || true
+}
+
+_ve_session_missing_stale() {
+  # prints space-separated groups missing from session but present on account
+  local g account need stale
+  g=$(id -nG)
+  account=$(_ve_account_groups)
+  stale=""
+  for need in $(_ve_expected_groups); do
+    if echo " $g " | grep -qw "$need"; then
+      continue
+    fi
+    if echo " $account " | grep -qw "$need"; then
+      stale="$stale $need"
+    fi
+  done
+  echo "$stale"
+}
+
+_ve_refresh_installed() {
+  [ -x "$REFRESH" ] || return 1
+  # setuid root?
+  [ -u "$REFRESH" ] || return 1
+  return 0
+}
+
+_ve_try_refresh_shell() {
+  # Replace *this* shell with one that has full group list. No desktop logout.
+  if ! _ve_refresh_installed; then
+    return 1
+  fi
+  export VE_ENV_CWD="$(pwd)"
+  echo "ve-env: re-executing shell with full project groups (other apps stay open)..."
+  echo "  helper: $REFRESH"
+  exec "$REFRESH"
+}
+
+_ve_print_install_helper() {
+  cat <<EOF
+
+ve-refresh-shell is not installed as setuid root yet (required to reload groups
+without a full desktop logout). One-time setup from the repo root:
+
+  gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c
+  sudo chown root:root ve-refresh-shell
+  sudo chmod 4755 ve-refresh-shell
+
+Or:  sudo ./fix-perms --verbose   # builds/installs the helper when source is present
+
+Then in this terminal:
+  source ./ve-env
+
+Until then, temporary workarounds (no full GUI logout):
+  exec sudo -iu $(id -un)          # new login shell as you (if sudo allows)
+  ssh $(id -un)@localhost          # new PAM session
+  sg $SHARED_GROUP -c 'git status' # one-shot under one group
+
+Do NOT use: newgrp $CODE_GROUP
+EOF
+}
+
+_ve_print_how_to_fix_groups() {
+  cat <<EOF
+
+=== Fix project groups without closing all GUI apps ===
+
+Linux freezes supplementary groups at login. If groups were added later, this
+shell is "stale". ve-env is *supposed* to fix that by re-execing a shell via
+setuid helper ve-refresh-shell (other apps stay open).
+
+EOF
+  if _ve_refresh_installed; then
+    echo "Helper is installed. From the repo:"
+    echo "  source ./ve-env"
+    echo "That will exec a new shell in the same cwd with full groups + umask 002."
+  else
+    _ve_print_install_helper
+  fi
+  cat <<EOF
+
+Verify after refresh:
+  id -nG | tr ' ' '\\n' | grep -E '^(ai-code|ai-shared|ai-sandbox)\$'
+  source ./ve-env check || ./ve-env check
+
+EOF
+}
+
 _ve_check() {
   local bad=0
-  local u g have missing
+  local u g account missing stale not_member
   u=$(id -un)
   g=$(id -nG)
+  account=$(_ve_account_groups)
+
   echo "user: $u"
-  echo "groups: $g"
+  echo "session groups (this shell): $g"
+  echo "account groups (id $u / NSS): $account"
   echo "umask: $(umask)"
   echo "cwd: $(pwd)"
+  if _ve_refresh_installed; then
+    echo "ve-refresh-shell: installed (setuid) at $REFRESH"
+  else
+    echo "ve-refresh-shell: NOT ready (need build + sudo chmod 4755) — group auto-fix disabled"
+  fi
+
   if [ "$(umask)" != "0002" ] && [ "$(umask)" != "002" ]; then
-    echo "WARN: umask is $(umask); want 002 (files 664, dirs 775→2775 with setgid)"
+    echo "WARN: umask is $(umask); want 002"
     bad=1
   else
     echo "OK: umask $(umask)"
   fi
+
   missing=""
+  stale=""
+  not_member=""
   for need in $(_ve_expected_groups); do
-    if ! echo " $g " | grep -qw "$need"; then
-      missing="$missing $need"
-      bad=1
+    if echo " $g " | grep -qw "$need"; then
+      continue
+    fi
+    missing="$missing $need"
+    bad=1
+    if echo " $account " | grep -qw "$need"; then
+      stale="$stale $need"
+    else
+      not_member="$not_member $need"
     fi
   done
-  if [ -n "$missing" ]; then
-    echo "WARN: missing groups:$missing"
-    echo "  Fix: log out/in, or carefully: newgrp $CODE_GROUP  (then re-check)"
+
+  if [ -z "$missing" ]; then
+    echo "OK: expected project groups present in this shell"
   else
-    echo "OK: expected groups present"
-  fi
-  # sample source modes if present
-  if [ -d app/src ]; then
-    sample=$(find app/src -type f \( -name '*.kt' -o -name '*.java' \) 2>/dev/null | head -1)
-    if [ -n "$sample" ]; then
-      mode=$(stat -c '%a %U:%G' "$sample" 2>/dev/null || true)
-      echo "sample source: $sample → $mode (want 664 *:ai-code)"
+    echo "WARN: missing from this shell:$missing"
+    if [ -n "$stale" ]; then
+      echo "CAUSE: stale session — account has:$stale but this process does not."
+      if _ve_refresh_installed; then
+        echo "FIX:  source ./ve-env     # will re-exec shell with full groups (no full logout)"
+      else
+        echo "FIX:  install ve-refresh-shell once, then source ./ve-env"
+        echo "      details: ./ve-env how-to-fix-groups"
+      fi
+      echo "NOT:  newgrp (wrong tool for multi-group restore)"
+    fi
+    if [ -n "$not_member" ]; then
+      echo "CAUSE: account is NOT in:$not_member"
+      echo "       sudo usermod -aG $CODE_GROUP,$SHARED_GROUP,$SANDBOX_GROUP $u  && re-login/refresh"
     fi
   fi
+
+  if [ -f "$SCRIPT_DIR/.git/config" ]; then
+    if [ -r "$SCRIPT_DIR/.git/config" ] && [ -w "$SCRIPT_DIR/.git/config" ]; then
+      echo "OK: .git/config readable+writable"
+    else
+      echo "WARN: cannot read/write .git/config (groups or modes). After groups OK: sudo ./fix-perms"
+      bad=1
+    fi
+  fi
+
   return $bad
 }
 
 _ve_activate() {
   umask 002
   echo "umask set to $(umask) in this shell"
+
+  local stale
+  stale=$(_ve_session_missing_stale)
+  if [ -n "$stale" ]; then
+    echo "Stale/missing session groups:$stale"
+    if _ve_try_refresh_shell; then
+      : # exec never returns
+    fi
+    # helper missing or exec failed
+    _ve_print_install_helper
+    _ve_check || true
+    return 1
+  fi
+
   _ve_check || true
-  echo "Note: missing login groups cannot be fully fixed without re-login/newgrp."
 }
 
 cmd="${1:-activate}"
 case "$cmd" in
   help|-h|--help)
     cat <<'EOF'
-ve-env — project shell environment helper
+ve-env — umask + project groups for this multi-user tree
 
-  source ./ve-env           # set umask 002 + print group/umask status (preferred)
-  source ./ve-env activate  # same
-  ./ve-env check            # diagnose only; exit 1 if problems
+  source ./ve-env              # umask 002; if groups stale, re-exec fixed shell
+  source ./ve-env activate     # same
+  ./ve-env check               # diagnose only
+  ./ve-env how-to-fix-groups   # install helper / alternatives
   ./ve-env help
 
-Target: umask 002 → new files 664, dirs 775 (source dirs 2775 with setgid).
+Group refresh does NOT require logging out of the whole desktop. It re-execs
+this terminal via setuid helper ve-refresh-shell (one-time sudo install).
+
+Do not use newgrp for multi-group restore.
 EOF
+    ;;
+  how-to-fix-groups|fix-groups)
+    _ve_print_how_to_fix_groups
     ;;
   check)
     if _ve_check; then exit 0; else exit 1; fi
@@ -111,15 +265,13 @@ EOF
     if [ "$_VE_SOURCED" -eq 1 ]; then
       _ve_activate
     else
-      echo "ve-env: not sourced — cannot set parent shell umask."
-      echo "  Run:  source ./ve-env"
-      echo "  Or:   source $SCRIPT_DIR/ve-env"
+      echo "ve-env: not sourced — run:  source ./ve-env"
       _ve_check || true
       exit 1
     fi
     ;;
   *)
-    echo "Unknown command: $cmd (try: activate | check | help)"
+    echo "Unknown: $cmd (activate | check | how-to-fix-groups | help)"
     exit 2
     ;;
 esac
