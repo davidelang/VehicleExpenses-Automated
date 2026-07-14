@@ -147,3 +147,10 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Commit orchestration/builds @ 401cf388; update-rules attempted.
 - AGENT_CONTEXT.md created at root (may be gitignored — local orientation).
 
+
+## 2026-07-13 - ve-env: fix stale-group guidance (do not use newgrp)
+
+- dlang is in ai-code/ai-shared/ai-sandbox in NSS; shell sessions often lack them until re-login.
+- newgrp only switches primary group and drops other project groups — wrong fix.
+- ve-env now distinguishes stale session vs not-a-member; how-to-fix-groups; .git/config smoke.
+

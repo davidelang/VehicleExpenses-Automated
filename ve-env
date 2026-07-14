@@ -1,22 +1,28 @@
 #!/bin/bash
-# ve-env — human/agent shell orientation for this multi-user project.
+# ve-env — human shell orientation for this multi-user project.
 #
-# Usage:
-#   source ./ve-env              # preferred: set umask 002 in *current* shell + check groups
+# Usage (preferred):
+#   source ./ve-env              # set umask 002 + diagnose groups
 #   source ./ve-env activate     # same
-#   ./ve-env check               # diagnostic only (exit non-zero if problems)
+#   ./ve-env check               # diagnose only; exit 1 if problems
 #   ./ve-env help
+#   ./ve-env how-to-fix-groups  # print re-login recipes
 #
-# When executed (not sourced), default "activate" cannot change the parent shell umask;
-# we print how to source, still run group/umask diagnostics.
+# IMPORTANT — groups:
+#   Membership is in /etc/group (see: getent group ai-shared).
+#   Your *shell* only gets those groups at login (or equivalent).
+#   `newgrp NAME` does NOT fix multi-group sessions: it switches primary GID
+#   and often drops other project groups. Do not chain newgrp for this.
+#   If id(1) without a username is missing ai-* but `id dlang` shows them,
+#   the session is stale → full re-login (or sudo -iu dlang / ssh localhost).
 
-set -euo pipefail
+set +e   # do not abort check on first warn
+set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-# shellcheck disable=SC1091
 if [ -f "$SCRIPT_DIR/project.config" ]; then
-  # shellcheck source=/dev/null
-  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|sandbox_group|primary_user|planning_user|coder_user|orchestrator_user)')
+  # shellcheck disable=SC1091
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|sandbox_group|primary_user|planning_user|coder_user|orchestrator_user)' || true)
 fi
 
 CODE_GROUP=${code_group:-ai-code}
@@ -24,12 +30,14 @@ SHARED_GROUP=${shared_group:-ai-shared}
 SANDBOX_GROUP=${sandbox_group:-ai-sandbox}
 PRIMARY_USER=${primary_user:-dlang}
 
-# Detect sourced vs executed (bash/zsh)
 _VE_SOURCED=0
 if [ -n "${BASH_VERSION:-}" ]; then
   [[ "${BASH_SOURCE[0]}" != "${0}" ]] && _VE_SOURCED=1
 elif [ -n "${ZSH_VERSION:-}" ]; then
-  [[ "$ZSH_EVAL_CONTEXT" == *:file* ]] && _VE_SOURCED=1
+  # zsh: sourced files set ZSH_EVAL_CONTEXT containing :file
+  case "${ZSH_EVAL_CONTEXT:-}" in
+    *:file*) _VE_SOURCED=1 ;;
+  esac
 fi
 
 _ve_expected_groups() {
@@ -44,50 +52,139 @@ _ve_expected_groups() {
   esac
 }
 
+# Groups the account has in the user database (what a fresh login should get)
+_ve_account_groups() {
+  local u
+  u=$(id -un)
+  # id USERNAME resolves via NSS/group file, not the process credential
+  id -nG "$u" 2>/dev/null || true
+}
+
+_ve_print_how_to_fix_groups() {
+  local u
+  u=$(id -un)
+  cat <<EOF
+
+=== How to get project groups into THIS session ===
+
+Your account ($u) is listed in the group database, but this shell's
+credential is stale (groups were added/changed after you logged in, or
+this terminal never got a full login token).
+
+DO NOT use:  newgrp ai-code
+  That only changes the primary group and often drops ai-shared / ai-sandbox.
+  That is why "newgrp then source ve-env" still warned.
+
+DO use one of these (pick one):
+
+1) Best — full desktop / SSH re-login
+   Log out of the graphical session completely (or reboot), then open a
+   new terminal. Then:
+     cd ~/git/VehicleExpenses-automated   # or your path
+     source ./ve-env
+
+2) New login shell as yourself (often enough without GUI logout)
+     exec sudo -iu $u
+   Then cd back to the repo and:  source ./ve-env
+
+3) SSH to yourself (forces a new PAM login)
+     ssh $u@localhost
+   Then cd to the repo and:  source ./ve-env
+
+4) One-shot command under a specific group (no interactive multi-group fix)
+     sg $SHARED_GROUP -c 'git status'
+     sg $CODE_GROUP -c './build_app "msg"'
+
+After a real re-login, this must succeed with no WARNs:
+     id -nG | tr ' ' '\\n' | grep -E '^(ai-code|ai-shared|ai-sandbox)\$'
+     source ./ve-env
+
+EOF
+}
+
 _ve_check() {
   local bad=0
-  local u g have missing
+  local u g account missing stale not_member
   u=$(id -un)
   g=$(id -nG)
+  account=$(_ve_account_groups)
+
   echo "user: $u"
-  echo "groups: $g"
+  echo "session groups (this shell): $g"
+  echo "account groups (id $u / NSS): $account"
   echo "umask: $(umask)"
   echo "cwd: $(pwd)"
+
   if [ "$(umask)" != "0002" ] && [ "$(umask)" != "002" ]; then
     echo "WARN: umask is $(umask); want 002 (files 664, dirs 775→2775 with setgid)"
     bad=1
   else
     echo "OK: umask $(umask)"
   fi
+
   missing=""
+  stale=""
+  not_member=""
   for need in $(_ve_expected_groups); do
-    if ! echo " $g " | grep -qw "$need"; then
-      missing="$missing $need"
-      bad=1
+    if echo " $g " | grep -qw "$need"; then
+      continue
+    fi
+    missing="$missing $need"
+    bad=1
+    if echo " $account " | grep -qw "$need"; then
+      stale="$stale $need"
+    else
+      not_member="$not_member $need"
     fi
   done
-  if [ -n "$missing" ]; then
-    echo "WARN: missing groups:$missing"
-    echo "  Fix: log out/in, or carefully: newgrp $CODE_GROUP  (then re-check)"
+
+  if [ -z "$missing" ]; then
+    echo "OK: expected project groups present in this shell"
   else
-    echo "OK: expected groups present"
+    echo "WARN: missing from this shell:$missing"
+    if [ -n "$stale" ]; then
+      echo "CAUSE: stale session — account HAS these groups:$stale"
+      echo "       but this process was not granted them at login."
+      echo "       Run:  ./ve-env how-to-fix-groups"
+      echo "       (Do NOT use newgrp — it will not restore multi-group membership.)"
+    fi
+    if [ -n "$not_member" ]; then
+      echo "CAUSE: account is NOT in:$not_member"
+      echo "       Ask admin to:  sudo usermod -aG $CODE_GROUP,$SHARED_GROUP,$SANDBOX_GROUP $u"
+      echo "       then full re-login."
+    fi
   fi
-  # sample source modes if present
+
+  # .git access smoke (common dlang breakage)
+  if [ -f "$SCRIPT_DIR/.git/config" ]; then
+    if [ -r "$SCRIPT_DIR/.git/config" ] && [ -w "$SCRIPT_DIR/.git/config" ]; then
+      echo "OK: .git/config readable+writable"
+    else
+      echo "WARN: cannot read/write $SCRIPT_DIR/.git/config"
+      echo "       (often stale groups or agent umask 027 left 640 owner-only write)."
+      echo "       After groups are fixed: sudo ./fix-perms  (rare recovery)"
+      bad=1
+    fi
+  fi
+
   if [ -d app/src ]; then
     sample=$(find app/src -type f \( -name '*.kt' -o -name '*.java' \) 2>/dev/null | head -1)
-    if [ -n "$sample" ]; then
+    if [ -n "${sample:-}" ]; then
       mode=$(stat -c '%a %U:%G' "$sample" 2>/dev/null || true)
       echo "sample source: $sample → $mode (want 664 *:ai-code)"
     fi
   fi
+
   return $bad
 }
 
 _ve_activate() {
   umask 002
   echo "umask set to $(umask) in this shell"
-  _ve_check || true
-  echo "Note: missing login groups cannot be fully fixed without re-login/newgrp."
+  if ! _ve_check; then
+    echo ""
+    echo "Activate set umask only. Groups still wrong — see warnings above."
+  fi
 }
 
 cmd="${1:-activate}"
@@ -96,13 +193,18 @@ case "$cmd" in
     cat <<'EOF'
 ve-env — project shell environment helper
 
-  source ./ve-env           # set umask 002 + print group/umask status (preferred)
-  source ./ve-env activate  # same
-  ./ve-env check            # diagnose only; exit 1 if problems
+  source ./ve-env                 # set umask 002 + print status (preferred)
+  source ./ve-env activate        # same
+  ./ve-env check                  # diagnose only; exit 1 if problems
+  ./ve-env how-to-fix-groups      # re-login recipes (read this if groups WARN)
   ./ve-env help
 
 Target: umask 002 → new files 664, dirs 775 (source dirs 2775 with setgid).
+Groups: must appear in `id -nG` (session), not only in /etc/group.
 EOF
+    ;;
+  how-to-fix-groups|fix-groups)
+    _ve_print_how_to_fix_groups
     ;;
   check)
     if _ve_check; then exit 0; else exit 1; fi
@@ -113,13 +215,12 @@ EOF
     else
       echo "ve-env: not sourced — cannot set parent shell umask."
       echo "  Run:  source ./ve-env"
-      echo "  Or:   source $SCRIPT_DIR/ve-env"
       _ve_check || true
       exit 1
     fi
     ;;
   *)
-    echo "Unknown command: $cmd (try: activate | check | help)"
+    echo "Unknown command: $cmd (try: activate | check | how-to-fix-groups | help)"
     exit 2
     ;;
 esac

@@ -21,7 +21,7 @@ Read in full early on startup/new cycle.
 - `ENGINEERING_LOG.md` — append only via `./append-to-engineering-log`
 - `TODO.md` — future backlog via `todo-append` / `todo-close`
 - Launchers: `run-grok-orchestrator`, `run-grok-master`, `run-grok-planner`, `run-grok-coder`, bare `run-grok` (dlang)
-- `ve-env` — `source ./ve-env` for umask 002 + group check
+- `ve-env` — `source ./ve-env` sets umask 002 + checks groups. If session missing ai-* but `id dlang` has them: stale login — full re-login or `exec sudo -iu dlang` (never `newgrp` for multi-group). See `./ve-env how-to-fix-groups`
 - Scripts: `update-rules.sh`, `build_app` (no raw gradlew; agent builds use `--no-daemon`), `get-builds-tag.sh`, `fix-perms` (rare), `setup_agent.sh` (creates worktree; does **not** auto-start CLI), `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`, `deploy`
 - `.grok/config.toml` + `.grok/hooks/` + `.grok/skills/` (prepare-local-pr, master-merge)
 - `MASTER_AGENT_MANDATE.md` — Master review/merge SoT
