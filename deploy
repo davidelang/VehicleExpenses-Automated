@@ -386,36 +386,28 @@ if [ "$DATA_ONLY_MODE" != "true" ] && [ "$CURRENT_USER" != "$PRIMARY_USER" ]; th
   fi
 fi
 
-# Ensure group-writable creation for build artifacts and Gradle caches (660/770)
+# Ensure group-writable creation for build artifacts and Gradle caches (664/2775 sources)
 umask 002
 
-# Ensure ai-shared (for .git/refs, worktree metadata, sandbox) and ai-code (for source tree setgid dirs).
-# Only re-exec once. Prefer ai-shared because it fixes the git providers.exec versionName issue.
-if [ "$DATA_ONLY_MODE" != "true" ] && [ -z "${GROUPS_ACTIVATED:-}" ]; then
+# Both ai-shared and ai-code are required. Agent builds leave app/build and project
+# .gradle as ai-coder:ai-code 66x — without ai-code in *this process*, dlang cannot
+# write fileHashes.lock (EACCES). Do NOT use `sg ai-shared` alone: that only fixes
+# one primary GID and historically re-ran deploy still missing ai-code.
+if [ "$DATA_ONLY_MODE" != "true" ]; then
   MISSING=""
   for grp in ai-shared ai-code; do
     if ! id -nG | grep -qw "$grp"; then MISSING="$MISSING $grp"; fi
   done
   if [ -n "$MISSING" ]; then
-    echo "Re-executing under ai-shared group for correct file permissions..."
-    q0=$(printf '%q' "$0")
-    # Use original $# to avoid printf %q "" producing phantom "''" for zero-arg case
-    if [ $# -eq 0 ]; then
-      qargs=""
-    else
-      qargs=$(printf '%q ' "$@"); qargs=${qargs% }
-    fi
-    if [ -z "$qargs" ]; then
-      ccmd="umask 007; GROUPS_ACTIVATED=1 exec $q0"
-    else
-      ccmd="umask 007; GROUPS_ACTIVATED=1 exec $q0 $qargs"
-    fi
-    exec sg ai-shared -c "$ccmd"
+    echo "ERROR: this shell is missing project group(s):$MISSING" >&2
+    echo "  Agent/build caches are group ai-code; git/sandbox need ai-shared." >&2
+    echo "  Fix (no full logout):  source ./ve-env" >&2
+    echo "  Or open a shell from setup_agent (execs ve-refresh-shell)." >&2
+    echo "  Then re-run:  ./deploy" >&2
+    echo "  Do NOT:  sg ai-shared  (single-group; breaks multi-user deploy)" >&2
+    exit 1
   fi
 fi
-# Note: ai-code is also needed for some dirs, but since uid=dlang owns most ai-code files/dirs in the worktree,
-# sg ai-shared gives the necessary group for shared git/.git metadata and sandbox; owner perms cover the rest.
-# This avoids ping-pong loops from sg only surfacing one group at a time.
 
 # Use project-local shared Gradle home (not per-user ~/.gradle).
 # Required for multi-user builds: same users serve different projects.
@@ -447,21 +439,41 @@ fix_build_dir_perms() {
 }
 fix_build_dir_perms
 
-# Multi-user handoff: agent (ai-coder) builds leave app/build owned by that uid.
-# chmod of foreign files often fails; wipe incremental caches before gradle instead.
-# Policy: no Gradle daemon (wrappers pass --no-daemon); clear KSP/config state that
-# causes "Permission denied" on classpath-entries.bin after cross-uid builds.
+# Multi-user handoff: agent (ai-coder) builds leave app/build and project .gradle
+# owned by ai-coder:ai-code. chmod of foreign files often fails for non-owners;
+# setgid dirs (2770/2775) allow group members to unlink — wipe caches instead.
+# Policy: no Gradle daemon; clear KSP + project .gradle locks/hashes that cause
+# "fileHashes.lock (Permission denied)" when a prior user left the tree.
 prepare_build_tree_for_deploy() {
-  echo "  Preparing build tree for deploy (wipe KSP/incremental caches; multi-user safe)..."
+  echo "  Preparing build tree for deploy (wipe KSP/incremental/.gradle locks; multi-user safe)..."
   if [ -d app/build ]; then
     chmod -R u+rX,g+rX app/build 2>/dev/null || true
     chmod -R u+rwX,g+rwX app/build 2>/dev/null || true
   fi
   rm -rf app/build/kspCaches app/build/intermediates app/build/generated 2>/dev/null || true
-  rm -rf .gradle/configuration-cache* 2>/dev/null || true
+
+  # Project-local .gradle (NOT GRADLE_USER_HOME): fileHashes.lock etc. after ai-coder builds
+  if [ -d .gradle ]; then
+    chmod -R u+rX,g+rX .gradle 2>/dev/null || true
+    chmod -R u+rwX,g+rwX .gradle 2>/dev/null || true
+    # Drop locks/version caches so this user can recreate them
+    find .gradle -name '*.lock' -delete 2>/dev/null || true
+    rm -rf .gradle/configuration-cache* 2>/dev/null || true
+    # If still not writable (missing group / sticky mess), wipe whole project .gradle
+    if ! touch .gradle/.ve_write_test 2>/dev/null; then
+      echo "  Project .gradle not writable by $(id -un) — removing for clean rebuild..."
+      rm -rf .gradle 2>/dev/null || true
+    else
+      rm -f .gradle/.ve_write_test
+      # Versioned fileHashes often still open/create as non-owner; drop 9.x caches if present
+      rm -rf .gradle/[0-9]* 2>/dev/null || true
+    fi
+  fi
+
   if [ -d app/build/intermediates ]; then
-    echo "  WARNING: Could not fully remove app/build/intermediates."
-    echo "  You may need: sudo chown -R ${PRIMARY_USER:-dlang}:ai-code app/build ; rm -rf app/build/intermediates app/build/generated .gradle/configuration-cache*"
+    echo "  WARNING: Could not fully remove app/build/intermediates (need group write on dir)."
+    echo "  Ensure: id shows ai-code  (source ./ve-env). Then: rm -rf app/build"
+    echo "  Last resort: sudo chown -R ${PRIMARY_USER:-dlang}:ai-code app/build .gradle"
   fi
 }
 prepare_build_tree_for_deploy
