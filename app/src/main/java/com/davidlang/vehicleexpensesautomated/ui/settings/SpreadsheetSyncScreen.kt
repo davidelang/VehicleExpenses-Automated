@@ -25,8 +25,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,7 +58,6 @@ import com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal.ZohoShe
 import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
 import androidx.browser.customtabs.CustomTabsIntent
 import android.net.Uri
-import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
@@ -608,9 +605,8 @@ private fun SpreadsheetDestEditForm(
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
         try {
-            val account = task.getResult(ApiException::class.java)
+            val account = viewModel.auth.parseSignInResult(result.data)
             val email = account.email ?: ""
             viewModel.auth.persistAccountEmail(email)
             accountHint = email
@@ -912,31 +908,27 @@ private fun SpreadsheetDestEditForm(
             -> Unit
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Background sync", style = MaterialTheme.typography.titleMedium)
-        if (isDeferredStub) {
-            Text(
-                "${provider.displayLabel()} is not yet available — background sync cannot be enabled.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-        SpreadsheetSwitchSetting(
-            "Enable background sync",
-            enabled,
-            enabled = !isDeferredStub,
-        ) { if (!isDeferredStub) enabled = it }
-        SpreadsheetSwitchSetting("Wi-Fi only", wifiOnly) { wifiOnly = it }
-        SpreadsheetSwitchSetting("Charging only", chargingOnly) { chargingOnly = it }
-        SpreadsheetSliderSetting(
-            "Background sync interval (hours)",
-            frequencyHours,
-            SpreadsheetDestination.MIN_FREQUENCY_HOURS..
-                SpreadsheetDestination.MAX_FREQUENCY_HOURS,
-        ) {
-            frequencyHours = SyncFrequencyUi.snapHours(it)
-        }
+        SyncBackgroundScheduleSection(
+            title = "Background sync",
+            enableLabel = "Enable background sync",
+            intervalSliderLabel = "Background sync interval (hours)",
+            state = SyncScheduleUiState(
+                enabled = enabled,
+                wifiOnly = wifiOnly,
+                chargingOnly = chargingOnly,
+                frequencyHours = frequencyHours,
+            ),
+            onEnabledChange = { if (!isDeferredStub) enabled = it },
+            onWifiOnlyChange = { wifiOnly = it },
+            onChargingOnlyChange = { chargingOnly = it },
+            onFrequencyHoursChange = { frequencyHours = SyncFrequencyUi.snapHours(it) },
+            enableSwitchEnabled = !isDeferredStub,
+            deferredStubMessage = if (isDeferredStub) {
+                "${provider.displayLabel()} is not yet available — background sync cannot be enabled."
+            } else {
+                null
+            },
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
         Button(
@@ -1065,35 +1057,3 @@ private fun SpreadsheetDestEditForm(
 }
 
 @Composable
-private fun SpreadsheetSwitchSetting(
-    label: String,
-    checked: Boolean,
-    enabled: Boolean = true,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 4.dp),
-    ) {
-        Text(label, modifier = Modifier.weight(1f))
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-        )
-    }
-}
-
-@Composable
-private fun SpreadsheetSliderSetting(
-    label: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
-) {
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(label, style = MaterialTheme.typography.titleMedium)
-        Slider(value = value, onValueChange = onValueChange, valueRange = range, modifier = Modifier.fillMaxWidth())
-        Text(SyncFrequencyUi.formatHoursLabel(value), style = MaterialTheme.typography.labelSmall)
-    }
-}

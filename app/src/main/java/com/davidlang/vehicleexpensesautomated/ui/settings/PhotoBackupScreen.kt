@@ -1,5 +1,3 @@
-@file:Suppress("DEPRECATION") // GoogleSignIn.getSignedInAccountFromIntent until Credential Manager migration.
-
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.content.Intent
@@ -30,8 +28,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -68,7 +64,6 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -487,9 +482,8 @@ private fun PhotoDestEditForm(
     val signInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
         try {
-            val account = task.getResult(ApiException::class.java)
+            val account = viewModel.auth.parseSignInResult(result.data)
             val email = account.email ?: ""
             viewModel.auth.persistAccountEmail(email)
             accountHint = email
@@ -913,19 +907,21 @@ private fun PhotoDestEditForm(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("Background backup", style = MaterialTheme.typography.titleMedium)
-        PhotoSwitchSetting("Enable background backup", enabled) { enabled = it }
-        PhotoSwitchSetting("Wi-Fi only", wifiOnly) { wifiOnly = it }
-        PhotoSwitchSetting("Charging only", chargingOnly) { chargingOnly = it }
-        PhotoSliderSetting(
-            "Background backup interval (hours)",
-            frequencyHours,
-            SpreadsheetDestination.MIN_FREQUENCY_HOURS..
-                SpreadsheetDestination.MAX_FREQUENCY_HOURS,
-        ) {
-            frequencyHours = SyncFrequencyUi.snapHours(it)
-        }
+        SyncBackgroundScheduleSection(
+            title = "Background backup",
+            enableLabel = "Enable background backup",
+            intervalSliderLabel = "Background backup interval (hours)",
+            state = SyncScheduleUiState(
+                enabled = enabled,
+                wifiOnly = wifiOnly,
+                chargingOnly = chargingOnly,
+                frequencyHours = frequencyHours,
+            ),
+            onEnabledChange = { enabled = it },
+            onWifiOnlyChange = { wifiOnly = it },
+            onChargingOnlyChange = { chargingOnly = it },
+            onFrequencyHoursChange = { frequencyHours = SyncFrequencyUi.snapHours(it) },
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
         Button(
@@ -1107,26 +1103,3 @@ private fun S3ProviderDropdown(
 }
 
 @Composable
-private fun PhotoSwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 4.dp),
-    ) {
-        Text(label, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-@Composable
-private fun PhotoSliderSetting(
-    label: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
-) {
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
-        Text(label, style = MaterialTheme.typography.titleMedium)
-        Slider(value = value, onValueChange = onValueChange, valueRange = range, modifier = Modifier.fillMaxWidth())
-        Text(SyncFrequencyUi.formatHoursLabel(value), style = MaterialTheme.typography.labelSmall)
-    }
-}

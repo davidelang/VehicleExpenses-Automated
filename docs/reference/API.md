@@ -17,8 +17,8 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
   - Primary record for fuel fill-ups, including location and cloud sync metadata.
 
 ### `ExpenseEntry.kt`
-- `ExpenseEntry(id, vehicleId, amount, description, date, photoUrl, category, receiptImagePath, …)`
-  - Entity for general expenses (repairs, insurance, etc.). `photoUrl` is the active receipt field; `receiptImagePath` is a deprecated column retained for DB migration only.
+- `ExpenseEntry(id, vehicleId, amount, currency, description, vendor, category, date, odometer, photoUrl, …, syncId, originDeviceId, updatedAt, vehicleSyncIdsJson)`
+  - Entity for general expenses (repairs, insurance, etc.). Human-readable fields first; sync metadata (`syncId`, `originDeviceId`, `vehicleSyncIdsJson`) at end of schema.
 
 ## OCR & Image Processing
 

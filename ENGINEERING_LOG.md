@@ -711,3 +711,5 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Phase 7: repo grep — zero hits for 22 deleted files/symbols in production Kotlin; BUILD SUCCESSFUL; tag code-cleanup/builds @ 4a3233f7
 - Net removals Phases 2-4: ~918 Kotlin lines; ConflictResolutionScreen + experiment UIs retained per plan
 - Inventory final disposition: dev-ai-interaction/research/dead-code-inventory-20260713.md
+
+## 2026-07-13 - Code review fixes: auth adapter, frequency migration, expense mode, schedule UI, DB v13 schema cleanup
