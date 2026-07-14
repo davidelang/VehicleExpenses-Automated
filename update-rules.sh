@@ -56,7 +56,9 @@ FILES=(
     ".gemini/system.md"
     ".gemini/system_prompt.md"
     "GEMINI.md"
-    "TODO.md"
+    # TODO.md is NOT synced. It is per-branch backlog (master product backlog vs
+    # orchestration meta). Blind cp from orchestration destroyed master cleanups.
+    # Merge via MASTER_AGENT_MANDATE special-file protocol only (todo-append/todo-close).
     "MASTER_AGENT_MANDATE.md"
     "README-multi-agent.md"
     "agent_reminder"
