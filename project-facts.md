@@ -23,6 +23,7 @@ Read in full early on startup/new cycle.
 - Launchers: `run-grok-orchestrator`, `run-grok-master`, `run-grok-planner`, `run-grok-coder`, bare `run-grok` (dlang)
 - `ve-env` — `source ./ve-env` sets umask 002; if session groups stale, re-execs shell via setuid `ve-refresh-shell` (no full desktop logout). One-time: build + `sudo chmod 4755 ve-refresh-shell` (or `sudo ./fix-perms`). Never `newgrp` for multi-group. See `./ve-env how-to-fix-groups`
 - Scripts: `update-rules.sh`, `build_app` and `deploy` (no raw gradlew; both pass `--no-daemon`; deploy wipes kspCaches before compile), `get-builds-tag.sh`, `fix-perms` (rare), `setup_agent.sh` (creates worktree; does **not** auto-start CLI), `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`
+- Master merge specials: `./merge-branch-into-master.sh <branch>`, `./install-merge-drivers.sh`, `git-merge-drivers/ve-englog` (eng-log third-version via `append-to-engineering-log`), `git-merge-drivers/ve-special-refuse` (block TODO/project-facts text merge). Every merge re-validates TODO (todo-close completed work) and project-facts (prune invalidated facts) against the **branch delta**, not only when those files changed.
 - `.grok/config.toml` + `.grok/hooks/` + `.grok/skills/` (prepare-local-pr, master-merge)
 - `MASTER_AGENT_MANDATE.md` — Master review/merge SoT
 - `standard-plan-compliance-block.md` — cite by path in plans

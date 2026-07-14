@@ -183,3 +183,17 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Approved: restore --no-daemon on deploy (missed Phase 5 of startup-rules cleanup)
 - Also: pre-gradle kspCaches wipe; gradle.properties daemon=false; PERMISSIONS_MODEL/project-facts
 - Symptom: dlang deploy Permission denied on ai-coder-owned kspCaches
+
+## 2026-07-13 - Completed: deploy no-daemon + KSP handoff
+
+- Commit orchestration/builds @ 579f4866
+- deploy: --no-daemon on both installDebug paths; prepare_build_tree_for_deploy
+- gradle.properties: org.gradle.daemon=false
+- PERMISSIONS_MODEL + project-facts updated
+- update-rules to push deploy to worktrees
+
+## 2026-07-14 - Execution start: git special-file merge drivers
+
+- Approved: git-special-file-merge-drivers (session plan)
+- ve-englog via append-to-engineering-log; ve-special-refuse; merge-branch-into-master always TODO/facts review
+- No happy-path chattr ±a

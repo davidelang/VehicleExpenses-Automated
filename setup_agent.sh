@@ -310,6 +310,12 @@ if [ -f "$AGENT_ABS/run-as-primary" ]; then
   chmod 4755 "$AGENT_ABS/run-as-primary" 2>/dev/null || true
 fi
 
+# Merge drivers are repo-global (.git config); ensure installed for all worktrees
+if [ -x "$PARENT_ROOT/install-merge-drivers.sh" ]; then
+  (cd "$PARENT_ROOT" && ./install-merge-drivers.sh >/dev/null) || true
+fi
+chmod +x "$AGENT_ABS/git-merge-drivers/"* "$AGENT_ABS/install-merge-drivers.sh" "$AGENT_ABS/merge-branch-into-master.sh" 2>/dev/null || true
+
 # Leave the user in the new worktree directory (do not auto-start any agent CLI).
 cd "$AGENT_ABS" || exit 1
 echo "Worktree ready: $AGENT_ABS"
