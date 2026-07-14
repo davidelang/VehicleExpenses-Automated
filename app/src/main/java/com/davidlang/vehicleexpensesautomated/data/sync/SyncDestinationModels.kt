@@ -83,6 +83,7 @@ data class SpreadsheetDestination(
     @Deprecated("Use frequencyMinutes", ReplaceWith("frequencyMinutes"))
     val frequencyHours: Int = 0,
 ) {
+    @Suppress("DEPRECATION") // legacy frequencyHours in stored JSON
     fun resolvedFrequencyMinutes(): Int = when {
         frequencyMinutes > 0 -> frequencyMinutes.coerceIn(MIN_FREQUENCY_MINUTES, MAX_FREQUENCY_MINUTES)
         frequencyHours > 0 -> (frequencyHours * 60).coerceIn(MIN_FREQUENCY_MINUTES, MAX_FREQUENCY_MINUTES)
@@ -113,6 +114,7 @@ data class PhotoDestination(
     @Deprecated("Use frequencyMinutes", ReplaceWith("frequencyMinutes"))
     val frequencyHours: Int = 0,
 ) {
+    @Suppress("DEPRECATION") // legacy frequencyHours in stored JSON
     fun resolvedFrequencyMinutes(): Int = when {
         frequencyMinutes > 0 -> frequencyMinutes.coerceIn(MIN_FREQUENCY_MINUTES, MAX_FREQUENCY_MINUTES)
         frequencyHours > 0 -> (frequencyHours * 60).coerceIn(MIN_FREQUENCY_MINUTES, MAX_FREQUENCY_MINUTES)

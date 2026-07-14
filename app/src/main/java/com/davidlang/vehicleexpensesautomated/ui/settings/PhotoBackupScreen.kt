@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION") // GoogleSignIn.getSignedInAccountFromIntent until Credential Manager migration.
+
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.content.Intent
@@ -15,7 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,6 +66,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
@@ -833,7 +836,7 @@ private fun PhotoDestEditForm(
                     modifier = Modifier.weight(1f),
                 )
                 IconButton(onClick = { showRcloneRemotesDialog = true }) {
-                    Icon(Icons.Default.List, contentDescription = "List remotes")
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = "List remotes")
                 }
             }
             OutlinedButton(
@@ -1084,7 +1087,7 @@ private fun S3ProviderDropdown(
             readOnly = true,
             label = { Text("Provider") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth(),
+            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth(),
         )
         ExposedDropdownMenu(
             expanded = expanded,

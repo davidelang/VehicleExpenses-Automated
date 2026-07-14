@@ -127,9 +127,10 @@ private fun ExpenseEntryScreenBody(
 
     // Prefill for edit; auto-select first vehicle for create
     LaunchedEffect(expenseId, vehicles) {
-        if (isEdit && expenseId != null) {
-            if (loadedId != expenseId) {
-                val entry = viewModel.getExpenseById(expenseId)
+        if (isEdit) {
+            val editId = expenseId ?: return@LaunchedEffect
+            if (loadedId != editId) {
+                val entry = viewModel.getExpenseById(editId)
                 if (entry != null) {
                     selectedVehicleId = entry.vehicleId
                     amount = if (entry.amount == 0.0) "" else entry.amount.toString()
@@ -145,7 +146,7 @@ private fun ExpenseEntryScreenBody(
                     photoUrl = entry.photoUrl
                     showLiveCamera = entry.photoUrl == null
                     loadedExpense = entry
-                    loadedId = expenseId
+                    loadedId = editId
                 } else {
                     loadedExpense = null
                     Toast.makeText(context, "Expense not found", Toast.LENGTH_LONG).show()

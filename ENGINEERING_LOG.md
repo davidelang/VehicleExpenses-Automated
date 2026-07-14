@@ -693,3 +693,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Phase 3: commit 4c58e0e0 (-180 lines); tag code-cleanup/builds updated
 - Phase 4: legacy data/storage dead code + comment hygiene
+
+## 2026-07-13 - Dead code Phases 3-4 complete
+
+- Phase 3: 4c58e0e0 orphan utils + OcrHarness dead types (-180)
+- Phase 4: c77e04b3 legacy data/storage dead code (-179); ExpenseEntryScreen comment fix
+- Remaining plan: Phase 5 warnings, Phase 6 docs, Phase 7 handoff
+
+## 2026-07-13 - Dead code Phase 5 start: compiler warnings and deprecation hygiene
+
+## 2026-07-13 - Phase 5-6: compiler warning fixes + docs alignment (dead-code-aggressive-review)
