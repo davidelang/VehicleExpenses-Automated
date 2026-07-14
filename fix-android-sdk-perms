@@ -1,0 +1,74 @@
+#!/bin/bash
+# fix-android-sdk-perms — make Android SDK/NDK readable by multi-user build agents
+#
+# Problem (2026-07-13): NDK sysroot libc++_shared.so files were dlang:dlang 660.
+# ai-coder is not in group dlang → Permission denied during CMake configure.
+# See: dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-20260713.md
+#
+# Run as primary user (dlang), once per machine / after NDK upgrade:
+#   ./fix-android-sdk-perms
+#   # or: sudo -u dlang ./fix-android-sdk-perms
+#
+# Safe: only adds group/other read (+X on dirs). Does not delete or move SDK.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/project.config" ]; then
+  # shellcheck disable=SC1091
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|primary_user)' || true)
+fi
+CODE_GROUP=${code_group:-ai-code}
+PRIMARY_USER=${primary_user:-dlang}
+
+SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
+if [ ! -d "$SDK_ROOT" ]; then
+  # common path when agent HOME is not dlang
+  if [ -d /home/dlang/Android/Sdk ]; then
+    SDK_ROOT=/home/dlang/Android/Sdk
+  else
+    echo "ERROR: Android SDK not found (set ANDROID_SDK_ROOT or install under ~/Android/Sdk)"
+    exit 1
+  fi
+fi
+
+if [ "$(id -un)" != "$PRIMARY_USER" ] && [ "$(id -un)" != "dlang" ]; then
+  echo "WARN: running as $(id -un); prefer $PRIMARY_USER (owns $SDK_ROOT)"
+fi
+
+if [ ! -w "$SDK_ROOT" ] && [ ! -O "$SDK_ROOT" ]; then
+  echo "ERROR: cannot write $SDK_ROOT as $(id -un). Run as $PRIMARY_USER or with sudo -u $PRIMARY_USER."
+  exit 1
+fi
+
+echo "Fixing multi-user read access under: $SDK_ROOT"
+echo "Target group for ownership preference: $CODE_GROUP"
+
+# Prefer ai-code group so build agents (in ai-code) can read without world-readable secrets if any.
+# Fallback: at least o+rX so any user can read the public NDK toolchain bits.
+if getent group "$CODE_GROUP" >/dev/null 2>&1; then
+  echo "chgrp -R $CODE_GROUP ndk/ (best effort)..."
+  chgrp -R "$CODE_GROUP" "$SDK_ROOT/ndk" 2>/dev/null || true
+fi
+
+echo "chmod -R g+rX,o+rX on ndk/ ..."
+chmod -R g+rX,o+rX "$SDK_ROOT/ndk" 2>/dev/null || {
+  echo "ERROR: chmod failed"
+  exit 1
+}
+
+# Explicitly fix the known 660 libc++_shared.so files (all ABIs)
+echo "Ensuring libc++_shared.so is world-readable..."
+find "$SDK_ROOT/ndk" -type f -name 'libc++_shared.so' -print -exec chmod a+r {} \;
+
+# Spot-check
+SAMPLE=$(find "$SDK_ROOT/ndk" -type f -name 'libc++_shared.so' | head -1)
+if [ -n "$SAMPLE" ]; then
+  ls -la "$SAMPLE"
+fi
+
+echo
+echo "Verify as ai-coder:"
+echo "  sudo -u ai-coder test -r '$SAMPLE' && echo OK"
+echo "  cd <agent-worktree> && sudo -u ai-coder ./build_app 'ndk smoke'"
+echo "Done."

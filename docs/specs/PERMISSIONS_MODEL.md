@@ -82,12 +82,26 @@ New files inherit group via setgid. **General/project shells and agent launchers
 - Specs in this doc are authoritative. Update only via approved plan.
 - Fresh `setup_agent.sh` leaves correct initial perms (no root chowns in normal flow).
 
+## Android SDK / NDK (outside the git tree)
+
+SDK is typically under `/home/dlang/Android/Sdk` (primary user home). NDK sysroot libs (`libc++_shared.so`) must be **readable by `ai-coder`** for CMake configure during `./build_app`.
+
+| Bad | Good |
+|-----|------|
+| `dlang:dlang 660` on `libc++_shared.so` | `a+r` (and preferably `ai-code` group + `g+rX` on NDK tree) |
+
+**Fix (as dlang, after NDK install/upgrade):** `./fix-android-sdk-perms`  
+See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-20260713.md`.
+
+`fix-perms` / `update-rules` do **not** modify the SDK tree (outside worktrees).
+
 ## When to Run Fixers / env helpers
 | Symptom | Run |
 |---------|-----|
 | New shell, unsure umask/groups | `source ./ve-env` or `./ve-env check` |
 | Agent/build created wrong modes | next `./build_app` / `./deploy` (normalize) |
 | Root-owned / systemic breakage | `sudo ./fix-perms` (**rare**) |
+| `ai-coder` NDK Permission denied on `libc++_shared.so` | `./fix-android-sdk-perms` as **dlang** |
 | Daily work | Do **not** run fix-perms habitually |
 
 - dlang builds/deploys must leave the tree in a state where ai-coder can continue (enforced by scripts + 2770 build dirs + 664 sources).

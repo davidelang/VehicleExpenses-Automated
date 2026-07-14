@@ -169,3 +169,11 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Removed TODO.md from update-rules.sh and sync_infrastructure.sh FILES.
 - TODO must merge only via special-file protocol / todo-append/todo-close, never blind cp.
 
+
+## 2026-07-13 - NDK permission handoff for ai-coder builds
+
+- Confirmed report: 4x libc++_shared.so under NDK 28.2 are 660; ai-coder cannot read (dlang:dlang).
+- Added ./fix-android-sdk-perms for dlang to run (g+rX,o+rX on ndk; a+r on libc++_shared.so).
+- Documented in PERMISSIONS_MODEL + research handoff note.
+- Orchestration agent cannot chmod under /home/dlang/Android/Sdk.
+
