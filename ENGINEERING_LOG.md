@@ -703,3 +703,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 ## 2026-07-13 - Dead code Phase 5 start: compiler warnings and deprecation hygiene
 
 ## 2026-07-13 - Phase 5-6: compiler warning fixes + docs alignment (dead-code-aggressive-review)
+
+## 2026-07-13 - Dead code Phases 5-7 complete (plan finished)
+
+- Phase 5: commit 4a3233f7 — ExpenseEntryScreen always-true branch; SyncDestinationModels frequencyHours suppress; PhotoBackupScreen Icons.AutoMirrored + menuAnchor(MenuAnchorType); RcloneRemoteDialogs menuAnchor overload; GoogleDriveAuth/GoogleSheetsAuth @file:Suppress(DEPRECATION) pending Credential Manager migration
+- Phase 6: NAVIGATION_MAP (start=quickfill, pump experiment, unwired ConflictResolution); API.md pruned deleted symbols; ARCHITECTURE.md PhotoBackupCoordinator path
+- Phase 7: repo grep — zero hits for 22 deleted files/symbols in production Kotlin; BUILD SUCCESSFUL; tag code-cleanup/builds @ 4a3233f7
+- Net removals Phases 2-4: ~918 Kotlin lines; ConflictResolutionScreen + experiment UIs retained per plan
+- Inventory final disposition: dev-ai-interaction/research/dead-code-inventory-20260713.md
