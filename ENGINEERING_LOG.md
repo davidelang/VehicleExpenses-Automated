@@ -645,3 +645,86 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 ## 2026-07-13 - fix_syncing_and_settings merge build gate
 
 - ./build_app succeeded on master @ b04c9e68 (JDK 17); builds tag updated.
+
+## 2026-07-13 - Dead code inventory Phase 1 start
+
+- Approved plan: dev-ai-interaction/plans/dead-code-aggressive-review-20260713-plan.md (Phase 1 only)
+- Branch: code-cleanup; deliverable: dev-ai-interaction/research/dead-code-inventory-20260713.md
+- No tracked source deletions this phase
+
+## 2026-07-13 - Dead code inventory Phase 1 complete
+
+- Deliverable: dev-ai-interaction/research/dead-code-inventory-20260713.md
+- 22 DELETE-CANDIDATE files (~900 Kotlin lines) across orphan UI, utils, legacy data/storage
+- 1 REVIEW item: ConflictResolutionScreen (TODO backlog — defer delete)
+- 4 DEFER-EXPERIMENT-ONLY files; production pump/Quick Fill path untouched
+- No tracked source changes; STOP per plan awaiting Phase 2+ approval
+
+## 2026-07-13 - Dead code Phase 2 start
+
+- Approved: orphan UI stub deletion per dead-code-inventory-20260713.md
+- Deleting 10 unwired UI files; keeping ConflictResolutionScreen (REVIEW/defer)
+
+## 2026-07-13 - Dead code Phase 2 complete (build env strike)
+
+- Commit 159c7ff6: deleted 10 orphan UI stubs (-559 lines); ConflictResolutionScreen kept
+- kspDebugKotlin OK; full build_app FAILED (NDK libc++_shared.so permission denied for ai-coder)
+- Awaiting NDK perm fix or dlang build before Phase 3 gate
+
+## 2026-07-13 - Phase 2 build gate passed (NDK + JDK 17)
+
+- NDK libc++_shared.so now readable (dlang:ai-code 664); configureCMake + buildCMake OK
+- Default JDK 25 lacks JAVA_COMPILER for Hilt; build succeeded with JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+- BUILD SUCCESSFUL; tag code-cleanup/builds @ ba00d3c6; describe code-cleanup-start-2-gba00d3c6
+
+## 2026-07-13 - Gradle JDK 17 project config fix
+
+- gradle.properties: org.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64 (daemon must be full JDK not JRE-only default-java)
+- settings.gradle.kts: foojay-resolver-convention 1.0.0 for jvmToolchain(17) provisioning
+- Verified ./gradlew :app:hiltJavaCompileDebug without JAVA_HOME env
+- Plan updated: Phase 5 compiler warnings/hygiene (not TODO.md); env issues = report not workaround
+
+## 2026-07-13 - Dead code Phase 3 start
+
+- Orphan utils: DiscoveryOcrUtils, ImageHashUtils, LocationUtils, MLKitMonoStrategy
+- Prune dead OcrEngineStrategy, HarnessRunDef, ReportCollector from OcrHarness.kt
+
+## 2026-07-13 - Dead code Phase 3 complete + Phase 4 start
+
+- Phase 3: commit 4c58e0e0 (-180 lines); tag code-cleanup/builds updated
+- Phase 4: legacy data/storage dead code + comment hygiene
+
+## 2026-07-13 - Dead code Phases 3-4 complete
+
+- Phase 3: 4c58e0e0 orphan utils + OcrHarness dead types (-180)
+- Phase 4: c77e04b3 legacy data/storage dead code (-179); ExpenseEntryScreen comment fix
+- Remaining plan: Phase 5 warnings, Phase 6 docs, Phase 7 handoff
+
+## 2026-07-13 - Dead code Phase 5 start: compiler warnings and deprecation hygiene
+
+## 2026-07-13 - Phase 5-6: compiler warning fixes + docs alignment (dead-code-aggressive-review)
+
+## 2026-07-13 - Dead code Phases 5-7 complete (plan finished)
+
+- Phase 5: commit 4a3233f7 — ExpenseEntryScreen always-true branch; SyncDestinationModels frequencyHours suppress; PhotoBackupScreen Icons.AutoMirrored + menuAnchor(MenuAnchorType); RcloneRemoteDialogs menuAnchor overload; GoogleDriveAuth/GoogleSheetsAuth @file:Suppress(DEPRECATION) pending Credential Manager migration
+- Phase 6: NAVIGATION_MAP (start=quickfill, pump experiment, unwired ConflictResolution); API.md pruned deleted symbols; ARCHITECTURE.md PhotoBackupCoordinator path
+- Phase 7: repo grep — zero hits for 22 deleted files/symbols in production Kotlin; BUILD SUCCESSFUL; tag code-cleanup/builds @ 4a3233f7
+- Net removals Phases 2-4: ~918 Kotlin lines; ConflictResolutionScreen + experiment UIs retained per plan
+- Inventory final disposition: dev-ai-interaction/research/dead-code-inventory-20260713.md
+
+## 2026-07-13 - Code review fixes: auth adapter, frequency migration, expense mode, schedule UI, DB v13 schema cleanup
+
+## 2026-07-13 - Settings screen decomposition (#5): split Photo/Spreadsheet edit forms, shared list/card/picker/scaffold UI
+
+## 2026-07-13 - Git history cleanup + PR prepared (code-cleanup)
+
+- Squashed 13 messy commits to 8 logical commits; backup tag backup-code-cleanup @ 85672713
+- Cleaned HEAD: d2685eab; tree diff vs backup empty; BUILD SUCCESSFUL
+- PR artifact: dev-ai-interaction/PRs/PR-code-cleanup.md
+- Ready for Master review via run-grok-master
+
+## 2026-07-14 - code-cleanup merged into master
+
+- Merge commit ca671196 via temp worktree merge-temp-code-cleanup (ENGINEERING_LOG preserved; branch entries appended via wrapper)
+- Master forensic review approved; DB v13 + settings decomposition + auth/frequency fixes accepted
+- Post-merge: project-facts consolidated; TODO dead-code item closed; build_app gate pending
