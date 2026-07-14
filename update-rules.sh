@@ -131,6 +131,11 @@ FILES=(
     "todo-append"
     "todo-close"
     "run-as-primary.c"
+    # Special-file merge drivers (eng-log append; refuse TODO/project-facts text merge)
+    "git-merge-drivers/ve-englog"
+    "git-merge-drivers/ve-special-refuse"
+    "install-merge-drivers.sh"
+    "merge-branch-into-master.sh"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
@@ -282,11 +287,21 @@ for WT in $WORKTREES; do
     # and run the perms fixer on this WT (as current or via sudo if needed).
     # This makes files "end up with the right permissions" directly from update-rules.
     chmod +x "$WT"/*.sh "$WT"/deploy "$WT"/build_app 2>/dev/null || true
+    chmod +x "$WT"/git-merge-drivers/* "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh 2>/dev/null || true
     if [ -x "$WT/fix-perms" ]; then
         echo "  Ensuring perms on $WT via fix-perms..."
         "$WT/fix-perms" "$WT" 2>/dev/null || sudo "$WT/fix-perms" "$WT" 2>/dev/null || true
     fi
+    # Merge drivers live in shared .git config (one install covers all worktrees)
+    if [ -x "$WT/install-merge-drivers.sh" ]; then
+      (cd "$WT" && ./install-merge-drivers.sh >/dev/null) || true
+    fi
 done
+
+# Install merge drivers from orchestration root as well
+if [ -x "$SOURCE_DIR/install-merge-drivers.sh" ]; then
+  (cd "$SOURCE_DIR" && ./install-merge-drivers.sh) || true
+fi
 
 # 5. Promote Policies to User-tier (ensure they are active)
 USER_POLICY_DIR="$HOME/.gemini/policies"

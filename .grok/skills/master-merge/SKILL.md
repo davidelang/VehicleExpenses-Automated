@@ -19,7 +19,12 @@ Follow **`MASTER_AGENT_MANDATE.md` §2** in full. Read that file first.
 1. Read `dev-ai-interaction/PRs/PR-<branch>.md`.
 2. `git log master..<branch>` and `git diff master..<branch>` vs plans.
 3. Reject unauthorized / plan-violating changes.
-4. On merge: `python3 dev-ai-interaction/audit_merge.py <branch>`; merge `--no-ff` (temp worktree if eng-log append-only blocks); special handling for ENGINEERING_LOG (wrapper only), TODO (union + **todo-close** items named in PR/commits), project-facts (consolidate + prune if large); `./build_app`.
+4. On merge:
+   - `python3 dev-ai-interaction/audit_merge.py <branch>`
+   - **`./merge-branch-into-master.sh <branch>`** (preferred; no temp branch for eng-log alone)
+   - **ENGINEERING_LOG:** driver `ve-englog` + `append-to-engineering-log` → third-version result (master + branch tail). Never replace with branch file. No `chattr -a`.
+   - **TODO.md / project-facts.md:** **always** special-file review against **branch delta** (and PR/commits), even if those paths did not change. Base = master. `todo-close` completed work; prune invalid facts. Drivers refuse naive text merge when both sides touch the path.
+   - Finish specials → `./build_app`
 5. Never set `works` tag. Inform user to run `./remove_worktree.sh` when done.
 
 ## Expectation

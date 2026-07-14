@@ -1,4 +1,3 @@
-
 # Permission filters (smudge/clean for @@ tokens in stamped files)
 # Do NOT apply to the filter scripts themselves to avoid circular "no such file" during initial checkout.
 setup-project filter=manage-configs
@@ -14,3 +13,10 @@ run-grok filter=manage-configs
 # Explicitly disable filters on the filter implementation scripts (prevents checkout-time "No such file" errors)
 filter-apply-config !filter
 filter-clean-config !filter
+
+# Special-file merge drivers (install via ./install-merge-drivers.sh / update-rules)
+# ve-englog: append branch tail via append-to-engineering-log (third-version result)
+# ve-special-refuse: block text merge; Master always reviews TODO/facts vs branch delta
+ENGINEERING_LOG.md merge=ve-englog
+TODO.md merge=ve-special-refuse
+project-facts.md merge=ve-special-refuse
