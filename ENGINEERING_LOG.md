@@ -217,3 +217,9 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - ensure_worktree_scripts_executable: chown primary:ai-code + 2775 on deploy/build_app/etc
 - update-rules: cp -p, chown primary, a+x per file (no fragile glob chmod)
 - gradle.properties: ensure 664 primary:ai-code in fix-perms
+
+## 2026-07-14 - fix: setup_agent project.config warning + leave shell in worktree
+
+- post-checkout: no warn on missing gitignored project.config; skip under VE_SETUP_AGENT=1
+- setup_agent: seed project.config before checkout; source ends with cd to agent; exec prints cd
+- gitignore ve-refresh-shell (like run-as-primary); track hooks/post-checkout

@@ -1,6 +1,10 @@
 #!/bin/bash
 # setup_agent.sh: Automate creation of agent worktrees
-# Usage: ./setup_agent.sh branch-name
+# Usage (from orchestration root):
+#   source ./setup_agent.sh branch-name   # recommended: ends in the new worktree
+#   . ./setup_agent.sh branch-name
+#   ./setup_agent.sh branch-name          # works, but cannot change your shell cwd;
+#                                         # prints an explicit cd command at the end
 #
 # Always run from the orchestration root.
 # This script now ensures the new worktree is fully permissioned
@@ -11,9 +15,15 @@
 BRANCH_NAME=$1
 
 if [ -z "$BRANCH_NAME" ]; then
-    echo "Usage: $0 branch-name"
-    exit 1
+    echo "Usage: source ./setup_agent.sh branch-name   # or: ./setup_agent.sh branch-name"
+    # When sourced, exit would kill the shell — use return if possible
+    return 1 2>/dev/null || exit 1
 fi
+
+# So post-checkout does not run fix-perms --all mid-setup or warn about gitignored project.config
+export VE_SETUP_AGENT=1
+# shellcheck disable=SC2064
+trap 'unset VE_SETUP_AGENT' EXIT
 
 # Load primary config for ownership (orchestration root always has project.config)
 if [ -f project.config ]; then
@@ -103,13 +113,11 @@ ensure_common_hooks_executable() {
   if [ ! -d "$hooks" ]; then
     return 0
   fi
-  # Install post-checkout from template if missing
-  if [ ! -f "$hooks/post-checkout" ]; then
-    if [ -f "$ORCH_ROOT/dev-ai-interaction/new-project-template/post-checkout" ]; then
-      cp "$ORCH_ROOT/dev-ai-interaction/new-project-template/post-checkout" "$hooks/post-checkout"
-    elif [ -f "$ORCH_ROOT/.git/hooks/post-checkout" ]; then
-      :
-    fi
+  # Install/refresh post-checkout from tracked template (hooks/post-checkout)
+  if [ -f "$ORCH_ROOT/hooks/post-checkout" ]; then
+    cp "$ORCH_ROOT/hooks/post-checkout" "$hooks/post-checkout"
+  elif [ ! -f "$hooks/post-checkout" ] && [ -f "$ORCH_ROOT/dev-ai-interaction/new-project-template/post-checkout" ]; then
+    cp "$ORCH_ROOT/dev-ai-interaction/new-project-template/post-checkout" "$hooks/post-checkout"
   fi
   # Active hooks only (not *.sample)
   find "$hooks" -maxdepth 1 -type f ! -name '*.sample' -exec chmod 775 {} + 2>/dev/null || true
@@ -226,29 +234,42 @@ verify_smudge() {
 
 # 4. Populate worktree from branch tip, then manually smudge stamped files.
 cd "$AGENT_ID"
+
+# project.config is gitignored — seed BEFORE checkout so post-checkout (if it runs)
+# and any early tooling see it. Re-seed after checkout in case filters were overwritten.
+if [ ! -f "$ORCH_ROOT/project.config" ]; then
+  echo "Error: $ORCH_ROOT/project.config missing."
+  echo "  Copy project.config.example → project.config and fill local values, then retry."
+  cd ..
+  git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
+  return 1 2>/dev/null || exit 1
+fi
+seed_smudge_inputs "$ORCH_ROOT"
+
 # After --no-checkout the index is empty; 'git checkout .' matches nothing.
 # Bypass git smudge on bulk checkout — feature branches may carry broken filter scripts.
+# VE_SETUP_AGENT=1 makes post-checkout a no-op (avoids mid-setup sudo fix-perms --all).
 if ! git -c filter.manage-configs.smudge=cat -c filter.manage-configs.clean=cat checkout HEAD -- .; then
   echo "Error: Failed to populate worktree (git checkout HEAD -- .)."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
-  exit 1
+  return 1 2>/dev/null || exit 1
 fi
 
-# Seed orchestration's project.config + filter scripts, then smudge stamped paths locally.
+# Re-seed filters from orchestration (authoritative) then smudge stamped paths.
 seed_smudge_inputs "$ORCH_ROOT"
 if ! re_smudge_stamped_files; then
   echo "Error: Failed to smudge stamped files using orchestration filter scripts."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
-  exit 1
+  return 1 2>/dev/null || exit 1
 fi
 
 if ! verify_smudge; then
   echo "Hint: ensure orchestration root has project.config and working filter-apply-config."
   cd ..
   git worktree remove --force "$AGENT_ID" 2>/dev/null || rm -rf "$AGENT_ID"
-  exit 1
+  return 1 2>/dev/null || exit 1
 fi
 
 if [ "$(id -un)" != "$PRIMARY_USER" ] && [ "$EUID" -ne 0 ]; then
@@ -351,10 +372,25 @@ if [ -x "$PARENT_ROOT/install-merge-drivers.sh" ]; then
 fi
 chmod +x "$AGENT_ABS/git-merge-drivers/"* "$AGENT_ABS/install-merge-drivers.sh" "$AGENT_ABS/merge-branch-into-master.sh" 2>/dev/null || true
 
-# Leave the user in the new worktree directory (do not auto-start any agent CLI).
-cd "$AGENT_ABS" || exit 1
+# Leave the user in the new worktree when possible.
+# A subprocess (./setup_agent.sh) cannot change the caller's cwd — only source can.
+unset VE_SETUP_AGENT
+trap - EXIT
+
 echo "Worktree ready: $AGENT_ABS"
 echo "Branch: $BRANCH_NAME  Agent ID: $AGENT_ID"
 echo "Next: run a launcher from here, e.g.  ../run-grok-coder   or   ../run-grok-planner"
-# success: shell stays in agent worktree if this script was sourced; if executed,
-# print path so the human can:  cd $AGENT_ABS
+
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  # Sourced: change the interactive shell into the new worktree
+  cd "$AGENT_ABS" || return 1
+  echo "Now in $(pwd)"
+  return 0
+fi
+
+# Executed as a program: print a copy-pasteable cd (and try to be obvious)
+echo
+echo "Your shell is still in the previous directory (scripts cannot cd the parent shell)."
+echo "  cd $AGENT_ABS"
+echo "Or next time:  source ./setup_agent.sh $BRANCH_NAME"
+exit 0

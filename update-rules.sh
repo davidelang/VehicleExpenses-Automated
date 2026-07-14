@@ -136,6 +136,7 @@ FILES=(
     "git-merge-drivers/ve-special-refuse"
     "install-merge-drivers.sh"
     "merge-branch-into-master.sh"
+    "hooks/post-checkout"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
