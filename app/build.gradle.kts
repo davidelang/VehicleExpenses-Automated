@@ -1,3 +1,6 @@
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+
 plugins {
     id("com.android.application")
     id("com.google.devtools.ksp")
@@ -72,6 +75,14 @@ android {
             excludes.add("META-INF/INDEX.LIST")
         }
     }
+}
+
+// Hilt's javac task does not inherit kotlin.jvmToolchain; pin all JavaCompile to JDK 17 via Foojay.
+val java17Compiler = javaToolchains.compilerFor {
+    languageVersion.set(JavaLanguageVersion.of(17))
+}
+tasks.withType<JavaCompile>().configureEach {
+    javaCompiler.set(java17Compiler)
 }
 
 dependencies {

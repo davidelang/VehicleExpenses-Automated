@@ -7,7 +7,7 @@ pluginManagement {
 }
 
 plugins {
-    // Resolve/provision JDK 17 toolchains for jvmToolchain(17) without shell JAVA_HOME.
+    // Auto-provision JDK 17 for jvmToolchain(17) and JavaCompile (incl. Hilt); no machine paths in gradle.properties.
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
