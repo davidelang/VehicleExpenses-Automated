@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -63,7 +64,7 @@ fun SyncDestinationListLayout(
     onSyncNow: () -> Unit,
     docLinkLabel: String? = null,
     onDocLinkClick: (() -> Unit)? = null,
-    listContent: @Composable () -> Unit,
+    listContent: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
         modifier = Modifier

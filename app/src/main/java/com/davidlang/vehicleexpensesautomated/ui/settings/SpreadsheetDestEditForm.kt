@@ -17,6 +17,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.browser.customtabs.CustomTabsIntent
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,6 +40,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncFrequencyUi
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherProviderCatalog
+import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal.FirebaseTabularConfig
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal.ZohoSheetConfig
 import com.google.android.gms.common.api.ApiException
