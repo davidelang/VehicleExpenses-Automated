@@ -136,20 +136,11 @@ class SyncDestinationStore(context: Context) {
         }
     }
 
-    private fun resolveFrequencyMinutes(obj: JSONObject): Int {
-        val minutes = obj.optInt("frequencyMinutes", 0)
-        if (minutes > 0) {
-            return minutes.coerceIn(
-                SpreadsheetDestination.MIN_FREQUENCY_MINUTES,
-                SpreadsheetDestination.MAX_FREQUENCY_MINUTES,
-            )
-        }
-        val hours = obj.optInt("frequencyHours", 6)
-        return (hours * 60).coerceIn(
-            SpreadsheetDestination.MIN_FREQUENCY_MINUTES,
-            SpreadsheetDestination.MAX_FREQUENCY_MINUTES,
+    private fun resolveFrequencyMinutes(obj: JSONObject): Int =
+        SyncFrequencyMigration.fromStoredJson(
+            obj.optInt("frequencyMinutes", 0),
+            obj.optInt("frequencyHours", 0),
         )
-    }
 
     private fun toJson(destinations: SyncDestinations): String {
         val root = JSONObject()

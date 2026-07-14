@@ -80,7 +80,6 @@ class ExpenseEntryRepository @Inject constructor(
                 entry.copy(
                     originDeviceId = entry.originDeviceId.ifBlank { deviceId },
                     updatedAt = now,
-                    receiptImagePath = null,
                 ),
             ),
         )
