@@ -210,3 +210,10 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Root cause: fix-perms chmod 660 all .git files stripped post-checkout +x
 - ensure_git_hooks_executable after every .git blanket chmod
 - setup_agent ensures hooks executable before worktree add and after fix-perms
+
+## 2026-07-14 - fix: deploy/build_app stay executable after update-rules
+
+- Root cause: update-rules cp as ai-orchestrator left 664/non-owner scripts; fix-perms only g+s without forcing +x
+- ensure_worktree_scripts_executable: chown primary:ai-code + 2775 on deploy/build_app/etc
+- update-rules: cp -p, chown primary, a+x per file (no fragile glob chmod)
+- gradle.properties: ensure 664 primary:ai-code in fix-perms

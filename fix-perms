@@ -263,6 +263,38 @@ ensure_git_hooks_executable() {
   done
 }
 
+# Worktree scripts humans/agents run by path (./deploy, ./build_app, …).
+# After update-rules `cp` (non-preserving): file is often 664 owned by the sync user
+# (e.g. ai-orchestrator). dlang then needs group+x or o+x — and g+s alone is not enough.
+ensure_worktree_scripts_executable() {
+  local wt="$1"
+  local f
+  # setgid + rwx for owner/group so primary and ai-code can run; other r-x for stale sessions
+  local scripts=(
+    build_app deploy setup_agent.sh remove_worktree.sh
+    get-builds-tag.sh update-rules.sh install-merge-drivers.sh merge-branch-into-master.sh
+    generate_pr.sh cleanup_pr.sh sync_infrastructure.sh
+    filter-apply-config filter-clean-config setup-project
+    set-worktree-perms set-sandbox-perms
+    run-grok run-grok-master run-grok-planner run-grok-coder run-grok-orchestrator
+    run-antigravity run-gemini
+  )
+  for f in "${scripts[@]}"; do
+    if [ -f "$wt/$f" ]; then
+      chown "$PRIMARY_USER:$CODE_GROUP" "$wt/$f" 2>/dev/null || true
+      chmod 2775 "$wt/$f" 2>/dev/null || chmod 775 "$wt/$f" 2>/dev/null || true
+    fi
+  done
+  # Shell helpers under git-merge-drivers/
+  if [ -d "$wt/git-merge-drivers" ]; then
+    find "$wt/git-merge-drivers" -type f -exec chown "$PRIMARY_USER:$CODE_GROUP" {} + 2>/dev/null || true
+    find "$wt/git-merge-drivers" -type f -exec chmod 775 {} + 2>/dev/null || true
+  fi
+  # Named *.sh at worktree root
+  find "$wt" -maxdepth 1 -type f -name '*.sh' -exec chown "$PRIMARY_USER:$CODE_GROUP" {} + 2>/dev/null || true
+  find "$wt" -maxdepth 1 -type f -name '*.sh' -exec chmod 2775 {} + 2>/dev/null || true
+}
+
 fix_worktree() {
   local wt="$1"
   if [ ! -d "$wt" ]; then return; fi
@@ -364,13 +396,24 @@ fix_worktree() {
     chmod 4755 "$wt/ve-refresh-shell" 2>/dev/null || true
   fi
 
-  # setgid on build_app/deploy
-  for f in build_app deploy; do
-    [ -f "$wt/$f" ] && chmod g+s "$wt/$f" 2>/dev/null || true
-  done
+  # Critical agent/human scripts: must be executable by primary + ai-code after any
+  # update-rules cp (often creates 664 owned by whoever ran sync) and after the
+  # broad "chmod u+rw,g+rw,o+r" pass (does not strip x, but never *adds* it).
+  # Only g+s without u+x/g+x leaves 2664 (rw-rwSr--) → dlang cannot ./deploy when
+  # owner is ai-orchestrator and session groups are stale/missing.
+  ensure_worktree_scripts_executable "$wt"
 
   # gradlew executable only by ai-code group (prevents planner)
-  [ -f "$wt/gradlew" ] && chmod 2750 "$wt/gradlew" 2>/dev/null || true
+  if [ -f "$wt/gradlew" ]; then
+    chown "$PRIMARY_USER:$CODE_GROUP" "$wt/gradlew" 2>/dev/null || true
+    chmod 2750 "$wt/gradlew" 2>/dev/null || true
+  fi
+
+  # Build config must stay group-readable (Gradle wrapper opens as deploying user)
+  if [ -f "$wt/gradle.properties" ]; then
+    chown "$PRIMARY_USER:$CODE_GROUP" "$wt/gradle.properties" 2>/dev/null || true
+    chmod 664 "$wt/gradle.properties" 2>/dev/null || true
+  fi
 
   # .gradle etc (basic)
   if [ -d "$wt/.gradle" ]; then
