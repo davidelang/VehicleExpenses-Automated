@@ -744,3 +744,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Phases 1-5: multi-dest photo sync, fuel sort+jitter, VM cleanup, experiment gate, CameraResolutionPicker, Quick Fill instruction line
 - Tag: full-code-review1/builds @ 598d72f9
 - Infra launcher changes stashed (stash: infra launcher sync touch) — not merged
+
+## 2026-07-14 - Overnight compile verification (deploy deferred)
+
+- ./build_app (no new commits): BUILD SUCCESSFUL 51s; tag full-code-review1/builds → f7efbd89 (housekeeping atop infra 28d83ea3 + feature batch through 54869259).
+- ./gradlew :app:assembleDebug --quiet: succeeded (second compile path).
+- Prior emulator UI smoke (5556/5554): Quick Fill instruction line, experiment gate, spreadsheet sync toast, reports, settings — pass; no experiment runs started.
+- APK: app/build/outputs/apk/debug/app-debug.apk @ describe full-code-review1-start-10-gf7efbd89.
+- Paused: awaiting user deploy (./deploy or gradlew installDebug per branch exception), then full device test pass on wake.
