@@ -1,16 +1,16 @@
 #!/bin/bash
 # setup_agent.sh: Automate creation of agent worktrees
 # Usage (from orchestration root):
-#   source ./setup_agent.sh branch-name   # recommended: ends in the new worktree
-#   . ./setup_agent.sh branch-name
-#   ./setup_agent.sh branch-name          # works, but cannot change your shell cwd;
-#                                         # prints an explicit cd command at the end
+#   ./setup_agent.sh branch-name
+#   source ./setup_agent.sh branch-name   # same end state
+#
+# On success: exec a new interactive shell in the new worktree with project
+# environment (umask 002 + full groups via ve-refresh-shell, same as ve-env).
+# That replaces this terminal only (other GUI apps stay open).
 #
 # Always run from the orchestration root.
-# This script now ensures the new worktree is fully permissioned
-# (setgid dirs, correct ownership/modes for log/wrapper, run-as-primary setuid,
-# no stray ACLs where possible, chattr +a, etc.) so it is immediately usable
-# by agents without extra manual sudo steps.
+# Ensures the new worktree is fully permissioned (setgid dirs, log/wrapper,
+# run-as-primary, ve-refresh-shell, etc.) so agents can start immediately.
 
 BRANCH_NAME=$1
 
@@ -349,7 +349,7 @@ if [ ! -f "$AGENT_ABS/ENGINEERING_LOG.md" ]; then
   echo "## $(date +%Y-%m-%d) - Initial log for $AGENT_ID" > "$AGENT_ABS/ENGINEERING_LOG.md"
 fi 2>/dev/null || true
 
-cd "$PARENT_ROOT"   # return to orchestration root 
+cd "$ORCH_ROOT" || cd "$PARENT_ROOT" || true
 
 # Use unified fix-perms for the new tree (pass --skip-sudoers so sudoers rules
 # are only (re)installed at true initial setup-project time).
@@ -357,40 +357,62 @@ cd "$PARENT_ROOT"   # return to orchestration root
 # Note: fix-perms blanket-chmods .git then restores hook +x (ensure_git_hooks_executable).
 sudo ./fix-perms --skip-sudoers "$AGENT_ABS" 2>/dev/null || true
 
-# Re-lock setuid binary silently (in case not covered).
+# Re-lock setuid binaries silently (in case not covered).
 if [ -f "$AGENT_ABS/run-as-primary" ]; then
   chown "$PRIMARY_USER:$CODE_GROUP" "$AGENT_ABS/run-as-primary" 2>/dev/null || true
   chmod 4755 "$AGENT_ABS/run-as-primary" 2>/dev/null || true
 fi
+# Prefer a working setuid helper on orch or agent for group refresh
+for _vrs in "$ORCH_ROOT/ve-refresh-shell" "$AGENT_ABS/ve-refresh-shell"; do
+  if [ -f "$_vrs" ]; then
+    sudo chown root:root "$_vrs" 2>/dev/null || true
+    sudo chmod 4755 "$_vrs" 2>/dev/null || true
+  fi
+done
 
 # After fix-perms, re-assert hooks (defense in depth; post-checkout must stay runnable)
 ensure_common_hooks_executable
 
 # Merge drivers are repo-global (.git config); ensure installed for all worktrees
-if [ -x "$PARENT_ROOT/install-merge-drivers.sh" ]; then
-  (cd "$PARENT_ROOT" && ./install-merge-drivers.sh >/dev/null) || true
+if [ -x "$ORCH_ROOT/install-merge-drivers.sh" ]; then
+  (cd "$ORCH_ROOT" && ./install-merge-drivers.sh >/dev/null) || true
 fi
 chmod +x "$AGENT_ABS/git-merge-drivers/"* "$AGENT_ABS/install-merge-drivers.sh" "$AGENT_ABS/merge-branch-into-master.sh" 2>/dev/null || true
 
-# Leave the user in the new worktree when possible.
-# A subprocess (./setup_agent.sh) cannot change the caller's cwd — only source can.
+# --- Enter new worktree shell (ve-env semantics) ---
+# Replace this process with an interactive shell in AGENT_ABS, umask 002, full
+# project groups when ve-refresh-shell is installed setuid (same as source ./ve-env).
 unset VE_SETUP_AGENT
 trap - EXIT
 
 echo "Worktree ready: $AGENT_ABS"
 echo "Branch: $BRANCH_NAME  Agent ID: $AGENT_ID"
 echo "Next: run a launcher from here, e.g.  ../run-grok-coder   or   ../run-grok-planner"
+echo "Entering worktree shell (umask 002 + project groups via ve-env helper)..."
 
-if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
-  # Sourced: change the interactive shell into the new worktree
-  cd "$AGENT_ABS" || return 1
-  echo "Now in $(pwd)"
-  return 0
+export VE_ENV_CWD="$AGENT_ABS"
+umask 002
+
+# Prefer setuid helper (orch copy first — one machine-wide install)
+REFRESH=""
+for _vrs in "$ORCH_ROOT/ve-refresh-shell" "$AGENT_ABS/ve-refresh-shell"; do
+  if [ -x "$_vrs" ] && [ -u "$_vrs" ]; then
+    REFRESH="$_vrs"
+    break
+  fi
+done
+
+if [ -n "$REFRESH" ]; then
+  exec "$REFRESH"
 fi
 
-# Executed as a program: print a copy-pasteable cd (and try to be obvious)
-echo
-echo "Your shell is still in the previous directory (scripts cannot cd the parent shell)."
-echo "  cd $AGENT_ABS"
-echo "Or next time:  source ./setup_agent.sh $BRANCH_NAME"
-exit 0
+# Fallback: interactive shell in worktree with umask 002 (groups may still be stale)
+echo "NOTE: ve-refresh-shell not setuid yet — shell may lack project groups."
+echo "  One-time: gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c && sudo chown root:root ve-refresh-shell && sudo chmod 4755 ve-refresh-shell"
+echo "  Then: source ./ve-env"
+cd "$AGENT_ABS" || {
+  echo "ERROR: cannot cd to $AGENT_ABS"
+  return 1 2>/dev/null || exit 1
+}
+SHELL_BIN="${SHELL:-/bin/bash}"
+exec "$SHELL_BIN"

@@ -223,3 +223,9 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - post-checkout: no warn on missing gitignored project.config; skip under VE_SETUP_AGENT=1
 - setup_agent: seed project.config before checkout; source ends with cd to agent; exec prints cd
 - gitignore ve-refresh-shell (like run-as-primary); track hooks/post-checkout
+
+## 2026-07-14 - setup_agent: exec worktree shell via ve-refresh-shell
+
+- On success: VE_ENV_CWD=agent, umask 002, exec ve-refresh-shell (same as ve-env)
+- Fallback: exec $SHELL in worktree if helper not setuid
+- Ensures ve-refresh-shell setuid after fix-perms
