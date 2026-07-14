@@ -733,3 +733,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - ./run-as-primary ./build_app SUCCESS on master @ f0446cd7; builds tag updated
 - First ai-coder build hit processDebugJavaRes chmod 770 on foreign-owned app/build; dlang euid via run-as-primary succeeded
+
+## 2026-07-14 - Sync/camera cleanup batch start
+
+- Plan: dev-ai-interaction/plans/sync-camera-cleanup-20260714-plan.md
+- Phase 1: multi-dest photo sync — SyncDestinationStore context-aware isPhotoConfigured/enabledPhoto; expense download uses per-dest ctx in loop
