@@ -263,3 +263,8 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 
 - Prefer good root-owned helper; --check before exec
 - master ve-env was stale and killed terminal
+
+## 2026-07-14 - fix: ve-env hang on --check subprocess
+
+- Old helper ignored --check and hung source ./ve-env
+- Stat-only gate; progress messages before exec

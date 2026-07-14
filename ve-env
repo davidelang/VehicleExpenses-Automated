@@ -113,19 +113,17 @@ _ve_session_missing_stale() {
 
 _ve_refresh_installed() {
   # Re-resolve so we pick a root-owned helper even if cwd worktree has a broken copy.
+  # Do NOT run the binary as a preflight subprocess: older builds ignore --check and
+  # exec an interactive shell, which hangs "source ./ve-env" forever.
   REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
   REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
-  _ve_helper_is_good "$REFRESH" || return 1
-  # Subprocess preflight: must not kill this shell. Old/mis-owned binaries fail --check.
-  if ! "$REFRESH" --check >/dev/null 2>&1; then
-    return 1
-  fi
-  return 0
+  _ve_helper_is_good "$REFRESH"
 }
 
 _ve_try_refresh_shell() {
   # Replace *this* shell with one that has full group list. No desktop logout.
-  # NEVER exec unless --check passes (prevents terminal death from bad setuid binaries).
+  # NEVER exec a non-root-owned setuid binary (kills terminal). Stat-only gate.
+  echo "ve-env: looking for setuid-root ve-refresh-shell..." >&2
   if ! _ve_refresh_installed; then
     REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
     REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
@@ -137,15 +135,19 @@ _ve_try_refresh_shell() {
     elif [ ! -e "$REFRESH" ]; then
       echo "ve-env: no good ve-refresh-shell found (need setuid root under worktree or parents)." >&2
     else
-      echo "ve-env: helper present but --check failed: $REFRESH" >&2
-      echo "  Rebuild+install: sudo ./install-ve-refresh-shell.sh $SCRIPT_DIR" >&2
+      echo "ve-env: helper not usable: $REFRESH (need -rwsr-xr-x root root)" >&2
+      echo "  Rebuild+install: sudo ./install-ve-refresh-shell.sh \$(git rev-parse --show-toplevel 2>/dev/null || pwd)" >&2
     fi
     return 1
   fi
   export VE_ENV_CWD="$(pwd)"
   echo "ve-env: re-executing shell with full project groups (other apps stay open)..."
-  echo "  helper: $REFRESH"
-  exec "$REFRESH"
+  echo "  helper: $REFRESH ($(stat -c '%U:%G %a' "$REFRESH" 2>/dev/null))"
+  # Replace this process only after printing — if exec fails, we return and keep the shell.
+  exec "$REFRESH" || {
+    echo "ve-env: exec $REFRESH failed — shell kept open" >&2
+    return 1
+  }
 }
 
 _ve_print_install_helper() {
