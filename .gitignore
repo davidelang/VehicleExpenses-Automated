@@ -36,7 +36,9 @@ bin/
 lib/
 
 # Misc
+# Built setuid helpers (source is tracked: run-as-primary.c, ve-refresh-shell.c)
 run-as-primary
+ve-refresh-shell
 .DS_Store
 Thumbs.db
 *.swp
