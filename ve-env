@@ -32,7 +32,6 @@ CODE_GROUP=${code_group:-ai-code}
 SHARED_GROUP=${shared_group:-ai-shared}
 SANDBOX_GROUP=${sandbox_group:-ai-sandbox}
 PRIMARY_USER=${primary_user:-dlang}
-REFRESH="$SCRIPT_DIR/ve-refresh-shell"
 
 _VE_SOURCED=0
 if [ -n "${BASH_VERSION:-}" ]; then
@@ -42,6 +41,32 @@ elif [ -n "${ZSH_VERSION:-}" ]; then
     *:file*) _VE_SOURCED=1 ;;
   esac
 fi
+
+# One machine-wide install at orchestration root is enough. Worktrees (agent-N)
+# source their local ve-env copy but must still find ../ve-refresh-shell.
+_ve_find_refresh() {
+  local d cand
+  d="$SCRIPT_DIR"
+  # Walk up a few levels (agent-2 → orch → parent of monorepo)
+  for _ in 1 2 3 4 5; do
+    cand="$d/ve-refresh-shell"
+    if [ -e "$cand" ]; then
+      echo "$cand"
+      return 0
+    fi
+    # Prefer orch marker if present
+    if [ -f "$d/update-rules.sh" ] && [ -e "$d/ve-refresh-shell" ]; then
+      echo "$d/ve-refresh-shell"
+      return 0
+    fi
+    [ "$d" = "/" ] && break
+    d=$(dirname "$d")
+  done
+  # Default path for install instructions even if missing
+  echo "$SCRIPT_DIR/ve-refresh-shell"
+  return 1
+}
+REFRESH="$(_ve_find_refresh 2>/dev/null || echo "$SCRIPT_DIR/ve-refresh-shell")"
 
 _ve_expected_groups() {
   local u
@@ -108,13 +133,17 @@ _ve_print_install_helper() {
   cat <<EOF
 
 ve-refresh-shell is not installed as setuid root yet (required to reload groups
-without a full desktop logout). One-time setup from the repo root:
+without a full desktop logout). One-time setup from the *orchestration root*
+(parent of agent-N), not necessarily this worktree:
 
+  cd /path/to/VehicleExpenses-automated   # orchestration root
   gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c
   sudo chown root:root ve-refresh-shell
   sudo chmod 4755 ve-refresh-shell
 
 Or:  sudo ./fix-perms --verbose   # builds/installs the helper when source is present
+
+ve-env looks for the helper in this directory and parents (so agent-N can use ../ve-refresh-shell).
 
 Then in this terminal:
   source ./ve-env
@@ -166,6 +195,8 @@ _ve_check() {
   echo "account groups (id $u / NSS): $account"
   echo "umask: $(umask)"
   echo "cwd: $(pwd)"
+  # Re-resolve in case cwd/layout changed
+  REFRESH="$(_ve_find_refresh 2>/dev/null || echo "$SCRIPT_DIR/ve-refresh-shell")"
   if _ve_refresh_installed; then
     echo "ve-refresh-shell: OK (setuid root) at $REFRESH"
   elif [ -x "$REFRESH" ] && [ -u "$REFRESH" ]; then
@@ -178,9 +209,10 @@ _ve_check() {
     echo "  Fix:  sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH"
     bad=1
   else
-    echo "ve-refresh-shell: NOT found — group auto-fix disabled"
-    echo "  Build: gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c"
-    echo "  Then:  sudo chown root:root ve-refresh-shell && sudo chmod 4755 ve-refresh-shell"
+    echo "ve-refresh-shell: NOT found under $SCRIPT_DIR or parents — group auto-fix disabled"
+    echo "  One install at orchestration root is enough (parent of agent-N)."
+    echo "  cd <orch-root> && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c"
+    echo "  sudo chown root:root ve-refresh-shell && sudo chmod 4755 ve-refresh-shell"
     bad=1
   fi
 
