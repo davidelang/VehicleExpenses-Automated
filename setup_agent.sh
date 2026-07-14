@@ -339,11 +339,6 @@ if [ -f "$AGENT_ABS/run-as-primary.c" ]; then
   (cd "$AGENT_ABS" && gcc -O2 -Wall -o run-as-primary run-as-primary.c && chmod 4755 run-as-primary && chown "$PRIMARY_USER:$CODE_GROUP" run-as-primary) 2>/dev/null || echo "    Warning: run-as-primary build/chmod may need gcc or manual fix"
 fi
 
-# ve-refresh-shell: setuid root; needs sudo for chown/chmod (fix-perms also does this)
-if [ -f "$AGENT_ABS/ve-refresh-shell.c" ]; then
-  (cd "$AGENT_ABS" && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c) 2>/dev/null || echo "    Warning: ve-refresh-shell compile failed (need gcc)"
-fi
-
 # Create log file with minimal header if missing (fixer will harden it)
 if [ ! -f "$AGENT_ABS/ENGINEERING_LOG.md" ]; then
   echo "## $(date +%Y-%m-%d) - Initial log for $AGENT_ID" > "$AGENT_ABS/ENGINEERING_LOG.md"
@@ -362,17 +357,29 @@ if [ -f "$AGENT_ABS/run-as-primary" ]; then
   chown "$PRIMARY_USER:$CODE_GROUP" "$AGENT_ABS/run-as-primary" 2>/dev/null || true
   chmod 4755 "$AGENT_ABS/run-as-primary" 2>/dev/null || true
 fi
-# Prefer a working setuid-root helper on orch or agent for group refresh.
-# Never leave setuid bit on a non-root-owned binary (kills terminals via ve-env).
-for _vrs in "$ORCH_ROOT/ve-refresh-shell" "$AGENT_ABS/ve-refresh-shell"; do
-  if [ -f "$_vrs" ]; then
-    if sudo chown root:root "$_vrs" 2>/dev/null; then
-      sudo chmod 4755 "$_vrs" 2>/dev/null || true
-    else
-      chmod 755 "$_vrs" 2>/dev/null || true
+
+# ve-refresh-shell: build + setuid-root in orch AND this agent worktree (not in git).
+# One sudo password may be requested. Never leave setuid on non-root owner.
+if [ -x "$ORCH_ROOT/install-ve-refresh-shell.sh" ]; then
+  echo "Installing ve-refresh-shell (setuid root) in orch + worktree..."
+  "$ORCH_ROOT/install-ve-refresh-shell.sh" "$ORCH_ROOT" 2>/dev/null || \
+    sudo "$ORCH_ROOT/install-ve-refresh-shell.sh" "$ORCH_ROOT" 2>/dev/null || true
+  "$ORCH_ROOT/install-ve-refresh-shell.sh" "$AGENT_ABS" 2>/dev/null || \
+    sudo "$ORCH_ROOT/install-ve-refresh-shell.sh" "$AGENT_ABS" 2>/dev/null || true
+else
+  # Fallback inline install
+  for _dest in "$ORCH_ROOT" "$AGENT_ABS"; do
+    [ -f "$_dest/ve-refresh-shell.c" ] || continue
+    (cd "$_dest" && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c) 2>/dev/null || true
+    if [ -f "$_dest/ve-refresh-shell" ]; then
+      if sudo chown root:root "$_dest/ve-refresh-shell" 2>/dev/null; then
+        sudo chmod 4755 "$_dest/ve-refresh-shell" 2>/dev/null || true
+      else
+        chmod 755 "$_dest/ve-refresh-shell" 2>/dev/null || true
+      fi
     fi
-  fi
-done
+  done
+fi
 
 # After fix-perms, re-assert hooks (defense in depth; post-checkout must stay runnable)
 ensure_common_hooks_executable

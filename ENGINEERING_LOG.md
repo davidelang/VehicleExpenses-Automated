@@ -246,3 +246,9 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 ## 2026-07-14 - ve-env check: report broken non-root setuid helper clearly
 
 - Distinguish OK setuid-root vs BROKEN setuid-wrong-owner vs missing
+
+## 2026-07-14 - install-ve-refresh-shell.sh: deploy helper to every worktree
+
+- Binary stays gitignored; .c tracked
+- setup_agent, fix-perms, update-rules call installer for each worktree
+- setuid only after chown root succeeds

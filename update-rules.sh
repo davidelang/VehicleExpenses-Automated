@@ -137,6 +137,7 @@ FILES=(
     "install-merge-drivers.sh"
     "merge-branch-into-master.sh"
     "hooks/post-checkout"
+    "install-ve-refresh-shell.sh"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
@@ -327,6 +328,11 @@ for WT in $WORKTREES; do
     # Merge drivers live in shared .git config (one install covers all worktrees)
     if [ -x "$WT/install-merge-drivers.sh" ]; then
       (cd "$WT" && ./install-merge-drivers.sh >/dev/null) || true
+    fi
+    # Deploy setuid-root ve-refresh-shell into each worktree (binary not in git)
+    if [ -x "$SOURCE_DIR/install-ve-refresh-shell.sh" ]; then
+      "$SOURCE_DIR/install-ve-refresh-shell.sh" "$WT" 2>/dev/null || \
+        sudo "$SOURCE_DIR/install-ve-refresh-shell.sh" "$WT" 2>/dev/null || true
     fi
 done
 
