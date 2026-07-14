@@ -738,3 +738,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Plan: dev-ai-interaction/plans/sync-camera-cleanup-20260714-plan.md
 - Phase 1: multi-dest photo sync — SyncDestinationStore context-aware isPhotoConfigured/enabledPhoto; expense download uses per-dest ctx in loop
+
+## 2026-07-14 - Sync/camera cleanup batch complete
+
+- Phases 1-5: multi-dest photo sync, fuel sort+jitter, VM cleanup, experiment gate, CameraResolutionPicker, Quick Fill instruction line
+- Tag: full-code-review1/builds @ 598d72f9
+- Infra launcher changes stashed (stash: infra launcher sync touch) — not merged
