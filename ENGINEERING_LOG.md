@@ -154,3 +154,10 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - newgrp only switches primary group and drops other project groups — wrong fix.
 - ve-env now distinguishes stale session vs not-a-member; how-to-fix-groups; .git/config smoke.
 
+
+## 2026-07-13 - ve-env re-exec via setuid ve-refresh-shell (no full desktop logout)
+
+- User expectation: source ./ve-env fixes stale groups without logging out of whole session.
+- Linux cannot inject groups into current process; solution is re-exec this terminal via setuid root helper that initgroups() for real uid only.
+- One-time: gcc + sudo chown root / chmod 4755, or sudo ./fix-perms.
+
