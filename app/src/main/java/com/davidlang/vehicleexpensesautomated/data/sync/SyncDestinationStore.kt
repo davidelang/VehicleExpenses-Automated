@@ -8,10 +8,10 @@ import com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal.ZohoShe
 import org.json.JSONArray
 import org.json.JSONObject
 
-class SyncDestinationStore(context: Context) {
+class SyncDestinationStore(private val appContext: Context) {
 
     private val prefs: SharedPreferences =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun load(): SyncDestinations {
         migrateLegacyIfNeeded()
@@ -193,13 +193,13 @@ class SyncDestinationStore(context: Context) {
         load().spreadsheet.filter { it.enabled && isSpreadsheetConfigured(it) }
 
     fun isPhotoConfigured(dest: PhotoDestination?): Boolean =
-        Companion.isPhotoConfigured(dest, context)
+        Companion.isPhotoConfigured(dest, appContext)
 
     fun photoSummaryLine(dest: PhotoDestination?): String =
-        Companion.photoSummaryLine(listOfNotNull(dest), context)
+        Companion.photoSummaryLine(listOfNotNull(dest), appContext)
 
     fun photoSummaryLine(dests: List<PhotoDestination>): String =
-        Companion.photoSummaryLine(dests, context)
+        Companion.photoSummaryLine(dests, appContext)
 
     fun enabledPhoto(): List<PhotoDestination> =
         load().photo.filter { it.enabled && isPhotoConfigured(it) }

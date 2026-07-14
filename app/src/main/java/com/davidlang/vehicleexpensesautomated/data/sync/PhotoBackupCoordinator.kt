@@ -625,7 +625,7 @@ class PhotoBackupCoordinator @Inject constructor(
     }
 
     /** Download expense receipt page(s) for a specific photo destination context. */
-    suspend fun downloadExpensePhoto(expense: ExpenseEntry, ctx: SyncContext): String? =
+    private suspend fun downloadExpensePhoto(expense: ExpenseEntry, ctx: SyncContext): String? =
         withContext(Dispatchers.IO) {
         prepareRcloneDestIfNeeded(ctx.dest, ctx.hint)
         val saveLocal = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
