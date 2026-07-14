@@ -664,3 +664,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Approved: orphan UI stub deletion per dead-code-inventory-20260713.md
 - Deleting 10 unwired UI files; keeping ConflictResolutionScreen (REVIEW/defer)
+
+## 2026-07-13 - Dead code Phase 2 complete (build env strike)
+
+- Commit 159c7ff6: deleted 10 orphan UI stubs (-559 lines); ConflictResolutionScreen kept
+- kspDebugKotlin OK; full build_app FAILED (NDK libc++_shared.so permission denied for ai-coder)
+- Awaiting NDK perm fix or dlang build before Phase 3 gate
