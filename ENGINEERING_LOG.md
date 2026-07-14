@@ -645,3 +645,22 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 ## 2026-07-13 - fix_syncing_and_settings merge build gate
 
 - ./build_app succeeded on master @ b04c9e68 (JDK 17); builds tag updated.
+
+## 2026-07-13 - Dead code inventory Phase 1 start
+
+- Approved plan: dev-ai-interaction/plans/dead-code-aggressive-review-20260713-plan.md (Phase 1 only)
+- Branch: code-cleanup; deliverable: dev-ai-interaction/research/dead-code-inventory-20260713.md
+- No tracked source deletions this phase
+
+## 2026-07-13 - Dead code inventory Phase 1 complete
+
+- Deliverable: dev-ai-interaction/research/dead-code-inventory-20260713.md
+- 22 DELETE-CANDIDATE files (~900 Kotlin lines) across orphan UI, utils, legacy data/storage
+- 1 REVIEW item: ConflictResolutionScreen (TODO backlog — defer delete)
+- 4 DEFER-EXPERIMENT-ONLY files; production pump/Quick Fill path untouched
+- No tracked source changes; STOP per plan awaiting Phase 2+ approval
+
+## 2026-07-13 - Dead code Phase 2 start
+
+- Approved: orphan UI stub deletion per dead-code-inventory-20260713.md
+- Deleting 10 unwired UI files; keeping ConflictResolutionScreen (REVIEW/defer)
