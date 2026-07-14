@@ -1,0 +1,36 @@
+#!/bin/bash
+# ve-special-refuse — Git merge driver for TODO.md and project-facts.md
+# Always refuse 3-way / auto text merge. Special-file protocol is mandatory
+# every Master merge (against branch delta), not only when these paths change.
+
+set -euo pipefail
+
+# %O %A %B %L %P
+P="${5:-special-file}"
+
+cat >&2 <<EOF
+ERROR: refusing git auto-merge of ${P} (text merge forbidden).
+
+These files always require Master special-file review for THIS merge
+(even if this path did not change on either side — review is driven by
+what the branch did to the rest of the repo):
+
+  TODO.md:
+    - Start from master TODO (not the branch file).
+    - todo-close items this branch implemented / PR or commits mark done.
+    - todo-append only for genuine new future backlog (rare).
+    - Never bulk-replace or naive-merge TODO.md.
+
+  project-facts.md:
+    - Start from master project-facts.
+    - Prune/fix facts invalidated by this branch or post-fork reality.
+    - Keep only stable orientation facts true after the merge.
+
+Read: MASTER_AGENT_MANDATE.md §2 (Merge Strategy)
+Skill: /master-merge  (.grok/skills/master-merge/SKILL.md)
+Helper: ./merge-branch-into-master.sh <branch>
+
+Keep ours (master), apply todo-append/todo-close and fact edits, then git add ${P}.
+EOF
+
+exit 1

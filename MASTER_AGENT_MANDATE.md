@@ -30,12 +30,13 @@ When the user asks you to review a branch (e.g., "Please review PR-feature-x"):
 4.  **Strict Enforcement:** If you find unauthorized changes (proactivity), you MUST reject the merge and instruct the Branch Agent to revert and fix.
 5. **Merge Strategy Proposal:** Your proposed Integration Strategy MUST be exactly this (copy-paste):
     - Run `python3 dev-ai-interaction/audit_merge.py <branch-name>` (divergence/overlap audit).
-    - Merge `<branch-name>` into master with `--no-ff` (temp worktree if `ENGINEERING_LOG.md` append-only blocks in-place merge).
-    - **ENGINEERING_LOG.md:** NOT a simple text merge. Extract substantive new entries from the branch log; append to current master via `./append-to-engineering-log @file.md` only. Never replace master's log with the branch file.
-    - **TODO.md:** NOT a simple text merge. Smart union — add branch new/changed items via `todo-append` semantics; preserve master's `# Future work`; drop ritual clutter and duplicates. **Close** items named in the PR doc / commit messages using `todo-close` (do not leave completed work open; never bulk-wipe the file).
-    - **project-facts.md:** NOT a simple text merge. Read both sides; keep only verifiable stable facts still true post-merge; drop obsolete paths, branch/tag/hash garbage, and effort narrative; write a fresh consolidated file. **If large, prune** aggressively at merge (validate candidates; drop noise).
+    - Prefer **`./merge-branch-into-master.sh <branch-name>`** from the master worktree (installs drivers, `git merge --no-ff --no-commit`, eng-log driver, restores master base for TODO/project-facts, prints always-on special-file checklist). Do **not** invent a temporary branch solely because of ENGINEERING_LOG `chattr +a` — eng-log merges via driver + `./append-to-engineering-log` without clearing append-only.
+    - If you must merge by hand: ensure `./install-merge-drivers.sh` has been run; use `git merge --no-ff --no-commit`.
+    - **ENGINEERING_LOG.md:** NOT a simple text merge. Git attribute `merge=ve-englog` appends the branch-only tail via `./append-to-engineering-log`. Result is usually a **third version** (master body + branch tail), not pure ours or pure theirs. Never replace master's log with the branch file. No happy-path `chattr -a`.
+    - **TODO.md:** NOT a simple text merge (`merge=ve-special-refuse`). **Every merge**, even if TODO.md itself was unchanged on both sides: start from **master** TODO; against branch delta + PR/commits, **`todo-close`** items this branch implemented; optional **`todo-append`** only for genuine new future backlog. Never bulk-wipe or take the branch file as truth.
+    - **project-facts.md:** NOT a simple text merge (`merge=ve-special-refuse`). **Every merge**, even if the file was unchanged: start from **master** facts; prune/fix anything invalidated by this branch or post-fork reality; keep only stable orientation still true after merge. No plan/branch/tag/"working on" narrative.
     - Reconcile fork-drift files at hunk level (prefer current master unless change is clearly in-scope for the merged branch).
-    - Run `./build_app` to verify compilation.
+    - Run `./build_app` to verify compilation (commits the merge + special-file outcomes as appropriate).
 
     **CRITICAL:** You are strictly forbidden from proposing or executing a `works` tag update. This tag is reserved for the User.
 
