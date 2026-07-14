@@ -14,7 +14,7 @@ fi
 ORCHESTRATOR_USER=${orchestrator_user:-ai-orchestrator}
 
 # Ensure all files created during this session are group-writable (multi-user env)
-umask 007
+umask 002
 
 ANTIGRAVITY_BIN="${ANTIGRAVITY_BIN:-${antigravity_bin:-$HOME/git/antigravity/agy}}"
 

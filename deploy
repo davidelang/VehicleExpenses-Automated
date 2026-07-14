@@ -387,7 +387,7 @@ if [ "$DATA_ONLY_MODE" != "true" ] && [ "$CURRENT_USER" != "$PRIMARY_USER" ]; th
 fi
 
 # Ensure group-writable creation for build artifacts and Gradle caches (660/770)
-umask 007
+umask 002
 
 # Ensure ai-shared (for .git/refs, worktree metadata, sandbox) and ai-code (for source tree setgid dirs).
 # Only re-exec once. Prefer ai-shared because it fixes the git providers.exec versionName issue.

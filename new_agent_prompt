@@ -31,3 +31,5 @@ Upon completion of this report:
 Do not perform any other tasks until the User has approved your report.
 
 *Tip for the User:* Remember to enable multiline input mode for comfortable plan and prompt entry: focus the prompt and press **Ctrl+M**, or type the slash command **/multiline** (alias **/ml**).
+
+**Cwd:** After geography in the Mandate report, treat cwd as fixed. Invoke `./append-to-engineering-log` etc. without `cd … &&` (breaks allow-lists).

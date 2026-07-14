@@ -66,7 +66,7 @@ fi
 PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
 
 # Ensure all files created during this session are group-writable (multi-user env)
-umask 007
+umask 002
 
 # === Model selection for Planning Agent ===
 #
@@ -201,9 +201,9 @@ echo "Tip: For easier multi-line plans and prompts, focus the input and press Ct
 
 # PLANNING_PROMPT was already set above (either from the file or generated as a fresh 'new planning cycle' fallback).
 
-# Default to enabling the runtime TodoGate.
+# TodoGate off by default (TODO is future backlog).
 TODO_GATE_FLAGS=""
-if [ "${GROK_TODO_GATE:-1}" = "1" ] || [ "${GROK_TODO_GATE:-1}" = "true" ]; then
+if [ "${GROK_TODO_GATE:-0}" = "1" ] || [ "${GROK_TODO_GATE:-0}" = "true" ]; then
     TODO_GATE_FLAGS="--todo-gate"
 fi
 

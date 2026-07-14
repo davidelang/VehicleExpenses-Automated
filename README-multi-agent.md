@@ -82,26 +82,17 @@ If the Gemini CLI crashes with `An unexpected critical error occurred:Error: ioc
 ---
 
 ### 2.3. Merging and Cleanup
-Once work is completed and merged into `master`:
+Do **not** naive-merge or set `works` tags from agents. Follow **`MASTER_AGENT_MANDATE.md` §2** (local PR at `dev-ai-interaction/PRs/PR-<branch>.md`, special-file protocol for ENGINEERING_LOG / TODO / project-facts, `./build_app`). Prefer skill `/master-merge` or Master session. Coder prepares PR via `/prepare-local-pr` / `./generate_pr.sh`.
 
-1.  **Merge the branch** (from the `master/` directory):
-    ```bash
-    cd master
-    git diff master..feature-name
-    git merge feature-name
-    git tag -f works
-    ```
+After Master merge is complete, from orchestration root:
 
-2.  **Remove the worktree and branch** (from the project root):
-    ```bash
-    cd ..
-    ./remove_worktree.sh feature-name
-    ```
-    *This script removes the worktree, the branch symlink, and the branch itself.*
-    * **Auto-Cleanup:** If the branch is merged OR has no unique commits, it is deleted automatically.
-    * **Force Levels:** 
-        * `-f`: Removes worktree despite uncommitted changes.
-        * `-ff`: Force deletes the branch even if not merged.
+```bash
+./remove_worktree.sh feature-name
+```
+
+- `-f`: Removes worktree despite uncommitted changes.
+- `-ff`: Force deletes the branch even if not merged.
+- **`works` tag:** User only.
 
 ---
 

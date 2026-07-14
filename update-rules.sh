@@ -85,16 +85,15 @@ FILES=(
     # interaction with the planner until explicit approval. Synced for use from
     # any worktree.
     "run-grok-planner"
-    # run-grok-master: specialized launcher for the top-level Master Orchestrator.
-    # Coordinates planning (often via run-grok-planner), spawns and monitors
-    # execution sub-agents, intervenes on run-away behavior, forces proper
-    # resets, collects logs, and initiates recovery planning. Synced to all
-    # worktrees.
     "run-grok-master"
-    # run-antigravity: launcher for the Antigravity agent CLI. Runs as ai-coder
-    # for consistent permissions in the multi-user setup. Synced to all worktrees.
+    "run-grok-coder"
+    "run-grok-orchestrator"
+    "run-grok"
+    "ve-env"
     "run-antigravity"
-    # Stable canonical guardrails block that every plan must include verbatim.
+    ".grok/skills/prepare-local-pr/SKILL.md"
+    ".grok/skills/master-merge/SKILL.md"
+    # Stable canonical guardrails block (cite by path in plans; do not paste).
     # This is the single source of truth for the short "Compliance & Execution
     # Guardrails (STANDARD BLOCK)" section. Placed at repo root (not under
     # dev-ai-interaction/) so it is a regular tracked file in every worktree
