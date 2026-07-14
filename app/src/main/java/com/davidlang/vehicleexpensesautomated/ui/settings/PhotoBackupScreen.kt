@@ -1101,5 +1101,3 @@ private fun S3ProviderDropdown(
         }
     }
 }
-
-@Composable
