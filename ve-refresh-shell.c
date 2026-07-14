@@ -86,8 +86,13 @@ int main(int argc, char **argv) {
     perror("ve-refresh-shell: initgroups");
     fprintf(stderr, "ve-refresh-shell: starting a normal shell (groups NOT refreshed).\n");
     /* still root — drop to user before shell */
-    if (setgid(pw->pw_gid) == 0) {
-      (void)setuid(ruid);
+    if (setgid(pw->pw_gid) != 0) {
+      perror("ve-refresh-shell: setgid (recovery)");
+      return 1;
+    }
+    if (setuid(ruid) != 0) {
+      perror("ve-refresh-shell: setuid (recovery)");
+      return 1;
     }
     exec_user_shell(pw);
     return 1;
