@@ -196,6 +196,11 @@ class MainActivity : ComponentActivity() {
                     return@VehicleExpensesAutomatedTheme
                 }
 
+                val showExperimentScreens = remember {
+                    context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE)
+                        .getBoolean("show_experiment_screens", false)
+                }
+
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
@@ -294,22 +299,24 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { drawerState.close() }
                                 }
                             )
-                            NavigationDrawerItem(
-                                label = { Text("Alignment Experiment") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("experiment")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Pump Experiment") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("experiment_pump")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
+                            if (showExperimentScreens) {
+                                NavigationDrawerItem(
+                                    label = { Text("Alignment Experiment") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                NavigationDrawerItem(
+                                    label = { Text("Pump Experiment") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment_pump")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                            }
                         }
                     }
                 ) {

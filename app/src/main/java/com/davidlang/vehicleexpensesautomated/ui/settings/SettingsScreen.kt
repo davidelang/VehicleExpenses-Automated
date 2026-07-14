@@ -90,6 +90,9 @@ fun SettingsScreen(navController: NavHostController) {
             }
         )
     }
+    var showExperimentScreens by remember {
+        mutableStateOf(prefs.getBoolean("show_experiment_screens", false))
+    }
     var debugMaxSessions by remember { mutableIntStateOf(prefs.getInt("debug_quick_fill_max_sessions", 10)) }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
     var shutterSounds by remember { mutableStateOf(prefs.getBoolean("shutter_sounds", true)) }
@@ -199,11 +202,12 @@ fun SettingsScreen(navController: NavHostController) {
         QuickFillDebugStore.pruneToMax(context)
     }
 
-    LaunchedEffect(saveFuelPhotos, saveExpensePhotos, debugQuickFill, darkModePref, shutterSounds, currencySymbol, volumeUnit) {
+    LaunchedEffect(saveFuelPhotos, saveExpensePhotos, debugQuickFill, showExperimentScreens, darkModePref, shutterSounds, currencySymbol, volumeUnit) {
         prefs.edit().apply {
             putBoolean("save_fuel_photos", saveFuelPhotos)
             putBoolean("save_expense_photos", saveExpensePhotos)
             putBoolean("debug_quick_fill", debugQuickFill)
+            putBoolean("show_experiment_screens", showExperimentScreens)
             putString("dark_mode", darkModePref)
             putBoolean("shutter_sounds", shutterSounds)
             putString("currency_symbol", currencySymbol)
@@ -278,6 +282,7 @@ fun SettingsScreen(navController: NavHostController) {
         }
         SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
         SwitchSetting("Debug Quick Fill", debugQuickFill) { debugQuickFill = it }
+        SwitchSetting("Show experiment screens (dev)", showExperimentScreens) { showExperimentScreens = it }
         OutlinedTextField(
             value = debugMaxSessions.toString(),
             onValueChange = { text ->
