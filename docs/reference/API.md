@@ -16,49 +16,45 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 - `FuelEntry(id, vehicleId, odometer, gallons, cost, timestamp, photoUrl, isPartialFill, latitude, longitude, location, cloudManifest)`
   - Primary record for fuel fill-ups, including location and cloud sync metadata.
 
-### `FuelFillup.kt`
-- `FuelFillup(id, vehicleId, odometer, gallons, cost, timestamp)`
-  - Simplified fuel record, possibly used for internal calculations or legacy support.
-
 ### `ExpenseEntry.kt`
-- `ExpenseEntry(id, vehicleId, amount, description, date, photoUrl, category, receiptImagePath)`
-  - Entity for general expenses (repairs, insurance, etc.).
+- `ExpenseEntry(id, vehicleId, amount, currency, description, vendor, category, date, odometer, photoUrl, …, syncId, originDeviceId, updatedAt, vehicleSyncIdsJson)`
+  - Entity for general expenses (repairs, insurance, etc.). Human-readable fields first; sync metadata (`syncId`, `originDeviceId`, `vehicleSyncIdsJson`) at end of schema.
 
 ## OCR & Image Processing
 
 ### `OcrHarness.kt`
-- `OcrHarness` (Object): Orchestrates the multi-engine OCR process.
-- `interface OcrEngine`: Common interface for all OCR engines.
-- `interface OcrEngineStrategy`: Strategy for choosing engines.
-- `interface ReportCollector`: Collects results from multiple engines.
+- `OcrHarness` (Object): Production OCR orchestration (`runDiscovery`, `runAutoFillPipeline`, `runPumpCostVolPipeline`).
+- `OcrHarnessResult`: Structured harness output for experiments and Quick Fill debug.
 
 ### `OcrEngine.kt`
 - `MlKitEngine`: Implementation of `OcrEngine` using Google's ML Kit.
-- `object OcrUtils`: General utilities for OCR results.
+- `OcrResult`, `TextBlock`: Shared OCR result types.
 
 ### `NativePaddleEngine.kt`
-- `NativePaddleEngine`: High-performance C++ based PaddleOCR implementation. Supports "V3" variants and "Mono" mode for odometer-specific optimizations.
+- `NativePaddleEngine`: High-performance C++ based PaddleOCR implementation. Production path `uint8_fp16_u8`.
 
-### `HybridOcrEngine.kt`
-- `HybridOcrEngine`: Combines ML Kit and PaddleOCR results for maximum accuracy.
+### `OdometerOcrUtils.kt`
+- `OdometerOcrUtils` (Object): Odometer-specific sanitization, landmark serialize/deserialize, and photo OCR helpers.
 
-### `OdometerOcrUtils.kt` & `DiscoveryOcrUtils.kt`
-- `OdometerOcrUtils` (Object): Odometer-specific sanitization and multi-step image variation processing (Raw, Grayscale, Bilateral, etc.).
-- `DiscoveryOcrUtils` (Object): Logic for identifying "Golden Anchors" during the vehicle discovery phase.
+### `PumpCostVolUtils.kt`
+- `PumpCostVolUtils` (Object): Quick Fill pump panel cost/volume classification (production path).
 
 ### `ImageAlignmentUtils.kt` & `NativeImageUtils.kt`
-- `ImageAlignmentUtils` (Object): Anchors-based triangulation (Zoom, Rotation, Pan) and Tier-1 Veto logic.
-- `NativeImageUtils` (Object): JNI-accelerated image operations (e.g., Grayscale, Bilateral filtering, Deskewing).
-
-## Localization & Image Analysis
-- `LocationUtils.kt`: Handles GPS coordinate retrieval for fuel entries.
-- `ImageHashUtils.kt`: Generates perceptual hashes (pHash) to identify duplicate or similar images.
+- `ImageAlignmentUtils` (Object): Anchors-based triangulation and veto logic.
+- `NativeImageUtils` (Object): JNI-accelerated image operations (grayscale, bilateral, deskew, histograms).
 
 ## Synchronization & Storage
-- `SyncManager.kt` / `SyncWorker.kt` / `GoogleSheetsClient.kt` / `GoogleDriveProvider.kt` / `PhotoStorageManager.kt`: Manages the local-first synchronization cycle to Google Sheets and Drive.
+- `SpreadsheetSyncCoordinator.kt` / `SyncWorker.kt` / `TabularShareApi` / `GoogleSheetsClient.kt`: Multi-destination spreadsheet sync.
+- `PhotoBackupCoordinator.kt` / `PhotoBackupWorker.kt` / `PhotoStorageManager.kt`: Multi-destination photo backup (Google Drive, OneDrive, S3, rclone Other).
 
-## UI Components
-- `ExperimentAlignmentScreen.kt`: Advanced debug tool for comparing OCR engines against a ground-truth dataset.
-- `DashboardScreen.kt`: Summary view of vehicle status and recent activity.
-- `ManageVehiclesScreen.kt`: Interface for configuring vehicle metadata and OCR crop regions.
-- `ConflictResolutionScreen.kt`: UI for resolving data discrepancies between local and remote (Google Sheets) state.
+## UI Components (production)
+- `QuickFillupScreen.kt`: Primary fuel fill-up capture and OCR.
+- `ManageVehiclesScreen.kt`: Vehicle metadata and OCR crop regions.
+- `ExpenseEntryScreen.kt` / `ExpenseListScreen.kt`: Expense capture and history.
+- `ReportsScreen.kt`, `SettingsScreen.kt`, `SpreadsheetSyncScreen.kt`, `PhotoBackupScreen.kt`.
+
+## Debug / experiment (temporary)
+- `ExperimentAlignmentScreen.kt`, `ExperimentPumpScreen.kt`: Research harnesses; scheduled for removal.
+
+## Unwired (future)
+- `ConflictResolutionScreen.kt`: Sync conflict UI — not yet routed in `MainActivity`.

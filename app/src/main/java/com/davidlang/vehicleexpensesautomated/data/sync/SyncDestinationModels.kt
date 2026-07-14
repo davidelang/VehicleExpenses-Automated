@@ -78,20 +78,15 @@ data class SpreadsheetDestination(
     val enabled: Boolean = false,
     val wifiOnly: Boolean = true,
     val chargingOnly: Boolean = false,
-    /** Background interval in minutes (min 15, max 24h). Legacy [frequencyHours] migrated on load. */
+    /** Background interval in minutes (min 15, max 24h). Legacy hours migrated on JSON load. */
     val frequencyMinutes: Int = 60,
-    @Deprecated("Use frequencyMinutes", ReplaceWith("frequencyMinutes"))
-    val frequencyHours: Int = 0,
 ) {
-    fun resolvedFrequencyMinutes(): Int = when {
-        frequencyMinutes > 0 -> frequencyMinutes.coerceIn(MIN_FREQUENCY_MINUTES, MAX_FREQUENCY_MINUTES)
-        frequencyHours > 0 -> (frequencyHours * 60).coerceIn(MIN_FREQUENCY_MINUTES, MAX_FREQUENCY_MINUTES)
-        else -> 60
-    }
+    fun resolvedFrequencyMinutes(): Int =
+        SyncFrequencyMigration.resolveMinutes(frequencyMinutes)
 
     companion object {
-        const val MIN_FREQUENCY_MINUTES = 15
-        const val MAX_FREQUENCY_MINUTES = 24 * 60
+        const val MIN_FREQUENCY_MINUTES = SyncFrequencyMigration.MIN_MINUTES
+        const val MAX_FREQUENCY_MINUTES = SyncFrequencyMigration.MAX_MINUTES
         const val MIN_FREQUENCY_HOURS = 0.25f
         const val MAX_FREQUENCY_HOURS = 24f
     }
@@ -110,18 +105,13 @@ data class PhotoDestination(
     val wifiOnly: Boolean = true,
     val chargingOnly: Boolean = false,
     val frequencyMinutes: Int = 60,
-    @Deprecated("Use frequencyMinutes", ReplaceWith("frequencyMinutes"))
-    val frequencyHours: Int = 0,
 ) {
-    fun resolvedFrequencyMinutes(): Int = when {
-        frequencyMinutes > 0 -> frequencyMinutes.coerceIn(MIN_FREQUENCY_MINUTES, MAX_FREQUENCY_MINUTES)
-        frequencyHours > 0 -> (frequencyHours * 60).coerceIn(MIN_FREQUENCY_MINUTES, MAX_FREQUENCY_MINUTES)
-        else -> 60
-    }
+    fun resolvedFrequencyMinutes(): Int =
+        SyncFrequencyMigration.resolveMinutes(frequencyMinutes)
 
     companion object {
-        const val MIN_FREQUENCY_MINUTES = 15
-        const val MAX_FREQUENCY_MINUTES = 24 * 60
+        const val MIN_FREQUENCY_MINUTES = SyncFrequencyMigration.MIN_MINUTES
+        const val MAX_FREQUENCY_MINUTES = SyncFrequencyMigration.MAX_MINUTES
     }
 }
 

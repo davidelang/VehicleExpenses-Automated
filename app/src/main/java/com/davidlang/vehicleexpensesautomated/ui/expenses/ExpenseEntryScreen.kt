@@ -58,11 +58,15 @@ private const val TAG = "ExpenseEntry"
 @Composable
 fun ExpenseEntryScreen(
     navController: NavHostController? = null,
-    expenseId: Long? = null
+    mode: ExpenseEntryMode = ExpenseEntryMode.Create,
 ) {
     // D4: reset all form state when switching create ↔ edit or edit id (no flash of prior expense).
-    key(expenseId ?: 0L) {
-        ExpenseEntryScreenBody(navController = navController, expenseId = expenseId)
+    val resetKey = when (mode) {
+        ExpenseEntryMode.Create -> 0L
+        is ExpenseEntryMode.Edit -> mode.id
+    }
+    key(resetKey) {
+        ExpenseEntryScreenBody(navController = navController, mode = mode)
     }
 }
 
@@ -70,14 +74,14 @@ fun ExpenseEntryScreen(
 @Composable
 private fun ExpenseEntryScreenBody(
     navController: NavHostController? = null,
-    expenseId: Long? = null
+    mode: ExpenseEntryMode = ExpenseEntryMode.Create,
 ) {
     val viewModel: ExpenseViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
-    val isEdit = expenseId != null && expenseId > 0
+    val editId = (mode as? ExpenseEntryMode.Edit)?.id
 
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     var selectedVehicleId by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -86,7 +90,7 @@ private fun ExpenseEntryScreenBody(
     /** Full row from DB on edit — preserves metadata not shown in the form. */
     var loadedExpense by remember { mutableStateOf<ExpenseEntry?>(null) }
     var isSaving by remember { mutableStateOf(false) }
-    val editLoadReady = !isEdit || (loadedExpense != null && loadedId == expenseId)
+    val editLoadReady = editId == null || (loadedExpense != null && loadedId == editId)
 
     val imageCapture: ImageCapture = remember {
         val resSelector = ResolutionSelector.Builder()
@@ -126,10 +130,10 @@ private fun ExpenseEntryScreenBody(
     val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
 
     // Prefill for edit; auto-select first vehicle for create
-    LaunchedEffect(expenseId, vehicles) {
-        if (isEdit && expenseId != null) {
-            if (loadedId != expenseId) {
-                val entry = viewModel.getExpenseById(expenseId)
+    LaunchedEffect(mode, vehicles) {
+        if (editId != null) {
+            if (loadedId != editId) {
+                val entry = viewModel.getExpenseById(editId)
                 if (entry != null) {
                     selectedVehicleId = entry.vehicleId
                     amount = if (entry.amount == 0.0) "" else entry.amount.toString()
@@ -145,7 +149,7 @@ private fun ExpenseEntryScreenBody(
                     photoUrl = entry.photoUrl
                     showLiveCamera = entry.photoUrl == null
                     loadedExpense = entry
-                    loadedId = expenseId
+                    loadedId = editId
                 } else {
                     loadedExpense = null
                     Toast.makeText(context, "Expense not found", Toast.LENGTH_LONG).show()
@@ -158,7 +162,7 @@ private fun ExpenseEntryScreenBody(
             if (selectedVehicleId == null && vehicles.isNotEmpty()) {
                 selectedVehicleId = vehicles.first().id
             }
-            if (!isEdit && photoUrl == null) {
+            if (editId == null && photoUrl == null) {
                 showLiveCamera = true
             }
         }
@@ -182,7 +186,7 @@ private fun ExpenseEntryScreenBody(
 
     fun saveExpense() {
         if (isSaving) return
-        if (isEdit && !editLoadReady) {
+        if (editId != null && !editLoadReady) {
             Toast.makeText(context, "Still loading expense…", Toast.LENGTH_SHORT).show()
             return
         }
@@ -194,7 +198,7 @@ private fun ExpenseEntryScreenBody(
         val amountVal = amount.toDoubleOrNull() ?: 0.0
         val storedCurrency = CurrencyCodes.fromSymbolOrCode(currencySymbol)
         val odo = odometerText.trim().toIntOrNull()
-        // copy() from loadedExpense preserves receiptImagePath, lat/long, location, cloudManifest
+        // copy() from loadedExpense preserves photoUrl, lat/long, location, cloudManifest
         val base = loadedExpense
         val toSave = (base ?: ExpenseEntry(
             vehicleId = vehicleId,
@@ -202,7 +206,7 @@ private fun ExpenseEntryScreenBody(
             description = "",
             date = date
         )).copy(
-            id = if (isEdit) expenseId!! else 0L,
+            id = editId ?: 0L,
             vehicleId = vehicleId,
             amount = amountVal,
             currency = storedCurrency,
@@ -220,7 +224,7 @@ private fun ExpenseEntryScreenBody(
                 viewModel.saveExpense(toSave)
                 Toast.makeText(
                     context,
-                    if (isEdit) "Expense updated" else "Expense saved",
+                    if (editId != null) "Expense updated" else "Expense saved",
                     Toast.LENGTH_SHORT
                 ).show()
                 navController?.navigate("expenselist") {
@@ -559,7 +563,7 @@ private fun ExpenseEntryScreenBody(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                if (isEdit) "Edit Expense" else "New Expense",
+                if (editId != null) "Edit Expense" else "New Expense",
                 style = MaterialTheme.typography.titleLarge
             )
 

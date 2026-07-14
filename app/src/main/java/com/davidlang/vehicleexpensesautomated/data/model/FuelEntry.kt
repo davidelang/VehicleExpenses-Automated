@@ -23,12 +23,12 @@ data class FuelEntry(
     val longitude: Double? = null,
     val location: String? = null,
     val cloudManifest: String? = null,
+    val deleted: Boolean = false,
+    val deletedAt: Long? = null,
     /** Stable cross-device merge key (UUID string). */
     val syncId: String = "",
     /** Device that created this row; blank until first save after migration. */
     val originDeviceId: String = "",
     /** Last-write-wins timestamp (ms). */
     val updatedAt: Long = 0,
-    val deleted: Boolean = false,
-    val deletedAt: Long? = null
 )
