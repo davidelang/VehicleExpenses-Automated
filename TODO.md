@@ -39,7 +39,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] Quick Fill: GPS-based currency default + locale filter for symbol chooser
 
 ## Backlog (engineering / tech debt)
-- [ ] **Dead code cleanup**
+- [x] **Dead code cleanup**
 - [ ] **Code optimization / hardening**
 - [ ] **Remove pump and alignment experiment UIs** once no longer needed for diagnostics
 - [ ] Create `docs/reference/DATABASE_SCHEMA.md`
