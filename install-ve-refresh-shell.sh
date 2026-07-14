@@ -5,21 +5,25 @@
 # be stored safely). Source ve-refresh-shell.c IS tracked.
 #
 # Usage:
-#   ./install-ve-refresh-shell.sh              # install into cwd (and rebuild)
+#   ./install-ve-refresh-shell.sh              # install into cwd
 #   ./install-ve-refresh-shell.sh /path/to/wt  # install into that worktree
-#   ./install-ve-refresh-shell.sh --all        # orch root + all agent-* / master worktrees
+#   ./install-ve-refresh-shell.sh --all        # orch root + all worktrees
 #
-# Requires sudo once for chown root + chmod 4755. Idempotent.
+# Requires sudo for chown root + chmod 4755. Idempotent.
+# NEVER leaves setuid bit on a non-root-owned binary (kills terminals via ve-env).
 
 set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-# Prefer common git dir's parent worktree that has update-rules (orchestration)
+ORCH="$ROOT"
 if [ -f "$ROOT/update-rules.sh" ]; then
   ORCH="$ROOT"
-else
-  ORCH="$ROOT"
 fi
+
+is_good() {
+  local b="$1"
+  [ -f "$b" ] && [ -x "$b" ] && [ -u "$b" ] && [ "$(stat -c '%U' "$b" 2>/dev/null)" = "root" ]
+}
 
 install_one() {
   local dest="$1"
@@ -39,51 +43,50 @@ install_one() {
   fi
 
   bin="$dest/ve-refresh-shell"
-  # Rebuild if missing, older than source, or not a regular file
   if [ ! -f "$bin" ] || [ "$src_c" -nt "$bin" ]; then
     echo "  Building $bin ..."
-    if ! gcc -O2 -Wall -o "$bin" "$src_c" 2>/dev/null; then
+    if ! gcc -O2 -Wall -o "$bin" "$src_c"; then
       echo "install-ve-refresh-shell: gcc failed for $bin" >&2
       return 1
     fi
   fi
 
-  # Setuid root only — never leave setuid on non-root owner
+  # Always strip setuid until root owns the file.
+  chmod a-s "$bin" 2>/dev/null || true
+  chmod 755 "$bin" 2>/dev/null || true
+
+  if is_good "$bin"; then
+    echo "  OK (already): $bin ($(stat -c '%U:%G %a' "$bin" 2>/dev/null))"
+    return 0
+  fi
+
+  if [ "$(id -u)" -eq 0 ]; then
+    chown root:root "$bin" && chmod 4755 "$bin"
+    echo "  OK: $bin ($(stat -c '%U:%G %a' "$bin" 2>/dev/null))"
+    return 0
+  fi
   if command -v sudo >/dev/null 2>&1; then
     if sudo chown root:root "$bin" 2>/dev/null && sudo chmod 4755 "$bin" 2>/dev/null; then
       echo "  OK: $bin ($(stat -c '%U:%G %a' "$bin" 2>/dev/null))"
       return 0
     fi
   fi
-  # Direct root
-  if [ "$(id -u)" -eq 0 ]; then
-    chown root:root "$bin" && chmod 4755 "$bin"
-    echo "  OK: $bin (as root)"
-    return 0
-  fi
 
-  chmod 755 "$bin" 2>/dev/null || true
-  echo "  WARN: could not chown root $bin — left 755 (run with sudo)" >&2
+  echo "  WARN: $bin not setuid-root (owner=$(stat -c '%U' "$bin" 2>/dev/null)). Run:" >&2
+  echo "    sudo chown root:root $bin && sudo chmod 4755 $bin" >&2
   return 1
-}
-
-is_good() {
-  local b="$1"
-  [ -x "$b" ] && [ -u "$b" ] && [ "$(stat -c '%U' "$b" 2>/dev/null)" = "root" ]
 }
 
 MODE="${1:-.}"
 if [ "$MODE" = "--all" ]; then
   echo "install-ve-refresh-shell: orchestration + worktrees under $ORCH"
   install_one "$ORCH" || true
-  # Common worktree names
   for d in "$ORCH"/agent-* "$ORCH"/master; do
     [ -d "$d" ] || continue
     [ -f "$d/.git" ] || [ -d "$d/.git" ] || continue
     echo "install-ve-refresh-shell: $d"
     install_one "$d" || true
   done
-  # Also any git worktrees
   if command -v git >/dev/null 2>&1; then
     while read -r wt; do
       [ -n "$wt" ] || continue
@@ -100,7 +103,6 @@ DEST="$MODE"
 if [ "$DEST" = "." ] || [ -z "$DEST" ]; then
   DEST=$(pwd)
 fi
-# Absolute
 DEST=$(cd "$DEST" && pwd)
 echo "install-ve-refresh-shell: $DEST"
 install_one "$DEST"
