@@ -1,50 +1,24 @@
 #!/bin/bash
-# run-grok
-# Launch Grok CLI in the current agent worktree.
-# Sandbox is provided via the ./@@SANDBOX_PATH@@ symlink (created by setup_agent or enable-full-orchestration.sh) + absolute path in mandates.
-# Full orchestration layout expected (see enable-full-orchestration.sh for opt-in from plain master checkout). Plain standalone master remains usable independently.
+# run-grok — bare primary-user (dlang) session: process-break / fewer multi-agent guardrails.
+# Human may explicitly authorize violating normal project process. Not the default agent path.
+# For multi-agent roles use: run-grok-orchestrator, run-grok-master, run-grok-planner, run-grok-coder.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"
-# Load permission config if present
 if [ -f project.config ]; then
-  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(orchestrator_user|GROK_BIN)')
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(primary_user|GROK_BIN)')
 fi
-ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
+PRIMARY_USER=${primary_user:-dlang}
 GROK_BIN="${GROK_BIN:-@@GROK_BIN_DEFAULT@@}"
 
-# Ensure all files created during this session are group-writable (multi-user env)
-umask 007
+umask 002
 
-echo "Launching Grok CLI in $(pwd)..."
+echo "Launching bare Grok as primary user ($PRIMARY_USER) in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
-echo "Running as: $ORCHESTRATOR_USER (via sudo -u)"
-echo "Tip: For easier multi-line plans and prompts, focus the input and press Ctrl+M (or type /multiline or /ml) to enable multiline input mode (Enter inserts newline; Shift+Enter or Alt+Enter sends)."
+echo "Mode: process-break allowed — user may authorize violating multi-agent rules."
+echo "Tip: Ctrl+M or /multiline for multi-line input."
 
-# Post-handoff / new cycle: relaunching this script (from inside an agent worktree) always injects the full
-# fresh-session instruction (see the long string below + new_agent_prompt). This forces the Mandate
-# report + STOP for a clean boundary. The primary planning deliverable the agent must
-# produce is a fresh plan file under @@SANDBOX_PATH@@/plans/ (never treat the harness session plan.md as the
-# approved work plan; see AGENT_MANDATES "Sandbox Plan File..." + MULTI_AGENT_USER_INSTRUCTIONS.md).
-# The agent is required to write @@SANDBOX_PATH@@/.post-handoff-gate.txt at every handoff for the
-# low-friction in-session fallback ritual.
-#
-# Note on models: The companion script `run-grok-planner` (used for dedicated Planning Agent sessions)
-# forces a strong reasoning model by default (see its source and AGENT_MANDATES.md). The main `run-grok`
-# launcher uses whatever model the underlying grok binary defaults to (or what you pass on the command line).
-# Stronger reasoning models are preferred for the planning phase.
-
-# Default to enabling the runtime TodoGate (turn-end enforcement around TODO.md updates).
-# Set GROK_TODO_GATE=0 to disable for this invocation.
-TODO_GATE_FLAGS=""
-if [ "${GROK_TODO_GATE:-1}" = "1" ] || [ "${GROK_TODO_GATE:-1}" = "true" ]; then
-    TODO_GATE_FLAGS="--todo-gate"
-fi
-
-# --no-alt-screen prevents the CLI from switching to the alternate screen buffer
-# (helps with scrollback, EBADF issues, and visibility in some terminal setups).
-# Support -- to pass raw params to the inner grok (like build_app).
 EXTRA_ARGS=()
 FOUND_DD=0
 for arg in "$@"; do
@@ -54,8 +28,16 @@ for arg in "$@"; do
     FOUND_DD=1
   fi
 done
-exec sudo -u "$ORCHESTRATOR_USER" "$GROK_BIN" \
-    "You are starting a fresh session in this multi-agent project. As your very first action, read the file new_agent_prompt in the current working directory (use your Read tool if needed) and follow its instructions to the letter. This includes immediately reading AGENT_CONTEXT.md and your CLI thin overlay (GROK.md or GEMINI.md), providing the required brief Mandate Acknowledgment report (overrides, barrier, verification, geography with Role+Branch, plans directory rule, etc.), and then waiting. Do not read TODO.md, search for other files, or begin any other task until the user provides a specific directive after your report. Your only mission right now is to introduce yourself via the report and wait. In your report, also remind the user about enabling multiline input (Ctrl+M or /multiline) for comfortable entry of detailed plans." \
-    $TODO_GATE_FLAGS \
+
+# Run as current user if already primary; else sudo -u primary
+if [ "$(id -un)" = "$PRIMARY_USER" ]; then
+  exec "$GROK_BIN" \
+    "You are running as the primary developer ($PRIMARY_USER) in a bare Grok session. Normal multi-agent process is optional. You may read AGENTS.md / AGENT_MANDATES.md if useful. The human may explicitly authorize violating those rules in this session. Confirm cwd once with pwd; never prefix helpers with cd … &&. Await the user's directive." \
     --no-alt-screen \
     "${EXTRA_ARGS[@]}"
+else
+  exec sudo -u "$PRIMARY_USER" "$GROK_BIN" \
+    "You are running as the primary developer ($PRIMARY_USER) in a bare Grok session. Normal multi-agent process is optional. You may read AGENTS.md / AGENT_MANDATES.md if useful. The human may explicitly authorize violating those rules in this session. Confirm cwd once with pwd; never prefix helpers with cd … &&. Await the user's directive." \
+    --no-alt-screen \
+    "${EXTRA_ARGS[@]}"
+fi

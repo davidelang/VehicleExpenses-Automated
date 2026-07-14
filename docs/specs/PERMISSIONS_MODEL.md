@@ -31,9 +31,11 @@ All code, scripts, and docs must follow this. Changes require plan + approval.
 
 ## Directory and File Permissions (pure Unix + setgid)
 - **Source code** (app/, docs/, etc., excluding build/ and dev-ai-interaction/): `dlang:ai-code 2775` (setgid).
-  - Files created by group members: 664.
+  - Files created by group members: **664**.
   - Non-members (ai-planner as "other"): r-x (read source, no write).
-- **Build output** (app/build/, build/, .gradle/): `dlang:ai-code 2770` (setgid). Group members (dlang or ai-coder) can overwrite generated files regardless of per-file owner.
+  - **Umask for source/docs work: `002`** (666→664, 777→775 → with setgid dirs **2775**). **Not** `007` (that yields 660/770 and breaks planner other-read).
+  - **Failure mode:** umask `027` → **640** (owner-only write; group read-only; planner cannot read). Fix via `source ./ve-env`, agent launchers, and `build_app`/`deploy` post-normalize — not daily `fix-perms`.
+- **Build output** (app/build/, build/, .gradle/): `dlang:ai-code 2770` (setgid). Files often **660**. Group members can overwrite. Gradle in `build_app` uses `--no-daemon` and may use umask 007 only inside the gradle subprocess; then chmod dirs 2770.
 - **Sandbox** (dev-ai-interaction/ and subdirs for plans etc.): `dlang:ai-shared 2775`.
 - **.git/**: `dlang:ai-shared 2770` (group can add objects).
 - **ENGINEERING_LOG.md**: `dlang:ai-shared 660` + `chattr +a` (kernel append-only). Set once (root only if needed to re-apply).
@@ -43,7 +45,7 @@ All code, scripts, and docs must follow this. Changes require plan + approval.
 - **run-as-primary** (generic setuid helper, not named after any local account): owned by primary_user (e.g. dlang), mode 4755. Any process executing it gets euid of the file owner for keystore consistency. Source run-as-primary.c is tracked; binary is built locally and ignored.
 - **No world-writable (666) anywhere** except possibly temp.
 
-New files inherit group via setgid + umask 007 enforced in all build/compile/deploy scripts.
+New files inherit group via setgid. **General/project shells and agent launchers: umask 002.** Build artifact trees tightened to 660/2770 after gradle.
 
 ## Critical Helpers (enforce rules where Unix alone is insufficient)
 - **append-to-engineering-log**: setgid wrapper + chattr +a on log. Validates `## YYYY-MM-DD` header. Only appends. Prevents git reset / overwrite on log.
@@ -80,8 +82,14 @@ New files inherit group via setgid + umask 007 enforced in all build/compile/dep
 - Specs in this doc are authoritative. Update only via approved plan.
 - Fresh `setup_agent.sh` leaves correct initial perms (no root chowns in normal flow).
 
-## When to Run Fixers
-- `set-worktree-perms` only after true breakage (e.g. root build, or detected by agent failure). Not before every command.
-- dlang builds/deploys must leave the tree in a state where ai-coder can continue (enforced by scripts + 2770 dirs).
+## When to Run Fixers / env helpers
+| Symptom | Run |
+|---------|-----|
+| New shell, unsure umask/groups | `source ./ve-env` or `./ve-env check` |
+| Agent/build created wrong modes | next `./build_app` / `./deploy` (normalize) |
+| Root-owned / systemic breakage | `sudo ./fix-perms` (**rare**) |
+| Daily work | Do **not** run fix-perms habitually |
+
+- dlang builds/deploys must leave the tree in a state where ai-coder can continue (enforced by scripts + 2770 build dirs + 664 sources).
 
 This model satisfies all constraints with minimal complexity.

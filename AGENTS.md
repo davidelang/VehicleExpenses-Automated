@@ -3,48 +3,55 @@
 This file (AGENTS.md) is the entry point for agent CLIs in this multi-agent VehicleExpenses-automated project.
 
 ## Immediate Reads (on every start / after /compact)
-1. Read `./AGENT_CONTEXT.md` — your identity, current branch/role, sandbox location, and agent-specific notes. (If missing, refer to `./master/AGENT_CONTEXT.md` as a template reference for variables and layout, and determine your Role/Branch from `git status`).
-2. Read your CLI-specific thin overlay: `./GROK.md` (for Grok) or `./GEMINI.md` (for Antigravity).
-3. Read `./AGENT_MANDATES.md` — the **shared core** for *all* agent CLIs (bi-modal workflow, STOP & WAIT, forensic verification + build_app, Baseball Rule, three git reset contexts with preflight, ICRS or raw pixel coordinates only, no deployment + shared hardware, per-branch tags, old plans directory rule, re-read after compaction, etc.).
+1. Read `./AGENT_CONTEXT.md` — identity, branch/role, sandbox. (If missing, use template / git status; orchestration root has its own AGENT_CONTEXT.md.)
+2. Read CLI overlay: `./GROK.md` or `./GEMINI.md`.
+3. Read `./AGENT_MANDATES.md` (shared core).
+4. **If Master** (`run-grok-master` / master worktree): also read **`MASTER_AGENT_MANDATE.md`** fully.
+5. Confirm **`pwd` once** — then never `cd … && ./helper` (breaks allow-lists → approval thrash).
 
-**Do NOT re-read system configuration files on every turn** (they are already in context via the harness).
+**Do NOT re-read system configuration files on every turn.**
 
-## Key File Disambiguation (Shared Inventory)
-| File                  | Purpose                                      | Read by                  | Notes |
-|-----------------------|----------------------------------------------|--------------------------|-------|
-| AGENT_CONTEXT.md     | Per-agent state (ID, branch, role, geography) | All agents              | Created once per worktree from template |
-| AGENT_MANDATES.md    | Shared CLI-neutral core mandates            | All agents (Grok, Antigravity, ...) | Authoritative for bi-modal, reset, coords, forensic, etc. |
-| GROK.md              | Grok-specific thin overlay                  | Grok CLI only           | Tool names (Read, Write, StrReplace, Shell, Task, SwitchMode), SwitchMode for plan mode |
-| GEMINI.md            | Antigravity CLI thin overlay                | Antigravity CLI only     | Tool names (run_command, write_to_file, replace_file_content, invoke_subagent) |
-| new_agent_prompt     | Fast-track launch report + STOP & WAIT      | All agents               | Unified startup prompt for Grok and Antigravity |
-| .grok/config.toml + hooks/ | Project permissions, PreToolUse hard stops | Harness (native)        | Checked-in; merges with ~/.grok/ ; plan-mode sandbox enforcement |
-| dev-ai-interaction/  | Sandbox (including plans/ for current active plans, analysis scripts, logs)     | All (via absolute or ./ symlink) | Only writable area in plan mode for most work |
-| docs/specs/          | Authoritative specs (ISOTROPIC_COORDINATE_SPEC.md is source of truth for coords) | Reference             | ICRS / raw pixel only |
+## Launchers (role → command)
+| Launcher | OS user | Role |
+|----------|---------|------|
+| `./run-grok-orchestrator` | ai-orchestrator | Meta rules / brain (orchestration branch) |
+| `./run-grok-master` | ai-coder | **Execute plan**; PR review/merge |
+| `./run-grok-planner` | ai-planner | Long-lived planning; **owns new cycles** |
+| `./run-grok-coder` | ai-coder | Implement in agent-N |
+| `./run-grok` | dlang | Bare process-break session |
 
-## Plans Directory Rule (Historical Only)
-`dev-ai-interaction/plans/` contains current-turn active plans (the one explicitly designated by the user for this turn) as well as the historical-plans/ sibling for finished/abandoned work (usually by another agent). 
-- In every planning phase the first concrete deliverable **must** be a fresh task plan written to a new file directly under `dev-ai-interaction/plans/` (standard structure; see the "Sandbox Plan File as the Primary Approved Artifact" subsection in AGENT_MANDATES.md and the explicit user magic/forbidden phrases + rituals in the tracked `MULTI_AGENT_USER_INSTRUCTIONS.md`).
-- "Being helpful," "proactive," or "efficient" during planning means research, idea suggestion, and plan improvement — **not** source changes or builds.
-- Each worktree root has `project-facts.md` (tracked). On cycle start the agent must read it first. It contains only stable layout facts and "where things live" pointers that remain true after merges and for new efforts on the tree (see AGENT_MANDATES).
-- The harness `~/.grok/sessions/.../plan.md` is the process log only (short entries referencing the sandbox plan path; roll old bulk to historical-plans/ then minimal prepend — prepending to, not even superseding).
-- Completed plans are moved to `dev-ai-interaction/historical-plans/`.
-- **Do not** start new work from any plan in `historical-plans/` (or any old/ subdirs) or from a non-designated file in `plans/` unless the user has *explicitly* designated the single current plan file (in dev-ai-interaction/plans/) for *this* turn by full path.
+Skills: `/prepare-local-pr`, `/master-merge`. Disabled in project config: `pr-babysit`, `execute-plan`, `design`, `check-work`. `/code-review` only when user explicitly wants ambitious restructure (separate planned turn).
 
-## Coordinates Policy (Project-Wide)
-The only valid coordinate systems are **ICRS** (Isotropic Center-Relative Space — radial shortest-edge normalization) and **raw pixel integers**.
-Normalized 0.0–1.0 (per-axis) is obsolete and must be corrected wherever it appears in docs, code comments (except known-good historical or internal math), or persistent storage.
+## Key File Disambiguation
+| File | Purpose | Notes |
+|------|---------|-------|
+| AGENT_CONTEXT.md | Role/branch/geography | Per worktree |
+| AGENT_MANDATES.md | Shared core | Bi-modal, reset, coords, TODO/eng-log, cwd |
+| MASTER_AGENT_MANDATE.md | Master merge/execute | Masters only |
+| GROK.md / GEMINI.md | CLI overlays | Thin |
+| new_agent_prompt | Startup ack + STOP | All |
+| standard-plan-compliance-block.md | Execution gates | **Cite by path; do not paste** |
+| project-facts.md | Orientation map | Discovery candidates; merge prunes |
+| TODO.md | Future backlog | todo-append / todo-close only |
+| ENGINEERING_LOG.md | Current turn | append-to-engineering-log only |
+| ve-env | Human shell umask/groups | `source ./ve-env` |
+| .grok/config.toml + hooks/ | Permissions + skills.disabled | |
+| dev-ai-interaction/ | Sandbox | Absolute path preferred |
+| docs/specs/ | Specs | PERMISSIONS_MODEL, coords |
 
-## Git Reset Rules (Three Contexts — CRITICAL)
-See AGENT_MANDATES.md for the exact three allowed contexts + mandatory preflight (verify the branch-scoped tag exists before `git reset --hard`).
+## Plans Directory Rule
+`dev-ai-interaction/plans/` — current designated plan. Completed → `historical-plans/`. Do not start work from historical or non-designated files unless user names the exact path. Harness session plan.md is process log only. project-facts.md = orientation only (see AGENT_MANDATES).
 
-Never use HEAD^, HEAD~, arbitrary SHAs, or other-branch tags.
+## Coordinates Policy
+ICRS or raw pixel integers only. Normalized 0.0–1.0 per-axis is obsolete.
+
+## Git Reset Rules
+See AGENT_MANDATES.md — three contexts + `./get-builds-tag.sh` preflight only.
 
 ## Next Steps After Reading
-- If this is a fresh launch or post-compaction: immediately produce the Mandate Acknowledgment report from `new_agent_prompt` and wait / STOP & WAIT.
-- For implementation: only after explicit user approval of a plan. Approval must reference the exact `dev-ai-interaction/plans/<name>-plan.md` path (see MULTI_AGENT_USER_INSTRUCTIONS.md for the required magic phrasing). The approved plan is always the designated sandbox file, not the harness session plan.md.
-- In planning, "being helpful/proactive/efficient" means research, suggesting ideas, and making the written plan document (in dev-ai-interaction/plans/) better — it does **not** mean making source changes or running builds. Do not call exit_plan_mode until the user has had full discussion on the written plan file and signals it is ready for presentation. Rejection or continued feedback = "revise the plan document", not "abandon". For complex work, prefer the sub-agent pattern: spawn a narrow Planning Sub-agent for research + plan doc iteration (it must not call exit_plan_mode), then an Execution Sub-agent after user approval of the written file. The main agent orchestrates and reviews. Create the fresh sandbox plan file as the primary artifact under `dev-ai-interaction/plans/` (see updated Plans Directory Rule + AGENT_MANDATES "Sandbox Plan File..." subsection). Read the local `project-facts.md` in the worktree root first for per-branch continuity. Use relaunch via the appropriate launcher after handoff for the cleanest new cycle.
-- Always use the absolute sandbox `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/` when writing research artifacts.
+- Fresh launch: Mandate Acknowledgment from `new_agent_prompt`, then STOP & WAIT.
+- Implementation only after magic approval naming `dev-ai-interaction/plans/<name>-plan.md`.
+- Planning help = research + better plan file, not source changes/builds.
+- Sandbox writes: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`.
 
-This project uses physical copies of the shared brain (delivered by `git worktree add` from master tip + hotfixed via `update-rules.sh` run from the orchestration root). 
-
-Welcome. Report your role, branch, and current mandates understanding now.
+Welcome. Report your role, branch, and mandates understanding now.

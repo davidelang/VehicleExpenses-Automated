@@ -1,35 +1,40 @@
-# project-facts.md — Stable "where things live" facts (orchestration)
+# project-facts.md — Stable orientation map (orchestration)
 
-Contains only locations and structure facts that remain true across efforts on this tree (after merge + new worktree for different work).
+Cold-start map so agents do not hunt or invent wrong procedures. Anything discovered that would help the *next* agent is a **candidate** to add here (short pointer). Merge process validates and prunes if large.
 
-Read in full early on startup/new cycle to avoid discovery searches.
+Read in full early on startup/new cycle.
 
 ## Sandbox (dev-ai-interaction)
 - Absolute path: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`
-- `dev-ai-interaction/plans/` — designated active plan (user names the exact file)
-- `dev-ai-interaction/historical-plans/` — archived/rolled plans
-- `dev-ai-interaction/implementation-failure-logs/` — scan on planner startup and "new planning cycle"
-- `dev-ai-interaction/.planning-agent-prompt.txt` — prompt written by master for planner restarts
+- `dev-ai-interaction/plans/` — designated active plan (user names exact file)
+- `dev-ai-interaction/historical-plans/` — archived plans
+- `dev-ai-interaction/implementation-failure-logs/` — scan on planner startup / recovery
+- `dev-ai-interaction/PRs/PR-<branch>.md` — local PR docs for Master
+- `dev-ai-interaction/.planning-agent-prompt.txt` — optional planner prompt file
 
-## At orchestration root (shared build homes)
-- `.gradle-shared/` — project-local `GRADLE_USER_HOME` for all builders (not per-user `~/.gradle`; created by `fix-perms`)
-- `.android-shared/` — project-local `ANDROID_USER_HOME` with canonical debug keystore (created by `fix-perms`)
+## Device / crash logs
+- Prefer `adb logcat -d` (or device-specific) into sandbox once; analyze locally. Do **not** start broad `find … *.log` hunts on the host.
 
-## At worktree root
-- `ENGINEERING_LOG.md` (append-only at end)
-- `project-facts.md` (this file)
-- `TODO.md`
-- Launchers: `run-grok`, `run-grok-planner`, `run-grok-master`
-- Scripts: `update-rules.sh` (run here to sync to worktrees), `build_app`, `get-builds-tag.sh`, `fix-perms`, `setup-project`, `setup_agent.sh`, `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`, `sync_infrastructure.sh`
-- `deploy` — `--restore-data` / `--install-data` standalone restore (no build/uninstall); `--push-vehicle-refs` pushes `vehicle_ref_*.jpg` with cache bust + clean launch; `--preserve-data` backups under `test-data-backups/<dev>-<ts>/` include `vehicle_refs.tar.gz` + `vehicle_refs.manifest` and `ve_source_zips.tar.gz` (device `/sdcard/Download` zips)
-- `push-vehicle-refs.sh` — thin wrapper calling `deploy --push-vehicle-refs` for phone-pulled Honda/Ford dash reference photos
-- `.grok/config.toml` + `.grok/hooks/`
-- `project.config.example`
+## At orchestration root
+- `.gradle-shared/` — project `GRADLE_USER_HOME` (multi-user)
+- `.android-shared/` — shared Android home / debug keystore
+- `ENGINEERING_LOG.md` — append only via `./append-to-engineering-log`
+- `TODO.md` — future backlog via `todo-append` / `todo-close`
+- Launchers: `run-grok-orchestrator`, `run-grok-master`, `run-grok-planner`, `run-grok-coder`, bare `run-grok` (dlang)
+- `ve-env` — `source ./ve-env` for umask 002 + group check
+- Scripts: `update-rules.sh`, `build_app` (no raw gradlew; agent builds use `--no-daemon`), `get-builds-tag.sh`, `fix-perms` (rare), `setup_agent.sh` (creates worktree; does **not** auto-start CLI), `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`, `deploy`
+- `.grok/config.toml` + `.grok/hooks/` + `.grok/skills/` (prepare-local-pr, master-merge)
+- `MASTER_AGENT_MANDATE.md` — Master review/merge SoT
+- `standard-plan-compliance-block.md` — cite by path in plans
 
 ## Worktree layout
-- App worktrees: `app/` + gradle bits + root scripts/launchers + symlink `dev-ai-interaction -> ../dev-ai-interaction`
-- This root (orchestration) is source for shared scripts/brain; use update-rules.sh to push
-- At managing orchestration root: app/ source tree is absent (only in dedicated worktrees); project-facts.md and facts remain stable for both managing root and app worktree usage.
-- Launchers (run-grok*) and setup assume full layout with dev-ai symlink (created by setup_agent or enable-full-orchestration in stamped plain trees). Plain master remains independently usable.
+- App worktrees (`agent-N/`, `master/`): `app/` + root scripts + symlink `dev-ai-interaction -> ../dev-ai-interaction`
+- Orchestration root: source of brain for `update-rules.sh`; may lack `app/` depending on layout mode
+- Sessions: human `cd`s into worktree once, then launcher; agents keep that cwd (no per-command `cd && helper`)
 
-Update only with new stable location facts valid for future unrelated work. Effort/plan details belong in the active plan or ENGINEERING_LOG.md.
+## Permissions targets
+- Source: dirs **2775**, files **664**, umask **002**
+- Build: dirs **2770**, files often **660**
+- See `docs/specs/PERMISSIONS_MODEL.md`
+
+Update only with orientation facts valid for future work. Effort/plan details → plan file or ENGINEERING_LOG.

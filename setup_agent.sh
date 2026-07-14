@@ -297,18 +297,10 @@ if [ -f "$AGENT_ABS/run-as-primary" ]; then
   chmod 4755 "$AGENT_ABS/run-as-primary" 2>/dev/null || true
 fi
 
-cd "$AGENT_ABS" || true   # restore for the optional launcher exec below
-# success is silent (Unix convention)
-
-# 7. Optional: Start Agent session immediately if in an interactive terminal
-if [ -t 0 ]; then
-    echo "Starting agent session..."
-    if [ -f "../run-antigravity" ]; then
-        exec ../run-antigravity
-    elif [ -f "../run-gemini" ]; then
-        exec ../run-gemini
-    else
-        export GEMINI_PROJECT_ROOT=$(pwd)
-        exec ~/git/gemini/bin/gemini -i "Read new_agent_prompt and follow its instructions." --include-directories ~/git/VehicleExpenses-automated/dev-ai-interaction/
-    fi
-fi
+# Leave the user in the new worktree directory (do not auto-start any agent CLI).
+cd "$AGENT_ABS" || exit 1
+echo "Worktree ready: $AGENT_ABS"
+echo "Branch: $BRANCH_NAME  Agent ID: $AGENT_ID"
+echo "Next: run a launcher from here, e.g.  ../run-grok-coder   or   ../run-grok-planner"
+# success: shell stays in agent worktree if this script was sourced; if executed,
+# print path so the human can:  cd $AGENT_ABS

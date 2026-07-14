@@ -50,7 +50,7 @@ fi
 CODER_USER=${coder_user:-@@CODE_GROUP@@r}
 
 # Ensure all files created during this session are group-writable (multi-user env)
-umask 007
+umask 002
 
 # Model selection for the Master Orchestrator.
 # Use the same strong default as the planner (grok-build in this environment).
@@ -63,9 +63,9 @@ echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
 echo "Tip: For easier multi-line plans and prompts, focus the input and press Ctrl+M (or type /multiline or /ml) to enable multiline input mode (Enter inserts newline; Shift+Enter or Alt+Enter sends)."
 
-# Default to enabling the runtime TodoGate.
+# TodoGate off by default (TODO is future backlog).
 TODO_GATE_FLAGS=""
-if [ "${GROK_TODO_GATE:-1}" = "1" ] || [ "${GROK_TODO_GATE:-1}" = "true" ]; then
+if [ "${GROK_TODO_GATE:-0}" = "1" ] || [ "${GROK_TODO_GATE:-0}" = "true" ]; then
     TODO_GATE_FLAGS="--todo-gate"
 fi
 
@@ -94,6 +94,10 @@ done
 # detailed research and plan document iteration to the dedicated planner.
 MASTER_PROMPT=$(cat << 'END_MASTER_PROMPT'
 You are the Master Orchestrator for the VehicleExpenses-automated multi-agent project.
+
+MANDATORY: Read MASTER_AGENT_MANDATE.md before PR review/merge. Typical work: user says "execute plan <sandbox-path>" — spawn/run implementers (run-grok-coder), report results. New planning cycles start in the planner terminal, not here. Never prefix helpers with cd … &&. TodoGate off by default.
+
+
 
 Your primary responsibilities are coordination, oversight, and intervention according to the strict rules in AGENT_MANDATES.md, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, and the latest approved plans. You act as the top-level coordinator and reviewer. 
 

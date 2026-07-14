@@ -120,3 +120,17 @@ Approved plan: dev-ai-interaction/plans/planning-policy-baseball-rule-and-block-
 ## 2026-06-30 - Planning policy executed: Baseball Rule + slim STANDARD BLOCK
 
 Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: AGENT_MANDATES.md, standard-plan-compliance-block.md v2026-06-30, AGENTS.md, MULTI_AGENT_USER_INSTRUCTIONS.md, OPERATIONAL_HANDBOOK.md. Sandbox: plan-style-guide.md, inning-end-report-template.md. update-rules.sh synced worktrees. Tag: orchestration/builds @ 0822cf11.
+
+## 2026-07-13 - Fix startup instruction mismatch (Task 1)
+
+- User approved the harness plan.md for startup fix.
+- Execution start: re-read project-facts.md (stable facts only), current bootstrap files, and standard-plan-compliance-block.md.
+- Will update new_grok_agent_prompt (primary), AGENTS.md, GROK.md, AGENT_MANDATES.md (consistency), and any duplicates via phased forensic edits + build_app gates.
+- Goal: eliminate tool name mismatches, align with current plan-mode harness (session plan.md + enter/exit tools), emphasize two-terminal workflow, keep all core mandates intact.
+- No app source changes. Forensic read before/after every edit.
+
+## 2026-07-13 - Start execution: startup-rules-roles-permissions-cleanup-20260713-plan v7
+
+- Resume after approval + review notes (umask run-*, project-facts candidates, master=execute plan, setup_agent no antigravity, no cd&&helpers).
+- Phase 0: copy plan to sandbox; promote MASTER_AGENT_MANDATE SoT from master/.
+

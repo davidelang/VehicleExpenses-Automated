@@ -1,0 +1,125 @@
+#!/bin/bash
+# ve-env — human/agent shell orientation for this multi-user project.
+#
+# Usage:
+#   source ./ve-env              # preferred: set umask 002 in *current* shell + check groups
+#   source ./ve-env activate     # same
+#   ./ve-env check               # diagnostic only (exit non-zero if problems)
+#   ./ve-env help
+#
+# When executed (not sourced), default "activate" cannot change the parent shell umask;
+# we print how to source, still run group/umask diagnostics.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+# shellcheck disable=SC1091
+if [ -f "$SCRIPT_DIR/project.config" ]; then
+  # shellcheck source=/dev/null
+  . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|sandbox_group|primary_user|planning_user|coder_user|orchestrator_user)')
+fi
+
+CODE_GROUP=${code_group:-ai-code}
+SHARED_GROUP=${shared_group:-ai-shared}
+SANDBOX_GROUP=${sandbox_group:-ai-sandbox}
+PRIMARY_USER=${primary_user:-dlang}
+
+# Detect sourced vs executed (bash/zsh)
+_VE_SOURCED=0
+if [ -n "${BASH_VERSION:-}" ]; then
+  [[ "${BASH_SOURCE[0]}" != "${0}" ]] && _VE_SOURCED=1
+elif [ -n "${ZSH_VERSION:-}" ]; then
+  [[ "$ZSH_EVAL_CONTEXT" == *:file* ]] && _VE_SOURCED=1
+fi
+
+_ve_expected_groups() {
+  local u
+  u=$(id -un)
+  case "$u" in
+    "$PRIMARY_USER"|dlang) echo "$CODE_GROUP $SHARED_GROUP $SANDBOX_GROUP" ;;
+    ai-coder|"${coder_user:-ai-coder}") echo "$CODE_GROUP $SHARED_GROUP $SANDBOX_GROUP" ;;
+    ai-orchestrator|"${orchestrator_user:-ai-orchestrator}") echo "$CODE_GROUP $SHARED_GROUP $SANDBOX_GROUP" ;;
+    ai-planner|"${planning_user:-ai-planner}") echo "$SHARED_GROUP $SANDBOX_GROUP" ;;
+    *) echo "$SHARED_GROUP" ;;
+  esac
+}
+
+_ve_check() {
+  local bad=0
+  local u g have missing
+  u=$(id -un)
+  g=$(id -nG)
+  echo "user: $u"
+  echo "groups: $g"
+  echo "umask: $(umask)"
+  echo "cwd: $(pwd)"
+  if [ "$(umask)" != "0002" ] && [ "$(umask)" != "002" ]; then
+    echo "WARN: umask is $(umask); want 002 (files 664, dirs 775→2775 with setgid)"
+    bad=1
+  else
+    echo "OK: umask $(umask)"
+  fi
+  missing=""
+  for need in $(_ve_expected_groups); do
+    if ! echo " $g " | grep -qw "$need"; then
+      missing="$missing $need"
+      bad=1
+    fi
+  done
+  if [ -n "$missing" ]; then
+    echo "WARN: missing groups:$missing"
+    echo "  Fix: log out/in, or carefully: newgrp $CODE_GROUP  (then re-check)"
+  else
+    echo "OK: expected groups present"
+  fi
+  # sample source modes if present
+  if [ -d app/src ]; then
+    sample=$(find app/src -type f \( -name '*.kt' -o -name '*.java' \) 2>/dev/null | head -1)
+    if [ -n "$sample" ]; then
+      mode=$(stat -c '%a %U:%G' "$sample" 2>/dev/null || true)
+      echo "sample source: $sample → $mode (want 664 *:ai-code)"
+    fi
+  fi
+  return $bad
+}
+
+_ve_activate() {
+  umask 002
+  echo "umask set to $(umask) in this shell"
+  _ve_check || true
+  echo "Note: missing login groups cannot be fully fixed without re-login/newgrp."
+}
+
+cmd="${1:-activate}"
+case "$cmd" in
+  help|-h|--help)
+    cat <<'EOF'
+ve-env — project shell environment helper
+
+  source ./ve-env           # set umask 002 + print group/umask status (preferred)
+  source ./ve-env activate  # same
+  ./ve-env check            # diagnose only; exit 1 if problems
+  ./ve-env help
+
+Target: umask 002 → new files 664, dirs 775 (source dirs 2775 with setgid).
+EOF
+    ;;
+  check)
+    if _ve_check; then exit 0; else exit 1; fi
+    ;;
+  activate|"")
+    if [ "$_VE_SOURCED" -eq 1 ]; then
+      _ve_activate
+    else
+      echo "ve-env: not sourced — cannot set parent shell umask."
+      echo "  Run:  source ./ve-env"
+      echo "  Or:   source $SCRIPT_DIR/ve-env"
+      _ve_check || true
+      exit 1
+    fi
+    ;;
+  *)
+    echo "Unknown command: $cmd (try: activate | check | help)"
+    exit 2
+    ;;
+esac
