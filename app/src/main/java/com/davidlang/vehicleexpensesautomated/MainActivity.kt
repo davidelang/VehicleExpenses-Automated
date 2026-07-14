@@ -56,6 +56,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdBackfill
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
 import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
+import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryMode
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
 import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentAlignmentScreen
@@ -352,11 +353,17 @@ class MainActivity : ComponentActivity() {
                                 composable("quickfill") { QuickFillupScreen(navController = navController) }
                                 composable("managevehicles") { ManageVehiclesScreen(navController = navController) }
                                 composable("expense") {
-                                    ExpenseEntryScreen(navController = navController, expenseId = null)
+                                    ExpenseEntryScreen(
+                                        navController = navController,
+                                        mode = ExpenseEntryMode.Create,
+                                    )
                                 }
                                 composable("expense/{expenseId}") { backStackEntry ->
                                     val id = backStackEntry.arguments?.getString("expenseId")?.toLongOrNull()
-                                    ExpenseEntryScreen(navController = navController, expenseId = id)
+                                    ExpenseEntryScreen(
+                                        navController = navController,
+                                        mode = ExpenseEntryMode.fromRoute(id),
+                                    )
                                 }
                                 composable("expenselist") { ExpenseListScreen(navController = navController) }
                                 composable("import") { ImportOldPicturesScreen(navController = navController) }

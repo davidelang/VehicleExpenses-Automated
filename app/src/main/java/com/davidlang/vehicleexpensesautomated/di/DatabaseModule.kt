@@ -81,6 +81,148 @@ object DatabaseModule {
         }
     }
 
+    val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS expense_entries_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    vehicleId INTEGER NOT NULL,
+                    amount REAL NOT NULL,
+                    currency TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    vendor TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    date INTEGER NOT NULL,
+                    odometer INTEGER,
+                    photoUrl TEXT,
+                    latitude REAL,
+                    longitude REAL,
+                    location TEXT,
+                    cloudManifest TEXT,
+                    deleted INTEGER NOT NULL,
+                    deletedAt INTEGER,
+                    syncId TEXT NOT NULL,
+                    originDeviceId TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    vehicleSyncIdsJson TEXT NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO expense_entries_new (
+                    id, vehicleId, amount, currency, description, vendor, category, date,
+                    odometer, photoUrl, latitude, longitude, location, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt, vehicleSyncIdsJson
+                )
+                SELECT
+                    id, vehicleId, amount, currency, description, vendor, category, date,
+                    odometer, photoUrl, latitude, longitude, location, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt, vehicleSyncIdsJson
+                FROM expense_entries
+                """.trimIndent(),
+            )
+            db.execSQL("DROP TABLE expense_entries")
+            db.execSQL("ALTER TABLE expense_entries_new RENAME TO expense_entries")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS fuel_entries_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    vehicleId INTEGER NOT NULL,
+                    odometer INTEGER NOT NULL,
+                    gallons REAL NOT NULL,
+                    cost REAL NOT NULL,
+                    currency TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    photoUrl TEXT,
+                    isPartialFill INTEGER NOT NULL,
+                    latitude REAL,
+                    longitude REAL,
+                    location TEXT,
+                    cloudManifest TEXT,
+                    deleted INTEGER NOT NULL,
+                    deletedAt INTEGER,
+                    syncId TEXT NOT NULL,
+                    originDeviceId TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO fuel_entries_new (
+                    id, vehicleId, odometer, gallons, cost, currency, timestamp,
+                    photoUrl, isPartialFill, latitude, longitude, location, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt
+                )
+                SELECT
+                    id, vehicleId, odometer, gallons, cost, currency, timestamp,
+                    photoUrl, isPartialFill, latitude, longitude, location, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt
+                FROM fuel_entries
+                """.trimIndent(),
+            )
+            db.execSQL("DROP TABLE fuel_entries")
+            db.execSQL("ALTER TABLE fuel_entries_new RENAME TO fuel_entries")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS vehicles_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    name TEXT NOT NULL,
+                    make TEXT,
+                    model TEXT,
+                    year INTEGER,
+                    licensePlate TEXT,
+                    vin TEXT,
+                    notes TEXT,
+                    referenceDashPhotoUrl TEXT,
+                    cleanedReferenceDashPhotoUrl TEXT,
+                    odometerCropLeft REAL,
+                    odometerCropTop REAL,
+                    odometerCropRight REAL,
+                    odometerCropBottom REAL,
+                    otherTextCropLeft REAL,
+                    otherTextCropTop REAL,
+                    otherTextCropRight REAL,
+                    otherTextCropBottom REAL,
+                    landmarkTextBlocksJson TEXT,
+                    cloudManifest TEXT,
+                    deleted INTEGER NOT NULL,
+                    deletedAt INTEGER,
+                    syncId TEXT NOT NULL,
+                    originDeviceId TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO vehicles_new (
+                    id, name, make, model, year, licensePlate, vin, notes,
+                    referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl,
+                    odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom,
+                    otherTextCropLeft, otherTextCropTop, otherTextCropRight, otherTextCropBottom,
+                    landmarkTextBlocksJson, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt
+                )
+                SELECT
+                    id, name, make, model, year, licensePlate, vin, notes,
+                    referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl,
+                    odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom,
+                    otherTextCropLeft, otherTextCropTop, otherTextCropRight, otherTextCropBottom,
+                    landmarkTextBlocksJson, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt
+                FROM vehicles
+                """.trimIndent(),
+            )
+            db.execSQL("DROP TABLE vehicles")
+            db.execSQL("ALTER TABLE vehicles_new RENAME TO vehicles")
+        }
+    }
+
     val MIGRATION_11_12 = object : Migration(11, 12) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -122,6 +264,7 @@ object DatabaseModule {
             MIGRATION_9_10,
             MIGRATION_10_11,
             MIGRATION_11_12,
+            MIGRATION_12_13,
         )
         .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()
