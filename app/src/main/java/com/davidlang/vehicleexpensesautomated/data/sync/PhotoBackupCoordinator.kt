@@ -227,7 +227,7 @@ class PhotoBackupCoordinator @Inject constructor(
                 if (count > 0) manifestChanged = true
                 uploads += count
                 if (expenseNeedsDownload(expense, destWithFolder)) {
-                    downloadExpensePhoto(expense)?.let { downloads++ }
+                    downloadExpensePhoto(expense, ctx)?.let { downloads++ }
                 }
             }
 
@@ -259,7 +259,7 @@ class PhotoBackupCoordinator @Inject constructor(
     }
 
     private suspend fun recountPendingAll(store: SyncDestinationStore): Int {
-        val dests = store.allPhoto().filter { SyncDestinationStore.isPhotoConfigured(it) }
+        val dests = store.allPhoto().filter { store.isPhotoConfigured(it) }
         if (dests.isEmpty()) {
             store.setPendingCount(0)
             return 0
@@ -618,9 +618,15 @@ class PhotoBackupCoordinator @Inject constructor(
         changed
     }
 
-    /** Download expense receipt page(s) from cloud manifest when local photos missing. */
+    /** Download expense receipt page(s) from cloud manifest when local photos missing (primary dest). */
     suspend fun downloadExpensePhoto(expense: ExpenseEntry): String? = withContext(Dispatchers.IO) {
         val ctx = resolveContext(null) ?: return@withContext null
+        downloadExpensePhoto(expense, ctx)
+    }
+
+    /** Download expense receipt page(s) for a specific photo destination context. */
+    suspend fun downloadExpensePhoto(expense: ExpenseEntry, ctx: SyncContext): String? =
+        withContext(Dispatchers.IO) {
         prepareRcloneDestIfNeeded(ctx.dest, ctx.hint)
         val saveLocal = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean("save_expense_photos", true)
@@ -886,7 +892,7 @@ class PhotoBackupCoordinator @Inject constructor(
     private fun notConfiguredOrAuth(destOverride: PhotoDestination? = null): PhotoBackupResult {
         val store = SyncDestinationStore(context)
         val dest = destOverride ?: store.photoDestination()
-        if (!SyncDestinationStore.isPhotoConfigured(dest)) {
+        if (!store.isPhotoConfigured(dest)) {
             return PhotoBackupResult(false, "Photo destination not configured")
         }
         return when (dest?.provider) {

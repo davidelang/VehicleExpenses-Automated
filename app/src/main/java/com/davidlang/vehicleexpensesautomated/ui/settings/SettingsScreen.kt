@@ -244,7 +244,7 @@ fun SettingsScreen(navController: NavHostController) {
         )
         SyncSummaryRow(
             title = "Photo backup",
-            summary = SyncDestinationStore.photoSummaryLine(photoDests),
+            summary = syncStore.photoSummaryLine(photoDests),
             pendingBadge = pendingBadge,
             errorText = photoError,
             showSyncNow = photoConfigured,

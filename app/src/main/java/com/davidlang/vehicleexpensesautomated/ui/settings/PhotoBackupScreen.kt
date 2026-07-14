@@ -183,7 +183,7 @@ private fun PhotoDestCard(
         add("Account: $account")
         add(if (configured) "Enabled: $enabledLabel" else "Not configured")
         if (configured) {
-            add(SyncDestinationStore.photoSummaryLine(dest))
+            add(SyncDestinationStore(context).photoSummaryLine(dest))
         }
     }
     SyncDestinationSummaryCard(

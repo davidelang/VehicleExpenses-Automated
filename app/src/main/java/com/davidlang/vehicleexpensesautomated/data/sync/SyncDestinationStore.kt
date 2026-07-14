@@ -192,6 +192,15 @@ class SyncDestinationStore(context: Context) {
     fun enabledSpreadsheet(): List<SpreadsheetDestination> =
         load().spreadsheet.filter { it.enabled && isSpreadsheetConfigured(it) }
 
+    fun isPhotoConfigured(dest: PhotoDestination?): Boolean =
+        Companion.isPhotoConfigured(dest, context)
+
+    fun photoSummaryLine(dest: PhotoDestination?): String =
+        Companion.photoSummaryLine(listOfNotNull(dest), context)
+
+    fun photoSummaryLine(dests: List<PhotoDestination>): String =
+        Companion.photoSummaryLine(dests, context)
+
     fun enabledPhoto(): List<PhotoDestination> =
         load().photo.filter { it.enabled && isPhotoConfigured(it) }
 
@@ -335,8 +344,11 @@ class SyncDestinationStore(context: Context) {
         fun photoSummaryLine(dest: PhotoDestination?): String =
             photoSummaryLine(listOfNotNull(dest))
 
-        fun photoSummaryLine(dests: List<PhotoDestination>): String {
-            val configured = dests.filter { isPhotoConfigured(it) }
+        fun photoSummaryLine(dests: List<PhotoDestination>): String =
+            photoSummaryLine(dests, context = null)
+
+        fun photoSummaryLine(dests: List<PhotoDestination>, context: Context?): String {
+            val configured = dests.filter { isPhotoConfigured(it, context) }
             if (configured.isEmpty()) return "Not set up"
             val enabledCount = configured.count { it.enabled }
             val primary = configured.firstOrNull { it.enabled } ?: configured.first()
