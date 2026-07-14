@@ -5,7 +5,7 @@ This document records the legacy OCR refinement strategies that were used to imp
 
 ## Last Known Functional State
 The code for these strategies was last active and verified at:
-**Git HEAD:** `cdfd1ac040d7bf81feaf6b46724e1b7bbd934269`
+**Git HEAD:** `cdfd1ac040d7bf81feaf6b46724e1b7bbd934269` (`obsolete-REFINEMENT_STRATEGIES`)
 
 ## Superseded By
 - **Iterative Engines:** `runMLKitIterative`, `runPaddleValleyMonoIterative`.

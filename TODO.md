@@ -2,6 +2,8 @@
 
 Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal → `ENGINEERING_LOG.md`.
 
+- [x] History purge: strip git blobs >100MB (fat Paddle JNI); see `docs/reference/GIT_HISTORY_OVERSIZE_BLOB_PURGE_20260713.md` (2026-07-13).
+
 ## Backlog (native / paddle)
 - [ ] True `LITE_BUILD_TAILOR` for **x86_64** emulator (space only; prod-path speed matches fat kernels)
 - [ ] True `LITE_BUILD_TAILOR` for **armeabi-v7a** or drop the ABI (space only if kept)
