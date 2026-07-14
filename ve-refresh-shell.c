@@ -55,8 +55,18 @@ static void exec_user_shell(struct passwd *pw) {
 }
 
 int main(int argc, char **argv) {
-  (void)argc;
-  (void)argv;
+  /* ve-env runs: ve-refresh-shell --check  (subprocess; must not kill the shell) */
+  if (argc >= 2 && argv[1] != NULL &&
+      (strcmp(argv[1], "--check") == 0 || strcmp(argv[1], "-c") == 0)) {
+    if (geteuid() != 0) {
+      fprintf(stderr,
+              "ve-refresh-shell --check: FAIL euid=%d (need setuid root binary)\n",
+              (int)geteuid());
+      return 1;
+    }
+    printf("ve-refresh-shell --check: OK (setuid root)\n");
+    return 0;
+  }
 
   uid_t ruid = getuid();
   struct passwd *pw = getpwuid(ruid);

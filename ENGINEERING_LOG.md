@@ -258,3 +258,8 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - build_app blocks on uncommitted tracked dirt
 - Prefer update-rules; ad-hoc cp must commit on target branch
 - setup_agent commits seed/sync dirt before handoff
+
+## 2026-07-14 - ve-env: never exec broken helper (master setuid ai-coder)
+
+- Prefer good root-owned helper; --check before exec
+- master ve-env was stale and killed terminal

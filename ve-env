@@ -42,31 +42,41 @@ elif [ -n "${ZSH_VERSION:-}" ]; then
   esac
 fi
 
-# One machine-wide install at orchestration root is enough. Worktrees (agent-N)
-# source their local ve-env copy but must still find ../ve-refresh-shell.
+# Prefer a *good* helper: executable + setuid + owned by root.
+# Never return a setuid-but-ai-coder binary first (master worktree often has that).
+_ve_helper_is_good() {
+  local b="$1"
+  [ -x "$b" ] || return 1
+  [ -u "$b" ] || return 1
+  [ "$(stat -c '%U' "$b" 2>/dev/null)" = "root" ] || return 1
+  return 0
+}
+
 _ve_find_refresh() {
-  local d cand
+  local d cand first_any=""
   d="$SCRIPT_DIR"
-  # Walk up a few levels (agent-2 → orch → parent of monorepo)
   for _ in 1 2 3 4 5; do
     cand="$d/ve-refresh-shell"
     if [ -e "$cand" ]; then
-      echo "$cand"
-      return 0
-    fi
-    # Prefer orch marker if present
-    if [ -f "$d/update-rules.sh" ] && [ -e "$d/ve-refresh-shell" ]; then
-      echo "$d/ve-refresh-shell"
-      return 0
+      [ -z "$first_any" ] && first_any="$cand"
+      if _ve_helper_is_good "$cand"; then
+        echo "$cand"
+        return 0
+      fi
     fi
     [ "$d" = "/" ] && break
     d=$(dirname "$d")
   done
-  # Default path for install instructions even if missing
+  # Fall back to first existing path for error messages / install hints
+  if [ -n "$first_any" ]; then
+    echo "$first_any"
+    return 1
+  fi
   echo "$SCRIPT_DIR/ve-refresh-shell"
   return 1
 }
-REFRESH="$(_ve_find_refresh 2>/dev/null || echo "$SCRIPT_DIR/ve-refresh-shell")"
+REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
+REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
 
 _ve_expected_groups() {
   local u
@@ -102,24 +112,33 @@ _ve_session_missing_stale() {
 }
 
 _ve_refresh_installed() {
-  # Must be executable, setuid, AND owned by root. setuid+owned-by-ai-coder is a
-  # common fix-perms footgun (chmod 4755 after failed chown root) — running that
-  # binary as dlang sets euid=ai-coder, initgroups fails, process exits, terminal dies.
-  [ -x "$REFRESH" ] || return 1
-  [ -u "$REFRESH" ] || return 1
-  local owner
-  owner=$(stat -c '%U' "$REFRESH" 2>/dev/null || true)
-  [ "$owner" = "root" ] || return 1
+  # Re-resolve so we pick a root-owned helper even if cwd worktree has a broken copy.
+  REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
+  REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
+  _ve_helper_is_good "$REFRESH" || return 1
+  # Subprocess preflight: must not kill this shell. Old/mis-owned binaries fail --check.
+  if ! "$REFRESH" --check >/dev/null 2>&1; then
+    return 1
+  fi
   return 0
 }
 
 _ve_try_refresh_shell() {
   # Replace *this* shell with one that has full group list. No desktop logout.
+  # NEVER exec unless --check passes (prevents terminal death from bad setuid binaries).
   if ! _ve_refresh_installed; then
-    if [ -x "$REFRESH" ] && [ -u "$REFRESH" ]; then
-      echo "ve-env: $REFRESH is setuid but NOT owned by root (owner=$(stat -c '%U' "$REFRESH" 2>/dev/null))." >&2
-      echo "  That would kill this terminal if exec'd. Fix once:" >&2
-      echo "    sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH" >&2
+    REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
+    REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
+    if [ -x "$REFRESH" ] && [ -u "$REFRESH" ] && [ "$(stat -c '%U' "$REFRESH" 2>/dev/null)" != "root" ]; then
+      echo "ve-env: refusing to exec $REFRESH (setuid but owner=$(stat -c '%U' "$REFRESH") — would kill this terminal)." >&2
+      echo "  Fix:  sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH" >&2
+      echo "  Or:   sudo rm -f $REFRESH   # then use orch root helper" >&2
+      echo "  Or:   sudo ./install-ve-refresh-shell.sh --all" >&2
+    elif [ ! -e "$REFRESH" ]; then
+      echo "ve-env: no good ve-refresh-shell found (need setuid root under worktree or parents)." >&2
+    else
+      echo "ve-env: helper present but --check failed: $REFRESH" >&2
+      echo "  Rebuild+install: sudo ./install-ve-refresh-shell.sh $SCRIPT_DIR" >&2
     fi
     return 1
   fi
