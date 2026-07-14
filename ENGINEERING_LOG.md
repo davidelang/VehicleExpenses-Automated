@@ -670,3 +670,16 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Commit 159c7ff6: deleted 10 orphan UI stubs (-559 lines); ConflictResolutionScreen kept
 - kspDebugKotlin OK; full build_app FAILED (NDK libc++_shared.so permission denied for ai-coder)
 - Awaiting NDK perm fix or dlang build before Phase 3 gate
+
+## 2026-07-13 - Phase 2 build gate passed (NDK + JDK 17)
+
+- NDK libc++_shared.so now readable (dlang:ai-code 664); configureCMake + buildCMake OK
+- Default JDK 25 lacks JAVA_COMPILER for Hilt; build succeeded with JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+- BUILD SUCCESSFUL; tag code-cleanup/builds @ ba00d3c6; describe code-cleanup-start-2-gba00d3c6
+
+## 2026-07-13 - Gradle JDK 17 project config fix
+
+- gradle.properties: org.gradle.java.home=/usr/lib/jvm/java-17-openjdk-amd64 (daemon must be full JDK not JRE-only default-java)
+- settings.gradle.kts: foojay-resolver-convention 1.0.0 for jvmToolchain(17) provisioning
+- Verified ./gradlew :app:hiltJavaCompileDebug without JAVA_HOME env
+- Plan updated: Phase 5 compiler warnings/hygiene (not TODO.md); env issues = report not workaround
