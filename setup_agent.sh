@@ -390,6 +390,25 @@ if [ -x "$ORCH_ROOT/install-merge-drivers.sh" ]; then
 fi
 chmod +x "$AGENT_ABS/git-merge-drivers/"* "$AGENT_ABS/install-merge-drivers.sh" "$AGENT_ABS/merge-branch-into-master.sh" 2>/dev/null || true
 
+# CRITICAL: seed/smudge/copy of tracked files must not leave the agent worktree dirty,
+# or ./build_app will refuse (uncommitted tracked files gate). Commit if needed.
+(
+  cd "$AGENT_ABS" || exit 0
+  if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+    echo "Committing setup_agent tracked-file updates so build_app can run..."
+    git add -u 2>/dev/null || true
+    # Newly copied tracked scripts may be untracked if not on branch tip yet
+    git add -A -- \
+      ve-env deploy build_app setup_agent.sh fix-perms update-rules.sh \
+      append-to-engineering-log get-builds-tag.sh install-*.sh \
+      git-merge-drivers hooks AGENT_MANDATES.md AGENTS.md GROK.md \
+      standard-plan-compliance-block.md project-facts.md 2>/dev/null || true
+    if ! git diff --cached --quiet 2>/dev/null; then
+      git commit -m "chore: setup_agent seed/sync tracked infra (keep build_app clean)" || true
+    fi
+  fi
+)
+
 # --- Enter new worktree shell (ve-env semantics) ---
 # Replace this process with an interactive shell in AGENT_ABS, umask 002, full
 # project groups when ve-refresh-shell is installed setuid (same as source ./ve-env).

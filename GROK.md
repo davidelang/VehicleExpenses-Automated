@@ -11,5 +11,6 @@ This is a thin overlay. The authoritative shared content is in `AGENT_MANDATES.m
 - Git reset: three contexts with preflight.
 - No deployment.
 - Orchestration layer: awareness of all agents.
+- Worktree deploy: never leave **uncommitted tracked** files in agent-N/master after `cp`/sync — `build_app` will refuse. Use `update-rules.sh` or commit. See AGENT_MANDATES.
 
 **Note:** The "re-read rules after compaction" is a shared mandate (see AGENT_MANDATES.md). It applies to all agent types.

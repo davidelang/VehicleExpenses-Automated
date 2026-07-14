@@ -4,7 +4,9 @@
 #
 # Per user direction and approved plan: ALWAYS run this from the orchestration root
 # on the `orchestration` branch (development context for all rule/infra changes).
-# It publishes (cp + per-worktree commit) to the `master/` worktree and all `agent-N/`
+# It publishes (cp + per-worktree commit) to the `master/` worktree and all `agent-N/`.
+# CRITICAL: that per-worktree commit is mandatory — ad-hoc cp of tracked files without
+# commit leaves agents unable to ./build_app (uncommitted tracked files gate).
 # worktrees. New worktrees inherit correct content via `git worktree add ... master`
 # (after the master branch tip has the updates).
 #

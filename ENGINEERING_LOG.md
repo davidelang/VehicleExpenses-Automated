@@ -252,3 +252,9 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Binary stays gitignored; .c tracked
 - setup_agent, fix-perms, update-rules call installer for each worktree
 - setuid only after chown root succeeds
+
+## 2026-07-14 - mandate: worktree deploy of tracked files must commit
+
+- build_app blocks on uncommitted tracked dirt
+- Prefer update-rules; ad-hoc cp must commit on target branch
+- setup_agent commits seed/sync dirt before handoff
