@@ -32,7 +32,6 @@ CODE_GROUP=${code_group:-ai-code}
 SHARED_GROUP=${shared_group:-ai-shared}
 SANDBOX_GROUP=${sandbox_group:-ai-sandbox}
 PRIMARY_USER=${primary_user:-dlang}
-REFRESH="$SCRIPT_DIR/ve-refresh-shell"
 
 _VE_SOURCED=0
 if [ -n "${BASH_VERSION:-}" ]; then
@@ -42,6 +41,42 @@ elif [ -n "${ZSH_VERSION:-}" ]; then
     *:file*) _VE_SOURCED=1 ;;
   esac
 fi
+
+# Prefer a *good* helper: executable + setuid + owned by root.
+# Never return a setuid-but-ai-coder binary first (master worktree often has that).
+_ve_helper_is_good() {
+  local b="$1"
+  [ -x "$b" ] || return 1
+  [ -u "$b" ] || return 1
+  [ "$(stat -c '%U' "$b" 2>/dev/null)" = "root" ] || return 1
+  return 0
+}
+
+_ve_find_refresh() {
+  local d cand first_any=""
+  d="$SCRIPT_DIR"
+  for _ in 1 2 3 4 5; do
+    cand="$d/ve-refresh-shell"
+    if [ -e "$cand" ]; then
+      [ -z "$first_any" ] && first_any="$cand"
+      if _ve_helper_is_good "$cand"; then
+        echo "$cand"
+        return 0
+      fi
+    fi
+    [ "$d" = "/" ] && break
+    d=$(dirname "$d")
+  done
+  # Fall back to first existing path for error messages / install hints
+  if [ -n "$first_any" ]; then
+    echo "$first_any"
+    return 1
+  fi
+  echo "$SCRIPT_DIR/ve-refresh-shell"
+  return 1
+}
+REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
+REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
 
 _ve_expected_groups() {
   local u
@@ -77,34 +112,59 @@ _ve_session_missing_stale() {
 }
 
 _ve_refresh_installed() {
-  [ -x "$REFRESH" ] || return 1
-  # setuid root?
-  [ -u "$REFRESH" ] || return 1
-  return 0
+  # Re-resolve so we pick a root-owned helper even if cwd worktree has a broken copy.
+  # Do NOT run the binary as a preflight subprocess: older builds ignore --check and
+  # exec an interactive shell, which hangs "source ./ve-env" forever.
+  REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
+  REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
+  _ve_helper_is_good "$REFRESH"
 }
 
 _ve_try_refresh_shell() {
   # Replace *this* shell with one that has full group list. No desktop logout.
+  # NEVER exec a non-root-owned setuid binary (kills terminal). Stat-only gate.
+  echo "ve-env: looking for setuid-root ve-refresh-shell..." >&2
   if ! _ve_refresh_installed; then
+    REFRESH="$(_ve_find_refresh 2>/dev/null || true)"
+    REFRESH=${REFRESH:-$SCRIPT_DIR/ve-refresh-shell}
+    if [ -x "$REFRESH" ] && [ -u "$REFRESH" ] && [ "$(stat -c '%U' "$REFRESH" 2>/dev/null)" != "root" ]; then
+      echo "ve-env: refusing to exec $REFRESH (setuid but owner=$(stat -c '%U' "$REFRESH") — would kill this terminal)." >&2
+      echo "  Fix:  sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH" >&2
+      echo "  Or:   sudo rm -f $REFRESH   # then use orch root helper" >&2
+      echo "  Or:   sudo ./install-ve-refresh-shell.sh --all" >&2
+    elif [ ! -e "$REFRESH" ]; then
+      echo "ve-env: no good ve-refresh-shell found (need setuid root under worktree or parents)." >&2
+    else
+      echo "ve-env: helper not usable: $REFRESH (need -rwsr-xr-x root root)" >&2
+      echo "  Rebuild+install: sudo ./install-ve-refresh-shell.sh \$(git rev-parse --show-toplevel 2>/dev/null || pwd)" >&2
+    fi
     return 1
   fi
   export VE_ENV_CWD="$(pwd)"
   echo "ve-env: re-executing shell with full project groups (other apps stay open)..."
-  echo "  helper: $REFRESH"
-  exec "$REFRESH"
+  echo "  helper: $REFRESH ($(stat -c '%U:%G %a' "$REFRESH" 2>/dev/null))"
+  # Replace this process only after printing — if exec fails, we return and keep the shell.
+  exec "$REFRESH" || {
+    echo "ve-env: exec $REFRESH failed — shell kept open" >&2
+    return 1
+  }
 }
 
 _ve_print_install_helper() {
   cat <<EOF
 
 ve-refresh-shell is not installed as setuid root yet (required to reload groups
-without a full desktop logout). One-time setup from the repo root:
+without a full desktop logout). One-time setup from the *orchestration root*
+(parent of agent-N), not necessarily this worktree:
 
+  cd /path/to/VehicleExpenses-automated   # orchestration root
   gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c
   sudo chown root:root ve-refresh-shell
   sudo chmod 4755 ve-refresh-shell
 
 Or:  sudo ./fix-perms --verbose   # builds/installs the helper when source is present
+
+ve-env looks for the helper in this directory and parents (so agent-N can use ../ve-refresh-shell).
 
 Then in this terminal:
   source ./ve-env
@@ -156,10 +216,25 @@ _ve_check() {
   echo "account groups (id $u / NSS): $account"
   echo "umask: $(umask)"
   echo "cwd: $(pwd)"
+  # Re-resolve in case cwd/layout changed
+  REFRESH="$(_ve_find_refresh 2>/dev/null || echo "$SCRIPT_DIR/ve-refresh-shell")"
   if _ve_refresh_installed; then
-    echo "ve-refresh-shell: installed (setuid) at $REFRESH"
+    echo "ve-refresh-shell: OK (setuid root) at $REFRESH"
+  elif [ -x "$REFRESH" ] && [ -u "$REFRESH" ]; then
+    echo "ve-refresh-shell: BROKEN — setuid but owner=$(stat -c '%U' "$REFRESH" 2>/dev/null) (must be root)"
+    echo "  Fix:  sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH"
+    echo "  Until fixed, source ./ve-env will NOT re-exec (avoids closing the terminal)."
+    bad=1
+  elif [ -e "$REFRESH" ]; then
+    echo "ve-refresh-shell: present but not setuid-root at $REFRESH"
+    echo "  Fix:  sudo chown root:root $REFRESH && sudo chmod 4755 $REFRESH"
+    bad=1
   else
-    echo "ve-refresh-shell: NOT ready (need build + sudo chmod 4755) — group auto-fix disabled"
+    echo "ve-refresh-shell: NOT found under $SCRIPT_DIR or parents — group auto-fix disabled"
+    echo "  One install at orchestration root is enough (parent of agent-N)."
+    echo "  cd <orch-root> && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c"
+    echo "  sudo chown root:root ve-refresh-shell && sudo chmod 4755 ve-refresh-shell"
+    bad=1
   fi
 
   if [ "$(umask)" != "0002" ] && [ "$(umask)" != "002" ]; then

@@ -36,7 +36,9 @@ bin/
 lib/
 
 # Misc
-# Built setuid helpers (source is tracked: run-as-primary.c, ve-refresh-shell.c)
+# Built setuid helpers — DO NOT commit binaries (arch-specific; setuid root cannot
+# be stored safely in git). Source is tracked: run-as-primary.c, ve-refresh-shell.c.
+# Install: ./install-ve-refresh-shell.sh [--all]  (also run by setup_agent / fix-perms)
 run-as-primary
 ve-refresh-shell
 .DS_Store

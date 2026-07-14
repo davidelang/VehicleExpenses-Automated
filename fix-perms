@@ -385,15 +385,26 @@ fix_worktree() {
     chmod 4755 "$wt/run-as-primary" 2>/dev/null || true
   fi
 
-  # ve-refresh-shell: setuid root helper so `source ./ve-env` can re-exec a shell
-  # with full NSS groups without a full desktop logout (see ve-env / ve-refresh-shell.c).
-  if [ -f "$wt/ve-refresh-shell.c" ]; then
-    if $VERBOSE; then echo "  Compiling ve-refresh-shell in $wt ..."; fi
-    (cd "$wt" && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c 2>/dev/null) || true
-  fi
-  if [ -f "$wt/ve-refresh-shell" ]; then
-    chown root:root "$wt/ve-refresh-shell" 2>/dev/null || true
-    chmod 4755 "$wt/ve-refresh-shell" 2>/dev/null || true
+  # ve-refresh-shell: setuid root per worktree (binary not in git; .c is tracked).
+  # Prefer shared installer; never leave setuid on non-root owner.
+  if [ -x "$SCRIPT_DIR/install-ve-refresh-shell.sh" ]; then
+    if $VERBOSE; then echo "  install-ve-refresh-shell for $wt"; fi
+    "$SCRIPT_DIR/install-ve-refresh-shell.sh" "$wt" 2>/dev/null || true
+  else
+    if [ -f "$wt/ve-refresh-shell.c" ]; then
+      if $VERBOSE; then echo "  Compiling ve-refresh-shell in $wt ..."; fi
+      (cd "$wt" && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c 2>/dev/null) || true
+    fi
+    if [ -f "$wt/ve-refresh-shell" ]; then
+      if chown root:root "$wt/ve-refresh-shell" 2>/dev/null; then
+        chmod 4755 "$wt/ve-refresh-shell" 2>/dev/null || true
+      else
+        chmod 755 "$wt/ve-refresh-shell" 2>/dev/null || true
+        if $VERBOSE; then
+          echo "  WARN: could not chown ve-refresh-shell root (need sudo); left non-setuid"
+        fi
+      fi
+    fi
   fi
 
   # Critical agent/human scripts: must be executable by primary + ai-code after any

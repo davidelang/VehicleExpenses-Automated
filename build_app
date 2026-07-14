@@ -26,19 +26,16 @@ fi
 # Source/docs: prefer 664/2775 → umask 002. Build outputs tightened after gradle.
 umask 002
 
-# Ensure ai-shared (for .git/refs, worktree metadata, sandbox) and ai-code (for source tree setgid dirs).
-# Only re-exec once. Prefer ai-shared because it fixes git-related config (versionName etc).
-# Use sg -c + printf %q to reliably preserve $0 and all arguments (sg/newgrp do not forward args in simple form).
-if ! id -nG | grep -qw ai-shared; then
-  echo "Re-executing under ai-shared group for correct file permissions..."
-  q0=$(printf '%q' "$0")
-  qargs=$(printf '%q ' "$@"); qargs=${qargs% }
-  ccmd="exec /bin/bash -c 'exec \"\$1\" \"\${@:2}\"' _ $q0 $qargs"
-  exec sg ai-shared -c "$ccmd"
+# ai-shared + ai-code required (agent caches are ai-coder:ai-code). Do not sg one group.
+MISSING=""
+for grp in ai-shared ai-code; do
+  if ! id -nG | grep -qw "$grp"; then MISSING="$MISSING $grp"; fi
+done
+if [ -n "$MISSING" ]; then
+  echo "ERROR: this shell is missing project group(s):$MISSING" >&2
+  echo "  Fix:  source ./ve-env   (or use a setup_agent worktree shell)" >&2
+  exit 1
 fi
-# Note: ai-code is also needed for some dirs, but since uid=dlang owns most ai-code files/dirs in the worktree,
-# sg ai-shared gives the necessary group for shared git/.git metadata and sandbox; owner perms cover the rest.
-# This avoids ping-pong loops from sg only surfacing one group at a time.
 
 if [ "$#" -ge 1 ]; then
     MSG_ARG="$1"

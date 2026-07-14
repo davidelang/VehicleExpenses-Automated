@@ -339,11 +339,6 @@ if [ -f "$AGENT_ABS/run-as-primary.c" ]; then
   (cd "$AGENT_ABS" && gcc -O2 -Wall -o run-as-primary run-as-primary.c && chmod 4755 run-as-primary && chown "$PRIMARY_USER:$CODE_GROUP" run-as-primary) 2>/dev/null || echo "    Warning: run-as-primary build/chmod may need gcc or manual fix"
 fi
 
-# ve-refresh-shell: setuid root; needs sudo for chown/chmod (fix-perms also does this)
-if [ -f "$AGENT_ABS/ve-refresh-shell.c" ]; then
-  (cd "$AGENT_ABS" && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c) 2>/dev/null || echo "    Warning: ve-refresh-shell compile failed (need gcc)"
-fi
-
 # Create log file with minimal header if missing (fixer will harden it)
 if [ ! -f "$AGENT_ABS/ENGINEERING_LOG.md" ]; then
   echo "## $(date +%Y-%m-%d) - Initial log for $AGENT_ID" > "$AGENT_ABS/ENGINEERING_LOG.md"
@@ -362,13 +357,29 @@ if [ -f "$AGENT_ABS/run-as-primary" ]; then
   chown "$PRIMARY_USER:$CODE_GROUP" "$AGENT_ABS/run-as-primary" 2>/dev/null || true
   chmod 4755 "$AGENT_ABS/run-as-primary" 2>/dev/null || true
 fi
-# Prefer a working setuid helper on orch or agent for group refresh
-for _vrs in "$ORCH_ROOT/ve-refresh-shell" "$AGENT_ABS/ve-refresh-shell"; do
-  if [ -f "$_vrs" ]; then
-    sudo chown root:root "$_vrs" 2>/dev/null || true
-    sudo chmod 4755 "$_vrs" 2>/dev/null || true
-  fi
-done
+
+# ve-refresh-shell: build + setuid-root in orch AND this agent worktree (not in git).
+# One sudo password may be requested. Never leave setuid on non-root owner.
+if [ -x "$ORCH_ROOT/install-ve-refresh-shell.sh" ]; then
+  echo "Installing ve-refresh-shell (setuid root) in orch + worktree..."
+  "$ORCH_ROOT/install-ve-refresh-shell.sh" "$ORCH_ROOT" 2>/dev/null || \
+    sudo "$ORCH_ROOT/install-ve-refresh-shell.sh" "$ORCH_ROOT" 2>/dev/null || true
+  "$ORCH_ROOT/install-ve-refresh-shell.sh" "$AGENT_ABS" 2>/dev/null || \
+    sudo "$ORCH_ROOT/install-ve-refresh-shell.sh" "$AGENT_ABS" 2>/dev/null || true
+else
+  # Fallback inline install
+  for _dest in "$ORCH_ROOT" "$AGENT_ABS"; do
+    [ -f "$_dest/ve-refresh-shell.c" ] || continue
+    (cd "$_dest" && gcc -O2 -Wall -o ve-refresh-shell ve-refresh-shell.c) 2>/dev/null || true
+    if [ -f "$_dest/ve-refresh-shell" ]; then
+      if sudo chown root:root "$_dest/ve-refresh-shell" 2>/dev/null; then
+        sudo chmod 4755 "$_dest/ve-refresh-shell" 2>/dev/null || true
+      else
+        chmod 755 "$_dest/ve-refresh-shell" 2>/dev/null || true
+      fi
+    fi
+  done
+fi
 
 # After fix-perms, re-assert hooks (defense in depth; post-checkout must stay runnable)
 ensure_common_hooks_executable
@@ -378,6 +389,25 @@ if [ -x "$ORCH_ROOT/install-merge-drivers.sh" ]; then
   (cd "$ORCH_ROOT" && ./install-merge-drivers.sh >/dev/null) || true
 fi
 chmod +x "$AGENT_ABS/git-merge-drivers/"* "$AGENT_ABS/install-merge-drivers.sh" "$AGENT_ABS/merge-branch-into-master.sh" 2>/dev/null || true
+
+# CRITICAL: seed/smudge/copy of tracked files must not leave the agent worktree dirty,
+# or ./build_app will refuse (uncommitted tracked files gate). Commit if needed.
+(
+  cd "$AGENT_ABS" || exit 0
+  if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+    echo "Committing setup_agent tracked-file updates so build_app can run..."
+    git add -u 2>/dev/null || true
+    # Newly copied tracked scripts may be untracked if not on branch tip yet
+    git add -A -- \
+      ve-env deploy build_app setup_agent.sh fix-perms update-rules.sh \
+      append-to-engineering-log get-builds-tag.sh install-*.sh \
+      git-merge-drivers hooks AGENT_MANDATES.md AGENTS.md GROK.md \
+      standard-plan-compliance-block.md project-facts.md 2>/dev/null || true
+    if ! git diff --cached --quiet 2>/dev/null; then
+      git commit -m "chore: setup_agent seed/sync tracked infra (keep build_app clean)" || true
+    fi
+  fi
+)
 
 # --- Enter new worktree shell (ve-env semantics) ---
 # Replace this process with an interactive shell in AGENT_ABS, umask 002, full
@@ -393,10 +423,10 @@ echo "Entering worktree shell (umask 002 + project groups via ve-env helper)..."
 export VE_ENV_CWD="$AGENT_ABS"
 umask 002
 
-# Prefer setuid helper (orch copy first — one machine-wide install)
+# Prefer setuid-root helper only (setuid+non-root owner is unsafe — see ve-env)
 REFRESH=""
 for _vrs in "$ORCH_ROOT/ve-refresh-shell" "$AGENT_ABS/ve-refresh-shell"; do
-  if [ -x "$_vrs" ] && [ -u "$_vrs" ]; then
+  if [ -x "$_vrs" ] && [ -u "$_vrs" ] && [ "$(stat -c '%U' "$_vrs" 2>/dev/null)" = "root" ]; then
     REFRESH="$_vrs"
     break
   fi
