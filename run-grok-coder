@@ -1,0 +1,49 @@
+#!/bin/bash
+# run-grok-coder — implement approved plans in agent-N worktree (ai-coder).
+# build_app only (no raw gradlew). Baseball/reset rules. Pre-PR self-review before generate_pr.sh.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+if [ -f project.config ]; then
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(coder_user|GROK_BIN)')
+fi
+CODER_USER=${coder_user:-ai-coder}
+GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
+
+umask 002
+
+echo "Launching Coder Grok in $(pwd)..."
+echo "Grok binary: $GROK_BIN"
+echo "Sandbox path: $SANDBOX_DIR"
+echo "Running as: $CODER_USER (via sudo -u)"
+echo "Tip: Ctrl+M or /multiline for multi-line input."
+
+TODO_GATE_FLAGS=""
+if [ "${GROK_TODO_GATE:-0}" = "1" ] || [ "${GROK_TODO_GATE:-0}" = "true" ]; then
+  TODO_GATE_FLAGS="--todo-gate"
+fi
+
+EXTRA_ARGS=()
+FOUND_DD=0
+for arg in "$@"; do
+  if [ "$FOUND_DD" -eq 1 ]; then
+    EXTRA_ARGS+=("$arg")
+  elif [ "$arg" = "--" ]; then
+    FOUND_DD=1
+  fi
+done
+
+exec sudo -u "$CODER_USER" "$GROK_BIN" \
+    "You are the Coder agent in a feature worktree (ai-coder). First: read new_agent_prompt, AGENT_CONTEXT.md, GROK.md, AGENT_MANDATES.md; Mandate Acknowledgment with Role=Coder and Branch from git; enter plan mode; STOP & WAIT.
+
+Standing coder rules after approval to implement:
+- Implement ONLY the approved sandbox plan named by the user.
+- First execution action: ./append-to-engineering-log (never ritual TODO). Never prefix helpers with cd … && — confirm pwd once at startup.
+- Builds only via ./build_app (never raw gradlew). Use ./get-builds-tag.sh before any allowed reset. Baseball Rule applies.
+- TODO.md is future-only (todo-append/todo-close). Current turn = engineering log.
+- Before handoff for master review: pre-submit code review vs plan; history cleanup; ./generate_pr.sh. Prefer skill prepare-local-pr if available. Never use GitHub pr-babysit/gh pr/Graphite for this project.
+- After ./build_app + ready-to-test handoff, stop. Feedback starts a new planning cycle.
+Remind user: Ctrl+M /multiline." \
+    $TODO_GATE_FLAGS \
+    --no-alt-screen \
+    "${EXTRA_ARGS[@]}"

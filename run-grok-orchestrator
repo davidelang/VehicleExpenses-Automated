@@ -1,0 +1,41 @@
+#!/bin/bash
+# run-grok-orchestrator — multi-agent brain/infra on orchestration branch (ai-orchestrator).
+# Meta rules cleanup, update-rules coordination, orchestration root work.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+if [ -f project.config ]; then
+  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(orchestrator_user|GROK_BIN)')
+fi
+ORCHESTRATOR_USER=${orchestrator_user:-ai-orchestrator}
+GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
+
+umask 002
+
+echo "Launching Orchestrator Grok in $(pwd)..."
+echo "Grok binary: $GROK_BIN"
+echo "Sandbox path: $SANDBOX_DIR"
+echo "Running as: $ORCHESTRATOR_USER (via sudo -u)"
+echo "Tip: Ctrl+M or /multiline for multi-line input."
+
+# TodoGate off by default (TODO is future backlog, not turn checklist)
+TODO_GATE_FLAGS=""
+if [ "${GROK_TODO_GATE:-0}" = "1" ] || [ "${GROK_TODO_GATE:-0}" = "true" ]; then
+  TODO_GATE_FLAGS="--todo-gate"
+fi
+
+EXTRA_ARGS=()
+FOUND_DD=0
+for arg in "$@"; do
+  if [ "$FOUND_DD" -eq 1 ]; then
+    EXTRA_ARGS+=("$arg")
+  elif [ "$arg" = "--" ]; then
+    FOUND_DD=1
+  fi
+done
+
+exec sudo -u "$ORCHESTRATOR_USER" "$GROK_BIN" \
+    "You are starting a fresh session as Orchestrator (meta rules / brain / infra). First action: read new_agent_prompt and follow it (AGENT_CONTEXT.md, GROK.md, AGENT_MANDATES.md, Mandate Acknowledgment, STOP & WAIT). Role=Orchestrator, expect branch orchestration. Cwd is fixed after startup — never prefix ./append-to-engineering-log or other helpers with cd … &&. Remind user of Ctrl+M /multiline." \
+    $TODO_GATE_FLAGS \
+    --no-alt-screen \
+    "${EXTRA_ARGS[@]}"

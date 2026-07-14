@@ -159,3 +159,6 @@ rules = [
 # Project .grok/hooks/ (PreToolUse) provide additional hard enforcement for plan-mode restrictions
 # (path traversal deny outside dev-ai-interaction/, sandbox-only writes in plan, etc.).
 # See .grok/hooks/ for the actual hook implementation(s).
+# Project skill policy (startup-rules cleanup 2026-07-13)
+[skills]
+disabled = ["pr-babysit", "execute-plan", "design", "check-work"]
