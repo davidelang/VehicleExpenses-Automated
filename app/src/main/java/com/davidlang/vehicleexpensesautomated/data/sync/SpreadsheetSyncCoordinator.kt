@@ -532,7 +532,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 }
             }
 
-            val sortedMerged = merged.sortedWith(compareBy({ it.timestamp }, { it.syncId }))
+            val sortedMerged = merged.sortedWith(compareBy({ it.timestamp }, { it.odometer }, { it.syncId }))
             writeRowsIncremental(
                 dest = dest,
                 backend = backend,
