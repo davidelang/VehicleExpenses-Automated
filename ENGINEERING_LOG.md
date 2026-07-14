@@ -713,3 +713,5 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Inventory final disposition: dev-ai-interaction/research/dead-code-inventory-20260713.md
 
 ## 2026-07-13 - Code review fixes: auth adapter, frequency migration, expense mode, schedule UI, DB v13 schema cleanup
+
+## 2026-07-13 - Settings screen decomposition (#5): split Photo/Spreadsheet edit forms, shared list/card/picker/scaffold UI
