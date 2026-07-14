@@ -42,7 +42,7 @@ The application follows a strict 4-stage pipeline for processing dashboard photo
 - **Repositories**: Abstract local SQLite APIs.
 
 ### Background Synchronization
-- **SyncWorker**: Periodically syncs data to Google Sheets via `GoogleSheetsClient` and backs up photos via `GoogleDriveProvider`.
+- **SyncWorker** / **PhotoBackupWorker**: Periodically sync spreadsheet data via `SpreadsheetSyncCoordinator` / `TabularShareApi` and back up photos via `PhotoBackupCoordinator` (Google Drive, OneDrive, S3, rclone).
 
 ## Component Interaction Diagram
 ```text
