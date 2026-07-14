@@ -161,3 +161,11 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Linux cannot inject groups into current process; solution is re-exec this terminal via setuid root helper that initgroups() for real uid only.
 - One-time: gcc + sudo chown root / chmod 4755, or sudo ./fix-perms.
 
+
+## 2026-07-13 - CRITICAL: restored master TODO.md after update-rules clobber
+
+- Root cause: update-rules FILES included TODO.md; orchestration agent ritual TODO overwrote master cleaned backlog (57281374).
+- Restored content from master pre-sync commit 57281374.
+- Removed TODO.md from update-rules.sh and sync_infrastructure.sh FILES.
+- TODO must merge only via special-file protocol / todo-append/todo-close, never blind cp.
+
