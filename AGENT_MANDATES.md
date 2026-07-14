@@ -242,6 +242,18 @@ git reset --hard "$TAG"
 - **Sandbox:** Use the absolute path `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/` (or the `./dev-ai-interaction` symlink inside the worktree) for research, plans, and logs.
 - At the **orchestration layer** you must maintain awareness of all currently supported agent runtimes (Grok CLI, Gemini CLI, Antigravity; the list is dynamic).
 
+## Deploying / copying into another worktree (CRITICAL — build_app gate)
+`./build_app` **refuses to compile** when there are uncommitted modifications to **tracked** files (`CRITICAL ERROR: Uncommitted tracked files detected`). That is intentional for version integrity (`git describe`).
+
+Therefore:
+
+1. **If you copy, overwrite, or hot-patch tracked files into another worktree** (agent-N, `master/`, etc.) — including `cp` of `deploy`, `ve-env`, `build_app`, mandates, hooks, or any other tracked path — you **MUST commit those changes on that worktree's branch** before considering the deploy done.
+2. **Prefer `./update-rules.sh`** from the orchestration root: it physically copies the FILES list and **commits** `chore: Synchronize agent rules and infrastructure` in each target worktree. That keeps agent trees buildable.
+3. **Ad-hoc `cp` without commit is a defect.** It leaves the coder unable to `./build_app` until someone cleans the dirt. Do not "just copy" into agent-N for a quick fix unless you also `git add` + commit (or run `update-rules`) in that worktree.
+4. **Untracked artifacts are fine without commit** when they are intentionally gitignored (e.g. `ve-refresh-shell`, `run-as-primary`, `project.config`, local `app/build/`). Only **tracked** dirt blocks `build_app`.
+5. **setup_agent / install helpers** that rewrite tracked sources in a new or existing worktree must leave the worktree **clean for tracked files** (commit or restore) before handoff to an agent.
+6. Before telling a human or coder "tree is ready," run `git status` in that worktree: no modified tracked files unless the agent is mid-approved execution.
+
 ## Engineering Defaults
 - **JSON Parsing:** Prioritize `jq`.
 - **OCR:** Multi-engine (ML Kit, Paddle). No silent fallbacks.

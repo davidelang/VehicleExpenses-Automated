@@ -42,6 +42,9 @@ Skills: `/prepare-local-pr`, `/master-merge`. Disabled in project config: `pr-ba
 ## Plans Directory Rule
 `dev-ai-interaction/plans/` — current designated plan. Completed → `historical-plans/`. Do not start work from historical or non-designated files unless user names the exact path. Harness session plan.md is process log only. project-facts.md = orientation only (see AGENT_MANDATES).
 
+## Worktree deploy / copy rule (blocks build_app if violated)
+`./build_app` fails on **uncommitted tracked** changes. If you copy tracked files into another worktree (`cp`, hot patch, partial sync), **commit on that branch** (or use `./update-rules.sh`, which commits). Untracked/gitignored binaries (e.g. `ve-refresh-shell`) need no commit. See AGENT_MANDATES "Deploying / copying into another worktree".
+
 ## Coordinates Policy
 ICRS or raw pixel integers only. Normalized 0.0–1.0 per-axis is obsolete.
 
