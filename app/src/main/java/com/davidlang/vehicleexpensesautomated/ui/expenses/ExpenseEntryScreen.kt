@@ -194,7 +194,7 @@ private fun ExpenseEntryScreenBody(
         val amountVal = amount.toDoubleOrNull() ?: 0.0
         val storedCurrency = CurrencyCodes.fromSymbolOrCode(currencySymbol)
         val odo = odometerText.trim().toIntOrNull()
-        // copy() from loadedExpense preserves receiptImagePath, lat/long, location, cloudManifest
+        // copy() from loadedExpense preserves photoUrl, lat/long, location, cloudManifest
         val base = loadedExpense
         val toSave = (base ?: ExpenseEntry(
             vehicleId = vehicleId,

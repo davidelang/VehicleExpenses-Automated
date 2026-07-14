@@ -688,3 +688,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Orphan utils: DiscoveryOcrUtils, ImageHashUtils, LocationUtils, MLKitMonoStrategy
 - Prune dead OcrEngineStrategy, HarnessRunDef, ReportCollector from OcrHarness.kt
+
+## 2026-07-13 - Dead code Phase 3 complete + Phase 4 start
+
+- Phase 3: commit 4c58e0e0 (-180 lines); tag code-cleanup/builds updated
+- Phase 4: legacy data/storage dead code + comment hygiene
