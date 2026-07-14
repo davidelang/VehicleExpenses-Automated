@@ -229,3 +229,9 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - On success: VE_ENV_CWD=agent, umask 002, exec ve-refresh-shell (same as ve-env)
 - Fallback: exec $SHELL in worktree if helper not setuid
 - Ensures ve-refresh-shell setuid after fix-perms
+
+## 2026-07-14 - fix: deploy no sg re-exec; wipe project .gradle locks
+
+- Root cause: ai-coder-owned .gradle/fileHashes.lock; sg ai-shared left process without ai-code
+- deploy: fail-fast if missing groups; prepare_build_tree wipes .gradle locks/version caches
+- build_app: same fail-fast for groups
