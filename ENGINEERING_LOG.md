@@ -177,3 +177,9 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Documented in PERMISSIONS_MODEL + research handoff note.
 - Orchestration agent cannot chmod under /home/dlang/Android/Sdk.
 
+
+## 2026-07-13 - Execution start: deploy no-daemon + KSP handoff
+
+- Approved: restore --no-daemon on deploy (missed Phase 5 of startup-rules cleanup)
+- Also: pre-gradle kspCaches wipe; gradle.properties daemon=false; PERMISSIONS_MODEL/project-facts
+- Symptom: dlang deploy Permission denied on ai-coder-owned kspCaches

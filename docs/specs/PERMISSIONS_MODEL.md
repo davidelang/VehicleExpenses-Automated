@@ -35,7 +35,7 @@ All code, scripts, and docs must follow this. Changes require plan + approval.
   - Non-members (ai-planner as "other"): r-x (read source, no write).
   - **Umask for source/docs work: `002`** (666→664, 777→775 → with setgid dirs **2775**). **Not** `007` (that yields 660/770 and breaks planner other-read).
   - **Failure mode:** umask `027` → **640** (owner-only write; group read-only; planner cannot read). Fix via `source ./ve-env`, agent launchers, and `build_app`/`deploy` post-normalize — not daily `fix-perms`.
-- **Build output** (app/build/, build/, .gradle/): `dlang:ai-code 2770` (setgid). Files often **660**. Group members can overwrite. Gradle in `build_app` uses `--no-daemon` and may use umask 007 only inside the gradle subprocess; then chmod dirs 2770.
+- **Build output** (app/build/, build/, .gradle/): `dlang:ai-code 2770` (setgid). Files often **660**. Group members can overwrite. Gradle in `build_app` **and** `deploy` uses `--no-daemon` and may use umask 007 only inside the gradle subprocess; then chmod dirs 2770.
 - **Sandbox** (dev-ai-interaction/ and subdirs for plans etc.): `dlang:ai-shared 2775`.
 - **.git/**: `dlang:ai-shared 2770` (group can add objects).
 - **ENGINEERING_LOG.md**: `dlang:ai-shared 660` + `chattr +a` (kernel append-only). Set once (root only if needed to re-apply).
@@ -56,10 +56,12 @@ New files inherit group via setgid. **General/project shells and agent launchers
 
 ## Build vs Deploy Ownership
 - Build dirs setgid `ai-code` + 2770 ensures any group member can create/overwrite generated files (BuildConfig etc.).
-- `ai-coder` builds (via `build_app`) → files `ai-coder:ai-code 660` or inherited group.
-- `dlang` deploys → can manage because member of ai-code + dir write bit allows delete/overwrite of other-group-member files (standard Unix behavior in non-sticky dir).
+- `ai-coder` builds (via `build_app`) → files `ai-coder:ai-code 660` or inherited group. **`build_app` does not re-exec as dlang** for agents (only root→primary).
+- `dlang` deploys → re-exec as primary; member of ai-code; dir write bit allows delete/overwrite of other-group-member files (standard Unix behavior in non-sticky dir).
+- **No Gradle daemon:** both `build_app` and `deploy` pass `--no-daemon`; `org.gradle.daemon=false`. Daemon reuse across uids caused KSP/cache Permission denied after agent builds.
+- `deploy` wipes `app/build/kspCaches` (and intermediates/generated/config-cache) before compile so foreign-owned incremental state is not required.
 - Scripts always: `umask 007; sg ai-code` (and `sudo -u dlang` only for keystore/signing if needed).
-- No direct `gradlew` or `gradlew.bat`. All through `build_app` (which handles commit, tag, local .gradle repair, forensic).
+- No direct `gradlew` or `gradlew.bat`. Agent builds through `build_app`; device install through `deploy` (human/primary).
 - `build_app` forwards gradle flags after `--` (e.g. `build_app "msg" file -- --info --stacktrace`).
 - Deploy never does unconditional uninstall. Uses PRESERVE_DATA for data survival.
 

@@ -22,7 +22,7 @@ Read in full early on startup/new cycle.
 - `TODO.md` — future backlog via `todo-append` / `todo-close`
 - Launchers: `run-grok-orchestrator`, `run-grok-master`, `run-grok-planner`, `run-grok-coder`, bare `run-grok` (dlang)
 - `ve-env` — `source ./ve-env` sets umask 002; if session groups stale, re-execs shell via setuid `ve-refresh-shell` (no full desktop logout). One-time: build + `sudo chmod 4755 ve-refresh-shell` (or `sudo ./fix-perms`). Never `newgrp` for multi-group. See `./ve-env how-to-fix-groups`
-- Scripts: `update-rules.sh`, `build_app` (no raw gradlew; agent builds use `--no-daemon`), `get-builds-tag.sh`, `fix-perms` (rare), `setup_agent.sh` (creates worktree; does **not** auto-start CLI), `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`, `deploy`
+- Scripts: `update-rules.sh`, `build_app` and `deploy` (no raw gradlew; both pass `--no-daemon`; deploy wipes kspCaches before compile), `get-builds-tag.sh`, `fix-perms` (rare), `setup_agent.sh` (creates worktree; does **not** auto-start CLI), `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`
 - `.grok/config.toml` + `.grok/hooks/` + `.grok/skills/` (prepare-local-pr, master-merge)
 - `MASTER_AGENT_MANDATE.md` — Master review/merge SoT
 - `standard-plan-compliance-block.md` — cite by path in plans
