@@ -34,7 +34,9 @@ for arg in "$@"; do
   fi
 done
 
-exec sudo -u "$ORCHESTRATOR_USER" "$GROK_BIN" \
+# umask must be set *inside* the target user (sudo does not keep parent umask).
+exec sudo -u "$ORCHESTRATOR_USER" -- bash -c 'umask 002; exec "$@"' bash \
+    "$GROK_BIN" \
     "You are starting a fresh session as Orchestrator (meta rules / brain / infra). First action: read new_agent_prompt and follow it (AGENT_CONTEXT.md, GROK.md, AGENT_MANDATES.md, Mandate Acknowledgment, STOP & WAIT). Role=Orchestrator, expect branch orchestration. Cwd is fixed after startup — never prefix ./append-to-engineering-log or other helpers with cd … &&. Remind user of Ctrl+M /multiline." \
     $TODO_GATE_FLAGS \
     --no-alt-screen \

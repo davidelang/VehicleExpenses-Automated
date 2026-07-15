@@ -47,6 +47,10 @@ All code, scripts, and docs must follow this. Changes require plan + approval.
 
 New files inherit group via setgid. **General/project shells and agent launchers: umask 002.** Build artifact trees tightened to 660/2770 after gradle.
 
+**Launcher umask (critical):** `run-grok*` must set `umask 002` **inside** the target user process (`sudo -u role bash -c 'umask 002; exec …'`). Setting umask only in the parent shell before `sudo -u` is insufficient — sudo/PAM often leave the agent on default **022**, which produces **2755** dirs / **644** files under setgid build trees. Symptom of broken handoff: `ai-coder`-owned `2755` under `app/build/generated` → dlang `./deploy` cannot wipe KSP outputs.
+
+**Deploy wipe fail-fast:** `prepare_build_tree_for_deploy` must remove `app/build/{kspCaches,intermediates,generated}` (and fail **before** Gradle if residual remains). Swallowing `rm -rf` failures (`|| true` without check) leads to `:app:kspDebugKotlin` “Unable to delete directory … Hilt *LazyClassKeys.pro”.
+
 ## Critical Helpers (enforce rules where Unix alone is insufficient)
 - **append-to-engineering-log**: setgid wrapper + chattr +a on log. Validates `## YYYY-MM-DD` header. Only appends. Prevents git reset / overwrite on log.
 - **todo-append**: (new) setgid helper. Only appends high-level future items under `# Future work` (rare use: only explicit deferrals, not per-commit). Enforces format.
@@ -102,6 +106,7 @@ See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-2026
 |---------|-----|
 | New shell, unsure umask/groups | `source ./ve-env` or `./ve-env check` |
 | Agent/build created wrong modes | next `./build_app` / `./deploy` (normalize) |
+| Deploy: Unable to delete `app/build/generated/ksp/...` (Hilt .pro) | Owner wipe: `sudo -u ai-coder rm -rf app/build/generated app/build/kspCaches app/build/intermediates` (or chown tree); then `./deploy`. Fixed scripts fail-fast with this message. |
 | Root-owned / systemic breakage | `sudo ./fix-perms` (**rare**) |
 | `ai-coder` NDK Permission denied on `libc++_shared.so` | `./fix-android-sdk-perms` as **dlang** |
 | Daily work | Do **not** run fix-perms habitually |
