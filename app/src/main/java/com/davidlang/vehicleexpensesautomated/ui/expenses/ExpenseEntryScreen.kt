@@ -7,8 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.resolutionselector.AspectRatioStrategy
-import androidx.camera.core.resolutionselector.ResolutionSelector
+import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
+import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -93,11 +93,10 @@ private fun ExpenseEntryScreenBody(
     val editLoadReady = editId == null || (loadedExpense != null && loadedId == editId)
 
     val imageCapture: ImageCapture = remember {
-        val resSelector = ResolutionSelector.Builder()
-            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-            .build()
         ImageCapture.Builder()
-            .setResolutionSelector(resSelector)
+            .setResolutionSelector(
+                CameraResolutionPicker.resolutionSelector(CameraCaptureProfile.RECEIPT_MAX),
+            )
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .build()
     }

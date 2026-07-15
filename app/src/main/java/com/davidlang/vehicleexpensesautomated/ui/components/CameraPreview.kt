@@ -7,10 +7,9 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
-import androidx.camera.core.resolutionselector.AspectRatioStrategy
-import androidx.camera.core.resolutionselector.ResolutionSelector
-
 import androidx.camera.lifecycle.ProcessCameraProvider
+import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
+import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -47,6 +46,7 @@ private fun computeAvailableRatios(minRatio: Float, maxRatio: Float): List<Float
 fun CameraPreview(
     modifier: Modifier = Modifier,
     imageCapture: ImageCapture,
+    captureProfile: CameraCaptureProfile = CameraCaptureProfile.OCR_MEDIUM,
     onImageCaptured: (ImageProxy) -> Unit = {},
     onZoomControlChanged: (CameraZoomControl?) -> Unit = {}
 ) {
@@ -146,10 +146,7 @@ fun CameraPreview(
                     it.setSurfaceProvider(previewView.surfaceProvider)
                 }
 
-                // Use aspect strategy to prefer device's native/correct aspect (4:3 for this sensor); ~2000 wide fine for odo
-                val resSelector = ResolutionSelector.Builder()
-                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-                    .build()
+                val resSelector = CameraResolutionPicker.resolutionSelector(captureProfile)
 
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setResolutionSelector(resSelector)
