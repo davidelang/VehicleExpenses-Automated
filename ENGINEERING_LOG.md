@@ -268,3 +268,19 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 
 - Old helper ignored --check and hung source ./ve-env
 - Stat-only gate; progress messages before exec
+
+## 2026-07-14 - Execution start: deploy KSP wipe + launcher umask
+
+- Approved: deploy-ksp-group-write-and-launcher-umask-20260714-plan.md
+- Root cause: ai-coder 2755 dirs block dlang deploy wipe of generated/ksp; || true swallows EACCES
+- Also: run-grok* umask 002 only in parent before sudo -u (may reset)
+
+
+## 2026-07-14 - Completed: deploy KSP wipe + launcher umask
+
+- deploy: fail-fast residual wipe (generated/kspCaches/intermediates); optional sudo -n -u ai-coder
+- build_app: post-repair g+w audit
+- run-grok*: umask 002 inside sudo -u target
+- PERMISSIONS_MODEL + project-facts; plan deploy-ksp-group-write-and-launcher-umask-20260714-plan.md
+- Human runs ./deploy manually (agents never deploy)
+
