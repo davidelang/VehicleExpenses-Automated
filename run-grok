@@ -13,10 +13,18 @@ GROK_BIN="${GROK_BIN:-@@GROK_BIN_DEFAULT@@}"
 
 umask 002
 
+ANDROID_SHARED=""
+if [ -d "$SCRIPT_DIR/.android-shared" ]; then
+  ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
+elif [ -d "$SCRIPT_DIR/../.android-shared" ]; then
+  ANDROID_SHARED="$(cd "$SCRIPT_DIR/.." && pwd)/.android-shared"
+fi
+
 echo "Launching bare Grok as primary user ($PRIMARY_USER) in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
 echo "Mode: process-break allowed — user may authorize violating multi-agent rules."
+[ -n "$ANDROID_SHARED" ] && echo "ANDROID_USER_HOME: $ANDROID_SHARED"
 echo "Tip: Ctrl+M or /multiline for multi-line input."
 
 EXTRA_ARGS=()
@@ -30,16 +38,17 @@ for arg in "$@"; do
 done
 
 # Run as current user if already primary; else sudo -u primary.
-# umask 002 must apply in the *running* process (sudo does not keep parent umask).
+# umask 002 + ANDROID_USER_HOME must apply in the *running* process.
 PROMPT="You are running as the primary developer ($PRIMARY_USER) in a bare Grok session. Normal multi-agent process is optional. You may read AGENTS.md / AGENT_MANDATES.md if useful. The human may explicitly authorize violating those rules in this session. Confirm cwd once with pwd; never prefix helpers with cd … &&. Await the user's directive."
 if [ "$(id -un)" = "$PRIMARY_USER" ]; then
   umask 002
+  [ -n "$ANDROID_SHARED" ] && export ANDROID_USER_HOME="$ANDROID_SHARED"
   exec "$GROK_BIN" \
     "$PROMPT" \
     --no-alt-screen \
     "${EXTRA_ARGS[@]}"
 else
-  exec sudo -u "$PRIMARY_USER" -- bash -c 'umask 002; exec "$@"' bash \
+  exec sudo -u "$PRIMARY_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} bash -c 'umask 002; exec "$@"' bash \
     "$GROK_BIN" \
     "$PROMPT" \
     --no-alt-screen \
