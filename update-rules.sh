@@ -68,6 +68,7 @@ FILES=(
     ".gitignore"
     "docs/specs/OPERATIONAL_HANDBOOK.md"
     "docs/ENVIRONMENT_SETUP.md"
+    "docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md"
     # New for Grok CLI parallel support (added per approved plan)
     "AGENT_MANDATES.md"
     "AGENTS.md"
@@ -137,6 +138,7 @@ FILES=(
     "run-as-primary.c"
     # Special-file merge drivers (eng-log append; refuse TODO/project-facts text merge)
     "git-merge-drivers/ve-englog"
+    "git-merge-drivers/ve-special-ours"
     "git-merge-drivers/ve-special-refuse"
     "install-merge-drivers.sh"
     "merge-branch-into-master.sh"
