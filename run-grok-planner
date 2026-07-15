@@ -220,7 +220,9 @@ for arg in "$@"; do
     FOUND_DD=1
   fi
 done
-exec sudo -u "$PLANNING_USER" "$GROK_BIN" \
+# umask must be set *inside* the target user (sudo does not keep parent umask).
+exec sudo -u "$PLANNING_USER" -- bash -c 'umask 002; exec "$@"' bash \
+    "$GROK_BIN" \
     "$PLANNING_PROMPT" \
     --model "$PLANNER_MODEL" \
     $TODO_GATE_FLAGS \

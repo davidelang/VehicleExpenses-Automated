@@ -356,6 +356,10 @@ mkdir -p test-data-backups 2>/dev/null || true
 # Load primary_user from project.config for portable primary developer identity (no hardcoded names).
 PRIMARY_USER=$(sed -n 's/^primary_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
 PRIMARY_USER=${PRIMARY_USER:-dlang}
+CODER_USER=$(sed -n 's/^coder_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
+CODER_USER=${CODER_USER:-ai-coder}
+CODE_GROUP=$(sed -n 's/^code_group=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
+CODE_GROUP=${CODE_GROUP:-ai-code}
 
 # Re-exec as PRIMARY_USER (not root) if we started as root. This ensures we use
 # the primary developer's debug keystore (~/.android/debug.keystore) for consistent APK
@@ -444,6 +448,8 @@ fix_build_dir_perms
 # setgid dirs (2770/2775) allow group members to unlink — wipe caches instead.
 # Policy: no Gradle daemon; clear KSP + project .gradle locks/hashes that cause
 # "fileHashes.lock (Permission denied)" when a prior user left the tree.
+# 2755 (umask 022) dirs owned by another user cannot be wiped by group members;
+# fail-fast rather than letting :app:kspDebugKotlin fail mid-build.
 prepare_build_tree_for_deploy() {
   echo "  Preparing build tree for deploy (wipe KSP/incremental/.gradle locks; multi-user safe)..."
   if [ -d app/build ]; then
@@ -470,13 +476,50 @@ prepare_build_tree_for_deploy() {
     fi
   fi
 
-  if [ -d app/build/intermediates ]; then
-    echo "  WARNING: Could not fully remove app/build/intermediates (need group write on dir)."
-    echo "  Ensure: id shows ai-code  (source ./ve-env). Then: rm -rf app/build"
-    echo "  Last resort: sudo chown -R ${PRIMARY_USER:-dlang}:ai-code app/build .gradle"
+  # Residual KSP/incremental trees (2755 foreign-owned) block dlang deploy.
+  local residual=""
+  for d in app/build/kspCaches app/build/intermediates app/build/generated; do
+    if [ -e "$d" ]; then
+      residual="$residual $d"
+    fi
+  done
+  if [ -n "$residual" ]; then
+    echo "  Wipe incomplete (foreign 2755/non-group-writable dirs common):$residual"
+    echo "  Trying sudo -n -u ${CODER_USER} rm -rf on residual paths..."
+    # shellcheck disable=SC2086
+    if sudo -n -u "$CODER_USER" rm -rf $residual 2>/dev/null; then
+      residual=""
+      for d in app/build/kspCaches app/build/intermediates app/build/generated; do
+        if [ -e "$d" ]; then residual="$residual $d"; fi
+      done
+    fi
   fi
+  if [ -n "$residual" ]; then
+    echo "ERROR: Cannot remove multi-user build caches (Gradle would fail at kspDebugKotlin)." >&2
+    echo "  Residual:$residual" >&2
+    echo "  Sample modes:" >&2
+    # shellcheck disable=SC2086
+    ls -ld $residual 2>/dev/null | head -10 >&2 || true
+    local sample
+    sample=$(find app/build/generated app/build/kspCaches app/build/intermediates -type d ! -perm -g+w 2>/dev/null | head -5)
+    if [ -n "$sample" ]; then
+      echo "  Non-group-writable dirs (need owner wipe or chown):" >&2
+      echo "$sample" | while read -r p; do ls -ld "$p" 2>/dev/null; done >&2
+    fi
+    echo "  Fix (pick one), then re-run ./deploy:" >&2
+    echo "    sudo -u ${CODER_USER} rm -rf app/build/generated app/build/kspCaches app/build/intermediates" >&2
+    echo "    sudo chown -R ${PRIMARY_USER}:${CODE_GROUP} app/build && find app/build -type d -exec chmod 2770 {} +" >&2
+    echo "  Ensure: id shows ${CODE_GROUP} (source ./ve-env)." >&2
+    return 1
+  fi
+  return 0
 }
-prepare_build_tree_for_deploy
+if [ "$DATA_ONLY_MODE" != "true" ]; then
+  if ! prepare_build_tree_for_deploy; then
+    echo "Aborting deploy: build tree not handoff-safe." >&2
+    exit 1
+  fi
+fi
 
 repair_shared_cache() {
   # Post-build permission repair for all shared build directories
@@ -1193,12 +1236,14 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 echo "  Will still build and attempt in-place install (no uninstall was done)."
             fi
 
-            # Pre-compile wipe already ran in prepare_build_tree_for_deploy (kspCaches,
-            # intermediates, generated, configuration-cache). Kill leftover file holders.
+            # Pre-compile wipe already ran early; re-wipe before gradle (caches may return).
+            # Kill leftover file holders.
             lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
             sleep 1
-            prepare_build_tree_for_deploy
-
+            if ! prepare_build_tree_for_deploy; then
+                echo "Deployment failed (build tree wipe)."
+                OVERALL_SUCCESS=false
+            else
             # No daemon: multi-user/agent builds (ai-coder) leave foreign-owned caches;
             # daemon must not run (project policy; match build_app).
             (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
@@ -1211,6 +1256,7 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
                 for DEVICE_ID in "${ALL_DEVICES[@]}"; do
                     restore_test_data "$DEVICE_ID"
                 done
+            fi
             fi
 
             # Clear logcat on *every* device we deployed to (important for multi-device)
@@ -1280,10 +1326,16 @@ else
             echo "  Will still build and attempt in-place install (no uninstall was done)."
         fi
 
-        # Pre-compile wipe (prepare_build_tree_for_deploy); kill leftover file holders.
+        # Pre-compile wipe; kill leftover file holders.
         lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
         sleep 1
-        prepare_build_tree_for_deploy
+        if ! prepare_build_tree_for_deploy; then
+            echo "Deployment to $TARGET ($DEVICE_ID) failed (build tree wipe)."
+            OVERALL_SUCCESS=false
+            echo "Clearing logcat on $DEVICE_ID..."
+            adb -s "$DEVICE_ID" logcat -c || echo "Warning: failed to clear logcat on $DEVICE_ID"
+            continue
+        fi
 
         # No daemon: multi-user policy; match build_app.
         (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)

@@ -29,15 +29,19 @@ for arg in "$@"; do
   fi
 done
 
-# Run as current user if already primary; else sudo -u primary
+# Run as current user if already primary; else sudo -u primary.
+# umask 002 must apply in the *running* process (sudo does not keep parent umask).
+PROMPT="You are running as the primary developer ($PRIMARY_USER) in a bare Grok session. Normal multi-agent process is optional. You may read AGENTS.md / AGENT_MANDATES.md if useful. The human may explicitly authorize violating those rules in this session. Confirm cwd once with pwd; never prefix helpers with cd … &&. Await the user's directive."
 if [ "$(id -un)" = "$PRIMARY_USER" ]; then
+  umask 002
   exec "$GROK_BIN" \
-    "You are running as the primary developer ($PRIMARY_USER) in a bare Grok session. Normal multi-agent process is optional. You may read AGENTS.md / AGENT_MANDATES.md if useful. The human may explicitly authorize violating those rules in this session. Confirm cwd once with pwd; never prefix helpers with cd … &&. Await the user's directive." \
+    "$PROMPT" \
     --no-alt-screen \
     "${EXTRA_ARGS[@]}"
 else
-  exec sudo -u "$PRIMARY_USER" "$GROK_BIN" \
-    "You are running as the primary developer ($PRIMARY_USER) in a bare Grok session. Normal multi-agent process is optional. You may read AGENTS.md / AGENT_MANDATES.md if useful. The human may explicitly authorize violating those rules in this session. Confirm cwd once with pwd; never prefix helpers with cd … &&. Await the user's directive." \
+  exec sudo -u "$PRIMARY_USER" -- bash -c 'umask 002; exec "$@"' bash \
+    "$GROK_BIN" \
+    "$PROMPT" \
     --no-alt-screen \
     "${EXTRA_ARGS[@]}"
 fi
