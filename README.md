@@ -2,6 +2,13 @@
 
 This is the **orchestration root** for a multi-agent development environment.
 
+## Setup (plain clone vs multi-worktree)
+
+**Authoritative host + build + layout guide:**  
+**[docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)**
+
+Covers: clean `master` clone → first successful build; what is checked in (Paddle/OpenCV/rclone prebuilts) vs external tools; multi-worktree bootstrap; keystore/NDK/SDK.
+
 ## 🚀 Quick Start
 For instructions on how to manage agents, create branches, and merge work, see:
 **[README-multi-agent.md](README-multi-agent.md)**

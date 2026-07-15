@@ -30,6 +30,7 @@ Read in full early on startup/new cycle.
 - `.grok/config.toml` + `.grok/hooks/` + `.grok/skills/` (prepare-local-pr, master-merge)
 - `MASTER_AGENT_MANDATE.md` — Master review/merge SoT
 - `standard-plan-compliance-block.md` — cite by path in plans
+- `docs/ENVIRONMENT_SETUP.md` — plain `master` clone build + multi-worktree host setup; in-repo prebuilts vs external rebuilds
 
 ## Worktree layout
 - App worktrees (`agent-N/`, `master/`): `app/` + root scripts + symlink `dev-ai-interaction -> ../dev-ai-interaction`

@@ -293,3 +293,10 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - PERMISSIONS_MODEL + project-facts
 - Devices already on shared cert (phones, 5554) unaffected; emulator-5556 still needs one-time uninstall by human
 
+
+## 2026-07-14 - ENVIRONMENT_SETUP doc + worktree infra audit
+
+- Audit: update-rules FILES (58) identical on orch, master/, agent-2/
+- Plain master build: no paddle/opencv/rclone source clones; jniLibs + assets + librclone.aar checked in
+- Added docs/ENVIRONMENT_SETUP.md; README/CONTRIBUTING/README-multi-agent pointers; sandbox audit report
+
