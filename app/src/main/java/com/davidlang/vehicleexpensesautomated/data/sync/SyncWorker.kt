@@ -33,7 +33,7 @@ class SyncWorker @AssistedInject constructor(
                 return@withContext Result.success()
             }
 
-            val result = coordinator.syncNow(null)
+            val result = coordinator.syncNow(null, SyncDestinationScope.ENABLED)
             when {
                 result.success -> {
                     Log.i(TAG, result.message)

@@ -67,8 +67,8 @@ fun SettingsScreen(navController: NavHostController) {
 
     LaunchedEffect(navBackStackEntry) {
         pendingBadge = syncStore.pendingBadgeText()
-        spreadsheetError = failureStore.firstSpreadsheetFailure()?.message
-        photoError = failureStore.firstPhotoFailure()?.message
+        spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
+        photoError = failureStore.photoFailureSummary(syncStore)
         withContext(Dispatchers.IO) {
             viewModel.recountPendingBadge()
         }
@@ -76,8 +76,8 @@ fun SettingsScreen(navController: NavHostController) {
     }
     val spreadsheetDests = destinations.spreadsheet
     val photoDests = destinations.photo
-    val spreadsheetConfigured = syncStore.enabledSpreadsheet().isNotEmpty()
-    val photoConfigured = syncStore.enabledPhoto().isNotEmpty()
+    val spreadsheetConfigured = syncStore.configuredSpreadsheet().isNotEmpty()
+    val photoConfigured = syncStore.configuredPhoto().isNotEmpty()
 
     var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", true)) }
     var saveExpensePhotos by remember { mutableStateOf(prefs.getBoolean("save_expense_photos", true)) }
@@ -89,6 +89,9 @@ fun SettingsScreen(navController: NavHostController) {
                 prefs.getBoolean("debug_ocr_pipeline", false)
             }
         )
+    }
+    var showExperimentScreens by remember {
+        mutableStateOf(prefs.getBoolean("show_experiment_screens", false))
     }
     var debugMaxSessions by remember { mutableIntStateOf(prefs.getInt("debug_quick_fill_max_sessions", 10)) }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
@@ -153,6 +156,20 @@ fun SettingsScreen(navController: NavHostController) {
     }
 
     var status by remember { mutableStateOf("Ready") }
+    var spreadsheetSyncStatus by remember { mutableStateOf("") }
+    var photoSyncStatus by remember { mutableStateOf("") }
+    var spreadsheetSyncInProgress by remember { mutableStateOf(false) }
+    var photoSyncInProgress by remember { mutableStateOf(false) }
+    var spreadsheetSyncIsError by remember { mutableStateOf(false) }
+    var photoSyncIsError by remember { mutableStateOf(false) }
+    val spreadsheetProgress = rememberMainThreadSyncProgress {
+        spreadsheetSyncStatus = it
+        spreadsheetSyncIsError = false
+    }
+    val photoProgress = rememberMainThreadSyncProgress {
+        photoSyncStatus = it
+        photoSyncIsError = false
+    }
     var showClearDebugConfirm by remember { mutableStateOf(false) }
     var debugDataRefreshKey by remember { mutableIntStateOf(0) }
     val debugSessions = remember(debugDataRefreshKey) { QuickFillDebugStore.listSessions(context) }
@@ -199,11 +216,12 @@ fun SettingsScreen(navController: NavHostController) {
         QuickFillDebugStore.pruneToMax(context)
     }
 
-    LaunchedEffect(saveFuelPhotos, saveExpensePhotos, debugQuickFill, darkModePref, shutterSounds, currencySymbol, volumeUnit) {
+    LaunchedEffect(saveFuelPhotos, saveExpensePhotos, debugQuickFill, showExperimentScreens, darkModePref, shutterSounds, currencySymbol, volumeUnit) {
         prefs.edit().apply {
             putBoolean("save_fuel_photos", saveFuelPhotos)
             putBoolean("save_expense_photos", saveExpensePhotos)
             putBoolean("debug_quick_fill", debugQuickFill)
+            putBoolean("show_experiment_screens", showExperimentScreens)
             putString("dark_mode", darkModePref)
             putBoolean("shutter_sounds", shutterSounds)
             putString("currency_symbol", currencySymbol)
@@ -227,37 +245,61 @@ fun SettingsScreen(navController: NavHostController) {
             summary = SyncDestinationStore.spreadsheetSummaryLine(spreadsheetDests),
             pendingBadge = pendingBadge,
             errorText = spreadsheetError,
+            syncStatusText = spreadsheetSyncStatus,
+            syncInProgress = spreadsheetSyncInProgress,
+            syncStatusIsError = spreadsheetSyncIsError,
             showSyncNow = spreadsheetConfigured,
             onRowClick = { navController.navigate("settings/spreadsheet_sync") },
             // Phase 15: Sync now via SpreadsheetSyncCoordinator
             onSyncNow = {
                 scope.launch {
+                    spreadsheetSyncInProgress = true
+                    spreadsheetSyncIsError = false
+                    spreadsheetSyncStatus = "Starting spreadsheet sync…"
                     try {
-                        val result = withContext(Dispatchers.IO) { viewModel.syncSpreadsheet() }
-                        spreadsheetError = failureStore.firstSpreadsheetFailure()?.message
-                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                        val result = withContext(Dispatchers.IO) {
+                            viewModel.syncSpreadsheet(spreadsheetProgress)
+                        }
+                        spreadsheetSyncStatus = result.message
+                        spreadsheetSyncIsError = !result.success
+                        spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
                     } catch (e: Exception) {
-                        Toast.makeText(context, e.message ?: "Sync failed", Toast.LENGTH_SHORT).show()
+                        spreadsheetSyncIsError = true
+                        spreadsheetSyncStatus = e.message ?: "Sync failed"
+                    } finally {
+                        spreadsheetSyncInProgress = false
                     }
                 }
             },
         )
         SyncSummaryRow(
             title = "Photo backup",
-            summary = SyncDestinationStore.photoSummaryLine(photoDests),
+            summary = syncStore.photoSummaryLine(photoDests),
             pendingBadge = pendingBadge,
             errorText = photoError,
+            syncStatusText = photoSyncStatus,
+            syncInProgress = photoSyncInProgress,
+            syncStatusIsError = photoSyncIsError,
             showSyncNow = photoConfigured,
             onRowClick = { navController.navigate("settings/photo_backup") },
             onSyncNow = {
                 scope.launch {
+                    photoSyncInProgress = true
+                    photoSyncIsError = false
+                    photoSyncStatus = "Starting photo backup…"
                     try {
-                        val result = withContext(Dispatchers.IO) { viewModel.syncPhotoBackup() }
+                        val result = withContext(Dispatchers.IO) {
+                            viewModel.syncPhotoBackup(photoProgress)
+                        }
+                        photoSyncStatus = result.message
+                        photoSyncIsError = !result.success
                         pendingBadge = syncStore.pendingBadgeText()
-                        photoError = failureStore.firstPhotoFailure()?.message
-                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                        photoError = failureStore.photoFailureSummary(syncStore)
                     } catch (e: Exception) {
-                        Toast.makeText(context, e.message ?: "Photo sync failed", Toast.LENGTH_SHORT).show()
+                        photoSyncIsError = true
+                        photoSyncStatus = e.message ?: "Photo sync failed"
+                    } finally {
+                        photoSyncInProgress = false
                     }
                 }
             },
@@ -278,6 +320,7 @@ fun SettingsScreen(navController: NavHostController) {
         }
         SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
         SwitchSetting("Debug Quick Fill", debugQuickFill) { debugQuickFill = it }
+        SwitchSetting("Show experiment screens (dev)", showExperimentScreens) { showExperimentScreens = it }
         OutlinedTextField(
             value = debugMaxSessions.toString(),
             onValueChange = { text ->
@@ -563,6 +606,9 @@ private fun SyncSummaryRow(
     summary: String,
     pendingBadge: String,
     errorText: String? = null,
+    syncStatusText: String = "",
+    syncInProgress: Boolean = false,
+    syncStatusIsError: Boolean = false,
     showSyncNow: Boolean,
     onRowClick: () -> Unit,
     onSyncNow: () -> Unit,
@@ -592,9 +638,20 @@ private fun SyncSummaryRow(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
+                if (syncStatusText.isNotBlank() || syncInProgress) {
+                    SyncStatusDisplay(
+                        statusText = syncStatusText,
+                        syncInProgress = syncInProgress,
+                        isError = syncStatusIsError,
+                        textStyle = MaterialTheme.typography.labelSmall,
+                    )
+                }
             }
             if (showSyncNow) {
-                TextButton(onClick = onSyncNow) {
+                TextButton(
+                    onClick = onSyncNow,
+                    enabled = !syncInProgress,
+                ) {
                     Text("Sync")
                 }
             }

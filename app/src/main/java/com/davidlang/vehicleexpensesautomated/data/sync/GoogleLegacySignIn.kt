@@ -23,12 +23,21 @@ class GoogleLegacySignIn @Inject constructor(
     @param:ApplicationContext private val context: Context,
 ) {
     @Suppress("DEPRECATION")
-    fun signInClient(oauthScope: String): GoogleSignInClient {
-        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+    fun signInClient(oauthScope: String): GoogleSignInClient =
+        signInClient(listOf(oauthScope))
+
+    @Suppress("DEPRECATION")
+    fun signInClient(oauthScopes: List<String>): GoogleSignInClient {
+        val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
-            .requestScopes(Scope(oauthScope))
-            .build()
-        return GoogleSignIn.getClient(context, options)
+        oauthScopes.distinct().forEach { builder.requestScopes(Scope(it)) }
+        return GoogleSignIn.getClient(context, builder.build())
+    }
+
+    @Suppress("DEPRECATION")
+    fun hasScope(scope: String): Boolean {
+        val account = lastAccount() ?: return false
+        return GoogleSignIn.hasPermissions(account, Scope(scope))
     }
 
     @Suppress("DEPRECATION")

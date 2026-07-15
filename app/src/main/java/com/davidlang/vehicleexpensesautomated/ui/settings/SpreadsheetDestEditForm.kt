@@ -32,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.davidlang.vehicleexpensesautomated.data.sync.DriveAuthRecovery
+import com.davidlang.vehicleexpensesautomated.data.sync.DriveRecoverableAuthException
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleSheetsClient
 import com.davidlang.vehicleexpensesautomated.data.sync.SheetsAuthRecovery
 import com.davidlang.vehicleexpensesautomated.data.sync.SheetsRecoverableAuthException
@@ -298,6 +300,29 @@ internal fun SpreadsheetDestEditForm(
         }
     }
 
+    var driveReadonlyGranted by remember { mutableStateOf(viewModel.driveAuth.hasReadonlyBrowseScope()) }
+
+    val driveReadonlyLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        try {
+            val account = viewModel.auth.parseSignInResult(result.data)
+            val email = account.email ?: ""
+            if (email.isNotBlank()) {
+                viewModel.driveAuth.persistAccountEmail(email)
+            }
+            driveReadonlyGranted = viewModel.driveAuth.hasReadonlyBrowseScope()
+            if (driveReadonlyGranted) {
+                statusText = "Drive browse access granted"
+            } else {
+                statusText = "Drive browse access not granted — try again"
+            }
+        } catch (e: ApiException) {
+            statusText = "Drive browse sign-in failed"
+            Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
+        }
+    }
+
     SyncDestinationEditScaffold(onBack = onBack, title = formTitle) {
         when (provider) {
             SpreadsheetProvider.GOOGLE_SHEETS -> {
@@ -398,13 +423,22 @@ internal fun SpreadsheetDestEditForm(
                             showBrowseDialog = false
                             statusText = "Selected: ${item.name}"
                         },
-                        listItems = { search ->
+                        enableHybridCatalog = true,
+                        readonlyAccessGranted = driveReadonlyGranted,
+                        onRequestReadonlyAccess = {
+                            driveReadonlyLauncher.launch(viewModel.driveAuth.readonlyBrowseSignInIntent())
+                        },
+                        listItems = { search, catalog ->
                             try {
-                                viewModel.listSpreadsheetsForBrowse(accountHint, search)
+                                viewModel.listSpreadsheetsForBrowse(accountHint, search, catalog)
+                            } catch (e: DriveRecoverableAuthException) {
+                                throw e
                             } catch (e: SheetsRecoverableAuthException) {
                                 throw e
                             } catch (e: Exception) {
-                                throw SheetsAuthRecovery.wrapIfRecoverable(e)
+                                throw DriveAuthRecovery.wrapIfRecoverable(
+                                    SheetsAuthRecovery.wrapIfRecoverable(e),
+                                )
                             }
                         },
                         createItem = { title ->
