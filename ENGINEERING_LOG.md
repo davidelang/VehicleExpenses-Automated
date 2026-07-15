@@ -284,3 +284,12 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - PERMISSIONS_MODEL + project-facts; plan deploy-ksp-group-write-and-launcher-umask-20260714-plan.md
 - Human runs ./deploy manually (agents never deploy)
 
+
+## 2026-07-14 - Unify debug keystores for all role users
+
+- Replaced ai-coder + ai-orchestrator private debug.keystore with project .android-shared (SHA1 E0:A9:3E:54… = dlang)
+- New ./sync-debug-keystores; called from fix-perms ensure_shared_build_homes
+- ve-env + run-grok* export ANDROID_USER_HOME to .android-shared inside target user
+- PERMISSIONS_MODEL + project-facts
+- Devices already on shared cert (phones, 5554) unaffected; emulator-5556 still needs one-time uninstall by human
+

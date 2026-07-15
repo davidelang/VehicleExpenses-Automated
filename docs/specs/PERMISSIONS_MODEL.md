@@ -101,6 +101,23 @@ See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-2026
 
 `fix-perms` / `update-rules` do **not** modify the SDK tree (outside worktrees).
 
+## Debug keystore (signing — multi-user)
+
+**One debug key only.** Canonical file: `<orchestration>/.android-shared/debug.keystore` (seeded from `dlang`’s `~/.android/debug.keystore`).
+
+| Bad | Good |
+|-----|------|
+| Each `ai-*` user has a unique auto-generated `~/.android/debug.keystore` | All role homes copy the shared key; `ANDROID_USER_HOME` points at `.android-shared` |
+| Raw `./gradlew installDebug` as `ai-coder` with private key → device poison | `./build_app` / human `./deploy` + unified keys |
+
+**Symptom:** `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on one device after another was installed with a foreign cert.
+
+**Fix keys (idempotent):** `./sync-debug-keystores` (also invoked from `fix-perms` / `ensure_shared_build_homes`). Prefer `sudo ./sync-debug-keystores` once so homes get correct ownership.
+
+**Runtime:** `build_app`/`deploy` export `ANDROID_USER_HOME` to `.android-shared`. `ve-env` and `run-grok*` set the same inside the target user.
+
+**Already-poisoned device:** uninstall once (`adb uninstall …` or `PRESERVE_DATA=1 ./deploy`), then human re-deploy with the unified key. Phones already on the shared cert are unaffected.
+
 ## When to Run Fixers / env helpers
 | Symptom | Run |
 |---------|-----|

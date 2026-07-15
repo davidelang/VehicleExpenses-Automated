@@ -113,6 +113,7 @@ FILES=(
     "filter-clean-config"
     "fix-perms"
     "fix-android-sdk-perms"
+    "sync-debug-keystores"
     "project.config.example"
     ".gitattributes"
     # Permission bootstrap (unified in fix-perms)
@@ -157,6 +158,7 @@ STAMP_FILES=(
     "filter-clean-config"
     "fix-perms"
     "fix-android-sdk-perms"
+    "sync-debug-keystores"
     "project.config.example"
     ".gitattributes"
     "enable-full-orchestration.sh"

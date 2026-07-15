@@ -12,10 +12,19 @@ GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
 
 umask 002
 
+# Shared debug keystore so any gradle/signing in this session uses dlang's cert
+ANDROID_SHARED=""
+if [ -d "$SCRIPT_DIR/.android-shared" ]; then
+  ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
+elif [ -d "$SCRIPT_DIR/../.android-shared" ]; then
+  ANDROID_SHARED="$(cd "$SCRIPT_DIR/.." && pwd)/.android-shared"
+fi
+
 echo "Launching Coder Grok in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
 echo "Running as: $CODER_USER (via sudo -u)"
+[ -n "$ANDROID_SHARED" ] && echo "ANDROID_USER_HOME: $ANDROID_SHARED"
 echo "Tip: Ctrl+M or /multiline for multi-line input."
 
 TODO_GATE_FLAGS=""
@@ -33,8 +42,8 @@ for arg in "$@"; do
   fi
 done
 
-# umask must be set *inside* the target user (sudo does not keep parent umask).
-exec sudo -u "$CODER_USER" -- bash -c 'umask 002; exec "$@"' bash \
+# umask + ANDROID_USER_HOME must be set *inside* the target user (sudo drops parent env/umask).
+exec sudo -u "$CODER_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} bash -c 'umask 002; exec "$@"' bash \
     "$GROK_BIN" \
     "You are the Coder agent in a feature worktree (ai-coder). First: read new_agent_prompt, AGENT_CONTEXT.md, GROK.md, AGENT_MANDATES.md; Mandate Acknowledgment with Role=Coder and Branch from git; enter plan mode; STOP & WAIT.
 

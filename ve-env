@@ -296,6 +296,15 @@ _ve_activate() {
   umask 002
   echo "umask set to $(umask) in this shell"
 
+  # Shared debug keystore (same cert for dlang + all ai-* builders)
+  if [ -d "$SCRIPT_DIR/.android-shared" ]; then
+    export ANDROID_USER_HOME="$SCRIPT_DIR/.android-shared"
+    echo "ANDROID_USER_HOME=$ANDROID_USER_HOME"
+  elif [ -d "$SCRIPT_DIR/../.android-shared" ]; then
+    export ANDROID_USER_HOME="$(cd "$SCRIPT_DIR/../.android-shared" && pwd)"
+    echo "ANDROID_USER_HOME=$ANDROID_USER_HOME"
+  fi
+
   local stale
   stale=$(_ve_session_missing_stale)
   if [ -n "$stale" ]; then
