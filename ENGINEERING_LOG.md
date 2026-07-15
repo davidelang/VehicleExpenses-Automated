@@ -300,3 +300,11 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Plain master build: no paddle/opencv/rclone source clones; jniLibs + assets + librclone.aar checked in
 - Added docs/ENVIRONMENT_SETUP.md; README/CONTRIBUTING/README-multi-agent pointers; sandbox audit report
 
+
+## 2026-07-14 - Sync merge infra from master (ve-special-ours)
+
+- Backported master@67a0508c: ve-special-ours, merge script index-first, install-merge-drivers autostash=false
+- update-rules FILES + docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md
+- Skill failed-merge recovery points at tracked docs (not sandbox)
+- Do NOT promote reset-master-pre-merge.sh
+
