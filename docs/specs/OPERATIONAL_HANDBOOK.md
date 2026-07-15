@@ -33,6 +33,8 @@ This document provides the detailed procedural logic for the VehicleExpenses-aut
 - Full policy: `AGENT_MANDATES.md` § Stability & Build Policy (Baseball Rule).
 
 ## 4. Git Hygiene & State Tracking
+
+**Master merge infra ownership:** orchestration is SoT for merge drivers; see `docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md`.
 - **Linear History:** Strict linear history is required. NO `git commit --amend`.
 - **Tracking Tags:** Use the following tags to track repository state:
     - `builds`: The last commit that successfully passed `./gradlew assembleDebug`.

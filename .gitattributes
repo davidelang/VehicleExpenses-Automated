@@ -14,10 +14,10 @@ filter-apply-config !filter
 filter-clean-config !filter
 # Special-file merge drivers (install via ./install-merge-drivers.sh / update-rules)
 # ve-englog: append branch tail via append-to-engineering-log (third-version result)
-# ve-special-refuse: block text merge; Master always reviews TODO/facts vs branch delta
+# ve-special-ours: always keep master/ours; Master still reviews vs branch delta (todo-close/append, facts prune)
 ENGINEERING_LOG.md merge=ve-englog
-TODO.md merge=ve-special-refuse
-project-facts.md merge=ve-special-refuse
+TODO.md merge=ve-special-ours
+project-facts.md merge=ve-special-ours
 third_party/paddle/exp_det_ab_unscheduled/PP-OCRv4_server_det_armv8.nb filter=lfs diff=lfs merge=lfs -text
 third_party/paddle/exp_det_ab_unscheduled/PP-OCRv4_server_det_x86_64.nb filter=lfs diff=lfs merge=lfs -text
 third_party/paddle/exp_det_ab_unscheduled/PP-OCRv5_server_det_armv8.nb filter=lfs diff=lfs merge=lfs -text
