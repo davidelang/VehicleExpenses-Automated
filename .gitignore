@@ -41,6 +41,11 @@ lib/
 # Install: ./install-ve-refresh-shell.sh [--all]  (also run by setup_agent / fix-perms)
 run-as-primary
 ve-refresh-shell
+
+# Host-only installers (orchestration machine; not published via update-rules; not app brain)
+grok-install.sh
+antigravity-install
+*.orig
 .DS_Store
 Thumbs.db
 *.swp
