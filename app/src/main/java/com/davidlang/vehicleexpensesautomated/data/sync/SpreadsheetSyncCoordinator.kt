@@ -47,22 +47,37 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
     private val syncMutex = Mutex()
 
-    suspend fun syncNow(accountHint: String? = null): SyncResult = syncMutex.withLock {
+    suspend fun syncNow(
+        accountHint: String? = null,
+        scope: SyncDestinationScope = SyncDestinationScope.CONFIGURED,
+        onProgress: SyncProgressListener? = null,
+    ): SyncResult = syncMutex.withLock {
         withContext(Dispatchers.IO) {
             syncIdBackfill.runIfNeeded()
             val store = SyncDestinationStore(context)
             val failureStore = SyncFailureStore(context)
-            val enabled = store.enabledSpreadsheet()
-            if (enabled.isEmpty()) {
+            val destinations = when (scope) {
+                SyncDestinationScope.CONFIGURED -> store.configuredSpreadsheet()
+                SyncDestinationScope.ENABLED -> store.enabledSpreadsheet()
+            }
+            if (destinations.isEmpty()) {
                 val dest = resolveLegacyOrPrimaryDest(store)
                 val targetId = resolveTargetId(dest)
                 if (targetId.isBlank()) {
-                    return@withContext SyncResult(false, "Spreadsheet not configured")
+                    val message = when (scope) {
+                        SyncDestinationScope.ENABLED -> "No enabled spreadsheet destinations"
+                        SyncDestinationScope.CONFIGURED -> "Spreadsheet not configured"
+                    }
+                    return@withContext SyncResult(false, message)
                 }
                 val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
+                val label = destLabel(dest)
+                onProgress?.onStatus("Syncing $label…")
                 val single = syncSingleDestination(dest, hint)
-                recordSpreadsheetResult(failureStore, dest.id, single)
+                recordSpreadsheetResult(failureStore, dest.id, label, single)
                 runPostSyncVehicleDownloads(hint)
+                onProgress?.onStatus(if (single.success) "$label done" else "$label failed")
+                onProgress?.onStatus(single.message)
                 return@withContext single
             }
 
@@ -73,12 +88,21 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             var anyFailure = false
             var consentResult: SyncResult? = null
 
-            for (dest in enabled) {
+            onProgress?.onStatus("Starting spreadsheet sync (${destinations.size} destinations)…")
+            for (dest in destinations) {
                 val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
                 val label = destLabel(dest)
+                onProgress?.onStatus("Syncing $label…")
                 val result = syncSingleDestination(dest, hint)
-                recordSpreadsheetResult(failureStore, dest.id, result)
+                recordSpreadsheetResult(failureStore, dest.id, label, result)
                 results.add(label to result)
+                onProgress?.onStatus(
+                    if (result.success) {
+                        "$label done (${result.vehiclesMerged} vehicles, ${result.expensesMerged} expenses, ${result.fuelMerged} fuel)"
+                    } else {
+                        "$label failed"
+                    },
+                )
                 if (result.success) {
                     totalVehicles += result.vehiclesMerged
                     totalExpenses += result.expensesMerged
@@ -93,10 +117,20 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
             runPostSyncVehicleDownloads(accountHint)
 
-            val message = results.joinToString("\n") { (label, result) -> "$label: ${result.message}" }
+            val message = SyncResultMessages.spreadsheetSummary(
+                results = results,
+                anyFailure = anyFailure,
+                totalVehicles = totalVehicles,
+                totalExpenses = totalExpenses,
+                totalFuel = totalFuel,
+            )
             if (consentResult != null && anyFailure) {
-                return@withContext consentResult.copy(message = message)
+                val consentLabel = results.first { !it.second.success && it.second.needsRemoteConsent }.first
+                val finalMessage = SyncResultMessages.consentWithDest(consentLabel, consentResult.message)
+                onProgress?.onStatus(finalMessage)
+                return@withContext consentResult.copy(message = finalMessage)
             }
+            onProgress?.onStatus(message)
             SyncResult(
                 success = !anyFailure,
                 message = message,
@@ -130,12 +164,13 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     private fun recordSpreadsheetResult(
         failureStore: SyncFailureStore,
         destId: String,
+        destName: String,
         result: SyncResult,
     ) {
         if (result.success) {
             failureStore.clearSpreadsheetFailure(destId)
         } else {
-            failureStore.recordSpreadsheetFailure(destId, result.message)
+            failureStore.recordSpreadsheetFailure(destId, destName)
         }
     }
 
@@ -532,7 +567,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 }
             }
 
-            val sortedMerged = merged.sortedWith(compareBy({ it.timestamp }, { it.syncId }))
+            val sortedMerged = merged.sortedWith(compareBy({ it.timestamp }, { it.odometer }, { it.syncId }))
             writeRowsIncremental(
                 dest = dest,
                 backend = backend,

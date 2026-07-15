@@ -40,8 +40,9 @@ class SyncManager @Inject constructor(
             .build()
 
         val periodMinutes = enabled.minOf { it.resolvedFrequencyMinutes() }.toLong()
-        val initialDelayMinutes = minOf(2L, periodMinutes)
-        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(periodMinutes, TimeUnit.MINUTES)
+        val initialDelayMinutes = SyncScheduleJitter.initialDelayMinutes(context, periodMinutes)
+        val flexMinutes = SyncScheduleJitter.flexMinutes(periodMinutes)
+        val syncRequest = PeriodicWorkRequestBuilder<SyncWorker>(periodMinutes, TimeUnit.MINUTES, flexMinutes, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .setInitialDelay(initialDelayMinutes, TimeUnit.MINUTES)
             .build()
