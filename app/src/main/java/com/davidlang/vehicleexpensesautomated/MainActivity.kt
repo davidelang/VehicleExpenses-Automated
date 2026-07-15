@@ -34,12 +34,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import android.content.SharedPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -196,6 +198,22 @@ class MainActivity : ComponentActivity() {
                     return@VehicleExpensesAutomatedTheme
                 }
 
+                val experimentPrefs = remember {
+                    context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
+                }
+                var showExperimentScreens by remember {
+                    mutableStateOf(experimentPrefs.getBoolean("show_experiment_screens", false))
+                }
+                DisposableEffect(experimentPrefs) {
+                    val listener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+                        if (key == "show_experiment_screens") {
+                            showExperimentScreens = prefs.getBoolean("show_experiment_screens", false)
+                        }
+                    }
+                    experimentPrefs.registerOnSharedPreferenceChangeListener(listener)
+                    onDispose { experimentPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+                }
+
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
@@ -294,22 +312,24 @@ class MainActivity : ComponentActivity() {
                                     scope.launch { drawerState.close() }
                                 }
                             )
-                            NavigationDrawerItem(
-                                label = { Text("Alignment Experiment") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("experiment")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Pump Experiment") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("experiment_pump")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
+                            if (showExperimentScreens) {
+                                NavigationDrawerItem(
+                                    label = { Text("Alignment Experiment") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                                NavigationDrawerItem(
+                                    label = { Text("Pump Experiment") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("experiment_pump")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
+                            }
                         }
                     }
                 ) {

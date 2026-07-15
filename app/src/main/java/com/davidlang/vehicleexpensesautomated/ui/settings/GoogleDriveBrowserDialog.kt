@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveBrowserItem
+import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowseCatalog
 import kotlinx.coroutines.launch
 
 enum class GoogleDriveBrowserMode {
@@ -45,19 +47,24 @@ fun GoogleDriveBrowserDialog(
     accountHint: String,
     onDismiss: () -> Unit,
     onSelect: (DriveBrowserItem) -> Unit,
-    listItems: suspend (searchQuery: String) -> List<DriveBrowserItem>,
+    listItems: suspend (searchQuery: String, catalog: GoogleDriveBrowseCatalog) -> List<DriveBrowserItem>,
     createItem: suspend (name: String) -> DriveBrowserItem,
+    enableHybridCatalog: Boolean = false,
+    readonlyAccessGranted: Boolean = true,
+    onRequestReadonlyAccess: () -> Unit = {},
     emptyMessage: String =
         "No items visible. With Drive access limited to this app, open or create files here first.",
 ) {
     val scope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
+    var catalog by remember { mutableStateOf(GoogleDriveBrowseCatalog.APP) }
     var items by remember { mutableStateOf<List<DriveBrowserItem>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var errorText by remember { mutableStateOf("") }
     var showCreatePrompt by remember { mutableStateOf(false) }
     var createName by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
+    var needsReadonlyConsent by remember { mutableStateOf(false) }
 
     val title = when (mode) {
         GoogleDriveBrowserMode.SPREADSHEETS -> "Browse spreadsheets"
@@ -71,13 +78,30 @@ fun GoogleDriveBrowserDialog(
         GoogleDriveBrowserMode.SPREADSHEETS -> "Vehicle Expenses"
         GoogleDriveBrowserMode.FOLDERS -> "Vehicle Expenses Photos"
     }
+    val allCatalogEmptyMessage = when (mode) {
+        GoogleDriveBrowserMode.SPREADSHEETS ->
+            "No spreadsheets found. Try search, or paste a sheet URL if it is shared with your account."
+        GoogleDriveBrowserMode.FOLDERS ->
+            "No folders found. Try search, or paste a folder URL if it is shared with your account."
+    }
 
     fun reload() {
+        if (enableHybridCatalog &&
+            catalog == GoogleDriveBrowseCatalog.ALL &&
+            !readonlyAccessGranted
+        ) {
+            loading = false
+            needsReadonlyConsent = true
+            items = emptyList()
+            errorText = ""
+            return
+        }
+        needsReadonlyConsent = false
         scope.launch {
             loading = true
             errorText = ""
             try {
-                items = listItems(searchQuery)
+                items = listItems(searchQuery, catalog)
             } catch (e: Exception) {
                 errorText = e.message ?: "Failed to load"
                 items = emptyList()
@@ -87,7 +111,7 @@ fun GoogleDriveBrowserDialog(
         }
     }
 
-    LaunchedEffect(accountHint, searchQuery) {
+    LaunchedEffect(accountHint, searchQuery, catalog, readonlyAccessGranted) {
         reload()
     }
 
@@ -146,6 +170,35 @@ fun GoogleDriveBrowserDialog(
         title = { Text(title) },
         text = {
             Column {
+                if (enableHybridCatalog) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        FilterChip(
+                            selected = catalog == GoogleDriveBrowseCatalog.APP,
+                            onClick = { catalog = GoogleDriveBrowseCatalog.APP },
+                            label = { Text("This app") },
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                        FilterChip(
+                            selected = catalog == GoogleDriveBrowseCatalog.ALL,
+                            onClick = { catalog = GoogleDriveBrowseCatalog.ALL },
+                            label = { Text("All & shared") },
+                        )
+                    }
+                    val itemLabel = when (mode) {
+                        GoogleDriveBrowserMode.SPREADSHEETS -> "spreadsheets"
+                        GoogleDriveBrowserMode.FOLDERS -> "folders"
+                    }
+                    Text(
+                        text = when (catalog) {
+                            GoogleDriveBrowseCatalog.APP ->
+                                "${itemLabel.replaceFirstChar { it.uppercase() }} created or opened in this app."
+                            GoogleDriveBrowseCatalog.ALL ->
+                                "All $itemLabel your Google account can view, including shared files."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    )
+                }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth(),
@@ -157,17 +210,35 @@ fun GoogleDriveBrowserDialog(
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                     )
-                    IconButton(
-                        onClick = {
-                            createName = createDefaultName
-                            showCreatePrompt = true
-                        },
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = createLabel)
+                    if (catalog == GoogleDriveBrowseCatalog.APP) {
+                        IconButton(
+                            onClick = {
+                                createName = createDefaultName
+                                showCreatePrompt = true
+                            },
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = createLabel)
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 when {
+                    needsReadonlyConsent -> {
+                        val browseItemLabel = when (mode) {
+                            GoogleDriveBrowserMode.SPREADSHEETS -> "spreadsheets"
+                            GoogleDriveBrowserMode.FOLDERS -> "folders"
+                        }
+                        Text(
+                            "Allow Drive read access to list all $browseItemLabel (owned and shared with you).",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        OutlinedButton(
+                            onClick = onRequestReadonlyAccess,
+                            modifier = Modifier.padding(top = 8.dp),
+                        ) {
+                            Text("Grant browse access")
+                        }
+                    }
                     loading -> {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -184,15 +255,22 @@ fun GoogleDriveBrowserDialog(
                         }
                     }
                     items.isEmpty() -> {
-                        Text(emptyMessage, style = MaterialTheme.typography.bodySmall)
-                        OutlinedButton(
-                            onClick = {
-                                createName = createDefaultName
-                                showCreatePrompt = true
-                            },
-                            modifier = Modifier.padding(top = 8.dp),
-                        ) {
-                            Text(createLabel)
+                        val message = if (catalog == GoogleDriveBrowseCatalog.ALL) {
+                            allCatalogEmptyMessage
+                        } else {
+                            emptyMessage
+                        }
+                        Text(message, style = MaterialTheme.typography.bodySmall)
+                        if (catalog == GoogleDriveBrowseCatalog.APP) {
+                            OutlinedButton(
+                                onClick = {
+                                    createName = createDefaultName
+                                    showCreatePrompt = true
+                                },
+                                modifier = Modifier.padding(top = 8.dp),
+                            ) {
+                                Text(createLabel)
+                            }
                         }
                     }
                     else -> {

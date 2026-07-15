@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -53,6 +54,41 @@ import kotlin.math.min
 
 private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
+
+private fun logHeapState(context: Context, label: String) {
+    val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    val mi = ActivityManager.MemoryInfo()
+    am.getMemoryInfo(mi)
+    val runtime = Runtime.getRuntime()
+    Log.i(
+        TAG,
+        "heap[$label] memoryClass=${am.memoryClass}MB largeMemoryClass=${am.largeMemoryClass}MB " +
+            "runtime max=${runtime.maxMemory()} total=${runtime.totalMemory()} free=${runtime.freeMemory()} " +
+            "availMem=${mi.availMem} threshold=${mi.threshold} lowMemory=${mi.lowMemory}"
+    )
+}
+
+/** Bounds-only probe — never loads full reference dash photos into RAM. */
+private fun probeReferenceDimensions(context: Context, path: String): Pair<Int, Int> {
+    return try {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        if (path.startsWith("content://")) {
+            context.contentResolver.openInputStream(android.net.Uri.parse(path))?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            }
+        } else {
+            BitmapFactory.decodeFile(path, options)
+        }
+        if (options.outWidth > 0 && options.outHeight > 0) {
+            Pair(options.outWidth, options.outHeight)
+        } else {
+            Pair(4000, 3072)
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "Failed to probe reference bounds: $path", e)
+        Pair(4000, 3072)
+    }
+}
 
 private val GOLDEN_SUBSET = mapOf(
     "PXL_20220701_020707365.dng" to 1,
@@ -199,9 +235,7 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
 
 data class ReferenceCache(
     val vehicle: Vehicle,
-    val referenceBase64: String,
     val curatedLandmarks: List<TextBlock>,
-    val bmp: Bitmap,
     val width: Int,
     val height: Int
 )
@@ -234,16 +268,15 @@ private suspend fun runExperiment(
     val total = photos.size
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
     val paddleEngine = NativePaddleEngine(context)
+    logHeapState(context, "runExperiment:start")
 
-    val cachedRefs = vehicles.map { vehicle ->
-        val bmp = OdometerOcrUtils.decodeBitmapSafely(context, vehicle.referenceDashPhotoUrl!!)
-            ?: BitmapFactory.decodeFile(vehicle.referenceDashPhotoUrl)
-        val curated = getFullLandmarksFromJson(vehicle.landmarkTextBlocksJson, "ML Kit", bmp.width, bmp.height)
-        val annotatedBmp = drawCropBoxesOnReference(bmp, vehicle)
-        val refBase64 = createScaledBase64(annotatedBmp, 400, 70)
-        annotatedBmp.recycle()
-        ReferenceCache(vehicle, refBase64, curated, bmp, bmp.width, bmp.height)
+    val cachedRefs = vehicles.mapNotNull { vehicle ->
+        val refUrl = vehicle.referenceDashPhotoUrl ?: return@mapNotNull null
+        val (refW, refH) = probeReferenceDimensions(context, refUrl)
+        val curated = getFullLandmarksFromJson(vehicle.landmarkTextBlocksJson, "ML Kit", refW, refH)
+        ReferenceCache(vehicle, curated, refW, refH)
     }
+    logHeapState(context, "after-cachedRefs-landmarks-only")
 
     val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
     withContext(Dispatchers.Main) {
@@ -253,10 +286,10 @@ private suspend fun runExperiment(
                 RectF(ref.vehicle.odometerCropLeft!!, ref.vehicle.odometerCropTop!!,
                       ref.vehicle.odometerCropRight!!, ref.vehicle.odometerCropBottom!!)
             } else {
-                IcrsMath.fullImageIcrsRect(ref.bmp.width, ref.bmp.height)
+                IcrsMath.fullImageIcrsRect(ref.width, ref.height)
             }
-            val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, ref.bmp.width, ref.bmp.height)
-            val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, ref.bmp.width, ref.bmp.height)
+            val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, ref.width, ref.height)
+            val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, ref.width, ref.height)
             val srcW = (p2.x - p1.x).toInt()
             val srcH = (p2.y - p1.y).toInt()
 
@@ -267,7 +300,7 @@ private suspend fun runExperiment(
             if (targetW > 0 && targetH > 0) {
                 vehicleBufferSets[ref.vehicle.id] = BufferSet(targetW, targetH)
                 // TEMP DIAGNOSTIC (2026-06-23) - remove after root cause fixed
-                Log.i("HIST_DIAG", "vehicleBufferSets created: id=${ref.vehicle.id} target=${targetW}x${targetH} src=${srcW}x${srcH} refBmp=${ref.bmp.width}x${ref.bmp.height}")
+                Log.i("HIST_DIAG", "vehicleBufferSets created: id=${ref.vehicle.id} target=${targetW}x${targetH} src=${srcW}x${srcH} refDims=${ref.width}x${ref.height}")
 
                 listOf(NativePaddleEngine.bufferSetA, NativePaddleEngine.bufferSetB).forEach { set ->
                     // DELIBERATE: We use the Vehicle ID as the explicit BufferSet crop ID here.
@@ -603,7 +636,7 @@ private suspend fun runExperiment(
     currentFile.appendText(footer)
     jsonFile.appendText("\n  ]\n}")
 
-    cachedRefs.forEach { it.bmp.recycle() }
+    logHeapState(context, "runExperiment:end")
     experimentRecSet320x48.release()
     experimentDetSet512x128.release()
     vehicleBufferSets.values.forEach { it.release() }

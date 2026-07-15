@@ -733,3 +733,29 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - ./run-as-primary ./build_app SUCCESS on master @ f0446cd7; builds tag updated
 - First ai-coder build hit processDebugJavaRes chmod 770 on foreign-owned app/build; dlang euid via run-as-primary succeeded
+
+## 2026-07-14 - Sync/camera cleanup batch start
+
+- Plan: dev-ai-interaction/plans/sync-camera-cleanup-20260714-plan.md
+- Phase 1: multi-dest photo sync — SyncDestinationStore context-aware isPhotoConfigured/enabledPhoto; expense download uses per-dest ctx in loop
+
+## 2026-07-14 - Sync/camera cleanup batch complete
+
+- Phases 1-5: multi-dest photo sync, fuel sort+jitter, VM cleanup, experiment gate, CameraResolutionPicker, Quick Fill instruction line
+- Tag: full-code-review1/builds @ 598d72f9
+- Infra launcher changes stashed (stash: infra launcher sync touch) — not merged
+
+## 2026-07-14 - Overnight compile verification (deploy deferred)
+
+- ./build_app (no new commits): BUILD SUCCESSFUL 51s; tag full-code-review1/builds → f7efbd89 (housekeeping atop infra 28d83ea3 + feature batch through 54869259).
+- ./gradlew :app:assembleDebug --quiet: succeeded (second compile path).
+- Prior emulator UI smoke (5556/5554): Quick Fill instruction line, experiment gate, spreadsheet sync toast, reports, settings — pass; no experiment runs started.
+- APK: app/build/outputs/apk/debug/app-debug.apk @ describe full-code-review1-start-10-gf7efbd89.
+- Paused: awaiting user deploy (./deploy or gradlew installDebug per branch exception), then full device test pass on wake.
+
+## 2026-07-14 - Sync UX polish and PR prep (full-code-review1)
+
+- **Activity:** Completed sync/camera review branch UX fixes; cleaned git history; prepared local PR.
+- **Sync UX:** Live per-destination status (no toasts); red error text; multi-line per-dest summaries; Drive photo upsert prevents duplicate uploads; experiment drawer toggle without restart.
+- **Verification:** Pixel 6 manual 3-dest spreadsheet sync clean in logcat; user confirmed experiment toggle and status line.
+- **Process:** Logical commit history + `backup-full-code-review1` tag; `./generate_pr.sh` for Master review.

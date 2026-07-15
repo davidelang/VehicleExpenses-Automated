@@ -82,14 +82,22 @@ class PhotoBackupCoordinator @Inject constructor(
     suspend fun syncNow(
         accountHint: String? = null,
         mode: PhotoSyncMode = PhotoSyncMode.FULL,
+        onProgress: SyncProgressListener? = null,
     ): PhotoBackupResult = withContext(Dispatchers.IO) {
         val store = SyncDestinationStore(context)
         val failureStore = SyncFailureStore(context)
-        val enabled = store.enabledPhoto()
-        if (enabled.isEmpty()) {
+        val destinations = when (mode) {
+            PhotoSyncMode.FULL -> store.configuredPhoto()
+            PhotoSyncMode.PENDING_ONLY -> store.enabledPhoto()
+        }
+        if (destinations.isEmpty()) {
+            if (mode == PhotoSyncMode.PENDING_ONLY) {
+                return@withContext PhotoBackupResult(false, "No enabled photo destinations")
+            }
             val ctx = resolveContext(accountHint) ?: return@withContext notConfiguredOrAuth()
+            onProgress?.onStatus("Syncing ${photoDestLabel(ctx.dest)}…")
             val single = syncSingleDestination(ctx, mode, sharedRebinds = 0)
-            recordPhotoResult(failureStore, ctx.dest.id, single)
+            recordPhotoResult(failureStore, ctx.dest.id, photoDestLabel(ctx.dest), single)
             recountPendingAll(store)
             if (single.success && (single.uploads > 0 || single.downloads > 0)) {
                 bestEffortSheetSync(accountHint)
@@ -109,20 +117,30 @@ class PhotoBackupCoordinator @Inject constructor(
         var manifestChangedAny = false
         var consentResult: PhotoBackupResult? = null
 
-        for (dest in enabled) {
+        onProgress?.onStatus("Starting photo backup (${destinations.size} destinations)…")
+        for (dest in destinations) {
             val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
             val ctx = resolveContext(hint, dest)
             val label = photoDestLabel(dest)
             if (ctx == null) {
+                onProgress?.onStatus("$label: not configured")
                 val fail = notConfiguredOrAuth(dest)
-                recordPhotoResult(failureStore, dest.id, fail)
+                recordPhotoResult(failureStore, dest.id, label, fail)
                 results.add(label to fail)
                 anyFailure = true
                 continue
             }
+            onProgress?.onStatus("Syncing $label…")
             val result = syncSingleDestination(ctx, mode, sharedRebinds = sharedRebinds)
-            recordPhotoResult(failureStore, dest.id, result)
+            recordPhotoResult(failureStore, dest.id, label, result)
             results.add(label to result)
+            onProgress?.onStatus(
+                if (result.success) {
+                    "$label done (${result.uploads} up, ${result.downloads} down)"
+                } else {
+                    "$label failed"
+                },
+            )
             if (result.success) {
                 totalUploads += result.uploads
                 totalDownloads += result.downloads
@@ -141,10 +159,19 @@ class PhotoBackupCoordinator @Inject constructor(
             bestEffortSheetSync(accountHint)
         }
 
-        val message = results.joinToString("\n") { (label, result) -> "$label: ${result.message}" }
+        val message = SyncResultMessages.photoSummary(
+            results = results,
+            anyFailure = anyFailure,
+            totalUploads = totalUploads,
+            totalDownloads = totalDownloads,
+        )
         if (consentResult != null && anyFailure) {
-            return@withContext consentResult.copy(message = message)
+            val consentLabel = results.first { !it.second.success && it.second.needsRemoteConsent }.first
+            val finalMessage = SyncResultMessages.consentWithDest(consentLabel, consentResult.message)
+            onProgress?.onStatus(finalMessage)
+            return@withContext consentResult.copy(message = finalMessage)
         }
+        onProgress?.onStatus(message)
         PhotoBackupResult(
             success = !anyFailure,
             message = message,
@@ -227,7 +254,7 @@ class PhotoBackupCoordinator @Inject constructor(
                 if (count > 0) manifestChanged = true
                 uploads += count
                 if (expenseNeedsDownload(expense, destWithFolder)) {
-                    downloadExpensePhoto(expense)?.let { downloads++ }
+                    downloadExpensePhoto(expense, ctx)?.let { downloads++ }
                 }
             }
 
@@ -259,7 +286,7 @@ class PhotoBackupCoordinator @Inject constructor(
     }
 
     private suspend fun recountPendingAll(store: SyncDestinationStore): Int {
-        val dests = store.allPhoto().filter { SyncDestinationStore.isPhotoConfigured(it) }
+        val dests = store.allPhoto().filter { store.isPhotoConfigured(it) }
         if (dests.isEmpty()) {
             store.setPendingCount(0)
             return 0
@@ -287,6 +314,7 @@ class PhotoBackupCoordinator @Inject constructor(
             val name = "vehicle_${vehicle.syncId}_ref.jpg"
             val result = ctx.backend.uploadFile(
                 dest, ctx.hint, refPath!!, name, "image/jpeg",
+                CloudManifest.fileIdForDest(manifest, dest.id, CloudManifest.ROLE_VEHICLE_REF),
             )
             if (result.resolvedFolderId.isNotBlank()) dest = dest.copy(folderId = result.resolvedFolderId)
             entries.add(
@@ -310,6 +338,7 @@ class PhotoBackupCoordinator @Inject constructor(
             val name = "vehicle_${vehicle.syncId}_ref_cleaned.jpg"
             val result = ctx.backend.uploadFile(
                 dest, ctx.hint, cleanedPath!!, name, "image/jpeg",
+                CloudManifest.fileIdForDest(manifest, dest.id, CloudManifest.ROLE_VEHICLE_REF_CLEANED),
             )
             if (result.resolvedFolderId.isNotBlank()) dest = dest.copy(folderId = result.resolvedFolderId)
             entries.add(
@@ -360,6 +389,7 @@ class PhotoBackupCoordinator @Inject constructor(
             val name = "fuel_${fuel.syncId}_$tag.jpg"
             val result = ctx.backend.uploadFile(
                 ctx.dest, ctx.hint, uri, name, "image/jpeg",
+                CloudManifest.fileIdForDest(manifest, ctx.dest.id, role),
             )
             manifest = CloudManifest.merge(
                 manifest,
@@ -412,6 +442,7 @@ class PhotoBackupCoordinator @Inject constructor(
             val name = ExpensePhotoUrls.remoteFileName(expense.syncId, page.index)
             val result = ctx.backend.uploadFile(
                 ctx.dest, ctx.hint, page.uri, name, "image/jpeg",
+                CloudManifest.fileIdForDest(manifest, ctx.dest.id, role),
             )
             manifest = CloudManifest.merge(
                 manifest,
@@ -618,9 +649,15 @@ class PhotoBackupCoordinator @Inject constructor(
         changed
     }
 
-    /** Download expense receipt page(s) from cloud manifest when local photos missing. */
+    /** Download expense receipt page(s) from cloud manifest when local photos missing (primary dest). */
     suspend fun downloadExpensePhoto(expense: ExpenseEntry): String? = withContext(Dispatchers.IO) {
         val ctx = resolveContext(null) ?: return@withContext null
+        downloadExpensePhoto(expense, ctx)
+    }
+
+    /** Download expense receipt page(s) for a specific photo destination context. */
+    private suspend fun downloadExpensePhoto(expense: ExpenseEntry, ctx: SyncContext): String? =
+        withContext(Dispatchers.IO) {
         prepareRcloneDestIfNeeded(ctx.dest, ctx.hint)
         val saveLocal = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
             .getBoolean("save_expense_photos", true)
@@ -847,12 +884,13 @@ class PhotoBackupCoordinator @Inject constructor(
     private fun recordPhotoResult(
         failureStore: SyncFailureStore,
         destId: String,
+        destName: String,
         result: PhotoBackupResult,
     ) {
         if (result.success) {
             failureStore.clearPhotoFailure(destId)
         } else {
-            failureStore.recordPhotoFailure(destId, result.message)
+            failureStore.recordPhotoFailure(destId, destName)
         }
     }
 
@@ -886,7 +924,7 @@ class PhotoBackupCoordinator @Inject constructor(
     private fun notConfiguredOrAuth(destOverride: PhotoDestination? = null): PhotoBackupResult {
         val store = SyncDestinationStore(context)
         val dest = destOverride ?: store.photoDestination()
-        if (!SyncDestinationStore.isPhotoConfigured(dest)) {
+        if (!store.isPhotoConfigured(dest)) {
             return PhotoBackupResult(false, "Photo destination not configured")
         }
         return when (dest?.provider) {

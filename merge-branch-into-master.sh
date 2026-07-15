@@ -140,7 +140,10 @@ merge_git_ort() {
   local branch="$1"
   englog_sync_index_to_worktree
   git update-index --skip-worktree ENGINEERING_LOG.md 2>/dev/null || true
-  git merge --no-ff --no-commit --no-autostash "$branch"
+  if ! git merge --no-ff --no-commit --no-autostash "$branch"; then
+    git update-index --no-skip-worktree ENGINEERING_LOG.md 2>/dev/null || true
+    return 1
+  fi
   restore_special TODO.md "$pre_todo"
   restore_special project-facts.md "$pre_facts"
   verify_index_blob TODO.md "$pre_todo"

@@ -92,9 +92,12 @@ class GoogleDrivePhotoBackend @Inject constructor(
         localSource: String,
         remoteFileName: String,
         mimeType: String,
+        existingFileId: String?,
     ): PhotoUploadResult {
         val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
-        val result = photoStorage.uploadToDestination(hint, dest, localSource, remoteFileName, mimeType)
+        val result = photoStorage.uploadToDestination(
+            hint, dest, localSource, remoteFileName, mimeType, existingFileId,
+        )
         return PhotoUploadResult(fileId = result.fileId, resolvedFolderId = result.resolvedFolderId)
     }
 

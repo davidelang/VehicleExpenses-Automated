@@ -231,6 +231,29 @@ internal fun PhotoDestEditForm(
         }
     }
 
+    var driveReadonlyGranted by remember { mutableStateOf(viewModel.auth.hasReadonlyBrowseScope()) }
+
+    val driveReadonlyLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        try {
+            val account = viewModel.auth.parseSignInResult(result.data)
+            val email = account.email ?: ""
+            if (email.isNotBlank()) {
+                viewModel.auth.persistAccountEmail(email)
+            }
+            driveReadonlyGranted = viewModel.auth.hasReadonlyBrowseScope()
+            if (driveReadonlyGranted) {
+                statusText = "Drive browse access granted"
+            } else {
+                statusText = "Drive browse access not granted — try again"
+            }
+        } catch (e: ApiException) {
+            statusText = "Drive browse sign-in failed"
+            Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
+        }
+    }
+
     val importConfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -371,9 +394,14 @@ internal fun PhotoDestEditForm(
                         showBrowseDialog = false
                         statusText = "Selected: ${item.name}"
                     },
-                    listItems = { search ->
+                    enableHybridCatalog = true,
+                    readonlyAccessGranted = driveReadonlyGranted,
+                    onRequestReadonlyAccess = {
+                        driveReadonlyLauncher.launch(viewModel.auth.readonlyBrowseSignInIntent())
+                    },
+                    listItems = { search, catalog ->
                         try {
-                            viewModel.listFoldersForBrowse(accountHint, search)
+                            viewModel.listFoldersForBrowse(accountHint, search, catalog)
                         } catch (e: DriveRecoverableAuthException) {
                             throw e
                         } catch (e: Exception) {

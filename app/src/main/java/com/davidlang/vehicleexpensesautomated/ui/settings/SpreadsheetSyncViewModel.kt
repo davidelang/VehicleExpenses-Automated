@@ -3,6 +3,8 @@ package com.davidlang.vehicleexpensesautomated.ui.settings
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveBrowserItem
+import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveAuth
+import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowseCatalog
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowserClient
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleSheetsAuth
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleSheetsClient
@@ -14,6 +16,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetSyncCoordinator
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncProgressListener
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncResult
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareApi
@@ -25,6 +28,7 @@ import javax.inject.Inject
 class SpreadsheetSyncViewModel @Inject constructor(
     @param:ApplicationContext private val context: Context,
     val auth: GoogleSheetsAuth,
+    val driveAuth: GoogleDriveAuth,
     val msAuth: MicrosoftOneDriveAuth,
     val zohoAuth: ZohoSheetAuth,
     private val sheetsClient: GoogleSheetsClient,
@@ -34,10 +38,17 @@ class SpreadsheetSyncViewModel @Inject constructor(
     private val syncManager: SyncManager,
 ) : ViewModel() {
 
-    suspend fun listSpreadsheetsForBrowse(accountHint: String, searchQuery: String): List<DriveBrowserItem> =
-        driveBrowser.listSpreadsheets(accountHint.ifBlank { null }, searchQuery)
+    suspend fun listSpreadsheetsForBrowse(
+        accountHint: String,
+        searchQuery: String,
+        catalog: GoogleDriveBrowseCatalog = GoogleDriveBrowseCatalog.APP,
+    ): List<DriveBrowserItem> =
+        driveBrowser.listSpreadsheets(accountHint.ifBlank { null }, searchQuery, catalog)
 
-    suspend fun syncNow(accountHint: String): SyncResult = coordinator.syncNow(accountHint)
+    suspend fun syncNow(
+        accountHint: String,
+        onProgress: SyncProgressListener? = null,
+    ): SyncResult = coordinator.syncNow(accountHint, onProgress = onProgress)
 
     suspend fun testConnection(dest: SpreadsheetDestination): Boolean {
         val result = tabularApi.testConnection(dest)

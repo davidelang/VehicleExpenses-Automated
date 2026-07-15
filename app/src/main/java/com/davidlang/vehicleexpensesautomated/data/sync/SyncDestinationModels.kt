@@ -3,6 +3,14 @@ package com.davidlang.vehicleexpensesautomated.data.sync
 import kotlin.math.roundToInt
 import java.util.UUID
 
+/** Which destinations participate in a sync run. */
+enum class SyncDestinationScope {
+    /** Manual Sync now — all configured destinations. */
+    CONFIGURED,
+    /** Background workers — only destinations with background sync enabled. */
+    ENABLED,
+}
+
 enum class SpreadsheetProvider(val jsonValue: String) {
     GOOGLE_SHEETS("google_sheets"),
     EXCEL("excel"),

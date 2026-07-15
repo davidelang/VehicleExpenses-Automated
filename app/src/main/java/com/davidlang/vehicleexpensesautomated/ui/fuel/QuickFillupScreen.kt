@@ -5,9 +5,6 @@ import android.util.Log
 import android.widget.Toast
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.resolutionselector.AspectRatioStrategy
-import androidx.camera.core.resolutionselector.ResolutionSelector
-
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,6 +53,8 @@ import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
+import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
@@ -176,6 +175,9 @@ fun QuickFillupScreen(
     val isProcessing = captureViewState == CaptureViewState.Processing
     val hasResults = captureViewState == CaptureViewState.Results
     var stageLabel by remember { mutableStateOf("") }
+    var instructionLine by remember {
+        mutableStateOf("Aim at odometer. Tap shutter to capture.")
+    }
     var isPhotoSaving by remember { mutableStateOf(false) }
     /** Null when idle/ok; set while saving or after a failed Camera-roll save. */
     var photoSaveStatus by remember { mutableStateOf<String?>(null) }
@@ -278,12 +280,10 @@ fun QuickFillupScreen(
     }
 
     val imageCapture: ImageCapture = remember {
-        // Use aspect strategy to prefer device's native/correct aspect (4:3 for this sensor); ~2000 wide fine for odo
-        val resSelector = ResolutionSelector.Builder()
-            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-            .build()
         ImageCapture.Builder()
-            .setResolutionSelector(resSelector)
+            .setResolutionSelector(
+                CameraResolutionPicker.resolutionSelector(CameraCaptureProfile.OCR_MEDIUM),
+            )
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .build()
     }
@@ -339,7 +339,6 @@ fun QuickFillupScreen(
                             }
 
                             val bufferSet = NativePaddleEngine.bufferSetA
-                            // receives 4:3 ~2000w grab; resized to full sensor 4:3 buffer
                             if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
                                 bufferSet.resize(imageProxy.width, imageProxy.height)
                             }
@@ -377,11 +376,16 @@ fun QuickFillupScreen(
                                         
                                         scope.launch(Dispatchers.Main) {
                                             if (result.error != null) {
+                                                instructionLine = result.error
                                                 Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
+                                            } else {
+                                                result.vehicleId?.let { selectedVehicleId = it }
+                                                result.odometer?.let { odometer = it }
+                                                instructionLine = when {
+                                                    result.odometer != null -> "Odometer: ${result.odometer}. Review fields, then Save."
+                                                    else -> "Dash captured. Enter odometer if needed, or switch to pump."
+                                                }
                                             }
-
-                                            result.vehicleId?.let { selectedVehicleId = it }
-                                            result.odometer?.let { odometer = it }
 
                                             if (debugMode && result.debugJson != null) {
                                                 val vId = result.vehicleId ?: selectedVehicleId
@@ -396,9 +400,6 @@ fun QuickFillupScreen(
                                                         odometer = result.odometer,
                                                         error = result.error,
                                                     )
-                                                    scope.launch(Dispatchers.Main) {
-                                                        Toast.makeText(context, "Debug session saved", Toast.LENGTH_SHORT).show()
-                                                    }
                                                 }
                                             }
                                         }
@@ -434,19 +435,19 @@ fun QuickFillupScreen(
                                         )
                                         scope.launch(Dispatchers.Main) {
                                             if (result.error != null) {
+                                                instructionLine = result.error
                                                 Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
                                             } else {
                                                 result.volume?.let { gallons = it }
                                                 result.cost?.let { cost = it }
-                                                val filled = listOfNotNull(result.volume, result.cost)
-                                                if (filled.isNotEmpty()) {
-                                                    Toast.makeText(
-                                                        context,
-                                                        "Pump: ${filled.joinToString(", ")}",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
+                                                val parts = buildList {
+                                                    result.cost?.let { add("cost $it") }
+                                                    result.volume?.let { add("volume $it") }
+                                                }
+                                                instructionLine = if (parts.isNotEmpty()) {
+                                                    "Pump: ${parts.joinToString(", ")}. Review fields, then Save."
                                                 } else {
-                                                    Toast.makeText(context, "Pump photo captured!", Toast.LENGTH_SHORT).show()
+                                                    "Pump photo captured. Enter cost/volume if needed, then Save."
                                                 }
                                             }
                                             if (debugMode && result.debugJson != null) {
@@ -463,9 +464,6 @@ fun QuickFillupScreen(
                                                         volume = result.volume,
                                                         error = result.error,
                                                     )
-                                                    scope.launch(Dispatchers.Main) {
-                                                        Toast.makeText(context, "Debug session saved", Toast.LENGTH_SHORT).show()
-                                                    }
                                                 }
                                             }
                                         }
@@ -756,6 +754,12 @@ fun QuickFillupScreen(
             }
 
             Column(modifier = Modifier.wrapContentWidth().then(cScrollModifier)) {
+        Text(
+            text = instructionLine,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
         // Group 1: Vehicle + Odo
         Column(modifier = Modifier.wrapContentWidth().then(odoBorder)) {
             Row(
@@ -1104,6 +1108,11 @@ fun QuickFillupScreen(
                 captureViewState = CaptureViewState.Live
             }
             captureMode = if (captureMode == "odo") "pump" else "odo"
+            instructionLine = if (captureMode == "pump") {
+                "Aim at pump display (cost/volume). Tap shutter to capture."
+            } else {
+                "Aim at odometer. Tap shutter to capture."
+            }
         }
     }
 
