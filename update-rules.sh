@@ -67,6 +67,7 @@ FILES=(
     "new_agent_prompt"
     ".gitignore"
     "docs/specs/OPERATIONAL_HANDBOOK.md"
+    "docs/ENVIRONMENT_SETUP.md"
     # New for Grok CLI parallel support (added per approved plan)
     "AGENT_MANDATES.md"
     "AGENTS.md"

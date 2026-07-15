@@ -2,6 +2,8 @@
 
 This repository uses a **Container/Worktree** layout designed for multiple AI agents working in parallel.
 
+**Host setup (plain app clone + this multi-worktree layout, build deps, prebuilts):** see **[docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)**.
+
 ## 1. Directory Structure
 
 - **Root (`VehicleExpenses-automated/`)**: Checked out to the `orchestration` branch. Contains shared infrastructure (rules, build scripts, sandbox).
