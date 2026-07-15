@@ -2,12 +2,10 @@
 # merge-branch-into-master.sh — Master-facing merge with special-file protocol.
 # Usage: ./merge-branch-into-master.sh <branch-name>
 #
-# - Ensures merge drivers installed
-# - git merge --no-ff --no-commit
-# - ENGINEERING_LOG: ve-englog may produce third-version via append-to-engineering-log
-# - TODO.md / project-facts.md: ALWAYS special-file review (against branch delta),
-#   not only when those paths changed. Keeps master base; never naive text merge.
-# - No happy-path chattr ±a
+# Special files:
+#   ENGINEERING_LOG.md — chattr +a: index-first or skip-worktree; ve-englog appends tail.
+#   TODO.md / project-facts.md — merge=ve-special-ours (keep master in index); restore_special
+#     enforces master worktree+index; Master runs todo-close/append + facts prune.
 #
 # Leaves merge UNCOMMITTED. Master finishes special files, then ./build_app.
 
@@ -38,88 +36,154 @@ else
   echo "WARNING: install-merge-drivers.sh missing; merge drivers may not run" >&2
 fi
 
-echo "=== merge-branch-into-master: merging $BRANCH into $CURRENT (--no-ff --no-commit) ==="
+echo "=== merge-branch-into-master: merging $BRANCH into $CURRENT ==="
 echo "Branch tip: $(git rev-parse --short "$BRANCH")  Base: $(git merge-base HEAD "$BRANCH" | cut -c1-8)"
 
-# Snapshot master specials before merge (always restore as protocol base)
+while git stash list 2>/dev/null | head -1 | grep -q autostash; do
+  echo "  Dropping stale autostash entry"
+  git stash drop >/dev/null 2>&1 || break
+done
+
 pre_todo=$(git rev-parse HEAD:TODO.md 2>/dev/null || echo "")
 pre_facts=$(git rev-parse HEAD:project-facts.md 2>/dev/null || echo "")
+pre_head=$(git rev-parse HEAD)
 
-set +e
-git merge --no-ff --no-commit "$BRANCH"
-merge_rc=$?
-set -e
-
-# Eng-log: stage third-version if worktree differs after ve-englog append
-if [ -f ENGINEERING_LOG.md ]; then
-  git add ENGINEERING_LOG.md 2>/dev/null || true
-fi
-
-# Always restore pre-merge master TODO + project-facts as working base.
-# Semantic protocol (todo-close / fact prune) runs against branch delta next —
-# never trust a 3-way or take-theirs of these files.
 restore_special() {
   local f="$1" blob="$2"
   if [ -z "$blob" ]; then
     return 0
   fi
-  if git ls-files -u -- "$f" | grep -q .; then
-    echo "  Restoring pre-merge master for unmerged $f"
-  else
-    echo "  Ensuring master base for $f (special-file protocol base)"
-  fi
+  echo "  restore_special: master base for $f"
   git show "$blob" > "$f"
   git add -f "$f" 2>/dev/null || git add "$f"
 }
-restore_special TODO.md "$pre_todo"
-restore_special project-facts.md "$pre_facts"
+
+verify_index_blob() {
+  local f="$1" expected="$2"
+  local actual
+  actual=$(git rev-parse ":$f" 2>/dev/null || echo "")
+  if [ "$actual" != "$expected" ]; then
+    echo "ERROR: staged $f blob ${actual:0:8} != master ${expected:0:8}" >&2
+    return 1
+  fi
+  echo "  verify: $f index matches master (${expected:0:8})"
+}
+
+englog_sync_index_to_worktree() {
+  if [ ! -f ENGINEERING_LOG.md ]; then
+    return 0
+  fi
+  git update-index --no-skip-worktree ENGINEERING_LOG.md 2>/dev/null || true
+  local hash
+  hash=$(git hash-object ENGINEERING_LOG.md)
+  git update-index --cacheinfo 100644,"$hash",ENGINEERING_LOG.md
+  echo "  ENGINEERING_LOG.md: index synced to worktree (${hash:0:8})"
+}
+
+englog_merge_via_driver() {
+  local branch="$1"
+  local base ancestor ours theirs
+  if [ ! -x ./git-merge-drivers/ve-englog ]; then
+    echo "WARNING: ve-englog missing; eng-log append skipped" >&2
+    return 1
+  fi
+  base=$(git merge-base "$pre_head" "$branch")
+  ancestor=$(mktemp)
+  ours=$(mktemp)
+  theirs=$(mktemp)
+  git show "$base":ENGINEERING_LOG.md > "$ancestor" 2>/dev/null || : > "$ancestor"
+  git show "$pre_head":ENGINEERING_LOG.md > "$ours" 2>/dev/null || : > "$ours"
+  git show "$branch":ENGINEERING_LOG.md > "$theirs"
+  ./git-merge-drivers/ve-englog "$ancestor" "$ours" "$theirs" "" ENGINEERING_LOG.md
+  rm -f "$ancestor" "$ours" "$theirs"
+  echo "  ENGINEERING_LOG.md: ve-englog append complete"
+}
+
+checkout_merged_worktree_skip_englog() {
+  local f
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    [ "$f" = "ENGINEERING_LOG.md" ] && continue
+    [ "$f" = "TODO.md" ] && continue
+    [ "$f" = "project-facts.md" ] && continue
+    git checkout-index -f -- "$f" 2>/dev/null || true
+  done < <(git diff --cached --name-only --diff-filter=ACMR)
+}
+
+write_merge_head() {
+  printf '%s\n' "$(git rev-parse "$BRANCH")" > "$(git rev-parse --git-path MERGE_HEAD)"
+}
+
+merge_index_first() {
+  local branch="$1"
+  local base tree
+  base=$(git merge-base HEAD "$branch")
+  englog_sync_index_to_worktree
+  tree=$(git merge-tree --write-tree --merge-base="$base" HEAD "$branch")
+  if [ -z "$tree" ]; then
+    echo "ERROR: merge-tree produced empty tree" >&2
+    return 1
+  fi
+  echo "  merge-tree OK → ${tree:0:8}"
+  git read-tree --reset "$tree"
+  restore_special TODO.md "$pre_todo"
+  restore_special project-facts.md "$pre_facts"
+  verify_index_blob TODO.md "$pre_todo"
+  verify_index_blob project-facts.md "$pre_facts"
+  checkout_merged_worktree_skip_englog
+  write_merge_head
+  englog_merge_via_driver "$branch" || true
+  git add ENGINEERING_LOG.md 2>/dev/null || true
+}
+
+merge_git_ort() {
+  local branch="$1"
+  englog_sync_index_to_worktree
+  git update-index --skip-worktree ENGINEERING_LOG.md 2>/dev/null || true
+  git merge --no-ff --no-commit --no-autostash "$branch"
+  restore_special TODO.md "$pre_todo"
+  restore_special project-facts.md "$pre_facts"
+  verify_index_blob TODO.md "$pre_todo"
+  verify_index_blob project-facts.md "$pre_facts"
+  englog_merge_via_driver "$branch" || true
+  git add ENGINEERING_LOG.md 2>/dev/null || true
+  git update-index --no-skip-worktree ENGINEERING_LOG.md 2>/dev/null || true
+}
+
+set +e
+merge_git_ort "$BRANCH"
+merge_rc=$?
+if [ "$merge_rc" -ne 0 ]; then
+  echo "  git merge failed (rc=$merge_rc); falling back to index-first +a-safe path" >&2
+  git merge --abort 2>/dev/null || true
+  git read-tree --reset "$pre_head" 2>/dev/null || true
+  merge_index_first "$BRANCH"
+  merge_rc=$?
+fi
+set -e
 
 cat <<EOF
 
 ========================================================================
 SPECIAL FILES — REQUIRED FOR EVERY MERGE (not only when these paths diff)
 Branch: $BRANCH
-Merge exit code: $merge_rc  (0=clean code merge, 1=conflicts remaining)
+Merge exit code: $merge_rc
 ========================================================================
 
 ENGINEERING_LOG.md
-  Driver ve-englog appends branch-only tail via ./append-to-engineering-log.
-  Result is usually a THIRD version (master + branch tail), not pure ours/theirs.
-  If eng-log still conflicted: resolve by keeping master body + append branch
-  entries only via the wrapper. Never replace master's log with the branch file.
+  ve-englog append-only (never chattr -a / unlink). Third version = master + branch tail.
 
-TODO.md  (ALWAYS — even if this file was unchanged on both sides)
-  Base: master TODO (already restored if branch text was pulled in).
-  Against git log/diff master...$BRANCH and dev-ai-interaction/PRs/PR-*.md:
-    - todo-close items this branch implemented or PR/commits mark done
-    - todo-append only for genuine new future backlog (rare)
-  Never bulk-replace TODO from the branch.
+TODO.md / project-facts.md
+  merge=ve-special-ours keeps master in git index; restore_special enforces master on disk.
+  Still required: todo-close / todo-append vs branch+PR; project-facts prune/add vs branch delta.
 
-project-facts.md  (ALWAYS — even if this file was unchanged on both sides)
-  Base: master project-facts.
-  Against branch delta and post-fork reality:
-    - prune/fix facts invalidated by this merge
-    - keep only stable orientation facts still true after merge
-  No plan/branch/tag/"working on" narrative.
-
-Next:
-  1. Complete TODO + project-facts protocol (helpers: todo-close, todo-append).
-  2. Resolve any remaining non-special conflicts.
-  3. git status; git add ...
-  4. ./build_app @summary.txt <files...>
-  5. Do NOT set works tag. User may ./remove_worktree.sh $BRANCH when done.
-
-Read: MASTER_AGENT_MANDATE.md §2
-Skill: /master-merge
+Next: complete TODO + project-facts protocol → git status → ./build_app
 ========================================================================
 EOF
 
-# Always non-zero so agent cannot treat script alone as "merge finished"
-# unless we want 0 when merge_rc==0 — plan said leave uncommitted + clear stdout.
-# Exit 2 = special files pending (even if git merge was clean).
 if [ "$merge_rc" -ne 0 ]; then
-  echo "merge-branch-into-master: git merge reported conflicts (rc=$merge_rc); special-file checklist still applies." >&2
+  echo "merge-branch-into-master: failed (rc=$merge_rc)" >&2
   exit "$merge_rc"
 fi
-echo "merge-branch-into-master: code merge staged (no commit). Complete special files, then build_app." >&2
+echo "merge-branch-into-master: staged (no commit). Complete special files, then build_app." >&2
 exit 0
