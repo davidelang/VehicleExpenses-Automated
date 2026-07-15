@@ -6,6 +6,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.CsvManager
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupCoordinator
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupResult
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetSyncCoordinator
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncProgressListener
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -18,9 +19,11 @@ class SettingsViewModel @Inject constructor(
     private val photoBackupCoordinator: PhotoBackupCoordinator,
 ) : ViewModel() {
 
-    suspend fun syncSpreadsheet(): SyncResult = syncCoordinator.syncNow()
+    suspend fun syncSpreadsheet(onProgress: SyncProgressListener? = null): SyncResult =
+        syncCoordinator.syncNow(onProgress = onProgress)
 
-    suspend fun syncPhotoBackup(): PhotoBackupResult = photoBackupCoordinator.syncNow()
+    suspend fun syncPhotoBackup(onProgress: SyncProgressListener? = null): PhotoBackupResult =
+        photoBackupCoordinator.syncNow(onProgress = onProgress)
 
     suspend fun recountPendingBadge(): Int = photoBackupCoordinator.recountPending()
 }

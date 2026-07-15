@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.ui.settings
 import androidx.lifecycle.ViewModel
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveBrowserItem
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveAuth
+import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowseCatalog
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowserClient
 import com.davidlang.vehicleexpensesautomated.data.sync.MicrosoftAuthResult
 import com.davidlang.vehicleexpensesautomated.data.sync.MicrosoftOneDriveAuth
@@ -11,6 +12,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupResult
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoSyncMode
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncProgressListener
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneConfigStepResult
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneDestConfig
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneOneDriveSetup
@@ -33,8 +35,12 @@ class PhotoBackupViewModel @Inject constructor(
     private val s3Setup: RcloneS3Setup,
 ) : ViewModel() {
 
-    suspend fun listFoldersForBrowse(accountHint: String, searchQuery: String): List<DriveBrowserItem> =
-        driveBrowser.listFolders(accountHint.ifBlank { null }, searchQuery = searchQuery)
+    suspend fun listFoldersForBrowse(
+        accountHint: String,
+        searchQuery: String,
+        catalog: GoogleDriveBrowseCatalog = GoogleDriveBrowseCatalog.APP,
+    ): List<DriveBrowserItem> =
+        driveBrowser.listFolders(accountHint.ifBlank { null }, searchQuery = searchQuery, catalog = catalog)
 
     suspend fun createFolderForBrowse(accountHint: String, name: String): DriveBrowserItem =
         driveBrowser.createFolder(name, accountHint.ifBlank { null })
@@ -45,8 +51,11 @@ class PhotoBackupViewModel @Inject constructor(
     suspend fun testConnection(accountHint: String, dest: PhotoDestination): PhotoBackupResult =
         coordinator.testConnection(accountHint.ifBlank { null }, dest)
 
-    suspend fun syncNow(accountHint: String): PhotoBackupResult =
-        coordinator.syncNow(accountHint.ifBlank { null }, PhotoSyncMode.FULL)
+    suspend fun syncNow(
+        accountHint: String,
+        onProgress: SyncProgressListener? = null,
+    ): PhotoBackupResult =
+        coordinator.syncNow(accountHint.ifBlank { null }, PhotoSyncMode.FULL, onProgress = onProgress)
 
     fun rescheduleBackgroundBackup() = photoBackupManager.scheduleFromDestination()
 
