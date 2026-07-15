@@ -68,6 +68,13 @@ PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
 # Ensure all files created during this session are group-writable (multi-user env)
 umask 002
 
+ANDROID_SHARED=""
+if [ -d "$SCRIPT_DIR/.android-shared" ]; then
+  ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
+elif [ -d "$SCRIPT_DIR/../.android-shared" ]; then
+  ANDROID_SHARED="$(cd "$SCRIPT_DIR/.." && pwd)/.android-shared"
+fi
+
 # === Model selection for Planning Agent ===
 #
 # In this grok.com environment the available models (from `grok models`) are:
@@ -220,8 +227,8 @@ for arg in "$@"; do
     FOUND_DD=1
   fi
 done
-# umask must be set *inside* the target user (sudo does not keep parent umask).
-exec sudo -u "$PLANNING_USER" -- bash -c 'umask 002; exec "$@"' bash \
+# umask + ANDROID_USER_HOME must be set *inside* the target user (sudo drops parent env/umask).
+exec sudo -u "$PLANNING_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} bash -c 'umask 002; exec "$@"' bash \
     "$GROK_BIN" \
     "$PLANNING_PROMPT" \
     --model "$PLANNER_MODEL" \
