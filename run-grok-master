@@ -311,7 +311,9 @@ END_MASTER_PROMPT
 )
 
 # --no-alt-screen for consistency.
-exec sudo -u "$CODER_USER" "$GROK_BIN" \
+# umask must be set *inside* the target user (sudo does not keep parent umask).
+exec sudo -u "$CODER_USER" -- bash -c 'umask 002; exec "$@"' bash \
+    "$GROK_BIN" \
     "$MASTER_PROMPT" \
     --model "$MASTER_MODEL" \
     $TODO_GATE_FLAGS \
