@@ -173,6 +173,28 @@ else
       fi
     done
 
+    # Assert group-writable dirs under app/build (2755 blocks other users' deploy wipe).
+    if [ -d app/build ]; then
+      BAD_DIRS=$(find app/build -type d ! -perm -g+w 2>/dev/null | head -20)
+      if [ -n "$BAD_DIRS" ]; then
+        echo "Re-applying group-write on non-group-writable app/build dirs..."
+        echo "$BAD_DIRS" | while read -r d; do chmod g+rwX "$d" 2>/dev/null || true; done
+        find app/build -type d -exec chmod 2770 {} + 2>/dev/null || true
+        BAD_DIRS=$(find app/build -type d ! -perm -g+w 2>/dev/null | head -10)
+        if [ -n "$BAD_DIRS" ]; then
+          BAD_N=$(find app/build -type d ! -perm -g+w 2>/dev/null | wc -l | tr -d ' ')
+          echo "WARN: $BAD_N app/build dir(s) still lack group write (other users cannot wipe/deploy)."
+          echo "  Sample:"
+          echo "$BAD_DIRS" | while read -r d; do ls -ld "$d" 2>/dev/null; done
+          echo "  Fix as owner: find app/build -type d -exec chmod 2770 {} +"
+        else
+          echo "Build tree group-writable: OK (after re-chmod)"
+        fi
+      else
+        echo "Build tree group-writable: OK"
+      fi
+    fi
+
     # Source tree target modes: dirs 2775, files 664 (planner other-read + group write)
     if [ -d app/src ]; then
       find app/src -type d -exec chmod 2775 {} + 2>/dev/null || true
