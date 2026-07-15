@@ -1,6 +1,9 @@
 # Contributing
 
-Pull requests welcome! See [docs/developer-guide.md](docs/developer-guide.md) for technical details on the project structure, architecture, and build process.
+Pull requests welcome!
+
+- **Build / environment setup (plain clone + multi-worktree):** [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)
+- **Architecture & permissions:** [docs/specs/ARCHITECTURE.md](docs/specs/ARCHITECTURE.md), [docs/specs/PERMISSIONS_MODEL.md](docs/specs/PERMISSIONS_MODEL.md)
 
 ## Agent Collaboration (Grok, Gemini CLI, Antigravity)
 
