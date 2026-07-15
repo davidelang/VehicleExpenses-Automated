@@ -16,6 +16,14 @@ class GoogleDriveAuth @Inject constructor(
 ) {
     fun getSignInClient(): GoogleSignInClient = legacy.signInClient(DRIVE_SCOPE)
 
+    /** Sign-in that adds [DRIVE_READONLY_SCOPE] for hybrid browse (all + shared files). */
+    fun getReadonlyBrowseSignInClient(): GoogleSignInClient =
+        legacy.signInClient(listOf(DRIVE_SCOPE, DRIVE_READONLY_SCOPE))
+
+    fun readonlyBrowseSignInIntent(): Intent = getReadonlyBrowseSignInClient().signInIntent
+
+    fun hasReadonlyBrowseScope(): Boolean = legacy.hasScope(DRIVE_READONLY_SCOPE)
+
     fun getLastAccount(): GoogleSignInAccount? = legacy.lastAccount()
 
     fun signInIntent(): Intent = getSignInClient().signInIntent
@@ -43,8 +51,21 @@ class GoogleDriveAuth @Inject constructor(
     fun resolveAccountFromHint(hint: String?): Account? =
         legacy.resolveAccountFromHint(hint, PREFS_DRIVE_ACCOUNT)
 
+    fun buildDriveServiceReadOnlyForAccountName(accountName: String): Drive {
+        val resolved = legacy.accountFromEmail(accountName)
+            ?: throw IllegalStateException("No Google account signed in for Drive")
+        return buildDriveServiceReadOnlyForAccount(resolved)
+    }
+
     private fun buildDriveServiceForAccount(account: Account): Drive {
         val credential = legacy.oauthCredential(DRIVE_SCOPE, account)
+        return Drive.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential)
+            .setApplicationName("VehicleExpenses-Automated")
+            .build()
+    }
+
+    private fun buildDriveServiceReadOnlyForAccount(account: Account): Drive {
+        val credential = legacy.oauthCredential(DRIVE_READONLY_SCOPE, account)
         return Drive.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential)
             .setApplicationName("VehicleExpenses-Automated")
             .build()
@@ -53,5 +74,6 @@ class GoogleDriveAuth @Inject constructor(
     companion object {
         const val PREFS_DRIVE_ACCOUNT = "drive_account_name"
         const val DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+        const val DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
     }
 }

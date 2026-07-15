@@ -56,6 +56,7 @@ class PhotoStorageManager @Inject constructor(
         localSource: String,
         remoteFileName: String,
         mimeType: String,
+        existingFileId: String? = null,
     ): DriveUploadResult {
         try {
             val drive = buildDriveService(accountHint)
@@ -63,15 +64,16 @@ class PhotoStorageManager @Inject constructor(
             val tempFile = materializeToTempFile(localSource, remoteFileName)
             try {
                 val mediaContent = FileContent(mimeType, tempFile)
-                val fileMetadata = com.google.api.services.drive.model.File().apply {
-                    name = remoteFileName
-                    parents = listOf(folderId)
-                }
-                val uploaded = drive.files().create(fileMetadata, mediaContent)
-                    .setFields("id")
-                    .execute()
+                val fileId = upsertDriveFile(
+                    drive = drive,
+                    folderId = folderId,
+                    remoteFileName = remoteFileName,
+                    mimeType = mimeType,
+                    mediaContent = mediaContent,
+                    existingFileId = existingFileId,
+                )
                 return DriveUploadResult(
-                    fileId = uploaded.id,
+                    fileId = fileId,
                     resolvedFolderId = folderId,
                 )
             } finally {
@@ -80,6 +82,58 @@ class PhotoStorageManager @Inject constructor(
         } catch (e: Exception) {
             throw DriveAuthRecovery.wrapIfRecoverable(e)
         }
+    }
+
+    /**
+     * Update an existing Drive file when possible; otherwise match by name in [folderId] before create.
+     * Avoids duplicate objects when manifest was lost but the remote file remains.
+     */
+    private fun upsertDriveFile(
+        drive: Drive,
+        folderId: String,
+        remoteFileName: String,
+        mimeType: String,
+        mediaContent: FileContent,
+        existingFileId: String?,
+    ): String {
+        val metadata = com.google.api.services.drive.model.File().apply {
+            name = remoteFileName
+        }
+        if (!existingFileId.isNullOrBlank()) {
+            try {
+                val updated = drive.files().update(existingFileId, metadata, mediaContent)
+                    .setFields("id")
+                    .execute()
+                return updated.id
+            } catch (_: Exception) {
+                // Stale manifest id — fall through to name lookup / create.
+            }
+        }
+        val byName = findFileIdByNameInFolder(drive, folderId, remoteFileName)
+        if (!byName.isNullOrBlank()) {
+            val updated = drive.files().update(byName, metadata, mediaContent)
+                .setFields("id")
+                .execute()
+            return updated.id
+        }
+        val createMetadata = com.google.api.services.drive.model.File().apply {
+            name = remoteFileName
+            parents = listOf(folderId)
+        }
+        return drive.files().create(createMetadata, mediaContent)
+            .setFields("id")
+            .execute()
+            .id
+    }
+
+    private fun findFileIdByNameInFolder(drive: Drive, folderId: String, fileName: String): String? {
+        val safeName = fileName.replace("'", "\\'")
+        val listed = drive.files().list()
+            .setQ("'$folderId' in parents and name='$safeName' and trashed=false")
+            .setFields("files(id,name)")
+            .setPageSize(1)
+            .execute()
+        return listed.files?.firstOrNull()?.id
     }
 
     /**

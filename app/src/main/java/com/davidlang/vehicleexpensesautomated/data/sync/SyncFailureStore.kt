@@ -46,6 +46,52 @@ class SyncFailureStore(context: Context) {
     fun firstPhotoFailure(): Failure? =
         loadAll().firstOrNull { it.destType == DestType.PHOTO }
 
+    /** User-facing summary: failed destination names only (not stored error text). */
+    fun spreadsheetFailureSummary(destStore: SyncDestinationStore): String? {
+        val failures = loadAll().filter { it.destType == DestType.SPREADSHEET }
+        if (failures.isEmpty()) return null
+        val byId = destStore.load().spreadsheet.associateBy { it.id }
+        val names = failures.map { failure ->
+            byId[failure.destId]?.let { dest ->
+                dest.displayName.ifBlank {
+                    dest.targetId.take(12).ifBlank { dest.provider.displayLabel() }
+                }
+            } ?: shortLegacyMessage(failure.message)
+        }
+        return SyncResultMessages.failedNamesMessage(names)
+    }
+
+    fun photoFailureSummary(destStore: SyncDestinationStore): String? {
+        val failures = loadAll().filter { it.destType == DestType.PHOTO }
+        if (failures.isEmpty()) return null
+        val byId = destStore.load().photo.associateBy { it.id }
+        val names = failures.map { failure ->
+            byId[failure.destId]?.let { dest ->
+                dest.displayName.ifBlank {
+                    dest.folderName.ifBlank { photoProviderLabel(dest.provider) }
+                }
+            } ?: shortLegacyMessage(failure.message)
+        }
+        return SyncResultMessages.failedNamesMessage(names)
+    }
+
+    private fun photoProviderLabel(provider: PhotoProvider): String = when (provider) {
+        PhotoProvider.GOOGLE_DRIVE -> "Google Drive"
+        PhotoProvider.ONEDRIVE -> "OneDrive"
+        PhotoProvider.S3 -> "S3"
+        PhotoProvider.OTHER -> "Other"
+        PhotoProvider.NONE -> "Photo backup"
+    }
+
+    private fun shortLegacyMessage(message: String): String {
+        val trimmed = message.trim()
+        if (trimmed.isBlank()) return "Sync failed"
+        if (trimmed.length > 80 || trimmed.contains('\n') || trimmed.contains("http", ignoreCase = true)) {
+            return "Sync failed"
+        }
+        return trimmed
+    }
+
     private fun record(destId: String, type: DestType, message: String) {
         val trimmed = message.trim().ifBlank { "Sync failed" }
         val all = loadAll().filterNot { it.destId == destId && it.destType == type }.toMutableList()

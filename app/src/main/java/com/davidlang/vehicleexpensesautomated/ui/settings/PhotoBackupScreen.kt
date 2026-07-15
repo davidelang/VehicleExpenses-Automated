@@ -97,47 +97,64 @@ private fun PhotoDestList(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var statusText by remember { mutableStateOf("") }
+    var syncInProgress by remember { mutableStateOf(false) }
+    var statusIsError by remember { mutableStateOf(false) }
+    val onProgress = rememberMainThreadSyncProgress {
+        statusText = it
+        statusIsError = false
+    }
     val consentRecovery = rememberConsentRecoveryHandle()
 
     SyncDestinationListLayout(
         title = "Photo Backup",
-        description = "Configure Google Drive, OneDrive, S3, or Other storage. Manual and background backup run all enabled destinations.",
+        description = "Configure Google Drive, OneDrive, S3, or Other storage. Manual sync runs all configured destinations; background backup runs enabled ones only.",
         statusText = statusText,
+        syncInProgress = syncInProgress,
+        statusIsError = statusIsError,
         destinationCount = destinations.size,
         maxDestinations = SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE,
         addButtonLabel = "Add photo destination",
         onAdd = onAdd,
-        syncNowLabel = "Sync now (all enabled)",
+        syncNowLabel = "Sync now (all configured)",
         onSyncNow = {
             fun runSync(allowRecovery: Boolean) {
                 scope.launch {
-                    val enabled = SyncDestinationStore(context).enabledPhoto()
-                    if (enabled.isEmpty()) {
-                        Toast.makeText(context, "No enabled photo destinations", Toast.LENGTH_SHORT).show()
+                    val configured = SyncDestinationStore(context).configuredPhoto()
+                    if (configured.isEmpty()) {
+                        statusIsError = true
+                        statusText = "No configured photo destinations"
                         return@launch
                     }
+                    syncInProgress = true
+                    statusIsError = false
+                    statusText = "Starting photo backup…"
+                    var awaitingConsent = false
                     try {
                         val result = withContext(Dispatchers.IO) {
-                            viewModel.syncNow("")
+                            viewModel.syncNow("", onProgress)
                         }
                         statusText = result.message
                         if (result.success) {
-                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                            statusIsError = false
                         } else if (result.needsRemoteConsent && result.recoveryIntent != null && allowRecovery) {
+                            statusIsError = true
+                            awaitingConsent = true
                             consentRecovery.launch(result.recoveryIntent) { runSync(allowRecovery = false) }
                         } else {
-                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                            statusIsError = true
                         }
                     } catch (e: DriveRecoverableAuthException) {
+                        statusIsError = true
                         statusText = e.message ?: DriveAuthRecovery.NEED_REMOTE_CONSENT_MESSAGE
                         if (allowRecovery) {
+                            awaitingConsent = true
                             consentRecovery.launch(e.recoveryIntent) { runSync(allowRecovery = false) }
-                        } else {
-                            Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
                         }
                     } catch (e: Exception) {
+                        statusIsError = true
                         statusText = DriveAuthRecovery.userMessage(e)
-                        Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
+                    } finally {
+                        if (!awaitingConsent) syncInProgress = false
                     }
                 }
             }
@@ -183,7 +200,7 @@ private fun PhotoDestCard(
         add("Account: $account")
         add(if (configured) "Enabled: $enabledLabel" else "Not configured")
         if (configured) {
-            add(SyncDestinationStore.photoSummaryLine(dest))
+            add(SyncDestinationStore(context).photoSummaryLine(dest))
         }
     }
     SyncDestinationSummaryCard(

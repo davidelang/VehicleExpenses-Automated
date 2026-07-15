@@ -18,6 +18,7 @@ interface PhotoSyncBackend {
         localSource: String,
         remoteFileName: String,
         mimeType: String,
+        existingFileId: String? = null,
     ): PhotoUploadResult
 
     suspend fun downloadFile(

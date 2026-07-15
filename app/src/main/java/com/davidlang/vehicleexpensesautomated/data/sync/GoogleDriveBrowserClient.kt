@@ -11,6 +11,12 @@ data class DriveBrowserItem(
     val name: String,
 )
 
+/** Hybrid browse: app-created/opened files vs full Drive catalog (owned + shared). */
+enum class GoogleDriveBrowseCatalog {
+    APP,
+    ALL,
+}
+
 @Singleton
 class GoogleDriveBrowserClient @Inject constructor(
     private val driveAuth: GoogleDriveAuth,
@@ -31,28 +37,38 @@ class GoogleDriveBrowserClient @Inject constructor(
             "https://drive.google.com/drive/folders/${id.trim()}"
     }
 
-    private fun buildDriveService(accountHint: String?): Drive {
+    private fun resolveAccountName(accountHint: String?): String {
         val account = driveAuth.resolveAccountFromHint(accountHint)
             ?: throw IllegalStateException("No Google account signed in for Drive")
-        return driveAuth.buildDriveServiceForAccountName(account.name)
+        return account.name
     }
+
+    private fun buildDriveService(accountHint: String?): Drive =
+        driveAuth.buildDriveServiceForAccountName(resolveAccountName(accountHint))
+
+    private fun buildDriveServiceReadOnly(accountHint: String?): Drive =
+        driveAuth.buildDriveServiceReadOnlyForAccountName(resolveAccountName(accountHint))
 
     suspend fun listSpreadsheets(
         accountHint: String? = null,
         searchQuery: String? = null,
+        catalog: GoogleDriveBrowseCatalog = GoogleDriveBrowseCatalog.APP,
     ): List<DriveBrowserItem> = withContext(Dispatchers.IO) {
         try {
-            val drive = buildDriveService(accountHint)
-            val q = buildString {
-                append("mimeType='$MIME_SPREADSHEET' and trashed=false")
-                val term = searchQuery?.trim().orEmpty()
-                if (term.isNotBlank()) {
-                    append(" and name contains '")
-                    append(term.replace("'", "\\'"))
-                    append("'")
+            when (catalog) {
+                GoogleDriveBrowseCatalog.APP -> {
+                    val drive = buildDriveService(accountHint)
+                    listFiles(
+                        drive,
+                        spreadsheetQuery(searchQuery, sharedWithMe = false),
+                    )
                 }
+                GoogleDriveBrowseCatalog.ALL -> listAllByMime(
+                    accountHint = accountHint,
+                    mimeType = MIME_SPREADSHEET,
+                    searchQuery = searchQuery,
+                )
             }
-            listFiles(drive, q)
         } catch (e: Exception) {
             throw DriveAuthRecovery.wrapIfRecoverable(e)
         }
@@ -62,26 +78,66 @@ class GoogleDriveBrowserClient @Inject constructor(
         accountHint: String? = null,
         parentId: String? = null,
         searchQuery: String? = null,
+        catalog: GoogleDriveBrowseCatalog = GoogleDriveBrowseCatalog.APP,
     ): List<DriveBrowserItem> = withContext(Dispatchers.IO) {
         try {
-            val drive = buildDriveService(accountHint)
-            val q = buildString {
-                append("mimeType='$MIME_FOLDER' and trashed=false")
-                if (!parentId.isNullOrBlank()) {
-                    append(" and '")
-                    append(parentId.trim())
-                    append("' in parents")
+            when (catalog) {
+                GoogleDriveBrowseCatalog.APP -> {
+                    val drive = buildDriveService(accountHint)
+                    listFiles(drive, folderQuery(parentId, searchQuery, sharedWithMe = false))
                 }
-                val term = searchQuery?.trim().orEmpty()
-                if (term.isNotBlank()) {
-                    append(" and name contains '")
-                    append(term.replace("'", "\\'"))
-                    append("'")
-                }
+                GoogleDriveBrowseCatalog.ALL -> listAllByMime(
+                    accountHint = accountHint,
+                    mimeType = MIME_FOLDER,
+                    searchQuery = searchQuery,
+                )
             }
-            listFiles(drive, q)
         } catch (e: Exception) {
             throw DriveAuthRecovery.wrapIfRecoverable(e)
+        }
+    }
+
+    private suspend fun listAllByMime(
+        accountHint: String?,
+        mimeType: String,
+        searchQuery: String?,
+    ): List<DriveBrowserItem> {
+        val drive = buildDriveServiceReadOnly(accountHint)
+        val seen = linkedSetOf<String>()
+        val merged = mutableListOf<DriveBrowserItem>()
+        for (sharedWithMe in listOf(false, true)) {
+            listFiles(drive, spreadsheetOrFolderQuery(mimeType, searchQuery, sharedWithMe)).forEach { item ->
+                if (seen.add(item.id)) merged.add(item)
+            }
+        }
+        return merged.sortedBy { it.name.lowercase() }
+    }
+
+    private fun spreadsheetQuery(searchQuery: String?, sharedWithMe: Boolean): String =
+        spreadsheetOrFolderQuery(MIME_SPREADSHEET, searchQuery, sharedWithMe)
+
+    private fun folderQuery(parentId: String?, searchQuery: String?, sharedWithMe: Boolean): String =
+        buildString {
+            append(spreadsheetOrFolderQuery(MIME_FOLDER, searchQuery, sharedWithMe))
+            if (!parentId.isNullOrBlank()) {
+                append(" and '")
+                append(parentId.trim())
+                append("' in parents")
+            }
+        }
+
+    private fun spreadsheetOrFolderQuery(
+        mimeType: String,
+        searchQuery: String?,
+        sharedWithMe: Boolean,
+    ): String = buildString {
+        if (sharedWithMe) append("sharedWithMe=true and ")
+        append("mimeType='$mimeType' and trashed=false")
+        val term = searchQuery?.trim().orEmpty()
+        if (term.isNotBlank()) {
+            append(" and name contains '")
+            append(term.replace("'", "\\'"))
+            append("'")
         }
     }
 

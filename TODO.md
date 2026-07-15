@@ -46,3 +46,6 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] Create `docs/reference/OCR_ENGINE_STRATEGY.md`
 - [ ] Create `docs/reference/ALIGNMENT_PIPELINE.md`
 - [ ] **NDK as git subproject:** migrate standalone NDK tree to tracked `ndk/` subproject with pinned revision
+# Future work
+
+Trip recording: separate screen with start/end odometer captures and work/personal/volunteer purpose (tax mileage records)

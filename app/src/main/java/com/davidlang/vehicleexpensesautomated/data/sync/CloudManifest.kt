@@ -96,6 +96,12 @@ object CloudManifest {
         return parse(json).any { it.destId == destId && it.role == role }
     }
 
+    /** Exact [destId] + [role] file id (no cross-dest fallback). Used to upsert Drive objects. */
+    fun fileIdForDest(json: String?, destId: String, role: String): String? {
+        if (role == ROLE_VEHICLE_LANDMARKS) return null
+        return parse(json).firstOrNull { it.destId == destId && it.role == role }?.fileId
+    }
+
     /**
      * Preferred [destId] first.
      * For Google Drive dests, may fall back to any `google_drive` entry (multi-device pull).

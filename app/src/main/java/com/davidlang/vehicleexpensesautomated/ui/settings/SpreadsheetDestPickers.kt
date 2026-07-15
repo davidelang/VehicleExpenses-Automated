@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
@@ -82,35 +81,54 @@ internal fun SpreadsheetDestList(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var statusText by remember { mutableStateOf("") }
+    var syncInProgress by remember { mutableStateOf(false) }
+    var statusIsError by remember { mutableStateOf(false) }
+    val onProgress = rememberMainThreadSyncProgress {
+        statusText = it
+        statusIsError = false
+    }
     val consentRecovery = rememberConsentRecoveryHandle()
 
     SyncDestinationListLayout(
         title = "Spreadsheet Sync",
-        description = "Configure spreadsheet destinations (Google Sheets, Excel, EtherCalc, Other). Manual and background sync run all enabled destinations.",
+        description = "Configure spreadsheet destinations (Google Sheets, Excel, EtherCalc, Other). Manual sync runs all configured destinations; background sync runs enabled ones only.",
         statusText = statusText,
+        syncInProgress = syncInProgress,
+        statusIsError = statusIsError,
         destinationCount = destinations.size,
         maxDestinations = SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE,
         addButtonLabel = "Add spreadsheet destination",
         onAdd = onAdd,
-        syncNowLabel = "Sync now (all enabled)",
+        syncNowLabel = "Sync now (all configured)",
         onSyncNow = {
             fun runSync(allowRecovery: Boolean) {
                 scope.launch {
-                    val enabled = SyncDestinationStore(context).enabledSpreadsheet()
-                    if (enabled.isEmpty()) {
-                        Toast.makeText(context, "No enabled spreadsheet destinations", Toast.LENGTH_SHORT).show()
+                    val configured = SyncDestinationStore(context).configuredSpreadsheet()
+                    if (configured.isEmpty()) {
+                        statusIsError = true
+                        statusText = "No configured spreadsheet destinations"
                         return@launch
                     }
-                    val result = withContext(Dispatchers.IO) {
-                        viewModel.syncNow("")
-                    }
-                    if (result.needsRemoteConsent && result.recoveryIntent != null && allowRecovery) {
+                    syncInProgress = true
+                    statusIsError = false
+                    statusText = "Starting spreadsheet sync…"
+                    var awaitingConsent = false
+                    try {
+                        val result = withContext(Dispatchers.IO) {
+                            viewModel.syncNow("", onProgress)
+                        }
+                        if (result.needsRemoteConsent && result.recoveryIntent != null && allowRecovery) {
+                            statusIsError = true
+                            statusText = result.message
+                            awaitingConsent = true
+                            consentRecovery.launch(result.recoveryIntent) { runSync(allowRecovery = false) }
+                            return@launch
+                        }
+                        statusIsError = !result.success
                         statusText = result.message
-                        consentRecovery.launch(result.recoveryIntent) { runSync(allowRecovery = false) }
-                        return@launch
+                    } finally {
+                        if (!awaitingConsent) syncInProgress = false
                     }
-                    statusText = result.message
-                    Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
                 }
             }
             runSync(allowRecovery = true)

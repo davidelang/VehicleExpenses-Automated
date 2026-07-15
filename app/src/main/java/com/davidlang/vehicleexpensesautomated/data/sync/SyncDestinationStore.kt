@@ -8,10 +8,10 @@ import com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal.ZohoShe
 import org.json.JSONArray
 import org.json.JSONObject
 
-class SyncDestinationStore(context: Context) {
+class SyncDestinationStore(private val appContext: Context) {
 
     private val prefs: SharedPreferences =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun load(): SyncDestinations {
         migrateLegacyIfNeeded()
@@ -192,8 +192,25 @@ class SyncDestinationStore(context: Context) {
     fun enabledSpreadsheet(): List<SpreadsheetDestination> =
         load().spreadsheet.filter { it.enabled && isSpreadsheetConfigured(it) }
 
+    /** Configured destinations regardless of background-sync toggle (manual Sync now). */
+    fun configuredSpreadsheet(): List<SpreadsheetDestination> =
+        load().spreadsheet.filter { isSpreadsheetConfigured(it) }
+
+    fun isPhotoConfigured(dest: PhotoDestination?): Boolean =
+        Companion.isPhotoConfigured(dest, appContext)
+
+    fun photoSummaryLine(dest: PhotoDestination?): String =
+        Companion.photoSummaryLine(listOfNotNull(dest), appContext)
+
+    fun photoSummaryLine(dests: List<PhotoDestination>): String =
+        Companion.photoSummaryLine(dests, appContext)
+
     fun enabledPhoto(): List<PhotoDestination> =
         load().photo.filter { it.enabled && isPhotoConfigured(it) }
+
+    /** Configured destinations regardless of background-backup toggle (manual Sync now). */
+    fun configuredPhoto(): List<PhotoDestination> =
+        load().photo.filter { isPhotoConfigured(it) }
 
     fun upsertSpreadsheet(dest: SpreadsheetDestination) {
         val all = load()
@@ -335,8 +352,11 @@ class SyncDestinationStore(context: Context) {
         fun photoSummaryLine(dest: PhotoDestination?): String =
             photoSummaryLine(listOfNotNull(dest))
 
-        fun photoSummaryLine(dests: List<PhotoDestination>): String {
-            val configured = dests.filter { isPhotoConfigured(it) }
+        fun photoSummaryLine(dests: List<PhotoDestination>): String =
+            photoSummaryLine(dests, context = null)
+
+        fun photoSummaryLine(dests: List<PhotoDestination>, context: Context?): String {
+            val configured = dests.filter { isPhotoConfigured(it, context) }
             if (configured.isEmpty()) return "Not set up"
             val enabledCount = configured.count { it.enabled }
             val primary = configured.firstOrNull { it.enabled } ?: configured.first()

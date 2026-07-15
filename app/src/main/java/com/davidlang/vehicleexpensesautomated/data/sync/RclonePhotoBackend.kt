@@ -65,6 +65,7 @@ class RclonePhotoBackend @Inject constructor(
         localSource: String,
         remoteFileName: String,
         mimeType: String,
+        existingFileId: String?,
     ): PhotoUploadResult = withContext(Dispatchers.IO) {
         val config = RcloneDestConfig.parse(dest.configJson)
             ?: throw RcloneException("Rclone destination not configured")

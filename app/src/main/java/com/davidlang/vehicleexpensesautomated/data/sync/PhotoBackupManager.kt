@@ -37,8 +37,9 @@ class PhotoBackupManager @Inject constructor(
             .build()
 
         val periodMinutes = enabled.minOf { it.resolvedFrequencyMinutes() }.toLong()
-        val initialDelayMinutes = minOf(2L, periodMinutes)
-        val request = PeriodicWorkRequestBuilder<PhotoBackupWorker>(periodMinutes, TimeUnit.MINUTES)
+        val initialDelayMinutes = SyncScheduleJitter.initialDelayMinutes(context, periodMinutes)
+        val flexMinutes = SyncScheduleJitter.flexMinutes(periodMinutes)
+        val request = PeriodicWorkRequestBuilder<PhotoBackupWorker>(periodMinutes, TimeUnit.MINUTES, flexMinutes, TimeUnit.MINUTES)
             .setConstraints(constraints)
             .setInitialDelay(initialDelayMinutes, TimeUnit.MINUTES)
             .build()
