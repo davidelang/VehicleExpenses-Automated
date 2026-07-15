@@ -21,15 +21,11 @@ Follow **`MASTER_AGENT_MANDATE.md` §2** in full. Read that file first.
 3. Reject unauthorized / plan-violating changes.
 4. On merge:
    - `python3 dev-ai-interaction/audit_merge.py <branch>`
-   - **`./install-merge-drivers.sh`** (sets `merge.autostash=false`, registers drivers)
-   - **`./merge-branch-into-master.sh <branch>`** — tries `git merge --no-autostash`; on +a eng-log failure falls back to index-first; **`restore_special`** + **`verify_index_blob`** for TODO/facts
-   - **ENGINEERING_LOG:** `ve-englog` + `append-to-engineering-log` → third version. No `chattr -a`.
-   - **TODO / project-facts:** `ve-special-ours` + `restore_special` → master base; then **`todo-close`** / **`todo-append`** and facts prune vs branch delta (always, even if paths unchanged).
-   - `./build_app` to commit merge
+   - **`./merge-branch-into-master.sh <branch>`** (preferred; no temp branch for eng-log alone)
+   - **ENGINEERING_LOG:** driver `ve-englog` + `append-to-engineering-log` → third-version result (master + branch tail). Never replace with branch file. No `chattr -a`.
+   - **TODO.md / project-facts.md:** **always** special-file review against **branch delta** (and PR/commits), even if those paths did not change. Base = master. `todo-close` completed work; prune invalid facts. Drivers refuse naive text merge when both sides touch the path.
+   - Finish specials → `./build_app`
 5. Never set `works` tag. Inform user to run `./remove_worktree.sh` when done.
-
-## Pre-merge reset (retry / debug)
-See `dev-ai-interaction/MASTER_MERGE_RESET.md` if redoing a merge after a failed attempt.
 
 ## Expectation
 Independent review should ideally find **nothing** if coder used prepare-local-pr well.
