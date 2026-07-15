@@ -308,3 +308,11 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Skill failed-merge recovery points at tracked docs (not sandbox)
 - Do NOT promote reset-master-pre-merge.sh
 
+
+## 2026-07-15 - update-rules safety + orch tip cleanup
+
+- update-rules: --dry-run / --force; skip dirty or worktree-ahead (blob history); copy when orch ahead
+- Removed orch app docs (API/ARCHITECTURE/BUFFER_SET); master retains
+- Untracked grok-install; gitignore host installers; ground_truth* kept (latest-report uses them)
+- Deleted untracked processed_ground_truth.json / .orig backups
+

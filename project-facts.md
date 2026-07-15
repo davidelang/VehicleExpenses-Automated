@@ -30,7 +30,9 @@ Read in full early on startup/new cycle.
 - `.grok/config.toml` + `.grok/hooks/` + `.grok/skills/` (prepare-local-pr, master-merge)
 - `MASTER_AGENT_MANDATE.md` — Master review/merge SoT
 - `standard-plan-compliance-block.md` — cite by path in plans
-- `docs/ENVIRONMENT_SETUP.md` — plain `master` clone build + multi-worktree host setup; in-repo prebuilts vs external rebuilds
+- `docs/ENVIRONMENT_SETUP.md` — plain `master` clone build + multi-worktree host setup; in-repo prebuilts vs external rebuilds (on orch + synced to app worktrees)
+- Ground-truth fixtures on **orchestration root** (not versioned with app): `ground_truth.json`, `ground_truth_odo.json`. Sandbox `latest-report` scripts often resolve `~/git/VehicleExpenses-automated/ground_truth_odo.json`. Do not delete. Untracked cousins (`processed_ground_truth.json`) are disposable.
+- Host installers (`grok-install.sh`, `antigravity-install`) are **local only** (gitignored); `run-*` launchers sync to worktrees. `./update-rules.sh` skips worktree-ahead/dirty paths unless `--force`; supports `--dry-run`.
 
 ## Worktree layout
 - App worktrees (`agent-N/`, `master/`): `app/` + root scripts + symlink `dev-ai-interaction -> ../dev-ai-interaction`

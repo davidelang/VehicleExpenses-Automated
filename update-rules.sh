@@ -2,31 +2,192 @@
 # update-rules.sh
 # Synchronizes infrastructure, policies, and mandates across all agent worktrees.
 #
-# Per user direction and approved plan: ALWAYS run this from the orchestration root
-# on the `orchestration` branch (development context for all rule/infra changes).
-# It publishes (cp + per-worktree commit) to the `master/` worktree and all `agent-N/`.
-# CRITICAL: that per-worktree commit is mandatory — ad-hoc cp of tracked files without
-# commit leaves agents unable to ./build_app (uncommitted tracked files gate).
-# worktrees. New worktrees inherit correct content via `git worktree add ... master`
-# (after the master branch tip has the updates).
+# ALWAYS run from the orchestration root on the `orchestration` branch.
+# Publishes (cp + per-worktree commit) to master/ and agent-N/.
+# Per-worktree commit is mandatory — ad-hoc cp without commit blocks ./build_app.
+#
+# Safety (default): do not clobber a worktree file that is "ahead" of orchestration
+# for that path. Use --force to publish orch over worktree anyway.
+#   --dry-run   show actions only
+#   -f/--force  always take orchestration content when it differs
+#
+# Decision per path (when content differs):
+#   - worktree dirty (uncommitted) → SKIP (alert), unless --force
+#   - worktree blob appears in orch history for path, orch moved on → COPY (clobber)
+#   - orch blob appears in worktree history for path, worktree moved on → SKIP
+#   - neither / diverged → SKIP unless --force
+# Content identical → SKIP (noop). mtime is logged only as a soft clue.
 #
 # Shared brain uses physical copies (no hard links, no skip-worktree).
 
-# Ensure group-writable files in multi-user environment
+# Intentionally no `set -e`: many best-effort chown/chmod/git steps use `|| true`.
+set -u
 umask 007
 
-# 1. Identify the repository root
+FORCE=0
+DRY_RUN=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -f|--force) FORCE=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: ./update-rules.sh [--dry-run] [-f|--force]
+
+  --dry-run   Print would-copy / would-skip without writing or committing
+  -f,--force  Overwrite worktree files even if dirty or worktree-ahead/diverged
+EOF
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1 (try --help)" >&2
+      exit 1
+      ;;
+  esac
+done
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="$(pwd)"
 
 echo "--- Rule Update Sync Starting ---"
 echo "Source: $SOURCE_DIR"
+echo "Mode: force=$FORCE dry_run=$DRY_RUN"
 
-# 2. Check if we are in a Git worktree
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "ERROR: This script must be run from inside a Git worktree."
     exit 1
 fi
+
+# file_blob_in_history REPO_DIR REV PATH BLOB
+# True if some commit reachable from REV that touches PATH has that blob for PATH.
+file_blob_in_history() {
+  local repo="$1" rev="$2" path="$3" want="$4"
+  local c b
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
+    b=$(git -C "$repo" rev-parse "$c:$path" 2>/dev/null) || continue
+    if [ "$b" = "$want" ]; then
+      return 0
+    fi
+  done < <(git -C "$repo" rev-list "$rev" -- "$path" 2>/dev/null)
+  return 1
+}
+
+# decide_sync_action WT FILE
+# Sets global DECIDE_ACTION=copy|skip and DECIDE_REASON=...
+DECIDE_ACTION=
+DECIDE_REASON=
+decide_sync_action() {
+  local wt="$1" file="$2"
+  local src="$SOURCE_DIR/$file" dst="$wt/$file"
+  DECIDE_ACTION=copy
+  DECIDE_REASON="missing or default publish"
+
+  if [ ! -f "$src" ]; then
+    DECIDE_ACTION=skip
+    DECIDE_REASON="source missing"
+    return
+  fi
+
+  if [ ! -f "$dst" ]; then
+    DECIDE_ACTION=copy
+    DECIDE_REASON="worktree missing file"
+    return
+  fi
+
+  local src_hash dst_hash
+  src_hash=$(git hash-object "$src" 2>/dev/null || cksum "$src" | awk '{print $1}')
+  dst_hash=$(git hash-object "$dst" 2>/dev/null || cksum "$dst" | awk '{print $1}')
+  if [ "$src_hash" = "$dst_hash" ]; then
+    DECIDE_ACTION=skip
+    DECIDE_REASON="content identical"
+    return
+  fi
+
+  # Soft clue only
+  local sm dm
+  sm=$(stat -c %Y "$src" 2>/dev/null || echo 0)
+  dm=$(stat -c %Y "$dst" 2>/dev/null || echo 0)
+  if [ "$dm" -gt "$sm" ]; then
+    echo "    note: $file worktree mtime newer than orch (clue only; not decisive)"
+  fi
+
+  local porcelain
+  porcelain=$(git -C "$wt" status --porcelain -- "$file" 2>/dev/null || true)
+  if [ -n "$porcelain" ]; then
+    if [ "$FORCE" -eq 1 ]; then
+      DECIDE_ACTION=copy
+      DECIDE_REASON="FORCE over dirty worktree ($porcelain)"
+    else
+      DECIDE_ACTION=skip
+      DECIDE_REASON="DIRTY worktree (uncommitted edits) — commit/backport or --force"
+    fi
+    return
+  fi
+
+  # Git blob comparison via history ancestry of content
+  local orch_rev wt_rev orch_blob wt_blob
+  orch_rev=$(git -C "$SOURCE_DIR" rev-parse HEAD 2>/dev/null || true)
+  wt_rev=$(git -C "$wt" rev-parse HEAD 2>/dev/null || true)
+  orch_blob=$(git -C "$SOURCE_DIR" rev-parse "HEAD:$file" 2>/dev/null || true)
+  wt_blob=$(git -C "$wt" rev-parse "HEAD:$file" 2>/dev/null || true)
+
+  # Prefer hashing working-tree source (may include uncommitted orch edits we are publishing)
+  local src_blob
+  src_blob=$(git hash-object "$src" 2>/dev/null || true)
+  [ -n "$src_blob" ] && orch_blob="$src_blob"
+
+  if [ -z "$wt_blob" ]; then
+    # tracked? untracked file with content
+    wt_blob=$(git hash-object "$dst" 2>/dev/null || true)
+  fi
+
+  if [ -n "$wt_blob" ] && [ -n "$orch_blob" ] && [ "$wt_blob" = "$orch_blob" ]; then
+    DECIDE_ACTION=skip
+    DECIDE_REASON="content identical (blob)"
+    return
+  fi
+
+  local wt_in_orch=0 orch_in_wt=0
+  if [ -n "$wt_blob" ] && [ -n "$orch_rev" ]; then
+    if file_blob_in_history "$SOURCE_DIR" "$orch_rev" "$file" "$wt_blob"; then
+      wt_in_orch=1
+    fi
+  fi
+  if [ -n "$orch_blob" ] && [ -n "$wt_rev" ]; then
+    if file_blob_in_history "$wt" "$wt_rev" "$file" "$orch_blob"; then
+      orch_in_wt=1
+    fi
+  fi
+
+  # worktree content is an older orch version → orch moved on → clobber
+  if [ "$wt_in_orch" -eq 1 ] && [ "$orch_in_wt" -eq 0 ]; then
+    DECIDE_ACTION=copy
+    DECIDE_REASON="worktree blob is ancestor content on orch (orch ahead)"
+    return
+  fi
+
+  # orch content still in worktree history, worktree changed away → worktree ahead
+  if [ "$orch_in_wt" -eq 1 ] && [ "$wt_in_orch" -eq 0 ]; then
+    if [ "$FORCE" -eq 1 ]; then
+      DECIDE_ACTION=copy
+      DECIDE_REASON="FORCE over worktree-ahead content"
+    else
+      DECIDE_ACTION=skip
+      DECIDE_REASON="worktree-ahead (orch blob in wt history; wt moved on) — backport or --force"
+    fi
+    return
+  fi
+
+  # both or neither: divergent or unknown
+  if [ "$FORCE" -eq 1 ]; then
+    DECIDE_ACTION=copy
+    DECIDE_REASON="FORCE over divergent/unknown history (wt_in_orch=$wt_in_orch orch_in_wt=$orch_in_wt)"
+  else
+    DECIDE_ACTION=skip
+    DECIDE_REASON="divergent/unknown (wt_in_orch=$wt_in_orch orch_in_wt=$orch_in_wt) — inspect, backport, or --force"
+  fi
+}
 
 # 3. Defined Shared Infrastructure Files
 #
@@ -98,6 +259,8 @@ FILES=(
     "ve-env"
     "ve-refresh-shell.c"
     "run-antigravity"
+    "run-antigravity-master"
+    "run-antigravity-planner"
     ".grok/skills/prepare-local-pr/SKILL.md"
     ".grok/skills/master-merge/SKILL.md"
     # Stable canonical guardrails block (cite by path in plans; do not paste).
@@ -210,7 +373,7 @@ for WT in $WORKTREES; do
     # snapshot/restore dirty working-tree files for the synced items (cp must win
     # on infra files; non-infra unstaged work remains untouched).
     stashed=0
-    if [ -d "$WT" ]; then
+    if [ "$DRY_RUN" -eq 0 ] && [ -d "$WT" ]; then
         if ( cd "$WT" && ! git diff --staged --quiet 2>/dev/null ); then
             echo "  Stashing staged changes temporarily in $WT before sync..."
             if ( cd "$WT" && git stash push --staged --message "update-rules temp: preserve staged work before infra sync" --quiet ); then
@@ -232,28 +395,45 @@ for WT in $WORKTREES; do
     CODE_GROUP=$(sed -n 's/^code_group=//p' "$SOURCE_DIR/project.config" 2>/dev/null | tr -d '\r' | head -1)
     CODE_GROUP=${CODE_GROUP:-ai-code}
 
+    COPIED_N=0
+    SKIPPED_N=0
     for FILE in "${COPY_LIST[@]}"; do
-        if [ -f "$SOURCE_DIR/$FILE" ]; then
-            TARGET_FILE="$WT/$FILE"
-            TARGET_DIR_PATH=$(dirname "$TARGET_FILE")
-            mkdir -p "$TARGET_DIR_PATH"
-            # Overwrite with physical copy (shared brain is physical copies on the branch, not links)
-            rm -f "$TARGET_FILE"
-            # Preserve mode from source when possible (keeps 100755 scripts executable)
-            cp -p "$SOURCE_DIR/$FILE" "$TARGET_FILE" 2>/dev/null || cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
-            # Prefer primary:ai-code so humans (dlang) own scripts they run
-            chown "$PRIMARY_USER:$CODE_GROUP" "$TARGET_FILE" 2>/dev/null || true
-            # If source was executable (or known launcher names), force +x for ugo
-            if [ -x "$SOURCE_DIR/$FILE" ] || [[ "$FILE" == *.sh ]] || \
-               [[ "$FILE" == deploy || "$FILE" == build_app || "$FILE" == gradlew ]] || \
-               [[ "$FILE" == git-merge-drivers/* ]]; then
-              chmod a+x "$TARGET_FILE" 2>/dev/null || true
+        if [ ! -f "$SOURCE_DIR/$FILE" ]; then
+            continue
+        fi
+        decide_sync_action "$WT" "$FILE"
+        if [ "$DECIDE_ACTION" = "skip" ]; then
+            SKIPPED_N=$((SKIPPED_N + 1))
+            if [ "$DECIDE_REASON" != "content identical" ] && [ "$DECIDE_REASON" != "content identical (blob)" ]; then
+                echo "    SKIP $FILE — $DECIDE_REASON"
             fi
+            continue
+        fi
+        echo "    COPY $FILE — $DECIDE_REASON"
+        COPIED_N=$((COPIED_N + 1))
+        if [ "$DRY_RUN" -eq 1 ]; then
+            continue
+        fi
+        TARGET_FILE="$WT/$FILE"
+        TARGET_DIR_PATH=$(dirname "$TARGET_FILE")
+        mkdir -p "$TARGET_DIR_PATH"
+        rm -f "$TARGET_FILE"
+        cp -p "$SOURCE_DIR/$FILE" "$TARGET_FILE" 2>/dev/null || cp "$SOURCE_DIR/$FILE" "$TARGET_FILE"
+        chown "$PRIMARY_USER:$CODE_GROUP" "$TARGET_FILE" 2>/dev/null || true
+        if [ -x "$SOURCE_DIR/$FILE" ] || [[ "$FILE" == *.sh ]] || \
+           [[ "$FILE" == deploy || "$FILE" == build_app || "$FILE" == gradlew ]] || \
+           [[ "$FILE" == run-* ]] || \
+           [[ "$FILE" == git-merge-drivers/* ]]; then
+          chmod a+x "$TARGET_FILE" 2>/dev/null || true
         fi
     done
+    echo "    summary: copy=$COPIED_N skip=$SKIPPED_N dry_run=$DRY_RUN"
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        continue
+    fi
 
     # Ensure management/orchestration scripts end up executable (right perms).
-    # Avoid a single chmod with globs that can fail the whole line; set each path.
     for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
                 "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh; do
       [ -f "$_exe" ] || continue
@@ -267,34 +447,25 @@ for WT in $WORKTREES; do
       find "$WT/git-merge-drivers" -type f -exec chmod a+x {} + 2>/dev/null || true
     fi
 
-    # Commit changes in the target worktree
     (
         cd "$WT" || exit
         
-        # Clean up any legacy protections first to ensure git can see/modify them
-        # Re-enable index tracking if it was skipped
-        git update-index --no-skip-worktree "${COPY_LIST[@]}" 2>/dev/null
-        # Restore write permissions
-        chmod +w "${COPY_LIST[@]}" 2>/dev/null
+        git update-index --no-skip-worktree "${COPY_LIST[@]}" 2>/dev/null || true
+        chmod +w "${COPY_LIST[@]}" 2>/dev/null || true
 
-        # Stage the files we just copied. Use -f for the infrastructure launchers
-        # and block (robust against any transient ignore rules or new-file edge
-        # cases during the batch). Do not blanket-suppress errors on the add;
-        # surface problems so we can see why a sync would fail to commit.
-        git add -f standard-plan-compliance-block.md get-builds-tag.sh run-grok-planner run-grok-master run-antigravity 2>&1 | cat
-        git add "${COPY_LIST[@]}" 2>&1 | cat
+        git add -f standard-plan-compliance-block.md get-builds-tag.sh \
+          run-grok-planner run-grok-master run-grok-coder run-grok-orchestrator run-grok \
+          run-antigravity run-antigravity-master run-antigravity-planner 2>&1 | cat || true
+        git add "${COPY_LIST[@]}" 2>&1 | cat || true
 
         if ! git diff --staged --quiet; then
             echo "Changes detected in $WT, committing..."
             git commit -m "chore: Synchronize agent rules and infrastructure"
         else
-            # As a final robustness measure for new files that may not have
-            # produced a visible diff in some git edge cases, explicitly check
-            # and force-add the critical new launchers + block if they are
-            # untracked in this worktree, then commit if anything is now staged.
-            for extra in standard-plan-compliance-block.md run-grok-planner run-grok-master run-antigravity; do
+            for extra in standard-plan-compliance-block.md run-grok-planner run-grok-master \
+                         run-antigravity run-antigravity-master run-antigravity-planner; do
                 if [ -f "$extra" ]; then
-                    git add -f "$extra" 2>&1 | cat
+                    git add -f "$extra" 2>&1 | cat || true
                 fi
             done
             if ! git diff --staged --quiet; then
@@ -307,9 +478,6 @@ for WT in $WORKTREES; do
 
         if [ "$stashed" -eq 1 ]; then
             echo "  Popping stash in $WT to restore previous state..."
-            # Use --index so the previously-staged items are restored to the index
-            # (staged) on top of the freshly committed infra sync. The working tree
-            # state for non-infra files is left as it was (cp already forced infra).
             if git stash pop --index --quiet; then
                 :
             else
@@ -319,6 +487,10 @@ for WT in $WORKTREES; do
             fi
         fi
     )
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+      continue
+    fi
 
     # Re-assert executables after commit (git may not preserve all mode bits in WT)
     for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
@@ -343,19 +515,23 @@ for WT in $WORKTREES; do
     fi
 done
 
-# Install merge drivers from orchestration root as well
-if [ -x "$SOURCE_DIR/install-merge-drivers.sh" ]; then
-  (cd "$SOURCE_DIR" && ./install-merge-drivers.sh) || true
+if [ "$DRY_RUN" -eq 0 ]; then
+  # Install merge drivers from orchestration root as well
+  if [ -x "$SOURCE_DIR/install-merge-drivers.sh" ]; then
+    (cd "$SOURCE_DIR" && ./install-merge-drivers.sh) || true
+  fi
+
+  # 5. Promote Policies to User-tier (ensure they are active)
+  USER_POLICY_DIR="$HOME/.gemini/policies"
+  echo ">>> Promoting policies to User-tier: $USER_POLICY_DIR"
+  mkdir -p "$USER_POLICY_DIR"
+  cp "$SOURCE_DIR/.gemini/policies/plans.toml" "$USER_POLICY_DIR/vehicle_expenses_plans.toml"
+  cp "$SOURCE_DIR/.gemini/policies/auto-saved.toml" "$USER_POLICY_DIR/vehicle_expenses_auto_saved.toml"
 fi
 
-# 5. Promote Policies to User-tier (ensure they are active)
-USER_POLICY_DIR="$HOME/.gemini/policies"
-echo ">>> Promoting policies to User-tier: $USER_POLICY_DIR"
-mkdir -p "$USER_POLICY_DIR"
-
-# Copy repo policies to system with project-specific prefixes to avoid collisions
-cp "$SOURCE_DIR/.gemini/policies/plans.toml" "$USER_POLICY_DIR/vehicle_expenses_plans.toml"
-cp "$SOURCE_DIR/.gemini/policies/auto-saved.toml" "$USER_POLICY_DIR/vehicle_expenses_auto_saved.toml"
-
 echo "--- Rule Update Sync Complete ---"
-echo "Status: All worktrees are now synchronized with $SOURCE_DIR."
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "Status: dry-run only (no files written, no commits)."
+else
+  echo "Status: Worktrees processed from $SOURCE_DIR (skipped worktree-ahead/dirty paths unless --force)."
+fi

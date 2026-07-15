@@ -188,8 +188,12 @@ cd my-feature            # or agent-N
 After brain/infra edits on orchestration:
 
 ```bash
-./update-rules.sh        # copies FILES into master/ + agent-*; commits chore sync
+./update-rules.sh --dry-run   # preview COPY vs SKIP (dirty / worktree-ahead protected)
+./update-rules.sh             # publish; skips worktree-ahead or dirty paths
+./update-rules.sh --force     # always take orchestration content when different
 ```
+
+Equal content is always a no-op. Host installers (`grok-install.sh`, `antigravity-install`) are **not** in git and are **not** synced; `run-grok*` / `run-antigravity*` **are** synced.
 
 ### 4.4 Worktree infra parity checklist
 
