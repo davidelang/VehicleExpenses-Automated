@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
+import android.content.Context
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Log
@@ -125,141 +126,28 @@ object PumpCostVolUtils {
         }
     }
 
-    fun classifyCostVolFromBoxOcr(candidates: List<RedBoxOcrCandidate>): CostVolClassifyResult {
-        val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
-        if (candidates.isEmpty()) return na
-        fun digitCount(s: String) = s.count { it.isDigit() }
-        fun parse(s: String): Pair<Float, Int> {
-            val d = s.filter { it.isDigit() || it == '.' }
-            val f = d.toFloatOrNull() ?: 0f
-            val dp = if ("." in d) d.substringAfter(".").length else 0
-            return f to dp
-        }
-        data class Enriched(
-            val cand: RedBoxOcrCandidate,
-            val cleanDigits: String,
-            val value: Float,
-            val dp: Int,
-            val probScore: Float,
-            val costScore: Int,
-            val volScore: Int
-        )
-        fun correctnessScore(e: Enriched): Int {
-            var s = (e.probScore * 100).toInt()
-            if ("." in e.cleanDigits) s += 50
-            return s
-        }
-        fun clusterOf(pool: List<Enriched>, seed: Enriched): List<Enriched> {
-            val pref = seed.cand.rect ?: return listOf(seed)
-            return pool.filter { e ->
-                e.cand.rect?.let { significantYOverlap(pref, it) } == true
-            }.ifEmpty { listOf(seed) }
-        }
-        fun pickClusterBest(pool: List<Enriched>, seed: Enriched): Enriched =
-            clusterOf(pool, seed).maxByOrNull { correctnessScore(it) + maxOf(it.costScore, it.volScore) } ?: seed
-        val goldenYs = candidates.filter { c ->
-            val a = c.asis.lowercase()
-            a.contains("$") || a.contains("/gal") || a.contains("gal")
-        }.mapNotNull { it.rect?.top }
-        val enriched = candidates.mapNotNull { c ->
-            if (hasBadInternalDecimals(c.digits)) return@mapNotNull null
-            val cleanDigits = cleanDecimal(c.digits)
-            if (digitCount(cleanDigits) < 2) return@mapNotNull null
-            val (v, dp) = parse(cleanDigits)
-            var cs = 0; var vs = 0
-            if (dp == 2) cs += 12
-            if (dp == 3) vs += 12
-            if (v > 20) cs += 8
-            if (v < 60 && v > 0) vs += 6
-            if (v in 3.0..30.0) vs += 1
-            if (dp > 0) { cs += 2; vs += 2 }
-            if ("." in cleanDigits) { cs += 5; vs += 5 }
-            if (goldenYs.isNotEmpty() && c.rect != null) {
-                val minDist = goldenYs.minOf { kotlin.math.abs(it - c.rect.top) }
-                cs += 20 - minOf(minDist / 10, 20)
-            }
-            val prob = probCorrectness(c.digitsProbs)
-            cs += (prob * 20).toInt()
-            vs += (prob * 20).toInt()
-            Enriched(c, cleanDigits, v, dp, prob, cs, vs)
-        }
-        if (enriched.isEmpty()) return na
-        if (enriched.none { it.cand.rect != null }) {
-            val costE = enriched.maxByOrNull { it.costScore }!!
-            val volE = enriched.filter { it.cand != costE.cand }.maxByOrNull { it.volScore }
-                ?: enriched.maxByOrNull { it.volScore }!!
-            var cstFb = repairDecimalForRole(costE.cleanDigits, "cost")
-            var vlmFb = repairDecimalForRole(volE.cleanDigits, "vol")
-            if (cstFb == vlmFb && enriched.size >= 2) vlmFb = "N/A"
-            if (digitCount(cstFb) < 2) cstFb = "N/A"
-            if (digitCount(vlmFb) < 2) vlmFb = "N/A"
-            return CostVolClassifyResult(cstFb, vlmFb, costE.cand, volE.cand)
-        }
-        val seed1 = enriched.maxByOrNull { maxOf(it.costScore, it.volScore) }!!
-        val firstBest = pickClusterBest(enriched, seed1)
-        val firstCluster = clusterOf(enriched, firstBest)
-        val firstClusterIds = firstCluster.map { it.cand }.toSet()
-        val costLikelihood = firstCluster.sumOf { it.costScore.toDouble() }.toFloat() + firstBest.probScore * 30f
-        val volLikelihood = firstCluster.sumOf { it.volScore.toDouble() }.toFloat() + firstBest.probScore * 30f
-        val firstIsCost = costLikelihood >= volLikelihood
-        val prefRect1 = firstBest.cand.rect
-        val secondPool = enriched.filter { e ->
-            e.cand !in firstClusterIds && (prefRect1 == null || e.cand.rect == null || !significantYOverlap(prefRect1, e.cand.rect))
-        }
-        var costCand: RedBoxOcrCandidate
-        var volCand: RedBoxOcrCandidate
-        var cst: String
-        var vlm: String
-        if (firstIsCost) {
-            costCand = firstBest.cand
-            cst = firstBest.cleanDigits
-            if (secondPool.isNotEmpty()) {
-                val seed2 = secondPool.maxByOrNull { maxOf(it.costScore, it.volScore) }!!
-                val secondBest = pickClusterBest(secondPool, seed2)
-                volCand = secondBest.cand
-                vlm = secondBest.cleanDigits
-            } else {
-                val alt = enriched.filter { it.cand != firstBest.cand }.maxByOrNull { it.volScore }
-                if (alt != null) { volCand = alt.cand; vlm = alt.cleanDigits }
-                else { volCand = firstBest.cand; vlm = "N/A" }
-            }
-        } else {
-            volCand = firstBest.cand
-            vlm = firstBest.cleanDigits
-            if (secondPool.isNotEmpty()) {
-                val seed2 = secondPool.maxByOrNull { maxOf(it.costScore, it.volScore) }!!
-                val secondBest = pickClusterBest(secondPool, seed2)
-                costCand = secondBest.cand
-                cst = secondBest.cleanDigits
-            } else {
-                val alt = enriched.filter { it.cand != firstBest.cand }.maxByOrNull { it.costScore }
-                if (alt != null) { costCand = alt.cand; cst = alt.cleanDigits }
-                else { costCand = firstBest.cand; cst = "N/A" }
-            }
-        }
-        cst = repairDecimalForRole(cst, "cost")
-        vlm = repairDecimalForRole(vlm, "vol")
-        if (cst == vlm && enriched.size >= 2) {
-            if (firstIsCost) {
-                val alt = secondPool.filter { it.cand != volCand }.maxByOrNull { it.volScore }
-                    ?: enriched.filter { it.cand != costCand && it.cand != volCand }.maxByOrNull { it.volScore }
-                if (alt != null) {
-                    volCand = alt.cand
-                    vlm = repairDecimalForRole(alt.cleanDigits, "vol")
-                } else vlm = "N/A"
-            } else {
-                val alt = secondPool.filter { it.cand != costCand }.maxByOrNull { it.costScore }
-                    ?: enriched.filter { it.cand != costCand && it.cand != volCand }.maxByOrNull { it.costScore }
-                if (alt != null) {
-                    costCand = alt.cand
-                    cst = repairDecimalForRole(alt.cleanDigits, "cost")
-                } else cst = "N/A"
-            }
-        }
-        if (digitCount(cst) < 2) cst = "N/A"
-        if (digitCount(vlm) < 2) vlm = "N/A"
-        return CostVolClassifyResult(cst, vlm, costCand, volCand)
-    }
+    /** Band-gated role pools (role_band); falls back to global pair when bands do not lock. */
+    fun classifyCostVolFromBoxOcr(
+        candidates: List<RedBoxOcrCandidate>,
+        ratioBandLo: Float = PumpOcrSettings.DEFAULT_RATIO_BAND_LO,
+        ratioBandHi: Float = PumpOcrSettings.DEFAULT_RATIO_BAND_HI,
+        labelYBandExtraFraction: Float = PumpOcrSettings.DEFAULT_LABEL_Y_BAND_EXTRA_FRACTION,
+    ): CostVolClassifyResult = PumpRoleBandClassifier.classify(
+        candidates,
+        ratioBandLo,
+        ratioBandHi,
+        labelYBandExtraFraction,
+    )
+
+    fun classifyCostVolFromBoxOcr(
+        context: Context,
+        candidates: List<RedBoxOcrCandidate>,
+    ): CostVolClassifyResult = classifyCostVolFromBoxOcr(
+        candidates,
+        PumpOcrSettings.ratioBandLo(context),
+        PumpOcrSettings.ratioBandHi(context),
+        PumpOcrSettings.labelYBandExtraFraction(context),
+    )
 
     fun createBlueAndOrangeHunksFromReds(
         reds: List<PumpHunk>,

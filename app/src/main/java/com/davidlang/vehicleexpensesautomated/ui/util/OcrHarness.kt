@@ -189,7 +189,7 @@ object OcrHarness {
         val gCands = PumpCostVolUtils.buildRedBoxCandidates(
             customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs
         )
-        return PumpCostVolUtils.classifyCostVolFromBoxOcr(gCands)
+        return PumpCostVolUtils.classifyCostVolFromBoxOcr(context, gCands)
     }
 
     /**
