@@ -759,3 +759,37 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - **Sync UX:** Live per-destination status (no toasts); red error text; multi-line per-dest summaries; Drive photo upsert prevents duplicate uploads; experiment drawer toggle without restart.
 - **Verification:** Pixel 6 manual 3-dest spreadsheet sync clean in logcat; user confirmed experiment toggle and status line.
 - **Process:** Logical commit history + `backup-full-code-review1` tag; `./generate_pr.sh` for Master review.
+
+## 2026-07-15 - Pump classifier sim Step 0.5 (baseline parity)
+
+- Fixed classify_baseline to faithful Kotlin port: enrich_candidates_kotlin uses cleanDecimal on digits, full fractional dp length, no v<=0.2 filter, label-based cand identity.
+- --verify-baseline: 0 mismatches on reference JSON; baseline replay matches device G/I metrics (GAP 34/38).
+- evaluate() and pool_recovery_rate: per-axis ? handling aligned with pump_deep_analysis.
+- CLI: --classifier global_pair_v1 (improved alias); classify_improved preserved as competitor.
+- global_pair_v1 replay GAP: Set G 12, Set I 15 (vs device 34/38).
+
+## 2026-07-15 - spatial_first v1 sim (not goal-complete)
+
+- User correctly noted goal incomplete without new-algorithm sim results.
+- Implemented classify_spatial() + --classifier spatial + --compare-all GAP table.
+- Baseline gate still 0 mismatches.
+- Replay on reference JSON (individual-axis GAP):
+  - device/baseline: G 34, I 38
+  - global_pair_v1: G 12, I 15 (best)
+  - spatial_first v1: G 52, I 44 (worse than device; needs Steps 2-3 tuning)
+- Known failure mode: truncated junk vol picks (e.g. 68 vs 13.617).
+
+## 2026-07-15 - spatial_first within-cluster ranking v2
+
+- Investigated spatial_first failures: ~70% cross-cluster junk pairing (68 vol), ~30% within-cluster integer vs decimal.
+- Added score_cluster_reading signals: decimal preference, digit count, prob, consensus, cost/vol US shape bonuses, junk fragment penalty, repair variants with parent consensus.
+- Cross-cluster pairing: junk vol -120, vol_shape +35, cost_shape +20.
+- Unit tests: dev-ai-interaction/test_cluster_reading_picker.py (12 cases).
+- GAP v1→v2: Set G 52→46, Set I 44→42. Baseline parity still 0.
+
+## 2026-07-15 - Pump OCR settings: 8 red boxes, Y-band prefs
+
+- Added PumpOcrSettings.kt: max red boxes (default 8), label Y-band extra fraction (smallest value-cluster rect height), ratio band lo/hi; resolution-independent helpers (smallestRect, labelCenterYInValueBand, rectCenterY).
+- ExperimentPumpScreen + OcrHarness + PumpCostVolUtils prune via settings (Quick Fill reads maxRedBoxes).
+- SettingsScreen: max red boxes always visible; Y-band + ratio fields under experiment screens.
+- classifyCostVolFromBoxOcr unchanged (selector experiments continue in sim).
