@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.BuildConfig
+import com.davidlang.vehicleexpensesautomated.ui.util.UserManualDocs
 
 @Composable
 fun AboutScreen() {
@@ -32,7 +33,7 @@ fun AboutScreen() {
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated"))) }) { Text("GitHub Repository") }
             Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated/blob/master/LICENSE"))) }) { Text("License (Apache 2.0)") }
-            Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/davidelang/VehicleExpenses-Automated/blob/master/user-manual.md"))) }) { Text("User Manual") }
+            Button(onClick = { UserManualDocs.openFullManual(context) }) { Text("User Manual") }
         }
     }
 }

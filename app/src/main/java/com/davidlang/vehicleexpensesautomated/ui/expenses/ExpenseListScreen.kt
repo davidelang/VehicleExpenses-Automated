@@ -38,6 +38,11 @@ fun ExpenseListScreen(navController: NavHostController? = null) {
                 text = "Expense List",
                 style = MaterialTheme.typography.headlineMedium
             )
+            Text(
+                "Tap a row to edit. Add new expenses from Menu → New Expense Entry.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         item {
             Spacer(modifier = Modifier.height(16.dp))

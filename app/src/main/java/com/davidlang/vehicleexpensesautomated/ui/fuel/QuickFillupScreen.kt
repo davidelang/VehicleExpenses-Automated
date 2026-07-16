@@ -760,6 +760,12 @@ fun QuickFillupScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
+        Text(
+            text = "Shutter = capture · Disk = save · ↕ = odo/pump mode · ↔ = swap cost/volume. Type fields anytime. Menu → Help for more.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        )
         // Group 1: Vehicle + Odo
         Column(modifier = Modifier.wrapContentWidth().then(odoBorder)) {
             Row(

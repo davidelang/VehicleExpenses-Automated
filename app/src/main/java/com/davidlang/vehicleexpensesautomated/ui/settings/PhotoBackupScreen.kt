@@ -107,7 +107,7 @@ private fun PhotoDestList(
 
     SyncDestinationListLayout(
         title = "Photo Backup",
-        description = "Configure Google Drive, OneDrive, S3, or Other storage. Manual sync runs all configured destinations; background backup runs enabled ones only.",
+        description = "Add a destination (Google Drive is common: Sign in with Google (Drive) → optional folder via 🔍 → save → Sync now). Manual sync runs all configured destinations; background backup runs enabled ones only.",
         statusText = statusText,
         syncInProgress = syncInProgress,
         statusIsError = statusIsError,
