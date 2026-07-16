@@ -486,7 +486,10 @@ object PumpCostVolUtils {
         pdHunksRawTotal.addAll(cleaned)
     }
 
-    fun pruneRectsToTopN(rects: MutableList<Rect>, maxCount: Int = 6) {
+    fun pruneRectsToTopN(
+        rects: MutableList<Rect>,
+        maxCount: Int = PumpOcrSettings.DEFAULT_MAX_RED_BOXES,
+    ) {
         doCrossScaleRedboxFilterPixel(rects)
         if (rects.size > maxCount) {
             rects.sortByDescending { r -> (r.right - r.left) * (r.bottom - r.top) }
@@ -689,7 +692,8 @@ object PumpCostVolUtils {
 
     /**
      * Set G ("none, calculated") cost/volume extraction: multi-scale red discovery,
-     * cross-scale filter, prune to top 6, calculated blue expansion, OCR, classify.
+     * cross-scale filter, prune to top N red boxes (see [PumpOcrSettings.DEFAULT_MAX_RED_BOXES]),
+     * calculated blue expansion, OCR, classify.
      */
     suspend fun runSetGCostVolExtraction(
         workspace: BufferSet,
@@ -747,7 +751,7 @@ object PumpCostVolUtils {
         doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
 
         val redPixelList = hunksToRects(pdHunksRawTotal).toMutableList()
-        pruneRectsToTopN(redPixelList, 6)
+        pruneRectsToTopN(redPixelList, PumpOcrSettings.DEFAULT_MAX_RED_BOXES)
         pdHunksRawTotal.clear()
         pdHunksRawTotal.addAll(rectsToHunks(redPixelList))
         val tRed = System.currentTimeMillis() - tRed0

@@ -24,6 +24,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import androidx.navigation.NavHostController
@@ -94,6 +95,27 @@ fun SettingsScreen(navController: NavHostController) {
         mutableStateOf(prefs.getBoolean("show_experiment_screens", false))
     }
     var debugMaxSessions by remember { mutableIntStateOf(prefs.getInt("debug_quick_fill_max_sessions", 10)) }
+    var pumpMaxRedBoxes by remember {
+        mutableIntStateOf(prefs.getInt(PumpOcrSettings.KEY_MAX_RED_BOXES, PumpOcrSettings.DEFAULT_MAX_RED_BOXES))
+    }
+    var pumpLabelYBandExtra by remember {
+        mutableStateOf(
+            prefs.getFloat(
+                PumpOcrSettings.KEY_LABEL_Y_BAND_EXTRA_FRACTION,
+                PumpOcrSettings.DEFAULT_LABEL_Y_BAND_EXTRA_FRACTION,
+            ).toString(),
+        )
+    }
+    var pumpRatioBandLo by remember {
+        mutableStateOf(
+            prefs.getFloat(PumpOcrSettings.KEY_RATIO_BAND_LO, PumpOcrSettings.DEFAULT_RATIO_BAND_LO).toString(),
+        )
+    }
+    var pumpRatioBandHi by remember {
+        mutableStateOf(
+            prefs.getFloat(PumpOcrSettings.KEY_RATIO_BAND_HI, PumpOcrSettings.DEFAULT_RATIO_BAND_HI).toString(),
+        )
+    }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
     var shutterSounds by remember { mutableStateOf(prefs.getBoolean("shutter_sounds", true)) }
     var currencySymbol by remember {
@@ -216,7 +238,28 @@ fun SettingsScreen(navController: NavHostController) {
         QuickFillDebugStore.pruneToMax(context)
     }
 
-    LaunchedEffect(saveFuelPhotos, saveExpensePhotos, debugQuickFill, showExperimentScreens, darkModePref, shutterSounds, currencySymbol, volumeUnit) {
+    LaunchedEffect(
+        saveFuelPhotos,
+        saveExpensePhotos,
+        debugQuickFill,
+        showExperimentScreens,
+        darkModePref,
+        shutterSounds,
+        currencySymbol,
+        volumeUnit,
+        pumpMaxRedBoxes,
+        pumpLabelYBandExtra,
+        pumpRatioBandLo,
+        pumpRatioBandHi,
+    ) {
+        val yExtra = pumpLabelYBandExtra.toFloatOrNull()
+            ?.coerceIn(0f, 1f) ?: PumpOcrSettings.DEFAULT_LABEL_Y_BAND_EXTRA_FRACTION
+        val rLo = pumpRatioBandLo.toFloatOrNull()
+            ?.coerceIn(PumpOcrSettings.MIN_RATIO_BAND, PumpOcrSettings.MAX_RATIO_BAND)
+            ?: PumpOcrSettings.DEFAULT_RATIO_BAND_LO
+        val rHi = pumpRatioBandHi.toFloatOrNull()
+            ?.coerceIn(PumpOcrSettings.MIN_RATIO_BAND, PumpOcrSettings.MAX_RATIO_BAND)
+            ?: PumpOcrSettings.DEFAULT_RATIO_BAND_HI
         prefs.edit().apply {
             putBoolean("save_fuel_photos", saveFuelPhotos)
             putBoolean("save_expense_photos", saveExpensePhotos)
@@ -226,6 +269,16 @@ fun SettingsScreen(navController: NavHostController) {
             putBoolean("shutter_sounds", shutterSounds)
             putString("currency_symbol", currencySymbol)
             putString("volume_unit", volumeUnit)
+            putInt(
+                PumpOcrSettings.KEY_MAX_RED_BOXES,
+                pumpMaxRedBoxes.coerceIn(
+                    PumpOcrSettings.MIN_MAX_RED_BOXES,
+                    PumpOcrSettings.MAX_MAX_RED_BOXES,
+                ),
+            )
+            putFloat(PumpOcrSettings.KEY_LABEL_Y_BAND_EXTRA_FRACTION, yExtra)
+            putFloat(PumpOcrSettings.KEY_RATIO_BAND_LO, rLo)
+            putFloat(PumpOcrSettings.KEY_RATIO_BAND_HI, maxOf(rLo, rHi))
             apply()
         }
     }
@@ -321,6 +374,48 @@ fun SettingsScreen(navController: NavHostController) {
         SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
         SwitchSetting("Debug Quick Fill", debugQuickFill) { debugQuickFill = it }
         SwitchSetting("Show experiment screens (dev)", showExperimentScreens) { showExperimentScreens = it }
+        OutlinedTextField(
+            value = pumpMaxRedBoxes.toString(),
+            onValueChange = { text ->
+                text.toIntOrNull()?.coerceIn(
+                    PumpOcrSettings.MIN_MAX_RED_BOXES,
+                    PumpOcrSettings.MAX_MAX_RED_BOXES,
+                )?.let { pumpMaxRedBoxes = it }
+            },
+            label = { Text("Pump max red boxes kept (${PumpOcrSettings.MIN_MAX_RED_BOXES}–${PumpOcrSettings.MAX_MAX_RED_BOXES})") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        if (showExperimentScreens) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Pump OCR (advanced)", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Label Y-band uses smallest value-cluster rect height × extra fraction (resolution-independent). " +
+                    "Ratio bands apply when experimental pairing is enabled.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = pumpLabelYBandExtra,
+                onValueChange = { pumpLabelYBandExtra = it },
+                label = { Text("Label Y-band extra (fraction of smallest value rect height, 0–1)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = pumpRatioBandLo,
+                onValueChange = { pumpRatioBandLo = it },
+                label = { Text("Cost/vol ratio band low ($/gal)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = pumpRatioBandHi,
+                onValueChange = { pumpRatioBandHi = it },
+                label = { Text("Cost/vol ratio band high ($/gal)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+        }
         OutlinedTextField(
             value = debugMaxSessions.toString(),
             onValueChange = { text ->

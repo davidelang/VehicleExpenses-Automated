@@ -136,11 +136,12 @@ object OcrHarness {
      * Caller must deskew/rotate workspace first; no second deskew here.
      */
     private suspend fun extractQuickFillSetGCostVol(
+        context: Context,
         workspace: BufferSet,
         paddleEngine: NativePaddleEngine,
         recBuffer: BufferSet,
         imgW: Int,
-        imgH: Int
+        imgH: Int,
     ): CostVolClassifyResult {
         val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
 
@@ -170,7 +171,7 @@ object OcrHarness {
         PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
 
         val redPixelList = PumpCostVolUtils.hunksToRects(pdHunksRawTotal).toMutableList()
-        PumpCostVolUtils.pruneRectsToTopN(redPixelList, 6)
+        PumpCostVolUtils.pruneRectsToTopN(redPixelList, PumpOcrSettings.maxRedBoxes(context))
         pdHunksRawTotal.clear()
         pdHunksRawTotal.addAll(PumpCostVolUtils.rectsToHunks(redPixelList))
         if (pdHunksRawTotal.isEmpty()) return na
@@ -217,7 +218,12 @@ object OcrHarness {
             val paddleEngine = NativePaddleEngine(context, "Numeric")
             val recBuffer = NativePaddleEngine.recBufferSet
             val cv = extractQuickFillSetGCostVol(
-                masterBuffer, paddleEngine, recBuffer, masterBuffer.width, masterBuffer.height
+                context,
+                masterBuffer,
+                paddleEngine,
+                recBuffer,
+                masterBuffer.width,
+                masterBuffer.height,
             )
 
             val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }
