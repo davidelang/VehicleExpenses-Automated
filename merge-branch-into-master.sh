@@ -125,7 +125,10 @@ merge_index_first() {
     return 1
   fi
   echo "  merge-tree OK → ${tree:0:8}"
-  git read-tree --reset "$tree"
+  if ! git read-tree --reset "$tree"; then
+    echo "ERROR: read-tree failed (often +a ENGINEERING_LOG.md); index left unchanged" >&2
+    return 1
+  fi
   restore_special TODO.md "$pre_todo"
   restore_special project-facts.md "$pre_facts"
   verify_index_blob TODO.md "$pre_todo"
@@ -140,7 +143,10 @@ merge_git_ort() {
   local branch="$1"
   englog_sync_index_to_worktree
   git update-index --skip-worktree ENGINEERING_LOG.md 2>/dev/null || true
-  git merge --no-ff --no-commit --no-autostash "$branch"
+  if ! git merge --no-ff --no-commit --no-autostash "$branch"; then
+    git update-index --no-skip-worktree ENGINEERING_LOG.md 2>/dev/null || true
+    return 1
+  fi
   restore_special TODO.md "$pre_todo"
   restore_special project-facts.md "$pre_facts"
   verify_index_blob TODO.md "$pre_todo"
