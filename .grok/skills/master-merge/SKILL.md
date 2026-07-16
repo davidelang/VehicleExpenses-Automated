@@ -22,15 +22,25 @@ Follow **`MASTER_AGENT_MANDATE.md` §2** in full. Read that file first.
 4. On merge:
    - `python3 dev-ai-interaction/audit_merge.py <branch>`
    - **`./install-merge-drivers.sh`** (sets `merge.autostash=false`, registers drivers)
-   - **`./merge-branch-into-master.sh <branch>`** — tries `git merge --no-autostash`; on +a eng-log failure falls back to index-first; **`restore_special`** + **`verify_index_blob`** for TODO/facts
+   - **`./merge-branch-into-master.sh <branch>`** — FF index path when possible; else `git merge --no-autostash`; else index-first for +a eng-log; **`restore_special`** + **`verify_index_blob`** for TODO/facts
    - **ENGINEERING_LOG:** `ve-englog` + `append-to-engineering-log` → third version. No `chattr -a`.
    - **TODO / project-facts:** `ve-special-ours` + `restore_special` → master base; then **`todo-close`** / **`todo-append`** and facts prune vs branch delta (always, even if paths unchanged).
-   - `./build_app` to commit merge
+   - **POST-MERGE GATE (before `./build_app`):**
+     ```bash
+     git diff --cached --name-only
+     # App merge: must list feature paths (e.g. *.kt), not ONLY ENGINEERING_LOG.md
+     ```
+     If only eng-log is staged while the branch changed app code → **FAILED**. Do not `build_app`.
+     Retry: `git reset HEAD` (unstage), then re-run the merge script (or fix script on **orchestration** + `update-rules`).
+   - `./build_app` to commit merge **only after** the staged set looks complete.
 5. Never set `works` tag. Inform user to run `./remove_worktree.sh` when done.
 
 ## Failed merge recovery
-See `docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md` § "Failed merge recovery" and `MASTER_AGENT_MANDATE.md` §2.
-Do **not** promote one-off `reset-master-pre-merge.sh` as normal flow.
+See `docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md` § "Failed merge recovery",  
+`docs/reference/MERGE_POSTMORTEM_IMPROVE_PUMP_CLASSIFICATION.md`, and `MASTER_AGENT_MANDATE.md` §2.
+
+Do **not** promote one-off `reset-master-pre-merge.sh` as normal flow.  
+Do **not** leave `merge-branch-into-master.sh` fixes only on master — orchestration is SoT, then `./update-rules.sh`.
 
 ## Expectation
 Independent review should ideally find **nothing** if coder used prepare-local-pr well.
