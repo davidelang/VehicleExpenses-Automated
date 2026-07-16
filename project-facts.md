@@ -30,6 +30,7 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - Reports metrics ($/mi, volume display): `docs/reference/REPORTS_METRICS.md`
 - Self-hosted sync setup cheatsheets: `docs/reference/self-host/` (INDEX, `photos/*`, `tabular/*`, `vendor-links/VENDOR_LINKS.md`); in-app links via `ui/util/SyncSetupDocs.kt`
 - Sync behavior reference (recovery, duplicates, LWW): `docs/reference/SYNC_BEHAVIOR.md`; user summary in `docs/reference/USER_GUIDE.md` sync section
+- End-user manual (illustrated): `docs/user-manual.md` with screenshots in `docs/user-manual/images/` (image links use public `raw.githubusercontent.com` absolute URLs); in-app Help is short guide; About + Help open via `ui/util/UserManualDocs.kt` → public raw URL (no GitHub login; Custom Tabs)
 
 ## At worktree root
 - `MASTER_AGENT_MANDATE.md` — master worktree only: PR review + merge integration protocol (special handling for ENGINEERING_LOG, TODO, project-facts)

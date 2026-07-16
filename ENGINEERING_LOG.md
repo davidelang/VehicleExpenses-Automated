@@ -799,3 +799,39 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - **Activity:** Ported sim `role_band` to `PumpRoleBandClassifier.kt`; wired `classifyCostVolFromBoxOcr`; ratio defaults 2/30; build green.
 - **History:** 2 logical commits; `backup-improve-pump-classification` @ 8833b5d4.
 - **PR:** `dev-ai-interaction/PRs/PR-improve-pump-classification.md` — ready for Master review/merge.
+
+## 2026-07-16 - User manual with screenshots — execution start
+- Approved plan: user-manual-with-screenshots (review comments applied)
+- Scope: docs/user-manual.md + images, rewrite Help + USER_GUIDE, About URL, Google sync setup, icons, on-screen help
+- Out of scope: Import Old Pictures, Alignment/Pump experiments
+- Device: emulator-5556; real-device photo shots deferred phase
+- First action: eng-log
+
+## 2026-07-16 - User manual screenshots + Help rewrite progress
+- Captured emulator-5556 screens → docs/user-manual/images/*.jpg
+- Wrote docs/user-manual.md (icons, Google Sheets/Drive setup, real-device follow-up phase)
+- Rewrote docs/reference/USER_GUIDE.md
+- Rewrote HelpScreen; fixed About manual URL
+- On-screen help text: QuickFill, ManageVehicles, ExpenseEntry/List, Reports, Settings, sync list descriptions
+- Next: ./build_app
+
+## 2026-07-16 - User manual execution complete
+- Commit 21ed0885: docs/user-manual.md + 17 screenshots, Help rewrite, About URL, on-screen tips, USER_GUIDE rewrite
+- ./build_app success; tag instruction/builds (instruction-start-1-g21ed0885)
+- NDK libc++ was mode 660 dlang:dlang (blocked ai-coder); fixed a+r via docker alpine mount for multi-user SDK
+- Emulator captures; real-device OCR photo shots listed in manual follow-up section
+- Ready for user deploy + test Help/manual/screens
+
+## 2026-07-16 - Integrate phone screenshots into user manual
+- Wire R1–R6 images into docs/user-manual.md; remove emulator-placeholder / follow-up sections
+- Prefer phone crops/landmarks/quickfill; keep emulator for chrome-only where no phone shot
+- Commit docs images (jpg only; drop raw png/notes from tree if present)
+
+## 2026-07-16 - Manual: Quick Fill auto vehicle + multi-device backup section
+- Correct Quick Fill vehicle auto-detect from dash landmarks
+- Restructure §5 as backups/multi-device sync; list spreadsheet + photo targets
+- todo-append missed fill / partial economy tracking
+
+## 2026-07-16 - Full manual URL without GitHub login
+- Point Help/About at public raw.githubusercontent.com URL (no account)
+- Absolute image URLs in user-manual.md for raw view; centralize link helper
