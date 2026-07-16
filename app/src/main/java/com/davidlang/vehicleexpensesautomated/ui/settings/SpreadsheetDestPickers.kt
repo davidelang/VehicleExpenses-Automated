@@ -91,7 +91,7 @@ internal fun SpreadsheetDestList(
 
     SyncDestinationListLayout(
         title = "Spreadsheet Sync",
-        description = "Configure spreadsheet destinations (Google Sheets, Excel, EtherCalc, Other). Manual sync runs all configured destinations; background sync runs enabled ones only.",
+        description = "Add a destination (Google Sheets is the common choice: Sign in → Sheet URL or 🔍 browse → save → Sync now). Manual sync runs all configured destinations; background sync runs enabled ones only.",
         statusText = statusText,
         syncInProgress = syncInProgress,
         statusIsError = statusIsError,

@@ -306,6 +306,11 @@ fun ReportsScreen(navController: NavHostController) {
             .verticalScroll(rememberScrollState())
     ) {
         Text("Reports", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "Summary, last full fills, expenses, and fill history per vehicle. Mixed currencies show separate totals (no conversion).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(modifier = Modifier.height(12.dp))
 
         Card(modifier = Modifier.fillMaxWidth()) {

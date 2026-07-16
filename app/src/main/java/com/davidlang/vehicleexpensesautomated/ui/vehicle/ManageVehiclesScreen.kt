@@ -256,6 +256,13 @@ fun ManageVehiclesScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
+        Text(
+            "Set up each vehicle once: reference dash photo → Odo Crop → Run Discovery → name → Create/Save. " +
+                "Crops and landmarks improve odometer OCR on Quick Fill. Menu → Help for a short walkthrough.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
             OutlinedTextField(

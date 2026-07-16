@@ -290,6 +290,14 @@ fun SettingsScreen(navController: NavHostController) {
             .verticalScroll(rememberScrollState())
     ) {
         Text("General Settings", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "Tap Spreadsheet sync or Photo backup to add destinations (e.g. Google Sheets + Google Drive). " +
+                "Use Sync now on each row after setup. A red ! in the title bar means a recent failure — open this screen. " +
+                "Menu → Help for Google setup steps.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(modifier = Modifier.height(16.dp))
 
         Text("Sync & backup", style = MaterialTheme.typography.titleMedium)

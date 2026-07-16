@@ -565,6 +565,12 @@ private fun ExpenseEntryScreenBody(
                 if (editId != null) "Edit Expense" else "New Expense",
                 style = MaterialTheme.typography.titleLarge
             )
+            Text(
+                "Disk = save · white circle = take receipt · gallery icon = pick image · Retake clears the photo. " +
+                    "Tap the currency symbol on amount to change currency.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             // Date display + picker
             OutlinedTextField(
