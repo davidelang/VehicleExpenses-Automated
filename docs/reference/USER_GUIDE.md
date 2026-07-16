@@ -4,43 +4,68 @@ status: dynamic
 ai_directive: "This is a downstream reference. It MUST be updated continuously to reflect the current state of the codebase. If you change a function or architecture described here, update this document in the same commit."
 ---
 
-# Vehicle Expenses Automated — User Manual
+# Vehicle Expenses Automated — User Guide (condensed)
 
-## App Icon
-The official launcher icon features two cars, a camera lens, and a green dollar sign with a plus symbol. It represents the "camera-first" approach to tracking vehicle expenses.
+**Full illustrated manual:** [docs/user-manual.md](../user-manual.md)  
+**On device:** Menu → **Help** (quick start) · Menu → **About** (version + manual link)
 
-## Overview
-Vehicle Expenses Automated is designed to track fuel entries and expenses with minimal manual data entry. By leveraging advanced multi-engine OCR and image alignment, the app automatically extracts odometer readings and fuel costs from your dashboard and pump photos.
+This file is a short reference for everyday use and sync behavior. Prefer the full manual for first-time setup with screenshots.
 
-## Core Workflow (Camera-First)
+## What the app does
 
-### Quick Fill-up (Main Screen)
-- **Capture**: Tap **Take Photo** to aim at your dashboard (odometer) or fuel pump.
-- **Automatic Identity**: The app detects the vehicle based on the visual alignment of the dashboard using Veto algorithms.
-- **Extraction**: Reads the Odometer, Gallons, and Cost.
-- **Location**: If enabled, the app automatically tags the entry with your current GPS coordinates.
-- **Save**: Review the extracted data and tap **Save**. The entry is queued for background sync.
+- **Quick Fill-up** — camera OCR for odometer and pump cost/volume, or manual entry; **vehicle auto-detects from dash landmarks** (no need to pick vehicle first).
+- **Manage Vehicles** — reference dash photo, odo/ignore crops, landmark discovery for vehicle identity.
+- **Expenses** — non-fuel costs with optional receipt photos.
+- **Reports** — summaries, last full fills, expense categories, fill history.
+- **Settings** — multi-destination spreadsheet sync + photo backup under **your** accounts, units, currency, local photo prefs.
 
-### Dashboard & Recent Activity
-- The **Dashboard** provides a high-level summary of your most recent fill-ups, average fuel economy, and pending sync items.
+**Not documented for end users:** Import Old Pictures, Alignment Experiment, Pump Experiment.
 
-## Managing Vehicles
-To achieve high OCR accuracy, the app uses **Reference Dash Photos**:
-1. **Set Reference**: In the **Manage Vehicles** screen, capture a clear photo of your vehicle's dashboard.
-2. **Define Crops**: Specify exact "crop rectangles" for the odometer and other important text areas.
-3. **Run Discovery**: Tap **Run Discovery** to initiate a multi-engine OCR scan. The app will extract "Golden Anchors" (landmarks) to identify your car in the future.
-4. **Show Landmarks / Edit OCR**: Tap **Show Landmarks** to instantly view the saved anchors. If the engine misread a critical word, tap **Edit OCR** to manually correct the text. The app uses these exact terms as a "Veto Pool" to differentiate your vehicles.
+## Icons (cheat sheet)
 
-## Expenses & Reports
-- Use the **New Expense Entry** screen to record non-fuel costs.
-- Track fuel economy (MPG/L/100km) and spending over time using the built-in charts in the **Reports** section.
+| Control | Meaning |
+|---------|---------|
+| ☰ | Navigation drawer |
+| ! (title bar) | Recent sync/backup failure → open Settings |
+| Shutter (white circle) | Capture for OCR / receipt |
+| Disk | Save fill or expense |
+| ↕ (Quick Fill) | Switch odometer ↔ pump mode |
+| ↔ (Quick Fill) | Swap cost ↔ volume |
+| 🔍 (sync forms) | Browse Drive for sheet or folder |
+| ← | Back from Settings sub-route |
 
-## Synchronization & Conflict Resolution
-- **Google Sheets & Drive**: Optionally sync entries to a Google Sheet and back up photos to Google Drive.
-- **Self-hosted sync**: For WebDAV, SFTP, MinIO/S3-compatible, EtherCalc, Baserow, and other self-hosted targets, see the setup index at [self-host/INDEX.md](self-host/INDEX.md).
-- **Conflict Resolution**: If the app detects a mismatch between your local data and the remote Google Sheet, it will present the **Conflict Resolution** screen to let you choose which version to keep.
-- **Last-write-wins (LWW)**: Sync merges rows by **Sync ID** using each row’s **Updated** timestamp. Deletes are rows marked **Deleted**; a newer edit on another device can restore (undelete) a row if its timestamp is newer.
-- **After an app upgrade**: You may briefly see **“Updating database after upgrade…”** while the app assigns sync IDs to existing local data. This is local-only (no cloud wait) and usually finishes in a few seconds.
-- **If sync is interrupted**: If the app stops mid-sync, the remote sheet may look wrong until the **next successful sync**, which re-merges and fixes the tab. On **Google Sheets**, you can also use **File → Version history** to restore an older sheet revision. Self-hosted targets may not offer the same history — see [self-host/README.md](self-host/README.md).
-- **Same fill on two devices**: Entering the same fill manually on two phones, or using Quick Fill twice for one real fill, creates **two rows**. That is expected; delete or merge the extra row in the app or sheet when you notice it.
-- **Sync problems**: When a destination fails, Settings shows a **red error** on the spreadsheet or photo summary, and a **problem icon** appears in the app title bar — open **Settings** to fix the destination (bad URL, sign-in, etc.). The app retries on the next scheduled sync interval.
+## Getting started
+
+1. **Manage Vehicles** → Add New Vehicle → dash photo → **Odo Crop** → **Run Discovery** (fix landmarks) → name → Create.
+2. **Quick Fill-up** → shutter on odometer (vehicle matches from landmarks) → **↕** → shutter on pump → **Save**. Works offline.
+3. Optional multi-device / backup: **Settings → Spreadsheet sync** / **Photo backup**.
+
+## Backups & multi-device
+
+- **Your accounts only** — Google / Microsoft / S3 / self-host; not a shared app cloud.
+- **Offline first** — add fills and receipts with no network; sync is background.
+- **Data (tabular):** Google Sheets, Excel, EtherCalc; Other → Baserow, NocoDB, Airtable, PocketBase, Supabase, Firebase, Zoho Sheet (+ deferred OnlyOffice/Collabora).
+- **Photos:** Google Drive, OneDrive, S3, Other (rclone: WebDAV, SFTP, …).
+- Full detail + setup screenshots: [user-manual.md § Backups](../user-manual.md#backups-and-multi-device-sync). Self-host: [self-host/INDEX.md](self-host/INDEX.md).
+
+## Google Sheets / Drive (quick)
+
+Spreadsheet: Settings → Spreadsheet sync → Add → **Google Sheets** → sign-in → URL or 🔍 → Sync now.  
+Photos: Settings → Photo backup → Add → **Google Drive** → sign-in → folder → Sync now.
+
+## Sync behavior (summary)
+
+- **LWW** by **Sync ID** + **Updated** timestamp; soft deletes.
+- Upgrade splash: local sync-id backfill (“Updating database after upgrade…”).
+- Interrupted sync: next successful sync repairs remote tabs.
+- Same fill entered twice = two rows (delete extras).
+- Failures: red summary on Settings + **!** in app bar.
+- Detail: [SYNC_BEHAVIOR.md](SYNC_BEHAVIOR.md).
+
+## Reports
+
+Per-vehicle summary, last-5 full-fill legs, expenses, all fills. Row currency respected; mixed currencies show per-currency subtotals (no FX). See [REPORTS_METRICS.md](REPORTS_METRICS.md).
+
+## Navigation map
+
+See [NAVIGATION_MAP.md](NAVIGATION_MAP.md).
