@@ -230,6 +230,7 @@ FILES=(
     "docs/specs/OPERATIONAL_HANDBOOK.md"
     "docs/ENVIRONMENT_SETUP.md"
     "docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md"
+    "docs/reference/MERGE_POSTMORTEM_IMPROVE_PUMP_CLASSIFICATION.md"
     # New for Grok CLI parallel support (added per approved plan)
     "AGENT_MANDATES.md"
     "AGENTS.md"

@@ -316,3 +316,10 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Untracked grok-install; gitignore host installers; ground_truth* kept (latest-report uses them)
 - Deleted untracked processed_ground_truth.json / .orig backups
 
+
+## 2026-07-16 - merge-branch-into-master: FF path + false-success fixes
+
+- Backport master return-1 fixes; FF index path; clear partial index; no englog worktree-sync before git merge
+- assert_staged_feature_files (eng-log-only stage = FAILED)
+- Mandate + master-merge skill post-merge gate; postmortem on orch
+
