@@ -835,3 +835,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 ## 2026-07-16 - Full manual URL without GitHub login
 - Point Help/About at public raw.githubusercontent.com URL (no account)
 - Absolute image URLs in user-manual.md for raw view; centralize link helper
+
+## 2026-07-16 - Local PR prepared (instruction / user manual)
+- History cleaned: 3 logical commits; backup-instruction at pre-cleanup tip
+- ./generate_pr.sh → dev-ai-interaction/PRs/PR-instruction.md
+- instruction/builds at f92f2282; ready for Master review/merge
+- Continue on same branch OK until merge; after merge use new branch
