@@ -841,3 +841,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - ./generate_pr.sh → dev-ai-interaction/PRs/PR-instruction.md
 - instruction/builds at f92f2282; ready for Master review/merge
 - Continue on same branch OK until merge; after merge use new branch
+
+## 2026-07-16 - Post-merge: instruction rebased/reset onto master
+- Master tip abda44ef (Merge branch instruction into master)
+- instruction fully contained in master; git reset --hard master
+- Session continues on instruction at post-merge tip for next planning cycle
+- instruction/builds retargeted via ./build_app
