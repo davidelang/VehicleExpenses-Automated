@@ -793,3 +793,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - ExperimentPumpScreen + OcrHarness + PumpCostVolUtils prune via settings (Quick Fill reads maxRedBoxes).
 - SettingsScreen: max red boxes always visible; Y-band + ratio fields under experiment screens.
 - classifyCostVolFromBoxOcr unchanged (selector experiments continue in sim).
+
+## 2026-07-16 - role_band in app + local PR prepared
+
+- **Activity:** Ported sim `role_band` to `PumpRoleBandClassifier.kt`; wired `classifyCostVolFromBoxOcr`; ratio defaults 2/30; build green.
+- **History:** 2 logical commits; `backup-improve-pump-classification` @ 8833b5d4.
+- **PR:** `dev-ai-interaction/PRs/PR-improve-pump-classification.md` — ready for Master review/merge.
