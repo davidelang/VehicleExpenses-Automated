@@ -391,7 +391,7 @@ fun SettingsScreen(navController: NavHostController) {
             Text("Pump OCR (advanced)", style = MaterialTheme.typography.titleSmall)
             Text(
                 "Label Y-band uses smallest value-cluster rect height × extra fraction (resolution-independent). " +
-                    "Ratio bands apply when experimental pairing is enabled.",
+                    "Ratio lo/hi are band-gated extreme checks (not a target $/gal).",
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedTextField(

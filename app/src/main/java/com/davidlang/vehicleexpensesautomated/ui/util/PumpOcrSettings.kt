@@ -22,8 +22,9 @@ object PumpOcrSettings {
     /** Extend label↔value Y band by this fraction of the smallest value-cluster rect height (resolution-independent). */
     const val DEFAULT_LABEL_Y_BAND_EXTRA_FRACTION = 0.15f
 
+    /** Band-gated floor $/gal (below any plausible pump price) and high-ratio confusion cap. */
     const val DEFAULT_RATIO_BAND_LO = 2.0f
-    const val DEFAULT_RATIO_BAND_HI = 6.0f
+    const val DEFAULT_RATIO_BAND_HI = 30.0f
     const val MIN_RATIO_BAND = 0.5f
     const val MAX_RATIO_BAND = 30.0f
 
