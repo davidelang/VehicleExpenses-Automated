@@ -6,8 +6,9 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 # Vehicle Expenses Automated — User Guide (condensed)
 
-**Full illustrated manual:** [docs/user-manual.md](../user-manual.md)  
-**On device:** Menu → **Help** (quick start) · Menu → **About** (version + manual link)
+**Full illustrated manual (HTML for browsers):** [docs/user-manual.html](../user-manual.html)  
+**Edit source:** [docs/user-manual.md](../user-manual.md) — regenerate HTML + assets with `./scripts/render-user-manual.sh` (see [USER_MANUAL_BUILD.md](USER_MANUAL_BUILD.md))  
+**On device:** Menu → **Help** (quick start) · Menu → **About** / Help → full manual (in-app HTML + screenshots)
 
 This file is a short reference for everyday use and sync behavior. Prefer the full manual for first-time setup with screenshots.
 
@@ -46,7 +47,7 @@ This file is a short reference for everyday use and sync behavior. Prefer the fu
 - **Offline first** — add fills and receipts with no network; sync is background.
 - **Data (tabular):** Google Sheets, Excel, EtherCalc; Other → Baserow, NocoDB, Airtable, PocketBase, Supabase, Firebase, Zoho Sheet (+ deferred OnlyOffice/Collabora).
 - **Photos:** Google Drive, OneDrive, S3, Other (rclone: WebDAV, SFTP, …).
-- Full detail + setup screenshots: [user-manual.md § Backups](../user-manual.md#backups-and-multi-device-sync). Self-host: [self-host/INDEX.md](self-host/INDEX.md).
+- Full detail + setup screenshots: [user-manual.html § Backups](../user-manual.html#backups-and-multi-device-sync). Self-host: [self-host/INDEX.md](self-host/INDEX.md).
 
 ## Google Sheets / Drive (quick)
 

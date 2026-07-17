@@ -5,7 +5,7 @@ This is the **source of truth** for bringing up Vehicle Expenses Automated:
 1. **Plain app environment** — clean `git clone` of `master` → successful `./build_app` / Gradle assemble.
 2. **Full multi-worktree environment** — orchestration root + `master/` + `agent-N/` + shared sandbox (current primary workflow).
 
-Related docs: `docs/specs/PERMISSIONS_MODEL.md`, `README-multi-agent.md`, `docs/specs/OPERATIONAL_HANDBOOK.md` (agent protocol, not host bootstrap).
+Related docs: `docs/specs/PERMISSIONS_MODEL.md`, `README-multi-agent.md`, `docs/specs/OPERATIONAL_HANDBOOK.md` (agent protocol, not host bootstrap). **User manual (edit Markdown → render HTML for browsers/app):** `docs/reference/USER_MANUAL_BUILD.md` (`./scripts/render-user-manual.sh`).
 
 ---
 

@@ -4,6 +4,7 @@ Pull requests welcome!
 
 - **Build / environment setup (plain clone + multi-worktree):** [docs/ENVIRONMENT_SETUP.md](docs/ENVIRONMENT_SETUP.md)
 - **Architecture & permissions:** [docs/specs/ARCHITECTURE.md](docs/specs/ARCHITECTURE.md), [docs/specs/PERMISSIONS_MODEL.md](docs/specs/PERMISSIONS_MODEL.md)
+- **Illustrated user manual (HTML for browsers, Markdown is edit source):** [docs/reference/USER_MANUAL_BUILD.md](docs/reference/USER_MANUAL_BUILD.md) — after editing `docs/user-manual.md`, run `./scripts/render-user-manual.sh` and commit HTML + assets
 
 ## Agent Collaboration (Grok, Gemini CLI, Antigravity)
 
