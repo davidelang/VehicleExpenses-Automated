@@ -841,3 +841,22 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - ./generate_pr.sh → dev-ai-interaction/PRs/PR-instruction.md
 - instruction/builds at f92f2282; ready for Master review/merge
 - Continue on same branch OK until merge; after merge use new branch
+
+## 2026-07-16 - Post-merge: instruction rebased/reset onto master
+- Master tip abda44ef (Merge branch instruction into master)
+- instruction fully contained in master; git reset --hard master
+- Session continues on instruction at post-merge tip for next planning cycle
+- instruction/builds retargeted via ./build_app
+
+## 2026-07-16 - Illustrated HTML user manual (screenshots in browser)
+- raw .md is plain text; generate docs/user-manual.html with images
+- UserManualDocs opens public HTML via jsDelivr (no GitHub login, images render)
+
+## 2026-07-16 - Browser manual is HTML (not raw markdown)
+- docs/user-manual.md remains edit source; docs/user-manual.html is browser-facing with screenshots
+- Add scripts/render-user-manual.sh; regenerate HTML + asset package; USER_GUIDE points to HTML
+
+## 2026-07-16 - Document HTML manual pipeline; render; local PR
+- docs/reference/USER_MANUAL_BUILD.md + CONTRIBUTING / ENVIRONMENT_SETUP / USER_GUIDE / project-facts
+- ./scripts/render-user-manual.sh then commit outputs
+- prepare local PR-instruction for master update
