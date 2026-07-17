@@ -7,7 +7,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 # Vehicle Expenses Automated — User Guide (condensed)
 
 **Full illustrated manual (HTML for browsers):** [docs/user-manual.html](../user-manual.html)  
-**Edit source:** [docs/user-manual.md](../user-manual.md) (regenerate HTML with `./scripts/render-user-manual.sh`)  
+**Edit source:** [docs/user-manual.md](../user-manual.md) — regenerate HTML + assets with `./scripts/render-user-manual.sh` (see [USER_MANUAL_BUILD.md](USER_MANUAL_BUILD.md))  
 **On device:** Menu → **Help** (quick start) · Menu → **About** / Help → full manual (in-app HTML + screenshots)
 
 This file is a short reference for everyday use and sync behavior. Prefer the full manual for first-time setup with screenshots.

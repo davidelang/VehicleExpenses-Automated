@@ -855,3 +855,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 ## 2026-07-16 - Browser manual is HTML (not raw markdown)
 - docs/user-manual.md remains edit source; docs/user-manual.html is browser-facing with screenshots
 - Add scripts/render-user-manual.sh; regenerate HTML + asset package; USER_GUIDE points to HTML
+
+## 2026-07-16 - Document HTML manual pipeline; render; local PR
+- docs/reference/USER_MANUAL_BUILD.md + CONTRIBUTING / ENVIRONMENT_SETUP / USER_GUIDE / project-facts
+- ./scripts/render-user-manual.sh then commit outputs
+- prepare local PR-instruction for master update

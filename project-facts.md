@@ -30,7 +30,7 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - Reports metrics ($/mi, volume display): `docs/reference/REPORTS_METRICS.md`
 - Self-hosted sync setup cheatsheets: `docs/reference/self-host/` (INDEX, `photos/*`, `tabular/*`, `vendor-links/VENDOR_LINKS.md`); in-app links via `ui/util/SyncSetupDocs.kt`
 - Sync behavior reference (recovery, duplicates, LWW): `docs/reference/SYNC_BEHAVIOR.md`; user summary in `docs/reference/USER_GUIDE.md` sync section
-- End-user manual: **edit** `docs/user-manual.md`; **browsers/app open HTML** (`docs/user-manual.html`, assets `app/src/main/assets/user-manual/`). Regenerate with `./scripts/render-user-manual.sh` (or `scripts/render_user_manual.py`). Never send end users to raw `.md` URLs. Help/About → `UserManualDocs.openFullManual` → `UserManualActivity` WebView. Online: jsDelivr `docs/user-manual.html` on master (`UserManualDocs.ONLINE_HTML_URL`).
+- End-user manual: **edit** `docs/user-manual.md`; **browsers/app open HTML** (`docs/user-manual.html`, assets `app/src/main/assets/user-manual/`). Pipeline doc: `docs/reference/USER_MANUAL_BUILD.md`. Regenerate: `./scripts/render-user-manual.sh`. Never send end users to raw `.md` URLs. Help/About → `UserManualDocs.openFullManual` → `UserManualActivity` WebView. Online: jsDelivr `docs/user-manual.html` on master (`UserManualDocs.ONLINE_HTML_URL`).
 
 ## At worktree root
 - `MASTER_AGENT_MANDATE.md` — master worktree only: PR review + merge integration protocol (special handling for ENGINEERING_LOG, TODO, project-facts)
