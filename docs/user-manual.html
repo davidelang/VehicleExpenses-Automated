@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vehicle Expenses Automated — User Manual</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height: 1.5;
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 3rem;
+      color: #111;
+      background: #fafafa;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #eee; background: #121212; }
+      a { color: #8ab4f8; }
+      table { border-color: #444; }
+      th, td { border-color: #444; }
+      code { background: #2a2a2a; }
+      pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
+    }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
+    th { background: rgba(0,0,0,0.05); text-align: left; }
+    code { font-size: 0.9em; padding: 0.1em 0.3em; border-radius: 4px; background: #eee; }
+    pre { padding: 0.75rem; overflow: auto; border-radius: 8px; background: #f0f0f0; }
+    pre code { background: transparent; padding: 0; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    .note { font-size: 0.9rem; opacity: 0.85; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <h1 id="vehicle-expenses-automated-user-manual">Vehicle Expenses Automated — User Manual</h1>
+<blockquote>
+<p><strong>Edit source (Markdown).</strong> Browsers and the in-app reader open the <strong>rendered HTML</strong>:<br />
+- Web: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (regenerate with <code>./scripts/render-user-manual.sh</code>)<br />
+- App: Help / About → full manual (bundled HTML + screenshots)</p>
+<p>Do not point end users at raw <code>.md</code> URLs — browsers show plain text only.</p>
+</blockquote>
+<p>Camera-first tracking for fuel fill-ups and vehicle expenses, with optional multi-device sync and backup under <strong>your</strong> cloud accounts.</p>
+<p>This is the <strong>full manual</strong> (screenshots + every step). On the phone, <strong>Menu → Help</strong> is a shorter getting-started guide.</p>
+<p><strong>Not covered here:</strong> Import Old Pictures, Alignment Experiment, and Pump Experiment (developer / advanced tools).</p>
+<hr />
+<h2 id="table-of-contents">Table of contents</h2>
+<ol>
+<li><a href="#what-you-need">What you need</a></li>
+<li><a href="#icons-at-a-glance">Icons at a glance</a></li>
+<li><a href="#open-the-menu">Open the menu</a></li>
+<li><a href="#first-time-setup-manage-vehicles">First-time setup: Manage Vehicles</a></li>
+<li><a href="#backups-and-multi-device-sync">Backups and multi-device sync</a></li>
+<li><a href="#quick-fill-up-fuel">Quick Fill-up (fuel)</a></li>
+<li><a href="#expenses">Expenses</a></li>
+<li><a href="#reports--charts">Reports &amp; Charts</a></li>
+<li><a href="#settings-local-preferences">Settings (local preferences)</a></li>
+<li><a href="#help--about">Help &amp; About</a></li>
+<li><a href="#related-docs">Related docs</a></li>
+</ol>
+<hr />
+<h2 id="what-you-need">What you need</h2>
+<ul>
+<li>Android phone or tablet.</li>
+<li>For best OCR: a clear view of your <strong>dashboard odometer</strong> and <strong>pump totals</strong> (or type the numbers by hand).</li>
+<li>Optional: accounts <strong>you control</strong> for spreadsheet data and/or photo backup (see <a href="#backups-and-multi-device-sync">Backups and multi-device sync</a>).</li>
+</ul>
+<hr />
+<h2 id="icons-at-a-glance">Icons at a glance</h2>
+<p>These appear on the main screens. Knowing them saves a lot of hunting.</p>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>Icon / control</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Top bar</td>
+<td><strong>☰ Menu</strong> (hamburger)</td>
+<td>Opens the navigation drawer</td>
+</tr>
+<tr>
+<td>Top bar</td>
+<td><strong>!</strong> (red)</td>
+<td>A spreadsheet or photo destination failed recently — open <strong>Settings</strong> to fix</td>
+</tr>
+<tr>
+<td>Settings sub-pages</td>
+<td><strong>←</strong></td>
+<td>Back to Settings</td>
+</tr>
+<tr>
+<td>Quick Fill</td>
+<td><strong>White circle</strong> (shutter)</td>
+<td>Capture odometer or pump display for OCR</td>
+</tr>
+<tr>
+<td>Quick Fill</td>
+<td><strong>Disk / Save</strong></td>
+<td>Save the fill-up (needs a vehicle and at least one of odo / volume / cost)</td>
+</tr>
+<tr>
+<td>Quick Fill</td>
+<td><strong>↕ arrows</strong> (mode switch)</td>
+<td>Toggle <strong>odometer mode</strong> vs <strong>pump (cost/volume) mode</strong>. Green border highlights the active field group</td>
+</tr>
+<tr>
+<td>Quick Fill</td>
+<td><strong>↔ arrows</strong> (between cost &amp; volume)</td>
+<td>Swap cost and volume if OCR put them in the wrong fields</td>
+</tr>
+<tr>
+<td>Quick Fill</td>
+<td><strong>Zoom 1x / …</strong></td>
+<td>Camera zoom ratios when the lens supports them</td>
+</tr>
+<tr>
+<td>Quick Fill (after capture)</td>
+<td><strong>Refresh</strong> on main button</td>
+<td>Discard preview and return to live camera</td>
+</tr>
+<tr>
+<td>Quick Fill (while processing)</td>
+<td><strong>X</strong> on main button</td>
+<td>Cancel in-progress capture/OCR</td>
+</tr>
+<tr>
+<td>Expense</td>
+<td><strong>Save</strong></td>
+<td>Save the expense</td>
+</tr>
+<tr>
+<td>Expense</td>
+<td><strong>Shutter circle</strong></td>
+<td>Take a receipt photo</td>
+</tr>
+<tr>
+<td>Expense</td>
+<td><strong>Gallery</strong></td>
+<td>Pick a receipt image from the library</td>
+</tr>
+<tr>
+<td>Expense</td>
+<td><strong>Retake</strong></td>
+<td>Clear current receipt photo and shoot again</td>
+</tr>
+<tr>
+<td>Expense / Manage Vehicles</td>
+<td><strong>+ / −</strong> FABs</td>
+<td>Zoom the photo preview</td>
+</tr>
+<tr>
+<td>Landmarks dialog</td>
+<td><strong>Edit OCR</strong></td>
+<td>Correct or add landmark text the engines missed</td>
+</tr>
+<tr>
+<td>Spreadsheet / Photo forms</td>
+<td><strong>🔍 Search</strong></td>
+<td>Browse Google Drive for a sheet or folder (after sign-in)</td>
+</tr>
+</tbody>
+</table>
+<p>Currency symbols on cost fields and <strong>G/L</strong> on volume fields are tappable: open a small menu to change currency or gallons vs liters for that entry.</p>
+<hr />
+<h2 id="open-the-menu">Open the menu</h2>
+<ol>
+<li>Tap <strong>☰</strong> at the top left.</li>
+<li>Choose a page.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Navigation drawer" src="user-manual/images/01-drawer.jpg" /></p>
+<p><strong>In-scope pages:</strong> Quick Fill-up · Manage Vehicles · New Expense Entry · Expense List · Reports &amp; Charts · Settings · Help · About.</p>
+<hr />
+<h2 id="first-time-setup-manage-vehicles">First-time setup: Manage Vehicles</h2>
+<p>OCR and <strong>automatic vehicle matching</strong> work best after you register each vehicle with a <strong>reference dashboard photo</strong>, crop the odometer, and run <strong>Discovery</strong> so the app stores landmark text for that dash. (How landmarks are chosen and matched will be documented in more detail in a later update.)</p>
+<h3 id="open-manage-vehicles">Open Manage Vehicles</h3>
+<p>Menu → <strong>Manage Vehicles</strong>. Choose a vehicle (or <strong>Add New Vehicle</strong>).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Manage Vehicles with reference dash, crops, and discovery" src="user-manual/images/r1-manage-vehicles-crops.jpg" /></p>
+<h3 id="add-or-edit-a-vehicle">Add or edit a vehicle</h3>
+<ol>
+<li>Open the <strong>Vehicle</strong> dropdown → pick a vehicle or <strong>Add New Vehicle</strong>.</li>
+<li>Capture or pick a clear <strong>reference dash photo</strong> (full instrument cluster, well lit, phone roughly square-on). Use <strong>Take Photo</strong> or <strong>Gallery</strong>.</li>
+<li>Draw crops:<br />
+   - <strong>Odo Crop</strong> — rectangle tightly around the odometer digits (button shows <strong>Done Odo</strong> while that mode is active).<br />
+   - <strong>Ignore Crop</strong> — optional region to ignore (clock, radio, etc.).<br />
+   - <strong>Edit Crops</strong> — adjust existing rectangles.</li>
+<li>Tap <strong>Run Discovery</strong> — multi-engine OCR finds landmark words outside the crops.</li>
+<li>Review with <strong>Show Landmarks</strong>. Use <strong>Edit OCR</strong> to fix misreads or <strong>add</strong> text that was missed.</li>
+<li>Fill <strong>Vehicle Name</strong> (required), plus make/model/year/plate as you like.</li>
+<li>Tap <strong>Create Vehicle</strong> or <strong>Save Changes</strong> (requires name + reference photo for a new vehicle).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Add new vehicle form fields" src="user-manual/images/03b-manage-vehicles-new.jpg" /></p>
+<h3 id="landmarks-fix-what-discovery-missed">Landmarks: fix what Discovery missed</h3>
+<p>After <strong>Show Landmarks</strong>, scroll the list and correct values. Engines sometimes miss small digits (for example a clock <strong>60</strong> on the bottom right of the cluster). Use <strong>Edit OCR</strong> to add or fix them so vehicle identity stays reliable.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Landmarks dialog — review and edit OCR" src="user-manual/images/r2-manage-vehicles-landmarks.jpg" /></p>
+<h3 id="typing-without-a-perfect-photo">Typing without a perfect photo</h3>
+<p>You can still use the app by selecting a vehicle and <strong>typing</strong> odometer, volume, and cost on Quick Fill — OCR is optional for every field. Gallery import works for the reference dash photo when you prefer not to shoot in-app.</p>
+<p><strong>Tip:</strong> After spreadsheet sync, vehicle definitions (crops, landmarks) live in the local database — you do not need to re-open Manage Vehicles for Quick Fill to use them.</p>
+<hr />
+<h2 id="backups-and-multi-device-sync">Backups and multi-device sync</h2>
+<p>The app is built so <strong>several phones or tablets can share the same fleet data</strong>, and so you can keep a <strong>copy of your data and photos off the device</strong>. That is done with destinations <strong>you</strong> configure under <strong>your</strong> accounts or <strong>your</strong> self-hosted servers — not a company-run “Vehicle Expenses cloud” that other people can see.</p>
+<h3 id="what-runs-where">What runs where</h3>
+<table>
+<thead>
+<tr>
+<th>Kind</th>
+<th>What it stores</th>
+<th>Typical use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Spreadsheet / tabular sync</strong></td>
+<td>Vehicles, fuel fills, expenses (rows and tabs)</td>
+<td>Multi-device merge + structured backup</td>
+</tr>
+<tr>
+<td><strong>Photo backup</strong></td>
+<td>Binary images (dash/pump/receipt/reference photos)</td>
+<td>Photo backup + restore missing files</td>
+</tr>
+</tbody>
+</table>
+<p>You can configure <strong>multiple destinations</strong> of each kind (soft cap per type). Manual <strong>Sync now</strong> and <strong>background</strong> workers run the enabled ones.</p>
+<h3 id="offline-first">Offline first</h3>
+<ul>
+<li><strong>No network is required</strong> to add a fill-up, expense, or receipt. Everything is saved <strong>locally first</strong>.</li>
+<li>When the network is available, sync and photo backup run as <strong>background tasks</strong> (on a schedule you set, and when you tap <strong>Sync now</strong>). Failures show as red text under the Settings rows and a <strong>!</strong> in the app title bar.</li>
+</ul>
+<h3 id="your-accounts-only">Your accounts only</h3>
+<p>Sign-in and tokens stay on the device for the providers you choose (Google, Microsoft, S3 keys, self-hosted URLs, and so on). Destinations are under <strong>full control of the user</strong> — your Google account, your OneDrive, your MinIO bucket, your EtherCalc host, etc. Nothing is shared with other Vehicle Expenses users through a shared backend.</p>
+<h3 id="supported-targets-data-spreadsheet-tabular">Supported targets — data (spreadsheet / tabular)</h3>
+<p>Configured under <strong>Settings → Spreadsheet sync</strong>. First-class picker options:</p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Sheets</strong></td>
+<td>Common default; tabs for Vehicles, Expenses, and per-vehicle fuel</td>
+</tr>
+<tr>
+<td><strong>Excel</strong></td>
+<td>Microsoft workbook via Graph / OneDrive-style binding</td>
+</tr>
+<tr>
+<td><strong>EtherCalc</strong></td>
+<td>Self-hosted collaborative spreadsheet rooms</td>
+</tr>
+<tr>
+<td><strong>Other →</strong> implemented backends</td>
+<td><strong>Baserow</strong>, <strong>NocoDB</strong>, <strong>Airtable</strong>, <strong>PocketBase</strong>, <strong>Supabase</strong>, <strong>Firebase</strong>, <strong>Zoho Sheet</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Deferred / not headless yet (listed under Other but not fully implemented): OnlyOffice, Collabora. See also <a href="reference/self-host/INDEX.md">self-host index</a>.</p>
+<p>CSV <strong>export/import</strong> (ZIP of the same tab layout) is available from Settings as a portable backup, independent of live sync.</p>
+<h3 id="supported-targets-photos-image-backup">Supported targets — photos (image backup)</h3>
+<p>Configured under <strong>Settings → Photo backup</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Drive</strong></td>
+<td>Folder you choose (browse or paste URL)</td>
+</tr>
+<tr>
+<td><strong>OneDrive</strong></td>
+<td>Microsoft account + path prefix</td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td>AWS, Wasabi, Cloudflare R2, MinIO, and other S3-compatible endpoints</td>
+</tr>
+<tr>
+<td><strong>Other</strong></td>
+<td>rclone-backed storage (e.g. WebDAV, SFTP, and other curated remotes available in the in-app picker)</td>
+</tr>
+</tbody>
+</table>
+<p>Setup cheatsheets for self-hosted photo and tabular targets: <a href="reference/self-host/INDEX.md">self-host index</a>.</p>
+<h3 id="multi-device-behavior-short">Multi-device behavior (short)</h3>
+<ul>
+<li>Rows merge by <strong>Sync ID</strong> with <strong>last-write-wins</strong> on <strong>Updated</strong> timestamps.</li>
+<li>Deletes are soft; a newer edit on another device can restore a row.</li>
+<li>Entering the <strong>same fill twice</strong> on two devices creates <strong>two rows</strong> — delete the extra when you notice.</li>
+<li>More detail: <a href="#sync-behavior-notes">Sync behavior notes</a> and <a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a>.</li>
+</ul>
+<h3 id="example-add-google-sheets-data">Example: add Google Sheets (data)</h3>
+<ol>
+<li><strong>Settings → Spreadsheet sync</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Spreadsheet sync list" src="user-manual/images/08-spreadsheet-sync.jpg" /></p>
+<ol start="2">
+<li>Tap <strong>Add spreadsheet destination</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Provider picker" src="user-manual/images/09-spreadsheet-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Choose <strong>Google Sheets</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Sheets form" src="user-manual/images/10-spreadsheet-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Sign in with Google</strong> → display name → <strong>Sheet URL</strong> or <strong>🔍</strong> browse/create → schedule options → enable → save.</li>
+<li><strong>Sync now</strong> once to create/update tabs: <code>Vehicles</code>, <code>Expenses</code>, <code>Fuel - {vehicle name}</code>.</li>
+</ol>
+<h3 id="example-add-google-drive-photos">Example: add Google Drive (photos)</h3>
+<ol>
+<li><strong>Settings → Photo backup</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo backup list" src="user-manual/images/11-photo-backup.jpg" /></p>
+<ol start="2">
+<li>Tap <strong>Add photo destination</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo provider picker" src="user-manual/images/12-photo-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Choose <strong>Google Drive</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Drive form" src="user-manual/images/13-photo-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Sign in with Google (Drive)</strong> → optional folder URL/browse → enable → save → <strong>Sync now</strong>.</li>
+</ol>
+<p>Manual <strong>Sync now</strong> for photos is a full pass; background backup typically processes <strong>pending-only</strong> uploads on a schedule.</p>
+<h3 id="sync-behavior-notes">Sync behavior notes</h3>
+<ul>
+<li>After app upgrade you may briefly see <strong>“Updating database after upgrade…”</strong> (local sync-id backfill).</li>
+<li>If a sync is interrupted, the next <strong>successful</strong> sync re-merges and repairs remote tabs.</li>
+<li>Failures: red summary on Settings rows + <strong>!</strong> in the app bar.</li>
+</ul>
+<hr />
+<h2 id="quick-fill-up-fuel">Quick Fill-up (fuel)</h2>
+<p>This is the <strong>home screen</strong> when you open the app.</p>
+<h3 id="vehicle-selection-usually-automatic">Vehicle selection (usually automatic)</h3>
+<p>You do <strong>not</strong> need to pick the vehicle first. When vehicles have <strong>landmarks</strong> set up in Manage Vehicles, Quick Fill <strong>auto-detects which vehicle</strong> from the dash image after you capture the odometer. You can still open the <strong>Vehicle</strong> dropdown to override if needed.</p>
+<h3 id="aim-at-the-odometer">Aim at the odometer</h3>
+<p>Stay in odometer mode and frame the cluster. Instruction: <em>Aim at odometer. Tap shutter to capture.</em></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — live camera on odometer" src="user-manual/images/r3-quickfill-odo-live.jpg" /></p>
+<h3 id="after-the-odometer-shutter">After the odometer shutter</h3>
+<p>OCR fills <strong>Odo</strong> and tries to match the vehicle from landmarks (review both if needed). The main button becomes <strong>Retry</strong> to re-shoot. Instruction summarizes the reading.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — odometer OCR result" src="user-manual/images/r4-quickfill-odo-result.jpg" /></p>
+<h3 id="pump-mode-cost-and-volume">Pump mode (cost and volume)</h3>
+<ol>
+<li>Tap <strong>↕</strong> to switch to pump mode: <em>Aim at pump display (cost/volume). Tap shutter.</em></li>
+<li>Capture the pump totals. Cost and volume fields fill; use <strong>↔</strong> if they are swapped.</li>
+<li>Tap currency or <strong>G/L</strong> if needed, then <strong>Save</strong> (disk). Empty fields make a <strong>partial fill</strong> (still allowed).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — pump OCR result" src="user-manual/images/r5-quickfill-pump-result.jpg" /></p>
+<p>You stay on Quick Fill for the next stop (fields clear after save). Work fully <strong>offline</strong>; sync runs later in the background when configured.</p>
+<h3 id="manual-entry-no-camera-bad-ocr">Manual entry (no camera / bad OCR)</h3>
+<ol>
+<li>Tap <strong>Odo</strong>, <strong>cost</strong>, or <strong>volume</strong> and type values (portrait uses the system keyboard; landscape uses an on-screen keypad).</li>
+<li>Choose or confirm the <strong>Vehicle</strong> if auto-detect did not run.</li>
+<li>Save as above.</li>
+</ol>
+<h3 id="modes-and-borders">Modes and borders</h3>
+<ul>
+<li><strong>Green border</strong> around vehicle+odo → capturing/editing odometer.</li>
+<li><strong>Green border</strong> around cost+volume → pump mode.</li>
+<li><strong>Save</strong> stays disabled until a vehicle is selected and at least one of odo/cost/volume has data, and OCR is not still running.</li>
+</ul>
+<p>On-screen tip (below the instruction line): <em>Shutter = capture · Disk = save · ↕ = odo/pump mode · ↔ = swap cost/volume.</em></p>
+<hr />
+<h2 id="expenses">Expenses</h2>
+<h3 id="new-expense-entry">New Expense Entry</h3>
+<p>Menu → <strong>New Expense Entry</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="New expense form and camera controls" src="user-manual/images/r6-new-expense.jpg" /></p>
+<ol>
+<li><strong>Save</strong> (disk), <strong>shutter</strong> (receipt photo), or <strong>gallery</strong> (pick image).</li>
+<li>Fill <strong>Date</strong>, <strong>Vehicle</strong>, <strong>Vendor</strong>, <strong>Description</strong>, <strong>Amount</strong> (currency symbol tappable), <strong>Category</strong>, optional <strong>Odometer</strong>.</li>
+<li>Multi-page receipts: capture additional pages if the UI offers paging (page 0 is the primary receipt).</li>
+<li><strong>Save</strong> to store (local first; photo backup and spreadsheet sync happen in the background when configured).</li>
+</ol>
+<h3 id="expense-list">Expense List</h3>
+<p>Menu → <strong>Expense List</strong> — browse past non-fuel expenses; open an item to edit.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Expense list" src="user-manual/images/05-expense-list.jpg" /></p>
+<hr />
+<h2 id="reports-charts">Reports &amp; Charts</h2>
+<p>Menu → <strong>Reports &amp; Charts</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Reports" src="user-manual/images/06-reports.jpg" /></p>
+<ul>
+<li><strong>Summary</strong> per vehicle (spend, economy where calculable).</li>
+<li><strong>Last 5 full fills</strong> — legs between complete fill-ups.</li>
+<li><strong>Expenses</strong> — non-fuel categories.</li>
+<li><strong>All fills (by date)</strong> — full fuel history.</li>
+</ul>
+<p>Money uses each row’s currency when set. Mixed-currency totals show <strong>per-currency subtotals</strong> (no silent FX conversion). $/mi is n/a when currencies are mixed.</p>
+<hr />
+<h2 id="settings-local-preferences">Settings (local preferences)</h2>
+<p>Menu → <strong>Settings</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Settings" src="user-manual/images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="More settings (scrolled)" src="user-manual/images/07b-settings-more.jpg" /></p>
+<p>For <strong>Spreadsheet sync</strong> and <strong>Photo backup</strong>, see <a href="#backups-and-multi-device-sync">Backups and multi-device sync</a>. The summary rows open those destination lists and support <strong>Sync now</strong>.</p>
+<h3 id="local-preferences-common">Local preferences (common)</h3>
+<ul>
+<li><strong>Save Fuel Receipt Photos</strong> / <strong>Save Expense Photos Locally</strong> — keep images on the device (may request Photos permission).</li>
+<li><strong>Play Shutter Sound</strong></li>
+<li><strong>Currency</strong> / <strong>Volume unit</strong> — app defaults (system or explicit). Changing volume unit with existing fuel data may offer a convert dialog.</li>
+<li><strong>Dark mode</strong></li>
+<li><strong>Debug Quick Fill</strong> / <strong>Show experiment screens (dev)</strong> — advanced; leave off for daily use. Experiment screens are not documented here.</li>
+</ul>
+<p>CSV <strong>export/import</strong> (ZIP of Vehicles / Expenses / Fuel tabs) is available from Settings when offered by the current build.</p>
+<hr />
+<h2 id="help-about">Help &amp; About</h2>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Help" src="user-manual/images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="About" src="user-manual/images/15-about.jpg" /></p>
+<ul>
+<li><strong>Help</strong> — on-device quick start + link to this manual + self-host setup index.</li>
+<li><strong>About</strong> — version, licenses, GitHub, this manual.</li>
+</ul>
+<hr />
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><a href="reference/USER_GUIDE.md">USER_GUIDE.md</a> — condensed reference</li>
+<li><a href="reference/self-host/INDEX.md">self-host/INDEX.md</a> — self-hosted photo/tabular setup</li>
+<li><a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> — merge, recovery, duplicates</li>
+<li><a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a> — economy metrics detail</li>
+</ul>
+</body>
+</html>
