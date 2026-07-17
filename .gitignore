@@ -103,6 +103,9 @@ alignment_results_*.json
 !app/src/main/assets/tflite/
 !app/src/main/assets/tflite/paddle/
 !app/src/main/assets/tflite/paddle/**
+# Offline illustrated user manual (HTML + screenshots)
+!app/src/main/assets/user-manual/
+!app/src/main/assets/user-manual/**
 
 .gemini/
 gha-creds-*.json

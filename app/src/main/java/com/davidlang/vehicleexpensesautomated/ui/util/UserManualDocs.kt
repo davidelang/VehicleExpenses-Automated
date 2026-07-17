@@ -1,25 +1,35 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
+import android.content.Intent
+import com.davidlang.vehicleexpensesautomated.ui.help.UserManualActivity
 
 /**
- * Public full user manual (illustrated).
+ * Full illustrated user manual.
  *
- * Uses [raw.githubusercontent.com] so opening the manual does **not** require a GitHub
- * account (public repo content). Prefer Custom Tabs via [SyncSetupDocs.open] so the
- * GitHub mobile app does not intercept and force a login wall.
+ * Opens an **in-app** HTML copy (assets) with screenshots. No network and no GitHub
+ * login are required. Source of truth for content remains `docs/user-manual.md`
+ * (and generated `docs/user-manual.html`); assets are packaged for offline reading.
  *
- * Image paths in [docs/user-manual.md] use the same raw host so screenshots load when
- * the markdown is viewed outside the GitHub web UI.
+ * Optional online HTML (after publish to master), for sharing outside the app:
+ * [ONLINE_HTML_URL].
  */
 object UserManualDocs {
-    private const val REPO_RAW =
-        "https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master"
+    private const val REPO = "davidelang/VehicleExpenses-Automated"
 
-    /** Full illustrated manual (Markdown, public, no GitHub login). */
-    fun fullManualUrl(): String = "$REPO_RAW/docs/user-manual.md"
+    /**
+     * Public HTML build served via jsDelivr (renders images; no GitHub login).
+     * Available only after `docs/user-manual.html` is on the public master branch.
+     */
+    const val ONLINE_HTML_URL =
+        "https://cdn.jsdelivr.net/gh/$REPO@master/docs/user-manual.html"
 
     fun openFullManual(context: Context) {
-        SyncSetupDocs.open(context, fullManualUrl())
+        context.startActivity(Intent(context, UserManualActivity::class.java))
+    }
+
+    /** Open the published web HTML (Custom Tabs). Prefer [openFullManual] in-app. */
+    fun openOnlineManual(context: Context) {
+        SyncSetupDocs.open(context, ONLINE_HTML_URL)
     }
 }

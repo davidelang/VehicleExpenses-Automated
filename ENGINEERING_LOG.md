@@ -847,3 +847,7 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - instruction fully contained in master; git reset --hard master
 - Session continues on instruction at post-merge tip for next planning cycle
 - instruction/builds retargeted via ./build_app
+
+## 2026-07-16 - Illustrated HTML user manual (screenshots in browser)
+- raw .md is plain text; generate docs/user-manual.html with images
+- UserManualDocs opens public HTML via jsDelivr (no GitHub login, images render)
