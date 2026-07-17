@@ -865,3 +865,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Cleaned to 2 commits; backup-instruction set
 - PR: dev-ai-interaction/PRs/PR-instruction.md
 - Ask Master: Please review PR-instruction
+
+## 2026-07-16 - Master merge PR-instruction (HTML illustrated manual)
+- Independent review PASS: HTML pipeline, WebView assets, USER_MANUAL_BUILD docs; no experiment/import scope creep
+- Merged instruction (7d8aa877) into master via merge-branch-into-master (FF index path)
+- project-facts: HTML edit/render orientation; missed-fill TODO left open
+- POST-MERGE gate: 34+ feature paths staged including assets and .kt
