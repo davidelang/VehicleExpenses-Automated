@@ -27,7 +27,7 @@ fun HelpScreen(navController: NavHostController? = null) {
     ) {
         Text("Help", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Short on-device guide so you can start immediately. For screenshots and every step, open the full online manual (public link — no GitHub login).",
+            "Short on-device guide so you can start immediately. For screenshots and every step, open the full illustrated manual (bundled in the app — works offline, no GitHub login).",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -1,25 +1,36 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
+import android.content.Intent
+import com.davidlang.vehicleexpensesautomated.ui.help.UserManualActivity
 
 /**
- * Public full user manual (illustrated).
+ * Full illustrated user manual — **HTML**, not raw Markdown.
  *
- * Uses [raw.githubusercontent.com] so opening the manual does **not** require a GitHub
- * account (public repo content). Prefer Custom Tabs via [SyncSetupDocs.open] so the
- * GitHub mobile app does not intercept and force a login wall.
+ * Browsers do not render GitHub raw `.md` as a document with images. Browser-facing
+ * and in-app readers always open **HTML**:
+ * - In-app: packaged assets (`UserManualActivity` WebView) — offline, no login
+ * - Web: [ONLINE_HTML_URL] (`docs/user-manual.html` on master via jsDelivr)
  *
- * Image paths in [docs/user-manual.md] use the same raw host so screenshots load when
- * the markdown is viewed outside the GitHub web UI.
+ * Edit source remains `docs/user-manual.md`. After editing, run
+ * `./scripts/render-user-manual.sh` to refresh HTML + assets.
  */
 object UserManualDocs {
-    private const val REPO_RAW =
-        "https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master"
+    private const val REPO = "davidelang/VehicleExpenses-Automated"
 
-    /** Full illustrated manual (Markdown, public, no GitHub login). */
-    fun fullManualUrl(): String = "$REPO_RAW/docs/user-manual.md"
+    /**
+     * Public **HTML** manual (screenshots render). No GitHub login.
+     * Available after `docs/user-manual.html` is on the public master branch.
+     */
+    const val ONLINE_HTML_URL =
+        "https://cdn.jsdelivr.net/gh/$REPO@master/docs/user-manual.html"
 
     fun openFullManual(context: Context) {
-        SyncSetupDocs.open(context, fullManualUrl())
+        context.startActivity(Intent(context, UserManualActivity::class.java))
+    }
+
+    /** Open published web HTML in Custom Tabs (not raw .md). */
+    fun openOnlineManual(context: Context) {
+        SyncSetupDocs.open(context, ONLINE_HTML_URL)
     }
 }

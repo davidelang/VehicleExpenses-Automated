@@ -48,6 +48,11 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".ui.help.UserManualActivity"
+            android:exported="false"
+            android:label="User Manual"
+            android:parentActivityName=".MainActivity" />
+        <activity
             android:name=".ui.settings.ZohoOAuthRedirectActivity"
             android:exported="true"
             android:launchMode="singleTask">
