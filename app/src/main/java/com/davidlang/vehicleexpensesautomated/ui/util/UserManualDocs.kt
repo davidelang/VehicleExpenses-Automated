@@ -5,21 +5,22 @@ import android.content.Intent
 import com.davidlang.vehicleexpensesautomated.ui.help.UserManualActivity
 
 /**
- * Full illustrated user manual.
+ * Full illustrated user manual — **HTML**, not raw Markdown.
  *
- * Opens an **in-app** HTML copy (assets) with screenshots. No network and no GitHub
- * login are required. Source of truth for content remains `docs/user-manual.md`
- * (and generated `docs/user-manual.html`); assets are packaged for offline reading.
+ * Browsers do not render GitHub raw `.md` as a document with images. Browser-facing
+ * and in-app readers always open **HTML**:
+ * - In-app: packaged assets (`UserManualActivity` WebView) — offline, no login
+ * - Web: [ONLINE_HTML_URL] (`docs/user-manual.html` on master via jsDelivr)
  *
- * Optional online HTML (after publish to master), for sharing outside the app:
- * [ONLINE_HTML_URL].
+ * Edit source remains `docs/user-manual.md`. After editing, run
+ * `./scripts/render-user-manual.sh` to refresh HTML + assets.
  */
 object UserManualDocs {
     private const val REPO = "davidelang/VehicleExpenses-Automated"
 
     /**
-     * Public HTML build served via jsDelivr (renders images; no GitHub login).
-     * Available only after `docs/user-manual.html` is on the public master branch.
+     * Public **HTML** manual (screenshots render). No GitHub login.
+     * Available after `docs/user-manual.html` is on the public master branch.
      */
     const val ONLINE_HTML_URL =
         "https://cdn.jsdelivr.net/gh/$REPO@master/docs/user-manual.html"
@@ -28,7 +29,7 @@ object UserManualDocs {
         context.startActivity(Intent(context, UserManualActivity::class.java))
     }
 
-    /** Open the published web HTML (Custom Tabs). Prefer [openFullManual] in-app. */
+    /** Open published web HTML in Custom Tabs (not raw .md). */
     fun openOnlineManual(context: Context) {
         SyncSetupDocs.open(context, ONLINE_HTML_URL)
     }

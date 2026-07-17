@@ -22,12 +22,15 @@
       th, td { border-color: #444; }
       code { background: #2a2a2a; }
       pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
     }
     h1, h2, h3 { line-height: 1.25; }
     h1 { font-size: 1.75rem; }
-    h2 { font-size: 1.35rem; margin-top: 2rem; border-bottom: 1px solid #ccc; padding-bottom: 0.25rem; }
-    @media (prefers-color-scheme: dark) {
-      h2 { border-bottom-color: #444; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
     }
     table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
     th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
@@ -41,10 +44,16 @@
   </style>
 </head>
 <body>
-  <p class="note">Vehicle Expenses Automated — full illustrated user manual. Source: <code>docs/user-manual.md</code> in the project repository.</p>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
   <h1 id="vehicle-expenses-automated-user-manual">Vehicle Expenses Automated — User Manual</h1>
+<blockquote>
+<p><strong>Edit source (Markdown).</strong> Browsers and the in-app reader open the <strong>rendered HTML</strong>:<br />
+- Web: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (regenerate with <code>./scripts/render-user-manual.sh</code>)<br />
+- App: Help / About → full manual (bundled HTML + screenshots)</p>
+<p>Do not point end users at raw <code>.md</code> URLs — browsers show plain text only.</p>
+</blockquote>
 <p>Camera-first tracking for fuel fill-ups and vehicle expenses, with optional multi-device sync and backup under <strong>your</strong> cloud accounts.</p>
-<p>This is the <strong>full online manual</strong> (screenshots + every step). On the phone, <strong>Menu → Help</strong> is a shorter getting-started guide.</p>
+<p>This is the <strong>full manual</strong> (screenshots + every step). On the phone, <strong>Menu → Help</strong> is a shorter getting-started guide.</p>
 <p><strong>Not covered here:</strong> Import Old Pictures, Alignment Experiment, and Pump Experiment (developer / advanced tools).</p>
 <hr />
 <h2 id="table-of-contents">Table of contents</h2>

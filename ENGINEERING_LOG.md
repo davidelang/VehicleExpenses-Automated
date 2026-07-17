@@ -851,3 +851,7 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 ## 2026-07-16 - Illustrated HTML user manual (screenshots in browser)
 - raw .md is plain text; generate docs/user-manual.html with images
 - UserManualDocs opens public HTML via jsDelivr (no GitHub login, images render)
+
+## 2026-07-16 - Browser manual is HTML (not raw markdown)
+- docs/user-manual.md remains edit source; docs/user-manual.html is browser-facing with screenshots
+- Add scripts/render-user-manual.sh; regenerate HTML + asset package; USER_GUIDE points to HTML

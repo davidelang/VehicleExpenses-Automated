@@ -22,12 +22,15 @@
       th, td { border-color: #444; }
       code { background: #2a2a2a; }
       pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
     }
     h1, h2, h3 { line-height: 1.25; }
     h1 { font-size: 1.75rem; }
-    h2 { font-size: 1.35rem; margin-top: 2rem; border-bottom: 1px solid #ccc; padding-bottom: 0.25rem; }
-    @media (prefers-color-scheme: dark) {
-      h2 { border-bottom-color: #444; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
     }
     table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
     th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
@@ -41,10 +44,16 @@
   </style>
 </head>
 <body>
-  <p class="note">Vehicle Expenses Automated — full illustrated user manual. Source: <code>docs/user-manual.md</code> in the project repository.</p>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
   <h1 id="vehicle-expenses-automated-user-manual">Vehicle Expenses Automated — User Manual</h1>
+<blockquote>
+<p><strong>Edit source (Markdown).</strong> Browsers and the in-app reader open the <strong>rendered HTML</strong>:<br />
+- Web: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (regenerate with <code>./scripts/render-user-manual.sh</code>)<br />
+- App: Help / About → full manual (bundled HTML + screenshots)</p>
+<p>Do not point end users at raw <code>.md</code> URLs — browsers show plain text only.</p>
+</blockquote>
 <p>Camera-first tracking for fuel fill-ups and vehicle expenses, with optional multi-device sync and backup under <strong>your</strong> cloud accounts.</p>
-<p>This is the <strong>full online manual</strong> (screenshots + every step). On the phone, <strong>Menu → Help</strong> is a shorter getting-started guide.</p>
+<p>This is the <strong>full manual</strong> (screenshots + every step). On the phone, <strong>Menu → Help</strong> is a shorter getting-started guide.</p>
 <p><strong>Not covered here:</strong> Import Old Pictures, Alignment Experiment, and Pump Experiment (developer / advanced tools).</p>
 <hr />
 <h2 id="table-of-contents">Table of contents</h2>
@@ -174,14 +183,14 @@
 <li>Tap <strong>☰</strong> at the top left.</li>
 <li>Choose a page.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Navigation drawer" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/01-drawer.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Navigation drawer" src="user-manual/images/01-drawer.jpg" /></p>
 <p><strong>In-scope pages:</strong> Quick Fill-up · Manage Vehicles · New Expense Entry · Expense List · Reports &amp; Charts · Settings · Help · About.</p>
 <hr />
 <h2 id="first-time-setup-manage-vehicles">First-time setup: Manage Vehicles</h2>
 <p>OCR and <strong>automatic vehicle matching</strong> work best after you register each vehicle with a <strong>reference dashboard photo</strong>, crop the odometer, and run <strong>Discovery</strong> so the app stores landmark text for that dash. (How landmarks are chosen and matched will be documented in more detail in a later update.)</p>
 <h3 id="open-manage-vehicles">Open Manage Vehicles</h3>
 <p>Menu → <strong>Manage Vehicles</strong>. Choose a vehicle (or <strong>Add New Vehicle</strong>).</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Manage Vehicles with reference dash, crops, and discovery" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r1-manage-vehicles-crops.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Manage Vehicles with reference dash, crops, and discovery" src="user-manual/images/r1-manage-vehicles-crops.jpg" /></p>
 <h3 id="add-or-edit-a-vehicle">Add or edit a vehicle</h3>
 <ol>
 <li>Open the <strong>Vehicle</strong> dropdown → pick a vehicle or <strong>Add New Vehicle</strong>.</li>
@@ -195,10 +204,10 @@
 <li>Fill <strong>Vehicle Name</strong> (required), plus make/model/year/plate as you like.</li>
 <li>Tap <strong>Create Vehicle</strong> or <strong>Save Changes</strong> (requires name + reference photo for a new vehicle).</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Add new vehicle form fields" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/03b-manage-vehicles-new.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Add new vehicle form fields" src="user-manual/images/03b-manage-vehicles-new.jpg" /></p>
 <h3 id="landmarks-fix-what-discovery-missed">Landmarks: fix what Discovery missed</h3>
 <p>After <strong>Show Landmarks</strong>, scroll the list and correct values. Engines sometimes miss small digits (for example a clock <strong>60</strong> on the bottom right of the cluster). Use <strong>Edit OCR</strong> to add or fix them so vehicle identity stays reliable.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Landmarks dialog — review and edit OCR" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r2-manage-vehicles-landmarks.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Landmarks dialog — review and edit OCR" src="user-manual/images/r2-manage-vehicles-landmarks.jpg" /></p>
 <h3 id="typing-without-a-perfect-photo">Typing without a perfect photo</h3>
 <p>You can still use the app by selecting a vehicle and <strong>typing</strong> odometer, volume, and cost on Quick Fill — OCR is optional for every field. Gallery import works for the reference dash photo when you prefer not to shoot in-app.</p>
 <p><strong>Tip:</strong> After spreadsheet sync, vehicle definitions (crops, landmarks) live in the local database — you do not need to re-open Manage Vehicles for Quick Fill to use them.</p>
@@ -305,15 +314,15 @@
 <ol>
 <li><strong>Settings → Spreadsheet sync</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Spreadsheet sync list" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/08-spreadsheet-sync.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Spreadsheet sync list" src="user-manual/images/08-spreadsheet-sync.jpg" /></p>
 <ol start="2">
 <li>Tap <strong>Add spreadsheet destination</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Provider picker" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/09-spreadsheet-provider-picker.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Provider picker" src="user-manual/images/09-spreadsheet-provider-picker.jpg" /></p>
 <ol start="3">
 <li>Choose <strong>Google Sheets</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Sheets form" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/10-spreadsheet-google-form.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Sheets form" src="user-manual/images/10-spreadsheet-google-form.jpg" /></p>
 <ol start="4">
 <li><strong>Sign in with Google</strong> → display name → <strong>Sheet URL</strong> or <strong>🔍</strong> browse/create → schedule options → enable → save.</li>
 <li><strong>Sync now</strong> once to create/update tabs: <code>Vehicles</code>, <code>Expenses</code>, <code>Fuel - {vehicle name}</code>.</li>
@@ -322,15 +331,15 @@
 <ol>
 <li><strong>Settings → Photo backup</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo backup list" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/11-photo-backup.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo backup list" src="user-manual/images/11-photo-backup.jpg" /></p>
 <ol start="2">
 <li>Tap <strong>Add photo destination</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo provider picker" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/12-photo-provider-picker.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Photo provider picker" src="user-manual/images/12-photo-provider-picker.jpg" /></p>
 <ol start="3">
 <li>Choose <strong>Google Drive</strong>.</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Drive form" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/13-photo-google-form.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Google Drive form" src="user-manual/images/13-photo-google-form.jpg" /></p>
 <ol start="4">
 <li><strong>Sign in with Google (Drive)</strong> → optional folder URL/browse → enable → save → <strong>Sync now</strong>.</li>
 </ol>
@@ -348,17 +357,17 @@
 <p>You do <strong>not</strong> need to pick the vehicle first. When vehicles have <strong>landmarks</strong> set up in Manage Vehicles, Quick Fill <strong>auto-detects which vehicle</strong> from the dash image after you capture the odometer. You can still open the <strong>Vehicle</strong> dropdown to override if needed.</p>
 <h3 id="aim-at-the-odometer">Aim at the odometer</h3>
 <p>Stay in odometer mode and frame the cluster. Instruction: <em>Aim at odometer. Tap shutter to capture.</em></p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — live camera on odometer" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r3-quickfill-odo-live.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — live camera on odometer" src="user-manual/images/r3-quickfill-odo-live.jpg" /></p>
 <h3 id="after-the-odometer-shutter">After the odometer shutter</h3>
 <p>OCR fills <strong>Odo</strong> and tries to match the vehicle from landmarks (review both if needed). The main button becomes <strong>Retry</strong> to re-shoot. Instruction summarizes the reading.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — odometer OCR result" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r4-quickfill-odo-result.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — odometer OCR result" src="user-manual/images/r4-quickfill-odo-result.jpg" /></p>
 <h3 id="pump-mode-cost-and-volume">Pump mode (cost and volume)</h3>
 <ol>
 <li>Tap <strong>↕</strong> to switch to pump mode: <em>Aim at pump display (cost/volume). Tap shutter.</em></li>
 <li>Capture the pump totals. Cost and volume fields fill; use <strong>↔</strong> if they are swapped.</li>
 <li>Tap currency or <strong>G/L</strong> if needed, then <strong>Save</strong> (disk). Empty fields make a <strong>partial fill</strong> (still allowed).</li>
 </ol>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — pump OCR result" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r5-quickfill-pump-result.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Quick Fill — pump OCR result" src="user-manual/images/r5-quickfill-pump-result.jpg" /></p>
 <p>You stay on Quick Fill for the next stop (fields clear after save). Work fully <strong>offline</strong>; sync runs later in the background when configured.</p>
 <h3 id="manual-entry-no-camera-bad-ocr">Manual entry (no camera / bad OCR)</h3>
 <ol>
@@ -377,7 +386,7 @@
 <h2 id="expenses">Expenses</h2>
 <h3 id="new-expense-entry">New Expense Entry</h3>
 <p>Menu → <strong>New Expense Entry</strong>.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="New expense form and camera controls" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/r6-new-expense.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="New expense form and camera controls" src="user-manual/images/r6-new-expense.jpg" /></p>
 <ol>
 <li><strong>Save</strong> (disk), <strong>shutter</strong> (receipt photo), or <strong>gallery</strong> (pick image).</li>
 <li>Fill <strong>Date</strong>, <strong>Vehicle</strong>, <strong>Vendor</strong>, <strong>Description</strong>, <strong>Amount</strong> (currency symbol tappable), <strong>Category</strong>, optional <strong>Odometer</strong>.</li>
@@ -386,11 +395,11 @@
 </ol>
 <h3 id="expense-list">Expense List</h3>
 <p>Menu → <strong>Expense List</strong> — browse past non-fuel expenses; open an item to edit.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Expense list" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/05-expense-list.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Expense list" src="user-manual/images/05-expense-list.jpg" /></p>
 <hr />
 <h2 id="reports-charts">Reports &amp; Charts</h2>
 <p>Menu → <strong>Reports &amp; Charts</strong>.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Reports" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/06-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Reports" src="user-manual/images/06-reports.jpg" /></p>
 <ul>
 <li><strong>Summary</strong> per vehicle (spend, economy where calculable).</li>
 <li><strong>Last 5 full fills</strong> — legs between complete fill-ups.</li>
@@ -401,8 +410,8 @@
 <hr />
 <h2 id="settings-local-preferences">Settings (local preferences)</h2>
 <p>Menu → <strong>Settings</strong>.</p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Settings" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/07-settings.jpg" /></p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="More settings (scrolled)" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/07b-settings-more.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Settings" src="user-manual/images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="More settings (scrolled)" src="user-manual/images/07b-settings-more.jpg" /></p>
 <p>For <strong>Spreadsheet sync</strong> and <strong>Photo backup</strong>, see <a href="#backups-and-multi-device-sync">Backups and multi-device sync</a>. The summary rows open those destination lists and support <strong>Sync now</strong>.</p>
 <h3 id="local-preferences-common">Local preferences (common)</h3>
 <ul>
@@ -415,8 +424,8 @@
 <p>CSV <strong>export/import</strong> (ZIP of Vehicles / Expenses / Fuel tabs) is available from Settings when offered by the current build.</p>
 <hr />
 <h2 id="help-about">Help &amp; About</h2>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Help" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/14-help.jpg" /></p>
-<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="About" src="https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/15-about.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Help" src="user-manual/images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="About" src="user-manual/images/15-about.jpg" /></p>
 <ul>
 <li><strong>Help</strong> — on-device quick start + link to this manual + self-host setup index.</li>
 <li><strong>About</strong> — version, licenses, GitHub, this manual.</li>

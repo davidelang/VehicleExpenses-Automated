@@ -1,8 +1,14 @@
 # Vehicle Expenses Automated — User Manual
 
+> **Edit source (Markdown).** Browsers and the in-app reader open the **rendered HTML**:
+> - Web: [`docs/user-manual.html`](user-manual.html) (regenerate with `./scripts/render-user-manual.sh`)
+> - App: Help / About → full manual (bundled HTML + screenshots)
+>
+> Do not point end users at raw `.md` URLs — browsers show plain text only.
+
 Camera-first tracking for fuel fill-ups and vehicle expenses, with optional multi-device sync and backup under **your** cloud accounts.
 
-This is the **full online manual** (screenshots + every step). On the phone, **Menu → Help** is a shorter getting-started guide.
+This is the **full manual** (screenshots + every step). On the phone, **Menu → Help** is a shorter getting-started guide.
 
 **Not covered here:** Import Old Pictures, Alignment Experiment, and Pump Experiment (developer / advanced tools).
 
