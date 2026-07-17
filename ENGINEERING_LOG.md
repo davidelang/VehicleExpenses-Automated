@@ -860,3 +860,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - docs/reference/USER_MANUAL_BUILD.md + CONTRIBUTING / ENVIRONMENT_SETUP / USER_GUIDE / project-facts
 - ./scripts/render-user-manual.sh then commit outputs
 - prepare local PR-instruction for master update
+
+## 2026-07-16 - Local PR-instruction (HTML manual) ready for Master
+- Cleaned to 2 commits; backup-instruction set
+- PR: dev-ai-interaction/PRs/PR-instruction.md
+- Ask Master: Please review PR-instruction
