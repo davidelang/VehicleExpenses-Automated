@@ -1,4 +1,4 @@
-package com.davidlang.vehicleexpensesautomated.ui.import
+package com.davidlang.vehicleexpensesautomated.ui.batch
 
 import androidx.lifecycle.ViewModel
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordinator

@@ -33,6 +33,7 @@ import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordina
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportPendingStore
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportProgress
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportResult
+import com.davidlang.vehicleexpensesautomated.ui.batch.BatchImportViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
