@@ -74,7 +74,9 @@ fun ImportOldPicturesScreen(
     var lastResult by remember { mutableStateOf<BatchImportResult?>(null) }
     var showQuestions by remember { mutableStateOf(false) }
     var pendingSnapshot by remember {
-        mutableStateOf(BatchImportPendingStore.load(context))
+        mutableStateOf<List<com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingItem>>(
+            BatchImportPendingStore.load(context),
+        )
     }
 
     val dashDir = remember { BatchFuelImportCoordinator.dashPhotoDir(context) }
