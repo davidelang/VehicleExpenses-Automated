@@ -117,44 +117,55 @@ private fun newestValidLegs(
 }
 
 /**
- * **$/mi** = (sum of fuel cost + sum of expenses for this vehicle)
- * / (maxOdo − minOdo) over all fuel rows with `odometer > 0`.
+ * **$/mi** over unbroken full→full segments only.
  *
- * Partial fills at the **start or end** of the odo range are acceptable noise
- * (they still contribute min/max if odo > 0). Mid-trip partials do not need
- * special handling: they do not change max−min when odometers still bound the range.
- * Denominator is **not** restricted to full fills only.
+ * For each adjacent full-fill pair with odo increase and no $/mi chain breaker
+ * in (prev.ts, cur.ts]: add miles and fuel costs (hasCost) + expenses whose
+ * date falls in that window. Odo-only rows never set endpoints or break.
  *
- * @return n/a (null) if fewer than two positive odometers or max ≤ min.
+ * @return n/a (null) if no segment miles, empty cost map, or mixed currency.
  */
 private fun dollarsPerMile(
     fuelEntries: List<FuelEntry>,
     expenses: List<ExpenseEntry>,
     defaultStored: String,
 ): Double? {
-    val odos = fuelEntries.map { it.odometer }.filter { it > 0 }
-    if (odos.size < 2) return null
-    val minO = odos.minOrNull() ?: return null
-    val maxO = odos.maxOrNull() ?: return null
-    if (maxO <= minO) return null
-    val fuelSums = CurrencyCodes.sumByCurrency(
-        fuelEntries,
-        defaultStored,
-        { it.currency },
-        { it.cost },
-    )
-    val expSums = CurrencyCodes.sumByCurrency(
-        expenses,
-        defaultStored,
-        { it.currency },
-        { it.amount },
-    )
+    val full = fullFillsAscending(fuelEntries)
+    if (full.size < 2) return null
+    var miles = 0
     val combined = mutableMapOf<String, Double>()
-    for ((k, v) in fuelSums) combined[k] = combined.getOrDefault(k, 0.0) + v
-    for ((k, v) in expSums) combined[k] = combined.getOrDefault(k, 0.0) + v
-    if (combined.size != 1) return null
+    for (i in 1 until full.size) {
+        val prev = full[i - 1]
+        val cur = full[i]
+        if (cur.odometer <= prev.odometer) continue
+        val between = fuelEntries.filter {
+            it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp
+        }
+        if (between.any { isDpmChainBreaker(it) }) continue
+        miles += cur.odometer - prev.odometer
+        val fuelWithCost = between.filter { hasCost(it) }
+        val fuelSums = CurrencyCodes.sumByCurrency(
+            fuelWithCost,
+            defaultStored,
+            { it.currency },
+            { it.cost },
+        )
+        for ((k, v) in fuelSums) combined[k] = combined.getOrDefault(k, 0.0) + v
+        val windowExpenses = expenses.filter {
+            it.date > prev.timestamp && it.date <= cur.timestamp
+        }
+        val expSums = CurrencyCodes.sumByCurrency(
+            windowExpenses,
+            defaultStored,
+            { it.currency },
+            { it.amount },
+        )
+        for ((k, v) in expSums) combined[k] = combined.getOrDefault(k, 0.0) + v
+    }
+    if (miles <= 0) return null
+    if (combined.isEmpty() || combined.size != 1) return null
     val totalCost = combined.values.first()
-    return totalCost / (maxO - minO).toDouble()
+    return totalCost / miles.toDouble()
 }
 
 private data class VehicleReportStats(
