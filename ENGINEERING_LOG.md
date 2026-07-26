@@ -906,3 +906,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start: Stage A (batch ingest) per approved plan batch-load-ingest-merge-questions-20260726-plan.md
 - Baseline tag: batch_load/builds @ a02dc9bc; Stages B–C deferred to later turn if A fills the turn
+
+## 2026-07-26 - batch-load Stage A complete (ingest)
+
+- Plan: batch-load-ingest-merge-questions-20260726-plan.md Stage A only
+- Added: PhotoExifMeta, FuelPhotoJson, BatchImportPending, BatchFuelImportCoordinator, hardDeleteFuelEntry
+- Set I hybrid in PumpCostVolUtils.runSetICostVolExtraction + OcrHarness.runPumpCostVolPipelineSetI
+- Import Old Pictures UI: Run batch import / Cancel / Review questions (list-only)
+- Hilt ViewModel in ui.batch (not ui.import — Java keyword breaks KSP)
+- Builds tag: batch_load/builds @ 6efd2743
+- Stages B (merge) and C (apply answers) remain on same plan path — not in this turn
