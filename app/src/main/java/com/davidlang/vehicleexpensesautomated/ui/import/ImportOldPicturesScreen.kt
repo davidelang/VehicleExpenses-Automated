@@ -1,121 +1,242 @@
 package com.davidlang.vehicleexpensesautomated.ui.import
 
-import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
-import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
-import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordinator
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportPendingStore
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportProgress
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportResult
+import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.File
+import kotlinx.coroutines.withContext
 
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface BatchImportEntryPoint {
+    fun batchFuelImportCoordinator(): BatchFuelImportCoordinator
+}
+
+/**
+ * Stage A UI: run batch import from hard-coded experiment photo dirs.
+ * Stage B/C (merge + question apply) come later; Review questions lists pending for now.
+ */
 @Composable
 fun ImportOldPicturesScreen(
-    navController: NavHostController
+    navController: NavHostController,
 ) {
     val context = LocalContext.current
-    val fuelViewModel: FuelViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
+    val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
-    val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
-    var selectedVehicleId by remember { mutableStateOf<Int?>(null) }
-    var photoUrl by remember { mutableStateOf<String?>(null) }
-    var lat by remember { mutableStateOf<Double?>(null) }
-    var lon by remember { mutableStateOf<Double?>(null) }
-    var loc by remember { mutableStateOf<String?>(null) }
-
-    val pickImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            scope.launch {
-                val tempFile = File.createTempFile("ocr_import", ".jpg", context.cacheDir)
-                context.contentResolver.openInputStream(it)?.use { input ->
-                    tempFile.outputStream().use { output -> input.copyTo(output) }
-                }
-                val result = OdometerOcrUtils.extractFromPhoto(tempFile.absolutePath)
-                photoUrl = tempFile.absolutePath
-                lat = result.latitude
-                lon = result.longitude
-                Toast.makeText(context, "Image imported with EXIF data", Toast.LENGTH_SHORT).show()
-            }
-        }
+    val coordinator = remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            BatchImportEntryPoint::class.java,
+        ).batchFuelImportCoordinator()
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Import Old Photo", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(16.dp))
+    var running by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<BatchImportProgress?>(null) }
+    var lastResult by remember { mutableStateOf<BatchImportResult?>(null) }
+    var showQuestions by remember { mutableStateOf(false) }
+    var pendingSnapshot by remember {
+        mutableStateOf(BatchImportPendingStore.load(context))
+    }
 
-        var dropdownExpanded by remember { mutableStateOf(false) }
-        ExposedDropdownMenuBox(
-            expanded = dropdownExpanded,
-            onExpandedChange = { dropdownExpanded = it }
-        ) {
-            OutlinedTextField(
-                value = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle",
-                onValueChange = {},
-                label = { Text("Vehicle") },
-                modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                readOnly = true
-            )
-            ExposedDropdownMenu(
-                expanded = dropdownExpanded,
-                onDismissRequest = { dropdownExpanded = false }
-            ) {
-                vehicles.forEach { vehicle ->
-                    DropdownMenuItem(
-                        text = { Text(vehicle.name) },
-                        onClick = {
-                            selectedVehicleId = vehicle.id
-                            dropdownExpanded = false
-                        }
-                    )
-                }
+    val dashDir = remember { BatchFuelImportCoordinator.dashPhotoDir(context) }
+    val pumpDir = remember { BatchFuelImportCoordinator.pumpPhotoDir(context) }
+    val dashCount = remember(dashDir) {
+        dashDir.listFiles()?.count {
+            it.isFile && it.extension.lowercase() in setOf("jpg", "jpeg", "png", "dng")
+        } ?: 0
+    }
+    val pumpCount = remember(pumpDir) {
+        pumpDir.listFiles()?.count {
+            it.isFile && it.extension.lowercase() in setOf("jpg", "jpeg", "png", "dng")
+        } ?: 0
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Import Old Pictures", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            "Batch OCR from experiment archives (no gallery picker yet). " +
+                "Dash: filesDir/experiment_photos · Pump: externalFiles/pump_photos. " +
+                "Set J odo + Set I cost/vol; partials written to DB. Merge is a later step.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Sources", style = MaterialTheme.typography.titleMedium)
+                Text("Dash photos: $dashCount  (${dashDir.absolutePath})")
+                Text("Pump photos: $pumpCount  (${pumpDir.absolutePath})")
+                Text("Vehicles in DB: ${vehicles.count { !it.deleted }}")
+                Text("Pending questions: ${pendingSnapshot.size}")
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(onClick = { pickImageLauncher.launch("image/*") }) {
-            Text("Select Photo")
+        progress?.let { p ->
+            Text("${p.phase}: ${p.message}")
+            if (p.total > 0) {
+                LinearProgressIndicator(
+                    progress = { p.current.toFloat() / p.total.toFloat() },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            Text(
+                "Inserted dash=${p.dashInserted} pump=${p.pumpInserted} · " +
+                    "pending=${p.pendingCount} · errors=${p.errors}",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        lastResult?.let { r ->
+            Text(
+                "Last run: dash=${r.dashInserted} pump=${r.pumpInserted} " +
+                    "pending=${r.pending.size} errors=${r.errors.size}" +
+                    if (r.cancelled) " (cancelled)" else "",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (r.errors.isNotEmpty()) {
+                Text(
+                    "Errors (first 5):\n" + r.errors.take(5).joinToString("\n"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
 
-        Button(
-            onClick = {
-                selectedVehicleId?.let { vehicleId ->
-                    fuelViewModel.saveFuel(
-                        FuelEntry(
-                            vehicleId = vehicleId,
-                            odometer = 0,
-                            gallons = 0.0,
-                            cost = 0.0,
-                            timestamp = System.currentTimeMillis(),
-                            photoUrl = photoUrl,
-                            latitude = lat,
-                            longitude = lon,
-                            location = loc
-                        )
-                    )
-                    navController.popBackStack()
-                }
-            },
-            enabled = selectedVehicleId != null && photoUrl != null,
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Complete Import")
+            Button(
+                onClick = {
+                    if (running) return@Button
+                    running = true
+                    lastResult = null
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.Default) {
+                                NativePaddleEngine.initializeGlobalBuffers(context.applicationContext)
+                            }
+                            val result = coordinator.runIngest(vehicles) { p ->
+                                progress = p
+                            }
+                            lastResult = result
+                            pendingSnapshot = result.pending
+                            Toast.makeText(
+                                context,
+                                if (result.cancelled) "Batch cancelled"
+                                else "Batch done: +${result.dashInserted + result.pumpInserted} rows",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Batch failed: ${e.message}", Toast.LENGTH_LONG)
+                                .show()
+                        } finally {
+                            running = false
+                        }
+                    }
+                },
+                enabled = !running && (dashCount + pumpCount) > 0,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(if (running) "Running…" else "Run batch import")
+            }
+            OutlinedButton(
+                onClick = { coordinator.requestCancel() },
+                enabled = running,
+            ) {
+                Text("Cancel")
+            }
+        }
+
+        OutlinedButton(
+            onClick = {
+                pendingSnapshot = BatchImportPendingStore.load(context)
+                showQuestions = !showQuestions
+            },
+            enabled = pendingSnapshot.isNotEmpty() || showQuestions,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                if (showQuestions) "Hide questions (${pendingSnapshot.size})"
+                else "Review questions (${pendingSnapshot.size})",
+            )
+        }
+
+        if (showQuestions) {
+            Text(
+                "Stage C apply actions not implemented yet — list only. Assign vehicle / merge next.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            pendingSnapshot.forEach { item ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text(item.kind.name, style = MaterialTheme.typography.labelLarge)
+                        Text(item.message, style = MaterialTheme.typography.bodyMedium)
+                        item.photoPath?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+            if (pendingSnapshot.isEmpty()) {
+                Text("No pending items.")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { navController.popBackStack() },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Back")
         }
     }
 }

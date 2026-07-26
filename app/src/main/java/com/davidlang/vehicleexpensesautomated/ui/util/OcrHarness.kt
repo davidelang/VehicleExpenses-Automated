@@ -248,6 +248,49 @@ object OcrHarness {
         }
     }
 
+    /**
+     * Batch-import pump cost/volume via **Set I** (D+E+G hybrid).
+     * Does not change Quick Fill [runPumpCostVolPipeline] (G--).
+     * [masterBuffer] must already hold the full photo in primary (after ingest).
+     */
+    suspend fun runPumpCostVolPipelineSetI(
+        context: Context,
+        masterBuffer: BufferSet,
+        debug: Boolean = false,
+    ): PumpCostVolResult {
+        val t0 = System.currentTimeMillis()
+        try {
+            val paddleEngine = NativePaddleEngine(context, "Numeric")
+            val recBuffer = NativePaddleEngine.recBufferSet
+            val imgW = masterBuffer.width
+            val imgH = masterBuffer.height
+            val cv = PumpCostVolUtils.runSetICostVolExtraction(
+                masterBuffer,
+                paddleEngine,
+                recBuffer,
+                imgW,
+                imgH,
+            )
+            val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }
+            val volume = cv.vol.takeIf { it != "N/A" && it.isNotBlank() }
+            if (cost == null && volume == null) {
+                return PumpCostVolResult(error = "Could not read pump display (Set I)")
+            }
+            val debugJson = if (debug) {
+                JsonObject().apply {
+                    addProperty("cost", cv.cost)
+                    addProperty("volume", cv.vol)
+                    addProperty("pipeline", "SetI")
+                    addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
+                }.toString()
+            } else null
+            return PumpCostVolResult(cost = cost, volume = volume, debugJson = debugJson)
+        } catch (e: Exception) {
+            Log.e("OcrHarness", "Set I pump pipeline failed", e)
+            return PumpCostVolResult(error = "Set I pump OCR failed: ${e.message ?: "Unknown error"}")
+        }
+    }
+
     suspend fun runDiscovery(input: Any, context: Context): OcrResult {
         val rawResult = MlKitEngine().recognize(input)
 

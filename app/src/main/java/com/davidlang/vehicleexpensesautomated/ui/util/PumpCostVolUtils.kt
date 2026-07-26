@@ -728,4 +728,141 @@ object PumpCostVolUtils {
             ocrOrangeCandidates = orangeCands,
         )
     }
+
+    /**
+     * Set I (D+E+G hybrid, calculated) — batch import only.
+     * Same stages as experiment `procI`: deskew once → G verts → clip stretch +
+     * adjusted valley/peak → D verts → valley push → E verts → one combined classify.
+     * Does not change Quick Fill G-- path.
+     */
+    // Experiment Set I vert lists (shared dual-device hybrid).
+    val SET_I_G_VERT: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.6f, 1.1f, 1.5f)
+    val SET_I_D_VERT: List<Float> = listOf(0.1f, 0.2f)
+    val SET_I_E_VERT: List<Float> = listOf(0.3f, 0.7f)
+
+    private suspend fun setIDiscoveryReds(
+        workspace: BufferSet,
+        paddleEngine: NativePaddleEngine,
+        imgW: Int,
+        imgH: Int,
+    ): List<PumpHunk> {
+        val scales = listOf(224, 608, 1024)
+        val pdHunksRawTotal = mutableListOf<PumpHunk>()
+        val pdHunksExpTotal = mutableListOf<PumpHunk>()
+        val pdHunksMaxTotal = mutableListOf<PumpHunk>()
+        scales.forEach { scale ->
+            val srcW = workspace.p.width
+            val srcH = workspace.p.height
+            val currentLongEdge = max(srcW, srcH)
+            val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+            val targetW = (srcW * scaleFactor).toInt()
+            val targetH = (srcH * scaleFactor).toInt()
+            val (outerId, innerId) = prepareScale(workspace, scale)
+            val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale)
+            pdHunksRawTotal.addAll(paddleResults[1])
+            pdHunksExpTotal.addAll(paddleResults[2])
+            pdHunksMaxTotal.addAll(paddleResults[3])
+            workspace.c[innerId].release()
+            workspace.c[outerId].release()
+        }
+        doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+        doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+        doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+        val redPixelList = hunksToRects(pdHunksRawTotal).toMutableList()
+        doCrossScaleRedboxFilterPixel(redPixelList)
+        pruneRectsToTopN(redPixelList, PumpOcrSettings.DEFAULT_MAX_RED_BOXES)
+        return rectsToHunks(redPixelList)
+    }
+
+    private suspend fun setIAppendStageOcr(
+        workspace: BufferSet,
+        paddleEngine: NativePaddleEngine,
+        recBuffer: BufferSet,
+        reds: List<PumpHunk>,
+        vertFactors: List<Float>,
+        combinedBluePixel: MutableList<Rect>,
+        combinedAsis: MutableList<String>,
+        combinedDigits: MutableList<String>,
+        combinedAsisProbs: MutableList<String>,
+        combinedDigitsProbs: MutableList<String>,
+        imgW: Int,
+        imgH: Int,
+    ) {
+        val (customBlue, _) = createBlueAndOrangeHunksFromReds(
+            reds, imgW, imgH, vertFactors, SET_G_HORIZ_FACTOR,
+        )
+        val bluePixel = hunksToRects(customBlue)
+        if (bluePixel.isEmpty()) return
+        val ocr = ocrPumpRectsAsisAndDigits(
+            workspace, paddleEngine, recBuffer, bluePixel, imgW, imgH,
+        )
+        combinedBluePixel.addAll(bluePixel)
+        combinedAsis.addAll(ocr.asis)
+        combinedDigits.addAll(ocr.digits)
+        combinedAsisProbs.addAll(ocr.asisProbs)
+        combinedDigitsProbs.addAll(ocr.digitsProbs)
+    }
+
+    suspend fun runSetICostVolExtraction(
+        workspace: BufferSet,
+        paddleEngine: NativePaddleEngine,
+        recBuffer: BufferSet,
+        imgW: Int,
+        imgH: Int,
+    ): CostVolClassifyResult {
+        val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+        val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+        val tilt = -deskewRes.paddleCppAngle
+        OdometerOcrUtils.rotate(workspace, tilt)
+
+        val combinedBluePixel = mutableListOf<Rect>()
+        val combinedAsis = mutableListOf<String>()
+        val combinedDigits = mutableListOf<String>()
+        val combinedAsisProbs = mutableListOf<String>()
+        val combinedDigitsProbs = mutableListOf<String>()
+
+        // G stage on post-deskew raw
+        var lastReds = setIDiscoveryReds(workspace, paddleEngine, imgW, imgH)
+        setIAppendStageOcr(
+            workspace, paddleEngine, recBuffer, lastReds, SET_I_G_VERT,
+            combinedBluePixel, combinedAsis, combinedDigits, combinedAsisProbs, combinedDigitsProbs,
+            imgW, imgH,
+        )
+
+        // Clip stretch + adjusted valley/peak grays
+        val (valleyGrays, peakGrays) = OdometerOcrUtils.getValleyPeakGrays(workspace.p.mat)
+        val (intensityLow, intensityHigh) = OdometerOcrUtils.getClipStretchLowHigh(workspace.p.mat)
+        OdometerOcrUtils.applyContrastStretch(workspace.p.mat, intensityLow, intensityHigh)
+        val stretchSpan = intensityHigh - intensityLow
+        fun adjustGrayForStretch(g: Int): Int =
+            if (stretchSpan > 0) ((g - intensityLow) * 255.0 / stretchSpan).toInt().coerceIn(0, 255) else g
+        val adjustedValleyGrays = valleyGrays.map { adjustGrayForStretch(it) }
+        val adjustedPeakGrays = peakGrays.map { adjustGrayForStretch(it) }
+
+        // D stage
+        lastReds = setIDiscoveryReds(workspace, paddleEngine, imgW, imgH)
+        setIAppendStageOcr(
+            workspace, paddleEngine, recBuffer, lastReds, SET_I_D_VERT,
+            combinedBluePixel, combinedAsis, combinedDigits, combinedAsisProbs, combinedDigitsProbs,
+            imgW, imgH,
+        )
+
+        // Valley push with adjusted grays
+        OdometerOcrUtils.applyValleyPushWithGrays(workspace.p.mat, adjustedValleyGrays, adjustedPeakGrays)
+
+        // E stage
+        lastReds = setIDiscoveryReds(workspace, paddleEngine, imgW, imgH)
+        setIAppendStageOcr(
+            workspace, paddleEngine, recBuffer, lastReds, SET_I_E_VERT,
+            combinedBluePixel, combinedAsis, combinedDigits, combinedAsisProbs, combinedDigitsProbs,
+            imgW, imgH,
+        )
+
+        if (combinedBluePixel.isEmpty()) return na
+        val allCands = buildRedBoxCandidates(
+            combinedBluePixel, combinedAsis, combinedDigits,
+            combinedAsisProbs, combinedDigitsProbs,
+        )
+        return classifyCostVolFromBoxOcr(allCands)
+    }
 }

@@ -901,3 +901,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Local PR: dev-ai-interaction/PRs/PR-batch_load.md
 - Tag: batch_load/builds @ 1de13e02; backup-batch_load set
 - Ready for Master independent review + merge
+
+## 2026-07-26 - batch-load-ingest-merge-questions-20260726
+
+- Execution start: Stage A (batch ingest) per approved plan batch-load-ingest-merge-questions-20260726-plan.md
+- Baseline tag: batch_load/builds @ a02dc9bc; Stages B–C deferred to later turn if A fills the turn
