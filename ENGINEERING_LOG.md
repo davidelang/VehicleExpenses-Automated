@@ -871,3 +871,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Merged instruction (7d8aa877) into master via merge-branch-into-master (FF index path)
 - project-facts: HTML edit/render orientation; missed-fill TODO left open
 - POST-MERGE gate: 34+ feature paths staged including assets and .kt
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726
+
+- Execution start for approved plan: reports-field-conditional-economy-chains-20260726-plan.md
+- Branch: batch_load; no prior batch_load/builds tag (first successful ./build_app will create it)
+- Scope: ReportsScreen.kt field-conditional MPG/$/mi chains + REPORTS_METRICS.md; phase 5 emulator probe after user deploy

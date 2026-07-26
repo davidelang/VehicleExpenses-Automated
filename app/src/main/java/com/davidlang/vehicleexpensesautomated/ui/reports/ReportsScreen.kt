@@ -27,13 +27,38 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// --- Math helpers (leg = interim-gallon sum between consecutive full fills) ---
+// --- Math helpers (field-conditional full fills + MPG / $/mi chains) ---
 
-/** Full fill points: not partial, odometer > 0 (time-sorted ascending). */
+// Field present iff value > 0 (Room non-null Int/Double; 0 = absent).
+private fun hasOdo(e: FuelEntry): Boolean = e.odometer > 0
+private fun hasCost(e: FuelEntry): Boolean = e.cost > 0.0
+private fun hasVol(e: FuelEntry): Boolean = e.gallons > 0.0
+
+/** Full fill anchor: not partial and odo + cost + volume all present. */
+private fun isFullFill(e: FuelEntry): Boolean =
+    !e.isPartialFill && hasOdo(e) && hasCost(e) && hasVol(e)
+
+/**
+ * MPG chain breaker: blank (no odo/cost/vol) or cost without volume.
+ * Odo-only rows are neither breakers nor contributors.
+ */
+private fun isMpgChainBreaker(e: FuelEntry): Boolean =
+    (!hasOdo(e) && !hasCost(e) && !hasVol(e)) ||
+        (hasCost(e) && !hasVol(e))
+
+/**
+ * $/mi chain breaker: blank (no odo/cost/vol) or volume without cost.
+ * Odo-only rows are neither breakers nor contributors.
+ */
+private fun isDpmChainBreaker(e: FuelEntry): Boolean =
+    (!hasOdo(e) && !hasCost(e) && !hasVol(e)) ||
+        (hasVol(e) && !hasCost(e))
+
+/** Full fill points (time-sorted ascending; id tie-break). */
 private fun fullFillsAscending(entries: List<FuelEntry>): List<FuelEntry> {
     return entries
-        .filter { !it.isPartialFill && it.odometer > 0 }
-        .sortedBy { it.timestamp }
+        .filter { isFullFill(it) }
+        .sortedWith(compareBy({ it.timestamp }, { it.id }))
 }
 
 /**
