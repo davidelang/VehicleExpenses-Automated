@@ -80,7 +80,9 @@ object PhotoExifMetaReader {
     private fun parseFilenameTimestamp(name: String): Long? {
         val m = PXL_NAME.matcher(name)
         if (!m.find()) return null
-        val compact = m.group(1) + m.group(2)
+        val d = m.group(1) ?: return null
+        val t = m.group(2) ?: return null
+        val compact = d + t
         return try {
             PXL_DT.parse(compact)?.time
         } catch (_: Exception) {

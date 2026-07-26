@@ -69,9 +69,9 @@ object BatchImportPendingStore {
                         id = o.optString("id", UUID.randomUUID().toString()),
                         kind = kind,
                         message = o.optString("message", ""),
-                        photoPath = o.optString("photoPath", null).takeIf { !it.isNullOrBlank() },
-                        durablePhotoPath = o.optString("durablePhotoPath", null)
-                            .takeIf { !it.isNullOrBlank() },
+                        photoPath = o.optString("photoPath", "").takeIf { it.isNotBlank() },
+                        durablePhotoPath = o.optString("durablePhotoPath", "")
+                            .takeIf { it.isNotBlank() },
                         timestampMs = if (o.has("timestampMs") && !o.isNull("timestampMs")) {
                             o.optLong("timestampMs")
                         } else null,
