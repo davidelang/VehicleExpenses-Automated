@@ -35,19 +35,9 @@ import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportProgress
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportResult
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
-import dagger.hilt.EntryPoint
-import dagger.hilt.InstallIn
-import dagger.hilt.android.EntryPointAccessors
-import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-@EntryPoint
-@InstallIn(SingletonComponent::class)
-interface BatchImportEntryPoint {
-    fun batchFuelImportCoordinator(): BatchFuelImportCoordinator
-}
 
 /**
  * Stage A UI: run batch import from hard-coded experiment photo dirs.
@@ -59,15 +49,10 @@ fun ImportOldPicturesScreen(
 ) {
     val context = LocalContext.current
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
+    val batchImportViewModel: BatchImportViewModel = hiltViewModel()
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
-
-    val coordinator = remember {
-        EntryPointAccessors.fromApplication(
-            context.applicationContext,
-            BatchImportEntryPoint::class.java,
-        ).batchFuelImportCoordinator()
-    }
+    val coordinator = batchImportViewModel.coordinator
 
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<BatchImportProgress?>(null) }
