@@ -63,7 +63,7 @@ private fun fullFillsAscending(entries: List<FuelEntry>): List<FuelEntry> {
 
 /**
  * One full-fill leg ending at [endFill] (must have a previous full).
- * cost/vol are rolled sums over (prev.ts, end.ts] with gallons > 0.
+ * cost/vol are rolled sums over (prev.ts, end.ts] for rows with cost/vol present.
  */
 private data class FullFillLeg(
     val endFill: FuelEntry,
@@ -74,7 +74,8 @@ private data class FullFillLeg(
 
 /**
  * Newest valid full-fill legs (newest first). Excludes first full (no predecessor).
- * Only legs with odo increase and volDisplay > 0 — every leg has defined mpg.
+ * Skips pairs with any MPG chain breaker in (prev.ts, cur.ts].
+ * Only legs with odo increase and sumVol > 0 — every leg has defined mpg.
  */
 private fun newestValidLegs(
     entries: List<FuelEntry>,
@@ -88,13 +89,16 @@ private fun newestValidLegs(
         val prev = full[i - 1]
         val cur = full[i]
         if (cur.odometer <= prev.odometer) continue
-        val window = entries.filter {
-            it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp && it.gallons > 0
+        val between = entries.filter {
+            it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp
         }
-        val sumVol = window.sumOf { it.gallons }
+        if (between.any { isMpgChainBreaker(it) }) continue
+        val withVol = between.filter { hasVol(it) }
+        val sumVol = withVol.sumOf { it.gallons }
         if (sumVol <= 0) continue
+        val withCost = between.filter { hasCost(it) }
         val sumCostByCurrency = CurrencyCodes.sumByCurrency(
-            window,
+            withCost,
             defaultStored,
             { it.currency },
             { it.cost },
