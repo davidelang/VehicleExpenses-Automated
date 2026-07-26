@@ -877,3 +877,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Execution start for approved plan: reports-field-conditional-economy-chains-20260726-plan.md
 - Branch: batch_load; no prior batch_load/builds tag (first successful ./build_app will create it)
 - Scope: ReportsScreen.kt field-conditional MPG/$/mi chains + REPORTS_METRICS.md; phase 5 emulator probe after user deploy
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726 phases 1-4 done
+
+- Phases 1-4 implemented and built on batch_load
+- ReportsScreen.kt: full fill = odo+cost+vol+!partial; MPG breakers; $/mi segment sum
+- docs/reference/REPORTS_METRICS.md rewritten to match
+- Tag: batch_load/builds @ 3d29b986 (batch_load-start-4-g3d29b986)
+- Phase 5 blocked on user APK deploy to emulator-5554 (device currently has versionName=instruction-start-8-g7d8aa877, not batch_load build)
