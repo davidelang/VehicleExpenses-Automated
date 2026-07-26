@@ -885,3 +885,12 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - docs/reference/REPORTS_METRICS.md rewritten to match
 - Tag: batch_load/builds @ 3d29b986 (batch_load-start-4-g3d29b986)
 - Phase 5 blocked on user APK deploy to emulator-5554 (device currently has versionName=instruction-start-8-g7d8aa877, not batch_load build)
+
+## 2026-07-26 - reports-field-conditional-economy-chains phase 5 probe PASS
+
+- Backup: test-data-backups/emulator-5554-20260726-095208
+- App on emulator-5554: batch_load-start-5-ge76bbc73
+- Probe cases odo_only / blank / cost_only / volume_only on Honda between full fills 2→3
+- UI Honda: baseline last 15.8 avg 17.0 $/mi 0.259; odo_only same; blank avg 15.8 $/mi 0.260; cost_only avg 15.8 $/mi 0.276; volume_only avg 14.5 $/mi 0.260
+- Evidence: dev-ai-interaction/research/reports-chain-probe-20260726/
+- DB restored from pre-probe backup; no leftover PROBE rows
