@@ -997,3 +997,24 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start: Stage B merge engine per batch-stage-b-merge-engine-coder-20260727-plan.md
 - Stage A parity PASS; baseline tag 83e36ca0
+
+## 2026-07-27 - batch-stage-b-merge-engine B1–B4 code
+
+- B1: FuelPhotoJson.unionPhotos / addPumpPhoto / addDashPhoto
+- B2: FuelRowMergeEngine.planMerge (vehicle clusters ±45m, vehicleId=0 pump pair, sequence vs re-shot, CONFLICT_ODO + photo paths, hard-delete list)
+- B3: BatchFuelImportCoordinator.applyMerge + Import **Run merge** button
+- B4: Merge after import checkbox default **off**
+- Fixtures notes: dev-ai-interaction/research/batch-stage-b-merge-fixtures-20260727.md
+- Tag: batch_load/builds @ 13d7c06b
+- Device Run merge still to verify after deploy
+
+## 2026-07-27 - batch-stage-b-merge-engine device Run merge
+
+- Deploy: adb install -r (./deploy re-exec loop as ai-coder; used direct install)
+- Pre: 302 rows, v0=148, fulls=6, odo_only=140, pump_only=154
+- applyMerge: updated=133 deleted=129 pending+=2 → tag code 13d7c06b
+- Post: 173 rows, v0=14, fulls=130, odo_only=16, pump_only=25
+- Non-batch: 9 kept (absorbed re-shot ids 6–8 same $18.40); full non-batch fills preserved
+- CONFLICT_ODO pending: 9594 vs 9698; 198699 vs 98699 (photo paths attached)
+- Summary: dev-ai-interaction/research/batch-stage-b-merge-20260727/merge-run-summary.txt
+- Stage C deferred (image-first questions, assign→re-merge UI)
