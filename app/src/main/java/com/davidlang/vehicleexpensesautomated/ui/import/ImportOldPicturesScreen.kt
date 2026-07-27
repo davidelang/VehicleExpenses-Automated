@@ -62,9 +62,11 @@ import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportProgress
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportResult
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingItem
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingKind
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelEconomyOutliers
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelRowMergeEngine
 import com.davidlang.vehicleexpensesautomated.data.batch.MergeApplyResult
 import com.davidlang.vehicleexpensesautomated.data.batch.PendingAnswerAction
+import com.davidlang.vehicleexpensesautomated.data.batch.dedupePhotoPaths
 import com.davidlang.vehicleexpensesautomated.data.batch.pendingPhotoUris
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
@@ -400,24 +402,84 @@ private fun PendingQuestionCard(
     var selectedVehicleId by remember(item.id) {
         mutableStateOf(item.suggestedVehicleId)
     }
+    /** MPG_OUTLIER: true = leg end (default), false = leg start (prior full fill). */
+    var mpgFocusEnd by remember(item.id) { mutableStateOf(true) }
+    var focusRow by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    var prevRow by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    var endRow by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
 
-    LaunchedEffect(item.id) {
-        photoPaths = coordinator.resolvePendingPhotoUris(item)
-        // Pre-fill edit fields from live row when possible
-        val id = item.fuelEntryId
-            ?: item.extra["suspectId"]?.toLongOrNull()
-            ?: item.extra["endEntryId"]?.toLongOrNull()
-        if (id != null) {
-            val row = coordinator.getFuelEntry(id)
-            if (row != null) {
-                if (odoText.isBlank() && row.odometer > 0) odoText = row.odometer.toString()
-                if (costText.isBlank() && row.cost > 0) costText = row.cost.toString()
-                if (volText.isBlank() && row.gallons > 0) volText = row.gallons.toString()
+    val endEntryId = item.extra["endEntryId"]?.toLongOrNull() ?: item.fuelEntryId
+    val prevEntryId = item.extra["prevEntryId"]?.toLongOrNull()
+    val focusEntryId: Long? =
+        if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+            if (mpgFocusEnd) endEntryId else prevEntryId
+        } else {
+            item.fuelEntryId
+                ?: item.extra["suspectId"]?.toLongOrNull()
+                ?: endEntryId
+        }
+
+    fun applyFocusPrefill(row: FuelEntry?) {
+        if (row == null) return
+        odoText = if (row.odometer > 0) row.odometer.toString() else ""
+        costText = if (row.cost > 0) row.cost.toString() else ""
+        volText = if (row.gallons > 0) row.gallons.toString() else ""
+    }
+
+    LaunchedEffect(item.id, mpgFocusEnd) {
+        if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+            val endId = endEntryId
+            val prevId = prevEntryId
+            val end = endId?.let { coordinator.getFuelEntry(it) }
+            val prev = prevId?.let { coordinator.getFuelEntry(it) }
+            endRow = end
+            prevRow = prev
+            val focus = if (mpgFocusEnd) end else prev
+            focusRow = focus
+            // Photos: focus row only (end paths from item or live; prev from extra/live)
+            photoPaths = when {
+                mpgFocusEnd -> {
+                    val fromExtra = item.extra["photoPaths"]
+                        ?.split('|')
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        .orEmpty()
+                    if (fromExtra.isNotEmpty()) {
+                        dedupePhotoPaths(fromExtra)
+                    } else if (end != null) {
+                        FuelEconomyOutliers.photoPathsForEntry(end)
+                    } else {
+                        pendingPhotoUris(item)
+                    }
+                }
+                else -> {
+                    val fromExtra = item.extra["prevPhotoPaths"]
+                        ?.split('|')
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        .orEmpty()
+                    if (fromExtra.isNotEmpty()) {
+                        dedupePhotoPaths(fromExtra)
+                    } else if (prev != null) {
+                        FuelEconomyOutliers.photoPathsForEntry(prev)
+                    } else {
+                        emptyList()
+                    }
+                }
+            }
+            applyFocusPrefill(focus)
+        } else {
+            photoPaths = coordinator.resolvePendingPhotoUris(item)
+            val id = focusEntryId
+            if (id != null) {
+                val row = coordinator.getFuelEntry(id)
+                focusRow = row
+                if (row != null) applyFocusPrefill(row)
             }
         }
     }
 
-    LaunchedEffect(item.id, item.fuelEntryId, expandNeighbors) {
+    LaunchedEffect(item.id, item.fuelEntryId, expandNeighbors, mpgFocusEnd) {
         when (item.kind) {
             BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE -> {
                 val ts = item.timestampMs
@@ -430,7 +492,17 @@ private fun PendingQuestionCard(
                     excludeEntryId = item.fuelEntryId,
                 )
             }
-            BatchPendingKind.MPG_OUTLIER,
+            BatchPendingKind.MPG_OUTLIER -> {
+                // Neighbors around **this fill** (leg end) so badges are stable
+                val anchorId = endEntryId ?: return@LaunchedEffect
+                neighbors = coordinator.neighborContext(
+                    fuelEntryId = anchorId,
+                    timestampMs = item.extra["endTs"]?.toLongOrNull() ?: item.timestampMs,
+                    vehicleIdHint = item.suggestedVehicleId,
+                    expandExtra = expandNeighbors,
+                    allVehicles = false,
+                )
+            }
             BatchPendingKind.ODO_SUSPECT,
             BatchPendingKind.ECONOMY_IGNORED,
             -> {
@@ -464,27 +536,112 @@ private fun PendingQuestionCard(
             Text(item.kind.name, style = MaterialTheme.typography.labelLarge)
             Text(item.message, style = MaterialTheme.typography.bodyMedium)
 
-            Text(
-                "Tap photo to enlarge",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            // MPG outlier: focus control before photos
+            if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+                Text("Which fill is the problem?", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (mpgFocusEnd) {
+                        Button(
+                            onClick = { mpgFocusEnd = true },
+                            enabled = enabled,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("This fill (leg end)") }
+                        OutlinedButton(
+                            onClick = { mpgFocusEnd = false },
+                            enabled = enabled && prevEntryId != null,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Leg start (prior)") }
+                    } else {
+                        OutlinedButton(
+                            onClick = { mpgFocusEnd = true },
+                            enabled = enabled,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("This fill (leg end)") }
+                        Button(
+                            onClick = { mpgFocusEnd = false },
+                            enabled = enabled && prevEntryId != null,
+                            modifier = Modifier.weight(1f),
+                        ) { Text("Leg start (prior)") }
+                    }
+                }
+                Text(
+                    if (mpgFocusEnd) {
+                        "Photos for This fill (leg end, id=${endEntryId ?: "?"})"
+                    } else {
+                        "Photos for Leg start (prior full fill, id=${prevEntryId ?: "?"})"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            } else {
+                Text(
+                    "Tap photo to enlarge",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
             PendingPhotoRow(
                 paths = photoPaths,
                 conflict = item.kind == BatchPendingKind.CONFLICT_ODO ||
-                    item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP ||
-                    item.kind == BatchPendingKind.MPG_OUTLIER,
+                    item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
                 onTap = { zoomPath = it },
             )
+            if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+                Text(
+                    "Tap photo to enlarge",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
 
-            // MPG outlier metrics
+            // MPG leg summary (explicit text — not a second photo dump)
             if (item.kind == BatchPendingKind.MPG_OUTLIER) {
                 val mpg = item.extra["mpg"]
                 val ref = item.extra["refMpg"]
+                val prevTs = item.extra["prevTs"]?.toLongOrNull()
+                    ?: prevRow?.timestamp
+                val endTs = item.extra["endTs"]?.toLongOrNull()
+                    ?: endRow?.timestamp
+                    ?: item.timestampMs
+                val legDelta = if (prevTs != null && endTs != null) {
+                    formatTimeDelta(endTs - prevTs)
+                } else {
+                    "n/a"
+                }
+                val prevOdo = prevRow?.odometer ?: item.extra["prevOdo"]?.toIntOrNull() ?: 0
+                val endOdo = endRow?.odometer ?: item.extra["endOdo"]?.toIntOrNull() ?: 0
+                val prevCost = prevRow?.cost ?: item.extra["prevCost"]?.toDoubleOrNull() ?: 0.0
+                val endCost = endRow?.cost ?: item.extra["endCost"]?.toDoubleOrNull() ?: 0.0
+                val prevVol = prevRow?.gallons ?: item.extra["prevVol"]?.toDoubleOrNull() ?: 0.0
+                val endVol = endRow?.gallons ?: item.extra["endVol"]?.toDoubleOrNull() ?: 0.0
+                val prevWhen = prevTs?.let {
+                    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(it))
+                } ?: "?"
+                val endWhen = endTs?.let {
+                    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(it))
+                } ?: "?"
+                Text("MPG leg", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Leg start (older full fill): $prevWhen · odo $prevOdo · " +
+                        "\$${"%.2f".format(prevCost)} · ${"%.2f".format(prevVol)}G · " +
+                        "Δt $legDelta before end",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "This fill (leg end): $endWhen · odo $endOdo · " +
+                        "\$${"%.2f".format(endCost)} · ${"%.2f".format(endVol)}G",
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 if (mpg != null && ref != null) {
                     Text(
-                        "Leg mpg=$mpg · ref=$ref · odoΔ=${item.extra["odoDelta"]} · vol=${item.extra["sumVol"]}",
+                        "Leg mpg=${"%.1f".format(mpg.toDoubleOrNull() ?: 0.0)} · " +
+                            "ref=${"%.1f".format(ref.toDoubleOrNull() ?: 0.0)} · " +
+                            "odoΔ=${item.extra["odoDelta"]} · vol=${item.extra["sumVol"]}",
                         style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -517,9 +674,27 @@ private fun PendingQuestionCard(
                 }
             }
 
-            // Same-vehicle neighbor context (outliers / odo suspect)
-            if (item.kind == BatchPendingKind.MPG_OUTLIER ||
-                item.kind == BatchPendingKind.ODO_SUSPECT ||
+            // Nearby fills (same vehicle) — not a substitute for the leg block
+            if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+                Text(
+                    "Nearby fills (same vehicle, by time)",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                neighbors.take(12).forEach { n ->
+                    val badge = when (n.id) {
+                        endEntryId -> " [THIS FILL]"
+                        prevEntryId -> " [LEG START]"
+                        else -> ""
+                    }
+                    NeighborLine(n, vehicles, prefix = "", badge = badge)
+                }
+                TextButton(
+                    onClick = { expandNeighbors += 1 },
+                    enabled = enabled,
+                ) {
+                    Text("Show more neighbors")
+                }
+            } else if (item.kind == BatchPendingKind.ODO_SUSPECT ||
                 item.kind == BatchPendingKind.ECONOMY_IGNORED
             ) {
                 Text("Context fills:", style = MaterialTheme.typography.labelMedium)
@@ -702,10 +877,15 @@ private fun PendingQuestionCard(
                 item.kind == BatchPendingKind.MPG_OUTLIER ||
                 item.kind == BatchPendingKind.ODO_SUSPECT
             ) {
-                Text(
-                    "Edit fields (pre-filled; clears ignore on save):",
-                    style = MaterialTheme.typography.labelMedium,
-                )
+                val editLabel = when {
+                    item.kind == BatchPendingKind.MPG_OUTLIER && mpgFocusEnd ->
+                        "Editing: This fill (leg end, id=${focusEntryId ?: "?"})"
+                    item.kind == BatchPendingKind.MPG_OUTLIER && !mpgFocusEnd ->
+                        "Editing: Leg start (prior, id=${focusEntryId ?: "?"})"
+                    else ->
+                        "Edit fields (pre-filled; clears ignore on save)"
+                }
+                Text(editLabel, style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     OutlinedTextField(
                         value = odoText,
@@ -743,6 +923,7 @@ private fun PendingQuestionCard(
                                     odometer = odoText.toIntOrNull(),
                                     cost = costText.toDoubleOrNull(),
                                     volume = volText.toDoubleOrNull(),
+                                    entryId = focusEntryId,
                                 ),
                             )
                         },
@@ -757,11 +938,7 @@ private fun PendingQuestionCard(
                         OutlinedButton(
                             onClick = {
                                 onAction(
-                                    PendingAnswerAction.FlagPartial(
-                                        entryId = item.fuelEntryId
-                                            ?: item.extra["suspectId"]?.toLongOrNull()
-                                            ?: item.extra["endEntryId"]?.toLongOrNull(),
-                                    ),
+                                    PendingAnswerAction.FlagPartial(entryId = focusEntryId),
                                 )
                             },
                             enabled = enabled,
@@ -772,11 +949,7 @@ private fun PendingQuestionCard(
                         OutlinedButton(
                             onClick = {
                                 onAction(
-                                    PendingAnswerAction.MarkAsGap(
-                                        entryId = item.fuelEntryId
-                                            ?: item.extra["suspectId"]?.toLongOrNull()
-                                            ?: item.extra["endEntryId"]?.toLongOrNull(),
-                                    ),
+                                    PendingAnswerAction.MarkAsGap(entryId = focusEntryId),
                                 )
                             },
                             enabled = enabled,
@@ -788,7 +961,12 @@ private fun PendingQuestionCard(
                     if (item.kind == BatchPendingKind.MPG_OUTLIER) {
                         OutlinedButton(
                             onClick = {
-                                onAction(PendingAnswerAction.SetEconomyIgnored(true))
+                                onAction(
+                                    PendingAnswerAction.SetEconomyIgnored(
+                                        ignored = true,
+                                        entryId = focusEntryId,
+                                    ),
+                                )
                             },
                             enabled = enabled,
                             modifier = Modifier.weight(1f),
@@ -799,7 +977,12 @@ private fun PendingQuestionCard(
                     if (item.kind == BatchPendingKind.ECONOMY_IGNORED) {
                         OutlinedButton(
                             onClick = {
-                                onAction(PendingAnswerAction.SetEconomyIgnored(false))
+                                onAction(
+                                    PendingAnswerAction.SetEconomyIgnored(
+                                        ignored = false,
+                                        entryId = focusEntryId,
+                                    ),
+                                )
                             },
                             enabled = enabled,
                             modifier = Modifier.weight(1f),
@@ -860,6 +1043,7 @@ private fun NeighborLine(
     vehicles: List<Vehicle>,
     prefix: String = "",
     anchorTs: Long? = null,
+    badge: String = "",
 ) {
     val name = when {
         n.vehicleId == 0 -> "Unknown"
@@ -878,6 +1062,7 @@ private fun NeighborLine(
     Text(
         "$prefix$ts · $name · odo ${n.odometer} · \$${n.cost} · ${n.gallons}G" +
             delta +
+            badge +
             if (flags.isNotEmpty()) " [$flags]" else "",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,

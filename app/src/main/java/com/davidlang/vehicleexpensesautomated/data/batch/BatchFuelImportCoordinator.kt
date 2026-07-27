@@ -484,7 +484,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 manualEditFuelFields(item, action)
             }
             is PendingAnswerAction.SetEconomyIgnored -> {
-                setEconomyIgnored(item, action.ignored)
+                setEconomyIgnored(item, action.ignored, action.entryId)
             }
             is PendingAnswerAction.AssignUnknownVehicle -> {
                 assignUnknownVehicle(item, action.vehicleId)
@@ -689,8 +689,10 @@ class BatchFuelImportCoordinator @Inject constructor(
         item: BatchPendingItem,
         action: PendingAnswerAction.ManualEditFuelFields,
     ): PendingAnswerResult {
-        val id = item.fuelEntryId
+        val id = action.entryId
+            ?: item.fuelEntryId
             ?: item.extra["suspectId"]?.toLongOrNull()
+            ?: item.extra["endEntryId"]?.toLongOrNull()
             ?: return PendingAnswerResult("No fuelEntryId", success = false)
         val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
             ?: return PendingAnswerResult("Fuel row $id not found", success = false)
@@ -711,18 +713,16 @@ class BatchFuelImportCoordinator @Inject constructor(
     private suspend fun setEconomyIgnored(
         item: BatchPendingItem,
         ignored: Boolean,
+        entryId: Long? = null,
     ): PendingAnswerResult {
-        val id = item.fuelEntryId
+        val id = entryId
+            ?: item.fuelEntryId
+            ?: item.extra["endEntryId"]?.toLongOrNull()
             ?: return PendingAnswerResult("No fuelEntryId", success = false)
         val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
             ?: return PendingAnswerResult("Fuel row $id not found", success = false)
         fuelEntryRepository.updateFuelEntry(live.copy(economyIgnored = ignored))
-        if (!ignored) {
-            clearAnsweredPending(item, id)
-        } else {
-            // Drop all kinds for this id; re-merge will re-enqueue ECONOMY_IGNORED
-            clearAnsweredPending(item, id)
-        }
+        clearAnsweredPending(item, id)
         return PendingAnswerResult(
             if (ignored) "Marked economyIgnored on id=$id" else "Unignored id=$id",
             remerge = true,
@@ -1093,9 +1093,14 @@ sealed class PendingAnswerAction {
         val odometer: Int? = null,
         val cost: Double? = null,
         val volume: Double? = null,
+        /** Explicit target row (e.g. MPG focus = leg end or leg start). */
+        val entryId: Long? = null,
     ) : PendingAnswerAction()
 
-    data class SetEconomyIgnored(val ignored: Boolean) : PendingAnswerAction()
+    data class SetEconomyIgnored(
+        val ignored: Boolean,
+        val entryId: Long? = null,
+    ) : PendingAnswerAction()
 
     data class AssignUnknownVehicle(val vehicleId: Int) : PendingAnswerAction()
 

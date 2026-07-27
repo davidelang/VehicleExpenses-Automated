@@ -1075,3 +1075,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Tag: batch_load/builds @ e743f48a
 - Verify: ./build_app only — no deploy/device smoke (coder not authorized to deploy for test)
 - Notes: research/batch-pending-gap-dedupe-timefmt-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity
+
+- Execution start: MPG outlier UI clarity per batch-mpg-outlier-ui-clarity-20260727-plan.md
+- Tip: batch_load/builds @ 47ddcf81
+- Device verify only after human deploy (coder will not adb install/deploy)
