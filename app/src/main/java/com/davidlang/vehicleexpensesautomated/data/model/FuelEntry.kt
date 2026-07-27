@@ -19,6 +19,12 @@ data class FuelEntry(
     val timestamp: Long,
     val photoUrl: String? = null,
     val isPartialFill: Boolean = false,
+    /**
+     * When true, this row is excluded from economy metrics (MPG legs, avg, $/mi anchors
+     * and window cost/vol). Inventory (fuel $, volume, fill counts) still includes it.
+     * **Must sync** with the fuel row (not pending-only).
+     */
+    val economyIgnored: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val location: String? = null,

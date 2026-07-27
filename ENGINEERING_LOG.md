@@ -1033,3 +1033,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Tag: batch_load/builds @ f360ce24
 - Notes: dev-ai-interaction/research/batch-stage-c-questions-20260727/smoke-notes.txt
 - Residual: 1 CONFLICT_ODO, 3 no-vehicle dash, 2 unreadable pump; AMBIGUOUS_MULTI_PUMP unused
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry
+
+- Execution start: photo UX, manual entry, economyIgnored sync, tank heuristic, unknown vehicle, outliers
+- Parent tip: batch_load/builds @ 27d92a09

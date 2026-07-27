@@ -26,6 +26,15 @@ object FuelRowMergeEngine {
     const val MERGE_WINDOW_MS: Long = 45L * 60L * 1000L
     const val COST_VOL_REL_TOL: Double = 0.05
     const val COST_ABS_FLOOR: Double = 1.0
+    /**
+     * Tank / max-fill slack in **preferred volume unit** (same as [FuelEntry.gallons]).
+     * Pump volume &gt; maxFill(vehicle) + this eliminates that vehicle for pairing.
+     * Spec: five US gallons; if preferred unit is liters, convert at call sites that know prefs.
+     * Default treats stored volumes as gallons-compatible (user preferred unit).
+     */
+    const val TANK_SLACK_GAL: Double = 5.0
+    /** Context window for unknown-vehicle neighbor lists (±). */
+    const val UNKNOWN_CONTEXT_WINDOW_MS: Long = 2L * 60L * 60L * 1000L
 
     data class MergePlan(
         val updates: List<FuelEntry> = emptyList(),
@@ -49,14 +58,24 @@ object FuelRowMergeEngine {
             it.vehicleId == BatchFuelImportCoordinator.UNASSIGNED_VEHICLE_ID && isPumpLike(it)
         }
 
-        // Pair unassigned pumps to nearest dash odo (known vehicle) in window
+        // Max fill volume per vehicle (tank estimate) — include all positive vols
+        val maxFillByVehicle = live
+            .filter { it.vehicleId > 0 && it.gallons > 0 }
+            .groupBy { it.vehicleId }
+            .mapValues { (_, rows) -> rows.maxOf { it.gallons } }
+
+        // Pair unassigned pumps: tank elimination, then nearest dash odo in window
         val reassignedById = mutableMapOf<Long, FuelEntry>()
         for (pump in unassignedPumps) {
-            val partner = assigned
-                .filter { hasPositiveOdo(it) && abs(it.timestamp - pump.timestamp) <= windowMs }
-                .minByOrNull { abs(it.timestamp - pump.timestamp) }
-            if (partner != null) {
-                reassignedById[pump.id] = pump.copy(vehicleId = partner.vehicleId)
+            val vehicleId = assignUnassignedPumpVehicle(
+                pump = pump,
+                assigned = assigned,
+                maxFillByVehicle = maxFillByVehicle,
+                activeVehicleIds = assigned.map { it.vehicleId }.toSet(),
+                windowMs = windowMs,
+            )
+            if (vehicleId != null && vehicleId > 0) {
+                reassignedById[pump.id] = pump.copy(vehicleId = vehicleId)
             }
         }
 
@@ -97,6 +116,57 @@ object FuelRowMergeEngine {
             hardDeletes = deletesById.values.toList(),
             newPending = allPending,
         )
+    }
+
+    /**
+     * Assign a vehicleId=0 pump:
+     * 1. Eliminate vehicles where pump vol &gt; maxFill + [TANK_SLACK_GAL]
+     * 2. If exactly one vehicle remains among active → auto-assign that vehicle
+     * 3. Else nearest in-window dash odo among remaining (or all if none eliminated)
+     * 4. If zero remain after tank elimination → leave unassigned
+     */
+    internal fun assignUnassignedPumpVehicle(
+        pump: FuelEntry,
+        assigned: List<FuelEntry>,
+        maxFillByVehicle: Map<Int, Double>,
+        activeVehicleIds: Set<Int>,
+        windowMs: Long = MERGE_WINDOW_MS,
+        tankSlack: Double = TANK_SLACK_GAL,
+    ): Int? {
+        val candidates = tankEligibleVehicles(
+            pumpVol = pump.gallons,
+            activeVehicleIds = activeVehicleIds,
+            maxFillByVehicle = maxFillByVehicle,
+            tankSlack = tankSlack,
+        )
+        if (candidates.isEmpty()) return null
+        if (candidates.size == 1) return candidates.single()
+
+        val partner = assigned
+            .filter {
+                it.vehicleId in candidates &&
+                    hasPositiveOdo(it) &&
+                    abs(it.timestamp - pump.timestamp) <= windowMs
+            }
+            .minByOrNull { abs(it.timestamp - pump.timestamp) }
+        return partner?.vehicleId
+    }
+
+    /**
+     * Vehicles not eliminated by tank max-fill rule.
+     * No maxFill known → keep vehicle (cannot eliminate).
+     */
+    fun tankEligibleVehicles(
+        pumpVol: Double,
+        activeVehicleIds: Set<Int>,
+        maxFillByVehicle: Map<Int, Double>,
+        tankSlack: Double = TANK_SLACK_GAL,
+    ): Set<Int> {
+        if (pumpVol <= 0 || activeVehicleIds.isEmpty()) return activeVehicleIds
+        return activeVehicleIds.filter { vid ->
+            val maxFill = maxFillByVehicle[vid]
+            maxFill == null || pumpVol <= maxFill + tankSlack
+        }.toSet()
     }
 
     /** Greedy seed-window + consecutive-gap clusters. */

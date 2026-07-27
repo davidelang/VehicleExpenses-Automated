@@ -18,6 +18,12 @@ enum class BatchPendingKind {
     UNREADABLE_DASH_NO_VEHICLE,
     CONFLICT_ODO,
     AMBIGUOUS_MULTI_PUMP,
+    /** Live fuel row with vehicleId=0 that still needs assignment. */
+    ASSIGN_UNKNOWN_VEHICLE,
+    /** Economy-ignored row needs review / unignore / edit. */
+    ECONOMY_IGNORED,
+    /** MPG outlier leg endpoint (3× vs median baseline). */
+    MPG_OUTLIER,
     OTHER,
 }
 

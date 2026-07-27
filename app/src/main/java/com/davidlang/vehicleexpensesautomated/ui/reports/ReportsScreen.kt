@@ -34,9 +34,15 @@ private fun hasOdo(e: FuelEntry): Boolean = e.odometer > 0
 private fun hasCost(e: FuelEntry): Boolean = e.cost > 0.0
 private fun hasVol(e: FuelEntry): Boolean = e.gallons > 0.0
 
-/** Full fill anchor: not partial and odo + cost + volume all present. */
+/**
+ * Full fill anchor: not partial, odo + cost + volume present, and not
+ * [FuelEntry.economyIgnored] (ignored rows never anchor MPG/$/mi legs).
+ */
 private fun isFullFill(e: FuelEntry): Boolean =
-    !e.isPartialFill && hasOdo(e) && hasCost(e) && hasVol(e)
+    !e.economyIgnored && !e.isPartialFill && hasOdo(e) && hasCost(e) && hasVol(e)
+
+/** Economy window contributor (cost/vol between full fills). */
+private fun contributesToEconomy(e: FuelEntry): Boolean = !e.economyIgnored
 
 /**
  * MPG chain breaker: blank (no odo/cost/vol) or cost without volume.
@@ -92,11 +98,11 @@ private fun newestValidLegs(
         val between = entries.filter {
             it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp
         }
-        if (between.any { isMpgChainBreaker(it) }) continue
-        val withVol = between.filter { hasVol(it) }
+        if (between.any { contributesToEconomy(it) && isMpgChainBreaker(it) }) continue
+        val withVol = between.filter { contributesToEconomy(it) && hasVol(it) }
         val sumVol = withVol.sumOf { it.gallons }
         if (sumVol <= 0) continue
-        val withCost = between.filter { hasCost(it) }
+        val withCost = between.filter { contributesToEconomy(it) && hasCost(it) }
         val sumCostByCurrency = CurrencyCodes.sumByCurrency(
             withCost,
             defaultStored,
@@ -141,9 +147,9 @@ private fun dollarsPerMile(
         val between = fuelEntries.filter {
             it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp
         }
-        if (between.any { isDpmChainBreaker(it) }) continue
+        if (between.any { contributesToEconomy(it) && isDpmChainBreaker(it) }) continue
         miles += cur.odometer - prev.odometer
-        val fuelWithCost = between.filter { hasCost(it) }
+        val fuelWithCost = between.filter { contributesToEconomy(it) && hasCost(it) }
         val fuelSums = CurrencyCodes.sumByCurrency(
             fuelWithCost,
             defaultStored,
@@ -189,6 +195,23 @@ private fun formatMpg(value: Double?): String {
     return if (value == null) "n/a" else "%.1f".format(value)
 }
 
+/**
+ * Drop legs where mpg &lt; ref/3 or mpg &gt; ref*3.
+ * [ref] = median of leg mpgs (robust baseline). If fewer than 3 legs, keep all.
+ */
+private fun excludeMpgOutliers(legs: List<FullFillLeg>): List<FullFillLeg> {
+    if (legs.size < 3) return legs
+    val sorted = legs.map { it.mpg }.sorted()
+    val mid = sorted.size / 2
+    val ref = if (sorted.size % 2 == 0) {
+        (sorted[mid - 1] + sorted[mid]) / 2.0
+    } else {
+        sorted[mid]
+    }
+    if (ref <= 0) return legs
+    return legs.filter { it.mpg >= ref / 3.0 && it.mpg <= ref * 3.0 }
+}
+
 private fun formatEntryDate(timestamp: Long): String {
     return SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(timestamp))
 }
@@ -223,8 +246,14 @@ private fun vehicleStatsOnlyLine(
     val fuel = CurrencyCodes.formatAggregateSum(stats.fuelCostByCurrency, defaultSymbol)
     return "Fuel $fuel · " +
         "${"%.1f".format(stats.gallons)}$unitLabel · " +
-        "${stats.fillCount}(${stats.partialCount}p) · " +
+        "fills ${stats.fillCount}(${stats.partialCount}p) · " +
         "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · $/mi $dpm"
+}
+
+/** User-facing vehicle label: never “Vehicle 0”. */
+fun reportVehicleDisplayName(vehicleId: Int, nameById: Map<Int, String>): String {
+    if (vehicleId == 0) return "Unknown"
+    return nameById[vehicleId] ?: "Vehicle $vehicleId"
 }
 
 /** Exp total + category breakdown (compact). */
@@ -297,9 +326,11 @@ fun ReportsScreen(navController: NavHostController) {
             val vExp = expByV[vehicleId].orEmpty()
             val allLegsNewestFirst = newestValidLegs(vFuel, defaultStored, maxLegs = Int.MAX_VALUE)
             val legsChrono = allLegsNewestFirst.asReversed() // oldest→newest for avg/last
+            // Display avg excludes 3× MPG outliers (same product rule as pending detect)
+            val displayLegs = excludeMpgOutliers(legsChrono)
             VehicleReportStats(
                 vehicleId = vehicleId,
-                name = vehicleNameById[vehicleId] ?: "Vehicle $vehicleId",
+                name = reportVehicleDisplayName(vehicleId, vehicleNameById),
                 fuelCostByCurrency = CurrencyCodes.sumByCurrency(
                     vFuel,
                     defaultStored,
@@ -309,10 +340,10 @@ fun ReportsScreen(navController: NavHostController) {
                 gallons = vFuel.sumOf { it.gallons },
                 fillCount = vFuel.size,
                 partialCount = vFuel.count { it.isPartialFill },
-                lastMpg = legsChrono.lastOrNull()?.mpg,
-                avgMpg = if (legsChrono.isEmpty()) null else legsChrono.map { it.mpg }.average(),
+                lastMpg = displayLegs.lastOrNull()?.mpg,
+                avgMpg = if (displayLegs.isEmpty()) null else displayLegs.map { it.mpg }.average(),
                 dollarsPerMile = dollarsPerMile(vFuel, vExp, defaultStored),
-                last5Legs = allLegsNewestFirst.take(5),
+                last5Legs = excludeMpgOutliers(allLegsNewestFirst).take(5),
                 expenseTotalByCurrency = CurrencyCodes.sumByCurrency(
                     vExp,
                     defaultStored,
@@ -691,11 +722,14 @@ private fun FillsBlock(
             Text("No fuel entries", style = MaterialTheme.typography.bodyMedium)
         } else {
             fills.forEach { entry ->
-                val name = vehicleNameById[entry.vehicleId] ?: "Vehicle ${entry.vehicleId}"
-                val partial = if (entry.isPartialFill) " · partial" else ""
+                val name = reportVehicleDisplayName(entry.vehicleId, vehicleNameById)
+                val flags = buildList {
+                    if (entry.isPartialFill) add("partial")
+                    if (entry.economyIgnored) add("ignored")
+                }.joinToString(" · ").let { if (it.isEmpty()) "" else " · $it" }
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     Column(modifier = Modifier.padding(10.dp)) {
-                        Text("$name · ${formatEntryDate(entry.timestamp)}$partial")
+                        Text("$name · ${formatEntryDate(entry.timestamp)}$flags")
                         Text(
                             "odo ${entry.odometer} · " +
                                 "${CurrencyCodes.formatAmount(entry.cost, entry.currency, defaultSymbol)} · " +

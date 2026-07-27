@@ -6,12 +6,20 @@ Reference for economy math in `ui/reports/ReportsScreen.kt`. Field presence: a n
 
 A fuel row is a **full fill** when:
 
+- `!economyIgnored`, and
 - `!isPartialFill`, and
 - odometer > 0, and
 - cost > 0, and
 - volume (`gallons`) > 0.
 
 Only full fills anchor MPG legs and $/mi segment endpoints. Partials may sit inside a window (and roll volume/cost when present) but never start or end a chain segment.
+
+### `economyIgnored` (synced boolean on `FuelEntry`)
+
+- **Must travel with the fuel row** (tabular column **Economy Ignored**; Room + LWW `updatedAt`). Not pending-only.
+- Economy (MPG legs, avg/last, $/mi anchors and window cost/vol): ignored rows **do not anchor** and **do not contribute** cost/vol in windows.
+- Inventory (fuel $, gallons, **fills N(Mp)** counts): **still include** ignored rows.
+- Successful field correction (manual odo/cost/vol) clears ignore; UI also has Unignore.
 
 ## Row shapes vs chains
 
@@ -30,13 +38,14 @@ Time gaps between fills are normal and are not breaks.
 
 1. Collect full fills for the vehicle, sorted by `timestamp` ascending (tie-break `id`).
 2. For each adjacent pair `(prev, cur)` with `cur.odometer > prev.odometer`:
-   - Window = all fuel rows with `prev.timestamp < t ≤ cur.timestamp`.
-   - If any row in the window is an **MPG chain breaker** (blank, or cost without volume), **skip** the pair.
-   - `sumVol` = sum of `gallons` for rows in the window with volume present.
+   - Window = all fuel rows with `prev.timestamp < t ≤ cur.timestamp` that are **not** `economyIgnored`.
+   - If any contributing row in the window is an **MPG chain breaker** (blank, or cost without volume), **skip** the pair.
+   - `sumVol` = sum of `gallons` for contributing rows in the window with volume present.
    - If `sumVol ≤ 0`, skip.
    - `mpg = (cur.odometer − prev.odometer) / sumVol`.
    - Display cost on a leg = multi-currency sum of costs in the window for rows with cost present (same helper as elsewhere).
-3. **Last MPG** = newest valid leg’s mpg; **avg MPG** = mean of all valid legs; **last-5** UI = up to five newest valid legs.
+3. **Display avg / last-5:** drop **MPG outliers** where `mpg < ref/3` or `mpg > ref*3`, with `ref` = **median** of all valid leg mpgs for that vehicle. If fewer than 3 legs, no outlier filter. Last MPG / avg use the filtered set.
+4. Outlier endpoints also enqueue Stage C `MPG_OUTLIER` questions after merge (separate from display).
 
 Odo-only rows in a window do not break, do not add volume/cost, and do not change odo endpoints (endpoints are full fills only).
 
@@ -54,9 +63,19 @@ Per vehicle, **segment sum** over unbroken full→full pairs (not global max−m
 
 Odo-only (and other non-full) rows never set min/max odo for this metric.
 
-## Inventory totals (unchanged)
+## Inventory totals
 
-Overall and per-vehicle inventory lines (total fuel $, total volume, fill counts) still sum **all** non-deleted rows for the vehicle. They are inventory, not chain economy. Only last/avg MPG, last-5 legs, and $/mi use the chain rules.
+Overall and per-vehicle inventory lines (total fuel $, total volume, fill counts) still sum **all** non-deleted rows for the vehicle (including `economyIgnored`). They are inventory, not chain economy. Only last/avg MPG, last-5 legs, and $/mi use the chain rules.
+
+Per-vehicle stats line format:
+
+```text
+Fuel $… · 1031.6G · fills 83(15p) · last … · avg … · $/mi …
+```
+
+**83** = total fuel rows; **(15p)** = partials. The word **fills** is required before the counts.
+
+Vehicle id `0` is labeled **Unknown** in reports UI (never “Vehicle 0”).
 
 ## Volume display
 

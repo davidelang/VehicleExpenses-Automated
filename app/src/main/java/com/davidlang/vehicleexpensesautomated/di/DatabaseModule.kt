@@ -81,6 +81,14 @@ object DatabaseModule {
         }
     }
 
+    val MIGRATION_13_14 = object : Migration(13, 14) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE fuel_entries ADD COLUMN economyIgnored INTEGER NOT NULL DEFAULT 0",
+            )
+        }
+    }
+
     val MIGRATION_12_13 = object : Migration(12, 13) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -265,6 +273,7 @@ object DatabaseModule {
             MIGRATION_10_11,
             MIGRATION_11_12,
             MIGRATION_12_13,
+            MIGRATION_13_14,
         )
         .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()
