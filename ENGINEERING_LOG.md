@@ -941,3 +941,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start: fix production Set J ref geometry (probe/4080, ICRS crop, Raw nestFilter)
 - Baseline: batch_load/builds @ d51f30d9
+
+## 2026-07-26 - production-setj-ref-geometry-parity done
+
+- Probed ref dims for landmarks+align; fallback 4080×3072
+- ICRS Float createCrop for odo window; Raw no nestFilter
+- Experiment screen untouched (independent copy)
+- Tag: batch_load/builds @ de113410
+- Device compare pending user deploy; notes in research/setj-geometry-parity-20260726/
