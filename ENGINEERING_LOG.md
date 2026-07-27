@@ -972,3 +972,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - first20 score: see research/batch-setj-parity-20260726/first20-after-geometry.txt (gate FAIL — residual leading-digit/blank DIFFs)
 - Part B: clickable pending UI + forcedVehicleId dash reprocess + skip/retry pump (build 06707a0a)
 - Experiment untouched; deploy needed for Part B on device
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti
+
+- Execution start: batch must run experiment Set J / Set I pipelines, not OcrHarness reinvented front-end
+- Baseline tag: batch_load/builds @ c112e80e

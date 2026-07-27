@@ -5,10 +5,10 @@ import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
+import com.davidlang.vehicleexpensesautomated.ui.experiment.AlignmentSetJRunner
+import com.davidlang.vehicleexpensesautomated.ui.experiment.PumpSetIRunner
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
-import com.davidlang.vehicleexpensesautomated.ui.util.ImageIngestionProvider
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
-import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -300,6 +300,10 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
     }
 
+    /**
+     * Dash: alignment **experiment Set J** pipeline via [AlignmentSetJRunner]
+     * (not [com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness.runAutoFillPipeline]).
+     */
     private suspend fun processDash(
         file: File,
         vehicles: List<Vehicle>,
@@ -311,34 +315,11 @@ class BatchFuelImportCoordinator @Inject constructor(
         val ts = meta.timestampMs ?: System.currentTimeMillis()
         val durable = copyToDurable(file, "dash")
 
-        val (w, h) = ImageIngestionProvider.probeDimensions(appContext, file.absolutePath)
-        if (w <= 0 || h <= 0) {
-            if (enqueuePendingOnFail) {
-                pending.add(
-                    BatchPendingItem(
-                        kind = BatchPendingKind.OTHER,
-                        message = "Dash unreadable dimensions: ${file.name}",
-                        photoPath = file.absolutePath,
-                        durablePhotoPath = durable.absolutePath,
-                        timestampMs = ts,
-                    ),
-                )
-            }
-            return false
-        }
-
-        val master = NativePaddleEngine.bufferSetA
-        master.resize(w, h)
-        ImageIngestionProvider.ingestFromFile(appContext, file.absolutePath, master.p)
-
         val activeVehicles = vehicles.filter { !it.deleted }
-        val result = OcrHarness.runAutoFillPipeline(
+        val result = AlignmentSetJRunner.runOnePhoto(
             context = appContext,
-            masterBuffer = master,
-            allVehicles = activeVehicles,
-            debug = false,
-            cameraRotationDegrees = 0,
-            onStage = null,
+            photoFile = file,
+            vehicles = activeVehicles,
             forcedVehicleId = forcedVehicleId,
         )
 
@@ -364,7 +345,6 @@ class BatchFuelImportCoordinator @Inject constructor(
         val photoJson = FuelPhotoJson.single("dash", durable.absolutePath, ts)
 
         if (odo == null) {
-            // Blank marker row: zeros break both chains; not partial inventory.
             fuelEntryRepository.insertFuelEntry(
                 FuelEntry(
                     vehicleId = result.vehicleId,
@@ -419,29 +399,8 @@ class BatchFuelImportCoordinator @Inject constructor(
         val durable = copyToDurable(file, "pump")
         val vehicleId = forcedVehicleId ?: UNASSIGNED_VEHICLE_ID
 
-        val (w, h) = ImageIngestionProvider.probeDimensions(appContext, file.absolutePath)
-        if (w <= 0 || h <= 0) {
-            if (enqueuePendingOnFail) {
-                pending.add(
-                    BatchPendingItem(
-                        kind = BatchPendingKind.UNREADABLE_PUMP,
-                        message = "Pump unreadable dimensions: ${file.name}",
-                        photoPath = file.absolutePath,
-                        durablePhotoPath = durable.absolutePath,
-                        timestampMs = ts,
-                        latitude = meta.latitude,
-                        longitude = meta.longitude,
-                    ),
-                )
-            }
-            return false
-        }
-
-        val master = NativePaddleEngine.bufferSetA
-        master.resize(w, h)
-        ImageIngestionProvider.ingestFromFile(appContext, file.absolutePath, master.p)
-
-        val result = OcrHarness.runPumpCostVolPipelineSetI(appContext, master, debug = false)
+        // Experiment Set I path (not OcrHarness.runPumpCostVolPipelineSetI / Quick Fill G--)
+        val result = PumpSetIRunner.runOnePhoto(appContext, file)
         val cost = parseMoneyOrVol(result.cost)
         val vol = parseMoneyOrVol(result.volume)
 

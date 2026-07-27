@@ -69,7 +69,7 @@ private fun logHeapState(context: Context, label: String) {
 }
 
 /** Bounds-only probe — never loads full reference dash photos into RAM. */
-private fun probeReferenceDimensions(context: Context, path: String): Pair<Int, Int> {
+internal fun probeReferenceDimensions(context: Context, path: String): Pair<Int, Int> {
     return try {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         if (path.startsWith("content://")) {
@@ -948,7 +948,7 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
     return root
 }
 
-private fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
+internal fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
     val cols = mat.cols()
     val rows = mat.rows()
     val totalPixels = cols * rows
@@ -996,7 +996,7 @@ private fun logAlignSliceDiag(label: String, set: BufferSet, sliceLabel: String,
     Log.d("ALIGN_BUF_DIAG", "DIAG_SLICE_PRE [$label] $sliceLabel.uvMat empty=${slice.uvMat.empty()} cols=${slice.uvMat.cols()} rows=${slice.uvMat.rows()}")
 }
 
-private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
+internal fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
     val arr = org.json.JSONArray()
     anns.forEach { ann ->
         val obj = org.json.JSONObject()
@@ -1012,7 +1012,7 @@ private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
     return arr.toString()
 }
 
-private suspend fun runBinTrialsPaddle(
+internal suspend fun runBinTrialsPaddle(
     odoBuffer: BufferSet,
     masterBuffer: BufferSet,
     vehicleId: Int,
@@ -1538,7 +1538,7 @@ private suspend fun runBinTrialsMLKit(
     return Pair(trialsHtml.toString(), trialsMeta)
 }
 
-private fun findValleyMidpoints(bins: FloatArray): List<Int> {
+internal fun findValleyMidpoints(bins: FloatArray): List<Int> {
     if (bins.isEmpty()) return emptyList()
     val binCount = bins.size
     val smoothed = FloatArray(binCount)
@@ -1709,7 +1709,7 @@ private fun buildHtmlRowDynamic(
     appendLine("</td></tr>")
 }
 
-private fun generateRunLengthHistogramB64(histStr: String?): String {
+internal fun generateRunLengthHistogramB64(histStr: String?): String {
     if (histStr.isNullOrEmpty()) return ""
     val counts = histStr.split(",").map { it.toIntOrNull() ?: 0 }
     // Viz uses first 256 bins; run-length native may use up to 8192.
@@ -1737,7 +1737,7 @@ private fun generateRunLengthHistogramB64(histStr: String?): String {
     return b64
 }
 
-private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
+internal fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
     if (hHist == null || vHist == null || hHist.isEmpty() || vHist.isEmpty()) return ""
     // Plot uses low bins 0..255 only; native H may supply 8192-bin long-lived arrays.
     val plotLimit = minOf(256, hHist.size, vHist.size)
@@ -1814,7 +1814,7 @@ private fun drawCropBoxesOnReference(bmp: Bitmap, vehicle: Vehicle): Bitmap {
     return annotated
 }
 
-private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
+internal fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
     if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
     try {
         val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else return emptyList()
@@ -1844,7 +1844,7 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
 private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
 
-private fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
+internal fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
     // Brightness path: OpenCV calcHist (64-bin FloatArray). Run-length stroke-width hist uses
     // NativeImageUtils.longLivedRunHistH/V (8192 bins). longLivedBrightness reserved for future native uint8 brightness.
     val hist = org.opencv.core.Mat()
@@ -1886,7 +1886,7 @@ private fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
     return OdometerOcrUtils.HistStats(intensityLow, intensityHigh, p80, bins)
 }
 
-private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<OdometerOcrUtils.HistMarker> = emptyList(), skipEnds: Boolean = false): String {
+internal fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<OdometerOcrUtils.HistMarker> = emptyList(), skipEnds: Boolean = false): String {
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
     val bins = FloatArray(64); hist.get(0, 0, bins)
@@ -1915,7 +1915,7 @@ private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<Od
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
 
-private suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
+internal suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
     val queryOcrDiscovery = OcrHarness.runDiscovery(input, context)
     val landmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
     return Pair(queryOcrDiscovery, landmarks)
@@ -1925,7 +1925,7 @@ private fun JSONObject.putSafe(key: String, value: Double, context: String = "")
 private fun JSONObject.putSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
 
-private suspend fun runPaddleValleyIterative(
+internal suspend fun runPaddleValleyIterative(
     displayName: String,
     masterBuffer: Any,
     mWidth: Int,
