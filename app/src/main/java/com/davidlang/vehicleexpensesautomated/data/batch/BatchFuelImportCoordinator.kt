@@ -52,6 +52,9 @@ class BatchFuelImportCoordinator @Inject constructor(
         private const val TAG = "BatchFuelImport"
         private val IMAGE_EXTS = setOf("jpg", "jpeg", "png", "dng")
 
+        /** Limited import size (like experiment Golden/Problem subset buttons). */
+        const val LIMITED_IMPORT_COUNT = 20
+
         fun dashPhotoDir(context: Context): File =
             File(context.filesDir, "experiment_photos").also { it.mkdirs() }
 
@@ -115,10 +118,15 @@ class BatchFuelImportCoordinator @Inject constructor(
     /**
      * Stage A: ingest dash + pump archives into fuel_entries partials / pending.
      * Does not merge.
+     *
+     * @param maxDash if non-null, only the first N dash images (sorted by name) are processed.
+     * @param maxPump if non-null, only the first N pump images (sorted by name) are processed.
      */
     suspend fun runIngest(
         vehicles: List<Vehicle>,
         onProgress: (BatchImportProgress) -> Unit = {},
+        maxDash: Int? = null,
+        maxPump: Int? = null,
     ): BatchImportResult = withContext(Dispatchers.Default) {
         clearCancel()
         val pending = BatchImportPendingStore.load(appContext).toMutableList()
@@ -127,8 +135,10 @@ class BatchFuelImportCoordinator @Inject constructor(
         var pumpInserted = 0
         var errCount = 0
 
-        val dashFiles = listImages(dashPhotoDir(appContext))
-        val pumpFiles = listImages(pumpPhotoDir(appContext))
+        val allDash = listImages(dashPhotoDir(appContext))
+        val allPump = listImages(pumpPhotoDir(appContext))
+        val dashFiles = if (maxDash != null) allDash.take(maxDash.coerceAtLeast(0)) else allDash
+        val pumpFiles = if (maxPump != null) allPump.take(maxPump.coerceAtLeast(0)) else allPump
         val total = dashFiles.size + pumpFiles.size
         var done = 0
 
@@ -147,7 +157,12 @@ class BatchFuelImportCoordinator @Inject constructor(
             )
         }
 
-        report("init", "Dash ${dashFiles.size} · pump ${pumpFiles.size}")
+        val limitNote = when {
+            maxDash != null || maxPump != null ->
+                " (limited: dash ${dashFiles.size}/${allDash.size}, pump ${pumpFiles.size}/${allPump.size})"
+            else -> ""
+        }
+        report("init", "Dash ${dashFiles.size} · pump ${pumpFiles.size}$limitNote")
 
         // --- Dash (Set J via runAutoFillPipeline) ---
         for (file in dashFiles) {

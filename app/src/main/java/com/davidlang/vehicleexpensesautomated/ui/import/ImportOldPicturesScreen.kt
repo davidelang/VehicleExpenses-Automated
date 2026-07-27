@@ -137,39 +137,46 @@ fun ImportOldPicturesScreen(
             }
         }
 
+        fun startIngest(maxDash: Int?, maxPump: Int?, toastLabel: String) {
+            if (running) return
+            running = true
+            lastResult = null
+            scope.launch {
+                try {
+                    withContext(Dispatchers.Default) {
+                        NativePaddleEngine.initializeGlobalBuffers(context.applicationContext)
+                    }
+                    val result = coordinator.runIngest(
+                        vehicles = vehicles,
+                        onProgress = { p -> progress = p },
+                        maxDash = maxDash,
+                        maxPump = maxPump,
+                    )
+                    lastResult = result
+                    pendingSnapshot = result.pending
+                    Toast.makeText(
+                        context,
+                        if (result.cancelled) "$toastLabel cancelled"
+                        else "$toastLabel done: +${result.dashInserted + result.pumpInserted} rows",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "$toastLabel failed: ${e.message}", Toast.LENGTH_LONG)
+                        .show()
+                } finally {
+                    running = false
+                }
+            }
+        }
+
+        val limitN = BatchFuelImportCoordinator.LIMITED_IMPORT_COUNT
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Button(
-                onClick = {
-                    if (running) return@Button
-                    running = true
-                    lastResult = null
-                    scope.launch {
-                        try {
-                            withContext(Dispatchers.Default) {
-                                NativePaddleEngine.initializeGlobalBuffers(context.applicationContext)
-                            }
-                            val result = coordinator.runIngest(vehicles) { p ->
-                                progress = p
-                            }
-                            lastResult = result
-                            pendingSnapshot = result.pending
-                            Toast.makeText(
-                                context,
-                                if (result.cancelled) "Batch cancelled"
-                                else "Batch done: +${result.dashInserted + result.pumpInserted} rows",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Batch failed: ${e.message}", Toast.LENGTH_LONG)
-                                .show()
-                        } finally {
-                            running = false
-                        }
-                    }
-                },
+                onClick = { startIngest(null, null, "Batch") },
                 enabled = !running && (dashCount + pumpCount) > 0,
                 modifier = Modifier.weight(1f),
             ) {
@@ -181,6 +188,24 @@ fun ImportOldPicturesScreen(
             ) {
                 Text("Cancel")
             }
+        }
+
+        // Like experiment Golden / Problem subset buttons — first N by name, not full corpus.
+        OutlinedButton(
+            onClick = {
+                startIngest(
+                    maxDash = limitN,
+                    maxPump = limitN,
+                    toastLabel = "Limited ($limitN+$limitN)",
+                )
+            },
+            enabled = !running && (dashCount + pumpCount) > 0,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                if (running) "Running…"
+                else "First $limitN dash + first $limitN pump",
+            )
         }
 
         OutlinedButton(

@@ -949,3 +949,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Experiment screen untouched (independent copy)
 - Tag: batch_load/builds @ de113410
 - Device compare pending user deploy; notes in research/setj-geometry-parity-20260726/
+
+## 2026-07-26 - batch import limited button (first 20+20)
+
+- Import UI: OutlinedButton "First 20 dash + first 20 pump" (name-sorted take)
+- BatchFuelImportCoordinator.runIngest(maxDash, maxPump); LIMITED_IMPORT_COUNT=20
