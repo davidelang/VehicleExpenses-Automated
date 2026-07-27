@@ -1018,3 +1018,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - CONFLICT_ODO pending: 9594 vs 9698; 198699 vs 98699 (photo paths attached)
 - Summary: dev-ai-interaction/research/batch-stage-b-merge-20260727/merge-run-summary.txt
 - Stage C deferred (image-first questions, assign→re-merge UI)
+
+## 2026-07-27 - batch-stage-c-image-questions
+
+- Execution start: Stage C image-first pending questions per batch-stage-c-image-questions-coder-20260727-plan.md
+- Stage B done on device; tip batch_load/builds @ 0c93922c

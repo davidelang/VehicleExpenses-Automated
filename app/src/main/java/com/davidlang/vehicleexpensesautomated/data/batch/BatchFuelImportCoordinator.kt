@@ -287,17 +287,17 @@ class BatchFuelImportCoordinator @Inject constructor(
 
     /**
      * Apply a pending answer from the Import questions UI.
-     * @return short status message for toast.
+     * Caller should [applyMerge] when [PendingAnswerResult.remerge] is true.
      */
     suspend fun applyPendingAnswer(
         item: BatchPendingItem,
         vehicles: List<Vehicle>,
         action: PendingAnswerAction,
-    ): String = withContext(Dispatchers.Default) {
+    ): PendingAnswerResult = withContext(Dispatchers.Default) {
         when (action) {
             is PendingAnswerAction.Skip -> {
                 BatchImportPendingStore.remove(appContext, item.id)
-                "Skipped pending item"
+                PendingAnswerResult("Skipped pending item", remerge = false)
             }
             is PendingAnswerAction.AssignVehicle -> {
                 when (item.kind) {
@@ -305,9 +305,17 @@ class BatchFuelImportCoordinator @Inject constructor(
                     BatchPendingKind.SKIP_OR_ASSIGN_VEHICLE,
                     -> {
                         val path = item.photoPath ?: item.durablePhotoPath
-                            ?: return@withContext "No photo path on pending item"
+                            ?: return@withContext PendingAnswerResult(
+                                "No photo path on pending item",
+                                success = false,
+                            )
                         val file = File(path)
-                        if (!file.isFile) return@withContext "Photo missing: $path"
+                        if (!file.isFile) {
+                            return@withContext PendingAnswerResult(
+                                "Photo missing: $path",
+                                success = false,
+                            )
+                        }
                         NativePaddleEngine.initializeGlobalBuffers(appContext)
                         val ok = processDash(
                             file = file,
@@ -318,17 +326,30 @@ class BatchFuelImportCoordinator @Inject constructor(
                         )
                         if (ok) {
                             BatchImportPendingStore.remove(appContext, item.id)
-                            "Reprocessed dash with vehicle ${action.vehicleId}"
+                            PendingAnswerResult(
+                                "Reprocessed dash with vehicle ${action.vehicleId}",
+                                remerge = true,
+                            )
                         } else {
-                            "Dash reprocess failed for vehicle ${action.vehicleId}"
+                            PendingAnswerResult(
+                                "Dash reprocess failed for vehicle ${action.vehicleId}",
+                                success = false,
+                            )
                         }
                     }
                     BatchPendingKind.ASSIGN_VEHICLE -> {
-                        // Legacy pending: run Set I and insert (or already inserted with 0 — reprocess)
                         val path = item.photoPath ?: item.durablePhotoPath
-                            ?: return@withContext "No photo path on pending item"
+                            ?: return@withContext PendingAnswerResult(
+                                "No photo path on pending item",
+                                success = false,
+                            )
                         val file = File(path)
-                        if (!file.isFile) return@withContext "Photo missing: $path"
+                        if (!file.isFile) {
+                            return@withContext PendingAnswerResult(
+                                "Photo missing: $path",
+                                success = false,
+                            )
+                        }
                         NativePaddleEngine.initializeGlobalBuffers(appContext)
                         val ok = processPump(
                             file = file,
@@ -338,22 +359,30 @@ class BatchFuelImportCoordinator @Inject constructor(
                         )
                         if (ok) {
                             BatchImportPendingStore.remove(appContext, item.id)
-                            "Pump processed for vehicle ${action.vehicleId}"
+                            PendingAnswerResult(
+                                "Pump processed for vehicle ${action.vehicleId}",
+                                remerge = true,
+                            )
                         } else {
-                            "Pump reprocess failed"
+                            PendingAnswerResult("Pump reprocess failed", success = false)
                         }
                     }
                     else -> {
                         BatchImportPendingStore.remove(appContext, item.id)
-                        "Removed pending (assign not applicable to ${item.kind})"
+                        PendingAnswerResult(
+                            "Removed pending (assign not applicable to ${item.kind})",
+                            remerge = false,
+                        )
                     }
                 }
             }
             is PendingAnswerAction.RetryPump -> {
                 val path = item.photoPath ?: item.durablePhotoPath
-                    ?: return@withContext "No photo path"
+                    ?: return@withContext PendingAnswerResult("No photo path", success = false)
                 val file = File(path)
-                if (!file.isFile) return@withContext "Photo missing"
+                if (!file.isFile) {
+                    return@withContext PendingAnswerResult("Photo missing", success = false)
+                }
                 NativePaddleEngine.initializeGlobalBuffers(appContext)
                 val ok = processPump(
                     file = file,
@@ -363,13 +392,107 @@ class BatchFuelImportCoordinator @Inject constructor(
                 )
                 if (ok) {
                     BatchImportPendingStore.remove(appContext, item.id)
-                    "Pump retry inserted (vehicleId=0 until merge)"
+                    PendingAnswerResult(
+                        "Pump retry inserted (vehicleId=0 until merge)",
+                        remerge = true,
+                    )
                 } else {
-                    "Pump retry still unreadable"
+                    PendingAnswerResult("Pump retry still unreadable", success = false)
                 }
+            }
+            is PendingAnswerAction.ResolveConflictOdo -> {
+                resolveConflictOdo(item, action.chosenOdo)
+            }
+            is PendingAnswerAction.KeepBothNoMerge -> {
+                BatchImportPendingStore.remove(appContext, item.id)
+                PendingAnswerResult(
+                    "Kept both (no merge); re-merge may re-ask CONFLICT_ODO",
+                    remerge = false,
+                )
             }
         }
     }
+
+    /**
+     * Keep [chosenOdo] as the only positive odometer among cluster entryIds.
+     * Pure odo-only rows with a different odo are hard-deleted; rows that still
+     * have cost/vol keep those fields with odo cleared for re-merge pairing.
+     */
+    private suspend fun resolveConflictOdo(
+        item: BatchPendingItem,
+        chosenOdo: Int,
+    ): PendingAnswerResult {
+        if (item.kind != BatchPendingKind.CONFLICT_ODO) {
+            return PendingAnswerResult("Not a CONFLICT_ODO item", success = false)
+        }
+        if (chosenOdo <= 0) {
+            return PendingAnswerResult("Invalid odometer $chosenOdo", success = false)
+        }
+        val entryIds = item.extra["entryIds"]
+            ?.split(',')
+            ?.mapNotNull { it.trim().toLongOrNull() }
+            ?.filter { it > 0 }
+            .orEmpty()
+        if (entryIds.isEmpty()) {
+            BatchImportPendingStore.remove(appContext, item.id)
+            return PendingAnswerResult("No entryIds on conflict; pending removed", remerge = false)
+        }
+        val live = fuelEntryRepository.getAllIncludingDeleted()
+            .filter { !it.deleted }
+            .associateBy { it.id }
+        var deleted = 0
+        var updated = 0
+        var kept = 0
+        for (id in entryIds) {
+            val e = live[id] ?: continue
+            when {
+                e.odometer == chosenOdo -> {
+                    kept++
+                }
+                e.odometer > 0 && e.odometer != chosenOdo -> {
+                    val hasPump = e.cost > 0 || e.gallons > 0
+                    if (hasPump) {
+                        fuelEntryRepository.updateFuelEntry(
+                            e.copy(odometer = 0, isPartialFill = true),
+                        )
+                        updated++
+                    } else {
+                        fuelEntryRepository.hardDeleteFuelEntry(e)
+                        deleted++
+                        Log.i(TAG, "conflict resolve hardDelete id=${e.id} odo=${e.odometer}")
+                    }
+                }
+                else -> {
+                    // no odo or already zero — leave for re-merge
+                }
+            }
+        }
+        BatchImportPendingStore.remove(appContext, item.id)
+        val msg = "Kept odo=$chosenOdo (keptRows≈$kept updated=$updated deleted=$deleted)"
+        Log.i(TAG, "resolveConflictOdo $msg")
+        return PendingAnswerResult(msg, remerge = true)
+    }
+
+    /** Paths for UI: item fields + photoUrl from related fuel rows when ids present. */
+    suspend fun resolvePendingPhotoUris(item: BatchPendingItem): List<String> =
+        withContext(Dispatchers.IO) {
+            val entryIds = buildList {
+                item.fuelEntryId?.let { add(it) }
+                item.extra["entryIds"]
+                    ?.split(',')
+                    ?.mapNotNull { it.trim().toLongOrNull() }
+                    ?.let { addAll(it) }
+            }.distinct()
+            val urls = if (entryIds.isEmpty()) {
+                emptyList()
+            } else {
+                val byId = fuelEntryRepository.getAllIncludingDeleted()
+                    .filter { it.id in entryIds }
+                    .associateBy { it.id }
+                entryIds.mapNotNull { byId[it]?.photoUrl }
+            }
+            pendingPhotoUris(item, urls)
+        }
 
     /**
      * Dash: alignment **experiment Set J** pipeline via [AlignmentSetJRunner]
@@ -523,4 +646,23 @@ sealed class PendingAnswerAction {
     data object Skip : PendingAnswerAction()
     data class AssignVehicle(val vehicleId: Int) : PendingAnswerAction()
     data object RetryPump : PendingAnswerAction()
+
+    /**
+     * [CONFLICT_ODO]: keep [chosenOdo] as authoritative for the cluster in
+     * [BatchPendingItem.extra] `entryIds`. Other rows with a different positive
+     * odo: pure odo-only → [FuelEntryRepository.hardDeleteFuelEntry]; rows with
+     * cost/vol keep data with odo zeroed so re-merge can pair. Then remove pending.
+     */
+    data class ResolveConflictOdo(val chosenOdo: Int) : PendingAnswerAction()
+
+    /** Drop the pending conflict without changing fuel rows (re-merge may re-ask). */
+    data object KeepBothNoMerge : PendingAnswerAction()
 }
+
+/** Result of [BatchFuelImportCoordinator.applyPendingAnswer]. */
+data class PendingAnswerResult(
+    val message: String,
+    /** True when fuel rows changed and Stage B re-merge should run. */
+    val remerge: Boolean = false,
+    val success: Boolean = true,
+)
