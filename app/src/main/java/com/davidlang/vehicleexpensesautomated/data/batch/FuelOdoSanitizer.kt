@@ -45,18 +45,20 @@ object FuelOdoSanitizer {
                 val limitMiles = maxVol * mpg * FuelRowMergeEngine.ODO_GAP_FACTOR
                 val odoRows = vRows
                     .map { current(it) }
-                    .filter { it.odometer > 0 && it.id !in demotedIds }
+                    .filter { eligibleForOdoSanity(it) && it.id !in demotedIds }
                     .sortedWith(compareBy({ it.timestamp }, { it.id }))
                 for (i in 1 until odoRows.size) {
                     val prev = current(odoRows[i - 1])
                     val cur = current(odoRows[i])
                     if (prev.id in demotedIds || cur.id in demotedIds) continue
+                    if (!eligibleForOdoSanity(prev) || !eligibleForOdoSanity(cur)) continue
                     if (cur.odometer <= prev.odometer) continue
                     val delta = cur.odometer - prev.odometer
                     if (delta > limitMiles) {
                         val next = odoRows.getOrNull(i + 1)?.let { current(it) }
                         val suspect = pickSuspect(prev, cur, next, gapDelta = delta, limitMiles = limitMiles)
-                        if (suspect.id !in demotedIds) {
+                        // Already partial / blank gap: never re-demote or re-enqueue
+                        if (suspect.id !in demotedIds && eligibleForOdoSanity(suspect)) {
                             val demoted = suspect.copy(isPartialFill = true)
                             updatesById[demoted.id] = demoted
                             demotedIds.add(demoted.id)
@@ -84,16 +86,17 @@ object FuelOdoSanitizer {
             // Pass 2: reverse odo
             val odoRows2 = vRows
                 .map { current(it) }
-                .filter { it.odometer > 0 && it.id !in demotedIds }
+                .filter { eligibleForOdoSanity(it) && it.id !in demotedIds }
                 .sortedWith(compareBy({ it.timestamp }, { it.id }))
             for (i in 1 until odoRows2.size) {
                 val prev = current(odoRows2[i - 1])
                 val cur = current(odoRows2[i])
                 if (prev.id in demotedIds || cur.id in demotedIds) continue
+                if (!eligibleForOdoSanity(prev) || !eligibleForOdoSanity(cur)) continue
                 if (cur.odometer < prev.odometer) {
                     val next = odoRows2.getOrNull(i + 1)?.let { current(it) }
                     val suspect = pickSuspect(prev, cur, next, gapDelta = null, limitMiles = null)
-                    if (suspect.id !in demotedIds) {
+                    if (suspect.id !in demotedIds && eligibleForOdoSanity(suspect)) {
                         val demoted = suspect.copy(isPartialFill = true)
                         updatesById[demoted.id] = demoted
                         demotedIds.add(demoted.id)
@@ -116,6 +119,17 @@ object FuelOdoSanitizer {
             updates = updatesById.values.toList(),
             newPending = pending,
         )
+    }
+
+    /**
+     * Rows already partial or full blank (odo/cost/vol all ≤0) are chain-safe /
+     * already handled — do not re-demote or re-enqueue ODO_SUSPECT.
+     */
+    private fun eligibleForOdoSanity(e: FuelEntry): Boolean {
+        if (e.isPartialFill) return false
+        val blank = e.odometer <= 0 && e.cost <= 0 && e.gallons <= 0
+        if (blank) return false
+        return e.odometer > 0
     }
 
     /**

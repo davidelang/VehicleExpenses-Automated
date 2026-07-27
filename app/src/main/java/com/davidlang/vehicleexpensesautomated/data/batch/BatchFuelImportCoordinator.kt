@@ -248,20 +248,15 @@ class BatchFuelImportCoordinator @Inject constructor(
             }
         }
 
-        val existing = BatchImportPendingStore.load(appContext)
+        // Full pending rebuild: wipe regenerable queue so stale pre-15m / pre-pair
+        // cards never reappear. Re-scan after sanitizer only.
+        onProgress("Rebuilding pending questions…")
+        val rebuilt = mutableListOf<BatchPendingItem>()
         var added = 0
         fun appendPending(p: BatchPendingItem) {
-            val dup = existing.any { e ->
-                e.kind == p.kind && (
-                    (p.fuelEntryId != null && e.fuelEntryId == p.fuelEntryId) ||
-                        (p.photoPath != null && e.photoPath == p.photoPath) ||
-                        e.message == p.message
-                    )
-            }
-            if (!dup) {
-                existing.add(p)
-                added++
-            }
+            if (isPendingDup(rebuilt, p)) return
+            rebuilt.add(p)
+            added++
         }
         for (p in plan.newPending) appendPending(p)
 
@@ -276,7 +271,6 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
         for (p in san.newPending) appendPending(p)
 
-        // Enqueue unknown vehicle + economy/outlier questions (post-sanitizer live set)
         val afterLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
         onProgress("Scanning unknown vehicles / economy…")
         for (e in afterLive.filter { it.vehicleId == UNASSIGNED_VEHICLE_ID }) {
@@ -289,21 +283,70 @@ class BatchFuelImportCoordinator @Inject constructor(
             appendPending(FuelEconomyOutliers.toPending(leg))
         }
 
-        BatchImportPendingStore.save(appContext, existing)
+        BatchImportPendingStore.save(appContext, rebuilt)
 
         val totalUpdated = plan.updates.size + sanitizeUpdates
         val msg =
             "updated=$totalUpdated deleted=${plan.hardDeletes.size} " +
-                "pending+=$added (sanitize=$sanitizeUpdates)"
+                "pending=$added (rebuild, sanitize=$sanitizeUpdates)"
         Log.i(TAG, "applyMerge $msg")
         onProgress("Done: $msg")
         MergeApplyResult(
             updated = totalUpdated,
             deleted = plan.hardDeletes.size,
             pendingAdded = added,
-            totalPending = existing.size,
+            totalPending = rebuilt.size,
             message = msg,
         )
+    }
+
+    /**
+     * Dedupe: primary `(kind, fuelEntryId)`; when no id, durable/photo stem.
+     */
+    private fun isPendingDup(existing: List<BatchPendingItem>, p: BatchPendingItem): Boolean {
+        return existing.any { e ->
+            if (e.kind != p.kind) return@any false
+            if (p.fuelEntryId != null && p.fuelEntryId > 0) {
+                e.fuelEntryId == p.fuelEntryId
+            } else {
+                val stemP = pendingDedupeStem(p)
+                val stemE = pendingDedupeStem(e)
+                stemP.isNotBlank() && stemP == stemE
+            }
+        }
+    }
+
+    private fun pendingDedupeStem(p: BatchPendingItem): String {
+        val path = p.durablePhotoPath ?: p.photoPath
+            ?: p.extra["photoPaths"]?.split('|')?.firstOrNull()
+            ?: return ""
+        return photoStem(path)
+    }
+
+    /** Drop every pending item that references [fuelEntryId] (all kinds). */
+    private fun removePendingForFuelEntry(fuelEntryId: Long?) {
+        if (fuelEntryId == null || fuelEntryId <= 0) return
+        val items = BatchImportPendingStore.load(appContext).filterNot { e ->
+            e.fuelEntryId == fuelEntryId ||
+                e.extra["suspectId"] == fuelEntryId.toString() ||
+                e.extra["endEntryId"] == fuelEntryId.toString() ||
+                e.extra["entryIds"]
+                    ?.split(',')
+                    ?.map { it.trim() }
+                    ?.contains(fuelEntryId.toString()) == true
+        }
+        BatchImportPendingStore.save(appContext, items)
+    }
+
+    /**
+     * Clear all pending and re-run [applyMerge] (human purge / rebuild button).
+     */
+    suspend fun clearPendingAndRescan(
+        onProgress: (String) -> Unit = {},
+    ): MergeApplyResult {
+        BatchImportPendingStore.clear(appContext)
+        onProgress("Pending cleared; running merge + re-scan…")
+        return applyMerge(onProgress)
     }
 
     /**
@@ -346,7 +389,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                             enqueuePendingOnFail = false,
                         )
                         if (ok) {
-                            BatchImportPendingStore.remove(appContext, item.id)
+                            clearAnsweredPending(item, item.fuelEntryId)
                             PendingAnswerResult(
                                 "Reprocessed dash with vehicle ${action.vehicleId}",
                                 remerge = true,
@@ -379,7 +422,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                             enqueuePendingOnFail = false,
                         )
                         if (ok) {
-                            BatchImportPendingStore.remove(appContext, item.id)
+                            clearAnsweredPending(item, item.fuelEntryId)
                             PendingAnswerResult(
                                 "Pump processed for vehicle ${action.vehicleId}",
                                 remerge = true,
@@ -389,7 +432,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         }
                     }
                     else -> {
-                        BatchImportPendingStore.remove(appContext, item.id)
+                        clearAnsweredPending(item, item.fuelEntryId)
                         PendingAnswerResult(
                             "Removed pending (assign not applicable to ${item.kind})",
                             remerge = false,
@@ -412,7 +455,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                     enqueuePendingOnFail = false,
                 )
                 if (ok) {
-                    BatchImportPendingStore.remove(appContext, item.id)
+                    clearAnsweredPending(item, item.fuelEntryId)
                     PendingAnswerResult(
                         "Pump retry inserted (vehicleId=0 until merge)",
                         remerge = true,
@@ -449,6 +492,9 @@ class BatchFuelImportCoordinator @Inject constructor(
             is PendingAnswerAction.FlagPartial -> {
                 flagPartial(item, action.entryId)
             }
+            is PendingAnswerAction.MarkAsGap -> {
+                markAsGap(item, action.entryId)
+            }
         }
     }
 
@@ -464,15 +510,78 @@ class BatchFuelImportCoordinator @Inject constructor(
         val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
             ?: return PendingAnswerResult("Fuel row $id not found", success = false)
         fuelEntryRepository.updateFuelEntry(live.copy(isPartialFill = true))
-        BatchImportPendingStore.remove(appContext, item.id)
-        // Drop related MPG_OUTLIER for same endpoint
-        val pending = BatchImportPendingStore.load(appContext).filterNot {
-            it.kind == BatchPendingKind.MPG_OUTLIER &&
-                (it.fuelEntryId == id || it.extra["endEntryId"] == id.toString())
-        }
-        BatchImportPendingStore.save(appContext, pending)
+        clearAnsweredPending(item, id)
         Log.i(TAG, "flagPartial id=$id")
         return PendingAnswerResult("Flagged id=$id as partial (no longer MPG anchor)", remerge = true)
+    }
+
+    /**
+     * Mark row as a **blank chain-breaker** (missed fill / gap): odo=cost=vol=0,
+     * isPartialFill=false (matches batch_import_dash_blank). Keep vehicle, timestamp, photo.
+     * Distinct from [FlagPartial] (keeps cost/vol) and economy ignore.
+     */
+    private suspend fun markAsGap(
+        item: BatchPendingItem,
+        entryId: Long?,
+    ): PendingAnswerResult {
+        val path = item.durablePhotoPath ?: item.photoPath
+        val ts = item.timestampMs ?: System.currentTimeMillis()
+        val id = entryId
+            ?: item.fuelEntryId
+            ?: item.extra["suspectId"]?.toLongOrNull()
+            ?: item.extra["endEntryId"]?.toLongOrNull()
+
+        if (id != null && id > 0) {
+            val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
+            if (live != null) {
+                fuelEntryRepository.updateFuelEntry(
+                    live.copy(
+                        odometer = 0,
+                        cost = 0.0,
+                        gallons = 0.0,
+                        isPartialFill = false,
+                        economyIgnored = false,
+                        location = live.location?.takeIf { it.isNotBlank() }
+                            ?: "batch_gap_marker",
+                    ),
+                )
+                clearAnsweredPending(item, id)
+                Log.i(TAG, "markAsGap updated id=$id to blank breaker")
+                return PendingAnswerResult(
+                    "Marked id=$id as gap (blank odo/cost/vol chain-breaker)",
+                    remerge = true,
+                )
+            }
+        }
+
+        // No row yet (e.g. unreadable pump with no insert): insert blank gap marker
+        val photoJson = path?.let { FuelPhotoJson.single("pump", it, ts) }
+        fuelEntryRepository.insertFuelEntry(
+            FuelEntry(
+                vehicleId = item.suggestedVehicleId?.takeIf { it > 0 } ?: UNASSIGNED_VEHICLE_ID,
+                odometer = 0,
+                gallons = 0.0,
+                cost = 0.0,
+                currency = "USD",
+                timestamp = ts,
+                photoUrl = photoJson,
+                isPartialFill = false,
+                latitude = item.latitude,
+                longitude = item.longitude,
+                location = "batch_gap_marker",
+            ),
+        )
+        clearAnsweredPending(item, null)
+        Log.i(TAG, "markAsGap inserted blank gap marker")
+        return PendingAnswerResult("Inserted gap marker (blank chain-breaker)", remerge = true)
+    }
+
+    private fun clearAnsweredPending(item: BatchPendingItem, fuelEntryId: Long?) {
+        removePendingForFuelEntry(fuelEntryId)
+        removePendingForFuelEntry(item.fuelEntryId)
+        removePendingForFuelEntry(item.extra["suspectId"]?.toLongOrNull())
+        removePendingForFuelEntry(item.extra["endEntryId"]?.toLongOrNull())
+        BatchImportPendingStore.remove(appContext, item.id)
     }
 
     private suspend fun manualPumpEntry(
@@ -481,7 +590,10 @@ class BatchFuelImportCoordinator @Inject constructor(
         volume: Double,
     ): PendingAnswerResult {
         if (cost <= 0 && volume <= 0) {
-            return PendingAnswerResult("Enter cost and/or volume > 0", success = false)
+            return PendingAnswerResult(
+                "Enter cost and/or volume > 0 (or use Mark as gap)",
+                success = false,
+            )
         }
         val path = item.durablePhotoPath ?: item.photoPath
         val ts = item.timestampMs ?: System.currentTimeMillis()
@@ -497,7 +609,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         economyIgnored = false,
                     ),
                 )
-                BatchImportPendingStore.remove(appContext, item.id)
+                clearAnsweredPending(item, existingId)
                 return PendingAnswerResult("Updated pump fields on id=$existingId", remerge = true)
             }
         }
@@ -517,7 +629,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 location = "batch_manual_pump",
             ),
         )
-        BatchImportPendingStore.remove(appContext, item.id)
+        clearAnsweredPending(item, null)
         return PendingAnswerResult("Manual pump entry saved", remerge = true)
     }
 
@@ -549,7 +661,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         isPartialFill = !(live.cost > 0 && live.gallons > 0),
                     ),
                 )
-                BatchImportPendingStore.remove(appContext, item.id)
+                clearAnsweredPending(item, existingId)
                 return PendingAnswerResult("Updated dash odo=$odometer vehicle=$vid", remerge = true)
             }
         }
@@ -569,7 +681,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 location = "batch_manual_dash",
             ),
         )
-        BatchImportPendingStore.remove(appContext, item.id)
+        clearAnsweredPending(item, null)
         return PendingAnswerResult("Manual dash odo=$odometer vehicle=$vid", remerge = true)
     }
 
@@ -578,6 +690,7 @@ class BatchFuelImportCoordinator @Inject constructor(
         action: PendingAnswerAction.ManualEditFuelFields,
     ): PendingAnswerResult {
         val id = item.fuelEntryId
+            ?: item.extra["suspectId"]?.toLongOrNull()
             ?: return PendingAnswerResult("No fuelEntryId", success = false)
         val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
             ?: return PendingAnswerResult("Fuel row $id not found", success = false)
@@ -591,7 +704,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             e.copy(isPartialFill = !full)
         }
         fuelEntryRepository.updateFuelEntry(updated)
-        BatchImportPendingStore.remove(appContext, item.id)
+        clearAnsweredPending(item, id)
         return PendingAnswerResult("Edited fuel id=$id (ignore cleared)", remerge = true)
     }
 
@@ -605,19 +718,10 @@ class BatchFuelImportCoordinator @Inject constructor(
             ?: return PendingAnswerResult("Fuel row $id not found", success = false)
         fuelEntryRepository.updateFuelEntry(live.copy(economyIgnored = ignored))
         if (!ignored) {
-            BatchImportPendingStore.remove(appContext, item.id)
+            clearAnsweredPending(item, id)
         } else {
-            // Keep/refresh ECONOMY_IGNORED pending; remove MPG_OUTLIER for same id
-            val pending = BatchImportPendingStore.load(appContext)
-            val kept = pending.filterNot {
-                it.id == item.id ||
-                    (it.kind == BatchPendingKind.MPG_OUTLIER && it.fuelEntryId == id)
-            }.toMutableList()
-            val fresh = FuelEconomyOutliers.economyIgnoredPending(live.copy(economyIgnored = true))
-            if (kept.none { it.kind == BatchPendingKind.ECONOMY_IGNORED && it.fuelEntryId == id }) {
-                kept.add(fresh)
-            }
-            BatchImportPendingStore.save(appContext, kept)
+            // Drop all kinds for this id; re-merge will re-enqueue ECONOMY_IGNORED
+            clearAnsweredPending(item, id)
         }
         return PendingAnswerResult(
             if (ignored) "Marked economyIgnored on id=$id" else "Unignored id=$id",
@@ -637,7 +741,7 @@ class BatchFuelImportCoordinator @Inject constructor(
         val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
             ?: return PendingAnswerResult("Fuel row $id not found", success = false)
         fuelEntryRepository.updateFuelEntry(live.copy(vehicleId = vehicleId))
-        BatchImportPendingStore.remove(appContext, item.id)
+        clearAnsweredPending(item, id)
         return PendingAnswerResult("Assigned unknown → vehicle $vehicleId", remerge = true)
     }
 
@@ -741,7 +845,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             ?.filter { it > 0 }
             .orEmpty()
         if (entryIds.isEmpty()) {
-            BatchImportPendingStore.remove(appContext, item.id)
+            clearAnsweredPending(item, null)
             return PendingAnswerResult("No entryIds on conflict; pending removed", remerge = false)
         }
         val live = fuelEntryRepository.getAllIncludingDeleted()
@@ -786,7 +890,8 @@ class BatchFuelImportCoordinator @Inject constructor(
                 }
             }
         }
-        BatchImportPendingStore.remove(appContext, item.id)
+        entryIds.forEach { removePendingForFuelEntry(it) }
+        clearAnsweredPending(item, entryIds.firstOrNull())
         val msg = "Kept odo=$chosenOdo (keptRows≈$kept updated=$updated deleted=$deleted)"
         Log.i(TAG, "resolveConflictOdo $msg")
         return PendingAnswerResult(msg, remerge = true)
@@ -1000,6 +1105,12 @@ sealed class PendingAnswerAction {
      * [SetEconomyIgnored].
      */
     data class FlagPartial(val entryId: Long? = null) : PendingAnswerAction()
+
+    /**
+     * Blank chain-breaker: odo=cost=vol=0, isPartialFill=false.
+     * Explicit zeros allowed (unlike manual pump entry).
+     */
+    data class MarkAsGap(val entryId: Long? = null) : PendingAnswerAction()
 }
 
 /** Result of [BatchFuelImportCoordinator.applyPendingAnswer]. */

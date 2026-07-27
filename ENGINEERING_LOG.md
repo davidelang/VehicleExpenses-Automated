@@ -1061,3 +1061,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Device: sanitize=31, ODO_SUSPECT=31 (incl. 20119 gap); CONFLICT_ODO=1
 - Tag: batch_load/builds @ 1fbe913e
 - Notes: research/batch-merge-window-odo-sanity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt
+
+- Execution start: Mark as gap, pending rebuild/dedupe, formatTimeDelta, Clear & re-scan
+- Parent tip: batch_load/builds @ 25df6455

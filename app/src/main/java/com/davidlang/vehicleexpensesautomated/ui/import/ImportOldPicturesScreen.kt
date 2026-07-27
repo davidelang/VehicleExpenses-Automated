@@ -70,6 +70,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.batch.BatchImportViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
+import com.davidlang.vehicleexpensesautomated.ui.util.formatTimeDelta
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -293,6 +294,35 @@ fun ImportOldPicturesScreen(
 
         Button(onClick = { runMerge() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             Text(if (merging) "Merging…" else "Run merge")
+        }
+
+        OutlinedButton(
+            onClick = {
+                if (running || merging || answering) return@OutlinedButton
+                merging = true
+                mergeStatus = "Clearing pending…"
+                scope.launch {
+                    try {
+                        val result = coordinator.clearPendingAndRescan { msg -> mergeStatus = msg }
+                        lastMerge = result
+                        reloadPending()
+                        Toast.makeText(
+                            context,
+                            "Clear & re-scan: ${result.message}",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Re-scan failed: ${e.message}", Toast.LENGTH_LONG)
+                            .show()
+                    } finally {
+                        merging = false
+                    }
+                }
+            },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Clear questions & re-scan")
         }
 
         mergeStatus?.let { Text("Merge: $it", style = MaterialTheme.typography.bodySmall) }
@@ -538,6 +568,13 @@ private fun PendingQuestionCard(
                 ) {
                     Text("Save cost/vol + re-merge")
                 }
+                OutlinedButton(
+                    onClick = { onAction(PendingAnswerAction.MarkAsGap()) },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Mark as gap (blank chain-breaker)")
+                }
             }
 
             // Manual dash
@@ -732,6 +769,21 @@ private fun PendingQuestionCard(
                         ) {
                             Text("Flag as partial")
                         }
+                        OutlinedButton(
+                            onClick = {
+                                onAction(
+                                    PendingAnswerAction.MarkAsGap(
+                                        entryId = item.fuelEntryId
+                                            ?: item.extra["suspectId"]?.toLongOrNull()
+                                            ?: item.extra["endEntryId"]?.toLongOrNull(),
+                                    ),
+                                )
+                            },
+                            enabled = enabled,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Mark as gap")
+                        }
                     }
                     if (item.kind == BatchPendingKind.MPG_OUTLIER) {
                         OutlinedButton(
@@ -819,18 +871,10 @@ private fun NeighborLine(
     }.joinToString(",")
     val ts = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(n.timestamp))
     val delta = if (anchorTs != null) {
-        val dMs = n.timestamp - anchorTs
-        val days = dMs / (24.0 * 60 * 60 * 1000)
-        when {
-            days <= -1 -> " · ${"%.0f".format(-days)}d earlier"
-            days >= 1 -> " · ${"%.0f".format(days)}d later"
-            else -> {
-                val mins = dMs / 60_000.0
-                if (mins < 0) " · ${"%.0f".format(-mins)}m earlier"
-                else " · ${"%.0f".format(mins)}m later"
-            }
-        }
-    } else ""
+        " · " + formatTimeDelta(n.timestamp - anchorTs)
+    } else {
+        ""
+    }
     Text(
         "$prefix$ts · $name · odo ${n.odometer} · \$${n.cost} · ${n.gallons}G" +
             delta +
@@ -1113,6 +1157,14 @@ private fun FullscreenPhotoDialog(
                             enabled = enabled,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Save cost/vol") }
+                        OutlinedButton(
+                            onClick = {
+                                onAction(PendingAnswerAction.MarkAsGap())
+                                onDismiss()
+                            },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Mark as gap") }
                         Button(
                             onClick = {
                                 onAction(PendingAnswerAction.RetryPump)
@@ -1205,6 +1257,20 @@ private fun FullscreenPhotoDialog(
                             enabled = enabled,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Flag as partial") }
+                        OutlinedButton(
+                            onClick = {
+                                onAction(
+                                    PendingAnswerAction.MarkAsGap(
+                                        entryId = item.fuelEntryId
+                                            ?: item.extra["suspectId"]?.toLongOrNull()
+                                            ?: item.extra["endEntryId"]?.toLongOrNull(),
+                                    ),
+                                )
+                                onDismiss()
+                            },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Mark as gap") }
                         if (item.kind == BatchPendingKind.MPG_OUTLIER) {
                             Button(
                                 onClick = {
