@@ -260,15 +260,11 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
         for (p in plan.newPending) appendPending(p)
 
-        // Odo reverse / unreasonable gap sanitizer (after cluster merges applied)
-        onProgress("Odo sanity…")
-        var sanitizeUpdates = 0
+        // Odo detector only (no row mutation)
+        onProgress("Odo detect…")
         val afterMergeLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
         val san = FuelOdoSanitizer.sanitize(afterMergeLive)
-        for (u in san.updates) {
-            fuelEntryRepository.updateFuelEntry(u)
-            sanitizeUpdates++
-        }
+        // san.updates always empty by design
         for (p in san.newPending) appendPending(p)
 
         val afterLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
@@ -285,14 +281,13 @@ class BatchFuelImportCoordinator @Inject constructor(
 
         BatchImportPendingStore.save(appContext, rebuilt)
 
-        val totalUpdated = plan.updates.size + sanitizeUpdates
         val msg =
-            "updated=$totalUpdated deleted=${plan.hardDeletes.size} " +
-                "pending=$added (rebuild, sanitize=$sanitizeUpdates)"
+            "updated=${plan.updates.size} deleted=${plan.hardDeletes.size} " +
+                "pending=$added (rebuild, odoSuspects=${san.newPending.size})"
         Log.i(TAG, "applyMerge $msg")
         onProgress("Done: $msg")
         MergeApplyResult(
-            updated = totalUpdated,
+            updated = plan.updates.size,
             deleted = plan.hardDeletes.size,
             pendingAdded = added,
             totalPending = rebuilt.size,
@@ -490,7 +485,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 assignUnknownVehicle(item, action.vehicleId)
             }
             is PendingAnswerAction.FlagPartial -> {
-                flagPartial(item, action.entryId)
+                // Legacy one-way button → set true (UI now uses SetPartialFill checkbox)
+                setPartialFill(item, action.entryId, partial = true)
+            }
+            is PendingAnswerAction.SetPartialFill -> {
+                setPartialFill(item, action.entryId, partial = action.partial)
             }
             is PendingAnswerAction.MarkAsGap -> {
                 markAsGap(item, action.entryId)
@@ -498,22 +497,59 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
     }
 
-    private suspend fun flagPartial(
+    /**
+     * Explicit partial override. Only legal when odo, cost, and volume are all present.
+     * [partial]=false clears the flag. Incomplete rows always store false.
+     */
+    private suspend fun setPartialFill(
         item: BatchPendingItem,
         entryId: Long?,
+        partial: Boolean,
     ): PendingAnswerResult {
         val id = entryId
             ?: item.fuelEntryId
             ?: item.extra["suspectId"]?.toLongOrNull()
             ?: item.extra["endEntryId"]?.toLongOrNull()
-            ?: return PendingAnswerResult("No entry id to flag partial", success = false)
+            ?: return PendingAnswerResult("No entry id for partial flag", success = false)
         val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
             ?: return PendingAnswerResult("Fuel row $id not found", success = false)
-        fuelEntryRepository.updateFuelEntry(live.copy(isPartialFill = true))
+        val complete = live.odometer > 0 && live.cost > 0 && live.gallons > 0
+        if (partial && !complete) {
+            return PendingAnswerResult(
+                "Partial only when odo, cost, and volume are all present",
+                success = false,
+            )
+        }
+        val value = partial && complete
+        fuelEntryRepository.updateFuelEntry(live.copy(isPartialFill = value))
         clearAnsweredPending(item, id)
-        Log.i(TAG, "flagPartial id=$id")
-        return PendingAnswerResult("Flagged id=$id as partial (no longer MPG anchor)", remerge = true)
+        Log.i(TAG, "setPartialFill id=$id partial=$value")
+        return PendingAnswerResult(
+            if (value) "id=$id treat as partial (not full-fill anchor)"
+            else "id=$id partial cleared",
+            remerge = true,
+        )
     }
+
+    /**
+     * One-shot repair: clear illegal or auto-set partial flags.
+     * Incomplete rows → false; optionally clear all complete flags too ([allComplete]).
+     */
+    suspend fun clearAutoPartialFlags(allComplete: Boolean = true): Int =
+        withContext(Dispatchers.IO) {
+            val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+            var n = 0
+            for (e in live) {
+                val complete = e.odometer > 0 && e.cost > 0 && e.gallons > 0
+                val shouldClear = e.isPartialFill && (!complete || allComplete)
+                if (shouldClear) {
+                    fuelEntryRepository.updateFuelEntry(e.copy(isPartialFill = false))
+                    n++
+                }
+            }
+            Log.i(TAG, "clearAutoPartialFlags cleared=$n allComplete=$allComplete")
+            n
+        }
 
     /**
      * Mark row as a **blank chain-breaker** (missed fill / gap): odo=cost=vol=0,
@@ -601,13 +637,15 @@ class BatchFuelImportCoordinator @Inject constructor(
         if (existingId != null && existingId > 0) {
             val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == existingId }
             if (live != null && !live.deleted) {
+                val next = live.copy(
+                    cost = if (cost > 0) cost else live.cost,
+                    gallons = if (volume > 0) volume else live.gallons,
+                    economyIgnored = false,
+                )
+                // Preserve explicit partial only if still complete; else false
+                val complete = next.odometer > 0 && next.cost > 0 && next.gallons > 0
                 fuelEntryRepository.updateFuelEntry(
-                    live.copy(
-                        cost = if (cost > 0) cost else live.cost,
-                        gallons = if (volume > 0) volume else live.gallons,
-                        isPartialFill = true,
-                        economyIgnored = false,
-                    ),
+                    next.copy(isPartialFill = complete && live.isPartialFill),
                 )
                 clearAnsweredPending(item, existingId)
                 return PendingAnswerResult("Updated pump fields on id=$existingId", remerge = true)
@@ -623,7 +661,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 currency = "USD",
                 timestamp = ts,
                 photoUrl = photoJson,
-                isPartialFill = true,
+                isPartialFill = false,
                 latitude = item.latitude,
                 longitude = item.longitude,
                 location = "batch_manual_pump",
@@ -653,13 +691,14 @@ class BatchFuelImportCoordinator @Inject constructor(
         if (existingId != null && existingId > 0) {
             val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == existingId }
             if (live != null && !live.deleted) {
+                val next = live.copy(
+                    odometer = odometer,
+                    vehicleId = vid,
+                    economyIgnored = false,
+                )
+                val complete = next.odometer > 0 && next.cost > 0 && next.gallons > 0
                 fuelEntryRepository.updateFuelEntry(
-                    live.copy(
-                        odometer = odometer,
-                        vehicleId = vid,
-                        economyIgnored = false,
-                        isPartialFill = !(live.cost > 0 && live.gallons > 0),
-                    ),
+                    next.copy(isPartialFill = complete && live.isPartialFill),
                 )
                 clearAnsweredPending(item, existingId)
                 return PendingAnswerResult("Updated dash odo=$odometer vehicle=$vid", remerge = true)
@@ -675,7 +714,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 currency = "USD",
                 timestamp = ts,
                 photoUrl = photoJson,
-                isPartialFill = true,
+                isPartialFill = false,
                 latitude = item.latitude,
                 longitude = item.longitude,
                 location = "batch_manual_dash",
@@ -702,8 +741,9 @@ class BatchFuelImportCoordinator @Inject constructor(
             gallons = action.volume?.takeIf { it > 0 } ?: live.gallons,
             economyIgnored = false,
         ).let { e ->
-            val full = e.vehicleId > 0 && e.odometer > 0 && e.cost > 0 && e.gallons > 0
-            e.copy(isPartialFill = !full)
+            val complete = e.odometer > 0 && e.cost > 0 && e.gallons > 0
+            // Preserve explicit partial only if still complete; never invent true
+            e.copy(isPartialFill = complete && live.isPartialFill)
         }
         fuelEntryRepository.updateFuelEntry(updated)
         clearAnsweredPending(item, id)
@@ -906,7 +946,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                     val hasPump = e.cost > 0 || e.gallons > 0
                     if (hasPump) {
                         fuelEntryRepository.updateFuelEntry(
-                            e.copy(odometer = 0, isPartialFill = true),
+                            e.copy(odometer = 0, isPartialFill = false),
                         )
                         updated++
                     } else {
@@ -1021,13 +1061,13 @@ class BatchFuelImportCoordinator @Inject constructor(
                 currency = "USD",
                 timestamp = ts,
                 photoUrl = photoJson,
-                isPartialFill = true,
+                isPartialFill = false, // incomplete by fields only
                 latitude = meta.latitude,
                 longitude = meta.longitude,
                 location = "batch_import_dash:${file.name}",
             ),
         )
-        Log.i(TAG, "Inserted odo partial vehicle=${result.vehicleId} odo=$odo ${file.name}")
+        Log.i(TAG, "Inserted odo-only vehicle=${result.vehicleId} odo=$odo ${file.name}")
         return true
     }
 
@@ -1080,7 +1120,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 currency = "USD",
                 timestamp = ts,
                 photoUrl = photoJson,
-                isPartialFill = true,
+                isPartialFill = false, // incomplete by fields only
                 latitude = meta.latitude,
                 longitude = meta.longitude,
                 location = "batch_import_pump:${file.name}",
@@ -1088,7 +1128,7 @@ class BatchFuelImportCoordinator @Inject constructor(
         )
         Log.i(
             TAG,
-            "Inserted pump partial vehicleId=$vehicleId " +
+            "Inserted pump cost/vol vehicleId=$vehicleId " +
                 "cost=$cost vol=$vol ${file.name}",
         )
         return true
@@ -1135,11 +1175,19 @@ sealed class PendingAnswerAction {
     data class AssignUnknownVehicle(val vehicleId: Int) : PendingAnswerAction()
 
     /**
-     * Set [FuelEntry.isPartialFill]=true on [entryId] (default: pending fuelEntryId /
-     * outlier end). Drops full-fill anchor; inventory still counts. Distinct from
-     * [SetEconomyIgnored].
+     * Legacy one-way flag → [SetPartialFill] with partial=true.
+     * Prefer [SetPartialFill] checkbox for check/uncheck.
      */
     data class FlagPartial(val entryId: Long? = null) : PendingAnswerAction()
+
+    /**
+     * Explicit partial override when odo+cost+vol all present.
+     * [partial]=false clears the flag.
+     */
+    data class SetPartialFill(
+        val partial: Boolean,
+        val entryId: Long? = null,
+    ) : PendingAnswerAction()
 
     /**
      * Blank chain-breaker: odo=cost=vol=0, isPartialFill=false.

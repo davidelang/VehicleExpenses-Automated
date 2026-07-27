@@ -5,21 +5,23 @@ import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 import kotlin.math.log10
 
 /**
- * Odometer reverse / unreasonable-gap sanitizer (Stage B follow-on).
+ * Odometer **detector** (not a healer).
  *
- * **Order:** gap demotion first (digit-gain inflation), then reverse re-check.
- * Demotes **suspect** row to [FuelEntry.isPartialFill]=true (keeps odo for edit);
- * enqueues [BatchPendingKind.ODO_SUSPECT] with reason in extra.
+ * Enqueues [BatchPendingKind.ODO_SUSPECT] only — **never** mutates rows
+ * (no demote-to-partial, no auto-zero odo).
  *
- * Gap rule: `Δodo > maxVol(v) * mpg(v) * [FuelRowMergeEngine.ODO_GAP_FACTOR]`.
- * mpg(v) = median of clean full-fill legs for **that vehicle only**; **no** constant
- * fallback — skip gap rule when &lt;3 clean legs or maxVol unknown.
- *
- * Reverse: `cur.odo < prev.odo` in time order → reliability score, **bias later** row.
+ * **Order:** reverse pairs first, then forward digit-jump, then optional gap
+ * with mpg only if computed from legs already in absolute band 5–80.
+ * No constant mpg fallback.
  */
 object FuelOdoSanitizer {
 
+    /** Display/clean mpg band for gap mpg estimate (not row mutation). */
+    const val CLEAN_MPG_MIN: Double = 5.0
+    const val CLEAN_MPG_MAX: Double = 80.0
+
     data class SanitizerResult(
+        /** Always empty — detect only. Kept for call-site compatibility. */
         val updates: List<FuelEntry> = emptyList(),
         val newPending: List<BatchPendingItem> = emptyList(),
     ) {
@@ -30,44 +32,87 @@ object FuelOdoSanitizer {
         val live = entries.filter { !it.deleted && it.vehicleId > 0 }
         if (live.isEmpty()) return SanitizerResult()
 
-        val updatesById = mutableMapOf<Long, FuelEntry>()
         val pending = mutableListOf<BatchPendingItem>()
-        val demotedIds = mutableSetOf<Long>()
-
-        fun current(e: FuelEntry): FuelEntry = updatesById[e.id] ?: e
+        val flaggedIds = mutableSetOf<Long>() // avoid double-enqueue same suspect
 
         for ((vid, vRows) in live.groupBy { it.vehicleId }) {
-            val mpg = robustMpg(vRows)
-            val maxVol = vRows.filter { it.gallons > 0 }.maxOfOrNull { it.gallons }
+            val odoRows = vRows
+                .filter { eligibleForOdoDetect(it) }
+                .sortedWith(compareBy({ it.timestamp }, { it.id }))
 
-            // Pass 1: unreasonable forward gaps
+            // Pass 1: reverse odo (before gap)
+            for (i in 1 until odoRows.size) {
+                val prev = odoRows[i - 1]
+                val cur = odoRows[i]
+                if (cur.odometer < prev.odometer) {
+                    val next = odoRows.getOrNull(i + 1)
+                    val suspect = pickSuspect(prev, cur, next)
+                    if (suspect.id !in flaggedIds) {
+                        flaggedIds.add(suspect.id)
+                        pending += odoSuspectPending(
+                            suspect = suspect,
+                            reason = "reverse",
+                            message = "Odometer reverse in time: prev=${prev.odometer} → " +
+                                "cur=${cur.odometer} vehicle=$vid; suspect id=${suspect.id} " +
+                                "(detect only — edit or checkbox partial)",
+                            prev = prev,
+                            cur = cur,
+                            next = next,
+                            extraFields = emptyMap(),
+                        )
+                    }
+                }
+            }
+
+            // Pass 2: forward digit-length / ×8–×12 jump
+            for (i in 1 until odoRows.size) {
+                val prev = odoRows[i - 1]
+                val cur = odoRows[i]
+                if (cur.odometer <= prev.odometer) continue
+                if (isDigitJump(prev.odometer, cur.odometer)) {
+                    val next = odoRows.getOrNull(i + 1)
+                    val suspect = pickSuspect(prev, cur, next)
+                    if (suspect.id !in flaggedIds) {
+                        flaggedIds.add(suspect.id)
+                        pending += odoSuspectPending(
+                            suspect = suspect,
+                            reason = "digit_jump",
+                            message = "Odometer digit jump: prev=${prev.odometer} → " +
+                                "cur=${cur.odometer} vehicle=$vid; suspect id=${suspect.id}",
+                            prev = prev,
+                            cur = cur,
+                            next = next,
+                            extraFields = mapOf(
+                                "prevDigits" to digitLen(prev.odometer).toString(),
+                                "curDigits" to digitLen(cur.odometer).toString(),
+                            ),
+                        )
+                    }
+                }
+            }
+
+            // Pass 3: gap with clean mpg only (5–80 band legs)
+            val mpg = robustCleanMpg(vRows)
+            val maxVol = vRows.filter { it.gallons > 0 }.maxOfOrNull { it.gallons }
             if (mpg != null && maxVol != null && maxVol > 0) {
                 val limitMiles = maxVol * mpg * FuelRowMergeEngine.ODO_GAP_FACTOR
-                val odoRows = vRows
-                    .map { current(it) }
-                    .filter { eligibleForOdoSanity(it) && it.id !in demotedIds }
-                    .sortedWith(compareBy({ it.timestamp }, { it.id }))
                 for (i in 1 until odoRows.size) {
-                    val prev = current(odoRows[i - 1])
-                    val cur = current(odoRows[i])
-                    if (prev.id in demotedIds || cur.id in demotedIds) continue
-                    if (!eligibleForOdoSanity(prev) || !eligibleForOdoSanity(cur)) continue
+                    val prev = odoRows[i - 1]
+                    val cur = odoRows[i]
                     if (cur.odometer <= prev.odometer) continue
                     val delta = cur.odometer - prev.odometer
                     if (delta > limitMiles) {
-                        val next = odoRows.getOrNull(i + 1)?.let { current(it) }
-                        val suspect = pickSuspect(prev, cur, next, gapDelta = delta, limitMiles = limitMiles)
-                        // Already partial / blank gap: never re-demote or re-enqueue
-                        if (suspect.id !in demotedIds && eligibleForOdoSanity(suspect)) {
-                            val demoted = suspect.copy(isPartialFill = true)
-                            updatesById[demoted.id] = demoted
-                            demotedIds.add(demoted.id)
+                        val next = odoRows.getOrNull(i + 1)
+                        val suspect = pickSuspect(prev, cur, next)
+                        if (suspect.id !in flaggedIds) {
+                            flaggedIds.add(suspect.id)
                             pending += odoSuspectPending(
-                                suspect = demoted,
+                                suspect = suspect,
                                 reason = "gap",
-                                message = "Unreasonable odo gap Δ=$delta > limit ${"%.0f".format(limitMiles)} " +
-                                    "(maxVol=${"%.2f".format(maxVol)} × mpg=${"%.1f".format(mpg)} × 3) " +
-                                    "vehicle=$vid; demoted id=${suspect.id}",
+                                message = "Unreasonable odo gap Δ=$delta > limit " +
+                                    "${"%.0f".format(limitMiles)} " +
+                                    "(maxVol=${"%.2f".format(maxVol)} × cleanMpg=${"%.1f".format(mpg)} × 3) " +
+                                    "vehicle=$vid; suspect id=${suspect.id} (detect only)",
                                 prev = prev,
                                 cur = cur,
                                 next = next,
@@ -82,61 +127,37 @@ object FuelOdoSanitizer {
                     }
                 }
             }
-
-            // Pass 2: reverse odo
-            val odoRows2 = vRows
-                .map { current(it) }
-                .filter { eligibleForOdoSanity(it) && it.id !in demotedIds }
-                .sortedWith(compareBy({ it.timestamp }, { it.id }))
-            for (i in 1 until odoRows2.size) {
-                val prev = current(odoRows2[i - 1])
-                val cur = current(odoRows2[i])
-                if (prev.id in demotedIds || cur.id in demotedIds) continue
-                if (!eligibleForOdoSanity(prev) || !eligibleForOdoSanity(cur)) continue
-                if (cur.odometer < prev.odometer) {
-                    val next = odoRows2.getOrNull(i + 1)?.let { current(it) }
-                    val suspect = pickSuspect(prev, cur, next, gapDelta = null, limitMiles = null)
-                    if (suspect.id !in demotedIds && eligibleForOdoSanity(suspect)) {
-                        val demoted = suspect.copy(isPartialFill = true)
-                        updatesById[demoted.id] = demoted
-                        demotedIds.add(demoted.id)
-                        pending += odoSuspectPending(
-                            suspect = demoted,
-                            reason = "reverse",
-                            message = "Odometer reverse in time: prev=${prev.odometer} → cur=${cur.odometer} " +
-                                "vehicle=$vid; demoted id=${suspect.id} (bias later when tied)",
-                            prev = prev,
-                            cur = cur,
-                            next = next,
-                            extraFields = emptyMap(),
-                        )
-                    }
-                }
-            }
         }
 
-        return SanitizerResult(
-            updates = updatesById.values.toList(),
-            newPending = pending,
-        )
+        return SanitizerResult(updates = emptyList(), newPending = pending)
     }
 
-    /**
-     * Rows already partial or full blank (odo/cost/vol all ≤0) are chain-safe /
-     * already handled — do not re-demote or re-enqueue ODO_SUSPECT.
-     */
-    private fun eligibleForOdoSanity(e: FuelEntry): Boolean {
-        if (e.isPartialFill) return false
+    /** Skip blank markers; still scan complete and incomplete odo-bearing rows. */
+    private fun eligibleForOdoDetect(e: FuelEntry): Boolean {
         val blank = e.odometer <= 0 && e.cost <= 0 && e.gallons <= 0
         if (blank) return false
         return e.odometer > 0
     }
 
+    private fun isDigitJump(prev: Int, cur: Int): Boolean {
+        if (prev <= 0 || cur <= 0) return false
+        val dp = digitLen(prev)
+        val dc = digitLen(cur)
+        if (kotlin.math.abs(dp - dc) >= 1 &&
+            (cur >= prev * 8 || prev >= cur * 8)
+        ) {
+            return true
+        }
+        // Same digit length but huge multiplier still suspicious
+        if (cur >= prev * 10 || prev >= cur * 10) return true
+        return false
+    }
+
     /**
-     * Median mpg of clean full-fill legs for this vehicle only.
-     * Requires ≥3 legs; else null (gap rule skipped).
+     * Median mpg of full-fill legs that already land in [CLEAN_MPG_MIN, CLEAN_MPG_MAX].
+     * Requires ≥3 such legs; else null (gap rule skipped — no fallback).
      */
-    fun robustMpg(vehicleEntries: List<FuelEntry>): Double? {
+    fun robustCleanMpg(vehicleEntries: List<FuelEntry>): Double? {
         val full = vehicleEntries
             .filter {
                 !it.deleted && !it.economyIgnored && !it.isPartialFill &&
@@ -155,7 +176,8 @@ object FuelOdoSanitizer {
             }
             val sumVol = between.filter { it.gallons > 0 }.sumOf { it.gallons }
             if (sumVol <= 0) continue
-            legs.add((cur.odometer - prev.odometer) / sumVol)
+            val mpg = (cur.odometer - prev.odometer) / sumVol
+            if (mpg in CLEAN_MPG_MIN..CLEAN_MPG_MAX) legs.add(mpg)
         }
         if (legs.size < 3) return null
         val sorted = legs.sorted()
@@ -167,15 +189,13 @@ object FuelOdoSanitizer {
         }
     }
 
-    /**
-     * Lower score = more suspect. Bias toward [cur] (later) when scores close.
-     */
+    /** Bias toward later row when scores close. */
     internal fun pickSuspect(
         prev: FuelEntry,
         cur: FuelEntry,
         next: FuelEntry?,
-        gapDelta: Int?,
-        limitMiles: Double?,
+        gapDelta: Int? = null,
+        limitMiles: Double? = null,
     ): FuelEntry {
         val peers = listOfNotNull(prev, cur, next).filter { it.odometer > 0 }
         val typicalDigits = peers
@@ -190,17 +210,15 @@ object FuelOdoSanitizer {
             var s = 0
             val d = digitLen(e.odometer)
             if (d != typicalDigits) s += 3
-            if (d == typicalDigits + 1 || e.odometer >= other.odometer * 8) s += 4 // extra digit
+            if (d == typicalDigits + 1 || e.odometer >= other.odometer * 8) s += 4
             if (d == typicalDigits - 1 || (other.odometer >= e.odometer * 8 && e.odometer > 0)) s += 4
             if (e.photoUrl.isNullOrBlank()) s += 1
             if (e.location?.contains("blank") == true) s += 1
-            if (e.isPartialFill) s += 1
             return s
         }
 
         val sp = score(prev, cur)
         val sc = score(cur, prev)
-        // Bias later (cur) when tied or within 1 point
         return if (sc >= sp - 1) cur else prev
     }
 

@@ -7,12 +7,27 @@ Reference for economy math in `ui/reports/ReportsScreen.kt`. Field presence: a n
 A fuel row is a **full fill** when:
 
 - `!economyIgnored`, and
-- `!isPartialFill`, and
+- `!isPartialFill` (**explicit override only** — see below), and
 - odometer > 0, and
 - cost > 0, and
 - volume (`gallons`) > 0.
 
-Only full fills anchor MPG legs and $/mi segment endpoints. Partials may sit inside a window (and roll volume/cost when present) but never start or end a chain segment.
+Only full fills anchor MPG legs and $/mi segment endpoints.
+
+### `isPartialFill` (explicit override — not “incomplete”)
+
+| Value | Meaning |
+|-------|---------|
+| **false (default)** | No override. Full-fill = field presence only. |
+| **true** | All three of odo, cost, volume are present **and** user checked “Treat as partial fill” — do **not** use as full-fill anchor. |
+
+**Implicit incompleteness** (missing odo and/or cost and/or volume) ⇒ not a full fill **without** setting the flag. Incomplete inserts keep `isPartialFill = false`.
+
+Batch import, merge, and odo sanitizer **must never** auto-set `isPartialFill = true` for missing data or “heal” odo issues.
+
+Inventory `fills N(Mp)`: **(Mp)** counts rows with **`isPartialFill == true`** only (explicit), not every incomplete row.
+
+Incomplete rows may still roll cost/vol into MPG/$/mi windows when present; they never anchor.
 
 ### `economyIgnored` (synced boolean on `FuelEntry`)
 
@@ -25,9 +40,9 @@ Only full fills anchor MPG legs and $/mi segment endpoints. Partials may sit ins
 
 | Row shape | MPG chain | $/mi chain | Notes |
 |-----------|-----------|------------|--------|
-| **Full fill** | Anchor | Anchor | Ends legs / segment endpoints |
-| **Partial** | May roll into window | May roll cost/vol into window | Not an anchor |
-| **Odo only** (odo > 0, cost ≤ 0, vol ≤ 0) | No-op (no break, no contribution) | No-op | Kept for later merge of cost/volume |
+| **Full fill** | Anchor | Anchor | Fields complete + flag false + not economyIgnored |
+| **Explicit partial** (`isPartialFill`) | May roll into window | May roll cost/vol into window | Complete fields but not an anchor |
+| **Odo only** (odo > 0, cost ≤ 0, vol ≤ 0) | No-op (no break, no contribution) | No-op | Flag stays false; not a full fill |
 | **Cost, no volume** | **Breaks** | Does not break by itself | Re-anchor MPG to nearest fulls on each side |
 | **Volume, no cost** | Does not break by itself | **Breaks** | Volume may still roll into an MPG leg if that leg is allowed |
 | **Blank** (odo/cost/vol all ≤ 0) | **Breaks** | **Breaks** | Missed / unrecoverable fill marker; no gap column |
@@ -44,8 +59,10 @@ Time gaps between fills are normal and are not breaks.
    - If `sumVol ≤ 0`, skip.
    - `mpg = (cur.odometer − prev.odometer) / sumVol`.
    - Display cost on a leg = multi-currency sum of costs in the window for rows with cost present (same helper as elsewhere).
-3. **Display avg / last-5:** drop **MPG outliers** where `mpg < ref/3` or `mpg > ref*3`, with `ref` = **median** of all valid leg mpgs for that vehicle. If fewer than 3 legs, no outlier filter. Last MPG / avg use the filtered set.
-4. Outlier endpoints also enqueue Stage C `MPG_OUTLIER` questions after merge (separate from display).
+3. **Display avg / last-5 (display filter only — no row mutation):**
+   - Keep legs with mpg in a hard absolute band **5–80** (outside → drop for display).
+   - Then drop **3× median** outliers among remaining legs (`mpg < ref/3` or `mpg > ref*3`). If fewer than 3 legs after band filter, skip 3× filter.
+4. Stage C may still enqueue `MPG_OUTLIER` questions after merge (detection path separate from display).
 
 Odo-only rows in a window do not break, do not add volume/cost, and do not change odo endpoints (endpoints are full fills only).
 
@@ -73,7 +90,7 @@ Per-vehicle stats line format:
 Fuel $… · 1031.6G · fills 83(15p) · last … · avg … · $/mi …
 ```
 
-**83** = total fuel rows; **(15p)** = partials. The word **fills** is required before the counts.
+**83** = total fuel rows; **(15p)** = rows with **`isPartialFill == true`** (explicit override only). The word **fills** is required before the counts.
 
 Vehicle id `0` is labeled **Unknown** in reports UI (never “Vehicle 0”).
 

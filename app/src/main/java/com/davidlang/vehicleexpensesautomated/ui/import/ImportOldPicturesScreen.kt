@@ -327,6 +327,32 @@ fun ImportOldPicturesScreen(
             Text("Clear questions & re-scan")
         }
 
+        OutlinedButton(
+            onClick = {
+                if (running || merging || answering) return@OutlinedButton
+                answering = true
+                scope.launch {
+                    try {
+                        val n = coordinator.clearAutoPartialFlags(allComplete = true)
+                        Toast.makeText(
+                            context,
+                            "Cleared $n auto/illegal partial flags",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Repair failed: ${e.message}", Toast.LENGTH_LONG)
+                            .show()
+                    } finally {
+                        answering = false
+                    }
+                }
+            },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Repair: clear partial flags")
+        }
+
         mergeStatus?.let { Text("Merge: $it", style = MaterialTheme.typography.bodySmall) }
         lastMerge?.let {
             Text(
@@ -413,6 +439,8 @@ private fun PendingQuestionCard(
     var afterThis by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
     var lastPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
     var thisPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
+    /** Explicit partial checkbox (only when focus row is field-complete). */
+    var treatPartial by remember(item.id) { mutableStateOf(false) }
 
     val thisEntryId = item.extra["thisEntryId"]?.toLongOrNull()
         ?: item.extra["endEntryId"]?.toLongOrNull()
@@ -463,6 +491,7 @@ private fun PendingQuestionCard(
             }
             val focus = if (mpgFocusThis) thisE else lastE
             applyFocusPrefill(focus)
+            treatPartial = focus?.isPartialFill == true
 
             val vid = item.suggestedVehicleId
                 ?: thisE?.vehicleId
@@ -484,7 +513,10 @@ private fun PendingQuestionCard(
             val id = focusEntryId
             if (id != null) {
                 val row = coordinator.getFuelEntry(id)
-                if (row != null) applyFocusPrefill(row)
+                if (row != null) {
+                    applyFocusPrefill(row)
+                    treatPartial = row.isPartialFill
+                }
             }
         }
     }
@@ -926,16 +958,38 @@ private fun PendingQuestionCard(
                     if (item.kind == BatchPendingKind.MPG_OUTLIER ||
                         item.kind == BatchPendingKind.ODO_SUSPECT
                     ) {
-                        OutlinedButton(
-                            onClick = {
-                                onAction(
-                                    PendingAnswerAction.FlagPartial(entryId = focusEntryId),
-                                )
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.weight(1f),
+                        val focusComplete = run {
+                            val o = odoText.toIntOrNull() ?: 0
+                            val c = costText.toDoubleOrNull() ?: 0.0
+                            val v = volText.toDoubleOrNull() ?: 0.0
+                            o > 0 && c > 0 && v > 0
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("Flag as partial")
+                            Checkbox(
+                                checked = treatPartial && focusComplete,
+                                onCheckedChange = { checked ->
+                                    if (!focusComplete && checked) return@Checkbox
+                                    treatPartial = checked
+                                    onAction(
+                                        PendingAnswerAction.SetPartialFill(
+                                            partial = checked,
+                                            entryId = focusEntryId,
+                                        ),
+                                    )
+                                },
+                                enabled = enabled && focusComplete,
+                            )
+                            Text(
+                                if (focusComplete) {
+                                    "Treat as partial fill (do not use as full-fill anchor)"
+                                } else {
+                                    "Treat as partial (need odo+cost+vol)"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                            )
                         }
                         OutlinedButton(
                             onClick = {
@@ -944,7 +998,7 @@ private fun PendingQuestionCard(
                                 )
                             },
                             enabled = enabled,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text("Mark as gap")
                         }
@@ -1444,10 +1498,11 @@ private fun FullscreenPhotoDialog(
                     BatchPendingKind.MPG_OUTLIER,
                     BatchPendingKind.ODO_SUSPECT,
                     -> {
-                        Button(
+                        OutlinedButton(
                             onClick = {
                                 onAction(
-                                    PendingAnswerAction.FlagPartial(
+                                    PendingAnswerAction.SetPartialFill(
+                                        partial = true,
                                         entryId = item.fuelEntryId
                                             ?: item.extra["suspectId"]?.toLongOrNull()
                                             ?: item.extra["endEntryId"]?.toLongOrNull(),
@@ -1457,7 +1512,7 @@ private fun FullscreenPhotoDialog(
                             },
                             enabled = enabled,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Flag as partial") }
+                        ) { Text("Treat as partial (if complete)") }
                         OutlinedButton(
                             onClick = {
                                 onAction(

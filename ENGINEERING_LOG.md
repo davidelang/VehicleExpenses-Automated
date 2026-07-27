@@ -1103,3 +1103,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Tag: batch_load/builds @ c272c521
 - No device test until human deploy
 - Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-partial-flag-semantics + sanitizer-correctness
+
+- Execution start: two plans
+  - batch-partial-flag-semantics-20260727-plan.md
+  - batch-partial-and-sanitizer-correctness-20260727-plan.md
+- No device deploy (human deploys before test)

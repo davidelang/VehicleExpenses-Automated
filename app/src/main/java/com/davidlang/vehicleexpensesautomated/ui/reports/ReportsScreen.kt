@@ -191,25 +191,32 @@ private data class VehicleReportStats(
     val expensesByCategory: Map<String, Map<String, Double>>
 )
 
-private fun formatMpg(value: Double?): String {
-    return if (value == null) "n/a" else "%.1f".format(value)
-}
+/** Absolute display band for leg mpg (filter only — no row mutation). */
+private const val DISPLAY_MPG_MIN = 5.0
+private const val DISPLAY_MPG_MAX = 80.0
 
 /**
- * Drop legs where mpg &lt; ref/3 or mpg &gt; ref*3.
- * [ref] = median of leg mpgs (robust baseline). If fewer than 3 legs, keep all.
+ * Display filter: keep mpg in 5–80, then drop 3× median outliers.
+ * Does not mutate fuel rows.
  */
 private fun excludeMpgOutliers(legs: List<FullFillLeg>): List<FullFillLeg> {
-    if (legs.size < 3) return legs
-    val sorted = legs.map { it.mpg }.sorted()
+    val banded = legs.filter { it.mpg in DISPLAY_MPG_MIN..DISPLAY_MPG_MAX }
+    if (banded.size < 3) return banded
+    val sorted = banded.map { it.mpg }.sorted()
     val mid = sorted.size / 2
     val ref = if (sorted.size % 2 == 0) {
         (sorted[mid - 1] + sorted[mid]) / 2.0
     } else {
         sorted[mid]
     }
-    if (ref <= 0) return legs
-    return legs.filter { it.mpg >= ref / 3.0 && it.mpg <= ref * 3.0 }
+    if (ref <= 0) return banded
+    return banded.filter { it.mpg >= ref / 3.0 && it.mpg <= ref * 3.0 }
+}
+
+private fun formatMpg(value: Double?): String {
+    if (value == null) return "n/a"
+    if (value < 1.0 || value > 100.0) return "n/a"
+    return "%.1f".format(value)
 }
 
 private fun formatEntryDate(timestamp: Long): String {
@@ -655,7 +662,7 @@ private fun FullFillLegRow(
             Box(
                 modifier = Modifier
                     .weight(0.7f)
-                    .height(18.dp),
+                    .height(22.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
                 Box(
@@ -665,8 +672,9 @@ private fun FullFillLegRow(
                         .background(Color(0xFF81C784).copy(alpha = 0.45f))
                 )
                 Text(
-                    "mpg ${"%.1f".format(leg.mpg)}",
+                    "mpg ${formatMpg(leg.mpg)}",
                     style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }

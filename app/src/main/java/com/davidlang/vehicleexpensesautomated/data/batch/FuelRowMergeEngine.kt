@@ -374,12 +374,8 @@ object FuelRowMergeEngine {
                 deletes.add(odoDonor)
                 usedOdoIds.add(odoDonor.id)
             }
-            row = if (!isLast) {
-                finalizePartialFlag(row.copy(isPartialFill = true))
-            } else {
-                finalizePartialFlag(row)
-            }
-            updates.add(row)
+            // Incomplete earlier sequence members: fields only; never auto-set partial true
+            updates.add(finalizePartialFlag(row))
         }
 
         // Absorb other pure odo companions (same cluster) into last if not already used
@@ -508,6 +504,9 @@ object FuelRowMergeEngine {
         val lon = a.longitude ?: b.longitude
         val loc = preferLocation(a.location, b.location)
         val idKeep = later.id
+        val complete = (if (odo > 0) odo else 0) > 0 && costF > 0 && galF > 0
+        // Explicit partial only when complete and either side already had user override
+        val preservePartial = complete && (a.isPartialFill || b.isPartialFill)
         return later.copy(
             id = idKeep,
             vehicleId = vehicleId,
@@ -520,7 +519,7 @@ object FuelRowMergeEngine {
             latitude = lat,
             longitude = lon,
             location = loc,
-            isPartialFill = true,
+            isPartialFill = preservePartial,
         )
     }
 
@@ -537,9 +536,13 @@ object FuelRowMergeEngine {
         }
     }
 
+    /**
+     * Partial flag is **explicit only**. Incomplete → force false.
+     * Complete → preserve existing user override (never invent true).
+     */
     private fun finalizePartialFlag(e: FuelEntry): FuelEntry {
-        val full = e.vehicleId > 0 && e.odometer > 0 && e.cost > 0 && e.gallons > 0
-        return e.copy(isPartialFill = !full)
+        val complete = e.odometer > 0 && e.cost > 0 && e.gallons > 0
+        return e.copy(isPartialFill = complete && e.isPartialFill)
     }
 
     private fun scoreStrength(e: FuelEntry): Int {

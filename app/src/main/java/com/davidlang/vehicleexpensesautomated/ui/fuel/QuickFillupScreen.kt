@@ -670,8 +670,8 @@ fun QuickFillupScreen(
                         val odoTrim = odometer.trim()
                         val costTrim = cost.trim()
                         val galTrim = gallons.trim()
-                        // Auto partial: any of odo/cost/gallons blank after trim.
-                        val isPartialFill = odoTrim.isBlank() || costTrim.isBlank() || galTrim.isBlank()
+                        // Explicit partial only (default false). Incomplete = missing fields,
+                        // not isPartialFill=true. Full-fill anchors use field presence.
                         val rawVolume = galTrim.toDoubleOrNull() ?: 0.0
                         val saveVolume = if (rawVolume == 0.0) {
                             0.0
@@ -692,7 +692,7 @@ fun QuickFillupScreen(
                                 latitude = lat,
                                 longitude = lon,
                                 location = loc,
-                                isPartialFill = isPartialFill
+                                isPartialFill = false,
                             )
                         )
                         NativePaddleEngine.releaseAllOdoBuffers()
