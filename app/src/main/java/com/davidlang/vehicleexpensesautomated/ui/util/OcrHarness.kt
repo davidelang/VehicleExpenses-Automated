@@ -399,7 +399,7 @@ object OcrHarness {
             org.opencv.imgproc.Imgproc.resize(src, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
         }
 
-        fun detectBoxesOnOdo(): List<TextBlock> {
+        suspend fun detectBoxesOnOdo(): List<TextBlock> {
             val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
             val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
             val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
@@ -443,7 +443,7 @@ object OcrHarness {
                 }
             }
 
-        fun ocrUnionRects(rects: List<Rect>): Pair<String, Pair<Float, Float>> {
+        suspend fun ocrUnionRects(rects: List<Rect>): Pair<String, Pair<Float, Float>> {
             if (rects.isEmpty()) return "" to (0f to 0f)
             val odoB = StringBuilder()
             val probs = mutableListOf<Float>()
