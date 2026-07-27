@@ -1066,3 +1066,12 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start: Mark as gap, pending rebuild/dedupe, formatTimeDelta, Clear & re-scan
 - Parent tip: batch_load/builds @ 25df6455
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt done (code)
+
+- Mark as gap (blank odo/cost/vol); pending full rebuild on merge; (kind,fuelEntryId) dedupe
+- formatTimeDelta for neighbor/unknown deltas; Clear questions & re-scan button
+- Sanitizer skips already-partial / blank; clear all pending kinds per answered fuelEntryId
+- Tag: batch_load/builds @ e743f48a
+- Verify: ./build_app only — no deploy/device smoke (coder not authorized to deploy for test)
+- Notes: research/batch-pending-gap-dedupe-timefmt-20260727/smoke-notes.txt
