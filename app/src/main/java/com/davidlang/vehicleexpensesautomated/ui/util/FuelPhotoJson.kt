@@ -72,4 +72,59 @@ object FuelPhotoJson {
         while ("pump_$n" in existing) n++
         return "pump_$n"
     }
+
+    /**
+     * Union photo lists by URI (first tag wins for same URI).
+     * Used by Stage B merge when combining dash/pump partials.
+     */
+    fun unionPhotos(a: String?, b: String?): String? {
+        val merged = LinkedHashMap<String, FuelPhotoRef>() // uri → ref
+        for (p in parse(a) + parse(b)) {
+            if (p.uri.isBlank()) continue
+            if (!merged.containsKey(p.uri)) merged[p.uri] = p
+        }
+        // Re-tag pumps so we keep pump, pump_2, … without URI collisions
+        val out = mutableListOf<FuelPhotoRef>()
+        val usedTags = mutableSetOf<String>()
+        for (p in merged.values) {
+            val tag = when {
+                p.tag == "dash" || p.tag.startsWith("dash") -> {
+                    if ("dash" !in usedTags) "dash" else p.tag
+                }
+                p.tag.startsWith("pump") -> nextPumpTag(usedTags)
+                else -> {
+                    var t = p.tag
+                    var i = 2
+                    while (t in usedTags) {
+                        t = "${p.tag}_$i"
+                        i++
+                    }
+                    t
+                }
+            }
+            usedTags.add(tag)
+            out.add(p.copy(tag = tag))
+        }
+        return serialize(out)
+    }
+
+    /** Append a pump photo; assigns next free pump / pump_N tag. */
+    fun addPumpPhoto(existing: String?, uri: String, ts: Long): String {
+        val list = parse(existing).toMutableList()
+        if (list.any { it.uri == uri }) return serialize(list) ?: single("pump", uri, ts)
+        val tag = nextPumpTag(list.map { it.tag })
+        list.add(FuelPhotoRef(tag = tag, uri = uri, ts = ts))
+        return serialize(list)!!
+    }
+
+    fun addDashPhoto(existing: String?, uri: String, ts: Long): String {
+        val list = parse(existing).toMutableList()
+        if (list.any { it.uri == uri }) return serialize(list) ?: single("dash", uri, ts)
+        if (list.none { it.tag == "dash" }) {
+            list.add(0, FuelPhotoRef(tag = "dash", uri = uri, ts = ts))
+        } else {
+            list.add(FuelPhotoRef(tag = "dash_2", uri = uri, ts = ts))
+        }
+        return serialize(list)!!
+    }
 }
