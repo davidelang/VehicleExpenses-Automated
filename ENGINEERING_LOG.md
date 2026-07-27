@@ -1038,3 +1038,12 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start: photo UX, manual entry, economyIgnored sync, tank heuristic, unknown vehicle, outliers
 - Parent tip: batch_load/builds @ 27d92a09
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry done
+
+- Photo stem-dedupe; DNG OpenCV preview; fullscreen +/− + sticky actions
+- Manual pump/dash/conflict odo; economyIgnored Room v14 + sync column Economy Ignored
+- Reports: fills N(Mp); Unknown label; economy excludes ignored; avg filters 3× outliers
+- Merge: tank maxFill+5 auto-assign; post-merge enqueue unknown + MPG_OUTLIER
+- Device: merge pending+=52 (9 unknown, 42 outliers); tag batch_load/builds @ aa9b1e53
+- Notes: research/batch-stage-c-photo-ux-20260727/smoke-notes.txt
