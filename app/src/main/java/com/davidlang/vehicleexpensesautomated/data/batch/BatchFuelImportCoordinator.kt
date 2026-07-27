@@ -310,29 +310,18 @@ class BatchFuelImportCoordinator @Inject constructor(
         return true
     }
 
+    /**
+     * Pump photos: always Set I cost/vol OCR and insert as partial with
+     * [UNASSIGNED_VEHICLE_ID]. Do **not** require a vehicle at ingest time —
+     * Stage B merge pairs by timestamp/location with dash rows and assigns vehicle.
+     */
     private suspend fun processPump(
         file: File,
-        defaultVehicleId: Int?,
         pending: MutableList<BatchPendingItem>,
     ): Boolean {
         val meta = PhotoExifMetaReader.read(file.absolutePath)
         val ts = meta.timestampMs ?: System.currentTimeMillis()
         val durable = copyToDurable(file, "pump")
-
-        if (defaultVehicleId == null) {
-            pending.add(
-                BatchPendingItem(
-                    kind = BatchPendingKind.ASSIGN_VEHICLE,
-                    message = "Which vehicle for pump photo ${file.name}?",
-                    photoPath = file.absolutePath,
-                    durablePhotoPath = durable.absolutePath,
-                    timestampMs = ts,
-                    latitude = meta.latitude,
-                    longitude = meta.longitude,
-                ),
-            )
-            return false
-        }
 
         val (w, h) = ImageIngestionProvider.probeDimensions(appContext, file.absolutePath)
         if (w <= 0 || h <= 0) {
@@ -343,7 +332,8 @@ class BatchFuelImportCoordinator @Inject constructor(
                     photoPath = file.absolutePath,
                     durablePhotoPath = durable.absolutePath,
                     timestampMs = ts,
-                    suggestedVehicleId = defaultVehicleId,
+                    latitude = meta.latitude,
+                    longitude = meta.longitude,
                 ),
             )
             return false
@@ -368,7 +358,6 @@ class BatchFuelImportCoordinator @Inject constructor(
                     timestampMs = ts,
                     latitude = meta.latitude,
                     longitude = meta.longitude,
-                    suggestedVehicleId = defaultVehicleId,
                 ),
             )
             return false
@@ -377,7 +366,7 @@ class BatchFuelImportCoordinator @Inject constructor(
         val photoJson = FuelPhotoJson.single("pump", durable.absolutePath, ts)
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
-                vehicleId = defaultVehicleId,
+                vehicleId = UNASSIGNED_VEHICLE_ID,
                 odometer = 0,
                 gallons = vol ?: 0.0,
                 cost = cost ?: 0.0,
@@ -390,7 +379,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 location = "batch_import_pump:${file.name}",
             ),
         )
-        Log.i(TAG, "Inserted pump partial vehicle=$defaultVehicleId cost=$cost vol=$vol ${file.name}")
+        Log.i(
+            TAG,
+            "Inserted pump partial vehicleId=$UNASSIGNED_VEHICLE_ID (unassigned) " +
+                "cost=$cost vol=$vol ${file.name}",
+        )
         return true
     }
 }
