@@ -977,3 +977,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start: batch must run experiment Set J / Set I pipelines, not OcrHarness reinvented front-end
 - Baseline tag: batch_load/builds @ c112e80e
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti done (code)
+
+- AlignmentSetJRunner: experiment Set A ID lock + Set J runPaddleValleyIterative for batch dash
+- PumpSetIRunner: experiment-equivalent Set I for batch pump
+- BatchFuelImportCoordinator no longer uses runAutoFillPipeline / runPumpCostVolPipelineSetI
+- Tag: batch_load/builds @ 7653d156
+- Device parity first-20 still needs deploy of this APK + re-run (prior c112e80e re-verify failed)
