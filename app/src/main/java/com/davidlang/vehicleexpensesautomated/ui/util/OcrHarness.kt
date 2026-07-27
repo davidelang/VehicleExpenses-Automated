@@ -41,7 +41,9 @@ object OcrHarness {
         allVehicles: List<Vehicle>,
         debug: Boolean,
         cameraRotationDegrees: Int = 0,
-        onStage: (suspend (String, Bitmap) -> Unit)? = null
+        onStage: (suspend (String, Bitmap) -> Unit)? = null,
+        /** When set, skip Tier-1 vehicle ID and use this vehicle for Set J (batch pending answers). */
+        forcedVehicleId: Int? = null,
     ): AutoFillResult {
         val t0 = System.currentTimeMillis()
         val jsonDebug = if (debug) JsonObject() else null
@@ -90,13 +92,21 @@ object OcrHarness {
                 add("discovery_landmarks", landmarksJson)
             }
 
-            // 3. Identification (Tier 1 Veto)
-            val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, allVehicles, "ML Kit")
-            val winnerId = vetoResults.entries.find { !it.value.isVetoed }?.key
-            val winningVehicle = allVehicles.find { it.id == winnerId }
+            // 3. Identification (Tier 1 Veto) — or forced vehicle for batch pending assign
+            val winningVehicle = if (forcedVehicleId != null) {
+                allVehicles.find { it.id == forcedVehicleId && !it.deleted }
+            } else {
+                val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, allVehicles, "ML Kit")
+                val winnerId = vetoResults.entries.find { !it.value.isVetoed }?.key
+                allVehicles.find { it.id == winnerId }
+            }
 
             if (winningVehicle == null) {
-                val errorMsg = "Vehicle not identified"
+                val errorMsg = if (forcedVehicleId != null) {
+                    "Forced vehicle $forcedVehicleId not found"
+                } else {
+                    "Vehicle not identified"
+                }
                 jsonDebug?.addProperty("error", errorMsg)
                 return AutoFillResult(error = errorMsg, debugJson = jsonDebug?.toString())
             }
@@ -104,6 +114,7 @@ object OcrHarness {
             jsonDebug?.apply {
                 addProperty("matched_vehicle_id", winningVehicle.id)
                 addProperty("matched_vehicle_name", winningVehicle.name)
+                if (forcedVehicleId != null) addProperty("forced_vehicle", true)
             }
 
             // 4. Extraction (Set J) — ref geometry must match real reference dash (probe or 4080×3072)

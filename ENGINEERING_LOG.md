@@ -960,3 +960,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - processPump always runs Set I; inserts with UNASSIGNED_VEHICLE_ID=0
 - No ASSIGN_VEHICLE gate; merge later assigns vehicle via time/location pairing
 - Unreadable pumps still pending only
+
+## 2026-07-26 - batch-setj-reverify-and-pending-answers-20260726
+
+- Execution start; device versionName=batch_load-start-21-gf43bb991 (geometry + unassigned pump)
+- Part A first-20 re-verify then Part B clickable pending answers

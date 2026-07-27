@@ -33,6 +33,10 @@ import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordina
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportPendingStore
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportProgress
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportResult
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingItem
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingKind
+import com.davidlang.vehicleexpensesautomated.data.batch.PendingAnswerAction
+import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.batch.BatchImportViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
@@ -41,8 +45,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Stage A UI: run batch import from hard-coded experiment photo dirs.
- * Stage B/C (merge + question apply) come later; Review questions lists pending for now.
+ * Stage A UI: batch import + clickable pending questions.
+ * Stage B merge is separate.
  */
 @Composable
 fun ImportOldPicturesScreen(
@@ -56,13 +60,12 @@ fun ImportOldPicturesScreen(
     val coordinator = batchImportViewModel.coordinator
 
     var running by remember { mutableStateOf(false) }
+    var answering by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<BatchImportProgress?>(null) }
     var lastResult by remember { mutableStateOf<BatchImportResult?>(null) }
     var showQuestions by remember { mutableStateOf(false) }
     var pendingSnapshot by remember {
-        mutableStateOf<List<com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingItem>>(
-            BatchImportPendingStore.load(context),
-        )
+        mutableStateOf(BatchImportPendingStore.load(context).toList())
     }
 
     val dashDir = remember { BatchFuelImportCoordinator.dashPhotoDir(context) }
@@ -78,6 +81,63 @@ fun ImportOldPicturesScreen(
         } ?: 0
     }
 
+    val activeVehicles = vehicles.filter { !it.deleted }
+
+    fun reloadPending() {
+        pendingSnapshot = BatchImportPendingStore.load(context).toList()
+    }
+
+    fun startIngest(maxDash: Int?, maxPump: Int?, toastLabel: String) {
+        if (running) return
+        running = true
+        lastResult = null
+        scope.launch {
+            try {
+                withContext(Dispatchers.Default) {
+                    NativePaddleEngine.initializeGlobalBuffers(context.applicationContext)
+                }
+                val result = coordinator.runIngest(
+                    vehicles = vehicles,
+                    onProgress = { p -> progress = p },
+                    maxDash = maxDash,
+                    maxPump = maxPump,
+                )
+                lastResult = result
+                pendingSnapshot = result.pending
+                Toast.makeText(
+                    context,
+                    if (result.cancelled) "$toastLabel cancelled"
+                    else "$toastLabel done: +${result.dashInserted + result.pumpInserted} rows" +
+                        " · pending ${result.pending.size}",
+                    Toast.LENGTH_LONG,
+                ).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "$toastLabel failed: ${e.message}", Toast.LENGTH_LONG)
+                    .show()
+            } finally {
+                running = false
+            }
+        }
+    }
+
+    fun applyAnswer(item: BatchPendingItem, action: PendingAnswerAction) {
+        if (answering || running) return
+        answering = true
+        scope.launch {
+            try {
+                val msg = withContext(Dispatchers.Default) {
+                    coordinator.applyPendingAnswer(item, vehicles, action)
+                }
+                reloadPending()
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Answer failed: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                answering = false
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -90,7 +150,7 @@ fun ImportOldPicturesScreen(
             "Batch OCR from experiment archives (no gallery picker yet). " +
                 "Dash: filesDir/experiment_photos · Pump: externalFiles/pump_photos. " +
                 "Set J odo + Set I cost/vol; partials written to DB. " +
-                "Pump rows are stored without a vehicle (vehicleId=0); merge will pair by time/location.",
+                "Pump rows use vehicleId=0 until merge pairs by time/location.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -100,7 +160,7 @@ fun ImportOldPicturesScreen(
                 Text("Sources", style = MaterialTheme.typography.titleMedium)
                 Text("Dash photos: $dashCount  (${dashDir.absolutePath})")
                 Text("Pump photos: $pumpCount  (${pumpDir.absolutePath})")
-                Text("Vehicles in DB: ${vehicles.count { !it.deleted }}")
+                Text("Vehicles in DB: ${activeVehicles.size}")
                 Text("Pending questions: ${pendingSnapshot.size}")
             }
         }
@@ -138,39 +198,8 @@ fun ImportOldPicturesScreen(
             }
         }
 
-        fun startIngest(maxDash: Int?, maxPump: Int?, toastLabel: String) {
-            if (running) return
-            running = true
-            lastResult = null
-            scope.launch {
-                try {
-                    withContext(Dispatchers.Default) {
-                        NativePaddleEngine.initializeGlobalBuffers(context.applicationContext)
-                    }
-                    val result = coordinator.runIngest(
-                        vehicles = vehicles,
-                        onProgress = { p -> progress = p },
-                        maxDash = maxDash,
-                        maxPump = maxPump,
-                    )
-                    lastResult = result
-                    pendingSnapshot = result.pending
-                    Toast.makeText(
-                        context,
-                        if (result.cancelled) "$toastLabel cancelled"
-                        else "$toastLabel done: +${result.dashInserted + result.pumpInserted} rows",
-                        Toast.LENGTH_LONG,
-                    ).show()
-                } catch (e: Exception) {
-                    Toast.makeText(context, "$toastLabel failed: ${e.message}", Toast.LENGTH_LONG)
-                        .show()
-                } finally {
-                    running = false
-                }
-            }
-        }
-
         val limitN = BatchFuelImportCoordinator.LIMITED_IMPORT_COUNT
+        val busy = running || answering
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -178,7 +207,7 @@ fun ImportOldPicturesScreen(
         ) {
             Button(
                 onClick = { startIngest(null, null, "Batch") },
-                enabled = !running && (dashCount + pumpCount) > 0,
+                enabled = !busy && (dashCount + pumpCount) > 0,
                 modifier = Modifier.weight(1f),
             ) {
                 Text(if (running) "Running…" else "Run batch import")
@@ -191,7 +220,6 @@ fun ImportOldPicturesScreen(
             }
         }
 
-        // Like experiment Golden / Problem subset buttons — first N by name, not full corpus.
         OutlinedButton(
             onClick = {
                 startIngest(
@@ -200,7 +228,7 @@ fun ImportOldPicturesScreen(
                     toastLabel = "Limited ($limitN+$limitN)",
                 )
             },
-            enabled = !running && (dashCount + pumpCount) > 0,
+            enabled = !busy && (dashCount + pumpCount) > 0,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
@@ -211,7 +239,7 @@ fun ImportOldPicturesScreen(
 
         OutlinedButton(
             onClick = {
-                pendingSnapshot = BatchImportPendingStore.load(context)
+                reloadPending()
                 showQuestions = !showQuestions
             },
             enabled = pendingSnapshot.isNotEmpty() || showQuestions,
@@ -225,23 +253,22 @@ fun ImportOldPicturesScreen(
 
         if (showQuestions) {
             Text(
-                "Stage C apply actions not implemented yet — list only. Assign vehicle / merge next.",
+                "Answer each item: assign vehicle (re-runs OCR where needed), skip, or retry pump.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            pendingSnapshot.forEach { item ->
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(10.dp)) {
-                        Text(item.kind.name, style = MaterialTheme.typography.labelLarge)
-                        Text(item.message, style = MaterialTheme.typography.bodyMedium)
-                        item.photoPath?.let {
-                            Text(it, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            }
             if (pendingSnapshot.isEmpty()) {
                 Text("No pending items.")
+            }
+            pendingSnapshot.forEach { item ->
+                PendingQuestionCard(
+                    item = item,
+                    vehicles = activeVehicles,
+                    enabled = !busy,
+                    onAssign = { vid -> applyAnswer(item, PendingAnswerAction.AssignVehicle(vid)) },
+                    onSkip = { applyAnswer(item, PendingAnswerAction.Skip) },
+                    onRetryPump = { applyAnswer(item, PendingAnswerAction.RetryPump) },
+                )
             }
         }
 
@@ -251,6 +278,78 @@ fun ImportOldPicturesScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text("Back")
+        }
+    }
+}
+
+@Composable
+private fun PendingQuestionCard(
+    item: BatchPendingItem,
+    vehicles: List<Vehicle>,
+    enabled: Boolean,
+    onAssign: (Int) -> Unit,
+    onSkip: () -> Unit,
+    onRetryPump: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(item.kind.name, style = MaterialTheme.typography.labelLarge)
+            Text(item.message, style = MaterialTheme.typography.bodyMedium)
+            val path = item.photoPath ?: item.durablePhotoPath
+            if (path != null) {
+                Text(
+                    path.substringAfterLast('/'),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            val needsVehicle = item.kind == BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE ||
+                item.kind == BatchPendingKind.ASSIGN_VEHICLE ||
+                item.kind == BatchPendingKind.SKIP_OR_ASSIGN_VEHICLE
+
+            if (needsVehicle && vehicles.isNotEmpty()) {
+                Text("Assign vehicle:", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    vehicles.forEach { v ->
+                        OutlinedButton(
+                            onClick = { onAssign(v.id) },
+                            enabled = enabled,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(v.name)
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onSkip,
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Skip")
+                }
+                if (item.kind == BatchPendingKind.UNREADABLE_PUMP) {
+                    Button(
+                        onClick = onRetryPump,
+                        enabled = enabled,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Retry pump")
+                    }
+                }
+            }
         }
     }
 }

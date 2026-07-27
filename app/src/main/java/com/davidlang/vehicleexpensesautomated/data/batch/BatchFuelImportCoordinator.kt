@@ -214,10 +214,98 @@ class BatchFuelImportCoordinator @Inject constructor(
         BatchImportResult(dashInserted, pumpInserted, pending, errors, cancelled = false)
     }
 
+    /**
+     * Apply a pending answer from the Import questions UI.
+     * @return short status message for toast.
+     */
+    suspend fun applyPendingAnswer(
+        item: BatchPendingItem,
+        vehicles: List<Vehicle>,
+        action: PendingAnswerAction,
+    ): String = withContext(Dispatchers.Default) {
+        when (action) {
+            is PendingAnswerAction.Skip -> {
+                BatchImportPendingStore.remove(appContext, item.id)
+                "Skipped pending item"
+            }
+            is PendingAnswerAction.AssignVehicle -> {
+                when (item.kind) {
+                    BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
+                    BatchPendingKind.SKIP_OR_ASSIGN_VEHICLE,
+                    -> {
+                        val path = item.photoPath ?: item.durablePhotoPath
+                            ?: return@withContext "No photo path on pending item"
+                        val file = File(path)
+                        if (!file.isFile) return@withContext "Photo missing: $path"
+                        NativePaddleEngine.initializeGlobalBuffers(appContext)
+                        val ok = processDash(
+                            file = file,
+                            vehicles = vehicles,
+                            pending = mutableListOf(),
+                            forcedVehicleId = action.vehicleId,
+                            enqueuePendingOnFail = false,
+                        )
+                        if (ok) {
+                            BatchImportPendingStore.remove(appContext, item.id)
+                            "Reprocessed dash with vehicle ${action.vehicleId}"
+                        } else {
+                            "Dash reprocess failed for vehicle ${action.vehicleId}"
+                        }
+                    }
+                    BatchPendingKind.ASSIGN_VEHICLE -> {
+                        // Legacy pending: run Set I and insert (or already inserted with 0 — reprocess)
+                        val path = item.photoPath ?: item.durablePhotoPath
+                            ?: return@withContext "No photo path on pending item"
+                        val file = File(path)
+                        if (!file.isFile) return@withContext "Photo missing: $path"
+                        NativePaddleEngine.initializeGlobalBuffers(appContext)
+                        val ok = processPump(
+                            file = file,
+                            pending = mutableListOf(),
+                            forcedVehicleId = action.vehicleId,
+                            enqueuePendingOnFail = false,
+                        )
+                        if (ok) {
+                            BatchImportPendingStore.remove(appContext, item.id)
+                            "Pump processed for vehicle ${action.vehicleId}"
+                        } else {
+                            "Pump reprocess failed"
+                        }
+                    }
+                    else -> {
+                        BatchImportPendingStore.remove(appContext, item.id)
+                        "Removed pending (assign not applicable to ${item.kind})"
+                    }
+                }
+            }
+            is PendingAnswerAction.RetryPump -> {
+                val path = item.photoPath ?: item.durablePhotoPath
+                    ?: return@withContext "No photo path"
+                val file = File(path)
+                if (!file.isFile) return@withContext "Photo missing"
+                NativePaddleEngine.initializeGlobalBuffers(appContext)
+                val ok = processPump(
+                    file = file,
+                    pending = mutableListOf(),
+                    forcedVehicleId = null,
+                    enqueuePendingOnFail = false,
+                )
+                if (ok) {
+                    BatchImportPendingStore.remove(appContext, item.id)
+                    "Pump retry inserted (vehicleId=0 until merge)"
+                } else {
+                    "Pump retry still unreadable"
+                }
+            }
+        }
+    }
+
     private suspend fun processDash(
         file: File,
         vehicles: List<Vehicle>,
         pending: MutableList<BatchPendingItem>,
+        forcedVehicleId: Int? = null,
+        enqueuePendingOnFail: Boolean = true,
     ): Boolean {
         val meta = PhotoExifMetaReader.read(file.absolutePath)
         val ts = meta.timestampMs ?: System.currentTimeMillis()
@@ -225,15 +313,17 @@ class BatchFuelImportCoordinator @Inject constructor(
 
         val (w, h) = ImageIngestionProvider.probeDimensions(appContext, file.absolutePath)
         if (w <= 0 || h <= 0) {
-            pending.add(
-                BatchPendingItem(
-                    kind = BatchPendingKind.OTHER,
-                    message = "Dash unreadable dimensions: ${file.name}",
-                    photoPath = file.absolutePath,
-                    durablePhotoPath = durable.absolutePath,
-                    timestampMs = ts,
-                ),
-            )
+            if (enqueuePendingOnFail) {
+                pending.add(
+                    BatchPendingItem(
+                        kind = BatchPendingKind.OTHER,
+                        message = "Dash unreadable dimensions: ${file.name}",
+                        photoPath = file.absolutePath,
+                        durablePhotoPath = durable.absolutePath,
+                        timestampMs = ts,
+                    ),
+                )
+            }
             return false
         }
 
@@ -249,21 +339,24 @@ class BatchFuelImportCoordinator @Inject constructor(
             debug = false,
             cameraRotationDegrees = 0,
             onStage = null,
+            forcedVehicleId = forcedVehicleId,
         )
 
         if (result.vehicleId == null) {
-            pending.add(
-                BatchPendingItem(
-                    kind = BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
-                    message = "Could not identify vehicle for ${file.name}" +
-                        (result.error?.let { ": $it" } ?: ""),
-                    photoPath = file.absolutePath,
-                    durablePhotoPath = durable.absolutePath,
-                    timestampMs = ts,
-                    latitude = meta.latitude,
-                    longitude = meta.longitude,
-                ),
-            )
+            if (enqueuePendingOnFail) {
+                pending.add(
+                    BatchPendingItem(
+                        kind = BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
+                        message = "Could not identify vehicle for ${file.name}" +
+                            (result.error?.let { ": $it" } ?: ""),
+                        photoPath = file.absolutePath,
+                        durablePhotoPath = durable.absolutePath,
+                        timestampMs = ts,
+                        latitude = meta.latitude,
+                        longitude = meta.longitude,
+                    ),
+                )
+            }
             return false
         }
 
@@ -311,31 +404,36 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
-     * Pump photos: always Set I cost/vol OCR and insert as partial with
-     * [UNASSIGNED_VEHICLE_ID]. Do **not** require a vehicle at ingest time —
-     * Stage B merge pairs by timestamp/location with dash rows and assigns vehicle.
+     * Pump photos: always Set I cost/vol OCR and insert as partial.
+     * Default vehicleId is [UNASSIGNED_VEHICLE_ID] (0) until merge; optional
+     * [forcedVehicleId] for legacy ASSIGN_VEHICLE pending answers.
      */
     private suspend fun processPump(
         file: File,
         pending: MutableList<BatchPendingItem>,
+        forcedVehicleId: Int? = null,
+        enqueuePendingOnFail: Boolean = true,
     ): Boolean {
         val meta = PhotoExifMetaReader.read(file.absolutePath)
         val ts = meta.timestampMs ?: System.currentTimeMillis()
         val durable = copyToDurable(file, "pump")
+        val vehicleId = forcedVehicleId ?: UNASSIGNED_VEHICLE_ID
 
         val (w, h) = ImageIngestionProvider.probeDimensions(appContext, file.absolutePath)
         if (w <= 0 || h <= 0) {
-            pending.add(
-                BatchPendingItem(
-                    kind = BatchPendingKind.UNREADABLE_PUMP,
-                    message = "Pump unreadable dimensions: ${file.name}",
-                    photoPath = file.absolutePath,
-                    durablePhotoPath = durable.absolutePath,
-                    timestampMs = ts,
-                    latitude = meta.latitude,
-                    longitude = meta.longitude,
-                ),
-            )
+            if (enqueuePendingOnFail) {
+                pending.add(
+                    BatchPendingItem(
+                        kind = BatchPendingKind.UNREADABLE_PUMP,
+                        message = "Pump unreadable dimensions: ${file.name}",
+                        photoPath = file.absolutePath,
+                        durablePhotoPath = durable.absolutePath,
+                        timestampMs = ts,
+                        latitude = meta.latitude,
+                        longitude = meta.longitude,
+                    ),
+                )
+            }
             return false
         }
 
@@ -348,25 +446,27 @@ class BatchFuelImportCoordinator @Inject constructor(
         val vol = parseMoneyOrVol(result.volume)
 
         if (cost == null && vol == null) {
-            pending.add(
-                BatchPendingItem(
-                    kind = BatchPendingKind.UNREADABLE_PUMP,
-                    message = "Unreadable pump ${file.name}" +
-                        (result.error?.let { ": $it" } ?: ""),
-                    photoPath = file.absolutePath,
-                    durablePhotoPath = durable.absolutePath,
-                    timestampMs = ts,
-                    latitude = meta.latitude,
-                    longitude = meta.longitude,
-                ),
-            )
+            if (enqueuePendingOnFail) {
+                pending.add(
+                    BatchPendingItem(
+                        kind = BatchPendingKind.UNREADABLE_PUMP,
+                        message = "Unreadable pump ${file.name}" +
+                            (result.error?.let { ": $it" } ?: ""),
+                        photoPath = file.absolutePath,
+                        durablePhotoPath = durable.absolutePath,
+                        timestampMs = ts,
+                        latitude = meta.latitude,
+                        longitude = meta.longitude,
+                    ),
+                )
+            }
             return false
         }
 
         val photoJson = FuelPhotoJson.single("pump", durable.absolutePath, ts)
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
-                vehicleId = UNASSIGNED_VEHICLE_ID,
+                vehicleId = vehicleId,
                 odometer = 0,
                 gallons = vol ?: 0.0,
                 cost = cost ?: 0.0,
@@ -381,9 +481,16 @@ class BatchFuelImportCoordinator @Inject constructor(
         )
         Log.i(
             TAG,
-            "Inserted pump partial vehicleId=$UNASSIGNED_VEHICLE_ID (unassigned) " +
+            "Inserted pump partial vehicleId=$vehicleId " +
                 "cost=$cost vol=$vol ${file.name}",
         )
         return true
     }
+}
+
+/** User answer on a pending batch question. */
+sealed class PendingAnswerAction {
+    data object Skip : PendingAnswerAction()
+    data class AssignVehicle(val vehicleId: Int) : PendingAnswerAction()
+    data object RetryPump : PendingAnswerAction()
 }

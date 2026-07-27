@@ -132,4 +132,15 @@ object BatchImportPendingStore {
         } catch (_: Exception) {
         }
     }
+
+    fun remove(context: Context, id: String) {
+        val items = load(context).filter { it.id != id }
+        save(context, items)
+    }
+
+    fun removeAll(context: Context, ids: Collection<String>) {
+        val drop = ids.toSet()
+        val items = load(context).filter { it.id !in drop }
+        save(context, items)
+    }
 }
