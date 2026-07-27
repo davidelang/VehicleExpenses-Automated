@@ -1081,3 +1081,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Execution start: MPG outlier UI clarity per batch-mpg-outlier-ui-clarity-20260727-plan.md
 - Tip: batch_load/builds @ 47ddcf81
 - Device verify only after human deploy (coder will not adb install/deploy)
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity done (code)
+
+- MPG_OUTLIER: end-only primary photos; leg start/end text; focus toggle prior/end
+- Edit/flag/ignore/gap target focusEntryId; nearby badges LEG START / THIS FILL
+- Tag: batch_load/builds @ 795c8e3b
+- No device test (await human deploy)
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
