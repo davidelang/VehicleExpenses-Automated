@@ -916,3 +916,14 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Hilt ViewModel in ui.batch (not ui.import — Java keyword breaks KSP)
 - Builds tag: batch_load/builds @ 6efd2743
 - Stages B (merge) and C (apply answers) remain on same plan path — not in this turn
+
+## 2026-07-26 - batch-dash-match-experiment-set-j-20260726
+
+- Execution start: unify Set J (experiment + batch + Quick Fill) per plan
+- Baseline: batch_load/builds @ 99d1043c
+
+## 2026-07-26 - batch-setj approach: copy experiment logic into production
+
+- User direction: do NOT extract shared dual-call API; copy experiment Set J into production
+- Experiment remains free to tinker (future compile-out); production batch/Quick Fill own a frozen copy
+- Continue plan batch-dash-match-experiment-set-j-20260726-plan.md with this approach

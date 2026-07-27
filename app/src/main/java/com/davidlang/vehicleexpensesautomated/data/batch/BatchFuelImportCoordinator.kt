@@ -95,11 +95,14 @@ class BatchFuelImportCoordinator @Inject constructor(
         return if (active.size == 1) active.first().id else null
     }
 
-    private fun parseOdometer(raw: String?): Int? {
+    /**
+     * Dash odometer from Set J is already [pickBestOdometer]-filtered (4–7 pure digits) or null.
+     * Do **not** digit-concatenate arbitrary OCR soup.
+     */
+    private fun parseSetJOdometer(raw: String?): Int? {
         if (raw.isNullOrBlank()) return null
-        val digits = raw.filter { it.isDigit() }
-        if (digits.isEmpty()) return null
-        return digits.toIntOrNull()
+        if (raw.length !in 4..7 || !raw.all { it.isDigit() }) return null
+        return raw.toIntOrNull()?.takeIf { it > 0 }
     }
 
     private fun parseMoneyOrVol(raw: String?): Double? {
@@ -248,10 +251,10 @@ class BatchFuelImportCoordinator @Inject constructor(
             return false
         }
 
-        val odo = parseOdometer(result.odometer)
+        val odo = parseSetJOdometer(result.odometer)
         val photoJson = FuelPhotoJson.single("dash", durable.absolutePath, ts)
 
-        if (odo == null || odo <= 0) {
+        if (odo == null) {
             // Blank marker row: zeros break both chains; not partial inventory.
             fuelEntryRepository.insertFuelEntry(
                 FuelEntry(
