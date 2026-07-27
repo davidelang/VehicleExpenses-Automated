@@ -494,7 +494,52 @@ class BatchFuelImportCoordinator @Inject constructor(
             is PendingAnswerAction.MarkAsGap -> {
                 markAsGap(item, action.entryId)
             }
+            is PendingAnswerAction.SaveOdoPeers -> {
+                saveOdoPeers(item, action)
+            }
         }
+    }
+
+    /**
+     * Update odometer on each peer that changed (odo > 0). Clears economyIgnored on
+     * edited rows; removes pending for all touched ids; remerge.
+     */
+    private suspend fun saveOdoPeers(
+        item: BatchPendingItem,
+        action: PendingAnswerAction.SaveOdoPeers,
+    ): PendingAnswerResult {
+        val pairs = listOfNotNull(
+            action.prevId?.let { id -> action.prevOdo?.takeIf { it > 0 }?.let { id to it } },
+            action.curId?.let { id -> action.curOdo?.takeIf { it > 0 }?.let { id to it } },
+            action.nextId?.let { id -> action.nextOdo?.takeIf { it > 0 }?.let { id to it } },
+        )
+        if (pairs.isEmpty()) {
+            return PendingAnswerResult("No odometer changes to save", success = false)
+        }
+        val live = fuelEntryRepository.getAllIncludingDeleted()
+            .filter { !it.deleted }
+            .associateBy { it.id }
+        val written = mutableListOf<String>()
+        for ((id, newOdo) in pairs) {
+            val e = live[id] ?: continue
+            if (e.odometer == newOdo) continue
+            fuelEntryRepository.updateFuelEntry(
+                e.copy(odometer = newOdo, economyIgnored = false),
+            )
+            written += "id=$id odo $newOdo"
+            removePendingForFuelEntry(id)
+        }
+        if (written.isEmpty()) {
+            clearAnsweredPending(item, item.fuelEntryId)
+            return PendingAnswerResult("No odometer differed from DB", remerge = false)
+        }
+        clearAnsweredPending(item, item.fuelEntryId)
+        action.prevId?.let { removePendingForFuelEntry(it) }
+        action.curId?.let { removePendingForFuelEntry(it) }
+        action.nextId?.let { removePendingForFuelEntry(it) }
+        val msg = "Saved odometers: ${written.joinToString("; ")}"
+        Log.i(TAG, msg)
+        return PendingAnswerResult(msg, remerge = true)
     }
 
     /**
@@ -1194,6 +1239,19 @@ sealed class PendingAnswerAction {
      * Explicit zeros allowed (unlike manual pump entry).
      */
     data class MarkAsGap(val entryId: Long? = null) : PendingAnswerAction()
+
+    /**
+     * Multi-peer odo save for [BatchPendingKind.ODO_SUSPECT] (prev / cur / next).
+     * Only values &gt; 0 that differ from DB are written.
+     */
+    data class SaveOdoPeers(
+        val prevId: Long? = null,
+        val prevOdo: Int? = null,
+        val curId: Long? = null,
+        val curOdo: Int? = null,
+        val nextId: Long? = null,
+        val nextOdo: Int? = null,
+    ) : PendingAnswerAction()
 }
 
 /** Result of [BatchFuelImportCoordinator.applyPendingAnswer]. */

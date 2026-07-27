@@ -1121,3 +1121,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Tag: batch_load/builds @ ec44b782
 - No device test until human deploy
 - Notes: research/batch-partial-sanitizer-correctness-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill
+
+- Execution start: ODO_SUSPECT per-fill UI layout
+- No device deploy until human deploys

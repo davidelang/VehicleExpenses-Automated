@@ -79,3 +79,21 @@ fun photoPathExists(path: String): Boolean {
 
 fun isDngPath(path: String): Boolean =
     path.substringAfterLast('.').equals("dng", ignoreCase = true)
+
+/**
+ * Dash-only photo URIs for odo questions (never pump tags).
+ * Legacy plain path (no JSON tags) is treated as a single dash image.
+ */
+fun dashPhotoPaths(photoUrl: String?): List<String> {
+    if (photoUrl.isNullOrBlank()) return emptyList()
+    val refs = FuelPhotoJson.parse(photoUrl)
+    if (refs.isEmpty()) return emptyList()
+    // Single legacy plain path parses as tag "dash"
+    val dash = refs.filter {
+        it.tag == "dash" || it.tag.startsWith("dash")
+    }.map { it.uri }.filter { it.isNotBlank() }
+    return dedupePhotoPaths(dash)
+}
+
+fun dashPhotoPaths(entry: com.davidlang.vehicleexpensesautomated.data.model.FuelEntry): List<String> =
+    dashPhotoPaths(entry.photoUrl)

@@ -236,28 +236,47 @@ object FuelOdoSanitizer {
         next: FuelEntry?,
         extraFields: Map<String, String>,
     ): BatchPendingItem {
-        val peers = listOfNotNull(prev, cur, next)
-        val photos = peers.flatMap { FuelPhotoJson.parse(it.photoUrl).map { p -> p.uri } }
-            .let { dedupePhotoPaths(it) }
+        val prevDash = dashPhotoPaths(prev)
+        val curDash = dashPhotoPaths(cur)
+        val nextDash = next?.let { dashPhotoPaths(it) }.orEmpty()
+        val suspectDash = dashPhotoPaths(suspect)
+        // Primary photo for list cards: suspect dash only (not all peers' pumps)
+        val primary = suspectDash.firstOrNull()
+            ?: curDash.firstOrNull()
+            ?: prevDash.firstOrNull()
         return BatchPendingItem(
             kind = BatchPendingKind.ODO_SUSPECT,
             message = message,
-            photoPath = photos.firstOrNull()
-                ?: FuelPhotoJson.parse(suspect.photoUrl).firstOrNull()?.uri,
-            durablePhotoPath = FuelPhotoJson.parse(suspect.photoUrl).firstOrNull()?.uri,
+            photoPath = primary,
+            durablePhotoPath = primary,
             timestampMs = suspect.timestamp,
             fuelEntryId = suspect.id,
             suggestedVehicleId = suspect.vehicleId.takeIf { it > 0 },
             extra = mapOf(
                 "reason" to reason,
-                "entryIds" to peers.map { it.id }.joinToString(","),
-                "photoPaths" to photos.joinToString("|"),
+                "entryIds" to listOfNotNull(prev.id, cur.id, next?.id).joinToString(","),
                 "suspectId" to suspect.id.toString(),
+                "prevEntryId" to prev.id.toString(),
+                "curEntryId" to cur.id.toString(),
+                "nextEntryId" to (next?.id?.toString() ?: ""),
+                "prevOdo" to prev.odometer.toString(),
+                "curOdo" to cur.odometer.toString(),
+                "nextOdo" to (next?.odometer?.toString() ?: ""),
+                "prevDashPaths" to prevDash.joinToString("|"),
+                "curDashPaths" to curDash.joinToString("|"),
+                "nextDashPaths" to nextDash.joinToString("|"),
+                "prevTs" to prev.timestamp.toString(),
+                "curTs" to cur.timestamp.toString(),
+                "nextTs" to (next?.timestamp?.toString() ?: ""),
+                "prevCost" to prev.cost.toString(),
+                "curCost" to cur.cost.toString(),
+                "nextCost" to (next?.cost?.toString() ?: ""),
+                "prevVol" to prev.gallons.toString(),
+                "curVol" to cur.gallons.toString(),
+                "nextVol" to (next?.gallons?.toString() ?: ""),
                 "parsedOdo" to suspect.odometer.toString(),
                 "parsedCost" to suspect.cost.toString(),
                 "parsedVol" to suspect.gallons.toString(),
-                "prevOdo" to prev.odometer.toString(),
-                "curOdo" to cur.odometer.toString(),
             ) + extraFields,
         )
     }

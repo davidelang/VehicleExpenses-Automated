@@ -66,6 +66,7 @@ import com.davidlang.vehicleexpensesautomated.data.batch.FuelEconomyOutliers
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelRowMergeEngine
 import com.davidlang.vehicleexpensesautomated.data.batch.MergeApplyResult
 import com.davidlang.vehicleexpensesautomated.data.batch.PendingAnswerAction
+import com.davidlang.vehicleexpensesautomated.data.batch.dashPhotoPaths
 import com.davidlang.vehicleexpensesautomated.data.batch.dedupePhotoPaths
 import com.davidlang.vehicleexpensesautomated.data.batch.pendingPhotoUris
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
@@ -442,6 +443,32 @@ private fun PendingQuestionCard(
     /** Explicit partial checkbox (only when focus row is field-complete). */
     var treatPartial by remember(item.id) { mutableStateOf(false) }
 
+    // ODO_SUSPECT: per-fill odo fields + dash-only photos (prev / cur / next)
+    var odoPrevText by remember(item.id) {
+        mutableStateOf(item.extra["prevOdo"]?.takeIf { it.isNotBlank() } ?: "")
+    }
+    var odoCurText by remember(item.id) {
+        mutableStateOf(item.extra["curOdo"]?.takeIf { it.isNotBlank() } ?: "")
+    }
+    var odoNextText by remember(item.id) {
+        mutableStateOf(item.extra["nextOdo"]?.takeIf { it.isNotBlank() } ?: "")
+    }
+    var odoPrevPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
+    var odoCurPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
+    var odoNextPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
+    var odoPrevId by remember(item.id) {
+        mutableStateOf(item.extra["prevEntryId"]?.toLongOrNull())
+    }
+    var odoCurId by remember(item.id) {
+        mutableStateOf(item.extra["curEntryId"]?.toLongOrNull())
+    }
+    var odoNextId by remember(item.id) {
+        mutableStateOf(item.extra["nextEntryId"]?.toLongOrNull()?.takeIf { it > 0 })
+    }
+    var odoSuspectId by remember(item.id) {
+        mutableStateOf(item.extra["suspectId"]?.toLongOrNull() ?: item.fuelEntryId)
+    }
+
     val thisEntryId = item.extra["thisEntryId"]?.toLongOrNull()
         ?: item.extra["endEntryId"]?.toLongOrNull()
         ?: item.fuelEntryId
@@ -534,9 +561,7 @@ private fun PendingQuestionCard(
                     excludeEntryId = item.fuelEntryId,
                 )
             }
-            BatchPendingKind.ODO_SUSPECT,
-            BatchPendingKind.ECONOMY_IGNORED,
-            -> {
+            BatchPendingKind.ECONOMY_IGNORED -> {
                 if (item.fuelEntryId == null && item.timestampMs == null) return@LaunchedEffect
                 neighbors = coordinator.neighborContext(
                     fuelEntryId = item.fuelEntryId
@@ -546,6 +571,49 @@ private fun PendingQuestionCard(
                     expandExtra = expandNeighbors,
                     allVehicles = false,
                 )
+            }
+            BatchPendingKind.ODO_SUSPECT -> {
+                fun paths(key: String): List<String> =
+                    item.extra[key]
+                        ?.split('|')
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        .orEmpty()
+                        .let { dedupePhotoPaths(it) }
+
+                odoPrevId = item.extra["prevEntryId"]?.toLongOrNull()
+                odoCurId = item.extra["curEntryId"]?.toLongOrNull()
+                odoNextId = item.extra["nextEntryId"]?.toLongOrNull()?.takeIf { it > 0 }
+                odoSuspectId = item.extra["suspectId"]?.toLongOrNull() ?: item.fuelEntryId
+
+                val prevE = odoPrevId?.let { coordinator.getFuelEntry(it) }
+                val curE = odoCurId?.let { coordinator.getFuelEntry(it) }
+                val nextE = odoNextId?.let { coordinator.getFuelEntry(it) }
+
+                odoPrevPhotos = paths("prevDashPaths").ifEmpty {
+                    prevE?.let { dashPhotoPaths(it) }.orEmpty()
+                }
+                odoCurPhotos = paths("curDashPaths").ifEmpty {
+                    curE?.let { dashPhotoPaths(it) }.orEmpty()
+                }
+                odoNextPhotos = paths("nextDashPaths").ifEmpty {
+                    nextE?.let { dashPhotoPaths(it) }.orEmpty()
+                }
+                if (prevE != null && prevE.odometer > 0) {
+                    odoPrevText = prevE.odometer.toString()
+                } else if (odoPrevText.isBlank()) {
+                    odoPrevText = item.extra["prevOdo"].orEmpty()
+                }
+                if (curE != null && curE.odometer > 0) {
+                    odoCurText = curE.odometer.toString()
+                } else if (odoCurText.isBlank()) {
+                    odoCurText = item.extra["curOdo"].orEmpty()
+                }
+                if (nextE != null && nextE.odometer > 0) {
+                    odoNextText = nextE.odometer.toString()
+                } else if (odoNextText.isBlank()) {
+                    odoNextText = item.extra["nextOdo"].orEmpty()
+                }
             }
             else -> {}
         }
@@ -675,6 +743,140 @@ private fun PendingQuestionCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            } else if (item.kind == BatchPendingKind.ODO_SUSPECT) {
+                // Per-fill dash-only blocks: previous → cur → next (by time)
+                val reason = item.extra["reason"] ?: "odo"
+                val prevTs = item.extra["prevTs"]?.toLongOrNull()
+                val curTs = item.extra["curTs"]?.toLongOrNull()
+                val nextTs = item.extra["nextTs"]?.toLongOrNull()
+                val dtLine = buildString {
+                    if (prevTs != null && curTs != null) {
+                        append("Δt prev→cur ${formatTimeDelta(curTs - prevTs)}")
+                    }
+                    if (curTs != null && nextTs != null) {
+                        if (isNotEmpty()) append(" · ")
+                        append("Δt cur→next ${formatTimeDelta(nextTs - curTs)}")
+                    }
+                }
+                if (dtLine.isNotEmpty()) {
+                    Text(dtLine, style = MaterialTheme.typography.bodySmall)
+                }
+                Text(
+                    "Dash photos only — fix any wrong odo, then Save odometers",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+
+                OdoPeerBlock(
+                    title = if (odoSuspectId == odoPrevId) {
+                        "── Previous fill (suspect) ──"
+                    } else {
+                        "── Previous fill ──"
+                    },
+                    emphasize = odoSuspectId == odoPrevId,
+                    photos = odoPrevPhotos,
+                    odoText = odoPrevText,
+                    onOdoChange = { odoPrevText = it },
+                    metaLine = odoPeerMetaLine(
+                        item.extra["prevTs"], item.extra["prevCost"], item.extra["prevVol"],
+                    ),
+                    enabled = enabled,
+                    onPhotoTap = { zoomPath = it },
+                )
+                OdoPeerBlock(
+                    title = if (odoSuspectId == odoCurId || odoSuspectId == null) {
+                        "── This fill (suspect) ──"
+                    } else {
+                        "── This fill ──"
+                    },
+                    emphasize = odoSuspectId == odoCurId ||
+                        (odoSuspectId != odoPrevId && odoSuspectId != odoNextId),
+                    photos = odoCurPhotos,
+                    odoText = odoCurText,
+                    onOdoChange = { odoCurText = it },
+                    metaLine = odoPeerMetaLine(
+                        item.extra["curTs"], item.extra["curCost"], item.extra["curVol"],
+                    ),
+                    enabled = enabled,
+                    onPhotoTap = { zoomPath = it },
+                )
+                if (odoNextId != null) {
+                    OdoPeerBlock(
+                        title = if (odoSuspectId == odoNextId) {
+                            "── Next fill (suspect) ──"
+                        } else {
+                            "── Next fill ──"
+                        },
+                        emphasize = odoSuspectId == odoNextId,
+                        photos = odoNextPhotos,
+                        odoText = odoNextText,
+                        onOdoChange = { odoNextText = it },
+                        metaLine = odoPeerMetaLine(
+                            item.extra["nextTs"], item.extra["nextCost"], item.extra["nextVol"],
+                        ),
+                        enabled = enabled,
+                        onPhotoTap = { zoomPath = it },
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        onAction(
+                            PendingAnswerAction.SaveOdoPeers(
+                                prevId = odoPrevId,
+                                prevOdo = odoPrevText.toIntOrNull(),
+                                curId = odoCurId,
+                                curOdo = odoCurText.toIntOrNull(),
+                                nextId = odoNextId,
+                                nextOdo = odoNextText.toIntOrNull(),
+                            ),
+                        )
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Save odometers")
+                }
+                // Optional partial on suspect if complete (cost+vol from extra)
+                val suspectComplete = run {
+                    val o = when (odoSuspectId) {
+                        odoPrevId -> odoPrevText.toIntOrNull() ?: 0
+                        odoNextId -> odoNextText.toIntOrNull() ?: 0
+                        else -> odoCurText.toIntOrNull() ?: 0
+                    }
+                    val c = when (odoSuspectId) {
+                        odoPrevId -> item.extra["prevCost"]?.toDoubleOrNull() ?: 0.0
+                        odoNextId -> item.extra["nextCost"]?.toDoubleOrNull() ?: 0.0
+                        else -> item.extra["curCost"]?.toDoubleOrNull() ?: 0.0
+                    }
+                    val v = when (odoSuspectId) {
+                        odoPrevId -> item.extra["prevVol"]?.toDoubleOrNull() ?: 0.0
+                        odoNextId -> item.extra["nextVol"]?.toDoubleOrNull() ?: 0.0
+                        else -> item.extra["curVol"]?.toDoubleOrNull() ?: 0.0
+                    }
+                    o > 0 && c > 0 && v > 0
+                }
+                if (suspectComplete) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = treatPartial,
+                            onCheckedChange = { checked ->
+                                treatPartial = checked
+                                onAction(
+                                    PendingAnswerAction.SetPartialFill(
+                                        partial = checked,
+                                        entryId = odoSuspectId,
+                                    ),
+                                )
+                            },
+                            enabled = enabled,
+                        )
+                        Text(
+                            "Treat as partial fill (suspect, all fields present)",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             } else {
                 Text(
                     "Tap photo to enlarge",
@@ -717,9 +919,7 @@ private fun PendingQuestionCard(
                 }
             }
 
-            if (item.kind == BatchPendingKind.ODO_SUSPECT ||
-                item.kind == BatchPendingKind.ECONOMY_IGNORED
-            ) {
+            if (item.kind == BatchPendingKind.ECONOMY_IGNORED) {
                 Text("Context fills:", style = MaterialTheme.typography.labelMedium)
                 neighbors.take(12).forEach { n ->
                     NeighborLine(n, vehicles)
@@ -895,10 +1095,9 @@ private fun PendingQuestionCard(
                 )
             }
 
-            // Economy / outlier / odo-suspect edit + ignore / flag partial
+            // Economy / MPG outlier edit panel (ODO_SUSPECT has per-fill odo UI above)
             if (item.kind == BatchPendingKind.ECONOMY_IGNORED ||
-                item.kind == BatchPendingKind.MPG_OUTLIER ||
-                item.kind == BatchPendingKind.ODO_SUSPECT
+                item.kind == BatchPendingKind.MPG_OUTLIER
             ) {
                 val editLabel = when {
                     item.kind == BatchPendingKind.MPG_OUTLIER && mpgFocusThis ->
@@ -955,9 +1154,7 @@ private fun PendingQuestionCard(
                     ) {
                         Text("Save edit")
                     }
-                    if (item.kind == BatchPendingKind.MPG_OUTLIER ||
-                        item.kind == BatchPendingKind.ODO_SUSPECT
-                    ) {
+                    if (item.kind == BatchPendingKind.MPG_OUTLIER) {
                         val focusComplete = run {
                             val o = odoText.toIntOrNull() ?: 0
                             val c = costText.toDoubleOrNull() ?: 0.0
@@ -1002,8 +1199,6 @@ private fun PendingQuestionCard(
                         ) {
                             Text("Mark as gap")
                         }
-                    }
-                    if (item.kind == BatchPendingKind.MPG_OUTLIER) {
                         OutlinedButton(
                             onClick = {
                                 onAction(
@@ -1080,6 +1275,69 @@ private fun PendingQuestionCard(
             onDismiss = { zoomPath = null },
         )
     }
+}
+
+@Composable
+private fun OdoPeerBlock(
+    title: String,
+    emphasize: Boolean,
+    photos: List<String>,
+    odoText: String,
+    onOdoChange: (String) -> Unit,
+    metaLine: String,
+    enabled: Boolean,
+    onPhotoTap: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            color = if (emphasize) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
+        if (photos.isEmpty()) {
+            Text(
+                "No dash photo",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            PendingPhotoRow(
+                paths = photos,
+                conflict = photos.size > 1,
+                onTap = onPhotoTap,
+            )
+        }
+        if (metaLine.isNotBlank()) {
+            Text(
+                metaLine,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        OutlinedTextField(
+            value = odoText,
+            onValueChange = onOdoChange,
+            label = { Text("Odo") },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        )
+    }
+}
+
+private fun odoPeerMetaLine(tsStr: String?, costStr: String?, volStr: String?): String {
+    val ts = tsStr?.toLongOrNull()
+    val whenStr = ts?.let {
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(it))
+    } ?: return ""
+    val cost = costStr?.toDoubleOrNull() ?: 0.0
+    val vol = volStr?.toDoubleOrNull() ?: 0.0
+    return "$whenStr · \$${"%.2f".format(cost)} · ${"%.2f".format(vol)}G"
 }
 
 /** Fallback text when live FuelEntry is missing but pending extra has field snapshots. */
