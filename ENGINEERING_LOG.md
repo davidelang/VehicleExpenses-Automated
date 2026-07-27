@@ -1023,3 +1023,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start: Stage C image-first pending questions per batch-stage-c-image-questions-coder-20260727-plan.md
 - Stage B done on device; tip batch_load/builds @ 0c93922c
+
+## 2026-07-27 - batch-stage-c-image-questions done
+
+- C1: pendingPhotoUris + image thumbs/zoom; DNG placeholder; filename secondary only
+- C2: CONFLICT_ODO Keep odo / Keep both; pure wrong-odo hard-delete; pump data odo zeroed
+- C3: successful answers auto applyMerge; skip does not re-merge
+- Device: Keep odo 9594 → pending 8→7 + remerge updated=16 deleted=1; Skip → pending 6
+- Tag: batch_load/builds @ f360ce24
+- Notes: dev-ai-interaction/research/batch-stage-c-questions-20260727/smoke-notes.txt
+- Residual: 1 CONFLICT_ODO, 3 no-vehicle dash, 2 unreadable pump; AMBIGUOUS_MULTI_PUMP unused
