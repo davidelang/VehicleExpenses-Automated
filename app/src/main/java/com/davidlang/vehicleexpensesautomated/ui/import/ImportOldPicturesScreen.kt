@@ -356,30 +356,66 @@ private fun PendingQuestionCard(
 ) {
     var photoPaths by remember(item.id) { mutableStateOf(pendingPhotoUris(item)) }
     var zoomPath by remember { mutableStateOf<String?>(null) }
-    var costText by remember(item.id) { mutableStateOf("") }
-    var volText by remember(item.id) { mutableStateOf("") }
-    var odoText by remember(item.id) { mutableStateOf("") }
+    var costText by remember(item.id) { mutableStateOf(item.extra["parsedCost"] ?: "") }
+    var volText by remember(item.id) { mutableStateOf(item.extra["parsedVol"] ?: "") }
+    var odoText by remember(item.id) {
+        mutableStateOf(item.extra["parsedOdo"] ?: "")
+    }
     var freeOdoText by remember(item.id) { mutableStateOf("") }
     var expandNeighbors by remember(item.id) { mutableIntStateOf(0) }
     var neighbors by remember(item.id) { mutableStateOf<List<FuelEntry>>(emptyList()) }
+    var perVehicleNeighbors by remember(item.id) {
+        mutableStateOf<List<BatchFuelImportCoordinator.PerVehicleNeighbor>>(emptyList())
+    }
     var selectedVehicleId by remember(item.id) {
         mutableStateOf(item.suggestedVehicleId)
     }
 
     LaunchedEffect(item.id) {
         photoPaths = coordinator.resolvePendingPhotoUris(item)
+        // Pre-fill edit fields from live row when possible
+        val id = item.fuelEntryId
+            ?: item.extra["suspectId"]?.toLongOrNull()
+            ?: item.extra["endEntryId"]?.toLongOrNull()
+        if (id != null) {
+            val row = coordinator.getFuelEntry(id)
+            if (row != null) {
+                if (odoText.isBlank() && row.odometer > 0) odoText = row.odometer.toString()
+                if (costText.isBlank() && row.cost > 0) costText = row.cost.toString()
+                if (volText.isBlank() && row.gallons > 0) volText = row.gallons.toString()
+            }
+        }
     }
 
     LaunchedEffect(item.id, item.fuelEntryId, expandNeighbors) {
-        if (item.fuelEntryId == null && item.timestampMs == null) return@LaunchedEffect
-        neighbors = coordinator.neighborContext(
-            fuelEntryId = item.fuelEntryId,
-            timestampMs = item.timestampMs,
-            vehicleIdHint = item.suggestedVehicleId,
-            expandExtra = expandNeighbors,
-            allVehicles = item.kind == BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE ||
-                item.kind == BatchPendingKind.MPG_OUTLIER,
-        )
+        when (item.kind) {
+            BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE -> {
+                val ts = item.timestampMs
+                    ?: item.fuelEntryId?.let { coordinator.getFuelEntry(it)?.timestamp }
+                    ?: return@LaunchedEffect
+                perVehicleNeighbors = coordinator.nearestNeighborsPerVehicle(
+                    timestampMs = ts,
+                    vehicles = vehicles,
+                    expandExtra = expandNeighbors,
+                    excludeEntryId = item.fuelEntryId,
+                )
+            }
+            BatchPendingKind.MPG_OUTLIER,
+            BatchPendingKind.ODO_SUSPECT,
+            BatchPendingKind.ECONOMY_IGNORED,
+            -> {
+                if (item.fuelEntryId == null && item.timestampMs == null) return@LaunchedEffect
+                neighbors = coordinator.neighborContext(
+                    fuelEntryId = item.fuelEntryId
+                        ?: item.extra["suspectId"]?.toLongOrNull(),
+                    timestampMs = item.timestampMs,
+                    vehicleIdHint = item.suggestedVehicleId,
+                    expandExtra = expandNeighbors,
+                    allVehicles = false,
+                )
+            }
+            else -> {}
+        }
     }
 
     val conflictOdos = remember(item) {
@@ -423,12 +459,38 @@ private fun PendingQuestionCard(
                 }
             }
 
-            // Neighbor context
-            if (item.fuelEntryId != null && (
-                    item.kind == BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE ||
-                        item.kind == BatchPendingKind.MPG_OUTLIER ||
-                        item.kind == BatchPendingKind.ECONOMY_IGNORED
-                    )
+            // Unknown: nearest before/after **per vehicle**
+            if (item.kind == BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE) {
+                val anchorTs = item.timestampMs
+                Text(
+                    "Nearest fill per vehicle (before / after):",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                perVehicleNeighbors.forEach { pv ->
+                    Text(pv.vehicleName, style = MaterialTheme.typography.labelLarge)
+                    if (pv.before.isEmpty() && pv.after.isEmpty()) {
+                        Text(
+                            "  (no other fills)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    pv.before.forEach { n ->
+                        NeighborLine(n, vehicles, prefix = "  ← ", anchorTs = anchorTs)
+                    }
+                    pv.after.forEach { n ->
+                        NeighborLine(n, vehicles, prefix = "  → ", anchorTs = anchorTs)
+                    }
+                }
+                TextButton(onClick = { expandNeighbors += 1 }, enabled = enabled) {
+                    Text("Show more (2nd/3rd nearest)")
+                }
+            }
+
+            // Same-vehicle neighbor context (outliers / odo suspect)
+            if (item.kind == BatchPendingKind.MPG_OUTLIER ||
+                item.kind == BatchPendingKind.ODO_SUSPECT ||
+                item.kind == BatchPendingKind.ECONOMY_IGNORED
             ) {
                 Text("Context fills:", style = MaterialTheme.typography.labelMedium)
                 neighbors.take(12).forEach { n ->
@@ -598,11 +660,15 @@ private fun PendingQuestionCard(
                 )
             }
 
-            // Economy / outlier edit + ignore
+            // Economy / outlier / odo-suspect edit + ignore / flag partial
             if (item.kind == BatchPendingKind.ECONOMY_IGNORED ||
-                item.kind == BatchPendingKind.MPG_OUTLIER
+                item.kind == BatchPendingKind.MPG_OUTLIER ||
+                item.kind == BatchPendingKind.ODO_SUSPECT
             ) {
-                Text("Edit fields (clears ignore):", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "Edit fields (pre-filled; clears ignore on save):",
+                    style = MaterialTheme.typography.labelMedium,
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     OutlinedTextField(
                         value = odoText,
@@ -647,6 +713,25 @@ private fun PendingQuestionCard(
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("Save edit")
+                    }
+                    if (item.kind == BatchPendingKind.MPG_OUTLIER ||
+                        item.kind == BatchPendingKind.ODO_SUSPECT
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                onAction(
+                                    PendingAnswerAction.FlagPartial(
+                                        entryId = item.fuelEntryId
+                                            ?: item.extra["suspectId"]?.toLongOrNull()
+                                            ?: item.extra["endEntryId"]?.toLongOrNull(),
+                                    ),
+                                )
+                            },
+                            enabled = enabled,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Flag as partial")
+                        }
                     }
                     if (item.kind == BatchPendingKind.MPG_OUTLIER) {
                         OutlinedButton(
@@ -718,7 +803,12 @@ private fun PendingQuestionCard(
 }
 
 @Composable
-private fun NeighborLine(n: FuelEntry, vehicles: List<Vehicle>) {
+private fun NeighborLine(
+    n: FuelEntry,
+    vehicles: List<Vehicle>,
+    prefix: String = "",
+    anchorTs: Long? = null,
+) {
     val name = when {
         n.vehicleId == 0 -> "Unknown"
         else -> vehicles.find { it.id == n.vehicleId }?.name ?: "Vehicle ${n.vehicleId}"
@@ -727,9 +817,23 @@ private fun NeighborLine(n: FuelEntry, vehicles: List<Vehicle>) {
         if (n.isPartialFill) add("p")
         if (n.economyIgnored) add("ign")
     }.joinToString(",")
-    val ts = SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date(n.timestamp))
+    val ts = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(n.timestamp))
+    val delta = if (anchorTs != null) {
+        val dMs = n.timestamp - anchorTs
+        val days = dMs / (24.0 * 60 * 60 * 1000)
+        when {
+            days <= -1 -> " · ${"%.0f".format(-days)}d earlier"
+            days >= 1 -> " · ${"%.0f".format(days)}d later"
+            else -> {
+                val mins = dMs / 60_000.0
+                if (mins < 0) " · ${"%.0f".format(-mins)}m earlier"
+                else " · ${"%.0f".format(mins)}m later"
+            }
+        }
+    } else ""
     Text(
-        "$ts · $name · odo ${n.odometer} · \$${n.cost} · ${n.gallons}G" +
+        "$prefix$ts · $name · odo ${n.odometer} · \$${n.cost} · ${n.gallons}G" +
+            delta +
             if (flags.isNotEmpty()) " [$flags]" else "",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1084,15 +1188,33 @@ private fun FullscreenPhotoDialog(
                             ) { Text(v.name) }
                         }
                     }
-                    BatchPendingKind.MPG_OUTLIER -> {
+                    BatchPendingKind.MPG_OUTLIER,
+                    BatchPendingKind.ODO_SUSPECT,
+                    -> {
                         Button(
                             onClick = {
-                                onAction(PendingAnswerAction.SetEconomyIgnored(true))
+                                onAction(
+                                    PendingAnswerAction.FlagPartial(
+                                        entryId = item.fuelEntryId
+                                            ?: item.extra["suspectId"]?.toLongOrNull()
+                                            ?: item.extra["endEntryId"]?.toLongOrNull(),
+                                    ),
+                                )
                                 onDismiss()
                             },
                             enabled = enabled,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Ignore in economy") }
+                        ) { Text("Flag as partial") }
+                        if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+                            Button(
+                                onClick = {
+                                    onAction(PendingAnswerAction.SetEconomyIgnored(true))
+                                    onDismiss()
+                                },
+                                enabled = enabled,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Ignore in economy") }
+                        }
                     }
                     BatchPendingKind.ECONOMY_IGNORED -> {
                         Button(

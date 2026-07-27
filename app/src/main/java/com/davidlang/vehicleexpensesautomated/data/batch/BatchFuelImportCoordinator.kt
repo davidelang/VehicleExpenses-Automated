@@ -265,7 +265,18 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
         for (p in plan.newPending) appendPending(p)
 
-        // After merge (or no-op): enqueue unknown vehicle + economy/outlier questions
+        // Odo reverse / unreasonable gap sanitizer (after cluster merges applied)
+        onProgress("Odo sanity…")
+        var sanitizeUpdates = 0
+        val afterMergeLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+        val san = FuelOdoSanitizer.sanitize(afterMergeLive)
+        for (u in san.updates) {
+            fuelEntryRepository.updateFuelEntry(u)
+            sanitizeUpdates++
+        }
+        for (p in san.newPending) appendPending(p)
+
+        // Enqueue unknown vehicle + economy/outlier questions (post-sanitizer live set)
         val afterLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
         onProgress("Scanning unknown vehicles / economy…")
         for (e in afterLive.filter { it.vehicleId == UNASSIGNED_VEHICLE_ID }) {
@@ -280,11 +291,14 @@ class BatchFuelImportCoordinator @Inject constructor(
 
         BatchImportPendingStore.save(appContext, existing)
 
-        val msg = "updated=${plan.updates.size} deleted=${plan.hardDeletes.size} pending+=$added"
+        val totalUpdated = plan.updates.size + sanitizeUpdates
+        val msg =
+            "updated=$totalUpdated deleted=${plan.hardDeletes.size} " +
+                "pending+=$added (sanitize=$sanitizeUpdates)"
         Log.i(TAG, "applyMerge $msg")
         onProgress("Done: $msg")
         MergeApplyResult(
-            updated = plan.updates.size,
+            updated = totalUpdated,
             deleted = plan.hardDeletes.size,
             pendingAdded = added,
             totalPending = existing.size,
@@ -432,7 +446,33 @@ class BatchFuelImportCoordinator @Inject constructor(
             is PendingAnswerAction.AssignUnknownVehicle -> {
                 assignUnknownVehicle(item, action.vehicleId)
             }
+            is PendingAnswerAction.FlagPartial -> {
+                flagPartial(item, action.entryId)
+            }
         }
+    }
+
+    private suspend fun flagPartial(
+        item: BatchPendingItem,
+        entryId: Long?,
+    ): PendingAnswerResult {
+        val id = entryId
+            ?: item.fuelEntryId
+            ?: item.extra["suspectId"]?.toLongOrNull()
+            ?: item.extra["endEntryId"]?.toLongOrNull()
+            ?: return PendingAnswerResult("No entry id to flag partial", success = false)
+        val live = fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
+            ?: return PendingAnswerResult("Fuel row $id not found", success = false)
+        fuelEntryRepository.updateFuelEntry(live.copy(isPartialFill = true))
+        BatchImportPendingStore.remove(appContext, item.id)
+        // Drop related MPG_OUTLIER for same endpoint
+        val pending = BatchImportPendingStore.load(appContext).filterNot {
+            it.kind == BatchPendingKind.MPG_OUTLIER &&
+                (it.fuelEntryId == id || it.extra["endEntryId"] == id.toString())
+        }
+        BatchImportPendingStore.save(appContext, pending)
+        Log.i(TAG, "flagPartial id=$id")
+        return PendingAnswerResult("Flagged id=$id as partial (no longer MPG anchor)", remerge = true)
     }
 
     private suspend fun manualPumpEntry(
@@ -602,8 +642,7 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
-     * Neighbor fills for context UI.
-     * Prefer [fuelEntryId] lookup; else filter by timestamp window.
+     * Neighbor fills for same-vehicle chronological context (outliers, odo suspect).
      */
     suspend fun neighborContext(
         fuelEntryId: Long?,
@@ -614,9 +653,8 @@ class BatchFuelImportCoordinator @Inject constructor(
     ): List<FuelEntry> = withContext(Dispatchers.IO) {
         val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
         val around = fuelEntryId?.let { id -> live.find { it.id == id } }
-        if (around != null) {
-            val useAll = allVehicles || around.vehicleId == 0
-            val pool = if (useAll) live else live.filter { it.vehicleId == around.vehicleId }
+        if (around != null && !allVehicles && around.vehicleId > 0) {
+            val pool = live.filter { it.vehicleId == around.vehicleId }
             val sorted = pool.sortedWith(compareBy({ it.timestamp }, { it.id }))
             val idx = sorted.indexOfFirst { it.id == around.id }
             if (idx >= 0) {
@@ -629,14 +667,57 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
         val ts = around?.timestamp ?: timestampMs ?: return@withContext emptyList()
         val window = FuelRowMergeEngine.UNKNOWN_CONTEXT_WINDOW_MS * (1L + expandExtra)
-        val useAll = allVehicles || (vehicleIdHint ?: 0) == 0 || around?.vehicleId == 0
         val pool = when {
-            useAll -> live
+            allVehicles || (vehicleIdHint ?: 0) == 0 || around?.vehicleId == 0 -> live
             vehicleIdHint != null && vehicleIdHint > 0 -> live.filter { it.vehicleId == vehicleIdHint }
             else -> live
         }
         pool.filter { kotlin.math.abs(it.timestamp - ts) <= window }
             .sortedWith(compareBy({ it.timestamp }, { it.id }))
+    }
+
+    /**
+     * Unknown-vehicle context: for **each** active vehicle, nearest fill strictly
+     * before and after [timestampMs] (or the unknown row's timestamp).
+     * [expandExtra] adds 2nd/3rd nearest per side.
+     */
+    data class PerVehicleNeighbor(
+        val vehicleId: Int,
+        val vehicleName: String,
+        val before: List<FuelEntry>,
+        val after: List<FuelEntry>,
+    )
+
+    suspend fun nearestNeighborsPerVehicle(
+        timestampMs: Long,
+        vehicles: List<Vehicle>,
+        expandExtra: Int = 0,
+        excludeEntryId: Long? = null,
+    ): List<PerVehicleNeighbor> = withContext(Dispatchers.IO) {
+        val live = fuelEntryRepository.getAllIncludingDeleted().filter {
+            !it.deleted && it.vehicleId > 0 && it.id != excludeEntryId
+        }
+        val perSide = 1 + expandExtra
+        vehicles.filter { !it.deleted }.map { v ->
+            val rows = live.filter { it.vehicleId == v.id }
+                .sortedWith(compareBy({ it.timestamp }, { it.id }))
+            val before = rows.filter { it.timestamp < timestampMs }
+                .takeLast(perSide)
+                .asReversed() // nearest first
+            val after = rows.filter { it.timestamp > timestampMs }
+                .take(perSide)
+            PerVehicleNeighbor(
+                vehicleId = v.id,
+                vehicleName = v.name.ifBlank { "Vehicle ${v.id}" },
+                before = before,
+                after = after,
+            )
+        }
+    }
+
+    /** Load fuel row for pre-filling edit fields. */
+    suspend fun getFuelEntry(id: Long): FuelEntry? = withContext(Dispatchers.IO) {
+        fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
     }
 
     /**
@@ -912,6 +993,13 @@ sealed class PendingAnswerAction {
     data class SetEconomyIgnored(val ignored: Boolean) : PendingAnswerAction()
 
     data class AssignUnknownVehicle(val vehicleId: Int) : PendingAnswerAction()
+
+    /**
+     * Set [FuelEntry.isPartialFill]=true on [entryId] (default: pending fuelEntryId /
+     * outlier end). Drops full-fill anchor; inventory still counts. Distinct from
+     * [SetEconomyIgnored].
+     */
+    data class FlagPartial(val entryId: Long? = null) : PendingAnswerAction()
 }
 
 /** Result of [BatchFuelImportCoordinator.applyPendingAnswer]. */

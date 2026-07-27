@@ -24,6 +24,11 @@ enum class BatchPendingKind {
     ECONOMY_IGNORED,
     /** MPG outlier leg endpoint (3× vs median baseline). */
     MPG_OUTLIER,
+    /**
+     * Odometer reverse or unreasonable gap demotion.
+     * extra.reason = reverse|gap; pre-fill from extra.parsedOdo/cost/vol.
+     */
+    ODO_SUSPECT,
     OTHER,
 }
 

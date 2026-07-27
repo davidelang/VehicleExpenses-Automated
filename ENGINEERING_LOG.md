@@ -1047,3 +1047,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Merge: tank maxFill+5 auto-assign; post-merge enqueue unknown + MPG_OUTLIER
 - Device: merge pending+=52 (9 unknown, 42 outliers); tag batch_load/builds @ aa9b1e53
 - Notes: research/batch-stage-c-photo-ux-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-merge-window-odo-sanity
+
+- Execution start: 15m merge window, tight dash/pump pairs, odo reverse/gap sanitizer, Flag partial, per-vehicle unknown context
+- Parent tip: batch_load/builds @ 3f915150

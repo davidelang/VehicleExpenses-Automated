@@ -13,9 +13,18 @@ import kotlin.math.max
  * row while `timestamp - seed.timestamp <= windowMs` **and** gap from previous
  * in cluster ≤ windowMs. (Seed-window + consecutive-gap both enforced.)
  *
+ * **Window:** [MERGE_WINDOW_MS] = **15 minutes** (not 45). Two fills ~44 min apart
+ * must not share a cluster.
+ *
+ * **Multi dash + multi pump (tight pairs):** when a greedy cluster contains ≥2
+ * dash-like **and** ≥2 pump-like rows, [splitTightDashPumpPairs] matches each
+ * dash↔pump by minimum |Δt| (each used once, |Δt| ≤ window), then
+ * [mergeOneCluster] runs **per sub-cluster** so two nearby fills never glue
+ * into one `pump`+`pump_2` CONFLICT_ODO row.
+ *
  * Unassigned pumps (`vehicleId == 0`) are first **paired** to the nearest dash odo
- * row of a known vehicle within the window; then that vehicle is applied. Unpaired
- * pumps stay out of vehicle clusters.
+ * row of a known vehicle within the window (tank maxFill+slack may eliminate
+ * vehicles); then that vehicle is applied. Unpaired pumps stay out of clusters.
  *
  * Multi-pump: amounts within [COST_VOL_REL_TOL] (and not over abs floor for cost)
  * → re-shot (one survivor). Beyond tol with abs > [COST_ABS_FLOOR] → sequence
@@ -23,18 +32,22 @@ import kotlin.math.max
  */
 object FuelRowMergeEngine {
 
-    const val MERGE_WINDOW_MS: Long = 45L * 60L * 1000L
+    /** Cluster / pair max gap — **15 minutes** (was 45; over-merged distinct fills). */
+    const val MERGE_WINDOW_MS: Long = 15L * 60L * 1000L
     const val COST_VOL_REL_TOL: Double = 0.05
     const val COST_ABS_FLOOR: Double = 1.0
     /**
      * Tank / max-fill slack in **preferred volume unit** (same as [FuelEntry.gallons]).
      * Pump volume &gt; maxFill(vehicle) + this eliminates that vehicle for pairing.
-     * Spec: five US gallons; if preferred unit is liters, convert at call sites that know prefs.
-     * Default treats stored volumes as gallons-compatible (user preferred unit).
      */
     const val TANK_SLACK_GAL: Double = 5.0
-    /** Context window for unknown-vehicle neighbor lists (±). */
+    /** Context window for unknown-vehicle neighbor lists (±) — independent of merge window. */
     const val UNKNOWN_CONTEXT_WINDOW_MS: Long = 2L * 60L * 60L * 1000L
+    /**
+     * Unreasonable odo gap: `Δodo > maxVol(vehicle) * mpg(vehicle) * ODO_GAP_FACTOR`.
+     * No constant mpg fallback — skip gap rule if vehicle mpg unavailable.
+     */
+    const val ODO_GAP_FACTOR: Double = 3.0
 
     data class MergePlan(
         val updates: List<FuelEntry> = emptyList(),
@@ -96,10 +109,19 @@ object FuelRowMergeEngine {
                     }
                     continue
                 }
-                val plan = mergeOneCluster(cluster)
-                allUpdates += plan.updates
-                allDeletes += plan.hardDeletes
-                allPending += plan.newPending
+                val split = splitTightDashPumpPairs(cluster, windowMs)
+                allPending += split.ambiguousPending
+                for (sub in split.subClusters) {
+                    if (sub.size < 2) {
+                        val only = sub.singleOrNull() ?: continue
+                        if (only.id in reassignedById) allUpdates += only
+                        continue
+                    }
+                    val plan = mergeOneCluster(sub)
+                    allUpdates += plan.updates
+                    allDeletes += plan.hardDeletes
+                    allPending += plan.newPending
+                }
             }
         }
 
@@ -189,6 +211,99 @@ object FuelRowMergeEngine {
         }
         out.add(cur)
         return out
+    }
+
+    data class TightPairSplit(
+        val subClusters: List<List<FuelEntry>>,
+        val ambiguousPending: List<BatchPendingItem> = emptyList(),
+    )
+
+    /**
+     * When a greedy cluster has **≥2 dash-like** and **≥2 pump-like** rows, split into
+     * tight time pairs so distinct fills never cross-merge into one CONFLICT_ODO /
+     * `pump`+`pump_2` row.
+     *
+     * **Pairing:** greedy match dash↔pump by ascending |Δt|, each row used at most
+     * once, only if `|Δt| ≤ windowMs`. Leftovers attach to nearest pair if within
+     * window, else singleton sub-clusters. Near-ties (two pumps within 1 min of same
+     * dash) still take nearest but enqueue [BatchPendingKind.AMBIGUOUS_MULTI_PUMP].
+     */
+    internal fun splitTightDashPumpPairs(
+        cluster: List<FuelEntry>,
+        windowMs: Long = MERGE_WINDOW_MS,
+    ): TightPairSplit {
+        val dashes = cluster.filter { isDashLike(it) }
+        val pumps = cluster.filter { isPumpLikeForSplit(it) }
+        if (dashes.size < 2 || pumps.size < 2) {
+            return TightPairSplit(listOf(cluster))
+        }
+
+        data class Edge(val dash: FuelEntry, val pump: FuelEntry, val dt: Long)
+
+        val edges = mutableListOf<Edge>()
+        for (d in dashes) {
+            for (p in pumps) {
+                val dt = abs(d.timestamp - p.timestamp)
+                if (dt <= windowMs) edges.add(Edge(d, p, dt))
+            }
+        }
+        if (edges.isEmpty()) return TightPairSplit(listOf(cluster))
+        edges.sortWith(compareBy({ it.dt }, { it.dash.id }, { it.pump.id }))
+
+        val usedDash = mutableSetOf<Long>()
+        val usedPump = mutableSetOf<Long>()
+        val pairs = mutableListOf<MutableList<FuelEntry>>()
+        val ambiguousPending = mutableListOf<BatchPendingItem>()
+
+        for (e in edges) {
+            if (e.dash.id in usedDash || e.pump.id in usedPump) continue
+            val rivals = edges.filter {
+                it.dash.id == e.dash.id &&
+                    it.pump.id != e.pump.id &&
+                    it.pump.id !in usedPump &&
+                    abs(it.dt - e.dt) <= 60_000L
+            }
+            if (rivals.isNotEmpty()) {
+                ambiguousPending += BatchPendingItem(
+                    kind = BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
+                    message = "Ambiguous dash–pump pairing near ts=${e.dash.timestamp} " +
+                        "(Δt=${e.dt}ms rivals=${rivals.size})",
+                    photoPath = FuelPhotoJson.parse(e.dash.photoUrl).firstOrNull()?.uri
+                        ?: FuelPhotoJson.parse(e.pump.photoUrl).firstOrNull()?.uri,
+                    timestampMs = e.dash.timestamp,
+                    fuelEntryId = e.dash.id,
+                    suggestedVehicleId = e.dash.vehicleId.takeIf { it > 0 },
+                    extra = mapOf(
+                        "entryIds" to listOf(e.dash.id, e.pump.id).joinToString(","),
+                        "photoPaths" to allPhotoUris(listOf(e.dash, e.pump)).joinToString("|"),
+                    ),
+                )
+            }
+            usedDash.add(e.dash.id)
+            usedPump.add(e.pump.id)
+            pairs.add(mutableListOf(e.dash, e.pump))
+        }
+
+        val pairedIds = pairs.flatten().map { it.id }.toSet()
+        val leftovers = cluster.filter { it.id !in pairedIds }
+        for (left in leftovers) {
+            val host = pairs.minByOrNull { pair ->
+                abs(pair.map { it.timestamp }.average() - left.timestamp)
+            }
+            if (host != null) {
+                val hostTs = host.map { it.timestamp }.average().toLong()
+                if (abs(left.timestamp - hostTs) <= windowMs) {
+                    host.add(left)
+                    continue
+                }
+            }
+            pairs.add(mutableListOf(left))
+        }
+
+        return TightPairSplit(
+            subClusters = pairs.map { it.sortedWith(compareBy({ it.timestamp }, { it.id })) },
+            ambiguousPending = ambiguousPending,
+        )
     }
 
     private fun mergeOneCluster(cluster: List<FuelEntry>): MergePlan {
@@ -460,6 +575,24 @@ object FuelRowMergeEngine {
      */
     private fun isPumpLike(e: FuelEntry): Boolean {
         if (e.location?.contains("batch_import_pump") == true) return true
+        return (hasCost(e) || hasVol(e)) && !hasPositiveOdo(e)
+    }
+
+    /** Dash-like for tight-pair split: odo-only (or batch dash location/tag). */
+    internal fun isDashLike(e: FuelEntry): Boolean {
+        if (e.location?.contains("batch_import_dash") == true) return true
+        val hasDashPhoto = FuelPhotoJson.parse(e.photoUrl).any {
+            it.tag == "dash" || it.tag.startsWith("dash")
+        }
+        if (hasDashPhoto && hasPositiveOdo(e) && !hasCost(e) && !hasVol(e)) return true
+        return hasPositiveOdo(e) && !hasCost(e) && !hasVol(e)
+    }
+
+    /** Pump-like for tight-pair split: cost/vol without odo (or batch pump). */
+    internal fun isPumpLikeForSplit(e: FuelEntry): Boolean {
+        if (e.location?.contains("batch_import_pump") == true) return true
+        val hasPumpPhoto = FuelPhotoJson.parse(e.photoUrl).any { it.tag.startsWith("pump") }
+        if (hasPumpPhoto && (hasCost(e) || hasVol(e)) && !hasPositiveOdo(e)) return true
         return (hasCost(e) || hasVol(e)) && !hasPositiveOdo(e)
     }
 

@@ -80,3 +80,11 @@ Vehicle id `0` is labeled **Unknown** in reports UI (never “Vehicle 0”).
 ## Volume display
 
 Fuel volumes in the database are stored in the user’s **preferred** unit (gallons or liters). Reports and fuel lists show that stored number with the preferred unit **label**; they do not re-convert.
+
+## Merge window / odo sanitizer (batch)
+
+- Cluster / pair window: **15 minutes** (`FuelRowMergeEngine.MERGE_WINDOW_MS`).
+- Multi dash+pump clusters split into tight time pairs before field merge.
+- Unreasonable odo gap: `Δodo > maxVol(vehicle) × medianMpg(vehicle) × 3` demotes suspect to **partial** + question (`ODO_SUSPECT`). No constant mpg fallback.
+- Reverse odo in time order: reliability demote (bias later) → partial + question.
+- **Flag as partial** on bad-mpg questions: endpoint leaves full-fill anchors without `economyIgnored`.
