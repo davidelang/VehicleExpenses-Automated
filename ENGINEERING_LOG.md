@@ -1144,3 +1144,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Completing MainActivity yellow bar + remaining CTA; no device deploy
 
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar done (code)
+
+- Merge: all live partials (sync/QF/batch); soft-delete published absorbs; lat/lon later-ts
+- hasUnmatchedPartials + post-sync toast CTA (no auto-merge)
+- Yellow title-bar ?N → import?review=1 expand Review questions; Help bullets
+- Tag: batch_load/builds @ 5e7de408
+- No device test until human deploy
+- Notes: research/batch-sync-cross-device-partials-and-titlebar-20260727/smoke-notes.txt
+
