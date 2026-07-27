@@ -1052,3 +1052,12 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start: 15m merge window, tight dash/pump pairs, odo reverse/gap sanitizer, Flag partial, per-vehicle unknown context
 - Parent tip: batch_load/builds @ 3f915150
+
+## 2026-07-27 - batch-merge-window-odo-sanity done
+
+- MERGE_WINDOW_MS=15m; splitTightDashPumpPairs for multi dash+pump
+- FuelOdoSanitizer: gap (maxVol×mpg×3, no fallback) then reverse; bias demote later
+- ODO_SUSPECT pending; FlagPartial action; per-vehicle nearest for unknown
+- Device: sanitize=31, ODO_SUSPECT=31 (incl. 20119 gap); CONFLICT_ODO=1
+- Tag: batch_load/builds @ 1fbe913e
+- Notes: research/batch-merge-window-odo-sanity-20260727/smoke-notes.txt
