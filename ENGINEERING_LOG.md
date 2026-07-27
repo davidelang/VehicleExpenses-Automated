@@ -1094,3 +1094,12 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Re-execute updated plan: Last/This photo blocks + 4-line context
 - Prior UI (single strip + toggle) superseded by locked two-block layout
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity layout v2 done (code)
+
+- Two-block Last/This photos above each button; 4-line text context (before/last/this/after)
+- Focus default This fill; edit/flag/ignore/gap target focus id
+- toPending: thisPhotoPaths + lastPhotoPaths
+- Tag: batch_load/builds @ c272c521
+- No device test until human deploy
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
