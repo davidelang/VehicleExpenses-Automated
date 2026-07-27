@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -24,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -35,6 +37,7 @@ import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportProgress
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportResult
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingItem
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingKind
+import com.davidlang.vehicleexpensesautomated.data.batch.MergeApplyResult
 import com.davidlang.vehicleexpensesautomated.data.batch.PendingAnswerAction
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.batch.BatchImportViewModel
@@ -46,7 +49,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Stage A UI: batch import + clickable pending questions.
- * Stage B merge is separate.
+ * Stage B: explicit **Run merge** (+ optional merge-after-import, default off).
  */
 @Composable
 fun ImportOldPicturesScreen(
@@ -61,8 +64,13 @@ fun ImportOldPicturesScreen(
 
     var running by remember { mutableStateOf(false) }
     var answering by remember { mutableStateOf(false) }
+    var merging by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<BatchImportProgress?>(null) }
+    var mergeStatus by remember { mutableStateOf<String?>(null) }
     var lastResult by remember { mutableStateOf<BatchImportResult?>(null) }
+    var lastMerge by remember { mutableStateOf<MergeApplyResult?>(null) }
+    /** Optional: run Stage B after Stage A finishes. Default **off**. */
+    var mergeAfterImport by remember { mutableStateOf(false) }
     var showQuestions by remember { mutableStateOf(false) }
     var pendingSnapshot by remember {
         mutableStateOf(BatchImportPendingStore.load(context).toList())
@@ -87,8 +95,32 @@ fun ImportOldPicturesScreen(
         pendingSnapshot = BatchImportPendingStore.load(context).toList()
     }
 
+    fun runMerge(toastPrefix: String = "Merge") {
+        if (running || merging || answering) return
+        merging = true
+        mergeStatus = "Planning…"
+        scope.launch {
+            try {
+                val result = coordinator.applyMerge { msg -> mergeStatus = msg }
+                lastMerge = result
+                reloadPending()
+                Toast.makeText(
+                    context,
+                    "$toastPrefix: ${result.message}",
+                    Toast.LENGTH_LONG,
+                ).show()
+            } catch (e: Exception) {
+                mergeStatus = "failed: ${e.message}"
+                Toast.makeText(context, "$toastPrefix failed: ${e.message}", Toast.LENGTH_LONG)
+                    .show()
+            } finally {
+                merging = false
+            }
+        }
+    }
+
     fun startIngest(maxDash: Int?, maxPump: Int?, toastLabel: String) {
-        if (running) return
+        if (running || merging) return
         running = true
         lastResult = null
         scope.launch {
@@ -104,13 +136,18 @@ fun ImportOldPicturesScreen(
                 )
                 lastResult = result
                 pendingSnapshot = result.pending
-                Toast.makeText(
-                    context,
+                var toast =
                     if (result.cancelled) "$toastLabel cancelled"
                     else "$toastLabel done: +${result.dashInserted + result.pumpInserted} rows" +
-                        " · pending ${result.pending.size}",
-                    Toast.LENGTH_LONG,
-                ).show()
+                        " · pending ${result.pending.size}"
+                if (mergeAfterImport && !result.cancelled) {
+                    mergeStatus = "Merge after import…"
+                    val mergeResult = coordinator.applyMerge { msg -> mergeStatus = msg }
+                    lastMerge = mergeResult
+                    reloadPending()
+                    toast += " · merge ${mergeResult.message}"
+                }
+                Toast.makeText(context, toast, Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "$toastLabel failed: ${e.message}", Toast.LENGTH_LONG)
                     .show()
@@ -121,7 +158,7 @@ fun ImportOldPicturesScreen(
     }
 
     fun applyAnswer(item: BatchPendingItem, action: PendingAnswerAction) {
-        if (answering || running) return
+        if (answering || running || merging) return
         answering = true
         scope.launch {
             try {
@@ -199,7 +236,7 @@ fun ImportOldPicturesScreen(
         }
 
         val limitN = BatchFuelImportCoordinator.LIMITED_IMPORT_COUNT
-        val busy = running || answering
+        val busy = running || answering || merging
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -234,6 +271,39 @@ fun ImportOldPicturesScreen(
             Text(
                 if (running) "Running…"
                 else "First $limitN dash + first $limitN pump",
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = mergeAfterImport,
+                onCheckedChange = { mergeAfterImport = it },
+                enabled = !busy,
+            )
+            Text(
+                "Merge after import (default off)",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
+        Button(
+            onClick = { runMerge() },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (merging) "Merging…" else "Run merge")
+        }
+
+        mergeStatus?.let { s ->
+            Text("Merge: $s", style = MaterialTheme.typography.bodySmall)
+        }
+        lastMerge?.let { m ->
+            Text(
+                "Last merge: ${m.message} · total pending=${m.totalPending}",
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
 

@@ -39,6 +39,15 @@ data class BatchImportResult(
     val cancelled: Boolean,
 )
 
+/** Result of applying [FuelRowMergeEngine.planMerge] to the live fuel table. */
+data class MergeApplyResult(
+    val updated: Int,
+    val deleted: Int,
+    val pendingAdded: Int,
+    val totalPending: Int,
+    val message: String,
+)
+
 /**
  * Stage A batch ingest: walk hard-coded experiment photo dirs, OCR, insert partials.
  * Merge (Stage B) is a separate call / button.
@@ -212,6 +221,68 @@ class BatchFuelImportCoordinator @Inject constructor(
         BatchImportPendingStore.save(appContext, pending)
         report("done", "Finished: dash=$dashInserted pump=$pumpInserted pending=${pending.size}")
         BatchImportResult(dashInserted, pumpInserted, pending, errors, cancelled = false)
+    }
+
+    /**
+     * Stage B: load non-deleted fuel entries → [FuelRowMergeEngine.planMerge] →
+     * update survivors → [FuelEntryRepository.hardDeleteFuelEntry] absorbs →
+     * append merge pending (deduped by kind+message/photo).
+     */
+    suspend fun applyMerge(
+        onProgress: (String) -> Unit = {},
+    ): MergeApplyResult = withContext(Dispatchers.IO) {
+        onProgress("Loading fuel entries…")
+        val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+        onProgress("Planning merge (${live.size} rows)…")
+        val plan = FuelRowMergeEngine.planMerge(live)
+        if (plan.isEmpty()) {
+            val pending = BatchImportPendingStore.load(appContext)
+            return@withContext MergeApplyResult(
+                updated = 0,
+                deleted = 0,
+                pendingAdded = 0,
+                totalPending = pending.size,
+                message = "No merge actions (updated=0 deleted=0 pending+=0)",
+            )
+        }
+
+        onProgress("Applying ${plan.updates.size} updates…")
+        for (u in plan.updates) {
+            fuelEntryRepository.updateFuelEntry(u)
+        }
+        onProgress("Hard-deleting ${plan.hardDeletes.size} absorbed rows…")
+        for (d in plan.hardDeletes) {
+            fuelEntryRepository.hardDeleteFuelEntry(d)
+            Log.i(TAG, "merge hardDelete id=${d.id} vehicle=${d.vehicleId} loc=${d.location}")
+        }
+
+        val existing = BatchImportPendingStore.load(appContext)
+        var added = 0
+        for (p in plan.newPending) {
+            val dup = existing.any { e ->
+                e.kind == p.kind && (
+                    (p.photoPath != null && e.photoPath == p.photoPath) ||
+                        (p.fuelEntryId != null && e.fuelEntryId == p.fuelEntryId) ||
+                        e.message == p.message
+                    )
+            }
+            if (!dup) {
+                existing.add(p)
+                added++
+            }
+        }
+        BatchImportPendingStore.save(appContext, existing)
+
+        val msg = "updated=${plan.updates.size} deleted=${plan.hardDeletes.size} pending+=$added"
+        Log.i(TAG, "applyMerge $msg")
+        onProgress("Done: $msg")
+        MergeApplyResult(
+            updated = plan.updates.size,
+            deleted = plan.hardDeletes.size,
+            pendingAdded = added,
+            totalPending = existing.size,
+            message = msg,
+        )
     }
 
     /**

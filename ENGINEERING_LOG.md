@@ -985,3 +985,15 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - BatchFuelImportCoordinator no longer uses runAutoFillPipeline / runPumpCostVolPipelineSetI
 - Tag: batch_load/builds @ 7653d156
 - Device parity first-20 still needs deploy of this APK + re-run (prior c112e80e re-verify failed)
+
+## 2026-07-27 - Batch Stage A full-run parity PASS; Stage B plan ready
+
+- Full batch finished (~02:35 PDT); app idle after last pump `PXL_20260411_201506380.jpg`.
+- Selective purge: deleted 74 old `batch_import%` rows (`updatedAt < 1785142500000`); kept 12 non-batch + 290 this-run (ids 219–508); pending cleaned to 6 this-run items.
+- Parity vs experiment: dash Set J 142 OK / 0 DIFF (4 no-vehicle pending); pump Set I 148 OK / 0 DIFF (2 unreadable both sides). Report: `dev-ai-interaction/research/batch-run-parity-20260727/`.
+- Next coder plan: `dev-ai-interaction/plans/batch-stage-b-merge-engine-coder-20260727-plan.md` (merge engine + Run merge). Durable B+C: `batch-stage-b-merge-and-stage-c-questions-20260727-plan.md`.
+
+## 2026-07-27 - batch-stage-b-merge-engine
+
+- Execution start: Stage B merge engine per batch-stage-b-merge-engine-coder-20260727-plan.md
+- Stage A parity PASS; baseline tag 83e36ca0
