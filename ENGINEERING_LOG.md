@@ -1110,3 +1110,14 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
   - batch-partial-flag-semantics-20260727-plan.md
   - batch-partial-and-sanitizer-correctness-20260727-plan.md
 - No device deploy (human deploys before test)
+
+## 2026-07-27 - partial-flag + sanitizer-correctness done (code)
+
+- isPartialFill explicit-only; inserts/merge/sanitizer never auto-true for incomplete
+- FuelOdoSanitizer detect-only (reverse, digit_jump, gap with clean mpg); no demote updates
+- Checkbox SetPartialFill; clearAutoPartialFlags repair button
+- Reports display band 5–80 + formatMpg n/a outside 1–100
+- Quick Fill: isPartialFill=false on save
+- Tag: batch_load/builds @ ec44b782
+- No device test until human deploy
+- Notes: research/batch-partial-sanitizer-correctness-20260727/smoke-notes.txt
