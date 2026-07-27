@@ -927,3 +927,12 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - User direction: do NOT extract shared dual-call API; copy experiment Set J into production
 - Experiment remains free to tinker (future compile-out); production batch/Quick Fill own a frozen copy
 - Continue plan batch-dash-match-experiment-set-j-20260726-plan.md with this approach
+
+## 2026-07-26 - batch-dash-match-experiment-set-j production copy done
+
+- OcrHarness.runSetJPipeline rewritten as independent copy of experiment Set J (Raw+Bin-Trials+connectSegmentsH+pickBestOdometer)
+- ExperimentAlignmentScreen NOT shared — free to tinker
+- Batch parseSetJOdometer: 4-7 pure digits only (no concat soup)
+- Tag: batch_load/builds @ 38186950
+- Device parity CSV pending user deploy + re-import after purging old batch dash rows
+- Notes: dev-ai-interaction/research/batch-setj-parity-20260726/NOTES.md
