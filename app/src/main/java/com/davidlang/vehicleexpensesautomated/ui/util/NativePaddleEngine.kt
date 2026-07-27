@@ -178,7 +178,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedBytes: ByteArray get() = _sharedBytes!!
         val sharedMatrix = android.graphics.Matrix()
 
-        private fun getReferenceDimensions(context: Context, path: String): Pair<Int, Int> {
+        /** Default reference dash size when probe fails (matches shared buffer / typical 12MP refs). Not 4000. */
+        const val DEFAULT_REF_DASH_W = 4080
+        const val DEFAULT_REF_DASH_H = 3072
+
+        /**
+         * Bounds-only probe of a vehicle reference dash photo (file path or content://).
+         * Used by production Set J / auto-fill for landmark decode + anchorAlign ref size.
+         */
+        fun getReferenceDimensions(context: Context, path: String): Pair<Int, Int> {
             return try {
                 val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 if (path.startsWith("content://")) {
@@ -191,11 +199,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 if (options.outWidth > 0 && options.outHeight > 0) {
                     Pair(options.outWidth, options.outHeight)
                 } else {
-                    Pair(4000, 3072) // Safe fallback
+                    Pair(DEFAULT_REF_DASH_W, DEFAULT_REF_DASH_H)
                 }
             } catch (e: Exception) {
                 Log.w("PaddleLite", "Failed to decode reference bounds: $path", e)
-                Pair(4000, 3072) // Safe fallback
+                Pair(DEFAULT_REF_DASH_W, DEFAULT_REF_DASH_H)
             }
         }
 
@@ -203,7 +211,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val (refW, refH) = if (!vehicle.referenceDashPhotoUrl.isNullOrEmpty()) {
                 getReferenceDimensions(context, vehicle.referenceDashPhotoUrl)
             } else {
-                Pair(4000, 3072)
+                Pair(DEFAULT_REF_DASH_W, DEFAULT_REF_DASH_H)
             }
 
             val icrsRect = if (vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null && vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null) {

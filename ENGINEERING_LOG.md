@@ -936,3 +936,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Tag: batch_load/builds @ 38186950
 - Device parity CSV pending user deploy + re-import after purging old batch dash rows
 - Notes: dev-ai-interaction/research/batch-setj-parity-20260726/NOTES.md
+
+## 2026-07-26 - production-setj-ref-geometry-parity-20260726
+
+- Execution start: fix production Set J ref geometry (probe/4080, ICRS crop, Raw nestFilter)
+- Baseline: batch_load/builds @ d51f30d9

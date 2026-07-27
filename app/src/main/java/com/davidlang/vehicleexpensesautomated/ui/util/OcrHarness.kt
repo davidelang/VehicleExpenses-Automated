@@ -106,12 +106,24 @@ object OcrHarness {
                 addProperty("matched_vehicle_name", winningVehicle.name)
             }
 
-            // 4. Extraction (Set J)
+            // 4. Extraction (Set J) — ref geometry must match real reference dash (probe or 4080×3072)
+            val (refW, refH) = if (!winningVehicle.referenceDashPhotoUrl.isNullOrEmpty()) {
+                NativePaddleEngine.getReferenceDimensions(context, winningVehicle.referenceDashPhotoUrl)
+            } else {
+                Pair(NativePaddleEngine.DEFAULT_REF_DASH_W, NativePaddleEngine.DEFAULT_REF_DASH_H)
+            }
+            jsonDebug?.apply {
+                addProperty("ref_dash_w", refW)
+                addProperty("ref_dash_h", refH)
+            }
             val referenceLandmarks = winningVehicle.landmarkTextBlocksJson?.let {
-                OdometerOcrUtils.getFullLandmarksFromJson(it, "ML Kit", 4000, 3072) // Refs are 4k
+                OdometerOcrUtils.getFullLandmarksFromJson(it, "ML Kit", refW, refH)
             } ?: emptyList()
 
-            val setJResult = runSetJPipeline(context, masterBuffer, winningVehicle, referenceLandmarks, queryLandmarks, debug, onStage)
+            val setJResult = runSetJPipeline(
+                context, masterBuffer, winningVehicle, referenceLandmarks, queryLandmarks,
+                debug, onStage, refW, refH,
+            )
             
             jsonDebug?.apply {
                 add("set_j", setJResult.jsonSection)
@@ -315,14 +327,12 @@ object OcrHarness {
     /**
      * Production Set J odometer extraction (batch import + Quick Fill).
      *
-     * **Parity contract (copied from alignment experiment Set J, not shared with it):**
-     * - Stages: **Raw** then **Bin-Trials**
-     * - Bin-Trials use full-mat stroke hist, **no** filterComponents pass (experiment set_j branch)
-     * - Cleaning: blackOutLargeAndSmall → **connectSegmentsH** → blackOutRollingDigits → components
-     * - Final value: [OdometerOcrUtils.pickBestOdometer] only (pure digits length **4–7**, or null)
-     *
-     * Experiment code in [ExperimentAlignmentScreen] is intentionally independent so it can be
-     * tinkered with / compile-out for development without changing this production copy.
+     * **Independent copy** of alignment experiment Set J (experiment may change / compile-out).
+     * Geometry inputs must match experiment at Jul 15 baseline:
+     * - [refW]/[refH] = probed reference dash size (fallback 4080×3072, not 4000)
+     * - Odo window: **ICRS Float** `createCrop` on aligned master (not pre-converted pixel Int crop)
+     * - Raw: detect → expand on **unfiltered** det boxes (no nestFilter on Raw)
+     * - Bin-Trials: nestFilter + full-mat hist + connectSegmentsH + pickBestOdometer (4–7 digits)
      */
     suspend fun runSetJPipeline(
         context: Context,
@@ -331,7 +341,9 @@ object OcrHarness {
         referenceLandmarks: List<TextBlock>,
         queryLandmarks: List<TextBlock>,
         debug: Boolean = false,
-        onStage: (suspend (String, Bitmap) -> Unit)? = null
+        onStage: (suspend (String, Bitmap) -> Unit)? = null,
+        refW: Int = NativePaddleEngine.DEFAULT_REF_DASH_W,
+        refH: Int = NativePaddleEngine.DEFAULT_REF_DASH_H,
     ): OcrHarnessResult {
         val t0 = System.currentTimeMillis()
         val jsonDebug = if (debug) JsonObject() else null
@@ -341,10 +353,10 @@ object OcrHarness {
         val imgW = masterBuffer.width
         val imgH = masterBuffer.height
 
-        // 1. Alignment
+        // 1. Alignment — refW/refH must be real reference dash dims (probed), not hardcoded 4000
         val disambiguated = ImageAlignmentUtils.disambiguateLandmarks(queryLandmarks, referenceLandmarks)
         val alignRes = ImageAlignmentUtils.anchorAlign(
-            masterBuffer, referenceLandmarks, disambiguated, vehicle, 4000, 3072, imgW, imgH,
+            masterBuffer, referenceLandmarks, disambiguated, vehicle, refW, refH, imgW, imgH,
         )
         jsonDebug?.apply {
             val alignMeta = JsonObject()
@@ -352,6 +364,8 @@ object OcrHarness {
             add("alignment", alignMeta)
             addProperty("alignment_success", alignRes.success)
             addProperty("alignment_message", alignRes.message)
+            addProperty("ref_w", refW)
+            addProperty("ref_h", refH)
         }
         if (!alignRes.success) {
             return OcrHarnessResult(
@@ -361,7 +375,7 @@ object OcrHarness {
         }
         onStage?.invoke("Aligned", masterBuffer.p.toBitmap())
 
-        // 2. Odometer crop window (ICRS → pixel) + stable crop for re-populate each stage
+        // 2. Odo crop: ICRS Float createCrop (experiment parity) — BufferSet maps ICRS→pixels at refresh
         val icrsRect = if (
             vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null &&
             vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null
@@ -373,16 +387,8 @@ object OcrHarness {
         } else {
             IcrsMath.fullImageIcrsRect(imgW, imgH)
         }
-        val p1 = IcrsMath.icrsToPixel(icrsRect.left, icrsRect.top, imgW, imgH)
-        val p2 = IcrsMath.icrsToPixel(icrsRect.right, icrsRect.bottom, imgW, imgH)
-        val cropL = p1.x.toInt().coerceIn(0, imgW - 1)
-        val cropT = p1.y.toInt().coerceIn(0, imgH - 1)
-        val cropR = p2.x.toInt().coerceIn(cropL + 1, imgW)
-        val cropB = p2.y.toInt().coerceIn(cropT + 1, imgH)
-        // Pixel crop on primary (aligned buffer is pixel space). Experiment uses ICRS crop ids;
-        // same geometry after icrsToPixel. id = vehicle.id for re-populate like experiment.
         masterBuffer.p.createCrop(
-            cropL, cropT, cropR - cropL, cropB - cropT, id = vehicle.id,
+            icrsRect.left, icrsRect.top, icrsRect.width(), icrsRect.height(), id = vehicle.id,
         )
 
         val odoBuffer = NativePaddleEngine.getOdoBuffer(context, vehicle)
@@ -487,12 +493,11 @@ object OcrHarness {
             return text to (sumP to minP)
         }
 
-        // --- Stage Raw (experiment set_j useCharAware path) ---
+        // --- Stage Raw (experiment: raw det boxes, no nestFilter before expand) ---
         repopulateOdoFromMasterCrop()
         onStage?.invoke("Odometer Crop", odoBuffer.p.toBitmap())
         val rawFull = detectBoxesOnOdo()
-        val rawNest = nestFilter(rawFull)
-        val rawValley = rawNest.map {
+        val rawValley = rawFull.map {
             NativeImageUtils.expandByCharacterAwareDiagnostic(odoBuffer.p.mat, it.boundingBox)
         }
         val rawFrags = rawValley.map { it.first }
