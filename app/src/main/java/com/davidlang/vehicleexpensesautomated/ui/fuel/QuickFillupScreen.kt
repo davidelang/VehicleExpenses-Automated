@@ -717,7 +717,7 @@ fun QuickFillupScreen(
                         captureViewState = CaptureViewState.Live
                         Toast.makeText(
                             context,
-                            if (isPartialFill) "Partial fill-up saved" else "Fill-up saved",
+                            "Fill-up saved",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
