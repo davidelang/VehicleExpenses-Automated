@@ -1134,3 +1134,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Tag: batch_load/builds @ 0da926d1
 - No device test until human deploy; re-scan after deploy
 - Notes: research/batch-odo-suspect-ui-per-fill-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar
+
+- Execution start: soft-delete sync, origin-device partials, title bar logo/version
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar (in progress)
+
+- Completing MainActivity yellow bar + remaining CTA; no device deploy
+
