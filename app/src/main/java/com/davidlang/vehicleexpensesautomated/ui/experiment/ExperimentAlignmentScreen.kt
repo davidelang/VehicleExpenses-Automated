@@ -948,7 +948,7 @@ private fun serializeVehiclePathwayToJson(res: SingleVehiclePathwayResult): JSON
     return root
 }
 
-internal fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
+private fun matToPbmP4Base64(mat: org.opencv.core.Mat): String {
     val cols = mat.cols()
     val rows = mat.rows()
     val totalPixels = cols * rows
@@ -996,7 +996,7 @@ private fun logAlignSliceDiag(label: String, set: BufferSet, sliceLabel: String,
     Log.d("ALIGN_BUF_DIAG", "DIAG_SLICE_PRE [$label] $sliceLabel.uvMat empty=${slice.uvMat.empty()} cols=${slice.uvMat.cols()} rows=${slice.uvMat.rows()}")
 }
 
-internal fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
+private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
     val arr = org.json.JSONArray()
     anns.forEach { ann ->
         val obj = org.json.JSONObject()
@@ -1538,7 +1538,7 @@ private suspend fun runBinTrialsMLKit(
     return Pair(trialsHtml.toString(), trialsMeta)
 }
 
-internal fun findValleyMidpoints(bins: FloatArray): List<Int> {
+private fun findValleyMidpoints(bins: FloatArray): List<Int> {
     if (bins.isEmpty()) return emptyList()
     val binCount = bins.size
     val smoothed = FloatArray(binCount)
@@ -1709,7 +1709,7 @@ private fun buildHtmlRowDynamic(
     appendLine("</td></tr>")
 }
 
-internal fun generateRunLengthHistogramB64(histStr: String?): String {
+private fun generateRunLengthHistogramB64(histStr: String?): String {
     if (histStr.isNullOrEmpty()) return ""
     val counts = histStr.split(",").map { it.toIntOrNull() ?: 0 }
     // Viz uses first 256 bins; run-length native may use up to 8192.
@@ -1737,7 +1737,7 @@ internal fun generateRunLengthHistogramB64(histStr: String?): String {
     return b64
 }
 
-internal fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
+private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String {
     if (hHist == null || vHist == null || hHist.isEmpty() || vHist.isEmpty()) return ""
     // Plot uses low bins 0..255 only; native H may supply 8192-bin long-lived arrays.
     val plotLimit = minOf(256, hHist.size, vHist.size)
@@ -1844,7 +1844,7 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
 private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
 
-internal fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
+private fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
     // Brightness path: OpenCV calcHist (64-bin FloatArray). Run-length stroke-width hist uses
     // NativeImageUtils.longLivedRunHistH/V (8192 bins). longLivedBrightness reserved for future native uint8 brightness.
     val hist = org.opencv.core.Mat()
@@ -1886,7 +1886,7 @@ internal fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats 
     return OdometerOcrUtils.HistStats(intensityLow, intensityHigh, p80, bins)
 }
 
-internal fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<OdometerOcrUtils.HistMarker> = emptyList(), skipEnds: Boolean = false): String {
+private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<OdometerOcrUtils.HistMarker> = emptyList(), skipEnds: Boolean = false): String {
     val hist = org.opencv.core.Mat()
     org.opencv.imgproc.Imgproc.calcHist(java.util.Collections.singletonList(mat), org.opencv.core.MatOfInt(0), org.opencv.core.Mat(), hist, org.opencv.core.MatOfInt(64), org.opencv.core.MatOfFloat(0f, 256f))
     val bins = FloatArray(64); hist.get(0, 0, bins)

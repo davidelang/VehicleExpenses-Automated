@@ -166,7 +166,7 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
         report("init", "Dash ${dashFiles.size} · pump ${pumpFiles.size}$limitNote")
 
-        // --- Dash (Set J via runAutoFillPipeline) ---
+        // --- Dash (Set J via AlignmentSetJRunner) ---
         for (file in dashFiles) {
             coroutineContext.ensureActive()
             if (cancelFlag.get()) {
