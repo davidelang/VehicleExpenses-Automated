@@ -55,6 +55,13 @@ class BatchFuelImportCoordinator @Inject constructor(
         /** Limited import size (like experiment Golden/Problem subset buttons). */
         const val LIMITED_IMPORT_COUNT = 20
 
+        /**
+         * Fuel row with no vehicle yet (pump-only batch ingest).
+         * Merge later pairs by time/location with dash rows and assigns a real vehicleId.
+         * No Room FK; 0 is not a real [Vehicle.id].
+         */
+        const val UNASSIGNED_VEHICLE_ID = 0
+
         fun dashPhotoDir(context: Context): File =
             File(context.filesDir, "experiment_photos").also { it.mkdirs() }
 
@@ -91,11 +98,6 @@ class BatchFuelImportCoordinator @Inject constructor(
         return dir.listFiles { f ->
             f.isFile && f.extension.lowercase() in IMAGE_EXTS
         }?.sortedBy { it.name } ?: emptyList()
-    }
-
-    private fun soleVehicleId(vehicles: List<Vehicle>): Int? {
-        val active = vehicles.filter { !it.deleted }
-        return if (active.size == 1) active.first().id else null
     }
 
     /**
@@ -185,8 +187,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             }
         }
 
-        // --- Pump (Set I) ---
-        val defaultVehicleId = soleVehicleId(vehicles)
+        // --- Pump (Set I): always OCR + insert; vehicleId left unassigned (0) until merge ---
         for (file in pumpFiles) {
             coroutineContext.ensureActive()
             if (cancelFlag.get()) {
@@ -198,7 +199,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             done++
             report("pump", "Pump Set I ${file.name} ($done/$total)")
             try {
-                val inserted = processPump(file, defaultVehicleId, pending)
+                val inserted = processPump(file, pending)
                 if (inserted) pumpInserted++
             } catch (e: Exception) {
                 errCount++

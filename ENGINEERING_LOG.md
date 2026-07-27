@@ -954,3 +954,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Import UI: OutlinedButton "First 20 dash + first 20 pump" (name-sorted take)
 - BatchFuelImportCoordinator.runIngest(maxDash, maxPump); LIMITED_IMPORT_COUNT=20
+
+## 2026-07-26 - batch pump ingest without vehicle
+
+- processPump always runs Set I; inserts with UNASSIGNED_VEHICLE_ID=0
+- No ASSIGN_VEHICLE gate; merge later assigns vehicle via time/location pairing
+- Unreadable pumps still pending only

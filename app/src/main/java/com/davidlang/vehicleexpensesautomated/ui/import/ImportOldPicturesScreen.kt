@@ -89,7 +89,8 @@ fun ImportOldPicturesScreen(
         Text(
             "Batch OCR from experiment archives (no gallery picker yet). " +
                 "Dash: filesDir/experiment_photos · Pump: externalFiles/pump_photos. " +
-                "Set J odo + Set I cost/vol; partials written to DB. Merge is a later step.",
+                "Set J odo + Set I cost/vol; partials written to DB. " +
+                "Pump rows are stored without a vehicle (vehicleId=0); merge will pair by time/location.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
