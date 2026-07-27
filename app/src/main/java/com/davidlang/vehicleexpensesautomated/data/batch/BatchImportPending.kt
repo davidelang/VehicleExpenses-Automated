@@ -154,4 +154,7 @@ object BatchImportPendingStore {
         val items = load(context).filter { it.id !in drop }
         save(context, items)
     }
+
+    /** Cheap count for title-bar yellow indicator. */
+    fun count(context: Context): Int = load(context).size
 }

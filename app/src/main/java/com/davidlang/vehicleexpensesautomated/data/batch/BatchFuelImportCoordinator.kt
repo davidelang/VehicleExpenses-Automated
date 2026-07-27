@@ -224,9 +224,10 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
-     * Stage B: load non-deleted fuel entries → [FuelRowMergeEngine.planMerge] →
-     * update survivors → [FuelEntryRepository.hardDeleteFuelEntry] absorbs →
-     * append merge pending (deduped by kind+message/photo).
+     * Merge **all** live fuel partials (batch, Quick Fill, sync-sourced — no
+     * batch-only filter) → [FuelRowMergeEngine.planMerge] → update survivors →
+     * absorb losers ([absorbMergedRow]: soft-delete if sync-published / non-batch,
+     * hard-delete pure local batch) → rebuild pending questions.
      */
     suspend fun applyMerge(
         onProgress: (String) -> Unit = {},
@@ -241,11 +242,13 @@ class BatchFuelImportCoordinator @Inject constructor(
             for (u in plan.updates) {
                 fuelEntryRepository.updateFuelEntry(u)
             }
-            onProgress("Hard-deleting ${plan.hardDeletes.size} absorbed rows…")
+            onProgress("Absorbing ${plan.hardDeletes.size} rows…")
+            var soft = 0
+            var hard = 0
             for (d in plan.hardDeletes) {
-                fuelEntryRepository.hardDeleteFuelEntry(d)
-                Log.i(TAG, "merge hardDelete id=${d.id} vehicle=${d.vehicleId} loc=${d.location}")
+                if (absorbMergedRow(d)) soft++ else hard++
             }
+            Log.i(TAG, "merge absorb soft=$soft hard=$hard")
         }
 
         // Full pending rebuild: wipe regenerable queue so stale pre-15m / pre-pair
@@ -293,6 +296,47 @@ class BatchFuelImportCoordinator @Inject constructor(
             totalPending = rebuilt.size,
             message = msg,
         )
+    }
+
+    /**
+     * Absorb a merge loser. Soft-delete when the row may need a sync tombstone
+     * (photo cloudManifest set, or not a pure local batch_import path). Hard-delete
+     * pure local batch rows that were never pushed.
+     *
+     * @return true if soft-deleted, false if hard-deleted
+     */
+    private suspend fun absorbMergedRow(entry: FuelEntry): Boolean {
+        return if (shouldSoftDeleteOnAbsorb(entry)) {
+            fuelEntryRepository.markFuelDeleted(entry)
+            Log.i(TAG, "merge softDelete id=${entry.id} vehicle=${entry.vehicleId} loc=${entry.location}")
+            true
+        } else {
+            fuelEntryRepository.hardDeleteFuelEntry(entry)
+            Log.i(TAG, "merge hardDelete id=${entry.id} vehicle=${entry.vehicleId} loc=${entry.location}")
+            false
+        }
+    }
+
+    /**
+     * Soft-delete when: cloud photo manifest present, **or** location is not a pure
+     * local batch tag (Quick Fill / sheet-synced rows often have null or free text).
+     */
+    internal fun shouldSoftDeleteOnAbsorb(e: FuelEntry): Boolean {
+        if (!e.cloudManifest.isNullOrBlank()) return true
+        val loc = e.location.orEmpty()
+        if (loc.startsWith("batch_import") ||
+            loc.startsWith("batch_manual") ||
+            loc.startsWith("batch_gap")
+        ) {
+            return false
+        }
+        return true
+    }
+
+    /** Detect odo-only + pump-only pairs in window (post-sync CTA). */
+    suspend fun hasUnmatchedPartials(): Boolean = withContext(Dispatchers.IO) {
+        val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+        FuelRowMergeEngine.hasUnmatchedPartials(live)
     }
 
     /**
@@ -995,9 +1039,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                         )
                         updated++
                     } else {
-                        fuelEntryRepository.hardDeleteFuelEntry(e)
+                        if (absorbMergedRow(e)) {
+                            // soft
+                        }
                         deleted++
-                        Log.i(TAG, "conflict resolve hardDelete id=${e.id} odo=${e.odometer}")
+                        Log.i(TAG, "conflict resolve absorb id=${e.id} odo=${e.odometer}")
                     }
                 }
                 else -> {

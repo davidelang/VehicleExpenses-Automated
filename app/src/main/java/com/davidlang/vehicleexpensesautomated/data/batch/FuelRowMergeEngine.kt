@@ -6,29 +6,31 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * Stage B pure merge planner for batch fuel partials.
+ * Pure merge planner for **any** live fuel partials — batch import, Quick Fill,
+ * and **sync-sourced** rows (no filter on `location` / batch tags).
+ *
+ * **Cross-device product:** Device A writes odo-only; device B writes cost/vol;
+ * after spreadsheet pull both rows sit in Room; [planMerge] pairs within
+ * [MERGE_WINDOW_MS] (GPS optional — time-first; lat/long never required).
  *
  * **Cluster algorithm (documented):** per known `vehicleId` (>0), sort by `timestamp`
  * ascending (tie-break `id`). Greedy grow: start a cluster at seed; append next
  * row while `timestamp - seed.timestamp <= windowMs` **and** gap from previous
  * in cluster ≤ windowMs. (Seed-window + consecutive-gap both enforced.)
  *
- * **Window:** [MERGE_WINDOW_MS] = **15 minutes** (not 45). Two fills ~44 min apart
- * must not share a cluster.
+ * **Window:** [MERGE_WINDOW_MS] = **15 minutes**. Two fills ~44 min apart must not
+ * share a cluster.
  *
  * **Multi dash + multi pump (tight pairs):** when a greedy cluster contains ≥2
  * dash-like **and** ≥2 pump-like rows, [splitTightDashPumpPairs] matches each
  * dash↔pump by minimum |Δt| (each used once, |Δt| ≤ window), then
- * [mergeOneCluster] runs **per sub-cluster** so two nearby fills never glue
- * into one `pump`+`pump_2` CONFLICT_ODO row.
+ * [mergeOneCluster] runs **per sub-cluster**.
  *
- * Unassigned pumps (`vehicleId == 0`) are first **paired** to the nearest dash odo
- * row of a known vehicle within the window (tank maxFill+slack may eliminate
- * vehicles); then that vehicle is applied. Unpaired pumps stay out of clusters.
+ * Unassigned pumps (`vehicleId == 0`) pair to nearest dash odo in window (tank
+ * maxFill+slack may eliminate vehicles). Unpaired pumps stay out of clusters.
  *
- * Multi-pump: amounts within [COST_VOL_REL_TOL] (and not over abs floor for cost)
- * → re-shot (one survivor). Beyond tol with abs > [COST_ABS_FLOOR] → sequence
- * (partial then full-capable); **never sum**.
+ * Multi-pump: within [COST_VOL_REL_TOL] → re-shot; beyond + abs floor → sequence;
+ * **never sum**. Lat/long: prefer later timestamp’s coords, else first non-null.
  */
 object FuelRowMergeEngine {
 
@@ -500,8 +502,9 @@ object FuelRowMergeEngine {
         }
         val currency = later.currency.ifBlank { earlier.currency }.ifBlank { "USD" }
         val photo = FuelPhotoJson.unionPhotos(a.photoUrl, b.photoUrl)
-        val lat = a.latitude ?: b.latitude
-        val lon = a.longitude ?: b.longitude
+        // Prefer later timestamp’s coords (EXIF/capture); GPS never required to merge
+        val lat = later.latitude ?: earlier.latitude
+        val lon = later.longitude ?: earlier.longitude
         val loc = preferLocation(a.location, b.location)
         val idKeep = later.id
         val complete = (if (odo > 0) odo else 0) > 0 && costF > 0 && galF > 0
@@ -568,6 +571,35 @@ object FuelRowMergeEngine {
     private fun hasPositiveOdo(e: FuelEntry) = e.odometer > 0
     private fun hasCost(e: FuelEntry) = e.cost > 0
     private fun hasVol(e: FuelEntry) = e.gallons > 0
+
+    /**
+     * True if there exists at least one odo-only + pump-only pair within [windowMs]
+     * that could merge (same vehicle or unassigned pump). Used for post-sync CTA.
+     * Does not mutate rows.
+     */
+    fun hasUnmatchedPartials(
+        entries: List<FuelEntry>,
+        windowMs: Long = MERGE_WINDOW_MS,
+    ): Boolean {
+        val live = entries.filter { !it.deleted }
+        val odoOnly = live.filter {
+            hasPositiveOdo(it) && !hasCost(it) && !hasVol(it)
+        }
+        val pumpOnly = live.filter {
+            (hasCost(it) || hasVol(it)) && !hasPositiveOdo(it)
+        }
+        if (odoOnly.isEmpty() || pumpOnly.isEmpty()) return false
+        for (o in odoOnly) {
+            for (p in pumpOnly) {
+                if (abs(o.timestamp - p.timestamp) > windowMs) continue
+                val sameVehicle = o.vehicleId > 0 && p.vehicleId == o.vehicleId
+                val unassignedPump = o.vehicleId > 0 && p.vehicleId == 0
+                val unassignedOdo = p.vehicleId > 0 && o.vehicleId == 0
+                if (sameVehicle || unassignedPump || unassignedOdo) return true
+            }
+        }
+        return false
+    }
 
     /** Pump-amount row: has cost or volume (may or may not have odo after sequence attach). */
     private fun isPumpAmountRow(e: FuelEntry): Boolean =

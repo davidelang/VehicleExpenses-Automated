@@ -88,6 +88,8 @@ import java.util.Locale
 @Composable
 fun ImportOldPicturesScreen(
     navController: NavHostController,
+    /** When true (yellow title-bar → import?review=1), auto-expand Review questions. */
+    expandReview: Boolean = false,
 ) {
     val context = LocalContext.current
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
@@ -104,9 +106,11 @@ fun ImportOldPicturesScreen(
     var lastResult by remember { mutableStateOf<BatchImportResult?>(null) }
     var lastMerge by remember { mutableStateOf<MergeApplyResult?>(null) }
     var mergeAfterImport by remember { mutableStateOf(false) }
-    var showQuestions by remember { mutableStateOf(false) }
     var pendingSnapshot by remember {
         mutableStateOf(BatchImportPendingStore.load(context).toList())
+    }
+    var showQuestions by remember {
+        mutableStateOf(expandReview && pendingSnapshot.isNotEmpty())
     }
 
     val dashDir = remember { BatchFuelImportCoordinator.dashPhotoDir(context) }
