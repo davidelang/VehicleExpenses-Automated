@@ -965,3 +965,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start; device versionName=batch_load-start-21-gf43bb991 (geometry + unassigned pump)
 - Part A first-20 re-verify then Part B clickable pending answers
+
+## 2026-07-26 - batch-setj-reverify + pending answers
+
+- Part A first-20 re-verify on f43bb991: 17 dash inserts + 20 pump vehicleId=0
+- first20 score: see research/batch-setj-parity-20260726/first20-after-geometry.txt (gate FAIL — residual leading-digit/blank DIFFs)
+- Part B: clickable pending UI + forcedVehicleId dash reprocess + skip/retry pump (build 06707a0a)
+- Experiment untouched; deploy needed for Part B on device
