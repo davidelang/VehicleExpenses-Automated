@@ -825,6 +825,36 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
+     * MPG_OUTLIER context lines: one fill immediately before [lastTs], one after [thisTs],
+     * same vehicle only. Does not walk generic ±N that can skip the true leg start.
+     */
+    suspend fun nearestFillBefore(
+        vehicleId: Int,
+        beforeTimestampMs: Long,
+        excludeIds: Set<Long> = emptySet(),
+    ): FuelEntry? = withContext(Dispatchers.IO) {
+        fuelEntryRepository.getAllIncludingDeleted()
+            .filter {
+                !it.deleted && it.vehicleId == vehicleId &&
+                    it.id !in excludeIds && it.timestamp < beforeTimestampMs
+            }
+            .maxWithOrNull(compareBy({ it.timestamp }, { it.id }))
+    }
+
+    suspend fun nearestFillAfter(
+        vehicleId: Int,
+        afterTimestampMs: Long,
+        excludeIds: Set<Long> = emptySet(),
+    ): FuelEntry? = withContext(Dispatchers.IO) {
+        fuelEntryRepository.getAllIncludingDeleted()
+            .filter {
+                !it.deleted && it.vehicleId == vehicleId &&
+                    it.id !in excludeIds && it.timestamp > afterTimestampMs
+            }
+            .minWithOrNull(compareBy({ it.timestamp }, { it.id }))
+    }
+
+    /**
      * Keep [chosenOdo] as the only positive odometer among cluster entryIds.
      * Pure odo-only rows with a different odo are hard-deleted; rows that still
      * have cost/vol keep those fields with odo cleared for re-merge pairing.

@@ -402,21 +402,30 @@ private fun PendingQuestionCard(
     var selectedVehicleId by remember(item.id) {
         mutableStateOf(item.suggestedVehicleId)
     }
-    /** MPG_OUTLIER: true = leg end (default), false = leg start (prior full fill). */
-    var mpgFocusEnd by remember(item.id) { mutableStateOf(true) }
-    var focusRow by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
-    var prevRow by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
-    var endRow by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    /**
+     * MPG_OUTLIER focus: true = **This fill** (leg end, default);
+     * false = **Last fill** (leg start / prior full fill).
+     */
+    var mpgFocusThis by remember(item.id) { mutableStateOf(true) }
+    var lastRow by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    var thisRow by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    var beforeLast by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    var afterThis by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    var lastPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
+    var thisPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
 
-    val endEntryId = item.extra["endEntryId"]?.toLongOrNull() ?: item.fuelEntryId
-    val prevEntryId = item.extra["prevEntryId"]?.toLongOrNull()
+    val thisEntryId = item.extra["thisEntryId"]?.toLongOrNull()
+        ?: item.extra["endEntryId"]?.toLongOrNull()
+        ?: item.fuelEntryId
+    val lastEntryId = item.extra["lastEntryId"]?.toLongOrNull()
+        ?: item.extra["prevEntryId"]?.toLongOrNull()
     val focusEntryId: Long? =
         if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-            if (mpgFocusEnd) endEntryId else prevEntryId
+            if (mpgFocusThis) thisEntryId else lastEntryId
         } else {
             item.fuelEntryId
                 ?: item.extra["suspectId"]?.toLongOrNull()
-                ?: endEntryId
+                ?: thisEntryId
         }
 
     fun applyFocusPrefill(row: FuelEntry?) {
@@ -426,60 +435,61 @@ private fun PendingQuestionCard(
         volText = if (row.gallons > 0) row.gallons.toString() else ""
     }
 
-    LaunchedEffect(item.id, mpgFocusEnd) {
+    fun parsePathList(key: String): List<String> =
+        item.extra[key]
+            ?.split('|')
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            .orEmpty()
+            .let { dedupePhotoPaths(it) }
+
+    LaunchedEffect(item.id, mpgFocusThis) {
         if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-            val endId = endEntryId
-            val prevId = prevEntryId
-            val end = endId?.let { coordinator.getFuelEntry(it) }
-            val prev = prevId?.let { coordinator.getFuelEntry(it) }
-            endRow = end
-            prevRow = prev
-            val focus = if (mpgFocusEnd) end else prev
-            focusRow = focus
-            // Photos: focus row only (end paths from item or live; prev from extra/live)
-            photoPaths = when {
-                mpgFocusEnd -> {
-                    val fromExtra = item.extra["photoPaths"]
-                        ?.split('|')
-                        ?.map { it.trim() }
-                        ?.filter { it.isNotBlank() }
-                        .orEmpty()
-                    if (fromExtra.isNotEmpty()) {
-                        dedupePhotoPaths(fromExtra)
-                    } else if (end != null) {
-                        FuelEconomyOutliers.photoPathsForEntry(end)
-                    } else {
-                        pendingPhotoUris(item)
-                    }
-                }
-                else -> {
-                    val fromExtra = item.extra["prevPhotoPaths"]
-                        ?.split('|')
-                        ?.map { it.trim() }
-                        ?.filter { it.isNotBlank() }
-                        .orEmpty()
-                    if (fromExtra.isNotEmpty()) {
-                        dedupePhotoPaths(fromExtra)
-                    } else if (prev != null) {
-                        FuelEconomyOutliers.photoPathsForEntry(prev)
-                    } else {
-                        emptyList()
-                    }
+            val thisId = thisEntryId
+            val lastId = lastEntryId
+            val thisE = thisId?.let { coordinator.getFuelEntry(it) }
+            val lastE = lastId?.let { coordinator.getFuelEntry(it) }
+            thisRow = thisE
+            lastRow = lastE
+            thisPhotos = parsePathList("thisPhotoPaths").ifEmpty {
+                parsePathList("photoPaths").ifEmpty {
+                    thisE?.let { FuelEconomyOutliers.photoPathsForEntry(it) }.orEmpty()
                 }
             }
+            lastPhotos = parsePathList("lastPhotoPaths").ifEmpty {
+                parsePathList("prevPhotoPaths").ifEmpty {
+                    lastE?.let { FuelEconomyOutliers.photoPathsForEntry(it) }.orEmpty()
+                }
+            }
+            val focus = if (mpgFocusThis) thisE else lastE
             applyFocusPrefill(focus)
+
+            val vid = item.suggestedVehicleId
+                ?: thisE?.vehicleId
+                ?: lastE?.vehicleId
+                ?: 0
+            val lastTs = lastE?.timestamp ?: item.extra["prevTs"]?.toLongOrNull()
+            val thisTs = thisE?.timestamp
+                ?: item.extra["endTs"]?.toLongOrNull()
+                ?: item.timestampMs
+            val exclude = setOfNotNull(thisId, lastId)
+            if (vid > 0 && lastTs != null) {
+                beforeLast = coordinator.nearestFillBefore(vid, lastTs, exclude)
+            }
+            if (vid > 0 && thisTs != null) {
+                afterThis = coordinator.nearestFillAfter(vid, thisTs, exclude)
+            }
         } else {
             photoPaths = coordinator.resolvePendingPhotoUris(item)
             val id = focusEntryId
             if (id != null) {
                 val row = coordinator.getFuelEntry(id)
-                focusRow = row
                 if (row != null) applyFocusPrefill(row)
             }
         }
     }
 
-    LaunchedEffect(item.id, item.fuelEntryId, expandNeighbors, mpgFocusEnd) {
+    LaunchedEffect(item.id, item.fuelEntryId, expandNeighbors) {
         when (item.kind) {
             BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE -> {
                 val ts = item.timestampMs
@@ -490,17 +500,6 @@ private fun PendingQuestionCard(
                     vehicles = vehicles,
                     expandExtra = expandNeighbors,
                     excludeEntryId = item.fuelEntryId,
-                )
-            }
-            BatchPendingKind.MPG_OUTLIER -> {
-                // Neighbors around **this fill** (leg end) so badges are stable
-                val anchorId = endEntryId ?: return@LaunchedEffect
-                neighbors = coordinator.neighborContext(
-                    fuelEntryId = anchorId,
-                    timestampMs = item.extra["endTs"]?.toLongOrNull() ?: item.timestampMs,
-                    vehicleIdHint = item.suggestedVehicleId,
-                    expandExtra = expandNeighbors,
-                    allVehicles = false,
                 )
             }
             BatchPendingKind.ODO_SUSPECT,
@@ -530,50 +529,119 @@ private fun PendingQuestionCard(
     }
 
     var tankMax by remember { mutableStateOf<Map<Int, Double>>(emptyMap()) }
+    val thisTsAnchor = thisRow?.timestamp
+        ?: item.extra["endTs"]?.toLongOrNull()
+        ?: item.timestampMs
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(item.kind.name, style = MaterialTheme.typography.labelLarge)
             Text(item.message, style = MaterialTheme.typography.bodyMedium)
 
-            // MPG outlier: focus control before photos
             if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-                Text("Which fill is the problem?", style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    if (mpgFocusEnd) {
-                        Button(
-                            onClick = { mpgFocusEnd = true },
-                            enabled = enabled,
-                            modifier = Modifier.weight(1f),
-                        ) { Text("This fill (leg end)") }
-                        OutlinedButton(
-                            onClick = { mpgFocusEnd = false },
-                            enabled = enabled && prevEntryId != null,
-                            modifier = Modifier.weight(1f),
-                        ) { Text("Leg start (prior)") }
-                    } else {
-                        OutlinedButton(
-                            onClick = { mpgFocusEnd = true },
-                            enabled = enabled,
-                            modifier = Modifier.weight(1f),
-                        ) { Text("This fill (leg end)") }
-                        Button(
-                            onClick = { mpgFocusEnd = false },
-                            enabled = enabled && prevEntryId != null,
-                            modifier = Modifier.weight(1f),
-                        ) { Text("Leg start (prior)") }
-                    }
+                // Metrics header
+                val mpg = item.extra["mpg"]?.toDoubleOrNull()
+                val ref = item.extra["refMpg"]?.toDoubleOrNull()
+                val lastTs = lastRow?.timestamp ?: item.extra["prevTs"]?.toLongOrNull()
+                val thisTs = thisRow?.timestamp ?: item.extra["endTs"]?.toLongOrNull()
+                val legDt = if (lastTs != null && thisTs != null) {
+                    formatTimeDelta(thisTs - lastTs)
+                } else {
+                    "n/a"
                 }
-                Text(
-                    if (mpgFocusEnd) {
-                        "Photos for This fill (leg end, id=${endEntryId ?: "?"})"
-                    } else {
-                        "Photos for Leg start (prior full fill, id=${prevEntryId ?: "?"})"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
+                if (mpg != null && ref != null) {
+                    Text(
+                        "Leg mpg=${"%.1f".format(mpg)} · ref=${"%.1f".format(ref)} · " +
+                            "odoΔ=${item.extra["odoDelta"]} · vol=${item.extra["sumVol"]} · " +
+                            "Δt last→this $legDt",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                // ── Last fill (photos above button) ──
+                Text("── Last fill ──", style = MaterialTheme.typography.titleSmall)
+                PendingPhotoRow(
+                    paths = lastPhotos,
+                    conflict = lastPhotos.size > 1,
+                    onTap = { zoomPath = it },
+                )
+                if (mpgFocusThis) {
+                    OutlinedButton(
+                        onClick = { mpgFocusThis = false },
+                        enabled = enabled && lastEntryId != null,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Last fill") }
+                } else {
+                    Button(
+                        onClick = { mpgFocusThis = false },
+                        enabled = enabled && lastEntryId != null,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Last fill (selected)") }
+                }
+
+                // ── This fill (photos above button) ──
+                Text("── This fill ──", style = MaterialTheme.typography.titleSmall)
+                PendingPhotoRow(
+                    paths = thisPhotos,
+                    conflict = thisPhotos.size > 1,
+                    onTap = { zoomPath = it },
+                )
+                if (mpgFocusThis) {
+                    Button(
+                        onClick = { mpgFocusThis = true },
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("This fill (selected)") }
+                } else {
+                    OutlinedButton(
+                        onClick = { mpgFocusThis = true },
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("This fill") }
+                }
+
+                // ── Context (text only): before last, last, this, after this ──
+                Text("── Context (text only) ──", style = MaterialTheme.typography.titleSmall)
+                beforeLast?.let { n ->
+                    NeighborLine(
+                        n, vehicles,
+                        prefix = "Before last: ",
+                        anchorTs = thisTsAnchor,
+                    )
+                } ?: Text(
+                    "Before last: —",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                NeighborLine(
+                    lastRow,
+                    vehicles,
+                    prefix = "Last fill: ",
+                    anchorTs = thisTsAnchor,
+                    fallback = mpgContextFallback(
+                        item, isLast = true,
+                    ),
+                )
+                NeighborLine(
+                    thisRow,
+                    vehicles,
+                    prefix = "This fill: ",
+                    anchorTs = thisTsAnchor,
+                    fallback = mpgContextFallback(
+                        item, isLast = false,
+                    ),
+                )
+                afterThis?.let { n ->
+                    NeighborLine(
+                        n, vehicles,
+                        prefix = "After this: ",
+                        anchorTs = thisTsAnchor,
+                    )
+                } ?: Text(
+                    "After this: —",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
                 Text(
@@ -581,69 +649,12 @@ private fun PendingQuestionCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
-            }
-
-            PendingPhotoRow(
-                paths = photoPaths,
-                conflict = item.kind == BatchPendingKind.CONFLICT_ODO ||
-                    item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
-                onTap = { zoomPath = it },
-            )
-            if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-                Text(
-                    "Tap photo to enlarge",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                PendingPhotoRow(
+                    paths = photoPaths,
+                    conflict = item.kind == BatchPendingKind.CONFLICT_ODO ||
+                        item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
+                    onTap = { zoomPath = it },
                 )
-            }
-
-            // MPG leg summary (explicit text — not a second photo dump)
-            if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-                val mpg = item.extra["mpg"]
-                val ref = item.extra["refMpg"]
-                val prevTs = item.extra["prevTs"]?.toLongOrNull()
-                    ?: prevRow?.timestamp
-                val endTs = item.extra["endTs"]?.toLongOrNull()
-                    ?: endRow?.timestamp
-                    ?: item.timestampMs
-                val legDelta = if (prevTs != null && endTs != null) {
-                    formatTimeDelta(endTs - prevTs)
-                } else {
-                    "n/a"
-                }
-                val prevOdo = prevRow?.odometer ?: item.extra["prevOdo"]?.toIntOrNull() ?: 0
-                val endOdo = endRow?.odometer ?: item.extra["endOdo"]?.toIntOrNull() ?: 0
-                val prevCost = prevRow?.cost ?: item.extra["prevCost"]?.toDoubleOrNull() ?: 0.0
-                val endCost = endRow?.cost ?: item.extra["endCost"]?.toDoubleOrNull() ?: 0.0
-                val prevVol = prevRow?.gallons ?: item.extra["prevVol"]?.toDoubleOrNull() ?: 0.0
-                val endVol = endRow?.gallons ?: item.extra["endVol"]?.toDoubleOrNull() ?: 0.0
-                val prevWhen = prevTs?.let {
-                    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(it))
-                } ?: "?"
-                val endWhen = endTs?.let {
-                    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(it))
-                } ?: "?"
-                Text("MPG leg", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    "Leg start (older full fill): $prevWhen · odo $prevOdo · " +
-                        "\$${"%.2f".format(prevCost)} · ${"%.2f".format(prevVol)}G · " +
-                        "Δt $legDelta before end",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Text(
-                    "This fill (leg end): $endWhen · odo $endOdo · " +
-                        "\$${"%.2f".format(endCost)} · ${"%.2f".format(endVol)}G",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                if (mpg != null && ref != null) {
-                    Text(
-                        "Leg mpg=${"%.1f".format(mpg.toDoubleOrNull() ?: 0.0)} · " +
-                            "ref=${"%.1f".format(ref.toDoubleOrNull() ?: 0.0)} · " +
-                            "odoΔ=${item.extra["odoDelta"]} · vol=${item.extra["sumVol"]}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
             }
 
             // Unknown: nearest before/after **per vehicle**
@@ -674,27 +685,7 @@ private fun PendingQuestionCard(
                 }
             }
 
-            // Nearby fills (same vehicle) — not a substitute for the leg block
-            if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-                Text(
-                    "Nearby fills (same vehicle, by time)",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                neighbors.take(12).forEach { n ->
-                    val badge = when (n.id) {
-                        endEntryId -> " [THIS FILL]"
-                        prevEntryId -> " [LEG START]"
-                        else -> ""
-                    }
-                    NeighborLine(n, vehicles, prefix = "", badge = badge)
-                }
-                TextButton(
-                    onClick = { expandNeighbors += 1 },
-                    enabled = enabled,
-                ) {
-                    Text("Show more neighbors")
-                }
-            } else if (item.kind == BatchPendingKind.ODO_SUSPECT ||
+            if (item.kind == BatchPendingKind.ODO_SUSPECT ||
                 item.kind == BatchPendingKind.ECONOMY_IGNORED
             ) {
                 Text("Context fills:", style = MaterialTheme.typography.labelMedium)
@@ -878,10 +869,10 @@ private fun PendingQuestionCard(
                 item.kind == BatchPendingKind.ODO_SUSPECT
             ) {
                 val editLabel = when {
-                    item.kind == BatchPendingKind.MPG_OUTLIER && mpgFocusEnd ->
-                        "Editing: This fill (leg end, id=${focusEntryId ?: "?"})"
-                    item.kind == BatchPendingKind.MPG_OUTLIER && !mpgFocusEnd ->
-                        "Editing: Leg start (prior, id=${focusEntryId ?: "?"})"
+                    item.kind == BatchPendingKind.MPG_OUTLIER && mpgFocusThis ->
+                        "Editing: This fill (id=${focusEntryId ?: "?"})"
+                    item.kind == BatchPendingKind.MPG_OUTLIER && !mpgFocusThis ->
+                        "Editing: Last fill (id=${focusEntryId ?: "?"})"
                     else ->
                         "Edit fields (pre-filled; clears ignore on save)"
                 }
@@ -1037,14 +1028,39 @@ private fun PendingQuestionCard(
     }
 }
 
+/** Fallback text when live FuelEntry is missing but pending extra has field snapshots. */
+private fun mpgContextFallback(item: BatchPendingItem, isLast: Boolean): String {
+    val tsKey = if (isLast) "prevTs" else "endTs"
+    val odoKey = if (isLast) "prevOdo" else "endOdo"
+    val costKey = if (isLast) "prevCost" else "endCost"
+    val volKey = if (isLast) "prevVol" else "endVol"
+    val ts = item.extra[tsKey]?.toLongOrNull()
+    val whenStr = ts?.let {
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(it))
+    } ?: "?"
+    val odo = item.extra[odoKey] ?: "?"
+    val cost = item.extra[costKey]?.toDoubleOrNull() ?: 0.0
+    val vol = item.extra[volKey]?.toDoubleOrNull() ?: 0.0
+    return "$whenStr · odo $odo · \$${"%.2f".format(cost)} · ${"%.2f".format(vol)}G"
+}
+
 @Composable
 private fun NeighborLine(
-    n: FuelEntry,
+    n: FuelEntry?,
     vehicles: List<Vehicle>,
     prefix: String = "",
     anchorTs: Long? = null,
     badge: String = "",
+    fallback: String? = null,
 ) {
+    if (n == null) {
+        Text(
+            prefix + (fallback ?: "—"),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
     val name = when {
         n.vehicleId == 0 -> "Unknown"
         else -> vehicles.find { it.id == n.vehicleId }?.name ?: "Vehicle ${n.vehicleId}"

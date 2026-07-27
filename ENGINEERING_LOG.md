@@ -1089,3 +1089,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Tag: batch_load/builds @ 795c8e3b
 - No device test (await human deploy)
 - Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity (layout v2)
+
+- Re-execute updated plan: Last/This photo blocks + 4-line context
+- Prior UI (single strip + toggle) superseded by locked two-block layout

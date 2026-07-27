@@ -87,33 +87,38 @@ object FuelEconomyOutliers {
         dedupePhotoPaths(FuelPhotoJson.parse(e.photoUrl).map { it.uri })
 
     /**
-     * Primary photos = **leg end only** (focus default). Prev endpoint ids + metrics
-     * live in [BatchPendingItem.extra] so the UI can switch focus without dumping
-     * both endpoints into one unlabeled photo strip.
+     * Pending for UI: **this fill** = leg end, **last fill** = leg start.
+     * Separate photo lists so the card can show photos above each fill button
+     * (never one unlabeled 4-image strip).
      */
     fun toPending(leg: OutlierLeg): BatchPendingItem {
-        val endPhotos = photoPathsForEntry(leg.endEntry)
-        val prevPhotos = photoPathsForEntry(leg.prevEntry)
+        val thisPhotos = photoPathsForEntry(leg.endEntry)
+        val lastPhotos = photoPathsForEntry(leg.prevEntry)
         return BatchPendingItem(
             kind = BatchPendingKind.MPG_OUTLIER,
             message = "MPG outlier ${"%.1f".format(leg.mpg)} vs ref ${"%.1f".format(leg.refMpg)} " +
                 "(odoΔ=${leg.odoDelta} vol=${"%.2f".format(leg.sumVol)}) vehicle=${leg.vehicleId}",
-            photoPath = endPhotos.firstOrNull(),
-            durablePhotoPath = endPhotos.firstOrNull(),
+            photoPath = thisPhotos.firstOrNull(),
+            durablePhotoPath = thisPhotos.firstOrNull(),
             timestampMs = leg.endEntry.timestamp,
             fuelEntryId = leg.endEntry.id,
             suggestedVehicleId = leg.vehicleId,
             extra = mapOf(
                 "entryIds" to "${leg.prevEntry.id},${leg.endEntry.id}",
-                // Primary strip paths (end/focus only)
-                "photoPaths" to endPhotos.joinToString("|"),
-                "prevPhotoPaths" to prevPhotos.joinToString("|"),
+                // Separate lists for Last fill / This fill photo blocks
+                "thisPhotoPaths" to thisPhotos.joinToString("|"),
+                "lastPhotoPaths" to lastPhotos.joinToString("|"),
+                // Back-compat aliases
+                "photoPaths" to thisPhotos.joinToString("|"),
+                "prevPhotoPaths" to lastPhotos.joinToString("|"),
                 "mpg" to leg.mpg.toString(),
                 "refMpg" to leg.refMpg.toString(),
                 "odoDelta" to leg.odoDelta.toString(),
                 "sumVol" to leg.sumVol.toString(),
                 "prevEntryId" to leg.prevEntry.id.toString(),
                 "endEntryId" to leg.endEntry.id.toString(),
+                "lastEntryId" to leg.prevEntry.id.toString(),
+                "thisEntryId" to leg.endEntry.id.toString(),
                 "prevTs" to leg.prevEntry.timestamp.toString(),
                 "endTs" to leg.endEntry.timestamp.toString(),
                 "prevOdo" to leg.prevEntry.odometer.toString(),
