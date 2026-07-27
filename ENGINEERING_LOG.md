@@ -1126,3 +1126,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Execution start: ODO_SUSPECT per-fill UI layout
 - No device deploy until human deploys
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill done (code)
+
+- ODO_SUSPECT: ordered prev/cur/next dash-only photos + odo fields under each
+- SaveOdoPeers multi-odo write; payload prevDashPaths/curDashPaths/nextDashPaths
+- Tag: batch_load/builds @ 0da926d1
+- No device test until human deploy; re-scan after deploy
+- Notes: research/batch-odo-suspect-ui-per-fill-20260727/smoke-notes.txt
