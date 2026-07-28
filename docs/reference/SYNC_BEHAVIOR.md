@@ -44,8 +44,19 @@ Vehicle reference images, fuel dash/pump photos, and expense receipts sync **bin
 
 On first launch after a schema upgrade that introduces blank **`syncId`** values, a one-shot local Room backfill assigns deterministic IDs. The UI may show **“Updating database after upgrade…”** until complete; cloud workers are not started until backfill finishes.
 
+## Fuel LWW vs field-merge vs questions
+
+| Layer | What | When |
+|-------|------|------|
+| **Row merge (LWW)** | Per `syncId`, side with greater `updatedAt` wins (tie → local). Upsert into Room **preserves** winner `updatedAt` (no restamp). Then write merged set back to the sheet. | Every successful spreadsheet/tabular fuel tab sync |
+| **Field merge (partials)** | After fuel LWW for the session, run the same **Run merge** engine as Import (`BatchFuelImportCoordinator.applyMerge`): 15m window, tight dash/pump pairs, soft-delete published absorbs. Cross-device odo-only + pump-only become one full fill when both land. | Once per successful sync session (not per row) |
+| **Question rebuild** | Pending JSON is **local-only** (not LWW’d). After field-merge: detect-only odo sanitizer + re-enqueue unknown vehicle / economyIgnored / **breaker-aware** `MPG_OUTLIER` (same chain rules as [REPORTS_METRICS.md](REPORTS_METRICS.md)). Legs with blank gap markers are **not** asked. | Same post-sync pass |
+
+User edits (gap insert, odo fix, partial checkbox) go through repository APIs that **stamp `updatedAt = now`**, so the next sync **pushes** those cleanups unless remote edited the same `syncId` later.
+
 ## Related docs
 
 - User-facing summary: [USER_GUIDE.md](USER_GUIDE.md) — Synchronization section
+- Economy chain rules: [REPORTS_METRICS.md](REPORTS_METRICS.md)
 - Self-hosted setup: [self-host/INDEX.md](self-host/INDEX.md)
 - Non-Google version-history caveat: [self-host/README.md](self-host/README.md)

@@ -41,6 +41,7 @@ fun HelpScreen(navController: NavHostController? = null) {
         SectionTitle("Icons")
         Bullet("☰ (top left) — open the menu")
         Bullet("! (red, title bar) — last spreadsheet or photo sync failed; open Settings")
+        Bullet("? (yellow, title bar) — open Import / Review questions when items need answers")
         Bullet("White circle — shutter (capture dash, pump, or receipt)")
         Bullet("Disk — save fill-up or expense")
         Bullet("↕ on Quick Fill — switch odometer mode ↔ pump (cost/volume) mode")
@@ -106,11 +107,14 @@ fun HelpScreen(navController: NavHostController? = null) {
         SectionTitle("If something fails")
         Bullet("Red error under Spreadsheet sync / Photo backup in Settings")
         Bullet("Red ! in the title bar → Settings")
+        Bullet("Yellow ? in the title bar → Import / Review questions")
         Bullet("Same fill entered twice on two devices = two rows; delete the extra")
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            "Import Old Pictures and experiment screens are advanced tools and are not covered here.",
+            "Import Old Pictures and experiment screens are advanced tools and are not covered here. " +
+                "Batch import references your existing dash/pump photo files in place (does not copy them). " +
+                "Do not delete experiment_photos or pump_photos while fuel rows still point at those files.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

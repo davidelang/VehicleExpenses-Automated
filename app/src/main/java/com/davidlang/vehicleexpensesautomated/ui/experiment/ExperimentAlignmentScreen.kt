@@ -70,7 +70,7 @@ private fun logHeapState(context: Context, label: String) {
 }
 
 /** Bounds-only probe — never loads full reference dash photos into RAM. */
-private fun probeReferenceDimensions(context: Context, path: String): Pair<Int, Int> {
+internal fun probeReferenceDimensions(context: Context, path: String): Pair<Int, Int> {
     return try {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         if (path.startsWith("content://")) {
@@ -1053,7 +1053,7 @@ private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
     return arr.toString()
 }
 
-private suspend fun runBinTrialsPaddle(
+internal suspend fun runBinTrialsPaddle(
     odoBuffer: BufferSet,
     masterBuffer: BufferSet,
     vehicleId: Int,
@@ -1781,7 +1781,7 @@ private fun generateDualHistogramB64(hHist: IntArray?, vHist: IntArray?): String
     return b64
 }
 
-private fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
+internal fun getFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
     if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
     try {
         val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else return emptyList()
@@ -1879,7 +1879,7 @@ private fun generateGatedHistogramB64(mat: org.opencv.core.Mat, markers: List<Od
     val b64 = OcrUtils.bitmapToBase64(bmp, 80); bmp.recycle(); hist.release(); return b64
 }
 
-private suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
+internal suspend fun performLandmarkDiscovery(input: Any, context: Context): Pair<OcrResult, List<TextBlock>> {
     val queryOcrDiscovery = OcrHarness.runDiscovery(input, context)
     val landmarks = OdometerOcrUtils.processRawLandmarks(queryOcrDiscovery.textBlocks, null, null, queryOcrDiscovery.imageWidth, queryOcrDiscovery.imageHeight)
     return Pair(queryOcrDiscovery, landmarks)
@@ -1889,7 +1889,7 @@ private fun JSONObject.putSafe(key: String, value: Double, context: String = "")
 private fun JSONObject.putSafe(key: String, value: Float, context: String = ""): JSONObject { return if (value.isFinite()) this.put(key, value) else { Log.e("ExperimentAlignment", "NON-FINITE value [$value] for key [$key] in $context"); this.put(key, "ERR: $value") } }
 
 
-private suspend fun runPaddleValleyIterative(
+internal suspend fun runPaddleValleyIterative(
     displayName: String,
     masterBuffer: Any,
     mWidth: Int,

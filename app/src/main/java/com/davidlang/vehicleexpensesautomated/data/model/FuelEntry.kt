@@ -18,7 +18,24 @@ data class FuelEntry(
     val currency: String = "",
     val timestamp: Long,
     val photoUrl: String? = null,
+    /**
+     * **Explicit full-fill override only** (default false).
+     *
+     * - **false:** no override. Full-fill anchors use field presence only
+     *   (`odo>0 && cost>0 && gallons>0` and not [economyIgnored]).
+     * - **true:** odo, cost, **and** volume are all present **and** the user
+     *   (checkbox) says: do **not** treat this row as a full-fill chain anchor.
+     *
+     * Incomplete rows (missing any field) are **not** full fills without setting
+     * this flag. Batch/merge/sanitizer must **never** auto-set true for missing data.
+     */
     val isPartialFill: Boolean = false,
+    /**
+     * When true, this row is excluded from economy metrics (MPG legs, avg, $/mi anchors
+     * and window cost/vol). Inventory (fuel $, volume, fill counts) still includes it.
+     * **Must sync** with the fuel row (not pending-only).
+     */
+    val economyIgnored: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val location: String? = null,

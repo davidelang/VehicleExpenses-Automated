@@ -21,9 +21,54 @@ class VehicleRepository @Inject constructor(
     private val photoStorage: PhotoStorageManager,
 ) {
 
+    companion object {
+        /** Matches [BatchFuelImportCoordinator.UNASSIGNED_VEHICLE_ID]. */
+        const val UNASSIGNED_VEHICLE_ID = 0
+        const val UNASSIGNED_VEHICLE_NAME = "Unassigned"
+        /**
+         * Fixed well-known sync id — same on every device so Vehicles + Fuel tabs
+         * LWW as one system bucket (`Fuel - Unassigned`).
+         */
+        const val UNASSIGNED_VEHICLE_SYNC_ID = "a0000000-0000-4000-8000-000000000001"
+        private const val UNASSIGNED_NOTES =
+            "System bucket for unassigned pump fills until resolved (do not delete)"
+    }
+
     fun getAllVehicles(): Flow<List<Vehicle>> = vehicleDao.getAllVehicles()
 
     suspend fun getVehicleById(id: Int): Vehicle? = vehicleDao.getVehicleById(id).first()
+
+    /**
+     * Ensure system vehicle id=0 **Unassigned** with fixed [UNASSIGNED_VEHICLE_SYNC_ID].
+     * Safe to call on startup / before spreadsheet fuel sync.
+     */
+    suspend fun ensureUnassignedVehicle() {
+        val deviceId = SyncIdentity.getOrCreateDeviceId(context)
+        val now = System.currentTimeMillis()
+        val byId = vehicleDao.getByIdOnce(UNASSIGNED_VEHICLE_ID)
+        val bySync = vehicleDao.findBySyncId(UNASSIGNED_VEHICLE_SYNC_ID)
+        if (byId != null &&
+            !byId.deleted &&
+            byId.name == UNASSIGNED_VEHICLE_NAME &&
+            byId.syncId == UNASSIGNED_VEHICLE_SYNC_ID
+        ) {
+            return
+        }
+        // Explicit SQL keeps id=0 (autoGenerate would reassign)
+        vehicleDao.upsertUnassignedSystemVehicle(
+            name = UNASSIGNED_VEHICLE_NAME,
+            notes = UNASSIGNED_NOTES,
+            syncId = UNASSIGNED_VEHICLE_SYNC_ID,
+            originDeviceId = byId?.originDeviceId?.ifBlank { deviceId }
+                ?: bySync?.originDeviceId?.ifBlank { deviceId }
+                ?: deviceId,
+            updatedAt = maxOf(byId?.updatedAt ?: 0L, bySync?.updatedAt ?: 0L, now),
+        )
+    }
+
+    /** Real vehicles only (exclude system Unassigned) for OCR / Quick Fill / assign targets. */
+    fun isSystemUnassigned(v: Vehicle): Boolean =
+        v.id == UNASSIGNED_VEHICLE_ID || v.syncId == UNASSIGNED_VEHICLE_SYNC_ID
 
     suspend fun insertVehicle(vehicle: Vehicle): Long {
         vehicleDao.insertVehicle(stampForWrite(vehicle))
@@ -52,9 +97,13 @@ class VehicleRepository @Inject constructor(
     suspend fun updateVehiclePreservingTimestamp(vehicle: Vehicle) =
         vehicleDao.updateVehicle(ensureSyncId(vehicle))
 
-    suspend fun deleteVehicle(vehicle: Vehicle) = vehicleDao.deleteVehicle(vehicle.id)
+    suspend fun deleteVehicle(vehicle: Vehicle) {
+        if (isSystemUnassigned(vehicle)) return
+        vehicleDao.deleteVehicle(vehicle.id)
+    }
 
     suspend fun markVehicleDeleted(vehicle: Vehicle) {
+        if (isSystemUnassigned(vehicle)) return
         val now = System.currentTimeMillis()
         vehicleDao.updateVehicle(stampForWrite(vehicle).copy(deleted = true, deletedAt = now))
     }

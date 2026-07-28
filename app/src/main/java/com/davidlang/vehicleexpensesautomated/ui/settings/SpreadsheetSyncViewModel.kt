@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordinator
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveBrowserItem
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveAuth
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowseCatalog
@@ -36,6 +37,7 @@ class SpreadsheetSyncViewModel @Inject constructor(
     private val tabularApi: TabularShareApi,
     private val coordinator: SpreadsheetSyncCoordinator,
     private val syncManager: SyncManager,
+    private val batchFuelImportCoordinator: BatchFuelImportCoordinator,
 ) : ViewModel() {
 
     suspend fun listSpreadsheetsForBrowse(
@@ -49,6 +51,13 @@ class SpreadsheetSyncViewModel @Inject constructor(
         accountHint: String,
         onProgress: SyncProgressListener? = null,
     ): SyncResult = coordinator.syncNow(accountHint, onProgress = onProgress)
+
+    /**
+     * Detect-only: odo-only + pump-only pairs within merge window after a fuel pull.
+     * Used for post-sync CTA — does not auto-merge.
+     */
+    suspend fun hasUnmatchedFuelPartials(): Boolean =
+        batchFuelImportCoordinator.hasUnmatchedPartials()
 
     suspend fun testConnection(dest: SpreadsheetDestination): Boolean {
         val result = tabularApi.testConnection(dest)
