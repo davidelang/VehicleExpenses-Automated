@@ -871,3 +871,22 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Merged instruction (7d8aa877) into master via merge-branch-into-master (FF index path)
 - project-facts: HTML edit/render orientation; missed-fill TODO left open
 - POST-MERGE gate: 34+ feature paths staged including assets and .kt
+
+## 2026-07-27 - simplify-experiments execution start
+
+- Approved plan: dev-ai-interaction/plans/simplify-experiments-keep-setj-gmm-seti-20260727-plan.md
+- Role=Coder branch=simplify_experiments HEAD=91e94f53
+- Baseline: no simplify_experiments/builds yet (first successful build_app will create it)
+- Next: Phase 0 durable obsolete tags
+
+## 2026-07-27 - Phase 0 obsolete tags
+
+- Created annotated tags at HEAD 91e94f53:
+- obsolete-experiment-alignment-sets-a-e
+- obsolete-experiment-pump-multi-sets
+- No source edits this phase
+
+## 2026-07-27 - Phase 1 alignment obsolete doc
+
+- Added docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md (sets A/E + helper catalog + silent lock note)
+- No Kotlin experiment changes this phase
