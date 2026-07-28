@@ -33,4 +33,38 @@ interface VehicleDao {
 
     @Query("DELETE FROM vehicles WHERE id = :id")
     suspend fun deleteVehicle(id: Int)
+
+    @Query("SELECT * FROM vehicles WHERE id = :id LIMIT 1")
+    suspend fun getByIdOnce(id: Int): Vehicle?
+
+    /**
+     * System Unassigned bucket (id=0). Room autoGenerate treats 0 as "unset" on
+     * normal insert — use explicit SQL so local id stays 0.
+     */
+    @Query(
+        """
+        INSERT OR REPLACE INTO vehicles (
+          id, name, make, model, year, licensePlate, vin, notes,
+          referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl,
+          odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom,
+          otherTextCropLeft, otherTextCropTop, otherTextCropRight, otherTextCropBottom,
+          landmarkTextBlocksJson, cloudManifest, deleted, deletedAt,
+          syncId, originDeviceId, updatedAt
+        ) VALUES (
+          0, :name, NULL, NULL, NULL, NULL, NULL, :notes,
+          NULL, NULL,
+          NULL, NULL, NULL, NULL,
+          NULL, NULL, NULL, NULL,
+          NULL, NULL, 0, NULL,
+          :syncId, :originDeviceId, :updatedAt
+        )
+        """,
+    )
+    suspend fun upsertUnassignedSystemVehicle(
+        name: String,
+        notes: String,
+        syncId: String,
+        originDeviceId: String,
+        updatedAt: Long,
+    )
 }
