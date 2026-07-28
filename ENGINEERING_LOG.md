@@ -903,3 +903,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Phase 5-6: removed runMLKitIterative + runBinTrialsMLKit (no callers)
 - Phase 6b: removed createScaledBase64 + drawCropBoxesOnReference orphans
 - Set J iterative body left bit-identical (char-aware, Raw+Bin-Trials)
+
+## 2026-07-27 - Phases 7-13 pump simplify
+
+- flows + flowProcessors = G-- and Set I only
+- deleted procA-F, procG, procGMinus, procH bodies
+- deleted binPeak stack, longLived/histPlot, ML discovery buffers, B/D retract helpers
+- deleted already-dead combinePhotoFragments/generateCdf/applyRecognitionHeuristics/drawHunks/pumpCreateScaledBase64
+- kept makeGProc, procGMinusMinus, procI, hybrid helpers, doBOrDRedOnlyImage
