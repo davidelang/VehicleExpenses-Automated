@@ -928,3 +928,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 ## 2026-07-28 - Phase 1 Build.import
 
 - ExperimentAlignmentScreen: import android.os.Build
+
+## 2026-07-28 - Phase 2-3 alignment JSON device field
+
+- Inserted root device=Build.MODEL after version before total_photos (match pump)
+- Forensic: key device, source Build.MODEL, field order parity with ExperimentPumpScreen jsonHeader
+- Only ExperimentAlignmentScreen.kt product code touched
