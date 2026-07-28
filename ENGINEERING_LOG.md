@@ -1165,3 +1165,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - No device test until human deploy
 - Notes: research/batch-mpg-gap-button-and-window-fills-20260727/smoke-notes.txt
 
+
+## 2026-07-27 - batch-no-durable-photo-copy done (code)
+
+- processDash/processPump: source paths only; copyToDurable removed
+- migrateDurablePhotoRefsToSource rewrite+delete unreferenced mirrors
+- PendingPhotoUris prefer source dirs; Help note
+- Tag: batch_load/builds @ a18099d1
+- No device test until human deploy
+- Notes: research/batch-no-durable-photo-copy-20260727/smoke-notes.txt
+
