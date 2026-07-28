@@ -895,3 +895,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Added docs/obsolete/EXPERIMENT_PUMP_SETS.md (sets A-H/D/E/G/G- + full helper catalog; G--/I retained)
 - No Kotlin experiment changes this phase
+
+## 2026-07-27 - Phases 3-6b alignment simplify
+
+- Phase 3: silent mlAngle ID lock + Set J only report column; drop Set A ML header
+- Phase 4: outer JSON winner/discovery_landmarks from pathways set_j
+- Phase 5-6: removed runMLKitIterative + runBinTrialsMLKit (no callers)
+- Phase 6b: removed createScaledBase64 + drawCropBoxesOnReference orphans
+- Set J iterative body left bit-identical (char-aware, Raw+Bin-Trials)
