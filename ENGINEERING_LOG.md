@@ -960,3 +960,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - PR: dev-ai-interaction/PRs/PR-simplify_experiments.md
 - Plans: simplify-experiments-keep-setj-gmm-seti, alignment-json-device-field, fix-alignment-report-empty-vehicles
 - Pre-submit review PASS; no TODO closes; ask Master: Please review PR-simplify_experiments
+
+## 2026-07-28 - Master merge PR-simplify_experiments
+
+- Independent review PASS: silent mlAngle ID lock + Set J; pump G-- + I; device/meta + empty-ref fail-fast; obsolete docs/tags; production isolation
+- Merged simplify_experiments (109b0d6a) into master via merge-branch-into-master (FF index path)
+- POST-MERGE gate: 5 non-special feature paths staged (.kt + docs) + eng-log third-version
+- TODO/project-facts: no branch delta; restore_special kept master
+- build_app OK → master commit 194123c7; builds tag updated
+- No works tag. Cleanup: ./remove_worktree.sh simplify_experiments from repo root when ready
+
