@@ -890,3 +890,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Added docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md (sets A/E + helper catalog + silent lock note)
 - No Kotlin experiment changes this phase
+
+## 2026-07-27 - Phase 2 pump obsolete doc
+
+- Added docs/obsolete/EXPERIMENT_PUMP_SETS.md (sets A-H/D/E/G/G- + full helper catalog; G--/I retained)
+- No Kotlin experiment changes this phase
