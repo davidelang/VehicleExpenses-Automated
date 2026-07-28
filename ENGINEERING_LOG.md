@@ -1185,3 +1185,14 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - No device test until human deploy
 - Notes: research/batch-stage-c-phased-questions-20260728/smoke-notes.txt
 
+
+## 2026-07-28 - batch-stage-c-ux-skip-photos-phase-scope done (code)
+
+- Phase-scoped pending rebuild; Next phase regenerates only next kinds
+- Skip ledger same-phase; answer journal jsonl + export (no replay)
+- Unassigned vehicle id=0 fixed syncId + Fuel - Unassigned tab; picker exclusions
+- Photo role dash/pump; Close z-order; CONFLICT keep-both completes
+- Tag: batch_load/builds @ dab2e144
+- No device test until human deploy
+- Notes: research/batch-stage-c-ux-skip-photos-phase-scope-20260728/smoke-notes.txt
+
