@@ -1175,3 +1175,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - No device test until human deploy
 - Notes: research/batch-no-durable-photo-copy-20260727/smoke-notes.txt
 
+
+## 2026-07-28 - batch-stage-c-phased-questions done (code)
+
+- StageCPhase 1–6 store + UI filter; skip/reset; clear-rescan → phase 1
+- ODO chain merge + simple length-guess mode; BAD_PUMP_RATIO phase 3
+- Gap from phase 3/5; post-sync remoteWins → phase 1 + rebuild
+- Tag: batch_load/builds @ 8ad579ef
+- No device test until human deploy
+- Notes: research/batch-stage-c-phased-questions-20260728/smoke-notes.txt
+
