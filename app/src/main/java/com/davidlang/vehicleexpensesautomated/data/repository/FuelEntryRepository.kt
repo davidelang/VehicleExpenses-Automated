@@ -43,6 +43,15 @@ class FuelEntryRepository @Inject constructor(
         )
     }
 
+    /**
+     * Hard-delete a local fuel row (Room `@Delete`). Used by batch merge when
+     * absorbing partials during initial testing (sync off). Normal UI continues
+     * to soft-delete via [deleteFuelEntry] / [markFuelDeleted].
+     */
+    suspend fun hardDeleteFuelEntry(entry: FuelEntry) {
+        fuelEntryDao.deleteFuelEntry(entry)
+    }
+
     suspend fun getAllIncludingDeleted(): List<FuelEntry> = fuelEntryDao.getAllIncludingDeleted()
 
     suspend fun findBySyncKey(originDeviceId: String, id: Long): FuelEntry? =
