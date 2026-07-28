@@ -24,7 +24,7 @@ object TabularSchema {
     )
     val FUEL_HEADERS = listOf(
         "Sync ID", "ID", "Vehicle Sync ID", "Vehicle ID", "Odometer", "Gallons", "Cost", "Currency", "Timestamp",
-        "Photo URL", "Partial Fill", "Latitude", "Longitude", "Location", "Cloud Manifest",
+        "Photo URL", "Partial Fill", "Economy Ignored", "Latitude", "Longitude", "Location", "Cloud Manifest",
         "Origin Device ID", "Updated At", "Deleted", "Deleted At",
     )
     val EXPENSE_HEADERS = listOf(
@@ -133,6 +133,7 @@ object TabularSchema {
         entry.timestamp.toString(),
         entry.photoUrl ?: "",
         entry.isPartialFill.toString(),
+        entry.economyIgnored.toString(),
         entry.latitude?.toString() ?: "",
         entry.longitude?.toString() ?: "",
         entry.location ?: "",
@@ -204,6 +205,7 @@ object TabularSchema {
             timestamp = timestamp,
             photoUrl = cell("Photo URL").ifBlank { null },
             isPartialFill = cell("Partial Fill").equals("true", ignoreCase = true),
+            economyIgnored = cell("Economy Ignored").equals("true", ignoreCase = true),
             latitude = cell("Latitude").toDoubleOrNull(),
             longitude = cell("Longitude").toDoubleOrNull(),
             location = cell("Location").ifBlank { null },
