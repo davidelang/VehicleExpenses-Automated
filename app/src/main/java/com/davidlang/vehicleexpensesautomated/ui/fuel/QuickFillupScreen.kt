@@ -158,7 +158,14 @@ fun QuickFillupScreen(
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
-    val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+    val vehiclesRaw by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+    // Exclude system Unassigned bucket (id=0) from Quick Fill picker
+    val vehicles = remember(vehiclesRaw) {
+        vehiclesRaw.filter {
+            it.id != 0 &&
+                it.syncId != com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository.UNASSIGNED_VEHICLE_SYNC_ID
+        }
+    }
     var selectedVehicleId by rememberSaveable { mutableStateOf<Int?>(null) }
     var odometer by rememberSaveable { mutableStateOf("") }
     var gallons by rememberSaveable { mutableStateOf("") }

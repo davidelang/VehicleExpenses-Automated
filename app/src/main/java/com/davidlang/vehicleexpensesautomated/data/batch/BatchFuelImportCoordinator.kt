@@ -238,14 +238,36 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
-     * Merge **all** live fuel partials (batch, Quick Fill, sync-sourced — no
-     * batch-only filter) → [FuelRowMergeEngine.planMerge] → update survivors →
-     * absorb losers ([absorbMergedRow]: soft-delete if sync-published / non-batch,
-     * hard-delete pure local batch) → rebuild pending questions.
+     * Field-merge all live partials + **phase-scoped** pending rebuild only.
+     * Pending store holds at most the current phase’s kinds (not full multi-phase backlog).
      */
     suspend fun applyMerge(
         onProgress: (String) -> Unit = {},
     ): MergeApplyResult = withContext(Dispatchers.IO) {
+        val phase = StageCPhaseStore.currentPhase(appContext)
+        runFieldMerge(onProgress) + rebuildPendingForPhase(phase, onProgress)
+    }
+
+    /**
+     * Advance Stage C to [newPhase] (or current+1), field-merge, generate **only**
+     * that phase’s questions from live Room.
+     */
+    suspend fun advancePhaseAndRebuild(
+        onProgress: (String) -> Unit = {},
+    ): MergeApplyResult = withContext(Dispatchers.IO) {
+        val next = StageCPhaseStore.advance(appContext)
+        onProgress("Next phase $next…")
+        val merge = runFieldMerge(onProgress)
+        val rebuild = rebuildPendingForPhase(next, onProgress)
+        val combined = merge + rebuild
+        val msg = "Phase $next: ${combined.totalPending} questions · ${combined.message}"
+        onProgress(msg)
+        combined.copy(message = msg)
+    }
+
+    private data class FieldMergeStats(val updated: Int, val deleted: Int)
+
+    private suspend fun runFieldMerge(onProgress: (String) -> Unit): FieldMergeStats {
         onProgress("Photo path migrate (if needed)…")
         try {
             val mig = migrateDurablePhotoRefsToSource()
@@ -259,94 +281,226 @@ class BatchFuelImportCoordinator @Inject constructor(
         val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
         onProgress("Planning merge (${live.size} rows)…")
         val plan = FuelRowMergeEngine.planMerge(live)
-
+        var soft = 0
+        var hard = 0
         if (!plan.isEmpty()) {
             onProgress("Applying ${plan.updates.size} updates…")
             for (u in plan.updates) {
                 fuelEntryRepository.updateFuelEntry(u)
             }
             onProgress("Absorbing ${plan.hardDeletes.size} rows…")
-            var soft = 0
-            var hard = 0
             for (d in plan.hardDeletes) {
                 if (absorbMergedRow(d)) soft++ else hard++
             }
             Log.i(TAG, "merge absorb soft=$soft hard=$hard")
         }
-
-        // Full pending rebuild: wipe regenerable queue so stale pre-15m / pre-pair
-        // cards never reappear. Re-scan after sanitizer only.
-        onProgress("Rebuilding pending questions…")
-        val rebuilt = mutableListOf<BatchPendingItem>()
-        var added = 0
-        fun appendPending(p: BatchPendingItem) {
-            if (isPendingDup(rebuilt, p)) return
-            rebuilt.add(p)
-            added++
-        }
-        for (p in plan.newPending) appendPending(p)
-
-        // Odo detector only (no row mutation)
-        onProgress("Odo detect…")
-        val afterMergeLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-        val san = FuelOdoSanitizer.sanitize(afterMergeLive)
-        // san.updates always empty by design
-        for (p in san.newPending) appendPending(p)
-
-        val afterLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-        onProgress("Scanning pump ratio / unknown vehicles / economy…")
-        for (p in FuelEconomyOutliers.detectBadPumpRatios(afterLive)) {
-            appendPending(p)
-        }
-        for (e in afterLive.filter { it.vehicleId == UNASSIGNED_VEHICLE_ID }) {
-            appendPending(FuelEconomyOutliers.unknownVehiclePending(e))
-        }
-        for (e in afterLive.filter { it.economyIgnored }) {
-            appendPending(FuelEconomyOutliers.economyIgnoredPending(e))
-        }
-        for (leg in FuelEconomyOutliers.detectOutliers(afterLive)) {
-            appendPending(FuelEconomyOutliers.toPending(leg))
-        }
-
-        BatchImportPendingStore.save(appContext, rebuilt)
-
-        val phase = StageCPhaseStore.currentPhase(appContext)
-        val phaseCount = StageCPhaseStore.countForPhase(rebuilt, phase)
-        val simpleOdo = rebuilt.count {
-            it.kind == BatchPendingKind.ODO_SUSPECT && it.extra["mode"] == "simple"
-        }
-        val complexOdo = rebuilt.count {
-            it.kind == BatchPendingKind.ODO_SUSPECT && it.extra["mode"] != "simple"
-        }
-        val msg =
-            "updated=${plan.updates.size} deleted=${plan.hardDeletes.size} " +
-                "pending=$added (phase $phase: $phaseCount shown · " +
-                "simpleOdo=$simpleOdo complexOdo=$complexOdo mpg=" +
-                "${rebuilt.count { it.kind == BatchPendingKind.MPG_OUTLIER }})"
-        Log.i(TAG, "applyMerge $msg")
-        onProgress("Done: $msg")
-        MergeApplyResult(
+        // Stash merge-side pending for phase filter in rebuild
+        lastMergePending = plan.newPending
+        return FieldMergeStats(
             updated = plan.updates.size,
             deleted = plan.hardDeletes.size,
-            pendingAdded = added,
+        )
+    }
+
+    @Volatile
+    private var lastMergePending: List<BatchPendingItem> = emptyList()
+
+    /**
+     * Generate pending for **one** phase only; apply skip ledger; save store.
+     */
+    private suspend fun rebuildPendingForPhase(
+        phase: Int,
+        onProgress: (String) -> Unit,
+    ): MergeApplyResult {
+        onProgress("Rebuilding phase $phase questions…")
+        val afterLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+        val candidates = mutableListOf<BatchPendingItem>()
+        fun append(p: BatchPendingItem) {
+            if (!StageCPhaseStore.belongsToPhase(p, phase)) return
+            if (isPendingDup(candidates, p)) return
+            candidates.add(p)
+        }
+
+        when (phase) {
+            StageCPhase.SIMPLE_ODO.number -> {
+                val san = FuelOdoSanitizer.sanitize(afterLive)
+                for (p in san.newPending) {
+                    if (p.extra["mode"] == "simple") append(p)
+                }
+            }
+            StageCPhase.COMPLEX_ODO.number -> {
+                val san = FuelOdoSanitizer.sanitize(afterLive)
+                for (p in san.newPending) {
+                    if (p.extra["mode"] != "simple") append(p)
+                }
+                for (p in lastMergePending) {
+                    if (p.kind == BatchPendingKind.CONFLICT_ODO) append(p)
+                }
+            }
+            StageCPhase.BAD_PUMP.number -> {
+                for (p in FuelEconomyOutliers.detectBadPumpRatios(afterLive)) append(p)
+            }
+            StageCPhase.UNASSIGNED.number -> {
+                for (e in afterLive.filter { it.vehicleId == UNASSIGNED_VEHICLE_ID }) {
+                    append(unknownVehiclePendingWithSuggest(e, afterLive))
+                }
+                for (p in lastMergePending) {
+                    if (p.kind == BatchPendingKind.ASSIGN_VEHICLE ||
+                        p.kind == BatchPendingKind.SKIP_OR_ASSIGN_VEHICLE
+                    ) {
+                        append(p)
+                    }
+                }
+            }
+            StageCPhase.UNREADABLE.number -> {
+                for (p in lastMergePending) {
+                    if (p.kind == BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE ||
+                        p.kind == BatchPendingKind.UNREADABLE_PUMP ||
+                        p.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP
+                    ) {
+                        append(p)
+                    }
+                }
+                // Preserve unreadable still on disk pending from batch ingest this session
+                for (p in BatchImportPendingStore.load(appContext)) {
+                    if (p.kind == BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE ||
+                        p.kind == BatchPendingKind.UNREADABLE_PUMP ||
+                        p.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP
+                    ) {
+                        append(p)
+                    }
+                }
+            }
+            StageCPhase.MPG.number -> {
+                for (leg in FuelEconomyOutliers.detectOutliers(afterLive)) {
+                    append(FuelEconomyOutliers.toPending(leg))
+                }
+                for (e in afterLive.filter { it.economyIgnored }) {
+                    append(FuelEconomyOutliers.economyIgnoredPending(e))
+                }
+            }
+        }
+
+        val skipped = StageCSkipLedger.load(appContext, phase)
+        val rebuilt = StageCSkipLedger.filterOut(candidates, skipped)
+        BatchImportPendingStore.save(appContext, rebuilt)
+
+        val msg =
+            "phase $phase: ${rebuilt.size} questions " +
+                "(skippedLedger=${skipped.size}, candidates=${candidates.size})"
+        Log.i(TAG, "rebuildPendingForPhase $msg")
+        onProgress("Done: $msg")
+        return MergeApplyResult(
+            updated = 0,
+            deleted = 0,
+            pendingAdded = rebuilt.size,
             totalPending = rebuilt.size,
             message = msg,
         )
     }
 
+    private operator fun FieldMergeStats.plus(r: MergeApplyResult): MergeApplyResult =
+        MergeApplyResult(
+            updated = updated + r.updated,
+            deleted = deleted + r.deleted,
+            pendingAdded = r.pendingAdded,
+            totalPending = r.totalPending,
+            message = "updated=$updated deleted=$deleted · ${r.message}",
+        )
+
     /**
-     * After fuel sync: rebuild pending; if remote fuel changed or field-merge
-     * absorbed rows, reset Stage C to phase 1 (skipped items not sticky).
+     * ASSIGN_UNKNOWN with optional tank/time suggest (phase 4).
+     */
+    private fun unknownVehiclePendingWithSuggest(
+        e: FuelEntry,
+        allLive: List<FuelEntry>,
+    ): BatchPendingItem {
+        val base = FuelEconomyOutliers.unknownVehiclePending(e)
+        val suggest = suggestVehicleForUnassigned(e, allLive) ?: return base
+        return base.copy(
+            suggestedVehicleId = suggest.first,
+            message = base.message + " · suggest vehicle=${suggest.first} (${suggest.second})",
+            extra = base.extra + mapOf(
+                "suggestedVehicleId" to suggest.first.toString(),
+                "suggestReason" to suggest.second,
+            ),
+        )
+    }
+
+    /**
+     * Unique tank fit → time-nearest known-vehicle fill. Null if ambiguous.
+     */
+    private fun suggestVehicleForUnassigned(
+        pump: FuelEntry,
+        allLive: List<FuelEntry>,
+    ): Pair<Int, String>? {
+        val known = allLive.filter { it.vehicleId > 0 && !it.deleted }
+        if (known.isEmpty()) return null
+        val maxFillByVehicle = known
+            .filter { it.gallons > 0 }
+            .groupBy { it.vehicleId }
+            .mapValues { (_, rows) -> rows.maxOf { it.gallons } }
+        val vol = pump.gallons
+        if (vol > 0) {
+            val tankOk = FuelRowMergeEngine.tankEligibleVehicles(
+                pumpVol = vol,
+                activeVehicleIds = known.map { it.vehicleId }.toSet(),
+                maxFillByVehicle = maxFillByVehicle,
+            )
+            if (tankOk.size == 1) {
+                return tankOk.first() to "tank fit"
+            }
+            if (tankOk.isNotEmpty()) {
+                val nearest = known
+                    .filter { it.vehicleId in tankOk && it.odometer > 0 }
+                    .minByOrNull { kotlin.math.abs(it.timestamp - pump.timestamp) }
+                if (nearest != null) {
+                    val competitors = known.filter {
+                        it.vehicleId != nearest.vehicleId &&
+                            it.vehicleId in tankOk &&
+                            kotlin.math.abs(it.timestamp - pump.timestamp) <
+                            kotlin.math.abs(nearest.timestamp - pump.timestamp) + 60_000
+                    }
+                    if (competitors.isEmpty()) {
+                        return nearest.vehicleId to "tank + nearest in time"
+                    }
+                }
+            }
+        }
+        val nearestAny = known
+            .filter { it.odometer > 0 || it.cost > 0 }
+            .minByOrNull { kotlin.math.abs(it.timestamp - pump.timestamp) }
+            ?: return null
+        val window = FuelRowMergeEngine.MERGE_WINDOW_MS * 2
+        val nearSame = known.filter {
+            kotlin.math.abs(it.timestamp - pump.timestamp) <= window &&
+                it.vehicleId != nearestAny.vehicleId
+        }
+        if (nearSame.isEmpty() &&
+            kotlin.math.abs(nearestAny.timestamp - pump.timestamp) <= window
+        ) {
+            return nearestAny.vehicleId to "nearest fill in time"
+        }
+        return null
+    }
+
+    /**
+     * After fuel sync: reset phase 1 + skip ledger when fuel changed; rebuild phase 1 only.
      */
     suspend fun postSyncRescanResetPhase(
         fuelRowsChanged: Boolean,
         onProgress: (String) -> Unit = {},
     ): MergeApplyResult {
-        val result = applyMerge(onProgress)
-        if (fuelRowsChanged || result.updated > 0 || result.deleted > 0) {
+        if (fuelRowsChanged) {
             StageCPhaseStore.resetToPhase1(appContext)
             onProgress("Sync updated fuel — review questions restarted (phase 1)")
-            Log.i(TAG, "postSync: reset Stage C to phase 1 (remote=$fuelRowsChanged mergeΔ=${result.updated}/${result.deleted})")
+            Log.i(TAG, "postSync: reset Stage C to phase 1 (remote=$fuelRowsChanged)")
+        }
+        val result = applyMerge(onProgress)
+        if (!fuelRowsChanged && (result.updated > 0 || result.deleted > 0)) {
+            StageCPhaseStore.resetToPhase1(appContext)
+            onProgress("Sync field-merge changed rows — phase 1")
+            return applyMerge(onProgress)
         }
         return result
     }
@@ -452,8 +606,15 @@ class BatchFuelImportCoordinator @Inject constructor(
         vehicles: List<Vehicle>,
         action: PendingAnswerAction,
     ): PendingAnswerResult = withContext(Dispatchers.Default) {
-        when (action) {
+        val phase = StageCPhaseStore.currentPhase(appContext)
+        val entryBefore = item.fuelEntryId?.let { id ->
+            fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
+        } ?: item.extra["suspectId"]?.toLongOrNull()?.let { id ->
+            fuelEntryRepository.getAllIncludingDeleted().find { it.id == id && !it.deleted }
+        }
+        val result = when (action) {
             is PendingAnswerAction.Skip -> {
+                StageCSkipLedger.add(appContext, phase, item)
                 BatchImportPendingStore.remove(appContext, item.id)
                 PendingAnswerResult("Skipped pending item", remerge = false)
             }
@@ -597,6 +758,15 @@ class BatchFuelImportCoordinator @Inject constructor(
                 saveOdoPeers(item, action)
             }
         }
+        StageCAnswerJournal.append(
+            context = appContext,
+            phase = phase,
+            item = item,
+            action = action,
+            result = result,
+            entryBefore = entryBefore,
+        )
+        result
     }
 
     /**

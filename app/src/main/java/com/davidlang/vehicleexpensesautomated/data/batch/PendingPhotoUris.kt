@@ -34,7 +34,30 @@ fun pendingPhotoUris(
         }
         if (!url.trimStart().startsWith("[")) add(url)
     }
-    return dedupePhotoPaths(candidates)
+    val role = StageCPhaseStore.photoRole(item)
+    val filtered = when (role) {
+        StageCPhaseStore.PhotoRole.DASH -> {
+            // Prefer dash-tagged from entry JSON; else paths that look like dash sources
+            val fromEntries = entryPhotoUrls.flatMap { dashPhotoPaths(it) }
+            val dashish = candidates.filter {
+                it.contains("experiment_photos", ignoreCase = true) ||
+                    it.contains("dash", ignoreCase = true) ||
+                    !it.contains("pump", ignoreCase = true)
+            }
+            (fromEntries + dashish + candidates).distinct()
+        }
+        StageCPhaseStore.PhotoRole.PUMP -> {
+            val fromEntries = entryPhotoUrls.flatMap { pumpPhotoPaths(it) }
+            val pumpish = candidates.filter {
+                it.contains("pump_photos", ignoreCase = true) ||
+                    it.contains("pump", ignoreCase = true) ||
+                    !it.contains("experiment_photos", ignoreCase = true)
+            }
+            (fromEntries + pumpish + candidates).distinct()
+        }
+        StageCPhaseStore.PhotoRole.BOTH -> candidates
+    }
+    return dedupePhotoPaths(filtered)
 }
 
 /**
@@ -102,3 +125,17 @@ fun dashPhotoPaths(photoUrl: String?): List<String> {
 
 fun dashPhotoPaths(entry: com.davidlang.vehicleexpensesautomated.data.model.FuelEntry): List<String> =
     dashPhotoPaths(entry.photoUrl)
+
+/** Pump-only photo URIs (tag pump / pump_N). */
+fun pumpPhotoPaths(photoUrl: String?): List<String> {
+    if (photoUrl.isNullOrBlank()) return emptyList()
+    val refs = FuelPhotoJson.parse(photoUrl)
+    if (refs.isEmpty()) return emptyList()
+    val pump = refs.filter {
+        it.tag == "pump" || it.tag.startsWith("pump")
+    }.map { it.uri }.filter { it.isNotBlank() }
+    return dedupePhotoPaths(pump)
+}
+
+fun pumpPhotoPaths(entry: com.davidlang.vehicleexpensesautomated.data.model.FuelEntry): List<String> =
+    pumpPhotoPaths(entry.photoUrl)

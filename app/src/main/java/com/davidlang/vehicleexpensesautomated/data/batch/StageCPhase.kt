@@ -4,10 +4,11 @@ import android.content.Context
 
 /**
  * Stage C phased question queue (1…6).
- * Only the **current** phase is shown in the default Import UI; detectors still
- * rebuild the full pending list so a rescan after phase advance picks up later kinds.
  *
- * @see batch-stage-c-phased-questions-20260728-plan.md
+ * **Generation is phase-scoped:** pending store holds only the current phase’s
+ * kinds after any normal Stage C op (not a full multi-phase backlog).
+ *
+ * @see batch-stage-c-ux-skip-photos-phase-scope-20260728-plan.md
  */
 enum class StageCPhase(val number: Int, val title: String) {
     SIMPLE_ODO(1, "Simple odometer fixes"),
@@ -29,8 +30,7 @@ enum class StageCPhase(val number: Int, val title: String) {
 }
 
 /**
- * Persisted current Stage C phase. Reset to phase 1 after fuel-changing sync
- * so skipped/deferred items are not sticky across pull.
+ * Persisted current Stage C phase. Reset to phase 1 after fuel-changing sync.
  */
 object StageCPhaseStore {
     private const val PREFS = "stage_c_phase"
@@ -54,19 +54,17 @@ object StageCPhaseStore {
 
     fun resetToPhase1(context: Context) {
         setPhase(context, StageCPhase.MIN)
+        StageCSkipLedger.clear(context)
     }
 
-    /** Advance to next phase (capped at 6). Returns new phase number. */
+    /** Advance to next phase (capped at 6). Clears skip ledger for the new phase. */
     fun advance(context: Context): Int {
         val next = (currentPhase(context) + 1).coerceAtMost(StageCPhase.MAX)
         setPhase(context, next)
+        StageCSkipLedger.clear(context)
         return next
     }
 
-    /**
-     * Which phase a pending item belongs to (for UI filter).
-     * ECONOMY_IGNORED → 0 (side panel / not blocking phase advance).
-     */
     fun phaseFor(item: BatchPendingItem): Int {
         return when (item.kind) {
             BatchPendingKind.ODO_SUSPECT -> {
@@ -84,28 +82,14 @@ object StageCPhaseStore {
             BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
             -> StageCPhase.UNREADABLE.number
             BatchPendingKind.MPG_OUTLIER -> StageCPhase.MPG.number
-            BatchPendingKind.ECONOMY_IGNORED -> 0
+            BatchPendingKind.ECONOMY_IGNORED -> StageCPhase.MPG.number
             BatchPendingKind.OTHER -> StageCPhase.MPG.number
         }
     }
 
-    fun filterForPhase(
-        items: List<BatchPendingItem>,
-        phase: Int,
-        showAll: Boolean,
-    ): List<BatchPendingItem> {
-        if (showAll) return items
-        return items.filter { phaseFor(it) == phase || phaseFor(it) == 0 && phase == StageCPhase.MAX }
-            .let { list ->
-                // ECONOMY_IGNORED only as optional side items when no blocking work in phase —
-                // still hide from early phases by default (phase 0).
-                if (phase < StageCPhase.MAX) {
-                    list.filter { phaseFor(it) == phase }
-                } else {
-                    list
-                }
-            }
-    }
+    /** True if [item] belongs to [phase] (for phase-scoped store). */
+    fun belongsToPhase(item: BatchPendingItem, phase: Int): Boolean =
+        phaseFor(item) == phase
 
     fun countForPhase(items: List<BatchPendingItem>, phase: Int): Int =
         items.count { phaseFor(it) == phase }
@@ -114,4 +98,27 @@ object StageCPhaseStore {
         val p = StageCPhase.fromNumber(phase)
         return "Phase ${p.number} of ${StageCPhase.COUNT}: ${p.title}"
     }
+
+    /**
+     * Prefer dash-only photos for odo phases; pump-only for pump/assign phases.
+     */
+    fun photoRole(item: BatchPendingItem): PhotoRole {
+        return when (item.kind) {
+            BatchPendingKind.ODO_SUSPECT,
+            BatchPendingKind.CONFLICT_ODO,
+            -> PhotoRole.DASH
+            BatchPendingKind.BAD_PUMP_RATIO,
+            BatchPendingKind.UNREADABLE_PUMP,
+            BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
+            BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE,
+            BatchPendingKind.ASSIGN_VEHICLE,
+            BatchPendingKind.SKIP_OR_ASSIGN_VEHICLE,
+            -> PhotoRole.PUMP
+            BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE -> PhotoRole.DASH
+            BatchPendingKind.MPG_OUTLIER -> PhotoRole.BOTH
+            else -> PhotoRole.BOTH
+        }
+    }
+
+    enum class PhotoRole { DASH, PUMP, BOTH }
 }

@@ -265,6 +265,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             return SyncResult(false, authRequiredMessage(dest.provider))
         }
         return try {
+            // System Unassigned vehicle (id=0) so Fuel - Unassigned tab exists
+            vehicleRepository.ensureUnassignedVehicle()
             val vehiclesMerged = syncVehiclesTab(dest, backend, hint)
             val expensesMerged = syncExpensesTab(dest, backend, hint)
             val fuel = syncFuelTabs(dest, backend, hint)

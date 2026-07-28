@@ -313,6 +313,16 @@ object FuelRowMergeEngine {
 
         val positiveOdos = sorted.map { it.odometer }.filter { it > 0 }.distinct()
         if (positiveOdos.size > 1) {
+            // Two+ complete independent fills in window → keep both (no CONFLICT card)
+            val completeFulls = sorted.filter {
+                it.odometer > 0 && it.cost > 0 && it.gallons > 0 &&
+                    !it.isPartialFill && !it.economyIgnored
+            }
+            if (completeFulls.size >= 2 &&
+                completeFulls.map { it.odometer }.distinct().size > 1
+            ) {
+                return MergePlan()
+            }
             val photos = allPhotoUris(sorted)
             return MergePlan(
                 newPending = listOf(

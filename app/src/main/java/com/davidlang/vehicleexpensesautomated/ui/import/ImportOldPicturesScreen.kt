@@ -15,11 +15,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -66,6 +69,7 @@ import com.davidlang.vehicleexpensesautomated.data.batch.FuelEconomyOutliers
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelRowMergeEngine
 import com.davidlang.vehicleexpensesautomated.data.batch.MergeApplyResult
 import com.davidlang.vehicleexpensesautomated.data.batch.PendingAnswerAction
+import com.davidlang.vehicleexpensesautomated.data.batch.StageCAnswerJournal
 import com.davidlang.vehicleexpensesautomated.data.batch.StageCPhase
 import com.davidlang.vehicleexpensesautomated.data.batch.StageCPhaseStore
 import com.davidlang.vehicleexpensesautomated.data.batch.dashPhotoPaths
@@ -114,13 +118,11 @@ fun ImportOldPicturesScreen(
     var stagePhase by remember {
         mutableStateOf(StageCPhaseStore.currentPhase(context))
     }
-    var showAllPhases by remember { mutableStateOf(false) }
     var showQuestions by remember {
         mutableStateOf(expandReview && pendingSnapshot.isNotEmpty())
     }
-    val phasePending = remember(pendingSnapshot, stagePhase, showAllPhases) {
-        StageCPhaseStore.filterForPhase(pendingSnapshot, stagePhase, showAllPhases)
-    }
+    // Pending store is phase-scoped (only current phase kinds)
+    val phasePending = pendingSnapshot
 
     val dashDir = remember { BatchFuelImportCoordinator.dashPhotoDir(context) }
     val pumpDir = remember { BatchFuelImportCoordinator.pumpPhotoDir(context) }
@@ -245,10 +247,9 @@ fun ImportOldPicturesScreen(
                 Text("Dash photos: $dashCount")
                 Text("Pump photos: $pumpCount")
                 Text("Vehicles in DB: ${activeVehicles.size}")
-                Text("Pending questions (all phases): ${pendingSnapshot.size}")
                 Text(
                     "${StageCPhaseStore.label(stagePhase)} · " +
-                        "${StageCPhaseStore.countForPhase(pendingSnapshot, stagePhase)} in this phase",
+                        "${pendingSnapshot.size} questions (this phase only)",
                 )
             }
         }
@@ -388,10 +389,9 @@ fun ImportOldPicturesScreen(
             enabled = pendingSnapshot.isNotEmpty() || showQuestions,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            val n = if (showAllPhases) pendingSnapshot.size else phasePending.size
             Text(
-                if (showQuestions) "Hide questions ($n)"
-                else "Review questions ($n in phase $stagePhase)",
+                if (showQuestions) "Hide questions (${phasePending.size})"
+                else "Review questions (${phasePending.size} in phase $stagePhase)",
             )
         }
 
@@ -402,37 +402,49 @@ fun ImportOldPicturesScreen(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                "Only this phase is shown by default. Finish or skip → rescan → next phase. " +
-                    "Successful edits re-run merge. Tap photo to enlarge.",
+                "Phase-scoped queue: only this phase is generated. " +
+                    "Next phase rebuilds from Room after your answers. Skip hides for this phase only. " +
+                    "Tap photo to enlarge.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Checkbox(
-                    checked = showAllPhases,
-                    onCheckedChange = { showAllPhases = it },
-                )
-                Text("Show all phases (debug)", style = MaterialTheme.typography.bodySmall)
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(
+                Button(
                     onClick = {
-                        if (busy) return@OutlinedButton
-                        val next = StageCPhaseStore.advance(context)
-                        stagePhase = next
-                        runMerge(toastPrefix = "Rescan after phase advance")
+                        if (busy || stagePhase >= StageCPhase.MAX) return@Button
+                        merging = true
+                        mergeStatus = "Next phase…"
+                        scope.launch {
+                            try {
+                                val result = coordinator.advancePhaseAndRebuild { msg ->
+                                    mergeStatus = msg
+                                }
+                                lastMerge = result
+                                reloadPending()
+                                val p = StageCPhaseStore.currentPhase(context)
+                                Toast.makeText(
+                                    context,
+                                    "Phase $p: ${result.totalPending} questions",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    "Next phase failed: ${e.message}",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            } finally {
+                                merging = false
+                            }
+                        }
                     },
                     enabled = !busy && stagePhase < StageCPhase.MAX,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Skip rest of phase → ${stagePhase + 1}")
+                    Text("Next phase")
                 }
                 OutlinedButton(
                     onClick = {
@@ -446,18 +458,43 @@ fun ImportOldPicturesScreen(
                     Text("Reset to phase 1")
                 }
             }
-            val visible = phasePending
-            if (visible.isEmpty()) {
-                Text(
-                    if (pendingSnapshot.isEmpty()) "No pending items."
-                    else "No questions in this phase (${pendingSnapshot.size} in other phases). " +
-                        "Advance phase or enable Show all.",
-                )
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        try {
+                            val cache = java.io.File(context.cacheDir, "stage_c_answer_journal.jsonl")
+                            val out = withContext(Dispatchers.IO) {
+                                StageCAnswerJournal.exportCopy(context, cache)
+                            }
+                            val n = StageCAnswerJournal.lineCount(context)
+                            Toast.makeText(
+                                context,
+                                if (out != null) {
+                                    "Journal exported ($n lines) → ${out.absolutePath}"
+                                } else {
+                                    "Journal empty or export failed"
+                                },
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG)
+                                .show()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Export answer journal")
             }
-            visible.forEach { item ->
+            if (phasePending.isEmpty()) {
+                Text("No pending items in this phase. Tap Next phase when ready.")
+            }
+            phasePending.forEach { item ->
                 PendingQuestionCard(
                     item = item,
-                    vehicles = activeVehicles,
+                    vehicles = activeVehicles.filter {
+                        it.id != BatchFuelImportCoordinator.UNASSIGNED_VEHICLE_ID
+                    },
                     enabled = !busy,
                     coordinator = coordinator,
                     onAction = { action -> applyAnswer(item, action) },
@@ -1219,6 +1256,32 @@ private fun PendingQuestionCard(
                 )
             }
 
+            // Phase 4: suggested vehicle button
+            if (item.kind == BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE) {
+                val sugId = item.extra["suggestedVehicleId"]?.toIntOrNull()
+                    ?: item.suggestedVehicleId
+                val reason = item.extra["suggestReason"]
+                val sugName = sugId?.let { id -> vehicles.find { it.id == id }?.name }
+                if (sugId != null && sugId > 0 && sugName != null) {
+                    Button(
+                        onClick = {
+                            onAction(PendingAnswerAction.AssignUnknownVehicle(sugId))
+                        },
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Assign to $sugName (suggested)")
+                    }
+                    if (!reason.isNullOrBlank()) {
+                        Text(
+                            reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
             // Dash vehicle reprocess (OCR)
             if (item.kind == BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE && vehicles.isNotEmpty()) {
                 Text("Or reprocess OCR with vehicle:", style = MaterialTheme.typography.labelMedium)
@@ -1772,89 +1835,88 @@ private fun FullscreenPhotoDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
-                .padding(8.dp),
+                .background(Color.Black),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp),
             ) {
                 Text(
                     item.kind.name + " · " + path.substringAfterLast('/'),
                     color = Color.White,
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = 80.dp),
                 )
-                TextButton(onClick = onDismiss) {
-                    Text("Close", color = Color.White)
-                }
-            }
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 10f)
-                            offset += pan
-                        }
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap!!.asImageBitmap(),
-                        contentDescription = "Full photo",
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clip(RectangleShape)
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 10f)
+                                offset += pan
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap!!.asImageBitmap(),
+                            contentDescription = "Full photo",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer(
+                                    scaleX = scale,
+                                    scaleY = scale,
+                                    translationX = offset.x,
+                                    translationY = offset.y,
+                                ),
+                            contentScale = ContentScale.Fit,
+                        )
+                    } else {
+                        Text("Photo unavailable", color = Color.White)
+                    }
+                    Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = offset.x,
-                                translationY = offset.y,
-                            ),
-                        contentScale = ContentScale.Fit,
-                    )
-                } else {
-                    Text("Photo unavailable", color = Color.White)
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        SmallFloatingActionButton(
+                            onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) },
+                            containerColor = Color.White.copy(alpha = 0.75f),
+                        ) { Text("+") }
+                        SmallFloatingActionButton(
+                            onClick = {
+                                scale = (scale / 1.2f).coerceIn(1f, 10f)
+                                if (scale == 1f) offset = Offset.Zero
+                            },
+                            containerColor = Color.White.copy(alpha = 0.75f),
+                        ) { Text("−") }
+                    }
                 }
+
+                // Sticky actions under image (clipped image area above)
                 Column(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(8.dp),
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp)
+                        .background(Color(0xEE222222))
+                        .padding(8.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    SmallFloatingActionButton(
-                        onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) },
-                        containerColor = Color.White.copy(alpha = 0.75f),
-                    ) { Text("+") }
-                    SmallFloatingActionButton(
-                        onClick = {
-                            scale = (scale / 1.2f).coerceIn(1f, 10f)
-                            if (scale == 1f) offset = Offset.Zero
-                        },
-                        containerColor = Color.White.copy(alpha = 0.75f),
-                    ) { Text("−") }
-                }
-            }
-
-            // Sticky actions under image
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xEE222222))
-                    .padding(8.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(item.message, color = Color.White, style = MaterialTheme.typography.bodySmall)
+                    Text(item.message, color = Color.White, style = MaterialTheme.typography.bodySmall)
                 when (item.kind) {
                     BatchPendingKind.UNREADABLE_PUMP -> {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2042,14 +2104,24 @@ private fun FullscreenPhotoDialog(
                     }
                     else -> {}
                 }
-                OutlinedButton(
-                    onClick = {
-                        onAction(PendingAnswerAction.Skip)
-                        onDismiss()
-                    },
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Skip") }
+                    OutlinedButton(
+                        onClick = {
+                            onAction(PendingAnswerAction.Skip)
+                            onDismiss()
+                        },
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Skip") }
+                }
+            }
+            // Close always on top (not under zoomed image)
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp),
+            ) {
+                Text("Close", color = Color.White)
             }
         }
     }

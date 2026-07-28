@@ -209,6 +209,7 @@ class MainActivity : ComponentActivity() {
                         try {
                             withContext(Dispatchers.IO) {
                                 syncIdBackfill.runIfNeeded()
+                                vehicleRepository.ensureUnassignedVehicle()
                                 syncManager.scheduleFromDestination()
                                 photoBackupManager.scheduleFromDestination()
                             }
