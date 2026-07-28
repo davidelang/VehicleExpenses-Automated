@@ -1196,3 +1196,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - No device test until human deploy
 - Notes: research/batch-stage-c-ux-skip-photos-phase-scope-20260728/smoke-notes.txt
 
+
+## 2026-07-28 - PR-batch_load prepared for Master review
+
+- History cleaned: 57 commits → 5 logical; backup-batch_load @ ff33f355; cleaned HEAD @ 11a2c1ca
+- PR: dev-ai-interaction/PRs/PR-batch_load.md (pre-submit review + plans)
+- Not rebased onto master (simplify_experiments); Master merge expects eng-log special handling + possible ExperimentAlignmentScreen conflict
+- Tree matches pre-cleanup tip; build_app SUCCESS after cleanup
+
