@@ -1154,3 +1154,14 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - No device test until human deploy
 - Notes: research/batch-sync-cross-device-partials-and-titlebar-20260727/smoke-notes.txt
 
+
+## 2026-07-27 - batch-mpg-gap-button-and-window-fills done (code)
+
+- MPG card: vertical Save / Missing data between last & this / Ignore (no clip)
+- markAsGap MPG: insert mid-leg blank; anchors preserved; dismiss if breaker exists
+- FuelEconomyChains + breaker-aware detectOutliers; windowSummary inventory
+- Post-sync applyMerge after fuel LWW; SYNC_BEHAVIOR + REPORTS_METRICS
+- Tag: batch_load/builds @ a50da18f
+- No device test until human deploy
+- Notes: research/batch-mpg-gap-button-and-window-fills-20260727/smoke-notes.txt
+
