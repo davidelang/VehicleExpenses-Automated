@@ -1302,3 +1302,14 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Not rebased onto master (simplify_experiments); Master merge expects eng-log special handling + possible ExperimentAlignmentScreen conflict
 - Tree matches pre-cleanup tip; build_app SUCCESS after cleanup
 
+
+## 2026-07-28 - Master merge PR-batch_load
+
+- Independent review PASS; non-FF merge with simplify_experiments overlap
+- merge-branch-into-master failed on +a eng-log (double/triple append side effect); completed via merge-tree + manual resolve
+- ExperimentAlignmentScreen: keep Set-J-only simplify + internal helpers for AlignmentSetJRunner (dropped batch dead createScaledBase64/drawCropBoxes conflict side)
+- project-facts: batch orientation + Room v14 from branch; TODO unchanged
+- Commit 1bfab017; build SUCCESS after java_res permission retry; builds tag updated
+- Worktree ENGINEERING_LOG.md may still have triple-appended tail (+a); committed blob is single third-version + this note — fix with sudo chattr -a when available
+- No works tag. Cleanup: ./remove_worktree.sh batch_load when ready
+
