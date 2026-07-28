@@ -918,3 +918,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Updated obsolete docs with orphan rows
 - Updated docs/PUMP_EXPERIMENT_FLOWS.md for G-- + I only
 - Isolation: only experiment screens + docs/obsolete + eng-log (+ PUMP_EXPERIMENT_FLOWS); OcrHarness/fuel/data untouched
+
+## 2026-07-28 - alignment-json-device-field execution start
+
+- Approved plan: dev-ai-interaction/plans/alignment-json-device-field-match-pump-20260728-plan.md
+- Branch=simplify_experiments baseline tag simplify_experiments/builds @ 1b12ec33
+- Scope: ExperimentAlignmentScreen.kt only — add root device=Build.MODEL to match pump JSON
+
+## 2026-07-28 - Phase 1 Build.import
+
+- ExperimentAlignmentScreen: import android.os.Build

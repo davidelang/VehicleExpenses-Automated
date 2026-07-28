@@ -14,6 +14,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Rect
 import android.net.Uri
+import android.os.Build
 import android.util.Base64
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
