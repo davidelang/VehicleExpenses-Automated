@@ -911,3 +911,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - deleted binPeak stack, longLived/histPlot, ML discovery buffers, B/D retract helpers
 - deleted already-dead combinePhotoFragments/generateCdf/applyRecognitionHeuristics/drawHunks/pumpCreateScaledBase64
 - kept makeGProc, procGMinusMinus, procI, hybrid helpers, doBOrDRedOnlyImage
+
+## 2026-07-27 - Phases 14-16 final
+
+- Orphan sweep: removed already-dead pGetFullLandmarksFromJson, pToEvenInt, toEvenInt; restored prepareScale + getHistStats after expression-body delete mishap
+- Updated obsolete docs with orphan rows
+- Updated docs/PUMP_EXPERIMENT_FLOWS.md for G-- + I only
+- Isolation: only experiment screens + docs/obsolete + eng-log (+ PUMP_EXPERIMENT_FLOWS); OcrHarness/fuel/data untouched

@@ -1696,20 +1696,6 @@ private fun pBuildHtmlRowDynamic(
     }
     appendLine("</table></td></tr>")
 }
-private fun pGetFullLandmarksFromJson(json: String?, engineName: String, imgW: Int, imgH: Int): List<TextBlock> {
-    if (json.isNullOrEmpty()) return emptyList(); val list = mutableListOf<TextBlock>()
-    try {
-        val root = JSONObject(json); val array = if (root.has(engineName)) root.getJSONArray(engineName) else if (json.startsWith("[")) JSONArray(json) else return emptyList()
-        for (i in 0 until array.length()) {
-            val obj = array.getJSONObject(i); val text = obj.getString("text"); val cx = obj.optDouble("cx", 0.0); val cy = obj.optDouble("cy", 0.0); val w = obj.optDouble("w", 0.0); val h = obj.optDouble("h", 0.0)
-            val centerPix = IcrsMath.icrsToPixel(cx.toFloat(), cy.toFloat(), imgW, imgH)
-            val sE = minOf(imgW, imgH).toDouble(); val pW = (w * sE); val pH = (h * sE)
-            val inst = if (obj.has("instance")) obj.getInt("instance") else -1; val cT = OdometerOcrUtils.cleanLandmarkString(text)
-            list.add(TextBlock(cT, android.graphics.Rect((centerPix.x - pW/2.0).toInt(), (centerPix.y - pH/2.0).toInt(), (centerPix.x + pW/2.0).toInt(), (centerPix.y + pH/2.0).toInt()), instanceId = inst))
-        }
-    } catch (e: Exception) { Log.e("ExperimentPump", "Failed to parse landmarks", e) }
-    return list
-}
 
 private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
     try {
@@ -1724,7 +1710,6 @@ private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Cont
     } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
 }
 
-private fun pToEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
 
 private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int> {
     val srcW = buffer.p.width
@@ -1748,7 +1733,6 @@ private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int>
 
     return Pair(outerId, innerId)
 }
-
 
 private suspend fun runDiscoveryPaddle(
     buffer: BufferSet,

@@ -110,6 +110,8 @@ Source file unless noted: `app/src/main/java/com/davidlang/vehicleexpensesautoma
 | `applyRecognitionHeuristics` | private fun | ~3744 | Text cleanup heuristics on hunk OCR strings | None | Already dead | `fun applyRecognitionHeuristics` |
 | `drawHunksOnBitmap` | private fun | ~3750 | Draw hunk rects on bitmap | None | Already dead | `fun drawHunksOnBitmap` |
 | `pumpCreateScaledBase64` | private fun | ~3760 | Scale bitmap → base64 JPEG | None | Already dead | `fun pumpCreateScaledBase64` |
+| `pGetFullLandmarksFromJson` | private fun | ~3332 | Parse landmark JSON into `TextBlock` list | None (orphan) | Already dead (orphan sweep) | `fun pGetFullLandmarksFromJson` at tag |
+| `pToEvenInt` | private fun | ~3360 | Round float to even int | None (orphan) | Already dead (orphan sweep) | `fun pToEvenInt` at tag |
 
 ### Processors (retired / inactive)
 

@@ -78,6 +78,7 @@ Every symbol below was experiment-local in `ExperimentAlignmentScreen.kt` (unles
 |--------|------|------------------|-------------|---------|-------------|----------|
 | `createScaledBase64` | private fun | ~1799 | Scale bitmap → base64 JPEG into optional target buffer | None (orphan) | Already dead | `git show <tag>:…ExperimentAlignmentScreen.kt` → `fun createScaledBase64` |
 | `drawCropBoxesOnReference` | private fun | ~1808 | Draw vehicle crop boxes on a reference bitmap | None (orphan) | Already dead | search `fun drawCropBoxesOnReference` at tag |
+| `toEvenInt` | private fun | ~1844 | Round float to even int | None (orphan) | Already dead (orphan sweep) | `fun toEvenInt` at tag |
 
 ### Becomes dead with Set A/E report removal
 

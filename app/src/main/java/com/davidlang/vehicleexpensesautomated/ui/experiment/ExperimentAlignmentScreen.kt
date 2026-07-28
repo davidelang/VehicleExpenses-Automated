@@ -1789,9 +1789,6 @@ private suspend fun extractZipToPhotos(uri: Uri, targetDir: File, context: Conte
     } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
 }
 
-private fun toEvenInt(v: Float): Int = ((v + 1).toInt() / 2) * 2
-
-
 private fun getHistStats(mat: org.opencv.core.Mat): OdometerOcrUtils.HistStats {
     // Brightness path: OpenCV calcHist (64-bin FloatArray). Run-length stroke-width hist uses
     // NativeImageUtils.longLivedRunHistH/V (8192 bins). longLivedBrightness reserved for future native uint8 brightness.
