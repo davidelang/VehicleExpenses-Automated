@@ -25,10 +25,15 @@ enum class BatchPendingKind {
     /** MPG outlier leg endpoint (3× vs median baseline). */
     MPG_OUTLIER,
     /**
-     * Odometer reverse or unreasonable gap demotion.
-     * extra.reason = reverse|gap; pre-fill from extra.parsedOdo/cost/vol.
+     * Odometer reverse / digit jump / gap (detect only).
+     * extra.mode = simple|complex; simple has suggestedOdo for short UI.
      */
     ODO_SUSPECT,
+    /**
+     * Pump cost/vol ratio absurd (phase 3): e.g. $/G outside [2,7].
+     * Edit cost/vol or mark unreadable → gap.
+     */
+    BAD_PUMP_RATIO,
     OTHER,
 }
 

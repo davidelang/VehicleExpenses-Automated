@@ -294,7 +294,10 @@ class BatchFuelImportCoordinator @Inject constructor(
         for (p in san.newPending) appendPending(p)
 
         val afterLive = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-        onProgress("Scanning unknown vehicles / economy…")
+        onProgress("Scanning pump ratio / unknown vehicles / economy…")
+        for (p in FuelEconomyOutliers.detectBadPumpRatios(afterLive)) {
+            appendPending(p)
+        }
         for (e in afterLive.filter { it.vehicleId == UNASSIGNED_VEHICLE_ID }) {
             appendPending(FuelEconomyOutliers.unknownVehiclePending(e))
         }
@@ -307,9 +310,19 @@ class BatchFuelImportCoordinator @Inject constructor(
 
         BatchImportPendingStore.save(appContext, rebuilt)
 
+        val phase = StageCPhaseStore.currentPhase(appContext)
+        val phaseCount = StageCPhaseStore.countForPhase(rebuilt, phase)
+        val simpleOdo = rebuilt.count {
+            it.kind == BatchPendingKind.ODO_SUSPECT && it.extra["mode"] == "simple"
+        }
+        val complexOdo = rebuilt.count {
+            it.kind == BatchPendingKind.ODO_SUSPECT && it.extra["mode"] != "simple"
+        }
         val msg =
             "updated=${plan.updates.size} deleted=${plan.hardDeletes.size} " +
-                "pending=$added (rebuild, odoSuspects=${san.newPending.size})"
+                "pending=$added (phase $phase: $phaseCount shown · " +
+                "simpleOdo=$simpleOdo complexOdo=$complexOdo mpg=" +
+                "${rebuilt.count { it.kind == BatchPendingKind.MPG_OUTLIER }})"
         Log.i(TAG, "applyMerge $msg")
         onProgress("Done: $msg")
         MergeApplyResult(
@@ -319,6 +332,23 @@ class BatchFuelImportCoordinator @Inject constructor(
             totalPending = rebuilt.size,
             message = msg,
         )
+    }
+
+    /**
+     * After fuel sync: rebuild pending; if remote fuel changed or field-merge
+     * absorbed rows, reset Stage C to phase 1 (skipped items not sticky).
+     */
+    suspend fun postSyncRescanResetPhase(
+        fuelRowsChanged: Boolean,
+        onProgress: (String) -> Unit = {},
+    ): MergeApplyResult {
+        val result = applyMerge(onProgress)
+        if (fuelRowsChanged || result.updated > 0 || result.deleted > 0) {
+            StageCPhaseStore.resetToPhase1(appContext)
+            onProgress("Sync updated fuel — review questions restarted (phase 1)")
+            Log.i(TAG, "postSync: reset Stage C to phase 1 (remote=$fuelRowsChanged mergeΔ=${result.updated}/${result.deleted})")
+        }
+        return result
     }
 
     /**
@@ -402,12 +432,14 @@ class BatchFuelImportCoordinator @Inject constructor(
 
     /**
      * Clear all pending and re-run [applyMerge] (human purge / rebuild button).
+     * Restarts Stage C at phase 1.
      */
     suspend fun clearPendingAndRescan(
         onProgress: (String) -> Unit = {},
     ): MergeApplyResult {
         BatchImportPendingStore.clear(appContext)
-        onProgress("Pending cleared; running merge + re-scan…")
+        StageCPhaseStore.resetToPhase1(appContext)
+        onProgress("Pending cleared; phase 1; running merge + re-scan…")
         return applyMerge(onProgress)
     }
 

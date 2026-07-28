@@ -193,4 +193,41 @@ object FuelEconomyOutliers {
             ),
         )
     }
+
+    /** $/preferred-volume band for “normal” pump economics (USD/gal-like). */
+    const val PUMP_RATIO_MIN: Double = 2.0
+    const val PUMP_RATIO_MAX: Double = 7.0
+
+    /**
+     * Phase 3: cost+vol present, ratio absurd (not blank breakers, not odo-only).
+     */
+    fun detectBadPumpRatios(entries: List<FuelEntry>): List<BatchPendingItem> {
+        val out = mutableListOf<BatchPendingItem>()
+        for (e in entries.filter { !it.deleted }) {
+            if (e.economyIgnored) continue
+            if (e.cost <= 0 || e.gallons <= 0) continue
+            // Blank-style already handled elsewhere
+            val ratio = e.cost / e.gallons
+            if (ratio in PUMP_RATIO_MIN..PUMP_RATIO_MAX) continue
+            val photos = photoPathsForEntry(e)
+            out += BatchPendingItem(
+                kind = BatchPendingKind.BAD_PUMP_RATIO,
+                message = "Bad pump ratio \$${"%.2f".format(ratio)}/vol " +
+                    "(cost=${e.cost} vol=${e.gallons}) id=${e.id} vehicle=${e.vehicleId}",
+                photoPath = photos.firstOrNull(),
+                durablePhotoPath = photos.firstOrNull(),
+                timestampMs = e.timestamp,
+                fuelEntryId = e.id,
+                suggestedVehicleId = e.vehicleId.takeIf { it > 0 },
+                extra = mapOf(
+                    "photoPaths" to photos.joinToString("|"),
+                    "parsedCost" to e.cost.toString(),
+                    "parsedVol" to e.gallons.toString(),
+                    "parsedOdo" to e.odometer.toString(),
+                    "ratio" to ratio.toString(),
+                ),
+            )
+        }
+        return out
+    }
 }

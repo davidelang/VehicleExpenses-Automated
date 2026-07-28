@@ -66,6 +66,8 @@ import com.davidlang.vehicleexpensesautomated.data.batch.FuelEconomyOutliers
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelRowMergeEngine
 import com.davidlang.vehicleexpensesautomated.data.batch.MergeApplyResult
 import com.davidlang.vehicleexpensesautomated.data.batch.PendingAnswerAction
+import com.davidlang.vehicleexpensesautomated.data.batch.StageCPhase
+import com.davidlang.vehicleexpensesautomated.data.batch.StageCPhaseStore
 import com.davidlang.vehicleexpensesautomated.data.batch.dashPhotoPaths
 import com.davidlang.vehicleexpensesautomated.data.batch.dedupePhotoPaths
 import com.davidlang.vehicleexpensesautomated.data.batch.pendingPhotoUris
@@ -109,8 +111,15 @@ fun ImportOldPicturesScreen(
     var pendingSnapshot by remember {
         mutableStateOf(BatchImportPendingStore.load(context).toList())
     }
+    var stagePhase by remember {
+        mutableStateOf(StageCPhaseStore.currentPhase(context))
+    }
+    var showAllPhases by remember { mutableStateOf(false) }
     var showQuestions by remember {
         mutableStateOf(expandReview && pendingSnapshot.isNotEmpty())
+    }
+    val phasePending = remember(pendingSnapshot, stagePhase, showAllPhases) {
+        StageCPhaseStore.filterForPhase(pendingSnapshot, stagePhase, showAllPhases)
     }
 
     val dashDir = remember { BatchFuelImportCoordinator.dashPhotoDir(context) }
@@ -130,6 +139,7 @@ fun ImportOldPicturesScreen(
 
     fun reloadPending() {
         pendingSnapshot = BatchImportPendingStore.load(context).toList()
+        stagePhase = StageCPhaseStore.currentPhase(context)
     }
 
     fun runMerge(toastPrefix: String = "Merge") {
@@ -235,7 +245,11 @@ fun ImportOldPicturesScreen(
                 Text("Dash photos: $dashCount")
                 Text("Pump photos: $pumpCount")
                 Text("Vehicles in DB: ${activeVehicles.size}")
-                Text("Pending questions: ${pendingSnapshot.size}")
+                Text("Pending questions (all phases): ${pendingSnapshot.size}")
+                Text(
+                    "${StageCPhaseStore.label(stagePhase)} · " +
+                        "${StageCPhaseStore.countForPhase(pendingSnapshot, stagePhase)} in this phase",
+                )
             }
         }
 
@@ -374,21 +388,73 @@ fun ImportOldPicturesScreen(
             enabled = pendingSnapshot.isNotEmpty() || showQuestions,
             modifier = Modifier.fillMaxWidth(),
         ) {
+            val n = if (showAllPhases) pendingSnapshot.size else phasePending.size
             Text(
-                if (showQuestions) "Hide questions (${pendingSnapshot.size})"
-                else "Review questions (${pendingSnapshot.size})",
+                if (showQuestions) "Hide questions ($n)"
+                else "Review questions ($n in phase $stagePhase)",
             )
         }
 
         if (showQuestions) {
             Text(
-                "Photos first (deduped). Manual fields when OCR failed. " +
+                StageCPhaseStore.label(stagePhase),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                "Only this phase is shown by default. Finish or skip → rescan → next phase. " +
                     "Successful edits re-run merge. Tap photo to enlarge.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (pendingSnapshot.isEmpty()) Text("No pending items.")
-            pendingSnapshot.forEach { item ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = showAllPhases,
+                    onCheckedChange = { showAllPhases = it },
+                )
+                Text("Show all phases (debug)", style = MaterialTheme.typography.bodySmall)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        if (busy) return@OutlinedButton
+                        val next = StageCPhaseStore.advance(context)
+                        stagePhase = next
+                        runMerge(toastPrefix = "Rescan after phase advance")
+                    },
+                    enabled = !busy && stagePhase < StageCPhase.MAX,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Skip rest of phase → ${stagePhase + 1}")
+                }
+                OutlinedButton(
+                    onClick = {
+                        StageCPhaseStore.resetToPhase1(context)
+                        stagePhase = 1
+                        runMerge(toastPrefix = "Rescan phase 1")
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Reset to phase 1")
+                }
+            }
+            val visible = phasePending
+            if (visible.isEmpty()) {
+                Text(
+                    if (pendingSnapshot.isEmpty()) "No pending items."
+                    else "No questions in this phase (${pendingSnapshot.size} in other phases). " +
+                        "Advance phase or enable Show all.",
+                )
+            }
+            visible.forEach { item ->
                 PendingQuestionCard(
                     item = item,
                     vehicles = activeVehicles,
@@ -767,8 +833,55 @@ private fun PendingQuestionCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            } else if (item.kind == BatchPendingKind.ODO_SUSPECT &&
+                item.extra["mode"] == "simple"
+            ) {
+                // Phase 1 short UI: one dash image + pre-filled guess
+                val guess = item.extra["suggestedOdo"] ?: item.extra["parsedOdo"].orEmpty()
+                var simpleOdo by remember(item.id) { mutableStateOf(guess) }
+                Text(
+                    "Suggested fix (length OCR). Edit if wrong, then Save.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                PendingPhotoRow(
+                    paths = photoPaths.ifEmpty {
+                        listOfNotNull(item.photoPath ?: item.durablePhotoPath)
+                    },
+                    conflict = false,
+                    onTap = { zoomPath = it },
+                )
+                OutlinedTextField(
+                    value = simpleOdo,
+                    onValueChange = { simpleOdo = it },
+                    label = { Text("Odometer") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = enabled,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+                Button(
+                    onClick = {
+                        val o = simpleOdo.toIntOrNull()
+                        if (o != null && o > 0) {
+                            onAction(
+                                PendingAnswerAction.ManualEditFuelFields(
+                                    odometer = o,
+                                    cost = null,
+                                    volume = null,
+                                    entryId = item.fuelEntryId
+                                        ?: item.extra["suspectId"]?.toLongOrNull(),
+                                ),
+                            )
+                        }
+                    },
+                    enabled = enabled && (simpleOdo.toIntOrNull() ?: 0) > 0,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Save odometer")
+                }
             } else if (item.kind == BatchPendingKind.ODO_SUSPECT) {
-                // Per-fill dash-only blocks: previous → cur → next (by time)
+                // Phase 2: per-fill dash-only blocks previous → cur → next
                 val reason = item.extra["reason"] ?: "odo"
                 val prevTs = item.extra["prevTs"]?.toLongOrNull()
                 val curTs = item.extra["curTs"]?.toLongOrNull()
@@ -1116,6 +1229,81 @@ private fun PendingQuestionCard(
                     onSelect = { onAction(PendingAnswerAction.AssignVehicle(it)) },
                     pumpVol = null,
                     maxFillByVehicle = emptyMap(),
+                )
+            }
+
+            // Phase 5: unreadable / ambiguous → may declare gap before MPG phase
+            if (item.kind == BatchPendingKind.UNREADABLE_PUMP ||
+                item.kind == BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE ||
+                item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        onAction(PendingAnswerAction.MarkAsGap(entryId = item.fuelEntryId))
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("This is a gap (blank breaker)")
+                }
+            }
+
+            // Bad pump ratio (phase 3): cost/vol edit or unreadable → gap
+            if (item.kind == BatchPendingKind.BAD_PUMP_RATIO) {
+                Text(
+                    "Cost/volume look wrong (\$/vol outside 2–7). Fix numbers or mark as gap.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(
+                        value = costText,
+                        onValueChange = { costText = it },
+                        label = { Text("Cost") },
+                        modifier = Modifier.weight(1f),
+                        enabled = enabled,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    )
+                    OutlinedTextField(
+                        value = volText,
+                        onValueChange = { volText = it },
+                        label = { Text("Vol") },
+                        modifier = Modifier.weight(1f),
+                        enabled = enabled,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    )
+                }
+                Button(
+                    onClick = {
+                        onAction(
+                            PendingAnswerAction.ManualEditFuelFields(
+                                odometer = null,
+                                cost = costText.toDoubleOrNull(),
+                                volume = volText.toDoubleOrNull(),
+                                entryId = item.fuelEntryId,
+                            ),
+                        )
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Save cost / vol")
+                }
+                OutlinedButton(
+                    onClick = {
+                        onAction(PendingAnswerAction.MarkAsGap(entryId = item.fuelEntryId))
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Unreadable — make a gap")
+                }
+                Text(
+                    "Blank chain-breaker at this fill (keeps timestamp/vehicle).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
@@ -1783,22 +1971,30 @@ private fun FullscreenPhotoDialog(
                     }
                     BatchPendingKind.MPG_OUTLIER,
                     BatchPendingKind.ODO_SUSPECT,
+                    BatchPendingKind.BAD_PUMP_RATIO,
+                    BatchPendingKind.UNREADABLE_PUMP,
+                    BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
+                    BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
                     -> {
-                        OutlinedButton(
-                            onClick = {
-                                onAction(
-                                    PendingAnswerAction.SetPartialFill(
-                                        partial = true,
-                                        entryId = item.fuelEntryId
-                                            ?: item.extra["suspectId"]?.toLongOrNull()
-                                            ?: item.extra["endEntryId"]?.toLongOrNull(),
-                                    ),
-                                )
-                                onDismiss()
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Treat as partial (if complete)") }
+                        if (item.kind == BatchPendingKind.MPG_OUTLIER ||
+                            item.kind == BatchPendingKind.ODO_SUSPECT
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    onAction(
+                                        PendingAnswerAction.SetPartialFill(
+                                            partial = true,
+                                            entryId = item.fuelEntryId
+                                                ?: item.extra["suspectId"]?.toLongOrNull()
+                                                ?: item.extra["endEntryId"]?.toLongOrNull(),
+                                        ),
+                                    )
+                                    onDismiss()
+                                },
+                                enabled = enabled,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Treat as partial (if complete)") }
+                        }
                         OutlinedButton(
                             onClick = {
                                 onAction(
@@ -1814,10 +2010,12 @@ private fun FullscreenPhotoDialog(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(
-                                if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-                                    "Missing data between last & this"
-                                } else {
-                                    "Mark as gap"
+                                when (item.kind) {
+                                    BatchPendingKind.MPG_OUTLIER ->
+                                        "Missing data between last & this"
+                                    BatchPendingKind.BAD_PUMP_RATIO ->
+                                        "Unreadable — make a gap"
+                                    else -> "This is a gap"
                                 },
                             )
                         }
