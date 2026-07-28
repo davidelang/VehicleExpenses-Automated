@@ -934,3 +934,15 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Inserted root device=Build.MODEL after version before total_photos (match pump)
 - Forensic: key device, source Build.MODEL, field order parity with ExperimentPumpScreen jsonHeader
 - Only ExperimentAlignmentScreen.kt product code touched
+
+## 2026-07-28 - fix-alignment-report-empty-vehicles execution start
+
+- Approved plan: dev-ai-interaction/plans/fix-alignment-report-empty-vehicles-deep-analysis-20260728-plan.md
+- Branch=simplify_experiments baseline simplify_experiments/builds @ c3e8d07c
+- Scope: fail-fast empty cachedRefs, root meta, deep_analysis empty-metrics message
+
+## 2026-07-28 - Phases 1-3 fail-fast + root meta
+
+- Guard: cachedRefs empty → onLog error + return before buffers/JSON/photo loop
+- JSON header only after usable-ref guard
+- Root fields: usable_vehicle_refs, vehicles_in_db (keep device/version/timestamp/total_photos)

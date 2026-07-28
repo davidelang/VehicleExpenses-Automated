@@ -279,6 +279,18 @@ private suspend fun runExperiment(
     }
     logHeapState(context, "after-cachedRefs-landmarks-only")
 
+    // Fail-fast: empty cachedRefs → empty JSON vehicles[] / no refinement → deep_analysis blank table.
+    // Prefer abort before photo loop and before writing alignment_results_*.json.
+    if (cachedRefs.isEmpty()) {
+        val missingRefUrl = vehicles.count { it.referenceDashPhotoUrl.isNullOrBlank() }
+        val msg = "Error: No usable vehicle dash references " +
+            "(${vehicles.size} vehicles in DB, 0 usable refs; $missingRefUrl missing referenceDashPhotoUrl). " +
+            "Restore vehicle refs (e.g. deploy --restore-data / --install-data) before running alignment experiment."
+        Log.e(TAG, msg)
+        onLog(msg)
+        return@withContext
+    }
+
     val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
     withContext(Dispatchers.Main) {
         cachedRefs.forEach { ref ->
@@ -313,9 +325,14 @@ private suspend fun runExperiment(
         }
     }
 
+    // JSON header only after usable-ref guard (Phases 1–2)
     val jsonFile = File(reportDir, "alignment_results_$timestamp.json")
     val deviceModel = Build.MODEL
-    jsonFile.writeText("{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"device\": \"$deviceModel\",\n  \"total_photos\": $total,\n  \"results\": [\n")
+    jsonFile.writeText(
+        "{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"device\": \"$deviceModel\",\n" +
+            "  \"usable_vehicle_refs\": ${cachedRefs.size},\n  \"vehicles_in_db\": ${vehicles.size},\n" +
+            "  \"total_photos\": $total,\n  \"results\": [\n"
+    )
 
     // Pre-allocated JSON serialization buffer (16MB starting capacity)
     var jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
