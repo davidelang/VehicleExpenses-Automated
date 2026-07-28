@@ -952,3 +952,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - deep_analysis.py: explicit ERROR when metrics empty but results non-empty (vehicles/No match counts + restore-data hint)
 - Isolation: only ExperimentAlignmentScreen.kt product change; silent-lock/Set J body unchanged
 - Final tag simplify_experiments/builds @ d71dfb56
+
+## 2026-07-28 - Local PR prepared: simplify_experiments
+
+- History: 9 process commits → 4 logical (backup-simplify_experiments @ c59db84f messy tip)
+- Cleaned HEAD: bda771cc; builds tag simplify_experiments/builds retargeted
+- PR: dev-ai-interaction/PRs/PR-simplify_experiments.md
+- Plans: simplify-experiments-keep-setj-gmm-seti, alignment-json-device-field, fix-alignment-report-empty-vehicles
+- Pre-submit review PASS; no TODO closes; ask Master: Please review PR-simplify_experiments
