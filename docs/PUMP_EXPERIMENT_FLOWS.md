@@ -1,8 +1,25 @@
 # Pump Experiment N-Sets Architecture
 
-This document describes the tree-based reporting architecture used in the Pump Experiment and provides instructions for future agents on how to add or modify experiment flows.
+This document describes the tree-based reporting architecture used in the Pump Experiment and the **current active flows** after the simplify-experiments trim.
+
+## Active flows (current)
+
+Only two columns run (each on a fresh master copy):
+
+| Flow display name | Processor | Notes |
+|-------------------|-----------|-------|
+| `Set G-- (4 pass, none, calculated)` | `makeGProc(SET_G_MINUS_MINUS_VERT_FACTORS, …)` → `procGMinusMinus` | Same verts as Quick Fill production (`PumpCostVolUtils` / `OcrHarness`) |
+| `Set I (D+E+G hybrid, calculated)` | `procI` | Deskew once; staged G/D/E verts (`iGVert` / `iDVert` / `iEVert`); one combined classify |
+
+**Retired multi-set flows and dead helpers** (recover with tags + full catalog):
+
+- Doc: `docs/obsolete/EXPERIMENT_PUMP_SETS.md`
+- Tag: `obsolete-experiment-pump-multi-sets` (`git show obsolete-experiment-pump-multi-sets:app/src/main/java/.../ExperimentPumpScreen.kt`)
+
+Removed clusters include: sets A–H / D / E / G / G- columns, binPeak stack, ML discovery buffers, C/E longLived hist visuals, already-dead legacies. **Not removed:** `makeGProc`, hybrid stage helpers, shared redbox/OCR/stitch paths used by G--/I.
 
 ## 1. The Tree Architecture (`PumpBranch`)
+
 The experiment uses a recursive data structure called `PumpBranch` to store results.
 
 ```kotlin
@@ -15,56 +32,41 @@ data class PumpBranch(
 )
 ```
 
-Each "Flow" (e.g., "Set A") is a sub-branch of the root tree. The reporting logic (`pBuildHtmlRowDynamic` and `pSerializePhotoResultToJson`) automatically walks this tree to generate columns and JSON objects. **Do not modify the reporting functions when adding new flows.**
+Each flow is a sub-branch of the root tree. Reporting (`pBuildHtmlRowDynamic` and `pSerializePhotoResultToJson`) walks this tree for columns and JSON. Prefer not modifying reporting when only adding/removing flows via the `flows` list + processor map.
 
-## 2. How to Add a New Flow
+## 2. How to configure flows
 
-### Step 1: Configure the Flow List
-In `ExperimentPumpScreen.kt`, locate the `flows` list inside the `runPumpExperiment` function:
+In `ExperimentPumpScreen.kt`, inside `runPumpExperiment`:
 
 ```kotlin
-// Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
-val flows = listOf("Set A", "New Set")
-```
-
-Adding a string to this list **normally** adds two columns (ML and Paddle) to the HTML report. Exception: documented pure-pump / ML-free flows (see below) only produce a Paddle column; the reporting builders auto-omit the ML th/td for those flow names.
-
-### Step 2: Implement Flow-Specific Logic
-Use an array (list) of processor functions/lambdas (or references to them), in the same order as the `flows` list. Iterate the array (e.g. `flows.forEachIndexed { i, _ -> ... flowProcessors[i](ws, br, det, w, h) }` or zip). Each processor entry is a self-contained function/lambda whose body is the linear list of steps for that path (transform, deskew/tilt, discovery, extraction, viz, populate only its branch keys). No `if (flowName == "Set X")` or hard-coded per-set function names inside the per-path code itself -- the array + index/zip is how the dispatch selects and iterates the function for each flow (per the clarification: "an array of functions that you can iterate over is fine", avoiding ugly hard-coding of names like "setAmlkit"/"setApaddle" at call sites or inside paths).
-
-Example (skeletal):
-```kotlin
-val flowProcessors = listOf(
-    { ws, br, det, w, h -> /* linear steps for Set A (stretch, standard tilt, ml+pd, both results/viz) */ },
-    { ws, br, det, w, h -> /* linear for Set B (pump-only, paddleCpp tilt, pd only) */ },
-    { ws, br, det, w, h -> /* linear for Set C (pump-only + valley bin-test: hist, midpoints, per-bin binarize, discovery per version, stack composite for PD, best for path) */ }
+val flows = listOf(
+    "Set G-- (4 pass, none, calculated)",
+    "Set I (D+E+G hybrid, calculated)"
 )
-flows.forEachIndexed { i, _ ->
-    val branch = root.getBranch(flows[i])
-    ... common setup (ws copy, discoveryDetails) ...
-    flowProcessors[i](workspace, branch, discoveryDetails, imgW, imgH)
-}
+// ...
+val flowProcessors = listOf(
+    "Set G-- (4 pass, none, calculated)" to procGMinusMinus,
+    "Set I (D+E+G hybrid, calculated)" to procI,
+)
 ```
-The old `if`/`when` inside a single `forEach` on flowName is the tangled mess being refactored away (old body remains temp during transition; full cleanup when processors are filled and old body removed). Pure-pump sets (B, C) just don't populate ML keys in their processor. Do not modify the reporting builders (pBuild*); they auto-handle via the branch data and flow names.
 
-See ExperimentPumpScreen.kt for the current array + dispatch (C entry is the dedicated per-path for the valley bin-test from alignment Set J).
+Each processor is self-contained. Dispatch selects by flow display name. Do not reintroduce retired multi-set processors without recovering them from the obsolete tag and updating obsolete docs.
 
-### Step 3: Populate the Branch
-Results are stored in the `branch` object provided for each iteration:
-* `branch.images["ML"] = ...`
-* `branch.images["PD"] = ...`
-* `branch.pathResults["ML"] = ...`
-* `branch.metadata["tilt"] = ...` (captured per-flow after the tilt selection; used by the first column to report "Tilt per set: ..." for each set)
+### Populate the branch
 
-## ML-free / pump-only flows (e.g. "Set B")
-For flows that deliberately skip ML Kit entirely (pump-only numeric path):
-- Guard the entire ML discovery block (`extractFromPhotoBitmapRaw`, mlBlocksRaw population), `mlHunks`, `images["ML"]`, and `pathResults["ML"]` with `if (flowName != "ThePureFlow") { ... }`.
-- Only populate `images["PD"]` and `pathResults["Paddle"]` (plus any flow-specific metadata such as the per-flow tilt).
-- The header and row builders contain the matching `if (flow != "ThePureFlow")` / `if (name != "ThePureFlow")` around the ML th/td so the column is omitted automatically.
-- The first (left) column will render per-set tilt angles (from `branch.metadata["tilt"]` values captured inside the flow loop after the deskew angle selection). This makes the different deskew choices (e.g. standard angle vs. paddleCppAngle) visible on every report row.
-- Set B is the reference implementation of this pattern. When adding future pure-pump sets, follow the same conditional structure around all ML Kit work.
+* `branch.images["PD"]` / `branch.pathResults["Paddle"]` for pump-only calculated paths
+* `branch.metadata["tilt"]` and timing keys for diagnostics
+
+ML Kit columns are no longer part of the active experiment (G--/I are paddle/calculated paths).
 
 ## 3. Best Practices
-* **Standardized Colors:** Use `Color.RED` for raw detections and `Color.rgb(255, 165, 0)` (ORANGE) for final merged results.
-* **Safety:** Always check if Base64 strings are empty before adding them to the branch to prevent broken links in the report.
-* **Per-set metadata (tilt etc.):** Store flow-specific values (tilt, timings) in `branch.metadata` under clear keys. The first column and metaHtml will surface them for diagnostics without changing the core reporting functions.
+
+* **Standardized Colors:** `Color.RED` for raw detections; `Color.rgb(255, 165, 0)` (ORANGE) for final merged results; blue for intermediate stretch/blue rects.
+* **Safety:** Check Base64 strings before adding to branch images.
+* **Per-set metadata:** Store tilt/timings in `branch.metadata`.
+* **Production isolation:** Quick Fill / `OcrHarness` / `PumpCostVolUtils` are separate from this experiment screen — do not “sync” experiment-only deletes into production without an explicit plan.
+* **Parity:** When changing G-- or I processor bodies, treat JSON parity as the primary criterion (same labels/fields as before on the same inputs).
+
+## Related
+
+* Alignment experiment simplify: `docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md` + tag `obsolete-experiment-alignment-sets-a-e` (silent mlAngle ID lock + Set J only).
