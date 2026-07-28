@@ -112,7 +112,9 @@ fun HelpScreen(navController: NavHostController? = null) {
 
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            "Import Old Pictures and experiment screens are advanced tools and are not covered here.",
+            "Import Old Pictures and experiment screens are advanced tools and are not covered here. " +
+                "Batch import references your existing dash/pump photo files in place (does not copy them). " +
+                "Do not delete experiment_photos or pump_photos while fuel rows still point at those files.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

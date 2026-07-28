@@ -6,9 +6,11 @@ import java.io.File
 /**
  * Stage C: resolve **deduped** display photo paths for a pending question.
  *
- * Preference: existing [durablePhotoPath] → [photoPath] → extra["photoPaths"] → entry photos.
- * Collapse copies of the same shot (durable + source, or `dash_ts_` / `pump_ts_` prefixes)
- * by **PXL_… stem** so the UI shows one thumb per shot.
+ * Preference: [photoPath] / [durablePhotoPath] (often same source path) → extra → entry photos.
+ * Collapse copies of the same shot (legacy durable mirror + source, or `dash_ts_` /
+ * `pump_ts_` prefixes) by **PXL_… stem** so the UI shows one thumb per shot.
+ *
+ * Batch no longer writes `batch_import_photos`; prefer live source dirs when choosing.
  */
 fun pendingPhotoUris(
     item: BatchPendingItem,
@@ -19,9 +21,8 @@ fun pendingPhotoUris(
         val t = p?.trim().orEmpty()
         if (t.isNotBlank()) candidates.add(t)
     }
-    // Prefer durable when present (existing file preferred at collapse time)
-    add(item.durablePhotoPath)
     add(item.photoPath)
+    add(item.durablePhotoPath)
     item.extra["photoPaths"]
         ?.split('|')
         ?.map { it.trim() }
@@ -37,7 +38,8 @@ fun pendingPhotoUris(
 }
 
 /**
- * One path per shot: group by [photoStem], prefer an existing file, then durable-looking path.
+ * One path per shot: group by [photoStem]. Prefer an existing **source** path
+ * (experiment_photos / pump_photos) over legacy batch_import_photos mirrors.
  */
 fun dedupePhotoPaths(paths: List<String>): List<String> {
     if (paths.isEmpty()) return emptyList()
@@ -49,8 +51,11 @@ fun dedupePhotoPaths(paths: List<String>): List<String> {
         groups.getOrPut(key) { mutableListOf() }.add(t)
     }
     return groups.values.map { group ->
-        group.firstOrNull { photoPathExists(it) }
-            ?: group.firstOrNull { it.contains("batch_import_photos") }
+        group.firstOrNull {
+            photoPathExists(it) && !it.contains("batch_import_photos")
+        }
+            ?: group.firstOrNull { photoPathExists(it) }
+            ?: group.firstOrNull { !it.contains("batch_import_photos") }
             ?: group.first()
     }
 }

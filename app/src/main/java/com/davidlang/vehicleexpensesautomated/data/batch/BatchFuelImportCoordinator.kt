@@ -51,6 +51,12 @@ data class MergeApplyResult(
 /**
  * Stage A batch ingest: walk hard-coded experiment photo dirs, OCR, insert partials.
  * Merge (Stage B) is a separate call / button.
+ *
+ * **Photo paths:** batch references **source files in place** (`experiment_photos`,
+ * `pump_photos`). It does **not** copy into `batch_import_photos` or invent new
+ * basenames. If a source file is later deleted, local thumbs may break until
+ * re-supplied — accepted vs filling disk with mirrors. Cloud photo backup may
+ * still upload remote copies; that is separate from local batch mirrors.
  */
 @Singleton
 class BatchFuelImportCoordinator @Inject constructor(
@@ -77,8 +83,16 @@ class BatchFuelImportCoordinator @Inject constructor(
         fun pumpPhotoDir(context: Context): File =
             File(context.getExternalFilesDir(null), "pump_photos").also { it.mkdirs() }
 
+        /**
+         * Legacy local mirror dir (no longer written by batch).
+         * Kept for migration / cleanup only — does **not** mkdirs.
+         */
         fun durablePhotoDir(context: Context): File =
-            File(context.filesDir, "batch_import_photos").also { it.mkdirs() }
+            File(context.filesDir, "batch_import_photos")
+
+        /** `dash_123_PXL_….jpg` / `pump_123_…` durable basenames from old copyToDurable. */
+        private val DURABLE_BASENAME =
+            Regex("""^(dash|pump)_(\d+)_(.+)$""", RegexOption.IGNORE_CASE)
     }
 
     private val cancelFlag = AtomicBoolean(false)
@@ -89,17 +103,6 @@ class BatchFuelImportCoordinator @Inject constructor(
 
     fun clearCancel() {
         cancelFlag.set(false)
-    }
-
-    /**
-     * Copy source into app-private durable dir; returns durable absolute path.
-     */
-    fun copyToDurable(source: File, prefix: String): File {
-        val dir = durablePhotoDir(appContext)
-        val safeName = source.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val dest = File(dir, "${prefix}_${System.currentTimeMillis()}_$safeName")
-        source.copyTo(dest, overwrite = true)
-        return dest
     }
 
     private fun listImages(dir: File): List<File> {
@@ -175,6 +178,17 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
         report("init", "Dash ${dashFiles.size} · pump ${pumpFiles.size}$limitNote")
 
+        // One-shot-ish: rewrite old durable mirrors → source paths; free disk
+        try {
+            val mig = migrateDurablePhotoRefsToSource()
+            if (mig.rewroteRows > 0 || mig.deletedFiles > 0) {
+                Log.i(TAG, "durable migrate: $mig")
+                report("init", "Migrated ${mig.rewroteRows} photo refs, deleted ${mig.deletedFiles} mirrors")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "durable migrate skipped: ${e.message}")
+        }
+
         // --- Dash (Set J via AlignmentSetJRunner) ---
         for (file in dashFiles) {
             coroutineContext.ensureActive()
@@ -232,6 +246,15 @@ class BatchFuelImportCoordinator @Inject constructor(
     suspend fun applyMerge(
         onProgress: (String) -> Unit = {},
     ): MergeApplyResult = withContext(Dispatchers.IO) {
+        onProgress("Photo path migrate (if needed)…")
+        try {
+            val mig = migrateDurablePhotoRefsToSource()
+            if (mig.rewroteRows > 0 || mig.deletedFiles > 0) {
+                Log.i(TAG, "durable migrate before merge: $mig")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "durable migrate before merge: ${e.message}")
+        }
         onProgress("Loading fuel entries…")
         val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
         onProgress("Planning merge (${live.size} rows)…")
@@ -1180,6 +1203,8 @@ class BatchFuelImportCoordinator @Inject constructor(
     /**
      * Dash: alignment **experiment Set J** pipeline via [AlignmentSetJRunner]
      * (not [com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness.runAutoFillPipeline]).
+     *
+     * Photo path = **source file in place** (no copy into batch_import_photos).
      */
     private suspend fun processDash(
         file: File,
@@ -1190,7 +1215,8 @@ class BatchFuelImportCoordinator @Inject constructor(
     ): Boolean {
         val meta = PhotoExifMetaReader.read(file.absolutePath)
         val ts = meta.timestampMs ?: System.currentTimeMillis()
-        val durable = copyToDurable(file, "dash")
+        // Reference source path only — never copyToDurable
+        val sourcePath = file.absolutePath
 
         val activeVehicles = vehicles.filter { !it.deleted }
         val result = AlignmentSetJRunner.runOnePhoto(
@@ -1207,8 +1233,8 @@ class BatchFuelImportCoordinator @Inject constructor(
                         kind = BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
                         message = "Could not identify vehicle for ${file.name}" +
                             (result.error?.let { ": $it" } ?: ""),
-                        photoPath = file.absolutePath,
-                        durablePhotoPath = durable.absolutePath,
+                        photoPath = sourcePath,
+                        durablePhotoPath = sourcePath, // same as source (no mirror)
                         timestampMs = ts,
                         latitude = meta.latitude,
                         longitude = meta.longitude,
@@ -1219,7 +1245,7 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
 
         val odo = parseSetJOdometer(result.odometer)
-        val photoJson = FuelPhotoJson.single("dash", durable.absolutePath, ts)
+        val photoJson = FuelPhotoJson.single("dash", sourcePath, ts)
 
         if (odo == null) {
             fuelEntryRepository.insertFuelEntry(
@@ -1264,6 +1290,8 @@ class BatchFuelImportCoordinator @Inject constructor(
      * Pump photos: always Set I cost/vol OCR and insert as partial.
      * Default vehicleId is [UNASSIGNED_VEHICLE_ID] (0) until merge; optional
      * [forcedVehicleId] for legacy ASSIGN_VEHICLE pending answers.
+     *
+     * Photo path = **source file in place** (no copy into batch_import_photos).
      */
     private suspend fun processPump(
         file: File,
@@ -1273,7 +1301,7 @@ class BatchFuelImportCoordinator @Inject constructor(
     ): Boolean {
         val meta = PhotoExifMetaReader.read(file.absolutePath)
         val ts = meta.timestampMs ?: System.currentTimeMillis()
-        val durable = copyToDurable(file, "pump")
+        val sourcePath = file.absolutePath
         val vehicleId = forcedVehicleId ?: UNASSIGNED_VEHICLE_ID
 
         // Experiment Set I path (not OcrHarness.runPumpCostVolPipelineSetI / Quick Fill G--)
@@ -1288,8 +1316,8 @@ class BatchFuelImportCoordinator @Inject constructor(
                         kind = BatchPendingKind.UNREADABLE_PUMP,
                         message = "Unreadable pump ${file.name}" +
                             (result.error?.let { ": $it" } ?: ""),
-                        photoPath = file.absolutePath,
-                        durablePhotoPath = durable.absolutePath,
+                        photoPath = sourcePath,
+                        durablePhotoPath = sourcePath,
                         timestampMs = ts,
                         latitude = meta.latitude,
                         longitude = meta.longitude,
@@ -1299,7 +1327,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             return false
         }
 
-        val photoJson = FuelPhotoJson.single("pump", durable.absolutePath, ts)
+        val photoJson = FuelPhotoJson.single("pump", sourcePath, ts)
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = vehicleId,
@@ -1322,6 +1350,142 @@ class BatchFuelImportCoordinator @Inject constructor(
         )
         return true
     }
+
+    data class DurableMigrateResult(
+        val rewroteRows: Int,
+        val rewrotePending: Int,
+        val deletedFiles: Int,
+    ) {
+        override fun toString(): String =
+            "rewroteRows=$rewroteRows rewrotePending=$rewrotePending deletedFiles=$deletedFiles"
+    }
+
+    /**
+     * Optional cleanup: rewrite `batch_import_photos/(dash|pump)_ts_NAME` URIs to
+     * `experiment_photos/NAME` or `pump_photos/NAME` when the source file exists,
+     * then delete unreferenced files under the legacy durable dir.
+     * Does **not** bump [FuelEntry.updatedAt] (photo bookkeeping only).
+     */
+    suspend fun migrateDurablePhotoRefsToSource(): DurableMigrateResult =
+        withContext(Dispatchers.IO) {
+            val dashDir = dashPhotoDir(appContext)
+            val pumpDir = pumpPhotoDir(appContext)
+            val durableDir = durablePhotoDir(appContext)
+
+            fun resolveSource(path: String): String? {
+                if (!path.contains("batch_import_photos")) return null
+                val base = path.trim().substringAfterLast('/').substringAfterLast('\\')
+                val m = DURABLE_BASENAME.matchEntire(base) ?: return null
+                val kind = m.groupValues[1].lowercase()
+                val originalName = m.groupValues[3]
+                val dir = when (kind) {
+                    "dash" -> dashDir
+                    "pump" -> pumpDir
+                    else -> return null
+                }
+                val target = File(dir, originalName)
+                return if (target.isFile) target.absolutePath else null
+            }
+
+            fun rewriteUri(uri: String): String {
+                return resolveSource(uri) ?: uri
+            }
+
+            var rewroteRows = 0
+            val all = fuelEntryRepository.getAllIncludingDeleted()
+            for (e in all) {
+                val url = e.photoUrl ?: continue
+                if (!url.contains("batch_import_photos")) continue
+                val refs = FuelPhotoJson.parse(url)
+                var changed = false
+                val next = refs.map { ref ->
+                    val r = rewriteUri(ref.uri)
+                    if (r != ref.uri) {
+                        changed = true
+                        ref.copy(uri = r)
+                    } else ref
+                }
+                if (!changed) continue
+                val serialized = FuelPhotoJson.serialize(next)
+                fuelEntryRepository.updateFuelEntryPreservingTimestamp(
+                    e.copy(photoUrl = serialized),
+                )
+                rewroteRows++
+            }
+
+            var rewrotePending = 0
+            val pending = BatchImportPendingStore.load(appContext)
+            if (pending.isNotEmpty()) {
+                val updated = pending.map { item ->
+                    var ch = false
+                    fun fix(p: String?): String? {
+                        if (p.isNullOrBlank()) return p
+                        val r = rewriteUri(p)
+                        if (r != p) ch = true
+                        return r
+                    }
+                    val photo = fix(item.photoPath)
+                    val durable = fix(item.durablePhotoPath)
+                    val extra = item.extra.toMutableMap()
+                    for (key in listOf(
+                        "photoPaths", "thisPhotoPaths", "lastPhotoPaths",
+                        "prevPhotoPaths", "prevDashPaths", "curDashPaths", "nextDashPaths",
+                    )) {
+                        val v = extra[key] ?: continue
+                        if (!v.contains("batch_import_photos")) continue
+                        val rewritten = v.split('|').joinToString("|") { part ->
+                            val t = part.trim()
+                            if (t.isEmpty()) t else rewriteUri(t)
+                        }
+                        if (rewritten != v) {
+                            extra[key] = rewritten
+                            ch = true
+                        }
+                    }
+                    if (!ch) item
+                    else {
+                        rewrotePending++
+                        item.copy(
+                            photoPath = photo,
+                            durablePhotoPath = durable,
+                            extra = extra,
+                        )
+                    }
+                }
+                if (rewrotePending > 0) {
+                    BatchImportPendingStore.save(appContext, updated)
+                }
+            }
+
+            // Collect still-referenced durable basenames (after rewrite)
+            val stillReferenced = mutableSetOf<String>()
+            fun noteRef(path: String?) {
+                if (path.isNullOrBlank()) return
+                if (!path.contains("batch_import_photos")) return
+                stillReferenced.add(path.substringAfterLast('/').substringAfterLast('\\'))
+            }
+            for (e in fuelEntryRepository.getAllIncludingDeleted()) {
+                for (ref in FuelPhotoJson.parse(e.photoUrl)) noteRef(ref.uri)
+            }
+            for (item in BatchImportPendingStore.load(appContext)) {
+                noteRef(item.photoPath)
+                noteRef(item.durablePhotoPath)
+                item.extra.values.forEach { v ->
+                    v.split('|').forEach { noteRef(it.trim()) }
+                }
+            }
+
+            var deletedFiles = 0
+            if (durableDir.isDirectory) {
+                durableDir.listFiles()?.forEach { f ->
+                    if (!f.isFile) return@forEach
+                    if (f.name in stillReferenced) return@forEach
+                    if (f.delete()) deletedFiles++
+                }
+            }
+
+            DurableMigrateResult(rewroteRows, rewrotePending, deletedFiles)
+        }
 }
 
 /** User answer on a pending batch question. */
