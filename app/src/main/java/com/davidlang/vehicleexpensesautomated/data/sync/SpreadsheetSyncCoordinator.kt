@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.data.sync
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordinator
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
@@ -43,6 +44,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     private val syncIdBackfill: SyncIdBackfill,
     private val photoBackupCoordinator: Lazy<PhotoBackupCoordinator>,
     private val photoStorage: PhotoStorageManager,
+    /** Post-fuel LWW: field-merge partials + breaker-aware question rebuild. */
+    private val batchFuelImportCoordinator: Lazy<BatchFuelImportCoordinator>,
 ) {
 
     private val syncMutex = Mutex()
@@ -76,9 +79,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 val single = syncSingleDestination(dest, hint)
                 recordSpreadsheetResult(failureStore, dest.id, label, single)
                 runPostSyncVehicleDownloads(hint)
-                onProgress?.onStatus(if (single.success) "$label done" else "$label failed")
-                onProgress?.onStatus(single.message)
-                return@withContext single
+                val withPost = if (single.success) appendPostFuelMerge(single) else single
+                onProgress?.onStatus(if (withPost.success) "$label done" else "$label failed")
+                onProgress?.onStatus(withPost.message)
+                return@withContext withPost
             }
 
             val results = mutableListOf<Pair<String, SyncResult>>()
@@ -117,7 +121,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
             runPostSyncVehicleDownloads(accountHint)
 
-            val message = SyncResultMessages.spreadsheetSummary(
+            var message = SyncResultMessages.spreadsheetSummary(
                 results = results,
                 anyFailure = anyFailure,
                 totalVehicles = totalVehicles,
@@ -130,6 +134,13 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 onProgress?.onStatus(finalMessage)
                 return@withContext consentResult.copy(message = finalMessage)
             }
+            // Once per sync session after successful multi-dest fuel LWW
+            if (!anyFailure) {
+                val postNote = runPostFuelMergeAndRebuild()
+                if (postNote != null) {
+                    message = "$message · $postNote"
+                }
+            }
             onProgress?.onStatus(message)
             SyncResult(
                 success = !anyFailure,
@@ -139,6 +150,42 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 fuelMerged = totalFuel,
             )
         }
+    }
+
+    /**
+     * After fuel tabular LWW: same pipeline as Import **Run merge** —
+     * field-merge all live partials + detect-only odo + rebuild regenerable questions
+     * (breaker-aware MPG_OUTLIER). Pending JSON is local-only; correctness = rebuild.
+     */
+    private suspend fun runPostFuelMergeAndRebuild(): String? {
+        return try {
+            onProgressSafe("Post-sync: merge + re-check questions…")
+            val result = batchFuelImportCoordinator.get().applyMerge()
+            val note =
+                if (result.updated > 0 || result.deleted > 0 || result.pendingAdded > 0) {
+                    "Sync: merged ${result.updated} partials, ${result.deleted} absorbs · " +
+                        "${result.totalPending} questions"
+                } else if (result.totalPending > 0) {
+                    "Sync: ${result.totalPending} questions (no new merges)"
+                } else {
+                    null
+                }
+            if (note != null) Log.i(TAG, "post-fuel merge: $note (${result.message})")
+            note
+        } catch (e: Exception) {
+            Log.w(TAG, "post-fuel merge/rebuild failed", e)
+            null
+        }
+    }
+
+    private fun onProgressSafe(msg: String) {
+        // no-op placeholder if we lack listener; progress already logged at call sites
+        Log.i(TAG, msg)
+    }
+
+    private suspend fun appendPostFuelMerge(result: SyncResult): SyncResult {
+        val note = runPostFuelMergeAndRebuild() ?: return result
+        return result.copy(message = "${result.message} · $note")
     }
 
     private fun resolveLegacyOrPrimaryDest(store: SyncDestinationStore): SpreadsheetDestination {

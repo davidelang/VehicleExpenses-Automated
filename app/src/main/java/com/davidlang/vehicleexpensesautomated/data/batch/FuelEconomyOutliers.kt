@@ -6,9 +6,16 @@ import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 /**
  * MPG outlier detection for Stage C pending enqueue.
  *
+ * **Same chain rules as reports** ([FuelEconomyChains] / REPORTS_METRICS):
+ * - Full-fill anchors only (`!economyIgnored && !isPartialFill && odo+cost+vol`).
+ * - Window = (prev.ts, cur.ts] non-ignored rows; **skip leg** if any MPG chain breaker
+ *   (blank or cost-without-vol) is in the window — do not ask “why is MPG bad?” when
+ *   the chain is already intentionally broken (e.g. `batch_gap_marker`).
+ * - `sumVol` includes partials and incomplete pumps with volume; they never anchor.
+ *
  * Leg is outlier if `mpg < ref/3` or `mpg > ref*3`.
- * [ref] = median of all usable full-fill leg mpgs for the vehicle.
- * Requires ≥3 legs; otherwise no auto-enqueue.
+ * [ref] = median of all **non-skipped** full-fill leg mpgs for the vehicle.
+ * Requires ≥3 usable legs; otherwise no auto-enqueue.
  */
 object FuelEconomyOutliers {
 
@@ -20,13 +27,9 @@ object FuelEconomyOutliers {
         val refMpg: Double,
         val odoDelta: Int,
         val sumVol: Double,
+        /** All non-ignored rows in the leg window (for inventory). */
+        val windowEntries: List<FuelEntry>,
     )
-
-    private fun hasOdo(e: FuelEntry) = e.odometer > 0
-    private fun hasCost(e: FuelEntry) = e.cost > 0
-    private fun hasVol(e: FuelEntry) = e.gallons > 0
-    private fun isFullFill(e: FuelEntry) =
-        !e.economyIgnored && !e.isPartialFill && hasOdo(e) && hasCost(e) && hasVol(e)
 
     fun detectOutliers(entries: List<FuelEntry>): List<OutlierLeg> {
         val live = entries.filter { !it.deleted }
@@ -39,24 +42,35 @@ object FuelEconomyOutliers {
 
     private fun detectForVehicle(vehicleId: Int, entries: List<FuelEntry>): List<OutlierLeg> {
         val full = entries
-            .filter { isFullFill(it) }
+            .filter { FuelEconomyChains.isFullFill(it) }
             .sortedWith(compareBy({ it.timestamp }, { it.id }))
         if (full.size < 2) return emptyList()
-        val legs = mutableListOf<Triple<FuelEntry, FuelEntry, Double>>() // prev, cur, mpg
+
+        data class Leg(
+            val prev: FuelEntry,
+            val cur: FuelEntry,
+            val mpg: Double,
+            val sumVol: Double,
+            val window: List<FuelEntry>,
+        )
+
+        val legs = mutableListOf<Leg>()
         for (i in 1 until full.size) {
             val prev = full[i - 1]
             val cur = full[i]
             if (cur.odometer <= prev.odometer) continue
-            val between = entries.filter {
-                it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp && !it.economyIgnored
-            }
-            val sumVol = between.filter { hasVol(it) }.sumOf { it.gallons }
+            val between = FuelEconomyChains.windowContributors(
+                entries, prev.timestamp, cur.timestamp,
+            )
+            // Product: no MPG_OUTLIER when chain already broken (gap markers, cost-no-vol)
+            if (FuelEconomyChains.windowHasMpgBreaker(between)) continue
+            val sumVol = FuelEconomyChains.sumVol(between)
             if (sumVol <= 0) continue
             val mpg = (cur.odometer - prev.odometer) / sumVol
-            legs.add(Triple(prev, cur, mpg))
+            legs.add(Leg(prev, cur, mpg, sumVol, between))
         }
         if (legs.size < 3) return emptyList()
-        val sortedMpg = legs.map { it.third }.sorted()
+        val sortedMpg = legs.map { it.mpg }.sorted()
         val mid = sortedMpg.size / 2
         val ref = if (sortedMpg.size % 2 == 0) {
             (sortedMpg[mid - 1] + sortedMpg[mid]) / 2.0
@@ -64,20 +78,17 @@ object FuelEconomyOutliers {
             sortedMpg[mid]
         }
         if (ref <= 0) return emptyList()
-        return legs.mapNotNull { (prev, cur, mpg) ->
-            if (mpg < ref / 3.0 || mpg > ref * 3.0) {
-                val between = entries.filter {
-                    it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp && !it.economyIgnored
-                }
-                val sumVol = between.filter { hasVol(it) }.sumOf { it.gallons }
+        return legs.mapNotNull { leg ->
+            if (leg.mpg < ref / 3.0 || leg.mpg > ref * 3.0) {
                 OutlierLeg(
                     vehicleId = vehicleId,
-                    endEntry = cur,
-                    prevEntry = prev,
-                    mpg = mpg,
+                    endEntry = leg.cur,
+                    prevEntry = leg.prev,
+                    mpg = leg.mpg,
                     refMpg = ref,
-                    odoDelta = cur.odometer - prev.odometer,
-                    sumVol = sumVol,
+                    odoDelta = leg.cur.odometer - leg.prev.odometer,
+                    sumVol = leg.sumVol,
+                    windowEntries = leg.window,
                 )
             } else null
         }
@@ -90,10 +101,25 @@ object FuelEconomyOutliers {
      * Pending for UI: **this fill** = leg end, **last fill** = leg start.
      * Separate photo lists so the card can show photos above each fill button
      * (never one unlabeled 4-image strip).
+     * [windowSummary] lists intermediate fills (text inventory).
      */
     fun toPending(leg: OutlierLeg): BatchPendingItem {
         val thisPhotos = photoPathsForEntry(leg.endEntry)
         val lastPhotos = photoPathsForEntry(leg.prevEntry)
+        // Window already filtered in detect; encode inventory directly
+        val inventory = leg.windowEntries
+            .sortedWith(compareBy({ it.timestamp }, { it.id }))
+            .let { window ->
+                val take = window.take(12)
+                val parts = take.map { e ->
+                    val gal = "%.2f".format(e.gallons)
+                    val cost = "%.2f".format(e.cost)
+                    "${e.id}:${e.odometer}:$gal:$cost:${FuelEconomyChains.rowShape(e)}"
+                }
+                val more = window.size - take.size
+                if (more > 0) parts.joinToString("|") + "|+$more more"
+                else parts.joinToString("|")
+            }
         return BatchPendingItem(
             kind = BatchPendingKind.MPG_OUTLIER,
             message = "MPG outlier ${"%.1f".format(leg.mpg)} vs ref ${"%.1f".format(leg.refMpg)} " +
@@ -127,6 +153,7 @@ object FuelEconomyOutliers {
                 "endCost" to leg.endEntry.cost.toString(),
                 "prevVol" to leg.prevEntry.gallons.toString(),
                 "endVol" to leg.endEntry.gallons.toString(),
+                "windowSummary" to inventory,
             ),
         )
     }

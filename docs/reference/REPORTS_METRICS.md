@@ -62,9 +62,11 @@ Time gaps between fills are normal and are not breaks.
 3. **Display avg / last-5 (display filter only — no row mutation):**
    - Keep legs with mpg in a hard absolute band **5–80** (outside → drop for display).
    - Then drop **3× median** outliers among remaining legs (`mpg < ref/3` or `mpg > ref*3`). If fewer than 3 legs after band filter, skip 3× filter.
-4. Stage C may still enqueue `MPG_OUTLIER` questions after merge (detection path separate from display).
+4. Stage C `FuelEconomyOutliers.detectOutliers` uses the **same** full-fill + window + MPG breaker rules via shared `FuelEconomyChains` (not a separate math). Legs with a blank gap marker (or cost-without-vol) in the window are **not** enqueued as `MPG_OUTLIER`. Display still applies the 5–80 band + 3× median filters above; Stage C uses only the 3× median vs vehicle ref for questions.
 
 Odo-only rows in a window do not break, do not add volume/cost, and do not change odo endpoints (endpoints are full fills only).
+
+After spreadsheet fuel sync, field-merge + question rebuild runs once (see [SYNC_BEHAVIOR.md](SYNC_BEHAVIOR.md) — Fuel LWW vs field-merge vs questions).
 
 ## Dollars per mile (`$/mi`)
 

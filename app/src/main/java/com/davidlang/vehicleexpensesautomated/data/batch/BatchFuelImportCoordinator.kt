@@ -641,14 +641,22 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
 
     /**
-     * Mark row as a **blank chain-breaker** (missed fill / gap): odo=cost=vol=0,
-     * isPartialFill=false (matches batch_import_dash_blank). Keep vehicle, timestamp, photo.
-     * Distinct from [FlagPartial] (keeps cost/vol) and economy ignore.
+     * Blank chain-breaker (missed fill / gap): odo=cost=vol=0, isPartialFill=false.
+     *
+     * **MPG_OUTLIER:** insert a new mid-leg blank between last & this anchors
+     * (does **not** zero either full fill). If a breaker already exists in the
+     * window, just dismiss the pending and re-detect.
+     *
+     * **Other kinds:** blank existing row by id, or insert blank at item timestamp.
      */
     private suspend fun markAsGap(
         item: BatchPendingItem,
         entryId: Long?,
     ): PendingAnswerResult {
+        if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+            return markAsGapMpgOutlier(item)
+        }
+
         val path = item.durablePhotoPath ?: item.photoPath
         val ts = item.timestampMs ?: System.currentTimeMillis()
         val id = entryId
@@ -699,6 +707,96 @@ class BatchFuelImportCoordinator @Inject constructor(
         clearAnsweredPending(item, null)
         Log.i(TAG, "markAsGap inserted blank gap marker")
         return PendingAnswerResult("Inserted gap marker (blank chain-breaker)", remerge = true)
+    }
+
+    /**
+     * Insert mid-leg blank between prev and end full fills. Anchors unchanged.
+     */
+    private suspend fun markAsGapMpgOutlier(item: BatchPendingItem): PendingAnswerResult {
+        val prevId = item.extra["prevEntryId"]?.toLongOrNull()
+            ?: item.extra["lastEntryId"]?.toLongOrNull()
+        val endId = item.extra["endEntryId"]?.toLongOrNull()
+            ?: item.extra["thisEntryId"]?.toLongOrNull()
+            ?: item.fuelEntryId
+        val prevTs = item.extra["prevTs"]?.toLongOrNull()
+        val endTs = item.extra["endTs"]?.toLongOrNull()
+            ?: item.timestampMs
+        val liveAll = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+        val prev = prevId?.let { id -> liveAll.find { it.id == id } }
+        val end = endId?.let { id -> liveAll.find { it.id == id } }
+        val vehicleId = item.suggestedVehicleId?.takeIf { it > 0 }
+            ?: end?.vehicleId?.takeIf { it > 0 }
+            ?: prev?.vehicleId?.takeIf { it > 0 }
+            ?: 0
+        val pTs = prevTs ?: prev?.timestamp
+        val eTs = endTs ?: end?.timestamp
+        if (vehicleId <= 0 || pTs == null || eTs == null) {
+            // Fall back to blanking focused/end row only if we lack leg metadata
+            val id = endId ?: item.fuelEntryId
+            if (id != null && id > 0) {
+                val live = liveAll.find { it.id == id }
+                if (live != null) {
+                    fuelEntryRepository.updateFuelEntry(
+                        live.copy(
+                            odometer = 0,
+                            cost = 0.0,
+                            gallons = 0.0,
+                            isPartialFill = false,
+                            economyIgnored = false,
+                            location = live.location?.takeIf { it.isNotBlank() }
+                                ?: "batch_gap_marker",
+                        ),
+                    )
+                    clearAnsweredPending(item, id)
+                    return PendingAnswerResult(
+                        "Marked id=$id as gap (missing leg bounds)",
+                        remerge = true,
+                    )
+                }
+            }
+            return PendingAnswerResult("Cannot place mid-leg gap (no vehicle/timestamps)", success = false)
+        }
+
+        val window = FuelEconomyChains.windowContributors(liveAll, pTs, eTs)
+        if (FuelEconomyChains.windowHasMpgBreaker(window)) {
+            // Already broken — dismiss question; re-detect will not re-enqueue
+            clearAnsweredPending(item, endId)
+            prevId?.let { removePendingForFuelEntry(it) }
+            endId?.let { removePendingForFuelEntry(it) }
+            Log.i(TAG, "markAsGap MPG: breaker already in window; dismissed pending")
+            return PendingAnswerResult(
+                "Gap already in leg window — question dismissed",
+                remerge = true,
+            )
+        }
+
+        val gapTs = pTs + maxOf(1L, (eTs - pTs) / 2L)
+        fuelEntryRepository.insertFuelEntry(
+            FuelEntry(
+                vehicleId = vehicleId,
+                odometer = 0,
+                gallons = 0.0,
+                cost = 0.0,
+                currency = end?.currency?.ifBlank { "USD" } ?: "USD",
+                timestamp = gapTs,
+                photoUrl = null,
+                isPartialFill = false,
+                economyIgnored = false,
+                location = "batch_gap_marker",
+            ),
+        )
+        clearAnsweredPending(item, endId)
+        prevId?.let { removePendingForFuelEntry(it) }
+        endId?.let { removePendingForFuelEntry(it) }
+        Log.i(
+            TAG,
+            "markAsGap MPG: inserted mid-leg blank vehicle=$vehicleId ts=$gapTs " +
+                "between prev=$prevId end=$endId (anchors preserved)",
+        )
+        return PendingAnswerResult(
+            "Inserted gap between last & this (anchors kept)",
+            remerge = true,
+        )
     }
 
     private fun clearAnsweredPending(item: BatchPendingItem, fuelEntryId: Long?) {

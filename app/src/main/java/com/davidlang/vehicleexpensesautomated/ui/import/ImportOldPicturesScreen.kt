@@ -663,6 +663,26 @@ private fun PendingQuestionCard(
                     )
                 }
 
+                // Window inventory (time-ordered fills between last → this)
+                val windowLines = item.extra["windowSummary"]
+                    ?.split('|')
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotEmpty() }
+                    .orEmpty()
+                if (windowLines.isNotEmpty()) {
+                    Text(
+                        "Fills in this leg (time order)",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    windowLines.forEach { line ->
+                        Text(
+                            line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
                 // ── Last fill (photos above button) ──
                 Text("── Last fill ──", style = MaterialTheme.typography.titleSmall)
                 PendingPhotoRow(
@@ -1141,98 +1161,102 @@ private fun PendingQuestionCard(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Button(
+                // Vertical stack — avoids Save/gap/Ignore clipped in horizontal Row
+                // (Screenshot_20260727_183016: only partial checkbox visible)
+                Button(
+                    onClick = {
+                        onAction(
+                            PendingAnswerAction.ManualEditFuelFields(
+                                odometer = odoText.toIntOrNull(),
+                                cost = costText.toDoubleOrNull(),
+                                volume = volText.toDoubleOrNull(),
+                                entryId = focusEntryId,
+                            ),
+                        )
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Save edit")
+                }
+                if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+                    val focusComplete = run {
+                        val o = odoText.toIntOrNull() ?: 0
+                        val c = costText.toDoubleOrNull() ?: 0.0
+                        val v = volText.toDoubleOrNull() ?: 0.0
+                        o > 0 && c > 0 && v > 0
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = treatPartial && focusComplete,
+                            onCheckedChange = { checked ->
+                                if (!focusComplete && checked) return@Checkbox
+                                treatPartial = checked
+                                onAction(
+                                    PendingAnswerAction.SetPartialFill(
+                                        partial = checked,
+                                        entryId = focusEntryId,
+                                    ),
+                                )
+                            },
+                            enabled = enabled && focusComplete,
+                        )
+                        Text(
+                            if (focusComplete) {
+                                "Treat as partial fill (do not use as full-fill anchor)"
+                            } else {
+                                "Treat as partial (need odo+cost+vol)"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            // entryId ignored for MPG — coordinator inserts mid-leg blank
+                            onAction(PendingAnswerAction.MarkAsGap(entryId = focusEntryId))
+                        },
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Missing data between last & this")
+                    }
+                    Text(
+                        "Inserts a blank chain-breaker between last and this fills; keeps both fills.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
                         onClick = {
                             onAction(
-                                PendingAnswerAction.ManualEditFuelFields(
-                                    odometer = odoText.toIntOrNull(),
-                                    cost = costText.toDoubleOrNull(),
-                                    volume = volText.toDoubleOrNull(),
+                                PendingAnswerAction.SetEconomyIgnored(
+                                    ignored = true,
                                     entryId = focusEntryId,
                                 ),
                             )
                         },
                         enabled = enabled,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("Save edit")
+                        Text("Ignore")
                     }
-                    if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-                        val focusComplete = run {
-                            val o = odoText.toIntOrNull() ?: 0
-                            val c = costText.toDoubleOrNull() ?: 0.0
-                            val v = volText.toDoubleOrNull() ?: 0.0
-                            o > 0 && c > 0 && v > 0
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked = treatPartial && focusComplete,
-                                onCheckedChange = { checked ->
-                                    if (!focusComplete && checked) return@Checkbox
-                                    treatPartial = checked
-                                    onAction(
-                                        PendingAnswerAction.SetPartialFill(
-                                            partial = checked,
-                                            entryId = focusEntryId,
-                                        ),
-                                    )
-                                },
-                                enabled = enabled && focusComplete,
+                }
+                if (item.kind == BatchPendingKind.ECONOMY_IGNORED) {
+                    OutlinedButton(
+                        onClick = {
+                            onAction(
+                                PendingAnswerAction.SetEconomyIgnored(
+                                    ignored = false,
+                                    entryId = focusEntryId,
+                                ),
                             )
-                            Text(
-                                if (focusComplete) {
-                                    "Treat as partial fill (do not use as full-fill anchor)"
-                                } else {
-                                    "Treat as partial (need odo+cost+vol)"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                onAction(
-                                    PendingAnswerAction.MarkAsGap(entryId = focusEntryId),
-                                )
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("Mark as gap")
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                onAction(
-                                    PendingAnswerAction.SetEconomyIgnored(
-                                        ignored = true,
-                                        entryId = focusEntryId,
-                                    ),
-                                )
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text("Ignore")
-                        }
-                    }
-                    if (item.kind == BatchPendingKind.ECONOMY_IGNORED) {
-                        OutlinedButton(
-                            onClick = {
-                                onAction(
-                                    PendingAnswerAction.SetEconomyIgnored(
-                                        ignored = false,
-                                        entryId = focusEntryId,
-                                    ),
-                                )
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Text("Unignore")
-                        }
+                        },
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Unignore")
                     }
                 }
             }
@@ -1788,7 +1812,15 @@ private fun FullscreenPhotoDialog(
                             },
                             enabled = enabled,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Mark as gap") }
+                        ) {
+                            Text(
+                                if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+                                    "Missing data between last & this"
+                                } else {
+                                    "Mark as gap"
+                                },
+                            )
+                        }
                         if (item.kind == BatchPendingKind.MPG_OUTLIER) {
                             Button(
                                 onClick = {

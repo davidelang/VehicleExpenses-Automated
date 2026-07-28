@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelEconomyChains
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
@@ -28,37 +29,14 @@ import java.util.Date
 import java.util.Locale
 
 // --- Math helpers (field-conditional full fills + MPG / $/mi chains) ---
-
-// Field present iff value > 0 (Room non-null Int/Double; 0 = absent).
-private fun hasOdo(e: FuelEntry): Boolean = e.odometer > 0
-private fun hasCost(e: FuelEntry): Boolean = e.cost > 0.0
-private fun hasVol(e: FuelEntry): Boolean = e.gallons > 0.0
-
-/**
- * Full fill anchor: not partial, odo + cost + volume present, and not
- * [FuelEntry.economyIgnored] (ignored rows never anchor MPG/$/mi legs).
- */
-private fun isFullFill(e: FuelEntry): Boolean =
-    !e.economyIgnored && !e.isPartialFill && hasOdo(e) && hasCost(e) && hasVol(e)
-
-/** Economy window contributor (cost/vol between full fills). */
-private fun contributesToEconomy(e: FuelEntry): Boolean = !e.economyIgnored
-
-/**
- * MPG chain breaker: blank (no odo/cost/vol) or cost without volume.
- * Odo-only rows are neither breakers nor contributors.
- */
-private fun isMpgChainBreaker(e: FuelEntry): Boolean =
-    (!hasOdo(e) && !hasCost(e) && !hasVol(e)) ||
-        (hasCost(e) && !hasVol(e))
-
-/**
- * $/mi chain breaker: blank (no odo/cost/vol) or volume without cost.
- * Odo-only rows are neither breakers nor contributors.
- */
-private fun isDpmChainBreaker(e: FuelEntry): Boolean =
-    (!hasOdo(e) && !hasCost(e) && !hasVol(e)) ||
-        (hasVol(e) && !hasCost(e))
+// Shared with Stage C via FuelEconomyChains (REPORTS_METRICS).
+private fun hasOdo(e: FuelEntry): Boolean = FuelEconomyChains.hasOdo(e)
+private fun hasCost(e: FuelEntry): Boolean = FuelEconomyChains.hasCost(e)
+private fun hasVol(e: FuelEntry): Boolean = FuelEconomyChains.hasVol(e)
+private fun isFullFill(e: FuelEntry): Boolean = FuelEconomyChains.isFullFill(e)
+private fun contributesToEconomy(e: FuelEntry): Boolean = FuelEconomyChains.contributesToEconomy(e)
+private fun isMpgChainBreaker(e: FuelEntry): Boolean = FuelEconomyChains.isMpgChainBreaker(e)
+private fun isDpmChainBreaker(e: FuelEntry): Boolean = FuelEconomyChains.isDpmChainBreaker(e)
 
 /** Full fill points (time-sorted ascending; id tie-break). */
 private fun fullFillsAscending(entries: List<FuelEntry>): List<FuelEntry> {
