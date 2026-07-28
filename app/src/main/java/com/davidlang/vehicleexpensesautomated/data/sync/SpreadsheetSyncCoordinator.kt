@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.data.sync
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordinator
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
@@ -29,8 +30,16 @@ data class SyncResult(
     val vehiclesMerged: Int = 0,
     val expensesMerged: Int = 0,
     val fuelMerged: Int = 0,
+    /** Remote LWW wins + new remote-only rows (for Stage C phase reset). */
+    val fuelRemoteWins: Int = 0,
     val needsRemoteConsent: Boolean = false,
     val recoveryIntent: Intent? = null,
+)
+
+/** Per-destination fuel tab LWW stats. */
+private data class FuelTabSyncStats(
+    val upserted: Int,
+    val remoteWins: Int,
 )
 
 @Singleton
@@ -43,6 +52,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     private val syncIdBackfill: SyncIdBackfill,
     private val photoBackupCoordinator: Lazy<PhotoBackupCoordinator>,
     private val photoStorage: PhotoStorageManager,
+    /** Post-fuel LWW: field-merge partials + breaker-aware question rebuild. */
+    private val batchFuelImportCoordinator: Lazy<BatchFuelImportCoordinator>,
 ) {
 
     private val syncMutex = Mutex()
@@ -76,15 +87,24 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 val single = syncSingleDestination(dest, hint)
                 recordSpreadsheetResult(failureStore, dest.id, label, single)
                 runPostSyncVehicleDownloads(hint)
-                onProgress?.onStatus(if (single.success) "$label done" else "$label failed")
-                onProgress?.onStatus(single.message)
-                return@withContext single
+                val withPost = if (single.success) {
+                    appendPostFuelMerge(
+                        single,
+                        fuelRowsChanged = single.fuelRemoteWins > 0,
+                    )
+                } else {
+                    single
+                }
+                onProgress?.onStatus(if (withPost.success) "$label done" else "$label failed")
+                onProgress?.onStatus(withPost.message)
+                return@withContext withPost
             }
 
             val results = mutableListOf<Pair<String, SyncResult>>()
             var totalVehicles = 0
             var totalExpenses = 0
             var totalFuel = 0
+            var totalFuelRemoteWins = 0
             var anyFailure = false
             var consentResult: SyncResult? = null
 
@@ -107,6 +127,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                     totalVehicles += result.vehiclesMerged
                     totalExpenses += result.expensesMerged
                     totalFuel += result.fuelMerged
+                    totalFuelRemoteWins += result.fuelRemoteWins
                 } else {
                     anyFailure = true
                     if (result.needsRemoteConsent && consentResult == null) {
@@ -117,7 +138,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
             runPostSyncVehicleDownloads(accountHint)
 
-            val message = SyncResultMessages.spreadsheetSummary(
+            var message = SyncResultMessages.spreadsheetSummary(
                 results = results,
                 anyFailure = anyFailure,
                 totalVehicles = totalVehicles,
@@ -130,6 +151,15 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 onProgress?.onStatus(finalMessage)
                 return@withContext consentResult.copy(message = finalMessage)
             }
+            // Once per sync session after successful multi-dest fuel LWW
+            if (!anyFailure) {
+                val postNote = runPostFuelMergeAndRebuild(
+                    fuelRowsChanged = totalFuelRemoteWins > 0,
+                )
+                if (postNote != null) {
+                    message = "$message · $postNote"
+                }
+            }
             onProgress?.onStatus(message)
             SyncResult(
                 success = !anyFailure,
@@ -137,8 +167,58 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 vehiclesMerged = totalVehicles,
                 expensesMerged = totalExpenses,
                 fuelMerged = totalFuel,
+                fuelRemoteWins = totalFuelRemoteWins,
             )
         }
+    }
+
+    /**
+     * After fuel tabular LWW: same pipeline as Import **Run merge** —
+     * field-merge all live partials + detect-only odo + rebuild regenerable questions
+     * (breaker-aware MPG_OUTLIER). Pending JSON is local-only; correctness = rebuild.
+     */
+    /**
+     * @param fuelRowsChanged true when LWW wrote remote winners/inserts or field-merge
+     * will see new data — resets Stage C phase to 1 (skipped items not sticky).
+     */
+    private suspend fun runPostFuelMergeAndRebuild(fuelRowsChanged: Boolean): String? {
+        return try {
+            onProgressSafe("Post-sync: merge + re-check questions…")
+            val result = batchFuelImportCoordinator.get().postSyncRescanResetPhase(
+                fuelRowsChanged = fuelRowsChanged,
+            )
+            val phaseReset = if (fuelRowsChanged) {
+                " · review questions restarted (phase 1)"
+            } else {
+                ""
+            }
+            val note =
+                if (result.updated > 0 || result.deleted > 0 || result.pendingAdded > 0 || fuelRowsChanged) {
+                    "Sync: merged ${result.updated} partials, ${result.deleted} absorbs · " +
+                        "${result.totalPending} questions$phaseReset"
+                } else if (result.totalPending > 0) {
+                    "Sync: ${result.totalPending} questions (no new merges)"
+                } else {
+                    null
+                }
+            if (note != null) Log.i(TAG, "post-fuel merge: $note (${result.message})")
+            note
+        } catch (e: Exception) {
+            Log.w(TAG, "post-fuel merge/rebuild failed", e)
+            null
+        }
+    }
+
+    private fun onProgressSafe(msg: String) {
+        Log.i(TAG, msg)
+    }
+
+    private suspend fun appendPostFuelMerge(
+        result: SyncResult,
+        fuelRowsChanged: Boolean,
+    ): SyncResult {
+        val note = runPostFuelMergeAndRebuild(fuelRowsChanged) ?: return result
+        return result.copy(message = "${result.message} · $note")
     }
 
     private fun resolveLegacyOrPrimaryDest(store: SyncDestinationStore): SpreadsheetDestination {
@@ -185,15 +265,20 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             return SyncResult(false, authRequiredMessage(dest.provider))
         }
         return try {
+            // System Unassigned vehicle (id=0) so Fuel - Unassigned tab exists
+            vehicleRepository.ensureUnassignedVehicle()
             val vehiclesMerged = syncVehiclesTab(dest, backend, hint)
             val expensesMerged = syncExpensesTab(dest, backend, hint)
-            val fuelMerged = syncFuelTabs(dest, backend, hint)
+            val fuel = syncFuelTabs(dest, backend, hint)
             SyncResult(
                 success = true,
-                message = "Sync complete: $vehiclesMerged vehicles, $expensesMerged expenses, $fuelMerged fuel",
+                message = "Sync complete: $vehiclesMerged vehicles, $expensesMerged expenses, " +
+                    "${fuel.upserted} fuel" +
+                    if (fuel.remoteWins > 0) " (${fuel.remoteWins} remote/new)" else "",
                 vehiclesMerged = vehiclesMerged,
                 expensesMerged = expensesMerged,
-                fuelMerged = fuelMerged,
+                fuelMerged = fuel.upserted,
+                fuelRemoteWins = fuel.remoteWins,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Sync failed for dest=${dest.id}", e)
@@ -518,12 +603,17 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         return sheetTitles.filter { it != oldTab }
     }
 
-    private suspend fun syncFuelTabs(dest: SpreadsheetDestination, backend: TabularShareBackend, accountHint: String?): Int {
+    private suspend fun syncFuelTabs(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+    ): FuelTabSyncStats {
         var sheetTitles = backend.listTabTitles(dest, accountHint)
         val hintStore = FuelTabRenameHintStore(context)
         val vehicles = vehicleRepository.getAllIncludingDeleted().filter { !it.deleted && it.syncId.isNotBlank() }
         val vehicleIdBySyncId = vehicles.associate { it.syncId to it.id }
         var total = 0
+        var remoteWins = 0
         for (vehicle in vehicles) {
             val tabName = TabularSchema.fuelTabName(vehicle.name)
             sheetTitles = migrateFuelTabRenameIfNeeded(
@@ -561,6 +651,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                     (entry as FuelEntry).copy(vehicleId = vehicle.id)
                 }
                 if (winner != null && winner.syncId.isNotBlank()) {
+                    val remoteWon = remote != null && (
+                        local == null || remote.updatedAt > local.updatedAt
+                        )
+                    if (remoteWon) remoteWins++
                     fuelRepository.upsertFromSync(winner)
                     merged.add(winner)
                     total++
@@ -581,7 +675,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 logTag = "Fuel-${vehicle.name}",
             )
         }
-        return total
+        return FuelTabSyncStats(upserted = total, remoteWins = remoteWins)
     }
 
     private fun resolveVehicleIdFromSyncId(

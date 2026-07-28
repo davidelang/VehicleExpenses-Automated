@@ -158,7 +158,14 @@ fun QuickFillupScreen(
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val scope = rememberCoroutineScope()
 
-    val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+    val vehiclesRaw by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+    // Exclude system Unassigned bucket (id=0) from Quick Fill picker
+    val vehicles = remember(vehiclesRaw) {
+        vehiclesRaw.filter {
+            it.id != 0 &&
+                it.syncId != com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository.UNASSIGNED_VEHICLE_SYNC_ID
+        }
+    }
     var selectedVehicleId by rememberSaveable { mutableStateOf<Int?>(null) }
     var odometer by rememberSaveable { mutableStateOf("") }
     var gallons by rememberSaveable { mutableStateOf("") }
@@ -670,8 +677,8 @@ fun QuickFillupScreen(
                         val odoTrim = odometer.trim()
                         val costTrim = cost.trim()
                         val galTrim = gallons.trim()
-                        // Auto partial: any of odo/cost/gallons blank after trim.
-                        val isPartialFill = odoTrim.isBlank() || costTrim.isBlank() || galTrim.isBlank()
+                        // Explicit partial only (default false). Incomplete = missing fields,
+                        // not isPartialFill=true. Full-fill anchors use field presence.
                         val rawVolume = galTrim.toDoubleOrNull() ?: 0.0
                         val saveVolume = if (rawVolume == 0.0) {
                             0.0
@@ -692,7 +699,7 @@ fun QuickFillupScreen(
                                 latitude = lat,
                                 longitude = lon,
                                 location = loc,
-                                isPartialFill = isPartialFill
+                                isPartialFill = false,
                             )
                         )
                         NativePaddleEngine.releaseAllOdoBuffers()
@@ -717,7 +724,7 @@ fun QuickFillupScreen(
                         captureViewState = CaptureViewState.Live
                         Toast.makeText(
                             context,
-                            if (isPartialFill) "Partial fill-up saved" else "Fill-up saved",
+                            "Fill-up saved",
                             Toast.LENGTH_SHORT
                         ).show()
                     }
