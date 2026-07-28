@@ -946,3 +946,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Guard: cachedRefs empty → onLog error + return before buffers/JSON/photo loop
 - JSON header only after usable-ref guard
 - Root fields: usable_vehicle_refs, vehicles_in_db (keep device/version/timestamp/total_photos)
+
+## 2026-07-28 - Phase 4-5 deep_analysis + isolation
+
+- deep_analysis.py: explicit ERROR when metrics empty but results non-empty (vehicles/No match counts + restore-data hint)
+- Isolation: only ExperimentAlignmentScreen.kt product change; silent-lock/Set J body unchanged
+- Final tag simplify_experiments/builds @ d71dfb56
