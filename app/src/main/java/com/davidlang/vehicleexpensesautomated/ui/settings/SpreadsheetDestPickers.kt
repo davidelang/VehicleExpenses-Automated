@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
@@ -126,6 +127,19 @@ internal fun SpreadsheetDestList(
                         }
                         statusIsError = !result.success
                         statusText = result.message
+                        // No auto-merge after sync; optional CTA if odo+pump partials look pairable
+                        if (result.success) {
+                            val unmatched = withContext(Dispatchers.IO) {
+                                viewModel.hasUnmatchedFuelPartials()
+                            }
+                            if (unmatched) {
+                                Toast.makeText(
+                                    context,
+                                    "Unmatched partials may need Run merge (Import Old Pictures)",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
                     } finally {
                         if (!awaitingConsent) syncInProgress = false
                     }

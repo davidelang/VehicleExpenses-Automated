@@ -44,13 +44,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import android.content.SharedPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
+import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportPendingStore
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
@@ -152,9 +161,27 @@ class MainActivity : ComponentActivity() {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 var backfillComplete by remember { mutableStateOf(syncIdBackfill.isBackfillDone()) }
                 var syncFailureVisible by remember { mutableStateOf(false) }
+                var pendingReviewCount by remember { mutableStateOf(0) }
+
+                fun refreshChromeIndicators() {
+                    syncFailureVisible = SyncFailureStore(context).hasAnyFailure()
+                    pendingReviewCount = BatchImportPendingStore.count(context)
+                }
 
                 LaunchedEffect(backfillComplete, navController.currentBackStackEntry) {
-                    syncFailureVisible = SyncFailureStore(context).hasAnyFailure()
+                    refreshChromeIndicators()
+                }
+
+                // Refresh yellow ? when app returns to foreground (after merge/answer/sync)
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            refreshChromeIndicators()
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
                 }
 
                 if (!backfillComplete) {
@@ -182,6 +209,7 @@ class MainActivity : ComponentActivity() {
                         try {
                             withContext(Dispatchers.IO) {
                                 syncIdBackfill.runIfNeeded()
+                                vehicleRepository.ensureUnassignedVehicle()
                                 syncManager.scheduleFromDestination()
                                 photoBackupManager.scheduleFromDestination()
                             }
@@ -223,7 +251,8 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "expense" -> "New Expense Entry"
                     currentRoute?.startsWith("expense/") == true -> "Edit Expense"
                     currentRoute == "expenselist" -> "Expense List"
-                    currentRoute == "import" -> "Import Old Pictures"
+                    currentRoute == "import" ||
+                        currentRoute?.startsWith("import") == true -> "Import Old Pictures"
                     currentRoute == "reports" -> "Reports & Charts"
                     currentRoute == "settings" -> "Settings"
                     currentRoute == "settings/spreadsheet_sync" -> "Spreadsheet Sync"
@@ -338,6 +367,26 @@ class MainActivity : ComponentActivity() {
                             TopAppBar(
                                 title = { Text(if (title == "Vehicle Expenses") title else "Vehicle Expenses - $title") },
                                 actions = {
+                                    // Order: review questions (yellow), then sync failure (red)
+                                    if (pendingReviewCount > 0) {
+                                        IconButton(
+                                            onClick = {
+                                                navController.navigate("import?review=1") {
+                                                    launchSingleTop = true
+                                                }
+                                            },
+                                            modifier = Modifier.semantics {
+                                                contentDescription = "Review questions"
+                                            },
+                                        ) {
+                                            Text(
+                                                if (pendingReviewCount > 99) "?99+"
+                                                else "?$pendingReviewCount",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = Color(0xFFFFC107), // amber/warning yellow
+                                            )
+                                        }
+                                    }
                                     if (syncFailureVisible) {
                                         IconButton(onClick = { navController.navigate("settings") }) {
                                             Text(
@@ -386,7 +435,22 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 composable("expenselist") { ExpenseListScreen(navController = navController) }
-                                composable("import") { ImportOldPicturesScreen(navController = navController) }
+                                composable(
+                                    route = "import?review={review}",
+                                    arguments = listOf(
+                                        navArgument("review") {
+                                            type = NavType.StringType
+                                            defaultValue = "0"
+                                        },
+                                    ),
+                                ) { entry ->
+                                    val expandReview =
+                                        entry.arguments?.getString("review") == "1"
+                                    ImportOldPicturesScreen(
+                                        navController = navController,
+                                        expandReview = expandReview,
+                                    )
+                                }
                                 composable("reports") { ReportsScreen(navController = navController) }
                                 composable("settings") { SettingsScreen(navController = navController) }
                                 composable("settings/spreadsheet_sync") {

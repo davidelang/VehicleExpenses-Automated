@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelEconomyChains
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
@@ -27,18 +28,26 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// --- Math helpers (leg = interim-gallon sum between consecutive full fills) ---
+// --- Math helpers (field-conditional full fills + MPG / $/mi chains) ---
+// Shared with Stage C via FuelEconomyChains (REPORTS_METRICS).
+private fun hasOdo(e: FuelEntry): Boolean = FuelEconomyChains.hasOdo(e)
+private fun hasCost(e: FuelEntry): Boolean = FuelEconomyChains.hasCost(e)
+private fun hasVol(e: FuelEntry): Boolean = FuelEconomyChains.hasVol(e)
+private fun isFullFill(e: FuelEntry): Boolean = FuelEconomyChains.isFullFill(e)
+private fun contributesToEconomy(e: FuelEntry): Boolean = FuelEconomyChains.contributesToEconomy(e)
+private fun isMpgChainBreaker(e: FuelEntry): Boolean = FuelEconomyChains.isMpgChainBreaker(e)
+private fun isDpmChainBreaker(e: FuelEntry): Boolean = FuelEconomyChains.isDpmChainBreaker(e)
 
-/** Full fill points: not partial, odometer > 0 (time-sorted ascending). */
+/** Full fill points (time-sorted ascending; id tie-break). */
 private fun fullFillsAscending(entries: List<FuelEntry>): List<FuelEntry> {
     return entries
-        .filter { !it.isPartialFill && it.odometer > 0 }
-        .sortedBy { it.timestamp }
+        .filter { isFullFill(it) }
+        .sortedWith(compareBy({ it.timestamp }, { it.id }))
 }
 
 /**
  * One full-fill leg ending at [endFill] (must have a previous full).
- * cost/vol are rolled sums over (prev.ts, end.ts] with gallons > 0.
+ * cost/vol are rolled sums over (prev.ts, end.ts] for rows with cost/vol present.
  */
 private data class FullFillLeg(
     val endFill: FuelEntry,
@@ -49,7 +58,8 @@ private data class FullFillLeg(
 
 /**
  * Newest valid full-fill legs (newest first). Excludes first full (no predecessor).
- * Only legs with odo increase and volDisplay > 0 — every leg has defined mpg.
+ * Skips pairs with any MPG chain breaker in (prev.ts, cur.ts].
+ * Only legs with odo increase and sumVol > 0 — every leg has defined mpg.
  */
 private fun newestValidLegs(
     entries: List<FuelEntry>,
@@ -63,13 +73,16 @@ private fun newestValidLegs(
         val prev = full[i - 1]
         val cur = full[i]
         if (cur.odometer <= prev.odometer) continue
-        val window = entries.filter {
-            it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp && it.gallons > 0
+        val between = entries.filter {
+            it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp
         }
-        val sumVol = window.sumOf { it.gallons }
+        if (between.any { contributesToEconomy(it) && isMpgChainBreaker(it) }) continue
+        val withVol = between.filter { contributesToEconomy(it) && hasVol(it) }
+        val sumVol = withVol.sumOf { it.gallons }
         if (sumVol <= 0) continue
+        val withCost = between.filter { contributesToEconomy(it) && hasCost(it) }
         val sumCostByCurrency = CurrencyCodes.sumByCurrency(
-            window,
+            withCost,
             defaultStored,
             { it.currency },
             { it.cost },
@@ -88,44 +101,55 @@ private fun newestValidLegs(
 }
 
 /**
- * **$/mi** = (sum of fuel cost + sum of expenses for this vehicle)
- * / (maxOdo − minOdo) over all fuel rows with `odometer > 0`.
+ * **$/mi** over unbroken full→full segments only.
  *
- * Partial fills at the **start or end** of the odo range are acceptable noise
- * (they still contribute min/max if odo > 0). Mid-trip partials do not need
- * special handling: they do not change max−min when odometers still bound the range.
- * Denominator is **not** restricted to full fills only.
+ * For each adjacent full-fill pair with odo increase and no $/mi chain breaker
+ * in (prev.ts, cur.ts]: add miles and fuel costs (hasCost) + expenses whose
+ * date falls in that window. Odo-only rows never set endpoints or break.
  *
- * @return n/a (null) if fewer than two positive odometers or max ≤ min.
+ * @return n/a (null) if no segment miles, empty cost map, or mixed currency.
  */
 private fun dollarsPerMile(
     fuelEntries: List<FuelEntry>,
     expenses: List<ExpenseEntry>,
     defaultStored: String,
 ): Double? {
-    val odos = fuelEntries.map { it.odometer }.filter { it > 0 }
-    if (odos.size < 2) return null
-    val minO = odos.minOrNull() ?: return null
-    val maxO = odos.maxOrNull() ?: return null
-    if (maxO <= minO) return null
-    val fuelSums = CurrencyCodes.sumByCurrency(
-        fuelEntries,
-        defaultStored,
-        { it.currency },
-        { it.cost },
-    )
-    val expSums = CurrencyCodes.sumByCurrency(
-        expenses,
-        defaultStored,
-        { it.currency },
-        { it.amount },
-    )
+    val full = fullFillsAscending(fuelEntries)
+    if (full.size < 2) return null
+    var miles = 0
     val combined = mutableMapOf<String, Double>()
-    for ((k, v) in fuelSums) combined[k] = combined.getOrDefault(k, 0.0) + v
-    for ((k, v) in expSums) combined[k] = combined.getOrDefault(k, 0.0) + v
-    if (combined.size != 1) return null
+    for (i in 1 until full.size) {
+        val prev = full[i - 1]
+        val cur = full[i]
+        if (cur.odometer <= prev.odometer) continue
+        val between = fuelEntries.filter {
+            it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp
+        }
+        if (between.any { contributesToEconomy(it) && isDpmChainBreaker(it) }) continue
+        miles += cur.odometer - prev.odometer
+        val fuelWithCost = between.filter { contributesToEconomy(it) && hasCost(it) }
+        val fuelSums = CurrencyCodes.sumByCurrency(
+            fuelWithCost,
+            defaultStored,
+            { it.currency },
+            { it.cost },
+        )
+        for ((k, v) in fuelSums) combined[k] = combined.getOrDefault(k, 0.0) + v
+        val windowExpenses = expenses.filter {
+            it.date > prev.timestamp && it.date <= cur.timestamp
+        }
+        val expSums = CurrencyCodes.sumByCurrency(
+            windowExpenses,
+            defaultStored,
+            { it.currency },
+            { it.amount },
+        )
+        for ((k, v) in expSums) combined[k] = combined.getOrDefault(k, 0.0) + v
+    }
+    if (miles <= 0) return null
+    if (combined.isEmpty() || combined.size != 1) return null
     val totalCost = combined.values.first()
-    return totalCost / (maxO - minO).toDouble()
+    return totalCost / miles.toDouble()
 }
 
 private data class VehicleReportStats(
@@ -145,8 +169,32 @@ private data class VehicleReportStats(
     val expensesByCategory: Map<String, Map<String, Double>>
 )
 
+/** Absolute display band for leg mpg (filter only — no row mutation). */
+private const val DISPLAY_MPG_MIN = 5.0
+private const val DISPLAY_MPG_MAX = 80.0
+
+/**
+ * Display filter: keep mpg in 5–80, then drop 3× median outliers.
+ * Does not mutate fuel rows.
+ */
+private fun excludeMpgOutliers(legs: List<FullFillLeg>): List<FullFillLeg> {
+    val banded = legs.filter { it.mpg in DISPLAY_MPG_MIN..DISPLAY_MPG_MAX }
+    if (banded.size < 3) return banded
+    val sorted = banded.map { it.mpg }.sorted()
+    val mid = sorted.size / 2
+    val ref = if (sorted.size % 2 == 0) {
+        (sorted[mid - 1] + sorted[mid]) / 2.0
+    } else {
+        sorted[mid]
+    }
+    if (ref <= 0) return banded
+    return banded.filter { it.mpg >= ref / 3.0 && it.mpg <= ref * 3.0 }
+}
+
 private fun formatMpg(value: Double?): String {
-    return if (value == null) "n/a" else "%.1f".format(value)
+    if (value == null) return "n/a"
+    if (value < 1.0 || value > 100.0) return "n/a"
+    return "%.1f".format(value)
 }
 
 private fun formatEntryDate(timestamp: Long): String {
@@ -183,8 +231,14 @@ private fun vehicleStatsOnlyLine(
     val fuel = CurrencyCodes.formatAggregateSum(stats.fuelCostByCurrency, defaultSymbol)
     return "Fuel $fuel · " +
         "${"%.1f".format(stats.gallons)}$unitLabel · " +
-        "${stats.fillCount}(${stats.partialCount}p) · " +
+        "fills ${stats.fillCount}(${stats.partialCount}p) · " +
         "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · $/mi $dpm"
+}
+
+/** User-facing vehicle label: never “Vehicle 0”. */
+fun reportVehicleDisplayName(vehicleId: Int, nameById: Map<Int, String>): String {
+    if (vehicleId == 0) return "Unknown"
+    return nameById[vehicleId] ?: "Vehicle $vehicleId"
 }
 
 /** Exp total + category breakdown (compact). */
@@ -257,9 +311,11 @@ fun ReportsScreen(navController: NavHostController) {
             val vExp = expByV[vehicleId].orEmpty()
             val allLegsNewestFirst = newestValidLegs(vFuel, defaultStored, maxLegs = Int.MAX_VALUE)
             val legsChrono = allLegsNewestFirst.asReversed() // oldest→newest for avg/last
+            // Display avg excludes 3× MPG outliers (same product rule as pending detect)
+            val displayLegs = excludeMpgOutliers(legsChrono)
             VehicleReportStats(
                 vehicleId = vehicleId,
-                name = vehicleNameById[vehicleId] ?: "Vehicle $vehicleId",
+                name = reportVehicleDisplayName(vehicleId, vehicleNameById),
                 fuelCostByCurrency = CurrencyCodes.sumByCurrency(
                     vFuel,
                     defaultStored,
@@ -269,10 +325,10 @@ fun ReportsScreen(navController: NavHostController) {
                 gallons = vFuel.sumOf { it.gallons },
                 fillCount = vFuel.size,
                 partialCount = vFuel.count { it.isPartialFill },
-                lastMpg = legsChrono.lastOrNull()?.mpg,
-                avgMpg = if (legsChrono.isEmpty()) null else legsChrono.map { it.mpg }.average(),
+                lastMpg = displayLegs.lastOrNull()?.mpg,
+                avgMpg = if (displayLegs.isEmpty()) null else displayLegs.map { it.mpg }.average(),
                 dollarsPerMile = dollarsPerMile(vFuel, vExp, defaultStored),
-                last5Legs = allLegsNewestFirst.take(5),
+                last5Legs = excludeMpgOutliers(allLegsNewestFirst).take(5),
                 expenseTotalByCurrency = CurrencyCodes.sumByCurrency(
                     vExp,
                     defaultStored,
@@ -584,7 +640,7 @@ private fun FullFillLegRow(
             Box(
                 modifier = Modifier
                     .weight(0.7f)
-                    .height(18.dp),
+                    .height(22.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
                 Box(
@@ -594,8 +650,9 @@ private fun FullFillLegRow(
                         .background(Color(0xFF81C784).copy(alpha = 0.45f))
                 )
                 Text(
-                    "mpg ${"%.1f".format(leg.mpg)}",
+                    "mpg ${formatMpg(leg.mpg)}",
                     style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
                     modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
@@ -651,11 +708,14 @@ private fun FillsBlock(
             Text("No fuel entries", style = MaterialTheme.typography.bodyMedium)
         } else {
             fills.forEach { entry ->
-                val name = vehicleNameById[entry.vehicleId] ?: "Vehicle ${entry.vehicleId}"
-                val partial = if (entry.isPartialFill) " · partial" else ""
+                val name = reportVehicleDisplayName(entry.vehicleId, vehicleNameById)
+                val flags = buildList {
+                    if (entry.isPartialFill) add("partial")
+                    if (entry.economyIgnored) add("ignored")
+                }.joinToString(" · ").let { if (it.isEmpty()) "" else " · $it" }
                 Card(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     Column(modifier = Modifier.padding(10.dp)) {
-                        Text("$name · ${formatEntryDate(entry.timestamp)}$partial")
+                        Text("$name · ${formatEntryDate(entry.timestamp)}$flags")
                         Text(
                             "odo ${entry.odometer} · " +
                                 "${CurrencyCodes.formatAmount(entry.cost, entry.currency, defaultSymbol)} · " +
