@@ -871,3 +871,84 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Merged instruction (7d8aa877) into master via merge-branch-into-master (FF index path)
 - project-facts: HTML edit/render orientation; missed-fill TODO left open
 - POST-MERGE gate: 34+ feature paths staged including assets and .kt
+
+## 2026-07-27 - simplify-experiments execution start
+
+- Approved plan: dev-ai-interaction/plans/simplify-experiments-keep-setj-gmm-seti-20260727-plan.md
+- Role=Coder branch=simplify_experiments HEAD=91e94f53
+- Baseline: no simplify_experiments/builds yet (first successful build_app will create it)
+- Next: Phase 0 durable obsolete tags
+
+## 2026-07-27 - Phase 0 obsolete tags
+
+- Created annotated tags at HEAD 91e94f53:
+- obsolete-experiment-alignment-sets-a-e
+- obsolete-experiment-pump-multi-sets
+- No source edits this phase
+
+## 2026-07-27 - Phase 1 alignment obsolete doc
+
+- Added docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md (sets A/E + helper catalog + silent lock note)
+- No Kotlin experiment changes this phase
+
+## 2026-07-27 - Phase 2 pump obsolete doc
+
+- Added docs/obsolete/EXPERIMENT_PUMP_SETS.md (sets A-H/D/E/G/G- + full helper catalog; G--/I retained)
+- No Kotlin experiment changes this phase
+
+## 2026-07-27 - Phases 3-6b alignment simplify
+
+- Phase 3: silent mlAngle ID lock + Set J only report column; drop Set A ML header
+- Phase 4: outer JSON winner/discovery_landmarks from pathways set_j
+- Phase 5-6: removed runMLKitIterative + runBinTrialsMLKit (no callers)
+- Phase 6b: removed createScaledBase64 + drawCropBoxesOnReference orphans
+- Set J iterative body left bit-identical (char-aware, Raw+Bin-Trials)
+
+## 2026-07-27 - Phases 7-13 pump simplify
+
+- flows + flowProcessors = G-- and Set I only
+- deleted procA-F, procG, procGMinus, procH bodies
+- deleted binPeak stack, longLived/histPlot, ML discovery buffers, B/D retract helpers
+- deleted already-dead combinePhotoFragments/generateCdf/applyRecognitionHeuristics/drawHunks/pumpCreateScaledBase64
+- kept makeGProc, procGMinusMinus, procI, hybrid helpers, doBOrDRedOnlyImage
+
+## 2026-07-27 - Phases 14-16 final
+
+- Orphan sweep: removed already-dead pGetFullLandmarksFromJson, pToEvenInt, toEvenInt; restored prepareScale + getHistStats after expression-body delete mishap
+- Updated obsolete docs with orphan rows
+- Updated docs/PUMP_EXPERIMENT_FLOWS.md for G-- + I only
+- Isolation: only experiment screens + docs/obsolete + eng-log (+ PUMP_EXPERIMENT_FLOWS); OcrHarness/fuel/data untouched
+
+## 2026-07-28 - alignment-json-device-field execution start
+
+- Approved plan: dev-ai-interaction/plans/alignment-json-device-field-match-pump-20260728-plan.md
+- Branch=simplify_experiments baseline tag simplify_experiments/builds @ 1b12ec33
+- Scope: ExperimentAlignmentScreen.kt only — add root device=Build.MODEL to match pump JSON
+
+## 2026-07-28 - Phase 1 Build.import
+
+- ExperimentAlignmentScreen: import android.os.Build
+
+## 2026-07-28 - Phase 2-3 alignment JSON device field
+
+- Inserted root device=Build.MODEL after version before total_photos (match pump)
+- Forensic: key device, source Build.MODEL, field order parity with ExperimentPumpScreen jsonHeader
+- Only ExperimentAlignmentScreen.kt product code touched
+
+## 2026-07-28 - fix-alignment-report-empty-vehicles execution start
+
+- Approved plan: dev-ai-interaction/plans/fix-alignment-report-empty-vehicles-deep-analysis-20260728-plan.md
+- Branch=simplify_experiments baseline simplify_experiments/builds @ c3e8d07c
+- Scope: fail-fast empty cachedRefs, root meta, deep_analysis empty-metrics message
+
+## 2026-07-28 - Phases 1-3 fail-fast + root meta
+
+- Guard: cachedRefs empty → onLog error + return before buffers/JSON/photo loop
+- JSON header only after usable-ref guard
+- Root fields: usable_vehicle_refs, vehicles_in_db (keep device/version/timestamp/total_photos)
+
+## 2026-07-28 - Phase 4-5 deep_analysis + isolation
+
+- deep_analysis.py: explicit ERROR when metrics empty but results non-empty (vehicles/No match counts + restore-data hint)
+- Isolation: only ExperimentAlignmentScreen.kt product change; silent-lock/Set J body unchanged
+- Final tag simplify_experiments/builds @ d71dfb56
