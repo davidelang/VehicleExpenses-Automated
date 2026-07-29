@@ -265,7 +265,44 @@ class BatchFuelImportCoordinator @Inject constructor(
         combined.copy(message = msg)
     }
 
-    private data class FieldMergeStats(val updated: Int, val deleted: Int)
+    data class FieldMergeStats(
+        val updated: Int,
+        val deleted: Int,
+        val liveCount: Int = 0,
+        val pendingFromMerge: Int = 0,
+        val secondPass: Boolean = false,
+    )
+
+    /**
+     * Field-merge only (no Stage C rebuild). Used after fuel LWW **before** sheet
+     * write-back so survivors + tombstones leave on the same Sync.
+     * Re-runs once if first pass absorbed nothing but unmatched odo/pump pairs remain.
+     */
+    suspend fun fieldMergeForSync(
+        onProgress: (String) -> Unit = {},
+    ): FieldMergeStats = withContext(Dispatchers.IO) {
+        val first = runFieldMerge(onProgress)
+        val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+        val unmatched = FuelRowMergeEngine.hasUnmatchedPartials(live)
+        Log.i(
+            TAG,
+            "fieldMergeForSync pass1 live=${first.liveCount} updates=${first.updated} " +
+                "deletes=${first.deleted} pending=${first.pendingFromMerge} unmatched=$unmatched",
+        )
+        if (first.deleted == 0 && unmatched) {
+            onProgress("Second-pass field merge (unmatched partials remain)…")
+            Log.i(TAG, "fieldMergeForSync second-pass merge")
+            val second = runFieldMerge(onProgress)
+            return@withContext FieldMergeStats(
+                updated = first.updated + second.updated,
+                deleted = first.deleted + second.deleted,
+                liveCount = second.liveCount,
+                pendingFromMerge = second.pendingFromMerge,
+                secondPass = true,
+            )
+        }
+        first
+    }
 
     private suspend fun runFieldMerge(onProgress: (String) -> Unit): FieldMergeStats {
         onProgress("Photo path migrate (if needed)…")
@@ -278,9 +315,15 @@ class BatchFuelImportCoordinator @Inject constructor(
             Log.w(TAG, "durable migrate before merge: ${e.message}")
         }
         onProgress("Loading fuel entries…")
-        val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
-        onProgress("Planning merge (${live.size} rows)…")
+        val all = fuelEntryRepository.getAllIncludingDeleted()
+        val live = all.filter { !it.deleted }
+        onProgress("Planning merge (${live.size} live / ${all.size} incl deleted)…")
         val plan = FuelRowMergeEngine.planMerge(live)
+        Log.i(
+            TAG,
+            "planMerge live=${live.size} updates=${plan.updates.size} " +
+                "hardDeletes=${plan.hardDeletes.size} newPending=${plan.newPending.size}",
+        )
         var soft = 0
         var hard = 0
         if (!plan.isEmpty()) {
@@ -299,6 +342,8 @@ class BatchFuelImportCoordinator @Inject constructor(
         return FieldMergeStats(
             updated = plan.updates.size,
             deleted = plan.hardDeletes.size,
+            liveCount = live.size,
+            pendingFromMerge = plan.newPending.size,
         )
     }
 

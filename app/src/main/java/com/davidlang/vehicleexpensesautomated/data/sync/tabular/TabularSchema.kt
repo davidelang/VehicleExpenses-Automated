@@ -121,6 +121,10 @@ object TabularSchema {
         )
     }
 
+    /**
+     * Fuel sheet **ID** column is **device-local** (Room PK of the writer).
+     * Cross-device identity is **Sync ID** only — never use sheet ID as Room PK on pull.
+     */
     fun fuelToRow(entry: FuelEntry, vehicleSyncId: String = ""): List<String> = listOf(
         entry.syncId,
         entry.id.toString(),
@@ -183,7 +187,8 @@ object TabularSchema {
 
     fun rowToFuel(row: List<String>, headerIndex: Map<String, Int>): FuelEntry {
         fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
-        val id = cell("ID").toLongOrNull() ?: 0L
+        // Sheet ID is legacy / device-local only — never materialize as Room PK
+        val sheetIdLegacy = cell("ID").toLongOrNull() ?: 0L
         val vehicleId = cell("Vehicle ID").toIntOrNull() ?: 0
         val odometer = cell("Odometer").toIntOrNull() ?: 0
         val gallons = cell("Gallons").toDoubleOrNull() ?: 0.0
@@ -192,11 +197,13 @@ object TabularSchema {
         val timestamp = cell("Timestamp").toLongOrNull() ?: 0L
         val syncIdCell = cell("Sync ID")
         val syncId = syncIdCell.ifBlank {
-            SyncIdGenerator.deterministicFuelFromSheet(id, vehicleId, odometer, gallons, cost, timestamp)
+            SyncIdGenerator.deterministicFuelFromSheet(
+                sheetIdLegacy, vehicleId, odometer, gallons, cost, timestamp,
+            )
         }
         return FuelEntry(
             syncId = syncId,
-            id = id,
+            id = 0,
             vehicleId = vehicleId,
             odometer = odometer,
             gallons = gallons,
@@ -224,7 +231,8 @@ object TabularSchema {
 
     fun rowToExpense(row: List<String>, headerIndex: Map<String, Int>): ExpenseEntry {
         fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
-        val id = cell("ID").toLongOrNull() ?: 0L
+        // Sheet ID is device-local only — Room PK auto-generated on insert
+        val sheetIdLegacy = cell("ID").toLongOrNull() ?: 0L
         val vehicleId = cell("Vehicle ID").toIntOrNull() ?: 0
         val date = cell("Date").toLongOrNull() ?: 0L
         val amount = cell("Amount").toDoubleOrNull() ?: 0.0
@@ -234,12 +242,14 @@ object TabularSchema {
         val vendor = cell("Vendor")
         val syncIdCell = cell("Sync ID")
         val syncId = syncIdCell.ifBlank {
-            SyncIdGenerator.deterministicExpenseFromSheet(id, vehicleId, date, amount, category, description, vendor)
+            SyncIdGenerator.deterministicExpenseFromSheet(
+                sheetIdLegacy, vehicleId, date, amount, category, description, vendor,
+            )
         }
         val vehicleSyncIdsJson = rowToExpenseVehicleSyncIdsJson(row, headerIndex)
         return ExpenseEntry(
             syncId = syncId,
-            id = id,
+            id = 0,
             vehicleId = vehicleId,
             vehicleSyncIdsJson = vehicleSyncIdsJson,
             amount = amount,
