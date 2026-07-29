@@ -60,7 +60,13 @@ class FuelEntryRepository @Inject constructor(
     suspend fun findBySyncId(syncId: String): FuelEntry? =
         fuelEntryDao.findBySyncId(syncId)
 
-    /** Sync path: preserve remote/local winner timestamps; do not stamp updatedAt to now. */
+    /**
+     * Sync path: preserve remote/local winner timestamps; do not stamp updatedAt to now.
+     *
+     * Cross-device identity is **[FuelEntry.syncId]** only. On insert (`existing == null`),
+     * always use **`id = 0`** so Room auto-generates a **local** PK — never insert another
+     * device’s Room id from the sheet (UNIQUE constraint crash).
+     */
     suspend fun upsertFromSync(entry: FuelEntry) {
         val withSyncId = ensureSyncId(entry)
         val existing = fuelEntryDao.findBySyncId(withSyncId.syncId)
@@ -68,7 +74,8 @@ class FuelEntryRepository @Inject constructor(
             val photoUrl = photoStorage.pickPreferredLocalPath(withSyncId.photoUrl, existing.photoUrl)
             withSyncId.copy(id = existing.id, photoUrl = photoUrl)
         } else {
-            withSyncId
+            // Foreign sheet "ID" must not become Room PK
+            withSyncId.copy(id = 0)
         }
         if (existing != null) {
             fuelEntryDao.updateFuelEntry(toWrite)

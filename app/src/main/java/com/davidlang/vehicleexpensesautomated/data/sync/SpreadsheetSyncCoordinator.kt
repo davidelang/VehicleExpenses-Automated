@@ -603,6 +603,13 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         return sheetTitles.filter { it != oldTab }
     }
 
+    /**
+     * Fuel sync order (locked product):
+     * 1) LWW all vehicle fuel tabs into Room
+     * 2) Field-merge (absorb partials; soft-delete losers) — **before** sheet write
+     * 3) Write each fuel tab from **fresh** Room (incl. tombstones)
+     * Stage C question rebuild stays in post-sync after this returns.
+     */
     private suspend fun syncFuelTabs(
         dest: SpreadsheetDestination,
         backend: TabularShareBackend,
@@ -614,6 +621,17 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         val vehicleIdBySyncId = vehicles.associate { it.syncId to it.id }
         var total = 0
         var remoteWins = 0
+
+        // Snapshot remote headers/rows per vehicle for write-back after merge
+        data class FuelTabSnapshot(
+            val vehicle: Vehicle,
+            val tabName: String,
+            val headerIndex: Map<String, Int>,
+            val remoteDataRows: List<List<String>>,
+        )
+        val snapshots = mutableListOf<FuelTabSnapshot>()
+
+        // --- Pass 1: LWW only (no sheet write yet) ---
         for (vehicle in vehicles) {
             val tabName = TabularSchema.fuelTabName(vehicle.name)
             sheetTitles = migrateFuelTabRenameIfNeeded(
@@ -643,7 +661,11 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             val remoteBySyncId = remoteFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
             val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
 
-            val merged = mutableListOf<FuelEntry>()
+            Log.i(
+                TAG,
+                "Fuel LWW ${vehicle.name}: local=${localFuel.size} remote=${remoteFuel.size} keys=${allSyncIds.size}",
+            )
+
             for (syncId in allSyncIds) {
                 val local = localBySyncId[syncId]
                 val remote = remoteBySyncId[syncId]
@@ -654,23 +676,73 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                     val remoteWon = remote != null && (
                         local == null || remote.updatedAt > local.updatedAt
                         )
-                    if (remoteWon) remoteWins++
+                    if (remoteWon) {
+                        remoteWins++
+                        if (remote.deleted && local != null && !local.deleted) {
+                            Log.i(
+                                TAG,
+                                "LWW: remote tombstone wins syncId=$syncId over local live " +
+                                    "id=${local.id} remoteUpdatedAt=${remote.updatedAt} " +
+                                    "localUpdatedAt=${local.updatedAt}",
+                            )
+                        }
+                    }
                     fuelRepository.upsertFromSync(winner)
-                    merged.add(winner)
                     total++
                 }
             }
 
-            val sortedMerged = merged.sortedWith(compareBy({ it.timestamp }, { it.odometer }, { it.syncId }))
+            snapshots.add(
+                FuelTabSnapshot(
+                    vehicle = vehicle,
+                    tabName = tabName,
+                    headerIndex = headerIndex,
+                    remoteDataRows = remoteDataRows,
+                ),
+            )
+        }
+
+        // --- Pass 2: field-merge on full Room (absorb partials before write-back) ---
+        val liveBefore = fuelRepository.getAllIncludingDeleted().filter { !it.deleted }.size
+        Log.i(TAG, "Fuel field-merge before sheet write; live=$liveBefore")
+        val mergeStats = try {
+            batchFuelImportCoordinator.get().fieldMergeForSync { msg ->
+                Log.i(TAG, "fieldMerge: $msg")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "field-merge before write failed", e)
+            null
+        }
+        if (mergeStats != null) {
+            Log.i(
+                TAG,
+                "Fuel field-merge done updates=${mergeStats.updated} deletes=${mergeStats.deleted} " +
+                    "secondPass=${mergeStats.secondPass} live=${mergeStats.liveCount}",
+            )
+        }
+
+        // --- Pass 3: write each tab from fresh Room (incl. deleted tombstones) ---
+        for (snap in snapshots) {
+            val vehicle = snap.vehicle
+            val fresh = fuelRepository.getAllIncludingDeleted()
+                .filter { it.vehicleId == vehicle.id && it.syncId.isNotBlank() }
+            val sortedMerged = fresh.sortedWith(
+                compareBy({ it.timestamp }, { it.odometer }, { it.syncId }),
+            )
+            val deletedCount = sortedMerged.count { it.deleted }
+            Log.i(
+                TAG,
+                "Fuel write ${vehicle.name}: rows=${sortedMerged.size} deleted=$deletedCount",
+            )
             writeRowsIncremental(
                 dest = dest,
                 backend = backend,
-                tabName = tabName,
+                tabName = snap.tabName,
                 headers = TabularSchema.FUEL_HEADERS,
                 sortedRows = sortedMerged.map { TabularSchema.fuelToRow(it, vehicle.syncId) },
                 sortedSyncIds = sortedMerged.map { it.syncId },
-                remoteDataRows = remoteDataRows,
-                headerIndex = headerIndex,
+                remoteDataRows = snap.remoteDataRows,
+                headerIndex = snap.headerIndex,
                 accountHint = accountHint,
                 logTag = "Fuel-${vehicle.name}",
             )

@@ -48,7 +48,10 @@ class ExpenseEntryRepository @Inject constructor(
     suspend fun findBySyncId(syncId: String): ExpenseEntry? =
         dao.findBySyncId(syncId)
 
-    /** Sync path: preserve remote/local winner timestamps; do not stamp updatedAt to now. */
+    /**
+     * Sync path: preserve remote/local winner timestamps; do not stamp updatedAt to now.
+     * On insert, **`id = 0`** so Room generates a local PK (sheet ID is not cross-device).
+     */
     suspend fun upsertFromSync(entry: ExpenseEntry) {
         val withSyncId = ensureSyncId(entry)
         val existing = dao.findBySyncId(withSyncId.syncId)
@@ -60,7 +63,7 @@ class ExpenseEntryRepository @Inject constructor(
             )
             withSyncId.copy(id = existing.id, photoUrl = photoUrl)
         } else {
-            withSyncId
+            withSyncId.copy(id = 0)
         }
         if (existing != null) {
             dao.update(toWrite)

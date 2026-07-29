@@ -399,40 +399,8 @@ class GoogleSheetsClient @Inject constructor(
     fun expenseToRow(entry: ExpenseEntry, vehicleSyncId: String = ""): List<String> =
         TabularSchema.expenseToRow(entry, vehicleSyncId)
 
-    fun rowToFuel(row: List<String>, headerIndex: Map<String, Int>): FuelEntry {
-        fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
-        val id = cell("ID").toLongOrNull() ?: 0L
-        val vehicleId = cell("Vehicle ID").toIntOrNull() ?: 0
-        val odometer = cell("Odometer").toIntOrNull() ?: 0
-        val gallons = cell("Gallons").toDoubleOrNull() ?: 0.0
-        val cost = cell("Cost").toDoubleOrNull() ?: 0.0
-        val currency = CurrencyCodes.fromSymbolOrCode(cell("Currency"))
-        val timestamp = cell("Timestamp").toLongOrNull() ?: 0L
-        val syncIdCell = cell("Sync ID")
-        val syncId = syncIdCell.ifBlank {
-            SyncIdGenerator.deterministicFuelFromSheet(id, vehicleId, odometer, gallons, cost, timestamp)
-        }
-        return FuelEntry(
-            syncId = syncId,
-            id = id,
-            vehicleId = vehicleId,
-            odometer = odometer,
-            gallons = gallons,
-            cost = cost,
-            currency = currency,
-            timestamp = timestamp,
-            photoUrl = cell("Photo URL").ifBlank { null },
-            isPartialFill = cell("Partial Fill").equals("true", ignoreCase = true),
-            latitude = cell("Latitude").toDoubleOrNull(),
-            longitude = cell("Longitude").toDoubleOrNull(),
-            location = cell("Location").ifBlank { null },
-            cloudManifest = cell("Cloud Manifest").ifBlank { null },
-            originDeviceId = cell("Origin Device ID"),
-            updatedAt = cell("Updated At").toLongOrNull() ?: 0L,
-            deleted = cell("Deleted").equals("true", ignoreCase = true),
-            deletedAt = cell("Deleted At").toLongOrNull(),
-        )
-    }
+    fun rowToFuel(row: List<String>, headerIndex: Map<String, Int>): FuelEntry =
+        TabularSchema.rowToFuel(row, headerIndex)
 
     fun rowToFuelVehicleSyncId(row: List<String>, headerIndex: Map<String, Int>): String {
         fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
