@@ -6,6 +6,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
+import com.davidlang.vehicleexpensesautomated.data.dao.MergeAckDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.BuildConfig
 import com.davidlang.vehicleexpensesautomated.data.db.AppDatabase
@@ -85,6 +86,25 @@ object DatabaseModule {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
                 "ALTER TABLE fuel_entries ADD COLUMN economyIgnored INTEGER NOT NULL DEFAULT 0",
+            )
+        }
+    }
+
+    val MIGRATION_14_15 = object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS merge_acks (
+                    ackId TEXT NOT NULL PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    memberSyncIds TEXT NOT NULL,
+                    createdAt INTEGER NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    deleted INTEGER NOT NULL,
+                    deletedAt INTEGER,
+                    originDeviceId TEXT NOT NULL
+                )
+                """.trimIndent(),
             )
         }
     }
@@ -274,6 +294,7 @@ object DatabaseModule {
             MIGRATION_11_12,
             MIGRATION_12_13,
             MIGRATION_13_14,
+            MIGRATION_14_15,
         )
         .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()
@@ -287,4 +308,7 @@ object DatabaseModule {
 
     @Provides
     fun provideFuelEntryDao(database: AppDatabase): FuelEntryDao = database.fuelEntryDao()
+
+    @Provides
+    fun provideMergeAckDao(database: AppDatabase): MergeAckDao = database.mergeAckDao()
 }

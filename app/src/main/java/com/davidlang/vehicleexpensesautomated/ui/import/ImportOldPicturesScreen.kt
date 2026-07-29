@@ -1232,6 +1232,13 @@ private fun PendingQuestionCard(
                 ) {
                     Text("Use entered odo + re-merge")
                 }
+                OutlinedButton(
+                    onClick = { onAction(PendingAnswerAction.KeepBothNoMerge) },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Looks correct — don't ask again")
+                }
             }
 
             // Unknown vehicle assign
@@ -1308,6 +1315,21 @@ private fun PendingQuestionCard(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("This is a gap (blank breaker)")
+                }
+            }
+            if (item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP) {
+                OutlinedButton(
+                    onClick = {
+                        onAction(
+                            PendingAnswerAction.AcknowledgeLooksCorrect(
+                                kind = "AMBIGUOUS_MULTI_PUMP",
+                            ),
+                        )
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Looks correct — don't ask again")
                 }
             }
 
@@ -1492,6 +1514,19 @@ private fun PendingQuestionCard(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text("Ignore")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            onAction(
+                                PendingAnswerAction.AcknowledgeLooksCorrect(
+                                    kind = "MPG_OUTLIER",
+                                ),
+                            )
+                        },
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Looks correct — don't ask again")
                     }
                 }
                 if (item.kind == BatchPendingKind.ECONOMY_IGNORED) {
@@ -2018,6 +2053,14 @@ private fun FullscreenPhotoDialog(
                             enabled = enabled,
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Use entered odo") }
+                        OutlinedButton(
+                            onClick = {
+                                onAction(PendingAnswerAction.KeepBothNoMerge)
+                                onDismiss()
+                            },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Looks correct — don't ask again") }
                     }
                     BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE -> {
                         vehicles.forEach { v ->
@@ -2056,6 +2099,34 @@ private fun FullscreenPhotoDialog(
                                 enabled = enabled,
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text("Treat as partial (if complete)") }
+                        }
+                        if (item.kind == BatchPendingKind.MPG_OUTLIER) {
+                            OutlinedButton(
+                                onClick = {
+                                    onAction(
+                                        PendingAnswerAction.AcknowledgeLooksCorrect(
+                                            kind = "MPG_OUTLIER",
+                                        ),
+                                    )
+                                    onDismiss()
+                                },
+                                enabled = enabled,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Looks correct — don't ask again") }
+                        }
+                        if (item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP) {
+                            OutlinedButton(
+                                onClick = {
+                                    onAction(
+                                        PendingAnswerAction.AcknowledgeLooksCorrect(
+                                            kind = "AMBIGUOUS_MULTI_PUMP",
+                                        ),
+                                    )
+                                    onDismiss()
+                                },
+                                enabled = enabled,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text("Looks correct — don't ask again") }
                         }
                         OutlinedButton(
                             onClick = {
