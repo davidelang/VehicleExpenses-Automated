@@ -64,6 +64,12 @@ object FuelRowMergeEngine {
     fun planMerge(
         entries: List<FuelEntry>,
         windowMs: Long = MERGE_WINDOW_MS,
+        /**
+         * Live MERGE_EXEMPT member sets (fuel syncIds). If any set is a subset of
+         * a sub-cluster's syncIds, that sub-cluster is left as-is (no absorb,
+         * no CONFLICT_ODO pending).
+         */
+        mergeExemptSets: List<Set<String>> = emptyList(),
     ): MergePlan {
         val live = entries.filter { !it.deleted }
         if (live.isEmpty()) return MergePlan()
@@ -117,6 +123,11 @@ object FuelRowMergeEngine {
                     if (sub.size < 2) {
                         val only = sub.singleOrNull() ?: continue
                         if (only.id in reassignedById) allUpdates += only
+                        continue
+                    }
+                    val subSyncIds = sub.map { it.syncId }.filter { it.isNotBlank() }.toSet()
+                    if (isClusterMergeExempt(subSyncIds, mergeExemptSets)) {
+                        // User acked keep-separate / looks-correct — no absorb, no CONFLICT
                         continue
                     }
                     val plan = mergeOneCluster(sub)
@@ -277,6 +288,13 @@ object FuelRowMergeEngine {
                     suggestedVehicleId = e.dash.vehicleId.takeIf { it > 0 },
                     extra = mapOf(
                         "entryIds" to listOf(e.dash.id, e.pump.id).joinToString(","),
+                        "entrySyncIds" to listOf(e.dash.syncId, e.pump.syncId)
+                            .filter { it.isNotBlank() }
+                            .joinToString(","),
+                        "memberSyncIds" to listOf(e.dash.syncId, e.pump.syncId)
+                            .filter { it.isNotBlank() }
+                            .sorted()
+                            .joinToString(","),
                         "photoPaths" to allPhotoUris(listOf(e.dash, e.pump)).joinToString("|"),
                     ),
                 )
@@ -338,6 +356,11 @@ object FuelRowMergeEngine {
                         fuelEntryId = sorted.firstOrNull()?.id,
                         extra = mapOf(
                             "entryIds" to sorted.map { it.id }.joinToString(","),
+                            "entrySyncIds" to sorted.map { it.syncId }.filter { it.isNotBlank() }
+                                .joinToString(","),
+                            "memberSyncIds" to sorted.map { it.syncId }.filter { it.isNotBlank() }
+                                .sorted()
+                                .joinToString(","),
                             "odos" to positiveOdos.joinToString(","),
                             "photoPaths" to photos.joinToString("|"),
                         ),
@@ -581,6 +604,20 @@ object FuelRowMergeEngine {
     private fun hasPositiveOdo(e: FuelEntry) = e.odometer > 0
     private fun hasCost(e: FuelEntry) = e.cost > 0
     private fun hasVol(e: FuelEntry) = e.gallons > 0
+
+    /**
+     * True when any exempt set is non-empty and entirely contained in [clusterSyncIds].
+     * Empty cluster syncIds never match (cannot identify members).
+     */
+    internal fun isClusterMergeExempt(
+        clusterSyncIds: Set<String>,
+        mergeExemptSets: List<Set<String>>,
+    ): Boolean {
+        if (clusterSyncIds.isEmpty() || mergeExemptSets.isEmpty()) return false
+        return mergeExemptSets.any { exempt ->
+            exempt.isNotEmpty() && exempt.all { it in clusterSyncIds }
+        }
+    }
 
     /**
      * True if there exists at least one odo-only + pump-only pair within [windowMs]

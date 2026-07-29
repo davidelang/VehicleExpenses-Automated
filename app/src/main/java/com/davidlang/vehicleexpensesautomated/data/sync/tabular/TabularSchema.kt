@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.data.sync.tabular
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdGenerator
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
@@ -13,6 +14,8 @@ object TabularSchema {
     const val TAB_VEHICLES = "Vehicles"
     const val TAB_EXPENSES = "Expenses"
     const val TAB_SYNC_TEST = "__sync_test"
+    /** Durable merge / Stage C “looks correct” acks (LWW by Sync ID = ackId). */
+    const val TAB_MERGE_ACKS = "Merge acks"
     const val FUEL_TAB_PREFIX = "Fuel - "
 
     val VEHICLE_HEADERS = listOf(
@@ -31,6 +34,10 @@ object TabularSchema {
         "Sync ID", "ID", "Vehicle Sync ID", "Vehicle Sync IDs", "Vehicle ID", "Date", "Amount", "Currency", "Category", "Description", "Vendor",
         "Odometer", "Photo URL", "Receipt Image Path", "Latitude", "Longitude",
         "Location", "Cloud Manifest", "Origin Device ID", "Updated At", "Deleted", "Deleted At",
+    )
+    val MERGE_ACK_HEADERS = listOf(
+        "Sync ID", "Kind", "Member Sync IDs",
+        "Created At", "Origin Device ID", "Updated At", "Deleted", "Deleted At",
     )
 
     fun fuelTabName(vehicleName: String): String = FUEL_TAB_PREFIX + sanitizeTabName(vehicleName)
@@ -290,5 +297,33 @@ object TabularSchema {
     fun rowToExpenseVehicleSyncIdsJson(row: List<String>, headerIndex: Map<String, Int>): String {
         val syncIds = rowToExpenseVehicleSyncIds(row, headerIndex)
         return ExpenseVehicleSyncIds.format(syncIds)
+    }
+
+    fun ackToRow(ack: MergeAck): List<String> = listOf(
+        ack.ackId,
+        ack.kind,
+        ack.memberSyncIds,
+        ack.createdAt.toString(),
+        ack.originDeviceId,
+        ack.updatedAt.toString(),
+        ack.deleted.toString(),
+        ack.deletedAt?.toString() ?: "",
+    )
+
+    fun rowToAck(row: List<String>, headerIndex: Map<String, Int>): MergeAck {
+        fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
+        val ackId = cell("Sync ID").ifBlank { SyncIdGenerator.randomSyncId() }
+        return MergeAck(
+            ackId = ackId,
+            kind = cell("Kind").ifBlank { MergeAck.KIND_MERGE_EXEMPT },
+            memberSyncIds = MergeAck.sortedMembersCsv(
+                cell("Member Sync IDs").split(',', '|').map { it.trim() },
+            ),
+            createdAt = cell("Created At").toLongOrNull() ?: 0L,
+            originDeviceId = cell("Origin Device ID"),
+            updatedAt = cell("Updated At").toLongOrNull() ?: 0L,
+            deleted = cell("Deleted").equals("true", ignoreCase = true),
+            deletedAt = cell("Deleted At").toLongOrNull(),
+        )
     }
 }

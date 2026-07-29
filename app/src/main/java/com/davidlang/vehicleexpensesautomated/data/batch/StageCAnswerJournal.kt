@@ -64,6 +64,8 @@ object StageCAnswerJournal {
         return when (action) {
             is PendingAnswerAction.Skip -> JSONObject().put("skip", true)
             is PendingAnswerAction.KeepBothNoMerge -> JSONObject().put("keepBoth", true)
+            is PendingAnswerAction.AcknowledgeLooksCorrect ->
+                JSONObject().put("ackKind", action.kind ?: "fromItem")
             is PendingAnswerAction.RetryPump -> JSONObject().put("retry", true)
             is PendingAnswerAction.ManualEditFuelFields -> JSONObject().apply {
                 put("odometer", action.odometer)

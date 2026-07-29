@@ -62,6 +62,7 @@ data class MergeApplyResult(
 class BatchFuelImportCoordinator @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val fuelEntryRepository: FuelEntryRepository,
+    private val mergeAckStore: MergeAckStore,
 ) {
     companion object {
         private const val TAG = "BatchFuelImport"
@@ -318,11 +319,18 @@ class BatchFuelImportCoordinator @Inject constructor(
         val all = fuelEntryRepository.getAllIncludingDeleted()
         val live = all.filter { !it.deleted }
         onProgress("Planning merge (${live.size} live / ${all.size} incl deleted)…")
-        val plan = FuelRowMergeEngine.planMerge(live)
+        val exemptSets = try {
+            mergeAckStore.liveMergeExemptSets()
+        } catch (e: Exception) {
+            Log.w(TAG, "load merge exempt sets failed: ${e.message}")
+            emptyList()
+        }
+        val plan = FuelRowMergeEngine.planMerge(live, mergeExemptSets = exemptSets)
         Log.i(
             TAG,
             "planMerge live=${live.size} updates=${plan.updates.size} " +
-                "hardDeletes=${plan.hardDeletes.size} newPending=${plan.newPending.size}",
+                "hardDeletes=${plan.hardDeletes.size} newPending=${plan.newPending.size} " +
+                "exemptSets=${exemptSets.size}",
         )
         var soft = 0
         var hard = 0
@@ -427,12 +435,38 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
 
         val skipped = StageCSkipLedger.load(appContext, phase)
-        val rebuilt = StageCSkipLedger.filterOut(candidates, skipped)
+        val afterSkip = StageCSkipLedger.filterOut(candidates, skipped)
+        val rebuilt = try {
+            // Enrich member syncIds from Room when only entryIds present
+            val liveById = afterLive.associateBy { it.id }
+            val enriched = afterSkip.map { item ->
+                val existing = mergeAckStore.pendingMemberSyncIds(item)
+                if (existing.isNotEmpty()) return@map item
+                val ids = item.extra["entryIds"]
+                    ?.split(',')
+                    ?.mapNotNull { it.trim().toLongOrNull() }
+                    .orEmpty()
+                if (ids.isEmpty()) return@map item
+                val syncIds = ids.mapNotNull { liveById[it]?.syncId?.takeIf { s -> s.isNotBlank() } }
+                if (syncIds.isEmpty()) return@map item
+                item.copy(
+                    extra = item.extra + mapOf(
+                        "entrySyncIds" to syncIds.joinToString(","),
+                        "memberSyncIds" to syncIds.sorted().joinToString(","),
+                    ),
+                )
+            }
+            mergeAckStore.filterPending(enriched)
+        } catch (e: Exception) {
+            Log.w(TAG, "mergeAck filterPending failed: ${e.message}")
+            afterSkip
+        }
         BatchImportPendingStore.save(appContext, rebuilt)
 
         val msg =
             "phase $phase: ${rebuilt.size} questions " +
-                "(skippedLedger=${skipped.size}, candidates=${candidates.size})"
+                "(skippedLedger=${skipped.size}, candidates=${candidates.size}, " +
+                "afterAckFilter=${rebuilt.size})"
         Log.i(TAG, "rebuildPendingForPhase $msg")
         onProgress("Done: $msg")
         return MergeApplyResult(
@@ -663,6 +697,25 @@ class BatchFuelImportCoordinator @Inject constructor(
                 BatchImportPendingStore.remove(appContext, item.id)
                 PendingAnswerResult("Skipped pending item", remerge = false)
             }
+            is PendingAnswerAction.AcknowledgeLooksCorrect -> {
+                val kind = action.kind?.takeIf { it.isNotBlank() }
+                    ?: when (item.kind) {
+                        BatchPendingKind.MPG_OUTLIER ->
+                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_MPG_OUTLIER
+                        BatchPendingKind.AMBIGUOUS_MULTI_PUMP ->
+                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_AMBIGUOUS_MULTI_PUMP
+                        BatchPendingKind.CONFLICT_ODO ->
+                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_CONFLICT_ODO
+                        else -> item.kind.name
+                    }
+                val alsoExempt = kind ==
+                    com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_CONFLICT_ODO ||
+                    kind ==
+                    com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_AMBIGUOUS_MULTI_PUMP ||
+                    kind ==
+                    com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_MERGE_EXEMPT
+                durableAckLooksCorrect(item, kind, alsoMergeExempt = alsoExempt)
+            }
             is PendingAnswerAction.AssignVehicle -> {
                 when (item.kind) {
                     BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
@@ -768,10 +821,18 @@ class BatchFuelImportCoordinator @Inject constructor(
                 resolveConflictOdo(item, action.chosenOdo)
             }
             is PendingAnswerAction.KeepBothNoMerge -> {
-                BatchImportPendingStore.remove(appContext, item.id)
-                PendingAnswerResult(
-                    "Kept both (no merge); re-merge may re-ask CONFLICT_ODO",
-                    remerge = false,
+                durableAckLooksCorrect(
+                    item = item,
+                    kind = when (item.kind) {
+                        BatchPendingKind.AMBIGUOUS_MULTI_PUMP ->
+                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_AMBIGUOUS_MULTI_PUMP
+                        BatchPendingKind.MPG_OUTLIER ->
+                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_MPG_OUTLIER
+                        else ->
+                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_CONFLICT_ODO
+                    },
+                    alsoMergeExempt = item.kind == BatchPendingKind.CONFLICT_ODO ||
+                        item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
                 )
             }
             is PendingAnswerAction.ManualPumpEntry -> {
@@ -1322,6 +1383,59 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
+     * Resolve member fuel syncIds from pending extra (entrySyncIds / entryIds → Room)
+     * and write durable ack; dismiss pending. MERGE_EXEMPT when [alsoMergeExempt].
+     */
+    private suspend fun durableAckLooksCorrect(
+        item: BatchPendingItem,
+        kind: String,
+        alsoMergeExempt: Boolean,
+    ): PendingAnswerResult {
+        val syncIds = resolveMemberSyncIds(item)
+        if (syncIds.isEmpty()) {
+            BatchImportPendingStore.remove(appContext, item.id)
+            return PendingAnswerResult(
+                "Acknowledged (no syncIds resolved; pending removed only)",
+                remerge = false,
+            )
+        }
+        mergeAckStore.acknowledge(
+            kind = kind,
+            memberFuelSyncIds = syncIds,
+            alsoMergeExempt = alsoMergeExempt,
+        )
+        BatchImportPendingStore.remove(appContext, item.id)
+        Log.i(TAG, "durable ack kind=$kind members=${syncIds.sorted()} exempt=$alsoMergeExempt")
+        return PendingAnswerResult(
+            "Looks correct — won't ask again ($kind)",
+            remerge = true,
+        )
+    }
+
+    /** Member fuel syncIds from extra keys or entryIds → live fuel rows. */
+    private suspend fun resolveMemberSyncIds(item: BatchPendingItem): Set<String> {
+        val fromExtra = mergeAckStore.pendingMemberSyncIds(item)
+        if (fromExtra.isNotEmpty()) return fromExtra
+        val entryIds = buildList {
+            item.fuelEntryId?.let { add(it) }
+            item.extra["entryIds"]
+                ?.split(',')
+                ?.mapNotNull { it.trim().toLongOrNull() }
+                ?.let { addAll(it) }
+            item.extra["prevEntryId"]?.toLongOrNull()?.let { add(it) }
+            item.extra["endEntryId"]?.toLongOrNull()?.let { add(it) }
+            item.extra["lastEntryId"]?.toLongOrNull()?.let { add(it) }
+            item.extra["thisEntryId"]?.toLongOrNull()?.let { add(it) }
+            item.extra["suspectId"]?.toLongOrNull()?.let { add(it) }
+        }.distinct()
+        if (entryIds.isEmpty()) return emptySet()
+        val live = fuelEntryRepository.getAllIncludingDeleted()
+            .filter { !it.deleted }
+            .associateBy { it.id }
+        return entryIds.mapNotNull { live[it]?.syncId?.takeIf { s -> s.isNotBlank() } }.toSet()
+    }
+
+    /**
      * MPG_OUTLIER context lines: one fill immediately before [lastTs], one after [thisTs],
      * same vehicle only. Does not walk generic ±N that can skip the true leg start.
      */
@@ -1749,8 +1863,17 @@ sealed class PendingAnswerAction {
      */
     data class ResolveConflictOdo(val chosenOdo: Int) : PendingAnswerAction()
 
-    /** Drop the pending conflict without changing fuel rows (re-merge may re-ask). */
+    /**
+     * Durable keep-both / looks-correct for CONFLICT / AMBIGUOUS (acks + MERGE_EXEMPT).
+     * Toast should say it will not re-ask while the ack holds.
+     */
     data object KeepBothNoMerge : PendingAnswerAction()
+
+    /**
+     * Durable "Looks correct — don't ask again" for Stage C cards.
+     * [kind] defaults from item; MPG_OUTLIER does not set MERGE_EXEMPT.
+     */
+    data class AcknowledgeLooksCorrect(val kind: String? = null) : PendingAnswerAction()
 
     /** Manual cost/volume for unreadable pump (insert or update). */
     data class ManualPumpEntry(val cost: Double, val volume: Double) : PendingAnswerAction()

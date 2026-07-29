@@ -48,9 +48,10 @@ On first launch after a schema upgrade that introduces blank **`syncId`** values
 
 | Layer | What | When |
 |-------|------|------|
-| **Row merge (LWW)** | Per `syncId`, side with greater `updatedAt` wins (tie → local). Upsert into Room **preserves** winner `updatedAt` (no restamp). Then write merged set back to the sheet. | Every successful spreadsheet/tabular fuel tab sync |
-| **Field merge (partials)** | After fuel LWW for the session, run the same **Run merge** engine as Import (`BatchFuelImportCoordinator.applyMerge`): 15m window, tight dash/pump pairs, soft-delete published absorbs. Cross-device odo-only + pump-only become one full fill when both land. | Once per successful sync session (not per row) |
-| **Question rebuild** | Pending JSON is **local-only** (not LWW’d). After field-merge: detect-only odo sanitizer + re-enqueue unknown vehicle / economyIgnored / **breaker-aware** `MPG_OUTLIER` (same chain rules as [REPORTS_METRICS.md](REPORTS_METRICS.md)). Legs with blank gap markers are **not** asked. | Same post-sync pass |
+| **Row merge (LWW)** | Per `syncId`, side with greater `updatedAt` wins (tie → local). Upsert into Room **preserves** winner `updatedAt` (no restamp). **Room PK is never taken from the sheet ID column** (insert with `id=0`). Then field-merge, then write merged set back to the sheet. | Every successful spreadsheet/tabular fuel tab sync |
+| **Field merge (partials)** | After fuel LWW, **before** sheet write-back: same **Run merge** engine (`fieldMergeForSync`): 15m window, tight pairs, soft-delete published absorbs. Second pass if unmatched odo/pump pairs remain. **MERGE_EXEMPT** acks suppress absorb of acked member `syncId` sets. | Once per successful fuel sync session |
+| **Question rebuild** | Pending JSON is **local-only** (not LWW’d). After field-merge: phase-scoped detectors; durable **Merge acks** drop re-asks for acked CONFLICT / AMBIGUOUS / MPG fingerprints. | Post-sync after fuel is stable |
+| **Merge acks tab** | Sheet tab **Merge acks** LWW by `ackId` (Sync ID column). Survives multi-device; kinds include `CONFLICT_ODO`, `AMBIGUOUS_MULTI_PUMP`, `MPG_OUTLIER`, `MERGE_EXEMPT`. | Same sync as fuel |
 
 User edits (gap insert, odo fix, partial checkbox) go through repository APIs that **stamp `updatedAt = now`**, so the next sync **pushes** those cleanups unless remote edited the same `syncId` later.
 

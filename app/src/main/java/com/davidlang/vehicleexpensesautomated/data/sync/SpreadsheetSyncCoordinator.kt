@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordinator
+import com.davidlang.vehicleexpensesautomated.data.batch.MergeAckStore
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
@@ -54,6 +56,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     private val photoStorage: PhotoStorageManager,
     /** Post-fuel LWW: field-merge partials + breaker-aware question rebuild. */
     private val batchFuelImportCoordinator: Lazy<BatchFuelImportCoordinator>,
+    private val mergeAckStore: MergeAckStore,
 ) {
 
     private val syncMutex = Mutex()
@@ -221,6 +224,57 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         return result.copy(message = "${result.message} · $note")
     }
 
+    /**
+     * LWW "Merge acks" tab by ackId (Sync ID column). Includes soft-deleted acks
+     * so tombstones propagate.
+     */
+    private suspend fun syncMergeAcksTab(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+    ): Int {
+        backend.ensureHeaders(dest, TabularSchema.TAB_MERGE_ACKS, TabularSchema.MERGE_ACK_HEADERS, accountHint)
+        val remoteRows = backend.readAllRows(dest, TabularSchema.TAB_MERGE_ACKS, accountHint)
+        val headerRow = remoteRows.firstOrNull() ?: TabularSchema.MERGE_ACK_HEADERS
+        val headerIndex = TabularSchema.headerIndex(headerRow)
+        val remoteDataRows = remoteRows.drop(1)
+            .filter { it.any { cell -> cell.isNotBlank() } }
+        val remoteAcks = remoteDataRows.map { TabularSchema.rowToAck(it, headerIndex) }
+
+        val localAcks = mergeAckStore.getAllIncludingDeleted()
+        val localById = localAcks.filter { it.ackId.isNotBlank() }.associateBy { it.ackId }
+        val remoteById = remoteAcks.filter { it.ackId.isNotBlank() }.associateBy { it.ackId }
+        val allIds = (localById.keys + remoteById.keys).toSet()
+
+        val merged = mutableListOf<MergeAck>()
+        var count = 0
+        for (ackId in allIds) {
+            val local = localById[ackId]
+            val remote = remoteById[ackId]
+            val winner = mergeLww(local, remote)
+            if (winner != null && winner.ackId.isNotBlank()) {
+                mergeAckStore.upsertFromSync(winner)
+                merged.add(winner)
+                count++
+            }
+        }
+
+        val sortedMerged = merged.sortedWith(compareBy({ it.kind }, { it.ackId }))
+        writeRowsIncremental(
+            dest = dest,
+            backend = backend,
+            tabName = TabularSchema.TAB_MERGE_ACKS,
+            headers = TabularSchema.MERGE_ACK_HEADERS,
+            sortedRows = sortedMerged.map { TabularSchema.ackToRow(it) },
+            sortedSyncIds = sortedMerged.map { it.ackId },
+            remoteDataRows = remoteDataRows,
+            headerIndex = headerIndex,
+            accountHint = accountHint,
+            logTag = "MergeAcks",
+        )
+        return count
+    }
+
     private fun resolveLegacyOrPrimaryDest(store: SyncDestinationStore): SpreadsheetDestination {
         store.spreadsheetDestination()?.let { return it }
         val legacyId = legacySheetId()
@@ -270,11 +324,16 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             val vehiclesMerged = syncVehiclesTab(dest, backend, hint)
             val expensesMerged = syncExpensesTab(dest, backend, hint)
             val fuel = syncFuelTabs(dest, backend, hint)
+            val mergeAcksMerged = syncMergeAcksTab(dest, backend, hint)
+            Log.i(TAG, "Merge acks tab upserted=$mergeAcksMerged")
             SyncResult(
                 success = true,
-                message = "Sync complete: $vehiclesMerged vehicles, $expensesMerged expenses, " +
-                    "${fuel.upserted} fuel" +
-                    if (fuel.remoteWins > 0) " (${fuel.remoteWins} remote/new)" else "",
+                message = buildString {
+                    append("Sync complete: $vehiclesMerged vehicles, $expensesMerged expenses, ")
+                    append("${fuel.upserted} fuel")
+                    if (fuel.remoteWins > 0) append(" (${fuel.remoteWins} remote/new)")
+                    if (mergeAcksMerged > 0) append(", $mergeAcksMerged merge-acks")
+                },
                 vehiclesMerged = vehiclesMerged,
                 expensesMerged = expensesMerged,
                 fuelMerged = fuel.upserted,
@@ -845,6 +904,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         is Vehicle -> item.updatedAt
         is FuelEntry -> item.updatedAt
         is ExpenseEntry -> item.updatedAt
+        is MergeAck -> item.updatedAt
         else -> 0L
     }
 

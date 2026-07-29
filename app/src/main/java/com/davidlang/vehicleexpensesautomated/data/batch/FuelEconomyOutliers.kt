@@ -131,6 +131,13 @@ object FuelEconomyOutliers {
             suggestedVehicleId = leg.vehicleId,
             extra = mapOf(
                 "entryIds" to "${leg.prevEntry.id},${leg.endEntry.id}",
+                "entrySyncIds" to listOf(leg.prevEntry.syncId, leg.endEntry.syncId)
+                    .filter { it.isNotBlank() }
+                    .joinToString(","),
+                "memberSyncIds" to listOf(leg.prevEntry.syncId, leg.endEntry.syncId)
+                    .filter { it.isNotBlank() }
+                    .sorted()
+                    .joinToString(","),
                 // Separate lists for Last fill / This fill photo blocks
                 "thisPhotoPaths" to thisPhotos.joinToString("|"),
                 "lastPhotoPaths" to lastPhotos.joinToString("|"),
