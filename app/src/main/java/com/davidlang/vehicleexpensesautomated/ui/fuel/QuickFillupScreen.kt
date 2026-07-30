@@ -747,7 +747,7 @@ fun QuickFillupScreen(
             val vehicleFieldWidth = vehicleTextWidth.coerceIn(80.dp, 172.dp)
 
             val odoBorder = if (captureMode == "odo") {
-                modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium).padding(8.dp)
+                Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium).padding(8.dp)
             } else {
                 Modifier.padding(8.dp)
             }
@@ -831,7 +831,7 @@ fun QuickFillupScreen(
 
         // Group 2: Volume + Cost
         val pumpBorder = if (captureMode == "pump") {
-            modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium).padding(8.dp)
+            Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium).padding(8.dp)
         } else {
             Modifier.padding(8.dp)
         }
