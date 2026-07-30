@@ -1551,3 +1551,12 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Magic-approved plan: dev-ai-interaction/plans/ui-consistency-cards-density-theme-20260730-plan.md
 - Branch minor-fixes; shared TappableCard/AdaptiveItemGrid/empty/date/cancel + apply in-scope UIs + theme accents + Material Save icons + UI_COMPAT docs
+
+## 2026-07-30 - ui-consistency-cards-density-theme: complete
+
+- Plan: ui-consistency-cards-density-theme-20260730-plan.md
+- UiChrome primitives; Material Save/PhotoLibrary; theme accents; date/header/cancel unify
+- Lists: Expense, Fuel History, Reports multi-col AdaptiveItemGrid, Lab hub/fills Cards, Syncing TappableCard
+- UI_COMPATIBILITY.md sections 11–15 (Cards, density, theme, icons, shared controls)
+- Residual: Import pending list not fully re-gridded; experiments untouched; camera chrome fixed contrast kept
+- builds tag minor-fixes/builds
