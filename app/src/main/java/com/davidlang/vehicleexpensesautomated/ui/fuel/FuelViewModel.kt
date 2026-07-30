@@ -28,6 +28,21 @@ class FuelViewModel @Inject constructor(
         }
     }
 
+    fun updateFuel(entry: FuelEntry) {
+        viewModelScope.launch {
+            fuelEntryRepository.updateFuelEntry(entry)
+            photoBackupCoordinator.enqueueAfterSave()
+        }
+    }
+
+    suspend fun getFuelById(id: Long): FuelEntry? = fuelEntryRepository.getById(id)
+
+    suspend fun downloadFuelPhoto(entry: FuelEntry): String? =
+        photoBackupCoordinator.downloadFuelPhoto(entry)
+
+    suspend fun scrubUnreadableFuelPhotos(entry: FuelEntry): FuelEntry =
+        photoBackupCoordinator.scrubUnreadableFuelPhotos(entry)
+
     fun convertAllVolumes(fromUnit: String, toUnit: String, onComplete: () -> Unit = {}) {
         viewModelScope.launch {
             fuelEntryRepository.convertAllVolumes(fromUnit, toUnit)

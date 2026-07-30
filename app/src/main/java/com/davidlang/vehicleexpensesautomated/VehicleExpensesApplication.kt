@@ -12,8 +12,6 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import dagger.hilt.android.HiltAndroidApp
-import java.io.File
-import java.io.FileOutputStream
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -71,7 +69,6 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
         android.util.Log.i("VehicleExpensesApp", "onCreate complete. Engines anchored.")
         super.onCreate()
 
-        copyTessdataOnce(this)
         if (syncIdBackfill.isBackfillDone()) {
             try {
                 android.util.Log.i("VehicleExpensesApp", "Scheduling background sync from destination settings")
@@ -100,21 +97,5 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
                 android.util.Log.w("VehicleExpensesApp", "rclone smoke failed (non-fatal)", e)
             }
         }.start()
-    }
-
-    private fun copyTessdataOnce(context: Context) {
-        val filesDir = File(context.filesDir, "tessdata")
-        filesDir.mkdirs()
-        try {
-            val assetManager = context.assets
-            val input = assetManager.open("tessdata/eng.traineddata")
-            val output = FileOutputStream(File(filesDir, "eng.traineddata"))
-            input.copyTo(output)
-            input.close()
-            output.close()
-            android.util.Log.i("OdometerOcr", "✅ eng.traineddata copied to ${filesDir.absolutePath}")
-        } catch (e: Exception) {
-            android.util.Log.e("OdometerOcr", "Failed to copy eng.traineddata", e)
-        }
     }
 }
