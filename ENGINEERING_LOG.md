@@ -1411,3 +1411,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - compose-m3 pulled material3 1.4 → NoSuchMethodError ExposedDropdownMenuBox on QuickFill
 - Keep vico:compose:3.2.3 only; cold start emulator-5554 OK (pid live, no Icons/tessdata FATAL)
 - Final builds: minor-fixes/builds @ 26095264 (+ facts tip)
+
+## 2026-07-30 - minor-fixes: local PR prepared (history cleanup)
+
+- Soft-reset history cleanup: `git tag -f backup-minor-fixes` @ pre-cleanup tip `c4222079`; `git reset --soft master`; six logical commits; TREE_MATCHES_BACKUP (`HEAD^{tree}` == backup tree `b434f073`).
+- Cleaned tip `d04fb7c7` (docs); post-cleanup `./build_app` SUCCESS; `minor-fixes/builds` updated to cleaned tip.
+- Pre-submit review vs five plans: scope OK; residual risks = multi-device font checklist + Lab experimental + i18n deferred.
+- `./generate_pr.sh` → `dev-ai-interaction/PRs/PR-minor-fixes.md` (plans embedded + Coder pre-submit section).
+- Ready for Master (`run-grok-master`) independent review + merge. Coder does not merge.
