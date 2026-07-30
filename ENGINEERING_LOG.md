@@ -1511,3 +1511,14 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - All phases 1–8 built; tag trip-tracking/builds @ 4d54082a
 - Open-only fuel tripType + vehicle tripTypesJson + TripTrackingScreen + sync columns
 - Ready to test; no ReportsScreen edits
+
+## 2026-07-30 - merge-trip-tracking-into-minor-fixes: complete
+
+- Plan: dev-ai-interaction/plans/merge-trip-tracking-into-minor-fixes-20260730-plan.md
+- Merge: two-parent commit 4273b527 (trip-tracking → minor-fixes). Standard `git merge` blocked by chattr +a ENGINEERING_LOG; used trip-only checkout + manual MainActivity resolve + commit-tree.
+- A2: MainActivity Trip Tracking after Quick Fill + Lab/Fuel History/Syncing retained; build SUCCESS (after java_res META-INF perm clean).
+- A3: project-facts DB v17 + trip bullets; NAVIGATION_MAP Syncing/Fuel History/Lab; TODO phase-2 tax-mile line.
+- B/C: UnitFormat.distanceUnitShortLabel + odometerReadingLabel; TripTrackingScreen wired (no bare mi); Fuel History trip line; Fuel Edit tripType field.
+- Tip 8666c3dc; builds tag minor-fixes/builds.
+- Residual: devices on DB v16 migrate once; multi-device font checklist separate; PR-minor-fixes.md stale until re-prepare-local-pr; tax reporting deferred.
+- No deploy. Ready for user test / later PR prep.
