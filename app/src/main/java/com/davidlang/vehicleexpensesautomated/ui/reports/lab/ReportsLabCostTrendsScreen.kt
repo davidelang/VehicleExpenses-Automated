@@ -21,15 +21,16 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 @Composable
 fun ReportsLabCostTrendsScreen(navController: NavHostController) {
     val data = rememberLabReportData()
-    val rows = remember(data.fuel) {
-        data.fuel.sortedBy { it.timestamp }.mapNotNull { e ->
+    val fillFuel = remember(data.fuel) { data.fuel.withoutTripStarts() }
+    val rows = remember(fillFuel) {
+        fillFuel.sortedBy { it.timestamp }.mapNotNull { e ->
             val up = unitPrice(e) ?: return@mapNotNull null
             e to up
         }
     }
     val chartY = remember(rows) { rows.map { (_, up) -> up.toFloat() } }
-    val totals = remember(data.fuel, data.defaultStored) {
-        CurrencyCodes.sumByCurrency(data.fuel, data.defaultStored, { it.currency }, { it.cost })
+    val totals = remember(fillFuel, data.defaultStored) {
+        CurrencyCodes.sumByCurrency(fillFuel, data.defaultStored, { it.currency }, { it.cost })
     }
 
     ReportsLabScreenScaffold(

@@ -14,7 +14,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 - **Expense List**: View historical non-fuel expenses.
 - **Import Old Pictures**: Batch import odometer photos for manual fuel entry.
 - **Reports & Charts**: View fuel economy, cost trends, and summaries (production).
-- **Reports Lab**: Experimental reports hub and child chart sets (always in drawer).
+- **Reports Lab**: Experimental reports hub and child sets including **Trip miles** (`reports_lab/trips`; always in drawer).
 - **Fuel History**: Per-vehicle fill list with edit + on-demand photo fetch (includes trip-start rows).
 - **Settings**: Configure units, storage, debug, experiment gates (not the primary sync summary).
 - **Syncing**: Sync summary / Sync now / spreadsheet + photo destination entry points.
@@ -47,6 +47,6 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 ## Notes
 - **Start destination**: Quick Fill-up (`quickfill`)
 - **Trip Tracking route**: `triptracking` (drawer item immediately after Quick Fill-up)
-- **Other top-level routes**: `fuelhistory`, `syncing`, `reports_lab` (+ `reports_lab/*` children), `fuel/{fuelId}`
+- **Other top-level routes**: `fuelhistory`, `syncing`, `reports_lab` (+ `reports_lab/*` children including `trips`), `fuel/{fuelId}`
 - **Navigation Drawer**: Accessible from all top-level screens.
 - **Deep Linking**: Not currently implemented.

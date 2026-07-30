@@ -305,9 +305,11 @@ fun ReportsScreen(navController: NavHostController) {
     val totalFuelCostByCurrency = remember(fuelEntries, defaultStored) {
         CurrencyCodes.sumByCurrency(fuelEntries, defaultStored, { it.currency }, { it.cost })
     }
+    // Inventory fills exclude trip starts; $ / volume still from all non-deleted fuel rows.
+    val fillInventory = remember(fuelEntries) { FuelEconomyChains.withoutTripStarts(fuelEntries) }
     val totalGallons = fuelEntries.sumOf { it.gallons }
-    val partialFills = fuelEntries.count { it.isPartialFill }
-    val totalFillUps = fuelEntries.size
+    val partialFills = fillInventory.count { it.isPartialFill }
+    val totalFillUps = fillInventory.size
 
     val vehicleStats = remember(fuelEntries, expenses, vehicleNameById, defaultStored) {
         val fuelByV = fuelEntries.groupBy { it.vehicleId }
@@ -315,6 +317,7 @@ fun ReportsScreen(navController: NavHostController) {
         val ids = (fuelByV.keys + expByV.keys).toSortedSet()
         ids.map { vehicleId ->
             val vFuel = fuelByV[vehicleId].orEmpty()
+            val vFills = FuelEconomyChains.withoutTripStarts(vFuel)
             val vExp = expByV[vehicleId].orEmpty()
             val allLegsNewestFirst = newestValidLegs(vFuel, defaultStored, maxLegs = Int.MAX_VALUE)
             val legsChrono = allLegsNewestFirst.asReversed() // oldest→newest for avg/last
@@ -330,8 +333,8 @@ fun ReportsScreen(navController: NavHostController) {
                     { it.cost },
                 ),
                 gallons = vFuel.sumOf { it.gallons },
-                fillCount = vFuel.size,
-                partialCount = vFuel.count { it.isPartialFill },
+                fillCount = vFills.size,
+                partialCount = vFills.count { it.isPartialFill },
                 lastMpg = displayLegs.lastOrNull()?.mpg,
                 avgMpg = if (displayLegs.isEmpty()) null else displayLegs.map { it.mpg }.average(),
                 dollarsPerMile = dollarsPerMile(vFuel, vExp, defaultStored),
@@ -355,8 +358,8 @@ fun ReportsScreen(navController: NavHostController) {
         }
     }
 
-    val allFillsNewest = remember(fuelEntries) {
-        fuelEntries.sortedByDescending { it.timestamp }.let { if (it.size > 50) it.take(50) else it }
+    val allFillsNewest = remember(fillInventory) {
+        fillInventory.sortedByDescending { it.timestamp }.let { if (it.size > 50) it.take(50) else it }
     }
     val allExpensesNewest = remember(expenses) {
         expenses.sortedByDescending { it.date }.let { if (it.size > 50) it.take(50) else it }

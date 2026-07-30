@@ -42,6 +42,8 @@ fun rememberLabReportData(): LabReportData {
         vehicles = activeVehicles,
         allVehicles = vehicles,
         fuel = fFuel,
+        /** Unfiltered (period/vehicle) fuel for trip segment end points outside the period. */
+        allFuel = fuels.filter { !it.deleted },
         expenses = fExp,
         defaultSymbol = defaultSymbol,
         defaultStored = defaultStored,
@@ -56,6 +58,7 @@ data class LabReportData(
     val vehicles: List<Vehicle>,
     val allVehicles: List<Vehicle>,
     val fuel: List<FuelEntry>,
+    val allFuel: List<FuelEntry>,
     val expenses: List<ExpenseEntry>,
     val defaultSymbol: String,
     val defaultStored: String,

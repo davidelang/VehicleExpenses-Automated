@@ -36,6 +36,11 @@ private val CATALOG = listOf(
     CatalogEntry("Expenses by category", "reports_lab/expenses", "Category totals and list"),
     CatalogEntry("Fill history", "reports_lab/fills", "Chronological fills for filters"),
     CatalogEntry("Vehicle summary", "reports_lab/vehicle_summary", "Shareable history pack"),
+    CatalogEntry(
+        "Trip miles",
+        "reports_lab/trips",
+        "Miles by trip type (open-only segments); share TEXT/CSV",
+    ),
 )
 
 @Composable

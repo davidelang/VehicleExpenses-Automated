@@ -166,6 +166,10 @@ fun formatVolume(gallons: Double, unitLabel: String): String {
     return com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits.formatVolume(gallons, unit)
 }
 
+/** Lab fill-facing sets: exclude open-only trip starts (not fuel inventory fills). */
+fun List<FuelEntry>.withoutTripStarts(): List<FuelEntry> =
+    FuelEconomyChains.withoutTripStarts(this)
+
 /** Unit price (cost/vol) when both present and vol > 0. */
 fun unitPrice(entry: FuelEntry): Double? {
     if (!FuelEconomyChains.hasCost(entry) || !FuelEconomyChains.hasVol(entry)) return null
@@ -225,6 +229,7 @@ fun teaserKpis(
     defaultStored: String,
 ): TeaserKpis {
     val legs = allValidLegsChrono(fuel, defaultStored)
+    val fills = fuel.withoutTripStarts()
     return TeaserKpis(
         fuelCostByCurrency = CurrencyCodes.sumByCurrency(
             fuel, defaultStored, { it.currency }, { it.cost },
@@ -232,14 +237,18 @@ fun teaserKpis(
         expenseByCurrency = CurrencyCodes.sumByCurrency(
             expenses, defaultStored, { it.currency }, { it.amount },
         ),
-        fillCount = fuel.size,
+        fillCount = fills.size,
         lastMpg = lastMpg(legs),
         avgMpg = avgMpg(legs),
     )
 }
 
+/**
+ * Odometer range for summary: any odo-bearing non-deleted row (fills **and** trip starts).
+ * Fill **counts** must use [withoutTripStarts] separately.
+ */
 fun odometerRange(fuel: List<FuelEntry>): Pair<Int?, Int?> {
-    val withOdo = fuel.filter { FuelEconomyChains.hasOdo(it) }
+    val withOdo = fuel.filter { !it.deleted && FuelEconomyChains.hasOdo(it) }
     if (withOdo.isEmpty()) return null to null
     return withOdo.minOf { it.odometer } to withOdo.maxOf { it.odometer }
 }

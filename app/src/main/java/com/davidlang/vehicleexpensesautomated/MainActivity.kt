@@ -87,6 +87,7 @@ import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabExpenseCa
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabFillHistoryScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabHubScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabMonthlyCostsScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabTripMilesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabVehicleSummaryScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.PhotoBackupScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
@@ -543,6 +544,9 @@ class MainActivity : ComponentActivity() {
                                 }
                                 composable("reports_lab/vehicle_summary") {
                                     ReportsLabVehicleSummaryScreen(navController = navController)
+                                }
+                                composable("reports_lab/trips") {
+                                    ReportsLabTripMilesScreen(navController = navController)
                                 }
                                 composable("fuelhistory") { FuelHistoryScreen(navController = navController) }
                                 composable("fuel/{fuelId}") { backStackEntry ->

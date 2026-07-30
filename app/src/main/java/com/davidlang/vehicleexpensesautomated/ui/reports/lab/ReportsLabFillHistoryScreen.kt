@@ -20,11 +20,13 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 @Composable
 fun ReportsLabFillHistoryScreen(navController: NavHostController) {
     val data = rememberLabReportData()
-    val rows = remember(data.fuel) { data.fuel.sortedByDescending { it.timestamp } }
+    val rows = remember(data.fuel) {
+        data.fuel.withoutTripStarts().sortedByDescending { it.timestamp }
+    }
 
     ReportsLabScreenScaffold(
         title = "Fill history",
-        subtitle = "Chronological fills for current filters. Tap a row to edit (Fuel History edit screen).",
+        subtitle = "Chronological fills for current filters (trip starts excluded). Tap a row to edit.",
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,

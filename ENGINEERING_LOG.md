@@ -1522,3 +1522,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Tip 8666c3dc; builds tag minor-fixes/builds.
 - Residual: devices on DB v16 migrate once; multi-device font checklist separate; PR-minor-fixes.md stale until re-prepare-local-pr; tax reporting deferred.
 - No deploy. Ready for user test / later PR prep.
+
+## 2026-07-30 - reports-lab-trip-miles-and-exclude-trip-from-fuel: start
+
+- Magic-approved plan: dev-ai-interaction/plans/reports-lab-trip-miles-and-exclude-trip-from-fuel-20260730-plan.md
+- Branch minor-fixes @ 94b55314; baseline builds tag minor-fixes/builds
+- Phases 1–6: trip predicate docs, production+Lab fill inventory exclude trips, trip segment helpers, Lab Trip miles screen, hub/nav/facts

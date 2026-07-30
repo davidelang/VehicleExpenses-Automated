@@ -24,17 +24,18 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
 
     fun packForVehicle(v: Vehicle?): String {
         val vid = v?.id ?: data.filter.vehicleId
-        val fuel = if (vid != null) data.fuel.filter { it.vehicleId == vid } else data.fuel
+        val fuelAll = if (vid != null) data.fuel.filter { it.vehicleId == vid } else data.fuel
+        val fills = fuelAll.withoutTripStarts()
         val exp = if (vid != null) data.expenses.filter { it.vehicleId == vid } else data.expenses
-        val legs = allValidLegsChrono(fuel, data.defaultStored)
-        val (minO, maxO) = odometerRange(fuel)
+        val legs = allValidLegsChrono(fuelAll, data.defaultStored)
+        val (minO, maxO) = odometerRange(fuelAll)
         val dist = if (minO != null && maxO != null && maxO >= minO) maxO - minO else null
-        val fuelCost = CurrencyCodes.sumByCurrency(fuel, data.defaultStored, { it.currency }, { it.cost })
+        val fuelCost = CurrencyCodes.sumByCurrency(fuelAll, data.defaultStored, { it.currency }, { it.cost })
         val expCost = CurrencyCodes.sumByCurrency(exp, data.defaultStored, { it.currency }, { it.amount })
         val topCats = categoryTotals(exp, data.defaultStored).entries
             .sortedByDescending { it.value.values.sum() }
             .take(5)
-        val dpm = dollarsPerMile(fuel, exp, data.defaultStored)
+        val dpm = dollarsPerMile(fuelAll, exp, data.defaultStored)
         return buildString {
             appendLine("Vehicle Expenses — Vehicle summary (experimental)")
             appendLine("Generated: ${formatLabDateTime(System.currentTimeMillis())}")
@@ -61,8 +62,8 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
                 },
             )
             appendLine(
-                "Fills: ${fuel.size} (${fuel.count { it.isPartialFill }} marked partial) · " +
-                    "Volume: ${formatVolume(fuel.sumOf { it.gallons }, data.volumeLabel)}",
+                "Fills: ${fills.size} (${fills.count { it.isPartialFill }} marked partial) · " +
+                    "Volume: ${formatVolume(fuelAll.sumOf { it.gallons }, data.volumeLabel)}",
             )
             appendLine("Fuel cost: ${CurrencyCodes.formatAggregateSum(fuelCost, data.defaultSymbol)}")
             appendLine(
@@ -73,14 +74,14 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
                     "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()}: " +
                     if (dpm == null) "n/a" else "%.3f".format(dpm),
             )
-            appendLine("(Full-fill and economyIgnored rules apply.)")
+            appendLine("(Full-fill and economyIgnored rules apply; trip starts excluded from fill counts.)")
             appendLine("Expenses: ${CurrencyCodes.formatAggregateSum(expCost, data.defaultSymbol)}")
             topCats.forEach { (cat, m) ->
                 appendLine("  $cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
             }
             appendLine()
             appendLine("Recent fills:")
-            fuel.sortedByDescending { it.timestamp }.take(5).forEach { e ->
+            fills.sortedByDescending { it.timestamp }.take(5).forEach { e ->
                 appendLine(
                     "  ${formatLabDate(e.timestamp)} odo ${e.odometer} " +
                         "${CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)} " +
@@ -110,7 +111,8 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
         row("meta", "vehicle_filter", data.filterVehicleLabel())
         targets.forEach { v ->
             val vid = v?.id
-            val fuel = if (vid != null) data.fuel.filter { it.vehicleId == vid } else data.fuel
+            val fuelAll = if (vid != null) data.fuel.filter { it.vehicleId == vid } else data.fuel
+            val fills = fuelAll.withoutTripStarts()
             val exp = if (vid != null) data.expenses.filter { it.vehicleId == vid } else data.expenses
             val prefix = v?.name ?: "all"
             row("identity", "name", v?.name.orEmpty())
@@ -119,21 +121,21 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
             row("identity", "year", v?.year?.toString().orEmpty())
             row("identity", "plate", v?.licensePlate.orEmpty())
             if (includeVinInShare) row("identity", "vin", v?.vin.orEmpty())
-            val (minO, maxO) = odometerRange(fuel)
+            val (minO, maxO) = odometerRange(fuelAll)
             row("odo", "min", minO?.toString() ?: "")
             row("odo", "max", maxO?.toString() ?: "")
-            row("fuel", "count", fuel.size.toString())
-            row("fuel", "partial", fuel.count { it.isPartialFill }.toString())
-            row("fuel", "volume", "%.4f".format(fuel.sumOf { it.gallons }))
-            CurrencyCodes.sumByCurrency(fuel, data.defaultStored, { it.currency }, { it.cost })
+            row("fuel", "count", fills.size.toString())
+            row("fuel", "partial", fills.count { it.isPartialFill }.toString())
+            row("fuel", "volume", "%.4f".format(fuelAll.sumOf { it.gallons }))
+            CurrencyCodes.sumByCurrency(fuelAll, data.defaultStored, { it.currency }, { it.cost })
                 .forEach { (c, a) -> row("fuel_cost", c, a.toString()) }
-            val legs = allValidLegsChrono(fuel, data.defaultStored)
+            val legs = allValidLegsChrono(fuelAll, data.defaultStored)
             row("economy", "last_mpg", lastMpg(legs)?.toString() ?: "")
             row("economy", "avg_mpg", avgMpg(legs)?.toString() ?: "")
-            row("economy", "dpm", dollarsPerMile(fuel, exp, data.defaultStored)?.toString() ?: "")
+            row("economy", "dpm", dollarsPerMile(fuelAll, exp, data.defaultStored)?.toString() ?: "")
             CurrencyCodes.sumByCurrency(exp, data.defaultStored, { it.currency }, { it.amount })
                 .forEach { (c, a) -> row("expense_total", c, a.toString()) }
-            fuel.sortedByDescending { it.timestamp }.forEach { e ->
+            fills.sortedByDescending { it.timestamp }.forEach { e ->
                 sb.append(
                     listOf(
                         "fill_row",
@@ -209,17 +211,18 @@ private fun VehicleSummarySection(
     includeVinOnScreen: Boolean,
 ) {
     val vid = vehicle?.id
-    val fuel = if (vid != null) data.fuel.filter { it.vehicleId == vid } else data.fuel
+    val fuelAll = if (vid != null) data.fuel.filter { it.vehicleId == vid } else data.fuel
+    val fills = fuelAll.withoutTripStarts()
     val exp = if (vid != null) data.expenses.filter { it.vehicleId == vid } else data.expenses
-    val legs = allValidLegsChrono(fuel, data.defaultStored)
-    val (minO, maxO) = odometerRange(fuel)
+    val legs = allValidLegsChrono(fuelAll, data.defaultStored)
+    val (minO, maxO) = odometerRange(fuelAll)
     val dist = if (minO != null && maxO != null && maxO >= minO) maxO - minO else null
-    val fuelCost = CurrencyCodes.sumByCurrency(fuel, data.defaultStored, { it.currency }, { it.cost })
+    val fuelCost = CurrencyCodes.sumByCurrency(fuelAll, data.defaultStored, { it.currency }, { it.cost })
     val expCost = CurrencyCodes.sumByCurrency(exp, data.defaultStored, { it.currency }, { it.amount })
     val topCats = categoryTotals(exp, data.defaultStored).entries
         .sortedByDescending { it.value.values.sum() }
         .take(5)
-    val dpm = dollarsPerMile(fuel, exp, data.defaultStored)
+    val dpm = dollarsPerMile(fuelAll, exp, data.defaultStored)
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -248,10 +251,12 @@ private fun VehicleSummarySection(
                         } ?: "")
                     else -> "n/a"
                 },
+                softWrap = true,
             )
             Text(
-                "Fills: ${fuel.size} (${fuel.count { it.isPartialFill }} partial) · " +
-                    formatVolume(fuel.sumOf { it.gallons }, data.volumeLabel),
+                "Fills: ${fills.size} (${fills.count { it.isPartialFill }} partial) · " +
+                    formatVolume(fuelAll.sumOf { it.gallons }, data.volumeLabel),
+                softWrap = true,
             )
             Text("Fuel: ${CurrencyCodes.formatAggregateSum(fuelCost, data.defaultSymbol)}")
             Text(
@@ -261,26 +266,29 @@ private fun VehicleSummarySection(
                     "${formatMpg(avgMpg(legs))} · " +
                     "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()} " +
                     if (dpm == null) "n/a" else "%.3f".format(dpm),
+                softWrap = true,
             )
             Text(
-                "Full-fill and economyIgnored rules apply.",
+                "Full-fill and economyIgnored rules apply; trip starts excluded from fill counts.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                softWrap = true,
             )
             Text("Expenses: ${CurrencyCodes.formatAggregateSum(expCost, data.defaultSymbol)}")
             topCats.forEach { (cat, m) ->
                 Text("  $cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}", style = MaterialTheme.typography.bodySmall)
             }
             Text("Last 5 fills", style = MaterialTheme.typography.titleSmall)
-            fuel.sortedByDescending { it.timestamp }.take(5).forEach { e ->
+            fills.sortedByDescending { it.timestamp }.take(5).forEach { e ->
                 Text(
                     "${formatLabDate(e.timestamp)} odo ${e.odometer} " +
                         "${CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)} " +
                         formatVolume(e.gallons, data.volumeLabel),
                     style = MaterialTheme.typography.bodySmall,
+                    softWrap = true,
                 )
             }
-            if (fuel.isEmpty()) Text("  (none)", style = MaterialTheme.typography.bodySmall)
+            if (fills.isEmpty()) Text("  (none)", style = MaterialTheme.typography.bodySmall)
             Text("Last 5 expenses", style = MaterialTheme.typography.titleSmall)
             exp.sortedByDescending { it.date }.take(5).forEach { e ->
                 Text(
