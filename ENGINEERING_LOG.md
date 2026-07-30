@@ -1565,3 +1565,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Magic-approved plan: dev-ai-interaction/plans/fix-adaptive-item-grid-measure-20260730-plan.md
 - Fix natural measure (Infinity wrap), remove 148.dp floor, TappableCard wrap, strip fillMaxWidth on grid children
+
+## 2026-07-30 - fix-adaptive-item-grid-measure: complete
+
+- Natural measure: Constraints(0, Infinity) + wrapContentWidth(unbounded); clamp natural to W; no 148.dp floor
+- Layout pass: equal cellW fill; TappableCard fillMaxWidth fills cell only
+- Reports VehicleSummaryBlock / Last5 wrapContentWidth; AdaptiveStatsText handles unbounded max
+- UI_COMPATIBILITY §12 + project-facts helper contract
+- Tip builds tag minor-fixes/builds; Phase 5 device check (5554 multi-col Lab hub) for user after install
