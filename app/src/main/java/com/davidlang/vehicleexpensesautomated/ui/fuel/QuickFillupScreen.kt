@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,12 +36,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathFillType
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +49,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
@@ -69,16 +66,8 @@ import java.util.Locale
 
 private enum class CaptureViewState { Live, Processing, Results }
 
-private const val LITERS_PER_GALLON = 3.785411784
-
-private fun convertVolumeForSave(value: Double, fromUnit: String, toUnit: String): Double {
-    if (fromUnit == toUnit) return value
-    return when {
-        fromUnit == "G" && toUnit == "L" -> value * LITERS_PER_GALLON
-        fromUnit == "L" && toUnit == "G" -> value / LITERS_PER_GALLON
-        else -> value
-    }
-}
+private fun convertVolumeForSave(value: Double, fromUnit: String, toUnit: String): Double =
+    VolumeUnits.convert(value, fromUnit, toUnit)
 
 /** In-memory photo pointer until FuelEntry Save (tag dash|pump). */
 private data class SessionPhoto(val uri: String, val ts: Long)
@@ -170,6 +159,7 @@ fun QuickFillupScreen(
     var odometer by rememberSaveable { mutableStateOf("") }
     var gallons by rememberSaveable { mutableStateOf("") }
     var cost by rememberSaveable { mutableStateOf("") }
+    var notes by rememberSaveable { mutableStateOf("") }
     /** Session photos keyed by tag (dash/pump); written to DB only on Save as JSON. */
     val sessionPhotos = remember { mutableStateMapOf<String, SessionPhoto>() }
     var lat by remember { mutableStateOf<Double?>(null) }
@@ -699,6 +689,7 @@ fun QuickFillupScreen(
                                 latitude = lat,
                                 longitude = lon,
                                 location = loc,
+                                notes = notes.trim().ifBlank { null },
                                 isPartialFill = false,
                             )
                         )
@@ -718,6 +709,7 @@ fun QuickFillupScreen(
                         odometer = ""
                         cost = ""
                         gallons = ""
+                        notes = ""
                         sessionPhotos.clear()
                         photoSaveStatus = null
                         capturePending = false
@@ -755,7 +747,7 @@ fun QuickFillupScreen(
             val vehicleFieldWidth = vehicleTextWidth.coerceIn(80.dp, 172.dp)
 
             val odoBorder = if (captureMode == "odo") {
-                Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
+                Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium).padding(8.dp)
             } else {
                 Modifier.padding(8.dp)
             }
@@ -839,7 +831,7 @@ fun QuickFillupScreen(
 
         // Group 2: Volume + Cost
         val pumpBorder = if (captureMode == "pump") {
-            Modifier.border(2.dp, Color.Green, MaterialTheme.shapes.medium).padding(8.dp)
+            Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium).padding(8.dp)
         } else {
             Modifier.padding(8.dp)
         }
@@ -986,6 +978,13 @@ fun QuickFillupScreen(
                     volumeField(Modifier.widthIn(min = 56.dp, max = 84.dp))
                 }
             }
+            OutlinedTextField(
+                value = notes,
+                onValueChange = { notes = it },
+                label = { Text("Notes") },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 3,
+            )
         }
             }
         }
@@ -1428,55 +1427,6 @@ private fun RoundActionButton(
         }
     }
 }
-
-// material-icons-core lacks Save; local Filled.Save matches Material disk icon (Icons.Filled.Save usage).
-private var _saveIcon: ImageVector? = null
-val Icons.Filled.Save: ImageVector
-    get() {
-        if (_saveIcon != null) return _saveIcon!!
-        _saveIcon = ImageVector.Builder(
-            name = "Save",
-            defaultWidth = 24.dp,
-            defaultHeight = 24.dp,
-            viewportWidth = 24f,
-            viewportHeight = 24f
-        ).apply {
-            path(
-                fill = SolidColor(Color.Black),
-                fillAlpha = 1f,
-                strokeAlpha = 1f,
-                strokeLineWidth = 1f,
-                strokeLineCap = StrokeCap.Butt,
-                strokeLineJoin = StrokeJoin.Miter,
-                strokeLineMiter = 4f,
-                pathFillType = PathFillType.NonZero
-            ) {
-                moveTo(17f, 3f)
-                horizontalLineTo(5f)
-                curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
-                verticalLineToRelative(14f)
-                curveToRelative(0f, 1.1f, 0.89f, 2f, 2f, 2f)
-                horizontalLineToRelative(14f)
-                curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
-                verticalLineTo(7f)
-                lineToRelative(-4f, -4f)
-                close()
-                moveTo(12f, 19f)
-                curveToRelative(-1.66f, 0f, -3f, -1.34f, -3f, -3f)
-                reflectiveCurveToRelative(1.34f, -3f, 3f, -3f)
-                reflectiveCurveToRelative(3f, 1.34f, 3f, 3f)
-                reflectiveCurveToRelative(-1.34f, 3f, -3f, 3f)
-                close()
-                moveTo(15f, 9f)
-                horizontalLineTo(5f)
-                verticalLineTo(5f)
-                horizontalLineToRelative(10f)
-                verticalLineToRelative(4f)
-                close()
-            }
-        }.build()
-        return _saveIcon!!
-    }
 
 private enum class ArrowOrientation { Vertical, Horizontal }
 

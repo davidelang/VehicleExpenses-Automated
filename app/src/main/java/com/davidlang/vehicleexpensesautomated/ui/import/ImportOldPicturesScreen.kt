@@ -77,8 +77,14 @@ import com.davidlang.vehicleexpensesautomated.data.batch.dedupePhotoPaths
 import com.davidlang.vehicleexpensesautomated.data.batch.pendingPhotoUris
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.batch.BatchImportViewModel
+import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasArchiveIdentity
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
+import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.formatTimeDelta
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -520,8 +526,14 @@ private fun PendingQuestionCard(
     coordinator: BatchFuelImportCoordinator,
     onAction: (PendingAnswerAction) -> Unit,
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val fuelViewModel: FuelViewModel = hiltViewModel()
+    val photoDestId = remember { SyncDestinationStore(context).photoDestination()?.id }
     var photoPaths by remember(item.id) { mutableStateOf(pendingPhotoUris(item)) }
     var zoomPath by remember { mutableStateOf<String?>(null) }
+    var archiveFuel by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    var fetchingArchive by remember(item.id) { mutableStateOf(false) }
     var costText by remember(item.id) { mutableStateOf(item.extra["parsedCost"] ?: "") }
     var volText by remember(item.id) { mutableStateOf(item.extra["parsedVol"] ?: "") }
     var odoText by remember(item.id) {
@@ -650,7 +662,42 @@ private fun PendingQuestionCard(
                 if (row != null) {
                     applyFocusPrefill(row)
                     treatPartial = row.isPartialFill
+                    archiveFuel = row
                 }
+            }
+        }
+    }
+
+    LaunchedEffect(focusEntryId, thisEntryId, lastEntryId, mpgFocusThis) {
+        val id = focusEntryId
+        if (id != null && item.kind != BatchPendingKind.MPG_OUTLIER) {
+            archiveFuel = coordinator.getFuelEntry(id)
+        }
+    }
+
+    fun canFetchFor(entry: FuelEntry?): Boolean = fuelHasArchiveIdentity(entry, photoDestId)
+
+    fun fetchArchiveFor(entryId: Long?, onPaths: (List<String>) -> Unit) {
+        if (entryId == null || fetchingArchive) return
+        scope.launch {
+            fetchingArchive = true
+            try {
+                val row = coordinator.getFuelEntry(entryId) ?: return@launch
+                val scrubbed = fuelViewModel.scrubUnreadableFuelPhotos(row)
+                fuelViewModel.downloadFuelPhoto(scrubbed)
+                val refreshed = fuelViewModel.getFuelById(entryId) ?: scrubbed
+                archiveFuel = refreshed
+                val uris = FuelPhotoJson.parse(refreshed.photoUrl).map { it.uri }
+                if (uris.isNotEmpty()) {
+                    onPaths(uris)
+                    Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, e.message ?: "Fetch failed", Toast.LENGTH_LONG).show()
+            } finally {
+                fetchingArchive = false
             }
         }
     }
@@ -792,6 +839,11 @@ private fun PendingQuestionCard(
                     paths = lastPhotos,
                     conflict = lastPhotos.size > 1,
                     onTap = { zoomPath = it },
+                    canFetchArchive = canFetchFor(lastRow),
+                    isFetchingArchive = fetchingArchive,
+                    onFetchArchive = {
+                        fetchArchiveFor(lastEntryId) { lastPhotos = it }
+                    },
                 )
                 if (mpgFocusThis) {
                     OutlinedButton(
@@ -813,6 +865,11 @@ private fun PendingQuestionCard(
                     paths = thisPhotos,
                     conflict = thisPhotos.size > 1,
                     onTap = { zoomPath = it },
+                    canFetchArchive = canFetchFor(thisRow),
+                    isFetchingArchive = fetchingArchive,
+                    onFetchArchive = {
+                        fetchArchiveFor(thisEntryId) { thisPhotos = it }
+                    },
                 )
                 if (mpgFocusThis) {
                     Button(
@@ -847,7 +904,7 @@ private fun PendingQuestionCard(
                     prefix = "Last fill: ",
                     anchorTs = thisTsAnchor,
                     fallback = mpgContextFallback(
-                        item, isLast = true,
+                        context, item, isLast = true,
                     ),
                 )
                 NeighborLine(
@@ -856,7 +913,7 @@ private fun PendingQuestionCard(
                     prefix = "This fill: ",
                     anchorTs = thisTsAnchor,
                     fallback = mpgContextFallback(
-                        item, isLast = false,
+                        context, item, isLast = false,
                     ),
                 )
                 afterThis?.let { n ->
@@ -887,6 +944,11 @@ private fun PendingQuestionCard(
                     },
                     conflict = false,
                     onTap = { zoomPath = it },
+                    canFetchArchive = canFetchFor(archiveFuel),
+                    isFetchingArchive = fetchingArchive,
+                    onFetchArchive = {
+                        fetchArchiveFor(focusEntryId) { photoPaths = it }
+                    },
                 )
                 OutlinedTextField(
                     value = simpleOdo,
@@ -952,6 +1014,7 @@ private fun PendingQuestionCard(
                     odoText = odoPrevText,
                     onOdoChange = { odoPrevText = it },
                     metaLine = odoPeerMetaLine(
+                        context,
                         item.extra["prevTs"], item.extra["prevCost"], item.extra["prevVol"],
                     ),
                     enabled = enabled,
@@ -969,6 +1032,7 @@ private fun PendingQuestionCard(
                     odoText = odoCurText,
                     onOdoChange = { odoCurText = it },
                     metaLine = odoPeerMetaLine(
+                        context,
                         item.extra["curTs"], item.extra["curCost"], item.extra["curVol"],
                     ),
                     enabled = enabled,
@@ -986,6 +1050,7 @@ private fun PendingQuestionCard(
                         odoText = odoNextText,
                         onOdoChange = { odoNextText = it },
                         metaLine = odoPeerMetaLine(
+                            context,
                             item.extra["nextTs"], item.extra["nextCost"], item.extra["nextVol"],
                         ),
                         enabled = enabled,
@@ -1062,6 +1127,11 @@ private fun PendingQuestionCard(
                     conflict = item.kind == BatchPendingKind.CONFLICT_ODO ||
                         item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
                     onTap = { zoomPath = it },
+                    canFetchArchive = canFetchFor(archiveFuel),
+                    isFetchingArchive = fetchingArchive,
+                    onFetchArchive = {
+                        fetchArchiveFor(focusEntryId) { photoPaths = it }
+                    },
                 )
             }
 
@@ -1644,30 +1714,46 @@ private fun OdoPeerBlock(
     }
 }
 
-private fun odoPeerMetaLine(tsStr: String?, costStr: String?, volStr: String?): String {
+private fun odoPeerMetaLine(
+    context: android.content.Context,
+    tsStr: String?,
+    costStr: String?,
+    volStr: String?,
+    currency: String = "",
+): String {
     val ts = tsStr?.toLongOrNull()
     val whenStr = ts?.let {
-        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(it))
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(it))
     } ?: return ""
     val cost = costStr?.toDoubleOrNull() ?: 0.0
     val vol = volStr?.toDoubleOrNull() ?: 0.0
-    return "$whenStr · \$${"%.2f".format(cost)} · ${"%.2f".format(vol)}G"
+    val defaultSymbol = CurrencyCodes.settingsDefaultSymbol(context)
+    val unit = VolumeUnits.resolvedPreferredVolumeUnit(context)
+    return "$whenStr · ${CurrencyCodes.formatAmount(cost, currency, defaultSymbol)} · " +
+        VolumeUnits.formatVolume(vol, unit)
 }
 
 /** Fallback text when live FuelEntry is missing but pending extra has field snapshots. */
-private fun mpgContextFallback(item: BatchPendingItem, isLast: Boolean): String {
+private fun mpgContextFallback(
+    context: android.content.Context,
+    item: BatchPendingItem,
+    isLast: Boolean,
+): String {
     val tsKey = if (isLast) "prevTs" else "endTs"
     val odoKey = if (isLast) "prevOdo" else "endOdo"
     val costKey = if (isLast) "prevCost" else "endCost"
     val volKey = if (isLast) "prevVol" else "endVol"
     val ts = item.extra[tsKey]?.toLongOrNull()
     val whenStr = ts?.let {
-        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(it))
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(it))
     } ?: "?"
     val odo = item.extra[odoKey] ?: "?"
     val cost = item.extra[costKey]?.toDoubleOrNull() ?: 0.0
     val vol = item.extra[volKey]?.toDoubleOrNull() ?: 0.0
-    return "$whenStr · odo $odo · \$${"%.2f".format(cost)} · ${"%.2f".format(vol)}G"
+    val defaultSymbol = CurrencyCodes.settingsDefaultSymbol(context)
+    val unit = VolumeUnits.resolvedPreferredVolumeUnit(context)
+    return "$whenStr · odo $odo · ${CurrencyCodes.formatAmount(cost, "", defaultSymbol)} · " +
+        VolumeUnits.formatVolume(vol, unit)
 }
 
 @Composable
@@ -1679,6 +1765,7 @@ private fun NeighborLine(
     badge: String = "",
     fallback: String? = null,
 ) {
+    val context = LocalContext.current
     if (n == null) {
         Text(
             prefix + (fallback ?: "—"),
@@ -1695,14 +1782,18 @@ private fun NeighborLine(
         if (n.isPartialFill) add("p")
         if (n.economyIgnored) add("ign")
     }.joinToString(",")
-    val ts = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(n.timestamp))
+    val ts = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(n.timestamp))
     val delta = if (anchorTs != null) {
         " · " + formatTimeDelta(n.timestamp - anchorTs)
     } else {
         ""
     }
+    val defaultSymbol = CurrencyCodes.settingsDefaultSymbol(context)
+    val unit = VolumeUnits.resolvedPreferredVolumeUnit(context)
     Text(
-        "$prefix$ts · $name · odo ${n.odometer} · \$${n.cost} · ${n.gallons}G" +
+        "$prefix$ts · $name · odo ${n.odometer} · " +
+            "${CurrencyCodes.formatAmount(n.cost, n.currency, defaultSymbol)} · " +
+            VolumeUnits.formatVolume(n.gallons, unit) +
             delta +
             badge +
             if (flags.isNotEmpty()) " [$flags]" else "",
@@ -1753,6 +1844,9 @@ private fun PendingPhotoRow(
     paths: List<String>,
     conflict: Boolean,
     onTap: (String) -> Unit,
+    canFetchArchive: Boolean = false,
+    isFetchingArchive: Boolean = false,
+    onFetchArchive: (() -> Unit)? = null,
 ) {
     if (paths.isEmpty()) {
         Box(
@@ -1762,7 +1856,20 @@ private fun PendingPhotoRow(
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            Text("Photo unavailable", style = MaterialTheme.typography.bodyMedium)
+            if (canFetchArchive && onFetchArchive != null) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Photo not local", style = MaterialTheme.typography.bodyMedium)
+                    Button(
+                        onClick = onFetchArchive,
+                        enabled = !isFetchingArchive,
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        Text(if (isFetchingArchive) "Fetching…" else "Fetch image from archive")
+                    }
+                }
+            } else {
+                Text("Photo unavailable", style = MaterialTheme.typography.bodyMedium)
+            }
         }
         return
     }
@@ -1786,6 +1893,9 @@ private fun PendingPhotoRow(
                     )
                     .height(160.dp),
                 onTap = { onTap(path) },
+                canFetchArchive = canFetchArchive,
+                isFetchingArchive = isFetchingArchive,
+                onFetchArchive = onFetchArchive,
             )
         }
     }
@@ -1796,6 +1906,9 @@ private fun PendingPhotoThumb(
     path: String,
     modifier: Modifier = Modifier,
     onTap: () -> Unit,
+    canFetchArchive: Boolean = false,
+    isFetchingArchive: Boolean = false,
+    onFetchArchive: (() -> Unit)? = null,
 ) {
     var bitmap by remember(path) { mutableStateOf<Bitmap?>(null) }
     var loadState by remember(path) { mutableStateOf("loading") }
@@ -1826,6 +1939,20 @@ private fun PendingPhotoThumb(
                     )
                 }
                 loadState == "loading" -> Text("Loading…", style = MaterialTheme.typography.bodySmall)
+                canFetchArchive && onFetchArchive != null -> {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Photo unavailable", style = MaterialTheme.typography.bodySmall)
+                        TextButton(
+                            onClick = onFetchArchive,
+                            enabled = !isFetchingArchive,
+                        ) {
+                            Text(
+                                if (isFetchingArchive) "Fetching…" else "Fetch image from archive",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                }
                 else -> Text("Photo unavailable", style = MaterialTheme.typography.bodySmall)
             }
         }

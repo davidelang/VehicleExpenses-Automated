@@ -13,6 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,16 +23,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
-import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import androidx.navigation.NavHostController
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.Currency
 import java.util.Locale
 
@@ -58,27 +56,6 @@ fun SettingsScreen(navController: NavHostController) {
     val hasFuelData = fuelEntries.isNotEmpty()
     val csvManager = viewModel.csvManager
     val scope = rememberCoroutineScope()
-    val syncStore = remember { SyncDestinationStore(context) }
-    val failureStore = remember { SyncFailureStore(context) }
-    var pendingBadge by remember { mutableStateOf(syncStore.pendingBadgeText()) }
-    var spreadsheetError by remember { mutableStateOf<String?>(null) }
-    var photoError by remember { mutableStateOf<String?>(null) }
-    val navBackStackEntry = navController.currentBackStackEntry
-    val destinations = remember(navBackStackEntry) { syncStore.load() }
-
-    LaunchedEffect(navBackStackEntry) {
-        pendingBadge = syncStore.pendingBadgeText()
-        spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
-        photoError = failureStore.photoFailureSummary(syncStore)
-        withContext(Dispatchers.IO) {
-            viewModel.recountPendingBadge()
-        }
-        pendingBadge = syncStore.pendingBadgeText()
-    }
-    val spreadsheetDests = destinations.spreadsheet
-    val photoDests = destinations.photo
-    val spreadsheetConfigured = syncStore.configuredSpreadsheet().isNotEmpty()
-    val photoConfigured = syncStore.configuredPhoto().isNotEmpty()
 
     var saveFuelPhotos by remember { mutableStateOf(prefs.getBoolean("save_fuel_photos", true)) }
     var saveExpensePhotos by remember { mutableStateOf(prefs.getBoolean("save_expense_photos", true)) }
@@ -178,25 +155,13 @@ fun SettingsScreen(navController: NavHostController) {
     }
 
     var status by remember { mutableStateOf("Ready") }
-    var spreadsheetSyncStatus by remember { mutableStateOf("") }
-    var photoSyncStatus by remember { mutableStateOf("") }
-    var spreadsheetSyncInProgress by remember { mutableStateOf(false) }
-    var photoSyncInProgress by remember { mutableStateOf(false) }
-    var spreadsheetSyncIsError by remember { mutableStateOf(false) }
-    var photoSyncIsError by remember { mutableStateOf(false) }
-    val spreadsheetProgress = rememberMainThreadSyncProgress {
-        spreadsheetSyncStatus = it
-        spreadsheetSyncIsError = false
-    }
-    val photoProgress = rememberMainThreadSyncProgress {
-        photoSyncStatus = it
-        photoSyncIsError = false
-    }
     var showClearDebugConfirm by remember { mutableStateOf(false) }
+    var showDebugInfoDialog by remember { mutableStateOf(false) }
     var debugDataRefreshKey by remember { mutableIntStateOf(0) }
     val debugSessions = remember(debugDataRefreshKey) { QuickFillDebugStore.listSessions(context) }
     val crashReports = remember(debugDataRefreshKey) { QuickFillDebugStore.listCrashReports(context) }
     val hasDebugData = debugSessions.isNotEmpty() || crashReports.isNotEmpty()
+    val debugReportCount = debugSessions.size + crashReports.size
     var showSendReportPicker by remember { mutableStateOf(false) }
     var selectedSessionPaths by remember { mutableStateOf(setOf<String>()) }
     var selectedCrashPaths by remember { mutableStateOf(setOf<String>()) }
@@ -292,82 +257,13 @@ fun SettingsScreen(navController: NavHostController) {
         Text("General Settings", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            "Tap Spreadsheet sync or Photo backup to add destinations (e.g. Google Sheets + Google Drive). " +
-                "Use Sync now on each row after setup. A red ! in the title bar means a recent failure — open this screen. " +
-                "Menu → Help for Google setup steps.",
+            "Sync & backup lives under Menu → Syncing (spreadsheet + photo destinations, Sync now, failures).",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("Sync & backup", style = MaterialTheme.typography.titleMedium)
-        SyncSummaryRow(
-            title = "Spreadsheet sync",
-            summary = SyncDestinationStore.spreadsheetSummaryLine(spreadsheetDests),
-            pendingBadge = pendingBadge,
-            errorText = spreadsheetError,
-            syncStatusText = spreadsheetSyncStatus,
-            syncInProgress = spreadsheetSyncInProgress,
-            syncStatusIsError = spreadsheetSyncIsError,
-            showSyncNow = spreadsheetConfigured,
-            onRowClick = { navController.navigate("settings/spreadsheet_sync") },
-            // Phase 15: Sync now via SpreadsheetSyncCoordinator
-            onSyncNow = {
-                scope.launch {
-                    spreadsheetSyncInProgress = true
-                    spreadsheetSyncIsError = false
-                    spreadsheetSyncStatus = "Starting spreadsheet sync…"
-                    try {
-                        val result = withContext(Dispatchers.IO) {
-                            viewModel.syncSpreadsheet(spreadsheetProgress)
-                        }
-                        spreadsheetSyncStatus = result.message
-                        spreadsheetSyncIsError = !result.success
-                        spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
-                    } catch (e: Exception) {
-                        spreadsheetSyncIsError = true
-                        spreadsheetSyncStatus = e.message ?: "Sync failed"
-                    } finally {
-                        spreadsheetSyncInProgress = false
-                    }
-                }
-            },
-        )
-        SyncSummaryRow(
-            title = "Photo backup",
-            summary = syncStore.photoSummaryLine(photoDests),
-            pendingBadge = pendingBadge,
-            errorText = photoError,
-            syncStatusText = photoSyncStatus,
-            syncInProgress = photoSyncInProgress,
-            syncStatusIsError = photoSyncIsError,
-            showSyncNow = photoConfigured,
-            onRowClick = { navController.navigate("settings/photo_backup") },
-            onSyncNow = {
-                scope.launch {
-                    photoSyncInProgress = true
-                    photoSyncIsError = false
-                    photoSyncStatus = "Starting photo backup…"
-                    try {
-                        val result = withContext(Dispatchers.IO) {
-                            viewModel.syncPhotoBackup(photoProgress)
-                        }
-                        photoSyncStatus = result.message
-                        photoSyncIsError = !result.success
-                        pendingBadge = syncStore.pendingBadgeText()
-                        photoError = failureStore.photoFailureSummary(syncStore)
-                    } catch (e: Exception) {
-                        photoSyncIsError = true
-                        photoSyncStatus = e.message ?: "Photo sync failed"
-                    } finally {
-                        photoSyncInProgress = false
-                    }
-                }
-            },
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        SwitchSetting("Save Fuel Receipt Photos", saveFuelPhotos) { enabled ->
+        SwitchSetting("Save fuel fill photos locally", saveFuelPhotos) { enabled ->
             saveFuelPhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
@@ -380,20 +276,76 @@ fun SettingsScreen(navController: NavHostController) {
             }
         }
         SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
-        SwitchSetting("Debug Quick Fill", debugQuickFill) { debugQuickFill = it }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
+        ) {
+            Text(
+                "Debug Quick Fill",
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                softWrap = true,
+            )
+            IconButton(
+                onClick = { showDebugInfoDialog = true },
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+            ) {
+                Icon(Icons.Default.Info, contentDescription = "About Debug Quick Fill")
+            }
+            Switch(checked = debugQuickFill, onCheckedChange = { debugQuickFill = it })
+        }
+        // Compact debug reports: stack at large font so controls stay usable
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "$debugReportCount /",
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                )
+                OutlinedTextField(
+                    value = debugMaxSessions.toString(),
+                    onValueChange = { text ->
+                        text.toIntOrNull()?.coerceIn(1, 50)?.let { debugMaxSessions = it }
+                    },
+                    label = { Text("Number of debug reports", maxLines = 2) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextButton(
+                    onClick = {
+                        if (!hasDebugData) {
+                            Toast.makeText(context, "No debug reports to send", Toast.LENGTH_SHORT).show()
+                        } else {
+                            selectedSessionPaths = emptySet()
+                            selectedCrashPaths = emptySet()
+                            showSendReportPicker = true
+                        }
+                    },
+                ) {
+                    Text("Send")
+                }
+                TextButton(onClick = { showClearDebugConfirm = true }) {
+                    Text("Delete")
+                }
+            }
+        }
         SwitchSetting("Show experiment screens (dev)", showExperimentScreens) { showExperimentScreens = it }
-        OutlinedTextField(
-            value = pumpMaxRedBoxes.toString(),
-            onValueChange = { text ->
-                text.toIntOrNull()?.coerceIn(
-                    PumpOcrSettings.MIN_MAX_RED_BOXES,
-                    PumpOcrSettings.MAX_MAX_RED_BOXES,
-                )?.let { pumpMaxRedBoxes = it }
-            },
-            label = { Text("Pump max red boxes kept (${PumpOcrSettings.MIN_MAX_RED_BOXES}–${PumpOcrSettings.MAX_MAX_RED_BOXES})") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
         if (showExperimentScreens) {
             Spacer(modifier = Modifier.height(8.dp))
             Text("Pump OCR (advanced)", style = MaterialTheme.typography.titleSmall)
@@ -401,6 +353,18 @@ fun SettingsScreen(navController: NavHostController) {
                 "Label Y-band uses smallest value-cluster rect height × extra fraction (resolution-independent). " +
                     "Ratio lo/hi are band-gated extreme checks (not a target $/gal).",
                 style = MaterialTheme.typography.bodySmall,
+            )
+            OutlinedTextField(
+                value = pumpMaxRedBoxes.toString(),
+                onValueChange = { text ->
+                    text.toIntOrNull()?.coerceIn(
+                        PumpOcrSettings.MIN_MAX_RED_BOXES,
+                        PumpOcrSettings.MAX_MAX_RED_BOXES,
+                    )?.let { pumpMaxRedBoxes = it }
+                },
+                label = { Text("Pump max red boxes kept (${PumpOcrSettings.MIN_MAX_RED_BOXES}–${PumpOcrSettings.MAX_MAX_RED_BOXES})") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
             )
             OutlinedTextField(
                 value = pumpLabelYBandExtra,
@@ -424,32 +388,21 @@ fun SettingsScreen(navController: NavHostController) {
                 singleLine = true,
             )
         }
-        OutlinedTextField(
-            value = debugMaxSessions.toString(),
-            onValueChange = { text ->
-                text.toIntOrNull()?.coerceIn(1, 50)?.let { debugMaxSessions = it }
-            },
-            label = { Text("Debug sessions to keep (1–50)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-        Button(
-            onClick = { showClearDebugConfirm = true },
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        ) {
-            Text("Clear debug data")
-        }
-        if (hasDebugData) {
-            Button(
-                onClick = {
-                    selectedSessionPaths = emptySet()
-                    selectedCrashPaths = emptySet()
-                    showSendReportPicker = true
+        if (showDebugInfoDialog) {
+            AlertDialog(
+                onDismissRequest = { showDebugInfoDialog = false },
+                title = { Text("Debug Quick Fill") },
+                text = {
+                    Text(
+                        "This captures images and OCR details during a quick fill that can be emailed for debugging.",
+                    )
                 },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            ) {
-                Text("Send failure report")
-            }
+                confirmButton = {
+                    TextButton(onClick = { showDebugInfoDialog = false }) {
+                        Text("OK")
+                    }
+                },
+            )
         }
         if (showSendReportPicker) {
             AlertDialog(
@@ -699,66 +652,6 @@ fun SettingsScreen(navController: NavHostController) {
         Button(onClick = { importLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Text("Import from CSV ZIP") }
         if (status != "Ready") {
             Text(status, modifier = Modifier.padding(top = 8.dp))
-        }
-    }
-}
-
-@Composable
-private fun SyncSummaryRow(
-    title: String,
-    summary: String,
-    pendingBadge: String,
-    errorText: String? = null,
-    syncStatusText: String = "",
-    syncInProgress: Boolean = false,
-    syncStatusIsError: Boolean = false,
-    showSyncNow: Boolean,
-    onRowClick: () -> Unit,
-    onSyncNow: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable(onClick = onRowClick),
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(summary, style = MaterialTheme.typography.bodySmall)
-                Text(
-                    pendingBadge,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (!errorText.isNullOrBlank()) {
-                    Text(
-                        errorText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                if (syncStatusText.isNotBlank() || syncInProgress) {
-                    SyncStatusDisplay(
-                        statusText = syncStatusText,
-                        syncInProgress = syncInProgress,
-                        isError = syncStatusIsError,
-                        textStyle = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-            if (showSyncNow) {
-                TextButton(
-                    onClick = onSyncNow,
-                    enabled = !syncInProgress,
-                ) {
-                    Text("Sync")
-                }
-            }
-            Text("›", style = MaterialTheme.typography.titleLarge)
         }
     }
 }

@@ -56,7 +56,7 @@ import java.util.zip.ZipInputStream
 import kotlin.math.max
 import kotlin.math.min
 
-private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
+private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/album/N6NedcjqSj-Zv-HJrW1Ltg"
 private const val TAG = "ExperimentPump"
 
 private fun pruneRedPixelsTopN(rects: MutableList<Rect>, context: Context) {
