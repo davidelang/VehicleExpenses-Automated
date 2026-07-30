@@ -27,7 +27,17 @@ import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Hidden CSV zip adapter — same schema as remote sync; not a user-visible destination. */
+/**
+ * Hidden CSV zip adapter — same tabular surface as spreadsheet sync (not a user destination).
+ *
+ * Export parity with sheet LWW:
+ * - Vehicles / Expenses / Merge acks (incl. soft-deleted tombstones)
+ * - One `Fuel - {name}.csv` per **live** vehicle (incl. system Unassigned when present),
+ *   fuel rows from [FuelEntryRepository.getAllIncludingDeleted] (tombstones included)
+ * - Fuel headers = full [TabularSchema.FUEL_HEADERS] (human-first, includes Notes)
+ *
+ * Import: missing files (e.g. old zips without Merge acks / Notes) are no-ops / name-based.
+ */
 @Singleton
 class CsvZipTabularBackend @Inject constructor(
     @param:ApplicationContext private val context: Context,
@@ -118,16 +128,37 @@ class CsvZipTabularBackend @Inject constructor(
     private suspend fun vehicleSyncIdById(): Map<Int, String> =
         vehicleRepository.getAllIncludingDeleted().associate { it.id to it.syncId }
 
+    /**
+     * One CSV per live vehicle (same set as sheet fuel tabs), including system
+     * Unassigned when present. Soft-deleted fuel rows included for LWW parity.
+     * Header line is always full [TabularSchema.FUEL_HEADERS] (Notes + Sync ID).
+     */
     private suspend fun buildPerVehicleFuelCsvs(): List<Pair<String, String>> {
-        val vehicles = vehicleRepository.getAllIncludingDeleted().filter { !it.deleted }
+        // Match SpreadsheetSyncCoordinator: live vehicles only (not soft-deleted).
+        val vehicles = vehicleRepository.getAllIncludingDeleted()
+            .filter { !it.deleted && it.syncId.isNotBlank() }
+            .sortedWith(compareBy({ it.name.lowercase() }, { it.syncId }))
         val fuelByVehicleId = fuelRepository.getAllIncludingDeleted().groupBy { it.vehicleId }
+        val headerLine = TabularSchema.FUEL_HEADERS.joinToString(",")
+        // Regression: human-first order must include Notes + Sync ID for sheet parity.
+        check(headerLine.contains("Notes") && headerLine.contains("Sync ID")) {
+            "FUEL_HEADERS must include Notes and Sync ID"
+        }
         return vehicles.map { vehicle ->
             val fileName = "${TabularSchema.fuelTabName(vehicle.name)}.csv"
-            val sb = StringBuilder(TabularSchema.FUEL_HEADERS.joinToString(",") + "\n")
+            val sb = StringBuilder(headerLine + "\n")
             fuelByVehicleId[vehicle.id].orEmpty()
                 .sortedWith(compareBy({ it.timestamp }, { it.syncId }))
                 .forEach { entry ->
-                    sb.append(csvRow(*TabularSchema.fuelToRow(entry, vehicle.syncId).toTypedArray()))
+                    sb.append(
+                        csvRow(
+                            *TabularSchema.fuelToRow(
+                                entry,
+                                vehicle.syncId,
+                                TabularSchema.FUEL_HEADERS,
+                            ).toTypedArray(),
+                        ),
+                    )
                 }
             fileName to sb.toString()
         }

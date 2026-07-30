@@ -70,7 +70,8 @@ class ZohoSheetTabularBackend @Inject constructor(
             val existing = rows.first().map { it.trim() }.filter { it.isNotEmpty() }
             val merged = TabularSchema.mergeHeaderOrder(existing, headers)
             if (merged != existing) {
-                val dataRows = rows.drop(1)
+                // Append missing only; pad data rows so new columns stay empty (no misalign).
+                val dataRows = TabularSchema.padDataRowsToWidth(rows.drop(1), merged.size)
                 client.writeAllRows(config, sheet, listOf(merged) + dataRows)
             }
         }
