@@ -24,6 +24,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasDeadLocalOnly
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
@@ -63,6 +64,7 @@ fun FuelEditScreen(
     var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrencySymbol) }
     var location by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }
+    var tripType by rememberSaveable { mutableStateOf("") }
     var isPartialFill by rememberSaveable { mutableStateOf(false) }
     var economyIgnored by rememberSaveable { mutableStateOf(false) }
     var timestampMs by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
@@ -92,6 +94,7 @@ fun FuelEditScreen(
         currencySymbol = CurrencyCodes.displaySymbol(e.currency, defaultCurrencySymbol)
         location = e.location.orEmpty()
         notes = e.notes.orEmpty()
+        tripType = e.tripType
         isPartialFill = e.isPartialFill
         economyIgnored = e.economyIgnored
         timestampMs = e.timestamp
@@ -208,7 +211,14 @@ fun FuelEditScreen(
         OutlinedTextField(
             value = odometer,
             onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
-            label = { Text("Odometer") },
+            label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = tripType,
+            onValueChange = { tripType = it },
+            label = { Text("Trip type (blank = normal fill)") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
@@ -275,6 +285,7 @@ fun FuelEditScreen(
                     timestamp = timestampMs,
                     location = location.trim().ifBlank { null },
                     notes = notes.trim().ifBlank { null },
+                    tripType = tripType.trim(),
                     isPartialFill = isPartialFill,
                     economyIgnored = economyIgnored,
                     photoUrl = photoUrl,

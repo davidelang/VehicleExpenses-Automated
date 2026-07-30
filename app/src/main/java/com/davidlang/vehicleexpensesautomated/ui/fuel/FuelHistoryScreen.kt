@@ -24,6 +24,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.firstReadableFuelPho
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasDeadLocalOnly
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
@@ -220,8 +221,17 @@ private fun FuelHistoryRow(
                     maxLines = 2,
                     softWrap = true,
                 )
+                if (display.tripType.isNotBlank()) {
+                    Text(
+                        "Trip: ${display.tripType}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        softWrap = true,
+                    )
+                }
                 Text(
-                    "odo ${display.odometer} · " +
+                    "${UnitFormat.odometerReadingLabel(display.odometer)} · " +
                         "${CurrencyCodes.formatAmount(display.cost, display.currency, defaultSymbol)} · " +
                         VolumeUnits.formatVolume(context, display.gallons, decimals = 3),
                     style = MaterialTheme.typography.bodySmall,

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -61,6 +62,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -244,7 +246,7 @@ fun TripTrackingScreen(
             longitude = longitude,
         )
         fuelViewModel.saveFuel(entry)
-        statusLine = "$toastLabel: $tripType @ $odo mi"
+        statusLine = "$toastLabel: $tripType @ ${UnitFormat.odometerReadingLabel(odo)}"
         Toast.makeText(context, statusLine, Toast.LENGTH_SHORT).show()
         eventTimestamp = System.currentTimeMillis()
         latitude = null
@@ -449,7 +451,7 @@ fun TripTrackingScreen(
         OutlinedTextField(
             value = odometer,
             onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
-            label = { Text("Odometer") },
+            label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
@@ -503,7 +505,8 @@ fun TripTrackingScreen(
         Text(
             text = when {
                 openTrip == null -> "No open trip on this vehicle (implicit personal)."
-                else -> "Open: ${openTrip.tripType} since odo ${openTrip.odometer}"
+                else ->
+                    "Open: ${openTrip.tripType} since ${UnitFormat.odometerReadingLabel(openTrip.odometer)}"
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.primary,
@@ -517,9 +520,11 @@ fun TripTrackingScreen(
                 )
             },
             enabled = selectedVehicleId != null && typeOptions.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
         ) {
-            Text("Start trip")
+            Text("Start trip", maxLines = 2, softWrap = true)
         }
 
         OutlinedButton(
@@ -527,9 +532,11 @@ fun TripTrackingScreen(
                 saveTripStart(type = TripTypes.PERSONAL, toastLabel = "Closed (Personal start)")
             },
             enabled = canClose && selectedVehicleId != null,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
         ) {
-            Text("Close trip (Personal)")
+            Text("Close trip (Personal)", maxLines = 2, softWrap = true)
         }
 
         OutlinedButton(

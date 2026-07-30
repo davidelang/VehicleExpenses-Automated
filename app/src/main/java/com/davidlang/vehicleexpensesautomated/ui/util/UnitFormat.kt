@@ -18,8 +18,19 @@ object UnitFormat {
     fun costPerDistanceLabel(): String = "$/mi"
 
     /**
+     * Short distance unit for odo/Δodo UI (currently `"mi"`).
+     * Instrument reading may be km on some vehicles; no conversion yet.
+     */
+    fun distanceUnitShortLabel(): String = "mi"
+
+    /**
+     * Format an absolute odometer reading for display (e.g. toast / summary).
+     */
+    fun odometerReadingLabel(odo: Int): String = "$odo ${distanceUnitShortLabel()}"
+
+    /**
      * Format an odometer delta for display. Today always uses `mi` wording even though
      * the instrument may be km — product has not added distance prefs yet.
      */
-    fun distanceDeltaLabel(delta: Int): String = "$delta mi"
+    fun distanceDeltaLabel(delta: Int): String = "$delta ${distanceUnitShortLabel()}"
 }

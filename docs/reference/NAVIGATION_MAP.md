@@ -13,12 +13,15 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 - **New Expense Entry**: Record non-fuel expenses (repairs, insurance, etc.).
 - **Expense List**: View historical non-fuel expenses.
 - **Import Old Pictures**: Batch import odometer photos for manual fuel entry.
-- **Reports & Charts**: View fuel economy, cost trends, and summaries.
-- **Settings**: Configure sync, units, and storage (sub-routes: Spreadsheet Sync, Photo Backup).
+- **Reports & Charts**: View fuel economy, cost trends, and summaries (production).
+- **Reports Lab**: Experimental reports hub and child chart sets (always in drawer).
+- **Fuel History**: Per-vehicle fill list with edit + on-demand photo fetch (includes trip-start rows).
+- **Settings**: Configure units, storage, debug, experiment gates (not the primary sync summary).
+- **Syncing**: Sync summary / Sync now / spreadsheet + photo destination entry points.
 - **Help**: User manual and troubleshooting.
 - **About**: Version information and credits.
-- **Alignment Experiment**: Debugging tool for testing OCR alignment logic (not linked from production flows).
-- **Pump Experiment**: Debugging tool for gas-pump cost/volume extraction (not linked from production flows).
+- **Alignment Experiment**: Debugging tool for testing OCR alignment logic (not linked from production flows; experiment toggle).
+- **Pump Experiment**: Debugging tool for gas-pump cost/volume extraction (not linked from production flows; experiment toggle).
 
 ## Page Flows
 - **Quick Fill-up** → **Reports** (after successful save)
@@ -28,8 +31,11 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 - **Expense List** → (pop back to previous screen)
 - **Import Old Pictures** → (pop back to previous screen)
 - **Reports & Charts** → **Quick Fill-up** (via menu or back button)
+- **Reports Lab** → child lab routes / drawer
+- **Fuel History** → **Edit Fill** (`fuel/{fuelId}`)
 - **Settings** → (pop back to previous screen)
-- **Settings** → **Spreadsheet Sync** / **Photo Backup** (sub-routes)
+- **Syncing** → **Spreadsheet Sync** / **Photo Backup** (sub-routes)
+- **Settings** → **Spreadsheet Sync** / **Photo Backup** (sub-routes still reachable)
 - **Help** → (pop back to previous screen)
 - **About** → (pop back to previous screen)
 - **Alignment Experiment** → (pop back to previous screen)
@@ -41,5 +47,6 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 ## Notes
 - **Start destination**: Quick Fill-up (`quickfill`)
 - **Trip Tracking route**: `triptracking` (drawer item immediately after Quick Fill-up)
+- **Other top-level routes**: `fuelhistory`, `syncing`, `reports_lab` (+ `reports_lab/*` children), `fuel/{fuelId}`
 - **Navigation Drawer**: Accessible from all top-level screens.
 - **Deep Linking**: Not currently implemented.
