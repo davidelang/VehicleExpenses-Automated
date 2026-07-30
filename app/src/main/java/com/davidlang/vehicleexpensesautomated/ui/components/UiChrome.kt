@@ -42,9 +42,9 @@ fun TappableCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // Do not force fillMaxWidth on the outer Card — AdaptiveItemGrid measures natural width first.
     Card(
         modifier = modifier
-            .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -90,15 +90,14 @@ fun <T> AdaptiveItemGrid(
         val hGapPx = with(density) { horizontalGap.roundToPx() }
         val vGapPx = with(density) { verticalGap.roundToPx() }
 
-        SubcomposeLayout(Modifier.fillMaxWidth()) { layoutConstraints ->
-            // Pass 1: natural widths
-            val natural = items.mapIndexed { index, item ->
-                val placeable = subcompose("nat_$index") {
-                    Box { itemContent(item) }
-                }.first().measure(Constraints())
-                placeable
+        SubcomposeLayout(Modifier.fillMaxWidth()) {
+            // Pass 1: natural (wrap) widths — items should not force full parent width
+            val naturalWidths = items.mapIndexed { index, item ->
+                subcompose("nat_$index") {
+                    itemContent(item)
+                }.first().measure(Constraints(maxWidth = maxWidthPx)).width
             }
-            val itemW = natural.maxOf { it.width }.coerceAtLeast(1)
+            val itemW = naturalWidths.maxOrNull()?.coerceAtLeast(1) ?: 1
             val cols = max(1, min(items.size, (maxWidthPx + hGapPx) / (itemW + hGapPx)))
             val cellW = if (cols <= 1) {
                 maxWidthPx
@@ -112,23 +111,24 @@ fun <T> AdaptiveItemGrid(
                     Box(Modifier = Modifier.width(with(density) { cellW.toDp() })) {
                         itemContent(item)
                     }
-                }.first().measure(Constraints.fixedWidth(cellW))
+                }.first().measure(
+                    Constraints(minWidth = cellW, maxWidth = cellW),
+                )
             }
 
             val rows = cells.chunked(cols)
-            var y = 0
             val rowHeights = rows.map { row -> row.maxOf { it.height } }
             val totalHeight = rowHeights.sum() + vGapPx * (rows.size - 1).coerceAtLeast(0)
 
             layout(maxWidthPx, totalHeight) {
+                var y = 0
                 rows.forEachIndexed { rowIndex, row ->
                     var x = 0
-                    val rowH = rowHeights[rowIndex]
                     row.forEach { placeable ->
                         placeable.placeRelative(x, y)
                         x += cellW + hGapPx
                     }
-                    y += rowH + vGapPx
+                    y += rowHeights[rowIndex] + vGapPx
                 }
             }
         }
