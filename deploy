@@ -3,9 +3,19 @@
 # Usage: ./deploy [alias1 alias2 ...]
 # If no arguments are provided, it deploys to all connected devices.
 #
-# Pass Gradle options after -- :
-#   ./deploy -- --info --stacktrace
-#   ./deploy tablet -- --debug
+# Default: install the last produced debug APK (from ./build_app / assembleDebug)
+# via adb install -r. Does NOT recompile. Dirty git is OK (deploy last built while
+# an agent works on the next plan). Version printed is the APK's versionName
+# (git describe baked in at assemble time), not live HEAD.
+#
+# To force a Gradle rebuild + install (wipe multi-user caches, --no-daemon
+# installDebug) — same as historical deploy behavior:
+#   ./deploy --rebuild
+#   REBUILD=1 ./deploy
+#
+# Pass Gradle options after -- (only meaningful with --rebuild):
+#   ./deploy --rebuild -- --info --stacktrace
+#   ./deploy --rebuild tablet -- --debug
 #
 # To force uninstall first (e.g. to recover from signature mismatch after
 # switching build environments or previous release builds):
@@ -82,11 +92,15 @@ deploy_usage() {
   cat <<'EOF'
 Usage: ./deploy [options] [device-alias|device-id ...] [-- gradle-flags...]
 
-Build, install, and deploy the debug APK. With no device arguments, all connected
-online devices are targeted.
+Install and deploy the debug APK. Default uses the last produced APK from
+./build_app (no recompile). With no device arguments, all connected online
+devices are targeted.
 
 Options:
   -h, --help              Show this help and exit
+      --rebuild           Wipe multi-user build caches and run Gradle
+                          installDebug (--no-daemon). Use when no APK exists
+                          or you intentionally want a full recompile.
       --preserve-data     Backup app data, uninstall+reinstall, restore backup
                           (refuses uninstall if backup capture fails)
       --backup, --fetch-data
@@ -110,6 +124,7 @@ Device aliases (see DEVICE_MAP in deploy script):
   Any other argument      -> treated as adb device id (e.g. emulator-5556)
 
 Environment variables (equivalent to flags where noted):
+  REBUILD=1               Same as --rebuild
   PRESERVE_DATA=1         Same as --preserve-data
   BACKUP=1, FETCH_DATA=1  Same as --backup / --fetch-data
   RESTORE_DATA=1          Same as --restore-data
@@ -118,12 +133,14 @@ Environment variables (equivalent to flags where noted):
   PUSH_VEHICLE_REFS_DIR   Default source dir for --push-vehicle-refs
   VEHICLE_REFS_SOURCE_DIR Local dir of vehicle_ref_*.jpg when capturing backups
 
-Gradle passthrough:
-  ./deploy [options] [devices...] -- --info --stacktrace
+Gradle passthrough (with --rebuild only):
+  ./deploy --rebuild [options] [devices...] -- --info --stacktrace
 
 Examples:
   ./deploy
   ./deploy tablet
+  ./deploy --rebuild
+  ./deploy --rebuild tablet -- --info
   ./deploy --preserve-data emulator-5556
   ./deploy --backup emulator-5556
   ./deploy --fetch-data tablet
@@ -247,8 +264,12 @@ PUSH_VEHICLE_REFS=${PUSH_VEHICLE_REFS:-false}
 PUSH_TEST_DATA=${PUSH_TEST_DATA:-false}
 BACKUP_ONLY=${BACKUP_ONLY:-false}
 SELECTED_BACKUP=${SELECTED_BACKUP:-}
+REBUILD=${REBUILD:-false}
+DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
+# Set after resolve; used for end-of-run version print (APK bake time, not live HEAD).
+DEPLOYED_VERSION=""
 
-if ! PARSED=$(getopt -o h -l help,preserve-data,backup,fetch-data,restore-data,install-data,clean,push-vehicle-refs,push-test-data -- "$@"); then
+if ! PARSED=$(getopt -o h -l help,rebuild,preserve-data,backup,fetch-data,restore-data,install-data,clean,push-vehicle-refs,push-test-data -- "$@"); then
   deploy_usage
   exit 1
 fi
@@ -258,6 +279,10 @@ while true; do
     -h|--help)
       deploy_usage
       exit 0
+      ;;
+    --rebuild)
+      REBUILD=true
+      shift
       ;;
     --preserve-data)
       PRESERVE_DATA=true
@@ -331,6 +356,7 @@ if truthy "${PUSH_VEHICLE_REFS}"; then PUSH_VEHICLE_REFS=true; fi
 if truthy "${PUSH_TEST_DATA}"; then PUSH_TEST_DATA=true; fi
 if truthy "${BACKUP}"; then BACKUP_ONLY=true; fi
 if truthy "${FETCH_DATA}"; then BACKUP_ONLY=true; fi
+if truthy "${REBUILD}"; then REBUILD=true; fi
 
 # Export so values survive the primary/ai-code re-execs that happen later.
 export PRESERVE_DATA
@@ -341,6 +367,7 @@ export PUSH_VEHICLE_REFS
 export PUSH_TEST_DATA
 export BACKUP_ONLY
 export SELECTED_BACKUP
+export REBUILD
 
 # Data-only modes never build; skip primary-user / group re-exec (avoids run-as-primary loops).
 DATA_ONLY_MODE=false
@@ -514,7 +541,115 @@ prepare_build_tree_for_deploy() {
   fi
   return 0
 }
-if [ "$DATA_ONLY_MODE" != "true" ]; then
+
+# Find aapt for reading versionName baked into the APK at assemble time.
+find_aapt() {
+  if command -v aapt >/dev/null 2>&1; then
+    command -v aapt
+    return 0
+  fi
+  local sdk bt
+  sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+  if [ -z "$sdk" ] && [ -f local.properties ]; then
+    sdk=$(sed -n 's/^sdk.dir=//p' local.properties 2>/dev/null | tr -d '\r' | head -1)
+    sdk=${sdk//\\/\/}
+  fi
+  if [ -n "$sdk" ] && [ -d "$sdk/build-tools" ]; then
+    bt=$(ls -d "$sdk/build-tools"/* 2>/dev/null | sort -V | tail -1)
+    if [ -n "$bt" ] && [ -x "$bt/aapt" ]; then
+      echo "$bt/aapt"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+# versionName at APK build time (git describe embedded by app/build.gradle.kts).
+apk_version_name() {
+  local apk=${1:-$DEBUG_APK}
+  local aapt_bin ver meta
+  if [ ! -f "$apk" ]; then
+    return 1
+  fi
+  if aapt_bin=$(find_aapt); then
+    ver=$("$aapt_bin" dump badging "$apk" 2>/dev/null | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)
+    if [ -n "$ver" ]; then
+      echo "$ver"
+      return 0
+    fi
+  fi
+  meta=$(dirname "$apk")/output-metadata.json
+  if [ -f "$meta" ]; then
+    ver=$(sed -n 's/.*"versionName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$meta" 2>/dev/null | head -1)
+    if [ -n "$ver" ]; then
+      echo "$ver"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+live_git_describe() {
+  local branch
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
+  git describe --tags --match "${branch}-start" 2>/dev/null || git describe --always 2>/dev/null || echo "unknown"
+}
+
+# adb install last produced debug APK (no Gradle).
+install_debug_apk() {
+  local device_id=$1
+  if [ ! -f "$DEBUG_APK" ]; then
+    echo "ERROR: No last-built APK at $DEBUG_APK" >&2
+    return 1
+  fi
+  echo "  adb -s $device_id install -r $DEBUG_APK"
+  adb -s "$device_id" install -r "$DEBUG_APK"
+}
+
+# --rebuild path: wipe + Gradle installDebug. Sets DEPLOYED_VERSION.
+# APK-first path uses install_debug_apk + apk_version_name directly (multi-device loop).
+run_package_install() {
+  local device_id=${1:-}
+  local ver ret
+
+  if [ "$REBUILD" != "true" ]; then
+    echo "ERROR: internal: run_package_install is for --rebuild only" >&2
+    return 1
+  fi
+  if [ ! -x ./gradlew ]; then
+    echo "Error: ./gradlew not found or not executable (required for --rebuild)."
+    return 1
+  fi
+  # Kill leftover file holders; wipe multi-user caches.
+  lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
+  sleep 1
+  if ! prepare_build_tree_for_deploy; then
+    echo "Deployment failed (build tree wipe)."
+    return 1
+  fi
+  echo "  --rebuild: Gradle installDebug (--no-daemon)..."
+  if [ -n "$device_id" ]; then
+    (umask 007; ANDROID_SERIAL="$device_id" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+  else
+    # All-devices / default installDebug (AGP targets connected devices).
+    (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+  fi
+  ret=$?
+  repair_shared_cache
+  if [ $ret -ne 0 ]; then
+    return $ret
+  fi
+  if ver=$(apk_version_name "$DEBUG_APK"); then
+    DEPLOYED_VERSION="$ver"
+  else
+    DEPLOYED_VERSION=$(live_git_describe)
+  fi
+  echo "  Installed version (at APK build): $DEPLOYED_VERSION"
+  return 0
+}
+
+# Wipe only when recompiling as a different user; APK-first must preserve agent caches.
+if [ "$DATA_ONLY_MODE" != "true" ] && [ "$REBUILD" = "true" ]; then
   if ! prepare_build_tree_for_deploy; then
     echo "Aborting deploy: build tree not handoff-safe." >&2
     exit 1
@@ -1179,10 +1314,19 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
         echo "No connected devices found."
         OVERALL_SUCCESS=false
     else
-        if [ ! -x ./gradlew ]; then
-            echo "Error: ./gradlew not found or not executable here."
+        # App worktree: need APK for default path, or gradlew for --rebuild.
+        if [ "$REBUILD" = "true" ] && [ ! -x ./gradlew ]; then
+            echo "Error: ./gradlew not found or not executable here (required for --rebuild)."
             echo "Run from inside an app worktree, e.g.: cd master && ../deploy   or cd agent-1 && ../deploy"
             echo "See README-multi-agent.md for the proper workflow."
+            OVERALL_SUCCESS=false
+        elif [ "$REBUILD" != "true" ] && [ ! -f "$DEBUG_APK" ]; then
+            echo "ERROR: No last-built APK at $DEBUG_APK"
+            echo "  Run ./build_app first, or use ./deploy --rebuild to compile+install."
+            echo "  (Run deploy from the app worktree that built the APK.)"
+            OVERALL_SUCCESS=false
+        elif [ ! -d app ]; then
+            echo "Error: no app/ directory here. Run from an app worktree."
             OVERALL_SUCCESS=false
         else
             for DEVICE_ID in "${ALL_DEVICES[@]}"; do
@@ -1233,30 +1377,40 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
 
             if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
                 echo "  [preserve] WARNING: App installed but no backup data captured (run-as couldn't read DB/images)."
-                echo "  Will still build and attempt in-place install (no uninstall was done)."
+                echo "  Will still attempt in-place install (no uninstall was done)."
             fi
 
-            # Pre-compile wipe already ran early; re-wipe before gradle (caches may return).
-            # Kill leftover file holders.
-            lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
-            sleep 1
-            if ! prepare_build_tree_for_deploy; then
-                echo "Deployment failed (build tree wipe)."
-                OVERALL_SUCCESS=false
+            if [ "$REBUILD" = "true" ]; then
+                # Single Gradle installDebug for all connected devices (historical behavior).
+                if ! run_package_install ""; then
+                    echo "Deployment failed."
+                    OVERALL_SUCCESS=false
+                else
+                    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+                        restore_test_data "$DEVICE_ID"
+                    done
+                fi
             else
-            # No daemon: multi-user/agent builds (ai-coder) leave foreign-owned caches;
-            # daemon must not run (project policy; match build_app).
-            (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
-            RET_VAL=$?
-            repair_shared_cache
-            if [ $RET_VAL -ne 0 ]; then
-                echo "Deployment failed."
-                OVERALL_SUCCESS=false
-            else
+                # APK-first: install the same last-built APK on every device.
+                if ver=$(apk_version_name "$DEBUG_APK"); then
+                    DEPLOYED_VERSION="$ver"
+                else
+                    DEPLOYED_VERSION="(unknown)"
+                fi
+                echo "Installing last built APK: $DEBUG_APK"
+                echo "  version (at APK build): $DEPLOYED_VERSION"
+                live=$(live_git_describe)
+                if [ "$DEPLOYED_VERSION" != "$live" ] && [ "$DEPLOYED_VERSION" != "(unknown)" ]; then
+                    echo "  note: APK version differs from current HEAD describe ($live) — expected if tree moved after build_app."
+                fi
                 for DEVICE_ID in "${ALL_DEVICES[@]}"; do
-                    restore_test_data "$DEVICE_ID"
+                    if ! install_debug_apk "$DEVICE_ID"; then
+                        echo "Deployment to $DEVICE_ID failed."
+                        OVERALL_SUCCESS=false
+                    else
+                        restore_test_data "$DEVICE_ID"
+                    fi
                 done
-            fi
             fi
 
             # Clear logcat on *every* device we deployed to (important for multi-device)
@@ -1277,9 +1431,18 @@ else
         DEVICE_ID="${DEVICE_MAP["$TARGET"]:-$TARGET}"
         
         echo "Deploying to $TARGET ($DEVICE_ID)..."
-        if [ ! -x ./gradlew ]; then
-            echo "Error: ./gradlew not found or not executable here."
+        if [ "$REBUILD" = "true" ] && [ ! -x ./gradlew ]; then
+            echo "Error: ./gradlew not found or not executable here (required for --rebuild)."
             echo "cd into the worktree containing the app/ first."
+            OVERALL_SUCCESS=false
+            continue
+        elif [ "$REBUILD" != "true" ] && [ ! -f "$DEBUG_APK" ]; then
+            echo "ERROR: No last-built APK at $DEBUG_APK"
+            echo "  Run ./build_app first, or use ./deploy --rebuild to compile+install."
+            OVERALL_SUCCESS=false
+            continue
+        elif [ ! -d app ]; then
+            echo "Error: no app/ directory here. Run from an app worktree."
             OVERALL_SUCCESS=false
             continue
         fi
@@ -1323,29 +1486,36 @@ else
 
         if [ "$PRESERVE_DATA" = "true" ] && [ "$PRESERVE_ABORT" = "true" ]; then
             echo "  [preserve] WARNING: App installed but no backup data captured (run-as couldn't read DB/images)."
-            echo "  Will still build and attempt in-place install (no uninstall was done)."
+            echo "  Will still attempt in-place install (no uninstall was done)."
         fi
 
-        # Pre-compile wipe; kill leftover file holders.
-        lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
-        sleep 1
-        if ! prepare_build_tree_for_deploy; then
-            echo "Deployment to $TARGET ($DEVICE_ID) failed (build tree wipe)."
-            OVERALL_SUCCESS=false
-            echo "Clearing logcat on $DEVICE_ID..."
-            adb -s "$DEVICE_ID" logcat -c || echo "Warning: failed to clear logcat on $DEVICE_ID"
-            continue
-        fi
-
-        # No daemon: multi-user policy; match build_app.
-        (umask 007; ANDROID_SERIAL="$DEVICE_ID" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
-        RET_VAL=$?
-        repair_shared_cache
-        if [ $RET_VAL -ne 0 ]; then
-            echo "Deployment to $TARGET ($DEVICE_ID) failed."
-            OVERALL_SUCCESS=false
+        if [ "$REBUILD" = "true" ]; then
+            if ! run_package_install "$DEVICE_ID"; then
+                echo "Deployment to $TARGET ($DEVICE_ID) failed."
+                OVERALL_SUCCESS=false
+            else
+                restore_test_data "$DEVICE_ID"
+            fi
         else
-            restore_test_data "$DEVICE_ID"
+            if [ -z "$DEPLOYED_VERSION" ]; then
+                if ver=$(apk_version_name "$DEBUG_APK"); then
+                    DEPLOYED_VERSION="$ver"
+                else
+                    DEPLOYED_VERSION="(unknown)"
+                fi
+                echo "Installing last built APK: $DEBUG_APK"
+                echo "  version (at APK build): $DEPLOYED_VERSION"
+                live=$(live_git_describe)
+                if [ "$DEPLOYED_VERSION" != "$live" ] && [ "$DEPLOYED_VERSION" != "(unknown)" ]; then
+                    echo "  note: APK version differs from current HEAD describe ($live) — expected if tree moved after build_app."
+                fi
+            fi
+            if ! install_debug_apk "$DEVICE_ID"; then
+                echo "Deployment to $TARGET ($DEVICE_ID) failed."
+                OVERALL_SUCCESS=false
+            else
+                restore_test_data "$DEVICE_ID"
+            fi
         fi
         echo "Clearing logcat on $DEVICE_ID..."
         adb -s "$DEVICE_ID" logcat -c || echo "Warning: failed to clear logcat on $DEVICE_ID"
@@ -1361,7 +1531,14 @@ if [ "$OVERALL_SUCCESS" = true ]; then
     fi
     echo "All deployments successful. Updating '$TAG_NAME' tag."
     git tag -f "$TAG_NAME"
-    git describe --tags --match "${CURRENT_BRANCH}-start" 2>/dev/null || git describe --always
+    # Prefer version baked into the APK (git describe at assemble time).
+    if [ -n "$DEPLOYED_VERSION" ] && [ "$DEPLOYED_VERSION" != "(unknown)" ]; then
+        echo "$DEPLOYED_VERSION"
+    elif ver=$(apk_version_name "$DEBUG_APK" 2>/dev/null); then
+        echo "$ver"
+    else
+        live_git_describe
+    fi
     exit 0
 else
     echo "One or more deployments failed. The 'deployed' tag was NOT updated."
