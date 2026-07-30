@@ -47,6 +47,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -76,9 +78,19 @@ import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.ReportsScreen
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelEditScreen
+import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelHistoryScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabCostTrendsScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabEfficiencyScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabExpenseCategoriesScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabFillHistoryScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabHubScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabMonthlyCostsScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabVehicleSummaryScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.PhotoBackupScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SpreadsheetSyncScreen
+import com.davidlang.vehicleexpensesautomated.ui.settings.SyncingScreen
 import com.davidlang.vehicleexpensesautomated.ui.theme.VehicleExpensesAutomatedTheme
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.OdometerOcrUtils
@@ -254,7 +266,12 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "import" ||
                         currentRoute?.startsWith("import") == true -> "Import Old Pictures"
                     currentRoute == "reports" -> "Reports & Charts"
+                    currentRoute == "reports_lab" ||
+                        currentRoute?.startsWith("reports_lab/") == true -> "Reports Lab"
+                    currentRoute == "fuelhistory" -> "Fuel History"
+                    currentRoute?.startsWith("fuel/") == true -> "Edit Fill"
                     currentRoute == "settings" -> "Settings"
+                    currentRoute == "syncing" -> "Syncing"
                     currentRoute == "settings/spreadsheet_sync" -> "Spreadsheet Sync"
                     currentRoute == "settings/photo_backup" -> "Photo Backup"
                     currentRoute == "help" -> "Help"
@@ -318,10 +335,34 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
+                                label = { Text("Reports Lab") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("reports_lab")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Fuel History") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("fuelhistory")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
                                 label = { Text("Settings") },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("settings")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Syncing") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("syncing")
                                     scope.launch { drawerState.close() }
                                 }
                             )
@@ -365,7 +406,14 @@ class MainActivity : ComponentActivity() {
                     Scaffold(
                         topBar = {
                             TopAppBar(
-                                title = { Text(if (title == "Vehicle Expenses") title else "Vehicle Expenses - $title") },
+                                title = {
+                                    Text(
+                                        if (title == "Vehicle Expenses") title else "Vehicle Expenses - $title",
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        softWrap = true,
+                                    )
+                                },
                                 actions = {
                                     // Order: review questions (yellow), then sync failure (red)
                                     if (pendingReviewCount > 0) {
@@ -375,20 +423,26 @@ class MainActivity : ComponentActivity() {
                                                     launchSingleTop = true
                                                 }
                                             },
-                                            modifier = Modifier.semantics {
-                                                contentDescription = "Review questions"
-                                            },
+                                            modifier = Modifier
+                                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                                .semantics {
+                                                    contentDescription = "Review questions"
+                                                },
                                         ) {
                                             Text(
                                                 if (pendingReviewCount > 99) "?99+"
                                                 else "?$pendingReviewCount",
                                                 style = MaterialTheme.typography.titleMedium,
                                                 color = Color(0xFFFFC107), // amber/warning yellow
+                                                maxLines = 1,
                                             )
                                         }
                                     }
                                     if (syncFailureVisible) {
-                                        IconButton(onClick = { navController.navigate("settings") }) {
+                                        IconButton(
+                                            onClick = { navController.navigate("syncing") },
+                                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                        ) {
                                             Text(
                                                 "!",
                                                 style = MaterialTheme.typography.titleLarge,
@@ -399,13 +453,21 @@ class MainActivity : ComponentActivity() {
                                 },
                                 navigationIcon = {
                                     val isSettingsSubRoute = currentRoute == "settings/spreadsheet_sync" ||
-                                        currentRoute == "settings/photo_backup"
+                                        currentRoute == "settings/photo_backup" ||
+                                        currentRoute?.startsWith("fuel/") == true ||
+                                        currentRoute?.startsWith("reports_lab/") == true
                                     if (isSettingsSubRoute) {
-                                        IconButton(onClick = { navController.popBackStack() }) {
+                                        IconButton(
+                                            onClick = { navController.popBackStack() },
+                                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                        ) {
                                             Text("←")
                                         }
                                     } else {
-                                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                        IconButton(
+                                            onClick = { scope.launch { drawerState.open() } },
+                                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                        ) {
                                             Icon(Icons.Default.Menu, contentDescription = "Menu")
                                         }
                                     }
@@ -452,7 +514,34 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 composable("reports") { ReportsScreen(navController = navController) }
+                                composable("reports_lab") { ReportsLabHubScreen(navController = navController) }
+                                composable("reports_lab/efficiency") {
+                                    ReportsLabEfficiencyScreen(navController = navController)
+                                }
+                                composable("reports_lab/cost_trends") {
+                                    ReportsLabCostTrendsScreen(navController = navController)
+                                }
+                                composable("reports_lab/monthly") {
+                                    ReportsLabMonthlyCostsScreen(navController = navController)
+                                }
+                                composable("reports_lab/expenses") {
+                                    ReportsLabExpenseCategoriesScreen(navController = navController)
+                                }
+                                composable("reports_lab/fills") {
+                                    ReportsLabFillHistoryScreen(navController = navController)
+                                }
+                                composable("reports_lab/vehicle_summary") {
+                                    ReportsLabVehicleSummaryScreen(navController = navController)
+                                }
+                                composable("fuelhistory") { FuelHistoryScreen(navController = navController) }
+                                composable("fuel/{fuelId}") { backStackEntry ->
+                                    val id = backStackEntry.arguments?.getString("fuelId")?.toLongOrNull()
+                                    if (id != null) {
+                                        FuelEditScreen(navController = navController, fuelId = id)
+                                    }
+                                }
                                 composable("settings") { SettingsScreen(navController = navController) }
+                                composable("syncing") { SyncingScreen(navController = navController) }
                                 composable("settings/spreadsheet_sync") {
                                     SpreadsheetSyncScreen(navController = navController)
                                 }
