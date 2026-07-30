@@ -106,6 +106,9 @@ alignment_results_*.json
 # Offline illustrated user manual (HTML + screenshots)
 !app/src/main/assets/user-manual/
 !app/src/main/assets/user-manual/**
+# Shell e-receipt fixtures for offline Email receipts ingest (manual test path)
+!app/src/main/assets/email-receipt/
+!app/src/main/assets/email-receipt/**
 
 .gemini/
 gha-creds-*.json

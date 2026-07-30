@@ -25,13 +25,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptPrefs
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Currency
 import java.util.Locale
 
@@ -270,6 +273,149 @@ fun SettingsScreen(navController: NavHostController) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Email loyalty receipts (Gmail label → Room Unassigned fuel rows)
+        val emailPrefs = remember { EmailReceiptPrefs(context) }
+        var emailPollEnabled by remember { mutableStateOf(emailPrefs.enabled) }
+        var emailLabel by remember {
+            mutableStateOf(
+                emailPrefs.labelName.ifBlank { EmailReceiptPrefs.DEFAULT_LABEL },
+            )
+        }
+        var emailAccount by remember { mutableStateOf(emailPrefs.accountEmail.orEmpty()) }
+        var emailLastSummary by remember { mutableStateOf(emailPrefs.lastRunSummary) }
+        var emailOfflineBusy by remember { mutableStateOf(false) }
+        var emailPollWatchToken by remember { mutableIntStateOf(0) }
+        // Reload last-run when Settings is shown / recomposed after nav
+        LaunchedEffect(Unit) {
+            emailLastSummary = emailPrefs.lastRunSummary
+        }
+        // After Poll now: light delayed reloads so async worker summary appears without leaving
+        LaunchedEffect(emailPollWatchToken) {
+            if (emailPollWatchToken == 0) return@LaunchedEffect
+            val delaysMs = longArrayOf(500L, 1500L, 3000L, 5000L)
+            for (d in delaysMs) {
+                kotlinx.coroutines.delay(d)
+                emailLastSummary = emailPrefs.lastRunSummary
+            }
+        }
+        val emailSignInLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult(),
+        ) { result ->
+            try {
+                val account = viewModel.parseEmailReceiptSignIn(result.data)
+                val email = account.email?.trim().orEmpty()
+                if (email.isNotEmpty()) {
+                    emailPrefs.accountEmail = email
+                    emailAccount = email
+                    Toast.makeText(context, "Gmail account: $email", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    "Gmail sign-in failed: ${e.message?.take(80)}",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+        Text("Email receipts (Shell)", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Offline: ingest packaged sample receipts into Unassigned fuel (no Gmail). " +
+                "Live: polls only a Gmail label you choose (filter from " +
+                "donotreply@mail.ereceiptshell.com). " +
+                "Rows: vehicle Unassigned (id 0), odometer 0, Partial Fill off. " +
+                "Gmail readonly scope is broad at OAuth; label is the app filter.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = {
+                if (emailOfflineBusy) return@OutlinedButton
+                emailOfflineBusy = true
+                scope.launch {
+                    try {
+                        val summary = withContext(Dispatchers.IO) {
+                            viewModel.ingestOfflineShellFixtures()
+                        }
+                        emailLastSummary = summary
+                        Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(
+                            context,
+                            "Offline ingest failed: ${e.message?.take(100)}",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } finally {
+                        emailOfflineBusy = false
+                    }
+                }
+            },
+            enabled = !emailOfflineBusy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                if (emailOfflineBusy) "Ingesting sample receipts…"
+                else "Ingest sample Shell receipts (offline)",
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        SwitchSetting("Enable Gmail receipt poll", emailPollEnabled) { enabled ->
+            emailPollEnabled = enabled
+            emailPrefs.enabled = enabled
+            emailPrefs.labelName = emailLabel
+            viewModel.rescheduleEmailReceiptPoll()
+        }
+        OutlinedTextField(
+            value = emailLabel,
+            onValueChange = {
+                emailLabel = it
+                emailPrefs.labelName = it
+                if (emailPollEnabled) viewModel.rescheduleEmailReceiptPoll()
+            },
+            label = { Text("Gmail label name") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            if (emailAccount.isBlank()) "Gmail account: (not signed in)"
+            else "Gmail account: $emailAccount",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = {
+                emailSignInLauncher.launch(viewModel.emailReceiptSignInIntent())
+            }) {
+                Text("Sign in for Gmail")
+            }
+            OutlinedButton(
+                onClick = {
+                    emailPrefs.labelName = emailLabel
+                    emailPrefs.enabled = emailPollEnabled
+                    viewModel.pollEmailReceiptsNow()
+                    Toast.makeText(context, "Email receipt poll queued", Toast.LENGTH_SHORT).show()
+                    emailLastSummary = emailPrefs.lastRunSummary
+                    emailPollWatchToken++
+                },
+                enabled = emailPollEnabled && emailLabel.isNotBlank(),
+            ) {
+                Text("Poll now")
+            }
+        }
+        TextButton(onClick = {
+            emailLastSummary = viewModel.readEmailReceiptLastSummary()
+        }) {
+            Text("Refresh last run")
+        }
+        if (emailLastSummary.isNotBlank()) {
+            Text(
+                "Last run: $emailLastSummary",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
 
         SwitchSetting("Save fuel fill photos locally", saveFuelPhotos) { enabled ->
