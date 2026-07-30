@@ -261,6 +261,21 @@ Therefore:
 - **Vetoes:** Primary matching signal is the **Automated Word Veto**.
 - **Coordinates:** **ICRS** (Isotropic Center-Relative Space — radial normalization from optical center based on shortest edge) **or raw pixel integers only**. Normalized 0.0–1.0 (per-axis) is obsolete and must be corrected. `BufferSet` Float overload = ICRS. See `docs/specs/ISOTROPIC_COORDINATE_SPEC.md` (authoritative).
 
+## Compose UI compatibility (mandatory for UI work)
+
+Any plan or execution that touches Compose UI, reports labels, Lab charts, photo sync UX, or unit/currency **display** **must** follow **`docs/reference/UI_COMPATIBILITY.md`** (cite by path; do not paste the full doc into plans). Regressing these is a **plan/execution defect**, not optional polish.
+
+Hard constraints (detail + grep checklist in the reference):
+
+- **Volume / economy / distance / currency display:** `VolumeUnits`, `UnitFormat`, `CurrencyCodes` only — no hardcoded `G` / `mpg` / `mi` unit words / bare `$` in new user-visible paths; no invent display conversion.
+- **Font scale:** Material `sp` typography; `softWrap` / `maxLines` / `heightIn(min=)`; **horizontal** fit required (vertical scroll OK).
+- **Icons:** keep BOM `material-icons-core` **and** `material-icons-extended` (startup crash if dropped).
+- **Vico Lab charts:** `compose:3.2.3` **only** — never `compose-m3`.
+- **Trip starts ≠ fills** for inventory/lists (`TripTimeline` / `withoutTripStarts`); tax miles use Lab Trip miles.
+- **Photos:** bulk auto-download **vehicle refs only**; fuel/expense on-demand fetch + scrub; no tessdata startup reintroduction.
+
+Code is authoritative if it disagrees with the doc — update `UI_COMPATIBILITY.md` in the same commit when conventions change.
+
 ## Old Plans Directory Rule
 `dev-ai-interaction/plans/` is historical reference only:
 - finished

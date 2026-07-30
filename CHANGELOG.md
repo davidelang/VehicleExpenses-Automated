@@ -1,11 +1,5 @@
 # Changelog
 
-## Backlog completed (moved from TODO, 2026-07-30)
-
-### Docs / product UX (audit close)
-- **Generate UI manual / in-app guide** — illustrated `docs/user-manual.md` + HTML pipeline; in-app `UserManualActivity` WebView; Help/About entry points (`PR-instruction`, 2026-07-16)
-- **Quick Fill: Settings default currency/volume to "use system"** — Settings already expose System default for currency and volume; Quick Fill resolves `currency_symbol` / volume prefs (stale backlog; verified on master 2026-07-30)
-
 ## Backlog completed (moved from TODO, 2026-07-13)
 
 ### Sync / settings / data (2026-07-12 — 2026-07-13)

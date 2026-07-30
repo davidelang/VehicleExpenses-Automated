@@ -1,6 +1,8 @@
 # Reports metrics
 
-Reference for economy math in `ui/reports/ReportsScreen.kt`. Field presence: a numeric field is **present** iff its value **> 0** (Room stores non-null `Int`/`Double`; 0 means absent).
+Reference for economy math in `ui/reports/ReportsScreen.kt` and shared `FuelEconomyChains`. Field presence: a numeric field is **present** iff its value **> 0** (Room stores non-null `Int`/`Double`; 0 means absent).
+
+**UI labels / units:** display via `VolumeUnits` + `UnitFormat` + `CurrencyCodes` — see **[UI_COMPATIBILITY.md](UI_COMPATIBILITY.md)** (agents must not hardcode unit words or treat trip starts as fills).
 
 ## Full fill (chain anchors)
 
@@ -42,7 +44,8 @@ Incomplete rows may still roll cost/vol into MPG/$/mi windows when present; they
 |-----------|-----------|------------|--------|
 | **Full fill** | Anchor | Anchor | Fields complete + flag false + not economyIgnored |
 | **Explicit partial** (`isPartialFill`) | May roll into window | May roll cost/vol into window | Complete fields but not an anchor |
-| **Odo only** (odo > 0, cost ≤ 0, vol ≤ 0) | No-op (no break, no contribution) | No-op | Flag stays false; not a full fill |
+| **Trip start** (`tripType` non-blank; [TripTimeline.isTripStart] / `FuelEconomyChains.isTripStart`) | No-op | No-op | **Not a fill** for inventory counts/lists. Typical row is odo-only (gallons=0, cost=0). `rowShape` → `"trip"`. Tax miles use open-only segments in Reports Lab. |
+| **Odo only** (odo > 0, cost ≤ 0, vol ≤ 0, blank tripType) | No-op (no break, no contribution) | No-op | Flag stays false; not a full fill |
 | **Cost, no volume** | **Breaks** | Does not break by itself | Re-anchor MPG to nearest fulls on each side |
 | **Volume, no cost** | Does not break by itself | **Breaks** | Volume may still roll into an MPG leg if that leg is allowed |
 | **Blank** (odo/cost/vol all ≤ 0) | **Breaks** | **Breaks** | Missed / unrecoverable fill marker; no gap column |
@@ -84,7 +87,9 @@ Odo-only (and other non-full) rows never set min/max odo for this metric.
 
 ## Inventory totals
 
-Overall and per-vehicle inventory lines (total fuel $, total volume, fill counts) still sum **all** non-deleted rows for the vehicle (including `economyIgnored`). They are inventory, not chain economy. Only last/avg MPG, last-5 legs, and $/mi use the chain rules.
+Overall and per-vehicle **fill counts** and “All fills” lists use **non-trip** fuel rows only (`!TripTimeline.isTripStart` / `FuelEconomyChains.withoutTripStarts`). Trip starts are open-only tax markers, not fill-ups.
+
+Fuel **$** and **volume** inventory still sum non-deleted fuel rows (trip starts contribute 0 cost/vol). `economyIgnored` rows remain in inventory $ / volume / fill counts when they are not trip starts. Only last/avg MPG, last-5 legs, and $/mi use the chain rules.
 
 Per-vehicle stats line format:
 
@@ -92,13 +97,13 @@ Per-vehicle stats line format:
 Fuel $… · 1031.6G · fills 83(15p) · last … · avg … · $/mi …
 ```
 
-**83** = total fuel rows; **(15p)** = rows with **`isPartialFill == true`** (explicit override only). The word **fills** is required before the counts.
+**83** = non-trip fuel rows; **(15p)** = those with **`isPartialFill == true`** (explicit override only). The word **fills** is required before the counts.
 
 Vehicle id `0` is labeled **Unknown** in reports UI (never “Vehicle 0”).
 
 ## Volume display
 
-Fuel volumes in the database are stored in the user’s **preferred** unit (gallons or liters). Reports and fuel lists show that stored number with the preferred unit **label**; they do not re-convert.
+Fuel volumes in the database are stored in the user’s **preferred** unit (gallons or liters). Reports and fuel lists show that stored number with the preferred unit **label**; they do not re-convert. Prefer `VolumeUnits.formatVolume` / `shortLabel` (see [UI_COMPATIBILITY.md](UI_COMPATIBILITY.md)).
 
 ## Merge window / odo sanitizer (batch)
 

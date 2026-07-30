@@ -13,6 +13,7 @@ This project uses a multi-agent orchestration setup with physical copies of the 
 **Primary references for all agents (read these first):**
 - `AGENT_CONTEXT.md` (in the worktree root) — your identity, branch, role, sandbox.
 - `AGENT_MANDATES.md` — shared core mandates for *all* CLIs (bi-modal workflow with hard plan-mode barrier + STOP & WAIT, forensic audit + `./build_app` validation after every edit, 3-3-3 strike rule, three approved `git reset` contexts with preflight, ICRS or raw pixel coordinates **only**, absolute no-deployment + shared hardware, per-branch tags, old plans directory rule, re-read after compaction, etc.).
+- **`docs/reference/UI_COMPATIBILITY.md`** — **mandatory** Compose UI compatibility (units/labels, fontScale, icons, Vico compose-only, trip≠fill inventory, photo bandwidth). Cite by path in plans; do not paste. Mandates section points here.
 - Agent-specific overlay: `GROK.md` (for Grok CLI) or `GEMINI.md` (for Gemini CLI).
 
 **Key modern rules (replacing all prior web-UI / cut-paste / sidebar instructions):**
