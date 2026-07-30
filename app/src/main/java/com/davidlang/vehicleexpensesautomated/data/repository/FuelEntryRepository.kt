@@ -24,6 +24,8 @@ class FuelEntryRepository @Inject constructor(
 
     fun getEntriesForVehicle(vehicleId: Int): Flow<List<FuelEntry>> = fuelEntryDao.getFuelEntriesForVehicle(vehicleId)
 
+    suspend fun getById(id: Long): FuelEntry? = fuelEntryDao.getById(id)
+
     suspend fun insertFuelEntry(entry: FuelEntry) = fuelEntryDao.insertFuelEntry(stampForWrite(entry))
 
     suspend fun updateFuelEntry(entry: FuelEntry) = fuelEntryDao.updateFuelEntry(stampForWrite(entry))

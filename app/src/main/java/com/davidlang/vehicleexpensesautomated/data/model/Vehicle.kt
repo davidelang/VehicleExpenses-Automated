@@ -25,6 +25,11 @@ data class Vehicle(
     val otherTextCropRight: Float? = null,
     val otherTextCropBottom: Float? = null,
     val landmarkTextBlocksJson: String? = null,
+    /**
+     * Ordered trip type names as a JSON string array (e.g. `["Business","Personal",…]`).
+     * First entry is the Start-trip dropdown default. Blank means seed/inherit at insert time.
+     */
+    val tripTypesJson: String = "",
     val cloudManifest: String? = null,
     val deleted: Boolean = false,
     val deletedAt: Long? = null,

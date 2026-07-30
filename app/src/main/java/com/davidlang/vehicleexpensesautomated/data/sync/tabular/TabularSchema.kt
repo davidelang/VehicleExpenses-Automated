@@ -23,6 +23,8 @@ object TabularSchema {
         "Odo Crop L", "Odo Crop T", "Odo Crop R", "Odo Crop B",
         "Other Crop L", "Other Crop T", "Other Crop R", "Other Crop B",
         "Landmark Text Blocks JSON",
+        /** Ordered trip type names JSON array; blank → seed/inherit on local insert. */
+        "Trip Types JSON",
         "Cloud Manifest", "Origin Device ID", "Updated At", "Deleted", "Deleted At",
     )
     /**
@@ -31,9 +33,10 @@ object TabularSchema {
      *
      * **Location** = station place JSON `{"name":"…","address":"…"}` (or legacy plain text).
      * **Notes** = freeform / batch provenance (e.g. `batch_import_dash:…`).
+     * **Trip Type** = non-empty open-only trip start reason; blank = normal fill.
      *
      * [ensureHeaders] / sheet write: existing non-empty headers keep their order;
-     * missing columns (e.g. Notes) are **appended** only — never rewrite known column order.
+     * missing columns (e.g. Notes, Trip Type) are **appended** only — never rewrite known column order.
      * [rowToFuel] is name-based (order-independent).
      */
     val FUEL_HEADERS = listOf(
@@ -48,6 +51,7 @@ object TabularSchema {
         "Latitude",
         "Longitude",
         "Notes",
+        "Trip Type",
         "Vehicle Sync ID",
         "Vehicle ID",
         "Photo URL",
@@ -111,6 +115,7 @@ object TabularSchema {
         vehicle.otherTextCropRight?.toString() ?: "",
         vehicle.otherTextCropBottom?.toString() ?: "",
         vehicle.landmarkTextBlocksJson ?: "",
+        vehicle.tripTypesJson,
         vehicle.cloudManifest ?: "",
         vehicle.originDeviceId,
         vehicle.updatedAt.toString(),
@@ -149,6 +154,7 @@ object TabularSchema {
             otherTextCropRight = optionalFloat("Other Crop R"),
             otherTextCropBottom = optionalFloat("Other Crop B"),
             landmarkTextBlocksJson = cell("Landmark Text Blocks JSON").ifBlank { null },
+            tripTypesJson = cell("Trip Types JSON"),
             cloudManifest = cell("Cloud Manifest").ifBlank { null },
             originDeviceId = cell("Origin Device ID"),
             updatedAt = cell("Updated At").toLongOrNull() ?: 0L,
@@ -186,6 +192,7 @@ object TabularSchema {
         "Latitude" to (entry.latitude?.toString() ?: ""),
         "Longitude" to (entry.longitude?.toString() ?: ""),
         "Notes" to (entry.notes ?: ""),
+        "Trip Type" to entry.tripType,
         "Vehicle Sync ID" to vehicleSyncId,
         "Vehicle ID" to entry.vehicleId.toString(),
         "Photo URL" to (entry.photoUrl ?: ""),
@@ -300,6 +307,7 @@ object TabularSchema {
             longitude = cell("Longitude").toDoubleOrNull(),
             location = cell("Location").ifBlank { null },
             notes = cell("Notes").ifBlank { null },
+            tripType = cell("Trip Type"),
             cloudManifest = cell("Cloud Manifest").ifBlank { null },
             originDeviceId = cell("Origin Device ID"),
             updatedAt = cell("Updated At").toLongOrNull() ?: 0L,

@@ -48,6 +48,12 @@ data class FuelEntry(
      * Default blank. Not used for station address (see [location]).
      */
     val notes: String? = null,
+    /**
+     * Trip start reason (Business / Personal / Charity / Medical / Moving / user types).
+     * Blank = normal fuel fill (not a trip open). Non-empty = open-only trip start at this odometer.
+     * Next non-deleted trip start on the same vehicle ends the prior segment (open→open).
+     */
+    val tripType: String = "",
     val cloudManifest: String? = null,
     val deleted: Boolean = false,
     val deletedAt: Long? = null,
