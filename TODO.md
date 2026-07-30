@@ -34,8 +34,8 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] **ODB-II integration:** live odometer reading
 - [ ] **Advanced reports and charts** (beyond current Reports screen)
 - [ ] **Prepare for Play Store** (signing, listing, policy, release pipeline)
-- [ ] **Generate UI manual / in-app guide** (expand beyond `docs/reference/USER_GUIDE.md`)
-- [ ] Quick Fill: Settings default currency/volume to "use system"
+- [x] **Generate UI manual / in-app guide** (expand beyond `docs/reference/USER_GUIDE.md`)
+- [x] Quick Fill: Settings default currency/volume to "use system"
 - [ ] Quick Fill: GPS-based currency default + locale filter for symbol chooser
 
 ## Backlog (engineering / tech debt)
@@ -48,13 +48,10 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] **NDK as git subproject:** migrate standalone NDK tree to tracked `ndk/` subproject with pinned revision
 # Future work
 
-Trip recording: separate screen with start/end odometer captures and work/personal/volunteer purpose (tax mileage records)
-
 Missed fill logging: fuel added but not recorded so MPG/$/mi cannot span that gap; needs UX + report/side-effect handling
+
+Trip tax-mile reporting (phase-2): open→open odo deltas by tripType; zero-length segment filter; economy-chain explicit ignore of trip starts (Trip Tracking open-only is shipped)
 
 i18n later: language packs for LTR locales; RTL and beyond deferred — see dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md (odometers/pumps still primarily Western digits; full UI RTL/complex scripts much later)
 
-i18n language packs (later): include Help + user-manual pipeline translation; debug/failure/feedback email templates stay English; RTL/beyond still deferred — dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md
-
-
-Trip tax-mile reporting (phase-2): open→open odo deltas by tripType; zero-length segment filter; economy-chain explicit ignore of trip starts — not in minor-fixes merge
+i18n language packs (later): include Help + user-manual pipeline translation; debug/failure/feedback email templates stay English; RTL/beyond still deferred

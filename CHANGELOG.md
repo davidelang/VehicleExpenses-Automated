@@ -1,5 +1,18 @@
 # Changelog
 
+## Backlog completed (moved from TODO, 2026-07-30)
+
+### Docs / product UX (audit close)
+- **Generate UI manual / in-app guide** — illustrated `docs/user-manual.md` + HTML pipeline; in-app `UserManualActivity` WebView; Help/About entry points (`PR-instruction`, 2026-07-16)
+- **Quick Fill: Settings default currency/volume to "use system"** — Settings already expose System default for currency and volume; Quick Fill resolves `currency_symbol` / volume prefs (stale backlog; verified on master 2026-07-30)
+
+### minor-fixes merge (PR-minor-fixes)
+- **Trip recording** — open-only Trip Tracking (`TripTrackingScreen`, Room v17 `tripType` / `tripTypesJson`, Close → Personal start, purpose types, odo camera); tax-mile phase-2 still open
+- Photo sync: bulk download vehicle refs only; on-demand fuel/expense “Fetch image from archive” + path scrub
+- Fuel History + edit; Syncing page split; Quick Fill notes; Settings/About polish
+- Reports Lab (experimental charts hub; does **not** close “Advanced reports and charts”)
+- Unit display façades (`VolumeUnits` / `UnitFormat`); UI_COMPATIBILITY + shared chrome
+
 ## Backlog completed (moved from TODO, 2026-07-13)
 
 ### Sync / settings / data (2026-07-12 — 2026-07-13)
