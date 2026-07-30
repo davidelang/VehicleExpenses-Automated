@@ -1324,3 +1324,252 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - BUILD SUCCESSFUL; no works tag
 - Cleanup: ./remove_worktree.sh improve-merges from repo root when ready
 
+
+## 2026-07-30 - EXEC START: minor-fixes-batch-20260730-plan.md
+
+- Branch: minor-fixes
+- Plan: dev-ai-interaction/plans/minor-fixes-batch-20260730-plan.md
+- Scope: Waves A–I (settings, About feedback, debug UX, Syncing page, QF notes, photo sync refs-only, fuel download API, Fuel History/edit + on-demand fetch)
+- Wave J host research not execution-build
+
+## 2026-07-30 - EXEC DONE: minor-fixes-batch-20260730-plan.md (Waves A–I)
+
+- Wave A: fuel photos label; pump Amazon album URL; max red boxes experiment-gated
+- Wave B–C: About feedback email + DeviceFeedbackInfo; debug QF compact X/max Send Delete + info
+- Wave D: SyncingScreen + drawer route; Settings loses sync block; red ! → syncing
+- Wave E: Quick Fill Notes field + persist/clear
+- Wave F: photo FULL/PENDING no expense bulk download; pending downloads = vehicle refs only
+- Wave G: scrubUnreadable fuel/expense; downloadFuelPhoto; Fuel DAO getById + VM APIs
+- Wave H: Fuel History tabs + FuelEdit; fetch-from-archive on history/edit/expense/batch pending
+- Wave I: project-facts orientation for Syncing/Fuel History/on-demand photo policy
+- Wave J host research: not in this execution (sandbox planner)
+- builds tag tip: minor-fixes/builds @ 54f64e2f (pre–project-facts commit)
+
+## 2026-07-30 - EXEC START: reports-lab-experimental-hub-20260730-plan.md
+
+- Branch: minor-fixes
+- Scope: Reports Lab hub + 6 report sets, filters, share TEXT/CSV, Vico charts; production ReportsScreen unchanged
+- Waves A–E
+
+## 2026-07-30 - EXEC DONE: reports-lab-experimental-hub-20260730-plan.md
+
+- Reports Lab hub + 6 sets under ui/reports/lab/; drawer always visible
+- Filters + prefs (vehicle/period/custom); teaser KPIs; empty states
+- Share TEXT/CSV each set; Vehicle summary pack + VIN checkbox (default off)
+- Vico 3.2.3 compose + compose-m3: MPG line, unit-price line, monthly bars, category bars
+- Production ReportsScreen.kt UNCHANGED
+- builds: minor-fixes/builds @ 2251a8f8 (+ project-facts phase next)
+
+## 2026-07-30 - EXEC START: minor-fixes-gaps-nits-followup-20260730-plan.md
+
+- Branch: minor-fixes
+- Gaps G1–G5: expenseHasPendingWork; Fuel History fetch label/await; fuel pump_N roles; host photo-kind REPORT
+
+## 2026-07-30 - EXEC DONE: minor-fixes-gaps-nits-followup-20260730-plan.md
+
+- G2: removed dead expenseHasPendingWork + unused expenseNeedsDownload
+- G3+G4: Fuel History Fetch image from archive + await Fetching…
+- G5: fuelRoleForTag / fuelTagFromRole for pump_N; wired upload+pending+download
+- G1: photo-kind-classify script + metrics.json + REPORT.md (5-NN ~88.7%, recommendation: needs human confirm)
+- builds: minor-fixes/builds @ 7f9ab6c3
+
+## 2026-07-30 - EXEC START: unit-i18n-consistency-20260730-plan.md
+
+- Branch: minor-fixes
+- Plan path: dev-ai-interaction/plans/unit-i18n-consistency-20260730-plan.md
+
+## 2026-07-30 - EXEC DONE: unit-i18n-consistency-20260730-plan.md
+
+- VolumeUnits.formatVolume (+ Context overload); space-before-unit
+- UnitFormat: mpg / $/mi / distanceDeltaLabel façade
+- Quick Fill convert → VolumeUnits.convert; Fuel History/Edit labels; batch neighbor currency+volume
+- Lab formatVolume delegates; Reports + Lab high-traffic economy labels via UnitFormat
+- project-facts + TODO i18n deferred pointer
+- builds: minor-fixes/builds @ 04efeb68
+
+## 2026-07-30 - EXEC START: form-icons-fontscale-startup-20260730-plan.md
+
+- Branch: minor-fixes
+- Plan: form-icons-fontscale-startup-20260730-plan.md
+
+## 2026-07-30 - Phase B5 note: Quick Fill font-scale
+
+- No QF code change: existing responsive A/B/C layout retained; multi-device large-font check deferred to 5554/5556 handoff
+
+## 2026-07-30 - EXEC DONE: fix-icons-fontscale-startup-20260730-plan.md
+
+- R1: material-icons-core + extended (BOM)
+- R5: removed copyTessdataOnce
+- R2: TopAppBar wrap, Settings debug stack, Fuel History fetch multi-line, Lab banner/title softWrap
+- R3: removed dead volumeLabel
+- R4: Lab UnitFormat for MPG chart/summary
+- R2 B5: QF no change (responsive layout retained)
+- builds: minor-fixes/builds @ bb63b72f
+
+## 2026-07-30 - Startup smoke: drop Vico compose-m3
+
+- compose-m3 pulled material3 1.4 → NoSuchMethodError ExposedDropdownMenuBox on QuickFill
+- Keep vico:compose:3.2.3 only; cold start emulator-5554 OK (pid live, no Icons/tessdata FATAL)
+- Final builds: minor-fixes/builds @ 26095264 (+ facts tip)
+
+## 2026-07-30 - minor-fixes: local PR prepared (history cleanup)
+
+- Soft-reset history cleanup: `git tag -f backup-minor-fixes` @ pre-cleanup tip `c4222079`; `git reset --soft master`; six logical commits; TREE_MATCHES_BACKUP (`HEAD^{tree}` == backup tree `b434f073`).
+- Cleaned tip `d04fb7c7` (docs); post-cleanup `./build_app` SUCCESS; `minor-fixes/builds` updated to cleaned tip.
+- Pre-submit review vs five plans: scope OK; residual risks = multi-device font checklist + Lab experimental + i18n deferred.
+- `./generate_pr.sh` → `dev-ai-interaction/PRs/PR-minor-fixes.md` (plans embedded + Coder pre-submit section).
+- Ready for Master (`run-grok-master`) independent review + merge. Coder does not merge.
+
+## 2026-07-30 - Trip tracking open-only fuel tripType execution start
+
+- Approved plan: dev-ai-interaction/plans/trip-tracking-open-only-fuel-triptype-20260730-plan.md
+- Branch: trip-tracking; agent-2 coder worktree
+- First action eng-log; phases 1–8 schema→sync→UI→nav
+
+## 2026-07-30 - Phase 1 schema tripType tripTypesJson
+
+- FuelEntry.tripType; Vehicle.tripTypesJson; AppDatabase v17; MIGRATION_16_17 registered
+- Building phase 1
+
+## 2026-07-30 - Phase 2 TripTypes helper + inherit
+
+- data/trip/TripTypes.kt pure parse/format/seed/reorder
+- VehicleRepository.insertVehicle stamps tripTypesJson from inherit or seed
+
+## 2026-07-30 - Phase 3 Tabular Trip Type columns
+
+- FUEL_HEADERS Trip Type; VEHICLE_HEADERS Trip Types JSON; maps + GoogleSheetsClient delegate
+
+## 2026-07-30 - Phase 4 TripTimeline helpers
+
+- isTripStart, tripStartsForVehicle, currentOpenTrip, buildTripStart
+
+## 2026-07-30 - Phase 5+6 TripTrackingScreen manual + manage types
+
+- Manual vehicle/odo/type, Start + Close(Personal), datetime override
+- ManageTripTypesDialog add/rename/reorder → vehicle.tripTypesJson
+
+## 2026-07-30 - Phase 7 camera odo path
+
+- TripTrackingScreen CameraPreview + OcrHarness.runAutoFillPipeline fills vehicle/odo
+
+## 2026-07-30 - Phase 8 nav + docs
+
+- MainActivity route triptracking + drawer after Quick Fill; NAVIGATION_MAP; project-facts Room v17 + trip locations
+
+## 2026-07-30 - Trip tracking plan execution complete
+
+- All phases 1–8 built; tag trip-tracking/builds @ 4d54082a
+- Open-only fuel tripType + vehicle tripTypesJson + TripTrackingScreen + sync columns
+- Ready to test; no ReportsScreen edits
+
+## 2026-07-30 - merge-trip-tracking-into-minor-fixes: execution start
+
+- Magic-approved plan: dev-ai-interaction/plans/merge-trip-tracking-into-minor-fixes-20260730-plan.md
+- Branch minor-fixes @ 4cecb088; merging trip-tracking @ f135917f
+- Baseline builds tag: minor-fixes/builds
+
+## 2026-07-30 - Trip tracking open-only fuel tripType execution start
+
+- Approved plan: dev-ai-interaction/plans/trip-tracking-open-only-fuel-triptype-20260730-plan.md
+- Branch: trip-tracking; agent-2 coder worktree
+- First action eng-log; phases 1–8 schema→sync→UI→nav
+
+## 2026-07-30 - Phase 1 schema tripType tripTypesJson
+
+- FuelEntry.tripType; Vehicle.tripTypesJson; AppDatabase v17; MIGRATION_16_17 registered
+- Building phase 1
+
+## 2026-07-30 - Phase 2 TripTypes helper + inherit
+
+- data/trip/TripTypes.kt pure parse/format/seed/reorder
+- VehicleRepository.insertVehicle stamps tripTypesJson from inherit or seed
+
+## 2026-07-30 - Phase 3 Tabular Trip Type columns
+
+- FUEL_HEADERS Trip Type; VEHICLE_HEADERS Trip Types JSON; maps + GoogleSheetsClient delegate
+
+## 2026-07-30 - Phase 4 TripTimeline helpers
+
+- isTripStart, tripStartsForVehicle, currentOpenTrip, buildTripStart
+
+## 2026-07-30 - Phase 5+6 TripTrackingScreen manual + manage types
+
+- Manual vehicle/odo/type, Start + Close(Personal), datetime override
+- ManageTripTypesDialog add/rename/reorder → vehicle.tripTypesJson
+
+## 2026-07-30 - Phase 7 camera odo path
+
+- TripTrackingScreen CameraPreview + OcrHarness.runAutoFillPipeline fills vehicle/odo
+
+## 2026-07-30 - Phase 8 nav + docs
+
+- MainActivity route triptracking + drawer after Quick Fill; NAVIGATION_MAP; project-facts Room v17 + trip locations
+
+## 2026-07-30 - Trip tracking plan execution complete
+
+- All phases 1–8 built; tag trip-tracking/builds @ 4d54082a
+- Open-only fuel tripType + vehicle tripTypesJson + TripTrackingScreen + sync columns
+- Ready to test; no ReportsScreen edits
+
+## 2026-07-30 - merge-trip-tracking-into-minor-fixes: complete
+
+- Plan: dev-ai-interaction/plans/merge-trip-tracking-into-minor-fixes-20260730-plan.md
+- Merge: two-parent commit 4273b527 (trip-tracking → minor-fixes). Standard `git merge` blocked by chattr +a ENGINEERING_LOG; used trip-only checkout + manual MainActivity resolve + commit-tree.
+- A2: MainActivity Trip Tracking after Quick Fill + Lab/Fuel History/Syncing retained; build SUCCESS (after java_res META-INF perm clean).
+- A3: project-facts DB v17 + trip bullets; NAVIGATION_MAP Syncing/Fuel History/Lab; TODO phase-2 tax-mile line.
+- B/C: UnitFormat.distanceUnitShortLabel + odometerReadingLabel; TripTrackingScreen wired (no bare mi); Fuel History trip line; Fuel Edit tripType field.
+- Tip 8666c3dc; builds tag minor-fixes/builds.
+- Residual: devices on DB v16 migrate once; multi-device font checklist separate; PR-minor-fixes.md stale until re-prepare-local-pr; tax reporting deferred.
+- No deploy. Ready for user test / later PR prep.
+
+## 2026-07-30 - reports-lab-trip-miles-and-exclude-trip-from-fuel: start
+
+- Magic-approved plan: dev-ai-interaction/plans/reports-lab-trip-miles-and-exclude-trip-from-fuel-20260730-plan.md
+- Branch minor-fixes @ 94b55314; baseline builds tag minor-fixes/builds
+- Phases 1–6: trip predicate docs, production+Lab fill inventory exclude trips, trip segment helpers, Lab Trip miles screen, hub/nav/facts
+
+## 2026-07-30 - reports-lab-trip-miles-and-exclude-trip-from-fuel: complete
+
+- Phases 1–6 done; tip 8e0c6f5f; builds tag minor-fixes/builds
+- Inventory: production + Lab fill counts/lists exclude TripTimeline.isTripStart
+- Lab Trip miles: reports_lab/trips, TripSegments, UnitFormat distance labels, TEXT/CSV share
+- Residual: implicit personal miles before first start out of scope; tax PDF n/a; re-prepare PR when ready
+
+## 2026-07-30 - docs-rules-ui-compat-agent-guidance: start
+
+- Magic-approved plan: dev-ai-interaction/plans/docs-rules-ui-compat-agent-guidance-20260730-plan.md
+- Branch minor-fixes @ 6b27d49c; phases: trip-miles nits N1–N4 then UI_COMPATIBILITY + mandates/docs
+
+## 2026-07-30 - docs-rules-ui-compat-agent-guidance: complete
+
+- Plan: docs-rules-ui-compat-agent-guidance-20260730-plan.md
+- N1–N4 fixed; UI_COMPATIBILITY.md + AGENT_MANDATES Compose UI section + CONTRIBUTING/facts/metrics/USER_GUIDE
+- Tip 9174744d; builds tag minor-fixes/builds; no PR/history rewrite
+
+## 2026-07-30 - ui-consistency-cards-density-theme: start
+
+- Magic-approved plan: dev-ai-interaction/plans/ui-consistency-cards-density-theme-20260730-plan.md
+- Branch minor-fixes; shared TappableCard/AdaptiveItemGrid/empty/date/cancel + apply in-scope UIs + theme accents + Material Save icons + UI_COMPAT docs
+
+## 2026-07-30 - ui-consistency-cards-density-theme: complete
+
+- Plan: ui-consistency-cards-density-theme-20260730-plan.md
+- UiChrome primitives; Material Save/PhotoLibrary; theme accents; date/header/cancel unify
+- Lists: Expense, Fuel History, Reports multi-col AdaptiveItemGrid, Lab hub/fills Cards, Syncing TappableCard
+- UI_COMPATIBILITY.md sections 11–15 (Cards, density, theme, icons, shared controls)
+- Residual: Import pending list not fully re-gridded; experiments untouched; camera chrome fixed contrast kept
+- builds tag minor-fixes/builds
+
+## 2026-07-30 - fix-adaptive-item-grid-measure: start
+
+- Magic-approved plan: dev-ai-interaction/plans/fix-adaptive-item-grid-measure-20260730-plan.md
+- Fix natural measure (Infinity wrap), remove 148.dp floor, TappableCard wrap, strip fillMaxWidth on grid children
+
+## 2026-07-30 - fix-adaptive-item-grid-measure: complete
+
+- Natural measure: Constraints(0, Infinity) + wrapContentWidth(unbounded); clamp natural to W; no 148.dp floor
+- Layout pass: equal cellW fill; TappableCard fillMaxWidth fills cell only
+- Reports VehicleSummaryBlock / Last5 wrapContentWidth; AdaptiveStatsText handles unbounded max
+- UI_COMPATIBILITY §12 + project-facts helper contract
+- Tip builds tag minor-fixes/builds; Phase 5 device check (5554 multi-col Lab hub) for user after install
