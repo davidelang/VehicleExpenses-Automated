@@ -38,7 +38,16 @@ data class FuelEntry(
     val economyIgnored: Boolean = false,
     val latitude: Double? = null,
     val longitude: Double? = null,
+    /**
+     * Station place data: JSON `{"name":"…","address":"…"}` when known.
+     * Legacy rows may hold plain text or old batch tags (prefer [notes] for new batch tags).
+     */
     val location: String? = null,
+    /**
+     * Freeform / batch provenance (e.g. `batch_import_dash:PXL_…`, `batch_gap_marker`).
+     * Default blank. Not used for station address (see [location]).
+     */
+    val notes: String? = null,
     val cloudManifest: String? = null,
     val deleted: Boolean = false,
     val deletedAt: Long? = null,

@@ -4,6 +4,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.MicrosoftOneDriveAuth
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularCapabilities
+import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareBackend
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularTestResult
 import javax.inject.Inject
@@ -64,10 +65,10 @@ class ExcelGraphTabularBackend @Inject constructor(
         if (firstRow.isNullOrEmpty()) {
             graphClient.writeRange(token, wb, tabName, "A1", listOf(headers))
         } else {
-            val existing = firstRow
-            val missing = headers.filter { it !in existing }
-            if (missing.isNotEmpty()) {
-                graphClient.writeRange(token, wb, tabName, "A1", listOf(headers))
+            val existing = firstRow.map { it.trim() }.filter { it.isNotEmpty() }
+            val merged = TabularSchema.mergeHeaderOrder(existing, headers)
+            if (merged != existing) {
+                graphClient.writeRange(token, wb, tabName, "A1", listOf(merged))
             }
         }
     }

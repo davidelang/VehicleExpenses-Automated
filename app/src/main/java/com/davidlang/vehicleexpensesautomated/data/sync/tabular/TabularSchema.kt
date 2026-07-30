@@ -25,10 +25,39 @@ object TabularSchema {
         "Landmark Text Blocks JSON",
         "Cloud Manifest", "Origin Device ID", "Updated At", "Deleted", "Deleted At",
     )
+    /**
+     * Canonical fuel column order for **new / empty** tabs and CSV zip export.
+     * Human fields first; machine IDs last.
+     *
+     * **Location** = station place JSON `{"name":"…","address":"…"}` (or legacy plain text).
+     * **Notes** = freeform / batch provenance (e.g. `batch_import_dash:…`).
+     *
+     * [ensureHeaders] / sheet write: existing non-empty headers keep their order;
+     * missing columns (e.g. Notes) are **appended** only — never rewrite known column order.
+     * [rowToFuel] is name-based (order-independent).
+     */
     val FUEL_HEADERS = listOf(
-        "Sync ID", "ID", "Vehicle Sync ID", "Vehicle ID", "Odometer", "Gallons", "Cost", "Currency", "Timestamp",
-        "Photo URL", "Partial Fill", "Economy Ignored", "Latitude", "Longitude", "Location", "Cloud Manifest",
-        "Origin Device ID", "Updated At", "Deleted", "Deleted At",
+        "Timestamp",
+        "Odometer",
+        "Gallons",
+        "Cost",
+        "Currency",
+        "Partial Fill",
+        "Economy Ignored",
+        "Location",
+        "Latitude",
+        "Longitude",
+        "Notes",
+        "Vehicle Sync ID",
+        "Vehicle ID",
+        "Photo URL",
+        "Cloud Manifest",
+        "Sync ID",
+        "ID",
+        "Origin Device ID",
+        "Updated At",
+        "Deleted",
+        "Deleted At",
     )
     val EXPENSE_HEADERS = listOf(
         "Sync ID", "ID", "Vehicle Sync ID", "Vehicle Sync IDs", "Vehicle ID", "Date", "Amount", "Currency", "Category", "Description", "Vendor",
@@ -131,29 +160,54 @@ object TabularSchema {
     /**
      * Fuel sheet **ID** column is **device-local** (Room PK of the writer).
      * Cross-device identity is **Sync ID** only — never use sheet ID as Room PK on pull.
+     *
+     * @param columnOrder sheet header order to emit; default [FUEL_HEADERS] for new tabs/CSV.
+     *   Existing sheets should pass their preserved header row (plus any appended columns).
      */
-    fun fuelToRow(entry: FuelEntry, vehicleSyncId: String = ""): List<String> = listOf(
-        entry.syncId,
-        entry.id.toString(),
-        vehicleSyncId,
-        entry.vehicleId.toString(),
-        entry.odometer.toString(),
-        entry.gallons.toString(),
-        entry.cost.toString(),
-        entry.currency,
-        entry.timestamp.toString(),
-        entry.photoUrl ?: "",
-        entry.isPartialFill.toString(),
-        entry.economyIgnored.toString(),
-        entry.latitude?.toString() ?: "",
-        entry.longitude?.toString() ?: "",
-        entry.location ?: "",
-        entry.cloudManifest ?: "",
-        entry.originDeviceId,
-        entry.updatedAt.toString(),
-        entry.deleted.toString(),
-        entry.deletedAt?.toString() ?: "",
+    fun fuelToRow(
+        entry: FuelEntry,
+        vehicleSyncId: String = "",
+        columnOrder: List<String> = FUEL_HEADERS,
+    ): List<String> {
+        val byName = fuelFieldMap(entry, vehicleSyncId)
+        return columnOrder.map { name -> byName[name] ?: "" }
+    }
+
+    /** Named fuel cells for encode/decode; includes all [FUEL_HEADERS] keys. */
+    fun fuelFieldMap(entry: FuelEntry, vehicleSyncId: String = ""): Map<String, String> = mapOf(
+        "Timestamp" to entry.timestamp.toString(),
+        "Odometer" to entry.odometer.toString(),
+        "Gallons" to entry.gallons.toString(),
+        "Cost" to entry.cost.toString(),
+        "Currency" to entry.currency,
+        "Partial Fill" to entry.isPartialFill.toString(),
+        "Economy Ignored" to entry.economyIgnored.toString(),
+        "Location" to (entry.location ?: ""),
+        "Latitude" to (entry.latitude?.toString() ?: ""),
+        "Longitude" to (entry.longitude?.toString() ?: ""),
+        "Notes" to (entry.notes ?: ""),
+        "Vehicle Sync ID" to vehicleSyncId,
+        "Vehicle ID" to entry.vehicleId.toString(),
+        "Photo URL" to (entry.photoUrl ?: ""),
+        "Cloud Manifest" to (entry.cloudManifest ?: ""),
+        "Sync ID" to entry.syncId,
+        "ID" to entry.id.toString(),
+        "Origin Device ID" to entry.originDeviceId,
+        "Updated At" to entry.updatedAt.toString(),
+        "Deleted" to entry.deleted.toString(),
+        "Deleted At" to (entry.deletedAt?.toString() ?: ""),
     )
+
+    /**
+     * Preserve [existingHeader] order; append any [canonical] names not already present.
+     * Empty existing → [canonical] (new / headerless tab).
+     */
+    fun mergeHeaderOrder(existingHeader: List<String>, canonical: List<String>): List<String> {
+        val existing = existingHeader.map { it.trim() }.filter { it.isNotEmpty() }
+        if (existing.isEmpty()) return canonical
+        val have = existing.toSet()
+        return existing + canonical.filter { it !in have }
+    }
 
     fun expenseToRow(entry: ExpenseEntry, vehicleSyncId: String = ""): List<String> {
         val syncIds = ExpenseVehicleSyncIds.parse(entry.vehicleSyncIdsJson)
@@ -223,6 +277,7 @@ object TabularSchema {
             latitude = cell("Latitude").toDoubleOrNull(),
             longitude = cell("Longitude").toDoubleOrNull(),
             location = cell("Location").ifBlank { null },
+            notes = cell("Notes").ifBlank { null },
             cloudManifest = cell("Cloud Manifest").ifBlank { null },
             originDeviceId = cell("Origin Device ID"),
             updatedAt = cell("Updated At").toLongOrNull() ?: 0L,

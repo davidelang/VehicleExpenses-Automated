@@ -67,10 +67,11 @@ class ZohoSheetTabularBackend @Inject constructor(
         if (rows.isEmpty() || rows.first().isEmpty()) {
             client.writeAllRows(config, sheet, listOf(headers))
         } else {
-            val existing = rows.first()
-            if (headers != existing) {
+            val existing = rows.first().map { it.trim() }.filter { it.isNotEmpty() }
+            val merged = TabularSchema.mergeHeaderOrder(existing, headers)
+            if (merged != existing) {
                 val dataRows = rows.drop(1)
-                client.writeAllRows(config, sheet, listOf(headers) + dataRows)
+                client.writeAllRows(config, sheet, listOf(merged) + dataRows)
             }
         }
     }

@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.davidlang.vehicleexpensesautomated.data.batch.MergeAckStore
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryRepository
@@ -33,13 +34,21 @@ class CsvZipTabularBackend @Inject constructor(
     private val vehicleRepository: VehicleRepository,
     private val expenseRepository: ExpenseEntryRepository,
     private val fuelRepository: FuelEntryRepository,
+    private val mergeAckStore: MergeAckStore,
 ) {
+    companion object {
+        /** Zip entry name matching sheet tab [TabularSchema.TAB_MERGE_ACKS]. */
+        const val MERGE_ACKS_CSV = "Merge acks.csv"
+        /** Alias for zips that cannot use spaces in entry names. */
+        const val MERGE_ACKS_CSV_ALIAS = "Merge_acks.csv"
+    }
 
     suspend fun exportZip(target: CsvZipTarget, request: TabularExportRequest): TabularExportResult =
         withContext(Dispatchers.IO) {
             val vehiclesCsv = buildVehiclesCsv()
             val perVehicleFuelCsvs = buildPerVehicleFuelCsvs()
             val expenseCsv = buildExpenseCsv()
+            val mergeAcksCsv = buildMergeAcksCsv()
 
             val zipFile = File(target.outputDir, "vehicle_expenses_backup_${System.currentTimeMillis()}.zip")
             ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
@@ -48,6 +57,7 @@ class CsvZipTabularBackend @Inject constructor(
                     writeCsvToZip(zos, fileName, csv)
                 }
                 writeCsvToZip(zos, "Expenses.csv", expenseCsv)
+                writeCsvToZip(zos, MERGE_ACKS_CSV, mergeAcksCsv)
             }
 
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zipFile)
@@ -83,6 +93,8 @@ class CsvZipTabularBackend @Inject constructor(
                         importExpenseCsv(content)
                     fileName == "Fuel_entries.csv" ->
                         importFuelCsv(content)
+                    fileName == MERGE_ACKS_CSV || fileName == MERGE_ACKS_CSV_ALIAS ->
+                        importMergeAcksCsv(content)
                     fileName.startsWith(TabularSchema.FUEL_TAB_PREFIX) && fileName.endsWith(".csv") -> {
                         val tabName = fileName.removeSuffix(".csv")
                         importFuelCsv(content, fuelTabVehicleId = vehicleIdByFuelTabName[tabName])
@@ -134,6 +146,29 @@ class CsvZipTabularBackend @Inject constructor(
             )
         }
         return sb.toString()
+    }
+
+    private suspend fun buildMergeAcksCsv(): String {
+        val acks = mergeAckStore.getAllIncludingDeleted()
+            .sortedWith(compareBy({ it.createdAt }, { it.ackId }))
+        val sb = StringBuilder(TabularSchema.MERGE_ACK_HEADERS.joinToString(",") + "\n")
+        acks.forEach {
+            sb.append(csvRow(*TabularSchema.ackToRow(it).toTypedArray()))
+        }
+        return sb.toString()
+    }
+
+    private suspend fun importMergeAcksCsv(csv: String) {
+        val lines = csv.lines().filter { it.isNotBlank() }
+        if (lines.isEmpty()) return
+        val headerIndex = TabularSchema.headerIndex(parseCsvLine(lines.first()))
+        lines.drop(1).forEach { line ->
+            val parts = parseCsvLine(line)
+            if (parts.isEmpty()) return@forEach
+            val ack = TabularSchema.rowToAck(parts, headerIndex)
+            if (ack.ackId.isBlank()) return@forEach
+            mergeAckStore.upsertFromSync(ack)
+        }
     }
 
     private fun csvEscape(value: String): String {

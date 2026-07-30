@@ -685,6 +685,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         data class FuelTabSnapshot(
             val vehicle: Vehicle,
             val tabName: String,
+            /** Preserved remote header order (+ appended missing cols after ensureHeaders). */
+            val writeHeaders: List<String>,
             val headerIndex: Map<String, Int>,
             val remoteDataRows: List<List<String>>,
         )
@@ -708,8 +710,12 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             )
             backend.ensureHeaders(dest, tabName, TabularSchema.FUEL_HEADERS, accountHint)
             val remoteRows = backend.readAllRows(dest, tabName, accountHint)
-            val headerRow = remoteRows.firstOrNull() ?: TabularSchema.FUEL_HEADERS
-            val headerIndex = TabularSchema.headerIndex(headerRow)
+            val headerRow = remoteRows.firstOrNull()?.map { it.trim() }?.filter { it.isNotEmpty() }
+                ?.takeIf { it.isNotEmpty() }
+                ?: TabularSchema.FUEL_HEADERS
+            // Preserve existing column order; only append any still-missing canonical cols.
+            val writeHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.FUEL_HEADERS)
+            val headerIndex = TabularSchema.headerIndex(writeHeaders)
             val remoteDataRows = remoteRows.drop(1)
                 .filter { it.any { cell -> cell.isNotBlank() } }
             val remoteFuel = parseFuelEntriesFromTab(dest, backend, tabName, vehicle, vehicleIdBySyncId, accountHint)
@@ -755,6 +761,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 FuelTabSnapshot(
                     vehicle = vehicle,
                     tabName = tabName,
+                    writeHeaders = writeHeaders,
                     headerIndex = headerIndex,
                     remoteDataRows = remoteDataRows,
                 ),
@@ -797,8 +804,11 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 dest = dest,
                 backend = backend,
                 tabName = snap.tabName,
-                headers = TabularSchema.FUEL_HEADERS,
-                sortedRows = sortedMerged.map { TabularSchema.fuelToRow(it, vehicle.syncId) },
+                // Keep sheet column order (append-only Notes); do not force human-first reorder.
+                headers = snap.writeHeaders,
+                sortedRows = sortedMerged.map {
+                    TabularSchema.fuelToRow(it, vehicle.syncId, snap.writeHeaders)
+                },
                 sortedSyncIds = sortedMerged.map { it.syncId },
                 remoteDataRows = snap.remoteDataRows,
                 headerIndex = snap.headerIndex,

@@ -109,6 +109,12 @@ object DatabaseModule {
         }
     }
 
+    val MIGRATION_15_16 = object : Migration(15, 16) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE fuel_entries ADD COLUMN notes TEXT")
+        }
+    }
+
     val MIGRATION_12_13 = object : Migration(12, 13) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -295,6 +301,7 @@ object DatabaseModule {
             MIGRATION_12_13,
             MIGRATION_13_14,
             MIGRATION_14_15,
+            MIGRATION_15_16,
         )
         .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()

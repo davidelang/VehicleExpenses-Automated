@@ -604,15 +604,16 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
-     * Soft-delete when: cloud photo manifest present, **or** location is not a pure
-     * local batch tag (Quick Fill / sheet-synced rows often have null or free text).
+     * Soft-delete when: cloud photo manifest present, **or** not a pure local batch
+     * provenance tag (notes preferred; location for legacy). Quick Fill / sheet rows
+     * often have null or free text / station JSON → soft-delete.
      */
     internal fun shouldSoftDeleteOnAbsorb(e: FuelEntry): Boolean {
         if (!e.cloudManifest.isNullOrBlank()) return true
-        val loc = e.location.orEmpty()
-        if (loc.startsWith("batch_import") ||
-            loc.startsWith("batch_manual") ||
-            loc.startsWith("batch_gap")
+        val tag = e.notes?.takeIf { it.isNotBlank() } ?: e.location.orEmpty()
+        if (tag.startsWith("batch_import") ||
+            tag.startsWith("batch_manual") ||
+            tag.startsWith("batch_gap")
         ) {
             return false
         }
@@ -1005,7 +1006,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         gallons = 0.0,
                         isPartialFill = false,
                         economyIgnored = false,
-                        location = live.location?.takeIf { it.isNotBlank() }
+                        notes = live.notes?.takeIf { it.isNotBlank() }
                             ?: "batch_gap_marker",
                     ),
                 )
@@ -1032,7 +1033,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 isPartialFill = false,
                 latitude = item.latitude,
                 longitude = item.longitude,
-                location = "batch_gap_marker",
+                notes = "batch_gap_marker",
             ),
         )
         clearAnsweredPending(item, null)
@@ -1074,7 +1075,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                             gallons = 0.0,
                             isPartialFill = false,
                             economyIgnored = false,
-                            location = live.location?.takeIf { it.isNotBlank() }
+                            notes = live.notes?.takeIf { it.isNotBlank() }
                                 ?: "batch_gap_marker",
                         ),
                     )
@@ -1113,7 +1114,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 photoUrl = null,
                 isPartialFill = false,
                 economyIgnored = false,
-                location = "batch_gap_marker",
+                notes = "batch_gap_marker",
             ),
         )
         clearAnsweredPending(item, endId)
@@ -1182,7 +1183,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 isPartialFill = false,
                 latitude = item.latitude,
                 longitude = item.longitude,
-                location = "batch_manual_pump",
+                notes = "batch_manual_pump",
             ),
         )
         clearAnsweredPending(item, null)
@@ -1235,7 +1236,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 isPartialFill = false,
                 latitude = item.latitude,
                 longitude = item.longitude,
-                location = "batch_manual_dash",
+                notes = "batch_manual_dash",
             ),
         )
         clearAnsweredPending(item, null)
@@ -1621,7 +1622,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                     isPartialFill = false,
                     latitude = meta.latitude,
                     longitude = meta.longitude,
-                    location = "batch_import_dash_blank:${file.name}",
+                    notes = "batch_import_dash_blank:${file.name}",
                 ),
             )
             Log.i(TAG, "Inserted blank dash marker vehicle=${result.vehicleId} ${file.name}")
@@ -1640,7 +1641,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 isPartialFill = false, // incomplete by fields only
                 latitude = meta.latitude,
                 longitude = meta.longitude,
-                location = "batch_import_dash:${file.name}",
+                notes = "batch_import_dash:${file.name}",
             ),
         )
         Log.i(TAG, "Inserted odo-only vehicle=${result.vehicleId} odo=$odo ${file.name}")
@@ -1701,7 +1702,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 isPartialFill = false, // incomplete by fields only
                 latitude = meta.latitude,
                 longitude = meta.longitude,
-                location = "batch_import_pump:${file.name}",
+                notes = "batch_import_pump:${file.name}",
             ),
         )
         Log.i(

@@ -326,46 +326,78 @@ object FuelRowMergeEngine {
         )
     }
 
+    private fun isCompleteFull(e: FuelEntry): Boolean =
+        e.odometer > 0 && e.cost > 0 && e.gallons > 0 &&
+            !e.isPartialFill && !e.economyIgnored
+
+    private fun conflictOdoPending(
+        sorted: List<FuelEntry>,
+        positiveOdos: List<Int>,
+        sameOdoFulls: Boolean,
+    ): MergePlan {
+        val photos = allPhotoUris(sorted)
+        val msg = if (sameOdoFulls) {
+            "Two complete fills same odo=${positiveOdos.firstOrNull()} " +
+                "vehicle=${sorted.first().vehicleId} " +
+                "ts≈${sorted.minOf { it.timestamp }}–${sorted.maxOf { it.timestamp}} " +
+                "(will not auto-merge; Keep both / Looks correct to ack)"
+        } else {
+            "Conflicting odometers ${positiveOdos.joinToString()} " +
+                "in cluster vehicle=${sorted.first().vehicleId} " +
+                "ts≈${sorted.minOf { it.timestamp }}–${sorted.maxOf { it.timestamp }}"
+        }
+        return MergePlan(
+            newPending = listOf(
+                BatchPendingItem(
+                    kind = BatchPendingKind.CONFLICT_ODO,
+                    message = msg,
+                    photoPath = photos.firstOrNull(),
+                    durablePhotoPath = photos.firstOrNull(),
+                    timestampMs = sorted.maxOf { it.timestamp },
+                    suggestedVehicleId = sorted.first().vehicleId,
+                    fuelEntryId = sorted.firstOrNull()?.id,
+                    extra = mapOf(
+                        "entryIds" to sorted.map { it.id }.joinToString(","),
+                        "entrySyncIds" to sorted.map { it.syncId }.filter { it.isNotBlank() }
+                            .joinToString(","),
+                        "memberSyncIds" to sorted.map { it.syncId }.filter { it.isNotBlank() }
+                            .sorted()
+                            .joinToString(","),
+                        "odos" to positiveOdos.joinToString(","),
+                        "photoPaths" to photos.joinToString("|"),
+                        "sameOdoCompleteFulls" to sameOdoFulls.toString(),
+                    ),
+                ),
+            ),
+        )
+    }
+
     private fun mergeOneCluster(cluster: List<FuelEntry>): MergePlan {
         val sorted = cluster.sortedWith(compareBy({ it.timestamp }, { it.id }))
 
-        val positiveOdos = sorted.map { it.odometer }.filter { it > 0 }.distinct()
-        if (positiveOdos.size > 1) {
-            // Two+ complete independent fills in window → keep both (no CONFLICT card)
-            val completeFulls = sorted.filter {
-                it.odometer > 0 && it.cost > 0 && it.gallons > 0 &&
-                    !it.isPartialFill && !it.economyIgnored
-            }
-            if (completeFulls.size >= 2 &&
-                completeFulls.map { it.odometer }.distinct().size > 1
-            ) {
+        // ≥2 complete fulls: never silent-absorb (same or distinct odo)
+        val completeFulls = sorted.filter { isCompleteFull(it) }
+        if (completeFulls.size >= 2) {
+            val fullOdos = completeFulls.map { it.odometer }.distinct()
+            if (fullOdos.size > 1) {
+                // Distinct odos among complete fulls → silent keep-both
                 return MergePlan()
             }
-            val photos = allPhotoUris(sorted)
-            return MergePlan(
-                newPending = listOf(
-                    BatchPendingItem(
-                        kind = BatchPendingKind.CONFLICT_ODO,
-                        message = "Conflicting odometers ${positiveOdos.joinToString()} " +
-                            "in cluster vehicle=${sorted.first().vehicleId} " +
-                            "ts≈${sorted.minOf { it.timestamp }}–${sorted.maxOf { it.timestamp }}",
-                        photoPath = photos.firstOrNull(),
-                        durablePhotoPath = photos.firstOrNull(),
-                        timestampMs = sorted.maxOf { it.timestamp },
-                        suggestedVehicleId = sorted.first().vehicleId,
-                        fuelEntryId = sorted.firstOrNull()?.id,
-                        extra = mapOf(
-                            "entryIds" to sorted.map { it.id }.joinToString(","),
-                            "entrySyncIds" to sorted.map { it.syncId }.filter { it.isNotBlank() }
-                                .joinToString(","),
-                            "memberSyncIds" to sorted.map { it.syncId }.filter { it.isNotBlank() }
-                                .sorted()
-                                .joinToString(","),
-                            "odos" to positiveOdos.joinToString(","),
-                            "photoPaths" to photos.joinToString("|"),
-                        ),
-                    ),
-                ),
+            // Same odo (or single odo value) among ≥2 complete fulls → CONFLICT, no absorb
+            return conflictOdoPending(
+                sorted = sorted,
+                positiveOdos = fullOdos,
+                sameOdoFulls = true,
+            )
+        }
+
+        val positiveOdos = sorted.map { it.odometer }.filter { it > 0 }.distinct()
+        if (positiveOdos.size > 1) {
+            // Partial/incomplete multi-odo conflict (not two complete fulls)
+            return conflictOdoPending(
+                sorted = sorted,
+                positiveOdos = positiveOdos,
+                sameOdoFulls = false,
             )
         }
 
@@ -477,10 +509,11 @@ object FuelRowMergeEngine {
     private fun absorbPhotoDuplicates(entries: List<FuelEntry>): MergePlan {
         if (entries.size < 2) return MergePlan()
         fun stem(e: FuelEntry): String {
-            val loc = e.location ?: ""
-            return loc.substringAfter("batch_import_dash:", "")
-                .ifBlank { loc.substringAfter("batch_import_dash_blank:", "") }
-                .ifBlank { loc.substringAfter("batch_import_pump:", "") }
+            // Prefer notes (new batch tags); fall back to location (legacy).
+            val tag = listOf(e.notes, e.location).firstOrNull { !it.isNullOrBlank() } ?: ""
+            return tag.substringAfter("batch_import_dash:", "")
+                .ifBlank { tag.substringAfter("batch_import_dash_blank:", "") }
+                .ifBlank { tag.substringAfter("batch_import_pump:", "") }
                 .ifBlank {
                     FuelPhotoJson.parse(e.photoUrl).firstOrNull()?.uri?.substringAfterLast('/')
                         ?: ""
@@ -539,6 +572,7 @@ object FuelRowMergeEngine {
         val lat = later.latitude ?: earlier.latitude
         val lon = later.longitude ?: earlier.longitude
         val loc = preferLocation(a.location, b.location)
+        val notes = preferNotes(a.notes, b.notes)
         val idKeep = later.id
         val complete = (if (odo > 0) odo else 0) > 0 && costF > 0 && galF > 0
         // Explicit partial only when complete and either side already had user override
@@ -555,15 +589,20 @@ object FuelRowMergeEngine {
             latitude = lat,
             longitude = lon,
             location = loc,
+            notes = notes,
             isPartialFill = preservePartial,
         )
     }
 
+    /**
+     * Prefer real station place (JSON / free text) over blank; batch tags score lower
+     * so a station name wins when present. Legacy batch tags may still live here.
+     */
     private fun preferLocation(a: String?, b: String?): String? {
         fun score(s: String?): Int {
             if (s.isNullOrBlank()) return 0
-            if (!s.startsWith("batch_import")) return 3
-            return 1
+            if (s.startsWith("batch_")) return 1
+            return 3
         }
         return when {
             score(a) > score(b) -> a
@@ -571,6 +610,25 @@ object FuelRowMergeEngine {
             else -> a ?: b
         }
     }
+
+    /**
+     * Prefer non-blank notes; keep batch tags when merging partials (do not drop provenance).
+     * When both non-blank and differ, prefer longer (more informative) side.
+     */
+    private fun preferNotes(a: String?, b: String?): String? {
+        val aa = a?.takeIf { it.isNotBlank() }
+        val bb = b?.takeIf { it.isNotBlank() }
+        return when {
+            aa == null -> bb
+            bb == null -> aa
+            aa == bb -> aa
+            else -> if (aa.length >= bb.length) aa else bb
+        }
+    }
+
+    /** True if [notes] or legacy [location] contains the batch token (case-sensitive). */
+    private fun hasBatchToken(e: FuelEntry, token: String): Boolean =
+        e.notes?.contains(token) == true || e.location?.contains(token) == true
 
     /**
      * Partial flag is **explicit only**. Incomplete → force false.
@@ -650,19 +708,20 @@ object FuelRowMergeEngine {
 
     /** Pump-amount row: has cost or volume (may or may not have odo after sequence attach). */
     private fun isPumpAmountRow(e: FuelEntry): Boolean =
-        hasCost(e) || hasVol(e) || (e.location?.contains("batch_import_pump") == true)
+        hasCost(e) || hasVol(e) || hasBatchToken(e, "batch_import_pump")
 
     /**
-     * Pump-like for pairing vehicleId=0: cost/vol without odo, or batch pump location.
+     * Pump-like for pairing vehicleId=0: cost/vol without odo, or batch pump tag
+     * (notes preferred; location for legacy rows).
      */
     private fun isPumpLike(e: FuelEntry): Boolean {
-        if (e.location?.contains("batch_import_pump") == true) return true
+        if (hasBatchToken(e, "batch_import_pump")) return true
         return (hasCost(e) || hasVol(e)) && !hasPositiveOdo(e)
     }
 
-    /** Dash-like for tight-pair split: odo-only (or batch dash location/tag). */
+    /** Dash-like for tight-pair split: odo-only (or batch dash tag in notes/location). */
     internal fun isDashLike(e: FuelEntry): Boolean {
-        if (e.location?.contains("batch_import_dash") == true) return true
+        if (hasBatchToken(e, "batch_import_dash")) return true
         val hasDashPhoto = FuelPhotoJson.parse(e.photoUrl).any {
             it.tag == "dash" || it.tag.startsWith("dash")
         }
@@ -672,7 +731,7 @@ object FuelRowMergeEngine {
 
     /** Pump-like for tight-pair split: cost/vol without odo (or batch pump). */
     internal fun isPumpLikeForSplit(e: FuelEntry): Boolean {
-        if (e.location?.contains("batch_import_pump") == true) return true
+        if (hasBatchToken(e, "batch_import_pump")) return true
         val hasPumpPhoto = FuelPhotoJson.parse(e.photoUrl).any { it.tag.startsWith("pump") }
         if (hasPumpPhoto && (hasCost(e) || hasVol(e)) && !hasPositiveOdo(e)) return true
         return (hasCost(e) || hasVol(e)) && !hasPositiveOdo(e)
