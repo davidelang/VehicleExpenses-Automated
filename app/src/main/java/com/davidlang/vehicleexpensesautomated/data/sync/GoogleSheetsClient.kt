@@ -37,13 +37,7 @@ class GoogleSheetsClient @Inject constructor(
         const val TAB_SYNC_TEST = "__sync_test"
         const val FUEL_TAB_PREFIX = "Fuel - "
 
-        val VEHICLE_HEADERS = listOf(
-            "Sync ID", "ID", "Name", "Make", "Model", "Year", "License Plate", "VIN", "Notes",
-            "Odo Crop L", "Odo Crop T", "Odo Crop R", "Odo Crop B",
-            "Other Crop L", "Other Crop T", "Other Crop R", "Other Crop B",
-            "Landmark Text Blocks JSON",
-            "Cloud Manifest", "Origin Device ID", "Updated At", "Deleted", "Deleted At",
-        )
+        val VEHICLE_HEADERS: List<String> get() = TabularSchema.VEHICLE_HEADERS
         /** Delegates to [TabularSchema.FUEL_HEADERS] (human-first order + Notes). */
         val FUEL_HEADERS: List<String> get() = TabularSchema.FUEL_HEADERS
         val EXPENSE_HEADERS: List<String> get() = TabularSchema.EXPENSE_HEADERS
@@ -63,70 +57,10 @@ class GoogleSheetsClient @Inject constructor(
         fun spreadsheetUrlFromId(id: String): String =
             "https://docs.google.com/spreadsheets/d/${id.trim()}/edit"
 
-        fun vehicleToRow(vehicle: Vehicle): List<String> = listOf(
-            vehicle.syncId,
-            vehicle.id.toString(),
-            vehicle.name,
-            vehicle.make ?: "",
-            vehicle.model ?: "",
-            vehicle.year?.toString() ?: "",
-            vehicle.licensePlate ?: "",
-            vehicle.vin ?: "",
-            vehicle.notes ?: "",
-            vehicle.odometerCropLeft?.toString() ?: "",
-            vehicle.odometerCropTop?.toString() ?: "",
-            vehicle.odometerCropRight?.toString() ?: "",
-            vehicle.odometerCropBottom?.toString() ?: "",
-            vehicle.otherTextCropLeft?.toString() ?: "",
-            vehicle.otherTextCropTop?.toString() ?: "",
-            vehicle.otherTextCropRight?.toString() ?: "",
-            vehicle.otherTextCropBottom?.toString() ?: "",
-            vehicle.landmarkTextBlocksJson ?: "",
-            vehicle.cloudManifest ?: "",
-            vehicle.originDeviceId,
-            vehicle.updatedAt.toString(),
-            vehicle.deleted.toString(),
-            vehicle.deletedAt?.toString() ?: "",
-        )
+        fun vehicleToRow(vehicle: Vehicle): List<String> = TabularSchema.vehicleToRow(vehicle)
 
-        fun rowToVehicle(row: List<String>, headerIndex: Map<String, Int>): Vehicle {
-            fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
-            fun optionalFloat(name: String): Float? = cell(name).toFloatOrNull()
-            val id = cell("ID").toIntOrNull() ?: 0
-            val name = cell("Name")
-            val make = cell("Make").ifBlank { null }
-            val model = cell("Model").ifBlank { null }
-            val year = cell("Year").toIntOrNull()
-            val syncIdCell = cell("Sync ID")
-            val syncId = syncIdCell.ifBlank {
-                SyncIdGenerator.deterministicVehicleFromSheet(id, name, make, model, year)
-            }
-            return Vehicle(
-                syncId = syncId,
-                id = id,
-                name = name,
-                make = make,
-                model = model,
-                year = year,
-                licensePlate = cell("License Plate").ifBlank { null },
-                vin = cell("VIN").ifBlank { null },
-                notes = cell("Notes").ifBlank { null },
-                odometerCropLeft = optionalFloat("Odo Crop L"),
-                odometerCropTop = optionalFloat("Odo Crop T"),
-                odometerCropRight = optionalFloat("Odo Crop R"),
-                odometerCropBottom = optionalFloat("Odo Crop B"),
-                otherTextCropLeft = optionalFloat("Other Crop L"),
-                otherTextCropTop = optionalFloat("Other Crop T"),
-                otherTextCropRight = optionalFloat("Other Crop R"),
-                otherTextCropBottom = optionalFloat("Other Crop B"),
-                landmarkTextBlocksJson = cell("Landmark Text Blocks JSON").ifBlank { null },
-                cloudManifest = cell("Cloud Manifest").ifBlank { null },
-                originDeviceId = cell("Origin Device ID"),
-                updatedAt = cell("Updated At").toLongOrNull() ?: 0L,
-                deleted = cell("Deleted").equals("true", ignoreCase = true),
-                deletedAt = cell("Deleted At").toLongOrNull(),
-            )
-        }
+        fun rowToVehicle(row: List<String>, headerIndex: Map<String, Int>): Vehicle =
+            TabularSchema.rowToVehicle(row, headerIndex)
     }
 
     fun resolveAccountNamePublic(hint: String?): String? =

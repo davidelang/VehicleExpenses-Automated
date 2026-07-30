@@ -26,6 +26,9 @@ interface FuelEntryDao {
     @Query("SELECT * FROM fuel_entries WHERE syncId = :syncId LIMIT 1")
     suspend fun findBySyncId(syncId: String): FuelEntry?
 
+    @Query("SELECT * FROM fuel_entries WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): FuelEntry?
+
     @Insert
     suspend fun insertFuelEntry(entry: FuelEntry)
 
