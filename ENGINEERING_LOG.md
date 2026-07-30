@@ -1573,3 +1573,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Reports VehicleSummaryBlock / Last5 wrapContentWidth; AdaptiveStatsText handles unbounded max
 - UI_COMPATIBILITY §12 + project-facts helper contract
 - Tip builds tag minor-fixes/builds; Phase 5 device check (5554 multi-col Lab hub) for user after install
+
+## 2026-07-30 - minor-fixes: local PR prepared (history cleanup)
+
+- Soft-reset cleanup: backup-minor-fixes @ 56b83864; 33 messy commits → 10 logical; TREE_MATCHES_BACKUP.
+- Cleaned tip 3cc40826; post-cleanup ./build_app SUCCESS; minor-fixes/builds updated.
+- ./generate_pr.sh → dev-ai-interaction/PRs/PR-minor-fixes.md (11 plans + Coder pre-submit).
+- Ready for Master (run-grok-master) independent review + merge. Coder does not merge.
