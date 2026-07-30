@@ -323,3 +323,17 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - assert_staged_feature_files (eng-log-only stage = FAILED)
 - Mandate + master-merge skill post-merge gate; postmortem on orch
 
+
+## 2026-07-30 - Execution start: deploy APK-first (root only, no update-rules)
+
+- Approved plan: APK-first deploy; --rebuild for gradle path
+- Scope: orchestration root deploy only; do not run update-rules
+- Version output from APK versionName (aapt), not live HEAD describe when using last APK
+
+## 2026-07-30 - Completed: deploy APK-first (root only)
+
+- Root deploy: default adb install -r last APK; --rebuild for wipe+installDebug
+- Version: aapt versionName (git describe at assemble); not live HEAD when APK path
+- Early prepare_build_tree only when REBUILD=true (preserves agent caches)
+- Did NOT run update-rules; worktrees still have old deploy
+- Plan archive: dev-ai-interaction/plans/deploy-apk-first-no-update-rules-20260730-plan.md
