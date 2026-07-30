@@ -80,6 +80,7 @@ import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.ReportsScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelEditScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelHistoryScreen
+import com.davidlang.vehicleexpensesautomated.ui.trip.TripTrackingScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabCostTrendsScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabEfficiencyScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabExpenseCategoriesScreen
@@ -259,6 +260,7 @@ class MainActivity : ComponentActivity() {
                 val currentRoute = navBackStackEntry?.destination?.route
                 val title = when {
                     currentRoute == "quickfill" -> "Quick Fill-up"
+                    currentRoute == "triptracking" -> "Trip Tracking"
                     currentRoute == "managevehicles" -> "Manage Vehicles"
                     currentRoute == "expense" -> "New Expense Entry"
                     currentRoute?.startsWith("expense/") == true -> "Edit Expense"
@@ -291,6 +293,14 @@ class MainActivity : ComponentActivity() {
                                 selected = false,
                                 onClick = {
                                     navController.navigate("quickfill")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Trip Tracking") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("triptracking")
                                     scope.launch { drawerState.close() }
                                 }
                             )
@@ -514,6 +524,7 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 composable("reports") { ReportsScreen(navController = navController) }
+                                composable("triptracking") { TripTrackingScreen(navController = navController) }
                                 composable("reports_lab") { ReportsLabHubScreen(navController = navController) }
                                 composable("reports_lab/efficiency") {
                                     ReportsLabEfficiencyScreen(navController = navController)

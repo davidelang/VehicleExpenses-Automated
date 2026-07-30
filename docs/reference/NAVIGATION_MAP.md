@@ -8,6 +8,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 ## Menu → Pages
 - **Quick Fill-up**: Main entry point for recording fuel fill-ups via camera/OCR (app start destination).
+- **Trip Tracking**: Open-only trip segments (Business / Personal / …) as fuel rows with **Trip Type**; camera or manual odo; immediately after Quick Fill-up in the drawer.
 - **Manage Vehicles**: Add, edit, or remove vehicles. Set up OCR reference photos and crop regions.
 - **New Expense Entry**: Record non-fuel expenses (repairs, insurance, etc.).
 - **Expense List**: View historical non-fuel expenses.
@@ -21,6 +22,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 ## Page Flows
 - **Quick Fill-up** → **Reports** (after successful save)
+- **Trip Tracking** → (pop back / drawer; saves trip-start fuel rows in place)
 - **Manage Vehicles** → (pop back to previous screen)
 - **New Expense Entry** → **Reports** (after successful save)
 - **Expense List** → (pop back to previous screen)
@@ -38,5 +40,6 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 ## Notes
 - **Start destination**: Quick Fill-up (`quickfill`)
+- **Trip Tracking route**: `triptracking` (drawer item immediately after Quick Fill-up)
 - **Navigation Drawer**: Accessible from all top-level screens.
 - **Deep Linking**: Not currently implemented.
