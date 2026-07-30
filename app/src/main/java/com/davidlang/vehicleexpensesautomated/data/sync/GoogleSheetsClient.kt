@@ -44,11 +44,8 @@ class GoogleSheetsClient @Inject constructor(
             "Landmark Text Blocks JSON",
             "Cloud Manifest", "Origin Device ID", "Updated At", "Deleted", "Deleted At",
         )
-        val FUEL_HEADERS = listOf(
-            "Sync ID", "ID", "Vehicle Sync ID", "Vehicle ID", "Odometer", "Gallons", "Cost", "Currency", "Timestamp",
-            "Photo URL", "Partial Fill", "Latitude", "Longitude", "Location", "Cloud Manifest",
-            "Origin Device ID", "Updated At", "Deleted", "Deleted At",
-        )
+        /** Delegates to [TabularSchema.FUEL_HEADERS] (human-first order + Notes). */
+        val FUEL_HEADERS: List<String> get() = TabularSchema.FUEL_HEADERS
         val EXPENSE_HEADERS: List<String> get() = TabularSchema.EXPENSE_HEADERS
 
         fun fuelTabName(vehicleName: String): String = FUEL_TAB_PREFIX + sanitizeTabName(vehicleName)
@@ -229,13 +226,16 @@ class GoogleSheetsClient @Inject constructor(
         val current = service.spreadsheets().values().get(sheetId, range).execute()
         val firstRow = current.getValues()?.firstOrNull()
         if (firstRow.isNullOrEmpty()) {
+            // New / empty tab: write full canonical header order (human-first for fuel).
             writeAllRows(sheetId, tabName, headers, emptyList(), accountHint)
         } else {
-            val existing = firstRow.map { it?.toString() ?: "" }
-            val missingHeaders = headers.filter { it !in existing }
-            if (missingHeaders.isNotEmpty()) {
-                Log.i(TAG, "Updating $tabName header row; missing: $missingHeaders")
-                val body = ValueRange().setValues(listOf(headers.map { it }))
+            // Existing header: keep order; append missing only (do not reorder known columns).
+            val existing = firstRow.map { it?.toString() ?: "" }.filter { it.isNotBlank() }
+            val merged = TabularSchema.mergeHeaderOrder(existing, headers)
+            if (merged != existing) {
+                val missingHeaders = merged.filter { it !in existing.toSet() }
+                Log.i(TAG, "Appending $tabName headers (order preserved); missing: $missingHeaders")
+                val body = ValueRange().setValues(listOf(merged.map { it }))
                 service.spreadsheets().values()
                     .update(sheetId, "'$tabName'!A1", body)
                     .setValueInputOption("RAW")
@@ -374,27 +374,8 @@ class GoogleSheetsClient @Inject constructor(
             }
         }
 
-    fun fuelToRow(entry: FuelEntry, vehicleSyncId: String = ""): List<String> = listOf(
-        entry.syncId,
-        entry.id.toString(),
-        vehicleSyncId,
-        entry.vehicleId.toString(),
-        entry.odometer.toString(),
-        entry.gallons.toString(),
-        entry.cost.toString(),
-        entry.currency,
-        entry.timestamp.toString(),
-        entry.photoUrl ?: "",
-        entry.isPartialFill.toString(),
-        entry.latitude?.toString() ?: "",
-        entry.longitude?.toString() ?: "",
-        entry.location ?: "",
-        entry.cloudManifest ?: "",
-        entry.originDeviceId,
-        entry.updatedAt.toString(),
-        entry.deleted.toString(),
-        entry.deletedAt?.toString() ?: "",
-    )
+    fun fuelToRow(entry: FuelEntry, vehicleSyncId: String = ""): List<String> =
+        TabularSchema.fuelToRow(entry, vehicleSyncId)
 
     fun expenseToRow(entry: ExpenseEntry, vehicleSyncId: String = ""): List<String> =
         TabularSchema.expenseToRow(entry, vehicleSyncId)

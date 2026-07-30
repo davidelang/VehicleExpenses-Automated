@@ -47,10 +47,12 @@ class EtherCalcTabularBackend @Inject constructor(
         if (rows.isEmpty() || rows.first().isEmpty()) {
             etherCalcClient.writeAllRows(cfg, tabName, headers, emptyList())
         } else {
-            val existing = rows.first()
-            if (headers != existing) {
+            val existing = rows.first().map { it.trim() }.filter { it.isNotEmpty() }
+            val merged = TabularSchema.mergeHeaderOrder(existing, headers)
+            if (merged != existing) {
+                // Append missing header names only; keep data column order.
                 val dataRows = rows.drop(1)
-                etherCalcClient.writeAllRows(cfg, tabName, headers, dataRows)
+                etherCalcClient.writeAllRows(cfg, tabName, merged, dataRows)
             }
         }
     }
