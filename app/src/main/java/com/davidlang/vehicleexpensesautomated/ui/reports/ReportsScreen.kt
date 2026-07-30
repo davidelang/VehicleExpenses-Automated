@@ -23,6 +23,8 @@ import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
+import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -202,7 +204,11 @@ private fun formatEntryDate(timestamp: Long): String {
 }
 
 private fun formatVolume(gallons: Double, unitLabel: String): String {
-    return "%.2f%s".format(gallons, unitLabel)
+    val unit = when (unitLabel.trim().uppercase()) {
+        "L", "LITERS" -> VolumeUnits.LITERS
+        else -> VolumeUnits.GALLONS
+    }
+    return VolumeUnits.formatVolume(gallons, unit)
 }
 
 /** Overall summary: 1 dense line (wraps naturally if narrow). No $/gal. */
@@ -218,7 +224,7 @@ private fun overallSummaryLine(
     val exp = CurrencyCodes.formatAggregateSum(totalExpensesByCurrency, defaultSymbol)
     val fuel = CurrencyCodes.formatAggregateSum(totalFuelCostByCurrency, defaultSymbol)
     return "Exp $exp · Fuel $fuel · " +
-        "${"%.1f".format(totalGallons)}$unitLabel · fills $totalFillUps (${partialFills}p)"
+        "${formatVolume(totalGallons, unitLabel)} · fills $totalFillUps (${partialFills}p)"
 }
 
 /** Stats only (no vehicle name) for Summary L2+. */
@@ -230,9 +236,10 @@ private fun vehicleStatsOnlyLine(
     val dpm = if (stats.dollarsPerMile == null) "n/a" else "%.3f".format(stats.dollarsPerMile)
     val fuel = CurrencyCodes.formatAggregateSum(stats.fuelCostByCurrency, defaultSymbol)
     return "Fuel $fuel · " +
-        "${"%.1f".format(stats.gallons)}$unitLabel · " +
+        "${formatVolume(stats.gallons, unitLabel)} · " +
         "fills ${stats.fillCount}(${stats.partialCount}p) · " +
-        "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · $/mi $dpm"
+        "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · " +
+        "${UnitFormat.costPerDistanceLabel()} $dpm"
 }
 
 /** User-facing vehicle label: never “Vehicle 0”. */
@@ -650,7 +657,7 @@ private fun FullFillLegRow(
                         .background(Color(0xFF81C784).copy(alpha = 0.45f))
                 )
                 Text(
-                    "mpg ${formatMpg(leg.mpg)}",
+                    "${UnitFormat.economyEfficiencyLabel()} ${formatMpg(leg.mpg)}",
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     modifier = Modifier.padding(horizontal = 4.dp)
