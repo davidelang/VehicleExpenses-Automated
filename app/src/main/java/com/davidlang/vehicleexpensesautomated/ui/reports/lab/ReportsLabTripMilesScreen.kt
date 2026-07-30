@@ -28,12 +28,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
     val data = rememberLabReportData()
     var includePersonalInTotals by remember { mutableStateOf(false) }
     var showZeroLength by remember { mutableStateOf(false) }
-    // List can show personal when checkbox for totals is off still? Plan: personal list may show;
-    // includePersonal defaults false for **totals**. Show personal in list always unless we want
-    // same flag — use same flag for list visibility of personal for simplicity (plan: list may show;
-    // tax totals default exclude). Separate: includePersonal affects totals; list shows personal always
-    // except we use includePersonal for list filter too when false hide personal from list.
-    // Plan: "list may show; tax totals default exclude Personal". So list shows personal by default.
+    // Tax totals default exclude Personal; list may still show Personal segments.
     var showPersonalInList by remember { mutableStateOf(true) }
 
     val (periodStart, periodEnd) = remember(data.filter) { periodBounds(data.filter) }
@@ -190,10 +185,14 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             )
             if (chartLabels.isNotEmpty()) {
                 Text(
-                    chartLabels.mapIndexed { i, t -> "${i + 1}. $t" }.joinToString(" · "),
+                    "Bar order: " +
+                        chartLabels.mapIndexed { i, t ->
+                            val m = milesByType[t] ?: 0
+                            "${i + 1}. $t (${UnitFormat.distanceDeltaLabel(m)})"
+                        }.joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall,
                     softWrap = true,
-                    maxLines = 4,
+                    maxLines = 6,
                 )
             }
         }
@@ -220,7 +219,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                         else -> "Closed"
                     }
                     val milesLabel = if (seg.isOpen) {
-                        "miles n/a"
+                        "n/a"
                     } else {
                         UnitFormat.distanceDeltaLabel(seg.miles)
                     }

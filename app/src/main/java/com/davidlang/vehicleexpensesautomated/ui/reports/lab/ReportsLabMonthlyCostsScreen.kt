@@ -21,8 +21,9 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 @Composable
 fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
     val data = rememberLabReportData()
-    val buckets = remember(data.fuel, data.expenses, data.defaultStored) {
-        monthlyCostBuckets(data.fuel, data.expenses, data.defaultStored)
+    val fillFuel = remember(data.fuel) { data.fuel.withoutTripStarts() }
+    val buckets = remember(fillFuel, data.expenses, data.defaultStored) {
+        monthlyCostBuckets(fillFuel, data.expenses, data.defaultStored)
     }
     val chartCurrency = remember(buckets, data.defaultStored) {
         val keys = buckets.flatMap { it.fuelByCurrency.keys + it.otherByCurrency.keys }.toSet()

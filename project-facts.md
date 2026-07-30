@@ -47,7 +47,8 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - `app/src/main/AndroidManifest.xml` — `<application android:largeHeap="true">`
 - Package: `app/src/main/java/com/davidlang/vehicleexpensesautomated/`
 - Compose UI icons: BOM-aligned `androidx.compose.material:material-icons-core` + `material-icons-extended` (required at runtime for `Icons.Default.*`)
-- UI text uses Material3 typography (`sp`); large `fontScale` supported with wrap/`heightIn` on primary chrome (TopAppBar, Settings debug row, Fuel History fetch, Lab filters)
+- **UI compatibility (agents):** `docs/reference/UI_COMPATIBILITY.md` — mandatory for Compose UI / unit labels / Lab charts / trip inventory / photo on-demand; bound in `AGENT_MANDATES.md`
+- UI text uses Material3 typography (`sp`); large `fontScale` supported with wrap/`heightIn` on primary chrome (TopAppBar, Settings debug row, Fuel History fetch, Lab filters); horizontal fit required
 - Core OCR harness: `ui/util/OcrEngine.kt`, `OcrHarness.kt`, `NativePaddleEngine.kt`, `IcrsMath.kt`
 - Production Paddle path: `NativePaddleEngine.PROD_PATH_ID` = `uint8_fp16_u8` (raw uint8 feed → fp16 compute; det uint8 heatmap thresh 0)
 - Production models: `app/src/main/assets/paddle/prod_u8fp16/` (`det_*`, `rec_v3_*`, `rec_numeric_*` for armv8 + x86_64 naming)

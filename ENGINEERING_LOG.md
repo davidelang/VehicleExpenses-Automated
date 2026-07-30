@@ -1535,3 +1535,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Inventory: production + Lab fill counts/lists exclude TripTimeline.isTripStart
 - Lab Trip miles: reports_lab/trips, TripSegments, UnitFormat distance labels, TEXT/CSV share
 - Residual: implicit personal miles before first start out of scope; tax PDF n/a; re-prepare PR when ready
+
+## 2026-07-30 - docs-rules-ui-compat-agent-guidance: start
+
+- Magic-approved plan: dev-ai-interaction/plans/docs-rules-ui-compat-agent-guidance-20260730-plan.md
+- Branch minor-fixes @ 6b27d49c; phases: trip-miles nits N1–N4 then UI_COMPATIBILITY + mandates/docs

@@ -1,6 +1,8 @@
 # Reports metrics
 
-Reference for economy math in `ui/reports/ReportsScreen.kt`. Field presence: a numeric field is **present** iff its value **> 0** (Room stores non-null `Int`/`Double`; 0 means absent).
+Reference for economy math in `ui/reports/ReportsScreen.kt` and shared `FuelEconomyChains`. Field presence: a numeric field is **present** iff its value **> 0** (Room stores non-null `Int`/`Double`; 0 means absent).
+
+**UI labels / units:** display via `VolumeUnits` + `UnitFormat` + `CurrencyCodes` — see **[UI_COMPATIBILITY.md](UI_COMPATIBILITY.md)** (agents must not hardcode unit words or treat trip starts as fills).
 
 ## Full fill (chain anchors)
 
@@ -101,7 +103,7 @@ Vehicle id `0` is labeled **Unknown** in reports UI (never “Vehicle 0”).
 
 ## Volume display
 
-Fuel volumes in the database are stored in the user’s **preferred** unit (gallons or liters). Reports and fuel lists show that stored number with the preferred unit **label**; they do not re-convert.
+Fuel volumes in the database are stored in the user’s **preferred** unit (gallons or liters). Reports and fuel lists show that stored number with the preferred unit **label**; they do not re-convert. Prefer `VolumeUnits.formatVolume` / `shortLabel` (see [UI_COMPATIBILITY.md](UI_COMPATIBILITY.md)).
 
 ## Merge window / odo sanitizer (batch)
 
