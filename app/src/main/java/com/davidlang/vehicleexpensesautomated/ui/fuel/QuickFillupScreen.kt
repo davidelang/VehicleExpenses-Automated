@@ -53,6 +53,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
@@ -69,16 +70,8 @@ import java.util.Locale
 
 private enum class CaptureViewState { Live, Processing, Results }
 
-private const val LITERS_PER_GALLON = 3.785411784
-
-private fun convertVolumeForSave(value: Double, fromUnit: String, toUnit: String): Double {
-    if (fromUnit == toUnit) return value
-    return when {
-        fromUnit == "G" && toUnit == "L" -> value * LITERS_PER_GALLON
-        fromUnit == "L" && toUnit == "G" -> value / LITERS_PER_GALLON
-        else -> value
-    }
-}
+private fun convertVolumeForSave(value: Double, fromUnit: String, toUnit: String): Double =
+    VolumeUnits.convert(value, fromUnit, toUnit)
 
 /** In-memory photo pointer until FuelEntry Save (tag dash|pump). */
 private data class SessionPhoto(val uri: String, val ts: Long)
@@ -170,6 +163,7 @@ fun QuickFillupScreen(
     var odometer by rememberSaveable { mutableStateOf("") }
     var gallons by rememberSaveable { mutableStateOf("") }
     var cost by rememberSaveable { mutableStateOf("") }
+    var notes by rememberSaveable { mutableStateOf("") }
     /** Session photos keyed by tag (dash/pump); written to DB only on Save as JSON. */
     val sessionPhotos = remember { mutableStateMapOf<String, SessionPhoto>() }
     var lat by remember { mutableStateOf<Double?>(null) }
@@ -699,6 +693,7 @@ fun QuickFillupScreen(
                                 latitude = lat,
                                 longitude = lon,
                                 location = loc,
+                                notes = notes.trim().ifBlank { null },
                                 isPartialFill = false,
                             )
                         )
@@ -718,6 +713,7 @@ fun QuickFillupScreen(
                         odometer = ""
                         cost = ""
                         gallons = ""
+                        notes = ""
                         sessionPhotos.clear()
                         photoSaveStatus = null
                         capturePending = false
@@ -986,6 +982,13 @@ fun QuickFillupScreen(
                     volumeField(Modifier.widthIn(min = 56.dp, max = 84.dp))
                 }
             }
+            OutlinedTextField(
+                value = notes,
+                onValueChange = { notes = it },
+                label = { Text("Notes") },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 3,
+            )
         }
             }
         }

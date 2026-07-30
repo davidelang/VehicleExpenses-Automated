@@ -33,6 +33,9 @@ class ExpenseViewModel @Inject constructor(
     suspend fun downloadExpensePhoto(entry: ExpenseEntry): String? =
         photoBackupCoordinator.downloadExpensePhoto(entry)
 
+    suspend fun scrubUnreadableExpensePhotos(entry: ExpenseEntry): ExpenseEntry =
+        photoBackupCoordinator.scrubUnreadableExpensePhotos(entry)
+
     suspend fun getExpenseById(id: Long): ExpenseEntry? = expenseEntryRepository.getById(id)
 
     suspend fun deleteExpense(entry: ExpenseEntry) {

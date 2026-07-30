@@ -40,10 +40,12 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
-import com.davidlang.vehicleexpensesautomated.data.sync.CloudManifest
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
+import com.davidlang.vehicleexpensesautomated.ui.components.expenseHasArchiveIdentity
+import com.davidlang.vehicleexpensesautomated.ui.components.expenseLocalMissingOrDead
+import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import java.text.SimpleDateFormat
@@ -78,6 +80,8 @@ private fun ExpenseEntryScreenBody(
 ) {
     val viewModel: ExpenseViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val photoStorage = settingsViewModel.photoStorageManager
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", android.content.Context.MODE_PRIVATE) }
     val scope = rememberCoroutineScope()
@@ -120,10 +124,12 @@ private fun ExpenseEntryScreenBody(
     var photoUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var showDatePicker by remember { mutableStateOf(false) }
     val photoDest = remember { SyncDestinationStore(context).photoDestination() }
-    val hasCloudOnlyReceipt = remember(loadedExpense, photoUrl, photoDest) {
+    val localPhotoMissing = remember(photoUrl) {
+        expenseLocalMissingOrDead(photoUrl, photoStorage)
+    }
+    val hasCloudOnlyReceipt = remember(loadedExpense, photoUrl, photoDest, localPhotoMissing) {
         val destId = photoDest?.id ?: return@remember false
-        photoUrl == null &&
-            CloudManifest.hasRole(loadedExpense?.cloudManifest, destId, CloudManifest.ROLE_EXPENSE_RECEIPT)
+        localPhotoMissing && expenseHasArchiveIdentity(loadedExpense, destId)
     }
 
     val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
@@ -134,20 +140,25 @@ private fun ExpenseEntryScreenBody(
             if (loadedId != editId) {
                 val entry = viewModel.getExpenseById(editId)
                 if (entry != null) {
-                    selectedVehicleId = entry.vehicleId
-                    amount = if (entry.amount == 0.0) "" else entry.amount.toString()
+                    var e = entry
+                    if (expenseLocalMissingOrDead(e.photoUrl, photoStorage) && !e.photoUrl.isNullOrBlank()) {
+                        e = viewModel.scrubUnreadableExpensePhotos(e)
+                    }
+                    selectedVehicleId = e.vehicleId
+                    amount = if (e.amount == 0.0) "" else e.amount.toString()
                     currencySymbol = CurrencyCodes.displaySymbol(
-                        entry.currency,
+                        e.currency,
                         defaultCurrencySymbol,
                     )
-                    vendor = entry.vendor
-                    description = entry.description
-                    category = entry.category
-                    odometerText = entry.odometer?.toString() ?: ""
-                    date = entry.date
-                    photoUrl = entry.photoUrl
-                    showLiveCamera = entry.photoUrl == null
-                    loadedExpense = entry
+                    vendor = e.vendor
+                    description = e.description
+                    category = e.category
+                    odometerText = e.odometer?.toString() ?: ""
+                    date = e.date
+                    photoUrl = e.photoUrl
+                    showLiveCamera = expenseLocalMissingOrDead(e.photoUrl, photoStorage) &&
+                        !expenseHasArchiveIdentity(e, photoDest?.id)
+                    loadedExpense = e
                     loadedId = editId
                 } else {
                     loadedExpense = null
@@ -380,7 +391,7 @@ private fun ExpenseEntryScreenBody(
                 .fillMaxWidth()
                 .background(Color.Black)
         ) {
-            if (hasCloudOnlyReceipt && photoUrl == null) {
+            if (hasCloudOnlyReceipt) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Center,
@@ -396,21 +407,25 @@ private fun ExpenseEntryScreenBody(
                             val entry = loadedExpense ?: return@Button
                             scope.launch {
                                 isDownloadingCloud = true
-                                photoStatus = "Downloading receipt…"
+                                photoStatus = "Fetching image…"
                                 try {
-                                    val local = viewModel.downloadExpensePhoto(entry)
+                                    val scrubbed = viewModel.scrubUnreadableExpensePhotos(entry)
+                                    loadedExpense = scrubbed
+                                    val local = viewModel.downloadExpensePhoto(scrubbed)
                                     if (local != null) {
                                         photoUrl = local
                                         showLiveCamera = false
                                         photoStatus = null
-                                        Toast.makeText(context, "Receipt downloaded", Toast.LENGTH_SHORT).show()
+                                        val refreshed = viewModel.getExpenseById(scrubbed.id)
+                                        if (refreshed != null) loadedExpense = refreshed
+                                        Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        photoStatus = "Download failed"
-                                        Toast.makeText(context, "Could not download receipt", Toast.LENGTH_LONG).show()
+                                        photoStatus = "Fetch failed"
+                                        Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
                                     }
                                 } catch (e: Exception) {
-                                    photoStatus = "Download failed"
-                                    Toast.makeText(context, e.message ?: "Download failed", Toast.LENGTH_LONG).show()
+                                    photoStatus = "Fetch failed"
+                                    Toast.makeText(context, e.message ?: "Fetch failed", Toast.LENGTH_LONG).show()
                                 } finally {
                                     isDownloadingCloud = false
                                 }
@@ -419,10 +434,10 @@ private fun ExpenseEntryScreenBody(
                         enabled = !isDownloadingCloud,
                         modifier = Modifier.padding(top = 12.dp),
                     ) {
-                        Text(if (isDownloadingCloud) "Downloading…" else "Download receipt")
+                        Text(if (isDownloadingCloud) "Fetching…" else "Fetch image from archive")
                     }
                 }
-            } else if (showLiveCamera || photoUrl == null) {
+            } else if (showLiveCamera || localPhotoMissing) {
                 CameraPreview(
                     modifier = Modifier.fillMaxSize(),
                     imageCapture = imageCapture,
