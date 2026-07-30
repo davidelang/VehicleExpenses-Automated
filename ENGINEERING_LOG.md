@@ -1313,3 +1313,14 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Worktree ENGINEERING_LOG.md may still have triple-appended tail (+a); committed blob is single third-version + this note — fix with sudo chattr -a when available
 - No works tag. Cleanup: ./remove_worktree.sh batch_load when ready
 
+
+## 2026-07-30 - Master merge PR-improve-merges
+
+- Independent review APPROVE; audit_merge FF SUCCESS
+- merge-branch-into-master.sh improve-merges (FF index path); ve-englog attempted dup tail → restored index to HEAD eng-log (no branch eng-log delta)
+- Worktree ENGINEERING_LOG still has prior +a duplicate tail (skip-worktree for integrity); needs sudo chattr -a + restore when available
+- project-facts: Room v16 + MergeAck locations
+- Commit 4011fddd on tip after feature commits; builds tag @ 4011fddd
+- BUILD SUCCESSFUL; no works tag
+- Cleanup: ./remove_worktree.sh improve-merges from repo root when ready
+
