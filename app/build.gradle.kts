@@ -96,6 +96,9 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.10.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
+    // Material Icons (BOM-aligned) — required for Icons.Default.* at runtime
+    implementation("androidx.compose.material:material-icons-core")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("com.google.android.gms:play-services-auth:21.0.0")
     implementation("com.microsoft.identity.client:msal:5.3.0")
@@ -103,6 +106,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     // Coil for image thumbnails
     implementation("io.coil-kt:coil-compose:2.6.0")
+    // Vico charts (Reports Lab) — pin 3.2.3; do NOT use compose-m3 (pulls material3 1.4
+    // via JetBrains CMP and breaks ExposedDropdownMenuBox ABI vs Compose BOM 2024.10 / 1.3.x)
+    implementation("com.patrykandpatrick.vico:compose:3.2.3")
+
+
     // Room DB
     val roomVersion = "2.7.0"
     implementation("androidx.room:room-runtime:$roomVersion")
