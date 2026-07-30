@@ -76,6 +76,7 @@ import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.ReportsScreen
+import com.davidlang.vehicleexpensesautomated.ui.trip.TripTrackingScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.PhotoBackupScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.SpreadsheetSyncScreen
@@ -247,6 +248,7 @@ class MainActivity : ComponentActivity() {
                 val currentRoute = navBackStackEntry?.destination?.route
                 val title = when {
                     currentRoute == "quickfill" -> "Quick Fill-up"
+                    currentRoute == "triptracking" -> "Trip Tracking"
                     currentRoute == "managevehicles" -> "Manage Vehicles"
                     currentRoute == "expense" -> "New Expense Entry"
                     currentRoute?.startsWith("expense/") == true -> "Edit Expense"
@@ -274,6 +276,14 @@ class MainActivity : ComponentActivity() {
                                 selected = false,
                                 onClick = {
                                     navController.navigate("quickfill")
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+                            NavigationDrawerItem(
+                                label = { Text("Trip Tracking") },
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("triptracking")
                                     scope.launch { drawerState.close() }
                                 }
                             )
@@ -420,6 +430,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(innerPadding)
                             ) {
                                 composable("quickfill") { QuickFillupScreen(navController = navController) }
+                                composable("triptracking") { TripTrackingScreen(navController = navController) }
                                 composable("managevehicles") { ManageVehiclesScreen(navController = navController) }
                                 composable("expense") {
                                     ExpenseEntryScreen(

@@ -1357,3 +1357,7 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 ## 2026-07-30 - Phase 7 camera odo path
 
 - TripTrackingScreen CameraPreview + OcrHarness.runAutoFillPipeline fills vehicle/odo
+
+## 2026-07-30 - Phase 8 nav + docs
+
+- MainActivity route triptracking + drawer after Quick Fill; NAVIGATION_MAP; project-facts Room v17 + trip locations
