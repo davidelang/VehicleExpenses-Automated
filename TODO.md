@@ -34,8 +34,8 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] **ODB-II integration:** live odometer reading
 - [ ] **Advanced reports and charts** (beyond current Reports screen)
 - [ ] **Prepare for Play Store** (signing, listing, policy, release pipeline)
-- [ ] **Generate UI manual / in-app guide** (expand beyond `docs/reference/USER_GUIDE.md`)
-- [ ] Quick Fill: Settings default currency/volume to "use system"
+- [x] **Generate UI manual / in-app guide** (expand beyond `docs/reference/USER_GUIDE.md`)
+- [x] Quick Fill: Settings default currency/volume to "use system"
 - [ ] Quick Fill: GPS-based currency default + locale filter for symbol chooser
 
 ## Backlog (engineering / tech debt)
