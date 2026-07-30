@@ -1468,3 +1468,46 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Magic-approved plan: dev-ai-interaction/plans/merge-trip-tracking-into-minor-fixes-20260730-plan.md
 - Branch minor-fixes @ 4cecb088; merging trip-tracking @ f135917f
 - Baseline builds tag: minor-fixes/builds
+
+## 2026-07-30 - Trip tracking open-only fuel tripType execution start
+
+- Approved plan: dev-ai-interaction/plans/trip-tracking-open-only-fuel-triptype-20260730-plan.md
+- Branch: trip-tracking; agent-2 coder worktree
+- First action eng-log; phases 1–8 schema→sync→UI→nav
+
+## 2026-07-30 - Phase 1 schema tripType tripTypesJson
+
+- FuelEntry.tripType; Vehicle.tripTypesJson; AppDatabase v17; MIGRATION_16_17 registered
+- Building phase 1
+
+## 2026-07-30 - Phase 2 TripTypes helper + inherit
+
+- data/trip/TripTypes.kt pure parse/format/seed/reorder
+- VehicleRepository.insertVehicle stamps tripTypesJson from inherit or seed
+
+## 2026-07-30 - Phase 3 Tabular Trip Type columns
+
+- FUEL_HEADERS Trip Type; VEHICLE_HEADERS Trip Types JSON; maps + GoogleSheetsClient delegate
+
+## 2026-07-30 - Phase 4 TripTimeline helpers
+
+- isTripStart, tripStartsForVehicle, currentOpenTrip, buildTripStart
+
+## 2026-07-30 - Phase 5+6 TripTrackingScreen manual + manage types
+
+- Manual vehicle/odo/type, Start + Close(Personal), datetime override
+- ManageTripTypesDialog add/rename/reorder → vehicle.tripTypesJson
+
+## 2026-07-30 - Phase 7 camera odo path
+
+- TripTrackingScreen CameraPreview + OcrHarness.runAutoFillPipeline fills vehicle/odo
+
+## 2026-07-30 - Phase 8 nav + docs
+
+- MainActivity route triptracking + drawer after Quick Fill; NAVIGATION_MAP; project-facts Room v17 + trip locations
+
+## 2026-07-30 - Trip tracking plan execution complete
+
+- All phases 1–8 built; tag trip-tracking/builds @ 4d54082a
+- Open-only fuel tripType + vehicle tripTypesJson + TripTrackingScreen + sync columns
+- Ready to test; no ReportsScreen edits
