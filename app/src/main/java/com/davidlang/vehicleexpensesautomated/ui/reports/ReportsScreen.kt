@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -402,11 +403,12 @@ fun ReportsScreen(navController: NavHostController) {
                 )
                 if (vehicleStats.isNotEmpty()) {
                     AdaptiveItemGrid(items = vehicleStats) { stats ->
+                        // No fillMaxWidth on grid item root — measure wrap for multi-col
                         VehicleSummaryBlock(
                             stats = stats,
                             unitLabel = volumeUnitLabel,
                             defaultSymbol = defaultSymbol,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier,
                         )
                     }
                 }
@@ -426,7 +428,7 @@ fun ReportsScreen(navController: NavHostController) {
                     stats = stats,
                     volumeUnitLabel = volumeUnitLabel,
                     defaultSymbol = defaultSymbol,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier,
                 )
             }
         }
@@ -483,16 +485,11 @@ private fun VehicleSummaryBlock(
 ) {
     val statsLine = vehicleStatsOnlyLine(stats, unitLabel, defaultSymbol)
     val expLine = vehicleExpenseSummaryLine(stats, defaultSymbol)
-    Column(modifier = modifier) {
+    // Wrap content width so AdaptiveItemGrid natural measure is not forced full-row.
+    Column(modifier = modifier.wrapContentWidth(align = Alignment.Start)) {
         Text(stats.name, style = MaterialTheme.typography.titleSmall)
-        AdaptiveStatsText(
-            statsLine = statsLine,
-            modifier = Modifier.fillMaxWidth()
-        )
-        AdaptiveStatsText(
-            statsLine = expLine,
-            modifier = Modifier.fillMaxWidth()
-        )
+        AdaptiveStatsText(statsLine = statsLine, modifier = Modifier)
+        AdaptiveStatsText(statsLine = expLine, modifier = Modifier)
     }
 }
 
@@ -504,6 +501,11 @@ private fun AdaptiveStatsText(
     val style = MaterialTheme.typography.bodySmall
     val measurer = rememberTextMeasurer()
     BoxWithConstraints(modifier = modifier) {
+        // Infinite max during AdaptiveItemGrid natural measure — wrap to text width.
+        if (!maxWidth.isFinite() || maxWidth == Dp.Infinity || maxWidth <= 0.dp) {
+            Text(statsLine, style = style)
+            return@BoxWithConstraints
+        }
         val maxPx = with(LocalDensity.current) { maxWidth.roundToPx() }.coerceAtLeast(0)
         val measured = measurer.measure(
             text = statsLine,
@@ -533,7 +535,7 @@ private fun VehicleLast5OnlyColumn(
     defaultSymbol: String,
     modifier: Modifier = Modifier
 ) {
-    Card(modifier = modifier) {
+    Card(modifier = modifier.wrapContentWidth(align = Alignment.Start)) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(stats.name, style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(6.dp))
@@ -542,9 +544,8 @@ private fun VehicleLast5OnlyColumn(
                 volumeUnitLabel = volumeUnitLabel,
                 defaultSymbol = defaultSymbol,
                 modifier = Modifier
-                    .fillMaxWidth()
                     .heightIn(max = vehicleColMaxHeight)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(rememberScrollState()),
             )
         }
     }

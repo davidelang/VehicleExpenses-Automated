@@ -7,12 +7,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -35,6 +35,12 @@ import kotlin.math.min
 /**
  * Card chrome for **tappable** list/hub items only (navigates or activates).
  * Non-tappable KPIs, form fields, switches stay bare (no Card).
+ *
+ * **Width contract:** Prefer **no** [Modifier.fillMaxWidth] on [modifier] when used inside
+ * [AdaptiveItemGrid] (grid natural pass measures wrap width). When the parent assigns a
+ * finite width (grid cell), [fillMaxWidth] on the card/column fills that **cell** only.
+ * [AdaptiveItemGrid] wraps the natural pass in [wrapContentWidth] so a child fillMaxWidth
+ * does not expand to the full screen during column-count measure.
  */
 @Composable
 fun TappableCard(
@@ -42,9 +48,9 @@ fun TappableCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    // Do not force fillMaxWidth on the outer Card — AdaptiveItemGrid measures natural width first.
     Card(
         modifier = modifier
+            .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -60,19 +66,22 @@ fun TappableCard(
 }
 
 /**
- * Multi-column grid driven by **content-measured** widest item (not fixed breakpoint tables).
+ * Content-measured multi-column grid (not fixed breakpoint tables).
  *
- * 1. Available width [W] from parent.
- * 2. Measure each item natural width; [itemW] = max.
- * 3. [cols] = max(1, floor((W + gap) / (itemW + gap))).
- * 4. Equal-weight cells in row-major rows; column count reacts to fontScale / density / content.
+ * Algorithm:
+ * 1. W = parent max width (px).
+ * 2. Natural pass: measure each item with minWidth=0, maxWidth=Infinity (wrapped so
+ *    fillMaxWidth children do not expand to parent W); natural_i = min(measured, W).
+ * 3. itemW = max(natural_i) (at least 1; if 0 use W).
+ * 4. cols = max(1, min(n, floor((W + gap) / (itemW + gap)))).
+ * 5. cellW = W when cols==1 else (W - (cols-1)*gap) / cols.
+ * 6. Layout pass: measure each item with minWidth=maxWidth=cellW (fill cell); row-major place.
  *
- * Prefer inside an existing vertical scroll; does not nest its own scroll.
- */
-/**
- * Content-measured multi-column grid.
- * Measures each item’s preferred width (wrap), then lays out equal-width cells in rows.
- * Items should not force [Modifier.fillMaxWidth] on their root if multi-column is desired.
+ * **Children must wrap for multi-col** — do not put [Modifier.fillMaxWidth] on the outermost
+ * composable inside the [itemContent] lambda. Prefer [TappableCard] (wraps) or bare wrap content.
+ * No dp floor in column-count math.
+ *
+ * Prefer inside an existing vertical scroll; no internal vertical scroll.
  */
 @Composable
 fun <T> AdaptiveItemGrid(
@@ -94,15 +103,27 @@ fun <T> AdaptiveItemGrid(
         }
         val hGapPx = with(density) { horizontalGap.roundToPx() }
         val vGapPx = with(density) { verticalGap.roundToPx() }
-        val floorPx = with(density) { 148.dp.roundToPx() }
 
         SubcomposeLayout(Modifier.fillMaxWidth()) { _ ->
-            val natural = items.mapIndexed { index, item ->
-                subcompose("nat$index") { itemContent(item) }
-                    .first()
-                    .measure(Constraints(maxWidth = maxWidthPx))
+            // Natural (wrap) measure — infinite max so fillMaxWidth does not snap to parent W
+            val naturalWidths = items.mapIndexed { index, item ->
+                val placeable = subcompose("nat$index") {
+                    Box(
+                        modifier = Modifier.wrapContentWidth(
+                            align = Alignment.Start,
+                            unbounded = true,
+                        ),
+                    ) {
+                        itemContent(item)
+                    }
+                }.first().measure(
+                    Constraints(minWidth = 0, maxWidth = Constraints.Infinity),
+                )
+                min(placeable.width, maxWidthPx).coerceAtLeast(0)
             }
-            val itemW = max(floorPx, natural.maxOf { it.width }.coerceAtLeast(1))
+            var itemW = naturalWidths.maxOrNull()?.coerceAtLeast(1) ?: 1
+            if (itemW <= 0) itemW = maxWidthPx
+
             val cols = max(1, min(items.size, (maxWidthPx + hGapPx) / (itemW + hGapPx)))
             val cellW = if (cols <= 1) {
                 maxWidthPx
@@ -110,9 +131,14 @@ fun <T> AdaptiveItemGrid(
                 (maxWidthPx - hGapPx * (cols - 1)) / cols
             }.coerceAtLeast(1)
 
+            // Fill cell — equal columns
             val cells = items.mapIndexed { index, item ->
                 subcompose("cell$index") {
-                    Box(modifier = Modifier.width(with(density) { cellW.toDp() })) {
+                    Box(
+                        modifier = Modifier
+                            .width(with(density) { cellW.toDp() })
+                            .fillMaxWidth(),
+                    ) {
                         itemContent(item)
                     }
                 }.first().measure(Constraints(minWidth = cellW, maxWidth = cellW))

@@ -120,8 +120,10 @@ Also smoke: large system font — TopAppBar, drawer labels, Share row buttons, L
 
 | Do | Don’t |
 |----|--------|
-| Use **`AdaptiveItemGrid`** — column count from measuring widest item vs available width | New peer-list **hardcoded dp breakpoint tables** (`minWidth = 200.dp` for col count) |
-| Re-measure with fontScale / density / content | Assume always 1 column on Lab or always N columns on tablet |
+| Use **`AdaptiveItemGrid`** — natural measure with **wrap** constraints (`maxWidth = Infinity`, min 0), then `itemW = max(natural)` clamped to parent W; cols = floor((W+gap)/(itemW+gap)); layout pass fills equal **cell** widths | New peer-list **hardcoded dp breakpoint tables** (`minWidth = 200.dp` for col count) |
+| **No fillMaxWidth on grid item roots** inside `AdaptiveItemGrid { }` — use [TappableCard] (wrap-friendly) or wrap content; grid nat pass also wraps so child fill does not snap to full screen | Force `Modifier.fillMaxWidth()` on outermost cell content (makes `itemW ≈ W` → always 1 column) |
+| Re-measure with fontScale / density / content (wider text → fewer cols) | Hardcoded **dp floors** in column-count math (e.g. 148.dp min item width) |
+| Prefer inside parent vertical scroll | Nested vertical scroll inside the grid |
 
 ## 13. Theme accents (non-camera)
 

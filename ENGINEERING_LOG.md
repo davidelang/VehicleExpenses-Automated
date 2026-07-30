@@ -1560,3 +1560,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - UI_COMPATIBILITY.md sections 11–15 (Cards, density, theme, icons, shared controls)
 - Residual: Import pending list not fully re-gridded; experiments untouched; camera chrome fixed contrast kept
 - builds tag minor-fixes/builds
+
+## 2026-07-30 - fix-adaptive-item-grid-measure: start
+
+- Magic-approved plan: dev-ai-interaction/plans/fix-adaptive-item-grid-measure-20260730-plan.md
+- Fix natural measure (Infinity wrap), remove 148.dp floor, TappableCard wrap, strip fillMaxWidth on grid children
