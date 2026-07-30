@@ -1324,3 +1324,14 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - BUILD SUCCESSFUL; no works tag
 - Cleanup: ./remove_worktree.sh improve-merges from repo root when ready
 
+
+## 2026-07-30 - Trip tracking open-only fuel tripType execution start
+
+- Approved plan: dev-ai-interaction/plans/trip-tracking-open-only-fuel-triptype-20260730-plan.md
+- Branch: trip-tracking; agent-2 coder worktree
+- First action eng-log; phases 1–8 schema→sync→UI→nav
+
+## 2026-07-30 - Phase 1 schema tripType tripTypesJson
+
+- FuelEntry.tripType; Vehicle.tripTypesJson; AppDatabase v17; MIGRATION_16_17 registered
+- Building phase 1

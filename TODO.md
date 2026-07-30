@@ -51,3 +51,5 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 Trip recording: separate screen with start/end odometer captures and work/personal/volunteer purpose (tax mileage records)
 
 Missed fill logging: fuel added but not recorded so MPG/$/mi cannot span that gap; needs UX + report/side-effect handling
+
+Trip tracking open-only fuel tripType (plan: trip-tracking-open-only-fuel-triptype-20260730-plan.md)
