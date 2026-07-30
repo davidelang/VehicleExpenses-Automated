@@ -12,6 +12,8 @@ import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepositor
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
+import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
+import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoRef
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -246,16 +248,15 @@ class PhotoBackupCoordinator @Inject constructor(
 
             for (expense in expenseRepository.getAllIncludingDeleted().filter { !it.deleted }) {
                 if (mode == PhotoSyncMode.PENDING_ONLY &&
-                    !expenseHasPendingWork(expense, destWithFolder)
+                    !expenseNeedsUpload(expense, destWithFolder)
                 ) {
                     continue
                 }
                 val count = uploadExpenseAsset(ctx.copy(dest = destWithFolder), expense)
                 if (count > 0) manifestChanged = true
                 uploads += count
-                if (expenseNeedsDownload(expense, destWithFolder)) {
-                    downloadExpensePhoto(expense, ctx)?.let { downloads++ }
-                }
+                // D1: never bulk-download expense receipts (or fuel photos) on Sync now / worker.
+                // On-demand: downloadExpensePhoto / downloadFuelPhoto from UI surfaces only.
             }
 
             val message = when {
@@ -381,10 +382,8 @@ class PhotoBackupCoordinator @Inject constructor(
 
         for ((tag, uri) in photos) {
             if (!photoStorage.isLocalReadable(uri)) continue
-            val role = when (tag) {
-                "pump" -> CloudManifest.ROLE_FUEL_PUMP
-                else -> CloudManifest.ROLE_FUEL_DASH
-            }
+            // dash→fuel_dash; pump→fuel_pump; pump_2→fuel_pump_2 (not dash)
+            val role = fuelRoleForTag(tag)
             if (CloudManifest.hasEntryForDest(manifest, ctx.dest.id, role)) continue
             val name = "fuel_${fuel.syncId}_$tag.jpg"
             val result = ctx.backend.uploadFile(
@@ -649,10 +648,188 @@ class PhotoBackupCoordinator @Inject constructor(
         changed
     }
 
+    /**
+     * Drop local photo pointers that are no longer readable. Preserves [FuelEntry.cloudManifest].
+     * Persists only when something changed, via [FuelEntryRepository.updateFuelEntryPreservingTimestamp].
+     * @return updated entry (or original if unchanged)
+     */
+    suspend fun scrubUnreadableFuelPhotos(entry: FuelEntry): FuelEntry = withContext(Dispatchers.IO) {
+        val photos = FuelPhotoJson.parse(entry.photoUrl)
+        if (photos.isEmpty()) return@withContext entry
+        val kept = photos.filter { photoStorage.isLocalReadable(it.uri) }
+        if (kept.size == photos.size) return@withContext entry
+        val newUrl = FuelPhotoJson.serialize(kept)
+        val updated = entry.copy(photoUrl = newUrl)
+        fuelRepository.updateFuelEntryPreservingTimestamp(updated)
+        updated
+    }
+
+    /**
+     * Drop expense local photo pages that are no longer readable. Preserves cloudManifest.
+     * Persists only when something changed, via preserving-timestamp update.
+     */
+    suspend fun scrubUnreadableExpensePhotos(entry: ExpenseEntry): ExpenseEntry = withContext(Dispatchers.IO) {
+        val pages = ExpensePhotoUrls.parse(entry.photoUrl)
+        if (pages.isEmpty()) {
+            // Legacy non-empty dead single path still needs scrub if parse returned empty? parse always returns page for non-blank.
+            if (!entry.photoUrl.isNullOrBlank() && !photoStorage.isLocalReadable(entry.photoUrl)) {
+                val updated = entry.copy(photoUrl = null)
+                expenseRepository.updateExpenseEntryPreservingTimestamp(updated)
+                return@withContext updated
+            }
+            return@withContext entry
+        }
+        val kept = pages.filter { photoStorage.isLocalReadable(it.uri) }
+        if (kept.size == pages.size) return@withContext entry
+        val newUrl = ExpensePhotoUrls.format(kept)
+        val updated = entry.copy(photoUrl = newUrl)
+        expenseRepository.updateExpenseEntryPreservingTimestamp(updated)
+        updated
+    }
+
     /** Download expense receipt page(s) from cloud manifest when local photos missing (primary dest). */
     suspend fun downloadExpensePhoto(expense: ExpenseEntry): String? = withContext(Dispatchers.IO) {
         val ctx = resolveContext(null) ?: return@withContext null
         downloadExpensePhoto(expense, ctx)
+    }
+
+    /**
+     * On-demand download of fuel fill photos (dash/pump) from cloud manifest.
+     * Never called by bulk Sync now / background worker.
+     * @return new photoUrl JSON/path or null if nothing downloaded
+     */
+    suspend fun downloadFuelPhoto(fuel: FuelEntry): String? = withContext(Dispatchers.IO) {
+        val ctx = resolveContext(null) ?: return@withContext null
+        downloadFuelPhoto(fuel, ctx)
+    }
+
+    private suspend fun downloadFuelPhoto(fuel: FuelEntry, ctx: SyncContext): String? =
+        withContext(Dispatchers.IO) {
+            prepareRcloneDestIfNeeded(ctx.dest, ctx.hint)
+            val saveLocal = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean("save_fuel_photos", true)
+            val provider = ctx.backend.manifestProvider()
+            val rolesToRestore = fuelPhotoRolesForDest(fuel, ctx.dest.id, provider)
+            if (rolesToRestore.isEmpty()) return@withContext null
+
+            val existing = FuelPhotoJson.parse(fuel.photoUrl).associateBy { it.tag }.toMutableMap()
+            var downloads = 0
+            val bindings = mutableListOf<CloudManifest.DownloadBinding>()
+
+            for (role in rolesToRestore) {
+                val tag = fuelTagFromRole(role)
+                val current = existing[tag]
+                if (current != null && photoStorage.isLocalReadable(current.uri)) continue
+                val fileId = CloudManifest.getFileId(
+                    fuel.cloudManifest,
+                    ctx.dest.id,
+                    role,
+                    provider,
+                ) ?: continue
+                val name = "fuel_${fuel.syncId}_$tag.jpg"
+                val local = ctx.backend.downloadFile(
+                    ctx.dest,
+                    ctx.hint,
+                    fileId,
+                    name,
+                    useMediaStore = saveLocal,
+                    photoType = PhotoType.FUEL,
+                )
+                existing[tag] = FuelPhotoRef(tag = tag, uri = local, ts = System.currentTimeMillis())
+                bindings.add(
+                    CloudManifest.DownloadBinding(
+                        role = role,
+                        fileId = fileId,
+                        name = name,
+                    ),
+                )
+                downloads++
+            }
+
+            if (downloads == 0) return@withContext fuel.photoUrl
+
+            val newPhotoUrl = FuelPhotoJson.serialize(existing.values.toList())
+            var updated = fuel.copy(photoUrl = if (saveLocal) newPhotoUrl else null)
+            if (bindings.isNotEmpty()) {
+                val merged = CloudManifest.bindLocalDestAfterDownload(
+                    fuel.cloudManifest,
+                    ctx.dest.id,
+                    bindings,
+                    provider,
+                )
+                if (merged != fuel.cloudManifest) {
+                    updated = updated.copy(cloudManifest = merged)
+                }
+            }
+            fuelRepository.updateFuelEntryPreservingTimestamp(updated)
+            newPhotoUrl
+        }
+
+    /**
+     * Tag ↔ CloudManifest role for fuel photos (single mapping for upload / pending / download).
+     *
+     * Examples:
+     * - `dash` ↔ `fuel_dash`
+     * - `pump` ↔ `fuel_pump`
+     * - `pump_2` ↔ `fuel_pump_2` (must NOT collapse to dash)
+     * - `pump_N` ↔ `fuel_pump_N`
+     */
+    private fun fuelRoleForTag(tag: String): String {
+        val t = tag.trim()
+        return when {
+            t == "dash" || t.startsWith("dash") -> CloudManifest.ROLE_FUEL_DASH
+            t == "pump" -> CloudManifest.ROLE_FUEL_PUMP
+            t.startsWith("pump_") -> "fuel_$t" // pump_2 → fuel_pump_2
+            t.startsWith("pump") -> "fuel_$t"
+            else -> CloudManifest.ROLE_FUEL_DASH
+        }
+    }
+
+    private fun fuelTagFromRole(role: String): String = when (role) {
+        CloudManifest.ROLE_FUEL_PUMP -> "pump"
+        CloudManifest.ROLE_FUEL_DASH -> "dash"
+        else -> {
+            // fuel_pump_2 → pump_2; fuel_pump_N → pump_N; other fuel_* → strip prefix
+            when {
+                role.startsWith("fuel_pump_") -> role.removePrefix("fuel_") // pump_2
+                role.startsWith("fuel_") -> role.removePrefix("fuel_")
+                else -> role.ifBlank { "dash" }
+            }
+        }
+    }
+
+    private fun isFuelPhotoRole(role: String): Boolean =
+        role == CloudManifest.ROLE_FUEL_DASH ||
+            role == CloudManifest.ROLE_FUEL_PUMP ||
+            role.startsWith("fuel_pump") ||
+            (role.startsWith("fuel_") && role != CloudManifest.ROLE_VEHICLE_REF &&
+                role != CloudManifest.ROLE_VEHICLE_REF_CLEANED)
+
+    private fun fuelPhotoRolesForDest(
+        fuel: FuelEntry,
+        destId: String,
+        provider: String,
+    ): List<String> {
+        val fromManifest = CloudManifest.parse(fuel.cloudManifest)
+            .filter { isFuelPhotoRole(it.role) }
+            .filter { entry ->
+                entry.destId == destId ||
+                    (provider != CloudManifest.PROVIDER_RCLONE &&
+                        entry.provider == CloudManifest.PROVIDER_GOOGLE_DRIVE)
+            }
+            .map { it.role }
+            .distinct()
+        if (fromManifest.isNotEmpty()) return fromManifest
+        // Prefer known roles if getFileId can resolve via fallback (legacy + any pump_N in local tags)
+        val fromTags = parseFuelPhotos(fuel.photoUrl)
+            ?.map { fuelRoleForTag(it.first) }
+            ?.distinct()
+            .orEmpty()
+        val candidates = (listOf(CloudManifest.ROLE_FUEL_DASH, CloudManifest.ROLE_FUEL_PUMP) + fromTags)
+            .distinct()
+        return candidates.filter { role ->
+            CloudManifest.getFileId(fuel.cloudManifest, destId, role, provider) != null
+        }
     }
 
     /** Download expense receipt page(s) for a specific photo destination context. */
@@ -833,7 +1010,7 @@ class PhotoBackupCoordinator @Inject constructor(
             val photos = parseFuelPhotos(fuel.photoUrl) ?: continue
             for ((tag, uri) in photos) {
                 if (!photoStorage.isLocalReadable(uri)) continue
-                val role = if (tag == "pump") CloudManifest.ROLE_FUEL_PUMP else CloudManifest.ROLE_FUEL_DASH
+                val role = fuelRoleForTag(tag)
                 if (!CloudManifest.hasEntryForDest(fuel.cloudManifest, dest.id, role)) upload++
             }
             if (!saveFuelLocal && fuel.photoUrl != null &&
@@ -844,8 +1021,9 @@ class PhotoBackupCoordinator @Inject constructor(
         }
 
         for (expense in expenseRepository.getAllIncludingDeleted().filter { !it.deleted }) {
+            // D2: pending download badge = vehicle refs only; expense archives are on-demand.
+            // Expense pending = upload only (never count missing receipts as downloads).
             if (expenseNeedsUpload(expense, dest)) upload++
-            if (expenseNeedsDownload(expense, dest)) download++
         }
 
         return PendingBreakdown(upload = upload, download = download)
@@ -1031,31 +1209,17 @@ class PhotoBackupCoordinator @Inject constructor(
         val photos = parseFuelPhotos(fuel.photoUrl) ?: return false
         for ((tag, uri) in photos) {
             if (!photoStorage.isLocalReadable(uri)) continue
-            val role = if (tag == "pump") CloudManifest.ROLE_FUEL_PUMP else CloudManifest.ROLE_FUEL_DASH
+            val role = fuelRoleForTag(tag)
             if (!CloudManifest.hasEntryForDest(fuel.cloudManifest, dest.id, role)) return true
         }
         return false
     }
-
-    private fun expenseHasPendingWork(expense: ExpenseEntry, dest: PhotoDestination): Boolean =
-        expenseNeedsUpload(expense, dest) || expenseNeedsDownload(expense, dest)
 
     private fun expenseNeedsUpload(expense: ExpenseEntry, dest: PhotoDestination): Boolean {
         for (page in ExpensePhotoUrls.parse(expense.photoUrl)) {
             if (!photoStorage.isLocalReadable(page.uri)) continue
             val role = ExpensePhotoUrls.roleForPage(page.index)
             if (!CloudManifest.hasEntryForDest(expense.cloudManifest, dest.id, role)) return true
-        }
-        return false
-    }
-
-    private fun expenseNeedsDownload(expense: ExpenseEntry, dest: PhotoDestination): Boolean {
-        val provider = manifestProviderFor(dest)
-        val localPages = ExpensePhotoUrls.parse(expense.photoUrl).associateBy { it.index }
-        for (role in expenseReceiptRolesForDest(expense, dest.id, provider)) {
-            val pageIndex = ExpensePhotoUrls.pageIndexFromRole(role)
-            val local = localPages[pageIndex]
-            if (local == null || !photoStorage.isLocalReadable(local.uri)) return true
         }
         return false
     }
