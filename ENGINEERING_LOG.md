@@ -1540,3 +1540,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Magic-approved plan: dev-ai-interaction/plans/docs-rules-ui-compat-agent-guidance-20260730-plan.md
 - Branch minor-fixes @ 6b27d49c; phases: trip-miles nits N1–N4 then UI_COMPATIBILITY + mandates/docs
+
+## 2026-07-30 - docs-rules-ui-compat-agent-guidance: complete
+
+- Plan: docs-rules-ui-compat-agent-guidance-20260730-plan.md
+- N1–N4 fixed; UI_COMPATIBILITY.md + AGENT_MANDATES Compose UI section + CONTRIBUTING/facts/metrics/USER_GUIDE
+- Tip 9174744d; builds tag minor-fixes/builds; no PR/history rewrite
