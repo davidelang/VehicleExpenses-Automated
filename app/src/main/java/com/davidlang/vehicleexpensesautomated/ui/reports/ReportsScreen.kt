@@ -502,7 +502,8 @@ private fun AdaptiveStatsText(
     val measurer = rememberTextMeasurer()
     BoxWithConstraints(modifier = modifier) {
         // Infinite max during AdaptiveItemGrid natural measure — wrap to text width.
-        if (!maxWidth.isFinite() || maxWidth == Dp.Infinity || maxWidth <= 0.dp) {
+        val bounded = constraints.hasBoundedWidth && constraints.maxWidth < Constraints.Infinity
+        if (!bounded || maxWidth <= 0.dp) {
             Text(statsLine, style = style)
             return@BoxWithConstraints
         }
