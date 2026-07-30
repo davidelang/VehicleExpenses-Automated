@@ -1353,3 +1353,7 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - Manual vehicle/odo/type, Start + Close(Personal), datetime override
 - ManageTripTypesDialog add/rename/reorder → vehicle.tripTypesJson
+
+## 2026-07-30 - Phase 7 camera odo path
+
+- TripTrackingScreen CameraPreview + OcrHarness.runAutoFillPipeline fills vehicle/odo

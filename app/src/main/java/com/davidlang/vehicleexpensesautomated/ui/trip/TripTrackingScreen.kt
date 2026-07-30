@@ -1,11 +1,16 @@
 package com.davidlang.vehicleexpensesautomated.ui.trip
 
 import android.app.TimePickerDialog
+import android.util.Log
 import android.widget.Toast
+import androidx.camera.core.ImageCapture
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
@@ -37,7 +43,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -47,13 +55,22 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.trip.TripTimeline
 import com.davidlang.vehicleexpensesautomated.data.trip.TripTypes
+import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
+import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
+import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+
+private const val TAG = "TripTracking"
 
 /**
  * Open-only trip tracking: insert fuel rows with non-blank [com.davidlang.vehicleexpensesautomated.data.model.FuelEntry.tripType].
@@ -87,6 +104,19 @@ fun TripTrackingScreen(
     var longitude by remember { mutableStateOf<Double?>(null) }
     var showManageTypes by remember { mutableStateOf(false) }
     var statusLine by remember { mutableStateOf<String?>(null) }
+    var showCamera by rememberSaveable { mutableStateOf(false) }
+    var capturePending by remember { mutableStateOf(false) }
+    var isProcessingOcr by remember { mutableStateOf(false) }
+    var ocrStage by remember { mutableStateOf("") }
+
+    val imageCapture: ImageCapture = remember {
+        ImageCapture.Builder()
+            .setResolutionSelector(
+                CameraResolutionPicker.resolutionSelector(CameraCaptureProfile.OCR_MEDIUM),
+            )
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .build()
+    }
 
     LaunchedEffect(vehicles) {
         if (selectedVehicleId == null && vehicles.isNotEmpty()) {
@@ -235,6 +265,156 @@ fun TripTrackingScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        OutlinedButton(
+            onClick = { showCamera = !showCamera },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (showCamera) "Hide camera" else "Show odometer camera")
+        }
+
+        if (showCamera) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(4f / 3f)
+                    .background(Color.Black),
+            ) {
+                CameraPreview(
+                    modifier = Modifier.fillMaxSize(),
+                    imageCapture = imageCapture,
+                    onImageCaptured = { imageProxy ->
+                        if (!capturePending) {
+                            imageProxy.close()
+                            return@CameraPreview
+                        }
+                        capturePending = false
+                        isProcessingOcr = true
+                        ocrStage = "Reading…"
+                        val planes = imageProxy.planes
+                        val isDirect = planes.all { it.buffer.isDirect }
+                        if (!isDirect) {
+                            imageProxy.close()
+                            isProcessingOcr = false
+                            Toast.makeText(context, "Error: Image buffer is not direct", Toast.LENGTH_LONG).show()
+                            return@CameraPreview
+                        }
+                        val bufferSet = NativePaddleEngine.bufferSetA
+                        if (bufferSet.width != imageProxy.width || bufferSet.height != imageProxy.height) {
+                            bufferSet.resize(imageProxy.width, imageProxy.height)
+                        }
+                        bufferSet.borrowYuv(
+                            planes[0].buffer,
+                            planes[1].buffer,
+                            planes[2].buffer,
+                            planes[0].rowStride,
+                            planes[1].rowStride,
+                            planes[1].pixelStride,
+                            planes[2].pixelStride,
+                        )
+                        bufferSet.normalizeYUV()
+                        val rotation = imageProxy.imageInfo.rotationDegrees
+                        imageProxy.close()
+
+                        scope.launch(Dispatchers.Default) {
+                            try {
+                                val result = OcrHarness.runAutoFillPipeline(
+                                    context = context,
+                                    masterBuffer = bufferSet,
+                                    allVehicles = vehicles,
+                                    debug = false,
+                                    cameraRotationDegrees = rotation,
+                                    onStage = { stage, _ ->
+                                        scope.launch(Dispatchers.Main) { ocrStage = stage }
+                                    },
+                                )
+                                withContext(Dispatchers.Main) {
+                                    if (result.error != null) {
+                                        Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
+                                        statusLine = result.error
+                                    } else {
+                                        result.vehicleId?.let { matchedId ->
+                                            if (vehicles.any { it.id == matchedId }) {
+                                                selectedVehicleId = matchedId
+                                            }
+                                        }
+                                        result.odometer?.let { odoStr ->
+                                            val digits = odoStr.filter { it.isDigit() }
+                                            if (digits.isNotEmpty()) odometer = digits
+                                        }
+                                        statusLine = buildString {
+                                            append("Camera: ")
+                                            result.odometer?.let { append("odo $it") }
+                                            result.vehicleId?.let { vid ->
+                                                val n = vehicles.find { it.id == vid }?.name
+                                                if (n != null) append(" · $n")
+                                            }
+                                            if (isEmpty()) append("captured — enter odo if needed")
+                                        }
+                                        Toast.makeText(context, statusLine, Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "OCR pipeline failed", e)
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(
+                                        context,
+                                        "OCR failed: ${e.localizedMessage ?: "Unknown"}",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                }
+                            } finally {
+                                withContext(Dispatchers.Main) {
+                                    isProcessingOcr = false
+                                    ocrStage = ""
+                                }
+                            }
+                        }
+                    },
+                )
+                if (isProcessingOcr) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = Color.White)
+                            if (ocrStage.isNotBlank()) {
+                                Text(
+                                    text = ocrStage,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Button(
+                onClick = {
+                    if (isProcessingOcr) return@Button
+                    try {
+                        android.media.MediaActionSound()
+                            .play(android.media.MediaActionSound.SHUTTER_CLICK)
+                    } catch (_: Exception) { /* optional */ }
+                    capturePending = true
+                    isProcessingOcr = true
+                    ocrStage = "Capturing…"
+                },
+                enabled = !isProcessingOcr,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Capture odometer")
+            }
+            Text(
+                "Review vehicle and odometer after capture, then Start or Close.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         ExposedDropdownMenuBox(
             expanded = vehicleMenuExpanded,
