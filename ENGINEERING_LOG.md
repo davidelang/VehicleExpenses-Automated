@@ -1528,3 +1528,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Magic-approved plan: dev-ai-interaction/plans/reports-lab-trip-miles-and-exclude-trip-from-fuel-20260730-plan.md
 - Branch minor-fixes @ 94b55314; baseline builds tag minor-fixes/builds
 - Phases 1–6: trip predicate docs, production+Lab fill inventory exclude trips, trip segment helpers, Lab Trip miles screen, hub/nav/facts
+
+## 2026-07-30 - reports-lab-trip-miles-and-exclude-trip-from-fuel: complete
+
+- Phases 1–6 done; tip 8e0c6f5f; builds tag minor-fixes/builds
+- Inventory: production + Lab fill counts/lists exclude TripTimeline.isTripStart
+- Lab Trip miles: reports_lab/trips, TripSegments, UnitFormat distance labels, TEXT/CSV share
+- Residual: implicit personal miles before first start out of scope; tax PDF n/a; re-prepare PR when ready
