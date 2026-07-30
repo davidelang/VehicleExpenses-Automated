@@ -8,6 +8,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.FuelTabRenameHintStore
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdGenerator
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdentity
+import com.davidlang.vehicleexpensesautomated.data.trip.TripTypes
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -71,8 +72,28 @@ class VehicleRepository @Inject constructor(
         v.id == UNASSIGNED_VEHICLE_ID || v.syncId == UNASSIGNED_VEHICLE_SYNC_ID
 
     suspend fun insertVehicle(vehicle: Vehicle): Long {
-        vehicleDao.insertVehicle(stampForWrite(vehicle))
+        vehicleDao.insertVehicle(stampForWrite(withTripTypesOnInsert(vehicle)))
         return 0L // Room auto-generates ID; legacy callers expect Long
+    }
+
+    /**
+     * Local create: if [Vehicle.tripTypesJson] is blank, inherit ordered types from the
+     * non-deleted non-Unassigned vehicle with latest [Vehicle.updatedAt]; else seed defaults.
+     * Sync upserts keep remote JSON as-is (including blank).
+     */
+    private suspend fun withTripTypesOnInsert(vehicle: Vehicle): Vehicle {
+        if (isSystemUnassigned(vehicle)) return vehicle
+        if (vehicle.tripTypesJson.isNotBlank()) return vehicle
+        val inheritFrom = vehicleDao.getAllIncludingDeleted()
+            .asSequence()
+            .filter { !it.deleted && !isSystemUnassigned(it) && it.tripTypesJson.isNotBlank() }
+            .maxByOrNull { it.updatedAt }
+        val json = if (inheritFrom != null) {
+            TripTypes.ensureNonEmpty(inheritFrom.tripTypesJson)
+        } else {
+            TripTypes.seedJson()
+        }
+        return vehicle.copy(tripTypesJson = json)
     }
 
     // Legacy method for existing CsvManager.kt + SyncWorker.kt

@@ -1335,3 +1335,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 
 - FuelEntry.tripType; Vehicle.tripTypesJson; AppDatabase v17; MIGRATION_16_17 registered
 - Building phase 1
+
+## 2026-07-30 - Phase 2 TripTypes helper + inherit
+
+- data/trip/TripTypes.kt pure parse/format/seed/reorder
+- VehicleRepository.insertVehicle stamps tripTypesJson from inherit or seed
