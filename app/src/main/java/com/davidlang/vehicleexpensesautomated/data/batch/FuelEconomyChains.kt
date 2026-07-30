@@ -1,12 +1,18 @@
 package com.davidlang.vehicleexpensesautomated.data.batch
 
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.trip.TripTimeline
 
 /**
  * Shared MPG / $/mi chain predicates for reports and Stage C questions.
  * Keep in lockstep with [docs/reference/REPORTS_METRICS.md].
  *
  * Field presence: numeric field is present iff value **> 0**.
+ *
+ * **Trip starts** ([isTripStart] / [TripTimeline.isTripStart]): non-blank `tripType`.
+ * They are **not fills** for inventory counts/lists. Typical trip rows are odo-only
+ * (gallons=0, cost=0) so they already skip full-fill anchors and cost/vol windows;
+ * inventory UIs must still exclude them via [isTripStart] or [withoutTripStarts].
  */
 object FuelEconomyChains {
 
@@ -14,18 +20,29 @@ object FuelEconomyChains {
     fun hasCost(e: FuelEntry): Boolean = e.cost > 0
     fun hasVol(e: FuelEntry): Boolean = e.gallons > 0
 
+    /** Delegates to [TripTimeline.isTripStart] — single source of truth. */
+    fun isTripStart(e: FuelEntry): Boolean = TripTimeline.isTripStart(e)
+
+    /** Fuel inventory / fill lists: non-deleted rows that are not trip starts. */
+    fun withoutTripStarts(entries: List<FuelEntry>): List<FuelEntry> =
+        entries.filter { !it.deleted && !isTripStart(it) }
+
     /**
      * Full-fill anchor: not economyIgnored, not explicit partial, odo+cost+vol present.
+     * Trip starts with zero vol/cost are never full fills.
      */
     fun isFullFill(e: FuelEntry): Boolean =
         !e.economyIgnored && !e.isPartialFill && hasOdo(e) && hasCost(e) && hasVol(e)
 
-    /** Contributes cost/vol to economy windows (not economyIgnored). */
-    fun contributesToEconomy(e: FuelEntry): Boolean = !e.economyIgnored
+    /**
+     * Contributes cost/vol to economy windows: not economyIgnored and not a trip start.
+     * (Trip starts are typically odo-only; exclude defensively.)
+     */
+    fun contributesToEconomy(e: FuelEntry): Boolean = !e.economyIgnored && !isTripStart(e)
 
     /**
      * MPG chain breaker: blank (no odo/cost/vol) or cost without volume.
-     * Odo-only rows are neither breakers nor volume contributors.
+     * Odo-only and trip-start rows are neither breakers nor volume contributors.
      */
     fun isMpgChainBreaker(e: FuelEntry): Boolean =
         (!hasOdo(e) && !hasCost(e) && !hasVol(e)) ||
@@ -39,7 +56,7 @@ object FuelEconomyChains {
             (hasVol(e) && !hasCost(e))
 
     /**
-     * Rows in (prevTs, endTs] that may contribute (excludes economyIgnored).
+     * Rows in (prevTs, endTs] that may contribute (excludes economyIgnored and trip starts).
      * Includes the end anchor when its timestamp equals endTs.
      */
     fun windowContributors(
@@ -51,7 +68,7 @@ object FuelEconomyChains {
             !it.deleted &&
                 it.timestamp > prevTs &&
                 it.timestamp <= endTs &&
-                !it.economyIgnored
+                contributesToEconomy(it)
         }
 
     fun sumVol(window: List<FuelEntry>): Double =
@@ -63,9 +80,10 @@ object FuelEconomyChains {
 
     /**
      * Compact shape label for inventory UI.
-     * FULL / odo-only / pump-no-odo / BLANK / partial / mixed
+     * trip / FULL / odo-only / pump-no-odo / BLANK / partial / mixed / ignored
      */
     fun rowShape(e: FuelEntry): String {
+        if (isTripStart(e)) return "trip"
         if (e.economyIgnored) return "ignored"
         if (!hasOdo(e) && !hasCost(e) && !hasVol(e)) return "BLANK"
         if (isFullFill(e)) return "FULL"

@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -22,7 +23,11 @@ import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
+import com.davidlang.vehicleexpensesautomated.ui.components.EmptyStateText
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
+import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -202,7 +207,11 @@ private fun formatEntryDate(timestamp: Long): String {
 }
 
 private fun formatVolume(gallons: Double, unitLabel: String): String {
-    return "%.2f%s".format(gallons, unitLabel)
+    val unit = when (unitLabel.trim().uppercase()) {
+        "L", "LITERS" -> VolumeUnits.LITERS
+        else -> VolumeUnits.GALLONS
+    }
+    return VolumeUnits.formatVolume(gallons, unit)
 }
 
 /** Overall summary: 1 dense line (wraps naturally if narrow). No $/gal. */
@@ -218,7 +227,7 @@ private fun overallSummaryLine(
     val exp = CurrencyCodes.formatAggregateSum(totalExpensesByCurrency, defaultSymbol)
     val fuel = CurrencyCodes.formatAggregateSum(totalFuelCostByCurrency, defaultSymbol)
     return "Exp $exp · Fuel $fuel · " +
-        "${"%.1f".format(totalGallons)}$unitLabel · fills $totalFillUps (${partialFills}p)"
+        "${formatVolume(totalGallons, unitLabel)} · fills $totalFillUps (${partialFills}p)"
 }
 
 /** Stats only (no vehicle name) for Summary L2+. */
@@ -230,9 +239,10 @@ private fun vehicleStatsOnlyLine(
     val dpm = if (stats.dollarsPerMile == null) "n/a" else "%.3f".format(stats.dollarsPerMile)
     val fuel = CurrencyCodes.formatAggregateSum(stats.fuelCostByCurrency, defaultSymbol)
     return "Fuel $fuel · " +
-        "${"%.1f".format(stats.gallons)}$unitLabel · " +
+        "${formatVolume(stats.gallons, unitLabel)} · " +
         "fills ${stats.fillCount}(${stats.partialCount}p) · " +
-        "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · $/mi $dpm"
+        "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · " +
+        "${UnitFormat.costPerDistanceLabel()} $dpm"
 }
 
 /** User-facing vehicle label: never “Vehicle 0”. */
@@ -264,8 +274,6 @@ private fun splitStatsAtMiddot(stats: String): Pair<String, String> {
     return parts.take(mid).joinToString(" · ") to parts.drop(mid).joinToString(" · ")
 }
 
-private val vehicleColMinWidth = 156.dp
-private val vehicleSummaryMinWidth = 200.dp
 private val vehicleColMaxHeight = 280.dp
 
 @Composable
@@ -298,9 +306,11 @@ fun ReportsScreen(navController: NavHostController) {
     val totalFuelCostByCurrency = remember(fuelEntries, defaultStored) {
         CurrencyCodes.sumByCurrency(fuelEntries, defaultStored, { it.currency }, { it.cost })
     }
+    // Inventory fills exclude trip starts; $ / volume still from all non-deleted fuel rows.
+    val fillInventory = remember(fuelEntries) { FuelEconomyChains.withoutTripStarts(fuelEntries) }
     val totalGallons = fuelEntries.sumOf { it.gallons }
-    val partialFills = fuelEntries.count { it.isPartialFill }
-    val totalFillUps = fuelEntries.size
+    val partialFills = fillInventory.count { it.isPartialFill }
+    val totalFillUps = fillInventory.size
 
     val vehicleStats = remember(fuelEntries, expenses, vehicleNameById, defaultStored) {
         val fuelByV = fuelEntries.groupBy { it.vehicleId }
@@ -308,6 +318,7 @@ fun ReportsScreen(navController: NavHostController) {
         val ids = (fuelByV.keys + expByV.keys).toSortedSet()
         ids.map { vehicleId ->
             val vFuel = fuelByV[vehicleId].orEmpty()
+            val vFills = FuelEconomyChains.withoutTripStarts(vFuel)
             val vExp = expByV[vehicleId].orEmpty()
             val allLegsNewestFirst = newestValidLegs(vFuel, defaultStored, maxLegs = Int.MAX_VALUE)
             val legsChrono = allLegsNewestFirst.asReversed() // oldest→newest for avg/last
@@ -323,8 +334,8 @@ fun ReportsScreen(navController: NavHostController) {
                     { it.cost },
                 ),
                 gallons = vFuel.sumOf { it.gallons },
-                fillCount = vFuel.size,
-                partialCount = vFuel.count { it.isPartialFill },
+                fillCount = vFills.size,
+                partialCount = vFills.count { it.isPartialFill },
                 lastMpg = displayLegs.lastOrNull()?.mpg,
                 avgMpg = if (displayLegs.isEmpty()) null else displayLegs.map { it.mpg }.average(),
                 dollarsPerMile = dollarsPerMile(vFuel, vExp, defaultStored),
@@ -348,8 +359,8 @@ fun ReportsScreen(navController: NavHostController) {
         }
     }
 
-    val allFillsNewest = remember(fuelEntries) {
-        fuelEntries.sortedByDescending { it.timestamp }.let { if (it.size > 50) it.take(50) else it }
+    val allFillsNewest = remember(fillInventory) {
+        fillInventory.sortedByDescending { it.timestamp }.let { if (it.size > 50) it.take(50) else it }
     }
     val allExpensesNewest = remember(expenses) {
         expenses.sortedByDescending { it.date }.let { if (it.size > 50) it.take(50) else it }
@@ -391,44 +402,14 @@ fun ReportsScreen(navController: NavHostController) {
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (vehicleStats.isNotEmpty()) {
-                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                        val cols = ((maxWidth / vehicleSummaryMinWidth).toInt()).coerceAtLeast(1)
-                        if (cols <= 1) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                vehicleStats.forEach { stats ->
-                                    VehicleSummaryBlock(
-                                        stats = stats,
-                                        unitLabel = volumeUnitLabel,
-                                        defaultSymbol = defaultSymbol,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            }
-                        } else {
-                            val chunked = vehicleStats.chunked(cols)
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                chunked.forEach { rowVehicles ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        rowVehicles.forEach { stats ->
-                                            VehicleSummaryBlock(
-                                                stats = stats,
-                                                unitLabel = volumeUnitLabel,
-                                                defaultSymbol = defaultSymbol,
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .widthIn(min = vehicleSummaryMinWidth)
-                                            )
-                                        }
-                                        repeat(cols - rowVehicles.size) {
-                                            Spacer(modifier = Modifier.weight(1f))
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    AdaptiveItemGrid(items = vehicleStats) { stats ->
+                        // No fillMaxWidth on grid item root — measure wrap for multi-col
+                        VehicleSummaryBlock(
+                            stats = stats,
+                            unitLabel = volumeUnitLabel,
+                            defaultSymbol = defaultSymbol,
+                            modifier = Modifier,
+                        )
                     }
                 }
             }
@@ -440,40 +421,22 @@ fun ReportsScreen(navController: NavHostController) {
         Spacer(modifier = Modifier.height(8.dp))
 
         if (vehicleStats.isEmpty()) {
-            Text("No vehicles with data", style = MaterialTheme.typography.bodyMedium)
+            EmptyStateText("No vehicles with data")
         } else {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val cols = ((maxWidth / vehicleColMinWidth).toInt()).coerceAtLeast(1)
-                val chunked = vehicleStats.chunked(cols)
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    chunked.forEach { rowVehicles ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            rowVehicles.forEach { stats ->
-                                VehicleLast5OnlyColumn(
-                                    stats = stats,
-                                    volumeUnitLabel = volumeUnitLabel,
-                                    defaultSymbol = defaultSymbol,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .widthIn(min = vehicleColMinWidth)
-                                )
-                            }
-                            repeat(cols - rowVehicles.size) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
+            AdaptiveItemGrid(items = vehicleStats) { stats ->
+                VehicleLast5OnlyColumn(
+                    stats = stats,
+                    volumeUnitLabel = volumeUnitLabel,
+                    defaultSymbol = defaultSymbol,
+                    modifier = Modifier,
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val sideBySide = maxWidth >= vehicleColMinWidth * 2
+            val sideBySide = maxWidth >= 320.dp
             if (sideBySide) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -522,16 +485,11 @@ private fun VehicleSummaryBlock(
 ) {
     val statsLine = vehicleStatsOnlyLine(stats, unitLabel, defaultSymbol)
     val expLine = vehicleExpenseSummaryLine(stats, defaultSymbol)
-    Column(modifier = modifier) {
+    // Wrap content width so AdaptiveItemGrid natural measure is not forced full-row.
+    Column(modifier = modifier.wrapContentWidth(align = Alignment.Start)) {
         Text(stats.name, style = MaterialTheme.typography.titleSmall)
-        AdaptiveStatsText(
-            statsLine = statsLine,
-            modifier = Modifier.fillMaxWidth()
-        )
-        AdaptiveStatsText(
-            statsLine = expLine,
-            modifier = Modifier.fillMaxWidth()
-        )
+        AdaptiveStatsText(statsLine = statsLine, modifier = Modifier)
+        AdaptiveStatsText(statsLine = expLine, modifier = Modifier)
     }
 }
 
@@ -543,6 +501,12 @@ private fun AdaptiveStatsText(
     val style = MaterialTheme.typography.bodySmall
     val measurer = rememberTextMeasurer()
     BoxWithConstraints(modifier = modifier) {
+        // Infinite max during AdaptiveItemGrid natural measure — wrap to text width.
+        val bounded = constraints.hasBoundedWidth && constraints.maxWidth < Constraints.Infinity
+        if (!bounded || maxWidth <= 0.dp) {
+            Text(statsLine, style = style)
+            return@BoxWithConstraints
+        }
         val maxPx = with(LocalDensity.current) { maxWidth.roundToPx() }.coerceAtLeast(0)
         val measured = measurer.measure(
             text = statsLine,
@@ -572,7 +536,7 @@ private fun VehicleLast5OnlyColumn(
     defaultSymbol: String,
     modifier: Modifier = Modifier
 ) {
-    Card(modifier = modifier) {
+    Card(modifier = modifier.wrapContentWidth(align = Alignment.Start)) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(stats.name, style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(6.dp))
@@ -581,9 +545,8 @@ private fun VehicleLast5OnlyColumn(
                 volumeUnitLabel = volumeUnitLabel,
                 defaultSymbol = defaultSymbol,
                 modifier = Modifier
-                    .fillMaxWidth()
                     .heightIn(max = vehicleColMaxHeight)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(rememberScrollState()),
             )
         }
     }
@@ -647,10 +610,10 @@ private fun FullFillLegRow(
                     modifier = Modifier
                         .fillMaxWidth(barFraction.coerceIn(0.05f, 1f))
                         .fillMaxHeight()
-                        .background(Color(0xFF81C784).copy(alpha = 0.45f))
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f))
                 )
                 Text(
-                    "mpg ${formatMpg(leg.mpg)}",
+                    "${UnitFormat.economyEfficiencyLabel()} ${formatMpg(leg.mpg)}",
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     modifier = Modifier.padding(horizontal = 4.dp)
