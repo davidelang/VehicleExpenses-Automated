@@ -60,7 +60,20 @@ On first launch after a schema upgrade that introduces blank **`syncId`** values
 | **Location** | Station place: JSON `{"name":"Shell","address":"…"}` when known; legacy plain text still displays. Lat/long stay in **Latitude** / **Longitude**. |
 | **Notes** | Freeform + batch provenance (`batch_import_dash:…`, `batch_gap_marker`, …). New batch inserts write tags here; engine role checks read **notes** and still accept legacy tags in **location**. |
 
-**Default header order** (new / empty fuel tabs and CSV export): human fields first (Timestamp … Notes), machine IDs last (Vehicle Sync ID … Deleted At). Existing sheets keep their column order; missing columns (e.g. Notes) are **appended** only — never auto-reordered. Reads are **name-based**.
+**Default header order** (new / empty fuel tabs and CSV export): human fields first (Timestamp … Notes), machine IDs last (Vehicle Sync ID … Deleted At). Existing sheets keep their column order; missing columns (e.g. Notes) are **appended** only — never auto-reordered. Backends that rewrite the full grid after append **pad** data rows with empty cells for new columns. Reads are **name-based**.
+
+### CSV zip backup parity
+
+Local CSV zip export mirrors the spreadsheet tabular surface (not a remote destination):
+
+| Zip entry | Sheet counterpart | Tombstones |
+|-----------|-------------------|------------|
+| `Vehicles.csv` | Vehicles tab | Included |
+| `Expenses.csv` | Expenses tab | Included |
+| `Fuel - {name}.csv` | Per live vehicle fuel tab (incl. Unassigned) | Soft-deleted fuel included |
+| `Merge acks.csv` | Merge acks tab | Included |
+
+Import: missing entries (old zips without Merge acks / Notes column) are no-ops; fuel/expense columns resolve by header name. Fuel export header always includes **Notes** and **Sync ID**.
 
 **Complete fulls in a 15 m cluster:** ≥2 complete fills with distinct odos → silent keep-both; same odo → `CONFLICT_ODO` pending (no silent absorb). Keep both / Looks correct write durable acks as before.
 

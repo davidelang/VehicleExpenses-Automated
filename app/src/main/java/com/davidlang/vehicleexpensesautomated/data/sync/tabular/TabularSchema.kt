@@ -201,6 +201,13 @@ object TabularSchema {
     /**
      * Preserve [existingHeader] order; append any [canonical] names not already present.
      * Empty existing → [canonical] (new / headerless tab).
+     *
+     * Used by every tabular [ensureHeaders] implementation:
+     * - empty / no usable header → write full canonical list
+     * - non-empty → this merge only (**never reorder** known columns)
+     *
+     * When a backend rewrites the full grid after appending headers, also call
+     * [padDataRowsToWidth] so each data row has empty cells for new columns.
      */
     fun mergeHeaderOrder(existingHeader: List<String>, canonical: List<String>): List<String> {
         val existing = existingHeader.map { it.trim() }.filter { it.isNotEmpty() }
@@ -208,6 +215,21 @@ object TabularSchema {
         val have = existing.toSet()
         return existing + canonical.filter { it !in have }
     }
+
+    /** Pad / truncate a single row to [width] cells (empty string fill). */
+    fun padRowToWidth(row: List<String>, width: Int): List<String> {
+        if (width <= 0) return emptyList()
+        if (row.size == width) return row
+        if (row.size > width) return row.take(width)
+        return row + List(width - row.size) { "" }
+    }
+
+    /**
+     * Pad each data row to [headerWidth] so appended header columns do not
+     * silently misalign when a backend rewrites the full grid.
+     */
+    fun padDataRowsToWidth(dataRows: List<List<String>>, headerWidth: Int): List<List<String>> =
+        dataRows.map { padRowToWidth(it, headerWidth) }
 
     fun expenseToRow(entry: ExpenseEntry, vehicleSyncId: String = ""): List<String> {
         val syncIds = ExpenseVehicleSyncIds.parse(entry.vehicleSyncIdsJson)
