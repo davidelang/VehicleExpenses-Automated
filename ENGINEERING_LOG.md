@@ -1344,3 +1344,7 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 ## 2026-07-30 - Phase 3 Tabular Trip Type columns
 
 - FUEL_HEADERS Trip Type; VEHICLE_HEADERS Trip Types JSON; maps + GoogleSheetsClient delegate
+
+## 2026-07-30 - Phase 4 TripTimeline helpers
+
+- isTripStart, tripStartsForVehicle, currentOpenTrip, buildTripStart
