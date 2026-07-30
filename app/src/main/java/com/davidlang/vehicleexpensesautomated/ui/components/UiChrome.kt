@@ -69,6 +69,11 @@ fun TappableCard(
  *
  * Prefer inside an existing vertical scroll; does not nest its own scroll.
  */
+/**
+ * Content-measured multi-column grid.
+ * Measures each item’s preferred width (wrap), then lays out equal-width cells in rows.
+ * Items should not force [Modifier.fillMaxWidth] on their root if multi-column is desired.
+ */
 @Composable
 fun <T> AdaptiveItemGrid(
     items: List<T>,
@@ -78,8 +83,8 @@ fun <T> AdaptiveItemGrid(
     itemContent: @Composable (T) -> Unit,
 ) {
     if (items.isEmpty()) return
+    val density = LocalDensity.current
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val density = LocalDensity.current
         val maxWidthPx = constraints.maxWidth
         if (maxWidthPx == Constraints.Infinity || maxWidthPx <= 0) {
             Column(verticalArrangement = Arrangement.spacedBy(verticalGap)) {
@@ -89,15 +94,15 @@ fun <T> AdaptiveItemGrid(
         }
         val hGapPx = with(density) { horizontalGap.roundToPx() }
         val vGapPx = with(density) { verticalGap.roundToPx() }
+        val floorPx = with(density) { 148.dp.roundToPx() }
 
-        SubcomposeLayout(Modifier.fillMaxWidth()) {
-            // Pass 1: natural (wrap) widths — items should not force full parent width
-            val naturalWidths = items.mapIndexed { index, item ->
-                subcompose("nat_$index") {
-                    itemContent(item)
-                }.first().measure(Constraints(maxWidth = maxWidthPx)).width
+        SubcomposeLayout(Modifier.fillMaxWidth()) { _ ->
+            val natural = items.mapIndexed { index, item ->
+                subcompose("nat$index") { itemContent(item) }
+                    .first()
+                    .measure(Constraints(maxWidth = maxWidthPx))
             }
-            val itemW = naturalWidths.maxOrNull()?.coerceAtLeast(1) ?: 1
+            val itemW = max(floorPx, natural.maxOf { it.width }.coerceAtLeast(1))
             val cols = max(1, min(items.size, (maxWidthPx + hGapPx) / (itemW + hGapPx)))
             val cellW = if (cols <= 1) {
                 maxWidthPx
@@ -105,30 +110,27 @@ fun <T> AdaptiveItemGrid(
                 (maxWidthPx - hGapPx * (cols - 1)) / cols
             }.coerceAtLeast(1)
 
-            // Pass 2: equal cell width
             val cells = items.mapIndexed { index, item ->
-                subcompose("cell_$index") {
-                    Box(Modifier = Modifier.width(with(density) { cellW.toDp() })) {
+                subcompose("cell$index") {
+                    Box(modifier = Modifier.width(with(density) { cellW.toDp() })) {
                         itemContent(item)
                     }
-                }.first().measure(
-                    Constraints(minWidth = cellW, maxWidth = cellW),
-                )
+                }.first().measure(Constraints(minWidth = cellW, maxWidth = cellW))
             }
 
             val rows = cells.chunked(cols)
             val rowHeights = rows.map { row -> row.maxOf { it.height } }
-            val totalHeight = rowHeights.sum() + vGapPx * (rows.size - 1).coerceAtLeast(0)
+            val totalH = rowHeights.sum() + vGapPx * (rows.size - 1).coerceAtLeast(0)
 
-            layout(maxWidthPx, totalHeight) {
+            layout(maxWidthPx, totalH) {
                 var y = 0
-                rows.forEachIndexed { rowIndex, row ->
+                rows.forEachIndexed { ri, row ->
                     var x = 0
-                    row.forEach { placeable ->
-                        placeable.placeRelative(x, y)
+                    row.forEach { p ->
+                        p.placeRelative(x, y)
                         x += cellW + hGapPx
                     }
-                    y += rowHeights[rowIndex] + vGapPx
+                    y += rowHeights[ri] + vGapPx
                 }
             }
         }
