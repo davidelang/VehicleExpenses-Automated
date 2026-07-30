@@ -1324,3 +1324,90 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - BUILD SUCCESSFUL; no works tag
 - Cleanup: ./remove_worktree.sh improve-merges from repo root when ready
 
+
+## 2026-07-30 - EXEC START: minor-fixes-batch-20260730-plan.md
+
+- Branch: minor-fixes
+- Plan: dev-ai-interaction/plans/minor-fixes-batch-20260730-plan.md
+- Scope: Waves A–I (settings, About feedback, debug UX, Syncing page, QF notes, photo sync refs-only, fuel download API, Fuel History/edit + on-demand fetch)
+- Wave J host research not execution-build
+
+## 2026-07-30 - EXEC DONE: minor-fixes-batch-20260730-plan.md (Waves A–I)
+
+- Wave A: fuel photos label; pump Amazon album URL; max red boxes experiment-gated
+- Wave B–C: About feedback email + DeviceFeedbackInfo; debug QF compact X/max Send Delete + info
+- Wave D: SyncingScreen + drawer route; Settings loses sync block; red ! → syncing
+- Wave E: Quick Fill Notes field + persist/clear
+- Wave F: photo FULL/PENDING no expense bulk download; pending downloads = vehicle refs only
+- Wave G: scrubUnreadable fuel/expense; downloadFuelPhoto; Fuel DAO getById + VM APIs
+- Wave H: Fuel History tabs + FuelEdit; fetch-from-archive on history/edit/expense/batch pending
+- Wave I: project-facts orientation for Syncing/Fuel History/on-demand photo policy
+- Wave J host research: not in this execution (sandbox planner)
+- builds tag tip: minor-fixes/builds @ 54f64e2f (pre–project-facts commit)
+
+## 2026-07-30 - EXEC START: reports-lab-experimental-hub-20260730-plan.md
+
+- Branch: minor-fixes
+- Scope: Reports Lab hub + 6 report sets, filters, share TEXT/CSV, Vico charts; production ReportsScreen unchanged
+- Waves A–E
+
+## 2026-07-30 - EXEC DONE: reports-lab-experimental-hub-20260730-plan.md
+
+- Reports Lab hub + 6 sets under ui/reports/lab/; drawer always visible
+- Filters + prefs (vehicle/period/custom); teaser KPIs; empty states
+- Share TEXT/CSV each set; Vehicle summary pack + VIN checkbox (default off)
+- Vico 3.2.3 compose + compose-m3: MPG line, unit-price line, monthly bars, category bars
+- Production ReportsScreen.kt UNCHANGED
+- builds: minor-fixes/builds @ 2251a8f8 (+ project-facts phase next)
+
+## 2026-07-30 - EXEC START: minor-fixes-gaps-nits-followup-20260730-plan.md
+
+- Branch: minor-fixes
+- Gaps G1–G5: expenseHasPendingWork; Fuel History fetch label/await; fuel pump_N roles; host photo-kind REPORT
+
+## 2026-07-30 - EXEC DONE: minor-fixes-gaps-nits-followup-20260730-plan.md
+
+- G2: removed dead expenseHasPendingWork + unused expenseNeedsDownload
+- G3+G4: Fuel History Fetch image from archive + await Fetching…
+- G5: fuelRoleForTag / fuelTagFromRole for pump_N; wired upload+pending+download
+- G1: photo-kind-classify script + metrics.json + REPORT.md (5-NN ~88.7%, recommendation: needs human confirm)
+- builds: minor-fixes/builds @ 7f9ab6c3
+
+## 2026-07-30 - EXEC START: unit-i18n-consistency-20260730-plan.md
+
+- Branch: minor-fixes
+- Plan path: dev-ai-interaction/plans/unit-i18n-consistency-20260730-plan.md
+
+## 2026-07-30 - EXEC DONE: unit-i18n-consistency-20260730-plan.md
+
+- VolumeUnits.formatVolume (+ Context overload); space-before-unit
+- UnitFormat: mpg / $/mi / distanceDeltaLabel façade
+- Quick Fill convert → VolumeUnits.convert; Fuel History/Edit labels; batch neighbor currency+volume
+- Lab formatVolume delegates; Reports + Lab high-traffic economy labels via UnitFormat
+- project-facts + TODO i18n deferred pointer
+- builds: minor-fixes/builds @ 04efeb68
+
+## 2026-07-30 - EXEC START: form-icons-fontscale-startup-20260730-plan.md
+
+- Branch: minor-fixes
+- Plan: form-icons-fontscale-startup-20260730-plan.md
+
+## 2026-07-30 - Phase B5 note: Quick Fill font-scale
+
+- No QF code change: existing responsive A/B/C layout retained; multi-device large-font check deferred to 5554/5556 handoff
+
+## 2026-07-30 - EXEC DONE: fix-icons-fontscale-startup-20260730-plan.md
+
+- R1: material-icons-core + extended (BOM)
+- R5: removed copyTessdataOnce
+- R2: TopAppBar wrap, Settings debug stack, Fuel History fetch multi-line, Lab banner/title softWrap
+- R3: removed dead volumeLabel
+- R4: Lab UnitFormat for MPG chart/summary
+- R2 B5: QF no change (responsive layout retained)
+- builds: minor-fixes/builds @ bb63b72f
+
+## 2026-07-30 - Startup smoke: drop Vico compose-m3
+
+- compose-m3 pulled material3 1.4 → NoSuchMethodError ExposedDropdownMenuBox on QuickFill
+- Keep vico:compose:3.2.3 only; cold start emulator-5554 OK (pid live, no Icons/tessdata FATAL)
+- Final builds: minor-fixes/builds @ 26095264 (+ facts tip)
