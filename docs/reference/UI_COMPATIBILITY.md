@@ -109,6 +109,53 @@ height\([0-9]
 
 Also smoke: large system font — TopAppBar, drawer labels, Share row buttons, Lab filters wrap; no horizontal control loss.
 
+## 11. Cards (tappable only)
+
+| Do | Don’t |
+|----|--------|
+| Use `ui/components/UiChrome.kt` **`TappableCard`** for rows/tiles that **navigate or activate** | Cards around static KPIs, form fields, switches, camera chrome |
+| Bare layout for non-tappable content | Bare `.clickable` list rows that navigate without Card chrome |
+
+## 12. Density (content-measured multi-column)
+
+| Do | Don’t |
+|----|--------|
+| Use **`AdaptiveItemGrid`** — column count from measuring widest item vs available width | New peer-list **hardcoded dp breakpoint tables** (`minWidth = 200.dp` for col count) |
+| Re-measure with fontScale / density / content | Assume always 1 column on Lab or always N columns on tablet |
+
+## 13. Theme accents (non-camera)
+
+| Do | Don’t |
+|----|--------|
+| `MaterialTheme.colorScheme.*` for badges, efficiency bars, non-camera borders | Hardcoded amber/green hex on app chrome |
+| Camera / crop / photo viewer fixed contrast (black/white/greyscale) | Dynamic surface colors on live camera overlays |
+
+## 14. Icons (drawer + Material only)
+
+| Do | Don’t |
+|----|--------|
+| Material Icons from **core + extended** BOM for Save, Close, Menu, PhotoLibrary, … | Local `ImageVector.Builder` paths for icons Material already provides |
+| **No** `icon =` on navigation drawer items (labels only) | Drawer leading icons |
+| Prefer **`AppIcon`** or 24.dp + theme tint | One-off sizes/tints without reason |
+
+## 15. Shared controls
+
+| Helper | Pattern |
+|--------|---------|
+| `EmptyStateText` / Lab `ReportsLabEmpty` | `bodyMedium` + `onSurfaceVariant` |
+| `AppDateTimeField` | Full-width **OutlinedButton** trigger; dialogs stay local |
+| `AppTextCancel` | Dialog/footer **TextButton** Cancel |
+| `AppOutlinedBack` | Full-width leave / cancel form **OutlinedButton** |
+| `FeatureScreenHeader` | `headlineMedium` title + optional `bodySmall` subtitle |
+
+## Extra grep (cards / theme / icons)
+
+```text
+Color\(0xFF   # non-camera chrome hex (review; camera/theme static OK)
+ImageVector.Builder
+NavigationDrawerItem\([\s\S]*icon\s*=
+```
+
 ## Key source paths
 
 | Concern | Path |
@@ -119,6 +166,7 @@ Also smoke: large system font — TopAppBar, drawer labels, Share row buttons, L
 | Economy chains / inventory | `app/.../data/batch/FuelEconomyChains.kt` |
 | Trip predicate / segments | `app/.../data/trip/TripTimeline.kt`, `TripSegments.kt` |
 | Lab charts | `app/.../ui/reports/lab/ReportsLabCharts.kt` |
+| Shared chrome | `app/.../ui/components/UiChrome.kt` (`TappableCard`, `AdaptiveItemGrid`, empty/date/cancel/header/icon) |
 | Deps | `app/build.gradle.kts` |
 | Metrics rules | `docs/reference/REPORTS_METRICS.md` |
 | Nav | `docs/reference/NAVIGATION_MAP.md` |

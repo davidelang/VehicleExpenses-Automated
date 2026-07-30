@@ -2,10 +2,9 @@ package com.davidlang.vehicleexpensesautomated.ui.fuel
 
 import android.widget.Toast
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +18,10 @@ import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
+import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
+import com.davidlang.vehicleexpensesautomated.ui.components.EmptyStateText
+import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
+import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasArchiveIdentity
 import com.davidlang.vehicleexpensesautomated.ui.components.firstReadableFuelPhotoUri
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasDeadLocalOnly
@@ -61,16 +64,19 @@ fun FuelHistoryScreen(navController: NavHostController) {
     // Local row refresh map after fetch/scrub
     var rowOverrides by remember { mutableStateOf<Map<Long, FuelEntry>>(emptyMap()) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Fuel History", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            "Per-vehicle fills. Tap a row to edit. Thumbnails fetch from archive when missing locally.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+    ) {
+        FeatureScreenHeader(
+            title = "Fuel History",
+            subtitle = "Per-vehicle fills. Tap a card to edit. Thumbnails fetch from archive when missing locally.",
         )
         Spacer(modifier = Modifier.height(8.dp))
         if (vehicleTabs.isEmpty()) {
-            Text("No vehicles yet", style = MaterialTheme.typography.bodyMedium)
+            EmptyStateText("No vehicles yet")
             return
         }
         ScrollableTabRow(selectedTabIndex = selectedTab.coerceIn(0, vehicleTabs.lastIndex)) {
@@ -84,29 +90,27 @@ fun FuelHistoryScreen(navController: NavHostController) {
         }
         Spacer(modifier = Modifier.height(8.dp))
         if (rows.isEmpty()) {
-            Text("No fuel entries for this vehicle", style = MaterialTheme.typography.bodyMedium)
+            EmptyStateText("No fuel entries for this vehicle")
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(rows, key = { it.id }) { base ->
-                    val entry = rowOverrides[base.id] ?: base
-                    FuelHistoryRow(
-                        entry = entry,
-                        dateLabel = dateFmt.format(Date(entry.timestamp)),
-                        defaultSymbol = defaultSymbol,
-                        photoStorage = photoStorage,
-                        destId = destId,
-                        onOpen = { navController.navigate("fuel/${entry.id}") },
-                        onFetched = { refreshed ->
-                            rowOverrides = rowOverrides + (refreshed.id to refreshed)
-                        },
-                        onScrubbed = { updated ->
-                            rowOverrides = rowOverrides + (updated.id to updated)
-                        },
-                        scrub = { e -> fuelViewModel.scrubUnreadableFuelPhotos(e) },
-                        download = { e -> fuelViewModel.downloadFuelPhoto(e) },
-                        reload = { id -> fuelViewModel.getFuelById(id) },
-                    )
-                }
+            val displayRows = rows.map { base -> rowOverrides[base.id] ?: base }
+            AdaptiveItemGrid(items = displayRows) { entry ->
+                FuelHistoryRow(
+                    entry = entry,
+                    dateLabel = dateFmt.format(Date(entry.timestamp)),
+                    defaultSymbol = defaultSymbol,
+                    photoStorage = photoStorage,
+                    destId = destId,
+                    onOpen = { navController.navigate("fuel/${entry.id}") },
+                    onFetched = { refreshed ->
+                        rowOverrides = rowOverrides + (refreshed.id to refreshed)
+                    },
+                    onScrubbed = { updated ->
+                        rowOverrides = rowOverrides + (updated.id to updated)
+                    },
+                    scrub = { e -> fuelViewModel.scrubUnreadableFuelPhotos(e) },
+                    download = { e -> fuelViewModel.downloadFuelPhoto(e) },
+                    reload = { id -> fuelViewModel.getFuelById(id) },
+                )
             }
         }
     }
@@ -147,13 +151,8 @@ private fun FuelHistoryRow(
         if (display.economyIgnored) add("ignored")
     }.joinToString(" · ").let { if (it.isEmpty()) "" else " · $it" }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onOpen),
-    ) {
+    TappableCard(onClick = onOpen) {
         Row(
-            modifier = Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(

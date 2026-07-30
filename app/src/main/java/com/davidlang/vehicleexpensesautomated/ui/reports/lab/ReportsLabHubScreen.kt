@@ -24,6 +24,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
+import com.davidlang.vehicleexpensesautomated.ui.components.EmptyStateText
+import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 
@@ -109,17 +112,11 @@ fun ReportsLabHubScreen(navController: NavHostController) {
         }
 
         Text("Report sets", style = MaterialTheme.typography.titleMedium)
-        CATALOG.forEach { entry ->
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { navController.navigate(entry.route) },
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(entry.title, style = MaterialTheme.typography.titleMedium)
-                    Text(entry.blurb, style = MaterialTheme.typography.bodySmall)
-                    Text("Open ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                }
+        AdaptiveItemGrid(items = CATALOG) { entry ->
+            TappableCard(onClick = { navController.navigate(entry.route) }) {
+                Text(entry.title, style = MaterialTheme.typography.titleMedium, softWrap = true, maxLines = 2)
+                Text(entry.blurb, style = MaterialTheme.typography.bodySmall, softWrap = true, maxLines = 3)
+                Text("Open ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
         }
     }

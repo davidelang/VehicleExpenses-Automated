@@ -15,6 +15,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
+import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
+import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,14 +69,11 @@ fun SyncingScreen(navController: NavHostController) {
             .padding(16.dp)
             .verticalScroll(rememberScrollState()),
     ) {
-        Text("Syncing", style = MaterialTheme.typography.headlineMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "Tap Spreadsheet sync or Photo backup to add destinations (e.g. Google Sheets + Google Drive). " +
-                "Use Sync now on each row after setup. A red ! in the title bar means a recent failure — open this screen. " +
+        FeatureScreenHeader(
+            title = "Syncing",
+            subtitle = "Tap Spreadsheet sync or Photo backup to add destinations. " +
+                "Use Sync on each card after setup. A red ! in the title bar means a recent failure. " +
                 "Menu → Help for Google setup steps.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -160,19 +159,14 @@ internal fun SyncSummaryRow(
     onRowClick: () -> Unit,
     onSyncNow: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable(onClick = onRowClick),
+    TappableCard(
+        onClick = onRowClick,
+        modifier = Modifier.padding(vertical = 4.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(summary, style = MaterialTheme.typography.bodySmall)
+                Text(title, style = MaterialTheme.typography.titleMedium, softWrap = true)
+                Text(summary, style = MaterialTheme.typography.bodySmall, softWrap = true)
                 Text(
                     pendingBadge,
                     style = MaterialTheme.typography.labelSmall,
@@ -183,6 +177,7 @@ internal fun SyncSummaryRow(
                         errorText,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error,
+                        softWrap = true,
                     )
                 }
                 if (syncStatusText.isNotBlank() || syncInProgress) {

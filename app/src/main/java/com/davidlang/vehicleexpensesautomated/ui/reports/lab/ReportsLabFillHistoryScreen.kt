@@ -15,6 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
+import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 @Composable
@@ -80,22 +82,19 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
             return@ReportsLabScreenScaffold
         }
         Text("${rows.size} fills", style = MaterialTheme.typography.titleSmall)
-        rows.forEach { e ->
+        AdaptiveItemGrid(items = rows) { e ->
             val flags = buildList {
                 if (e.isPartialFill) add("partial")
                 if (e.economyIgnored) add("ignored")
             }.joinToString(" · ").let { if (it.isEmpty()) "" else " · $it" }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 3.dp)
-                    .clickable { navController.navigate("fuel/${e.id}") },
-            ) {
-                Text("${data.vehicleName(e.vehicleId)} · ${formatLabDate(e.timestamp)}$flags")
+            TappableCard(onClick = { navController.navigate("fuel/${e.id}") }) {
+                Text("${data.vehicleName(e.vehicleId)} · ${formatLabDate(e.timestamp)}$flags", softWrap = true, maxLines = 2)
                 Text(
                     "odo ${e.odometer} · ${CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)} · " +
                         formatVolume(e.gallons, data.volumeLabel),
                     style = MaterialTheme.typography.bodySmall,
+                    softWrap = true,
+                    maxLines = 3,
                 )
             }
         }

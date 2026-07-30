@@ -1546,3 +1546,8 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Plan: docs-rules-ui-compat-agent-guidance-20260730-plan.md
 - N1–N4 fixed; UI_COMPATIBILITY.md + AGENT_MANDATES Compose UI section + CONTRIBUTING/facts/metrics/USER_GUIDE
 - Tip 9174744d; builds tag minor-fixes/builds; no PR/history rewrite
+
+## 2026-07-30 - ui-consistency-cards-density-theme: start
+
+- Magic-approved plan: dev-ai-interaction/plans/ui-consistency-cards-density-theme-20260730-plan.md
+- Branch minor-fixes; shared TappableCard/AdaptiveItemGrid/empty/date/cancel + apply in-scope UIs + theme accents + Material Save icons + UI_COMPAT docs

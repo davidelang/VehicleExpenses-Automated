@@ -62,6 +62,8 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
+import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -260,7 +262,10 @@ fun TripTrackingScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Trip Tracking", style = MaterialTheme.typography.titleLarge)
+        FeatureScreenHeader(
+            title = "Trip Tracking",
+            subtitle = "Open-only trip starts as fuel rows with Trip Type.",
+        )
         Text(
             "Open-only: each Start (or Close→Personal) writes a fuel row with Trip Type. " +
                 "Next open on this vehicle ends the prior segment.",
@@ -487,19 +492,15 @@ fun TripTrackingScreen(
             }
         }
 
-        Text(
-            text = "When: ${dateTimeFmt.format(Date(eventTimestamp))}",
-            style = MaterialTheme.typography.bodyMedium,
+        AppDateTimeField(
+            label = "When: ${dateTimeFmt.format(Date(eventTimestamp))}",
+            onClick = { showDatePicker = true },
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { showDatePicker = true }) {
-                Text("Set date/time")
-            }
-            OutlinedButton(
-                onClick = { eventTimestamp = System.currentTimeMillis() },
-            ) {
-                Text("Use now")
-            }
+        OutlinedButton(
+            onClick = { eventTimestamp = System.currentTimeMillis() },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Use now")
         }
 
         Text(

@@ -25,6 +25,9 @@ import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
+import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
+import com.davidlang.vehicleexpensesautomated.ui.components.AppOutlinedBack
+import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
@@ -118,7 +121,7 @@ fun FuelEditScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Edit fill", style = MaterialTheme.typography.headlineMedium)
+        FeatureScreenHeader("Edit fill")
 
         // Photos
         Box(
@@ -247,9 +250,10 @@ fun FuelEditScreen(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
-        OutlinedButton(onClick = { showDatePicker = true }, modifier = Modifier.fillMaxWidth()) {
-            Text("Date/time: ${dateFmt.format(Date(timestampMs))}")
-        }
+        AppDateTimeField(
+            label = "Date/time: ${dateFmt.format(Date(timestampMs))}",
+            onClick = { showDatePicker = true },
+        )
         OutlinedTextField(
             value = location,
             onValueChange = { location = it },
@@ -300,9 +304,7 @@ fun FuelEditScreen(
         ) {
             Text(if (isSaving) "Saving…" else "Save")
         }
-        TextButton(onClick = { navController.popBackStack() }, modifier = Modifier.fillMaxWidth()) {
-            Text("Cancel")
-        }
+        AppOutlinedBack(onClick = { navController.popBackStack() })
     }
 
     if (showDatePicker) {

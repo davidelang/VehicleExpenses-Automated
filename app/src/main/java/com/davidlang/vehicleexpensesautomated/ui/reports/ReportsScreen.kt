@@ -22,6 +22,8 @@ import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseViewModel
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
+import com.davidlang.vehicleexpensesautomated.ui.components.EmptyStateText
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
@@ -271,8 +273,6 @@ private fun splitStatsAtMiddot(stats: String): Pair<String, String> {
     return parts.take(mid).joinToString(" · ") to parts.drop(mid).joinToString(" · ")
 }
 
-private val vehicleColMinWidth = 156.dp
-private val vehicleSummaryMinWidth = 200.dp
 private val vehicleColMaxHeight = 280.dp
 
 @Composable
@@ -401,44 +401,13 @@ fun ReportsScreen(navController: NavHostController) {
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (vehicleStats.isNotEmpty()) {
-                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                        val cols = ((maxWidth / vehicleSummaryMinWidth).toInt()).coerceAtLeast(1)
-                        if (cols <= 1) {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                vehicleStats.forEach { stats ->
-                                    VehicleSummaryBlock(
-                                        stats = stats,
-                                        unitLabel = volumeUnitLabel,
-                                        defaultSymbol = defaultSymbol,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            }
-                        } else {
-                            val chunked = vehicleStats.chunked(cols)
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                chunked.forEach { rowVehicles ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        rowVehicles.forEach { stats ->
-                                            VehicleSummaryBlock(
-                                                stats = stats,
-                                                unitLabel = volumeUnitLabel,
-                                                defaultSymbol = defaultSymbol,
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .widthIn(min = vehicleSummaryMinWidth)
-                                            )
-                                        }
-                                        repeat(cols - rowVehicles.size) {
-                                            Spacer(modifier = Modifier.weight(1f))
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    AdaptiveItemGrid(items = vehicleStats) { stats ->
+                        VehicleSummaryBlock(
+                            stats = stats,
+                            unitLabel = volumeUnitLabel,
+                            defaultSymbol = defaultSymbol,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
@@ -450,40 +419,22 @@ fun ReportsScreen(navController: NavHostController) {
         Spacer(modifier = Modifier.height(8.dp))
 
         if (vehicleStats.isEmpty()) {
-            Text("No vehicles with data", style = MaterialTheme.typography.bodyMedium)
+            EmptyStateText("No vehicles with data")
         } else {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val cols = ((maxWidth / vehicleColMinWidth).toInt()).coerceAtLeast(1)
-                val chunked = vehicleStats.chunked(cols)
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    chunked.forEach { rowVehicles ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            rowVehicles.forEach { stats ->
-                                VehicleLast5OnlyColumn(
-                                    stats = stats,
-                                    volumeUnitLabel = volumeUnitLabel,
-                                    defaultSymbol = defaultSymbol,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .widthIn(min = vehicleColMinWidth)
-                                )
-                            }
-                            repeat(cols - rowVehicles.size) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
+            AdaptiveItemGrid(items = vehicleStats) { stats ->
+                VehicleLast5OnlyColumn(
+                    stats = stats,
+                    volumeUnitLabel = volumeUnitLabel,
+                    defaultSymbol = defaultSymbol,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val sideBySide = maxWidth >= vehicleColMinWidth * 2
+            val sideBySide = maxWidth >= 320.dp
             if (sideBySide) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -657,7 +608,7 @@ private fun FullFillLegRow(
                     modifier = Modifier
                         .fillMaxWidth(barFraction.coerceIn(0.05f, 1f))
                         .fillMaxHeight()
-                        .background(Color(0xFF81C784).copy(alpha = 0.45f))
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f))
                 )
                 Text(
                     "${UnitFormat.economyEfficiencyLabel()} ${formatMpg(leg.mpg)}",

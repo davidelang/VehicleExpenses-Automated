@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -41,6 +44,7 @@ import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
+import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
 import com.davidlang.vehicleexpensesautomated.ui.components.expenseHasArchiveIdentity
@@ -500,7 +504,7 @@ private fun ExpenseEntryScreenBody(
                 enabled = !isPhotoSaving && !isSaving && editLoadReady
             ) {
                 Icon(
-                    imageVector = ExpenseSaveIcon,
+                    imageVector = Icons.Filled.Save,
                     contentDescription = "Save expense",
                     modifier = Modifier.size(32.dp)
                 )
@@ -532,7 +536,7 @@ private fun ExpenseEntryScreenBody(
                 enabled = !isPhotoSaving
             ) {
                 Icon(
-                    imageVector = ExpensePhotoLibraryIcon,
+                    imageVector = Icons.Filled.PhotoLibrary,
                     contentDescription = "Pick picture from gallery",
                     modifier = Modifier.size(32.dp)
                 )
@@ -587,16 +591,9 @@ private fun ExpenseEntryScreenBody(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            // Date display + picker
-            OutlinedTextField(
-                value = dateFmt.format(Date(date)),
-                onValueChange = {},
-                label = { Text("Date") },
-                readOnly = true,
-                modifier = Modifier.fillMaxWidth(),
-                trailingIcon = {
-                    TextButton(onClick = { showDatePicker = true }) { Text("Change") }
-                }
+            AppDateTimeField(
+                label = "Date: ${dateFmt.format(Date(date))}",
+                onClick = { showDatePicker = true },
             )
 
             val vehicleName = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle"
@@ -750,91 +747,3 @@ private fun ZoomPanPhotoViewer(
         }
     }
 }
-
-private var _expenseSaveIcon: ImageVector? = null
-private val ExpenseSaveIcon: ImageVector
-    get() {
-        _expenseSaveIcon?.let { return it }
-        _expenseSaveIcon = ImageVector.Builder(
-            name = "ExpenseSave",
-            defaultWidth = 24.dp,
-            defaultHeight = 24.dp,
-            viewportWidth = 24f,
-            viewportHeight = 24f
-        ).apply {
-            path(
-                fill = SolidColor(Color.Black),
-                pathFillType = PathFillType.NonZero
-            ) {
-                moveTo(17f, 3f)
-                horizontalLineTo(5f)
-                curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
-                verticalLineToRelative(14f)
-                curveToRelative(0f, 1.1f, 0.89f, 2f, 2f, 2f)
-                horizontalLineToRelative(14f)
-                curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
-                verticalLineTo(7f)
-                lineToRelative(-4f, -4f)
-                close()
-                moveTo(12f, 19f)
-                curveToRelative(-1.66f, 0f, -3f, -1.34f, -3f, -3f)
-                reflectiveCurveToRelative(1.34f, -3f, 3f, -3f)
-                reflectiveCurveToRelative(3f, 1.34f, 3f, 3f)
-                reflectiveCurveToRelative(-1.34f, 3f, -3f, 3f)
-                close()
-                moveTo(15f, 9f)
-                horizontalLineTo(5f)
-                verticalLineTo(5f)
-                horizontalLineToRelative(10f)
-                verticalLineTo(9f)
-                close()
-            }
-        }.build()
-        return _expenseSaveIcon!!
-    }
-
-private var _expensePhotoLibraryIcon: ImageVector? = null
-private val ExpensePhotoLibraryIcon: ImageVector
-    get() {
-        _expensePhotoLibraryIcon?.let { return it }
-        _expensePhotoLibraryIcon = ImageVector.Builder(
-            name = "ExpensePhotoLibrary",
-            defaultWidth = 24.dp,
-            defaultHeight = 24.dp,
-            viewportWidth = 24f,
-            viewportHeight = 24f
-        ).apply {
-            path(
-                fill = SolidColor(Color.Black),
-                pathFillType = PathFillType.NonZero
-            ) {
-                moveTo(22f, 16f)
-                verticalLineTo(4f)
-                curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f)
-                horizontalLineTo(8f)
-                curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
-                verticalLineToRelative(12f)
-                curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
-                horizontalLineToRelative(12f)
-                curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
-                close()
-                moveTo(11.5f, 9f)
-                lineToRelative(2.03f, 2.71f)
-                lineTo(16f, 9f)
-                lineToRelative(4f, 5f)
-                horizontalLineTo(8f)
-                lineToRelative(3.5f, -5f)
-                close()
-                moveTo(2f, 6f)
-                verticalLineToRelative(14f)
-                curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
-                horizontalLineToRelative(14f)
-                verticalLineToRelative(-2f)
-                horizontalLineTo(4f)
-                verticalLineTo(6f)
-                horizontalLineTo(2f)
-                close()
-            }
-        }.build()
-        return _expensePhotoLibraryIcon!!
-    }

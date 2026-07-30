@@ -281,10 +281,5 @@ fun ReportsLabScreenScaffold(
 
 @Composable
 fun ReportsLabEmpty(message: String) {
-    Text(
-        message,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(vertical = 16.dp),
-    )
+    com.davidlang.vehicleexpensesautomated.ui.components.EmptyStateText(message)
 }

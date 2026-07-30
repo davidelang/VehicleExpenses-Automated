@@ -444,7 +444,7 @@ class MainActivity : ComponentActivity() {
                                                 if (pendingReviewCount > 99) "?99+"
                                                 else "?$pendingReviewCount",
                                                 style = MaterialTheme.typography.titleMedium,
-                                                color = Color(0xFFFFC107), // amber/warning yellow
+                                                color = MaterialTheme.colorScheme.tertiary,
                                                 maxLines = 1,
                                             )
                                         }
