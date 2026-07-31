@@ -46,11 +46,14 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
+import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
 import com.davidlang.vehicleexpensesautomated.ui.components.expenseHasArchiveIdentity
 import com.davidlang.vehicleexpensesautomated.ui.components.expenseLocalMissingOrDead
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
@@ -139,6 +142,10 @@ private fun ExpenseEntryScreenBody(
     var rowAccuracyM by remember { mutableStateOf<Double?>(null) }
     /** True when attached photo is gallery-sourced (device GPS must not win on row). */
     var photoFromGallery by remember { mutableStateOf(false) }
+    var locationStatus by remember { mutableStateOf("") }
+    var placeName by remember { mutableStateOf("") }
+    var placeAddress by remember { mutableStateOf("") }
+    var confirmLocation by remember { mutableStateOf(true) }
     val photoDest = remember { SyncDestinationStore(context).photoDestination() }
 
     // One-shot device GPS for camera path (not re-fetched per shutter).
@@ -149,6 +156,31 @@ private fun ExpenseEntryScreenBody(
             rowLat = fix.latitude
             rowLon = fix.longitude
             rowAccuracyM = if (fix.hasAccuracy()) fix.accuracy.toDouble() else null
+        }
+    }
+
+    LaunchedEffect(rowLat, rowLon, category) {
+        val la = rowLat
+        val lo = rowLon
+        if (la == null || lo == null) {
+            locationStatus = ""
+            return@LaunchedEffect
+        }
+        locationStatus = "Looking up place…"
+        val kind = LocationLookup.kindForExpenseCategory(category)
+        val result = LocationLookup.lookup(
+            lat = la,
+            lon = lo,
+            kind = kind,
+            accuracyM = rowAccuracyM,
+            uiTimeout = true,
+        )
+        if (result != null && result.hasPlace()) {
+            placeName = result.name
+            placeAddress = result.address
+            locationStatus = "Resolved: ${result.displayLine()}"
+        } else {
+            locationStatus = "No place found (will retry after save if online)"
         }
     }
     val localPhotoMissing = remember(photoUrl) {
@@ -186,6 +218,10 @@ private fun ExpenseEntryScreenBody(
                     rowLat = FuelLocationJson.lat(e.location)
                     rowLon = FuelLocationJson.lon(e.location)
                     rowAccuracyM = FuelLocationJson.accuracyM(e.location)
+                    val blob = FuelLocationJson.parseBlob(e.location)
+                    placeName = blob?.name.orEmpty()
+                    placeAddress = blob?.address.orEmpty()
+                    confirmLocation = blob?.confirmed == true || blob?.hasPlace() == true
                     photoFromGallery = false
                     showLiveCamera = expenseLocalMissingOrDead(e.photoUrl, photoStorage) &&
                         !expenseHasArchiveIdentity(e, photoDest?.id)
@@ -263,14 +299,31 @@ private fun ExpenseEntryScreenBody(
             category = category,
             date = date,
             photoUrl = if (prefs.getBoolean("save_expense_photos", true)) photoUrl else null,
-            location = FuelLocationJson.encode(
-                FuelLocationJson.fromCoords(
+            location = run {
+                val base = FuelLocationJson.fromCoords(
                     rowLat,
                     rowLon,
                     rowAccuracyM,
                     source = if (photoFromGallery) "exif" else "device",
-                ),
-            ),
+                ) ?: FuelLocationJson.Blob()
+                val placeBlank = placeName.isBlank() && placeAddress.isBlank()
+                val kind = LocationLookup.kindForExpenseCategory(category)
+                val saveBlob = when {
+                    confirmLocation && !placeBlank -> base.withPlace(
+                        name = placeName,
+                        address = placeAddress,
+                        confirmed = true,
+                        source = "user",
+                        kind = kind.blobKindTag(),
+                        lookedUpAt = System.currentTimeMillis(),
+                    )
+                    else -> base.coordsOnly()
+                }
+                if (saveBlob.hasCoordsWithoutPlace()) {
+                    LocationLookupScheduler.enqueueSoon(context)
+                }
+                FuelLocationJson.encode(saveBlob)
+            },
         )
         // D5: await persistence before navigate
         scope.launch {
@@ -760,6 +813,18 @@ private fun ExpenseEntryScreenBody(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
+
+            if (rowLat != null && rowLon != null) {
+                LocationConfirmBlock(
+                    statusLine = locationStatus,
+                    name = placeName,
+                    address = placeAddress,
+                    confirmChecked = confirmLocation,
+                    onNameChange = { placeName = it },
+                    onAddressChange = { placeAddress = it },
+                    onConfirmChange = { confirmLocation = it },
+                )
+            }
         }
     }
 }

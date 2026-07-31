@@ -46,9 +46,13 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
+import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
@@ -177,9 +181,13 @@ fun QuickFillupScreen(
     /** Row lat/lon for save (camera path = once-per-screen device fix). */
     var lat by remember { mutableStateOf<Double?>(null) }
     var lon by remember { mutableStateOf<Double?>(null) }
-    var loc by remember { mutableStateOf<String?>(null) }
     /** Held device fix for EXIF stamping on CameraX JPEGs; once per screen visit. */
     var deviceLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    var locationStatus by remember { mutableStateOf("") }
+    var placeName by remember { mutableStateOf("") }
+    var placeAddress by remember { mutableStateOf("") }
+    var confirmLocation by remember { mutableStateOf(true) }
+    var locationLookupDone by remember { mutableStateOf(false) }
 
     // One-shot device GPS on enter (not per shutter); odo+pump+row share this fix.
     LaunchedEffect(Unit) {
@@ -189,6 +197,35 @@ fun QuickFillupScreen(
             lat = fix.latitude
             lon = fix.longitude
         }
+    }
+
+    // Non-blocking POI when coords available (cancel/re-run if lat/lon change).
+    LaunchedEffect(lat, lon) {
+        val la = lat
+        val lo = lon
+        if (la == null || lo == null) {
+            locationStatus = ""
+            locationLookupDone = false
+            return@LaunchedEffect
+        }
+        locationStatus = "Looking up place…"
+        locationLookupDone = false
+        val acc = deviceLocation?.takeIf { it.hasAccuracy() }?.accuracy?.toDouble()
+        val result = LocationLookup.lookup(
+            lat = la,
+            lon = lo,
+            kind = LocationLookupKind.FUEL_STATION,
+            accuracyM = acc,
+            uiTimeout = true,
+        )
+        if (result != null && result.hasPlace()) {
+            placeName = result.name
+            placeAddress = result.address
+            locationStatus = "Resolved: ${result.displayLine()}"
+        } else {
+            locationStatus = "No place found (will retry after save if online)"
+        }
+        locationLookupDone = true
     }
 
     var captureViewState by rememberSaveable { mutableStateOf(CaptureViewState.Live) }
@@ -702,6 +739,21 @@ fun QuickFillupScreen(
                         }
                         val photoUrlJson = sessionPhotosToJson(sessionPhotos)
                         val storedCurrency = CurrencyCodes.fromSymbolOrCode(currencySymbol)
+                        val baseBlob = FuelLocationJson.fromLocation(deviceLocation)
+                            ?: FuelLocationJson.fromCoords(lat, lon, source = "device")
+                            ?: FuelLocationJson.Blob()
+                        val placeBlank = placeName.isBlank() && placeAddress.isBlank()
+                        val saveBlob = when {
+                            confirmLocation && !placeBlank -> baseBlob.withPlace(
+                                name = placeName,
+                                address = placeAddress,
+                                confirmed = true,
+                                source = "user",
+                                kind = LocationLookupKind.FUEL_STATION.blobKindTag(),
+                                lookedUpAt = System.currentTimeMillis(),
+                            )
+                            else -> baseBlob.coordsOnly() // unchecked or empty place → coords only
+                        }
                         fuelViewModel.saveFuel(
                             FuelEntry(
                                 vehicleId = vehicleId,
@@ -711,19 +763,14 @@ fun QuickFillupScreen(
                                 currency = storedCurrency,
                                 timestamp = System.currentTimeMillis(),
                                 photoUrl = photoUrlJson,
-                                location = FuelLocationJson.encode(
-                                    run {
-                                        val base = FuelLocationJson.fromLocation(deviceLocation)
-                                            ?: FuelLocationJson.fromCoords(lat, lon, source = "device")
-                                            ?: FuelLocationJson.Blob()
-                                        // loc (POI string) still unused; place filled by lookup later
-                                        base
-                                    },
-                                ),
+                                location = FuelLocationJson.encode(saveBlob),
                                 notes = notes.trim().ifBlank { null },
                                 isPartialFill = false,
                             )
                         )
+                        if (saveBlob.hasCoordsWithoutPlace()) {
+                            LocationLookupScheduler.enqueueSoon(context)
+                        }
                         NativePaddleEngine.releaseAllOdoBuffers()
                         NativePaddleEngine.bufferSetA.unborrow()
                         NativePaddleEngine.bufferSetA.clearCrops()
@@ -1016,6 +1063,18 @@ fun QuickFillupScreen(
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 3,
             )
+            if (lat != null && lon != null) {
+                LocationConfirmBlock(
+                    statusLine = locationStatus,
+                    name = placeName,
+                    address = placeAddress,
+                    confirmChecked = confirmLocation,
+                    onNameChange = { placeName = it },
+                    onAddressChange = { placeAddress = it },
+                    onConfirmChange = { confirmLocation = it },
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
         }
             }
         }
