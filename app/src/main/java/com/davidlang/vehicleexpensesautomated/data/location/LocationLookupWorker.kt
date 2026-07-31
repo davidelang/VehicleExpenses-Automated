@@ -37,10 +37,17 @@ class LocationLookupWorker @AssistedInject constructor(
                 val blob = FuelLocationJson.parseBlob(entry.location) ?: continue
                 val lat = blob.lat ?: continue
                 val lon = blob.lon ?: continue
+                // Trip starts (and address_only blobs) → Nominatim only; normal fills → gas station.
+                val kind = when {
+                    entry.tripType.isNotBlank() -> LocationLookupKind.ADDRESS_ONLY
+                    blob.kind == "address_only" -> LocationLookupKind.ADDRESS_ONLY
+                    else -> LocationLookupKind.FUEL_STATION
+                }
+                Log.i(TAG, "Fuel id=${entry.id} kind=$kind tripType=${entry.tripType}")
                 val result = LocationLookup.lookup(
                     lat = lat,
                     lon = lon,
-                    kind = LocationLookupKind.FUEL_STATION,
+                    kind = kind,
                     accuracyM = blob.accuracyM,
                     uiTimeout = false,
                 )

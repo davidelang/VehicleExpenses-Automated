@@ -2306,3 +2306,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Phase 13: TODO multi-candidate + post-save confirm; project-facts; SYNC_BEHAVIOR
 - User: manually delete empty Lat/Lon columns from existing spreadsheets
 
+
+## 2026-07-31 - fix-location-worker-trip-kind-batch-exif execution start
+
+- Plan: dev-ai-interaction/plans/fix-location-worker-trip-kind-and-batch-import-exif-20260731-plan.md
+- Branch: location-fixes (baseline location-fixes/builds @ 0d747e82)
+- Phases 1-5: worker trip ADDRESS_ONLY; pending accuracyM; pending insert accuracy+EXIF re-read; enqueue after import; TODO close + hygiene
+
