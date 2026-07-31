@@ -2336,3 +2336,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Branch: location-fixes (baseline location-fixes/builds @ 90fceb54)
 - Phases 1-7: INTERNET manifest; NetworkStatus; tabular Location-only; QF/Trip/Expense provenance+offline; docs
 
+
+## 2026-07-31 - location-source-and-tabular-cleanup complete
+
+- Phase 1-2: INTERNET + ACCESS_NETWORK_STATE; NetworkStatus.hasUsableNetwork
+- Phase 3: Tabular/CSV Location-only; foldLegacy migration-only comment; placeSourceForConfirm
+- Phase 4-6: QF/Trip/Expense lookupSource tracking; offline status; provenance on confirm-save
+- Phase 7: project-facts + SYNC_BEHAVIOR
+

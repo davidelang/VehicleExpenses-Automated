@@ -57,7 +57,7 @@ On first launch after a schema upgrade that introduces blank **`syncId`** values
 
 | Column | Meaning |
 |--------|---------|
-| **Location** | **Sole geo/place package** (JSON blob): `lat`/`lon`/`accuracyM`/`name`/`address`/`confirmed`/`source`/`kind`/`lookedUpAt`. Legacy plain text and name/address-only JSON still parse. **Latitude** / **Longitude** tabular columns are **removed** from schema (user may delete empty columns on existing sheets). |
+| **Location** | **Sole geo/place package** (JSON blob): `lat`/`lon`/`accuracyM`/`name`/`address`/`confirmed`/`source`/`kind`/`lookedUpAt`. Legacy plain text and name/address-only JSON still parse. Import/export read **Location cell only** — no sheet **Latitude** / **Longitude** fold (columns removed from schema; user may delete empty columns on existing sheets). |
 | **Notes** | Freeform + batch provenance (`batch_import_dash:…`, `batch_gap_marker`, …). New batch inserts write tags here; engine role checks read **notes** and still accept legacy tags in **location**. |
 
 ### Location JSON LWW merge
@@ -70,6 +70,8 @@ When two sides of a fuel/expense row differ, overall row LWW still uses **`updat
 4. Winner takes the **entire** location blob (coords + place + flags).
 
 Pending deferred POI fill (no flag column): blob has lat/lon but blank name and address → `LocationLookupWorker` fills silently with **`confirmed: false`**.
+
+**`source` on confirm:** Live confirm of an **unedited** Overpass/Nominatim preview keeps `source` as `overpass` / `nominatim` with `confirmed: true` (user approved the lookup). Edited or typed place text uses `source: user`. Silent worker fill keeps API source and `confirmed: false`.
 
 **Default header order** (new / empty fuel tabs and CSV export): human fields first (Timestamp … Notes), machine IDs last (Vehicle Sync ID … Deleted At). Existing sheets keep their column order; missing columns (e.g. Notes) are **appended** only — never auto-reordered. Backends that rewrite the full grid after append **pad** data rows with empty cells for new columns. Reads are **name-based**.
 
