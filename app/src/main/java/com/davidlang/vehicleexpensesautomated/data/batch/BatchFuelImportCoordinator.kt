@@ -1598,6 +1598,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         timestampMs = ts,
                         latitude = meta.latitude,
                         longitude = meta.longitude,
+                        accuracyM = meta.accuracyM,
                     ),
                 )
             }
@@ -1679,6 +1680,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         timestampMs = ts,
                         latitude = meta.latitude,
                         longitude = meta.longitude,
+                        accuracyM = meta.accuracyM,
                     ),
                 )
             }
