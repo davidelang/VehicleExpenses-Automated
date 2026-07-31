@@ -10,6 +10,7 @@ import androidx.camera.core.ImageCaptureException
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -212,6 +213,11 @@ private fun ExpenseEntryScreenBody(
                 photoUrl = uri.toString()
                 photoStatus = null
                 showLiveCamera = false
+                // Gallery: row lat/lon from EXIF only — never current device GPS.
+                photoFromGallery = true
+                val meta = PhotoExifMetaReader.read(context, uri)
+                rowLat = meta.latitude
+                rowLon = meta.longitude
                 Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
             } else {
                 photoUrl = null
