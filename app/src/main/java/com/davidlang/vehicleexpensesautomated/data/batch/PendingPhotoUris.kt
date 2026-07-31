@@ -35,29 +35,49 @@ fun pendingPhotoUris(
         if (!url.trimStart().startsWith("[")) add(url)
     }
     val role = StageCPhaseStore.photoRole(item)
+    // Strict role filters: never re-union unfiltered [candidates] (leaked wrong role into ODO/BAD_PUMP).
     val filtered = when (role) {
         StageCPhaseStore.PhotoRole.DASH -> {
-            // Prefer dash-tagged from entry JSON; else paths that look like dash sources
             val fromEntries = entryPhotoUrls.flatMap { dashPhotoPaths(it) }
-            val dashish = candidates.filter {
-                it.contains("experiment_photos", ignoreCase = true) ||
-                    it.contains("dash", ignoreCase = true) ||
-                    !it.contains("pump", ignoreCase = true)
-            }
-            (fromEntries + dashish + candidates).distinct()
+            val dashish = candidates.filter { isDashPathHint(it) }
+            (fromEntries + dashish).distinct()
         }
         StageCPhaseStore.PhotoRole.PUMP -> {
             val fromEntries = entryPhotoUrls.flatMap { pumpPhotoPaths(it) }
-            val pumpish = candidates.filter {
-                it.contains("pump_photos", ignoreCase = true) ||
-                    it.contains("pump", ignoreCase = true) ||
-                    !it.contains("experiment_photos", ignoreCase = true)
-            }
-            (fromEntries + pumpish + candidates).distinct()
+            val pumpish = candidates.filter { isPumpPathHint(it) }
+            (fromEntries + pumpish).distinct()
         }
         StageCPhaseStore.PhotoRole.BOTH -> candidates
     }
     return dedupePhotoPaths(filtered)
+}
+
+/**
+ * Path heuristics for **dash** shots only — excludes pump_photos / pump_ prefixes.
+ * Used by [pendingPhotoUris] DASH role and Stage C ODO UIs.
+ */
+fun isDashPathHint(path: String): Boolean {
+    val p = path.trim()
+    if (p.isEmpty()) return false
+    val lower = p.lowercase()
+    if (lower.contains("pump_photos")) return false
+    if (Regex("""(?:^|[/\\])pump_\d+_""", RegexOption.IGNORE_CASE).containsMatchIn(p)) return false
+    if (lower.contains("experiment_photos")) return true
+    if (Regex("""(?:^|[/\\])dash_\d+_""", RegexOption.IGNORE_CASE).containsMatchIn(p)) return true
+    if (lower.contains("dash")) return true
+    // Plain path without pump signals — treat as dash for ODO role
+    return !lower.contains("pump")
+}
+
+/** Path heuristics for **pump** shots only — excludes pure dash/experiment_photos sources. */
+fun isPumpPathHint(path: String): Boolean {
+    val p = path.trim()
+    if (p.isEmpty()) return false
+    val lower = p.lowercase()
+    if (lower.contains("pump_photos")) return true
+    if (Regex("""(?:^|[/\\])pump_\d+_""", RegexOption.IGNORE_CASE).containsMatchIn(p)) return true
+    if (lower.contains("pump")) return true
+    return false
 }
 
 /**

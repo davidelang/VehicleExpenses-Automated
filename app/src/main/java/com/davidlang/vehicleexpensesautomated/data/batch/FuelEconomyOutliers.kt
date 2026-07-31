@@ -193,8 +193,9 @@ object FuelEconomyOutliers {
             durablePhotoPath = photos.firstOrNull(),
             timestampMs = e.timestamp,
             fuelEntryId = e.id,
-            latitude = e.latitude,
-            longitude = e.longitude,
+            latitude = FuelLocationJson.lat(e.location),
+            longitude = FuelLocationJson.lon(e.location),
+            accuracyM = FuelLocationJson.accuracyM(e.location),
             extra = mapOf(
                 "photoPaths" to photos.joinToString("|"),
             ),

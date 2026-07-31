@@ -26,11 +26,18 @@ import kotlin.math.max
  * dash↔pump by minimum |Δt| (each used once, |Δt| ≤ window), then
  * [mergeOneCluster] runs **per sub-cluster**.
  *
- * Unassigned pumps (`vehicleId == 0`) pair to nearest dash odo in window (tank
- * maxFill+slack may eliminate vehicles). Unpaired pumps stay out of clusters.
+ * Unassigned pumps (`vehicleId == 0`) pair first by **same-stop location + time**
+ * ([FuelStopMatch]) to a unique vehicle-known fill; else tank maxFill+slack then
+ * nearest dash odo in window. Unpaired pumps stay out of clusters.
+ *
+ * **Dual pump same stop (silent):** ≥2 pump-amount rows + dash/odo anchor sharing
+ * location within window → earlier pump (timestamp, id) is partial / non-full-fill;
+ * later is full-fill candidate. Must not leave vehicleId=0 or phase-4 ASSIGN_UNKNOWN
+ * when correlation is unique.
  *
  * Multi-pump: within [COST_VOL_REL_TOL] → re-shot; beyond + abs floor → sequence;
- * **never sum**. Lat/long: prefer later timestamp’s coords, else first non-null.
+ * **never sum**. Location blob (coords+place): [FuelLocationJson.mergeBlobs] in mergeFields;
+ * backfill when survivor empty (batch→non-batch).
  */
 object FuelRowMergeEngine {
 
@@ -155,10 +162,12 @@ object FuelRowMergeEngine {
 
     /**
      * Assign a vehicleId=0 pump:
-     * 1. Eliminate vehicles where pump vol &gt; maxFill + [TANK_SLACK_GAL]
-     * 2. If exactly one vehicle remains among active → auto-assign that vehicle
-     * 3. Else nearest in-window dash odo among remaining (or all if none eliminated)
-     * 4. If zero remain after tank elimination → leave unassigned
+     * 1. **Same location + time window** against vehicle-known fills (prefer odo/dash-like):
+     *    unique vehicleId → assign; multiple vehicles → leave unassigned (no silent pick).
+     * 2. Eliminate vehicles where pump vol &gt; maxFill + [TANK_SLACK_GAL]
+     * 3. If exactly one vehicle remains among active → auto-assign that vehicle
+     * 4. Else nearest in-window dash odo among remaining (or all if none eliminated)
+     * 5. If zero remain after tank elimination → leave unassigned
      */
     internal fun assignUnassignedPumpVehicle(
         pump: FuelEntry,
@@ -168,6 +177,19 @@ object FuelRowMergeEngine {
         windowMs: Long = MERGE_WINDOW_MS,
         tankSlack: Double = TANK_SLACK_GAL,
     ): Int? {
+        // 1) Place/time: unique vehicle at same stop
+        val locPartners = assigned.filter {
+            it.vehicleId > 0 &&
+                abs(it.timestamp - pump.timestamp) <= windowMs &&
+                FuelStopMatch.locationsMatch(pump, it)
+        }
+        if (locPartners.isNotEmpty()) {
+            val vids = locPartners.map { it.vehicleId }.distinct()
+            if (vids.size == 1) return vids.single()
+            // Ambiguous multi-vehicle same stop — do not tank-guess past location conflict
+            return null
+        }
+
         val candidates = tankEligibleVehicles(
             pumpVol = pump.gallons,
             activeVehicleIds = activeVehicleIds,
@@ -375,6 +397,21 @@ object FuelRowMergeEngine {
     private fun mergeOneCluster(cluster: List<FuelEntry>): MergePlan {
         val sorted = cluster.sortedWith(compareBy({ it.timestamp }, { it.id }))
 
+        val pumpLike = sorted.filter { isPumpAmountRow(it) }
+        val dashLike = sorted.filter { isDashLike(it) }
+
+        // Dual+ pumps at same stop as a dash/odo anchor → earlier partial, later full (sequence).
+        // Prefer this over CONFLICT_ODO when correlation is clear by location/time.
+        if (pumpLike.size >= 2 && isSameStopMultiPump(sorted, pumpLike, dashLike)) {
+            val byTime = pumpLike.sortedWith(compareBy({ it.timestamp }, { it.id }))
+            val anyReshot = byTime.indices.any { i ->
+                (i + 1 until byTime.size).any { j -> amountsWithinTol(byTime[i], byTime[j]) }
+            }
+            if (!anyReshot) {
+                return mergeSequenceCluster(sorted, byTime, markEarlierPartial = true)
+            }
+        }
+
         // ≥2 complete fulls: never silent-absorb (same or distinct odo)
         val completeFulls = sorted.filter { isCompleteFull(it) }
         if (completeFulls.size >= 2) {
@@ -401,7 +438,6 @@ object FuelRowMergeEngine {
             )
         }
 
-        val pumpLike = sorted.filter { isPumpAmountRow(it) }
         if (pumpLike.size >= 2 && isAmountSequence(pumpLike)) {
             // If any pair is re-shot (within tol), field-complete instead
             val byTime = pumpLike.sortedWith(compareBy({ it.timestamp }, { it.id }))
@@ -409,7 +445,7 @@ object FuelRowMergeEngine {
                 (i + 1 until byTime.size).any { j -> amountsWithinTol(byTime[i], byTime[j]) }
             }
             if (!anyReshot) {
-                return mergeSequenceCluster(sorted, byTime)
+                return mergeSequenceCluster(sorted, byTime, markEarlierPartial = true)
             }
         }
 
@@ -417,12 +453,42 @@ object FuelRowMergeEngine {
     }
 
     /**
+     * True when ≥2 pump-amount rows share a stop with each other and/or a dash-like
+     * anchor (place match or geo), within the cluster already time-windowed.
+     */
+    private fun isSameStopMultiPump(
+        sorted: List<FuelEntry>,
+        pumpLike: List<FuelEntry>,
+        dashLike: List<FuelEntry>,
+    ): Boolean {
+        if (pumpLike.size < 2) return false
+        val anchors = if (dashLike.isNotEmpty()) dashLike else sorted.filter { hasPositiveOdo(it) }
+        if (anchors.isEmpty()) {
+            // All pumps: any pair same location
+            return pumpLike.indices.any { i ->
+                (i + 1 until pumpLike.size).any { j ->
+                    FuelStopMatch.locationsMatch(pumpLike[i], pumpLike[j])
+                }
+            }
+        }
+        return pumpLike.all { p ->
+            anchors.any { a -> FuelStopMatch.locationsMatch(p, a) } ||
+                pumpLike.any { o -> o.id != p.id && FuelStopMatch.locationsMatch(p, o) }
+        }
+    }
+
+    /**
      * Sequence: keep each distinct-amount pump as its own row (never sum).
-     * Earlier rows stay partial; last gets odo if a pure odo donor exists.
+     * Earlier rows: non-full-fill / explicit partial when complete; last gets odo if a
+     * pure odo donor exists (full-fill candidate).
+     *
+     * @param markEarlierPartial when true (same-stop dual pump), set [FuelEntry.isPartialFill]
+     * on earlier complete pumps so they never act as full-fill anchors.
      */
     private fun mergeSequenceCluster(
         sorted: List<FuelEntry>,
         pumpLike: List<FuelEntry>,
+        markEarlierPartial: Boolean = false,
     ): MergePlan {
         val odoDonor = sorted
             .filter { hasPositiveOdo(it) && !isPumpAmountRow(it) }
@@ -441,8 +507,18 @@ object FuelRowMergeEngine {
                 deletes.add(odoDonor)
                 usedOdoIds.add(odoDonor.id)
             }
-            // Incomplete earlier sequence members: fields only; never auto-set partial true
-            updates.add(finalizePartialFlag(row))
+            if (!isLast && markEarlierPartial) {
+                // Earlier at same stop: partial if complete fields, else leave incomplete (not full fill)
+                val complete = hasPositiveOdo(row) && hasCost(row) && hasVol(row)
+                row = if (complete) {
+                    row.copy(isPartialFill = true)
+                } else {
+                    finalizePartialFlag(row)
+                }
+            } else {
+                row = finalizePartialFlag(row)
+            }
+            updates.add(row)
         }
 
         // Absorb other pure odo companions (same cluster) into last if not already used
@@ -568,10 +644,13 @@ object FuelRowMergeEngine {
         }
         val currency = later.currency.ifBlank { earlier.currency }.ifBlank { "USD" }
         val photo = FuelPhotoJson.unionPhotos(a.photoUrl, b.photoUrl)
-        // Prefer later timestamp’s coords (EXIF/capture); GPS never required to merge
-        val lat = later.latitude ?: earlier.latitude
-        val lon = later.longitude ?: earlier.longitude
-        val loc = preferLocation(a.location, b.location)
+        // Blob merge: place/coords LWW + backfill when one side empty (batch→non-batch)
+        val loc = FuelLocationJson.mergeBlobs(
+            a.location,
+            b.location,
+            updatedAtA = a.updatedAt.takeIf { it > 0 } ?: a.timestamp,
+            updatedAtB = b.updatedAt.takeIf { it > 0 } ?: b.timestamp,
+        ) ?: preferLocation(a.location, b.location)
         val notes = preferNotes(a.notes, b.notes)
         val idKeep = later.id
         val complete = (if (odo > 0) odo else 0) > 0 && costF > 0 && galF > 0
@@ -586,8 +665,6 @@ object FuelRowMergeEngine {
             currency = currency,
             timestamp = ts,
             photoUrl = photo,
-            latitude = lat,
-            longitude = lon,
             location = loc,
             notes = notes,
             isPartialFill = preservePartial,
