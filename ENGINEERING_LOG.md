@@ -2321,3 +2321,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Phase 3-4: resolvePendingGeo + locationBlobFromPending; enqueue after import inserts
 - Phase 5: closed TODO Location Lookup Worker; multi-candidate + post-save remain; project-facts
 
+
+## 2026-07-31 - location-fixes: local PR prepared (history cleanup)
+
+- Soft-reset cleanup: backup-location-fixes @ 7c2ccb10; 28 messy commits → 9 logical; TREE_MATCHES_BACKUP (77809c07).
+- Cleaned tip 5d14d6ba; post-cleanup ./build_app SUCCESS; location-fixes/builds updated.
+- ./generate_pr.sh → dev-ai-interaction/PRs/PR-location-fixes.md (3 plans + Coder pre-submit).
+- Ready for Master (run-grok-master) independent review + merge. Coder does not merge.
+
