@@ -55,3 +55,6 @@ Trip tax-mile reporting (phase-2): open→open odo deltas by tripType; zero-leng
 i18n later: language packs for LTR locales; RTL and beyond deferred — see dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md (odometers/pumps still primarily Western digits; full UI RTL/complex scripts much later)
 
 i18n language packs (later): include Help + user-manual pipeline translation; debug/failure/feedback email templates stay English; RTL/beyond still deferred
+Location multi-candidate picker: show nearby POIs ranked by distance/accuracy; pick one (accuracyM informs ranking)
+
+Post-save location confirm UI: confirm deferred/worker place fill on edit screens (silent fill uses confirmed:false)

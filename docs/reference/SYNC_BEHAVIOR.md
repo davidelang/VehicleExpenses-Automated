@@ -57,8 +57,19 @@ On first launch after a schema upgrade that introduces blank **`syncId`** values
 
 | Column | Meaning |
 |--------|---------|
-| **Location** | Station place: JSON `{"name":"Shell","address":"…"}` when known; legacy plain text still displays. Lat/long stay in **Latitude** / **Longitude**. |
+| **Location** | **Sole geo/place package** (JSON blob): `lat`/`lon`/`accuracyM`/`name`/`address`/`confirmed`/`source`/`kind`/`lookedUpAt`. Legacy plain text and name/address-only JSON still parse. **Latitude** / **Longitude** tabular columns are **removed** from schema (user may delete empty columns on existing sheets). |
 | **Notes** | Freeform + batch provenance (`batch_import_dash:…`, `batch_gap_marker`, …). New batch inserts write tags here; engine role checks read **notes** and still accept legacy tags in **location**. |
+
+### Location JSON LWW merge
+
+When two sides of a fuel/expense row differ, overall row LWW still uses **`updatedAt`**, but the **`location`** field is merged with dedicated rules (`FuelLocationJson.mergeBlobs`):
+
+1. Prefer the side that has **place** data (name/address) if the other has none.
+2. If both have place: **`confirmed: true` trumps unconfirmed** (regardless of lookedUpAt).
+3. Same confirmed-ness: later **`lookedUpAt`**, else later row **`updatedAt`**.
+4. Winner takes the **entire** location blob (coords + place + flags).
+
+Pending deferred POI fill (no flag column): blob has lat/lon but blank name and address → `LocationLookupWorker` fills silently with **`confirmed: false`**.
 
 **Default header order** (new / empty fuel tabs and CSV export): human fields first (Timestamp … Notes), machine IDs last (Vehicle Sync ID … Deleted At). Existing sheets keep their column order; missing columns (e.g. Notes) are **appended** only — never auto-reordered. Backends that rewrite the full grid after append **pad** data rows with empty cells for new columns. Reads are **name-based**.
 

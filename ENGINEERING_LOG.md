@@ -2294,3 +2294,15 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - ExpenseEntryScreen pickImageLauncher: single rowLat=meta.latitude, rowLon=meta.longitude (lines ~219-220). No duplicate rowLon assignment.
 - Phase 0 no-op; proceeding to Phase 1 FuelLocationJson.
 
+
+## 2026-07-31 - location-poi-lookup phases 0-13 complete
+
+- Plan: location-poi-lookup-confirm-and-queue-20260730-plan.md
+- Phase 0: gallery rowLon clean (no-op)
+- Phase 1-3: FuelLocationJson blob, DB v18 drop lat/lon, call-sites + accuracyM
+- Phase 4-8: Nominatim/Overpass/LocationLookup + Worker/scheduler
+- Phase 9: tabular drop Lat/Lon; location LWW mergeBlobs
+- Phase 10-12: QF/Trip/Expense LocationConfirmBlock + save rules + enqueue
+- Phase 13: TODO multi-candidate + post-save confirm; project-facts; SYNC_BEHAVIOR
+- User: manually delete empty Lat/Lon columns from existing spreadsheets
+
