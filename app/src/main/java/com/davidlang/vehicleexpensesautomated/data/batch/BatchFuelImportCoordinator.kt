@@ -2,7 +2,9 @@ package com.davidlang.vehicleexpensesautomated.data.batch
 
 import android.content.Context
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+// FuelLocationJson same package
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.ui.experiment.AlignmentSetJRunner
@@ -1021,6 +1023,7 @@ class BatchFuelImportCoordinator @Inject constructor(
 
         // No row yet (e.g. unreadable pump with no insert): insert blank gap marker
         val photoJson = path?.let { FuelPhotoJson.single("pump", it, ts) }
+        val locJson = locationBlobFromPending(item)
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = item.suggestedVehicleId?.takeIf { it > 0 } ?: UNASSIGNED_VEHICLE_ID,
@@ -1031,11 +1034,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false,
-                latitude = item.latitude,
-                longitude = item.longitude,
+                location = locJson,
                 notes = "batch_gap_marker",
             ),
         )
+        maybeEnqueueLocationLookup(locJson)
         clearAnsweredPending(item, null)
         Log.i(TAG, "markAsGap inserted blank gap marker")
         return PendingAnswerResult("Inserted gap marker (blank chain-breaker)", remerge = true)
@@ -1171,6 +1174,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             }
         }
         val photoJson = path?.let { FuelPhotoJson.single("pump", it, ts) }
+        val locJson = locationBlobFromPending(item)
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = UNASSIGNED_VEHICLE_ID,
@@ -1181,11 +1185,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false,
-                latitude = item.latitude,
-                longitude = item.longitude,
+                location = locJson,
                 notes = "batch_manual_pump",
             ),
         )
+        maybeEnqueueLocationLookup(locJson)
         clearAnsweredPending(item, null)
         return PendingAnswerResult("Manual pump entry saved", remerge = true)
     }
@@ -1224,6 +1228,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             }
         }
         val photoJson = path?.let { FuelPhotoJson.single("dash", it, ts) }
+        val locJson = locationBlobFromPending(item)
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = vid,
@@ -1234,11 +1239,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false,
-                latitude = item.latitude,
-                longitude = item.longitude,
+                location = locJson,
                 notes = "batch_manual_dash",
             ),
         )
+        maybeEnqueueLocationLookup(locJson)
         clearAnsweredPending(item, null)
         return PendingAnswerResult("Manual dash odo=$odometer vehicle=$vid", remerge = true)
     }
@@ -1563,6 +1568,48 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
 
     /**
+     * Lat/lon/accuracy from pending item, re-reading EXIF from photo path when any field is missing.
+     * Prefer already-set item fields over re-read.
+     */
+    private fun resolvePendingGeo(item: BatchPendingItem): Triple<Double?, Double?, Double?> {
+        var lat = item.latitude
+        var lon = item.longitude
+        var acc = item.accuracyM
+        if (lat != null && lon != null && acc != null) {
+            return Triple(lat, lon, acc)
+        }
+        val path = item.durablePhotoPath ?: item.photoPath
+        if (!path.isNullOrBlank()) {
+            val f = File(path)
+            if (f.isFile) {
+                try {
+                    val meta = PhotoExifMetaReader.read(f.absolutePath)
+                    if (lat == null) lat = meta.latitude
+                    if (lon == null) lon = meta.longitude
+                    if (acc == null) acc = meta.accuracyM
+                } catch (e: Exception) {
+                    Log.w(TAG, "EXIF re-read for pending failed: ${e.message}")
+                }
+            }
+        }
+        return Triple(lat, lon, acc)
+    }
+
+    private fun locationBlobFromPending(item: BatchPendingItem): String? {
+        val (lat, lon, acc) = resolvePendingGeo(item)
+        return FuelLocationJson.encode(
+            FuelLocationJson.fromCoords(lat, lon, acc, source = "exif"),
+        )
+    }
+
+    /** One-shot deferred POI when insert left coords without place (non-blocking). */
+    private fun maybeEnqueueLocationLookup(locationJson: String?) {
+        if (FuelLocationJson.hasCoordsWithoutPlace(locationJson)) {
+            LocationLookupScheduler.enqueueSoon(appContext)
+        }
+    }
+
+    /**
      * Dash: alignment **experiment Set J** pipeline via [AlignmentSetJRunner]
      * (not [com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness.runAutoFillPipeline]).
      *
@@ -1600,6 +1647,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         timestampMs = ts,
                         latitude = meta.latitude,
                         longitude = meta.longitude,
+                        accuracyM = meta.accuracyM,
                     ),
                 )
             }
@@ -1610,6 +1658,9 @@ class BatchFuelImportCoordinator @Inject constructor(
         val photoJson = FuelPhotoJson.single("dash", sourcePath, ts)
 
         if (odo == null) {
+            val locJson = FuelLocationJson.encode(
+                FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif"),
+            )
             fuelEntryRepository.insertFuelEntry(
                 FuelEntry(
                     vehicleId = result.vehicleId,
@@ -1620,15 +1671,18 @@ class BatchFuelImportCoordinator @Inject constructor(
                     timestamp = ts,
                     photoUrl = photoJson,
                     isPartialFill = false,
-                    latitude = meta.latitude,
-                    longitude = meta.longitude,
+                    location = locJson,
                     notes = "batch_import_dash_blank:${file.name}",
                 ),
             )
+            maybeEnqueueLocationLookup(locJson)
             Log.i(TAG, "Inserted blank dash marker vehicle=${result.vehicleId} ${file.name}")
             return true
         }
 
+        val locJson = FuelLocationJson.encode(
+            FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif"),
+        )
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = result.vehicleId,
@@ -1639,11 +1693,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false, // incomplete by fields only
-                latitude = meta.latitude,
-                longitude = meta.longitude,
+                location = locJson,
                 notes = "batch_import_dash:${file.name}",
             ),
         )
+        maybeEnqueueLocationLookup(locJson)
         Log.i(TAG, "Inserted odo-only vehicle=${result.vehicleId} odo=$odo ${file.name}")
         return true
     }
@@ -1683,6 +1737,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         timestampMs = ts,
                         latitude = meta.latitude,
                         longitude = meta.longitude,
+                        accuracyM = meta.accuracyM,
                     ),
                 )
             }
@@ -1690,6 +1745,9 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
 
         val photoJson = FuelPhotoJson.single("pump", sourcePath, ts)
+        val locJson = FuelLocationJson.encode(
+            FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif"),
+        )
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = vehicleId,
@@ -1700,11 +1758,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false, // incomplete by fields only
-                latitude = meta.latitude,
-                longitude = meta.longitude,
+                location = locJson,
                 notes = "batch_import_pump:${file.name}",
             ),
         )
+        maybeEnqueueLocationLookup(locJson)
         Log.i(
             TAG,
             "Inserted pump cost/vol vehicleId=$vehicleId " +

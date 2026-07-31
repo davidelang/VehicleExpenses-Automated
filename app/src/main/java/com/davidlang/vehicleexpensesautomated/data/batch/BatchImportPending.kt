@@ -46,6 +46,8 @@ data class BatchPendingItem(
     val timestampMs: Long? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
+    /** Horizontal accuracy meters from EXIF when known; omitted when null. */
+    val accuracyM: Double? = null,
     val suggestedVehicleId: Int? = null,
     val fuelEntryId: Long? = null,
     val extra: Map<String, String> = emptyMap(),
@@ -97,6 +99,9 @@ object BatchImportPendingStore {
                         longitude = if (o.has("longitude") && !o.isNull("longitude")) {
                             o.optDouble("longitude")
                         } else null,
+                        accuracyM = if (o.has("accuracyM") && !o.isNull("accuracyM")) {
+                            o.optDouble("accuracyM")
+                        } else null,
                         suggestedVehicleId = if (o.has("suggestedVehicleId") && !o.isNull("suggestedVehicleId")) {
                             o.optInt("suggestedVehicleId")
                         } else null,
@@ -127,6 +132,7 @@ object BatchImportPendingStore {
                 item.timestampMs?.let { o.put("timestampMs", it) }
                 item.latitude?.let { o.put("latitude", it) }
                 item.longitude?.let { o.put("longitude", it) }
+                item.accuracyM?.let { o.put("accuracyM", it) }
                 item.suggestedVehicleId?.let { o.put("suggestedVehicleId", it) }
                 item.fuelEntryId?.let { o.put("fuelEntryId", it) }
                 if (item.extra.isNotEmpty()) {

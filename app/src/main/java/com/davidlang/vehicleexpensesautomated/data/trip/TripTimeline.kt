@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.data.trip
 
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 
 /**
@@ -42,6 +43,7 @@ object TripTimeline {
         timestamp: Long = System.currentTimeMillis(),
         latitude: Double? = null,
         longitude: Double? = null,
+        accuracyM: Double? = null,
         photoUrl: String? = null,
         syncId: String = "",
         originDeviceId: String = "",
@@ -60,9 +62,9 @@ object TripTimeline {
             photoUrl = photoUrl,
             isPartialFill = false,
             economyIgnored = false,
-            latitude = latitude,
-            longitude = longitude,
-            location = null,
+            location = FuelLocationJson.encode(
+                FuelLocationJson.fromCoords(latitude, longitude, accuracyM, source = "device"),
+            ),
             notes = null,
             tripType = type,
             syncId = syncId,
