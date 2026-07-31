@@ -293,6 +293,12 @@ private fun ExpenseEntryScreenBody(
         isPhotoSaving = true
         photoStatus = "Saving photo…"
         showLiveCamera = true
+        // Camera path: row uses once-per-screen device fix (restore after any gallery pick).
+        photoFromGallery = false
+        val locForExif = deviceLocation
+        rowLat = locForExif?.latitude
+        rowLon = locForExif?.longitude
+        var rotationDegrees = 0
         try {
             val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 context.display
@@ -302,6 +308,13 @@ private fun ExpenseEntryScreenBody(
             }
             val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
             imageCapture.targetRotation = rotation
+            rotationDegrees = when (rotation) {
+                android.view.Surface.ROTATION_0 -> 0
+                android.view.Surface.ROTATION_90 -> 90
+                android.view.Surface.ROTATION_180 -> 180
+                android.view.Surface.ROTATION_270 -> 270
+                else -> 0
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set target rotation", e)
         }
@@ -321,12 +334,16 @@ private fun ExpenseEntryScreenBody(
                     )
                 }
             }
+            val captureMetadata = ImageCapture.Metadata().apply {
+                location = locForExif
+            }
             val outputOptions = ImageCapture.OutputFileOptions.Builder(
                 resolver,
                 android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 contentValues
-            ).build()
+            ).setMetadata(captureMetadata).build()
 
+            val orientForExif = rotationDegrees
             imageCapture.takePicture(
                 outputOptions,
                 ContextCompat.getMainExecutor(context),
@@ -342,6 +359,12 @@ private fun ExpenseEntryScreenBody(
                                 Toast.LENGTH_LONG
                             ).show()
                         } else {
+                            PhotoExifWriter.writeGpsAndOrientation(
+                                context,
+                                savedUri,
+                                locForExif,
+                                orientForExif,
+                            )
                             photoUrl = savedUri.toString()
                             photoStatus = null
                             showLiveCamera = false
