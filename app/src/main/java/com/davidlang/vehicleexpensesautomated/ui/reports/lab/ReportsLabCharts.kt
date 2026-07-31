@@ -1,14 +1,19 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import android.util.Log
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.axis.Axis
 import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
@@ -21,11 +26,20 @@ import com.patrykandpatrick.vico.compose.cartesian.layer.rememberColumnCartesian
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
 import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
-import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+
+private const val CHART_TAG = "ReportsLabCharts"
+
+/** Family colors for efficiency metrics (lines + axis captions). */
+object LabChartColors {
+    val Mpg = Color(0xFF1565C0) // blue
+    val Gpm = Color(0xFF00897B) // teal
+    val DpmFuel = Color(0xFF2E7D32) // green
+    val DpmIncl = Color(0xFF6A1B9A) // purple
+}
 
 /**
  * Convert epoch ms → X unit (fractional days) for time-series charts.
@@ -59,6 +73,8 @@ fun LabTimeSeriesLineChart(
     caption: String,
     emptyMessage: String,
     heightDp: Int = 200,
+    startAxisLabel: String? = null,
+    startAxisColor: Color? = null,
 ) {
     LabMultiAxisTimeSeriesChart(
         startSeries = series,
@@ -66,13 +82,15 @@ fun LabTimeSeriesLineChart(
         caption = caption,
         emptyMessage = emptyMessage,
         heightDp = heightDp,
+        startAxisLabel = startAxisLabel,
+        startAxisColor = startAxisColor,
     )
 }
 
 /**
- * Single chart: **start (left)** Y for [startSeries] (mpg/gpm), **end (right)** Y for [endSeries] ($/mi).
- * Two [lineModel] partials → two [rememberLineCartesianLayer] with Start/End axis positions.
- * mpg and gpm share the left scale (legend distinguishes); dual independent left axes not used (Vico 3.2.3).
+ * Single chart: **start (left)** Y for [startSeries], **end (right)** Y for [endSeries].
+ * Prefer putting single-family series on **Start** (End-only can be fragile in Vico 3.2.3).
+ * Use [key] remount when axis structure changes so layer count matches model partials.
  */
 @Composable
 fun LabMultiAxisTimeSeriesChart(
@@ -81,6 +99,10 @@ fun LabMultiAxisTimeSeriesChart(
     caption: String,
     emptyMessage: String,
     heightDp: Int = 240,
+    startAxisLabel: String? = null,
+    endAxisLabel: String? = null,
+    startAxisColor: Color? = null,
+    endAxisColor: Color? = null,
 ) {
     fun nonempty(s: Map<String, List<LabTimeYPoint>>) =
         s.filter { it.value.isNotEmpty() }
@@ -92,101 +114,135 @@ fun LabMultiAxisTimeSeriesChart(
         ReportsLabEmpty(emptyMessage)
         return
     }
-    val modelProducer = remember { CartesianChartModelProducer() }
-    val seriesKey = buildString {
-        start.forEach { (k, v) -> append("S$k:${v.joinToString { "${it.timestampMs}:${it.y}" }}|") }
-        end.forEach { (k, v) -> append("E$k:${v.joinToString { "${it.timestampMs}:${it.y}" }}|") }
+    // Prefer Start for single-family (money-only, gpm-only, mpg-only) to avoid End-only quirks.
+    val (left, right) = if (start.isEmpty() && end.isNotEmpty()) {
+        end to emptyMap()
+    } else {
+        start to end
     }
-    LaunchedEffect(seriesKey) {
-        modelProducer.runTransaction {
-            if (start.isNotEmpty()) {
-                lineModel {
-                    for ((key, pts) in start) {
-                        val sorted = pts.sortedBy { it.timestampMs }
-                        if (sorted.isEmpty()) continue
-                        series(
-                            sorted.map { tsToChartX(it.timestampMs) },
-                            sorted.map { it.y.toDouble() },
-                            key,
-                        )
+    val seriesKey = buildString {
+        append("L${left.size}R${right.size}|")
+        left.forEach { (k, v) -> append("S$k:${v.size}|") }
+        right.forEach { (k, v) -> append("E$k:${v.size}|") }
+    }
+    val leftLabel = if (start.isEmpty() && end.isNotEmpty()) endAxisLabel else startAxisLabel
+    val leftColor = if (start.isEmpty() && end.isNotEmpty()) endAxisColor else startAxisColor
+    val rightLabel = if (start.isEmpty() && end.isNotEmpty()) null else endAxisLabel
+    val rightColor = if (start.isEmpty() && end.isNotEmpty()) null else endAxisColor
+
+    key(seriesKey) {
+        val modelProducer = remember(seriesKey) { CartesianChartModelProducer() }
+        LaunchedEffect(seriesKey) {
+            try {
+                modelProducer.runTransaction {
+                    if (left.isNotEmpty()) {
+                        lineModel {
+                            for ((keyName, pts) in left) {
+                                val sorted = pts.sortedBy { it.timestampMs }
+                                if (sorted.size < 1) continue
+                                series(
+                                    sorted.map { tsToChartX(it.timestampMs) },
+                                    sorted.map { it.y.toDouble() },
+                                    keyName,
+                                )
+                            }
+                        }
+                    }
+                    if (right.isNotEmpty()) {
+                        lineModel {
+                            for ((keyName, pts) in right) {
+                                val sorted = pts.sortedBy { it.timestampMs }
+                                if (sorted.size < 1) continue
+                                series(
+                                    sorted.map { tsToChartX(it.timestampMs) },
+                                    sorted.map { it.y.toDouble() },
+                                    keyName,
+                                )
+                            }
+                        }
                     }
                 }
-            }
-            if (end.isNotEmpty()) {
-                lineModel {
-                    for ((key, pts) in end) {
-                        val sorted = pts.sortedBy { it.timestampMs }
-                        if (sorted.isEmpty()) continue
-                        series(
-                            sorted.map { tsToChartX(it.timestampMs) },
-                            sorted.map { it.y.toDouble() },
-                            key,
-                        )
-                    }
-                }
+            } catch (e: Exception) {
+                Log.e(CHART_TAG, "Chart model transaction failed", e)
             }
         }
-    }
-    val dateFmt = rememberDateXFormatter()
-    val scroll = rememberVicoScrollState(scrollEnabled = false)
-    Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
-    val legendParts = mutableListOf<String>()
-    if (start.isNotEmpty()) {
-        legendParts += "Left: ${start.keys.joinToString(" · ")}"
-    }
-    if (end.isNotEmpty()) {
-        legendParts += "Right \$: ${end.keys.joinToString(" · ")}"
-    }
-    if (legendParts.isNotEmpty()) {
-        Text(
-            legendParts.joinToString(" · "),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            softWrap = true,
+        val dateFmt = rememberDateXFormatter()
+        val scroll = rememberVicoScrollState(scrollEnabled = false)
+        Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
+        val legendParts = mutableListOf<String>()
+        if (left.isNotEmpty()) {
+            legendParts += "Left: ${left.keys.joinToString(" · ")}"
+        }
+        if (right.isNotEmpty()) {
+            legendParts += "Right: ${right.keys.joinToString(" · ")}"
+        }
+        if (legendParts.isNotEmpty()) {
+            Text(
+                legendParts.joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                softWrap = true,
+            )
+        }
+        if (leftLabel != null) {
+            Text(
+                leftLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = leftColor ?: MaterialTheme.colorScheme.primary,
+                softWrap = true,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        if (rightLabel != null) {
+            Text(
+                rightLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = rightColor ?: MaterialTheme.colorScheme.tertiary,
+                softWrap = true,
+            )
+        }
+        val startLayer = if (left.isNotEmpty()) {
+            rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.Start)
+        } else {
+            null
+        }
+        val endLayer = if (right.isNotEmpty()) {
+            rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.End)
+        } else {
+            null
+        }
+        val chart = when {
+            startLayer != null && endLayer != null ->
+                rememberCartesianChart(
+                    startLayer,
+                    endLayer,
+                    startAxis = VerticalAxis.rememberStart(),
+                    endAxis = VerticalAxis.rememberEnd(),
+                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
+                )
+            startLayer != null ->
+                rememberCartesianChart(
+                    startLayer,
+                    startAxis = VerticalAxis.rememberStart(),
+                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
+                )
+            endLayer != null ->
+                rememberCartesianChart(
+                    endLayer,
+                    endAxis = VerticalAxis.rememberEnd(),
+                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
+                )
+            else -> return@key
+        }
+        CartesianChartHost(
+            chart = chart,
+            modelProducer = modelProducer,
+            scrollState = scroll,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(heightDp.dp),
         )
     }
-    // Layer order matches lineModel order: first partial → Start, second → End when both present.
-    val startLayer = if (start.isNotEmpty()) {
-        rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.Start)
-    } else {
-        null
-    }
-    val endLayer = if (end.isNotEmpty()) {
-        rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.End)
-    } else {
-        null
-    }
-    val chart = when {
-        startLayer != null && endLayer != null ->
-            rememberCartesianChart(
-                startLayer,
-                endLayer,
-                startAxis = VerticalAxis.rememberStart(),
-                endAxis = VerticalAxis.rememberEnd(),
-                bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
-            )
-        startLayer != null ->
-            rememberCartesianChart(
-                startLayer,
-                startAxis = VerticalAxis.rememberStart(),
-                bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
-            )
-        endLayer != null ->
-            rememberCartesianChart(
-                endLayer,
-                endAxis = VerticalAxis.rememberEnd(),
-                bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
-            )
-        else -> return
-    }
-    CartesianChartHost(
-        chart = chart,
-        modelProducer = modelProducer,
-        scrollState = scroll,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(heightDp.dp),
-    )
 }
 
 @Composable
@@ -194,7 +250,6 @@ fun LabMpgLineChart(
     yValues: List<Float>,
     emptyMessage: String = "Not enough ${UnitFormat.economyEfficiencyLabel()} legs for a chart (need ≥2).",
 ) {
-    // Legacy index-only path — prefer [LabTimeSeriesLineChart] with timestamps.
     if (yValues.size < 2) {
         ReportsLabEmpty(emptyMessage)
         return
@@ -242,36 +297,96 @@ fun LabMonthlyBarsChart(
     }
     val modelProducer = remember { CartesianChartModelProducer() }
     LaunchedEffect(fuelAmounts, otherAmounts, monthKeys) {
-        modelProducer.runTransaction {
-            columnModel {
-                // X = month index 0..n-1; labels via caption / keys in UI
-                series(fuelAmounts.map { it.toDouble() }, "fuel")
-                series(otherAmounts.map { it.toDouble() }, "other")
+        try {
+            modelProducer.runTransaction {
+                columnModel {
+                    series(fuelAmounts.map { it.toDouble() }, "fuel")
+                    series(otherAmounts.map { it.toDouble() }, "other")
+                }
             }
+        } catch (e: Exception) {
+            Log.e(CHART_TAG, "Monthly bars transaction failed", e)
         }
     }
     val scroll = rememberVicoScrollState(scrollEnabled = false)
-    Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
-    if (monthKeys.isNotEmpty()) {
-        Text(
-            monthKeys.joinToString(" · "),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            softWrap = true,
-            maxLines = 3,
-        )
+    val monthFmt = remember(monthKeys) {
+        CartesianValueFormatter { _, value, _ ->
+            val i = value.toInt()
+            monthKeys.getOrNull(i) ?: ""
+        }
     }
+    Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
     CartesianChartHost(
         chart = rememberCartesianChart(
             rememberColumnCartesianLayer(),
             startAxis = VerticalAxis.rememberStart(),
-            bottomAxis = HorizontalAxis.rememberBottom(),
+            bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = monthFmt),
         ),
         modelProducer = modelProducer,
         scrollState = scroll,
         modifier = Modifier
             .fillMaxWidth()
             .height(220.dp),
+    )
+}
+
+/**
+ * Multi-series index chart (X = 0..n-1) with optional category labels on the bottom axis.
+ * Used for monthly Each (one series per vehicle) and category Each (series per vehicle).
+ */
+@Composable
+fun LabMultiSeriesIndexChart(
+    series: Map<String, List<Float>>,
+    xLabels: List<String>,
+    caption: String,
+    emptyMessage: String = "Not enough data for a chart.",
+    heightDp: Int = 220,
+) {
+    val clean = series.filter { it.value.isNotEmpty() }
+    if (clean.isEmpty() || xLabels.isEmpty()) {
+        ReportsLabEmpty(emptyMessage)
+        return
+    }
+    val modelProducer = remember { CartesianChartModelProducer() }
+    val key = clean.entries.joinToString("|") { (k, v) -> "$k:${v.joinToString()}" } + xLabels.joinToString()
+    LaunchedEffect(key) {
+        try {
+            modelProducer.runTransaction {
+                columnModel {
+                    for ((name, amounts) in clean) {
+                        val padded = xLabels.indices.map { i -> amounts.getOrElse(i) { 0f }.toDouble() }
+                        series(padded, name)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(CHART_TAG, "Multi-series index chart failed", e)
+        }
+    }
+    val scroll = rememberVicoScrollState(scrollEnabled = false)
+    val labelFmt = remember(xLabels) {
+        CartesianValueFormatter { _, value, _ ->
+            xLabels.getOrNull(value.toInt()) ?: ""
+        }
+    }
+    Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
+    Text(
+        "Series: ${clean.keys.joinToString(" · ")}",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        softWrap = true,
+    )
+    CartesianChartHost(
+        chart = rememberCartesianChart(
+            rememberColumnCartesianLayer(),
+            startAxis = VerticalAxis.rememberStart(),
+            bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = labelFmt),
+        ),
+        modelProducer = modelProducer,
+        scrollState = scroll,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(heightDp.dp),
     )
 }
 
@@ -287,28 +402,32 @@ fun LabCategoryBarsChart(
     }
     val modelProducer = remember { CartesianChartModelProducer() }
     LaunchedEffect(amounts) {
-        modelProducer.runTransaction {
-            columnModel {
-                series(amounts.map { it.toDouble() }, "cat")
+        try {
+            modelProducer.runTransaction {
+                columnModel {
+                    series(amounts.map { it.toDouble() }, "cat")
+                }
             }
+        } catch (e: Exception) {
+            Log.e(CHART_TAG, "Category bars failed", e)
         }
     }
     val scroll = rememberVicoScrollState(scrollEnabled = false)
-    Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
-    if (categoryLabels.isNotEmpty()) {
-        Text(
-            categoryLabels.joinToString(" · "),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            softWrap = true,
-            maxLines = 4,
-        )
+    val catFmt = remember(categoryLabels) {
+        CartesianValueFormatter { _, value, _ ->
+            categoryLabels.getOrNull(value.toInt()) ?: ""
+        }
     }
+    Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
     CartesianChartHost(
         chart = rememberCartesianChart(
             rememberColumnCartesianLayer(),
             startAxis = VerticalAxis.rememberStart(),
-            bottomAxis = HorizontalAxis.rememberBottom(),
+            bottomAxis = if (categoryLabels.isNotEmpty()) {
+                HorizontalAxis.rememberBottom(valueFormatter = catFmt)
+            } else {
+                HorizontalAxis.rememberBottom()
+            },
         ),
         modelProducer = modelProducer,
         scrollState = scroll,

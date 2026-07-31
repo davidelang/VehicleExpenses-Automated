@@ -17,6 +17,8 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 @Composable
 fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
     val data = rememberLabReportData(LabVehicleMembership.EXPENSE)
+    val isEach = data.filter.vehicleMode == LabVehicleMode.EACH
+
     val byCat = remember(data.expenses, data.defaultStored) {
         categoryTotals(data.expenses, data.defaultStored)
     }
@@ -30,10 +32,41 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
     }
     val sortedCats = byCat.entries.sortedByDescending { (_, m) -> m[chartCurrency] ?: m.values.sum() }
     val chartAmounts = sortedCats.map { (_, m) -> (m[chartCurrency] ?: 0.0).toFloat() }
+    val catLabels = sortedCats.map { it.key }
+
+    // Each: categories on X, one series per vehicle
+    val eachSeries = remember(
+        isEach, data.expenses, data.defaultStored, chartCurrency, catLabels, data.vehicles,
+    ) {
+        if (!isEach || catLabels.isEmpty()) emptyMap()
+        else {
+            val byVehicle = data.expenses.groupBy { it.vehicleId }
+            byVehicle.entries
+                .sortedBy { (vid, _) -> data.vehicleName(vid) }
+                .associate { (vid, exps) ->
+                    val totals = categoryTotals(exps, data.defaultStored)
+                    data.vehicleName(vid) to catLabels.map { cat ->
+                        (totals[cat]?.get(chartCurrency) ?: 0.0).toFloat()
+                    }
+                }
+        }
+    }
+    val eachByVehicleTotals = remember(isEach, data.expenses, data.defaultStored) {
+        if (!isEach) emptyMap()
+        else {
+            data.expenses.groupBy { it.vehicleId }
+                .entries
+                .sortedBy { (vid, _) -> data.vehicleName(vid) }
+                .associate { (vid, exps) ->
+                    data.vehicleName(vid) to categoryTotals(exps, data.defaultStored)
+                }
+        }
+    }
 
     ReportsLabScreenScaffold(
         title = "Expenses by category",
-        infoText = "Category totals for the filtered period. Chart uses one currency series (caption).",
+        infoText = "Category totals for the filtered period. Chart uses one currency series (caption). " +
+            "Each vehicle = multi-series (categories on X, one series per vehicle).",
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
@@ -43,8 +76,17 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                     appendLine("Vehicle Expenses — Expenses by category")
                     appendLine("Period: ${periodLabel(data.filter)}")
                     appendLine("Vehicle: ${data.filterVehicleLabel()}")
-                    sortedCats.forEach { (cat, m) ->
-                        appendLine("$cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
+                    if (isEach) {
+                        eachByVehicleTotals.forEach { (vName, cats) ->
+                            appendLine("--- $vName ---")
+                            cats.forEach { (cat, m) ->
+                                appendLine("  $cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
+                            }
+                        }
+                    } else {
+                        sortedCats.forEach { (cat, m) ->
+                            appendLine("$cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
+                        }
                     }
                     appendLine("--- rows ---")
                     data.expenses.sortedByDescending { it.date }.forEach { e ->
@@ -61,10 +103,27 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                 textBody = buildText,
                 csvFileName = "lab_expenses.csv",
                 csvBody = {
-                    val sb = StringBuilder("section,category,date,amount,currency,description\n")
-                    sortedCats.forEach { (cat, m) ->
-                        m.forEach { (c, a) ->
-                            sb.append("total,${ReportsLabShare.csvEscape(cat)},,$a,${c.ifBlank { data.defaultStored }},\n")
+                    val sb = StringBuilder("section,category,date,amount,currency,description,vehicle\n")
+                    if (isEach) {
+                        eachByVehicleTotals.forEach { (vName, cats) ->
+                            cats.forEach { (cat, m) ->
+                                m.forEach { (c, a) ->
+                                    sb.append(
+                                        "total,${ReportsLabShare.csvEscape(cat)},,$a," +
+                                            "${c.ifBlank { data.defaultStored }},," +
+                                            "${ReportsLabShare.csvEscape(vName)}\n",
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        sortedCats.forEach { (cat, m) ->
+                            m.forEach { (c, a) ->
+                                sb.append(
+                                    "total,${ReportsLabShare.csvEscape(cat)},,$a," +
+                                        "${c.ifBlank { data.defaultStored }},,\n",
+                                )
+                            }
                         }
                     }
                     data.expenses.forEach { e ->
@@ -76,6 +135,7 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                                 "%.4f".format(e.amount),
                                 e.currency.ifBlank { data.defaultStored },
                                 ReportsLabShare.csvEscape(e.description),
+                                ReportsLabShare.csvEscape(data.vehicleName(e.vehicleId)),
                             ).joinToString(","),
                         ).append('\n')
                     }
@@ -89,15 +149,36 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
             ReportsLabEmpty("No expenses in this filter.")
             return@ReportsLabScreenScaffold
         }
-        LabCategoryBarsChart(
-            amounts = chartAmounts,
-            categoryLabels = sortedCats.map { it.key },
-            caption = "Category bars for currency $chartCurrency (no FX). Other currencies listed in tables.",
-        )
-        Spacer(Modifier.height(8.dp))
-        Text("Category totals", style = MaterialTheme.typography.titleSmall)
-        sortedCats.forEach { (cat, m) ->
-            Text("$cat · ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
+        if (isEach) {
+            LabMultiSeriesIndexChart(
+                series = eachSeries,
+                xLabels = catLabels,
+                caption = "Category amounts per vehicle (currency $chartCurrency, no FX).",
+            )
+            Spacer(Modifier.height(8.dp))
+            Text("Per-vehicle category totals", style = MaterialTheme.typography.titleSmall)
+            eachByVehicleTotals.forEach { (vName, cats) ->
+                Text(vName, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+                cats.entries
+                    .sortedByDescending { (_, m) -> m[chartCurrency] ?: m.values.sum() }
+                    .forEach { (cat, m) ->
+                        Text(
+                            "  $cat · ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+            }
+        } else {
+            LabCategoryBarsChart(
+                amounts = chartAmounts,
+                categoryLabels = catLabels,
+                caption = "Category bars for currency $chartCurrency (no FX). Other currencies listed in tables.",
+            )
+            Spacer(Modifier.height(8.dp))
+            Text("Category totals", style = MaterialTheme.typography.titleSmall)
+            sortedCats.forEach { (cat, m) ->
+                Text("$cat · ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
+            }
         }
         Spacer(Modifier.height(8.dp))
         Text("All expenses in period", style = MaterialTheme.typography.titleSmall)

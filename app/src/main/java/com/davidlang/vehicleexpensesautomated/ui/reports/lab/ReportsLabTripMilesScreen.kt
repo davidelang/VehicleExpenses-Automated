@@ -61,12 +61,47 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             showZeroLength = showZeroLength,
         ).sortedByDescending { it.startTimestamp }
     }
+    val isEach = data.filter.vehicleMode == LabVehicleMode.EACH
     val milesByType = remember(inPeriod, includePersonalInTotals, showZeroLength) {
         TripSegments.milesByType(
             inPeriod,
             includePersonal = includePersonalInTotals,
             includeZeroLength = showZeroLength,
         )
+    }
+    // Each: per-vehicle miles by type (X = type, series = vehicle)
+    val milesByVehicleAndType = remember(
+        isEach, inPeriod, includePersonalInTotals, showZeroLength, data.vehicles,
+    ) {
+        if (!isEach) emptyMap()
+        else {
+            inPeriod.groupBy { it.vehicleId }
+                .entries
+                .sortedBy { (vid, _) -> data.vehicleName(vid) }
+                .associate { (vid, segs) ->
+                    data.vehicleName(vid) to TripSegments.milesByType(
+                        segs,
+                        includePersonal = includePersonalInTotals,
+                        includeZeroLength = showZeroLength,
+                    )
+                }
+        }
+    }
+    val eachTypeLabels = remember(milesByVehicleAndType, milesByType) {
+        if (!isEach) emptyList()
+        else {
+            // Prefer global type order from aggregate map; union any extra vehicle-only types
+            val ordered = milesByType.keys.toMutableList()
+            milesByVehicleAndType.values.forEach { m ->
+                m.keys.forEach { t -> if (t !in ordered) ordered += t }
+            }
+            ordered
+        }
+    }
+    val eachChartSeries = remember(milesByVehicleAndType, eachTypeLabels) {
+        milesByVehicleAndType.mapValues { (_, mbt) ->
+            eachTypeLabels.map { t -> (mbt[t] ?: 0).toFloat() }
+        }
     }
     val totalMiles = milesByType.values.sum()
     val openCount = remember(inPeriod) { TripSegments.openCount(inPeriod) }
@@ -160,7 +195,27 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             style = MaterialTheme.typography.bodySmall,
             softWrap = true,
         )
-        if (milesByType.isEmpty()) {
+        if (isEach) {
+            if (milesByVehicleAndType.isEmpty() || eachTypeLabels.isEmpty()) {
+                ReportsLabEmpty("No closed trip miles for these filters/toggles.")
+            } else {
+                milesByVehicleAndType.forEach { (vName, mbt) ->
+                    Text(vName, style = MaterialTheme.typography.titleSmall, softWrap = true)
+                    mbt.forEach { (type, miles) ->
+                        Text(
+                            "  $type: ${UnitFormat.distanceDeltaLabel(miles)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            softWrap = true,
+                        )
+                    }
+                }
+                LabMultiSeriesIndexChart(
+                    series = eachChartSeries,
+                    xLabels = eachTypeLabels,
+                    caption = "Miles by type per vehicle (${UnitFormat.distanceUnitShortLabel()})",
+                )
+            }
+        } else if (milesByType.isEmpty()) {
             ReportsLabEmpty("No closed trip miles for these filters/toggles.")
         } else {
             milesByType.forEach { (type, miles) ->
@@ -248,6 +303,7 @@ private const val TRIP_MILES_INFO =
         "Start trip count as Personal when you never started a purpose earlier " +
         "(same as starting Personal on day 1). If a vehicle has fills but no trip starts, " +
         "baseline → last odo in period also counts as Personal. " +
+        "Each vehicle = miles-by-type series and totals per vehicle. " +
         "Not a tax form — export and use elsewhere. " +
         "Period filters by segment start time. Zero-length closed segments are excluded " +
         "from totals by default."

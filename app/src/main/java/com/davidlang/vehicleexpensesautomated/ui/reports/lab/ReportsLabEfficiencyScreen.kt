@@ -28,10 +28,7 @@ private data class EffMetricToggles(
     val gpm: Boolean = false,
     val dpmFuel: Boolean = true,
     val dpmIncl: Boolean = false,
-) {
-    fun ensureAtLeastOne(): EffMetricToggles =
-        if (!mpg && !gpm && !dpmFuel && !dpmIncl) copy(mpg = true) else this
-}
+)
 
 private object EffMetricPrefs {
     private const val PREFS = "vehicle_settings"
@@ -42,7 +39,7 @@ private object EffMetricPrefs {
             gpm = p.getBoolean("reports_lab_eff_gpm", false),
             dpmFuel = p.getBoolean("reports_lab_eff_dpm_fuel", true),
             dpmIncl = p.getBoolean("reports_lab_eff_dpm_incl", false),
-        ).ensureAtLeastOne()
+        )
     }
 
     fun save(context: Context, t: EffMetricToggles) {
@@ -62,9 +59,8 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
     var toggles by remember { mutableStateOf(EffMetricPrefs.load(context)) }
 
     fun setToggles(next: EffMetricToggles) {
-        val n = next.ensureAtLeastOne()
-        toggles = n
-        EffMetricPrefs.save(context, n)
+        toggles = next
+        EffMetricPrefs.save(context, next)
     }
 
     val byScope = remember(data.fuel, data.filter.vehicleMode) { data.fuelByVehicleScope() }
@@ -76,41 +72,47 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
         }
     }
 
-    val economySeries = remember(metricsByScope, toggles, data.filter.vehicleMode) {
-        buildMap {
-            for ((vid, metrics) in metricsByScope) {
-                val prefix = when {
-                    data.filter.vehicleMode == LabVehicleMode.EACH && vid != null ->
-                        data.vehicleName(vid) + " "
-                    else -> ""
-                }
-                if (toggles.mpg) {
+    fun seriesPrefix(vid: Int?): String =
+        when {
+            data.filter.vehicleMode == LabVehicleMode.EACH && vid != null ->
+                data.vehicleName(vid) + " "
+            else -> ""
+        }
+
+    val mpgSeries = remember(metricsByScope, toggles.mpg, data.filter.vehicleMode) {
+        if (!toggles.mpg) emptyMap()
+        else {
+            buildMap {
+                for ((vid, metrics) in metricsByScope) {
                     put(
-                        prefix + UnitFormat.economyEfficiencyLabel(),
+                        seriesPrefix(vid) + UnitFormat.economyEfficiencyLabel(),
                         metrics.map {
                             LabTimeYPoint(it.leg.endTimestamp, it.mpg.toFloat(), "mpg")
                         },
                     )
                 }
-                if (toggles.gpm) {
+            }.filterValues { it.isNotEmpty() }
+        }
+    }
+    val gpmSeries = remember(metricsByScope, toggles.gpm, data.filter.vehicleMode) {
+        if (!toggles.gpm) emptyMap()
+        else {
+            buildMap {
+                for ((vid, metrics) in metricsByScope) {
                     put(
-                        prefix + "gpm",
+                        seriesPrefix(vid) + "gpm",
                         metrics.mapNotNull { m ->
                             m.gpm?.let { LabTimeYPoint(m.leg.endTimestamp, it.toFloat(), "gpm") }
                         },
                     )
                 }
-            }
-        }.filterValues { it.isNotEmpty() }
+            }.filterValues { it.isNotEmpty() }
+        }
     }
-    val moneySeries = remember(metricsByScope, toggles, data.filter.vehicleMode) {
+    val moneySeries = remember(metricsByScope, toggles.dpmFuel, toggles.dpmIncl, data.filter.vehicleMode) {
         buildMap {
             for ((vid, metrics) in metricsByScope) {
-                val prefix = when {
-                    data.filter.vehicleMode == LabVehicleMode.EACH && vid != null ->
-                        data.vehicleName(vid) + " "
-                    else -> ""
-                }
+                val prefix = seriesPrefix(vid)
                 if (toggles.dpmFuel) {
                     put(
                         prefix + UnitFormat.costPerDistanceLabel() + " fuel",
@@ -135,16 +137,29 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
         }.filterValues { it.isNotEmpty() }
     }
 
+    val anyMetricOn = toggles.mpg || toggles.gpm || toggles.dpmFuel || toggles.dpmIncl
+    val hasMpg = mpgSeries.isNotEmpty()
+    val hasGpm = gpmSeries.isNotEmpty()
+    val hasMoney = moneySeries.isNotEmpty()
+
     val allMetricsFlat = metricsByScope.values.flatten()
     val allLegs = metricsByScope.values.flatMap { list -> list.map { it.leg } }
+
+    val moneyAxisColor = when {
+        toggles.dpmFuel && !toggles.dpmIncl -> LabChartColors.DpmFuel
+        !toggles.dpmFuel && toggles.dpmIncl -> LabChartColors.DpmIncl
+        else -> LabChartColors.DpmFuel
+    }
 
     ReportsLabScreenScaffold(
         title = "Fuel efficiency",
         infoText = "Economy & cost/distance over full-fill legs (same chain rules as production). " +
             "Toggles: mpg, gpm, ${UnitFormat.costPerDistanceLabel()} fuel-only, " +
-            "${UnitFormat.costPerDistanceLabel()} incl. expenses. " +
+            "${UnitFormat.costPerDistanceLabel()} incl. expenses — all optional (including none). " +
+            "Gpm uses its own Y scale (not shared with mpg). " +
+            "When gpm and \$/mi are both on, money is a second chart below. " +
             "Charts use a date X axis and fit screen width. " +
-            "Each vehicle = multi-color series.",
+            "Each vehicle = multi-series per family.",
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
@@ -161,7 +176,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                                 if (toggles.gpm) "gpm" else null,
                                 if (toggles.dpmFuel) "\$/mi fuel" else null,
                                 if (toggles.dpmIncl) "\$/mi+exp" else null,
-                            ).joinToString(", "),
+                            ).joinToString(", ").ifBlank { "(none)" },
                     )
                     if (toggles.mpg) {
                         appendLine(
@@ -262,14 +277,71 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (economySeries.isNotEmpty() || moneySeries.isNotEmpty()) {
-            LabMultiAxisTimeSeriesChart(
-                startSeries = economySeries,
-                endSeries = moneySeries,
-                caption = "Economy (left) + cost/distance (right \$) — date X, fit width",
-                emptyMessage = "Not enough points for a chart.",
-            )
+
+        when {
+            !anyMetricOn -> {
+                ReportsLabEmpty("No metrics selected")
+            }
+            !hasMpg && !hasGpm && !hasMoney -> {
+                ReportsLabEmpty("Not enough points for a chart.")
+            }
+            // A4: gpm + money → economy host + separate money host
+            hasGpm && hasMoney -> {
+                LabMultiAxisTimeSeriesChart(
+                    startSeries = mpgSeries,
+                    endSeries = gpmSeries,
+                    caption = "Economy — mpg (left) + gpm (right); separate scales",
+                    emptyMessage = "Not enough economy points for a chart.",
+                    startAxisLabel = if (hasMpg) UnitFormat.economyEfficiencyLabel() else null,
+                    endAxisLabel = "gpm",
+                    startAxisColor = LabChartColors.Mpg,
+                    endAxisColor = LabChartColors.Gpm,
+                )
+                Spacer(Modifier.height(8.dp))
+                LabMultiAxisTimeSeriesChart(
+                    startSeries = moneySeries,
+                    endSeries = emptyMap(),
+                    caption = "Cost per distance (separate chart / scale)",
+                    emptyMessage = "Not enough cost/distance points for a chart.",
+                    startAxisLabel = UnitFormat.costPerDistanceLabel(),
+                    startAxisColor = moneyAxisColor,
+                )
+            }
+            // Money only, or mpg + money without gpm (End→Start flip when mpg empty)
+            hasMoney && !hasGpm -> {
+                LabMultiAxisTimeSeriesChart(
+                    startSeries = mpgSeries,
+                    endSeries = moneySeries,
+                    caption = when {
+                        hasMpg -> "mpg (left) + cost/distance (right)"
+                        else -> "Cost per distance"
+                    },
+                    emptyMessage = "Not enough points for a chart.",
+                    startAxisLabel = if (hasMpg) UnitFormat.economyEfficiencyLabel() else null,
+                    endAxisLabel = UnitFormat.costPerDistanceLabel(),
+                    startAxisColor = if (hasMpg) LabChartColors.Mpg else null,
+                    endAxisColor = moneyAxisColor,
+                )
+            }
+            // Economy only (mpg and/or gpm; no money)
+            else -> {
+                LabMultiAxisTimeSeriesChart(
+                    startSeries = mpgSeries,
+                    endSeries = gpmSeries,
+                    caption = when {
+                        hasMpg && hasGpm -> "mpg (left) + gpm (right); separate scales"
+                        hasMpg -> UnitFormat.economyEfficiencyLabel()
+                        else -> "gpm"
+                    },
+                    emptyMessage = "Not enough points for a chart.",
+                    startAxisLabel = if (hasMpg) UnitFormat.economyEfficiencyLabel() else null,
+                    endAxisLabel = if (hasGpm) "gpm" else null,
+                    startAxisColor = if (hasMpg) LabChartColors.Mpg else null,
+                    endAxisColor = if (hasGpm) LabChartColors.Gpm else null,
+                )
+            }
         }
+
         Spacer(Modifier.height(8.dp))
         Text("Legs (newest first)", style = MaterialTheme.typography.titleSmall)
         if (allMetricsFlat.isEmpty()) {

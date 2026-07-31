@@ -18,7 +18,9 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
 
     ReportsLabScreenScaffold(
         title = "Fill history",
-        infoText = "Chronological fills for current filters (trip starts excluded). Tap a row to edit.",
+        infoText = "Chronological fills for current filters (trip starts excluded). " +
+            "Each vehicle uses the same multi-vehicle list as All (vehicle name on each row). " +
+            "Tap a row to edit.",
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,

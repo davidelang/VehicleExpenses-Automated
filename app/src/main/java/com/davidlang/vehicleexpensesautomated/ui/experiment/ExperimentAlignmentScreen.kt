@@ -53,7 +53,6 @@ import java.util.zip.ZipInputStream
 import kotlin.math.max
 import kotlin.math.min
 
-private const val AMAZON_PHOTOS_LINK = "https://www.amazon.com/photos/shared/81xh078qSgydiVwUH9VWBw.EcItxhL_TTM9KNvR0akUC0"
 private const val TAG = "ExperimentAlignment"
 
 private fun logHeapState(context: Context, label: String) {
@@ -90,33 +89,6 @@ internal fun probeReferenceDimensions(context: Context, path: String): Pair<Int,
         Pair(4000, 3072)
     }
 }
-
-private val GOLDEN_SUBSET = mapOf(
-    "PXL_20220701_020707365.dng" to 1,
-    "PXL_20220821_051055938.dng" to 2,
-    "PXL_20221029_002946498.dng" to 4,
-    "PXL_20221020_215546513.dng" to 3,
-    "PXL_20221221_205939873.dng" to 9,
-    "PXL_20221228_164725812.dng" to 12,
-    "PXL_20221222_211445685.dng" to 10,
-    "PXL_20230113_231330881.dng" to 14,
-    "PXL_20221121_021330418.jpg" to 5,
-    "PXL_20221126_210323823.jpg" to 7,
-    "PXL_20221128_172727575.jpg" to 8
-)
-
-private val FAILING_SUBSET = mapOf(
-    "PXL_20221228_164725812.dng" to 12,
-    "PXL_20231223_074744139.jpg" to 41,
-    "PXL_20240114_162249446.jpg" to 45,
-    "PXL_20240414_010409990.jpg" to 50,
-    "PXL_20240722_200247194.jpg" to 56,
-    "PXL_20250423_023559600.jpg" to 78,
-    "PXL_20250426_023457157.jpg" to 80,
-    "PXL_20250521_001438093.jpg" to 89,
-    "PXL_20251111_071548876.jpg" to 124,
-    "PXL_20260220_061131814.jpg" to 134
-)
 
 @Immutable
 data class PhotoResultSummary(
@@ -177,7 +149,6 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = { val intent = Intent(Intent.ACTION_VIEW, Uri.parse(AMAZON_PHOTOS_LINK)); context.startActivity(intent) }, modifier = Modifier.fillMaxWidth()) { Text("Open Amazon Photos Album") }
         Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
         Button(onClick = {
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
@@ -195,31 +166,20 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
         Button(onClick = {
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
             scope.launch {
-                val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
-                Log.d(TAG, "Run Limited listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
-                val subset = allFiles.filter { it.name in GOLDEN_SUBSET.keys }
-                totalPhotos = subset.size
+                val allFiles = experimentDir.listFiles { f ->
+                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+                } ?: emptyArray()
+                val first10 = allFiles.sortedBy { it.name }.take(10)
+                val subsetMap = first10.mapIndexed { i, f -> f.name to (i + 1) }.toMap()
+                Log.d(TAG, "First 10 listFiles: dir=${experimentDir.absolutePath} count=${first10.size}")
+                totalPhotos = first10.size
                 isRunning = true; resultsList.clear()
-                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, GOLDEN_SUBSET) { res, p ->
+                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, subsetMap) { res, p ->
                     resultsList.add(res); progress = p; currentPhotoName = res.photoName
                 }
-                isRunning = false; status = "Complete! Limited Report saved."
+                isRunning = false; status = "Complete! First 10 report saved."
             }
-        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Limited Experiment (Golden Subset)") }
-        Button(onClick = {
-            if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
-            scope.launch {
-                val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
-                Log.d(TAG, "Run Failing Subset listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
-                val subset = allFiles.filter { it.name in FAILING_SUBSET.keys }
-                totalPhotos = subset.size
-                isRunning = true; resultsList.clear()
-                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, FAILING_SUBSET) { res, p ->
-                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
-                }
-                isRunning = false; status = "Complete! Failing Subset Report saved."
-            }
-        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Failing Subset") }
+        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("First 10") }
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->
