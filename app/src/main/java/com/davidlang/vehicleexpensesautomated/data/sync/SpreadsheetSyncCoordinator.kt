@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordinator
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.batch.MergeAckStore
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
@@ -903,9 +904,30 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             else -> {
                 val localTs = updatedAtOf(local!!)
                 val remoteTs = updatedAtOf(remote!!)
-                @Suppress("UNCHECKED_CAST")
                 val winner = if (remoteTs > localTs) remote else local
-                winner as T
+                // Location JSON: confirmed trumps unconfirmed; later unconfirmed trumps earlier
+                // (winner takes whole blob after rules — see FuelLocationJson.mergeBlobs).
+                when {
+                    winner is FuelEntry && local is FuelEntry && remote is FuelEntry -> {
+                        val mergedLoc = FuelLocationJson.mergeBlobs(
+                            local.location,
+                            remote.location,
+                            updatedAtA = local.updatedAt,
+                            updatedAtB = remote.updatedAt,
+                        )
+                        winner.copy(location = mergedLoc) as T
+                    }
+                    winner is ExpenseEntry && local is ExpenseEntry && remote is ExpenseEntry -> {
+                        val mergedLoc = FuelLocationJson.mergeBlobs(
+                            local.location,
+                            remote.location,
+                            updatedAtA = local.updatedAt,
+                            updatedAtB = remote.updatedAt,
+                        )
+                        winner.copy(location = mergedLoc) as T
+                    }
+                    else -> winner as T
+                }
             }
         }
     }

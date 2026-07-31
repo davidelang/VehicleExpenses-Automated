@@ -49,8 +49,6 @@ object TabularSchema {
         "Partial Fill",
         "Economy Ignored",
         "Location",
-        "Latitude",
-        "Longitude",
         "Notes",
         "Trip Type",
         "Vehicle Sync ID",
@@ -66,7 +64,7 @@ object TabularSchema {
     )
     val EXPENSE_HEADERS = listOf(
         "Sync ID", "ID", "Vehicle Sync ID", "Vehicle Sync IDs", "Vehicle ID", "Date", "Amount", "Currency", "Category", "Description", "Vendor",
-        "Odometer", "Photo URL", "Receipt Image Path", "Latitude", "Longitude",
+        "Odometer", "Photo URL", "Receipt Image Path",
         "Location", "Cloud Manifest", "Origin Device ID", "Updated At", "Deleted", "Deleted At",
     )
     val MERGE_ACK_HEADERS = listOf(
@@ -190,9 +188,6 @@ object TabularSchema {
         "Partial Fill" to entry.isPartialFill.toString(),
         "Economy Ignored" to entry.economyIgnored.toString(),
         "Location" to (entry.location ?: ""),
-        // Legacy columns (dropped in schema phase 9); still read/written from blob interim
-        "Latitude" to (FuelLocationJson.lat(entry.location)?.toString() ?: ""),
-        "Longitude" to (FuelLocationJson.lon(entry.location)?.toString() ?: ""),
         "Notes" to (entry.notes ?: ""),
         "Trip Type" to entry.tripType,
         "Vehicle Sync ID" to vehicleSyncId,
@@ -266,8 +261,6 @@ object TabularSchema {
         entry.odometer?.toString() ?: "",
         entry.photoUrl ?: "",
         "",
-        FuelLocationJson.lat(entry.location)?.toString() ?: "",
-        FuelLocationJson.lon(entry.location)?.toString() ?: "",
         entry.location ?: "",
         entry.cloudManifest ?: "",
         entry.originDeviceId,
@@ -305,6 +298,7 @@ object TabularSchema {
             photoUrl = cell("Photo URL").ifBlank { null },
             isPartialFill = cell("Partial Fill").equals("true", ignoreCase = true),
             economyIgnored = cell("Economy Ignored").equals("true", ignoreCase = true),
+            // Prefer Location JSON blob; fold legacy Latitude/Longitude cells if still present on sheet
             location = FuelLocationJson.foldLegacy(
                 cell("Latitude").toDoubleOrNull(),
                 cell("Longitude").toDoubleOrNull(),
