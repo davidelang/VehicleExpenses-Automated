@@ -2329,3 +2329,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - ./generate_pr.sh → dev-ai-interaction/PRs/PR-location-fixes.md (3 plans + Coder pre-submit).
 - Ready for Master (run-grok-master) independent review + merge. Coder does not merge.
 
+
+## 2026-07-31 - location-source-and-tabular-cleanup execution start
+
+- Plan: dev-ai-interaction/plans/location-source-and-tabular-cleanup-20260731-plan.md
+- Branch: location-fixes (baseline location-fixes/builds @ 90fceb54)
+- Phases 1-7: INTERNET manifest; NetworkStatus; tabular Location-only; QF/Trip/Expense provenance+offline; docs
+

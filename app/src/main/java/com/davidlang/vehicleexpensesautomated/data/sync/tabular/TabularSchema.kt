@@ -1,6 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.data.sync.tabular
 
-import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
@@ -298,12 +297,8 @@ object TabularSchema {
             photoUrl = cell("Photo URL").ifBlank { null },
             isPartialFill = cell("Partial Fill").equals("true", ignoreCase = true),
             economyIgnored = cell("Economy Ignored").equals("true", ignoreCase = true),
-            // Prefer Location JSON blob; fold legacy Latitude/Longitude cells if still present on sheet
-            location = FuelLocationJson.foldLegacy(
-                cell("Latitude").toDoubleOrNull(),
-                cell("Longitude").toDoubleOrNull(),
-                cell("Location").ifBlank { null },
-            ),
+            // Sole geo carrier: Location JSON (no sheet Latitude/Longitude fold)
+            location = cell("Location").ifBlank { null },
             notes = cell("Notes").ifBlank { null },
             tripType = cell("Trip Type"),
             cloudManifest = cell("Cloud Manifest").ifBlank { null },
@@ -350,11 +345,8 @@ object TabularSchema {
             category = category,
             vendor = vendor,
             odometer = cell("Odometer").toIntOrNull(),
-            location = FuelLocationJson.foldLegacy(
-                cell("Latitude").toDoubleOrNull(),
-                cell("Longitude").toDoubleOrNull(),
-                cell("Location").ifBlank { null },
-            ),
+            // Sole geo carrier: Location JSON (no sheet Latitude/Longitude fold)
+            location = cell("Location").ifBlank { null },
             cloudManifest = cell("Cloud Manifest").ifBlank { null },
             originDeviceId = cell("Origin Device ID"),
             updatedAt = cell("Updated At").toLongOrNull() ?: 0L,
