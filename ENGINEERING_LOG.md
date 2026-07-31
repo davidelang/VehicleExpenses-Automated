@@ -2037,3 +2037,13 @@ x
 - C2 line strokes + C3 Y tick/axis colors via Vico 3.2.3 LineProvider / VerticalAxis style
 - No deploy
 
+
+## 2026-07-31 - efficiency-chart-line-and-axis-colors complete
+
+- Plan: efficiency-chart-line-and-axis-colors-20260731-plan.md
+- LineCartesianLayer LineProvider.series with family Fill colors; dual money fuel/incl; Each shade+dash
+- VerticalAxis Start/End: rememberAxisLine/Label/TickComponent family color (Y1 real axis styling)
+- Caption Text colors kept (Y2); bottom date axis neutral
+- Non-efficiency charts unchanged (null familyDefault → Vico default)
+- build tag: a590ab31; no deploy
+
