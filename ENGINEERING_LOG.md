@@ -2265,3 +2265,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Special files: master TODO base + closed Trip recording future work; tax-mile phase-2 + i18n future kept; project-facts from branch orientation; CHANGELOG 2026-07-30 audit + minor-fixes section preserved
 - Advanced reports left open (Lab experimental)
 
+
+## 2026-07-30 - capture-gps-exif-camerax execution start
+
+- Plan: dev-ai-interaction/plans/capture-gps-and-exif-on-camerax-paths-20260730-plan.md
+- Branch: location-fixes (no prior location-fixes/builds tag; first successful build_app creates it)
+- Phases 1-12: manifest perms → play-services-location → CaptureLocation → PhotoExifWriter → PhotoExifMeta URI → MainActivity → QF GPS → QF EXIF → Trip GPS → Expense camera → Expense gallery → hygiene
+
