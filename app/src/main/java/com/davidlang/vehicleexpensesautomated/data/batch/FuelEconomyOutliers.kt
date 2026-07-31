@@ -195,6 +195,7 @@ object FuelEconomyOutliers {
             fuelEntryId = e.id,
             latitude = FuelLocationJson.lat(e.location),
             longitude = FuelLocationJson.lon(e.location),
+            accuracyM = FuelLocationJson.accuracyM(e.location),
             extra = mapOf(
                 "photoPaths" to photos.joinToString("|"),
             ),
