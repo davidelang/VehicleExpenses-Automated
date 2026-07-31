@@ -12,20 +12,27 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.axis.Axis
 import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
 import com.patrykandpatrick.vico.compose.cartesian.axis.VerticalAxis
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberAxisLabelComponent
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberAxisLineComponent
+import com.patrykandpatrick.vico.compose.cartesian.axis.rememberAxisTickComponent
 import com.patrykandpatrick.vico.compose.cartesian.data.CartesianChartModelProducer
 import com.patrykandpatrick.vico.compose.cartesian.data.CartesianValueFormatter
 import com.patrykandpatrick.vico.compose.cartesian.data.columnModel
 import com.patrykandpatrick.vico.compose.cartesian.data.lineModel
+import com.patrykandpatrick.vico.compose.cartesian.layer.LineCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberColumnCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLayer
 import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
 import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
+import com.patrykandpatrick.vico.compose.common.Fill
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,13 +40,121 @@ import java.util.concurrent.TimeUnit
 
 private const val CHART_TAG = "ReportsLabCharts"
 
-/** Family colors for efficiency metrics (lines + axis captions). */
+/** Family colors for efficiency metrics (lines + axis ticks + captions). */
 object LabChartColors {
     val Mpg = Color(0xFF1565C0) // blue
     val Gpm = Color(0xFF00897B) // teal
     val DpmFuel = Color(0xFF2E7D32) // green
     val DpmIncl = Color(0xFF6A1B9A) // purple
 }
+
+/**
+ * Map a series legend key to its metric family color when recognizable
+ * (efficiency screen keys: mpg / gpm / cost-per-distance fuel / +exp).
+ */
+fun familyColorForSeriesKey(key: String): Color? {
+    val k = key.lowercase()
+    return when {
+        k.contains("+exp") || k.contains("incl") -> LabChartColors.DpmIncl
+        k.endsWith(" fuel") ||
+            (k.contains("fuel") && (k.contains("/mi") || k.contains("/km") || k.contains("per"))) ->
+            LabChartColors.DpmFuel
+        k.contains("gpm") -> LabChartColors.Gpm
+        k.contains("mpg") || k.contains("l/100") || k.contains("km/l") || k.contains("kpl") ->
+            LabChartColors.Mpg
+        else -> null
+    }
+}
+
+/**
+ * Stroke color for one series: family hue, with shade variation when several share an axis
+ * (Each vehicle, or dual $/mi on one money host).
+ */
+fun seriesStrokeColor(
+    key: String,
+    familyDefault: Color,
+    index: Int,
+    total: Int,
+): Color {
+    val base = familyColorForSeriesKey(key) ?: familyDefault
+    if (total <= 1) return base
+    // Darken later series; keep hue in family (L2).
+    val t = index.toFloat() / (total - 1).coerceAtLeast(1).toFloat()
+    val factor = 1f - 0.35f * t
+    return Color(
+        red = (base.red * factor).coerceIn(0f, 1f),
+        green = (base.green * factor).coerceIn(0f, 1f),
+        blue = (base.blue * factor).coerceIn(0f, 1f),
+        alpha = base.alpha,
+    )
+}
+
+@Composable
+private fun rememberFamilyLineLayer(
+    seriesKeys: Collection<String>,
+    familyDefault: Color?,
+    verticalAxisPosition: Axis.Position.Vertical,
+): LineCartesianLayer {
+    val keys = seriesKeys.toList()
+    // Only apply fixed family colors when caller provides a family default (efficiency).
+    // Cost trends / other callers keep Vico default rainbow.
+    if (familyDefault == null || keys.isEmpty()) {
+        return rememberLineCartesianLayer(verticalAxisPosition = verticalAxisPosition)
+    }
+    val lines = remember(keys, familyDefault) {
+        keys.mapIndexed { index, keyName ->
+            val c = seriesStrokeColor(keyName, familyDefault, index, keys.size)
+            val stroke: LineCartesianLayer.LineStroke =
+                if (keys.size > 1 && index % 2 == 1) {
+                    LineCartesianLayer.LineStroke.Dashed(
+                        thickness = 2.dp,
+                        dashLength = 8.dp,
+                        gapLength = 4.dp,
+                    )
+                } else {
+                    LineCartesianLayer.LineStroke.Continuous(thickness = 2.dp)
+                }
+            LineCartesianLayer.Line(
+                fill = LineCartesianLayer.LineFill.single(Fill(c)),
+                stroke = stroke,
+            )
+        }
+    }
+    return rememberLineCartesianLayer(
+        lineProvider = LineCartesianLayer.LineProvider.series(lines),
+        verticalAxisPosition = verticalAxisPosition,
+    )
+}
+
+@Composable
+private fun rememberFamilyStartAxis(color: Color?) =
+    if (color == null) {
+        VerticalAxis.rememberStart()
+    } else {
+        val fill = Fill(color)
+        VerticalAxis.rememberStart(
+            line = rememberAxisLineComponent(fill = fill),
+            label = rememberAxisLabelComponent(
+                style = TextStyle(color = color, fontSize = 10.sp),
+            ),
+            tick = rememberAxisTickComponent(fill = fill),
+        )
+    }
+
+@Composable
+private fun rememberFamilyEndAxis(color: Color?) =
+    if (color == null) {
+        VerticalAxis.rememberEnd()
+    } else {
+        val fill = Fill(color)
+        VerticalAxis.rememberEnd(
+            line = rememberAxisLineComponent(fill = fill),
+            label = rememberAxisLabelComponent(
+                style = TextStyle(color = color, fontSize = 10.sp),
+            ),
+            tick = rememberAxisTickComponent(fill = fill),
+        )
+    }
 
 /**
  * Convert epoch ms → X unit (fractional days) for time-series charts.
@@ -227,24 +342,35 @@ private fun LabMultiAxisTimeSeriesChartBody(
     }
     val hasLeft = left.isNotEmpty()
     val hasRight = right.isNotEmpty()
+    // Order of keys must match lineModel series order (map insertion order).
     val startLayer = if (hasLeft) {
-        rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.Start)
+        rememberFamilyLineLayer(
+            seriesKeys = left.keys,
+            familyDefault = leftColor,
+            verticalAxisPosition = Axis.Position.Vertical.Start,
+        )
     } else {
         null
     }
     val endLayer = if (hasRight) {
-        rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.End)
+        rememberFamilyLineLayer(
+            seriesKeys = right.keys,
+            familyDefault = rightColor,
+            verticalAxisPosition = Axis.Position.Vertical.End,
+        )
     } else {
         null
     }
+    val startAxis = if (hasLeft) rememberFamilyStartAxis(leftColor) else null
+    val endAxis = if (hasRight) rememberFamilyEndAxis(rightColor) else null
     when {
-        startLayer != null && endLayer != null -> {
+        startLayer != null && endLayer != null && startAxis != null && endAxis != null -> {
             CartesianChartHost(
                 chart = rememberCartesianChart(
                     startLayer,
                     endLayer,
-                    startAxis = VerticalAxis.rememberStart(),
-                    endAxis = VerticalAxis.rememberEnd(),
+                    startAxis = startAxis,
+                    endAxis = endAxis,
                     bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
                 ),
                 modelProducer = modelProducer,
@@ -254,11 +380,11 @@ private fun LabMultiAxisTimeSeriesChartBody(
                     .height(heightDp.dp),
             )
         }
-        startLayer != null -> {
+        startLayer != null && startAxis != null -> {
             CartesianChartHost(
                 chart = rememberCartesianChart(
                     startLayer,
-                    startAxis = VerticalAxis.rememberStart(),
+                    startAxis = startAxis,
                     bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
                 ),
                 modelProducer = modelProducer,
@@ -268,11 +394,11 @@ private fun LabMultiAxisTimeSeriesChartBody(
                     .height(heightDp.dp),
             )
         }
-        endLayer != null -> {
+        endLayer != null && endAxis != null -> {
             CartesianChartHost(
                 chart = rememberCartesianChart(
                     endLayer,
-                    endAxis = VerticalAxis.rememberEnd(),
+                    endAxis = endAxis,
                     bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
                 ),
                 modelProducer = modelProducer,
