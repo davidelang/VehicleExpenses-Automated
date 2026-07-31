@@ -36,11 +36,10 @@ data class FuelEntry(
      * **Must sync** with the fuel row (not pending-only).
      */
     val economyIgnored: Boolean = false,
-    val latitude: Double? = null,
-    val longitude: Double? = null,
     /**
-     * Station place data: JSON `{"name":"…","address":"…"}` when known.
-     * Legacy rows may hold plain text or old batch tags (prefer [notes] for new batch tags).
+     * Sole geo/place package: JSON blob with lat/lon/accuracyM/name/address/confirmed/…
+     * See [com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson].
+     * Legacy plain text / name-address JSON still parseable.
      */
     val location: String? = null,
     /**
