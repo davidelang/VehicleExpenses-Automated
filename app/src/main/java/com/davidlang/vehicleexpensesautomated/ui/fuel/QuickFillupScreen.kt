@@ -52,6 +52,7 @@ import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
@@ -162,9 +163,22 @@ fun QuickFillupScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     /** Session photos keyed by tag (dash/pump); written to DB only on Save as JSON. */
     val sessionPhotos = remember { mutableStateMapOf<String, SessionPhoto>() }
+    /** Row lat/lon for save (camera path = once-per-screen device fix). */
     var lat by remember { mutableStateOf<Double?>(null) }
     var lon by remember { mutableStateOf<Double?>(null) }
     var loc by remember { mutableStateOf<String?>(null) }
+    /** Held device fix for EXIF stamping on CameraX JPEGs; once per screen visit. */
+    var deviceLocation by remember { mutableStateOf<android.location.Location?>(null) }
+
+    // One-shot device GPS on enter (not per shutter); odo+pump+row share this fix.
+    LaunchedEffect(Unit) {
+        val fix = CaptureLocation.captureLocationOrNull(context)
+        deviceLocation = fix
+        if (fix != null) {
+            lat = fix.latitude
+            lon = fix.longitude
+        }
+    }
 
     var captureViewState by rememberSaveable { mutableStateOf(CaptureViewState.Live) }
     var capturePending by remember { mutableStateOf(false) }
