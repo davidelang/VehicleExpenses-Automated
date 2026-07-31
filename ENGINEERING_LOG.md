@@ -2265,3 +2265,59 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Special files: master TODO base + closed Trip recording future work; tax-mile phase-2 + i18n future kept; project-facts from branch orientation; CHANGELOG 2026-07-30 audit + minor-fixes section preserved
 - Advanced reports left open (Lab experimental)
 
+
+## 2026-07-30 - capture-gps-exif-camerax execution start
+
+- Plan: dev-ai-interaction/plans/capture-gps-and-exif-on-camerax-paths-20260730-plan.md
+- Branch: location-fixes (no prior location-fixes/builds tag; first successful build_app creates it)
+- Phases 1-12: manifest perms → play-services-location → CaptureLocation → PhotoExifWriter → PhotoExifMeta URI → MainActivity → QF GPS → QF EXIF → Trip GPS → Expense camera → Expense gallery → hygiene
+
+
+## 2026-07-30 - capture-gps-exif-camerax phases 1-12 complete
+
+- Plan: dev-ai-interaction/plans/capture-gps-and-exif-on-camerax-paths-20260730-plan.md
+- Delivered: CaptureLocation, PhotoExifWriter, PhotoExifMeta URI, MainActivity location chain, QF/Trip/Expense once-per-screen GPS, QF+Expense CameraX Metadata+EXIF, Expense gallery EXIF-or-null
+- Strike 1 on Phase 4: platform ExifInterface lacks setLatLong → DMS attribute write
+- Closed TODO Troubleshoot missing lat/long; project-facts GPS/EXIF pointers
+- Handoff: ready to test after final build_app
+
+
+## 2026-07-31 - location-poi-lookup execution start
+
+- Plan: dev-ai-interaction/plans/location-poi-lookup-confirm-and-queue-20260730-plan.md
+- Branch: location-fixes (baseline location-fixes/builds @ ab656ccc)
+- Phases 0-13: gallery nit → FuelLocationJson blob → v18 migration → call-site accuracy → Nominatim/Overpass/facade → worker → tabular → QF/Trip/Expense UI → hygiene
+
+
+## 2026-07-31 - location-poi Phase 0 forensic (gallery nit)
+
+- ExpenseEntryScreen pickImageLauncher: single rowLat=meta.latitude, rowLon=meta.longitude (lines ~219-220). No duplicate rowLon assignment.
+- Phase 0 no-op; proceeding to Phase 1 FuelLocationJson.
+
+
+## 2026-07-31 - location-poi-lookup phases 0-13 complete
+
+- Plan: location-poi-lookup-confirm-and-queue-20260730-plan.md
+- Phase 0: gallery rowLon clean (no-op)
+- Phase 1-3: FuelLocationJson blob, DB v18 drop lat/lon, call-sites + accuracyM
+- Phase 4-8: Nominatim/Overpass/LocationLookup + Worker/scheduler
+- Phase 9: tabular drop Lat/Lon; location LWW mergeBlobs
+- Phase 10-12: QF/Trip/Expense LocationConfirmBlock + save rules + enqueue
+- Phase 13: TODO multi-candidate + post-save confirm; project-facts; SYNC_BEHAVIOR
+- User: manually delete empty Lat/Lon columns from existing spreadsheets
+
+
+## 2026-07-31 - fix-location-worker-trip-kind-batch-exif execution start
+
+- Plan: dev-ai-interaction/plans/fix-location-worker-trip-kind-and-batch-import-exif-20260731-plan.md
+- Branch: location-fixes (baseline location-fixes/builds @ 0d747e82)
+- Phases 1-5: worker trip ADDRESS_ONLY; pending accuracyM; pending insert accuracy+EXIF re-read; enqueue after import; TODO close + hygiene
+
+
+## 2026-07-31 - fix-location-worker-trip-kind-batch-exif complete
+
+- Phase 1: LocationLookupWorker tripType/blob kind → ADDRESS_ONLY
+- Phase 2: BatchPendingItem.accuracyM load/save; EXIF pending constructors
+- Phase 3-4: resolvePendingGeo + locationBlobFromPending; enqueue after import inserts
+- Phase 5: closed TODO Location Lookup Worker; multi-candidate + post-save remain; project-facts
+
