@@ -66,6 +66,7 @@ import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
+import com.davidlang.vehicleexpensesautomated.ui.util.NetworkStatus
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
@@ -117,6 +118,9 @@ fun TripTrackingScreen(
     var placeName by remember { mutableStateOf("") }
     var placeAddress by remember { mutableStateOf("") }
     var confirmLocation by remember { mutableStateOf(true) }
+    var lookupName by remember { mutableStateOf<String?>(null) }
+    var lookupAddress by remember { mutableStateOf<String?>(null) }
+    var lookupSource by remember { mutableStateOf<String?>(null) }
     var showManageTypes by remember { mutableStateOf(false) }
     var statusLine by remember { mutableStateOf<String?>(null) }
     var showCamera by rememberSaveable { mutableStateOf(false) }
@@ -139,6 +143,16 @@ fun TripTrackingScreen(
         val lo = longitude
         if (la == null || lo == null) {
             locationStatus = ""
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
+            return@LaunchedEffect
+        }
+        if (!NetworkStatus.hasUsableNetwork(context)) {
+            locationStatus = "Offline — place lookup when online"
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
             return@LaunchedEffect
         }
         locationStatus = "Looking up address…"
@@ -152,8 +166,14 @@ fun TripTrackingScreen(
         if (result != null && result.hasPlace()) {
             placeName = result.name
             placeAddress = result.address
+            lookupName = result.name
+            lookupAddress = result.address
+            lookupSource = result.source
             locationStatus = "Resolved: ${result.displayLine()}"
         } else {
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
             locationStatus = "No address found (will retry after save if online)"
         }
     }
@@ -296,7 +316,13 @@ fun TripTrackingScreen(
                 name = placeName,
                 address = placeAddress,
                 confirmed = true,
-                source = "user",
+                source = FuelLocationJson.placeSourceForConfirm(
+                    placeName,
+                    placeAddress,
+                    lookupName,
+                    lookupAddress,
+                    lookupSource,
+                ),
                 kind = LocationLookupKind.ADDRESS_ONLY.blobKindTag(),
                 lookedUpAt = System.currentTimeMillis(),
             )

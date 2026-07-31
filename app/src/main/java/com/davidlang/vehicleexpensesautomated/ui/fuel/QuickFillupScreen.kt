@@ -60,6 +60,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
+import com.davidlang.vehicleexpensesautomated.ui.util.NetworkStatus
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
@@ -188,6 +189,10 @@ fun QuickFillupScreen(
     var placeAddress by remember { mutableStateOf("") }
     var confirmLocation by remember { mutableStateOf(true) }
     var locationLookupDone by remember { mutableStateOf(false) }
+    /** Last successful live lookup (for confirm provenance: overpass/nominatim vs user edit). */
+    var lookupName by remember { mutableStateOf<String?>(null) }
+    var lookupAddress by remember { mutableStateOf<String?>(null) }
+    var lookupSource by remember { mutableStateOf<String?>(null) }
 
     // One-shot device GPS on enter (not per shutter); odo+pump+row share this fix.
     LaunchedEffect(Unit) {
@@ -206,6 +211,17 @@ fun QuickFillupScreen(
         if (la == null || lo == null) {
             locationStatus = ""
             locationLookupDone = false
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
+            return@LaunchedEffect
+        }
+        if (!NetworkStatus.hasUsableNetwork(context)) {
+            locationStatus = "Offline — place lookup when online"
+            locationLookupDone = true
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
             return@LaunchedEffect
         }
         locationStatus = "Looking up place…"
@@ -221,8 +237,14 @@ fun QuickFillupScreen(
         if (result != null && result.hasPlace()) {
             placeName = result.name
             placeAddress = result.address
+            lookupName = result.name
+            lookupAddress = result.address
+            lookupSource = result.source
             locationStatus = "Resolved: ${result.displayLine()}"
         } else {
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
             locationStatus = "No place found (will retry after save if online)"
         }
         locationLookupDone = true
