@@ -86,7 +86,7 @@ object PhotoExifWriter {
     private fun apply(exif: ExifInterface, location: Location?, rotationDegrees: Int) {
         exif.setAttribute(ExifInterface.TAG_ORIENTATION, orientationTag(rotationDegrees).toString())
         if (location != null) {
-            exif.setLatLong(location.latitude, location.longitude)
+            setGpsAttributes(exif, location.latitude, location.longitude)
         }
     }
 
@@ -99,5 +99,33 @@ object PhotoExifWriter {
             270 -> ExifInterface.ORIENTATION_ROTATE_270
             else -> ExifInterface.ORIENTATION_NORMAL
         }
+    }
+
+    /**
+     * Platform [ExifInterface] has [ExifInterface.getLatLong] but no setLatLong on all API
+     * levels / compile targets — write GPS tags as rational DMS strings.
+     */
+    private fun setGpsAttributes(exif: ExifInterface, latitude: Double, longitude: Double) {
+        exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE, toDmsRational(latitude))
+        exif.setAttribute(
+            ExifInterface.TAG_GPS_LATITUDE_REF,
+            if (latitude >= 0.0) "N" else "S",
+        )
+        exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE, toDmsRational(longitude))
+        exif.setAttribute(
+            ExifInterface.TAG_GPS_LONGITUDE_REF,
+            if (longitude >= 0.0) "E" else "W",
+        )
+    }
+
+    /** Absolute degrees → "deg/1,min/1,sec*10000/10000" EXIF rational string. */
+    private fun toDmsRational(coord: Double): String {
+        val abs = kotlin.math.abs(coord)
+        val deg = abs.toInt()
+        val minFloat = (abs - deg) * 60.0
+        val min = minFloat.toInt()
+        val sec = (minFloat - min) * 60.0
+        val secScaled = (sec * 10000.0).toInt()
+        return "$deg/1,$min/1,$secScaled/10000"
     }
 }
