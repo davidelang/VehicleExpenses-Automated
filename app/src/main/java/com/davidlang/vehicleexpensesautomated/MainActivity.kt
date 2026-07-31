@@ -130,6 +130,21 @@ class MainActivity : ComponentActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+        // After media dialog settles → location (no stacked dialogs).
+        maybeRequestLocationPermission()
+    }
+
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val anyGranted = results.values.any { it }
+        if (!anyGranted) {
+            Toast.makeText(
+                this,
+                "Location denied — fills save without GPS",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -153,18 +168,41 @@ class MainActivity : ComponentActivity() {
     private fun maybeRequestMediaPermissionForFuelPhotos() {
         val prefs = getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
         val saveFuelPhotos = prefs.getBoolean("save_fuel_photos", true)
-        if (!saveFuelPhotos) return
+        if (!saveFuelPhotos) {
+            maybeRequestLocationPermission()
+            return
+        }
         val permission = mediaImagesPermission()
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            maybeRequestLocationPermission()
             return
         }
         mediaPermissionLauncher.launch(permission)
     }
 
+    /** One-shot FINE+COARSE after camera/media chain; soft deny toast only. */
+    private fun maybeRequestLocationPermission() {
+        val fine = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (fine || coarse) return
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            )
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Camera only here — media follows in cameraPermissionLauncher callback (no stacked dialogs).
+        // Camera only here — media then location follow in callbacks (no stacked dialogs).
         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
 
         setContent {
