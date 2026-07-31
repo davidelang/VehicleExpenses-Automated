@@ -1,15 +1,11 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -20,7 +16,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 @Composable
 fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
-    val data = rememberLabReportData()
+    val data = rememberLabReportData(LabVehicleMembership.EXPENSE)
     val byCat = remember(data.expenses, data.defaultStored) {
         categoryTotals(data.expenses, data.defaultStored)
     }
@@ -37,32 +33,34 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
 
     ReportsLabScreenScaffold(
         title = "Expenses by category",
-        subtitle = "Category totals for the filtered period. Chart uses one currency series (caption).",
+        infoText = "Category totals for the filtered period. Chart uses one currency series (caption).",
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
-        shareRow = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    val body = buildString {
-                        appendLine("Vehicle Expenses — Expenses by category (experimental)")
-                        appendLine("Period: ${periodLabel(data.filter)}")
-                        appendLine("Vehicle: ${data.filterVehicleLabel()}")
-                        sortedCats.forEach { (cat, m) ->
-                            appendLine("$cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
-                        }
-                        appendLine("--- rows ---")
-                        data.expenses.sortedByDescending { it.date }.forEach { e ->
-                            appendLine(
-                                "${formatLabDate(e.date)} ${e.category} " +
-                                    CurrencyCodes.formatAmount(e.amount, e.currency, data.defaultSymbol) +
-                                    " ${e.description.take(40)}",
-                            )
-                        }
+        shareActions = run {
+            val buildText = {
+                buildString {
+                    appendLine("Vehicle Expenses — Expenses by category")
+                    appendLine("Period: ${periodLabel(data.filter)}")
+                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
+                    sortedCats.forEach { (cat, m) ->
+                        appendLine("$cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
                     }
-                    ReportsLabShare.shareText(data.context, "Expenses by category", body)
-                }) { Text("Share TEXT") }
-                OutlinedButton(onClick = {
+                    appendLine("--- rows ---")
+                    data.expenses.sortedByDescending { it.date }.forEach { e ->
+                        appendLine(
+                            "${formatLabDate(e.date)} ${e.category} " +
+                                CurrencyCodes.formatAmount(e.amount, e.currency, data.defaultSymbol) +
+                                " ${e.description.take(40)}",
+                        )
+                    }
+                }
+            }
+            ReportsLabShareActions(
+                subject = "Expenses by category",
+                textBody = buildText,
+                csvFileName = "lab_expenses.csv",
+                csvBody = {
                     val sb = StringBuilder("section,category,date,amount,currency,description\n")
                     sortedCats.forEach { (cat, m) ->
                         m.forEach { (c, a) ->
@@ -81,9 +79,10 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                             ).joinToString(","),
                         ).append('\n')
                     }
-                    ReportsLabShare.shareCsv(data.context, "lab_expenses.csv", sb.toString(), "Expenses CSV")
-                }) { Text("Share CSV") }
-            }
+                    sb.toString()
+                },
+                pdfBody = { ReportsLabPdf.fromPlainText("Expenses by category", buildText()) },
+            )
         },
     ) {
         if (data.expenses.isEmpty()) {
@@ -92,6 +91,7 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
         }
         LabCategoryBarsChart(
             amounts = chartAmounts,
+            categoryLabels = sortedCats.map { it.key },
             caption = "Category bars for currency $chartCurrency (no FX). Other currencies listed in tables.",
         )
         Spacer(Modifier.height(8.dp))

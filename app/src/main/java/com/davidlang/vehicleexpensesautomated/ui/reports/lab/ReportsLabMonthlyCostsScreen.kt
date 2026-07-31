@@ -1,15 +1,11 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -20,7 +16,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 @Composable
 fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
-    val data = rememberLabReportData()
+    val data = rememberLabReportData(LabVehicleMembership.FUEL_OR_EXPENSE)
     val fillFuel = remember(data.fuel) { data.fuel.withoutTripStarts() }
     val buckets = remember(fillFuel, data.expenses, data.defaultStored) {
         monthlyCostBuckets(fillFuel, data.expenses, data.defaultStored)
@@ -38,30 +34,32 @@ fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
 
     ReportsLabScreenScaffold(
         title = "Monthly costs",
-        subtitle = "Fuel vs other expenses by calendar month. Mixed currency: per-currency lines (no FX).",
+        infoText = "Fuel vs other expenses by calendar month. Mixed currency: per-currency lines (no FX).",
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
-        shareRow = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    val body = buildString {
-                        appendLine("Vehicle Expenses — Monthly costs (experimental)")
-                        appendLine("Period: ${periodLabel(data.filter)}")
-                        appendLine("Vehicle: ${data.filterVehicleLabel()}")
-                        buckets.forEach { b ->
-                            appendLine("--- ${b.key} ---")
-                            appendLine("  Fuel: ${CurrencyCodes.formatAggregateSum(b.fuelByCurrency, data.defaultSymbol)}")
-                            appendLine("  Other: ${CurrencyCodes.formatAggregateSum(b.otherByCurrency, data.defaultSymbol)}")
-                            val total = (b.fuelByCurrency.keys + b.otherByCurrency.keys).associateWith { c ->
-                                (b.fuelByCurrency[c] ?: 0.0) + (b.otherByCurrency[c] ?: 0.0)
-                            }
-                            appendLine("  Total: ${CurrencyCodes.formatAggregateSum(total, data.defaultSymbol)}")
+        shareActions = run {
+            val buildText = {
+                buildString {
+                    appendLine("Vehicle Expenses — Monthly costs")
+                    appendLine("Period: ${periodLabel(data.filter)}")
+                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
+                    buckets.forEach { b ->
+                        appendLine("--- ${b.key} ---")
+                        appendLine("  Fuel: ${CurrencyCodes.formatAggregateSum(b.fuelByCurrency, data.defaultSymbol)}")
+                        appendLine("  Other: ${CurrencyCodes.formatAggregateSum(b.otherByCurrency, data.defaultSymbol)}")
+                        val total = (b.fuelByCurrency.keys + b.otherByCurrency.keys).associateWith { c ->
+                            (b.fuelByCurrency[c] ?: 0.0) + (b.otherByCurrency[c] ?: 0.0)
                         }
+                        appendLine("  Total: ${CurrencyCodes.formatAggregateSum(total, data.defaultSymbol)}")
                     }
-                    ReportsLabShare.shareText(data.context, "Monthly costs", body)
-                }) { Text("Share TEXT") }
-                OutlinedButton(onClick = {
+                }
+            }
+            ReportsLabShareActions(
+                subject = "Monthly costs",
+                textBody = buildText,
+                csvFileName = "lab_monthly.csv",
+                csvBody = {
                     val sb = StringBuilder("month,kind,currency,amount\n")
                     buckets.forEach { b ->
                         b.fuelByCurrency.forEach { (c, a) ->
@@ -71,9 +69,10 @@ fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
                             sb.append("${b.key},other,${c.ifBlank { data.defaultStored }},$a\n")
                         }
                     }
-                    ReportsLabShare.shareCsv(data.context, "lab_monthly.csv", sb.toString(), "Monthly costs CSV")
-                }) { Text("Share CSV") }
-            }
+                    sb.toString()
+                },
+                pdfBody = { ReportsLabPdf.fromPlainText("Monthly costs", buildText()) },
+            )
         },
     ) {
         if (buckets.isEmpty()) {
@@ -83,6 +82,7 @@ fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
         LabMonthlyBarsChart(
             fuelAmounts = fuelSeries,
             otherAmounts = otherSeries,
+            monthKeys = buckets.map { it.key },
             caption = "Bars: fuel vs other for currency $chartCurrency (no FX conversion).",
         )
         Spacer(Modifier.height(8.dp))
