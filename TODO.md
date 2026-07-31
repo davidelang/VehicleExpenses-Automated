@@ -26,7 +26,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] **Deep linking** (not implemented per `docs/reference/NAVIGATION_MAP.md`)
 
 ## Backlog (location)
-- [ ] **Location Lookup Worker:** background POI resolution (Overpass/OSM; `dev-ai-interaction/LOCATION_LOOKUP_WORKER.md`)
+- [x] **Location Lookup Worker:** background POI resolution (Overpass/OSM; `dev-ai-interaction/LOCATION_LOOKUP_WORKER.md`)
 - [x] **Troubleshoot missing lat/long:** EXIF from photos; if absent, explicit location permission + capture at save
 
 ## Backlog (features / product)

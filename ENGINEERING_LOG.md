@@ -2313,3 +2313,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Branch: location-fixes (baseline location-fixes/builds @ 0d747e82)
 - Phases 1-5: worker trip ADDRESS_ONLY; pending accuracyM; pending insert accuracy+EXIF re-read; enqueue after import; TODO close + hygiene
 
+
+## 2026-07-31 - fix-location-worker-trip-kind-batch-exif complete
+
+- Phase 1: LocationLookupWorker tripType/blob kind → ADDRESS_ONLY
+- Phase 2: BatchPendingItem.accuracyM load/save; EXIF pending constructors
+- Phase 3-4: resolvePendingGeo + locationBlobFromPending; enqueue after import inserts
+- Phase 5: closed TODO Location Lookup Worker; multi-candidate + post-save remain; project-facts
+
