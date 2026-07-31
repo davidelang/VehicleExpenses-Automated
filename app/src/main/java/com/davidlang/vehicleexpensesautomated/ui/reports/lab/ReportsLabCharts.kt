@@ -104,144 +104,184 @@ fun LabMultiAxisTimeSeriesChart(
     startAxisColor: Color? = null,
     endAxisColor: Color? = null,
 ) {
-    fun nonempty(s: Map<String, List<LabTimeYPoint>>) =
-        s.filter { it.value.isNotEmpty() }
-
-    val start = nonempty(startSeries)
-    val end = nonempty(endSeries)
+    val start = startSeries.filter { it.value.isNotEmpty() }
+    val end = endSeries.filter { it.value.isNotEmpty() }
     val totalPts = start.values.sumOf { it.size } + end.values.sumOf { it.size }
     if ((start.isEmpty() && end.isEmpty()) || totalPts < 2) {
         ReportsLabEmpty(emptyMessage)
         return
     }
     // Prefer Start for single-family (money-only, gpm-only, mpg-only) to avoid End-only quirks.
-    val (left, right) = if (start.isEmpty() && end.isNotEmpty()) {
-        end to emptyMap()
-    } else {
-        start to end
-    }
+    val flippedMoneyOnly = start.isEmpty() && end.isNotEmpty()
+    val left = if (flippedMoneyOnly) end else start
+    val right: Map<String, List<LabTimeYPoint>> =
+        if (flippedMoneyOnly) emptyMap() else end
     val seriesKey = buildString {
         append("L${left.size}R${right.size}|")
         left.forEach { (k, v) -> append("S$k:${v.size}|") }
         right.forEach { (k, v) -> append("E$k:${v.size}|") }
     }
-    val leftLabel = if (start.isEmpty() && end.isNotEmpty()) endAxisLabel else startAxisLabel
-    val leftColor = if (start.isEmpty() && end.isNotEmpty()) endAxisColor else startAxisColor
-    val rightLabel = if (start.isEmpty() && end.isNotEmpty()) null else endAxisLabel
-    val rightColor = if (start.isEmpty() && end.isNotEmpty()) null else endAxisColor
+    val leftLabel = if (flippedMoneyOnly) endAxisLabel else startAxisLabel
+    val leftColor = if (flippedMoneyOnly) endAxisColor else startAxisColor
+    val rightLabel = if (flippedMoneyOnly) null else endAxisLabel
+    val rightColor = if (flippedMoneyOnly) null else endAxisColor
 
+    // Remount host when axis structure changes (avoids layer/partial mismatch).
+    // No non-local return@key — D8 rejects those synthetic methods.
     key(seriesKey) {
-        val modelProducer = remember(seriesKey) { CartesianChartModelProducer() }
-        LaunchedEffect(seriesKey) {
-            try {
-                modelProducer.runTransaction {
-                    if (left.isNotEmpty()) {
-                        lineModel {
-                            for ((keyName, pts) in left) {
-                                val sorted = pts.sortedBy { it.timestampMs }
-                                if (sorted.size < 1) continue
-                                series(
-                                    sorted.map { tsToChartX(it.timestampMs) },
-                                    sorted.map { it.y.toDouble() },
-                                    keyName,
-                                )
-                            }
-                        }
-                    }
-                    if (right.isNotEmpty()) {
-                        lineModel {
-                            for ((keyName, pts) in right) {
-                                val sorted = pts.sortedBy { it.timestampMs }
-                                if (sorted.size < 1) continue
-                                series(
-                                    sorted.map { tsToChartX(it.timestampMs) },
-                                    sorted.map { it.y.toDouble() },
-                                    keyName,
-                                )
-                            }
+        LabMultiAxisTimeSeriesChartBody(
+            left = left,
+            right = right,
+            seriesKey = seriesKey,
+            caption = caption,
+            heightDp = heightDp,
+            leftLabel = leftLabel,
+            rightLabel = rightLabel,
+            leftColor = leftColor,
+            rightColor = rightColor,
+        )
+    }
+}
+
+@Composable
+private fun LabMultiAxisTimeSeriesChartBody(
+    left: Map<String, List<LabTimeYPoint>>,
+    right: Map<String, List<LabTimeYPoint>>,
+    seriesKey: String,
+    caption: String,
+    heightDp: Int,
+    leftLabel: String?,
+    rightLabel: String?,
+    leftColor: Color?,
+    rightColor: Color?,
+) {
+    val modelProducer = remember(seriesKey) { CartesianChartModelProducer() }
+    LaunchedEffect(seriesKey) {
+        try {
+            modelProducer.runTransaction {
+                if (left.isNotEmpty()) {
+                    lineModel {
+                        for ((keyName, pts) in left) {
+                            val sorted = pts.sortedBy { it.timestampMs }
+                            if (sorted.isEmpty()) continue
+                            series(
+                                sorted.map { tsToChartX(it.timestampMs) },
+                                sorted.map { it.y.toDouble() },
+                                keyName,
+                            )
                         }
                     }
                 }
-            } catch (e: Exception) {
-                Log.e(CHART_TAG, "Chart model transaction failed", e)
+                if (right.isNotEmpty()) {
+                    lineModel {
+                        for ((keyName, pts) in right) {
+                            val sorted = pts.sortedBy { it.timestampMs }
+                            if (sorted.isEmpty()) continue
+                            series(
+                                sorted.map { tsToChartX(it.timestampMs) },
+                                sorted.map { it.y.toDouble() },
+                                keyName,
+                            )
+                        }
+                    }
+                }
             }
+        } catch (e: Exception) {
+            Log.e(CHART_TAG, "Chart model transaction failed", e)
         }
-        val dateFmt = rememberDateXFormatter()
-        val scroll = rememberVicoScrollState(scrollEnabled = false)
-        Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
-        val legendParts = mutableListOf<String>()
-        if (left.isNotEmpty()) {
-            legendParts += "Left: ${left.keys.joinToString(" · ")}"
-        }
-        if (right.isNotEmpty()) {
-            legendParts += "Right: ${right.keys.joinToString(" · ")}"
-        }
-        if (legendParts.isNotEmpty()) {
-            Text(
-                legendParts.joinToString(" · "),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                softWrap = true,
-            )
-        }
-        if (leftLabel != null) {
-            Text(
-                leftLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = leftColor ?: MaterialTheme.colorScheme.primary,
-                softWrap = true,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
-        if (rightLabel != null) {
-            Text(
-                rightLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = rightColor ?: MaterialTheme.colorScheme.tertiary,
-                softWrap = true,
-            )
-        }
-        val startLayer = if (left.isNotEmpty()) {
-            rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.Start)
-        } else {
-            null
-        }
-        val endLayer = if (right.isNotEmpty()) {
-            rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.End)
-        } else {
-            null
-        }
-        val chart = when {
-            startLayer != null && endLayer != null ->
-                rememberCartesianChart(
-                    startLayer,
-                    endLayer,
-                    startAxis = VerticalAxis.rememberStart(),
-                    endAxis = VerticalAxis.rememberEnd(),
-                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
-                )
-            startLayer != null ->
-                rememberCartesianChart(
-                    startLayer,
-                    startAxis = VerticalAxis.rememberStart(),
-                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
-                )
-            endLayer != null ->
-                rememberCartesianChart(
-                    endLayer,
-                    endAxis = VerticalAxis.rememberEnd(),
-                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
-                )
-            else -> return@key
-        }
-        CartesianChartHost(
-            chart = chart,
-            modelProducer = modelProducer,
-            scrollState = scroll,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(heightDp.dp),
+    }
+    val dateFmt = rememberDateXFormatter()
+    val scroll = rememberVicoScrollState(scrollEnabled = false)
+    Text(caption, style = MaterialTheme.typography.labelMedium, softWrap = true)
+    val legendParts = mutableListOf<String>()
+    if (left.isNotEmpty()) {
+        legendParts += "Left: ${left.keys.joinToString(" · ")}"
+    }
+    if (right.isNotEmpty()) {
+        legendParts += "Right: ${right.keys.joinToString(" · ")}"
+    }
+    if (legendParts.isNotEmpty()) {
+        Text(
+            legendParts.joinToString(" · "),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            softWrap = true,
         )
+    }
+    if (leftLabel != null) {
+        Text(
+            leftLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = leftColor ?: MaterialTheme.colorScheme.primary,
+            softWrap = true,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+    if (rightLabel != null) {
+        Text(
+            rightLabel,
+            style = MaterialTheme.typography.labelSmall,
+            color = rightColor ?: MaterialTheme.colorScheme.tertiary,
+            softWrap = true,
+        )
+    }
+    val hasLeft = left.isNotEmpty()
+    val hasRight = right.isNotEmpty()
+    val startLayer = if (hasLeft) {
+        rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.Start)
+    } else {
+        null
+    }
+    val endLayer = if (hasRight) {
+        rememberLineCartesianLayer(verticalAxisPosition = Axis.Position.Vertical.End)
+    } else {
+        null
+    }
+    when {
+        startLayer != null && endLayer != null -> {
+            CartesianChartHost(
+                chart = rememberCartesianChart(
+                    startLayer,
+                    endLayer,
+                    startAxis = VerticalAxis.rememberStart(),
+                    endAxis = VerticalAxis.rememberEnd(),
+                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
+                ),
+                modelProducer = modelProducer,
+                scrollState = scroll,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(heightDp.dp),
+            )
+        }
+        startLayer != null -> {
+            CartesianChartHost(
+                chart = rememberCartesianChart(
+                    startLayer,
+                    startAxis = VerticalAxis.rememberStart(),
+                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
+                ),
+                modelProducer = modelProducer,
+                scrollState = scroll,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(heightDp.dp),
+            )
+        }
+        endLayer != null -> {
+            CartesianChartHost(
+                chart = rememberCartesianChart(
+                    endLayer,
+                    endAxis = VerticalAxis.rememberEnd(),
+                    bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFmt),
+                ),
+                modelProducer = modelProducer,
+                scrollState = scroll,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(heightDp.dp),
+            )
+        }
     }
 }
 
