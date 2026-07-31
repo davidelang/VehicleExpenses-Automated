@@ -31,6 +31,8 @@ fun SyncingScreen(navController: NavHostController) {
     var pendingBadge by remember { mutableStateOf(syncStore.pendingBadgeText()) }
     var spreadsheetError by remember { mutableStateOf<String?>(null) }
     var photoError by remember { mutableStateOf<String?>(null) }
+    var spreadsheetErrorDetails by remember { mutableStateOf<String?>(null) }
+    var photoErrorDetails by remember { mutableStateOf<String?>(null) }
     val navBackStackEntry = navController.currentBackStackEntry
     val destinations = remember(navBackStackEntry) { syncStore.load() }
 
@@ -38,6 +40,8 @@ fun SyncingScreen(navController: NavHostController) {
         pendingBadge = syncStore.pendingBadgeText()
         spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
         photoError = failureStore.photoFailureSummary(syncStore)
+        spreadsheetErrorDetails = failureStore.spreadsheetFailureDetails(syncStore)
+        photoErrorDetails = failureStore.photoFailureDetails(syncStore)
         withContext(Dispatchers.IO) {
             viewModel.recountPendingBadge()
         }
@@ -83,6 +87,8 @@ fun SyncingScreen(navController: NavHostController) {
             summary = SyncDestinationStore.spreadsheetSummaryLine(spreadsheetDests),
             pendingBadge = pendingBadge,
             errorText = spreadsheetError,
+            errorDetails = spreadsheetErrorDetails,
+            errorDetailsTitle = "Spreadsheet sync failure",
             syncStatusText = spreadsheetSyncStatus,
             syncInProgress = spreadsheetSyncInProgress,
             syncStatusIsError = spreadsheetSyncIsError,
@@ -100,6 +106,7 @@ fun SyncingScreen(navController: NavHostController) {
                         spreadsheetSyncStatus = result.message
                         spreadsheetSyncIsError = !result.success
                         spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
+                        spreadsheetErrorDetails = failureStore.spreadsheetFailureDetails(syncStore)
                     } catch (e: Exception) {
                         spreadsheetSyncIsError = true
                         spreadsheetSyncStatus = e.message ?: "Sync failed"
@@ -115,6 +122,8 @@ fun SyncingScreen(navController: NavHostController) {
             summary = syncStore.photoSummaryLine(photoDests),
             pendingBadge = pendingBadge,
             errorText = photoError,
+            errorDetails = photoErrorDetails,
+            errorDetailsTitle = "Photo backup failure",
             syncStatusText = photoSyncStatus,
             syncInProgress = photoSyncInProgress,
             syncStatusIsError = photoSyncIsError,
@@ -133,6 +142,7 @@ fun SyncingScreen(navController: NavHostController) {
                         photoSyncIsError = !result.success
                         pendingBadge = syncStore.pendingBadgeText()
                         photoError = failureStore.photoFailureSummary(syncStore)
+                        photoErrorDetails = failureStore.photoFailureDetails(syncStore)
                     } catch (e: Exception) {
                         photoSyncIsError = true
                         photoSyncStatus = e.message ?: "Photo sync failed"
@@ -152,6 +162,8 @@ internal fun SyncSummaryRow(
     summary: String,
     pendingBadge: String,
     errorText: String? = null,
+    errorDetails: String? = null,
+    errorDetailsTitle: String = "Sync failure",
     syncStatusText: String = "",
     syncInProgress: Boolean = false,
     syncStatusIsError: Boolean = false,
@@ -159,6 +171,7 @@ internal fun SyncSummaryRow(
     onRowClick: () -> Unit,
     onSyncNow: () -> Unit,
 ) {
+    var showDetails by remember { mutableStateOf(false) }
     TappableCard(
         onClick = onRowClick,
         modifier = Modifier.padding(vertical = 4.dp),
@@ -173,12 +186,23 @@ internal fun SyncSummaryRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (!errorText.isNullOrBlank()) {
-                    Text(
-                        errorText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        softWrap = true,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            errorText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            softWrap = true,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (!errorDetails.isNullOrBlank()) {
+                            TextButton(
+                                onClick = { showDetails = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            ) {
+                                Text("Details", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
                 }
                 if (syncStatusText.isNotBlank() || syncInProgress) {
                     SyncStatusDisplay(
@@ -199,5 +223,12 @@ internal fun SyncSummaryRow(
             }
             Text("›", style = MaterialTheme.typography.titleLarge)
         }
+    }
+    if (showDetails && !errorDetails.isNullOrBlank()) {
+        SyncFailureDetailsDialog(
+            title = errorDetailsTitle,
+            detailMessage = errorDetails,
+            onDismiss = { showDetails = false },
+        )
     }
 }

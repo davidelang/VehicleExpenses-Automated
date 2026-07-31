@@ -50,7 +50,12 @@ class SpreadsheetSyncViewModel @Inject constructor(
     suspend fun syncNow(
         accountHint: String,
         onProgress: SyncProgressListener? = null,
-    ): SyncResult = coordinator.syncNow(accountHint, onProgress = onProgress)
+        destId: String? = null,
+    ): SyncResult = coordinator.syncNow(
+        accountHint = accountHint.ifBlank { null },
+        destId = destId,
+        onProgress = onProgress,
+    )
 
     /**
      * Detect-only: odo-only + pump-only pairs within merge window after a fuel pull.

@@ -59,6 +59,16 @@ class GoogleSheetsTabularBackend @Inject constructor(
         return sheetsClient.readAllRows(sheetId, tabName, accountHint)
     }
 
+    override suspend fun batchReadTabs(
+        dest: SpreadsheetDestination,
+        tabNames: List<String>,
+        accountHint: String?,
+    ): Map<String, List<List<String>>> {
+        val sheetId = resolveTargetId(dest)
+        if (sheetId.isBlank()) return emptyMap()
+        return sheetsClient.batchReadTabs(sheetId, tabNames, accountHint)
+    }
+
     override suspend fun listTabTitles(dest: SpreadsheetDestination, accountHint: String?): List<String> {
         val sheetId = resolveTargetId(dest)
         return sheetsClient.listSheetTitles(sheetId, accountHint)

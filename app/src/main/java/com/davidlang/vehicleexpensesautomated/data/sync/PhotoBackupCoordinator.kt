@@ -16,6 +16,9 @@ import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoRef
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -80,14 +83,44 @@ class PhotoBackupCoordinator @Inject constructor(
             uploadVehicleAssetsInternal(ctx, vehicle)
         }
 
-    /** Phase 9–11: photo sync — [mode] FULL (manual) scans everything; PENDING_ONLY (worker) pending queue only. */
+    /** One photo sync pipeline at a time (hub / dest edit / worker). */
+    private val photoSyncMutex = Mutex()
+
+    /**
+     * Phase 9–11: photo sync — [mode] FULL (manual) scans everything; PENDING_ONLY (worker) pending queue only.
+     * @param destId when non-null, sync only that photo destination.
+     */
     suspend fun syncNow(
         accountHint: String? = null,
         mode: PhotoSyncMode = PhotoSyncMode.FULL,
+        destId: String? = null,
         onProgress: SyncProgressListener? = null,
-    ): PhotoBackupResult = withContext(Dispatchers.IO) {
+    ): PhotoBackupResult = photoSyncMutex.withLock {
+        withContext(Dispatchers.IO) {
         val store = SyncDestinationStore(context)
         val failureStore = SyncFailureStore(context)
+        // Drop orphan destId failures (deleted/recreated destinations).
+        failureStore.pruneToKnownDestinations(store)
+
+        if (destId != null) {
+            val dest = store.allPhoto().find { it.id == destId }
+                ?: return@withContext PhotoBackupResult(false, "Destination not found")
+            val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
+            val ctx = resolveContext(hint, dest) ?: return@withContext notConfiguredOrAuth(dest)
+            val label = photoDestLabel(dest)
+            onProgress?.onStatus("Syncing $label…")
+            val single = syncSingleDestinationWithRetry(ctx, mode, sharedRebinds = 0, onProgress)
+            recordPhotoResult(failureStore, dest.id, single)
+            recountPendingAll(store)
+            if (single.success && (single.uploads > 0 || single.downloads > 0)) {
+                bestEffortSheetSync(accountHint)
+            }
+            onProgress?.onStatus(
+                if (single.success) "$label done" else photoFailStatus(label, single.message),
+            )
+            return@withContext single
+        }
+
         val destinations = when (mode) {
             PhotoSyncMode.FULL -> store.configuredPhoto()
             PhotoSyncMode.PENDING_ONLY -> store.enabledPhoto()
@@ -98,8 +131,8 @@ class PhotoBackupCoordinator @Inject constructor(
             }
             val ctx = resolveContext(accountHint) ?: return@withContext notConfiguredOrAuth()
             onProgress?.onStatus("Syncing ${photoDestLabel(ctx.dest)}…")
-            val single = syncSingleDestination(ctx, mode, sharedRebinds = 0)
-            recordPhotoResult(failureStore, ctx.dest.id, photoDestLabel(ctx.dest), single)
+            val single = syncSingleDestinationWithRetry(ctx, mode, sharedRebinds = 0, onProgress)
+            recordPhotoResult(failureStore, ctx.dest.id, single)
             recountPendingAll(store)
             if (single.success && (single.uploads > 0 || single.downloads > 0)) {
                 bestEffortSheetSync(accountHint)
@@ -120,27 +153,27 @@ class PhotoBackupCoordinator @Inject constructor(
         var consentResult: PhotoBackupResult? = null
 
         onProgress?.onStatus("Starting photo backup (${destinations.size} destinations)…")
-        for (dest in destinations) {
+        for ((index, dest) in destinations.withIndex()) {
             val hint = accountHint?.takeIf { it.isNotBlank() } ?: dest.accountHint
             val ctx = resolveContext(hint, dest)
             val label = photoDestLabel(dest)
             if (ctx == null) {
                 onProgress?.onStatus("$label: not configured")
                 val fail = notConfiguredOrAuth(dest)
-                recordPhotoResult(failureStore, dest.id, label, fail)
+                recordPhotoResult(failureStore, dest.id, fail)
                 results.add(label to fail)
                 anyFailure = true
                 continue
             }
             onProgress?.onStatus("Syncing $label…")
-            val result = syncSingleDestination(ctx, mode, sharedRebinds = sharedRebinds)
-            recordPhotoResult(failureStore, dest.id, label, result)
+            val result = syncSingleDestinationWithRetry(ctx, mode, sharedRebinds = sharedRebinds, onProgress)
+            recordPhotoResult(failureStore, dest.id, result)
             results.add(label to result)
             onProgress?.onStatus(
                 if (result.success) {
                     "$label done (${result.uploads} up, ${result.downloads} down)"
                 } else {
-                    "$label failed"
+                    photoFailStatus(label, result.message)
                 },
             )
             if (result.success) {
@@ -152,6 +185,9 @@ class PhotoBackupCoordinator @Inject constructor(
                 if (result.needsRemoteConsent && consentResult == null) {
                     consentResult = result
                 }
+            }
+            if (index < destinations.lastIndex) {
+                delay(SyncRateLimit.interDestPaceMs)
             }
         }
 
@@ -180,6 +216,37 @@ class PhotoBackupCoordinator @Inject constructor(
             uploads = totalUploads,
             downloads = totalDownloads,
         )
+        } // withContext
+    } // photoSyncMutex
+
+    private fun photoFailStatus(label: String, detail: String): String {
+        val short = SyncRateLimit.shortTitle(detail, forSheets = false)
+        return if (short != null) "$label failed — $short" else "$label failed"
+    }
+
+    /** Rate-limit detect → wait → retry around [syncSingleDestination]. */
+    private suspend fun syncSingleDestinationWithRetry(
+        ctx: SyncContext,
+        mode: PhotoSyncMode,
+        sharedRebinds: Int,
+        onProgress: SyncProgressListener?,
+    ): PhotoBackupResult {
+        var attempt = 0
+        while (true) {
+            attempt++
+            val result = syncSingleDestination(ctx, mode, sharedRebinds)
+            if (result.success) return result
+            if (result.needsRemoteConsent) return result
+            if (SyncRateLimit.isRateLimitError(result.message) && attempt < SyncRateLimit.MAX_ATTEMPTS) {
+                val waitMs = SyncRateLimit.backoffMs(attempt)
+                val sec = (waitMs / 1000L).toInt()
+                Log.w(TAG, "Photo rate limited dest=${ctx.dest.id}; waiting ${sec}s ($attempt/${SyncRateLimit.MAX_ATTEMPTS})")
+                onProgress?.onStatus("Rate limited — waiting ${sec}s…")
+                delay(waitMs)
+                continue
+            }
+            return result
+        }
     }
 
     private suspend fun syncSingleDestination(
@@ -1062,13 +1129,12 @@ class PhotoBackupCoordinator @Inject constructor(
     private fun recordPhotoResult(
         failureStore: SyncFailureStore,
         destId: String,
-        destName: String,
         result: PhotoBackupResult,
     ) {
         if (result.success) {
             failureStore.clearPhotoFailure(destId)
         } else {
-            failureStore.recordPhotoFailure(destId, destName)
+            failureStore.recordPhotoFailure(destId, result.message)
         }
     }
 

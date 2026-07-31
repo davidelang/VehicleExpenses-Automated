@@ -40,7 +40,9 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SheetsRecoverableAuthExc
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncFrequencyUi
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncRateLimit
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherProviderCatalog
 import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal.FirebaseTabularConfig
@@ -171,8 +173,18 @@ internal fun SpreadsheetDestEditForm(
         )
     }
     var statusText by remember { mutableStateOf("") }
+    var syncInProgress by remember { mutableStateOf(false) }
+    var statusIsError by remember { mutableStateOf(false) }
+    val failureStore = remember { SyncFailureStore(context) }
+    var storedFailureDetail by remember {
+        mutableStateOf(if (isNew) null else failureStore.spreadsheetFailure(id)?.message)
+    }
     val isDeferredStub = provider == SpreadsheetProvider.ONLYOFFICE ||
         provider == SpreadsheetProvider.COLLABORA
+    val syncProgress = rememberMainThreadSyncProgress {
+        statusText = it
+        statusIsError = false
+    }
 
     LaunchedEffect(isDeferredStub) {
         if (isDeferredStub && enabled) {
@@ -610,6 +622,11 @@ internal fun SpreadsheetDestEditForm(
         )
 
         Spacer(modifier = Modifier.height(16.dp))
+        val canSyncThisDest = !isNew &&
+            !isDeferredStub &&
+            store.allSpreadsheet().find { it.id == id }?.let {
+                SyncDestinationStore.isSpreadsheetConfigured(it)
+            } == true
         SyncDestinationEditFooter(
             testButtonLabel = "Test connection (this destination)",
             onTest = {
@@ -693,9 +710,11 @@ internal fun SpreadsheetDestEditForm(
                             val ok = withContext(Dispatchers.IO) {
                                 viewModel.testConnection(testDest)
                             }
+                            statusIsError = !ok
                             statusText = if (ok) "Connection test passed" else "Connection test failed"
                             Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
                         } catch (e: SheetsRecoverableAuthException) {
+                            statusIsError = true
                             statusText = e.message ?: SheetsAuthRecovery.NEED_REMOTE_CONSENT_MESSAGE
                             if (allowRecovery) {
                                 consentRecovery.launch(e.recoveryIntent) { runTest(allowRecovery = false) }
@@ -703,6 +722,7 @@ internal fun SpreadsheetDestEditForm(
                                 Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
                             }
                         } catch (e: Exception) {
+                            statusIsError = true
                             statusText = SheetsAuthRecovery.userMessage(e)
                             Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
                         }
@@ -710,6 +730,58 @@ internal fun SpreadsheetDestEditForm(
                 }
                 runTest(allowRecovery = true)
             },
+            onSyncNow = if (isNew || isDeferredStub) {
+                null
+            } else {
+                {
+                    scope.launch {
+                        if (!canSyncThisDest) {
+                            Toast.makeText(
+                                context,
+                                "Save a configured destination first",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            return@launch
+                        }
+                        syncInProgress = true
+                        statusIsError = false
+                        statusText = "Starting sync for this destination…"
+                        try {
+                            val result = withContext(Dispatchers.IO) {
+                                viewModel.syncNow(
+                                    accountHint = accountHint,
+                                    onProgress = syncProgress,
+                                    destId = id,
+                                )
+                            }
+                            statusIsError = !result.success
+                            statusText = result.message
+                            storedFailureDetail = failureStore.spreadsheetFailure(id)?.message
+                            Toast.makeText(
+                                context,
+                                if (result.success) "Sync complete" else (
+                                    SyncRateLimit.shortTitle(result.message)
+                                        ?: "Sync failed — open Details"
+                                    ),
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        } catch (e: Exception) {
+                            statusIsError = true
+                            statusText = SheetsAuthRecovery.userMessage(e)
+                            storedFailureDetail = failureStore.spreadsheetFailure(id)?.message
+                                ?: statusText
+                            Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
+                        } finally {
+                            syncInProgress = false
+                        }
+                    }
+                }
+            },
+            syncInProgress = syncInProgress,
+            syncNowEnabled = canSyncThisDest,
+            statusIsError = statusIsError,
+            failureDetailMessage = storedFailureDetail,
+            failureDialogTitle = displayName.ifBlank { "Spreadsheet sync failure" },
             showRemove = !isNew,
             onRemove = {
                 store.removeSpreadsheet(id)

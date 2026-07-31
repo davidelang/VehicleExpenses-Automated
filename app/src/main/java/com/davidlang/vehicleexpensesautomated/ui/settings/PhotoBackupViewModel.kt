@@ -54,8 +54,14 @@ class PhotoBackupViewModel @Inject constructor(
     suspend fun syncNow(
         accountHint: String,
         onProgress: SyncProgressListener? = null,
+        destId: String? = null,
     ): PhotoBackupResult =
-        coordinator.syncNow(accountHint.ifBlank { null }, PhotoSyncMode.FULL, onProgress = onProgress)
+        coordinator.syncNow(
+            accountHint = accountHint.ifBlank { null },
+            mode = PhotoSyncMode.FULL,
+            destId = destId,
+            onProgress = onProgress,
+        )
 
     fun rescheduleBackgroundBackup() = photoBackupManager.scheduleFromDestination()
 
