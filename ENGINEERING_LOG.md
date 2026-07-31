@@ -2030,3 +2030,10 @@ x
 - Experiments: drop Amazon/Golden/Failing/Problem; First 10 on Alignment+Pump
 - build tag: c4f461c6; no deploy
 
+
+## 2026-07-31 - efficiency-chart-line-and-axis-colors start
+
+- Plan: efficiency-chart-line-and-axis-colors-20260731-plan.md
+- C2 line strokes + C3 Y tick/axis colors via Vico 3.2.3 LineProvider / VerticalAxis style
+- No deploy
+
