@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.data.sync.tabular
 
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
@@ -189,8 +190,9 @@ object TabularSchema {
         "Partial Fill" to entry.isPartialFill.toString(),
         "Economy Ignored" to entry.economyIgnored.toString(),
         "Location" to (entry.location ?: ""),
-        "Latitude" to (entry.latitude?.toString() ?: ""),
-        "Longitude" to (entry.longitude?.toString() ?: ""),
+        // Legacy columns (dropped in schema phase 9); still read/written from blob interim
+        "Latitude" to (FuelLocationJson.lat(entry.location)?.toString() ?: ""),
+        "Longitude" to (FuelLocationJson.lon(entry.location)?.toString() ?: ""),
         "Notes" to (entry.notes ?: ""),
         "Trip Type" to entry.tripType,
         "Vehicle Sync ID" to vehicleSyncId,
@@ -264,8 +266,8 @@ object TabularSchema {
         entry.odometer?.toString() ?: "",
         entry.photoUrl ?: "",
         "",
-        entry.latitude?.toString() ?: "",
-        entry.longitude?.toString() ?: "",
+        FuelLocationJson.lat(entry.location)?.toString() ?: "",
+        FuelLocationJson.lon(entry.location)?.toString() ?: "",
         entry.location ?: "",
         entry.cloudManifest ?: "",
         entry.originDeviceId,
@@ -303,9 +305,11 @@ object TabularSchema {
             photoUrl = cell("Photo URL").ifBlank { null },
             isPartialFill = cell("Partial Fill").equals("true", ignoreCase = true),
             economyIgnored = cell("Economy Ignored").equals("true", ignoreCase = true),
-            latitude = cell("Latitude").toDoubleOrNull(),
-            longitude = cell("Longitude").toDoubleOrNull(),
-            location = cell("Location").ifBlank { null },
+            location = FuelLocationJson.foldLegacy(
+                cell("Latitude").toDoubleOrNull(),
+                cell("Longitude").toDoubleOrNull(),
+                cell("Location").ifBlank { null },
+            ),
             notes = cell("Notes").ifBlank { null },
             tripType = cell("Trip Type"),
             cloudManifest = cell("Cloud Manifest").ifBlank { null },
@@ -352,9 +356,11 @@ object TabularSchema {
             category = category,
             vendor = vendor,
             odometer = cell("Odometer").toIntOrNull(),
-            latitude = cell("Latitude").toDoubleOrNull(),
-            longitude = cell("Longitude").toDoubleOrNull(),
-            location = cell("Location").ifBlank { null },
+            location = FuelLocationJson.foldLegacy(
+                cell("Latitude").toDoubleOrNull(),
+                cell("Longitude").toDoubleOrNull(),
+                cell("Location").ifBlank { null },
+            ),
             cloudManifest = cell("Cloud Manifest").ifBlank { null },
             originDeviceId = cell("Origin Device ID"),
             updatedAt = cell("Updated At").toLongOrNull() ?: 0L,

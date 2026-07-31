@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
@@ -710,9 +711,15 @@ fun QuickFillupScreen(
                                 currency = storedCurrency,
                                 timestamp = System.currentTimeMillis(),
                                 photoUrl = photoUrlJson,
-                                latitude = lat,
-                                longitude = lon,
-                                location = loc,
+                                location = FuelLocationJson.encode(
+                                    run {
+                                        val base = FuelLocationJson.fromLocation(deviceLocation)
+                                            ?: FuelLocationJson.fromCoords(lat, lon, source = "device")
+                                            ?: FuelLocationJson.Blob()
+                                        // loc (POI string) still unused; place filled by lookup later
+                                        base
+                                    },
+                                ),
                                 notes = notes.trim().ifBlank { null },
                                 isPartialFill = false,
                             )

@@ -45,6 +45,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
@@ -132,9 +133,10 @@ private fun ExpenseEntryScreenBody(
     var showDatePicker by remember { mutableStateOf(false) }
     /** Once-per-screen device fix for camera path EXIF + row (isolated from gallery). */
     var deviceLocation by remember { mutableStateOf<android.location.Location?>(null) }
-    /** Lat/lon persisted on save (camera → device; gallery → EXIF-or-null in phase 11). */
+    /** Lat/lon persisted on save (camera → device; gallery → EXIF-or-null). */
     var rowLat by remember { mutableStateOf<Double?>(null) }
     var rowLon by remember { mutableStateOf<Double?>(null) }
+    var rowAccuracyM by remember { mutableStateOf<Double?>(null) }
     /** True when attached photo is gallery-sourced (device GPS must not win on row). */
     var photoFromGallery by remember { mutableStateOf(false) }
     val photoDest = remember { SyncDestinationStore(context).photoDestination() }
@@ -146,6 +148,7 @@ private fun ExpenseEntryScreenBody(
         if (fix != null && editId == null && !photoFromGallery) {
             rowLat = fix.latitude
             rowLon = fix.longitude
+            rowAccuracyM = if (fix.hasAccuracy()) fix.accuracy.toDouble() else null
         }
     }
     val localPhotoMissing = remember(photoUrl) {
@@ -180,8 +183,9 @@ private fun ExpenseEntryScreenBody(
                     odometerText = e.odometer?.toString() ?: ""
                     date = e.date
                     photoUrl = e.photoUrl
-                    rowLat = e.latitude
-                    rowLon = e.longitude
+                    rowLat = FuelLocationJson.lat(e.location)
+                    rowLon = FuelLocationJson.lon(e.location)
+                    rowAccuracyM = FuelLocationJson.accuracyM(e.location)
                     photoFromGallery = false
                     showLiveCamera = expenseLocalMissingOrDead(e.photoUrl, photoStorage) &&
                         !expenseHasArchiveIdentity(e, photoDest?.id)
@@ -218,6 +222,7 @@ private fun ExpenseEntryScreenBody(
                 val meta = PhotoExifMetaReader.read(context, uri)
                 rowLat = meta.latitude
                 rowLon = meta.longitude
+                rowAccuracyM = meta.accuracyM
                 Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
             } else {
                 photoUrl = null
@@ -258,8 +263,14 @@ private fun ExpenseEntryScreenBody(
             category = category,
             date = date,
             photoUrl = if (prefs.getBoolean("save_expense_photos", true)) photoUrl else null,
-            latitude = rowLat,
-            longitude = rowLon,
+            location = FuelLocationJson.encode(
+                FuelLocationJson.fromCoords(
+                    rowLat,
+                    rowLon,
+                    rowAccuracyM,
+                    source = if (photoFromGallery) "exif" else "device",
+                ),
+            ),
         )
         // D5: await persistence before navigate
         scope.launch {
@@ -304,6 +315,7 @@ private fun ExpenseEntryScreenBody(
         val locForExif = deviceLocation
         rowLat = locForExif?.latitude
         rowLon = locForExif?.longitude
+        rowAccuracyM = locForExif?.let { if (it.hasAccuracy()) it.accuracy.toDouble() else null }
         var rotationDegrees = 0
         try {
             val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {

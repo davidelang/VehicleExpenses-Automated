@@ -3,6 +3,7 @@ package com.davidlang.vehicleexpensesautomated.data.batch
 import android.content.Context
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+// FuelLocationJson same package
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.ui.experiment.AlignmentSetJRunner
@@ -1031,8 +1032,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false,
-                latitude = item.latitude,
-                longitude = item.longitude,
+                location = FuelLocationJson.encode(FuelLocationJson.fromCoords(item.latitude, item.longitude, source = "exif")),
                 notes = "batch_gap_marker",
             ),
         )
@@ -1181,8 +1181,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false,
-                latitude = item.latitude,
-                longitude = item.longitude,
+                location = FuelLocationJson.encode(FuelLocationJson.fromCoords(item.latitude, item.longitude, source = "exif")),
                 notes = "batch_manual_pump",
             ),
         )
@@ -1234,8 +1233,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false,
-                latitude = item.latitude,
-                longitude = item.longitude,
+                location = FuelLocationJson.encode(FuelLocationJson.fromCoords(item.latitude, item.longitude, source = "exif")),
                 notes = "batch_manual_dash",
             ),
         )
@@ -1598,8 +1596,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         photoPath = sourcePath,
                         durablePhotoPath = sourcePath, // same as source (no mirror)
                         timestampMs = ts,
-                        latitude = meta.latitude,
-                        longitude = meta.longitude,
+                        location = FuelLocationJson.encode(FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif")),
                     ),
                 )
             }
@@ -1620,8 +1617,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                     timestamp = ts,
                     photoUrl = photoJson,
                     isPartialFill = false,
-                    latitude = meta.latitude,
-                    longitude = meta.longitude,
+                    location = FuelLocationJson.encode(FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif")),
                     notes = "batch_import_dash_blank:${file.name}",
                 ),
             )
@@ -1639,8 +1635,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false, // incomplete by fields only
-                latitude = meta.latitude,
-                longitude = meta.longitude,
+                location = FuelLocationJson.encode(FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif")),
                 notes = "batch_import_dash:${file.name}",
             ),
         )
@@ -1681,8 +1676,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         photoPath = sourcePath,
                         durablePhotoPath = sourcePath,
                         timestampMs = ts,
-                        latitude = meta.latitude,
-                        longitude = meta.longitude,
+                        location = FuelLocationJson.encode(FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif")),
                     ),
                 )
             }
@@ -1700,8 +1694,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false, // incomplete by fields only
-                latitude = meta.latitude,
-                longitude = meta.longitude,
+                location = FuelLocationJson.encode(FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif")),
                 notes = "batch_import_pump:${file.name}",
             ),
         )

@@ -568,10 +568,13 @@ object FuelRowMergeEngine {
         }
         val currency = later.currency.ifBlank { earlier.currency }.ifBlank { "USD" }
         val photo = FuelPhotoJson.unionPhotos(a.photoUrl, b.photoUrl)
-        // Prefer later timestamp’s coords (EXIF/capture); GPS never required to merge
-        val lat = later.latitude ?: earlier.latitude
-        val lon = later.longitude ?: earlier.longitude
-        val loc = preferLocation(a.location, b.location)
+        // Prefer later place/coords via blob merge; GPS never required to merge
+        val loc = FuelLocationJson.mergeBlobs(
+            a.location,
+            b.location,
+            updatedAtA = a.updatedAt.takeIf { it > 0 } ?: a.timestamp,
+            updatedAtB = b.updatedAt.takeIf { it > 0 } ?: b.timestamp,
+        ) ?: preferLocation(a.location, b.location)
         val notes = preferNotes(a.notes, b.notes)
         val idKeep = later.id
         val complete = (if (odo > 0) odo else 0) > 0 && costF > 0 && galF > 0
@@ -586,8 +589,6 @@ object FuelRowMergeEngine {
             currency = currency,
             timestamp = ts,
             photoUrl = photo,
-            latitude = lat,
-            longitude = lon,
             location = loc,
             notes = notes,
             isPartialFill = preservePartial,

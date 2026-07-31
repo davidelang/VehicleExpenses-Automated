@@ -24,6 +24,8 @@ data class PhotoExifMeta(
     val latitude: Double?,
     val longitude: Double?,
     val source: String,
+    /** Horizontal positioning error in meters when EXIF provides it; else null. */
+    val accuracyM: Double? = null,
 )
 
 object PhotoExifMetaReader {
@@ -43,7 +45,7 @@ object PhotoExifMetaReader {
     fun read(path: String): PhotoExifMeta {
         val file = File(path)
         if (!file.isFile) {
-            return PhotoExifMeta(null, null, null, "missing")
+            return PhotoExifMeta(null, null, null, "missing", null)
         }
         return try {
             val exif = ExifInterface(path)
@@ -51,7 +53,7 @@ object PhotoExifMetaReader {
         } catch (e: Exception) {
             Log.w(TAG, "EXIF read failed for $path: ${e.message}")
             val ts = parseFilenameTimestamp(file.name)
-            PhotoExifMeta(ts, null, null, if (ts != null) "filename" else "error")
+            PhotoExifMeta(ts, null, null, if (ts != null) "filename" else "error", null)
         }
     }
 
@@ -65,7 +67,7 @@ object PhotoExifMetaReader {
                 "file" -> {
                     val path = uri.path
                     if (path.isNullOrBlank()) {
-                        PhotoExifMeta(null, null, null, "missing")
+                        PhotoExifMeta(null, null, null, "missing", null)
                     } else {
                         read(path)
                     }
@@ -75,12 +77,12 @@ object PhotoExifMetaReader {
                     context.contentResolver.openInputStream(uri)?.use { stream ->
                         val exif = ExifInterface(stream)
                         metaFromExif(exif, displayName)
-                    } ?: PhotoExifMeta(null, null, null, "missing")
+                    } ?: PhotoExifMeta(null, null, null, "missing", null)
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "EXIF read failed for $uri: ${e.message}")
-            PhotoExifMeta(null, null, null, "error")
+            PhotoExifMeta(null, null, null, "error", null)
         }
     }
 
@@ -95,12 +97,41 @@ object PhotoExifMetaReader {
         }
         val latLong = FloatArray(2)
         val hasGps = exif.getLatLong(latLong)
+        val accuracyM = parseGpsHorizontalError(exif)
         return PhotoExifMeta(
             timestampMs = ts,
             latitude = if (hasGps) latLong[0].toDouble() else null,
             longitude = if (hasGps) latLong[1].toDouble() else null,
             source = source,
+            accuracyM = accuracyM,
         )
+    }
+
+    /**
+     * EXIF GPSHPositioningError (meters) when present. Tag may be absent on many cameras.
+     */
+    private fun parseGpsHorizontalError(exif: ExifInterface): Double? {
+        return try {
+            // API 24+ may expose as attribute string; rational "n/d"
+            // Platform constant name varies; use attribute string key.
+            val raw = exif.getAttribute("GPSHPositioningError") ?: return null
+            parseExifRational(raw)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseExifRational(raw: String): Double? {
+        val t = raw.trim()
+        if (t.isEmpty()) return null
+        val parts = t.split("/")
+        return if (parts.size == 2) {
+            val n = parts[0].toDoubleOrNull() ?: return null
+            val d = parts[1].toDoubleOrNull() ?: return null
+            if (d == 0.0) null else n / d
+        } else {
+            t.toDoubleOrNull()
+        }
     }
 
     private fun parseExifDateTime(exif: ExifInterface): Long? {

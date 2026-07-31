@@ -107,6 +107,7 @@ fun TripTrackingScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var latitude by remember { mutableStateOf<Double?>(null) }
     var longitude by remember { mutableStateOf<Double?>(null) }
+    var deviceAccuracyM by remember { mutableStateOf<Double?>(null) }
     var showManageTypes by remember { mutableStateOf(false) }
     var statusLine by remember { mutableStateOf<String?>(null) }
     var showCamera by rememberSaveable { mutableStateOf(false) }
@@ -120,6 +121,7 @@ fun TripTrackingScreen(
         if (fix != null) {
             latitude = fix.latitude
             longitude = fix.longitude
+            deviceAccuracyM = if (fix.hasAccuracy()) fix.accuracy.toDouble() else null
         }
     }
 
@@ -256,6 +258,7 @@ fun TripTrackingScreen(
             timestamp = eventTimestamp,
             latitude = latitude,
             longitude = longitude,
+            accuracyM = deviceAccuracyM,
         )
         fuelViewModel.saveFuel(entry)
         statusLine = "$toastLabel: $tripType @ ${UnitFormat.odometerReadingLabel(odo)}"
