@@ -15,12 +15,11 @@ This file is a short reference for everyday use and sync behavior. Prefer the fu
 ## What the app does
 
 - **Quick Fill-up** — camera OCR for odometer and pump cost/volume, or manual entry; **vehicle auto-detects from dash landmarks** (no need to pick vehicle first).
-- **Trip Tracking** — open/switch tax-style trip segments (Business / Personal / …) as fuel rows with **Trip Type** (drawer after Quick Fill).
+- **Start trip** — open/switch tax-style trip segments (Business / Personal / …) as fuel rows with **Trip Type** (drawer after Quick Fill).
 - **Manage Vehicles** — reference dash photo, odo/ignore crops, landmark discovery for vehicle identity.
 - **Expenses** — non-fuel costs with optional receipt photos.
-- **Fuel History** — per-vehicle fill list; edit fill; **Fetch image from archive** when the photo is only in cloud backup.
-- **Reports & Charts** — production summaries, last full fills, expense categories, fill history (**trip starts are not counted as fills**).
-- **Reports Lab** — experimental report sets (including **Trip miles** by trip type); always in the drawer.
+- - **Reports & Charts** — production summaries, last full fills, expense categories, fill history (**trip starts are not counted as fills**).
+- **Reports** — experimental report sets (including **Trip miles** by trip type); always in the drawer.
 - **Settings** — units, currency, local photo prefs, debug/experiment gates (not the main sync summary).
 - **Syncing** — spreadsheet + photo destination summary, **Sync now**, and entry to Spreadsheet Sync / Photo Backup.
 
@@ -83,7 +82,7 @@ Photos: **Syncing** → Photo Backup → Add → **Google Drive** → sign-in �
 ## Reports
 
 Production **Reports & Charts**: per-vehicle summary, last-5 full-fill legs, expenses, all fills (non-trip). Row currency respected; mixed currencies show per-currency subtotals (no FX). See [REPORTS_METRICS.md](REPORTS_METRICS.md).  
-Experimental **Reports Lab** includes **Trip miles** (miles by trip type from open-only segments).
+Experimental **Reports** includes **Trip miles** (miles by trip type from open-only segments).
 
 ## Navigation map
 
