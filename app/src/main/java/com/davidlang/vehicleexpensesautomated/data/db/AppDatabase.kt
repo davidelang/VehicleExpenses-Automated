@@ -13,7 +13,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 
 @Database(
     entities = [Vehicle::class, FuelEntry::class, ExpenseEntry::class, MergeAck::class],
-    version = 17,
+    version = 19,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
