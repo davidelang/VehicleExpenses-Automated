@@ -22,11 +22,13 @@ This is the **full manual** (screenshots + every step). On the phone, **Menu →
 4. [First-time setup: Manage Vehicles](#first-time-setup-manage-vehicles)
 5. [Backups and multi-device sync](#backups-and-multi-device-sync)
 6. [Quick Fill-up (fuel)](#quick-fill-up-fuel)
-7. [Expenses](#expenses)
-8. [Reports & Charts](#reports--charts)
-9. [Settings (local preferences)](#settings-local-preferences)
-10. [Help & About](#help--about)
-11. [Related docs](#related-docs)
+7. [Start trip](#start-trip)
+8. [Expenses](#expenses)
+9. [Reports](#reports)
+10. [Settings (local preferences)](#settings-local-preferences)
+11. [Syncing](#syncing)
+12. [Help & About](#help--about)
+13. [Related docs](#related-docs)
 
 ---
 
@@ -45,8 +47,10 @@ These appear on the main screens. Knowing them saves a lot of hunting.
 | Where | Icon / control | What it does |
 |-------|----------------|--------------|
 | Top bar | **☰ Menu** (hamburger) | Opens the navigation drawer |
-| Top bar | **!** (red) | A spreadsheet or photo destination failed recently — open **Settings** to fix |
-| Settings sub-pages | **←** | Back to Settings |
+| Top bar | **ⓘ** (page help) | Short help for the **current** page (next to menu when available) |
+| Top bar | **`?N`** (yellow) | Pending import review questions — opens Import review |
+| Top bar | **!** (red) | A spreadsheet or photo destination failed recently — open **Syncing** to fix |
+| Settings / Reports children | **←** | Back to parent |
 | Quick Fill | **White circle** (shutter) | Capture odometer or pump display for OCR |
 | Quick Fill | **Disk / Save** | Save the fill-up (needs a vehicle and at least one of odo / volume / cost) |
 | Quick Fill | **↕ arrows** (mode switch) | Toggle **odometer mode** vs **pump (cost/volume) mode**. Green border highlights the active field group |
@@ -73,7 +77,11 @@ Currency symbols on cost fields and **G/L** on volume fields are tappable: open 
 
 ![Navigation drawer](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/01-drawer.jpg)
 
-**In-scope pages:** Quick Fill-up · Manage Vehicles · New Expense Entry · Expense List · Reports & Charts · Settings · Help · About.
+**Main drawer:** Quick Fill-up · Start trip · Manage Vehicles · New expense · **Reports** · Settings · Syncing · Help · About.
+
+**Experiment drawer** (Settings → Show experiment screens): Alignment Experiment · Pump Experiment · **Import Old Pictures**.
+
+**Via Reports hub (not main drawer):** Expenses list · Fill history.
 
 ---
 
@@ -277,15 +285,25 @@ Menu → **New Expense Entry**.
 
 ### Expense List
 
-Menu → **Expense List** — browse past non-fuel expenses; open an item to edit.
+Menu → **Reports** → **Expenses list** — browse past non-fuel expenses; open an item to edit.
 
 ![Expense list](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/05-expense-list.jpg)
 
 ---
 
-## Reports & Charts
+## Start trip
 
-Menu → **Reports & Charts**.
+Menu → **Start trip**. Capture or enter odometer, choose trip type, save with the disk icon. **Stop** is a shortcut for Personal now at the held GPS location. Use **ⓘ** for control reminders.
+
+## Reports
+
+Menu → **Reports** opens the product reports hub (all-time summary + catalog cards). Open a card for filters (vehicle All / Each / Single + period), charts, and share (TEXT / CSV / PDF).
+
+Includes **Fuel efficiency** (multi-metric chart), cost trends, monthly costs, expenses by category, fill history, vehicle summary, and **Trip miles**. Trip starts are not counted as fills.
+
+## Syncing
+
+Menu → **Syncing** — spreadsheet and photo destination cards, **Sync** for all configured destinations, failure summary and **Details**. Open a destination for **Test connection** and **Sync now (this destination)**.
 
 ![Reports](https://raw.githubusercontent.com/davidelang/VehicleExpenses-Automated/master/docs/user-manual/images/06-reports.jpg)
 

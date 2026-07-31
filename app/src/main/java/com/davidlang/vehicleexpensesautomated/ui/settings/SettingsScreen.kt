@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
@@ -53,6 +54,12 @@ fun SettingsScreen(navController: NavHostController) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val viewModel: SettingsViewModel = hiltViewModel()
+    RegisterPageHelp(
+        title = "Settings",
+        "Units, photo save toggles, debug Quick Fill, and experiment screens live here.",
+        "Spreadsheet and photo destinations are under Menu → Syncing (not only this page).",
+        "Show experiment screens reveals Alignment, Pump Experiment, and Import Old Pictures in the drawer.",
+    )
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val fuelEntries by fuelViewModel.fuelEntries.collectAsState(initial = emptyList())
     val hasFuelData = fuelEntries.isNotEmpty()

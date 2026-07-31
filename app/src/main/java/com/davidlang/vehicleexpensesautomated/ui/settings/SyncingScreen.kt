@@ -15,6 +15,7 @@ import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,6 +24,12 @@ import kotlinx.coroutines.withContext
 fun SyncingScreen(navController: NavHostController) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = hiltViewModel()
+    RegisterPageHelp(
+        title = "Syncing",
+        "Spreadsheet sync and Photo backup open destination lists. Sync on each card runs all configured destinations.",
+        "Red ! in the title bar means a stored failure — open Details on the card for the full API message.",
+        "Leaving this screen during Sync now does not cancel the job (it continues in the background).",
+    )
     val syncStore = remember { SyncDestinationStore(context) }
     val failureStore = remember { SyncFailureStore(context) }
     var pendingBadge by remember { mutableStateOf(syncStore.pendingBadgeText()) }

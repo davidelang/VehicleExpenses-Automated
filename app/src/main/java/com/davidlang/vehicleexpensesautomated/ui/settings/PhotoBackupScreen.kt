@@ -24,6 +24,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.PhotoDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneDestConfig
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -97,6 +98,12 @@ private fun PhotoDestList(
     viewModel: PhotoBackupViewModel,
 ) {
     val context = LocalContext.current
+    RegisterPageHelp(
+        title = "Photo Backup",
+        "Add Google Drive (or other) destinations. Sync now uploads vehicle refs and pending photos.",
+        "Open a destination for Test connection and Sync now (this destination).",
+        "Leaving the screen mid-sync does not cancel the backup.",
+    )
     var statusText by remember { mutableStateOf("") }
     var statusIsError by remember { mutableStateOf(false) }
     val syncInProgress by viewModel.manualSyncInProgress.collectAsState()

@@ -27,9 +27,15 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-/** Convert epoch ms → X unit (fractional days) for time-series charts. */
-fun tsToChartX(timestampMs: Long): Double =
-    timestampMs.toDouble() / TimeUnit.DAYS.toMillis(1).toDouble()
+/**
+ * Convert epoch ms → X unit (fractional days) for time-series charts.
+ * Quantized to **4 decimal places** so Vico 3.2.3 GCD step computation does not
+ * throw `IllegalArgumentException: The x-values are too precise`.
+ */
+fun tsToChartX(timestampMs: Long): Double {
+    val days = timestampMs.toDouble() / TimeUnit.DAYS.toMillis(1).toDouble()
+    return kotlin.math.round(days * 10_000.0) / 10_000.0
+}
 
 private fun chartXToDateLabel(x: Double): String {
     val ms = (x * TimeUnit.DAYS.toMillis(1).toDouble()).toLong()

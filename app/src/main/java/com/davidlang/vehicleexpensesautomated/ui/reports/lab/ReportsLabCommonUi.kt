@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -20,8 +18,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
@@ -40,32 +36,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/** Hub / page help: Info icon opens a short dialog (replaces long banner blurbs). */
-@Composable
-fun ReportsLabInfoIconButton(title: String, body: String) {
-    var open by remember { mutableStateOf(false) }
-    IconButton(onClick = { open = true }) {
-        Icon(Icons.Default.Info, contentDescription = "About $title")
-    }
-    if (open) {
-        AlertDialog(
-            onDismissRequest = { open = false },
-            title = { Text(title) },
-            text = { Text(body) },
-            confirmButton = {
-                TextButton(onClick = { open = false }) { Text("OK") }
-            },
-        )
-    }
-}
-
 /**
- * Title line: optional page title (when not relying on app bar alone), Info, Share.
+ * Title line: optional page title + Share.
+ * Page help goes to top-bar Info via [RegisterPageHelp] (no mid-screen Info icon).
  * Prefer empty [title] on hub (app bar already says Reports).
  */
 @Composable
@@ -76,7 +55,10 @@ fun ReportsLabTitleRow(
     shareActions: ReportsLabShareActions?,
 ) {
     val context = LocalContext.current
-    if (title.isNullOrBlank() && infoText.isNullOrBlank() && shareActions == null) return
+    if (!infoText.isNullOrBlank()) {
+        RegisterPageHelp(infoTitle, infoText)
+    }
+    if (title.isNullOrBlank() && shareActions == null) return
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -93,9 +75,6 @@ fun ReportsLabTitleRow(
         } else {
             // Spacer so icons sit end-aligned on hub
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-        }
-        if (!infoText.isNullOrBlank()) {
-            ReportsLabInfoIconButton(title = infoTitle, body = infoText)
         }
         if (shareActions != null) {
             ReportsLabShareIconButton(context = context, actions = shareActions)

@@ -22,6 +22,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
 import com.davidlang.vehicleexpensesautomated.ui.components.EmptyStateText
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasArchiveIdentity
@@ -44,6 +45,11 @@ fun FuelHistoryScreen(navController: NavHostController) {
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
+    RegisterPageHelp(
+        title = "Fuel History",
+        "Per-vehicle tabs list fills and trip starts. Tap a row to edit.",
+        "Missing photos can be fetched from archive when a cloud destination is configured.",
+    )
     val photoStorage = settingsViewModel.photoStorageManager
     val fills by fuelViewModel.fuelEntries.collectAsState()
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())

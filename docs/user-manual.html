@@ -64,9 +64,11 @@
 <li><a href="#first-time-setup-manage-vehicles">First-time setup: Manage Vehicles</a></li>
 <li><a href="#backups-and-multi-device-sync">Backups and multi-device sync</a></li>
 <li><a href="#quick-fill-up-fuel">Quick Fill-up (fuel)</a></li>
+<li><a href="#start-trip">Start trip</a></li>
 <li><a href="#expenses">Expenses</a></li>
-<li><a href="#reports--charts">Reports &amp; Charts</a></li>
+<li><a href="#reports">Reports</a></li>
 <li><a href="#settings-local-preferences">Settings (local preferences)</a></li>
+<li><a href="#syncing">Syncing</a></li>
 <li><a href="#help--about">Help &amp; About</a></li>
 <li><a href="#related-docs">Related docs</a></li>
 </ol>
@@ -96,13 +98,23 @@
 </tr>
 <tr>
 <td>Top bar</td>
-<td><strong>!</strong> (red)</td>
-<td>A spreadsheet or photo destination failed recently — open <strong>Settings</strong> to fix</td>
+<td><strong>ⓘ</strong> (page help)</td>
+<td>Short help for the <strong>current</strong> page (next to menu when available)</td>
 </tr>
 <tr>
-<td>Settings sub-pages</td>
+<td>Top bar</td>
+<td><strong><code>?N</code></strong> (yellow)</td>
+<td>Pending import review questions — opens Import review</td>
+</tr>
+<tr>
+<td>Top bar</td>
+<td><strong>!</strong> (red)</td>
+<td>A spreadsheet or photo destination failed recently — open <strong>Syncing</strong> to fix</td>
+</tr>
+<tr>
+<td>Settings / Reports children</td>
 <td><strong>←</strong></td>
-<td>Back to Settings</td>
+<td>Back to parent</td>
 </tr>
 <tr>
 <td>Quick Fill</td>
@@ -184,7 +196,9 @@
 <li>Choose a page.</li>
 </ol>
 <p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Navigation drawer" src="user-manual/images/01-drawer.jpg" /></p>
-<p><strong>In-scope pages:</strong> Quick Fill-up · Manage Vehicles · New Expense Entry · Expense List · Reports &amp; Charts · Settings · Help · About.</p>
+<p><strong>Main drawer:</strong> Quick Fill-up · Start trip · Manage Vehicles · New expense · <strong>Reports</strong> · Settings · Syncing · Help · About.</p>
+<p><strong>Experiment drawer</strong> (Settings → Show experiment screens): Alignment Experiment · Pump Experiment · <strong>Import Old Pictures</strong>.</p>
+<p><strong>Via Reports hub (not main drawer):</strong> Expenses list · Fill history.</p>
 <hr />
 <h2 id="first-time-setup-manage-vehicles">First-time setup: Manage Vehicles</h2>
 <p>OCR and <strong>automatic vehicle matching</strong> work best after you register each vehicle with a <strong>reference dashboard photo</strong>, crop the odometer, and run <strong>Discovery</strong> so the app stores landmark text for that dash. (How landmarks are chosen and matched will be documented in more detail in a later update.)</p>
@@ -394,11 +408,16 @@
 <li><strong>Save</strong> to store (local first; photo backup and spreadsheet sync happen in the background when configured).</li>
 </ol>
 <h3 id="expense-list">Expense List</h3>
-<p>Menu → <strong>Expense List</strong> — browse past non-fuel expenses; open an item to edit.</p>
+<p>Menu → <strong>Reports</strong> → <strong>Expenses list</strong> — browse past non-fuel expenses; open an item to edit.</p>
 <p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Expense list" src="user-manual/images/05-expense-list.jpg" /></p>
 <hr />
-<h2 id="reports-charts">Reports &amp; Charts</h2>
-<p>Menu → <strong>Reports &amp; Charts</strong>.</p>
+<h2 id="start-trip">Start trip</h2>
+<p>Menu → <strong>Start trip</strong>. Capture or enter odometer, choose trip type, save with the disk icon. <strong>Stop</strong> is a shortcut for Personal now at the held GPS location. Use <strong>ⓘ</strong> for control reminders.</p>
+<h2 id="reports">Reports</h2>
+<p>Menu → <strong>Reports</strong> opens the product reports hub (all-time summary + catalog cards). Open a card for filters (vehicle All / Each / Single + period), charts, and share (TEXT / CSV / PDF).</p>
+<p>Includes <strong>Fuel efficiency</strong> (multi-metric chart), cost trends, monthly costs, expenses by category, fill history, vehicle summary, and <strong>Trip miles</strong>. Trip starts are not counted as fills.</p>
+<h2 id="syncing">Syncing</h2>
+<p>Menu → <strong>Syncing</strong> — spreadsheet and photo destination cards, <strong>Sync</strong> for all configured destinations, failure summary and <strong>Details</strong>. Open a destination for <strong>Test connection</strong> and <strong>Sync now (this destination)</strong>.</p>
 <p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Reports" src="user-manual/images/06-reports.jpg" /></p>
 <ul>
 <li><strong>Summary</strong> per vehicle (spend, economy where calculable).</li>

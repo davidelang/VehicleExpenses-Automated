@@ -21,6 +21,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherKind
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherProviderCatalog
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherProviderInfo
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -80,6 +81,12 @@ internal fun SpreadsheetDestList(
     viewModel: SpreadsheetSyncViewModel,
 ) {
     val context = LocalContext.current
+    RegisterPageHelp(
+        title = "Spreadsheet Sync",
+        "Add destinations (Google Sheets is common). Sync now runs all configured destinations.",
+        "Open a destination for Test connection, Sync now (this destination), and Details on failures.",
+        "Background sync uses destinations with background enabled only.",
+    )
     var statusText by remember { mutableStateOf("") }
     var statusIsError by remember { mutableStateOf(false) }
     val syncInProgress by viewModel.manualSyncInProgress.collectAsState()

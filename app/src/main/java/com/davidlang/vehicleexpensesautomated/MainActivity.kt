@@ -15,8 +15,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.CircularProgressIndicator
@@ -46,9 +48,9 @@ import android.content.SharedPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -437,18 +439,26 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Scaffold(
                         topBar = {
+                            // Narrow phones (~448dp on 5556): short title so Info stays visible with ?N + !.
+                            val screenWidthDp = LocalConfiguration.current.screenWidthDp
+                            val narrowTitle = screenWidthDp < 600
+                            val titleText = when {
+                                title == "Vehicle Expenses" -> title
+                                narrowTitle -> title
+                                else -> "Vehicle Expenses - $title"
+                            }
                             TopAppBar(
                                 title = {
                                     Text(
-                                        if (title == "Vehicle Expenses") title else "Vehicle Expenses - $title",
-                                        maxLines = 2,
+                                        titleText,
+                                        maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        softWrap = true,
+                                        softWrap = false,
                                     )
                                 },
                                 actions = {
-                                    // Page help (when registered) → review questions (yellow) → sync failure (red)
-                                    PageHelpTopBarAction(pageHelpController)
+                                    // Priority if tight: drawer/back + Info (leading) already placed;
+                                    // trailing badges only: ?N then !
                                     if (pendingReviewCount > 0) {
                                         IconButton(
                                             onClick = {
@@ -485,24 +495,28 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 navigationIcon = {
+                                    // Leading: drawer/back then Info (I2 — next to menu, not only trailing).
                                     val isSettingsSubRoute = currentRoute == "settings/spreadsheet_sync" ||
                                         currentRoute == "settings/photo_backup" ||
                                         currentRoute?.startsWith("fuel/") == true ||
                                         currentRoute?.startsWith("reports_lab/") == true
-                                    if (isSettingsSubRoute) {
-                                        IconButton(
-                                            onClick = { navController.popBackStack() },
-                                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                                        ) {
-                                            Text("←")
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (isSettingsSubRoute) {
+                                            IconButton(
+                                                onClick = { navController.popBackStack() },
+                                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                            ) {
+                                                Text("←")
+                                            }
+                                        } else {
+                                            IconButton(
+                                                onClick = { scope.launch { drawerState.open() } },
+                                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                            ) {
+                                                Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                            }
                                         }
-                                    } else {
-                                        IconButton(
-                                            onClick = { scope.launch { drawerState.open() } },
-                                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                                        ) {
-                                            Icon(Icons.Default.Menu, contentDescription = "Menu")
-                                        }
+                                        PageHelpTopBarAction(pageHelpController)
                                     }
                                 }
                             )

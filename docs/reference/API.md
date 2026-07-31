@@ -44,14 +44,18 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 - `NativeImageUtils` (Object): JNI-accelerated image operations (grayscale, bilateral, deskew, histograms).
 
 ## Synchronization & Storage
-- `SpreadsheetSyncCoordinator.kt` / `SyncWorker.kt` / `TabularShareApi` / `GoogleSheetsClient.kt`: Multi-destination spreadsheet sync.
-- `PhotoBackupCoordinator.kt` / `PhotoBackupWorker.kt` / `PhotoStorageManager.kt`: Multi-destination photo backup (Google Drive, OneDrive, S3, rclone Other).
+- `SpreadsheetSyncCoordinator.kt` / `SyncWorker.kt` / `TabularShareApi` / `GoogleSheetsClient.kt`: Multi-destination spreadsheet sync (mutex, multi-dest sequential, bulk `batchGet` compare, `SyncRateLimit` per API call).
+- `SyncFailureStore.kt` / `SyncRateLimit.kt`: Per-dest last failure (full message + prune orphans); Sheets read/write rate-limit wait/retry.
+- `PhotoBackupCoordinator.kt` / `PhotoBackupWorker.kt` / `PhotoStorageManager.kt`: Multi-destination photo backup (Google Drive, OneDrive, S3, rclone Other); manual Sync now is ViewModel-scoped.
 
 ## UI Components (production)
 - `QuickFillupScreen.kt`: Primary fuel fill-up capture and OCR.
+- `TripTrackingScreen.kt`: Start trip (open-only trip types).
 - `ManageVehiclesScreen.kt`: Vehicle metadata and OCR crop regions.
-- `ExpenseEntryScreen.kt` / `ExpenseListScreen.kt`: Expense capture and history.
-- `ReportsScreen.kt`, `SettingsScreen.kt`, `SpreadsheetSyncScreen.kt`, `PhotoBackupScreen.kt`.
+- `ExpenseEntryScreen.kt` / `ExpenseListScreen.kt`: Expense capture and history (list via Reports hub).
+- `ui/reports/lab/*`: Product **Reports** hub and children (efficiency, costs, trips, …).
+- `PageHelp.kt` / `RegisterPageHelp`: Top-bar page Info registry.
+- `SettingsScreen.kt`, `SyncingScreen.kt`, `SpreadsheetSyncScreen.kt`, `PhotoBackupScreen.kt`.
 
 ## Debug / experiment (temporary)
 - `ExperimentAlignmentScreen.kt`, `ExperimentPumpScreen.kt`: Research harnesses; scheduled for removal.
