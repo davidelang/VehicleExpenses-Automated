@@ -9,6 +9,8 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -127,7 +129,24 @@ private fun ExpenseEntryScreenBody(
     var date by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
     var photoUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var showDatePicker by remember { mutableStateOf(false) }
+    /** Once-per-screen device fix for camera path EXIF + row (isolated from gallery). */
+    var deviceLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    /** Lat/lon persisted on save (camera → device; gallery → EXIF-or-null in phase 11). */
+    var rowLat by remember { mutableStateOf<Double?>(null) }
+    var rowLon by remember { mutableStateOf<Double?>(null) }
+    /** True when attached photo is gallery-sourced (device GPS must not win on row). */
+    var photoFromGallery by remember { mutableStateOf(false) }
     val photoDest = remember { SyncDestinationStore(context).photoDestination() }
+
+    // One-shot device GPS for camera path (not re-fetched per shutter).
+    LaunchedEffect(Unit) {
+        val fix = CaptureLocation.captureLocationOrNull(context)
+        deviceLocation = fix
+        if (fix != null && editId == null && !photoFromGallery) {
+            rowLat = fix.latitude
+            rowLon = fix.longitude
+        }
+    }
     val localPhotoMissing = remember(photoUrl) {
         expenseLocalMissingOrDead(photoUrl, photoStorage)
     }
@@ -160,6 +179,9 @@ private fun ExpenseEntryScreenBody(
                     odometerText = e.odometer?.toString() ?: ""
                     date = e.date
                     photoUrl = e.photoUrl
+                    rowLat = e.latitude
+                    rowLon = e.longitude
+                    photoFromGallery = false
                     showLiveCamera = expenseLocalMissingOrDead(e.photoUrl, photoStorage) &&
                         !expenseHasArchiveIdentity(e, photoDest?.id)
                     loadedExpense = e
@@ -229,7 +251,9 @@ private fun ExpenseEntryScreenBody(
             odometer = odo,
             category = category,
             date = date,
-            photoUrl = if (prefs.getBoolean("save_expense_photos", true)) photoUrl else null
+            photoUrl = if (prefs.getBoolean("save_expense_photos", true)) photoUrl else null,
+            latitude = rowLat,
+            longitude = rowLon,
         )
         // D5: await persistence before navigate
         scope.launch {
