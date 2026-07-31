@@ -1,6 +1,8 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
+import android.content.Context
 import android.media.ExifInterface
+import android.net.Uri
 import android.util.Log
 import java.io.File
 import java.text.SimpleDateFormat
@@ -9,12 +11,13 @@ import java.util.TimeZone
 import java.util.regex.Pattern
 
 /**
- * EXIF capture time + GPS for batch import (and any file-path photo).
+ * EXIF capture time + GPS for batch import (file path) and gallery pick (content URI).
  *
  * Time: prefer [ExifInterface.TAG_DATETIME_ORIGINAL], then [ExifInterface.TAG_DATETIME].
  * EXIF datetimes have no timezone; we parse as **local timezone of the device**
  * (same convention as common Android ExifInterface samples) → epoch ms.
- * Filename fallback: `PXL_yyyyMMdd_HHmmss` only when no EXIF datetime.
+ * Filename fallback: `PXL_yyyyMMdd_HHmmss` only when no EXIF datetime (path reads only).
+ * Missing GPS is not an error — lat/lon null.
  */
 data class PhotoExifMeta(
     val timestampMs: Long?,
@@ -44,26 +47,60 @@ object PhotoExifMetaReader {
         }
         return try {
             val exif = ExifInterface(path)
-            val ts = parseExifDateTime(exif) ?: parseFilenameTimestamp(file.name)
-            val source = when {
-                exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) != null -> "exif_original"
-                exif.getAttribute(ExifInterface.TAG_DATETIME) != null -> "exif_datetime"
-                ts != null -> "filename"
-                else -> "none"
-            }
-            val latLong = FloatArray(2)
-            val hasGps = exif.getLatLong(latLong)
-            PhotoExifMeta(
-                timestampMs = ts,
-                latitude = if (hasGps) latLong[0].toDouble() else null,
-                longitude = if (hasGps) latLong[1].toDouble() else null,
-                source = source,
-            )
+            metaFromExif(exif, file.name)
         } catch (e: Exception) {
             Log.w(TAG, "EXIF read failed for $path: ${e.message}")
             val ts = parseFilenameTimestamp(file.name)
             PhotoExifMeta(ts, null, null, if (ts != null) "filename" else "error")
         }
+    }
+
+    /**
+     * Gallery / SAF pick: open via ContentResolver stream (or file scheme → path).
+     * GPS only when EXIF contains it; otherwise lat/lon null (not an error).
+     */
+    fun read(context: Context, uri: Uri): PhotoExifMeta {
+        return try {
+            when (uri.scheme?.lowercase(Locale.US)) {
+                "file" -> {
+                    val path = uri.path
+                    if (path.isNullOrBlank()) {
+                        PhotoExifMeta(null, null, null, "missing")
+                    } else {
+                        read(path)
+                    }
+                }
+                else -> {
+                    val displayName = uri.lastPathSegment
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        val exif = ExifInterface(stream)
+                        metaFromExif(exif, displayName)
+                    } ?: PhotoExifMeta(null, null, null, "missing")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "EXIF read failed for $uri: ${e.message}")
+            PhotoExifMeta(null, null, null, "error")
+        }
+    }
+
+    private fun metaFromExif(exif: ExifInterface, nameForFilenameFallback: String?): PhotoExifMeta {
+        val ts = parseExifDateTime(exif)
+            ?: nameForFilenameFallback?.let { parseFilenameTimestamp(it) }
+        val source = when {
+            exif.getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) != null -> "exif_original"
+            exif.getAttribute(ExifInterface.TAG_DATETIME) != null -> "exif_datetime"
+            ts != null && nameForFilenameFallback != null -> "filename"
+            else -> "none"
+        }
+        val latLong = FloatArray(2)
+        val hasGps = exif.getLatLong(latLong)
+        return PhotoExifMeta(
+            timestampMs = ts,
+            latitude = if (hasGps) latLong[0].toDouble() else null,
+            longitude = if (hasGps) latLong[1].toDouble() else null,
+            source = source,
+        )
     }
 
     private fun parseExifDateTime(exif: ExifInterface): Long? {
