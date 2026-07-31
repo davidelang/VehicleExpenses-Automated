@@ -10,6 +10,7 @@ import androidx.camera.core.ImageCaptureException
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
+import com.davidlang.vehicleexpensesautomated.ui.util.NetworkStatus
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import androidx.compose.foundation.Image
@@ -177,6 +178,9 @@ private fun ExpenseEntryScreenBody(
     var placeName by remember { mutableStateOf("") }
     var placeAddress by remember { mutableStateOf("") }
     var confirmLocation by remember { mutableStateOf(true) }
+    var lookupName by remember { mutableStateOf<String?>(null) }
+    var lookupAddress by remember { mutableStateOf<String?>(null) }
+    var lookupSource by remember { mutableStateOf<String?>(null) }
     val photoDest = remember { SyncDestinationStore(context).photoDestination() }
 
     // One-shot device GPS for camera path (not re-fetched per shutter).
@@ -195,6 +199,16 @@ private fun ExpenseEntryScreenBody(
         val lo = rowLon
         if (la == null || lo == null) {
             locationStatus = ""
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
+            return@LaunchedEffect
+        }
+        if (!NetworkStatus.hasUsableNetwork(context)) {
+            locationStatus = "Offline — place lookup when online"
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
             return@LaunchedEffect
         }
         locationStatus = "Looking up place…"
@@ -209,9 +223,15 @@ private fun ExpenseEntryScreenBody(
         if (result != null && result.hasPlace()) {
             placeName = result.name
             placeAddress = result.address
+            lookupName = result.name
+            lookupAddress = result.address
+            lookupSource = result.source
             // Happy path: address fields only — no duplicate "Resolved:" banner.
             locationStatus = ""
         } else {
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
             locationStatus = "No place found (will retry after save if online)"
         }
     }
@@ -354,7 +374,13 @@ private fun ExpenseEntryScreenBody(
                         name = placeName,
                         address = placeAddress,
                         confirmed = true,
-                        source = "user",
+                        source = FuelLocationJson.placeSourceForConfirm(
+                            placeName,
+                            placeAddress,
+                            lookupName,
+                            lookupAddress,
+                            lookupSource,
+                        ),
                         kind = kind.blobKindTag(),
                         lookedUpAt = System.currentTimeMillis(),
                     )
