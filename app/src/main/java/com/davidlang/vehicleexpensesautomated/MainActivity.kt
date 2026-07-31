@@ -495,25 +495,36 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 navigationIcon = {
-                                    // Leading: drawer/back then Info (I2 — next to menu, not only trailing).
-                                    val isSettingsSubRoute = currentRoute == "settings/spreadsheet_sync" ||
-                                        currentRoute == "settings/photo_backup" ||
-                                        currentRoute?.startsWith("fuel/") == true ||
-                                        currentRoute?.startsWith("reports_lab/") == true
+                                    // Leading: ☰ then ← then Info (reports children get both; hub ☰ only).
+                                    val isReportsChild =
+                                        currentRoute?.startsWith("reports_lab/") == true ||
+                                            currentRoute == "expenselist"
+                                    val isSettingsOrFuelSub =
+                                        currentRoute == "settings/spreadsheet_sync" ||
+                                            currentRoute == "settings/photo_backup" ||
+                                            currentRoute?.startsWith("fuel/") == true
+                                    // Settings/fuel keep ←-only; report children + everything else show drawer.
+                                    val showMenu = !isSettingsOrFuelSub
+                                    val showBack = isSettingsOrFuelSub || isReportsChild
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (isSettingsSubRoute) {
-                                            IconButton(
-                                                onClick = { navController.popBackStack() },
-                                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                                            ) {
-                                                Text("←")
-                                            }
-                                        } else {
+                                        if (showMenu) {
                                             IconButton(
                                                 onClick = { scope.launch { drawerState.open() } },
                                                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                                             ) {
                                                 Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                            }
+                                        }
+                                        if (showBack) {
+                                            IconButton(
+                                                onClick = {
+                                                    if (!navController.popBackStack() && isReportsChild) {
+                                                        navController.navigate("reports_lab")
+                                                    }
+                                                },
+                                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                            ) {
+                                                Text("←")
                                             }
                                         }
                                         PageHelpTopBarAction(pageHelpController)
