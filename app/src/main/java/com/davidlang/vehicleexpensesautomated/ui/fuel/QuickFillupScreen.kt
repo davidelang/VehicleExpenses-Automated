@@ -45,16 +45,23 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
+import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +82,15 @@ private data class SessionPhoto(val uri: String, val ts: Long)
 /** Map captureMode odo→dash, pump→pump. */
 private fun photoTagForCaptureMode(captureMode: String): String {
     return if (captureMode == "pump") "pump" else "dash"
+}
+
+/** Surface.ROTATION_* → degrees for EXIF orientation. */
+private fun surfaceRotationToDegrees(rotation: Int): Int = when (rotation) {
+    android.view.Surface.ROTATION_0 -> 0
+    android.view.Surface.ROTATION_90 -> 90
+    android.view.Surface.ROTATION_180 -> 180
+    android.view.Surface.ROTATION_270 -> 270
+    else -> 0
 }
 
 /** Compact JSON array for FuelEntry.photoUrl; null if empty. */
@@ -162,9 +178,55 @@ fun QuickFillupScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     /** Session photos keyed by tag (dash/pump); written to DB only on Save as JSON. */
     val sessionPhotos = remember { mutableStateMapOf<String, SessionPhoto>() }
+    /** Row lat/lon for save (camera path = once-per-screen device fix). */
     var lat by remember { mutableStateOf<Double?>(null) }
     var lon by remember { mutableStateOf<Double?>(null) }
-    var loc by remember { mutableStateOf<String?>(null) }
+    /** Held device fix for EXIF stamping on CameraX JPEGs; once per screen visit. */
+    var deviceLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    var locationStatus by remember { mutableStateOf("") }
+    var placeName by remember { mutableStateOf("") }
+    var placeAddress by remember { mutableStateOf("") }
+    var confirmLocation by remember { mutableStateOf(true) }
+    var locationLookupDone by remember { mutableStateOf(false) }
+
+    // One-shot device GPS on enter (not per shutter); odo+pump+row share this fix.
+    LaunchedEffect(Unit) {
+        val fix = CaptureLocation.captureLocationOrNull(context)
+        deviceLocation = fix
+        if (fix != null) {
+            lat = fix.latitude
+            lon = fix.longitude
+        }
+    }
+
+    // Non-blocking POI when coords available (cancel/re-run if lat/lon change).
+    LaunchedEffect(lat, lon) {
+        val la = lat
+        val lo = lon
+        if (la == null || lo == null) {
+            locationStatus = ""
+            locationLookupDone = false
+            return@LaunchedEffect
+        }
+        locationStatus = "Looking up place…"
+        locationLookupDone = false
+        val acc = deviceLocation?.takeIf { it.hasAccuracy() }?.accuracy?.toDouble()
+        val result = LocationLookup.lookup(
+            lat = la,
+            lon = lo,
+            kind = LocationLookupKind.FUEL_STATION,
+            accuracyM = acc,
+            uiTimeout = true,
+        )
+        if (result != null && result.hasPlace()) {
+            placeName = result.name
+            placeAddress = result.address
+            locationStatus = "Resolved: ${result.displayLine()}"
+        } else {
+            locationStatus = "No place found (will retry after save if online)"
+        }
+        locationLookupDone = true
+    }
 
     var captureViewState by rememberSaveable { mutableStateOf(CaptureViewState.Live) }
     var capturePending by remember { mutableStateOf(false) }
@@ -677,6 +739,21 @@ fun QuickFillupScreen(
                         }
                         val photoUrlJson = sessionPhotosToJson(sessionPhotos)
                         val storedCurrency = CurrencyCodes.fromSymbolOrCode(currencySymbol)
+                        val baseBlob = FuelLocationJson.fromLocation(deviceLocation)
+                            ?: FuelLocationJson.fromCoords(lat, lon, source = "device")
+                            ?: FuelLocationJson.Blob()
+                        val placeBlank = placeName.isBlank() && placeAddress.isBlank()
+                        val saveBlob = when {
+                            confirmLocation && !placeBlank -> baseBlob.withPlace(
+                                name = placeName,
+                                address = placeAddress,
+                                confirmed = true,
+                                source = "user",
+                                kind = LocationLookupKind.FUEL_STATION.blobKindTag(),
+                                lookedUpAt = System.currentTimeMillis(),
+                            )
+                            else -> baseBlob.coordsOnly() // unchecked or empty place → coords only
+                        }
                         fuelViewModel.saveFuel(
                             FuelEntry(
                                 vehicleId = vehicleId,
@@ -686,13 +763,14 @@ fun QuickFillupScreen(
                                 currency = storedCurrency,
                                 timestamp = System.currentTimeMillis(),
                                 photoUrl = photoUrlJson,
-                                latitude = lat,
-                                longitude = lon,
-                                location = loc,
+                                location = FuelLocationJson.encode(saveBlob),
                                 notes = notes.trim().ifBlank { null },
                                 isPartialFill = false,
                             )
                         )
+                        if (saveBlob.hasCoordsWithoutPlace()) {
+                            LocationLookupScheduler.enqueueSoon(context)
+                        }
                         NativePaddleEngine.releaseAllOdoBuffers()
                         NativePaddleEngine.bufferSetA.unborrow()
                         NativePaddleEngine.bufferSetA.clearCrops()
@@ -985,6 +1063,18 @@ fun QuickFillupScreen(
                 modifier = Modifier.fillMaxWidth(),
                 maxLines = 3,
             )
+            if (lat != null && lon != null) {
+                LocationConfirmBlock(
+                    statusLine = locationStatus,
+                    name = placeName,
+                    address = placeAddress,
+                    confirmChecked = confirmLocation,
+                    onNameChange = { placeName = it },
+                    onAddressChange = { placeAddress = it },
+                    onConfirmChange = { confirmLocation = it },
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
         }
             }
         }
@@ -1012,6 +1102,7 @@ fun QuickFillupScreen(
         if (saveFuelPhotosNow) {
             isPhotoSaving = true
             photoSaveStatus = "Saving photo…"
+            var rotationDegrees = 0
             try {
                 val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                     context.display
@@ -1021,6 +1112,7 @@ fun QuickFillupScreen(
                 }
                 val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
                 imageCapture.targetRotation = rotation
+                rotationDegrees = surfaceRotationToDegrees(rotation)
             } catch (e: Exception) {
                 Log.e("QuickFill", "Failed to set target rotation", e)
             }
@@ -1038,12 +1130,17 @@ fun QuickFillupScreen(
                     }
                 }
 
+                val captureMetadata = ImageCapture.Metadata().apply {
+                    location = deviceLocation
+                }
                 val outputOptions = ImageCapture.OutputFileOptions.Builder(
                     resolver,
                     android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     contentValues
-                ).build()
+                ).setMetadata(captureMetadata).build()
 
+                val locForExif = deviceLocation
+                val orientForExif = rotationDegrees
                 imageCapture.takePicture(
                     outputOptions,
                     ContextCompat.getMainExecutor(context),
@@ -1059,6 +1156,12 @@ fun QuickFillupScreen(
                                     Toast.LENGTH_LONG
                                 ).show()
                             } else {
+                                PhotoExifWriter.writeGpsAndOrientation(
+                                    context,
+                                    savedUri,
+                                    locForExif,
+                                    orientForExif,
+                                )
                                 sessionPhotos[photoTag] = SessionPhoto(
                                     uri = savedUri.toString(),
                                     ts = System.currentTimeMillis()
@@ -1078,6 +1181,12 @@ fun QuickFillupScreen(
                                 null
                             }
                             if (fallbackUri != null) {
+                                PhotoExifWriter.writeGpsAndOrientation(
+                                    context,
+                                    fallbackUri,
+                                    locForExif,
+                                    orientForExif,
+                                )
                                 sessionPhotos[photoTag] = SessionPhoto(
                                     uri = fallbackUri.toString(),
                                     ts = System.currentTimeMillis()

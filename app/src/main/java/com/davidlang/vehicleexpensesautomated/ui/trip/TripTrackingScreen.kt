@@ -60,10 +60,16 @@ import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
+import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
+import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -106,12 +112,51 @@ fun TripTrackingScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var latitude by remember { mutableStateOf<Double?>(null) }
     var longitude by remember { mutableStateOf<Double?>(null) }
+    var deviceAccuracyM by remember { mutableStateOf<Double?>(null) }
+    var locationStatus by remember { mutableStateOf("") }
+    var placeName by remember { mutableStateOf("") }
+    var placeAddress by remember { mutableStateOf("") }
+    var confirmLocation by remember { mutableStateOf(true) }
     var showManageTypes by remember { mutableStateOf(false) }
     var statusLine by remember { mutableStateOf<String?>(null) }
     var showCamera by rememberSaveable { mutableStateOf(false) }
     var capturePending by remember { mutableStateOf(false) }
     var isProcessingOcr by remember { mutableStateOf(false) }
     var ocrStage by remember { mutableStateOf("") }
+
+    // One-shot device GPS per screen visit (not per OCR capture).
+    LaunchedEffect(Unit) {
+        val fix = CaptureLocation.captureLocationOrNull(context)
+        if (fix != null) {
+            latitude = fix.latitude
+            longitude = fix.longitude
+            deviceAccuracyM = if (fix.hasAccuracy()) fix.accuracy.toDouble() else null
+        }
+    }
+
+    LaunchedEffect(latitude, longitude) {
+        val la = latitude
+        val lo = longitude
+        if (la == null || lo == null) {
+            locationStatus = ""
+            return@LaunchedEffect
+        }
+        locationStatus = "Looking up address…"
+        val result = LocationLookup.lookup(
+            lat = la,
+            lon = lo,
+            kind = LocationLookupKind.ADDRESS_ONLY,
+            accuracyM = deviceAccuracyM,
+            uiTimeout = true,
+        )
+        if (result != null && result.hasPlace()) {
+            placeName = result.name
+            placeAddress = result.address
+            locationStatus = "Resolved: ${result.displayLine()}"
+        } else {
+            locationStatus = "No address found (will retry after save if online)"
+        }
+    }
 
     val imageCapture: ImageCapture = remember {
         ImageCapture.Builder()
@@ -239,20 +284,42 @@ fun TripTrackingScreen(
             Toast.makeText(context, "Trip type is required", Toast.LENGTH_SHORT).show()
             return
         }
+        val base = FuelLocationJson.fromCoords(
+            latitude,
+            longitude,
+            deviceAccuracyM,
+            source = "device",
+        ) ?: FuelLocationJson.Blob()
+        val placeBlank = placeName.isBlank() && placeAddress.isBlank()
+        val saveBlob = when {
+            confirmLocation && !placeBlank -> base.withPlace(
+                name = placeName,
+                address = placeAddress,
+                confirmed = true,
+                source = "user",
+                kind = LocationLookupKind.ADDRESS_ONLY.blobKindTag(),
+                lookedUpAt = System.currentTimeMillis(),
+            )
+            else -> base.coordsOnly()
+        }
         val entry = TripTimeline.buildTripStart(
             vehicleId = vehicleId,
             odometer = odo,
             tripType = tripType,
             timestamp = eventTimestamp,
-            latitude = latitude,
-            longitude = longitude,
-        )
+            latitude = null,
+            longitude = null,
+            accuracyM = null,
+            photoUrl = null,
+        ).copy(location = FuelLocationJson.encode(saveBlob))
         fuelViewModel.saveFuel(entry)
+        if (saveBlob.hasCoordsWithoutPlace()) {
+            LocationLookupScheduler.enqueueSoon(context)
+        }
         statusLine = "$toastLabel: $tripType @ ${UnitFormat.odometerReadingLabel(odo)}"
         Toast.makeText(context, statusLine, Toast.LENGTH_SHORT).show()
         eventTimestamp = System.currentTimeMillis()
-        latitude = null
-        longitude = null
+        // Keep once-per-screen device lat/lon while staying on Trip Tracking.
     }
 
     Column(
@@ -461,6 +528,18 @@ fun TripTrackingScreen(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+
+        if (latitude != null && longitude != null) {
+            LocationConfirmBlock(
+                statusLine = locationStatus,
+                name = placeName,
+                address = placeAddress,
+                confirmChecked = confirmLocation,
+                onNameChange = { placeName = it },
+                onAddressChange = { placeAddress = it },
+                onConfirmChange = { confirmLocation = it },
+            )
+        }
 
         ExposedDropdownMenuBox(
             expanded = typeMenuExpanded,

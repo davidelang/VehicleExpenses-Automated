@@ -9,6 +9,9 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,11 +45,15 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
+import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
 import com.davidlang.vehicleexpensesautomated.ui.components.expenseHasArchiveIdentity
 import com.davidlang.vehicleexpensesautomated.ui.components.expenseLocalMissingOrDead
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
@@ -127,7 +134,55 @@ private fun ExpenseEntryScreenBody(
     var date by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
     var photoUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var showDatePicker by remember { mutableStateOf(false) }
+    /** Once-per-screen device fix for camera path EXIF + row (isolated from gallery). */
+    var deviceLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    /** Lat/lon persisted on save (camera → device; gallery → EXIF-or-null). */
+    var rowLat by remember { mutableStateOf<Double?>(null) }
+    var rowLon by remember { mutableStateOf<Double?>(null) }
+    var rowAccuracyM by remember { mutableStateOf<Double?>(null) }
+    /** True when attached photo is gallery-sourced (device GPS must not win on row). */
+    var photoFromGallery by remember { mutableStateOf(false) }
+    var locationStatus by remember { mutableStateOf("") }
+    var placeName by remember { mutableStateOf("") }
+    var placeAddress by remember { mutableStateOf("") }
+    var confirmLocation by remember { mutableStateOf(true) }
     val photoDest = remember { SyncDestinationStore(context).photoDestination() }
+
+    // One-shot device GPS for camera path (not re-fetched per shutter).
+    LaunchedEffect(Unit) {
+        val fix = CaptureLocation.captureLocationOrNull(context)
+        deviceLocation = fix
+        if (fix != null && editId == null && !photoFromGallery) {
+            rowLat = fix.latitude
+            rowLon = fix.longitude
+            rowAccuracyM = if (fix.hasAccuracy()) fix.accuracy.toDouble() else null
+        }
+    }
+
+    LaunchedEffect(rowLat, rowLon, category) {
+        val la = rowLat
+        val lo = rowLon
+        if (la == null || lo == null) {
+            locationStatus = ""
+            return@LaunchedEffect
+        }
+        locationStatus = "Looking up place…"
+        val kind = LocationLookup.kindForExpenseCategory(category)
+        val result = LocationLookup.lookup(
+            lat = la,
+            lon = lo,
+            kind = kind,
+            accuracyM = rowAccuracyM,
+            uiTimeout = true,
+        )
+        if (result != null && result.hasPlace()) {
+            placeName = result.name
+            placeAddress = result.address
+            locationStatus = "Resolved: ${result.displayLine()}"
+        } else {
+            locationStatus = "No place found (will retry after save if online)"
+        }
+    }
     val localPhotoMissing = remember(photoUrl) {
         expenseLocalMissingOrDead(photoUrl, photoStorage)
     }
@@ -160,6 +215,14 @@ private fun ExpenseEntryScreenBody(
                     odometerText = e.odometer?.toString() ?: ""
                     date = e.date
                     photoUrl = e.photoUrl
+                    rowLat = FuelLocationJson.lat(e.location)
+                    rowLon = FuelLocationJson.lon(e.location)
+                    rowAccuracyM = FuelLocationJson.accuracyM(e.location)
+                    val blob = FuelLocationJson.parseBlob(e.location)
+                    placeName = blob?.name.orEmpty()
+                    placeAddress = blob?.address.orEmpty()
+                    confirmLocation = blob?.confirmed == true || blob?.hasPlace() == true
+                    photoFromGallery = false
                     showLiveCamera = expenseLocalMissingOrDead(e.photoUrl, photoStorage) &&
                         !expenseHasArchiveIdentity(e, photoDest?.id)
                     loadedExpense = e
@@ -190,6 +253,12 @@ private fun ExpenseEntryScreenBody(
                 photoUrl = uri.toString()
                 photoStatus = null
                 showLiveCamera = false
+                // Gallery: row lat/lon from EXIF only — never current device GPS.
+                photoFromGallery = true
+                val meta = PhotoExifMetaReader.read(context, uri)
+                rowLat = meta.latitude
+                rowLon = meta.longitude
+                rowAccuracyM = meta.accuracyM
                 Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
             } else {
                 photoUrl = null
@@ -229,7 +298,32 @@ private fun ExpenseEntryScreenBody(
             odometer = odo,
             category = category,
             date = date,
-            photoUrl = if (prefs.getBoolean("save_expense_photos", true)) photoUrl else null
+            photoUrl = if (prefs.getBoolean("save_expense_photos", true)) photoUrl else null,
+            location = run {
+                val base = FuelLocationJson.fromCoords(
+                    rowLat,
+                    rowLon,
+                    rowAccuracyM,
+                    source = if (photoFromGallery) "exif" else "device",
+                ) ?: FuelLocationJson.Blob()
+                val placeBlank = placeName.isBlank() && placeAddress.isBlank()
+                val kind = LocationLookup.kindForExpenseCategory(category)
+                val saveBlob = when {
+                    confirmLocation && !placeBlank -> base.withPlace(
+                        name = placeName,
+                        address = placeAddress,
+                        confirmed = true,
+                        source = "user",
+                        kind = kind.blobKindTag(),
+                        lookedUpAt = System.currentTimeMillis(),
+                    )
+                    else -> base.coordsOnly()
+                }
+                if (saveBlob.hasCoordsWithoutPlace()) {
+                    LocationLookupScheduler.enqueueSoon(context)
+                }
+                FuelLocationJson.encode(saveBlob)
+            },
         )
         // D5: await persistence before navigate
         scope.launch {
@@ -269,6 +363,13 @@ private fun ExpenseEntryScreenBody(
         isPhotoSaving = true
         photoStatus = "Saving photo…"
         showLiveCamera = true
+        // Camera path: row uses once-per-screen device fix (restore after any gallery pick).
+        photoFromGallery = false
+        val locForExif = deviceLocation
+        rowLat = locForExif?.latitude
+        rowLon = locForExif?.longitude
+        rowAccuracyM = locForExif?.let { if (it.hasAccuracy()) it.accuracy.toDouble() else null }
+        var rotationDegrees = 0
         try {
             val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 context.display
@@ -278,6 +379,13 @@ private fun ExpenseEntryScreenBody(
             }
             val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
             imageCapture.targetRotation = rotation
+            rotationDegrees = when (rotation) {
+                android.view.Surface.ROTATION_0 -> 0
+                android.view.Surface.ROTATION_90 -> 90
+                android.view.Surface.ROTATION_180 -> 180
+                android.view.Surface.ROTATION_270 -> 270
+                else -> 0
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set target rotation", e)
         }
@@ -297,12 +405,16 @@ private fun ExpenseEntryScreenBody(
                     )
                 }
             }
+            val captureMetadata = ImageCapture.Metadata().apply {
+                location = locForExif
+            }
             val outputOptions = ImageCapture.OutputFileOptions.Builder(
                 resolver,
                 android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 contentValues
-            ).build()
+            ).setMetadata(captureMetadata).build()
 
+            val orientForExif = rotationDegrees
             imageCapture.takePicture(
                 outputOptions,
                 ContextCompat.getMainExecutor(context),
@@ -318,6 +430,12 @@ private fun ExpenseEntryScreenBody(
                                 Toast.LENGTH_LONG
                             ).show()
                         } else {
+                            PhotoExifWriter.writeGpsAndOrientation(
+                                context,
+                                savedUri,
+                                locForExif,
+                                orientForExif,
+                            )
                             photoUrl = savedUri.toString()
                             photoStatus = null
                             showLiveCamera = false
@@ -695,6 +813,18 @@ private fun ExpenseEntryScreenBody(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
+
+            if (rowLat != null && rowLon != null) {
+                LocationConfirmBlock(
+                    statusLine = locationStatus,
+                    name = placeName,
+                    address = placeAddress,
+                    confirmChecked = confirmLocation,
+                    onNameChange = { placeName = it },
+                    onAddressChange = { placeAddress = it },
+                    onConfirmChange = { confirmLocation = it },
+                )
+            }
         }
     }
 }
