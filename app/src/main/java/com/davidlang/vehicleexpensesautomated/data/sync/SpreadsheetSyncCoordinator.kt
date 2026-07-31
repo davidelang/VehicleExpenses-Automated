@@ -367,6 +367,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     ) {
         if (result.success) {
             failureStore.clearSpreadsheetFailure(destId)
+        } else if (result.message.contains("rememberCoroutineScope", ignoreCase = true) ||
+            result.message.contains("left the composition", ignoreCase = true)
+        ) {
+            Log.w(TAG, "Skip recording spreadsheet failure (UI cancel): ${result.message}")
         } else {
             // Store full API/user message (capped), not display name alone.
             failureStore.recordSpreadsheetFailure(destId, result.message)
@@ -417,6 +421,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 fuelRemoteWins = fuel.remoteWins,
             )
         } catch (e: Exception) {
+            // Compose dispose / structured cancel must not become a stored spreadsheet failure.
+            if (e.isNonFailureCancel()) throw e
             Log.e(TAG, "Sync failed for dest=${dest.id}", e)
             val wrapped = SheetsAuthRecovery.wrapIfRecoverable(e)
             if (wrapped is SheetsRecoverableAuthException) {

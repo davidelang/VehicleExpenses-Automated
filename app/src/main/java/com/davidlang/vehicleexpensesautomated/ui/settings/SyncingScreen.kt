@@ -1,7 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.widget.Toast
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,14 +17,12 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
 fun SyncingScreen(navController: NavHostController) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = hiltViewModel()
-    val scope = rememberCoroutineScope()
     val syncStore = remember { SyncDestinationStore(context) }
     val failureStore = remember { SyncFailureStore(context) }
     var pendingBadge by remember { mutableStateOf(syncStore.pendingBadgeText()) }
@@ -35,6 +32,15 @@ fun SyncingScreen(navController: NavHostController) {
     var photoErrorDetails by remember { mutableStateOf<String?>(null) }
     val navBackStackEntry = navController.currentBackStackEntry
     val destinations = remember(navBackStackEntry) { syncStore.load() }
+
+    val spreadsheetSyncStatus by viewModel.spreadsheetSyncStatus.collectAsState()
+    val spreadsheetSyncInProgress by viewModel.spreadsheetSyncInProgress.collectAsState()
+    val spreadsheetSyncIsError by viewModel.spreadsheetSyncIsError.collectAsState()
+    val spreadsheetSyncResult by viewModel.spreadsheetSyncResult.collectAsState()
+    val photoSyncStatus by viewModel.photoSyncStatus.collectAsState()
+    val photoSyncInProgress by viewModel.photoSyncInProgress.collectAsState()
+    val photoSyncIsError by viewModel.photoSyncIsError.collectAsState()
+    val photoSyncResult by viewModel.photoSyncResult.collectAsState()
 
     LaunchedEffect(navBackStackEntry) {
         pendingBadge = syncStore.pendingBadgeText()
@@ -47,25 +53,32 @@ fun SyncingScreen(navController: NavHostController) {
         }
         pendingBadge = syncStore.pendingBadgeText()
     }
+
+    // Refresh failure lines when a ViewModel-scoped sync finishes
+    LaunchedEffect(spreadsheetSyncResult) {
+        val result = spreadsheetSyncResult ?: return@LaunchedEffect
+        spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
+        spreadsheetErrorDetails = failureStore.spreadsheetFailureDetails(syncStore)
+        if (!result.success) {
+            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+        }
+        viewModel.clearSpreadsheetSyncResult()
+    }
+    LaunchedEffect(photoSyncResult) {
+        val result = photoSyncResult ?: return@LaunchedEffect
+        pendingBadge = syncStore.pendingBadgeText()
+        photoError = failureStore.photoFailureSummary(syncStore)
+        photoErrorDetails = failureStore.photoFailureDetails(syncStore)
+        if (!result.success) {
+            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+        }
+        viewModel.clearPhotoSyncResult()
+    }
+
     val spreadsheetDests = destinations.spreadsheet
     val photoDests = destinations.photo
     val spreadsheetConfigured = syncStore.configuredSpreadsheet().isNotEmpty()
     val photoConfigured = syncStore.configuredPhoto().isNotEmpty()
-
-    var spreadsheetSyncStatus by remember { mutableStateOf("") }
-    var photoSyncStatus by remember { mutableStateOf("") }
-    var spreadsheetSyncInProgress by remember { mutableStateOf(false) }
-    var photoSyncInProgress by remember { mutableStateOf(false) }
-    var spreadsheetSyncIsError by remember { mutableStateOf(false) }
-    var photoSyncIsError by remember { mutableStateOf(false) }
-    val spreadsheetProgress = rememberMainThreadSyncProgress {
-        spreadsheetSyncStatus = it
-        spreadsheetSyncIsError = false
-    }
-    val photoProgress = rememberMainThreadSyncProgress {
-        photoSyncStatus = it
-        photoSyncIsError = false
-    }
 
     Column(
         modifier = Modifier
@@ -95,26 +108,11 @@ fun SyncingScreen(navController: NavHostController) {
             showSyncNow = spreadsheetConfigured,
             onRowClick = { navController.navigate("settings/spreadsheet_sync") },
             onSyncNow = {
-                scope.launch {
-                    spreadsheetSyncInProgress = true
-                    spreadsheetSyncIsError = false
-                    spreadsheetSyncStatus = "Starting spreadsheet sync…"
-                    try {
-                        val result = withContext(Dispatchers.IO) {
-                            viewModel.syncSpreadsheet(spreadsheetProgress)
-                        }
-                        spreadsheetSyncStatus = result.message
-                        spreadsheetSyncIsError = !result.success
-                        spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
-                        spreadsheetErrorDetails = failureStore.spreadsheetFailureDetails(syncStore)
-                    } catch (e: Exception) {
-                        spreadsheetSyncIsError = true
-                        spreadsheetSyncStatus = e.message ?: "Sync failed"
-                        Toast.makeText(context, spreadsheetSyncStatus, Toast.LENGTH_LONG).show()
-                    } finally {
-                        spreadsheetSyncInProgress = false
-                    }
+                if (!spreadsheetConfigured) {
+                    Toast.makeText(context, "No configured spreadsheet destinations", Toast.LENGTH_SHORT).show()
+                    return@SyncSummaryRow
                 }
+                viewModel.startSpreadsheetSync()
             },
         )
         SyncSummaryRow(
@@ -130,27 +128,11 @@ fun SyncingScreen(navController: NavHostController) {
             showSyncNow = photoConfigured,
             onRowClick = { navController.navigate("settings/photo_backup") },
             onSyncNow = {
-                scope.launch {
-                    photoSyncInProgress = true
-                    photoSyncIsError = false
-                    photoSyncStatus = "Starting photo backup…"
-                    try {
-                        val result = withContext(Dispatchers.IO) {
-                            viewModel.syncPhotoBackup(photoProgress)
-                        }
-                        photoSyncStatus = result.message
-                        photoSyncIsError = !result.success
-                        pendingBadge = syncStore.pendingBadgeText()
-                        photoError = failureStore.photoFailureSummary(syncStore)
-                        photoErrorDetails = failureStore.photoFailureDetails(syncStore)
-                    } catch (e: Exception) {
-                        photoSyncIsError = true
-                        photoSyncStatus = e.message ?: "Photo sync failed"
-                        Toast.makeText(context, photoSyncStatus, Toast.LENGTH_LONG).show()
-                    } finally {
-                        photoSyncInProgress = false
-                    }
+                if (!photoConfigured) {
+                    Toast.makeText(context, "No configured photo destinations", Toast.LENGTH_SHORT).show()
+                    return@SyncSummaryRow
                 }
+                viewModel.startPhotoSync()
             },
         )
     }

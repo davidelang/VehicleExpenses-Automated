@@ -339,6 +339,8 @@ class PhotoBackupCoordinator @Inject constructor(
                 downloads = downloads,
             )
         } catch (e: Exception) {
+            // Compose dispose / job cancel must not become a stored Drive "failure".
+            if (e.isNonFailureCancel()) throw e
             handleError("Photo sync failed", e, ctx.dest)
         }
     }
@@ -1133,6 +1135,11 @@ class PhotoBackupCoordinator @Inject constructor(
     ) {
         if (result.success) {
             failureStore.clearPhotoFailure(destId)
+        } else if (result.message.contains("rememberCoroutineScope", ignoreCase = true) ||
+            result.message.contains("left the composition", ignoreCase = true)
+        ) {
+            // Defensive: never persist Compose dispose text as a Drive failure.
+            Log.w(TAG, "Skip recording photo failure (UI cancel): ${result.message}")
         } else {
             failureStore.recordPhotoFailure(destId, result.message)
         }
@@ -1212,6 +1219,10 @@ class PhotoBackupCoordinator @Inject constructor(
     }
 
     private fun handleError(logMsg: String, e: Exception, dest: PhotoDestination? = null): PhotoBackupResult {
+        if (e.isNonFailureCancel()) {
+            Log.i(TAG, "$logMsg (cancelled — not a dest failure)", e)
+            throw e
+        }
         Log.e(TAG, logMsg, e)
         val wrapped = DriveAuthRecovery.wrapIfRecoverable(e)
         if (wrapped is DriveRecoverableAuthException) {

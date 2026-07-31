@@ -22,6 +22,7 @@ import androidx.browser.customtabs.CustomTabsIntent
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -173,7 +174,6 @@ internal fun SpreadsheetDestEditForm(
         )
     }
     var statusText by remember { mutableStateOf("") }
-    var syncInProgress by remember { mutableStateOf(false) }
     var statusIsError by remember { mutableStateOf(false) }
     val failureStore = remember { SyncFailureStore(context) }
     var storedFailureDetail by remember {
@@ -181,9 +181,28 @@ internal fun SpreadsheetDestEditForm(
     }
     val isDeferredStub = provider == SpreadsheetProvider.ONLYOFFICE ||
         provider == SpreadsheetProvider.COLLABORA
-    val syncProgress = rememberMainThreadSyncProgress {
-        statusText = it
-        statusIsError = false
+    val syncInProgress by viewModel.manualSyncInProgress.collectAsState()
+    val vmSyncStatus by viewModel.manualSyncStatus.collectAsState()
+    val vmSyncIsError by viewModel.manualSyncIsError.collectAsState()
+    val syncResult by viewModel.manualSyncResult.collectAsState()
+    val footerStatus = if (syncInProgress || vmSyncStatus.isNotBlank()) vmSyncStatus else statusText
+    val footerIsError = if (syncInProgress || vmSyncStatus.isNotBlank()) vmSyncIsError else statusIsError
+
+    LaunchedEffect(syncResult) {
+        val result = syncResult ?: return@LaunchedEffect
+        statusText = result.message
+        statusIsError = !result.success
+        storedFailureDetail = failureStore.spreadsheetFailure(id)?.message
+        Toast.makeText(
+            context,
+            if (result.success) {
+                "Sync complete"
+            } else {
+                SyncRateLimit.shortTitle(result.message) ?: "Sync failed — open Details"
+            },
+            Toast.LENGTH_SHORT,
+        ).show()
+        viewModel.clearManualSyncResult()
     }
 
     LaunchedEffect(isDeferredStub) {
@@ -734,52 +753,20 @@ internal fun SpreadsheetDestEditForm(
                 null
             } else {
                 {
-                    scope.launch {
-                        if (!canSyncThisDest) {
-                            Toast.makeText(
-                                context,
-                                "Save a configured destination first",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                            return@launch
-                        }
-                        syncInProgress = true
-                        statusIsError = false
-                        statusText = "Starting sync for this destination…"
-                        try {
-                            val result = withContext(Dispatchers.IO) {
-                                viewModel.syncNow(
-                                    accountHint = accountHint,
-                                    onProgress = syncProgress,
-                                    destId = id,
-                                )
-                            }
-                            statusIsError = !result.success
-                            statusText = result.message
-                            storedFailureDetail = failureStore.spreadsheetFailure(id)?.message
-                            Toast.makeText(
-                                context,
-                                if (result.success) "Sync complete" else (
-                                    SyncRateLimit.shortTitle(result.message)
-                                        ?: "Sync failed — open Details"
-                                    ),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        } catch (e: Exception) {
-                            statusIsError = true
-                            statusText = SheetsAuthRecovery.userMessage(e)
-                            storedFailureDetail = failureStore.spreadsheetFailure(id)?.message
-                                ?: statusText
-                            Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
-                        } finally {
-                            syncInProgress = false
-                        }
+                    if (!canSyncThisDest) {
+                        Toast.makeText(
+                            context,
+                            "Save a configured destination first",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    } else {
+                        viewModel.startManualSync(accountHint = accountHint, destId = id)
                     }
                 }
             },
             syncInProgress = syncInProgress,
             syncNowEnabled = canSyncThisDest,
-            statusIsError = statusIsError,
+            statusIsError = footerIsError,
             failureDetailMessage = storedFailureDetail,
             failureDialogTitle = displayName.ifBlank { "Spreadsheet sync failure" },
             showRemove = !isNew,
@@ -789,7 +776,7 @@ internal fun SpreadsheetDestEditForm(
                 Toast.makeText(context, "Destination removed", Toast.LENGTH_SHORT).show()
                 onRemoved()
             },
-            statusText = statusText,
+            statusText = footerStatus,
         )
     }
 }

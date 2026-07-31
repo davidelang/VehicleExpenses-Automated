@@ -29,11 +29,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,8 +43,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncProgressListener
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class ConsentRecoveryHandle internal constructor(
     val launch: (Intent, () -> Unit) -> Unit,
@@ -66,12 +66,24 @@ fun rememberConsentRecoveryHandle(): ConsentRecoveryHandle {
     }
 }
 
+/**
+ * Best-effort progress for long-running sync. Uses a process main [Handler] so
+ * disposing the composition never throws into the sync job
+ * (`ForgottenCoroutineScopeException`).
+ */
 @Composable
 fun rememberMainThreadSyncProgress(onUpdate: (String) -> Unit): SyncProgressListener {
-    val scope = rememberCoroutineScope()
-    return remember(onUpdate) {
+    val latestUpdate by rememberUpdatedState(onUpdate)
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    return remember {
         SyncProgressListener { message ->
-            scope.launch(Dispatchers.Main.immediate) { onUpdate(message) }
+            mainHandler.post {
+                try {
+                    latestUpdate(message)
+                } catch (_: Throwable) {
+                    // Composition/state gone — progress is optional
+                }
+            }
         }
     }
 }

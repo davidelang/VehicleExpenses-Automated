@@ -27,6 +27,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -146,7 +147,6 @@ internal fun PhotoDestEditForm(
         )
     }
     var statusText by remember { mutableStateOf("") }
-    var syncInProgress by remember { mutableStateOf(false) }
     var statusIsError by remember { mutableStateOf(false) }
     val failureStore = remember { SyncFailureStore(context) }
     var storedFailureDetail by remember {
@@ -159,9 +159,29 @@ internal fun PhotoDestEditForm(
     var rcloneWizardMode by remember { mutableStateOf(RcloneWizardMode.CREATE) }
     var rcloneEditRemote by remember { mutableStateOf<String?>(null) }
     val consentRecovery = rememberConsentRecoveryHandle()
-    val syncProgress = rememberMainThreadSyncProgress {
-        statusText = it
-        statusIsError = false
+    val syncInProgress by viewModel.manualSyncInProgress.collectAsState()
+    val vmSyncStatus by viewModel.manualSyncStatus.collectAsState()
+    val vmSyncIsError by viewModel.manualSyncIsError.collectAsState()
+    val syncResult by viewModel.manualSyncResult.collectAsState()
+    val footerStatus = if (syncInProgress || vmSyncStatus.isNotBlank()) vmSyncStatus else statusText
+    val footerIsError = if (syncInProgress || vmSyncStatus.isNotBlank()) vmSyncIsError else statusIsError
+
+    LaunchedEffect(syncResult) {
+        val result = syncResult ?: return@LaunchedEffect
+        statusText = result.message
+        statusIsError = !result.success
+        storedFailureDetail = failureStore.photoFailure(id)?.message
+        Toast.makeText(
+            context,
+            if (result.success) {
+                "Backup complete"
+            } else {
+                SyncRateLimit.shortTitle(result.message, forSheets = false)
+                    ?: "Backup failed — open Details"
+            },
+            Toast.LENGTH_SHORT,
+        ).show()
+        viewModel.clearManualSyncResult()
     }
     val displayNameRequired = totalDestCount > 1
     val formTitle = when {
@@ -804,52 +824,20 @@ internal fun PhotoDestEditForm(
                 null
             } else {
                 {
-                    scope.launch {
-                        if (!canSyncThisDest) {
-                            Toast.makeText(
-                                context,
-                                "Save a configured destination first",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                            return@launch
-                        }
-                        syncInProgress = true
-                        statusIsError = false
-                        statusText = "Starting backup for this destination…"
-                        try {
-                            val result = withContext(Dispatchers.IO) {
-                                viewModel.syncNow(
-                                    accountHint = accountHint,
-                                    onProgress = syncProgress,
-                                    destId = id,
-                                )
-                            }
-                            statusIsError = !result.success
-                            statusText = result.message
-                            storedFailureDetail = failureStore.photoFailure(id)?.message
-                            Toast.makeText(
-                                context,
-                                if (result.success) "Backup complete" else (
-                                    SyncRateLimit.shortTitle(result.message, forSheets = false)
-                                        ?: "Backup failed — open Details"
-                                    ),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        } catch (e: Exception) {
-                            statusIsError = true
-                            statusText = DriveAuthRecovery.userMessage(e)
-                            storedFailureDetail = failureStore.photoFailure(id)?.message
-                                ?: statusText
-                            Toast.makeText(context, statusText, Toast.LENGTH_LONG).show()
-                        } finally {
-                            syncInProgress = false
-                        }
+                    if (!canSyncThisDest) {
+                        Toast.makeText(
+                            context,
+                            "Save a configured destination first",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    } else {
+                        viewModel.startManualSync(accountHint = accountHint, destId = id)
                     }
                 }
             },
             syncInProgress = syncInProgress,
             syncNowEnabled = canSyncThisDest,
-            statusIsError = statusIsError,
+            statusIsError = footerIsError,
             failureDetailMessage = storedFailureDetail,
             failureDialogTitle = displayName.ifBlank { "Photo backup failure" },
             showRemove = !isNew,
@@ -859,7 +847,7 @@ internal fun PhotoDestEditForm(
                 Toast.makeText(context, "Destination removed", Toast.LENGTH_SHORT).show()
                 onRemoved()
             },
-            statusText = statusText,
+            statusText = footerStatus,
         )
     }
 }
