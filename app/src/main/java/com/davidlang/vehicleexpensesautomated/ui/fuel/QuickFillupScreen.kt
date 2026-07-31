@@ -770,7 +770,13 @@ fun QuickFillupScreen(
                                 name = placeName,
                                 address = placeAddress,
                                 confirmed = true,
-                                source = "user",
+                                source = FuelLocationJson.placeSourceForConfirm(
+                                    placeName,
+                                    placeAddress,
+                                    lookupName,
+                                    lookupAddress,
+                                    lookupSource,
+                                ),
                                 kind = LocationLookupKind.FUEL_STATION.blobKindTag(),
                                 lookedUpAt = System.currentTimeMillis(),
                             )
