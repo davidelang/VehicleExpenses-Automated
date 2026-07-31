@@ -56,6 +56,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -76,6 +77,15 @@ private data class SessionPhoto(val uri: String, val ts: Long)
 /** Map captureMode odo→dash, pump→pump. */
 private fun photoTagForCaptureMode(captureMode: String): String {
     return if (captureMode == "pump") "pump" else "dash"
+}
+
+/** Surface.ROTATION_* → degrees for EXIF orientation. */
+private fun surfaceRotationToDegrees(rotation: Int): Int = when (rotation) {
+    android.view.Surface.ROTATION_0 -> 0
+    android.view.Surface.ROTATION_90 -> 90
+    android.view.Surface.ROTATION_180 -> 180
+    android.view.Surface.ROTATION_270 -> 270
+    else -> 0
 }
 
 /** Compact JSON array for FuelEntry.photoUrl; null if empty. */
@@ -1026,6 +1036,7 @@ fun QuickFillupScreen(
         if (saveFuelPhotosNow) {
             isPhotoSaving = true
             photoSaveStatus = "Saving photo…"
+            var rotationDegrees = 0
             try {
                 val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                     context.display
@@ -1035,6 +1046,7 @@ fun QuickFillupScreen(
                 }
                 val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
                 imageCapture.targetRotation = rotation
+                rotationDegrees = surfaceRotationToDegrees(rotation)
             } catch (e: Exception) {
                 Log.e("QuickFill", "Failed to set target rotation", e)
             }
@@ -1052,12 +1064,17 @@ fun QuickFillupScreen(
                     }
                 }
 
+                val captureMetadata = ImageCapture.Metadata().apply {
+                    location = deviceLocation
+                }
                 val outputOptions = ImageCapture.OutputFileOptions.Builder(
                     resolver,
                     android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     contentValues
-                ).build()
+                ).setMetadata(captureMetadata).build()
 
+                val locForExif = deviceLocation
+                val orientForExif = rotationDegrees
                 imageCapture.takePicture(
                     outputOptions,
                     ContextCompat.getMainExecutor(context),
@@ -1073,6 +1090,12 @@ fun QuickFillupScreen(
                                     Toast.LENGTH_LONG
                                 ).show()
                             } else {
+                                PhotoExifWriter.writeGpsAndOrientation(
+                                    context,
+                                    savedUri,
+                                    locForExif,
+                                    orientForExif,
+                                )
                                 sessionPhotos[photoTag] = SessionPhoto(
                                     uri = savedUri.toString(),
                                     ts = System.currentTimeMillis()
@@ -1092,6 +1115,12 @@ fun QuickFillupScreen(
                                 null
                             }
                             if (fallbackUri != null) {
+                                PhotoExifWriter.writeGpsAndOrientation(
+                                    context,
+                                    fallbackUri,
+                                    locForExif,
+                                    orientForExif,
+                                )
                                 sessionPhotos[photoTag] = SessionPhoto(
                                     uri = fallbackUri.toString(),
                                     ts = System.currentTimeMillis()
