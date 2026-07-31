@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneLoader
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneRuntime
@@ -74,6 +75,7 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
                 android.util.Log.i("VehicleExpensesApp", "Scheduling background sync from destination settings")
                 syncManager.scheduleFromDestination()
                 photoBackupManager.scheduleFromDestination()
+                LocationLookupScheduler.ensurePeriodic(this)
                 android.util.Log.i("VehicleExpensesApp", "Background sync schedules updated")
             } catch (e: Exception) {
                 android.util.Log.e("VehicleExpensesApp", "Failed to schedule background sync", e)
