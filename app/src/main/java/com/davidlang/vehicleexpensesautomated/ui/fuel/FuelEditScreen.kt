@@ -15,12 +15,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
-import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
+import com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField
+import com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoThumb
 import com.davidlang.vehicleexpensesautomated.ui.components.firstReadableFuelPhotoUri
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasArchiveIdentity
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasDeadLocalOnly
+import com.davidlang.vehicleexpensesautomated.ui.components.photoUrisFromJsonOrPath
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
@@ -49,7 +52,8 @@ fun FuelEditScreen(
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val photoStorage = settingsViewModel.photoStorageManager
     val scope = rememberCoroutineScope()
-    val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+    val allVehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+    val vehicles = remember(allVehicles) { allVehicles.forUserPicker() }
     val destId = remember { SyncDestinationStore(context).photoDestination()?.id }
     val defaultCurrencySymbol = remember {
         try {
@@ -123,63 +127,45 @@ fun FuelEditScreen(
     ) {
         FeatureScreenHeader("Edit fill")
 
-        // Photos
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(160.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            when {
-                thumbUri != null -> {
-                    Image(
-                        painter = rememberAsyncImagePainter(thumbUri),
-                        contentDescription = "Fill photo",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit,
-                    )
-                    if (FuelPhotoJson.parse(photoUrl).size > 1) {
-                        Text(
-                            "${FuelPhotoJson.parse(photoUrl).size} photos",
-                            modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
-                canFetch -> {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Photo in archive only", style = MaterialTheme.typography.bodyMedium)
-                        Button(
-                            onClick = {
-                                val entry = loaded ?: return@Button
-                                scope.launch {
-                                    isFetching = true
-                                    try {
-                                        val scrubbed = fuelViewModel.scrubUnreadableFuelPhotos(entry)
-                                        val local = fuelViewModel.downloadFuelPhoto(scrubbed)
-                                        val refreshed = fuelViewModel.getFuelById(fuelId)
-                                        if (refreshed != null) {
-                                            loaded = refreshed
-                                            photoUrl = refreshed.photoUrl
-                                        }
-                                        if (local != null) {
-                                            Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
-                                        }
-                                    } finally {
-                                        isFetching = false
-                                    }
-                                }
-                            },
-                            enabled = !isFetching,
-                        ) {
-                            Text(if (isFetching) "Fetching…" else "Fetch image from archive")
-                        }
-                    }
-                }
-                else -> Text("No photo", style = MaterialTheme.typography.bodyMedium)
+        // Photos (zoomable; larger default on wide layouts)
+        when {
+            thumbUri != null -> {
+                val uris = photoUrisFromJsonOrPath(photoUrl).ifEmpty { listOf(thumbUri) }
+                ZoomablePhotoThumb(uris = uris, contentDescription = "Fill photo")
             }
+            canFetch -> {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Photo in archive only", style = MaterialTheme.typography.bodyMedium)
+                    Button(
+                        onClick = {
+                            val entry = loaded ?: return@Button
+                            scope.launch {
+                                isFetching = true
+                                try {
+                                    val scrubbed = fuelViewModel.scrubUnreadableFuelPhotos(entry)
+                                    val local = fuelViewModel.downloadFuelPhoto(scrubbed)
+                                    val refreshed = fuelViewModel.getFuelById(fuelId)
+                                    if (refreshed != null) {
+                                        loaded = refreshed
+                                        photoUrl = refreshed.photoUrl
+                                    }
+                                    if (local != null) {
+                                        Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
+                                    }
+                                } finally {
+                                    isFetching = false
+                                }
+                            }
+                        },
+                        enabled = !isFetching,
+                    ) {
+                        Text(if (isFetching) "Fetching…" else "Fetch image from archive")
+                    }
+                }
+            }
+            else -> Text("No photo", style = MaterialTheme.typography.bodyMedium)
         }
 
         ExposedDropdownMenuBox(
@@ -211,21 +197,22 @@ fun FuelEditScreen(
             }
         }
 
-        OutlinedTextField(
+        CaretEnabledOutlinedTextField(
             value = odometer,
             onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
             label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            showCaretButtons = true,
         )
-        OutlinedTextField(
+        CaretEnabledOutlinedTextField(
             value = tripType,
             onValueChange = { tripType = it },
             label = { Text("Trip type (blank = normal fill)") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
-        OutlinedTextField(
+        CaretEnabledOutlinedTextField(
             value = volume,
             onValueChange = { volume = it },
             label = {
@@ -235,15 +222,17 @@ fun FuelEditScreen(
             },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            showCaretButtons = true,
         )
-        OutlinedTextField(
+        CaretEnabledOutlinedTextField(
             value = cost,
             onValueChange = { cost = it },
             label = { Text("Cost") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            showCaretButtons = true,
         )
-        OutlinedTextField(
+        CaretEnabledOutlinedTextField(
             value = currencySymbol,
             onValueChange = { currencySymbol = it },
             label = { Text("Currency") },
@@ -254,17 +243,18 @@ fun FuelEditScreen(
             label = "Date/time: ${dateFmt.format(Date(timestampMs))}",
             onClick = { showDatePicker = true },
         )
-        OutlinedTextField(
+        CaretEnabledOutlinedTextField(
             value = location,
             onValueChange = { location = it },
             label = { Text("Location") },
             modifier = Modifier.fillMaxWidth(),
         )
-        OutlinedTextField(
+        CaretEnabledOutlinedTextField(
             value = notes,
             onValueChange = { notes = it },
             label = { Text("Notes") },
             modifier = Modifier.fillMaxWidth(),
+            singleLine = false,
             maxLines = 4,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {

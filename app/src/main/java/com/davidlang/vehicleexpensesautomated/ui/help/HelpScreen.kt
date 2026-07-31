@@ -69,12 +69,12 @@ fun HelpScreen(navController: NavHostController? = null) {
         Bullet("Disk (Save). Blank fields are allowed as a partial fill. Works offline")
 
         SectionTitle("3. Log an expense")
-        Bullet("Menu → New Expense Entry")
+        Bullet("Menu → New expense")
         Bullet("Shutter or gallery for the receipt; fill vendor, amount, category, vehicle")
-        Bullet("Save. Use Expense List to review or edit later")
+        Bullet("Save. Open expenses from Reports → Expenses list to review or edit later")
 
         SectionTitle("4. Reports")
-        Bullet("Menu → Reports & Charts for summaries, last full fills, expenses, and history")
+        Bullet("Menu → Reports for efficiency, costs, trips, vehicle summary, and expense list")
 
         SectionTitle("5. Backups & multi-device (optional)")
         Text(

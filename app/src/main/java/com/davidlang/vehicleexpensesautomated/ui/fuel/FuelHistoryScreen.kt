@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.fuel
 
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +23,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
 import com.davidlang.vehicleexpensesautomated.ui.components.EmptyStateText
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
+import com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasArchiveIdentity
 import com.davidlang.vehicleexpensesautomated.ui.components.firstReadableFuelPhotoUri
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasDeadLocalOnly
@@ -164,14 +166,22 @@ private fun FuelHistoryRow(
             ) {
                 when {
                     thumbUri != null -> {
+                        var showZoom by remember { mutableStateOf(false) }
                         Image(
                             painter = rememberAsyncImagePainter(thumbUri),
                             contentDescription = "Fill photo",
                             modifier = Modifier
                                 .size(56.dp)
-                                .fillMaxSize(),
+                                .fillMaxSize()
+                                .clickable { showZoom = true },
                             contentScale = ContentScale.Crop,
                         )
+                        if (showZoom) {
+                            ZoomablePhotoDialog(
+                                uris = listOf(thumbUri),
+                                onDismiss = { showZoom = false },
+                            )
+                        }
                     }
                     canFetch -> {
                         TextButton(

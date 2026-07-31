@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -69,6 +70,9 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdBackfill
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
 import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
+import com.davidlang.vehicleexpensesautomated.ui.components.LocalPageHelpController
+import com.davidlang.vehicleexpensesautomated.ui.components.PageHelpTopBarAction
+import com.davidlang.vehicleexpensesautomated.ui.components.rememberPageHelpController
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryMode
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
@@ -77,7 +81,7 @@ import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPumpScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
-import com.davidlang.vehicleexpensesautomated.ui.reports.ReportsScreen
+
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelEditScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelHistoryScreen
 import com.davidlang.vehicleexpensesautomated.ui.trip.TripTrackingScreen
@@ -130,6 +134,21 @@ class MainActivity : ComponentActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+        // After media dialog settles → location (no stacked dialogs).
+        maybeRequestLocationPermission()
+    }
+
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val anyGranted = results.values.any { it }
+        if (!anyGranted) {
+            Toast.makeText(
+                this,
+                "Location denied — fills save without GPS",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -153,18 +172,41 @@ class MainActivity : ComponentActivity() {
     private fun maybeRequestMediaPermissionForFuelPhotos() {
         val prefs = getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
         val saveFuelPhotos = prefs.getBoolean("save_fuel_photos", true)
-        if (!saveFuelPhotos) return
+        if (!saveFuelPhotos) {
+            maybeRequestLocationPermission()
+            return
+        }
         val permission = mediaImagesPermission()
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            maybeRequestLocationPermission()
             return
         }
         mediaPermissionLauncher.launch(permission)
     }
 
+    /** One-shot FINE+COARSE after camera/media chain; soft deny toast only. */
+    private fun maybeRequestLocationPermission() {
+        val fine = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (fine || coarse) return
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            )
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Camera only here — media follows in cameraPermissionLauncher callback (no stacked dialogs).
+        // Camera only here — media then location follow in callbacks (no stacked dialogs).
         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
 
         setContent {
@@ -256,21 +298,22 @@ class MainActivity : ComponentActivity() {
                     onDispose { experimentPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
                 }
 
+                val pageHelpController = rememberPageHelpController()
+
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
                 val title = when {
                     currentRoute == "quickfill" -> "Quick Fill-up"
-                    currentRoute == "triptracking" -> "Trip Tracking"
+                    currentRoute == "triptracking" -> "Start trip"
                     currentRoute == "managevehicles" -> "Manage Vehicles"
-                    currentRoute == "expense" -> "New Expense Entry"
-                    currentRoute?.startsWith("expense/") == true -> "Edit Expense"
-                    currentRoute == "expenselist" -> "Expense List"
+                    currentRoute == "expense" -> "New expense"
+                    currentRoute?.startsWith("expense/") == true -> "Edit expense"
+                    currentRoute == "expenselist" -> "Expense list"
                     currentRoute == "import" ||
                         currentRoute?.startsWith("import") == true -> "Import Old Pictures"
-                    currentRoute == "reports" -> "Reports & Charts"
                     currentRoute == "reports_lab" ||
-                        currentRoute?.startsWith("reports_lab/") == true -> "Reports Lab"
+                        currentRoute?.startsWith("reports_lab/") == true -> "Reports"
                     currentRoute == "fuelhistory" -> "Fuel History"
                     currentRoute?.startsWith("fuel/") == true -> "Edit Fill"
                     currentRoute == "settings" -> "Settings"
@@ -284,6 +327,7 @@ class MainActivity : ComponentActivity() {
                     else -> "Vehicle Expenses"
                 }
 
+                CompositionLocalProvider(LocalPageHelpController provides pageHelpController) {
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     drawerContent = {
@@ -298,7 +342,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Trip Tracking") },
+                                label = { Text("Start trip") },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("triptracking")
@@ -314,7 +358,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("New Expense Entry") },
+                                label = { Text("New expense") },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("expense")
@@ -322,42 +366,10 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Expense List") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("expenselist")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Import Old Pictures") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("import")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Reports & Charts") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("reports")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Reports Lab") },
+                                label = { Text("Reports") },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("reports_lab")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Fuel History") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("fuelhistory")
                                     scope.launch { drawerState.close() }
                                 }
                             )
@@ -410,6 +422,15 @@ class MainActivity : ComponentActivity() {
                                         scope.launch { drawerState.close() }
                                     }
                                 )
+                                // Import is experiment-gated in drawer; top-bar ?N review still routes to import.
+                                NavigationDrawerItem(
+                                    label = { Text("Import Old Pictures") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("import")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
                             }
                         }
                     }
@@ -426,7 +447,8 @@ class MainActivity : ComponentActivity() {
                                     )
                                 },
                                 actions = {
-                                    // Order: review questions (yellow), then sync failure (red)
+                                    // Page help (when registered) → review questions (yellow) → sync failure (red)
+                                    PageHelpTopBarAction(pageHelpController)
                                     if (pendingReviewCount > 0) {
                                         IconButton(
                                             onClick = {
@@ -524,7 +546,7 @@ class MainActivity : ComponentActivity() {
                                         expandReview = expandReview,
                                     )
                                 }
-                                composable("reports") { ReportsScreen(navController = navController) }
+
                                 composable("triptracking") { TripTrackingScreen(navController = navController) }
                                 composable("reports_lab") { ReportsLabHubScreen(navController = navController) }
                                 composable("reports_lab/efficiency") {
@@ -571,6 +593,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                } // CompositionLocalProvider (PageHelp)
             }
         }
     }
