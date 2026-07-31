@@ -1596,7 +1596,8 @@ class BatchFuelImportCoordinator @Inject constructor(
                         photoPath = sourcePath,
                         durablePhotoPath = sourcePath, // same as source (no mirror)
                         timestampMs = ts,
-                        location = FuelLocationJson.encode(FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif")),
+                        latitude = meta.latitude,
+                        longitude = meta.longitude,
                     ),
                 )
             }
@@ -1676,7 +1677,8 @@ class BatchFuelImportCoordinator @Inject constructor(
                         photoPath = sourcePath,
                         durablePhotoPath = sourcePath,
                         timestampMs = ts,
-                        location = FuelLocationJson.encode(FuelLocationJson.fromCoords(meta.latitude, meta.longitude, meta.accuracyM, source = "exif")),
+                        latitude = meta.latitude,
+                        longitude = meta.longitude,
                     ),
                 )
             }
