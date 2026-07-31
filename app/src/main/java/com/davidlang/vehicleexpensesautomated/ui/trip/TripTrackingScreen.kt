@@ -60,6 +60,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
@@ -112,6 +113,15 @@ fun TripTrackingScreen(
     var capturePending by remember { mutableStateOf(false) }
     var isProcessingOcr by remember { mutableStateOf(false) }
     var ocrStage by remember { mutableStateOf("") }
+
+    // One-shot device GPS per screen visit (not per OCR capture).
+    LaunchedEffect(Unit) {
+        val fix = CaptureLocation.captureLocationOrNull(context)
+        if (fix != null) {
+            latitude = fix.latitude
+            longitude = fix.longitude
+        }
+    }
 
     val imageCapture: ImageCapture = remember {
         ImageCapture.Builder()
@@ -251,8 +261,7 @@ fun TripTrackingScreen(
         statusLine = "$toastLabel: $tripType @ ${UnitFormat.odometerReadingLabel(odo)}"
         Toast.makeText(context, statusLine, Toast.LENGTH_SHORT).show()
         eventTimestamp = System.currentTimeMillis()
-        latitude = null
-        longitude = null
+        // Keep once-per-screen device lat/lon while staying on Trip Tracking.
     }
 
     Column(
