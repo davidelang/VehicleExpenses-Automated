@@ -2272,3 +2272,12 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Branch: location-fixes (no prior location-fixes/builds tag; first successful build_app creates it)
 - Phases 1-12: manifest perms → play-services-location → CaptureLocation → PhotoExifWriter → PhotoExifMeta URI → MainActivity → QF GPS → QF EXIF → Trip GPS → Expense camera → Expense gallery → hygiene
 
+
+## 2026-07-30 - capture-gps-exif-camerax phases 1-12 complete
+
+- Plan: dev-ai-interaction/plans/capture-gps-and-exif-on-camerax-paths-20260730-plan.md
+- Delivered: CaptureLocation, PhotoExifWriter, PhotoExifMeta URI, MainActivity location chain, QF/Trip/Expense once-per-screen GPS, QF+Expense CameraX Metadata+EXIF, Expense gallery EXIF-or-null
+- Strike 1 on Phase 4: platform ExifInterface lacks setLatLong → DMS attribute write
+- Closed TODO Troubleshoot missing lat/long; project-facts GPS/EXIF pointers
+- Handoff: ready to test after final build_app
+

@@ -27,7 +27,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 
 ## Backlog (location)
 - [ ] **Location Lookup Worker:** background POI resolution (Overpass/OSM; `dev-ai-interaction/LOCATION_LOOKUP_WORKER.md`)
-- [ ] **Troubleshoot missing lat/long:** EXIF from photos; if absent, explicit location permission + capture at save
+- [x] **Troubleshoot missing lat/long:** EXIF from photos; if absent, explicit location permission + capture at save
 
 ## Backlog (features / product)
 - [ ] **Expense receipt parsing:** OCR/parse store name, cost, line items from receipt photos
