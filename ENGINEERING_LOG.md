@@ -2281,3 +2281,16 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Closed TODO Troubleshoot missing lat/long; project-facts GPS/EXIF pointers
 - Handoff: ready to test after final build_app
 
+
+## 2026-07-31 - location-poi-lookup execution start
+
+- Plan: dev-ai-interaction/plans/location-poi-lookup-confirm-and-queue-20260730-plan.md
+- Branch: location-fixes (baseline location-fixes/builds @ ab656ccc)
+- Phases 0-13: gallery nit → FuelLocationJson blob → v18 migration → call-site accuracy → Nominatim/Overpass/facade → worker → tabular → QF/Trip/Expense UI → hygiene
+
+
+## 2026-07-31 - location-poi Phase 0 forensic (gallery nit)
+
+- ExpenseEntryScreen pickImageLauncher: single rowLat=meta.latitude, rowLon=meta.longitude (lines ~219-220). No duplicate rowLon assignment.
+- Phase 0 no-op; proceeding to Phase 1 FuelLocationJson.
+
