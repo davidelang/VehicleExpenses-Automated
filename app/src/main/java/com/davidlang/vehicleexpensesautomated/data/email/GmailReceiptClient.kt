@@ -16,7 +16,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Minimal Gmail REST client: list messages under a user label + Shell sender, fetch HTML body.
+ * Minimal Gmail REST client: list messages under a user label (mixed vendors), fetch HTML body.
+ * Vendor filter is autodetect at parse time — not a Gmail From: restriction.
  * Uses OAuth via [GoogleLegacySignIn] with gmail.readonly only (no send/delete).
  */
 @Singleton
@@ -28,6 +29,7 @@ class GmailReceiptClient @Inject constructor(
         val id: String,
         val from: String,
         val subject: String,
+        val dateHeader: String,
         val htmlBody: String,
     )
 
@@ -37,10 +39,15 @@ class GmailReceiptClient @Inject constructor(
         legacy.resolveAccountFromHint(emailHint, EmailReceiptPrefs.KEY_ACCOUNT)
             ?: legacy.resolveAccount(legacy.lastAccount())
 
+    /** @deprecated Use [listLabeledReceipts]; kept as alias for call sites. */
+    fun listShellReceipts(account: Account, labelName: String, maxResults: Int = 25): List<GmailMessage> =
+        listLabeledReceipts(account, labelName, maxResults)
+
     /**
+     * Label-only query (no Shell-only from:). Autodetect vendor after fetch.
      * @return messages (may be empty). Throws [NeedsConsentException] if user must re-auth.
      */
-    fun listShellReceipts(account: Account, labelName: String, maxResults: Int = 25): List<GmailMessage> {
+    fun listLabeledReceipts(account: Account, labelName: String, maxResults: Int = 25): List<GmailMessage> {
         val credential = legacy.oauthCredential(EmailReceiptPrefs.GMAIL_READONLY_SCOPE, account)
         val token = try {
             credential.token
@@ -54,8 +61,8 @@ class GmailReceiptClient @Inject constructor(
         val label = labelName.trim()
         if (label.isEmpty()) return emptyList()
 
-        // Application-level label filter (OAuth is still broad gmail.readonly — documented).
-        val q = "label:${quoteLabel(label)} from:donotreply@mail.ereceiptshell.com"
+        // User filter → label is source of truth; mixed Shell + Sam's (etc.).
+        val q = "label:${quoteLabel(label)}"
         val listUrl =
             "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${enc(q)}&maxResults=$maxResults"
         val listJson = httpGet(listUrl, token)
@@ -67,7 +74,6 @@ class GmailReceiptClient @Inject constructor(
             val id = arr.getJSONObject(i).getString("id")
             try {
                 val full = fetchMessage(token, id) ?: continue
-                if (!senderAllowed(full.from)) continue
                 out.add(full)
             } catch (e: UserRecoverableAuthIOException) {
                 throw NeedsConsentException(e.intent)
@@ -86,17 +92,25 @@ class GmailReceiptClient @Inject constructor(
         val headers = payload.optJSONArray("headers")
         var from = ""
         var subject = ""
+        var dateHeader = ""
         if (headers != null) {
             for (i in 0 until headers.length()) {
                 val h = headers.getJSONObject(i)
                 when (h.optString("name").lowercase()) {
                     "from" -> from = h.optString("value")
                     "subject" -> subject = h.optString("value")
+                    "date" -> dateHeader = h.optString("value")
                 }
             }
         }
         val html = extractHtml(payload) ?: return null
-        return GmailMessage(id = id, from = from, subject = subject, htmlBody = html)
+        return GmailMessage(
+            id = id,
+            from = from,
+            subject = subject,
+            dateHeader = dateHeader,
+            htmlBody = html,
+        )
     }
 
     private fun extractHtml(payload: JSONObject): String? {
@@ -159,13 +173,7 @@ class GmailReceiptClient @Inject constructor(
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
 
-    private fun senderAllowed(from: String): Boolean {
-        val f = from.lowercase()
-        return SHELL_SENDERS.any { f.contains(it) }
-    }
-
     companion object {
         private const val TAG = "GmailReceiptClient"
-        private val SHELL_SENDERS = listOf("donotreply@mail.ereceiptshell.com")
     }
 }

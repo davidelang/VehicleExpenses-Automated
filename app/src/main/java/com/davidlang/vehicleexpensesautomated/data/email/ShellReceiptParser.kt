@@ -11,6 +11,7 @@ object ShellReceiptParser {
     fun parse(html: String?, messageKey: String? = null, gmailMessageId: String? = null): ParsedFuelReceipt? {
         if (html.isNullOrBlank()) return null
         val lower = html.lowercase()
+        if (lower.contains("samsclub.com") || lower.contains("sam's club fuel")) return null
         val looksShell =
             lower.contains("ereceiptshell") ||
                 lower.contains("shell e-receipt") ||

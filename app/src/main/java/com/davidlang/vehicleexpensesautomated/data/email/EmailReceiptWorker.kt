@@ -48,7 +48,7 @@ class EmailReceiptWorker @AssistedInject constructor(
                 return@withContext Result.success()
             }
             val messages = try {
-                gmailClient.listShellReceipts(account, label)
+                gmailClient.listLabeledReceipts(account, label)
             } catch (e: GmailReceiptClient.NeedsConsentException) {
                 val msg = "needs Gmail consent — open Settings → Email receipts"
                 Log.w(TAG, msg, e)
@@ -59,10 +59,15 @@ class EmailReceiptWorker @AssistedInject constructor(
 
             for (msg in messages) {
                 scanned++
-                val receipt = ShellReceiptParser.parse(
+                val receipt = ReceiptParsers.tryParse(
                     html = msg.htmlBody,
-                    gmailMessageId = msg.id,
-                    messageKey = msg.id,
+                    meta = ReceiptParsers.Meta(
+                        messageKey = msg.id,
+                        gmailMessageId = msg.id,
+                        fromHeader = msg.from,
+                        subject = msg.subject,
+                        emailDateHeader = msg.dateHeader,
+                    ),
                 )
                 if (receipt == null) {
                     skippedParse++

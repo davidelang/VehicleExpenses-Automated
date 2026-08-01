@@ -4287,3 +4287,17 @@ x
 
 - .gitignore allow app/src/main/assets/email-receipt/** (was ignored by assets/*)
 - Force-add shell-receipt1/2.html so offline ingest ships in APK
+
+## 2026-08-01 - Execute email-receipt Sam's Club + Shell autodetect
+
+- Plan: dev-ai-interaction/plans/email-receipt-sams-club-plus-shell-autodetect-20260801-plan.md
+- Branch: email-connection @ c73f1a68
+- Scope: Sam's parser, label-only Gmail list, ReceiptParsers facade, offline fixtures
+
+
+## 2026-08-01 - Sam's Club + Shell autodetect (code)
+
+- SamsClubReceiptParser + ReceiptParsers facade; Gmail label-only list
+- Offline fixtures: 2 Shell + 1 Sam's; node tests 60 pass
+- Apps Script ReceiptParsers/SamsParser; Settings copy multi-vendor
+

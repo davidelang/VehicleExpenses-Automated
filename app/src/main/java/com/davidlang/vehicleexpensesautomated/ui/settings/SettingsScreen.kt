@@ -319,11 +319,11 @@ fun SettingsScreen(navController: NavHostController) {
                 ).show()
             }
         }
-        Text("Email receipts (Shell)", style = MaterialTheme.typography.titleMedium)
+        Text("Email receipts (Shell + Sam's Club)", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Offline: ingest packaged sample receipts into Unassigned fuel (no Gmail). " +
-                "Live: polls only a Gmail label you choose (filter from " +
-                "donotreply@mail.ereceiptshell.com). " +
+            "Offline: ingest packaged Shell + Sam's Club samples into Unassigned fuel (no Gmail). " +
+                "Live: polls only a Gmail label you choose (put Shell and Sam's fuel mails on the same label). " +
+                "Vendor is auto-detected per message; unknown mail is skipped. " +
                 "Rows: vehicle Unassigned (id 0), odometer 0, Partial Fill off. " +
                 "Gmail readonly scope is broad at OAuth; label is the app filter.",
             style = MaterialTheme.typography.bodySmall,
@@ -357,7 +357,7 @@ fun SettingsScreen(navController: NavHostController) {
         ) {
             Text(
                 if (emailOfflineBusy) "Ingesting sample receipts…"
-                else "Ingest sample Shell receipts (offline)",
+                else "Ingest sample receipts (offline)",
             )
         }
         Spacer(modifier = Modifier.height(8.dp))

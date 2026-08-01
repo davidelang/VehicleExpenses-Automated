@@ -7,7 +7,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Offline ingest of packaged Shell fixture HTML (no Gmail).
+ * Offline ingest of packaged Shell + Sam's Club fixture HTML (no Gmail).
  * Message keys are stable so re-run is idempotent (dups only).
  */
 @Singleton
@@ -22,34 +22,49 @@ class EmailReceiptFixtureIngest @Inject constructor(
         val parseSkip: Int,
     )
 
+    data class FixtureSpec(
+        val assetName: String,
+        val messageKey: String,
+        val fromHeader: String? = null,
+        val subject: String? = null,
+        val emailDateHeader: String? = null,
+    )
+
     /**
-     * Parse + insert both packaged fixtures. Writes nothing to Gmail.
-     * @return human-readable summary for [EmailReceiptPrefs.lastRunSummary]
+     * Parse + insert all packaged sample receipts. Writes nothing to Gmail.
      */
-    suspend fun ingestSampleShellReceipts(): Aggregate {
+    suspend fun ingestSampleShellReceipts(): Aggregate = ingestAllSampleReceipts()
+
+    /** Alias: Shell + Sam's offline samples. */
+    suspend fun ingestAllSampleReceipts(): Aggregate {
         var inserted = 0
         var duplicates = 0
         var parseSkip = 0
-        for ((assetName, messageKey) in FIXTURES) {
-            val html = readAsset(assetName)
+        for (fx in FIXTURES) {
+            val html = readAsset(fx.assetName)
             if (html == null) {
                 parseSkip++
-                Log.w(TAG, "missing asset $assetName")
+                Log.w(TAG, "missing asset ${fx.assetName}")
                 continue
             }
-            val parsed = ShellReceiptParser.parse(
+            val parsed = ReceiptParsers.tryParse(
                 html = html,
-                messageKey = messageKey,
-                gmailMessageId = messageKey,
+                meta = ReceiptParsers.Meta(
+                    messageKey = fx.messageKey,
+                    gmailMessageId = fx.messageKey,
+                    fromHeader = fx.fromHeader,
+                    subject = fx.subject,
+                    emailDateHeader = fx.emailDateHeader,
+                ),
             )
             if (parsed == null) {
                 parseSkip++
-                Log.w(TAG, "parse failed for $messageKey")
+                Log.w(TAG, "parse failed for ${fx.messageKey}")
                 continue
             }
             val result = ingest.ingest(
                 parsed = parsed,
-                gmailMessageId = messageKey,
+                gmailMessageId = fx.messageKey,
                 originDeviceId = ORIGIN_OFFLINE_FIXTURE,
             )
             when {
@@ -58,7 +73,7 @@ class EmailReceiptFixtureIngest @Inject constructor(
             }
             Log.i(
                 TAG,
-                "fixture $messageKey cost=${parsed.cost} gal=${parsed.gallons} " +
+                "fixture ${fx.messageKey} brand=${parsed.brand} cost=${parsed.cost} gal=${parsed.gallons} " +
                     "inserted=${result.inserted} dup=${result.skippedDuplicate}",
             )
         }
@@ -89,10 +104,17 @@ class EmailReceiptFixtureIngest @Inject constructor(
         private const val TAG = "EmailReceiptFixtureIngest"
         private const val ASSET_DIR = "email-receipt"
         private const val ORIGIN_OFFLINE_FIXTURE = "android-email-fixture"
-        /** Stable keys (not random Gmail ids) — second ingest → dups only. */
-        val FIXTURES: List<Pair<String, String>> = listOf(
-            "shell-receipt1.html" to "fixture|shell-receipt1",
-            "shell-receipt2.html" to "fixture|shell-receipt2",
+        /** Stable keys — second ingest → dups only. */
+        val FIXTURES: List<FixtureSpec> = listOf(
+            FixtureSpec("shell-receipt1.html", "fixture|shell-receipt1"),
+            FixtureSpec("shell-receipt2.html", "fixture|shell-receipt2"),
+            FixtureSpec(
+                assetName = "sams-club-receipt1.html",
+                messageKey = "fixture|sams-club-receipt1",
+                fromHeader = "Sam's Club <transaction@info.samsclub.com>",
+                subject = "Here's your fuel station receipt",
+                emailDateHeader = "Fri, 31 Jul 2026 21:48:47 -0600",
+            ),
         )
     }
 }
