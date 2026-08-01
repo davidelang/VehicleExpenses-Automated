@@ -240,6 +240,9 @@ FILES=(
     ".grok/hooks/plan-mode-hard-stops.js"
     ".grok/agents/plan.md"
     ".grok/agents/explore.md"
+    ".grok/prompts/planning-subagent.md"
+    ".grok/prompts/execution-subagent.md"
+    ".grok/prompts/dedicated-planner.md"
     # Tracked human-facing ritual document (magic words, forbidden phrases, post-handoff instructions).
     # Added per approved meta-plan for plan/execute cycle enforcement; synced to all worktrees.
     "MULTI_AGENT_USER_INSTRUCTIONS.md"

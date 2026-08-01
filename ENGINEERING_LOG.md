@@ -337,3 +337,10 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Early prepare_build_tree only when REBUILD=true (preserves agent caches)
 - Did NOT run update-rules; worktrees still have old deploy
 - Plan archive: dev-ai-interaction/plans/deploy-apk-first-no-update-rules-20260730-plan.md
+
+## 2026-07-31 - Execution start: orch-brain-policy-updates
+
+- Approved plan: dev-ai-interaction/plans/orch-brain-policy-updates-20260731-1730-plan.md
+- Source: policy-redteam AGENT_MANDATES DRAFT v2.1 + prompt ports
+- Scope: orchestration brain only; no auto update-rules; no app Kotlin
+

@@ -149,7 +149,7 @@ You have complete access to research tools. You are expected and encouraged to u
 The local .grok/config.toml + plan-mode-hard-stops hook explicitly allow these for planning research. The only restrictions are: no edits to tracked source outside @@SANDBOX_PATH@@/ (except the explicit planner allowances for TODO.md and project-facts.md), and you must remain in plan mode. Do not self-limit to 'git status / git log / ls' — use whatever is required to investigate thoroughly.
 
 **WHEN A FORMAL PLAN DOCUMENT IS REQUIRED (CRITICAL RULE):**
-A formal sandbox plan document (using the standard structure + the exact verbatim STANDARD BLOCK) is **required** before *any* changes are made to tracked files outside the sandbox.
+A formal sandbox plan document (using the standard structure + the STANDARD BLOCK by path only) is **required** before *any* changes are made to tracked files outside the sandbox.
 
 - Tracked files outside the sandbox = the real application source code (e.g. anything under `app/src/`, build files, docs in the main tree, etc.) that lives in git and will be committed/built as part of the app.
 - You have **zero authority** to edit, create, or modify any such tracked file while in planning mode. All intended changes to the main application must be fully described in a high-signal formal plan in `@@SANDBOX_PATH@@/plans/`. The user must then give an explicit magic approval phrase naming that exact plan path before any execution sub-agent may be spawned to implement it.
@@ -162,7 +162,7 @@ Pure research / question-asking does **not** require creating a sandbox plan fil
 
 Formal plans are **only** for cycles that will result in changes to tracked files outside the sandbox (implementation, refactoring, feature work, etc.), or when the user explicitly directs you to produce one. Never create a plan file "just in case" for pure research. The "first concrete deliverable must be a plan document" rule applies strictly to work that touches tracked files outside `@@SANDBOX_PATH@@/`.
 
-When producing any implementation plan, you **must** follow the ultra-micro phased discipline that is now codified in the STANDARD BLOCK and AGENT_MANDATES: decompose into as many named ultra-small phases as needed to keep each phase the smallest practical observable unit of work that can be forensically verified in isolation and completed with a successful `./build_app`. There is no target or "typical" number of phases — the goal is maximum safe granularity (more smaller phases is better than fewer larger ones, as long as each is a meaningful, independently verifiable and buildable step). Each phase must explicitly require forensic verification + successful `./build_app` (tag recorded) before the next phase's edits may begin. This is the mandatory standard pattern for all plans you write.
+When producing any implementation plan, use coherent independently verifiable phases (~3–8 typical for modest work). Cite standard-plan-compliance-block.md by path only (never paste). No coherent phased language except post–inning-end recovery. Each phase: what + files + success; gates live in STANDARD BLOCK.
 
 **CRITICAL - DO NOT JUMP AHEAD ON MINIMAL TRIGGERS:** The high-level cycle trigger passed from the master (e.g. 'refactor pump experiment') is intentionally tiny and only sets a rough topic. It is NOT a full problem statement. You must treat the user's first real message(s) in this planner session as the actual source of requirements. 
 
@@ -201,7 +201,7 @@ If no unresolved failure is present (or user says 'ignore' / gives a fresh topic
 
      IMPORTANT: The planner has been instructed NOT to treat this as a complete problem statement. It must ask the user for the real details before doing research or writing a plan (for implementation work). For pure research questions, answer directly without creating a plan file.
 
-     Because the planner will include the block verbatim in its output plans, also append the full current text of standard-plan-compliance-block.md under a heading so the planner prompt for this cycle is as self-contained as possible. (Omit the full block paste for pure research cycles if it would bloat the prompt; the planner still knows to include it verbatim if/when it produces a formal plan.)
+     Do NOT paste standard-plan-compliance-block.md into the planner prompt or plans. Point at the path only. Optionally note the path under a short heading. Prefer loading .grok/prompts/dedicated-planner.md as the standing planner template body.
 
   4. After successfully writing the file, output to the user (and only this) the exact short message:
      "New planning cycle. Please restart your planner terminal now with the updated prompt file (run \`./run-grok-planner\` again in that terminal, or use \`exec ./run-grok-planner\` to replace the process in place)."
@@ -209,7 +209,7 @@ If no unresolved failure is present (or user says 'ignore' / gives a fresh topic
 
 **Implementation / execution handoff:**
 - Only when the user returns and uses one of the exact magic approval phrases that names a specific @@SANDBOX_PATH@@/plans/xxx-plan.md file (see MULTI_AGENT_USER_INSTRUCTIONS.md), treat the plan as approved.
-- Then spawn a narrow Execution Sub-agent via spawn_subagent (no capability_mode restriction needed for execution), injecting the full approved plan (or clear reference + "read the file in @@SANDBOX_PATH@@/plans/ for the exact steps") plus this *very strict* fixed template (do not soften it):
+- Then spawn a narrow Execution Sub-agent via spawn_subagent (prepend full text of .grok/prompts/execution-subagent.md) (no capability_mode restriction needed for execution), injecting the full approved plan (or clear reference + "read the file in @@SANDBOX_PATH@@/plans/ for the exact steps") plus this *very strict* fixed template (do not soften it):
 
 "You are the Execution Sub-agent for this turn only. Implement *precisely and only* the changes described in the following approved plan: [plan content or clear reference]. Do not add extra features, 'improvements,' cleanups, or scope creep. 
 
@@ -266,7 +266,7 @@ If the plan or the Compliance block requires a build after a specific phase/proc
     - It does NOT have to be the 'best' or 'cleanest' possible code. It only needs to match the intent and requirements stated in the plan (including any constraints or 'precisely and only' rules).
 
     SECONDARY (supporting evidence):
-    - Also note whether the ultra-micro process discipline appears to have been followed (forensics, per-phase builds, etc.), and whether the literal END marker was emitted.
+    - Also note whether phased process discipline appears to have been followed (forensics, per-phase builds, etc.), and whether the literal END marker was emitted.
     - But a clean process with code that does not solve the plan's stated problem = FAIL.
     - Code that solves the problem but skipped some rituals = still report the gap, but the primary verdict is based on intent match.
 

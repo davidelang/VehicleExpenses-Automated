@@ -1,16 +1,18 @@
 # Grok Project Mandates (Overlay)
 
-This is a thin overlay. The authoritative shared content is in `AGENT_MANDATES.md` (read it for bi-modal workflow, tags, reset rules, deploy ban, coordinates, forensic, etc.).
+Thin overlay. Shared law: `AGENT_MANDATES.md`.
 
-**Grok CLI specifics:**
-- Tool mapping: Read, Write, StrReplace, Shell, Task, SwitchMode (plan/agent).
-- **Shell cwd:** Confirm `pwd` **once at startup**. Then invoke `./append-to-engineering-log` / `./build_app` / etc. **without** `cd … &&` (allow patterns match command start; `cd && helper` breaks whitelist and forces approvals). Use Shell `working_directory` only if you must leave cwd — never re-cd every command.
-- Phase gating: Use plan mode (enter_plan_mode / SwitchMode) for research/strategy; only exit after explicit user approval of a plan and directive to implement. During planning, "being helpful/proactive/efficient" means research, suggesting ideas, and improving the plan document (in dev-ai-interaction/plans/) — it does **not** mean making source changes or compiling. Do not call exit_plan_mode to present until the user has had full interactive discussion on the written plan file in dev-ai-interaction/plans/. User rejection or continued feedback on a draft = "continue revising the plan document", not "abandon the plan." For complex work, use sub-agents: spawn a narrow Planning Sub-agent (research + plan doc only; it must not call exit_plan_mode) for the back-and-forth, review the produced file, get explicit user approval of the written plan, then spawn an Execution Sub-agent with the plan injected. The main agent orchestrates and reviews fidelity. The primary planning artifact is always a fresh plan file written to dev-ai-interaction/plans/ (see AGENT_MANDATES "Sandbox Plan File as the Primary..." + MULTI_AGENT_USER_INSTRUCTIONS.md); the harness session plan.md is process log only (roll + minimal prepend, never the approved work plan).
-- Old plans rule: as above (plus harness plan hygiene and explicit sandbox plan file requirement in AGENT_MANDATES).
+**Grok CLI:**
+
+- Tools: Read, Write, StrReplace, Shell, Task/spawn, enter/exit plan mode.
+- **Shell cwd:** `pwd` once at startup. Invoke `./append-to-engineering-log`, `./build_app`, `./get-builds-tag.sh` as literal `./helper` — **never** `cd … &&`.
+- **Native plan mode:** Optional only for bare `./run-grok` and orchestrator. **Planner and coder must not rely on it** (role barrier + mandates). Approved work plan is always a sandbox file under `dev-ai-interaction/plans/`; harness `plan.md` is process log only.
+- **Planning:** Research + revise sandbox plan only. Do not call `exit_plan_mode` until user path-approves (or says so). “Helpful” ≠ implement or build.
+- **Execution:** Only after magic approval of exact plan path. Completeness pass before handoff. Plan Status APPROVED → CODE LANDED.
+- **Spawn prompts:** Load full `.grok/prompts/planning-subagent.md` / `execution-subagent.md` / `dedicated-planner.md` when spawning — do not invent weaker prompts.
 - Coordinates: ICRS or pixel only.
-- Git reset: three contexts with preflight.
+- Git reset: three contexts + `./get-builds-tag.sh` preflight.
 - No deployment.
-- Orchestration layer: awareness of all agents.
-- Worktree deploy: never leave **uncommitted tracked** files in agent-N/master after `cp`/sync — `build_app` will refuse. Use `update-rules.sh` or commit. See AGENT_MANDATES.
+- Worktree deploy: no uncommitted tracked dirt after `cp` (use `update-rules` or commit).
 
-**Note:** The "re-read rules after compaction" is a shared mandate (see AGENT_MANDATES.md). It applies to all agent types.
+**Re-read after compaction:** role pack in `AGENTS.md` (not every turn).
