@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Araç Giderleri</string>
+    <string name="app_name_long">Otomatik Araç Giderleri</string>
+    <string name="lang_name_de">Deutsch</string>
+    <string name="lang_name_en">English</string>
+    <string name="lang_name_es">Español</string>
+    <string name="lang_name_fr">Français</string>
+    <string name="lang_name_id">Bahasa Indonesia</string>
+    <string name="lang_name_it">Italiano</string>
+    <string name="lang_name_nl">Nederlands</string>
+    <string name="lang_name_pl">Polski</string>
+    <string name="lang_name_pt_br">Português (Brasil)</string>
+    <string name="lang_name_ru">Русский</string>
+    <string name="lang_name_tr">Türkçe</string>
+    <string name="lang_name_vi">Tiếng Việt</string>
+    <string name="nav_about">Hakkında</string>
+    <string name="nav_alignment_experiment">Alignment Experiment</string>
+    <string name="nav_drawer_title">Araç Giderleri</string>
+    <string name="nav_edit_expense">Gideri düzenle</string>
+    <string name="nav_edit_fill">Dolumu düzenle</string>
+    <string name="nav_expense_list">Gider listesi</string>
+    <string name="nav_fuel_history">Yakıt geçmişi</string>
+    <string name="nav_help">Yardım</string>
+    <string name="nav_import_old_pictures">Import Old Pictures</string>
+    <string name="nav_manage_vehicles">Araçları yönet</string>
+    <string name="nav_new_expense">Yeni gider</string>
+    <string name="nav_photo_backup">Foto yedek</string>
+    <string name="nav_pump_experiment">Pump Experiment</string>
+    <string name="nav_pump_experiment_long">Gas Pump Extraction Experiment</string>
+    <string name="nav_quick_fill">Hızlı dolum</string>
+    <string name="nav_reports">Raporlar</string>
+    <string name="nav_review_questions">Review questions</string>
+    <string name="nav_settings">Ayarlar</string>
+    <string name="nav_setup_tips">Kurulum ipuçları</string>
+    <string name="nav_spreadsheet_sync">Tablo senkronu</string>
+    <string name="nav_start_trip">Yolculuk başlat</string>
+    <string name="nav_syncing">Senkronizasyon</string>
+    <string name="nav_title_app_page">Araç Giderleri - %1$s</string>
+    <string name="nav_welcome">Hoş geldiniz</string>
+    <string name="settings_general">Genel ayarlar</string>
+    <string name="settings_language">Dil</string>
+    <string name="settings_language_restart_hint">Dil uygulama arayüzüne hemen uygulanır.</string>
+    <string name="settings_language_system">Sistem varsayılanı</string>
+    <string name="settings_sync_lives_under">Senkron ve yedekleme Menü → Senkronizasyon altında (tablo + foto, Şimdi senkron, hatalar).</string>
+    <string name="user_manual_title">Kullanıcı kılavuzu</string>
+</resources>

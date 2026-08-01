@@ -22,11 +22,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.davidlang.vehicleexpensesautomated.R
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
@@ -103,6 +106,8 @@ fun SettingsScreen(navController: NavHostController) {
         )
     }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
+    var appLanguagePref by remember { mutableStateOf(AppLanguage.readPrefForUi(context)) }
+    var languageMenuExpanded by remember { mutableStateOf(false) }
     var shutterSounds by remember { mutableStateOf(prefs.getBoolean("shutter_sounds", true)) }
     var currencySymbol by remember {
         mutableStateOf(
@@ -263,14 +268,69 @@ fun SettingsScreen(navController: NavHostController) {
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text("General Settings", style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.settings_general), style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            "Sync & backup lives under Menu → Syncing (spreadsheet + photo destinations, Sync now, failures).",
+            stringResource(R.string.settings_sync_lives_under),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(16.dp))
+
+        Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.titleSmall)
+        val languageLabel = when (appLanguagePref) {
+            AppLanguage.SYSTEM -> stringResource(R.string.settings_language_system)
+            else -> {
+                val loc = AppLanguage.SUPPORTED.firstOrNull { it.prefTag == appLanguagePref }
+                if (loc != null) stringResource(loc.displayNameRes)
+                else stringResource(R.string.lang_name_en)
+            }
+        }
+        ExposedDropdownMenuBox(
+            expanded = languageMenuExpanded,
+            onExpandedChange = { languageMenuExpanded = it },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            OutlinedTextField(
+                value = languageLabel,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text(stringResource(R.string.settings_language)) },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageMenuExpanded) },
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
+            )
+            ExposedDropdownMenu(
+                expanded = languageMenuExpanded,
+                onDismissRequest = { languageMenuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.settings_language_system)) },
+                    onClick = {
+                        appLanguagePref = AppLanguage.SYSTEM
+                        AppLanguage.setPref(context, AppLanguage.SYSTEM)
+                        languageMenuExpanded = false
+                    },
+                )
+                AppLanguage.SUPPORTED.forEach { loc ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(loc.displayNameRes)) },
+                        onClick = {
+                            appLanguagePref = loc.prefTag
+                            AppLanguage.setPref(context, loc.prefTag)
+                            languageMenuExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+        Text(
+            stringResource(R.string.settings_language_restart_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
 
         SwitchSetting("Save fuel fill photos locally", saveFuelPhotos) { enabled ->
             saveFuelPhotos = enabled

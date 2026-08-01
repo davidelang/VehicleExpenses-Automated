@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Расходы на авто</string>
+    <string name="app_name_long">Автоматизированные расходы на авто</string>
+    <string name="lang_name_de">Deutsch</string>
+    <string name="lang_name_en">English</string>
+    <string name="lang_name_es">Español</string>
+    <string name="lang_name_fr">Français</string>
+    <string name="lang_name_id">Bahasa Indonesia</string>
+    <string name="lang_name_it">Italiano</string>
+    <string name="lang_name_nl">Nederlands</string>
+    <string name="lang_name_pl">Polski</string>
+    <string name="lang_name_pt_br">Português (Brasil)</string>
+    <string name="lang_name_ru">Русский</string>
+    <string name="lang_name_tr">Türkçe</string>
+    <string name="lang_name_vi">Tiếng Việt</string>
+    <string name="nav_about">О программе</string>
+    <string name="nav_alignment_experiment">Alignment Experiment</string>
+    <string name="nav_drawer_title">Расходы на авто</string>
+    <string name="nav_edit_expense">Изменить расход</string>
+    <string name="nav_edit_fill">Изменить заправку</string>
+    <string name="nav_expense_list">Список расходов</string>
+    <string name="nav_fuel_history">История заправок</string>
+    <string name="nav_help">Справка</string>
+    <string name="nav_import_old_pictures">Import Old Pictures</string>
+    <string name="nav_manage_vehicles">Управление авто</string>
+    <string name="nav_new_expense">Новый расход</string>
+    <string name="nav_photo_backup">Резерв фото</string>
+    <string name="nav_pump_experiment">Pump Experiment</string>
+    <string name="nav_pump_experiment_long">Gas Pump Extraction Experiment</string>
+    <string name="nav_quick_fill">Быстрая заправка</string>
+    <string name="nav_reports">Отчёты</string>
+    <string name="nav_review_questions">Review questions</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="nav_setup_tips">Советы по настройке</string>
+    <string name="nav_spreadsheet_sync">Синхр. таблиц</string>
+    <string name="nav_start_trip">Начать поездку</string>
+    <string name="nav_syncing">Синхронизация</string>
+    <string name="nav_title_app_page">Расходы на авто - %1$s</string>
+    <string name="nav_welcome">Добро пожаловать</string>
+    <string name="settings_general">Общие настройки</string>
+    <string name="settings_language">Язык</string>
+    <string name="settings_language_restart_hint">Язык сразу применяется к интерфейсу.</string>
+    <string name="settings_language_system">Системный по умолчанию</string>
+    <string name="settings_sync_lives_under">Синхронизация и резерв в Меню → Синхронизация (таблицы + фото, Синхр. сейчас, сбои).</string>
+    <string name="user_manual_title">Руководство пользователя</string>
+</resources>

@@ -3484,3 +3484,10 @@ x
 - build_app: first attempt processDebugJavaRes mode 770 flake (cleaned intermediates); retry SUCCESS
 - builds tag → 6889b142 (merge commit). No works tag.
 
+
+## 2026-08-01 - i18n LTR Latin band language packs — execution start
+
+- Approved plan: dev-ai-interaction/plans/i18n-ltr-latin-band-language-packs-20260801-0311-plan.md
+- Branch: i18n_lang_packs
+- Status APPROVED
+- Phase 1: locale infrastructure + agent law skeleton

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Voertuigkosten</string>
+    <string name="app_name_long">Geautomatiseerde voertuigkosten</string>
+    <string name="lang_name_de">Deutsch</string>
+    <string name="lang_name_en">English</string>
+    <string name="lang_name_es">Español</string>
+    <string name="lang_name_fr">Français</string>
+    <string name="lang_name_id">Bahasa Indonesia</string>
+    <string name="lang_name_it">Italiano</string>
+    <string name="lang_name_nl">Nederlands</string>
+    <string name="lang_name_pl">Polski</string>
+    <string name="lang_name_pt_br">Português (Brasil)</string>
+    <string name="lang_name_ru">Русский</string>
+    <string name="lang_name_tr">Türkçe</string>
+    <string name="lang_name_vi">Tiếng Việt</string>
+    <string name="nav_about">Over</string>
+    <string name="nav_alignment_experiment">Alignment Experiment</string>
+    <string name="nav_drawer_title">Voertuigkosten</string>
+    <string name="nav_edit_expense">Uitgave bewerken</string>
+    <string name="nav_edit_fill">Tanken bewerken</string>
+    <string name="nav_expense_list">Uitgavenlijst</string>
+    <string name="nav_fuel_history">Brandstofgeschiedenis</string>
+    <string name="nav_help">Help</string>
+    <string name="nav_import_old_pictures">Import Old Pictures</string>
+    <string name="nav_manage_vehicles">Voertuigen beheren</string>
+    <string name="nav_new_expense">Nieuwe uitgave</string>
+    <string name="nav_photo_backup">Foto-back-up</string>
+    <string name="nav_pump_experiment">Pump Experiment</string>
+    <string name="nav_pump_experiment_long">Gas Pump Extraction Experiment</string>
+    <string name="nav_quick_fill">Snel tanken</string>
+    <string name="nav_reports">Rapporten</string>
+    <string name="nav_review_questions">Review questions</string>
+    <string name="nav_settings">Instellingen</string>
+    <string name="nav_setup_tips">Installatietips</string>
+    <string name="nav_spreadsheet_sync">Spreadsheet-sync</string>
+    <string name="nav_start_trip">Reis starten</string>
+    <string name="nav_syncing">Synchroniseren</string>
+    <string name="nav_title_app_page">Voertuigkosten - %1$s</string>
+    <string name="nav_welcome">Welkom</string>
+    <string name="settings_general">Algemene instellingen</string>
+    <string name="settings_language">Taal</string>
+    <string name="settings_language_restart_hint">De taal geldt meteen voor de app-UI.</string>
+    <string name="settings_language_system">Systeemstandaard</string>
+    <string name="settings_sync_lives_under">Sync en back-up onder Menu → Synchroniseren (spreadsheet + foto’s, Nu sync, fouten).</string>
+    <string name="user_manual_title">Handleiding</string>
+</resources>

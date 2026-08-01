@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Despesas do veículo</string>
+    <string name="app_name_long">Despesas do veículo automatizadas</string>
+    <string name="lang_name_de">Deutsch</string>
+    <string name="lang_name_en">English</string>
+    <string name="lang_name_es">Español</string>
+    <string name="lang_name_fr">Français</string>
+    <string name="lang_name_id">Bahasa Indonesia</string>
+    <string name="lang_name_it">Italiano</string>
+    <string name="lang_name_nl">Nederlands</string>
+    <string name="lang_name_pl">Polski</string>
+    <string name="lang_name_pt_br">Português (Brasil)</string>
+    <string name="lang_name_ru">Русский</string>
+    <string name="lang_name_tr">Türkçe</string>
+    <string name="lang_name_vi">Tiếng Việt</string>
+    <string name="nav_about">Sobre</string>
+    <string name="nav_alignment_experiment">Alignment Experiment</string>
+    <string name="nav_drawer_title">Despesas do veículo</string>
+    <string name="nav_edit_expense">Editar despesa</string>
+    <string name="nav_edit_fill">Editar abastecimento</string>
+    <string name="nav_expense_list">Lista de despesas</string>
+    <string name="nav_fuel_history">Histórico de combustível</string>
+    <string name="nav_help">Ajuda</string>
+    <string name="nav_import_old_pictures">Import Old Pictures</string>
+    <string name="nav_manage_vehicles">Gerenciar veículos</string>
+    <string name="nav_new_expense">Nova despesa</string>
+    <string name="nav_photo_backup">Backup de fotos</string>
+    <string name="nav_pump_experiment">Pump Experiment</string>
+    <string name="nav_pump_experiment_long">Gas Pump Extraction Experiment</string>
+    <string name="nav_quick_fill">Abastecimento rápido</string>
+    <string name="nav_reports">Relatórios</string>
+    <string name="nav_review_questions">Review questions</string>
+    <string name="nav_settings">Configurações</string>
+    <string name="nav_setup_tips">Dicas de configuração</string>
+    <string name="nav_spreadsheet_sync">Sync de planilhas</string>
+    <string name="nav_start_trip">Iniciar viagem</string>
+    <string name="nav_syncing">Sincronização</string>
+    <string name="nav_title_app_page">Despesas do veículo - %1$s</string>
+    <string name="nav_welcome">Boas-vindas</string>
+    <string name="settings_general">Configurações gerais</string>
+    <string name="settings_language">Idioma</string>
+    <string name="settings_language_restart_hint">O idioma se aplica imediatamente à interface.</string>
+    <string name="settings_language_system">Padrão do sistema</string>
+    <string name="settings_sync_lives_under">Sincronização e backup em Menu → Sincronização (planilhas + fotos, Sincronizar agora, falhas).</string>
+    <string name="user_manual_title">Manual do usuário</string>
+</resources>

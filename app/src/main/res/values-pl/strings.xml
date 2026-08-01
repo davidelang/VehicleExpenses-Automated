@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wydatki pojazdu</string>
+    <string name="app_name_long">Zautomatyzowane wydatki pojazdu</string>
+    <string name="lang_name_de">Deutsch</string>
+    <string name="lang_name_en">English</string>
+    <string name="lang_name_es">Español</string>
+    <string name="lang_name_fr">Français</string>
+    <string name="lang_name_id">Bahasa Indonesia</string>
+    <string name="lang_name_it">Italiano</string>
+    <string name="lang_name_nl">Nederlands</string>
+    <string name="lang_name_pl">Polski</string>
+    <string name="lang_name_pt_br">Português (Brasil)</string>
+    <string name="lang_name_ru">Русский</string>
+    <string name="lang_name_tr">Türkçe</string>
+    <string name="lang_name_vi">Tiếng Việt</string>
+    <string name="nav_about">O aplikacji</string>
+    <string name="nav_alignment_experiment">Alignment Experiment</string>
+    <string name="nav_drawer_title">Wydatki pojazdu</string>
+    <string name="nav_edit_expense">Edytuj wydatek</string>
+    <string name="nav_edit_fill">Edytuj tankowanie</string>
+    <string name="nav_expense_list">Lista wydatków</string>
+    <string name="nav_fuel_history">Historia paliwa</string>
+    <string name="nav_help">Pomoc</string>
+    <string name="nav_import_old_pictures">Import Old Pictures</string>
+    <string name="nav_manage_vehicles">Zarządzaj pojazdami</string>
+    <string name="nav_new_expense">Nowy wydatek</string>
+    <string name="nav_photo_backup">Kopia zdjęć</string>
+    <string name="nav_pump_experiment">Pump Experiment</string>
+    <string name="nav_pump_experiment_long">Gas Pump Extraction Experiment</string>
+    <string name="nav_quick_fill">Szybkie tankowanie</string>
+    <string name="nav_reports">Raporty</string>
+    <string name="nav_review_questions">Review questions</string>
+    <string name="nav_settings">Ustawienia</string>
+    <string name="nav_setup_tips">Wskazówki konfiguracji</string>
+    <string name="nav_spreadsheet_sync">Sync arkuszy</string>
+    <string name="nav_start_trip">Rozpocznij podróż</string>
+    <string name="nav_syncing">Synchronizacja</string>
+    <string name="nav_title_app_page">Wydatki pojazdu - %1$s</string>
+    <string name="nav_welcome">Witamy</string>
+    <string name="settings_general">Ustawienia ogólne</string>
+    <string name="settings_language">Język</string>
+    <string name="settings_language_restart_hint">Język stosuje się od razu do interfejsu.</string>
+    <string name="settings_language_system">Domyślny systemowy</string>
+    <string name="settings_sync_lives_under">Sync i kopia w Menu → Synchronizacja (arkusze + zdjęcia, Sync teraz, błędy).</string>
+    <string name="user_manual_title">Podręcznik użytkownika</string>
+</resources>

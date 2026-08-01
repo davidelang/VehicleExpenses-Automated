@@ -50,11 +50,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.davidlang.vehicleexpensesautomated.R
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -325,39 +328,41 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 val title = when {
-                    currentRoute == "quickfill" -> "Quick Fill-up"
-                    currentRoute == "triptracking" -> "Start trip"
-                    currentRoute == "managevehicles" -> "Manage Vehicles"
-                    currentRoute == "expense" -> "New expense"
-                    currentRoute?.startsWith("expense/") == true -> "Edit expense"
-                    currentRoute == "expenselist" -> "Expense list"
+                    currentRoute == "quickfill" -> stringResource(R.string.nav_quick_fill)
+                    currentRoute == "triptracking" -> stringResource(R.string.nav_start_trip)
+                    currentRoute == "managevehicles" -> stringResource(R.string.nav_manage_vehicles)
+                    currentRoute == "expense" -> stringResource(R.string.nav_new_expense)
+                    currentRoute?.startsWith("expense/") == true -> stringResource(R.string.nav_edit_expense)
+                    currentRoute == "expenselist" -> stringResource(R.string.nav_expense_list)
                     currentRoute == "import" ||
-                        currentRoute?.startsWith("import") == true -> "Import Old Pictures"
+                        currentRoute?.startsWith("import") == true -> stringResource(R.string.nav_import_old_pictures)
                     currentRoute == "reports_lab" ||
-                        currentRoute?.startsWith("reports_lab/") == true -> "Reports"
-                    currentRoute == "fuelhistory" -> "Fuel History"
-                    currentRoute?.startsWith("fuel/") == true -> "Edit Fill"
-                    currentRoute == "settings" -> "Settings"
-                    currentRoute == "syncing" -> "Syncing"
-                    currentRoute == "settings/spreadsheet_sync" -> "Spreadsheet Sync"
-                    currentRoute == "settings/photo_backup" -> "Photo Backup"
-                    currentRoute == "help" -> "Help"
-                    currentRoute == "about" -> "About"
-                    currentRoute == "onboarding" -> "Welcome"
-                    currentRoute?.startsWith("tutorial/") == true -> "Setup tips"
-                    currentRoute == "experiment" -> "Alignment Experiment"
-                    currentRoute == "experiment_pump" -> "Gas Pump Extraction Experiment"
-                    else -> "Vehicle Expenses"
+                        currentRoute?.startsWith("reports_lab/") == true -> stringResource(R.string.nav_reports)
+                    currentRoute == "fuelhistory" -> stringResource(R.string.nav_fuel_history)
+                    currentRoute?.startsWith("fuel/") == true -> stringResource(R.string.nav_edit_fill)
+                    currentRoute == "settings" -> stringResource(R.string.nav_settings)
+                    currentRoute == "syncing" -> stringResource(R.string.nav_syncing)
+                    currentRoute == "settings/spreadsheet_sync" -> stringResource(R.string.nav_spreadsheet_sync)
+                    currentRoute == "settings/photo_backup" -> stringResource(R.string.nav_photo_backup)
+                    currentRoute == "help" -> stringResource(R.string.nav_help)
+                    currentRoute == "about" -> stringResource(R.string.nav_about)
+                    currentRoute == "onboarding" -> stringResource(R.string.nav_welcome)
+                    currentRoute?.startsWith("tutorial/") == true -> stringResource(R.string.nav_setup_tips)
+                    currentRoute == "experiment" -> stringResource(R.string.nav_alignment_experiment)
+                    currentRoute == "experiment_pump" -> stringResource(R.string.nav_pump_experiment_long)
+                    else -> stringResource(R.string.app_name)
                 }
+                val drawerTitle = stringResource(R.string.nav_drawer_title)
+                val appName = stringResource(R.string.app_name)
 
                 CompositionLocalProvider(LocalPageHelpController provides pageHelpController) {
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     drawerContent = {
                         ModalDrawerSheet {
-                            Text("Vehicle Expenses", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
+                            Text(drawerTitle, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
                             NavigationDrawerItem(
-                                label = { Text("Quick Fill-up") },
+                                label = { Text(stringResource(R.string.nav_quick_fill)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("quickfill")
@@ -365,7 +370,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Start trip") },
+                                label = { Text(stringResource(R.string.nav_start_trip)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("triptracking")
@@ -373,7 +378,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Manage Vehicles") },
+                                label = { Text(stringResource(R.string.nav_manage_vehicles)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("managevehicles")
@@ -381,7 +386,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("New expense") },
+                                label = { Text(stringResource(R.string.nav_new_expense)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("expense")
@@ -389,7 +394,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Reports") },
+                                label = { Text(stringResource(R.string.nav_reports)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("reports_lab")
@@ -397,7 +402,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Settings") },
+                                label = { Text(stringResource(R.string.nav_settings)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("settings")
@@ -405,7 +410,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Syncing") },
+                                label = { Text(stringResource(R.string.nav_syncing)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("syncing")
@@ -413,7 +418,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Help") },
+                                label = { Text(stringResource(R.string.nav_help)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("help")
@@ -421,7 +426,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("About") },
+                                label = { Text(stringResource(R.string.nav_about)) },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("about")
@@ -430,7 +435,7 @@ class MainActivity : ComponentActivity() {
                             )
                             if (showExperimentScreens) {
                                 NavigationDrawerItem(
-                                    label = { Text("Alignment Experiment") },
+                                    label = { Text(stringResource(R.string.nav_alignment_experiment)) },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("experiment")
@@ -438,16 +443,16 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                                 NavigationDrawerItem(
-                                    label = { Text("Pump Experiment") },
+                                    label = { Text(stringResource(R.string.nav_pump_experiment)) },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("experiment_pump")
                                         scope.launch { drawerState.close() }
                                     }
                                 )
-                                // Import is experiment-gated in drawer; top-bar ?N review still routes to import.
+                                // Import is experiment-gated in drawer; English experiment label (plan non-goal to translate import surface).
                                 NavigationDrawerItem(
-                                    label = { Text("Import Old Pictures") },
+                                    label = { Text(stringResource(R.string.nav_import_old_pictures)) },
                                     selected = false,
                                     onClick = {
                                         navController.navigate("import")
@@ -464,9 +469,9 @@ class MainActivity : ComponentActivity() {
                             val screenWidthDp = LocalConfiguration.current.screenWidthDp
                             val narrowTitle = screenWidthDp < 600
                             val titleText = when {
-                                title == "Vehicle Expenses" -> title
+                                title == appName -> title
                                 narrowTitle -> title
-                                else -> "Vehicle Expenses - $title"
+                                else -> stringResource(R.string.nav_title_app_page, title)
                             }
                             TopAppBar(
                                 title = {
@@ -490,7 +495,9 @@ class MainActivity : ComponentActivity() {
                                             modifier = Modifier
                                                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                                 .semantics {
-                                                    contentDescription = "Review questions"
+                                                    contentDescription =
+                                                        // English experiment surface; contentDescription still resource-backed for consistency
+                                                        context.getString(R.string.nav_review_questions)
                                                 },
                                         ) {
                                             Text(
