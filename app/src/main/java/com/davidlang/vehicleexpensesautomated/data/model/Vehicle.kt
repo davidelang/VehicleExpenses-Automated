@@ -30,6 +30,12 @@ data class Vehicle(
      * First entry is the Start-trip dropdown default. Blank means seed/inherit at insert time.
      */
     val tripTypesJson: String = "",
+    /**
+     * Ordered expense category names as a JSON string array.
+     * First entry is the new-expense default. Blank means seed/inherit at insert time.
+     * See [com.davidlang.vehicleexpensesautomated.data.expense.ExpenseCategories].
+     */
+    val expenseCategoriesJson: String = "",
     val cloudManifest: String? = null,
     val deleted: Boolean = false,
     val deletedAt: Long? = null,

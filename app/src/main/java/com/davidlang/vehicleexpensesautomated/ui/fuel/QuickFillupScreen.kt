@@ -24,11 +24,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -45,16 +50,28 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
+import com.davidlang.vehicleexpensesautomated.ui.components.CaptureButtonState
+import com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField
+import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
+import com.davidlang.vehicleexpensesautomated.ui.components.RoundCaptureButton
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +80,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Currency
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
 
 private enum class CaptureViewState { Live, Processing, Results }
 
@@ -75,6 +94,15 @@ private data class SessionPhoto(val uri: String, val ts: Long)
 /** Map captureMode odo→dash, pump→pump. */
 private fun photoTagForCaptureMode(captureMode: String): String {
     return if (captureMode == "pump") "pump" else "dash"
+}
+
+/** Surface.ROTATION_* → degrees for EXIF orientation. */
+private fun surfaceRotationToDegrees(rotation: Int): Int = when (rotation) {
+    android.view.Surface.ROTATION_0 -> 0
+    android.view.Surface.ROTATION_90 -> 90
+    android.view.Surface.ROTATION_180 -> 180
+    android.view.Surface.ROTATION_270 -> 270
+    else -> 0
 }
 
 /** Compact JSON array for FuelEntry.photoUrl; null if empty. */
@@ -148,13 +176,8 @@ fun QuickFillupScreen(
     val scope = rememberCoroutineScope()
 
     val vehiclesRaw by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
-    // Exclude system Unassigned bucket (id=0) from Quick Fill picker
-    val vehicles = remember(vehiclesRaw) {
-        vehiclesRaw.filter {
-            it.id != 0 &&
-                it.syncId != com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository.UNASSIGNED_VEHICLE_SYNC_ID
-        }
-    }
+    // Exclude system Unassigned bucket from Quick Fill picker
+    val vehicles = remember(vehiclesRaw) { vehiclesRaw.forUserPicker() }
     var selectedVehicleId by rememberSaveable { mutableStateOf<Int?>(null) }
     var odometer by rememberSaveable { mutableStateOf("") }
     var gallons by rememberSaveable { mutableStateOf("") }
@@ -162,9 +185,56 @@ fun QuickFillupScreen(
     var notes by rememberSaveable { mutableStateOf("") }
     /** Session photos keyed by tag (dash/pump); written to DB only on Save as JSON. */
     val sessionPhotos = remember { mutableStateMapOf<String, SessionPhoto>() }
+    /** Row lat/lon for save (camera path = once-per-screen device fix). */
     var lat by remember { mutableStateOf<Double?>(null) }
     var lon by remember { mutableStateOf<Double?>(null) }
-    var loc by remember { mutableStateOf<String?>(null) }
+    /** Held device fix for EXIF stamping on CameraX JPEGs; once per screen visit. */
+    var deviceLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    var locationStatus by remember { mutableStateOf("") }
+    var placeName by remember { mutableStateOf("") }
+    var placeAddress by remember { mutableStateOf("") }
+    var confirmLocation by remember { mutableStateOf(true) }
+    var locationLookupDone by remember { mutableStateOf(false) }
+
+    // One-shot device GPS on enter (not per shutter); odo+pump+row share this fix.
+    LaunchedEffect(Unit) {
+        val fix = CaptureLocation.captureLocationOrNull(context)
+        deviceLocation = fix
+        if (fix != null) {
+            lat = fix.latitude
+            lon = fix.longitude
+        }
+    }
+
+    // Non-blocking POI when coords available (cancel/re-run if lat/lon change).
+    LaunchedEffect(lat, lon) {
+        val la = lat
+        val lo = lon
+        if (la == null || lo == null) {
+            locationStatus = ""
+            locationLookupDone = false
+            return@LaunchedEffect
+        }
+        locationStatus = "Looking up place…"
+        locationLookupDone = false
+        val acc = deviceLocation?.takeIf { it.hasAccuracy() }?.accuracy?.toDouble()
+        val result = LocationLookup.lookup(
+            lat = la,
+            lon = lo,
+            kind = LocationLookupKind.FUEL_STATION,
+            accuracyM = acc,
+            uiTimeout = true,
+        )
+        if (result != null && result.hasPlace()) {
+            placeName = result.name
+            placeAddress = result.address
+            // Happy path: address fields only — no duplicate "Resolved:" banner.
+            locationStatus = ""
+        } else {
+            locationStatus = "No place found (will retry after save if online)"
+        }
+        locationLookupDone = true
+    }
 
     var captureViewState by rememberSaveable { mutableStateOf(CaptureViewState.Live) }
     var capturePending by remember { mutableStateOf(false) }
@@ -176,6 +246,15 @@ fun QuickFillupScreen(
         mutableStateOf("Aim at odometer. Tap shutter to capture.")
     }
     var isPhotoSaving by remember { mutableStateOf(false) }
+
+    RegisterPageHelp(
+        title = "Quick Fill controls",
+        "White circle — shutter (capture dash or pump).",
+        "Disk — save the fill when fields are ready.",
+        "↕ — switch odometer mode ↔ pump (cost/volume) mode.",
+        "↔ — swap cost and volume fields.",
+        "Type odo/cost/volume anytime (custom keypad). Menu → Help for the full walkthrough.",
+    )
     /** Null when idle/ok; set while saving or after a failed Camera-roll save. */
     var photoSaveStatus by remember { mutableStateOf<String?>(null) }
     var zoomControl by remember { mutableStateOf<CameraZoomControl?>(null) }
@@ -218,46 +297,165 @@ fun QuickFillupScreen(
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
 
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     var isOdoFocused by remember { mutableStateOf(false) }
     var isVolumeFocused by remember { mutableStateOf(false) }
     var isCostFocused by remember { mutableStateOf(false) }
+    /** Active numeric field for custom keypad: odo | cost | volume */
     var editingField by rememberSaveable { mutableStateOf<String?>(null) }
-    val isPortraitFieldFocused = isOdoFocused || isVolumeFocused || isCostFocused
-    val isLandscapeEditing = isLandscape && (isPortraitFieldFocused || editingField != null)
-    val isEditing = if (isLandscape) isLandscapeEditing else isPortraitFieldFocused
+    // Caret indices for keypad insert (clamped to field length)
+    var odoCaret by remember { mutableIntStateOf(0) }
+    var costCaret by remember { mutableIntStateOf(0) }
+    var volumeCaret by remember { mutableIntStateOf(0) }
+    val odoFocusRequester = remember { FocusRequester() }
+    val costFocusRequester = remember { FocusRequester() }
+    val volumeFocusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(isOdoFocused, isVolumeFocused, isCostFocused) {
-        if (!isOdoFocused && !isVolumeFocused && !isCostFocused) {
-            editingField = null
+    val isNumericEditing = editingField == "odo" || editingField == "cost" || editingField == "volume"
+    // Keypad active in both orientations when a numeric field is selected
+    val isEditing = isNumericEditing
+
+    LaunchedEffect(editingField) {
+        if (editingField != null) {
+            keyboardController?.hide()
         }
     }
 
-    val appendToDecimalField: (String, String) -> String = { current, digit ->
-        when (digit) {
-            "." -> if (current.contains(".")) current else if (current.isEmpty()) "0." else "$current."
-            else -> if (current.length < 10) current + digit else current
+    fun caretFor(field: String?): Int = when (field) {
+        "odo" -> odoCaret.coerceIn(0, odometer.length)
+        "cost" -> costCaret.coerceIn(0, cost.length)
+        "volume" -> volumeCaret.coerceIn(0, gallons.length)
+        else -> 0
+    }
+
+    fun textFor(field: String?): String = when (field) {
+        "odo" -> odometer
+        "cost" -> cost
+        "volume" -> gallons
+        else -> ""
+    }
+
+    fun setNumericField(field: String, text: String, caret: Int) {
+        val c = caret.coerceIn(0, text.length)
+        when (field) {
+            "odo" -> {
+                odometer = text
+                odoCaret = c
+            }
+            "cost" -> {
+                cost = text
+                costCaret = c
+            }
+            "volume" -> {
+                gallons = text
+                volumeCaret = c
+            }
+        }
+    }
+
+    fun insertAtCaret(field: String, insert: String, maxLen: Int, allowDot: Boolean) {
+        val t = textFor(field)
+        val caret = caretFor(field)
+        if (insert == ".") {
+            if (!allowDot || t.contains('.')) return
+            val piece = if (t.isEmpty() || caret == 0) "0." else "."
+            if (t.length + piece.length > maxLen) return
+            val nt = t.take(caret) + piece + t.drop(caret)
+            setNumericField(field, nt, caret + piece.length)
+            return
+        }
+        if (!insert.all { it.isDigit() }) return
+        if (t.length >= maxLen) return
+        val nt = t.take(caret) + insert + t.drop(caret)
+        if (nt.length > maxLen) return
+        setNumericField(field, nt, caret + insert.length)
+    }
+
+    fun backspaceAtCaret(field: String) {
+        val t = textFor(field)
+        val caret = caretFor(field)
+        if (caret <= 0 || t.isEmpty()) return
+        val nt = t.take(caret - 1) + t.drop(caret)
+        setNumericField(field, nt, caret - 1)
+    }
+
+    fun moveCaret(field: String, delta: Int) {
+        val t = textFor(field)
+        val next = (caretFor(field) + delta).coerceIn(0, t.length)
+        when (field) {
+            "odo" -> odoCaret = next
+            "cost" -> costCaret = next
+            "volume" -> volumeCaret = next
         }
     }
 
     val onKeypadDigit: (String) -> Unit = { digit ->
         when (editingField) {
-            "odo" -> if (digit.all { it.isDigit() } && odometer.length < 7) odometer += digit
-            "cost" -> cost = appendToDecimalField(cost, digit)
-            "volume" -> gallons = appendToDecimalField(gallons, digit)
+            "odo" -> insertAtCaret("odo", digit, maxLen = 7, allowDot = false)
+            "cost" -> insertAtCaret("cost", digit, maxLen = 10, allowDot = true)
+            "volume" -> insertAtCaret("volume", digit, maxLen = 10, allowDot = true)
         }
     }
 
     val onKeypadBackspace: () -> Unit = {
-        when (editingField) {
-            "odo" -> if (odometer.isNotEmpty()) odometer = odometer.dropLast(1)
-            "cost" -> if (cost.isNotEmpty()) cost = cost.dropLast(1)
-            "volume" -> if (gallons.isNotEmpty()) gallons = gallons.dropLast(1)
-        }
+        editingField?.let { backspaceAtCaret(it) }
+    }
+
+    val onKeypadCaretLeft: () -> Unit = {
+        editingField?.let { moveCaret(it, -1) }
+    }
+
+    val onKeypadCaretRight: () -> Unit = {
+        editingField?.let { moveCaret(it, 1) }
     }
 
     val onKeypadDismiss: () -> Unit = {
         editingField = null
         focusManager.clearFocus()
+    }
+
+    val onKeypadNextField: () -> Unit = {
+        when (editingField) {
+            "odo" -> {
+                editingField = "cost"
+                costCaret = cost.length
+                isCostFocused = true
+                isOdoFocused = false
+                costFocusRequester.requestFocus()
+            }
+            "cost" -> {
+                editingField = "volume"
+                volumeCaret = gallons.length
+                isVolumeFocused = true
+                isCostFocused = false
+                volumeFocusRequester.requestFocus()
+            }
+            "volume" -> {
+                editingField = null
+                isVolumeFocused = false
+                focusManager.clearFocus()
+            }
+            else -> onKeypadDismiss()
+        }
+    }
+
+    fun beginNumericEdit(field: String) {
+        editingField = field
+        when (field) {
+            "odo" -> {
+                odoCaret = odometer.length
+                isOdoFocused = true
+            }
+            "cost" -> {
+                costCaret = cost.length
+                isCostFocused = true
+            }
+            "volume" -> {
+                volumeCaret = gallons.length
+                isVolumeFocused = true
+            }
+        }
+        keyboardController?.hide()
     }
 
     DisposableEffect(Unit) {
@@ -677,6 +875,21 @@ fun QuickFillupScreen(
                         }
                         val photoUrlJson = sessionPhotosToJson(sessionPhotos)
                         val storedCurrency = CurrencyCodes.fromSymbolOrCode(currencySymbol)
+                        val baseBlob = FuelLocationJson.fromLocation(deviceLocation)
+                            ?: FuelLocationJson.fromCoords(lat, lon, source = "device")
+                            ?: FuelLocationJson.Blob()
+                        val placeBlank = placeName.isBlank() && placeAddress.isBlank()
+                        val saveBlob = when {
+                            confirmLocation && !placeBlank -> baseBlob.withPlace(
+                                name = placeName,
+                                address = placeAddress,
+                                confirmed = true,
+                                source = "user",
+                                kind = LocationLookupKind.FUEL_STATION.blobKindTag(),
+                                lookedUpAt = System.currentTimeMillis(),
+                            )
+                            else -> baseBlob.coordsOnly() // unchecked or empty place → coords only
+                        }
                         fuelViewModel.saveFuel(
                             FuelEntry(
                                 vehicleId = vehicleId,
@@ -686,13 +899,14 @@ fun QuickFillupScreen(
                                 currency = storedCurrency,
                                 timestamp = System.currentTimeMillis(),
                                 photoUrl = photoUrlJson,
-                                latitude = lat,
-                                longitude = lon,
-                                location = loc,
+                                location = FuelLocationJson.encode(saveBlob),
                                 notes = notes.trim().ifBlank { null },
                                 isPartialFill = false,
                             )
                         )
+                        if (saveBlob.hasCoordsWithoutPlace()) {
+                            LocationLookupScheduler.enqueueSoon(context)
+                        }
                         NativePaddleEngine.releaseAllOdoBuffers()
                         NativePaddleEngine.bufferSetA.unborrow()
                         NativePaddleEngine.bufferSetA.clearCrops()
@@ -729,14 +943,10 @@ fun QuickFillupScreen(
     }
 
     val fieldsContent = @Composable {
-        BoxWithConstraints(modifier = Modifier.wrapContentWidth()) {
+        // Width comes from parent (portrait fillMaxWidth / landscape max cap).
+        // Do not wrapContentWidth on long help text — that crushed landscape A.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
             val stackedPump = maxWidth < 340.dp
-            val cScrollState = rememberScrollState()
-            val cScrollModifier = if (stackedPump) {
-                Modifier.verticalScroll(cScrollState)
-            } else {
-                Modifier
-            }
 
             val textMeasurer = rememberTextMeasurer()
             val longestVehicle = vehicles.maxOfOrNull { it.name } ?: "Select vehicle"
@@ -752,19 +962,8 @@ fun QuickFillupScreen(
                 Modifier.padding(8.dp)
             }
 
-            Column(modifier = Modifier.wrapContentWidth().then(cScrollModifier)) {
-        Text(
-            text = instructionLine,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-        Text(
-            text = "Shutter = capture · Disk = save · ↕ = odo/pump mode · ↔ = swap cost/volume. Type fields anytime. Menu → Help for more.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-        )
+            // Parent Panel C owns verticalScroll; no nested scroll here.
+            Column(modifier = Modifier.fillMaxWidth()) {
         // Group 1: Vehicle + Odo
         Column(modifier = Modifier.wrapContentWidth().then(odoBorder)) {
             Row(
@@ -803,24 +1002,29 @@ fun QuickFillupScreen(
                         }
                     }
                 }
-                OutlinedTextField(
+                CaretEnabledOutlinedTextField(
                     value = odometer,
                     onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
                     label = { Text("Odo") },
+                    // Custom NumericKeypad is the only soft digit UI (both orientations).
+                    showCaretButtons = false,
+                    caretIndex = odoCaret,
+                    onCaretIndexChange = { odoCaret = it },
                     modifier = Modifier
                         .widthIn(min = 64.dp, max = 88.dp)
+                        .focusRequester(odoFocusRequester)
                         .onFocusChanged {
                             isOdoFocused = it.isFocused
-                            if (it.isFocused) editingField = "odo"
+                            if (it.isFocused) beginNumericEdit("odo")
                             else if (editingField == "odo") editingField = null
                         },
-                    readOnly = isLandscape,
+                    readOnly = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
                         imeAction = ImeAction.Next
                     ),
                     keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                        onNext = { onKeypadNextField() }
                     ),
                     singleLine = true
                 )
@@ -846,7 +1050,7 @@ fun QuickFillupScreen(
                         .distinct()
                         .sorted()
                 }
-                OutlinedTextField(
+                CaretEnabledOutlinedTextField(
                     value = cost,
                     onValueChange = { cost = it },
                     label = {
@@ -871,22 +1075,24 @@ fun QuickFillupScreen(
                             }
                         }
                     },
-                    modifier = modifier.onFocusChanged {
-                        isCostFocused = it.isFocused
-                        if (it.isFocused) editingField = "cost"
-                        else if (editingField == "cost") editingField = null
-                    },
-                    readOnly = isLandscape,
+                    modifier = modifier
+                        .focusRequester(costFocusRequester)
+                        .onFocusChanged {
+                            isCostFocused = it.isFocused
+                            if (it.isFocused) beginNumericEdit("cost")
+                            else if (editingField == "cost") editingField = null
+                        },
+                    readOnly = true,
+                    showCaretButtons = false,
+                    caretIndex = costCaret,
+                    onCaretIndexChange = { costCaret = it },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal,
                         imeAction = imeAction
                     ),
                     keyboardActions = KeyboardActions(
-                        onNext = { focusManager.moveFocus(FocusDirection.Next) },
-                        onDone = {
-                            editingField = null
-                            focusManager.clearFocus()
-                        }
+                        onNext = { onKeypadNextField() },
+                        onDone = { onKeypadNextField() }
                     ),
                     singleLine = true
                 )
@@ -910,7 +1116,7 @@ fun QuickFillupScreen(
             val volumeField = @Composable { modifier: Modifier ->
                 var showVolumeMenu by remember { mutableStateOf(false) }
                 val volumeSymbols = remember { listOf("G", "L") }
-                OutlinedTextField(
+                CaretEnabledOutlinedTextField(
                     value = gallons,
                     onValueChange = { gallons = it },
                     label = {
@@ -935,21 +1141,23 @@ fun QuickFillupScreen(
                             }
                         }
                     },
-                    modifier = modifier.onFocusChanged {
-                        isVolumeFocused = it.isFocused
-                        if (it.isFocused) editingField = "volume"
-                        else if (editingField == "volume") editingField = null
-                    },
-                    readOnly = isLandscape,
+                    modifier = modifier
+                        .focusRequester(volumeFocusRequester)
+                        .onFocusChanged {
+                            isVolumeFocused = it.isFocused
+                            if (it.isFocused) beginNumericEdit("volume")
+                            else if (editingField == "volume") editingField = null
+                        },
+                    readOnly = true,
+                    showCaretButtons = false,
+                    caretIndex = volumeCaret,
+                    onCaretIndexChange = { volumeCaret = it },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Decimal,
                         imeAction = ImeAction.Done
                     ),
                     keyboardActions = KeyboardActions(
-                        onDone = {
-                            editingField = null
-                            focusManager.clearFocus()
-                        }
+                        onDone = { onKeypadNextField() }
                     ),
                     singleLine = true
                 )
@@ -978,16 +1186,38 @@ fun QuickFillupScreen(
                     volumeField(Modifier.widthIn(min = 56.dp, max = 84.dp))
                 }
             }
-            OutlinedTextField(
+            val panelCTextWidth = if (isLandscape) {
+                Modifier.widthIn(min = 80.dp, max = vehicleFieldWidth.coerceAtLeast(172.dp))
+            } else {
+                Modifier.fillMaxWidth()
+            }
+            com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
                 label = { Text("Notes") },
-                modifier = Modifier.fillMaxWidth(),
+                // Landscape: match Panel C sibling width (not full remaining A+B space).
+                // Portrait: full width of Panel C.
+                modifier = panelCTextWidth,
+                singleLine = false,
                 maxLines = 3,
             )
-        }
+            if (lat != null && lon != null) {
+                LocationConfirmBlock(
+                    statusLine = locationStatus,
+                    name = placeName,
+                    address = placeAddress,
+                    confirmChecked = confirmLocation,
+                    onNameChange = { placeName = it },
+                    onAddressChange = { placeAddress = it },
+                    onConfirmChange = { confirmLocation = it },
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .then(panelCTextWidth),
+                )
             }
-        }
+            } // pump Column
+            } // fields Column
+        } // BoxWithConstraints
     }
 
     val onShutterClick = {
@@ -1012,6 +1242,7 @@ fun QuickFillupScreen(
         if (saveFuelPhotosNow) {
             isPhotoSaving = true
             photoSaveStatus = "Saving photo…"
+            var rotationDegrees = 0
             try {
                 val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                     context.display
@@ -1021,6 +1252,7 @@ fun QuickFillupScreen(
                 }
                 val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
                 imageCapture.targetRotation = rotation
+                rotationDegrees = surfaceRotationToDegrees(rotation)
             } catch (e: Exception) {
                 Log.e("QuickFill", "Failed to set target rotation", e)
             }
@@ -1038,12 +1270,17 @@ fun QuickFillupScreen(
                     }
                 }
 
+                val captureMetadata = ImageCapture.Metadata().apply {
+                    location = deviceLocation
+                }
                 val outputOptions = ImageCapture.OutputFileOptions.Builder(
                     resolver,
                     android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     contentValues
-                ).build()
+                ).setMetadata(captureMetadata).build()
 
+                val locForExif = deviceLocation
+                val orientForExif = rotationDegrees
                 imageCapture.takePicture(
                     outputOptions,
                     ContextCompat.getMainExecutor(context),
@@ -1059,9 +1296,18 @@ fun QuickFillupScreen(
                                     Toast.LENGTH_LONG
                                 ).show()
                             } else {
+                                val captureTs = System.currentTimeMillis()
+                                PhotoExifWriter.writeGpsAndOrientation(
+                                    context,
+                                    savedUri,
+                                    locForExif,
+                                    orientForExif,
+                                    timestampMs = captureTs,
+                                    userComment = "ve:tag=$photoTag",
+                                )
                                 sessionPhotos[photoTag] = SessionPhoto(
                                     uri = savedUri.toString(),
-                                    ts = System.currentTimeMillis()
+                                    ts = captureTs
                                 )
                                 photoSaveStatus = null
                                 Toast.makeText(context, "Photo saved to Camera", Toast.LENGTH_SHORT).show()
@@ -1078,9 +1324,18 @@ fun QuickFillupScreen(
                                 null
                             }
                             if (fallbackUri != null) {
+                                val captureTs = System.currentTimeMillis()
+                                PhotoExifWriter.writeGpsAndOrientation(
+                                    context,
+                                    fallbackUri,
+                                    locForExif,
+                                    orientForExif,
+                                    timestampMs = captureTs,
+                                    userComment = "ve:tag=$photoTag",
+                                )
                                 sessionPhotos[photoTag] = SessionPhoto(
                                     uri = fallbackUri.toString(),
-                                    ts = System.currentTimeMillis()
+                                    ts = captureTs
                                 )
                                 photoSaveStatus = null
                                 Toast.makeText(
@@ -1148,6 +1403,7 @@ fun QuickFillupScreen(
             }
         }
 
+        val statusLine = photoSaveStatus ?: instructionLine
         Box(
             modifier = if (isLand) Modifier.wrapContentSize() else Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
@@ -1177,23 +1433,37 @@ fun QuickFillupScreen(
                             }
                         )
                     }
-                    RoundActionButton(
-                        viewState = mainButtonState,
-                        onClick = onMainButtonClick
+                    RoundCaptureButton(
+                        viewState = mainButtonState.toCaptureButtonState(),
+                        onClick = onMainButtonClick,
                     )
                     // Save in B — landscape branch
                     saveButtonContent(Modifier.wrapContentWidth())
                 }
             } else {
                 // Save in B — portrait branch: single horizontal row (save, shutter, mode)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                Text(
+                    text = statusLine,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 2.dp),
+                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     saveButtonContent(Modifier.wrapContentWidth())
-                    RoundActionButton(
-                        viewState = mainButtonState,
-                        onClick = onMainButtonClick
+                    RoundCaptureButton(
+                        viewState = mainButtonState.toCaptureButtonState(),
+                        onClick = onMainButtonClick,
                     )
                     IconButton(
                         onClick = onModeSwitchClick,
@@ -1213,41 +1483,43 @@ fun QuickFillupScreen(
                         )
                     }
                 }
+                }
             }
         }
     }
 
-    // Save in B only. A gets weight(1) remainder after B+C for max camera; zoom in right-blank or bottom-blank inside A.
-    // 3-panel layout: A (camera bottom-center fill), B (controls), C (results). Portrait C centered; landscape C content-sized.
-
+    // 3-panel layout: A (camera) ≥ half, B controls, C fields (scroll, width-capped in landscape).
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        // Config-based layout: device landscape orientation triggers 3-panel Row
         if (isLandscape) {
             Row(modifier = Modifier.fillMaxSize()) {
                 if (isEditing) {
-                    // Landscape editing: keypad replaces A+B space
+                    // Landscape editing: 4×4 keypad replaces A+B space
                     Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(1.2f)
                             .fillMaxHeight(),
                         contentAlignment = Alignment.Center
                     ) {
                         NumericKeypad(
                             onDigit = onKeypadDigit,
                             onBackspace = onKeypadBackspace,
+                            onCaretLeft = onKeypadCaretLeft,
+                            onCaretRight = onKeypadCaretRight,
+                            onNextField = onKeypadNextField,
                             onDismiss = onKeypadDismiss
                         )
                     }
                 } else {
-                    // Panel A — camera/results (remaining space)
+                    // Panel A — ≥ ~half width (weight 1.2 vs C 1.0)
                     Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(1.2f)
                             .fillMaxHeight()
+                            .widthIn(min = 200.dp)
                     ) {
                         panelAContent(false)
                     }
-                    // Panel B — navigation controls + Save (bottom)
+                    // Panel B — navigation controls + Save
                     Box(
                         modifier = Modifier
                             .wrapContentWidth()
@@ -1258,33 +1530,45 @@ fun QuickFillupScreen(
                         cameraControlsContent(true)
                     }
                 }
-                // Panel C — content-sized fields (wrapContentWidth)
+                // Panel C — width-capped so long lines never crush A
                 Column(
-                    modifier = if (isEditing) {
-                        Modifier
-                            .wrapContentWidth()
-                            .padding(horizontal = 8.dp, vertical = 8.dp)
-                    } else {
-                        Modifier
-                            .wrapContentWidth()
-                            .fillMaxHeight()
-                            .padding(horizontal = 8.dp, vertical = 8.dp)
-                            .verticalScroll(rememberScrollState())
-                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .widthIn(max = 280.dp)
+                        .fillMaxHeight()
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     fieldsContent()
                 }
             }
         } else {
-            // Portrait: A+B hidden during field edit (system keyboard); restored on focus clear.
-            // A uses weight remainder with fillMaxSize so camera preview expands to sides and down toward B.
+            // Portrait: A ≥ 50% height; B fixed; C remaining + verticalScroll only.
+            // Keypad editing: keypad in A slot; C keeps remaining scrollable band.
             Column(modifier = Modifier.fillMaxSize()) {
-                if (!isPortraitFieldFocused) {
+                if (isEditing) {
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .fillMaxSize()
+                            .weight(0.45f)
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        NumericKeypad(
+                            onDigit = onKeypadDigit,
+                            onBackspace = onKeypadBackspace,
+                            onCaretLeft = onKeypadCaretLeft,
+                            onCaretRight = onKeypadCaretRight,
+                            onNextField = onKeypadNextField,
+                            onDismiss = onKeypadDismiss
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .weight(0.45f)
+                            .fillMaxWidth()
                     ) {
                         panelAContent(false)
                     }
@@ -1297,15 +1581,12 @@ fun QuickFillupScreen(
                         cameraControlsContent(false)
                     }
                 }
-                // Panel C — portrait: fields centered horizontally in available width
                 Column(
                     modifier = Modifier
+                        .weight(0.55f)
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .then(
-                            if (isPortraitFieldFocused) Modifier.weight(1f, fill = false)
-                            else Modifier.verticalScroll(rememberScrollState())
-                        ),
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Box(
@@ -1318,6 +1599,12 @@ fun QuickFillupScreen(
             }
         }
     }
+}
+
+private fun CaptureViewState.toCaptureButtonState(): CaptureButtonState = when (this) {
+    CaptureViewState.Live -> CaptureButtonState.Live
+    CaptureViewState.Processing -> CaptureButtonState.Processing
+    CaptureViewState.Results -> CaptureButtonState.Results
 }
 
 @Composable
@@ -1333,97 +1620,68 @@ private fun SymbolLabel(
     )
 }
 
+/**
+ * Quick Fill 4×4 numeric keypad (both orientations).
+ *
+ * ```
+ * 1  2  3  ⌫
+ * 4  5  6  ◀
+ * 7  8  9  ▶
+ * .  0  OK  blank
+ * ```
+ * OK = next field (odo→cost→volume→dismiss). blank = dismiss only.
+ */
 @Composable
 private fun NumericKeypad(
     onDigit: (String) -> Unit,
     onBackspace: () -> Unit,
+    onCaretLeft: () -> Unit,
+    onCaretRight: () -> Unit,
+    onNextField: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     keySize: Dp = 48.dp
 ) {
+    val gap = 4.dp
     val rows = listOf(
-        listOf("1", "2", "3"),
-        listOf("4", "5", "6"),
-        listOf("7", "8", "9"),
-        listOf(".", "0", "⌫")
+        listOf("1", "2", "3", "⌫"),
+        listOf("4", "5", "6", "◀"),
+        listOf("7", "8", "9", "▶"),
+        listOf(".", "0", "OK", "blank"),
     )
     Column(
-        modifier = modifier.width(keySize * 3),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        modifier = modifier.width(keySize * 4 + gap * 3),
+        verticalArrangement = Arrangement.spacedBy(gap)
     ) {
         rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                 row.forEach { key ->
                     OutlinedButton(
                         onClick = {
                             when (key) {
                                 "⌫" -> onBackspace()
+                                "◀" -> onCaretLeft()
+                                "▶" -> onCaretRight()
+                                "OK" -> onNextField()
+                                "blank" -> onDismiss()
                                 else -> onDigit(key)
                             }
                         },
                         modifier = Modifier.size(keySize),
                         contentPadding = PaddingValues(0.dp)
                     ) {
-                        Text(key, style = MaterialTheme.typography.titleMedium)
+                        when (key) {
+                            "blank" -> Icon(
+                                imageVector = Icons.Filled.KeyboardArrowDown,
+                                contentDescription = "Dismiss keypad"
+                            )
+                            "◀" -> Text("◀", style = MaterialTheme.typography.titleMedium)
+                            "▶" -> Text("▶", style = MaterialTheme.typography.titleMedium)
+                            else -> Text(key, style = MaterialTheme.typography.titleMedium)
+                        }
                     }
                 }
             }
-        }
-        OutlinedButton(
-            onClick = onDismiss,
-            modifier = Modifier
-                .size(keySize)
-                .align(Alignment.CenterHorizontally),
-            contentPadding = PaddingValues(0.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.KeyboardArrowDown,
-                contentDescription = "Dismiss keypad"
-            )
-        }
-    }
-}
-
-@Composable
-private fun RoundActionButton(
-    viewState: CaptureViewState,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    IconButton(
-        onClick = onClick,
-        modifier = modifier
-            .size(64.dp)
-            .then(
-                when (viewState) {
-                    CaptureViewState.Live -> Modifier
-                        .background(Color.White, CircleShape)
-                        .border(4.dp, Color.Gray, CircleShape)
-                    CaptureViewState.Processing -> Modifier
-                        .background(MaterialTheme.colorScheme.error, CircleShape)
-                    CaptureViewState.Results -> Modifier
-                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
-                }
-            )
-    ) {
-        when (viewState) {
-            CaptureViewState.Live -> Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(Color.White, CircleShape)
-            )
-            CaptureViewState.Processing -> Icon(
-                imageVector = Icons.Filled.Close,
-                contentDescription = "Cancel processing",
-                tint = MaterialTheme.colorScheme.onError,
-                modifier = Modifier.size(32.dp)
-            )
-            CaptureViewState.Results -> Icon(
-                imageVector = Icons.Filled.Refresh,
-                contentDescription = "Retry",
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(32.dp)
-            )
         }
     }
 }

@@ -34,9 +34,11 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.data.repository.forManageList
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoType
 import com.davidlang.vehicleexpensesautomated.ui.components.LandmarkDebugDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.PhotoPicker
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.*
 import kotlinx.coroutines.Dispatchers
@@ -60,7 +62,10 @@ fun ManageVehiclesScreen(
 ) {
     val context = LocalContext.current
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
-    val vehicles by vehicleViewModel.vehicles.collectAsState()
+    val allVehicles by vehicleViewModel.vehicles.collectAsState()
+    val vehicles = remember(allVehicles) {
+        allVehicles.forManageList()
+    }
     val scope = rememberCoroutineScope()
 
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
@@ -255,14 +260,12 @@ fun ManageVehiclesScreen(
         }
     }
 
+    RegisterPageHelp(
+        title = "Manage Vehicles",
+        "Set up each vehicle once: reference dash photo → Odo Crop → Run Discovery → name → Create/Save. " +
+            "Crops and landmarks improve odometer OCR on Quick Fill. Menu → Help for a short walkthrough.",
+    )
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
-        Text(
-            "Set up each vehicle once: reference dash photo → Odo Crop → Run Discovery → name → Create/Save. " +
-                "Crops and landmarks improve odometer OCR on Quick Fill. Menu → Help for a short walkthrough.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 12.dp),
-        )
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
             OutlinedTextField(
@@ -281,6 +284,17 @@ fun ManageVehiclesScreen(
             PhotoPicker(photoStorageManager = hiltViewModel<SettingsViewModel>().photoStorageManager, photoType = PhotoType.FUEL, currentPhotoUrl = pickedPhotoUrl, onPhotoUrlChanged = { url -> if (url != null) processImportedPhoto(url) })
 
             if (referencePhotoUrl != null) {
+                var showFullPhoto by remember(referencePhotoUrl) { mutableStateOf(false) }
+                TextButton(onClick = { showFullPhoto = true }) {
+                    Text("View full photo (zoom +/−)")
+                }
+                if (showFullPhoto) {
+                    com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog(
+                        uris = listOf(referencePhotoUrl!!),
+                        title = "Reference dash photo",
+                        onDismiss = { showFullPhoto = false },
+                    )
+                }
                 EditCropsView(referencePhotoUrl!!, odometerCropRect, otherTextCropRect, originalImageSize, editMode,
                     onSizeChanged = { imageSize = it },
                     onCropChanged = { odo, other -> odometerCropRect = odo; otherTextCropRect = other })
