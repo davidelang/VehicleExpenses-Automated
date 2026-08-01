@@ -55,7 +55,8 @@ Orientation pointers: **`project-facts.md`**. Economy math: **`REPORTS_METRICS.m
 | Do | Don’t |
 |----|--------|
 | Vico **`compose:3.2.3` only** (`ReportsLabCharts.kt` patterns) | Add `vico:compose-m3` (Material3 ABI break vs Compose BOM 2024.10) |
-| Treat Lab as **experimental**; production **Reports & Charts** remains default | Replace production Reports with Lab without an approved plan |
+| Treat Lab hub (`reports_lab`) as **product Reports** (drawer **Reports**) | Reintroduce a second “production Reports & Charts” surface without a plan |
+| Keep Vico X values ≤ **4 decimal places** (`tsToChartX` quantize) | Pass raw epoch-ms/day floats into Vico line models (crashes GCD) |
 | Share TEXT/CSV under `filesDir/reports_lab/` via `ReportsLabShare` | Assume Lab filters replace global Settings |
 
 ## 7. Trip starts vs fills
@@ -63,7 +64,7 @@ Orientation pointers: **`project-facts.md`**. Economy math: **`REPORTS_METRICS.m
 | Do | Don’t |
 |----|--------|
 | `TripTimeline.isTripStart` / `FuelEconomyChains.isTripStart` — single predicate | Second ad-hoc `tripType.isNotBlank()` inventory rule |
-| Fill **counts** and fill **lists**: `withoutTripStarts()` / non-trip only | Count trip starts as fill-ups in production Reports or Lab fill-facing sets |
+| Fill **counts** and fill **lists**: `withoutTripStarts()` / non-trip only | Count trip starts as fill-ups in Lab fill-facing sets |
 | Tax-style miles: Lab **Trip miles** (`reports_lab/trips`) + `TripSegments` | Put tax mile redesign into production MPG chains without a plan |
 | Odo range summaries may include trip odo events | Treat open-only trip rows as volume/cost inventory |
 

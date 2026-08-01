@@ -6,47 +6,60 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 # Vehicle Expenses Automated — Navigation Map
 
-## Menu → Pages
-- **Quick Fill-up**: Main entry point for recording fuel fill-ups via camera/OCR (app start destination).
-- **Trip Tracking**: Open-only trip segments (Business / Personal / …) as fuel rows with **Trip Type**; camera or manual odo; immediately after Quick Fill-up in the drawer.
-- **Manage Vehicles**: Add, edit, or remove vehicles. Set up OCR reference photos and crop regions.
-- **New Expense Entry**: Record non-fuel expenses (repairs, insurance, etc.).
-- **Expense List**: View historical non-fuel expenses.
-- **Import Old Pictures**: Batch import odometer photos for manual fuel entry.
-- **Reports & Charts**: View fuel economy, cost trends, and summaries (production).
-- **Reports Lab**: Experimental reports hub and child sets including **Trip miles** (`reports_lab/trips`; always in drawer).
-- **Fuel History**: Per-vehicle fill list with edit + on-demand photo fetch (includes trip-start rows).
-- **Settings**: Configure units, storage, debug, experiment gates (not the primary sync summary).
-- **Syncing**: Sync summary / Sync now / spreadsheet + photo destination entry points.
-- **Help**: User manual and troubleshooting.
-- **About**: Version information and credits.
-- **Alignment Experiment**: Debugging tool for testing OCR alignment logic (not linked from production flows; experiment toggle).
-- **Pump Experiment**: Debugging tool for gas-pump cost/volume extraction (not linked from production flows; experiment toggle).
+## Drawer order (always visible)
 
-## Page Flows
-- **Quick Fill-up** → **Reports** (after successful save)
-- **Trip Tracking** → (pop back / drawer; saves trip-start fuel rows in place)
-- **Manage Vehicles** → (pop back to previous screen)
-- **New Expense Entry** → **Reports** (after successful save)
-- **Expense List** → (pop back to previous screen)
-- **Import Old Pictures** → (pop back to previous screen)
-- **Reports & Charts** → **Quick Fill-up** (via menu or back button)
-- **Reports Lab** → child lab routes / drawer
-- **Fuel History** → **Edit Fill** (`fuel/{fuelId}`)
-- **Settings** → (pop back to previous screen)
-- **Syncing** → **Spreadsheet Sync** / **Photo Backup** (sub-routes)
-- **Settings** → **Spreadsheet Sync** / **Photo Backup** (sub-routes still reachable)
-- **Help** → (pop back to previous screen)
-- **About** → (pop back to previous screen)
-- **Alignment Experiment** → (pop back to previous screen)
-- **Pump Experiment** → (pop back to previous screen)
+1. **Quick Fill-up** (`quickfill`) — start destination; camera/OCR fuel entry  
+2. **Start trip** (`triptracking`) — open-only trip segments as fuel rows with Trip Type  
+3. **Manage Vehicles** (`managevehicles`) — vehicles, reference dash photo, crops, landmarks  
+4. **New expense** (`expense`) — non-fuel expenses (create; edit via `expense/{id}`)  
+5. **Reports** (`reports_lab`) — product reports hub (Lab); not experiment-gated  
+6. **Settings** (`settings`) — units, photos, debug QF, experiment gate  
+7. **Syncing** (`syncing`) — spreadsheet + photo sync summary / Sync now  
+8. **Help** (`help`)  
+9. **About** (`about`)
 
-## Unwired / future
-- **Conflict Resolution** (`ConflictResolutionScreen.kt`): Implemented but not in the navigation drawer; reserved for future multi-device sync conflict UI.
+## Drawer — experiment gate only (`show_experiment_screens`)
+
+Order under the toggle (Settings):
+
+1. **Alignment Experiment** (`experiment`)  
+2. **Pump Experiment** (`experiment_pump`)  
+3. **Import Old Pictures** (`import` / `import?review=1`) — batch historical photos  
+
+When the gate is **off**, Import is **not** in the drawer. Top-bar **`?N`** still opens import review when pending questions exist.
+
+## Not in the main drawer
+
+| Surface | How to open |
+|---------|-------------|
+| Expense list | Reports hub card → `expenselist` |
+| Fill history / Fuel history | Reports hub card or deep `fuelhistory` |
+| Edit fill | `fuel/{fuelId}` from history / reports fills |
+| Spreadsheet / Photo destinations | Syncing → cards, or Settings sub-routes |
+| Legacy **Reports & Charts** | **Removed** (no route `reports`; no `ReportsScreen`) |
+
+## Top app bar chrome
+
+| Control | Role |
+|---------|------|
+| **☰** or **←** | Open drawer, or back from sub-routes (settings children, fuel edit, reports_lab children). Report children + `expenselist` show **☰ and ←**. |
+| **ⓘ** Page help | Shown when the current screen calls `RegisterPageHelp` (leading, next to menu/back). Registration uses a **generation token** so dispose of a previous screen does not clear a newer screen’s help. Phone-narrow titles use page name only so Info stays visible with badges. |
+| **`?N`** | Pending import review count → `import?review=1` |
+| **`!`** | Stored sync failure → **Syncing** |
+
+Priority if space is tight: menu/back → **Info** → `?N` → `!`.
+
+## Page flows (selected)
+
+- **Quick Fill-up** / **New expense** — stay in place after save (drawer for Reports)  
+- **Start trip** — writes trip-start fuel rows; no separate close column  
+- **Reports hub** → `reports_lab/time` (**Time based reports**), `expenses`, `fills`, `vehicle_summary`, `trips`; hub card → `expenselist`. Legacy routes `efficiency` / `cost_trends` / `monthly` redirect to `time`.  
+- **Syncing** → `settings/spreadsheet_sync`, `settings/photo_backup`  
+- **Fuel History** → fills only → **Edit Fill**; trip starts listed under **Trip miles**  
 
 ## Notes
-- **Start destination**: Quick Fill-up (`quickfill`)
-- **Trip Tracking route**: `triptracking` (drawer item immediately after Quick Fill-up)
-- **Other top-level routes**: `fuelhistory`, `syncing`, `reports_lab` (+ `reports_lab/*` children including `trips`), `fuel/{fuelId}`
-- **Navigation Drawer**: Accessible from all top-level screens.
-- **Deep Linking**: Not currently implemented.
+
+- **Start destination:** `quickfill`  
+- **Product Reports** = Lab hub only (`reports_lab/*`).  
+- **Fill inventory** (Fuel History + Fill history report) excludes trip starts (`tripType` non-blank). Trip list is on Trip miles.  
+- Conflict resolution UI exists but is not drawer-linked.
