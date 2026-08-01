@@ -8,6 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
+import com.davidlang.vehicleexpensesautomated.ui.reports.LastFullFillLegsBlock
+import com.davidlang.vehicleexpensesautomated.ui.reports.lastFullFillLegsShareLines
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 @Composable
@@ -15,10 +17,21 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
     val data = rememberLabReportData()
     var includeVinInShare by remember { mutableStateOf(false) }
 
-    val targets: List<Vehicle?> = remember(data.filter.vehicleId, data.vehicles) {
-        when (val id = data.filter.vehicleId) {
-            null -> data.vehicles.map { it }
-            else -> listOf(data.vehicles.firstOrNull { it.id == id } ?: data.allVehicles.firstOrNull { it.id == id })
+    val targets: List<Vehicle?> = remember(
+        data.filter.vehicleMode,
+        data.filter.vehicleId,
+        data.vehicles,
+    ) {
+        when (data.filter.vehicleMode) {
+            LabVehicleMode.ALL -> listOf(null) // combined all-vehicles pack
+            LabVehicleMode.EACH -> data.vehicles.map { it } // stacked per vehicle
+            LabVehicleMode.SINGLE -> {
+                val id = data.filter.vehicleId
+                listOf(
+                    data.vehicles.firstOrNull { it.id == id }
+                        ?: data.allVehicles.firstOrNull { it.id == id },
+                )
+            }
         }
     }
 
@@ -37,7 +50,7 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
             .take(5)
         val dpm = dollarsPerMile(fuelAll, exp, data.defaultStored)
         return buildString {
-            appendLine("Vehicle Expenses — Vehicle summary (experimental)")
+            appendLine("Vehicle Expenses — Vehicle summary")
             appendLine("Generated: ${formatLabDateTime(System.currentTimeMillis())}")
             appendLine("Period: ${periodLabel(data.filter)}")
             val identity = buildList {
@@ -80,13 +93,9 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
                 appendLine("  $cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
             }
             appendLine()
-            appendLine("Recent fills:")
-            fills.sortedByDescending { it.timestamp }.take(5).forEach { e ->
-                appendLine(
-                    "  ${formatLabDate(e.timestamp)} odo ${e.odometer} " +
-                        "${CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)} " +
-                        formatVolume(e.gallons, data.volumeLabel),
-                )
+            appendLine("Last 5 full fills:")
+            lastFullFillLegsShareLines(legs, data.volumeLabel, data.defaultSymbol).forEach {
+                appendLine(it)
             }
             appendLine("Recent expenses:")
             exp.sortedByDescending { it.date }.take(5).forEach { e ->
@@ -135,16 +144,16 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
             row("economy", "dpm", dollarsPerMile(fuelAll, exp, data.defaultStored)?.toString() ?: "")
             CurrencyCodes.sumByCurrency(exp, data.defaultStored, { it.currency }, { it.amount })
                 .forEach { (c, a) -> row("expense_total", c, a.toString()) }
-            fills.sortedByDescending { it.timestamp }.forEach { e ->
+            excludeMpgOutliers(legs).asReversed().take(5).forEach { leg ->
                 sb.append(
                     listOf(
-                        "fill_row",
+                        "full_fill_leg",
                         prefix,
-                        formatLabDate(e.timestamp),
-                        e.odometer.toString(),
-                        "%.4f".format(e.cost),
-                        "%.4f".format(e.gallons),
-                        e.currency.ifBlank { data.defaultStored },
+                        formatLabDate(leg.endFill.timestamp),
+                        leg.endFill.odometer.toString(),
+                        "%.4f".format(leg.mpg),
+                        "%.4f".format(leg.sumVol),
+                        leg.miles.toString(),
                     ).joinToString(","),
                 ).append('\n')
             }
@@ -166,33 +175,26 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
 
     ReportsLabScreenScaffold(
         title = "Vehicle summary",
-        subtitle = "A shareable history pack for this vehicle and period.",
+        infoText = "A shareable history pack for this vehicle and period. " +
+            "Toggle Include VIN below before sharing if needed (default off).",
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
-        shareRow = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = includeVinInShare, onCheckedChange = { includeVinInShare = it })
-                    Text("Include VIN in share (default off)", style = MaterialTheme.typography.bodySmall)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = {
-                        val body = targets.joinToString("\n") { packForVehicle(it) }
-                        ReportsLabShare.shareText(data.context, "Vehicle summary", body)
-                    }) { Text("Share TEXT") }
-                    OutlinedButton(onClick = {
-                        ReportsLabShare.shareCsv(
-                            data.context,
-                            "lab_vehicle_summary.csv",
-                            csvPack(),
-                            "Vehicle summary CSV",
-                        )
-                    }) { Text("Share CSV") }
-                }
-            }
+        shareActions = run {
+            val buildText = { targets.joinToString("\n") { packForVehicle(it) } }
+            ReportsLabShareActions(
+                subject = "Vehicle summary",
+                textBody = buildText,
+                csvFileName = "lab_vehicle_summary.csv",
+                csvBody = { csvPack() },
+                pdfBody = { ReportsLabPdf.fromPlainText("Vehicle summary", buildText()) },
+            )
         },
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = includeVinInShare, onCheckedChange = { includeVinInShare = it })
+            Text("Include VIN in share (default off)", style = MaterialTheme.typography.bodySmall)
+        }
         if (data.fuel.isEmpty() && data.expenses.isEmpty() && targets.all { it == null }) {
             ReportsLabEmpty("No data for this filter.")
             return@ReportsLabScreenScaffold
@@ -278,17 +280,11 @@ private fun VehicleSummarySection(
             topCats.forEach { (cat, m) ->
                 Text("  $cat: ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}", style = MaterialTheme.typography.bodySmall)
             }
-            Text("Last 5 fills", style = MaterialTheme.typography.titleSmall)
-            fills.sortedByDescending { it.timestamp }.take(5).forEach { e ->
-                Text(
-                    "${formatLabDate(e.timestamp)} odo ${e.odometer} " +
-                        "${CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)} " +
-                        formatVolume(e.gallons, data.volumeLabel),
-                    style = MaterialTheme.typography.bodySmall,
-                    softWrap = true,
-                )
-            }
-            if (fills.isEmpty()) Text("  (none)", style = MaterialTheme.typography.bodySmall)
+            LastFullFillLegsBlock(
+                legsChrono = legs,
+                volumeUnitLabel = data.volumeLabel,
+                defaultSymbol = data.defaultSymbol,
+            )
             Text("Last 5 expenses", style = MaterialTheme.typography.titleSmall)
             exp.sortedByDescending { it.date }.take(5).forEach { e ->
                 Text(

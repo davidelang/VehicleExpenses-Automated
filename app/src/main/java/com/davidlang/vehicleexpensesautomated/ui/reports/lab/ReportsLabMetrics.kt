@@ -17,6 +17,20 @@ data class LabFullFillLeg(
     val sumVol: Double,
     val mpg: Double,
     val miles: Int,
+) {
+    /** Volume per mile (inverse of mpg) when miles > 0. */
+    val gpm: Double?
+        get() = if (miles > 0 && sumVol > 0) sumVol / miles.toDouble() else null
+
+    val endTimestamp: Long get() = endFill.timestamp
+    val vehicleId: Int get() = endFill.vehicleId
+}
+
+/** Time-series chart point (X = capture/leg timestamp). */
+data class LabTimeYPoint(
+    val timestampMs: Long,
+    val y: Float,
+    val seriesKey: String = "",
 )
 
 private const val DISPLAY_MPG_MIN = 5.0
@@ -99,6 +113,104 @@ fun avgMpg(legsChrono: List<LabFullFillLeg>): Double? {
     if (d.isEmpty()) return null
     return d.map { it.mpg }.average()
 }
+
+/**
+ * Fuel-only $/mi for one leg window (prev→end). Null if miles≤0, no cost, or mixed currency.
+ * Uses DPM chain breakers (not MPG breakers).
+ */
+fun dpmFuelOnly(
+    leg: LabFullFillLeg,
+    fuelEntries: List<FuelEntry>,
+    defaultStored: String,
+): Double? {
+    if (leg.miles <= 0) return null
+    val prev = leg.prevFill
+    val cur = leg.endFill
+    val between = fuelEntries.filter {
+        it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp
+    }
+    if (between.any {
+            FuelEconomyChains.contributesToEconomy(it) && FuelEconomyChains.isDpmChainBreaker(it)
+        }
+    ) {
+        return null
+    }
+    val withCost = between.filter {
+        FuelEconomyChains.contributesToEconomy(it) && FuelEconomyChains.hasCost(it)
+    }
+    val byC = CurrencyCodes.sumByCurrency(
+        withCost, defaultStored, { it.currency }, { it.cost },
+    )
+    if (byC.isEmpty() || byC.size != 1) return null
+    return byC.values.first() / leg.miles.toDouble()
+}
+
+/**
+ * Fuel + expenses in leg window ÷ miles. Null if mixed currency or no spend.
+ */
+fun dpmInclExpenses(
+    leg: LabFullFillLeg,
+    fuelEntries: List<FuelEntry>,
+    expenses: List<ExpenseEntry>,
+    defaultStored: String,
+): Double? {
+    if (leg.miles <= 0) return null
+    val prev = leg.prevFill
+    val cur = leg.endFill
+    val between = fuelEntries.filter {
+        it.timestamp > prev.timestamp && it.timestamp <= cur.timestamp
+    }
+    if (between.any {
+            FuelEconomyChains.contributesToEconomy(it) && FuelEconomyChains.isDpmChainBreaker(it)
+        }
+    ) {
+        return null
+    }
+    val combined = mutableMapOf<String, Double>()
+    val fuelWithCost = between.filter {
+        FuelEconomyChains.contributesToEconomy(it) && FuelEconomyChains.hasCost(it)
+    }
+    for ((k, v) in CurrencyCodes.sumByCurrency(
+        fuelWithCost, defaultStored, { it.currency }, { it.cost },
+    )) {
+        combined[k] = combined.getOrDefault(k, 0.0) + v
+    }
+    val windowExpenses = expenses.filter {
+        it.date > prev.timestamp && it.date <= cur.timestamp
+    }
+    for ((k, v) in CurrencyCodes.sumByCurrency(
+        windowExpenses, defaultStored, { it.currency }, { it.amount },
+    )) {
+        combined[k] = combined.getOrDefault(k, 0.0) + v
+    }
+    if (combined.isEmpty() || combined.size != 1) return null
+    return combined.values.first() / leg.miles.toDouble()
+}
+
+/** Legs with per-leg multi-metric values for efficiency charts/export. */
+data class LabLegMetrics(
+    val leg: LabFullFillLeg,
+    val mpg: Double,
+    val gpm: Double?,
+    val dpmFuel: Double?,
+    val dpmInclExp: Double?,
+)
+
+fun labLegMetrics(
+    legs: List<LabFullFillLeg>,
+    fuelEntries: List<FuelEntry>,
+    expenses: List<ExpenseEntry>,
+    defaultStored: String,
+): List<LabLegMetrics> =
+    legs.map { leg ->
+        LabLegMetrics(
+            leg = leg,
+            mpg = leg.mpg,
+            gpm = leg.gpm,
+            dpmFuel = dpmFuelOnly(leg, fuelEntries, defaultStored),
+            dpmInclExp = dpmInclExpenses(leg, fuelEntries, expenses, defaultStored),
+        )
+    }
 
 fun dollarsPerMile(
     fuelEntries: List<FuelEntry>,
@@ -241,6 +353,100 @@ fun teaserKpis(
         lastMpg = lastMpg(legs),
         avgMpg = avgMpg(legs),
     )
+}
+
+/** Hub / summary card metrics (mirrors production Reports overall + per-vehicle lines). */
+data class HubVehicleSummary(
+    val vehicleId: Int,
+    val name: String,
+    val fuelCostByCurrency: Map<String, Double>,
+    val gallons: Double,
+    val fillCount: Int,
+    val partialCount: Int,
+    val lastMpg: Double?,
+    val avgMpg: Double?,
+    val dollarsPerMile: Double?,
+    val expenseTotalByCurrency: Map<String, Double>,
+)
+
+fun hubVehicleSummaries(
+    fuel: List<FuelEntry>,
+    expenses: List<ExpenseEntry>,
+    nameById: Map<Int, String>,
+    defaultStored: String,
+): List<HubVehicleSummary> {
+    val fuelByV = fuel.groupBy { it.vehicleId }
+    val expByV = expenses.groupBy { it.vehicleId }
+    val ids = (fuelByV.keys + expByV.keys).toSortedSet()
+    return ids.map { vehicleId ->
+        val vFuel = fuelByV[vehicleId].orEmpty()
+        val vFills = vFuel.withoutTripStarts()
+        val vExp = expByV[vehicleId].orEmpty()
+        val legs = allValidLegsChrono(vFuel, defaultStored)
+        HubVehicleSummary(
+            vehicleId = vehicleId,
+            name = when {
+                vehicleId == 0 -> "Unknown"
+                else -> nameById[vehicleId] ?: "Vehicle $vehicleId"
+            },
+            fuelCostByCurrency = CurrencyCodes.sumByCurrency(
+                vFuel, defaultStored, { it.currency }, { it.cost },
+            ),
+            gallons = vFuel.sumOf { it.gallons },
+            fillCount = vFills.size,
+            partialCount = vFills.count { it.isPartialFill },
+            lastMpg = lastMpg(legs),
+            avgMpg = avgMpg(legs),
+            dollarsPerMile = dollarsPerMile(vFuel, vExp, defaultStored),
+            expenseTotalByCurrency = CurrencyCodes.sumByCurrency(
+                vExp, defaultStored, { it.currency }, { it.amount },
+            ),
+        )
+    }
+}
+
+fun hubOverallSummaryLine(
+    fuel: List<FuelEntry>,
+    expenses: List<ExpenseEntry>,
+    volumeLabel: String,
+    defaultSymbol: String,
+    defaultStored: String,
+): String {
+    val fills = fuel.withoutTripStarts()
+    val exp = CurrencyCodes.formatAggregateSum(
+        CurrencyCodes.sumByCurrency(expenses, defaultStored, { it.currency }, { it.amount }),
+        defaultSymbol,
+    )
+    val fuelSum = CurrencyCodes.formatAggregateSum(
+        CurrencyCodes.sumByCurrency(fuel, defaultStored, { it.currency }, { it.cost }),
+        defaultSymbol,
+    )
+    val vol = formatVolume(fuel.sumOf { it.gallons }, volumeLabel)
+    val partial = fills.count { it.isPartialFill }
+    return "Exp $exp · Fuel $fuelSum · $vol · fills ${fills.size} (${partial}p)"
+}
+
+fun hubVehicleStatsLine(
+    stats: HubVehicleSummary,
+    volumeLabel: String,
+    defaultSymbol: String,
+): String {
+    val dpm = if (stats.dollarsPerMile == null) {
+        "n/a"
+    } else {
+        "%.3f".format(stats.dollarsPerMile)
+    }
+    val fuel = CurrencyCodes.formatAggregateSum(stats.fuelCostByCurrency, defaultSymbol)
+    return "Fuel $fuel · " +
+        "${formatVolume(stats.gallons, volumeLabel)} · " +
+        "fills ${stats.fillCount}(${stats.partialCount}p) · " +
+        "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · " +
+        "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()} $dpm"
+}
+
+fun hubVehicleExpenseLine(stats: HubVehicleSummary, defaultSymbol: String): String {
+    val total = CurrencyCodes.formatAggregateSum(stats.expenseTotalByCurrency, defaultSymbol)
+    return "Exp $total"
 }
 
 /**

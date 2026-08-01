@@ -1,19 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
@@ -28,34 +18,38 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
 
     ReportsLabScreenScaffold(
         title = "Fill history",
-        subtitle = "Chronological fills for current filters (trip starts excluded). Tap a row to edit.",
+        infoText = "Chronological fills for current filters (trip starts excluded). " +
+            "Each vehicle uses the same multi-vehicle list as All (vehicle name on each row). " +
+            "Tap a row to edit.",
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
-        shareRow = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    val body = buildString {
-                        appendLine("Vehicle Expenses — Fill history (experimental)")
-                        appendLine("Period: ${periodLabel(data.filter)}")
-                        appendLine("Vehicle: ${data.filterVehicleLabel()}")
-                        appendLine("Count: ${rows.size}")
-                        rows.forEach { e ->
-                            val flags = buildList {
-                                if (e.isPartialFill) add("partial")
-                                if (e.economyIgnored) add("ignored")
-                            }.joinToString(",")
-                            appendLine(
-                                "${formatLabDate(e.timestamp)} ${data.vehicleName(e.vehicleId)} " +
-                                    "odo ${e.odometer} ${CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)} " +
-                                    "${formatVolume(e.gallons, data.volumeLabel)}" +
-                                    if (flags.isNotEmpty()) " [$flags]" else "",
-                            )
-                        }
+        shareActions = run {
+            val buildText = {
+                buildString {
+                    appendLine("Vehicle Expenses — Fill history")
+                    appendLine("Period: ${periodLabel(data.filter)}")
+                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
+                    appendLine("Count: ${rows.size}")
+                    rows.forEach { e ->
+                        val flags = buildList {
+                            if (e.isPartialFill) add("partial")
+                            if (e.economyIgnored) add("ignored")
+                        }.joinToString(",")
+                        appendLine(
+                            "${formatLabDate(e.timestamp)} ${data.vehicleName(e.vehicleId)} " +
+                                "odo ${e.odometer} ${CurrencyCodes.formatAmount(e.cost, e.currency, data.defaultSymbol)} " +
+                                "${formatVolume(e.gallons, data.volumeLabel)}" +
+                                if (flags.isNotEmpty()) " [$flags]" else "",
+                        )
                     }
-                    ReportsLabShare.shareText(data.context, "Fill history", body)
-                }) { Text("Share TEXT") }
-                OutlinedButton(onClick = {
+                }
+            }
+            ReportsLabShareActions(
+                subject = "Fill history",
+                textBody = buildText,
+                csvFileName = "lab_fills.csv",
+                csvBody = {
                     val sb = StringBuilder("date,vehicle,odo,cost,volume,currency,partial,economy_ignored,notes\n")
                     rows.forEach { e ->
                         sb.append(
@@ -72,9 +66,10 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
                             ).joinToString(","),
                         ).append('\n')
                     }
-                    ReportsLabShare.shareCsv(data.context, "lab_fills.csv", sb.toString(), "Fill history CSV")
-                }) { Text("Share CSV") }
-            }
+                    sb.toString()
+                },
+                pdfBody = { ReportsLabPdf.fromPlainText("Fill history", buildText()) },
+            )
         },
     ) {
         if (rows.isEmpty()) {
