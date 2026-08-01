@@ -41,7 +41,8 @@ fun HelpScreen(navController: NavHostController? = null) {
         if (navController != null) {
             SectionTitle("Setup tips (animated)")
             Text(
-                "Short step-by-step walkthroughs with screenshots (offline). Also offered on first run when you have no vehicles.",
+                "Short step-by-step walkthroughs with screenshots (offline). Also offered on first run when you have no vehicles. " +
+                    "Connect existing setup = join another device’s shared sheet + photo folder (not create a new blank sheet).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -59,7 +60,7 @@ fun HelpScreen(navController: NavHostController? = null) {
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             ) {
-                Text("Tutorial: Set up sync")
+                Text("Tutorial: Connect existing setup")
             }
             TextButton(
                 onClick = { navController.navigate("onboarding") },
@@ -107,7 +108,10 @@ fun HelpScreen(navController: NavHostController? = null) {
 
         SectionTitle("4. Reports")
         Bullet("Menu → Reports — hub summary, then report cards")
-        Bullet("Time based reports — one chart for mpg, G/mi (or L/mi), \$/G, \$/mi, monthly \$, trip miles/% with optional Smooth bins")
+        Bullet(
+            "Time based reports — one plot with independent Y scales (mpg and G/mi on the left; \$ / trip miles / trip % by type on the right), " +
+                "optional Smooth bins",
+        )
         Bullet("Fill history lists fills only; Trip miles has the trip-start list (tap a row to edit)")
         Bullet("Fuel History and edit screens can Fetch image from archive when any photo destination has the file")
 

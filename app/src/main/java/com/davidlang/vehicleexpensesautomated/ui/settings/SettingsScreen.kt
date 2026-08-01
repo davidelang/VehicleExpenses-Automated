@@ -413,7 +413,7 @@ fun SettingsScreen(navController: NavHostController) {
             onClick = { navController.navigate("tutorial/tutorial_setup_sync") },
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         ) {
-            Text("Tutorial: Set up sync")
+            Text("Tutorial: Connect existing setup")
         }
         OutlinedButton(
             onClick = { navController.navigate("onboarding") },

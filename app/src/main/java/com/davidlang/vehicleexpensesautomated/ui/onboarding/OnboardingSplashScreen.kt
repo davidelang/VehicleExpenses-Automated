@@ -32,7 +32,7 @@ fun OnboardingSplashScreen(navController: NavHostController) {
     val context = LocalContext.current
     RegisterPageHelp(
         title = "Welcome",
-        "No vehicles yet. Choose stand-alone setup (add a vehicle) or connect sync to an existing multi-device setup.",
+        "No vehicles yet. Choose stand-alone (add a vehicle on this phone) or connect to an existing multi-device setup (same sheet + photo folder).",
         "You can skip and use Quick Fill manually; this screen returns on the next start until a vehicle exists.",
     )
     Column(
@@ -79,9 +79,9 @@ fun OnboardingSplashScreen(navController: NavHostController) {
             modifier = Modifier.fillMaxWidth().height(56.dp),
         ) {
             Column(horizontalAlignment = Alignment.Start, modifier = Modifier.fillMaxWidth()) {
-                Text("Set up sync", style = MaterialTheme.typography.titleMedium)
+                Text("Connect existing setup", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "I already use this app elsewhere / I have a sheet or photo backup",
+                    "Another device already has the app — join that sheet + photo folder",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

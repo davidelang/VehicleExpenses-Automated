@@ -2143,3 +2143,20 @@ x
 - render-user-manual.sh → html + assets; Help/About/USER_GUIDE verified
 - No app code change required beyond prior onboarding
 
+
+## 2026-08-01 - residual-finish-recent-plans start
+
+- Plan: residual-finish-recent-plans-20260801-plan.md
+- J join-existing sync tutorial; H Help multi-axis; D optional form shots
+- No deploy
+
+
+## 2026-08-01 - residual-finish-recent-plans complete
+
+- Plan: residual-finish-recent-plans-20260801-plan.md
+- J: SETUP_SYNC rewritten join-existing; splash Connect existing setup; Help/Settings labels
+- H: Help Time based reports = independent Y scales + trip % by type; USER_GUIDE join-existing one-liner
+- D: re-captured 09/10/12/13 (+10 email masked); r2 landmarks + r4 QF odo-result kept pre-refresh (chrome still accurate)
+- render-user-manual.sh; build_app after Kotlin
+- No deploy
+

@@ -44,7 +44,7 @@ This file is a short reference for everyday use and sync behavior. Prefer the fu
 
 1. **Manage Vehicles** → Add New Vehicle → dash photo → **Odo Crop** → **Run Discovery** (fix landmarks) → name → Create.
 2. **Quick Fill-up** → shutter on odometer (vehicle matches from landmarks) → **↕** → shutter on pump → **Save**. Works offline. Use **ⓘ** for control reminders.
-3. Optional multi-device / backup: open **Syncing** → **Spreadsheet Sync** / **Photo Backup**.
+3. Optional multi-device / backup: open **Syncing** → **Spreadsheet Sync** / **Photo Backup**. New device into an **existing** cluster: sign in and open the **same** shared sheet + photo folder (Help → **Connect existing setup** tutorial); stand-alone first setup is **Add a vehicle**.
 
 ## Units
 
