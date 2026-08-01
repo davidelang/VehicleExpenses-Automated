@@ -82,7 +82,7 @@ Failures: red summary + **Details** (full API text, Copy); **!** in app bar open
 
 ## Reports
 
-Menu → **Reports** opens the product hub (all-time summary + catalog). Child reports support vehicle mode (**All / Each / Single**) and period filters. **Time based reports** plots optional metrics on **one** chart (economy left; money + trip right) with Smooth bins; labels use unit façades (`$/G`, `G/mi`, …). **Trip miles** lists trip starts (tap to edit); Fuel History is fills only. Photos missing locally can **Fetch from archive** using any configured photo destination. Math: [REPORTS_METRICS.md](REPORTS_METRICS.md).
+Menu → **Reports** opens the product hub (all-time summary + catalog). Child reports support vehicle mode (**All / Each / Single**) and period filters. **Time based reports** plots optional metrics on **one** plot with **independent Y scales** per unit family (economy left; $ / trip miles / trip % by type on the right) and Smooth bins; labels use unit façades (`$/G`, `G/mi`, …). **Trip miles** lists trip starts (tap to edit); Fill history / Fuel History are fills only. Photos missing locally can **Fetch from archive** using any configured photo destination. Illustrated steps: [user-manual.html](../user-manual.html). Math: [REPORTS_METRICS.md](REPORTS_METRICS.md).
 
 ## Navigation map
 

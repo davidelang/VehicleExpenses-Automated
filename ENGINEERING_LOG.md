@@ -2127,3 +2127,19 @@ x
 - Assets app/src/main/assets/tutorials/; manual composites from sandbox masked set + render
 - No deploy
 
+
+## 2026-07-31 - user-manual-screenshot-integration start
+
+- Plan: user-manual-screenshot-integration-20260731-plan.md
+- Promote 5556 masked shots; update md; render HTML/assets
+- No deploy
+
+
+## 2026-07-31 - user-manual-screenshot-integration complete
+
+- Plan: user-manual-screenshot-integration-20260731-plan.md
+- Promoted 5556 masked shots + re-captured spreadsheet list, photo backup list, settings scroll, syncing hub
+- user-manual.md: Start trip, Time based reports, fill/fuel edit, trip miles, Syncing hub; composites noted
+- render-user-manual.sh → html + assets; Help/About/USER_GUIDE verified
+- No app code change required beyond prior onboarding
+
