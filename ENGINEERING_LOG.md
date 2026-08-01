@@ -370,3 +370,12 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - update-rules FILES updated; no update-rules run
 - Regenerated .planning-agent-prompt.txt from planner pack
 
+
+## 2026-07-31 - Plan archive review (implemented evidence)
+
+- Classified ~412 active plans via status/git subject/eng-log/PR/file-touch signals
+- Moved ~405 to historical-plans/ (incl. prior CODE LANDED + bulk evidence pass + manual follow-ups)
+- Left: 2 orch policy plans, int8/jit PROPOSED set, 256-lie experiment (no clear land)
+- Report: dev-ai-interaction/research/plan-archive-review-20260731.md
+- Note: scoring favors distinctive tokens; a few weak matches possible — report lists scores/reasons
+
