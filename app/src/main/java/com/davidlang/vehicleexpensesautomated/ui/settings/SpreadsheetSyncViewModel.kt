@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordinator
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveBrowserItem
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveAuth
@@ -10,7 +11,6 @@ import com.davidlang.vehicleexpensesautomated.data.sync.GoogleDriveBrowserClient
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleSheetsAuth
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleSheetsClient
 import com.davidlang.vehicleexpensesautomated.data.sync.MicrosoftOneDriveAuth
-import com.davidlang.vehicleexpensesautomated.data.sync.ZohoSheetAuth
 import com.davidlang.vehicleexpensesautomated.data.sync.SheetsAuthRecovery
 import com.davidlang.vehicleexpensesautomated.data.sync.SheetsRecoverableAuthException
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
@@ -19,11 +19,19 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetSyncCoordinat
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncProgressListener
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncResult
+import com.davidlang.vehicleexpensesautomated.data.sync.ZohoSheetAuth
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareApi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @HiltViewModel
 class SpreadsheetSyncViewModel @Inject constructor(
@@ -40,6 +48,55 @@ class SpreadsheetSyncViewModel @Inject constructor(
     private val batchFuelImportCoordinator: BatchFuelImportCoordinator,
 ) : ViewModel() {
 
+    private val _manualSyncStatus = MutableStateFlow("")
+    val manualSyncStatus: StateFlow<String> = _manualSyncStatus.asStateFlow()
+    private val _manualSyncInProgress = MutableStateFlow(false)
+    val manualSyncInProgress: StateFlow<Boolean> = _manualSyncInProgress.asStateFlow()
+    private val _manualSyncIsError = MutableStateFlow(false)
+    val manualSyncIsError: StateFlow<Boolean> = _manualSyncIsError.asStateFlow()
+    private val _manualSyncResult = MutableStateFlow<SyncResult?>(null)
+    val manualSyncResult: StateFlow<SyncResult?> = _manualSyncResult.asStateFlow()
+
+    /**
+     * Runs spreadsheet Sync now on [viewModelScope] so leaving settings does not cancel.
+     */
+    fun startManualSync(accountHint: String = "", destId: String? = null) {
+        if (_manualSyncInProgress.value) return
+        viewModelScope.launch {
+            _manualSyncInProgress.value = true
+            _manualSyncIsError.value = false
+            _manualSyncResult.value = null
+            _manualSyncStatus.value = "Starting spreadsheet sync…"
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    coordinator.syncNow(
+                        accountHint = accountHint.ifBlank { null },
+                        destId = destId,
+                        onProgress = SyncProgressListener { msg ->
+                            _manualSyncStatus.value = msg
+                            _manualSyncIsError.value = false
+                        },
+                    )
+                }
+                _manualSyncStatus.value = result.message
+                _manualSyncIsError.value = !result.success
+                _manualSyncResult.value = result
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _manualSyncIsError.value = true
+                _manualSyncStatus.value = e.message ?: "Sync failed"
+                _manualSyncResult.value = SyncResult(false, _manualSyncStatus.value)
+            } finally {
+                _manualSyncInProgress.value = false
+            }
+        }
+    }
+
+    fun clearManualSyncResult() {
+        _manualSyncResult.value = null
+    }
+
     suspend fun listSpreadsheetsForBrowse(
         accountHint: String,
         searchQuery: String,
@@ -50,7 +107,12 @@ class SpreadsheetSyncViewModel @Inject constructor(
     suspend fun syncNow(
         accountHint: String,
         onProgress: SyncProgressListener? = null,
-    ): SyncResult = coordinator.syncNow(accountHint, onProgress = onProgress)
+        destId: String? = null,
+    ): SyncResult = coordinator.syncNow(
+        accountHint = accountHint.ifBlank { null },
+        destId = destId,
+        onProgress = onProgress,
+    )
 
     /**
      * Detect-only: odo-only + pump-only pairs within merge window after a fuel pull.

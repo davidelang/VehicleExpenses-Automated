@@ -14,6 +14,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +25,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
@@ -51,6 +54,12 @@ fun SettingsScreen(navController: NavHostController) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val viewModel: SettingsViewModel = hiltViewModel()
+    RegisterPageHelp(
+        title = "Settings",
+        "Units, photo save toggles, debug Quick Fill, and experiment screens live here.",
+        "Spreadsheet and photo destinations are under Menu → Syncing (not only this page).",
+        "Show experiment screens reveals Alignment, Pump Experiment, and Import Old Pictures in the drawer.",
+    )
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val fuelEntries by fuelViewModel.fuelEntries.collectAsState(initial = emptyList())
     val hasFuelData = fuelEntries.isNotEmpty()
@@ -276,58 +285,39 @@ fun SettingsScreen(navController: NavHostController) {
             }
         }
         SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp),
-        ) {
-            Text(
-                "Debug Quick Fill",
-                modifier = Modifier.weight(1f),
-                maxLines = 2,
-                softWrap = true,
-            )
-            IconButton(
-                onClick = { showDebugInfoDialog = true },
-                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-            ) {
-                Icon(Icons.Default.Info, contentDescription = "About Debug Quick Fill")
-            }
-            Switch(checked = debugQuickFill, onCheckedChange = { debugQuickFill = it })
-        }
-        // Compact debug reports: stack at large font so controls stay usable
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+        // Order: title · Info · count/max · Delete · Send · toggle
+        // Wide: one line. Narrow: line1 title·Info·toggle; line2 count·Delete·Send end-aligned.
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val wideEnough = maxWidth >= 420.dp
+            val countMaxBlock: @Composable RowScope.() -> Unit = {
                 Text(
                     "$debugReportCount /",
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
+                    maxLines = 1,
                 )
                 OutlinedTextField(
                     value = debugMaxSessions.toString(),
                     onValueChange = { text ->
                         text.toIntOrNull()?.coerceIn(1, 50)?.let { debugMaxSessions = it }
                     },
-                    label = { Text("Number of debug reports", maxLines = 2) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .widthIn(min = 48.dp, max = 72.dp)
+                        .weight(1f, fill = false),
                     singleLine = true,
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TextButton(
+            val deleteSendBlock: @Composable () -> Unit = {
+                IconButton(
+                    onClick = { showClearDebugConfirm = true },
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete debug reports",
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                IconButton(
                     onClick = {
                         if (!hasDebugData) {
                             Toast.makeText(context, "No debug reports to send", Toast.LENGTH_SHORT).show()
@@ -337,13 +327,99 @@ fun SettingsScreen(navController: NavHostController) {
                             showSendReportPicker = true
                         }
                     },
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                 ) {
-                    Text("Send")
-                }
-                TextButton(onClick = { showClearDebugConfirm = true }) {
-                    Text("Delete")
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Send debug reports",
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
+            if (wideEnough) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        "Debug Quick Fill",
+                        modifier = Modifier.weight(1f),
+                        maxLines = 2,
+                        softWrap = true,
+                    )
+                    IconButton(
+                        onClick = { showDebugInfoDialog = true },
+                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = "About Debug Quick Fill")
+                    }
+                    countMaxBlock()
+                    deleteSendBlock()
+                    Switch(checked = debugQuickFill, onCheckedChange = { debugQuickFill = it })
+                }
+            } else {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp),
+                    ) {
+                        Text(
+                            "Debug Quick Fill",
+                            modifier = Modifier.weight(1f),
+                            maxLines = 2,
+                            softWrap = true,
+                        )
+                        IconButton(
+                            onClick = { showDebugInfoDialog = true },
+                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                        ) {
+                            Icon(Icons.Default.Info, contentDescription = "About Debug Quick Fill")
+                        }
+                        Switch(checked = debugQuickFill, onCheckedChange = { debugQuickFill = it })
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                    ) {
+                        countMaxBlock()
+                        deleteSendBlock()
+                    }
+                }
+            }
+        }
+        Text("Setup tips", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "First-run walkthroughs for adding a vehicle or connecting sync (also under Help).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = { navController.navigate("tutorial/tutorial_add_vehicle") },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        ) {
+            Text("Tutorial: Add a vehicle")
+        }
+        OutlinedButton(
+            onClick = { navController.navigate("tutorial/tutorial_setup_sync") },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        ) {
+            Text("Tutorial: Connect existing setup")
+        }
+        OutlinedButton(
+            onClick = { navController.navigate("onboarding") },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
+        ) {
+            Text("Show first-run welcome")
         }
         SwitchSetting("Show experiment screens (dev)", showExperimentScreens) { showExperimentScreens = it }
         if (showExperimentScreens) {

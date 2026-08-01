@@ -6,10 +6,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -20,9 +21,9 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherKind
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherProviderCatalog
 import com.davidlang.vehicleexpensesautomated.data.sync.TabularOtherProviderInfo
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.util.SyncSetupDocs
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -80,72 +81,68 @@ internal fun SpreadsheetDestList(
     viewModel: SpreadsheetSyncViewModel,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    RegisterPageHelp(
+        title = "Spreadsheet Sync",
+        "Add destinations (Google Sheets is common). Sync now runs all configured destinations.",
+        "Open a destination for Test connection, Sync now (this destination), and Details on failures.",
+        "Background sync uses destinations with background enabled only.",
+    )
     var statusText by remember { mutableStateOf("") }
-    var syncInProgress by remember { mutableStateOf(false) }
     var statusIsError by remember { mutableStateOf(false) }
-    val onProgress = rememberMainThreadSyncProgress {
-        statusText = it
-        statusIsError = false
-    }
+    val syncInProgress by viewModel.manualSyncInProgress.collectAsState()
+    val vmStatus by viewModel.manualSyncStatus.collectAsState()
+    val vmIsError by viewModel.manualSyncIsError.collectAsState()
+    val syncResult by viewModel.manualSyncResult.collectAsState()
     val consentRecovery = rememberConsentRecoveryHandle()
+
+    val displayStatus = if (syncInProgress || vmStatus.isNotBlank()) vmStatus else statusText
+    val displayIsError = if (syncInProgress || vmStatus.isNotBlank()) vmIsError else statusIsError
+
+    LaunchedEffect(syncResult) {
+        val result = syncResult ?: return@LaunchedEffect
+        statusText = result.message
+        statusIsError = !result.success
+        if (result.needsRemoteConsent && result.recoveryIntent != null) {
+            consentRecovery.launch(result.recoveryIntent) {
+                viewModel.startManualSync("")
+            }
+            viewModel.clearManualSyncResult()
+            return@LaunchedEffect
+        }
+        if (result.success) {
+            val unmatched = withContext(Dispatchers.IO) {
+                viewModel.hasUnmatchedFuelPartials()
+            }
+            if (unmatched) {
+                Toast.makeText(
+                    context,
+                    "Unmatched partials may need Run merge (Import Old Pictures)",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+        viewModel.clearManualSyncResult()
+    }
 
     SyncDestinationListLayout(
         title = "Spreadsheet Sync",
         description = "Add a destination (Google Sheets is the common choice: Sign in → Sheet URL or 🔍 browse → save → Sync now). Manual sync runs all configured destinations; background sync runs enabled ones only.",
-        statusText = statusText,
+        statusText = displayStatus,
         syncInProgress = syncInProgress,
-        statusIsError = statusIsError,
+        statusIsError = displayIsError,
         destinationCount = destinations.size,
         maxDestinations = SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE,
         addButtonLabel = "Add spreadsheet destination",
         onAdd = onAdd,
         syncNowLabel = "Sync now (all configured)",
         onSyncNow = {
-            fun runSync(allowRecovery: Boolean) {
-                scope.launch {
-                    val configured = SyncDestinationStore(context).configuredSpreadsheet()
-                    if (configured.isEmpty()) {
-                        statusIsError = true
-                        statusText = "No configured spreadsheet destinations"
-                        return@launch
-                    }
-                    syncInProgress = true
-                    statusIsError = false
-                    statusText = "Starting spreadsheet sync…"
-                    var awaitingConsent = false
-                    try {
-                        val result = withContext(Dispatchers.IO) {
-                            viewModel.syncNow("", onProgress)
-                        }
-                        if (result.needsRemoteConsent && result.recoveryIntent != null && allowRecovery) {
-                            statusIsError = true
-                            statusText = result.message
-                            awaitingConsent = true
-                            consentRecovery.launch(result.recoveryIntent) { runSync(allowRecovery = false) }
-                            return@launch
-                        }
-                        statusIsError = !result.success
-                        statusText = result.message
-                        // No auto-merge after sync; optional CTA if odo+pump partials look pairable
-                        if (result.success) {
-                            val unmatched = withContext(Dispatchers.IO) {
-                                viewModel.hasUnmatchedFuelPartials()
-                            }
-                            if (unmatched) {
-                                Toast.makeText(
-                                    context,
-                                    "Unmatched partials may need Run merge (Import Old Pictures)",
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        }
-                    } finally {
-                        if (!awaitingConsent) syncInProgress = false
-                    }
-                }
+            val configured = SyncDestinationStore(context).configuredSpreadsheet()
+            if (configured.isEmpty()) {
+                statusIsError = true
+                statusText = "No configured spreadsheet destinations"
+                return@SyncDestinationListLayout
             }
-            runSync(allowRecovery = true)
+            viewModel.startManualSync("")
         },
         docLinkLabel = "Self-hosted spreadsheet servers",
         onDocLinkClick = { SyncSetupDocs.open(context, SyncSetupDocs.tabularReadme()) },

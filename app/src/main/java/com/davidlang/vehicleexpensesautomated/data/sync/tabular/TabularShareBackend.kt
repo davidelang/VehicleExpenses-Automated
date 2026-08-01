@@ -32,6 +32,20 @@ interface TabularShareBackend {
         accountHint: String?,
     ): List<List<String>>
 
+    /**
+     * Bulk compare read for LWW. Default: sequential [readAllRows] (non-Sheets backends).
+     * Google Sheets overrides with `values.batchGet` (few API calls for many tabs).
+     */
+    suspend fun batchReadTabs(
+        dest: SpreadsheetDestination,
+        tabNames: List<String>,
+        accountHint: String?,
+    ): Map<String, List<List<String>>> {
+        val names = tabNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (names.isEmpty()) return emptyMap()
+        return names.associateWith { readAllRows(dest, it, accountHint) }
+    }
+
     suspend fun listTabTitles(dest: SpreadsheetDestination, accountHint: String?): List<String>
 
     suspend fun renameTab(

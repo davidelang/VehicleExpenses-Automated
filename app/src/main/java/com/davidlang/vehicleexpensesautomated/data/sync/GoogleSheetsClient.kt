@@ -6,7 +6,6 @@ import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
-import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.model.AddSheetRequest
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest
@@ -29,8 +28,18 @@ class GoogleSheetsClient @Inject constructor(
     private val auth: GoogleSheetsAuth,
 ) {
 
+    /**
+     * **Every** Sheets `.execute()` (GET meta/values and mutating writes) goes through
+     * [SyncRateLimit.withSheetsApiLimit] — pace + rate-limit detect/wait/retry.
+     */
+    private suspend fun <T> executeApi(block: () -> T): T =
+        SyncRateLimit.withSheetsApiLimit(block)
+
     companion object {
         private const val TAG = "GoogleSheetsClient"
+
+        /** Max ranges per values.batchGet (under Google limits; plan ≤50). */
+        private const val BATCH_GET_MAX_RANGES = 40
 
         const val TAB_VEHICLES = "Vehicles"
         const val TAB_EXPENSES = "Expenses"
@@ -74,7 +83,9 @@ class GoogleSheetsClient @Inject constructor(
 
     suspend fun getSpreadsheet(sheetId: String, accountHint: String? = null): Spreadsheet =
         withContext(Dispatchers.IO) {
-            val spreadsheet = sheetsService(accountHint).spreadsheets().get(sheetId).execute()
+            val spreadsheet = executeApi {
+                sheetsService(accountHint).spreadsheets().get(sheetId).execute()
+            }
             Log.i(TAG, "Opened spreadsheet: ${spreadsheet.properties?.title}")
             spreadsheet
         }
@@ -82,15 +93,18 @@ class GoogleSheetsClient @Inject constructor(
     suspend fun createSpreadsheet(title: String, accountHint: String? = null): Spreadsheet =
         withContext(Dispatchers.IO) {
             val body = Spreadsheet().setProperties(SpreadsheetProperties().setTitle(title))
-            sheetsService(accountHint).spreadsheets().create(body).execute()
+            executeApi {
+                sheetsService(accountHint).spreadsheets().create(body).execute()
+            }
         }
 
-    /** Phase 6: create missing sheet tab via batchUpdate. */
     /** List all sheet tab titles in the spreadsheet (one metadata GET). */
     suspend fun listSheetTitles(sheetId: String, accountHint: String? = null): List<String> =
         withContext(Dispatchers.IO) {
             val service = sheetsService(accountHint)
-            val meta = service.spreadsheets().get(sheetId).setFields("sheets.properties.title").execute()
+            val meta = executeApi {
+                service.spreadsheets().get(sheetId).setFields("sheets.properties.title").execute()
+            }
             meta.sheets?.mapNotNull { it.properties?.title } ?: emptyList()
         }
 
@@ -107,7 +121,9 @@ class GoogleSheetsClient @Inject constructor(
     ): Boolean = withContext(Dispatchers.IO) {
         if (oldTitle == newTitle) return@withContext true
         val service = sheetsService(accountHint)
-        val meta = service.spreadsheets().get(sheetId).setFields("sheets.properties").execute()
+        val meta = executeApi {
+            service.spreadsheets().get(sheetId).setFields("sheets.properties").execute()
+        }
         val titles = meta.sheets?.mapNotNull { it.properties?.title }.orEmpty()
         if (oldTitle !in titles) {
             return@withContext newTitle in titles
@@ -128,7 +144,9 @@ class GoogleSheetsClient @Inject constructor(
         val batch = BatchUpdateSpreadsheetRequest().setRequests(
             listOf(Request().setUpdateSheetProperties(update)),
         )
-        service.spreadsheets().batchUpdate(sheetId, batch).execute()
+        executeApi {
+            service.spreadsheets().batchUpdate(sheetId, batch).execute()
+        }
         Log.i(TAG, "Renamed sheet tab: \"$oldTitle\" → \"$newTitle\"")
         true
     }
@@ -136,7 +154,9 @@ class GoogleSheetsClient @Inject constructor(
     suspend fun createTabIfMissing(sheetId: String, tabName: String, accountHint: String? = null): Int =
         withContext(Dispatchers.IO) {
             val service = sheetsService(accountHint)
-            val meta = service.spreadsheets().get(sheetId).setFields("sheets.properties").execute()
+            val meta = executeApi {
+                service.spreadsheets().get(sheetId).setFields("sheets.properties").execute()
+            }
             val existing = meta.sheets?.firstOrNull { it.properties?.title == tabName }
             if (existing != null) return@withContext existing.properties.sheetId
 
@@ -144,7 +164,9 @@ class GoogleSheetsClient @Inject constructor(
             val batch = BatchUpdateSpreadsheetRequest().setRequests(
                 listOf(Request().setAddSheet(addSheet)),
             )
-            val response = service.spreadsheets().batchUpdate(sheetId, batch).execute()
+            val response = executeApi {
+                service.spreadsheets().batchUpdate(sheetId, batch).execute()
+            }
             response.replies?.firstOrNull()?.addSheet?.properties?.sheetId ?: 0
         }
 
@@ -157,7 +179,9 @@ class GoogleSheetsClient @Inject constructor(
         createTabIfMissing(sheetId, tabName, accountHint)
         val service = sheetsService(accountHint)
         val range = "'$tabName'!A1:ZZ1"
-        val current = service.spreadsheets().values().get(sheetId, range).execute()
+        val current = executeApi {
+            service.spreadsheets().values().get(sheetId, range).execute()
+        }
         val firstRow = current.getValues()?.firstOrNull()
         if (firstRow.isNullOrEmpty()) {
             // New / empty tab: write full canonical header order (human-first for fuel).
@@ -170,10 +194,12 @@ class GoogleSheetsClient @Inject constructor(
                 val missingHeaders = merged.filter { it !in existing.toSet() }
                 Log.i(TAG, "Appending $tabName headers (order preserved); missing: $missingHeaders")
                 val body = ValueRange().setValues(listOf(merged.map { it }))
-                service.spreadsheets().values()
-                    .update(sheetId, "'$tabName'!A1", body)
-                    .setValueInputOption("RAW")
-                    .execute()
+                executeApi {
+                    service.spreadsheets().values()
+                        .update(sheetId, "'$tabName'!A1", body)
+                        .setValueInputOption("RAW")
+                        .execute()
+                }
             }
         }
     }
@@ -186,10 +212,53 @@ class GoogleSheetsClient @Inject constructor(
     ): List<List<String>> = withContext(Dispatchers.IO) {
         val service = sheetsService(accountHint)
         val range = "'$tabName'!A:ZZ"
-        val result = service.spreadsheets().values().get(sheetId, range).execute()
+        val result = executeApi {
+            service.spreadsheets().values().get(sheetId, range).execute()
+        }
         result.getValues()?.map { row ->
             row.map { cell -> cell?.toString() ?: "" }
         } ?: emptyList()
+    }
+
+    /**
+     * Bulk compare read: one `values.batchGet` per chunk of tabs (≤[BATCH_GET_MAX_RANGES]).
+     * Cuts read quota from N full-tab GETs to ~ceil(N/40) requests.
+     * Missing / empty tabs map to empty lists. Ranges go through [executeApi].
+     */
+    suspend fun batchReadTabs(
+        sheetId: String,
+        tabNames: List<String>,
+        accountHint: String? = null,
+    ): Map<String, List<List<String>>> = withContext(Dispatchers.IO) {
+        val names = tabNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (names.isEmpty()) return@withContext emptyMap()
+        val service = sheetsService(accountHint)
+        val out = LinkedHashMap<String, List<List<String>>>(names.size)
+        val chunks = names.chunked(BATCH_GET_MAX_RANGES)
+        Log.i(
+            TAG,
+            "batchReadTabs: ${names.size} tabs in ${chunks.size} batchGet(s) " +
+                "(sheetId=${sheetId.take(12)}…)",
+        )
+        for (chunk in chunks) {
+            val ranges = chunk.map { tab -> "'$tab'!A:ZZ" }
+            val response = executeApi {
+                service.spreadsheets().values()
+                    .batchGet(sheetId)
+                    .setRanges(ranges)
+                    .setMajorDimension("ROWS")
+                    .execute()
+            }
+            val valueRanges = response.valueRanges.orEmpty()
+            for ((index, tabName) in chunk.withIndex()) {
+                val vr = valueRanges.getOrNull(index)
+                val rows = vr?.getValues()?.map { row ->
+                    row.map { cell -> cell?.toString() ?: "" }
+                } ?: emptyList()
+                out[tabName] = rows
+            }
+        }
+        out
     }
 
     suspend fun writeAllRows(
@@ -203,10 +272,12 @@ class GoogleSheetsClient @Inject constructor(
         val allRows = listOf(headers.map { it }) + rows
         val body = ValueRange().setValues(allRows)
         val range = "'$tabName'!A1"
-        service.spreadsheets().values()
-            .update(sheetId, range, body)
-            .setValueInputOption("RAW")
-            .execute()
+        executeApi {
+            service.spreadsheets().values()
+                .update(sheetId, range, body)
+                .setValueInputOption("RAW")
+                .execute()
+        }
     }
 
     /** Append data rows after the last populated row in [tabName]. */
@@ -220,11 +291,13 @@ class GoogleSheetsClient @Inject constructor(
         val service = sheetsService(accountHint)
         val body = ValueRange().setValues(rows)
         val range = "'$tabName'!A:ZZ"
-        service.spreadsheets().values()
-            .append(sheetId, range, body)
-            .setValueInputOption("RAW")
-            .setInsertDataOption("INSERT_ROWS")
-            .execute()
+        executeApi {
+            service.spreadsheets().values()
+                .append(sheetId, range, body)
+                .setValueInputOption("RAW")
+                .setInsertDataOption("INSERT_ROWS")
+                .execute()
+        }
     }
 
     /** Update a contiguous block starting at [startRow] (1-based, includes header row semantics). */
@@ -240,10 +313,12 @@ class GoogleSheetsClient @Inject constructor(
         val endRow = startRow + rows.size - 1
         val body = ValueRange().setValues(rows)
         val range = "'$tabName'!A$startRow:ZZ$endRow"
-        service.spreadsheets().values()
-            .update(sheetId, range, body)
-            .setValueInputOption("RAW")
-            .execute()
+        executeApi {
+            service.spreadsheets().values()
+                .update(sheetId, range, body)
+                .setValueInputOption("RAW")
+                .execute()
+        }
     }
 
     /** Clear sheet values from [startRow] (1-based) through the end of the tab. */
@@ -256,9 +331,11 @@ class GoogleSheetsClient @Inject constructor(
         if (startRow < 1) return@withContext
         val service = sheetsService(accountHint)
         val range = "'$tabName'!A$startRow:ZZ"
-        service.spreadsheets().values()
-            .clear(sheetId, range, com.google.api.services.sheets.v4.model.ClearValuesRequest())
-            .execute()
+        executeApi {
+            service.spreadsheets().values()
+                .clear(sheetId, range, com.google.api.services.sheets.v4.model.ClearValuesRequest())
+                .execute()
+        }
     }
 
     fun syncIdFromRow(row: List<String>, headerIndex: Map<String, Int>, column: String = "Sync ID"): String {
@@ -279,13 +356,17 @@ class GoogleSheetsClient @Inject constructor(
     suspend fun deleteTab(sheetId: String, tabName: String, accountHint: String? = null) =
         withContext(Dispatchers.IO) {
             val service = sheetsService(accountHint)
-            val meta = service.spreadsheets().get(sheetId).setFields("sheets.properties").execute()
+            val meta = executeApi {
+                service.spreadsheets().get(sheetId).setFields("sheets.properties").execute()
+            }
             val sheet = meta.sheets?.firstOrNull { it.properties?.title == tabName } ?: return@withContext
             val sheetIdNum = sheet.properties?.sheetId ?: return@withContext
             val batch = BatchUpdateSpreadsheetRequest().setRequests(
                 listOf(Request().setDeleteSheet(DeleteSheetRequest().setSheetId(sheetIdNum))),
             )
-            service.spreadsheets().batchUpdate(sheetId, batch).execute()
+            executeApi {
+                service.spreadsheets().batchUpdate(sheetId, batch).execute()
+            }
         }
 
     suspend fun testConnection(sheetId: String, accountHint: String? = null): Boolean =
@@ -330,5 +411,4 @@ class GoogleSheetsClient @Inject constructor(
 
     fun headerIndex(headers: List<String>): Map<String, Int> =
         headers.mapIndexed { index, name -> name to index }.toMap()
-
 }
