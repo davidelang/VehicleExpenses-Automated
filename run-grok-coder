@@ -1,9 +1,10 @@
 #!/bin/bash
 # run-grok-coder — implement approved plans in agent-N worktree (ai-coder).
-# build_app only (no raw gradlew). Baseball/reset rules. Pre-PR self-review before generate_pr.sh.
+# Session prompt = compose of existing files (new_agent_prompt + role-coder.md).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+COMPOSE="$SCRIPT_DIR/.grok/prompts/compose-session-prompt.sh"
 if [ -f project.config ]; then
   . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(coder_user|GROK_BIN)')
 fi
@@ -12,7 +13,6 @@ GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
 
 umask 002
 
-# Shared debug keystore so any gradle/signing in this session uses dlang's cert
 ANDROID_SHARED=""
 if [ -d "$SCRIPT_DIR/.android-shared" ]; then
   ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
@@ -24,6 +24,7 @@ echo "Launching Coder Grok in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
 echo "Running as: $CODER_USER (via sudo -u)"
+echo "Prompt pack: new_agent_prompt + .grok/prompts/role-coder.md"
 [ -n "$ANDROID_SHARED" ] && echo "ANDROID_USER_HOME: $ANDROID_SHARED"
 echo "Tip: Ctrl+M or /multiline for multi-line input."
 
@@ -42,19 +43,12 @@ for arg in "$@"; do
   fi
 done
 
-# umask + ANDROID_USER_HOME must be set *inside* the target user (sudo drops parent env/umask).
-exec sudo -u "$CODER_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} bash -c 'umask 002; exec "$@"' bash \
-    "$GROK_BIN" \
-    "You are the Coder agent in a feature worktree (ai-coder). First: read new_agent_prompt, AGENT_CONTEXT.md, GROK.md, AGENT_MANDATES.md; Mandate Acknowledgment with Role=Coder and Branch from git; enter plan mode; STOP & WAIT.
+export GROK_PROMPT_ROOT="$SCRIPT_DIR"
+PROMPT="$("$COMPOSE" new_agent_prompt .grok/prompts/role-coder.md)"
 
-Standing coder rules after approval to implement:
-- Implement ONLY the approved sandbox plan named by the user.
-- First execution action: ./append-to-engineering-log (never ritual TODO). Never prefix helpers with cd … && — confirm pwd once at startup.
-- Builds only via ./build_app (never raw gradlew). Use ./get-builds-tag.sh before any allowed reset. Baseball Rule applies.
-- TODO.md is future-only (todo-append/todo-close). Current turn = engineering log.
-- Before handoff for master review: pre-submit code review vs plan; history cleanup; ./generate_pr.sh. Prefer skill prepare-local-pr if available. Never use GitHub pr-babysit/gh pr/Graphite for this project.
-- After ./build_app + ready-to-test handoff, stop. Feedback starts a new planning cycle.
-Remind user: Ctrl+M /multiline." \
+exec sudo -u "$CODER_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} GROK_PROMPT_ROOT="$SCRIPT_DIR" bash -c 'umask 002; exec "$@"' bash \
+    "$GROK_BIN" \
+    "$PROMPT" \
     $TODO_GATE_FLAGS \
     --no-alt-screen \
     "${EXTRA_ARGS[@]}"
