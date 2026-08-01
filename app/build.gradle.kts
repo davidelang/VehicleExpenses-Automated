@@ -73,6 +73,11 @@ android {
         resources {
             excludes.add("META-INF/DEPENDENCIES")
             excludes.add("META-INF/INDEX.LIST")
+            // android-mail + android-activation both ship these
+            excludes.add("META-INF/LICENSE.md")
+            excludes.add("META-INF/NOTICE.md")
+            excludes.add("META-INF/LICENSE.txt")
+            excludes.add("META-INF/NOTICE.txt")
         }
     }
 }
