@@ -1,9 +1,10 @@
 #!/bin/bash
 # run-grok-orchestrator — multi-agent brain/infra on orchestration branch (ai-orchestrator).
-# Meta rules cleanup, update-rules coordination, orchestration root work.
+# Session prompt = compose of new_agent_prompt + role-orchestrator.md.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+COMPOSE="$SCRIPT_DIR/.grok/prompts/compose-session-prompt.sh"
 if [ -f project.config ]; then
   . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(orchestrator_user|GROK_BIN)')
 fi
@@ -23,10 +24,10 @@ echo "Launching Orchestrator Grok in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
 echo "Running as: $ORCHESTRATOR_USER (via sudo -u)"
+echo "Prompt pack: new_agent_prompt + .grok/prompts/role-orchestrator.md"
 [ -n "$ANDROID_SHARED" ] && echo "ANDROID_USER_HOME: $ANDROID_SHARED"
 echo "Tip: Ctrl+M or /multiline for multi-line input."
 
-# TodoGate off by default (TODO is future backlog, not turn checklist)
 TODO_GATE_FLAGS=""
 if [ "${GROK_TODO_GATE:-0}" = "1" ] || [ "${GROK_TODO_GATE:-0}" = "true" ]; then
   TODO_GATE_FLAGS="--todo-gate"
@@ -42,10 +43,12 @@ for arg in "$@"; do
   fi
 done
 
-# umask + ANDROID_USER_HOME must be set *inside* the target user (sudo drops parent env/umask).
-exec sudo -u "$ORCHESTRATOR_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} bash -c 'umask 002; exec "$@"' bash \
+export GROK_PROMPT_ROOT="$SCRIPT_DIR"
+PROMPT="$("$COMPOSE" new_agent_prompt .grok/prompts/role-orchestrator.md)"
+
+exec sudo -u "$ORCHESTRATOR_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} GROK_PROMPT_ROOT="$SCRIPT_DIR" bash -c 'umask 002; exec "$@"' bash \
     "$GROK_BIN" \
-    "You are starting a fresh session as Orchestrator (meta rules / brain / infra). First action: read new_agent_prompt and follow it (AGENT_CONTEXT.md, GROK.md, AGENT_MANDATES.md, Mandate Acknowledgment, STOP & WAIT). Role=Orchestrator, expect branch orchestration. Cwd is fixed after startup — never prefix ./append-to-engineering-log or other helpers with cd … &&. Remind user of Ctrl+M /multiline." \
+    "$PROMPT" \
     $TODO_GATE_FLAGS \
     --no-alt-screen \
     "${EXTRA_ARGS[@]}"

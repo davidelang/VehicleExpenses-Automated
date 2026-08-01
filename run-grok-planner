@@ -1,71 +1,19 @@
 #!/bin/bash
-# run-grok-planner
-# Launch a dedicated narrow-scoped Planning Agent for direct user interaction
-# during the research/planning phase.
-#
-# Primary supported mode: long-lived terminals.
-# Keep one terminal with the master (`run-grok-master`) and one dedicated
-# planning terminal (`run-grok-planner`). These stay open across many cycles.
-#
-# When you tell the master "New planning cycle" (optionally + one short sentence
-# of context or feedback), the master's built-in prompt automates the rest:
-# it reads project-facts.md + the latest standard-plan-compliance-block.md,
-# writes a complete narrow prompt (full dedicated planner template + embedded
-# guardrails + your context) to `@@SANDBOX_PATH@@/.planning-agent-prompt.txt`,
-# and tells you the exact one-line restart command.
-#
-# Usage:
-#   ./run-grok-planner                  # uses @@SANDBOX_PATH@@/.planning-agent-prompt.txt
-#                                       # If missing: auto-generates a default prompt and
-#                                       # starts exactly as if the master had just handled
-#                                       # a "New planning cycle" trigger.
-#   ./run-grok-planner path/to/prompt.txt
-#
-#   In an existing planner terminal you can simply re-run the command
-#   (or use `exec ./run-grok-planner`) to replace the process with a fresh
-#   one using the latest prompt. This is the normal low-friction ritual for
-#   beginning a new planning cycle in the long-lived workflow.
-#
-# The master prompt now contains the full logic and template so you only need
-# the short "New planning cycle" trigger in the master terminal.
-#
-# The prompt file contains the full strict instructions for the Planning Agent:
-# - Stay in plan mode.
-# - Only research and revise the plan document in @@SANDBOX_PATH@@/plans/.
-# - Zero write access to tracked source outside the sandbox.
-# - High-signal / low-boilerplate plans; always include the exact standard
-#   block verbatim.
-# - project-facts.md hygiene (stable facts only) and light reporting.
-# - Only call exit_plan_mode (or signal readiness) when the user explicitly says
-#   a phrase like "this plan is good, exit planning mode" or the exact magic
-#   approval phrasing.
-#
-# Even in a long-lived session the planner must treat each new cycle (after
-# restart or after being told a new cycle has begun) as a fresh planning phase:
-# re-read project-facts.md (full read + hygiene), start a new high-signal plan,
-# etc.
-#
-# This workflow gives you direct, unmediated back-and-forth with the Planning
-# Agent without bouncing every message through the main orchestrator, while
-# still allowing the master to keep the planner on current instructions.
-#
-# See AGENT_MANDATES.md (dedicated Planning Agent Session section) and
-# MULTI_AGENT_USER_INSTRUCTIONS.md for the full long-lived workflow and the
-# recommended prompt template.
-#
-# Sandbox is provided via the ./@@SANDBOX_PATH@@ symlink + absolute path in mandates.
+# run-grok-planner — dedicated Planning Agent (@@PLANNING_USER@@).
+# Default pack: new_agent_prompt + role-planner.md + dedicated-planner.md
+# Optional: first arg = existing prompt file (e.g. .planning-agent-prompt.txt from master).
+# If default prompt file missing, compose the pack and write it for restarts.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"
+COMPOSE="$SCRIPT_DIR/.grok/prompts/compose-session-prompt.sh"
 GROK_BIN="${GROK_BIN:-@@GROK_BIN_DEFAULT@@}"
 
-# Load permission config if present (populated by smudge filter)
 if [ -f project.config ]; then
   . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(planning_user|GROK_BIN)')
 fi
 PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
 
-# Ensure all files created during this session are group-writable (multi-user env)
 umask 002
 
 ANDROID_SHARED=""
@@ -75,149 +23,42 @@ elif [ -d "$SCRIPT_DIR/../.android-shared" ]; then
   ANDROID_SHARED="$(cd "$SCRIPT_DIR/.." && pwd)/.android-shared"
 fi
 
-# === Model selection for Planning Agent ===
-#
-# In this grok.com environment the available models (from `grok models`) are:
-#   * grok-build (default / primary)
-#
-# "grok-build" is the appropriate model for planning and interpreting existing code.
-# It is the stronger default here and better at long-horizon reasoning, code understanding,
-# and strictly obeying "stay in plan mode / only revise the plan document / no source changes".
-#
-# We default the planner to grok-build.
-# Override only if you have a different valid model via the GROK_PLANNER_MODEL
-# environment variable or by passing --model on the command line (passed through in "$@").
 DEFAULT_PLANNER_MODEL="grok-build"
 PLANNER_MODEL="${GROK_PLANNER_MODEL:-$DEFAULT_PLANNER_MODEL}"
 
-# Default prompt file written by the main agent.
-# Can be overridden as first argument.
-# Determine prompt file. If the first argument is a file that exists, use it.
-# Otherwise use the default location and allow fallback generation for a fresh cycle.
+export GROK_PROMPT_ROOT="$SCRIPT_DIR"
+COMPOSE_PACK=(new_agent_prompt .grok/prompts/role-planner.md .grok/prompts/dedicated-planner.md)
+
+# Explicit prompt file path if first arg is an existing file
 if [ -n "${1:-}" ] && [ -f "$1" ]; then
-    PROMPT_FILE="$1"
-    shift
+  PROMPT_FILE="$1"
+  shift
+  PLANNING_PROMPT=$(cat "$PROMPT_FILE")
 else
-    PROMPT_FILE="${1:-$SANDBOX_DIR/.planning-agent-prompt.txt}"
-    if [ -n "$1" ]; then
-        shift
-    fi
-fi
-
-if [ ! -f "$PROMPT_FILE" ]; then
-    # Only auto-generate a fresh-cycle prompt when we are using the canonical default location.
-    # If the user explicitly passed a non-existent file, error out.
-    if [ "$PROMPT_FILE" != "$SANDBOX_DIR/.planning-agent-prompt.txt" ]; then
-        echo "ERROR: Specified planning prompt file not found: $PROMPT_FILE" >&2
-        exit 1
-    fi
-
-    echo "INFO: Planning prompt file not found: $PROMPT_FILE" >&2
-    echo "Falling back to fresh 'new planning cycle' mode (as if the master just processed the trigger)." >&2
-    echo "Generating a default dedicated planner prompt..." >&2
-
-    # Build a self-contained default prompt for a fresh planning cycle.
-    # This makes run-grok-planner usable standalone when the file from the master is absent.
-    PROJECT_FACTS_FILE="$SCRIPT_DIR/project-facts.md"
-    STD_BLOCK_FILE="$SCRIPT_DIR/standard-plan-compliance-block.md"
-
-    PROJECT_FACTS=""
-    if [ -f "$PROJECT_FACTS_FILE" ]; then
-        PROJECT_FACTS=$(cat "$PROJECT_FACTS_FILE")
-    else
-        PROJECT_FACTS="(project-facts.md not found at this time — planner should still read it via tools if possible)"
-    fi
-
-    STD_BLOCK=""
-    if [ -f "$STD_BLOCK_FILE" ]; then
-        STD_BLOCK=$(cat "$STD_BLOCK_FILE")
-    else
-        STD_BLOCK="(standard-plan-compliance-block.md not found)"
-    fi
-
-    FAILURE_HINT=""
-    if ls "$SANDBOX_DIR/implementation-failure-logs/" 2>/dev/null | grep -q . ; then
-        FAILURE_HINT="There are files present in @@SANDBOX_PATH@@/implementation-failure-logs/. You must inspect them as one of your first tool-using steps."
-    fi
-
-    PLANNING_PROMPT="You are a dedicated Planning Agent running in a long-lived terminal. You are in plan mode and must stay there.
-
-**CRITICAL: FRESH STANDALONE LOAD (run-grok-planner started with no .planning-agent-prompt.txt) — TREAT EXACTLY AS 'NEW PLANNING CYCLE'**
-
-The prompt file was missing. This is equivalent to the master just having received a 'New planning cycle' (or 'New planning cycle' + brief context) from the user.
-
-**MANDATORY FIRST ACTIONS — DO THESE WITH TOOLS *BEFORE* ANY ROLE ACKNOWLEDGMENT OR ASKING THE USER FOR DETAILS:**
-- list_dir (or shell ls) on @@SANDBOX_PATH@@/implementation-failure-logs/
-- Read recent failure log files (especially anything dated around 2026-06-18 or mentioning '0-1', 'crop', 'incomplete', 'recovery').
-- Use grep + read_file on the code locations referenced in those logs to verify current state.
-- Determine and report whether any failures are still unresolved.
-- Read the *entire* project-facts.md (full content, report its size if large).
-- Perform hygiene on it (keep only stable location facts).
-
-After the tool results:
-- If there are unresolved implementation failures: Lead with a clear summary of the open issue(s) and ask the user whether they want a recovery plan targeting exactly those gaps.
-- Otherwise: Briefly note that no unresolved failures were detected on this fresh load.
-- THEN proceed with normal fresh-cycle behavior: solicit a clear problem statement / direction from the user for this planning cycle.
-
-Do not skip the failure scan + project-facts read on this standalone/fresh start. Use your tools first.
-
-**RESEARCH CAPABILITIES — FULL INVESTIGATION POWER:**
-Use the complete toolset for research. This explicitly includes full git history commands in any form (git log with -S/-p/ranges/etc., git show, git diff, git describe, ...), adb logcat (dumps, filters, all flags) + adb pull/shell for device logs and reports, cat/tail/find/jq on sandbox artifacts and logs, and any other shell needed to investigate code, history, or runtime behavior. The project whitelists these; do not wait for reminders.
-
-Your *only* job is research and iteratively producing/revising the highest-quality plan document in @@SANDBOX_PATH@@/plans/ using the standard structure (including the exact naming guidance for plan files). Produce a high-signal, low-boilerplate document focused on the specific work of *this* turn. Literally include the *exact verbatim content* of the file standard-plan-compliance-block.md as a section titled 'Compliance & Execution Guardrails for This Turn (STANDARD BLOCK)'. Do not modify, add to, or rephrase anything inside that block. Reference the live mandates for background rules instead of repeating policy text.
-
-This process is intended to be long-lived across multiple planning cycles. When the master indicates that a new planning cycle has begun (by telling you to restart with an updated prompt file), you must restart this terminal/process with the new prompt to load the latest instructions and standard block. Until a restart is requested, after every '**END OF EXECUTION TURN**' marker or when the user says 'new planning cycle' (directly to the planner or via master), you must first perform the mandatory failure detection (scan implementation-failure-logs/* , use tools to verify whether the specific gaps are actually resolved in the current code state, ask the user if any are unresolved), then re-read project-facts.md (full read + hygiene prune first), start with a fresh high-signal plan for the new request (or recovery if directed), and follow all the rules in this prompt and the referenced mandates. If no unresolved failure, behave as a clean default new cycle (solicit the problem as if the master had just received a bare 'New planning cycle'). The plan is the precise scope + steps contract for the current cycle. You have zero write access to any tracked source files outside the sandbox. You must never make source changes or run builds. You must **not** call exit_plan_mode on your own initiative. Talk directly with the user, incorporate their feedback into revisions of the plan file, and provide summaries of changes. Only when the user explicitly says a phrase like 'this plan is good, exit planning mode', 'the plan at @@SANDBOX_PATH@@/plans/xxx-plan.md is approved', or the exact magic approval phrasing, then call exit_plan_mode (if appropriate for the harness) and stop. Until then, just revise the plan based on user input and output the path to the current plan file after each significant revision.
-
-**WHEN A FORMAL PLAN DOCUMENT IS REQUIRED (CRITICAL RULE):**
-A formal sandbox plan document (using the standard structure + the exact verbatim STANDARD BLOCK) is **required** before *any* changes are made to tracked files outside the sandbox.
-
-- You have **zero authority** to edit, create, or modify any tracked file outside @@SANDBOX_PATH@@/ while in planning mode.
-- You **are allowed and encouraged** to freely work inside the sandbox (@@SANDBOX_PATH@@/**).
-- You may also edit project-facts.md and TODO.md (the explicit planner exceptions).
-- Pure research questions do **not** require creating a plan file.
-
-Multiline input convenience: At session start, remind the user they can enable multiline mode (focus prompt + Ctrl+M, or /multiline or /ml).
-
-$FAILURE_HINT
-
-=== project-facts.md (read at planner startup for this fresh cycle) ===
-$PROJECT_FACTS
-
-=== Current STANDARD BLOCK (include verbatim in any plans you produce) ===
-$STD_BLOCK
-
-Current cycle direction and context (HIGH-LEVEL ONLY):
-This is a fresh standalone launch / 'new planning cycle' with no prior master-provided context. Ask the user for the detailed problem statement or direction before producing research or a plan.
-"
-
-    # Write the generated prompt so that re-exec / future runs in this terminal pick it up.
+  PROMPT_FILE="${SANDBOX_DIR}/.planning-agent-prompt.txt"
+  if [ -f "$PROMPT_FILE" ]; then
+    PLANNING_PROMPT=$(cat "$PROMPT_FILE")
+  else
+    echo "INFO: $PROMPT_FILE missing — composing default planner pack" >&2
+    PLANNING_PROMPT="$("$COMPOSE" "${COMPOSE_PACK[@]}")"
     mkdir -p "$(dirname "$PROMPT_FILE")"
     printf '%s\n' "$PLANNING_PROMPT" > "$PROMPT_FILE"
-    echo "Generated default 'new planning cycle' prompt and wrote it to $PROMPT_FILE"
-    echo "You can now use exec ./run-grok-planner (or just ./run-grok-planner) to restart with it."
-else
-    PLANNING_PROMPT=$(cat "$PROMPT_FILE")
+    echo "Wrote default planner prompt to $PROMPT_FILE" >&2
+  fi
 fi
 
 echo "Launching dedicated Planning Agent in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
-echo "Using narrow prompt from: $PROMPT_FILE"
+echo "Prompt source: $PROMPT_FILE (pack: new_agent_prompt + role-planner + dedicated-planner)"
 echo "Forcing planning model: $PLANNER_MODEL (set GROK_PLANNER_MODEL to override)"
-echo "Tip: For easier multi-line plans and prompts, focus the input and press Ctrl+M (or type /multiline or /ml) to enable multiline input mode (Enter inserts newline; Shift+Enter or Alt+Enter sends)."
+echo "Tip: Ctrl+M or /multiline for multi-line input."
 
-# PLANNING_PROMPT was already set above (either from the file or generated as a fresh 'new planning cycle' fallback).
-
-# TodoGate off by default (TODO is future backlog).
 TODO_GATE_FLAGS=""
 if [ "${GROK_TODO_GATE:-0}" = "1" ] || [ "${GROK_TODO_GATE:-0}" = "true" ]; then
-    TODO_GATE_FLAGS="--todo-gate"
+  TODO_GATE_FLAGS="--todo-gate"
 fi
 
-# --no-alt-screen for consistency with run-grok.
-# We explicitly pass --model for the planner. Any additional --model on the command
-# line (in "$@") will override this.
-# Support -- to pass raw params to the inner grok.
 EXTRA_ARGS=()
 FOUND_DD=0
 for arg in "$@"; do
@@ -227,8 +68,8 @@ for arg in "$@"; do
     FOUND_DD=1
   fi
 done
-# umask + ANDROID_USER_HOME must be set *inside* the target user (sudo drops parent env/umask).
-exec sudo -u "$PLANNING_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} bash -c 'umask 002; exec "$@"' bash \
+
+exec sudo -u "$PLANNING_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} GROK_PROMPT_ROOT="$SCRIPT_DIR" bash -c 'umask 002; exec "$@"' bash \
     "$GROK_BIN" \
     "$PLANNING_PROMPT" \
     --model "$PLANNER_MODEL" \
