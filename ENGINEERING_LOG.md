@@ -2265,3 +2265,13 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Special files: master TODO base + closed Trip recording future work; tax-mile phase-2 + i18n future kept; project-facts from branch orientation; CHANGELOG 2026-07-30 audit + minor-fixes section preserved
 - Advanced reports left open (Lab experimental)
 
+
+## 2026-08-01 - Master TODO review (code vs backlog)
+
+- Closed: Advanced reports (Reports Lab shipped on master; multi-select remains separate deferred work)
+- Kept open OnlyOffice/Collabora (real backends still wanted; stub/catalog only)
+- Annotated: Location Lookup + EXIF/GPS (done on ui-followups, not master tip)
+- Annotated: ConflictResolutionScreen exists but unwired to identification
+- Future work: trip tax free-text reworded to remaining polish
+- Still open (valid): LITE_BUILD_TAILOR, 16k pages, polarity, landmarks remove, BufferSet audit, multi-currency, expense multi-vehicle UI, email import/hook, MSAL, deep linking, GPS currency, ODB-II, Play Store, pump experiment UI removal, schema docs, NDK subproject, missed fill logging, i18n packs
+

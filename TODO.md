@@ -12,7 +12,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 
 ## Backlog (OCR / alignment / identity)
 - [ ] **Dashboard Polarity:** refine polarity detection beyond simple corner sampling (Algorithm A/B fallback)
-- [ ] **Conflict resolution:** field-level UI for multi-device sync column conflicts + wire `ConflictResolutionScreen` into identification flow for ambiguous matches
+- [ ] **Conflict resolution:** field-level UI for multi-device sync column conflicts + wire `ConflictResolutionScreen` into identification flow for ambiguous matches (`ConflictResolutionScreen` **exists**; identification wiring incomplete)
 - [ ] **Landmark management:** add ability to remove landmarks (not only ignore-crop); improve landmark CRUD in Manage Vehicles
 - [ ] **BufferSet anti-pattern audit:** eliminate cached `Mat`/`Slice` pointer aliases repo-wide (see `docs/specs/BUFFER_SET_SPEC.md`)
 
@@ -21,18 +21,18 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] Expense multi-vehicle picker UI + multi-page receipt capture UX (schema/sync ready)
 - [ ] Import **fill data** and **expense receipts** from email and/or file pickers (not only camera / gallery)
 - [ ] **Email hook:** receive/import fill and expense data via email intent or similar
-- [ ] **OnlyOffice / Collabora** tabular sync (deferred stub; spike NO-GO for headless cell API)
+- [ ] **OnlyOffice / Collabora** tabular sync (catalog + DeferredTabularBackendStub present; **real backends still TODO** — prior “spike NO-GO” was API approach; product still wanted)
 - [ ] **MSAL app registration:** replace placeholder `msal_auth_config.json` with real Azure app registration for managed OneDrive
 - [ ] **Deep linking** (not implemented per `docs/reference/NAVIGATION_MAP.md`)
 
 ## Backlog (location)
-- [ ] **Location Lookup Worker:** background POI resolution (Overpass/OSM; `dev-ai-interaction/LOCATION_LOOKUP_WORKER.md`)
-- [ ] **Troubleshoot missing lat/long:** EXIF from photos; if absent, explicit location permission + capture at save
+- [ ] **Location Lookup Worker:** background POI resolution (Overpass/OSM; `dev-ai-interaction/LOCATION_LOOKUP_WORKER.md`) — **done on ui-followups (agent-1); not on master tip yet**
+- [ ] **Troubleshoot missing lat/long:** EXIF from photos; if absent, explicit location permission + capture at save — **partial on master (import EXIF read); full CaptureLocation/GPS write on ui-followups**
 
 ## Backlog (features / product)
 - [ ] **Expense receipt parsing:** OCR/parse store name, cost, line items from receipt photos
 - [ ] **ODB-II integration:** live odometer reading
-- [ ] **Advanced reports and charts** (beyond current Reports screen)
+- [x] **Advanced reports and charts** (beyond current Reports screen)
 - [ ] **Prepare for Play Store** (signing, listing, policy, release pipeline)
 - [x] **Generate UI manual / in-app guide** (expand beyond `docs/reference/USER_GUIDE.md`)
 - [x] Quick Fill: Settings default currency/volume to "use system"
@@ -50,7 +50,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 
 Missed fill logging: fuel added but not recorded so MPG/$/mi cannot span that gap; needs UX + report/side-effect handling
 
-Trip tax-mile reporting (phase-2): open→open odo deltas by tripType; zero-length segment filter; economy-chain explicit ignore of trip starts (Trip Tracking open-only is shipped)
+Trip tax-mile reporting (remaining polish): open→open packaging/export if still needed — Trip open-only + Lab trip miles/personal filters exist on product tree (confirm after ui-followups merge)
 
 i18n later: language packs for LTR locales; RTL and beyond deferred — see dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md (odometers/pumps still primarily Western digits; full UI RTL/complex scripts much later)
 
