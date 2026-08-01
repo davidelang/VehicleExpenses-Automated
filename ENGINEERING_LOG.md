@@ -394,3 +394,11 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Documented rule in plan-style-guide + project-facts
 - LOCATION_LOOKUP_WORKER + i18n research already in place
 
+
+## 2026-07-31 - TODO vs obsolete plans cleanup
+
+- Closed sandbox TODO paddle-v3-greedy as done/obsolete (file never restored)
+- Re-archived 17 completed pump/4box plans (only [x] TODO refs)
+- Kept reports-efficiency plan (agent-1 still defers multi-select from it)
+- Rule: open TODO protects plan; obsolete plan → close TODO then archive
+
