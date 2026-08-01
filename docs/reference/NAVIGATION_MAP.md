@@ -42,8 +42,8 @@ When the gate is **off**, Import is **not** in the drawer. Top-bar **`?N`** stil
 
 | Control | Role |
 |---------|------|
-| **☰** or **←** | Open drawer, or back from sub-routes (settings children, fuel edit, reports_lab children) |
-| **ⓘ** Page help | Shown when the current screen calls `RegisterPageHelp` (leading, next to menu/back). Phone-narrow titles use page name only so Info stays visible with badges. |
+| **☰** or **←** | Open drawer, or back from sub-routes (settings children, fuel edit, reports_lab children). Report children + `expenselist` show **☰ and ←**. |
+| **ⓘ** Page help | Shown when the current screen calls `RegisterPageHelp` (leading, next to menu/back). Registration uses a **generation token** so dispose of a previous screen does not clear a newer screen’s help. Phone-narrow titles use page name only so Info stays visible with badges. |
 | **`?N`** | Pending import review count → `import?review=1` |
 | **`!`** | Stored sync failure → **Syncing** |
 
@@ -53,13 +53,13 @@ Priority if space is tight: menu/back → **Info** → `?N` → `!`.
 
 - **Quick Fill-up** / **New expense** — stay in place after save (drawer for Reports)  
 - **Start trip** — writes trip-start fuel rows; no separate close column  
-- **Reports hub** → child routes `reports_lab/efficiency`, `cost_trends`, `monthly`, `expenses`, `fills`, `vehicle_summary`, `trips`; hub card → `expenselist`  
+- **Reports hub** → `reports_lab/time` (Fuel over time), `expenses`, `fills`, `vehicle_summary`, `trips`; hub card → `expenselist`. Legacy routes `efficiency` / `cost_trends` / `monthly` redirect to `time`.  
 - **Syncing** → `settings/spreadsheet_sync`, `settings/photo_backup`  
-- **Fuel History** → **Edit Fill**  
+- **Fuel History** → fills only → **Edit Fill**; trip starts listed under **Trip miles**  
 
 ## Notes
 
 - **Start destination:** `quickfill`  
 - **Product Reports** = Lab hub only (`reports_lab/*`).  
-- **Fill inventory** in reports excludes trip starts (`tripType` non-blank).  
+- **Fill inventory** (Fuel History + Fill history report) excludes trip starts (`tripType` non-blank). Trip list is on Trip miles.  
 - Conflict resolution UI exists but is not drawer-linked.

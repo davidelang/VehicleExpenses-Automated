@@ -87,12 +87,10 @@ import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelEditScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelHistoryScreen
 import com.davidlang.vehicleexpensesautomated.ui.trip.TripTrackingScreen
-import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabCostTrendsScreen
-import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabEfficiencyScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabExpenseCategoriesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabFillHistoryScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabHubScreen
-import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabMonthlyCostsScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabTimeChartsScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabTripMilesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabVehicleSummaryScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.PhotoBackupScreen
@@ -574,14 +572,18 @@ class MainActivity : ComponentActivity() {
 
                                 composable("triptracking") { TripTrackingScreen(navController = navController) }
                                 composable("reports_lab") { ReportsLabHubScreen(navController = navController) }
+                                composable("reports_lab/time") {
+                                    ReportsLabTimeChartsScreen(navController = navController)
+                                }
+                                // Legacy deep links → unified time charts (R1.2)
                                 composable("reports_lab/efficiency") {
-                                    ReportsLabEfficiencyScreen(navController = navController)
+                                    ReportsLabTimeChartsScreen(navController = navController)
                                 }
                                 composable("reports_lab/cost_trends") {
-                                    ReportsLabCostTrendsScreen(navController = navController)
+                                    ReportsLabTimeChartsScreen(navController = navController)
                                 }
                                 composable("reports_lab/monthly") {
-                                    ReportsLabMonthlyCostsScreen(navController = navController)
+                                    ReportsLabTimeChartsScreen(navController = navController)
                                 }
                                 composable("reports_lab/expenses") {
                                     ReportsLabExpenseCategoriesScreen(navController = navController)

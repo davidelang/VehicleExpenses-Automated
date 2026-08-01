@@ -29,7 +29,7 @@ This file is a short reference for everyday use and sync behavior. Prefer the fu
 | Control | Meaning |
 |---------|---------|
 | ☰ | Navigation drawer |
-| **ⓘ** (title bar, next to menu) | Page help for the current screen (when registered) |
+| **ⓘ** (title bar, next to menu) | Page help for the current screen (when registered; stays for the whole visit) |
 | **`?N`** | Pending import review questions → Import review |
 | **`!`** (title bar) | Recent sync/backup failure → open **Syncing** |
 | Shutter (white circle) | Capture for OCR / receipt |

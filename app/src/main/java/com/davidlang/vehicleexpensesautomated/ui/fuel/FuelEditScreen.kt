@@ -1,24 +1,53 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
 import android.widget.Toast
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
+import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
+import com.davidlang.vehicleexpensesautomated.ui.components.AppOutlinedBack
 import com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField
+import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
 import com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoThumb
 import com.davidlang.vehicleexpensesautomated.ui.components.firstReadableFuelPhotoUri
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasArchiveIdentity
@@ -26,11 +55,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasDeadLocalOnly
 import com.davidlang.vehicleexpensesautomated.ui.components.photoUrisFromJsonOrPath
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
-import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
-import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
-import com.davidlang.vehicleexpensesautomated.ui.components.AppOutlinedBack
-import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.launch
@@ -62,6 +87,7 @@ fun FuelEditScreen(
             "$"
         }
     }
+    val multiColumn = LocalConfiguration.current.screenWidthDp >= 480
 
     var loaded by remember { mutableStateOf<FuelEntry?>(null) }
     var vehicleId by rememberSaveable { mutableStateOf(0) }
@@ -69,9 +95,10 @@ fun FuelEditScreen(
     var volume by rememberSaveable { mutableStateOf("") }
     var cost by rememberSaveable { mutableStateOf("") }
     var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrencySymbol) }
-    var location by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }
     var tripType by rememberSaveable { mutableStateOf("") }
+    /** Loaded trip type was non-blank — keep field visible even if user clears. */
+    var showTripType by rememberSaveable { mutableStateOf(false) }
     var isPartialFill by rememberSaveable { mutableStateOf(false) }
     var economyIgnored by rememberSaveable { mutableStateOf(false) }
     var timestampMs by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
@@ -80,6 +107,12 @@ fun FuelEditScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var isFetching by remember { mutableStateOf(false) }
+    var locationExpanded by rememberSaveable { mutableStateOf(false) }
+    var locLat by rememberSaveable { mutableStateOf("") }
+    var locLon by rememberSaveable { mutableStateOf("") }
+    var locAccuracy by rememberSaveable { mutableStateOf("") }
+    var locName by rememberSaveable { mutableStateOf("") }
+    var locAddress by rememberSaveable { mutableStateOf("") }
     val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
 
     LaunchedEffect(fuelId) {
@@ -99,13 +132,22 @@ fun FuelEditScreen(
         volume = if (e.gallons == 0.0) "" else e.gallons.toString()
         cost = if (e.cost == 0.0) "" else e.cost.toString()
         currencySymbol = CurrencyCodes.displaySymbol(e.currency, defaultCurrencySymbol)
-        location = e.location.orEmpty()
         notes = e.notes.orEmpty()
         tripType = e.tripType
+        showTripType = e.tripType.isNotBlank()
         isPartialFill = e.isPartialFill
         economyIgnored = e.economyIgnored
         timestampMs = e.timestamp
         photoUrl = e.photoUrl
+        val blob = FuelLocationJson.parseBlob(e.location) ?: FuelLocationJson.Blob(
+            name = e.location?.takeIf { !it.trim().startsWith("{") }.orEmpty(),
+        )
+        locLat = blob.lat?.toString().orEmpty()
+        locLon = blob.lon?.toString().orEmpty()
+        locAccuracy = blob.accuracyM?.toString().orEmpty()
+        locName = blob.name
+        locAddress = blob.address
+        locationExpanded = blob.hasCoords() || blob.hasPlace()
     }
 
     if (loaded == null) {
@@ -117,6 +159,15 @@ fun FuelEditScreen(
 
     val thumbUri = firstReadableFuelPhotoUri(photoUrl, photoStorage)
     val canFetch = thumbUri == null && fuelHasArchiveIdentity(loaded, destId)
+    val locationSummary = remember(locName, locAddress, locLat, locLon) {
+        when {
+            locName.isNotBlank() && locAddress.isNotBlank() -> "$locName — $locAddress"
+            locName.isNotBlank() -> locName
+            locAddress.isNotBlank() -> locAddress
+            locLat.isNotBlank() && locLon.isNotBlank() -> "$locLat, $locLon"
+            else -> "No location"
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -127,7 +178,6 @@ fun FuelEditScreen(
     ) {
         FeatureScreenHeader("Edit fill")
 
-        // Photos (zoomable; larger default on wide layouts)
         when {
             thumbUri != null -> {
                 val uris = photoUrisFromJsonOrPath(photoUrl).ifEmpty { listOf(thumbUri) }
@@ -168,86 +218,126 @@ fun FuelEditScreen(
             else -> Text("No photo", style = MaterialTheme.typography.bodyMedium)
         }
 
-        ExposedDropdownMenuBox(
-            expanded = vehicleDropdown,
-            onExpandedChange = { vehicleDropdown = !vehicleDropdown },
-        ) {
-            val name = vehicles.firstOrNull { it.id == vehicleId }?.name ?: "Vehicle $vehicleId"
-            OutlinedTextField(
-                value = name,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Vehicle") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = vehicleDropdown) },
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
-            )
-            ExposedDropdownMenu(
-                expanded = vehicleDropdown,
-                onDismissRequest = { vehicleDropdown = false },
+        // Vehicle | Odometer
+        if (multiColumn) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                vehicles.forEach { v ->
-                    DropdownMenuItem(
-                        text = { Text(v.name) },
-                        onClick = {
-                            vehicleId = v.id
-                            vehicleDropdown = false
-                        },
-                    )
-                }
+                VehiclePickerField(
+                    vehicles = vehicles,
+                    vehicleId = vehicleId,
+                    expanded = vehicleDropdown,
+                    onExpandedChange = { vehicleDropdown = it },
+                    onSelect = { vehicleId = it },
+                    modifier = Modifier.weight(1f),
+                )
+                CaretEnabledOutlinedTextField(
+                    value = odometer,
+                    onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    showCaretButtons = true,
+                )
             }
+        } else {
+            VehiclePickerField(
+                vehicles = vehicles,
+                vehicleId = vehicleId,
+                expanded = vehicleDropdown,
+                onExpandedChange = { vehicleDropdown = it },
+                onSelect = { vehicleId = it },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            CaretEnabledOutlinedTextField(
+                value = odometer,
+                onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
+                label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                showCaretButtons = true,
+            )
         }
 
-        CaretEnabledOutlinedTextField(
-            value = odometer,
-            onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
-            label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            showCaretButtons = true,
-        )
-        CaretEnabledOutlinedTextField(
-            value = tripType,
-            onValueChange = { tripType = it },
-            label = { Text("Trip type (blank = normal fill)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-        CaretEnabledOutlinedTextField(
-            value = volume,
-            onValueChange = { volume = it },
-            label = {
-                Text(
-                    "Volume (${VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))})",
+        // F2: trip type only when loaded row had a type (trip-start edit)
+        if (showTripType) {
+            CaretEnabledOutlinedTextField(
+                value = tripType,
+                onValueChange = { tripType = it },
+                label = { Text("Trip type") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+        }
+
+        // Currency | Cost | Volume (currency before cost)
+        if (multiColumn) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CaretEnabledOutlinedTextField(
+                    value = currencySymbol,
+                    onValueChange = { currencySymbol = it },
+                    label = { Text("Currency") },
+                    modifier = Modifier.weight(0.9f),
+                    singleLine = true,
                 )
-            },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            showCaretButtons = true,
-        )
-        CaretEnabledOutlinedTextField(
-            value = cost,
-            onValueChange = { cost = it },
-            label = { Text("Cost") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            showCaretButtons = true,
-        )
-        CaretEnabledOutlinedTextField(
-            value = currencySymbol,
-            onValueChange = { currencySymbol = it },
-            label = { Text("Currency") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
+                CaretEnabledOutlinedTextField(
+                    value = cost,
+                    onValueChange = { cost = it },
+                    label = { Text("Cost") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    showCaretButtons = true,
+                )
+                CaretEnabledOutlinedTextField(
+                    value = volume,
+                    onValueChange = { volume = it },
+                    label = {
+                        Text(
+                            "Vol (${VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))})",
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    showCaretButtons = true,
+                )
+            }
+        } else {
+            CaretEnabledOutlinedTextField(
+                value = currencySymbol,
+                onValueChange = { currencySymbol = it },
+                label = { Text("Currency") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            CaretEnabledOutlinedTextField(
+                value = cost,
+                onValueChange = { cost = it },
+                label = { Text("Cost") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                showCaretButtons = true,
+            )
+            CaretEnabledOutlinedTextField(
+                value = volume,
+                onValueChange = { volume = it },
+                label = {
+                    Text(
+                        "Volume (${VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))})",
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                showCaretButtons = true,
+            )
+        }
+
         AppDateTimeField(
             label = "Date/time: ${dateFmt.format(Date(timestampMs))}",
             onClick = { showDatePicker = true },
-        )
-        CaretEnabledOutlinedTextField(
-            value = location,
-            onValueChange = { location = it },
-            label = { Text("Location") },
-            modifier = Modifier.fillMaxWidth(),
         )
         CaretEnabledOutlinedTextField(
             value = notes,
@@ -257,6 +347,87 @@ fun FuelEditScreen(
             singleLine = false,
             maxLines = 4,
         )
+
+        // Location: summary + expand to structured fields
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Location", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    locationSummary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    softWrap = true,
+                )
+            }
+            TextButton(onClick = { locationExpanded = !locationExpanded }) {
+                Text(if (locationExpanded) "Hide details" else "Location details")
+            }
+        }
+        if (locationExpanded) {
+            if (multiColumn) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CaretEnabledOutlinedTextField(
+                        value = locLat,
+                        onValueChange = { locLat = it },
+                        label = { Text("Latitude") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                    CaretEnabledOutlinedTextField(
+                        value = locLon,
+                        onValueChange = { locLon = it },
+                        label = { Text("Longitude") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                    )
+                }
+            } else {
+                CaretEnabledOutlinedTextField(
+                    value = locLat,
+                    onValueChange = { locLat = it },
+                    label = { Text("Latitude") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                CaretEnabledOutlinedTextField(
+                    value = locLon,
+                    onValueChange = { locLon = it },
+                    label = { Text("Longitude") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            }
+            CaretEnabledOutlinedTextField(
+                value = locAccuracy,
+                onValueChange = { locAccuracy = it },
+                label = { Text("Accuracy (m)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            CaretEnabledOutlinedTextField(
+                value = locName,
+                onValueChange = { locName = it },
+                label = { Text("Place name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            CaretEnabledOutlinedTextField(
+                value = locAddress,
+                onValueChange = { locAddress = it },
+                label = { Text("Address") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
+                maxLines = 3,
+            )
+        }
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = isPartialFill, onCheckedChange = { isPartialFill = it })
             Text("Partial fill (not a full-fill anchor)")
@@ -270,6 +441,14 @@ fun FuelEditScreen(
             onClick = {
                 val base = loaded ?: return@Button
                 isSaving = true
+                val blob = FuelLocationJson.Blob(
+                    lat = locLat.toDoubleOrNull(),
+                    lon = locLon.toDoubleOrNull(),
+                    accuracyM = locAccuracy.toDoubleOrNull(),
+                    name = locName.trim(),
+                    address = locAddress.trim(),
+                )
+                val locationJson = FuelLocationJson.encode(blob)
                 val updated = base.copy(
                     vehicleId = vehicleId,
                     odometer = odometer.toIntOrNull() ?: 0,
@@ -277,9 +456,9 @@ fun FuelEditScreen(
                     cost = cost.toDoubleOrNull() ?: 0.0,
                     currency = CurrencyCodes.fromSymbolOrCode(currencySymbol),
                     timestamp = timestampMs,
-                    location = location.trim().ifBlank { null },
+                    location = locationJson,
                     notes = notes.trim().ifBlank { null },
-                    tripType = tripType.trim(),
+                    tripType = if (showTripType) tripType.trim() else "",
                     isPartialFill = isPartialFill,
                     economyIgnored = economyIgnored,
                     photoUrl = photoUrl,
@@ -322,6 +501,47 @@ fun FuelEditScreen(
             },
         ) {
             DatePicker(state = state)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VehiclePickerField(
+    vehicles: List<com.davidlang.vehicleexpensesautomated.data.model.Vehicle>,
+    vehicleId: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = onExpandedChange,
+        modifier = modifier,
+    ) {
+        val name = vehicles.firstOrNull { it.id == vehicleId }?.name ?: "Vehicle $vehicleId"
+        OutlinedTextField(
+            value = name,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Vehicle") },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth(),
+        )
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+        ) {
+            vehicles.forEach { v ->
+                DropdownMenuItem(
+                    text = { Text(v.name) },
+                    onClick = {
+                        onSelect(v.id)
+                        onExpandedChange(false)
+                    },
+                )
+            }
         }
     }
 }

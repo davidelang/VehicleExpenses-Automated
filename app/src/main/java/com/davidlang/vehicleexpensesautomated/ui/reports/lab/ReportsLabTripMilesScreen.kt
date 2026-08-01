@@ -1,5 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -244,14 +245,28 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             }
         }
 
-        Text("Segments", style = MaterialTheme.typography.titleMedium)
+        Text("Trip starts / segments", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Chronological trip list (separate from Fuel History fills). Tap a row to edit the start fill when it has an id.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            softWrap = true,
+        )
         if (listSegs.isEmpty()) {
             ReportsLabEmpty("No trip segments match the list filters.")
         } else {
             listSegs.forEach { seg ->
+                val canOpen = !seg.isImplicitLeading && seg.start.id > 0L
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(
+                            if (canOpen) {
+                                Modifier.clickable { navController.navigate("fuel/${seg.start.id}") }
+                            } else {
+                                Modifier
+                            },
+                        )
                         .padding(vertical = 4.dp),
                 ) {
                     val typeLabel = if (seg.isImplicitLeading) {
@@ -260,7 +275,8 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                         seg.tripType
                     }
                     Text(
-                        "${data.vehicleName(seg.vehicleId)} · $typeLabel · ${formatLabDateTime(seg.startTimestamp)}",
+                        "${data.vehicleName(seg.vehicleId)} · $typeLabel · ${formatLabDateTime(seg.startTimestamp)}" +
+                            if (canOpen) " · tap to edit" else "",
                         style = MaterialTheme.typography.titleSmall,
                         softWrap = true,
                         maxLines = 3,
@@ -304,6 +320,7 @@ private const val TRIP_MILES_INFO =
         "(same as starting Personal on day 1). If a vehicle has fills but no trip starts, " +
         "baseline → last odo in period also counts as Personal. " +
         "Each vehicle = miles-by-type series and totals per vehicle. " +
+        "Segment list is the trip surface (Fuel History lists fills only). " +
         "Not a tax form — export and use elsewhere. " +
         "Period filters by segment start time. Zero-length closed segments are excluded " +
         "from totals by default."

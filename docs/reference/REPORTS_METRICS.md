@@ -6,7 +6,7 @@ Legacy production `ReportsScreen.kt` was **removed**; product surface is Lab onl
 
 **UI labels / units:** display via `VolumeUnits` + `UnitFormat` + `CurrencyCodes` — see **[UI_COMPATIBILITY.md](UI_COMPATIBILITY.md)** (agents must not hardcode unit words or treat trip starts as fills).
 
-**Charts:** date-ordered X via `tsToChartX` (fractional days, **rounded to 4 decimals** for Vico 3.2.3). Efficiency can show multiple metrics on one multi-axis chart; vehicle filter modes include **All / Each / Single**. Trip miles use `TripSegments` (implicit leading Personal).
+**Charts:** date-ordered X via `tsToChartX` (fractional days, **rounded to 4 decimals** for Vico 3.2.3). Unified **Fuel over time** (`reports_lab/time`) merges former efficiency / unit-price trends / monthly cost cards with optional metrics, **Smooth** bins (`None` / day / week / month / year / custom N days), and fixed axis policy: **economy (mpg/gpm) left-family host**; **money and trip metrics right-family hosts** (never move $ left to free a slot for gpm). Edge-spanning full-fill legs contribute full miles/vol to **both** bins. Vehicle filter modes: **All / Each / Single**. Trip miles use `TripSegments` (implicit leading Personal).
 
 ## Full fill (chain anchors)
 

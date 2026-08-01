@@ -29,29 +29,50 @@ data class PageHelpSpec(
 /**
  * Current screen registers help for the TopAppBar Info action.
  * Screens call [ProvidePageHelp] / [rememberPageHelpController] from MainActivity.
+ *
+ * Registration uses a generation token so [clearIf] does not wipe a newer screen’s
+ * help when an older composition disposes after a navigation race (H1).
  */
 class PageHelpController {
     var current by mutableStateOf<PageHelpSpec?>(null)
         private set
 
-    fun set(spec: PageHelpSpec?) {
+    private var generation: Long = 0L
+    private var ownerId: Long = 0L
+
+    /** Registers [spec] and returns an owner id for [clearIf]. */
+    fun set(spec: PageHelpSpec?): Long {
+        generation += 1L
+        ownerId = generation
         current = spec
+        return ownerId
     }
 
+    /** Clears only if [ownerId] still owns the registration. */
+    fun clearIf(ownerId: Long) {
+        if (this.ownerId == ownerId) {
+            current = null
+            this.ownerId = 0L
+        }
+    }
+
+    /** Unconditional clear (tests / rare full reset). Prefer [clearIf]. */
     fun clear() {
         current = null
+        ownerId = 0L
     }
 }
 
 val LocalPageHelpController = compositionLocalOf<PageHelpController?> { null }
 
-/** Register help while this composition is active; clears on leave. */
+/** Register help while this composition is active; clears on leave only if still owner. */
 @Composable
 fun RegisterPageHelp(title: String, vararg bodyLines: String) {
     val controller = LocalPageHelpController.current
-    DisposableEffect(controller, title, bodyLines.toList()) {
-        controller?.set(PageHelpSpec(title, bodyLines.toList()))
-        onDispose { controller?.clear() }
+    val body = bodyLines.toList()
+    DisposableEffect(controller, title, body) {
+        val id = controller?.set(PageHelpSpec(title, body)) ?: 0L
+        onDispose { controller?.clearIf(id) }
     }
 }
 

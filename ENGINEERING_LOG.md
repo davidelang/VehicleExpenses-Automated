@@ -2047,3 +2047,20 @@ x
 - Non-efficiency charts unchanged (null familyDefault → Vico default)
 - build tag: a590ab31; no deploy
 
+
+## 2026-07-31 - unified-time-report-fill-edit-pagehelp start
+
+- Plan: unified-time-report-fill-edit-pagehelp-20260731-plan.md
+- H PageHelp token; F edit fill/fills-only/trips; R unified time report+bins+PDF; D docs
+- No deploy
+
+
+## 2026-07-31 - unified-time-report-fill-edit-pagehelp complete
+
+- Plan: unified-time-report-fill-edit-pagehelp-20260731-plan.md
+- H: PageHelp set returns owner; clearIf(id) only if current (Info stays)
+- F: multi-dest archive identity; Edit fill currency-before-cost, multi-col, location expand, hide blank trip type; Fuel History fills-only; Trip miles trip list + tap edit
+- R: reports_lab/time Fuel over time (metrics, smooth bins, axis policy, PDF combined+per-series); hub merge; legacy routes redirect
+- D: NAVIGATION_MAP, REPORTS_METRICS, USER_GUIDE, project-facts
+- No deploy
+

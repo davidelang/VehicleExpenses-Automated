@@ -31,14 +31,20 @@ import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 private data class CatalogEntry(val title: String, val route: String, val blurb: String)
 
 private val CATALOG = listOf(
-    CatalogEntry("Fuel efficiency", "reports_lab/efficiency", "MPG legs, last/avg MPG, chart"),
-    CatalogEntry("Fuel & cost trends", "reports_lab/cost_trends", "Unit price per fill and totals"),
-    CatalogEntry("Monthly costs", "reports_lab/monthly", "Fuel vs other by month"),
+    CatalogEntry(
+        "Fuel over time",
+        "reports_lab/time",
+        "mpg, gpm, unit price, \$/mi, monthly \$, trip miles/% with smooth bins",
+    ),
     CatalogEntry("Expenses by category", "reports_lab/expenses", "Category totals and list"),
     CatalogEntry("Expenses list", "expenselist", "All expenses — tap to edit"),
-    CatalogEntry("Fill history", "reports_lab/fills", "Chronological fills for filters"),
+    CatalogEntry("Fill history", "reports_lab/fills", "Chronological fills only (no trip starts)"),
     CatalogEntry("Vehicle summary", "reports_lab/vehicle_summary", "Shareable history pack"),
-    CatalogEntry("Trip miles", "reports_lab/trips", "Miles by trip type (incl. implicit Personal)"),
+    CatalogEntry(
+        "Trip miles",
+        "reports_lab/trips",
+        "Miles by type + trip start list (tap to edit)",
+    ),
 )
 
 private const val HUB_INFO =
