@@ -2160,3 +2160,11 @@ x
 - render-user-manual.sh; build_app after Kotlin
 - No deploy
 
+
+## 2026-08-01 - Local PR prepared: ui-followups
+
+- History cleanup: soft-reset onto master → **9 logical commits**; `backup-ui-followups` @ `72d52dac`; **TREE_MATCHES_BACKUP** (`HEAD^{tree}` == backup tree `1a408d5a`).
+- Cleaned HEAD: `3037b9c5`.
+- PR doc: `dev-ai-interaction/PRs/PR-ui-followups.md` (pre-submit review + plans + diffstat).
+- Archived finished plans → `historical-plans/`: residual-finish-recent, onboarding-splash-tutorials, user-manual-screenshot-integration, sync-tutorial-join-existing-cluster, reports-efficiency-mpg-dpm-each-vehicle.
+- Ready for Master (`run-grok-master`) independent review + merge. No deploy/merge by coder.
