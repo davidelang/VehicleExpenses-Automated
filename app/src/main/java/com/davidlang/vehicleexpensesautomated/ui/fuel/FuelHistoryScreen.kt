@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.fuel
 
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,7 +22,9 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
 import com.davidlang.vehicleexpensesautomated.ui.components.EmptyStateText
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
+import com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasArchiveIdentity
 import com.davidlang.vehicleexpensesautomated.ui.components.firstReadableFuelPhotoUri
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasDeadLocalOnly
@@ -42,6 +45,11 @@ fun FuelHistoryScreen(navController: NavHostController) {
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
+    RegisterPageHelp(
+        title = "Fuel History",
+        "Per-vehicle tabs list fuel fills only (trip starts are under Reports → Trip miles).",
+        "Tap a row to edit. Missing photos can be fetched from archive when cloud identity exists.",
+    )
     val photoStorage = settingsViewModel.photoStorageManager
     val fills by fuelViewModel.fuelEntries.collectAsState()
     val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
@@ -58,8 +66,14 @@ fun FuelHistoryScreen(navController: NavHostController) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val selectedVehicleId = vehicleTabs.getOrNull(selectedTab)?.id
     val rows = remember(fills, selectedVehicleId) {
-        if (selectedVehicleId == null) emptyList()
-        else fills.filter { it.vehicleId == selectedVehicleId }.sortedByDescending { it.timestamp }
+        if (selectedVehicleId == null) {
+            emptyList()
+        } else {
+            // F4.1: fills only — trip starts live on Trip miles report.
+            fills
+                .filter { it.vehicleId == selectedVehicleId && it.tripType.isBlank() }
+                .sortedByDescending { it.timestamp }
+        }
     }
     // Local row refresh map after fetch/scrub
     var rowOverrides by remember { mutableStateOf<Map<Long, FuelEntry>>(emptyMap()) }
@@ -72,7 +86,7 @@ fun FuelHistoryScreen(navController: NavHostController) {
     ) {
         FeatureScreenHeader(
             title = "Fuel History",
-            subtitle = "Per-vehicle fills. Tap a card to edit. Thumbnails fetch from archive when missing locally.",
+            subtitle = "Per-vehicle fills (no trip starts). Tap a card to edit. Thumbnails fetch from archive when missing locally.",
         )
         Spacer(modifier = Modifier.height(8.dp))
         if (vehicleTabs.isEmpty()) {
@@ -164,14 +178,22 @@ private fun FuelHistoryRow(
             ) {
                 when {
                     thumbUri != null -> {
+                        var showZoom by remember { mutableStateOf(false) }
                         Image(
                             painter = rememberAsyncImagePainter(thumbUri),
                             contentDescription = "Fill photo",
                             modifier = Modifier
                                 .size(56.dp)
-                                .fillMaxSize(),
+                                .fillMaxSize()
+                                .clickable { showZoom = true },
                             contentScale = ContentScale.Crop,
                         )
+                        if (showZoom) {
+                            ZoomablePhotoDialog(
+                                uris = listOf(thumbUri),
+                                onDismiss = { showZoom = false },
+                            )
+                        }
                     }
                     canFetch -> {
                         TextButton(

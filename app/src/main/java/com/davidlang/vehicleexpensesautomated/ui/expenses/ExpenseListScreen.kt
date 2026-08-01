@@ -48,8 +48,8 @@ fun ExpenseListScreen(navController: NavHostController? = null) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         FeatureScreenHeader(
-            title = "Expense List",
-            subtitle = "Tap a card to edit. Add new expenses from Menu → New Expense Entry.",
+            title = "Expense list",
+            subtitle = "Tap a card to edit. Add from Menu → New expense, or Reports hub.",
         )
         Spacer(modifier = Modifier.height(8.dp))
         if (expenses.isEmpty()) {

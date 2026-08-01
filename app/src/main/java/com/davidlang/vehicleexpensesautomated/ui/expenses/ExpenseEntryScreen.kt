@@ -9,6 +9,9 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
+import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
+import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,11 +45,19 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
+import com.davidlang.vehicleexpensesautomated.data.expense.ExpenseCategories
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
+import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
+import com.davidlang.vehicleexpensesautomated.ui.components.ExposedDropdownMenuWithManageFooter
+import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.components.expenseHasArchiveIdentity
 import com.davidlang.vehicleexpensesautomated.ui.components.expenseLocalMissingOrDead
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
@@ -91,8 +102,14 @@ private fun ExpenseEntryScreenBody(
     val scope = rememberCoroutineScope()
     val editId = (mode as? ExpenseEntryMode.Edit)?.id
 
-    val vehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+    val allVehicles by vehicleViewModel.vehicles.collectAsState(initial = emptyList())
+    val vehicles = remember(allVehicles) {
+        allVehicles.forUserPicker()
+    }
     var selectedVehicleId by rememberSaveable { mutableStateOf<Int?>(null) }
+    val selectedVehicle = remember(vehicles, selectedVehicleId) {
+        vehicles.firstOrNull { it.id == selectedVehicleId }
+    }
     var vehicleDropdownExpanded by remember { mutableStateOf(false) }
     var loadedId by rememberSaveable { mutableStateOf<Long?>(null) }
     /** Full row from DB on edit — preserves metadata not shown in the form. */
@@ -122,12 +139,82 @@ private fun ExpenseEntryScreenBody(
     var currencySymbol by rememberSaveable { mutableStateOf(defaultCurrencySymbol) }
     var vendor by rememberSaveable { mutableStateOf("") }
     var description by rememberSaveable { mutableStateOf("") }
-    var category by rememberSaveable { mutableStateOf("Other") }
+    var category by rememberSaveable { mutableStateOf("") }
+    var categoryMenuExpanded by remember { mutableStateOf(false) }
+    var showManageCategories by remember { mutableStateOf(false) }
+    val categoryOptions = remember(selectedVehicle?.expenseCategoriesJson, selectedVehicle?.id, category) {
+        val base = ExpenseCategories.parse(selectedVehicle?.expenseCategoriesJson)
+        if (category.isNotBlank() && base.none { it.equals(category, ignoreCase = true) }) {
+            listOf(category) + base
+        } else {
+            base
+        }
+    }
     var odometerText by rememberSaveable { mutableStateOf("") }
     var date by rememberSaveable { mutableStateOf(System.currentTimeMillis()) }
+    /** Create defaults true; edit load sets false (D4). */
+    var timeIsNow by rememberSaveable { mutableStateOf(editId == null) }
     var photoUrl by rememberSaveable { mutableStateOf<String?>(null) }
+
+    RegisterPageHelp(
+        title = "Expense entry",
+        "Disk = save · white circle = take receipt · gallery icon = pick image · Retake clears the photo.",
+        "Tap the currency symbol on amount to change currency.",
+        "Time is now (default on create) stamps the save time; uncheck to pick date/time.",
+        "Manage categories… stays pinned at the bottom of the category menu " +
+            "(scroll the list above if long; select a vehicle first).",
+    )
     var showDatePicker by remember { mutableStateOf(false) }
+    /** Once-per-screen device fix for camera path EXIF + row (isolated from gallery). */
+    var deviceLocation by remember { mutableStateOf<android.location.Location?>(null) }
+    /** Lat/lon persisted on save (camera → device; gallery → EXIF-or-null). */
+    var rowLat by remember { mutableStateOf<Double?>(null) }
+    var rowLon by remember { mutableStateOf<Double?>(null) }
+    var rowAccuracyM by remember { mutableStateOf<Double?>(null) }
+    /** True when attached photo is gallery-sourced (device GPS must not win on row). */
+    var photoFromGallery by remember { mutableStateOf(false) }
+    var locationStatus by remember { mutableStateOf("") }
+    var placeName by remember { mutableStateOf("") }
+    var placeAddress by remember { mutableStateOf("") }
+    var confirmLocation by remember { mutableStateOf(true) }
     val photoDest = remember { SyncDestinationStore(context).photoDestination() }
+
+    // One-shot device GPS for camera path (not re-fetched per shutter).
+    LaunchedEffect(Unit) {
+        val fix = CaptureLocation.captureLocationOrNull(context)
+        deviceLocation = fix
+        if (fix != null && editId == null && !photoFromGallery) {
+            rowLat = fix.latitude
+            rowLon = fix.longitude
+            rowAccuracyM = if (fix.hasAccuracy()) fix.accuracy.toDouble() else null
+        }
+    }
+
+    LaunchedEffect(rowLat, rowLon, category) {
+        val la = rowLat
+        val lo = rowLon
+        if (la == null || lo == null) {
+            locationStatus = ""
+            return@LaunchedEffect
+        }
+        locationStatus = "Looking up place…"
+        val kind = LocationLookup.kindForExpenseCategory(category)
+        val result = LocationLookup.lookup(
+            lat = la,
+            lon = lo,
+            kind = kind,
+            accuracyM = rowAccuracyM,
+            uiTimeout = true,
+        )
+        if (result != null && result.hasPlace()) {
+            placeName = result.name
+            placeAddress = result.address
+            // Happy path: address fields only — no duplicate "Resolved:" banner.
+            locationStatus = ""
+        } else {
+            locationStatus = "No place found (will retry after save if online)"
+        }
+    }
     val localPhotoMissing = remember(photoUrl) {
         expenseLocalMissingOrDead(photoUrl, photoStorage)
     }
@@ -159,7 +246,16 @@ private fun ExpenseEntryScreenBody(
                     category = e.category
                     odometerText = e.odometer?.toString() ?: ""
                     date = e.date
+                    timeIsNow = false
                     photoUrl = e.photoUrl
+                    rowLat = FuelLocationJson.lat(e.location)
+                    rowLon = FuelLocationJson.lon(e.location)
+                    rowAccuracyM = FuelLocationJson.accuracyM(e.location)
+                    val blob = FuelLocationJson.parseBlob(e.location)
+                    placeName = blob?.name.orEmpty()
+                    placeAddress = blob?.address.orEmpty()
+                    confirmLocation = blob?.confirmed == true || blob?.hasPlace() == true
+                    photoFromGallery = false
                     showLiveCamera = expenseLocalMissingOrDead(e.photoUrl, photoStorage) &&
                         !expenseHasArchiveIdentity(e, photoDest?.id)
                     loadedExpense = e
@@ -181,6 +277,13 @@ private fun ExpenseEntryScreenBody(
             }
         }
     }
+    // Default category = first catalog entry when creating (not when editing loaded row)
+    LaunchedEffect(selectedVehicleId, selectedVehicle?.expenseCategoriesJson, editId, loadedId) {
+        if (editId != null) return@LaunchedEffect
+        if (category.isBlank()) {
+            category = ExpenseCategories.defaultCategory(selectedVehicle?.expenseCategoriesJson)
+        }
+    }
 
     val pickImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -190,6 +293,12 @@ private fun ExpenseEntryScreenBody(
                 photoUrl = uri.toString()
                 photoStatus = null
                 showLiveCamera = false
+                // Gallery: row lat/lon from EXIF only — never current device GPS.
+                photoFromGallery = true
+                val meta = PhotoExifMetaReader.read(context, uri)
+                rowLat = meta.latitude
+                rowLon = meta.longitude
+                rowAccuracyM = meta.accuracyM
                 Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
             } else {
                 photoUrl = null
@@ -212,13 +321,14 @@ private fun ExpenseEntryScreenBody(
         val amountVal = amount.toDoubleOrNull() ?: 0.0
         val storedCurrency = CurrencyCodes.fromSymbolOrCode(currencySymbol)
         val odo = odometerText.trim().toIntOrNull()
+        val saveDate = if (timeIsNow) System.currentTimeMillis() else date
         // copy() from loadedExpense preserves photoUrl, lat/long, location, cloudManifest
         val base = loadedExpense
         val toSave = (base ?: ExpenseEntry(
             vehicleId = vehicleId,
             amount = 0.0,
             description = "",
-            date = date
+            date = saveDate
         )).copy(
             id = editId ?: 0L,
             vehicleId = vehicleId,
@@ -228,8 +338,33 @@ private fun ExpenseEntryScreenBody(
             vendor = vendor,
             odometer = odo,
             category = category,
-            date = date,
-            photoUrl = if (prefs.getBoolean("save_expense_photos", true)) photoUrl else null
+            date = saveDate,
+            photoUrl = if (prefs.getBoolean("save_expense_photos", true)) photoUrl else null,
+            location = run {
+                val base = FuelLocationJson.fromCoords(
+                    rowLat,
+                    rowLon,
+                    rowAccuracyM,
+                    source = if (photoFromGallery) "exif" else "device",
+                ) ?: FuelLocationJson.Blob()
+                val placeBlank = placeName.isBlank() && placeAddress.isBlank()
+                val kind = LocationLookup.kindForExpenseCategory(category)
+                val saveBlob = when {
+                    confirmLocation && !placeBlank -> base.withPlace(
+                        name = placeName,
+                        address = placeAddress,
+                        confirmed = true,
+                        source = "user",
+                        kind = kind.blobKindTag(),
+                        lookedUpAt = System.currentTimeMillis(),
+                    )
+                    else -> base.coordsOnly()
+                }
+                if (saveBlob.hasCoordsWithoutPlace()) {
+                    LocationLookupScheduler.enqueueSoon(context)
+                }
+                FuelLocationJson.encode(saveBlob)
+            },
         )
         // D5: await persistence before navigate
         scope.launch {
@@ -269,6 +404,13 @@ private fun ExpenseEntryScreenBody(
         isPhotoSaving = true
         photoStatus = "Saving photo…"
         showLiveCamera = true
+        // Camera path: row uses once-per-screen device fix (restore after any gallery pick).
+        photoFromGallery = false
+        val locForExif = deviceLocation
+        rowLat = locForExif?.latitude
+        rowLon = locForExif?.longitude
+        rowAccuracyM = locForExif?.let { if (it.hasAccuracy()) it.accuracy.toDouble() else null }
+        var rotationDegrees = 0
         try {
             val display = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 context.display
@@ -278,6 +420,13 @@ private fun ExpenseEntryScreenBody(
             }
             val rotation = display?.rotation ?: android.view.Surface.ROTATION_0
             imageCapture.targetRotation = rotation
+            rotationDegrees = when (rotation) {
+                android.view.Surface.ROTATION_0 -> 0
+                android.view.Surface.ROTATION_90 -> 90
+                android.view.Surface.ROTATION_180 -> 180
+                android.view.Surface.ROTATION_270 -> 270
+                else -> 0
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set target rotation", e)
         }
@@ -297,12 +446,16 @@ private fun ExpenseEntryScreenBody(
                     )
                 }
             }
+            val captureMetadata = ImageCapture.Metadata().apply {
+                location = locForExif
+            }
             val outputOptions = ImageCapture.OutputFileOptions.Builder(
                 resolver,
                 android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 contentValues
-            ).build()
+            ).setMetadata(captureMetadata).build()
 
+            val orientForExif = rotationDegrees
             imageCapture.takePicture(
                 outputOptions,
                 ContextCompat.getMainExecutor(context),
@@ -318,6 +471,14 @@ private fun ExpenseEntryScreenBody(
                                 Toast.LENGTH_LONG
                             ).show()
                         } else {
+                            PhotoExifWriter.writeGpsAndOrientation(
+                                context,
+                                savedUri,
+                                locForExif,
+                                orientForExif,
+                                timestampMs = System.currentTimeMillis(),
+                                userComment = "ve:tag=expense",
+                            )
                             photoUrl = savedUri.toString()
                             photoStatus = null
                             showLiveCamera = false
@@ -484,10 +645,37 @@ private fun ExpenseEntryScreenBody(
                     }
                 }
             } else {
-                ZoomPanPhotoViewer(
-                    photoUrl = photoUrl!!,
-                    modifier = Modifier.fillMaxSize()
-                )
+                var showZoom by remember(photoUrl) { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable { showZoom = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = rememberAsyncImagePainter(photoUrl),
+                        contentDescription = "Expense photo — tap to zoom",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                    Text(
+                        "Tap to zoom",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(8.dp)
+                            .background(Color.Black.copy(alpha = 0.45f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                if (showZoom) {
+                    com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog(
+                        uris = listOf(photoUrl!!),
+                        title = "Expense photo",
+                        onDismiss = { showZoom = false },
+                    )
+                }
             }
         }
 
@@ -580,21 +768,22 @@ private fun ExpenseEntryScreenBody(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                if (editId != null) "Edit Expense" else "New Expense",
-                style = MaterialTheme.typography.titleLarge
-            )
-            Text(
-                "Disk = save · white circle = take receipt · gallery icon = pick image · Retake clears the photo. " +
-                    "Tap the currency symbol on amount to change currency.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            AppDateTimeField(
-                label = "Date: ${dateFmt.format(Date(date))}",
-                onClick = { showDatePicker = true },
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = timeIsNow,
+                    onCheckedChange = { checked ->
+                        timeIsNow = checked
+                        if (checked) date = System.currentTimeMillis()
+                    },
+                )
+                Text("Time is now", style = MaterialTheme.typography.bodyMedium)
+            }
+            if (!timeIsNow) {
+                AppDateTimeField(
+                    label = "Date: ${dateFmt.format(Date(date))}",
+                    onClick = { showDatePicker = true },
+                )
+            }
 
             val vehicleName = vehicles.find { it.id == selectedVehicleId }?.name ?: "Select vehicle"
             ExposedDropdownMenuBox(
@@ -622,13 +811,18 @@ private fun ExpenseEntryScreenBody(
                             onClick = {
                                 selectedVehicleId = vehicle.id
                                 vehicleDropdownExpanded = false
+                                if (editId == null) {
+                                    category = ExpenseCategories.defaultCategory(
+                                        vehicle.expenseCategoriesJson,
+                                    )
+                                }
                             }
                         )
                     }
                 }
             }
 
-            OutlinedTextField(
+            com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = vendor,
                 onValueChange = { vendor = it },
                 label = { Text("Vendor") },
@@ -636,11 +830,13 @@ private fun ExpenseEntryScreenBody(
                 singleLine = true
             )
 
-            OutlinedTextField(
+            com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
                 label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = false,
+                maxLines = 4,
             )
 
             var showCurrencyMenu by remember { mutableStateOf(false) }
@@ -650,7 +846,7 @@ private fun ExpenseEntryScreenBody(
                     .distinct()
                     .sorted()
             }
-            OutlinedTextField(
+            com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
                 label = {
@@ -677,73 +873,95 @@ private fun ExpenseEntryScreenBody(
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                showCaretButtons = true,
             )
 
-            OutlinedTextField(
-                value = category,
-                onValueChange = { category = it },
-                label = { Text("Category") },
+            ExposedDropdownMenuBox(
+                expanded = categoryMenuExpanded,
+                onExpandedChange = { categoryMenuExpanded = it },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+            ) {
+                OutlinedTextField(
+                    value = category.ifBlank {
+                        ExpenseCategories.defaultCategory(selectedVehicle?.expenseCategoriesJson)
+                    },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Category") },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
+                    singleLine = true,
+                )
+                ExposedDropdownMenuWithManageFooter(
+                    expanded = categoryMenuExpanded,
+                    onDismissRequest = { categoryMenuExpanded = false },
+                    items = categoryOptions,
+                    onItemClick = { cat ->
+                        category = cat
+                        categoryMenuExpanded = false
+                    },
+                    manageLabel = "Manage categories…",
+                    onManageClick = {
+                        categoryMenuExpanded = false
+                        if (selectedVehicle == null) {
+                            Toast.makeText(
+                                context,
+                                "Select a vehicle first",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        } else {
+                            showManageCategories = true
+                        }
+                    },
+                )
+            }
 
-            OutlinedTextField(
+            com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = odometerText,
                 onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) odometerText = it },
                 label = { Text("Odometer (optional)") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                showCaretButtons = true,
             )
-        }
-    }
-}
 
-/** View-only pinch zoom + pan (ManageVehicles-style). */
-@Composable
-private fun ZoomPanPhotoViewer(
-    photoUrl: String,
-    modifier: Modifier = Modifier
-) {
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-
-    Box(
-        modifier = modifier
-            .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(1f, 10f)
-                    offset += pan
-                }
+            if (rowLat != null && rowLon != null) {
+                LocationConfirmBlock(
+                    statusLine = locationStatus,
+                    name = placeName,
+                    address = placeAddress,
+                    confirmChecked = confirmLocation,
+                    onNameChange = { placeName = it },
+                    onAddressChange = { placeAddress = it },
+                    onConfirmChange = { confirmLocation = it },
+                    confirmLabel = "Confirm this location",
+                )
             }
-    ) {
-        Image(
-            painter = rememberAsyncImagePainter(photoUrl),
-            contentDescription = "Expense photo",
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y
-                ),
-            contentScale = ContentScale.Fit
-        )
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            SmallFloatingActionButton(
-                onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) },
-                containerColor = Color.White.copy(alpha = 0.7f)
-            ) { Text("+") }
-            SmallFloatingActionButton(
-                onClick = { scale = (scale / 1.2f).coerceIn(1f, 10f) },
-                containerColor = Color.White.copy(alpha = 0.7f)
-            ) { Text("-") }
         }
     }
+
+    if (showManageCategories && selectedVehicle != null) {
+        ManageExpenseCategoriesDialog(
+            vehicle = selectedVehicle!!,
+            onDismiss = { showManageCategories = false },
+            onSave = { updated ->
+                scope.launch {
+                    vehicleViewModel.updateVehicle(updated)
+                    showManageCategories = false
+                    // Refresh selection if deleted current category
+                    val cats = ExpenseCategories.parse(updated.expenseCategoriesJson)
+                    if (cats.none { it.equals(category, ignoreCase = true) }) {
+                        category = cats.firstOrNull().orEmpty()
+                    }
+                }
+            },
+        )
+    }
 }
+
+

@@ -8,6 +8,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.FuelTabRenameHintStore
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdGenerator
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdentity
+import com.davidlang.vehicleexpensesautomated.data.expense.ExpenseCategories
 import com.davidlang.vehicleexpensesautomated.data.trip.TripTypes
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -72,28 +73,45 @@ class VehicleRepository @Inject constructor(
         v.id == UNASSIGNED_VEHICLE_ID || v.syncId == UNASSIGNED_VEHICLE_SYNC_ID
 
     suspend fun insertVehicle(vehicle: Vehicle): Long {
-        vehicleDao.insertVehicle(stampForWrite(withTripTypesOnInsert(vehicle)))
+        vehicleDao.insertVehicle(stampForWrite(withCatalogsOnInsert(vehicle)))
         return 0L // Room auto-generates ID; legacy callers expect Long
     }
 
     /**
-     * Local create: if [Vehicle.tripTypesJson] is blank, inherit ordered types from the
+     * Local create: if trip types or expense categories JSON is blank, inherit from the
      * non-deleted non-Unassigned vehicle with latest [Vehicle.updatedAt]; else seed defaults.
      * Sync upserts keep remote JSON as-is (including blank).
      */
-    private suspend fun withTripTypesOnInsert(vehicle: Vehicle): Vehicle {
+    private suspend fun withCatalogsOnInsert(vehicle: Vehicle): Vehicle {
         if (isSystemUnassigned(vehicle)) return vehicle
-        if (vehicle.tripTypesJson.isNotBlank()) return vehicle
-        val inheritFrom = vehicleDao.getAllIncludingDeleted()
-            .asSequence()
-            .filter { !it.deleted && !isSystemUnassigned(it) && it.tripTypesJson.isNotBlank() }
-            .maxByOrNull { it.updatedAt }
-        val json = if (inheritFrom != null) {
-            TripTypes.ensureNonEmpty(inheritFrom.tripTypesJson)
-        } else {
-            TripTypes.seedJson()
+        var v = vehicle
+        if (v.tripTypesJson.isBlank()) {
+            val inheritFrom = vehicleDao.getAllIncludingDeleted()
+                .asSequence()
+                .filter { !it.deleted && !isSystemUnassigned(it) && it.tripTypesJson.isNotBlank() }
+                .maxByOrNull { it.updatedAt }
+            val json = if (inheritFrom != null) {
+                TripTypes.ensureNonEmpty(inheritFrom.tripTypesJson)
+            } else {
+                TripTypes.seedJson()
+            }
+            v = v.copy(tripTypesJson = json)
         }
-        return vehicle.copy(tripTypesJson = json)
+        if (v.expenseCategoriesJson.isBlank()) {
+            val inheritFrom = vehicleDao.getAllIncludingDeleted()
+                .asSequence()
+                .filter {
+                    !it.deleted && !isSystemUnassigned(it) && it.expenseCategoriesJson.isNotBlank()
+                }
+                .maxByOrNull { it.updatedAt }
+            val json = if (inheritFrom != null) {
+                ExpenseCategories.ensureNonEmpty(inheritFrom.expenseCategoriesJson)
+            } else {
+                ExpenseCategories.seedJson()
+            }
+            v = v.copy(expenseCategoriesJson = json)
+        }
+        return v
     }
 
     // Legacy method for existing CsvManager.kt + SyncWorker.kt
@@ -187,3 +205,19 @@ class VehicleRepository @Inject constructor(
         if (vehicle.syncId.isNotBlank()) vehicle
         else vehicle.copy(syncId = SyncIdGenerator.randomSyncId())
 }
+
+/** True for system Unassigned bucket (id=0 / fixed sync id). */
+fun isSystemUnassignedVehicle(v: Vehicle): Boolean =
+    v.id == VehicleRepository.UNASSIGNED_VEHICLE_ID ||
+        v.syncId == VehicleRepository.UNASSIGNED_VEHICLE_SYNC_ID
+
+/**
+ * Capture / assign pickers: non-deleted, not system Unassigned.
+ * Does **not** apply to Reports (Unknown may appear when data-bearing).
+ */
+fun List<Vehicle>.forUserPicker(): List<Vehicle> =
+    filter { !it.deleted && !isSystemUnassignedVehicle(it) }
+        .sortedBy { it.name.lowercase() }
+
+/** Manage Vehicles list: same as [forUserPicker]. */
+fun List<Vehicle>.forManageList(): List<Vehicle> = forUserPicker()
