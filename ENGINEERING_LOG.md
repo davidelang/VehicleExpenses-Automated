@@ -3474,3 +3474,13 @@ x
 - PR doc: `dev-ai-interaction/PRs/PR-ui-followups.md` (pre-submit review + plans + diffstat).
 - Archived finished plans → `historical-plans/`: residual-finish-recent, onboarding-splash-tutorials, user-manual-screenshot-integration, sync-tutorial-join-existing-cluster, reports-efficiency-mpg-dpm-each-vehicle.
 - Ready for Master (`run-grok-master`) independent review + merge. No deploy/merge by coder.
+
+## 2026-08-01 - Master merge: ui-followups
+
+- audit_merge SUCCESS (FF); merge-branch-into-master.sh FF index path; staged 95 .kt + assets/docs
+- ve-englog third version (hash-object -w fix for missing blob before commit)
+- TODO: closed Location Lookup Worker + Troubleshoot lat/long; deferred multi-candidate, post-save confirm, multi-select Sum/Avg, trip packaging; Advanced reports stays closed
+- project-facts: branch orientation (Room v19, Lab Reports, onboarding, sync rate-limit)
+- build_app: first attempt processDebugJavaRes mode 770 flake (cleaned intermediates); retry SUCCESS
+- builds tag → 6889b142 (merge commit). No works tag.
+
