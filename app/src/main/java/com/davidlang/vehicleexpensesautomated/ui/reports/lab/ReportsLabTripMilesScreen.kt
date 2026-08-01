@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -111,7 +115,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
     val leadingCount = remember(inPeriod) { inPeriod.count { it.isImplicitLeading } }
 
     ReportsLabScreenScaffold(
-        title = "Trip miles",
+        title = stringResource(R.string.reports_trip_miles),
         infoText = TRIP_MILES_INFO,
         filterState = data.filter,
         vehicles = data.vehicles,
@@ -150,8 +154,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     checked = includePersonalInTotals,
                     onCheckedChange = { includePersonalInTotals = it },
                 )
-                Text(
-                    "Include Personal in mile totals (incl. implicit leading)",
+                Text(stringResource(R.string.reports_include_personal_in_mile_totals_incl_implicit_le),
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -162,8 +165,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     checked = showPersonalInList,
                     onCheckedChange = { showPersonalInList = it },
                 )
-                Text(
-                    "Show Personal segments in list",
+                Text(stringResource(R.string.reports_show_personal_segments_in_list),
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -174,8 +176,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     checked = showZeroLength,
                     onCheckedChange = { showZeroLength = it },
                 )
-                Text(
-                    "Include zero-length segments",
+                Text(stringResource(R.string.reports_include_zero_length_segments),
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -183,7 +184,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             }
         }
 
-        Text("KPIs", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.reports_kpis), style = MaterialTheme.typography.titleMedium)
         Text(
             "Total miles: ${UnitFormat.distanceDeltaLabel(totalMiles)}" +
                 if (!includePersonalInTotals) " (Personal excluded)" else "",
@@ -245,9 +246,8 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             }
         }
 
-        Text("Trip starts / segments", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Chronological trip list (separate from Fuel History fills). Tap a row to edit the start fill when it has an id.",
+        Text(stringResource(R.string.reports_trip_starts_segments), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.reports_chronological_trip_list_separate_from_fuel_histo),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             softWrap = true,
@@ -392,7 +392,7 @@ private fun buildCsvShare(
         )
     }
     sb.appendLine(
-        "segment_header,date,vehicle,type,status,miles,start_odo,end_odo,implicit_leading,unit",
+        stringResource(R.string.reports_segment_header_date_vehicle_type_status_miles_st),
     )
     listSegs.forEach { seg ->
         val status = when {

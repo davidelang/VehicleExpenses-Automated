@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -40,6 +42,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -157,12 +160,12 @@ private fun ExpenseEntryScreenBody(
     var photoUrl by rememberSaveable { mutableStateOf<String?>(null) }
 
     RegisterPageHelp(
-        title = "Expense entry",
-        "Disk = save · white circle = take receipt · gallery icon = pick image · Retake clears the photo.",
-        "Tap the currency symbol on amount to change currency.",
-        "Time is now (default on create) stamps the save time; uncheck to pick date/time.",
+        title = stringResource(R.string.expense_expense_entry),
+        stringResource(R.string.expense_disk_save_white_circle_take_receipt_gallery_icon),
+        stringResource(R.string.expense_tap_the_currency_symbol_on_amount_to_change_curr),
+        stringResource(R.string.expense_time_is_now_default_on_create_stamps_the_save_ti),
         "Manage categories… stays pinned at the bottom of the category menu " +
-            "(scroll the list above if long; select a vehicle first).",
+            stringResource(R.string.expense_scroll_the_list_above_if_long_select_a_vehicle_f),
     )
     var showDatePicker by remember { mutableStateOf(false) }
     /** Once-per-screen device fix for camera path EXIF + row (isolated from gallery). */
@@ -262,7 +265,7 @@ private fun ExpenseEntryScreenBody(
                     loadedId = editId
                 } else {
                     loadedExpense = null
-                    Toast.makeText(context, "Expense not found", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, context.getString(R.string.expense_expense_not_found), Toast.LENGTH_LONG).show()
                     navController?.popBackStack()
                         ?: navController?.navigate("expenselist") { launchSingleTop = true }
                 }
@@ -299,7 +302,7 @@ private fun ExpenseEntryScreenBody(
                 rowLat = meta.latitude
                 rowLon = meta.longitude
                 rowAccuracyM = meta.accuracyM
-                Toast.makeText(context, "Photo selected", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.expense_photo_selected), Toast.LENGTH_SHORT).show()
             } else {
                 photoUrl = null
                 showLiveCamera = true
@@ -310,12 +313,12 @@ private fun ExpenseEntryScreenBody(
     fun saveExpense() {
         if (isSaving) return
         if (editId != null && !editLoadReady) {
-            Toast.makeText(context, "Still loading expense…", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.expense_still_loading_expense), Toast.LENGTH_SHORT).show()
             return
         }
         val vehicleId = selectedVehicleId
         if (vehicleId == null) {
-            Toast.makeText(context, "Select a vehicle", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.expense_select_a_vehicle), Toast.LENGTH_SHORT).show()
             return
         }
         val amountVal = amount.toDoubleOrNull() ?: 0.0
@@ -465,9 +468,7 @@ private fun ExpenseEntryScreenBody(
                         Log.i(TAG, "Expense photo saved: $savedUri")
                         if (savedUri == null) {
                             photoStatus = "Photo save failed"
-                            Toast.makeText(
-                                context,
-                                "Could not save expense photo to Camera roll: missing MediaStore URI",
+                            Toast.makeText(context, context.getString(R.string.expense_could_not_save_expense_photo_to_camera_roll_miss),
                                 Toast.LENGTH_LONG
                             ).show()
                         } else {
@@ -482,7 +483,7 @@ private fun ExpenseEntryScreenBody(
                             photoUrl = savedUri.toString()
                             photoStatus = null
                             showLiveCamera = false
-                            Toast.makeText(context, "Photo saved to Camera", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.fuel_photo_saved_to_camera), Toast.LENGTH_SHORT).show()
                         }
                         isPhotoSaving = false
                     }
@@ -538,10 +539,10 @@ private fun ExpenseEntryScreenBody(
                         }
                         showDatePicker = false
                     }
-                ) { Text("OK") }
+                ) { Text(stringResource(R.string.settings_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.settings_cancel)) }
             }
         ) {
             DatePicker(state = state)
@@ -562,8 +563,7 @@ private fun ExpenseEntryScreenBody(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(
-                        "Receipt is in cloud backup only",
+                    Text(stringResource(R.string.expense_receipt_is_in_cloud_backup_only),
                         color = Color.White,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -583,10 +583,10 @@ private fun ExpenseEntryScreenBody(
                                         photoStatus = null
                                         val refreshed = viewModel.getExpenseById(scrubbed.id)
                                         if (refreshed != null) loadedExpense = refreshed
-                                        Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, context.getString(R.string.fuel_image_fetched), Toast.LENGTH_SHORT).show()
                                     } else {
                                         photoStatus = "Fetch failed"
-                                        Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, context.getString(R.string.fuel_could_not_fetch_image), Toast.LENGTH_LONG).show()
                                     }
                                 } catch (e: Exception) {
                                     photoStatus = "Fetch failed"
@@ -654,12 +654,11 @@ private fun ExpenseEntryScreenBody(
                 ) {
                     Image(
                         painter = rememberAsyncImagePainter(photoUrl),
-                        contentDescription = "Expense photo — tap to zoom",
+                        contentDescription = stringResource(R.string.expense_expense_photo_tap_to_zoom),
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit,
                     )
-                    Text(
-                        "Tap to zoom",
+                    Text(stringResource(R.string.expense_tap_to_zoom),
                         color = Color.White,
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier
@@ -672,7 +671,7 @@ private fun ExpenseEntryScreenBody(
                 if (showZoom) {
                     com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog(
                         uris = listOf(photoUrl!!),
-                        title = "Expense photo",
+                        title = stringResource(R.string.expense_expense_photo),
                         onDismiss = { showZoom = false },
                     )
                 }
@@ -693,7 +692,7 @@ private fun ExpenseEntryScreenBody(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Save,
-                    contentDescription = "Save expense",
+                    contentDescription = stringResource(R.string.expense_save_expense),
                     modifier = Modifier.size(32.dp)
                 )
             }
@@ -725,7 +724,7 @@ private fun ExpenseEntryScreenBody(
             ) {
                 Icon(
                     imageVector = Icons.Filled.PhotoLibrary,
-                    contentDescription = "Pick picture from gallery",
+                    contentDescription = stringResource(R.string.expense_pick_picture_from_gallery),
                     modifier = Modifier.size(32.dp)
                 )
             }
@@ -739,7 +738,7 @@ private fun ExpenseEntryScreenBody(
                     },
                     enabled = !isPhotoSaving,
                 ) {
-                    Text("Retake")
+                    Text(stringResource(R.string.expense_retake))
                 }
             }
         }
@@ -776,7 +775,7 @@ private fun ExpenseEntryScreenBody(
                         if (checked) date = System.currentTimeMillis()
                     },
                 )
-                Text("Time is now", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.expense_time_is_now), style = MaterialTheme.typography.bodyMedium)
             }
             if (!timeIsNow) {
                 AppDateTimeField(
@@ -794,7 +793,7 @@ private fun ExpenseEntryScreenBody(
                 OutlinedTextField(
                     value = vehicleName,
                     onValueChange = {},
-                    label = { Text("Vehicle") },
+                    label = { Text(stringResource(R.string.fuel_vehicle)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
@@ -825,7 +824,7 @@ private fun ExpenseEntryScreenBody(
             com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = vendor,
                 onValueChange = { vendor = it },
-                label = { Text("Vendor") },
+                label = { Text(stringResource(R.string.expense_vendor)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -833,7 +832,7 @@ private fun ExpenseEntryScreenBody(
             com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("Description") },
+                label = { Text(stringResource(R.string.expense_description)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = false,
                 maxLines = 4,
@@ -888,7 +887,7 @@ private fun ExpenseEntryScreenBody(
                     },
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Category") },
+                    label = { Text(stringResource(R.string.expense_category)) },
                     trailingIcon = {
                         ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryMenuExpanded)
                     },
@@ -909,9 +908,7 @@ private fun ExpenseEntryScreenBody(
                     onManageClick = {
                         categoryMenuExpanded = false
                         if (selectedVehicle == null) {
-                            Toast.makeText(
-                                context,
-                                "Select a vehicle first",
+                            Toast.makeText(context, context.getString(R.string.expense_select_a_vehicle_first),
                                 Toast.LENGTH_SHORT,
                             ).show()
                         } else {
@@ -924,7 +921,7 @@ private fun ExpenseEntryScreenBody(
             com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = odometerText,
                 onValueChange = { if (it.length <= 8 && it.all { c -> c.isDigit() }) odometerText = it },
-                label = { Text("Odometer (optional)") },
+                label = { Text(stringResource(R.string.expense_odometer_optional)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 showCaretButtons = true,

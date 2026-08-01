@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -32,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveAuthRecovery
 import com.davidlang.vehicleexpensesautomated.data.sync.DriveRecoverableAuthException
@@ -370,7 +373,7 @@ internal fun SpreadsheetDestEditForm(
                 OutlinedButton(
                     onClick = {
                         if (activity == null) {
-                            Toast.makeText(context, "Sign-in requires activity", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.settings_sign_in_requires_activity), Toast.LENGTH_SHORT).show()
                         } else {
                             scope.launch {
                                 try {
@@ -425,20 +428,20 @@ internal fun SpreadsheetDestEditForm(
                     OutlinedTextField(
                         value = targetUrl,
                         onValueChange = { targetUrl = it },
-                        label = { Text("Sheet URL") },
-                        supportingText = { Text("Paste a link or use browse") },
+                        label = { Text(stringResource(R.string.settings_sheet_url)) },
+                        supportingText = { Text(stringResource(R.string.settings_paste_a_link_or_use_browse)) },
                         modifier = Modifier.weight(1f),
                     )
                     IconButton(
                         onClick = {
                             if (accountHint.isBlank() && viewModel.auth.getLastAccount() == null) {
-                                Toast.makeText(context, "Sign in first", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.settings_sign_in_first), Toast.LENGTH_SHORT).show()
                             } else {
                                 showBrowseDialog = true
                             }
                         },
                     ) {
-                        Icon(Icons.Default.Search, contentDescription = "Browse spreadsheets")
+                        Icon(Icons.Default.Search, contentDescription = stringResource(R.string.settings_browse_spreadsheets))
                     }
                 }
 
@@ -482,7 +485,7 @@ internal fun SpreadsheetDestEditForm(
                             }
                         },
                         emptyMessage =
-                            "No spreadsheets visible. Create one here or open an existing sheet in this app first.",
+                            stringResource(R.string.settings_no_spreadsheets_visible_create_one_here_or_open_),
                     )
                 }
             }
@@ -490,33 +493,33 @@ internal fun SpreadsheetDestEditForm(
                 OutlinedTextField(
                     value = targetId,
                     onValueChange = { targetId = it },
-                    label = { Text("Workbook item ID") },
-                    supportingText = { Text("OneDrive/SharePoint drive item id for the .xlsx workbook") },
+                    label = { Text(stringResource(R.string.settings_workbook_item_id)) },
+                    supportingText = { Text(stringResource(R.string.settings_onedrive_sharepoint_drive_item_id_for_the_xlsx_w)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = targetUrl,
                     onValueChange = { targetUrl = it },
-                    label = { Text("Workbook URL (optional)") },
+                    label = { Text(stringResource(R.string.settings_workbook_url_optional)) },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
             SpreadsheetProvider.ETHERCALC -> {
                 TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.tabular("ethercalc")) }) {
-                    Text("Setup help — EtherCalc")
+                    Text(stringResource(R.string.settings_setup_help_ethercalc))
                 }
                 OutlinedTextField(
                     value = etherCalcBaseUrl,
                     onValueChange = { etherCalcBaseUrl = it },
-                    label = { Text("EtherCalc base URL") },
-                    supportingText = { Text("e.g. https://ethercalc.example.com") },
+                    label = { Text(stringResource(R.string.settings_ethercalc_base_url)) },
+                    supportingText = { Text(stringResource(R.string.settings_e_g_https_ethercalc_example_com)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     value = etherCalcRoomPrefix,
                     onValueChange = { etherCalcRoomPrefix = it },
-                    label = { Text("Room prefix") },
-                    supportingText = { Text("Each tab maps to a room: prefix-tabname") },
+                    label = { Text(stringResource(R.string.settings_room_prefix)) },
+                    supportingText = { Text(stringResource(R.string.settings_each_tab_maps_to_a_room_prefix_tabname)) },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
             }
@@ -581,7 +584,7 @@ internal fun SpreadsheetDestEditForm(
                     signedIn = zohoAccessToken.isNotBlank(),
                     onSignIn = {
                         if (zohoClientId.isBlank()) {
-                            Toast.makeText(context, "Enter OAuth client id first", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.settings_enter_oauth_client_id_first), Toast.LENGTH_SHORT).show()
                         } else {
                             scope.launch {
                                 try {
@@ -619,7 +622,7 @@ internal fun SpreadsheetDestEditForm(
         }
 
         SyncBackgroundScheduleSection(
-            title = "Background sync",
+            title = stringResource(R.string.settings_background_sync),
             enableLabel = "Enable background sync",
             intervalSliderLabel = "Background sync interval (hours)",
             state = SyncScheduleUiState(
@@ -722,7 +725,7 @@ internal fun SpreadsheetDestEditForm(
                             accountHint = accountHint,
                         )
                         if (!SyncDestinationStore.isSpreadsheetConfigured(testDest)) {
-                            Toast.makeText(context, "Configure a destination first", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.settings_configure_a_destination_first), Toast.LENGTH_SHORT).show()
                             return@launch
                         }
                         try {
@@ -754,9 +757,7 @@ internal fun SpreadsheetDestEditForm(
             } else {
                 {
                     if (!canSyncThisDest) {
-                        Toast.makeText(
-                            context,
-                            "Save a configured destination first",
+                        Toast.makeText(context, context.getString(R.string.settings_save_a_configured_destination_first),
                             Toast.LENGTH_SHORT,
                         ).show()
                     } else {
@@ -773,7 +774,7 @@ internal fun SpreadsheetDestEditForm(
             onRemove = {
                 store.removeSpreadsheet(id)
                 viewModel.rescheduleBackgroundSync()
-                Toast.makeText(context, "Destination removed", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.settings_destination_removed), Toast.LENGTH_SHORT).show()
                 onRemoved()
             },
             statusText = footerStatus,

@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +43,7 @@ fun LastFullFillLegsBlock(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, style = MaterialTheme.typography.titleSmall)
         if (displayNewestFirst.isEmpty()) {
-            Text("No full fills", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.reports_no_full_fills), style = MaterialTheme.typography.bodySmall)
         } else {
             val maxMpg = displayNewestFirst.maxOfOrNull { it.mpg }?.takeIf { it > 0 } ?: 1.0
             displayNewestFirst.forEach { leg ->

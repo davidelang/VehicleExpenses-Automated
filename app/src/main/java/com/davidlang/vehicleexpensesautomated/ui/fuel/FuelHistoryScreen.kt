@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -12,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -46,9 +49,9 @@ fun FuelHistoryScreen(navController: NavHostController) {
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     RegisterPageHelp(
-        title = "Fuel History",
-        "Per-vehicle tabs list fuel fills only (trip starts are under Reports → Trip miles).",
-        "Tap a row to edit. Missing photos can be fetched from archive when cloud identity exists.",
+        title = stringResource(R.string.nav_fuel_history),
+        stringResource(R.string.fuel_per_vehicle_tabs_list_fuel_fills_only_trip_start),
+        stringResource(R.string.fuel_tap_a_row_to_edit_missing_photos_can_be_fetched_),
     )
     val photoStorage = settingsViewModel.photoStorageManager
     val fills by fuelViewModel.fuelEntries.collectAsState()
@@ -85,7 +88,7 @@ fun FuelHistoryScreen(navController: NavHostController) {
             .padding(16.dp),
     ) {
         FeatureScreenHeader(
-            title = "Fuel History",
+            title = stringResource(R.string.nav_fuel_history),
             subtitle = "Per-vehicle fills (no trip starts). Tap a card to edit. Thumbnails fetch from archive when missing locally.",
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -181,7 +184,7 @@ private fun FuelHistoryRow(
                         var showZoom by remember { mutableStateOf(false) }
                         Image(
                             painter = rememberAsyncImagePainter(thumbUri),
-                            contentDescription = "Fill photo",
+                            contentDescription = stringResource(R.string.fuel_fill_photo),
                             modifier = Modifier
                                 .size(56.dp)
                                 .fillMaxSize()
@@ -209,9 +212,9 @@ private fun FuelHistoryRow(
                                         display = refreshed
                                         onFetched(refreshed)
                                         if (local != null) {
-                                            Toast.makeText(context, "Image fetched", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, context.getString(R.string.fuel_image_fetched), Toast.LENGTH_SHORT).show()
                                         } else {
-                                            Toast.makeText(context, "Could not fetch image", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, context.getString(R.string.fuel_could_not_fetch_image), Toast.LENGTH_LONG).show()
                                         }
                                     } finally {
                                         fetching = false

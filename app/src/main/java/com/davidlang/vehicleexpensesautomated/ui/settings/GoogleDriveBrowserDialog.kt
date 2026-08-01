@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,7 +57,7 @@ fun GoogleDriveBrowserDialog(
     readonlyAccessGranted: Boolean = true,
     onRequestReadonlyAccess: () -> Unit = {},
     emptyMessage: String =
-        "No items visible. With Drive access limited to this app, open or create files here first.",
+        stringResource(R.string.settings_no_items_visible_with_drive_access_limited_to_th),
 ) {
     val scope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
@@ -125,7 +129,7 @@ fun GoogleDriveBrowserDialog(
                 OutlinedTextField(
                     value = createName,
                     onValueChange = { createName = it },
-                    label = { Text("Name") },
+                    label = { Text(stringResource(R.string.settings_name)) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !creating,
                 )
@@ -159,7 +163,7 @@ fun GoogleDriveBrowserDialog(
                     onClick = { if (!creating) showCreatePrompt = false },
                     enabled = !creating,
                 ) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.settings_cancel))
                 }
             },
         )
@@ -175,13 +179,13 @@ fun GoogleDriveBrowserDialog(
                         FilterChip(
                             selected = catalog == GoogleDriveBrowseCatalog.APP,
                             onClick = { catalog = GoogleDriveBrowseCatalog.APP },
-                            label = { Text("This app") },
+                            label = { Text(stringResource(R.string.settings_this_app)) },
                             modifier = Modifier.padding(end = 8.dp),
                         )
                         FilterChip(
                             selected = catalog == GoogleDriveBrowseCatalog.ALL,
                             onClick = { catalog = GoogleDriveBrowseCatalog.ALL },
-                            label = { Text("All & shared") },
+                            label = { Text(stringResource(R.string.settings_all_shared)) },
                         )
                     }
                     val itemLabel = when (mode) {
@@ -206,7 +210,7 @@ fun GoogleDriveBrowserDialog(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        label = { Text("Search") },
+                        label = { Text(stringResource(R.string.settings_search)) },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                     )
@@ -236,7 +240,7 @@ fun GoogleDriveBrowserDialog(
                             onClick = onRequestReadonlyAccess,
                             modifier = Modifier.padding(top = 8.dp),
                         ) {
-                            Text("Grant browse access")
+                            Text(stringResource(R.string.settings_grant_browse_access))
                         }
                     }
                     loading -> {
@@ -245,13 +249,13 @@ fun GoogleDriveBrowserDialog(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp))
-                            Text("Loading…")
+                            Text(stringResource(R.string.settings_loading))
                         }
                     }
                     errorText.isNotBlank() -> {
                         Text(errorText, color = MaterialTheme.colorScheme.error)
                         OutlinedButton(onClick = { reload() }, modifier = Modifier.padding(top = 8.dp)) {
-                            Text("Retry")
+                            Text(stringResource(R.string.settings_retry))
                         }
                     }
                     items.isEmpty() -> {
@@ -292,7 +296,7 @@ fun GoogleDriveBrowserDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.settings_cancel))
             }
         },
     )

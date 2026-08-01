@@ -137,7 +137,7 @@ class MainActivity : ComponentActivity() {
         if (!isGranted) {
             Toast.makeText(
                 this,
-                "Photos permission denied. Fuel photo saving to Camera roll may fail until Photos access is granted in system Settings.",
+                stringResource(R.string.nav_photos_permission_denied_fuel_photo_saving_to_ca),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -152,7 +152,7 @@ class MainActivity : ComponentActivity() {
         if (!anyGranted) {
             Toast.makeText(
                 this,
-                "Location denied — fills save without GPS",
+                stringResource(R.string.nav_location_denied_fills_save_without_gps),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -257,12 +257,10 @@ class MainActivity : ComponentActivity() {
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             CircularProgressIndicator()
-                            Text(
-                                "Updating database after upgrade…",
+                            Text(stringResource(R.string.nav_updating_database_after_upgrade),
                                 style = MaterialTheme.typography.titleMedium,
                             )
-                            Text(
-                                "This usually takes a few seconds.",
+                            Text(stringResource(R.string.nav_this_usually_takes_a_few_seconds),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -278,9 +276,7 @@ class MainActivity : ComponentActivity() {
                             }
                         } catch (e: Exception) {
                             Log.e("MainActivity", "sync-id backfill failed", e)
-                            Toast.makeText(
-                                context,
-                                "Database upgrade failed — restart the app",
+                            Toast.makeText(context, context.getString(R.string.nav_database_upgrade_failed_restart_the_app),
                                 Toast.LENGTH_LONG,
                             ).show()
                         }
@@ -540,7 +536,7 @@ class MainActivity : ComponentActivity() {
                                                 onClick = { scope.launch { drawerState.open() } },
                                                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                                             ) {
-                                                Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                                Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.nav_menu))
                                             }
                                         }
                                         if (showBack) {

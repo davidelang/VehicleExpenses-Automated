@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
@@ -118,7 +122,7 @@ fun ZoomablePhotoDialog(
                             .padding(end = 8.dp),
                     )
                     TextButton(onClick = onDismiss) {
-                        Text("Close", color = Color.White)
+                        Text(stringResource(R.string.settings_close), color = Color.White)
                     }
                 }
                 Box(
@@ -146,7 +150,7 @@ fun ZoomablePhotoDialog(
                         fileBitmap != null -> {
                             Image(
                                 bitmap = fileBitmap!!.asImageBitmap(),
-                                contentDescription = "Photo",
+                                contentDescription = stringResource(R.string.ui_photo),
                                 modifier = layerMod,
                                 contentScale = ContentScale.Fit,
                             )
@@ -160,12 +164,12 @@ fun ZoomablePhotoDialog(
                                         path
                                     },
                                 ),
-                                contentDescription = "Photo",
+                                contentDescription = stringResource(R.string.ui_photo),
                                 modifier = layerMod,
                                 contentScale = ContentScale.Fit,
                             )
                         }
-                        else -> Text("Photo unavailable", color = Color.White)
+                        else -> Text(stringResource(R.string.ui_photo_unavailable), color = Color.White)
                     }
                     Column(
                         modifier = Modifier
@@ -196,7 +200,7 @@ fun ZoomablePhotoDialog(
                                 index = (index - 1).coerceAtLeast(0)
                             },
                             enabled = index > 0,
-                        ) { Text("Prev", color = Color.White) }
+                        ) { Text(stringResource(R.string.ui_prev), color = Color.White) }
                         Text(
                             "${index + 1} / ${uris.size}",
                             color = Color.White,
@@ -208,7 +212,7 @@ fun ZoomablePhotoDialog(
                                 index = (index + 1).coerceAtMost(uris.lastIndex)
                             },
                             enabled = index < uris.lastIndex,
-                        ) { Text("Next", color = Color.White) }
+                        ) { Text(stringResource(R.string.ui_next), color = Color.White) }
                     }
                 }
             }

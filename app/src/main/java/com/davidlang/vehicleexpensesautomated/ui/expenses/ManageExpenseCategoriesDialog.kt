@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -58,8 +62,7 @@ fun ManageExpenseCategoriesDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    "First item is the new-expense default. Renames/deletes do not rewrite past expense Category strings.",
+                Text(stringResource(R.string.expense_first_item_is_the_new_expense_default_renames_de),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 categories.forEachIndexed { index, name ->
@@ -81,7 +84,7 @@ fun ManageExpenseCategoriesDialog(
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowUp,
-                                contentDescription = "Move up",
+                                contentDescription = stringResource(R.string.expense_move_up),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -94,7 +97,7 @@ fun ManageExpenseCategoriesDialog(
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Move down",
+                                contentDescription = stringResource(R.string.expense_move_down),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -103,7 +106,7 @@ fun ManageExpenseCategoriesDialog(
                                 renameIndex = index
                                 renameText = name
                             },
-                        ) { Text("Rename") }
+                        ) { Text(stringResource(R.string.expense_rename)) }
                         IconButton(
                             onClick = {
                                 if (categories.size <= 1) return@IconButton
@@ -119,7 +122,7 @@ fun ManageExpenseCategoriesDialog(
                         ) {
                             Icon(
                                 Icons.Default.Delete,
-                                contentDescription = "Delete category",
+                                contentDescription = stringResource(R.string.expense_delete_category),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -129,7 +132,7 @@ fun ManageExpenseCategoriesDialog(
                     CaretEnabledOutlinedTextField(
                         value = renameText,
                         onValueChange = { renameText = it },
-                        label = { Text("New name") },
+                        label = { Text(stringResource(R.string.expense_new_name)) },
                         singleLine = true,
                         showCaretButtons = false,
                         modifier = Modifier.fillMaxWidth(),
@@ -141,8 +144,8 @@ fun ManageExpenseCategoriesDialog(
                                 categories = ExpenseCategories.rename(categories, i, renameText).toMutableList()
                                 renameIndex = null
                             },
-                        ) { Text("Apply rename") }
-                        TextButton(onClick = { renameIndex = null }) { Text("Cancel") }
+                        ) { Text(stringResource(R.string.expense_apply_rename)) }
+                        TextButton(onClick = { renameIndex = null }) { Text(stringResource(R.string.settings_cancel)) }
                     }
                 }
                 Row(
@@ -153,7 +156,7 @@ fun ManageExpenseCategoriesDialog(
                     CaretEnabledOutlinedTextField(
                         value = newName,
                         onValueChange = { newName = it },
-                        label = { Text("New category") },
+                        label = { Text(stringResource(R.string.expense_new_category)) },
                         singleLine = true,
                         showCaretButtons = false,
                         modifier = Modifier.weight(1f),
@@ -164,7 +167,7 @@ fun ManageExpenseCategoriesDialog(
                             newName = ""
                         },
                         modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text("Add") }
+                    ) { Text(stringResource(R.string.expense_add)) }
                 }
             }
         },
@@ -174,10 +177,10 @@ fun ManageExpenseCategoriesDialog(
                     val json = ExpenseCategories.format(categories)
                     onSave(vehicle.copy(expenseCategoriesJson = json))
                 },
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.fuel_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
         },
     )
 }

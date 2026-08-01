@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.expenses
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -48,7 +51,7 @@ fun ExpenseListScreen(navController: NavHostController? = null) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         FeatureScreenHeader(
-            title = "Expense list",
+            title = stringResource(R.string.nav_expense_list),
             subtitle = "Tap a card to edit. Add from Menu → New expense, or Reports hub.",
         )
         Spacer(modifier = Modifier.height(8.dp))

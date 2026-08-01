@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.onboarding
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 /** Stable tutorial IDs (T1). */
 object TutorialIds {
     const val ADD_VEHICLE = "tutorial_add_vehicle"
@@ -28,84 +32,84 @@ object TutorialCatalog {
     val all: List<Tutorial> = listOf(
         Tutorial(
             id = TutorialIds.ADD_VEHICLE,
-            title = "Add a vehicle",
+            title = stringResource(R.string.onboarding_add_a_vehicle),
             endRoute = "managevehicles",
             endCtaLabel = "Go to Manage Vehicles",
             steps = listOf(
                 TutorialStep(
-                    title = "Open Manage Vehicles",
+                    title = stringResource(R.string.onboarding_open_manage_vehicles),
                     body = "From the menu (☰), choose Manage Vehicles. This is where you create dashboards " +
-                        "the app can recognize later.",
+                        stringResource(R.string.onboarding_the_app_can_recognize_later),
                     imageAsset = "tutorials/drawer.jpg",
                 ),
                 TutorialStep(
-                    title = "Add New Vehicle",
+                    title = stringResource(R.string.vehicle_add_new_vehicle),
                     body = "Open the vehicle dropdown and pick Add New Vehicle. You are setting up this phone " +
-                        "as stand-alone / first vehicle (or an additional vehicle).",
+                        stringResource(R.string.onboarding_as_stand_alone_first_vehicle_or_an_additional_ve),
                     imageAsset = "tutorials/vehicle_manage.jpg",
                 ),
                 TutorialStep(
-                    title = "Dashboard photo",
+                    title = stringResource(R.string.onboarding_dashboard_photo),
                     body = "Take or pick a clear photo of the instrument cluster. Good lighting and a square-on " +
-                        "view of the odometer help discovery.",
+                        stringResource(R.string.onboarding_view_of_the_odometer_help_discovery),
                     imageAsset = "tutorials/vehicle_dash.jpg",
                 ),
                 TutorialStep(
-                    title = "Odo Crop & Run Discovery",
+                    title = stringResource(R.string.onboarding_odo_crop_run_discovery),
                     body = "Draw Odo Crop around the odometer digits (optional Ignore Crop for clutter). " +
-                        "Tap Run Discovery and review landmarks. Edit OCR text if something was missed.",
+                        stringResource(R.string.onboarding_tap_run_discovery_and_review_landmarks_edit_ocr_),
                     imageAsset = "tutorials/vehicle_crops.jpg",
                 ),
                 TutorialStep(
-                    title = "Name and Create",
+                    title = stringResource(R.string.onboarding_name_and_create),
                     body = "Enter a Vehicle Name, then Create Vehicle. After at least one user vehicle exists, " +
-                        "the first-run splash will not appear again.",
+                        stringResource(R.string.onboarding_the_first_run_splash_will_not_appear_again),
                     imageAsset = "tutorials/vehicle_manage.jpg",
                 ),
             ),
         ),
         Tutorial(
             id = TutorialIds.SETUP_SYNC,
-            title = "Connect existing setup",
+            title = stringResource(R.string.onboarding_connect_existing_setup),
             endRoute = "syncing",
             endCtaLabel = "Go to Syncing",
             steps = listOf(
                 TutorialStep(
-                    title = "You already have a cluster",
+                    title = stringResource(R.string.onboarding_you_already_have_a_cluster),
                     body = "This path is for a **new phone or tablet** joining an **existing** Vehicle Expenses setup. " +
                         "Another device already has vehicles, a **shared spreadsheet**, and usually a **shared photo folder**. " +
                         "You use **your** Google / Microsoft / other account — not an app-hosted cloud. " +
-                        "Stand-alone first setup (no other device yet) is **Add a vehicle**, not this tutorial.",
+                        stringResource(R.string.onboarding_stand_alone_first_setup_no_other_device_yet_is_a),
                     imageAsset = "tutorials/drawer.jpg",
                 ),
                 TutorialStep(
-                    title = "Open Syncing on this device",
+                    title = stringResource(R.string.onboarding_open_syncing_on_this_device),
                     body = "From the menu (☰), open **Syncing**. You will add destinations that point at the **same** " +
-                        "sheet and photo folder the other device already uses — not brand-new empty ones.",
+                        stringResource(R.string.onboarding_sheet_and_photo_folder_the_other_device_already_),
                     imageAsset = "tutorials/sync_hub.jpg",
                 ),
                 TutorialStep(
-                    title = "Spreadsheet: open the existing shared file",
+                    title = stringResource(R.string.onboarding_spreadsheet_open_the_existing_shared_file),
                     body = "Add a spreadsheet destination → pick the same provider as the other device (often Google Sheets) → " +
                         "sign in. Paste the **existing sheet URL** from the other phone (or Drive **browse to that file**). " +
                         "Test connection, then **Sync now** to pull vehicles and rows. " +
-                        "**Do not Create** a new blank spreadsheet for this path (if the UI still offers Create, skip it).",
+                        stringResource(R.string.onboarding_do_not_create_a_new_blank_spreadsheet_for_this_p),
                     imageAsset = "tutorials/sync_sheet.jpg",
                 ),
                 TutorialStep(
-                    title = "Photos: same existing folder",
+                    title = stringResource(R.string.onboarding_photos_same_existing_folder),
                     body = "Add a photo destination → same provider as the other device → sign in. " +
                         "Choose the **same photo folder** already used by the cluster (URL or browse). " +
                         "Test connection → Sync now. Vehicle reference images can download automatically; " +
                         "fill/receipt photos are on-demand via Fetch from archive. " +
-                        "**Do not create a new empty folder** for this path.",
+                        stringResource(R.string.onboarding_do_not_create_a_new_empty_folder_for_this_path),
                     imageAsset = "tutorials/sync_photo.jpg",
                 ),
                 TutorialStep(
-                    title = "After the first Sync now",
+                    title = stringResource(R.string.onboarding_after_the_first_sync_now),
                     body = "Vehicles and data should appear from the shared sheet. Only then, if a vehicle is missing " +
                         "a local dash photo, open Manage Vehicles and capture or fetch the reference image. " +
-                        "You do not need to re-type the whole fleet from scratch.",
+                        stringResource(R.string.onboarding_you_do_not_need_to_re_type_the_whole_fleet_from_),
                     imageAsset = "tutorials/sync_hub.jpg",
                 ),
             ),

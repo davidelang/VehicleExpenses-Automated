@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -198,7 +202,7 @@ object ReportsLabPdf {
     ): ByteArray {
         val allLines = plainText.lines()
         val meta = mutableListOf(
-            "Vehicle Expenses",
+            stringResource(R.string.nav_drawer_title),
             "Generated: ${formatGenerated(generatedMs)}",
         )
         // Promote Period: / Vehicle: lines into header when present

@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.widget.Toast
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -14,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
@@ -32,7 +35,7 @@ internal fun SpreadsheetOtherKindPicker(
     onCancel: () -> Unit,
 ) {
     SyncProviderChoiceScreen(
-        title = "Other — pick category",
+        title = stringResource(R.string.settings_other_pick_category),
         choices = TabularOtherProviderCatalog.KIND_GROUPS.map { kind ->
             kind.label to { onPick(kind) }
         },
@@ -62,7 +65,7 @@ internal fun SpreadsheetProviderPicker(
     onCancel: () -> Unit,
 ) {
     SyncProviderChoiceScreen(
-        title = "Add spreadsheet destination",
+        title = stringResource(R.string.settings_add_spreadsheet_destination),
         choices = listOf(
             "Google Sheets" to { onPick(SpreadsheetProvider.GOOGLE_SHEETS) },
             "Excel" to { onPick(SpreadsheetProvider.EXCEL) },
@@ -82,10 +85,10 @@ internal fun SpreadsheetDestList(
 ) {
     val context = LocalContext.current
     RegisterPageHelp(
-        title = "Spreadsheet Sync",
-        "Add destinations (Google Sheets is common). Sync now runs all configured destinations.",
-        "Open a destination for Test connection, Sync now (this destination), and Details on failures.",
-        "Background sync uses destinations with background enabled only.",
+        title = stringResource(R.string.nav_spreadsheet_sync),
+        stringResource(R.string.settings_add_destinations_google_sheets_is_common_sync_no),
+        stringResource(R.string.settings_open_a_destination_for_test_connection_sync_now_),
+        stringResource(R.string.settings_background_sync_uses_destinations_with_backgroun),
     )
     var statusText by remember { mutableStateOf("") }
     var statusIsError by remember { mutableStateOf(false) }
@@ -114,9 +117,7 @@ internal fun SpreadsheetDestList(
                 viewModel.hasUnmatchedFuelPartials()
             }
             if (unmatched) {
-                Toast.makeText(
-                    context,
-                    "Unmatched partials may need Run merge (Import Old Pictures)",
+                Toast.makeText(context, context.getString(R.string.settings_unmatched_partials_may_need_run_merge_import_old),
                     Toast.LENGTH_LONG,
                 ).show()
             }
@@ -125,7 +126,7 @@ internal fun SpreadsheetDestList(
     }
 
     SyncDestinationListLayout(
-        title = "Spreadsheet Sync",
+        title = stringResource(R.string.nav_spreadsheet_sync),
         description = "Add a destination (Google Sheets is the common choice: Sign in → Sheet URL or 🔍 browse → save → Sync now). Manual sync runs all configured destinations; background sync runs enabled ones only.",
         statusText = displayStatus,
         syncInProgress = syncInProgress,

@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -174,9 +178,9 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
     }
 
     ReportsLabScreenScaffold(
-        title = "Vehicle summary",
+        title = stringResource(R.string.reports_vehicle_summary),
         infoText = "A shareable history pack for this vehicle and period. " +
-            "Toggle Include VIN below before sharing if needed (default off).",
+            stringResource(R.string.reports_toggle_include_vin_below_before_sharing_if_neede),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
@@ -193,7 +197,7 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = includeVinInShare, onCheckedChange = { includeVinInShare = it })
-            Text("Include VIN in share (default off)", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.reports_include_vin_in_share_default_off), style = MaterialTheme.typography.bodySmall)
         }
         if (data.fuel.isEmpty() && data.expenses.isEmpty() && targets.all { it == null }) {
             ReportsLabEmpty("No data for this filter.")
@@ -228,7 +232,7 @@ private fun VehicleSummarySection(
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Vehicle summary", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.reports_vehicle_summary), style = MaterialTheme.typography.titleMedium)
             Text("Generated: ${formatLabDateTime(System.currentTimeMillis())}", style = MaterialTheme.typography.labelSmall)
             Text("Period: ${periodLabel(data.filter)}")
             Text(
@@ -270,8 +274,7 @@ private fun VehicleSummarySection(
                     if (dpm == null) "n/a" else "%.3f".format(dpm),
                 softWrap = true,
             )
-            Text(
-                "Full-fill and economyIgnored rules apply; trip starts excluded from fill counts.",
+            Text(stringResource(R.string.reports_full_fill_and_economyignored_rules_apply_trip_st),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 softWrap = true,
@@ -285,7 +288,7 @@ private fun VehicleSummarySection(
                 volumeUnitLabel = data.volumeLabel,
                 defaultSymbol = data.defaultSymbol,
             )
-            Text("Last 5 expenses", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.reports_last_5_expenses), style = MaterialTheme.typography.titleSmall)
             exp.sortedByDescending { it.date }.take(5).forEach { e ->
                 Text(
                     "${formatLabDate(e.date)} ${e.category} " +
@@ -293,7 +296,7 @@ private fun VehicleSummarySection(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            if (exp.isEmpty()) Text("  (none)", style = MaterialTheme.typography.bodySmall)
+            if (exp.isEmpty()) Text(stringResource(R.string.reports_none), style = MaterialTheme.typography.bodySmall)
         }
     }
 }

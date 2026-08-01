@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,10 +21,10 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
     }
 
     ReportsLabScreenScaffold(
-        title = "Fill history",
+        title = stringResource(R.string.reports_fill_history),
         infoText = "Chronological fills for current filters (trip starts excluded). " +
             "Each vehicle uses the same multi-vehicle list as All (vehicle name on each row). " +
-            "Tap a row to edit.",
+            stringResource(R.string.reports_tap_a_row_to_edit),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,

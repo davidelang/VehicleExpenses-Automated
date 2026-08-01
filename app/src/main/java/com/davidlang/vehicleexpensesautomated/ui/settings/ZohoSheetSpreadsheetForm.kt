@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
@@ -40,11 +43,11 @@ fun ZohoSheetSpreadsheetForm(
 ) {
     val context = LocalContext.current
     TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.tabular("zoho-sheet")) }) {
-        Text("Setup help — Zoho Sheet")
+        Text(stringResource(R.string.settings_setup_help_zoho_sheet))
     }
     Text(
         "Register a Zoho API client (client-based or server-based). Sign in stores an OAuth access token app-privately. " +
-            "Optional refresh token + client secret enable silent refresh before sync.",
+            stringResource(R.string.settings_optional_refresh_token_client_secret_enable_sile),
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(modifier = Modifier.height(8.dp))
@@ -55,34 +58,34 @@ fun ZohoSheetSpreadsheetForm(
     OutlinedTextField(
         value = workbookId,
         onValueChange = onWorkbookIdChange,
-        label = { Text("Workbook resource id") },
-        supportingText = { Text("From the Zoho Sheet URL (open/<rid>)") },
+        label = { Text(stringResource(R.string.settings_workbook_resource_id)) },
+        supportingText = { Text(stringResource(R.string.settings_from_the_zoho_sheet_url_open_rid)) },
         modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
         value = clientId,
         onValueChange = onClientIdChange,
-        label = { Text("OAuth client id") },
+        label = { Text(stringResource(R.string.settings_oauth_client_id)) },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = clientSecret,
         onValueChange = onClientSecretChange,
-        label = { Text("Client secret (optional, for refresh)") },
+        label = { Text(stringResource(R.string.settings_client_secret_optional_for_refresh)) },
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = accessToken,
         onValueChange = onAccessTokenChange,
-        label = { Text("Access token") },
+        label = { Text(stringResource(R.string.settings_access_token)) },
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = refreshToken,
         onValueChange = onRefreshTokenChange,
-        label = { Text("Refresh token (optional)") },
+        label = { Text(stringResource(R.string.settings_refresh_token_optional)) },
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
@@ -101,8 +104,8 @@ fun ZohoSheetSpreadsheetForm(
     OutlinedTextField(
         value = fuelSheets,
         onValueChange = onFuelSheetsChange,
-        label = { Text("Fuel tab worksheet names (optional)") },
-        supportingText = { Text("One per line: Fuel - VehicleName=SheetName") },
+        label = { Text(stringResource(R.string.settings_fuel_tab_worksheet_names_optional)) },
+        supportingText = { Text(stringResource(R.string.settings_one_per_line_fuel_vehiclename_sheetname)) },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         minLines = 2,
     )
