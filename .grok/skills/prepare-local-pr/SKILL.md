@@ -21,8 +21,9 @@ You prepare a **local** PR document for Master review. This repo does **not** us
 1. **Pre-submit code review** (you): diff vs the approved plan path(s). Fail if scope creep / silent improvements. List residual risks.
 2. **History cleanup** on this branch: logical commits; create/update `backup-<branch>` if required by project cleanup scripts; never `git commit --amend` of published history without explicit user protocol.
 3. Run **`./generate_pr.sh`** with plan paths → `dev-ai-interaction/PRs/PR-<branch>.md`. Include review summary and any TODO items that merge should **close**.
-4. `./append-to-engineering-log` note: PR prepared, path to PR doc.
-5. Stop and tell the user: ready for Master (`run-grok-master`) independent review + merge. Do not merge yourself.
+4. **Archive completed plans:** move designated CODE LANDED / done plan file(s) from `dev-ai-interaction/plans/` to `dev-ai-interaction/historical-plans/` (do not leave landfill of finished contracts in `plans/`).
+5. `./append-to-engineering-log` note: PR prepared, path to PR doc.
+6. Stop and tell the user: ready for Master (`run-grok-master`) independent review + merge. Do not merge yourself.
 
 ## Forbidden
 - `gh pr create`, Graphite `gt submit`, `/pr-babysit`, force-push without project rules.

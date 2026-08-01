@@ -33,7 +33,8 @@ Follow **`MASTER_AGENT_MANDATE.md` §2** in full. Read that file first.
      If only eng-log is staged while the branch changed app code → **FAILED**. Do not `build_app`.
      Retry: `git reset HEAD` (unstage), then re-run the merge script (or fix script on **orchestration** + `update-rules`).
    - `./build_app` to commit merge **only after** the staged set looks complete.
-5. Never set `works` tag. Inform user to run `./remove_worktree.sh` when done.
+5. After successful merge, if the PR/plan is fully landed, ensure designated plan(s) are under `dev-ai-interaction/historical-plans/` (move from `plans/` if still active). Do **not** auto-run `./update-rules.sh` unless the human requests a brain sweep (can interfere with active agents).
+6. Never set `works` tag. Inform user to run `./remove_worktree.sh` when done.
 
 ## Failed merge recovery
 See `docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md` § "Failed merge recovery",  

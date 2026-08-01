@@ -1,10 +1,10 @@
 #!/bin/bash
 # run-grok — bare primary-user (dlang) session: process-break / fewer multi-agent guardrails.
-# Human may explicitly authorize violating normal project process. Not the default agent path.
-# For multi-agent roles use: run-grok-orchestrator, run-grok-master, run-grok-planner, run-grok-coder.
+# Prompt pack: new_agent_prompt + role-primary.md
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"
+COMPOSE="$SCRIPT_DIR/.grok/prompts/compose-session-prompt.sh"
 if [ -f project.config ]; then
   . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(primary_user|GROK_BIN)')
 fi
@@ -23,6 +23,7 @@ fi
 echo "Launching bare Grok as primary user ($PRIMARY_USER) in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
+echo "Prompt pack: new_agent_prompt + .grok/prompts/role-primary.md"
 echo "Mode: process-break allowed — user may authorize violating multi-agent rules."
 [ -n "$ANDROID_SHARED" ] && echo "ANDROID_USER_HOME: $ANDROID_SHARED"
 echo "Tip: Ctrl+M or /multiline for multi-line input."
@@ -37,9 +38,9 @@ for arg in "$@"; do
   fi
 done
 
-# Run as current user if already primary; else sudo -u primary.
-# umask 002 + ANDROID_USER_HOME must apply in the *running* process.
-PROMPT="You are running as the primary developer ($PRIMARY_USER) in a bare Grok session. Normal multi-agent process is optional. You may read AGENTS.md / AGENT_MANDATES.md if useful. The human may explicitly authorize violating those rules in this session. Confirm cwd once with pwd; never prefix helpers with cd … &&. Await the user's directive."
+export GROK_PROMPT_ROOT="$SCRIPT_DIR"
+PROMPT="$("$COMPOSE" new_agent_prompt .grok/prompts/role-primary.md)"
+
 if [ "$(id -un)" = "$PRIMARY_USER" ]; then
   umask 002
   [ -n "$ANDROID_SHARED" ] && export ANDROID_USER_HOME="$ANDROID_SHARED"
@@ -48,7 +49,7 @@ if [ "$(id -un)" = "$PRIMARY_USER" ]; then
     --no-alt-screen \
     "${EXTRA_ARGS[@]}"
 else
-  exec sudo -u "$PRIMARY_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} bash -c 'umask 002; exec "$@"' bash \
+  exec sudo -u "$PRIMARY_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} GROK_PROMPT_ROOT="$SCRIPT_DIR" bash -c 'umask 002; exec "$@"' bash \
     "$GROK_BIN" \
     "$PROMPT" \
     --no-alt-screen \

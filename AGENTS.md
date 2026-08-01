@@ -2,59 +2,81 @@
 
 This file (AGENTS.md) is the entry point for agent CLIs in this multi-agent VehicleExpenses-automated project.
 
-## Immediate Reads (on every start / after /compact)
-1. Read `./AGENT_CONTEXT.md` — identity, branch/role, sandbox. (If missing, use template / git status; orchestration root has its own AGENT_CONTEXT.md.)
-2. Read CLI overlay: `./GROK.md` or `./GEMINI.md`.
-3. Read `./AGENT_MANDATES.md` (shared core).
-4. **If Master** (`run-grok-master` / master worktree): also read **`MASTER_AGENT_MANDATE.md`** fully.
-5. Confirm **`pwd` once** — then never `cd … && ./helper` (breaks allow-lists → approval thrash).
+## Immediate reads (session start / after compact / new cycle)
 
-**Do NOT re-read system configuration files on every turn.**
+**Role pack** (full read — not every message):
+
+1. `./AGENT_CONTEXT.md` — identity, branch/role, sandbox.
+2. CLI overlay: `./GROK.md` or `./GEMINI.md`.
+3. `./AGENT_MANDATES.md` (shared core).
+4. `./project-facts.md` (**full** file — orientation only).
+5. **If Master:** also `MASTER_AGENT_MANDATE.md`.
+6. **If Planner:** `standard-plan-compliance-block.md` (path), `dev-ai-interaction/research/plan-style-guide.md`, designated plan if any.
+7. **If Coder (execute):** `standard-plan-compliance-block.md` + **approved** plan path only.
+8. **Master / orch after handoff:** also `MULTI_AGENT_USER_INSTRUCTIONS.md`.
+9. Confirm **`pwd` once** — never `cd … && ./helper` (breaks allow-lists).
+
+**Do not** re-read the full pack every turn. Critical rules are not optional “on demand if you guess.”
+
+When **spawning** planner/executor roles, load the full file under `.grok/prompts/` (see AGENT_MANDATES).
+
+**Launchers:** `run-grok*` build the session prompt by composing existing files via `.grok/prompts/compose-session-prompt.sh` (e.g. `new_agent_prompt` + `role-coder.md`). Do not re-author law in shell inject strings.
 
 ## Launchers (role → command)
-| Launcher | OS user | Role |
-|----------|---------|------|
-| `./run-grok-orchestrator` | ai-orchestrator | Meta rules / brain (orchestration branch) |
-| `./run-grok-master` | ai-coder | **Execute plan**; PR review/merge |
-| `./run-grok-planner` | ai-planner | Long-lived planning; **owns new cycles** |
-| `./run-grok-coder` | ai-coder | Implement in agent-N |
-| `./run-grok` | dlang | Bare process-break session |
 
-Skills: `/prepare-local-pr`, `/master-merge`. Disabled in project config: `pr-babysit`, `execute-plan`, `design`, `check-work`. `/code-review` only when user explicitly wants ambitious restructure (separate planned turn).
+| Launcher | OS user | Role | Plans? | Implements app? | Native plan mode? |
+|----------|---------|------|--------|-----------------|-------------------|
+| `./run-grok-orchestrator` | ai-orchestrator | Meta rules / brain | Meta | Meta | Optional |
+| `./run-grok-master` | ai-coder | Execute dispatch; PR review/merge | No | Via coder | No |
+| `./run-grok-planner` | ai-planner | Long-lived planning; **owns new cycles** | Yes | **No** | **Avoid** |
+| `./run-grok-coder` | ai-coder | Implement in agent-N | **No** | Yes (approved plan only) | **No** |
+| `./run-grok` | dlang | Bare process-break session | Yes | Yes | Optional |
 
-## Key File Disambiguation
-| File | Purpose | Notes |
-|------|---------|-------|
-| AGENT_CONTEXT.md | Role/branch/geography | Per worktree |
-| AGENT_MANDATES.md | Shared core | Bi-modal, reset, coords, TODO/eng-log, cwd |
-| MASTER_AGENT_MANDATE.md | Master merge/execute | Masters only |
-| GROK.md / GEMINI.md | CLI overlays | Thin |
-| new_agent_prompt | Startup ack + STOP | All |
-| standard-plan-compliance-block.md | Execution gates | **Cite by path; do not paste** |
-| project-facts.md | Orientation map | Discovery candidates; merge prunes |
-| TODO.md | Future backlog | todo-append / todo-close only |
-| ENGINEERING_LOG.md | Current turn | append-to-engineering-log only |
-| ve-env | Human shell umask/groups | `source ./ve-env` |
-| .grok/config.toml + hooks/ | Permissions + skills.disabled | |
-| dev-ai-interaction/ | Sandbox | Absolute path preferred |
-| docs/specs/ | Specs | PERMISSIONS_MODEL, coords |
+## Skills
 
-## Plans Directory Rule
-`dev-ai-interaction/plans/` — current designated plan. Completed → `historical-plans/`. Do not start work from historical or non-designated files unless user names the exact path. Harness session plan.md is process log only. project-facts.md = orientation only (see AGENT_MANDATES).
+| Enabled (project) | Disabled (do not use for app multi-agent) |
+|-------------------|------------------------------------------|
+| `prepare-local-pr`, `master-merge` | `pr-babysit`, `execute-plan`, `design`, `check-work`, **`implement`** |
 
-## Worktree deploy / copy rule (blocks build_app if violated)
-`./build_app` fails on **uncommitted tracked** changes. If you copy tracked files into another worktree (`cp`, hot patch, partial sync), **commit on that branch** (or use `./update-rules.sh`, which commits). Untracked/gitignored binaries (e.g. `ve-refresh-shell`) need no commit. See AGENT_MANDATES "Deploying / copying into another worktree".
+`/code-review` only when user explicitly wants ambitious restructure (separate planned turn).
 
-## Coordinates Policy
+## Key file disambiguation
+
+| File | Purpose |
+|------|---------|
+| AGENT_CONTEXT.md | Role/branch/geography |
+| AGENT_MANDATES.md | Shared core law |
+| `.grok/prompts/*.md` | Full spawn templates |
+| MASTER_AGENT_MANDATE.md | Master merge/execute |
+| GROK.md / GEMINI.md | Thin CLI overlays |
+| new_agent_prompt | Startup ack + STOP |
+| standard-plan-compliance-block.md | Execution gates — **cite path; do not paste** |
+| project-facts.md | Orientation map |
+| TODO.md | Future backlog (`todo-append` / `todo-close`) |
+| ENGINEERING_LOG.md | Activity (`append-to-engineering-log` only) |
+| MULTI_AGENT_USER_INSTRUCTIONS.md | Human magic phrases / rituals |
+| dev-ai-interaction/ | Sandbox (absolute path preferred) |
+
+## Plans
+
+- Designated file under `dev-ai-interaction/plans/` only. Completed → `historical-plans/`.
+- Filenames: `descriptive-kebab-YYYYMMDD-HHMM-plan.md` (**minutes** when stamping).
+- Harness session `plan.md` = process log only — never the approved work plan.
+- Research findings default to **chat**; files only if asked or durable cache (still discuss in chat).
+
+## Worktree deploy / copy
+
+`./build_app` refuses uncommitted **tracked** dirt. Prefer `./update-rules.sh` (cp + commit). Ad-hoc `cp` of tracked files must be followed by commit on that worktree.
+
+## Coordinates
+
 ICRS or raw pixel integers only. Normalized 0.0–1.0 per-axis is obsolete.
 
-## Git Reset Rules
-See AGENT_MANDATES.md — three contexts + `./get-builds-tag.sh` preflight only.
+## Next steps after reading
 
-## Next Steps After Reading
-- Fresh launch: Mandate Acknowledgment from `new_agent_prompt`, then STOP & WAIT.
+- Fresh launch: Mandate Acknowledgment from `new_agent_prompt`, then STOP & WAIT (except pure role already mid-cycle).
 - Implementation only after magic approval naming `dev-ai-interaction/plans/<name>-plan.md`.
 - Planning help = research + better plan file, not source changes/builds.
-- Sandbox writes: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`.
+- Sandbox: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`.
 
 Welcome. Report your role, branch, and mandates understanding now.
