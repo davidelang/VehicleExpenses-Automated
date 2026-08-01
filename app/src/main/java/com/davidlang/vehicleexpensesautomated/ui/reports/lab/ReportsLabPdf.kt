@@ -1,9 +1,5 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
-import com.davidlang.vehicleexpensesautomated.R
-
-import androidx.compose.ui.res.stringResource
-
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -202,7 +198,8 @@ object ReportsLabPdf {
     ): ByteArray {
         val allLines = plainText.lines()
         val meta = mutableListOf(
-            stringResource(R.string.nav_drawer_title),
+            // Export meta stays English product name (share/PDF header; not Compose scope)
+            "Vehicle Expenses",
             "Generated: ${formatGenerated(generatedMs)}",
         )
         // Promote Period: / Vehicle: lines into header when present

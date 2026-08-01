@@ -382,8 +382,10 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         },
     )
 
+    val timeReportsTitle = stringResource(R.string.reports_time_based_reports)
+    val combinedMultiScaleTitle = stringResource(R.string.reports_combined_multi_scale)
     ReportsLabScreenScaffold(
-        title = stringResource(R.string.reports_time_based_reports),
+        title = timeReportsTitle,
         infoText = TIME_CHARTS_INFO,
         filterState = data.filter,
         vehicles = data.vehicles,
@@ -438,7 +440,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     if (chartFamilies.isNotEmpty()) {
                         val combinedBmp = renderMultiFamilyChartBitmap(
                             families = chartFamilies,
-                            title = stringResource(R.string.reports_combined_multi_scale),
+                            title = combinedMultiScaleTitle,
                         )
                         sections += ReportsLabPdf.PdfSection(
                             heading = "Combined chart",
@@ -487,7 +489,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                         }
                     }
                     ReportsLabPdf.buildTextReportPdf(
-                        title = stringResource(R.string.reports_time_based_reports),
+                        title = timeReportsTitle,
                         metaLines = listOf(
                             "Period: ${periodLabel(data.filter)}",
                             "Vehicle: ${data.filterVehicleLabel()}",

@@ -391,9 +391,8 @@ private fun buildCsvShare(
             "total_by_type,${ReportsLabShare.csvEscape(t)},$m,$unit",
         )
     }
-    sb.appendLine(
-        stringResource(R.string.reports_segment_header_date_vehicle_type_status_miles_st),
-    )
+    // Share CSV column header (English export schema)
+    sb.appendLine("segment,date,vehicle,type,status,miles,start_odo,end_odo")
     listSegs.forEach { seg ->
         val status = when {
             seg.isOpen -> "open"

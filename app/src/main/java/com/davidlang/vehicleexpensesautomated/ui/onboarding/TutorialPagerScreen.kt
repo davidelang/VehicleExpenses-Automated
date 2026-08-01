@@ -44,7 +44,8 @@ fun TutorialPagerScreen(
     navController: NavHostController,
     tutorialId: String,
 ) {
-    val tutorial = TutorialCatalog.get(tutorialId)
+    val context = LocalContext.current
+    val tutorial = remember(tutorialId, context) { TutorialCatalog.get(context, tutorialId) }
     if (tutorial == null) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             Text(stringResource(R.string.onboarding_tutorial_not_found))
@@ -54,7 +55,6 @@ fun TutorialPagerScreen(
     }
     val pagerState = rememberPagerState(pageCount = { tutorial.steps.size })
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     Column(
         modifier = Modifier

@@ -33,16 +33,33 @@ import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 
 private data class CatalogEntry(val title: String, val route: String, val blurb: String)
 
-private val CATALOG = listOf(
+@Composable
+private fun reportsLabCatalog(): List<CatalogEntry> = listOf(
     CatalogEntry(
         stringResource(R.string.reports_time_based_reports),
         "reports_lab/time",
-        "mpg, G/mi, \$/G, \$/mi, monthly \$, trip miles/% · one chart · smooth bins",
+        stringResource(R.string.reports_hub_time_blurb),
     ),
-    CatalogEntry("Expenses by category", "reports_lab/expenses", "Category totals and list"),
-    CatalogEntry("Expenses list", "expenselist", "All expenses — tap to edit"),
-    CatalogEntry("Fill history", "reports_lab/fills", "Chronological fills only (no trip starts)"),
-    CatalogEntry("Vehicle summary", "reports_lab/vehicle_summary", "Shareable history pack"),
+    CatalogEntry(
+        stringResource(R.string.reports_expenses_by_category),
+        "reports_lab/expenses",
+        stringResource(R.string.reports_hub_expenses_blurb),
+    ),
+    CatalogEntry(
+        stringResource(R.string.nav_expense_list),
+        "expenselist",
+        stringResource(R.string.reports_hub_expense_list_blurb),
+    ),
+    CatalogEntry(
+        stringResource(R.string.reports_fill_history),
+        "reports_lab/fills",
+        stringResource(R.string.reports_hub_fills_blurb),
+    ),
+    CatalogEntry(
+        stringResource(R.string.reports_vehicle_summary),
+        "reports_lab/vehicle_summary",
+        stringResource(R.string.reports_hub_vehicle_summary_blurb),
+    ),
     CatalogEntry(
         stringResource(R.string.reports_trip_miles),
         "reports_lab/trips",
@@ -138,7 +155,7 @@ fun ReportsLabHubScreen(navController: NavHostController) {
         }
 
         Text(stringResource(R.string.reports_report_sets), style = MaterialTheme.typography.titleMedium)
-        AdaptiveItemGrid(items = CATALOG) { entry ->
+        AdaptiveItemGrid(items = reportsLabCatalog()) { entry ->
             TappableCard(onClick = { navController.navigate(entry.route) }) {
                 Text(entry.title, style = MaterialTheme.typography.titleMedium, softWrap = true, maxLines = 2)
                 Text(entry.blurb, style = MaterialTheme.typography.bodySmall, softWrap = true, maxLines = 3)

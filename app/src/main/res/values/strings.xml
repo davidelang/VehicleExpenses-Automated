@@ -445,4 +445,36 @@
     <string name="nav_database_upgrade_failed_restart_the_app">Database upgrade failed — restart the app</string>
     <string name="nav_photos_permission_denied_fuel_photo_saving_to_ca">Photos permission denied. Fuel photo saving to Camera roll may fail until Photos access is granted in system Settings.</string>
     <string name="nav_location_denied_fills_save_without_gps">Location denied — fills save without GPS</string>
+
+    <!-- Tutorials (shared images; localized text) -->
+    <string name="tutorial_add_vehicle_title">Add a vehicle</string>
+    <string name="tutorial_add_vehicle_cta">Go to Manage Vehicles</string>
+    <string name="tutorial_add_vehicle_step1_title">Open Manage Vehicles</string>
+    <string name="tutorial_add_vehicle_step1_body">From the menu (☰), choose Manage Vehicles. This is where you create dashboards the app can recognize later.</string>
+    <string name="tutorial_add_vehicle_step2_title">Add New Vehicle</string>
+    <string name="tutorial_add_vehicle_step2_body">Open the vehicle dropdown and pick Add New Vehicle. You are setting up this phone as stand-alone / first vehicle (or an additional vehicle).</string>
+    <string name="tutorial_add_vehicle_step3_title">Dashboard photo</string>
+    <string name="tutorial_add_vehicle_step3_body">Take or pick a clear photo of the instrument cluster. Good lighting and a square-on view of the odometer help discovery.</string>
+    <string name="tutorial_add_vehicle_step4_title">Odo Crop &amp; Run Discovery</string>
+    <string name="tutorial_add_vehicle_step4_body">Draw Odo Crop around the odometer digits (optional Ignore Crop for clutter). Tap Run Discovery and review landmarks. Edit OCR text if something was missed.</string>
+    <string name="tutorial_add_vehicle_step5_title">Name and Create</string>
+    <string name="tutorial_add_vehicle_step5_body">Enter a Vehicle Name, then Create Vehicle. After at least one user vehicle exists, the first-run splash will not appear again.</string>
+    <string name="tutorial_setup_sync_title">Connect existing setup</string>
+    <string name="tutorial_setup_sync_cta">Go to Syncing</string>
+    <string name="tutorial_setup_sync_step1_title">You already have a cluster</string>
+    <string name="tutorial_setup_sync_step1_body">This path is for a **new phone or tablet** joining an **existing** Vehicle Expenses setup. Another device already has vehicles, a **shared spreadsheet**, and usually a **shared photo folder**. You use **your** Google / Microsoft / other account — not an app-hosted cloud. Stand-alone first setup (no other device yet) is **Add a vehicle**, not this tutorial.</string>
+    <string name="tutorial_setup_sync_step2_title">Open Syncing on this device</string>
+    <string name="tutorial_setup_sync_step2_body">From the menu (☰), open **Syncing**. You will add destinations that point at the **same** sheet and photo folder the other device already uses — not brand-new empty ones.</string>
+    <string name="tutorial_setup_sync_step3_title">Spreadsheet: open the existing shared file</string>
+    <string name="tutorial_setup_sync_step3_body">Add a spreadsheet destination → pick the same provider as the other device (often Google Sheets) → sign in. Paste the **existing sheet URL** from the other phone (or Drive **browse to that file**). Test connection, then **Sync now** to pull vehicles and rows. **Do not Create** a new blank spreadsheet for this path (if the UI still offers Create, skip it).</string>
+    <string name="tutorial_setup_sync_step4_title">Photos: same existing folder</string>
+    <string name="tutorial_setup_sync_step4_body">Add a photo destination → same provider as the other device → sign in. Choose the **same photo folder** already used by the cluster (URL or browse). Test connection → Sync now. Vehicle reference images can download automatically; fill/receipt photos are on-demand via Fetch from archive. **Do not create a new empty folder** for this path.</string>
+    <string name="tutorial_setup_sync_step5_title">After the first Sync now</string>
+    <string name="tutorial_setup_sync_step5_body">Vehicles and data should appear from the shared sheet. Only then, if a vehicle is missing a local dash photo, open Manage Vehicles and capture or fetch the reference image. You do not need to re-type the whole fleet from scratch.</string>
+    <string name="reports_hub_time_blurb">mpg, G/mi, $/G, $/mi, monthly $, trip miles/% · one chart · smooth bins</string>
+    <string name="reports_hub_expenses_blurb">Category totals and list</string>
+    <string name="reports_hub_expense_list_blurb">All expenses — tap to edit</string>
+    <string name="reports_hub_fills_blurb">Chronological fills only (no trip starts)</string>
+    <string name="reports_hub_vehicle_summary_blurb">Shareable history pack</string>
+
 </resources>

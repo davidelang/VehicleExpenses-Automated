@@ -137,7 +137,7 @@ class MainActivity : ComponentActivity() {
         if (!isGranted) {
             Toast.makeText(
                 this,
-                stringResource(R.string.nav_photos_permission_denied_fuel_photo_saving_to_ca),
+                getString(R.string.nav_photos_permission_denied_fuel_photo_saving_to_ca),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -152,7 +152,7 @@ class MainActivity : ComponentActivity() {
         if (!anyGranted) {
             Toast.makeText(
                 this,
-                stringResource(R.string.nav_location_denied_fills_save_without_gps),
+                getString(R.string.nav_location_denied_fills_save_without_gps),
                 Toast.LENGTH_LONG
             ).show()
         }

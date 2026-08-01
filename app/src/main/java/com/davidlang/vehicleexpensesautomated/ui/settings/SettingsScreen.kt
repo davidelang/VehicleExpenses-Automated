@@ -330,19 +330,19 @@ fun SettingsScreen(navController: NavHostController) {
         )
         Spacer(modifier = Modifier.height(12.dp))
 
-        SwitchSetting(stringResource(R.string.settings_save_fuel_fill_photos_locally) saveFuelPhotos) { enabled ->
+        SwitchSetting(stringResource(R.string.settings_save_fuel_fill_photos_locally), saveFuelPhotos) { enabled ->
             saveFuelPhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
             }
         }
-        SwitchSetting(stringResource(R.string.settings_save_expense_photos_locally) saveExpensePhotos) { enabled ->
+        SwitchSetting(stringResource(R.string.settings_save_expense_photos_locally), saveExpensePhotos) { enabled ->
             saveExpensePhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
             }
         }
-        SwitchSetting(stringResource(R.string.settings_play_shutter_sound) shutterSounds) { shutterSounds = it }
+        SwitchSetting(stringResource(R.string.settings_play_shutter_sound), shutterSounds) { shutterSounds = it }
         // Order: title · Info · count/max · Delete · Send · toggle
         // Wide: one line. Narrow: line1 title·Info·toggle; line2 count·Delete·Send end-aligned.
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -476,7 +476,7 @@ fun SettingsScreen(navController: NavHostController) {
         ) {
             Text(stringResource(R.string.settings_show_first_run_welcome))
         }
-        SwitchSetting(stringResource(R.string.settings_show_experiment_screens_dev) showExperimentScreens) { showExperimentScreens = it }
+        SwitchSetting(stringResource(R.string.settings_show_experiment_screens_dev), showExperimentScreens) { showExperimentScreens = it }
         if (showExperimentScreens) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(stringResource(R.string.settings_pump_ocr_advanced), style = MaterialTheme.typography.titleSmall)
