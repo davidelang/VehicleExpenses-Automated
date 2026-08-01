@@ -15,8 +15,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,8 +36,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,9 +49,9 @@ import android.content.SharedPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -64,11 +68,17 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
+import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
+import com.davidlang.vehicleexpensesautomated.ui.onboarding.OnboardingSplashScreen
+import com.davidlang.vehicleexpensesautomated.ui.onboarding.TutorialPagerScreen
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdBackfill
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
 import com.davidlang.vehicleexpensesautomated.ui.about.AboutScreen
+import com.davidlang.vehicleexpensesautomated.ui.components.LocalPageHelpController
+import com.davidlang.vehicleexpensesautomated.ui.components.PageHelpTopBarAction
+import com.davidlang.vehicleexpensesautomated.ui.components.rememberPageHelpController
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryMode
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseEntryScreen
 import com.davidlang.vehicleexpensesautomated.ui.expenses.ExpenseListScreen
@@ -77,16 +87,14 @@ import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentPumpScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.QuickFillupScreen
 import com.davidlang.vehicleexpensesautomated.ui.help.HelpScreen
 import com.davidlang.vehicleexpensesautomated.ui.import.ImportOldPicturesScreen
-import com.davidlang.vehicleexpensesautomated.ui.reports.ReportsScreen
+
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelEditScreen
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelHistoryScreen
 import com.davidlang.vehicleexpensesautomated.ui.trip.TripTrackingScreen
-import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabCostTrendsScreen
-import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabEfficiencyScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabExpenseCategoriesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabFillHistoryScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabHubScreen
-import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabMonthlyCostsScreen
+import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabTimeChartsScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabTripMilesScreen
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.ReportsLabVehicleSummaryScreen
 import com.davidlang.vehicleexpensesautomated.ui.settings.PhotoBackupScreen
@@ -130,6 +138,21 @@ class MainActivity : ComponentActivity() {
                 Toast.LENGTH_LONG
             ).show()
         }
+        // After media dialog settles → location (no stacked dialogs).
+        maybeRequestLocationPermission()
+    }
+
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        val anyGranted = results.values.any { it }
+        if (!anyGranted) {
+            Toast.makeText(
+                this,
+                "Location denied — fills save without GPS",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -153,18 +176,41 @@ class MainActivity : ComponentActivity() {
     private fun maybeRequestMediaPermissionForFuelPhotos() {
         val prefs = getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE)
         val saveFuelPhotos = prefs.getBoolean("save_fuel_photos", true)
-        if (!saveFuelPhotos) return
+        if (!saveFuelPhotos) {
+            maybeRequestLocationPermission()
+            return
+        }
         val permission = mediaImagesPermission()
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+            maybeRequestLocationPermission()
             return
         }
         mediaPermissionLauncher.launch(permission)
     }
 
+    /** One-shot FINE+COARSE after camera/media chain; soft deny toast only. */
+    private fun maybeRequestLocationPermission() {
+        val fine = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (fine || coarse) return
+        locationPermissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+            )
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Camera only here — media follows in cameraPermissionLauncher callback (no stacked dialogs).
+        // Camera only here — media then location follow in callbacks (no stacked dialogs).
         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
 
         setContent {
@@ -256,21 +302,39 @@ class MainActivity : ComponentActivity() {
                     onDispose { experimentPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
                 }
 
+                val pageHelpController = rememberPageHelpController()
+
+                // First-run splash when no user vehicles (S1/S4/S5)
+                val allVehicles by vehicleRepository.getAllVehicles()
+                    .collectAsState(initial = emptyList())
+                val userVehiclesEmpty = remember(allVehicles) {
+                    allVehicles.forUserPicker().isEmpty()
+                }
+
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
+                LaunchedEffect(backfillComplete, userVehiclesEmpty, currentRoute) {
+                    if (!backfillComplete) return@LaunchedEffect
+                    if (!userVehiclesEmpty) return@LaunchedEffect
+                    // Only auto-open splash from home so we don't interrupt tutorials mid-flow.
+                    if (currentRoute == "quickfill" || currentRoute == null) {
+                        navController.navigate("onboarding") {
+                            launchSingleTop = true
+                        }
+                    }
+                }
                 val title = when {
                     currentRoute == "quickfill" -> "Quick Fill-up"
-                    currentRoute == "triptracking" -> "Trip Tracking"
+                    currentRoute == "triptracking" -> "Start trip"
                     currentRoute == "managevehicles" -> "Manage Vehicles"
-                    currentRoute == "expense" -> "New Expense Entry"
-                    currentRoute?.startsWith("expense/") == true -> "Edit Expense"
-                    currentRoute == "expenselist" -> "Expense List"
+                    currentRoute == "expense" -> "New expense"
+                    currentRoute?.startsWith("expense/") == true -> "Edit expense"
+                    currentRoute == "expenselist" -> "Expense list"
                     currentRoute == "import" ||
                         currentRoute?.startsWith("import") == true -> "Import Old Pictures"
-                    currentRoute == "reports" -> "Reports & Charts"
                     currentRoute == "reports_lab" ||
-                        currentRoute?.startsWith("reports_lab/") == true -> "Reports Lab"
+                        currentRoute?.startsWith("reports_lab/") == true -> "Reports"
                     currentRoute == "fuelhistory" -> "Fuel History"
                     currentRoute?.startsWith("fuel/") == true -> "Edit Fill"
                     currentRoute == "settings" -> "Settings"
@@ -279,11 +343,14 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "settings/photo_backup" -> "Photo Backup"
                     currentRoute == "help" -> "Help"
                     currentRoute == "about" -> "About"
+                    currentRoute == "onboarding" -> "Welcome"
+                    currentRoute?.startsWith("tutorial/") == true -> "Setup tips"
                     currentRoute == "experiment" -> "Alignment Experiment"
                     currentRoute == "experiment_pump" -> "Gas Pump Extraction Experiment"
                     else -> "Vehicle Expenses"
                 }
 
+                CompositionLocalProvider(LocalPageHelpController provides pageHelpController) {
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     drawerContent = {
@@ -298,7 +365,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Trip Tracking") },
+                                label = { Text("Start trip") },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("triptracking")
@@ -314,7 +381,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("New Expense Entry") },
+                                label = { Text("New expense") },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("expense")
@@ -322,42 +389,10 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             NavigationDrawerItem(
-                                label = { Text("Expense List") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("expenselist")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Import Old Pictures") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("import")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Reports & Charts") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("reports")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Reports Lab") },
+                                label = { Text("Reports") },
                                 selected = false,
                                 onClick = {
                                     navController.navigate("reports_lab")
-                                    scope.launch { drawerState.close() }
-                                }
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Fuel History") },
-                                selected = false,
-                                onClick = {
-                                    navController.navigate("fuelhistory")
                                     scope.launch { drawerState.close() }
                                 }
                             )
@@ -410,23 +445,41 @@ class MainActivity : ComponentActivity() {
                                         scope.launch { drawerState.close() }
                                     }
                                 )
+                                // Import is experiment-gated in drawer; top-bar ?N review still routes to import.
+                                NavigationDrawerItem(
+                                    label = { Text("Import Old Pictures") },
+                                    selected = false,
+                                    onClick = {
+                                        navController.navigate("import")
+                                        scope.launch { drawerState.close() }
+                                    }
+                                )
                             }
                         }
                     }
                 ) {
                     Scaffold(
                         topBar = {
+                            // Narrow phones (~448dp on 5556): short title so Info stays visible with ?N + !.
+                            val screenWidthDp = LocalConfiguration.current.screenWidthDp
+                            val narrowTitle = screenWidthDp < 600
+                            val titleText = when {
+                                title == "Vehicle Expenses" -> title
+                                narrowTitle -> title
+                                else -> "Vehicle Expenses - $title"
+                            }
                             TopAppBar(
                                 title = {
                                     Text(
-                                        if (title == "Vehicle Expenses") title else "Vehicle Expenses - $title",
-                                        maxLines = 2,
+                                        titleText,
+                                        maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        softWrap = true,
+                                        softWrap = false,
                                     )
                                 },
                                 actions = {
-                                    // Order: review questions (yellow), then sync failure (red)
+                                    // Priority if tight: drawer/back + Info (leading) already placed;
+                                    // trailing badges only: ?N then !
                                     if (pendingReviewCount > 0) {
                                         IconButton(
                                             onClick = {
@@ -463,24 +516,39 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 navigationIcon = {
-                                    val isSettingsSubRoute = currentRoute == "settings/spreadsheet_sync" ||
-                                        currentRoute == "settings/photo_backup" ||
-                                        currentRoute?.startsWith("fuel/") == true ||
-                                        currentRoute?.startsWith("reports_lab/") == true
-                                    if (isSettingsSubRoute) {
-                                        IconButton(
-                                            onClick = { navController.popBackStack() },
-                                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                                        ) {
-                                            Text("←")
+                                    // Leading: ☰ then ← then Info (reports children get both; hub ☰ only).
+                                    val isReportsChild =
+                                        currentRoute?.startsWith("reports_lab/") == true ||
+                                            currentRoute == "expenselist"
+                                    val isSettingsOrFuelSub =
+                                        currentRoute == "settings/spreadsheet_sync" ||
+                                            currentRoute == "settings/photo_backup" ||
+                                            currentRoute?.startsWith("fuel/") == true
+                                    // Settings/fuel keep ←-only; report children + everything else show drawer.
+                                    val showMenu = !isSettingsOrFuelSub
+                                    val showBack = isSettingsOrFuelSub || isReportsChild
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (showMenu) {
+                                            IconButton(
+                                                onClick = { scope.launch { drawerState.open() } },
+                                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                            ) {
+                                                Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                            }
                                         }
-                                    } else {
-                                        IconButton(
-                                            onClick = { scope.launch { drawerState.open() } },
-                                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
-                                        ) {
-                                            Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                        if (showBack) {
+                                            IconButton(
+                                                onClick = {
+                                                    if (!navController.popBackStack() && isReportsChild) {
+                                                        navController.navigate("reports_lab")
+                                                    }
+                                                },
+                                                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                            ) {
+                                                Text("←")
+                                            }
                                         }
+                                        PageHelpTopBarAction(pageHelpController)
                                     }
                                 }
                             )
@@ -524,17 +592,21 @@ class MainActivity : ComponentActivity() {
                                         expandReview = expandReview,
                                     )
                                 }
-                                composable("reports") { ReportsScreen(navController = navController) }
+
                                 composable("triptracking") { TripTrackingScreen(navController = navController) }
                                 composable("reports_lab") { ReportsLabHubScreen(navController = navController) }
+                                composable("reports_lab/time") {
+                                    ReportsLabTimeChartsScreen(navController = navController)
+                                }
+                                // Legacy deep links → unified time charts (R1.2)
                                 composable("reports_lab/efficiency") {
-                                    ReportsLabEfficiencyScreen(navController = navController)
+                                    ReportsLabTimeChartsScreen(navController = navController)
                                 }
                                 composable("reports_lab/cost_trends") {
-                                    ReportsLabCostTrendsScreen(navController = navController)
+                                    ReportsLabTimeChartsScreen(navController = navController)
                                 }
                                 composable("reports_lab/monthly") {
-                                    ReportsLabMonthlyCostsScreen(navController = navController)
+                                    ReportsLabTimeChartsScreen(navController = navController)
                                 }
                                 composable("reports_lab/expenses") {
                                     ReportsLabExpenseCategoriesScreen(navController = navController)
@@ -563,7 +635,19 @@ class MainActivity : ComponentActivity() {
                                 composable("settings/photo_backup") {
                                     PhotoBackupScreen(navController = navController)
                                 }
-                                composable("help") { HelpScreen() }
+                                composable("onboarding") {
+                                    OnboardingSplashScreen(navController = navController)
+                                }
+                                composable(
+                                    route = "tutorial/{tutorialId}",
+                                    arguments = listOf(
+                                        navArgument("tutorialId") { type = NavType.StringType },
+                                    ),
+                                ) { entry ->
+                                    val id = entry.arguments?.getString("tutorialId").orEmpty()
+                                    TutorialPagerScreen(navController = navController, tutorialId = id)
+                                }
+                                composable("help") { HelpScreen(navController = navController) }
                                 composable("about") { AboutScreen() }
                                 composable("experiment") { ExperimentAlignmentScreen(navController = navController) }
                                 composable("experiment_pump") { ExperimentPumpScreen(navController = navController) }
@@ -571,6 +655,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                } // CompositionLocalProvider (PageHelp)
             }
         }
     }
