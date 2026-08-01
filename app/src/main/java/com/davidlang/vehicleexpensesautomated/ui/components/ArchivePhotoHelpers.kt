@@ -6,23 +6,42 @@ import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.sync.CloudManifest
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 
-/** True when any cloud fuel role has a file id for [destId] (or Drive fallback). */
+/**
+ * True when any configured photo dest has a fuel role with a file id in the manifest
+ * (multi-dest / any fuel_* role). [destId] is optional preferred identity only.
+ */
 fun fuelHasArchiveIdentity(fuel: FuelEntry?, destId: String?): Boolean {
-    if (fuel == null || destId.isNullOrBlank()) return false
+    if (fuel == null) return false
     val m = fuel.cloudManifest
+    // Any dest: fuel role with non-blank fileId (F1.1 multi-dest).
+    if (CloudManifest.parse(m).any {
+            (it.role == CloudManifest.ROLE_FUEL_DASH ||
+                it.role == CloudManifest.ROLE_FUEL_PUMP ||
+                it.role.startsWith("fuel_")) &&
+                it.fileId.isNotBlank()
+        }
+    ) {
+        return true
+    }
+    if (destId.isNullOrBlank()) return false
     return CloudManifest.hasRole(m, destId, CloudManifest.ROLE_FUEL_DASH) ||
-        CloudManifest.hasRole(m, destId, CloudManifest.ROLE_FUEL_PUMP) ||
-        CloudManifest.parse(m).any { it.role.startsWith("fuel_") && it.fileId.isNotBlank() }
+        CloudManifest.hasRole(m, destId, CloudManifest.ROLE_FUEL_PUMP)
 }
 
+/** True when any expense receipt role has a cloud file id (any dest). */
 fun expenseHasArchiveIdentity(expense: ExpenseEntry?, destId: String?): Boolean {
-    if (expense == null || destId.isNullOrBlank()) return false
+    if (expense == null) return false
     val m = expense.cloudManifest
-    return CloudManifest.hasRole(m, destId, CloudManifest.ROLE_EXPENSE_RECEIPT) ||
-        CloudManifest.parse(m).any {
-            it.role == CloudManifest.ROLE_EXPENSE_RECEIPT ||
-                it.role.startsWith("${CloudManifest.ROLE_EXPENSE_RECEIPT}_")
+    if (CloudManifest.parse(m).any {
+            (it.role == CloudManifest.ROLE_EXPENSE_RECEIPT ||
+                it.role.startsWith("${CloudManifest.ROLE_EXPENSE_RECEIPT}_")) &&
+                it.fileId.isNotBlank()
         }
+    ) {
+        return true
+    }
+    if (destId.isNullOrBlank()) return false
+    return CloudManifest.hasRole(m, destId, CloudManifest.ROLE_EXPENSE_RECEIPT)
 }
 
 /** First readable local fuel photo uri, or null. */
