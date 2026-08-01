@@ -4,12 +4,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import androidx.security.crypto.MasterKeys
 
 /**
  * Stores IMAP password / app-password only. Never log values.
  * Falls back to plain private prefs if encrypted prefs cannot be created
- * (still MODE_PRIVATE; not ideal but fail-soft for sideload).
+ * (still MODE_PRIVATE; fail-soft for sideload).
  */
 class ImapSecretStore(context: Context) {
     private val appContext = context.applicationContext
@@ -30,13 +30,11 @@ class ImapSecretStore(context: Context) {
 
         private fun createPrefs(context: Context): SharedPreferences {
             return try {
-                val masterKey = MasterKey.Builder(context)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build()
+                val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
                 EncryptedSharedPreferences.create(
-                    context,
                     FILE,
-                    masterKey,
+                    masterKeyAlias,
+                    context,
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
                 )
