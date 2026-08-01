@@ -970,6 +970,1312 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - build_app OK → master commit 194123c7; builds tag updated
 - No works tag. Cleanup: ./remove_worktree.sh simplify_experiments from repo root when ready
 
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726
+
+- Execution start for approved plan: reports-field-conditional-economy-chains-20260726-plan.md
+- Branch: batch_load; no prior batch_load/builds tag (first successful ./build_app will create it)
+- Scope: ReportsScreen.kt field-conditional MPG/$/mi chains + REPORTS_METRICS.md; phase 5 emulator probe after user deploy
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726 phases 1-4 done
+
+- Phases 1-4 implemented and built on batch_load
+- ReportsScreen.kt: full fill = odo+cost+vol+!partial; MPG breakers; $/mi segment sum
+- docs/reference/REPORTS_METRICS.md rewritten to match
+- Tag: batch_load/builds @ 3d29b986 (batch_load-start-4-g3d29b986)
+- Phase 5 blocked on user APK deploy to emulator-5554 (device currently has versionName=instruction-start-8-g7d8aa877, not batch_load build)
+
+## 2026-07-26 - reports-field-conditional-economy-chains phase 5 probe PASS
+
+- Backup: test-data-backups/emulator-5554-20260726-095208
+- App on emulator-5554: batch_load-start-5-ge76bbc73
+- Probe cases odo_only / blank / cost_only / volume_only on Honda between full fills 2→3
+- UI Honda: baseline last 15.8 avg 17.0 $/mi 0.259; odo_only same; blank avg 15.8 $/mi 0.260; cost_only avg 15.8 $/mi 0.276; volume_only avg 14.5 $/mi 0.260
+- Evidence: dev-ai-interaction/research/reports-chain-probe-20260726/
+- DB restored from pre-probe backup; no leftover PROBE rows
+
+## 2026-07-26 - reports-field-conditional-economy-chains PR prepared
+
+- Pre-submit review PASS vs plan; device probe PASS; DB restored
+- Local PR: dev-ai-interaction/PRs/PR-batch_load.md
+- Tag: batch_load/builds @ 1de13e02; backup-batch_load set
+- Ready for Master independent review + merge
+
+## 2026-07-26 - batch-load-ingest-merge-questions-20260726
+
+- Execution start: Stage A (batch ingest) per approved plan batch-load-ingest-merge-questions-20260726-plan.md
+- Baseline tag: batch_load/builds @ a02dc9bc; Stages B–C deferred to later turn if A fills the turn
+
+## 2026-07-26 - batch-load Stage A complete (ingest)
+
+- Plan: batch-load-ingest-merge-questions-20260726-plan.md Stage A only
+- Added: PhotoExifMeta, FuelPhotoJson, BatchImportPending, BatchFuelImportCoordinator, hardDeleteFuelEntry
+- Set I hybrid in PumpCostVolUtils.runSetICostVolExtraction + OcrHarness.runPumpCostVolPipelineSetI
+- Import Old Pictures UI: Run batch import / Cancel / Review questions (list-only)
+- Hilt ViewModel in ui.batch (not ui.import — Java keyword breaks KSP)
+- Builds tag: batch_load/builds @ 6efd2743
+- Stages B (merge) and C (apply answers) remain on same plan path — not in this turn
+
+## 2026-07-26 - batch-dash-match-experiment-set-j-20260726
+
+- Execution start: unify Set J (experiment + batch + Quick Fill) per plan
+- Baseline: batch_load/builds @ 99d1043c
+
+## 2026-07-26 - batch-setj approach: copy experiment logic into production
+
+- User direction: do NOT extract shared dual-call API; copy experiment Set J into production
+- Experiment remains free to tinker (future compile-out); production batch/Quick Fill own a frozen copy
+- Continue plan batch-dash-match-experiment-set-j-20260726-plan.md with this approach
+
+## 2026-07-26 - batch-dash-match-experiment-set-j production copy done
+
+- OcrHarness.runSetJPipeline rewritten as independent copy of experiment Set J (Raw+Bin-Trials+connectSegmentsH+pickBestOdometer)
+- ExperimentAlignmentScreen NOT shared — free to tinker
+- Batch parseSetJOdometer: 4-7 pure digits only (no concat soup)
+- Tag: batch_load/builds @ 38186950
+- Device parity CSV pending user deploy + re-import after purging old batch dash rows
+- Notes: dev-ai-interaction/research/batch-setj-parity-20260726/NOTES.md
+
+## 2026-07-26 - production-setj-ref-geometry-parity-20260726
+
+- Execution start: fix production Set J ref geometry (probe/4080, ICRS crop, Raw nestFilter)
+- Baseline: batch_load/builds @ d51f30d9
+
+## 2026-07-26 - production-setj-ref-geometry-parity done
+
+- Probed ref dims for landmarks+align; fallback 4080×3072
+- ICRS Float createCrop for odo window; Raw no nestFilter
+- Experiment screen untouched (independent copy)
+- Tag: batch_load/builds @ de113410
+- Device compare pending user deploy; notes in research/setj-geometry-parity-20260726/
+
+## 2026-07-26 - batch import limited button (first 20+20)
+
+- Import UI: OutlinedButton "First 20 dash + first 20 pump" (name-sorted take)
+- BatchFuelImportCoordinator.runIngest(maxDash, maxPump); LIMITED_IMPORT_COUNT=20
+
+## 2026-07-26 - batch pump ingest without vehicle
+
+- processPump always runs Set I; inserts with UNASSIGNED_VEHICLE_ID=0
+- No ASSIGN_VEHICLE gate; merge later assigns vehicle via time/location pairing
+- Unreadable pumps still pending only
+
+## 2026-07-26 - batch-setj-reverify-and-pending-answers-20260726
+
+- Execution start; device versionName=batch_load-start-21-gf43bb991 (geometry + unassigned pump)
+- Part A first-20 re-verify then Part B clickable pending answers
+
+## 2026-07-26 - batch-setj-reverify + pending answers
+
+- Part A first-20 re-verify on f43bb991: 17 dash inserts + 20 pump vehicleId=0
+- first20 score: see research/batch-setj-parity-20260726/first20-after-geometry.txt (gate FAIL — residual leading-digit/blank DIFFs)
+- Part B: clickable pending UI + forcedVehicleId dash reprocess + skip/retry pump (build 06707a0a)
+- Experiment untouched; deploy needed for Part B on device
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti
+
+- Execution start: batch must run experiment Set J / Set I pipelines, not OcrHarness reinvented front-end
+- Baseline tag: batch_load/builds @ c112e80e
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti done (code)
+
+- AlignmentSetJRunner: experiment Set A ID lock + Set J runPaddleValleyIterative for batch dash
+- PumpSetIRunner: experiment-equivalent Set I for batch pump
+- BatchFuelImportCoordinator no longer uses runAutoFillPipeline / runPumpCostVolPipelineSetI
+- Tag: batch_load/builds @ 7653d156
+- Device parity first-20 still needs deploy of this APK + re-run (prior c112e80e re-verify failed)
+
+## 2026-07-27 - Batch Stage A full-run parity PASS; Stage B plan ready
+
+- Full batch finished (~02:35 PDT); app idle after last pump `PXL_20260411_201506380.jpg`.
+- Selective purge: deleted 74 old `batch_import%` rows (`updatedAt < 1785142500000`); kept 12 non-batch + 290 this-run (ids 219–508); pending cleaned to 6 this-run items.
+- Parity vs experiment: dash Set J 142 OK / 0 DIFF (4 no-vehicle pending); pump Set I 148 OK / 0 DIFF (2 unreadable both sides). Report: `dev-ai-interaction/research/batch-run-parity-20260727/`.
+- Next coder plan: `dev-ai-interaction/plans/batch-stage-b-merge-engine-coder-20260727-plan.md` (merge engine + Run merge). Durable B+C: `batch-stage-b-merge-and-stage-c-questions-20260727-plan.md`.
+
+## 2026-07-27 - batch-stage-b-merge-engine
+
+- Execution start: Stage B merge engine per batch-stage-b-merge-engine-coder-20260727-plan.md
+- Stage A parity PASS; baseline tag 83e36ca0
+
+## 2026-07-27 - batch-stage-b-merge-engine B1–B4 code
+
+- B1: FuelPhotoJson.unionPhotos / addPumpPhoto / addDashPhoto
+- B2: FuelRowMergeEngine.planMerge (vehicle clusters ±45m, vehicleId=0 pump pair, sequence vs re-shot, CONFLICT_ODO + photo paths, hard-delete list)
+- B3: BatchFuelImportCoordinator.applyMerge + Import **Run merge** button
+- B4: Merge after import checkbox default **off**
+- Fixtures notes: dev-ai-interaction/research/batch-stage-b-merge-fixtures-20260727.md
+- Tag: batch_load/builds @ 13d7c06b
+- Device Run merge still to verify after deploy
+
+## 2026-07-27 - batch-stage-b-merge-engine device Run merge
+
+- Deploy: adb install -r (./deploy re-exec loop as ai-coder; used direct install)
+- Pre: 302 rows, v0=148, fulls=6, odo_only=140, pump_only=154
+- applyMerge: updated=133 deleted=129 pending+=2 → tag code 13d7c06b
+- Post: 173 rows, v0=14, fulls=130, odo_only=16, pump_only=25
+- Non-batch: 9 kept (absorbed re-shot ids 6–8 same $18.40); full non-batch fills preserved
+- CONFLICT_ODO pending: 9594 vs 9698; 198699 vs 98699 (photo paths attached)
+- Summary: dev-ai-interaction/research/batch-stage-b-merge-20260727/merge-run-summary.txt
+- Stage C deferred (image-first questions, assign→re-merge UI)
+
+## 2026-07-27 - batch-stage-c-image-questions
+
+- Execution start: Stage C image-first pending questions per batch-stage-c-image-questions-coder-20260727-plan.md
+- Stage B done on device; tip batch_load/builds @ 0c93922c
+
+## 2026-07-27 - batch-stage-c-image-questions done
+
+- C1: pendingPhotoUris + image thumbs/zoom; DNG placeholder; filename secondary only
+- C2: CONFLICT_ODO Keep odo / Keep both; pure wrong-odo hard-delete; pump data odo zeroed
+- C3: successful answers auto applyMerge; skip does not re-merge
+- Device: Keep odo 9594 → pending 8→7 + remerge updated=16 deleted=1; Skip → pending 6
+- Tag: batch_load/builds @ f360ce24
+- Notes: dev-ai-interaction/research/batch-stage-c-questions-20260727/smoke-notes.txt
+- Residual: 1 CONFLICT_ODO, 3 no-vehicle dash, 2 unreadable pump; AMBIGUOUS_MULTI_PUMP unused
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry
+
+- Execution start: photo UX, manual entry, economyIgnored sync, tank heuristic, unknown vehicle, outliers
+- Parent tip: batch_load/builds @ 27d92a09
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry done
+
+- Photo stem-dedupe; DNG OpenCV preview; fullscreen +/− + sticky actions
+- Manual pump/dash/conflict odo; economyIgnored Room v14 + sync column Economy Ignored
+- Reports: fills N(Mp); Unknown label; economy excludes ignored; avg filters 3× outliers
+- Merge: tank maxFill+5 auto-assign; post-merge enqueue unknown + MPG_OUTLIER
+- Device: merge pending+=52 (9 unknown, 42 outliers); tag batch_load/builds @ aa9b1e53
+- Notes: research/batch-stage-c-photo-ux-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-merge-window-odo-sanity
+
+- Execution start: 15m merge window, tight dash/pump pairs, odo reverse/gap sanitizer, Flag partial, per-vehicle unknown context
+- Parent tip: batch_load/builds @ 3f915150
+
+## 2026-07-27 - batch-merge-window-odo-sanity done
+
+- MERGE_WINDOW_MS=15m; splitTightDashPumpPairs for multi dash+pump
+- FuelOdoSanitizer: gap (maxVol×mpg×3, no fallback) then reverse; bias demote later
+- ODO_SUSPECT pending; FlagPartial action; per-vehicle nearest for unknown
+- Device: sanitize=31, ODO_SUSPECT=31 (incl. 20119 gap); CONFLICT_ODO=1
+- Tag: batch_load/builds @ 1fbe913e
+- Notes: research/batch-merge-window-odo-sanity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt
+
+- Execution start: Mark as gap, pending rebuild/dedupe, formatTimeDelta, Clear & re-scan
+- Parent tip: batch_load/builds @ 25df6455
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt done (code)
+
+- Mark as gap (blank odo/cost/vol); pending full rebuild on merge; (kind,fuelEntryId) dedupe
+- formatTimeDelta for neighbor/unknown deltas; Clear questions & re-scan button
+- Sanitizer skips already-partial / blank; clear all pending kinds per answered fuelEntryId
+- Tag: batch_load/builds @ e743f48a
+- Verify: ./build_app only — no deploy/device smoke (coder not authorized to deploy for test)
+- Notes: research/batch-pending-gap-dedupe-timefmt-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity
+
+- Execution start: MPG outlier UI clarity per batch-mpg-outlier-ui-clarity-20260727-plan.md
+- Tip: batch_load/builds @ 47ddcf81
+- Device verify only after human deploy (coder will not adb install/deploy)
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity done (code)
+
+- MPG_OUTLIER: end-only primary photos; leg start/end text; focus toggle prior/end
+- Edit/flag/ignore/gap target focusEntryId; nearby badges LEG START / THIS FILL
+- Tag: batch_load/builds @ 795c8e3b
+- No device test (await human deploy)
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity (layout v2)
+
+- Re-execute updated plan: Last/This photo blocks + 4-line context
+- Prior UI (single strip + toggle) superseded by locked two-block layout
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity layout v2 done (code)
+
+- Two-block Last/This photos above each button; 4-line text context (before/last/this/after)
+- Focus default This fill; edit/flag/ignore/gap target focus id
+- toPending: thisPhotoPaths + lastPhotoPaths
+- Tag: batch_load/builds @ c272c521
+- No device test until human deploy
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-partial-flag-semantics + sanitizer-correctness
+
+- Execution start: two plans
+  - batch-partial-flag-semantics-20260727-plan.md
+  - batch-partial-and-sanitizer-correctness-20260727-plan.md
+- No device deploy (human deploys before test)
+
+## 2026-07-27 - partial-flag + sanitizer-correctness done (code)
+
+- isPartialFill explicit-only; inserts/merge/sanitizer never auto-true for incomplete
+- FuelOdoSanitizer detect-only (reverse, digit_jump, gap with clean mpg); no demote updates
+- Checkbox SetPartialFill; clearAutoPartialFlags repair button
+- Reports display band 5–80 + formatMpg n/a outside 1–100
+- Quick Fill: isPartialFill=false on save
+- Tag: batch_load/builds @ ec44b782
+- No device test until human deploy
+- Notes: research/batch-partial-sanitizer-correctness-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill
+
+- Execution start: ODO_SUSPECT per-fill UI layout
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill done (code)
+
+- ODO_SUSPECT: ordered prev/cur/next dash-only photos + odo fields under each
+- SaveOdoPeers multi-odo write; payload prevDashPaths/curDashPaths/nextDashPaths
+- Tag: batch_load/builds @ 0da926d1
+- No device test until human deploy; re-scan after deploy
+- Notes: research/batch-odo-suspect-ui-per-fill-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar
+
+- Execution start: soft-delete sync, origin-device partials, title bar logo/version
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar (in progress)
+
+- Completing MainActivity yellow bar + remaining CTA; no device deploy
+
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar done (code)
+
+- Merge: all live partials (sync/QF/batch); soft-delete published absorbs; lat/lon later-ts
+- hasUnmatchedPartials + post-sync toast CTA (no auto-merge)
+- Yellow title-bar ?N → import?review=1 expand Review questions; Help bullets
+- Tag: batch_load/builds @ 5e7de408
+- No device test until human deploy
+- Notes: research/batch-sync-cross-device-partials-and-titlebar-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-mpg-gap-button-and-window-fills done (code)
+
+- MPG card: vertical Save / Missing data between last & this / Ignore (no clip)
+- markAsGap MPG: insert mid-leg blank; anchors preserved; dismiss if breaker exists
+- FuelEconomyChains + breaker-aware detectOutliers; windowSummary inventory
+- Post-sync applyMerge after fuel LWW; SYNC_BEHAVIOR + REPORTS_METRICS
+- Tag: batch_load/builds @ a50da18f
+- No device test until human deploy
+- Notes: research/batch-mpg-gap-button-and-window-fills-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-no-durable-photo-copy done (code)
+
+- processDash/processPump: source paths only; copyToDurable removed
+- migrateDurablePhotoRefsToSource rewrite+delete unreferenced mirrors
+- PendingPhotoUris prefer source dirs; Help note
+- Tag: batch_load/builds @ a18099d1
+- No device test until human deploy
+- Notes: research/batch-no-durable-photo-copy-20260727/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-phased-questions done (code)
+
+- StageCPhase 1–6 store + UI filter; skip/reset; clear-rescan → phase 1
+- ODO chain merge + simple length-guess mode; BAD_PUMP_RATIO phase 3
+- Gap from phase 3/5; post-sync remoteWins → phase 1 + rebuild
+- Tag: batch_load/builds @ 8ad579ef
+- No device test until human deploy
+- Notes: research/batch-stage-c-phased-questions-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-ux-skip-photos-phase-scope done (code)
+
+- Phase-scoped pending rebuild; Next phase regenerates only next kinds
+- Skip ledger same-phase; answer journal jsonl + export (no replay)
+- Unassigned vehicle id=0 fixed syncId + Fuel - Unassigned tab; picker exclusions
+- Photo role dash/pump; Close z-order; CONFLICT keep-both completes
+- Tag: batch_load/builds @ dab2e144
+- No device test until human deploy
+- Notes: research/batch-stage-c-ux-skip-photos-phase-scope-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - PR-batch_load prepared for Master review
+
+- History cleaned: 57 commits → 5 logical; backup-batch_load @ ff33f355; cleaned HEAD @ 11a2c1ca
+- PR: dev-ai-interaction/PRs/PR-batch_load.md (pre-submit review + plans)
+- Not rebased onto master (simplify_experiments); Master merge expects eng-log special handling + possible ExperimentAlignmentScreen conflict
+- Tree matches pre-cleanup tip; build_app SUCCESS after cleanup
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726
+
+- Execution start for approved plan: reports-field-conditional-economy-chains-20260726-plan.md
+- Branch: batch_load; no prior batch_load/builds tag (first successful ./build_app will create it)
+- Scope: ReportsScreen.kt field-conditional MPG/$/mi chains + REPORTS_METRICS.md; phase 5 emulator probe after user deploy
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726 phases 1-4 done
+
+- Phases 1-4 implemented and built on batch_load
+- ReportsScreen.kt: full fill = odo+cost+vol+!partial; MPG breakers; $/mi segment sum
+- docs/reference/REPORTS_METRICS.md rewritten to match
+- Tag: batch_load/builds @ 3d29b986 (batch_load-start-4-g3d29b986)
+- Phase 5 blocked on user APK deploy to emulator-5554 (device currently has versionName=instruction-start-8-g7d8aa877, not batch_load build)
+
+## 2026-07-26 - reports-field-conditional-economy-chains phase 5 probe PASS
+
+- Backup: test-data-backups/emulator-5554-20260726-095208
+- App on emulator-5554: batch_load-start-5-ge76bbc73
+- Probe cases odo_only / blank / cost_only / volume_only on Honda between full fills 2→3
+- UI Honda: baseline last 15.8 avg 17.0 $/mi 0.259; odo_only same; blank avg 15.8 $/mi 0.260; cost_only avg 15.8 $/mi 0.276; volume_only avg 14.5 $/mi 0.260
+- Evidence: dev-ai-interaction/research/reports-chain-probe-20260726/
+- DB restored from pre-probe backup; no leftover PROBE rows
+
+## 2026-07-26 - reports-field-conditional-economy-chains PR prepared
+
+- Pre-submit review PASS vs plan; device probe PASS; DB restored
+- Local PR: dev-ai-interaction/PRs/PR-batch_load.md
+- Tag: batch_load/builds @ 1de13e02; backup-batch_load set
+- Ready for Master independent review + merge
+
+## 2026-07-26 - batch-load-ingest-merge-questions-20260726
+
+- Execution start: Stage A (batch ingest) per approved plan batch-load-ingest-merge-questions-20260726-plan.md
+- Baseline tag: batch_load/builds @ a02dc9bc; Stages B–C deferred to later turn if A fills the turn
+
+## 2026-07-26 - batch-load Stage A complete (ingest)
+
+- Plan: batch-load-ingest-merge-questions-20260726-plan.md Stage A only
+- Added: PhotoExifMeta, FuelPhotoJson, BatchImportPending, BatchFuelImportCoordinator, hardDeleteFuelEntry
+- Set I hybrid in PumpCostVolUtils.runSetICostVolExtraction + OcrHarness.runPumpCostVolPipelineSetI
+- Import Old Pictures UI: Run batch import / Cancel / Review questions (list-only)
+- Hilt ViewModel in ui.batch (not ui.import — Java keyword breaks KSP)
+- Builds tag: batch_load/builds @ 6efd2743
+- Stages B (merge) and C (apply answers) remain on same plan path — not in this turn
+
+## 2026-07-26 - batch-dash-match-experiment-set-j-20260726
+
+- Execution start: unify Set J (experiment + batch + Quick Fill) per plan
+- Baseline: batch_load/builds @ 99d1043c
+
+## 2026-07-26 - batch-setj approach: copy experiment logic into production
+
+- User direction: do NOT extract shared dual-call API; copy experiment Set J into production
+- Experiment remains free to tinker (future compile-out); production batch/Quick Fill own a frozen copy
+- Continue plan batch-dash-match-experiment-set-j-20260726-plan.md with this approach
+
+## 2026-07-26 - batch-dash-match-experiment-set-j production copy done
+
+- OcrHarness.runSetJPipeline rewritten as independent copy of experiment Set J (Raw+Bin-Trials+connectSegmentsH+pickBestOdometer)
+- ExperimentAlignmentScreen NOT shared — free to tinker
+- Batch parseSetJOdometer: 4-7 pure digits only (no concat soup)
+- Tag: batch_load/builds @ 38186950
+- Device parity CSV pending user deploy + re-import after purging old batch dash rows
+- Notes: dev-ai-interaction/research/batch-setj-parity-20260726/NOTES.md
+
+## 2026-07-26 - production-setj-ref-geometry-parity-20260726
+
+- Execution start: fix production Set J ref geometry (probe/4080, ICRS crop, Raw nestFilter)
+- Baseline: batch_load/builds @ d51f30d9
+
+## 2026-07-26 - production-setj-ref-geometry-parity done
+
+- Probed ref dims for landmarks+align; fallback 4080×3072
+- ICRS Float createCrop for odo window; Raw no nestFilter
+- Experiment screen untouched (independent copy)
+- Tag: batch_load/builds @ de113410
+- Device compare pending user deploy; notes in research/setj-geometry-parity-20260726/
+
+## 2026-07-26 - batch import limited button (first 20+20)
+
+- Import UI: OutlinedButton "First 20 dash + first 20 pump" (name-sorted take)
+- BatchFuelImportCoordinator.runIngest(maxDash, maxPump); LIMITED_IMPORT_COUNT=20
+
+## 2026-07-26 - batch pump ingest without vehicle
+
+- processPump always runs Set I; inserts with UNASSIGNED_VEHICLE_ID=0
+- No ASSIGN_VEHICLE gate; merge later assigns vehicle via time/location pairing
+- Unreadable pumps still pending only
+
+## 2026-07-26 - batch-setj-reverify-and-pending-answers-20260726
+
+- Execution start; device versionName=batch_load-start-21-gf43bb991 (geometry + unassigned pump)
+- Part A first-20 re-verify then Part B clickable pending answers
+
+## 2026-07-26 - batch-setj-reverify + pending answers
+
+- Part A first-20 re-verify on f43bb991: 17 dash inserts + 20 pump vehicleId=0
+- first20 score: see research/batch-setj-parity-20260726/first20-after-geometry.txt (gate FAIL — residual leading-digit/blank DIFFs)
+- Part B: clickable pending UI + forcedVehicleId dash reprocess + skip/retry pump (build 06707a0a)
+- Experiment untouched; deploy needed for Part B on device
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti
+
+- Execution start: batch must run experiment Set J / Set I pipelines, not OcrHarness reinvented front-end
+- Baseline tag: batch_load/builds @ c112e80e
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti done (code)
+
+- AlignmentSetJRunner: experiment Set A ID lock + Set J runPaddleValleyIterative for batch dash
+- PumpSetIRunner: experiment-equivalent Set I for batch pump
+- BatchFuelImportCoordinator no longer uses runAutoFillPipeline / runPumpCostVolPipelineSetI
+- Tag: batch_load/builds @ 7653d156
+- Device parity first-20 still needs deploy of this APK + re-run (prior c112e80e re-verify failed)
+
+## 2026-07-27 - Batch Stage A full-run parity PASS; Stage B plan ready
+
+- Full batch finished (~02:35 PDT); app idle after last pump `PXL_20260411_201506380.jpg`.
+- Selective purge: deleted 74 old `batch_import%` rows (`updatedAt < 1785142500000`); kept 12 non-batch + 290 this-run (ids 219–508); pending cleaned to 6 this-run items.
+- Parity vs experiment: dash Set J 142 OK / 0 DIFF (4 no-vehicle pending); pump Set I 148 OK / 0 DIFF (2 unreadable both sides). Report: `dev-ai-interaction/research/batch-run-parity-20260727/`.
+- Next coder plan: `dev-ai-interaction/plans/batch-stage-b-merge-engine-coder-20260727-plan.md` (merge engine + Run merge). Durable B+C: `batch-stage-b-merge-and-stage-c-questions-20260727-plan.md`.
+
+## 2026-07-27 - batch-stage-b-merge-engine
+
+- Execution start: Stage B merge engine per batch-stage-b-merge-engine-coder-20260727-plan.md
+- Stage A parity PASS; baseline tag 83e36ca0
+
+## 2026-07-27 - batch-stage-b-merge-engine B1–B4 code
+
+- B1: FuelPhotoJson.unionPhotos / addPumpPhoto / addDashPhoto
+- B2: FuelRowMergeEngine.planMerge (vehicle clusters ±45m, vehicleId=0 pump pair, sequence vs re-shot, CONFLICT_ODO + photo paths, hard-delete list)
+- B3: BatchFuelImportCoordinator.applyMerge + Import **Run merge** button
+- B4: Merge after import checkbox default **off**
+- Fixtures notes: dev-ai-interaction/research/batch-stage-b-merge-fixtures-20260727.md
+- Tag: batch_load/builds @ 13d7c06b
+- Device Run merge still to verify after deploy
+
+## 2026-07-27 - batch-stage-b-merge-engine device Run merge
+
+- Deploy: adb install -r (./deploy re-exec loop as ai-coder; used direct install)
+- Pre: 302 rows, v0=148, fulls=6, odo_only=140, pump_only=154
+- applyMerge: updated=133 deleted=129 pending+=2 → tag code 13d7c06b
+- Post: 173 rows, v0=14, fulls=130, odo_only=16, pump_only=25
+- Non-batch: 9 kept (absorbed re-shot ids 6–8 same $18.40); full non-batch fills preserved
+- CONFLICT_ODO pending: 9594 vs 9698; 198699 vs 98699 (photo paths attached)
+- Summary: dev-ai-interaction/research/batch-stage-b-merge-20260727/merge-run-summary.txt
+- Stage C deferred (image-first questions, assign→re-merge UI)
+
+## 2026-07-27 - batch-stage-c-image-questions
+
+- Execution start: Stage C image-first pending questions per batch-stage-c-image-questions-coder-20260727-plan.md
+- Stage B done on device; tip batch_load/builds @ 0c93922c
+
+## 2026-07-27 - batch-stage-c-image-questions done
+
+- C1: pendingPhotoUris + image thumbs/zoom; DNG placeholder; filename secondary only
+- C2: CONFLICT_ODO Keep odo / Keep both; pure wrong-odo hard-delete; pump data odo zeroed
+- C3: successful answers auto applyMerge; skip does not re-merge
+- Device: Keep odo 9594 → pending 8→7 + remerge updated=16 deleted=1; Skip → pending 6
+- Tag: batch_load/builds @ f360ce24
+- Notes: dev-ai-interaction/research/batch-stage-c-questions-20260727/smoke-notes.txt
+- Residual: 1 CONFLICT_ODO, 3 no-vehicle dash, 2 unreadable pump; AMBIGUOUS_MULTI_PUMP unused
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry
+
+- Execution start: photo UX, manual entry, economyIgnored sync, tank heuristic, unknown vehicle, outliers
+- Parent tip: batch_load/builds @ 27d92a09
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry done
+
+- Photo stem-dedupe; DNG OpenCV preview; fullscreen +/− + sticky actions
+- Manual pump/dash/conflict odo; economyIgnored Room v14 + sync column Economy Ignored
+- Reports: fills N(Mp); Unknown label; economy excludes ignored; avg filters 3× outliers
+- Merge: tank maxFill+5 auto-assign; post-merge enqueue unknown + MPG_OUTLIER
+- Device: merge pending+=52 (9 unknown, 42 outliers); tag batch_load/builds @ aa9b1e53
+- Notes: research/batch-stage-c-photo-ux-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-merge-window-odo-sanity
+
+- Execution start: 15m merge window, tight dash/pump pairs, odo reverse/gap sanitizer, Flag partial, per-vehicle unknown context
+- Parent tip: batch_load/builds @ 3f915150
+
+## 2026-07-27 - batch-merge-window-odo-sanity done
+
+- MERGE_WINDOW_MS=15m; splitTightDashPumpPairs for multi dash+pump
+- FuelOdoSanitizer: gap (maxVol×mpg×3, no fallback) then reverse; bias demote later
+- ODO_SUSPECT pending; FlagPartial action; per-vehicle nearest for unknown
+- Device: sanitize=31, ODO_SUSPECT=31 (incl. 20119 gap); CONFLICT_ODO=1
+- Tag: batch_load/builds @ 1fbe913e
+- Notes: research/batch-merge-window-odo-sanity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt
+
+- Execution start: Mark as gap, pending rebuild/dedupe, formatTimeDelta, Clear & re-scan
+- Parent tip: batch_load/builds @ 25df6455
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt done (code)
+
+- Mark as gap (blank odo/cost/vol); pending full rebuild on merge; (kind,fuelEntryId) dedupe
+- formatTimeDelta for neighbor/unknown deltas; Clear questions & re-scan button
+- Sanitizer skips already-partial / blank; clear all pending kinds per answered fuelEntryId
+- Tag: batch_load/builds @ e743f48a
+- Verify: ./build_app only — no deploy/device smoke (coder not authorized to deploy for test)
+- Notes: research/batch-pending-gap-dedupe-timefmt-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity
+
+- Execution start: MPG outlier UI clarity per batch-mpg-outlier-ui-clarity-20260727-plan.md
+- Tip: batch_load/builds @ 47ddcf81
+- Device verify only after human deploy (coder will not adb install/deploy)
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity done (code)
+
+- MPG_OUTLIER: end-only primary photos; leg start/end text; focus toggle prior/end
+- Edit/flag/ignore/gap target focusEntryId; nearby badges LEG START / THIS FILL
+- Tag: batch_load/builds @ 795c8e3b
+- No device test (await human deploy)
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity (layout v2)
+
+- Re-execute updated plan: Last/This photo blocks + 4-line context
+- Prior UI (single strip + toggle) superseded by locked two-block layout
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity layout v2 done (code)
+
+- Two-block Last/This photos above each button; 4-line text context (before/last/this/after)
+- Focus default This fill; edit/flag/ignore/gap target focus id
+- toPending: thisPhotoPaths + lastPhotoPaths
+- Tag: batch_load/builds @ c272c521
+- No device test until human deploy
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-partial-flag-semantics + sanitizer-correctness
+
+- Execution start: two plans
+  - batch-partial-flag-semantics-20260727-plan.md
+  - batch-partial-and-sanitizer-correctness-20260727-plan.md
+- No device deploy (human deploys before test)
+
+## 2026-07-27 - partial-flag + sanitizer-correctness done (code)
+
+- isPartialFill explicit-only; inserts/merge/sanitizer never auto-true for incomplete
+- FuelOdoSanitizer detect-only (reverse, digit_jump, gap with clean mpg); no demote updates
+- Checkbox SetPartialFill; clearAutoPartialFlags repair button
+- Reports display band 5–80 + formatMpg n/a outside 1–100
+- Quick Fill: isPartialFill=false on save
+- Tag: batch_load/builds @ ec44b782
+- No device test until human deploy
+- Notes: research/batch-partial-sanitizer-correctness-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill
+
+- Execution start: ODO_SUSPECT per-fill UI layout
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill done (code)
+
+- ODO_SUSPECT: ordered prev/cur/next dash-only photos + odo fields under each
+- SaveOdoPeers multi-odo write; payload prevDashPaths/curDashPaths/nextDashPaths
+- Tag: batch_load/builds @ 0da926d1
+- No device test until human deploy; re-scan after deploy
+- Notes: research/batch-odo-suspect-ui-per-fill-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar
+
+- Execution start: soft-delete sync, origin-device partials, title bar logo/version
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar (in progress)
+
+- Completing MainActivity yellow bar + remaining CTA; no device deploy
+
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar done (code)
+
+- Merge: all live partials (sync/QF/batch); soft-delete published absorbs; lat/lon later-ts
+- hasUnmatchedPartials + post-sync toast CTA (no auto-merge)
+- Yellow title-bar ?N → import?review=1 expand Review questions; Help bullets
+- Tag: batch_load/builds @ 5e7de408
+- No device test until human deploy
+- Notes: research/batch-sync-cross-device-partials-and-titlebar-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-mpg-gap-button-and-window-fills done (code)
+
+- MPG card: vertical Save / Missing data between last & this / Ignore (no clip)
+- markAsGap MPG: insert mid-leg blank; anchors preserved; dismiss if breaker exists
+- FuelEconomyChains + breaker-aware detectOutliers; windowSummary inventory
+- Post-sync applyMerge after fuel LWW; SYNC_BEHAVIOR + REPORTS_METRICS
+- Tag: batch_load/builds @ a50da18f
+- No device test until human deploy
+- Notes: research/batch-mpg-gap-button-and-window-fills-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-no-durable-photo-copy done (code)
+
+- processDash/processPump: source paths only; copyToDurable removed
+- migrateDurablePhotoRefsToSource rewrite+delete unreferenced mirrors
+- PendingPhotoUris prefer source dirs; Help note
+- Tag: batch_load/builds @ a18099d1
+- No device test until human deploy
+- Notes: research/batch-no-durable-photo-copy-20260727/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-phased-questions done (code)
+
+- StageCPhase 1–6 store + UI filter; skip/reset; clear-rescan → phase 1
+- ODO chain merge + simple length-guess mode; BAD_PUMP_RATIO phase 3
+- Gap from phase 3/5; post-sync remoteWins → phase 1 + rebuild
+- Tag: batch_load/builds @ 8ad579ef
+- No device test until human deploy
+- Notes: research/batch-stage-c-phased-questions-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-ux-skip-photos-phase-scope done (code)
+
+- Phase-scoped pending rebuild; Next phase regenerates only next kinds
+- Skip ledger same-phase; answer journal jsonl + export (no replay)
+- Unassigned vehicle id=0 fixed syncId + Fuel - Unassigned tab; picker exclusions
+- Photo role dash/pump; Close z-order; CONFLICT keep-both completes
+- Tag: batch_load/builds @ dab2e144
+- No device test until human deploy
+- Notes: research/batch-stage-c-ux-skip-photos-phase-scope-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - PR-batch_load prepared for Master review
+
+- History cleaned: 57 commits → 5 logical; backup-batch_load @ ff33f355; cleaned HEAD @ 11a2c1ca
+- PR: dev-ai-interaction/PRs/PR-batch_load.md (pre-submit review + plans)
+- Not rebased onto master (simplify_experiments); Master merge expects eng-log special handling + possible ExperimentAlignmentScreen conflict
+- Tree matches pre-cleanup tip; build_app SUCCESS after cleanup
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726
+
+- Execution start for approved plan: reports-field-conditional-economy-chains-20260726-plan.md
+- Branch: batch_load; no prior batch_load/builds tag (first successful ./build_app will create it)
+- Scope: ReportsScreen.kt field-conditional MPG/$/mi chains + REPORTS_METRICS.md; phase 5 emulator probe after user deploy
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726 phases 1-4 done
+
+- Phases 1-4 implemented and built on batch_load
+- ReportsScreen.kt: full fill = odo+cost+vol+!partial; MPG breakers; $/mi segment sum
+- docs/reference/REPORTS_METRICS.md rewritten to match
+- Tag: batch_load/builds @ 3d29b986 (batch_load-start-4-g3d29b986)
+- Phase 5 blocked on user APK deploy to emulator-5554 (device currently has versionName=instruction-start-8-g7d8aa877, not batch_load build)
+
+## 2026-07-26 - reports-field-conditional-economy-chains phase 5 probe PASS
+
+- Backup: test-data-backups/emulator-5554-20260726-095208
+- App on emulator-5554: batch_load-start-5-ge76bbc73
+- Probe cases odo_only / blank / cost_only / volume_only on Honda between full fills 2→3
+- UI Honda: baseline last 15.8 avg 17.0 $/mi 0.259; odo_only same; blank avg 15.8 $/mi 0.260; cost_only avg 15.8 $/mi 0.276; volume_only avg 14.5 $/mi 0.260
+- Evidence: dev-ai-interaction/research/reports-chain-probe-20260726/
+- DB restored from pre-probe backup; no leftover PROBE rows
+
+## 2026-07-26 - reports-field-conditional-economy-chains PR prepared
+
+- Pre-submit review PASS vs plan; device probe PASS; DB restored
+- Local PR: dev-ai-interaction/PRs/PR-batch_load.md
+- Tag: batch_load/builds @ 1de13e02; backup-batch_load set
+- Ready for Master independent review + merge
+
+## 2026-07-26 - batch-load-ingest-merge-questions-20260726
+
+- Execution start: Stage A (batch ingest) per approved plan batch-load-ingest-merge-questions-20260726-plan.md
+- Baseline tag: batch_load/builds @ a02dc9bc; Stages B–C deferred to later turn if A fills the turn
+
+## 2026-07-26 - batch-load Stage A complete (ingest)
+
+- Plan: batch-load-ingest-merge-questions-20260726-plan.md Stage A only
+- Added: PhotoExifMeta, FuelPhotoJson, BatchImportPending, BatchFuelImportCoordinator, hardDeleteFuelEntry
+- Set I hybrid in PumpCostVolUtils.runSetICostVolExtraction + OcrHarness.runPumpCostVolPipelineSetI
+- Import Old Pictures UI: Run batch import / Cancel / Review questions (list-only)
+- Hilt ViewModel in ui.batch (not ui.import — Java keyword breaks KSP)
+- Builds tag: batch_load/builds @ 6efd2743
+- Stages B (merge) and C (apply answers) remain on same plan path — not in this turn
+
+## 2026-07-26 - batch-dash-match-experiment-set-j-20260726
+
+- Execution start: unify Set J (experiment + batch + Quick Fill) per plan
+- Baseline: batch_load/builds @ 99d1043c
+
+## 2026-07-26 - batch-setj approach: copy experiment logic into production
+
+- User direction: do NOT extract shared dual-call API; copy experiment Set J into production
+- Experiment remains free to tinker (future compile-out); production batch/Quick Fill own a frozen copy
+- Continue plan batch-dash-match-experiment-set-j-20260726-plan.md with this approach
+
+## 2026-07-26 - batch-dash-match-experiment-set-j production copy done
+
+- OcrHarness.runSetJPipeline rewritten as independent copy of experiment Set J (Raw+Bin-Trials+connectSegmentsH+pickBestOdometer)
+- ExperimentAlignmentScreen NOT shared — free to tinker
+- Batch parseSetJOdometer: 4-7 pure digits only (no concat soup)
+- Tag: batch_load/builds @ 38186950
+- Device parity CSV pending user deploy + re-import after purging old batch dash rows
+- Notes: dev-ai-interaction/research/batch-setj-parity-20260726/NOTES.md
+
+## 2026-07-26 - production-setj-ref-geometry-parity-20260726
+
+- Execution start: fix production Set J ref geometry (probe/4080, ICRS crop, Raw nestFilter)
+- Baseline: batch_load/builds @ d51f30d9
+
+## 2026-07-26 - production-setj-ref-geometry-parity done
+
+- Probed ref dims for landmarks+align; fallback 4080×3072
+- ICRS Float createCrop for odo window; Raw no nestFilter
+- Experiment screen untouched (independent copy)
+- Tag: batch_load/builds @ de113410
+- Device compare pending user deploy; notes in research/setj-geometry-parity-20260726/
+
+## 2026-07-26 - batch import limited button (first 20+20)
+
+- Import UI: OutlinedButton "First 20 dash + first 20 pump" (name-sorted take)
+- BatchFuelImportCoordinator.runIngest(maxDash, maxPump); LIMITED_IMPORT_COUNT=20
+
+## 2026-07-26 - batch pump ingest without vehicle
+
+- processPump always runs Set I; inserts with UNASSIGNED_VEHICLE_ID=0
+- No ASSIGN_VEHICLE gate; merge later assigns vehicle via time/location pairing
+- Unreadable pumps still pending only
+
+## 2026-07-26 - batch-setj-reverify-and-pending-answers-20260726
+
+- Execution start; device versionName=batch_load-start-21-gf43bb991 (geometry + unassigned pump)
+- Part A first-20 re-verify then Part B clickable pending answers
+
+## 2026-07-26 - batch-setj-reverify + pending answers
+
+- Part A first-20 re-verify on f43bb991: 17 dash inserts + 20 pump vehicleId=0
+- first20 score: see research/batch-setj-parity-20260726/first20-after-geometry.txt (gate FAIL — residual leading-digit/blank DIFFs)
+- Part B: clickable pending UI + forcedVehicleId dash reprocess + skip/retry pump (build 06707a0a)
+- Experiment untouched; deploy needed for Part B on device
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti
+
+- Execution start: batch must run experiment Set J / Set I pipelines, not OcrHarness reinvented front-end
+- Baseline tag: batch_load/builds @ c112e80e
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti done (code)
+
+- AlignmentSetJRunner: experiment Set A ID lock + Set J runPaddleValleyIterative for batch dash
+- PumpSetIRunner: experiment-equivalent Set I for batch pump
+- BatchFuelImportCoordinator no longer uses runAutoFillPipeline / runPumpCostVolPipelineSetI
+- Tag: batch_load/builds @ 7653d156
+- Device parity first-20 still needs deploy of this APK + re-run (prior c112e80e re-verify failed)
+
+## 2026-07-27 - Batch Stage A full-run parity PASS; Stage B plan ready
+
+- Full batch finished (~02:35 PDT); app idle after last pump `PXL_20260411_201506380.jpg`.
+- Selective purge: deleted 74 old `batch_import%` rows (`updatedAt < 1785142500000`); kept 12 non-batch + 290 this-run (ids 219–508); pending cleaned to 6 this-run items.
+- Parity vs experiment: dash Set J 142 OK / 0 DIFF (4 no-vehicle pending); pump Set I 148 OK / 0 DIFF (2 unreadable both sides). Report: `dev-ai-interaction/research/batch-run-parity-20260727/`.
+- Next coder plan: `dev-ai-interaction/plans/batch-stage-b-merge-engine-coder-20260727-plan.md` (merge engine + Run merge). Durable B+C: `batch-stage-b-merge-and-stage-c-questions-20260727-plan.md`.
+
+## 2026-07-27 - batch-stage-b-merge-engine
+
+- Execution start: Stage B merge engine per batch-stage-b-merge-engine-coder-20260727-plan.md
+- Stage A parity PASS; baseline tag 83e36ca0
+
+## 2026-07-27 - batch-stage-b-merge-engine B1–B4 code
+
+- B1: FuelPhotoJson.unionPhotos / addPumpPhoto / addDashPhoto
+- B2: FuelRowMergeEngine.planMerge (vehicle clusters ±45m, vehicleId=0 pump pair, sequence vs re-shot, CONFLICT_ODO + photo paths, hard-delete list)
+- B3: BatchFuelImportCoordinator.applyMerge + Import **Run merge** button
+- B4: Merge after import checkbox default **off**
+- Fixtures notes: dev-ai-interaction/research/batch-stage-b-merge-fixtures-20260727.md
+- Tag: batch_load/builds @ 13d7c06b
+- Device Run merge still to verify after deploy
+
+## 2026-07-27 - batch-stage-b-merge-engine device Run merge
+
+- Deploy: adb install -r (./deploy re-exec loop as ai-coder; used direct install)
+- Pre: 302 rows, v0=148, fulls=6, odo_only=140, pump_only=154
+- applyMerge: updated=133 deleted=129 pending+=2 → tag code 13d7c06b
+- Post: 173 rows, v0=14, fulls=130, odo_only=16, pump_only=25
+- Non-batch: 9 kept (absorbed re-shot ids 6–8 same $18.40); full non-batch fills preserved
+- CONFLICT_ODO pending: 9594 vs 9698; 198699 vs 98699 (photo paths attached)
+- Summary: dev-ai-interaction/research/batch-stage-b-merge-20260727/merge-run-summary.txt
+- Stage C deferred (image-first questions, assign→re-merge UI)
+
+## 2026-07-27 - batch-stage-c-image-questions
+
+- Execution start: Stage C image-first pending questions per batch-stage-c-image-questions-coder-20260727-plan.md
+- Stage B done on device; tip batch_load/builds @ 0c93922c
+
+## 2026-07-27 - batch-stage-c-image-questions done
+
+- C1: pendingPhotoUris + image thumbs/zoom; DNG placeholder; filename secondary only
+- C2: CONFLICT_ODO Keep odo / Keep both; pure wrong-odo hard-delete; pump data odo zeroed
+- C3: successful answers auto applyMerge; skip does not re-merge
+- Device: Keep odo 9594 → pending 8→7 + remerge updated=16 deleted=1; Skip → pending 6
+- Tag: batch_load/builds @ f360ce24
+- Notes: dev-ai-interaction/research/batch-stage-c-questions-20260727/smoke-notes.txt
+- Residual: 1 CONFLICT_ODO, 3 no-vehicle dash, 2 unreadable pump; AMBIGUOUS_MULTI_PUMP unused
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry
+
+- Execution start: photo UX, manual entry, economyIgnored sync, tank heuristic, unknown vehicle, outliers
+- Parent tip: batch_load/builds @ 27d92a09
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry done
+
+- Photo stem-dedupe; DNG OpenCV preview; fullscreen +/− + sticky actions
+- Manual pump/dash/conflict odo; economyIgnored Room v14 + sync column Economy Ignored
+- Reports: fills N(Mp); Unknown label; economy excludes ignored; avg filters 3× outliers
+- Merge: tank maxFill+5 auto-assign; post-merge enqueue unknown + MPG_OUTLIER
+- Device: merge pending+=52 (9 unknown, 42 outliers); tag batch_load/builds @ aa9b1e53
+- Notes: research/batch-stage-c-photo-ux-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-merge-window-odo-sanity
+
+- Execution start: 15m merge window, tight dash/pump pairs, odo reverse/gap sanitizer, Flag partial, per-vehicle unknown context
+- Parent tip: batch_load/builds @ 3f915150
+
+## 2026-07-27 - batch-merge-window-odo-sanity done
+
+- MERGE_WINDOW_MS=15m; splitTightDashPumpPairs for multi dash+pump
+- FuelOdoSanitizer: gap (maxVol×mpg×3, no fallback) then reverse; bias demote later
+- ODO_SUSPECT pending; FlagPartial action; per-vehicle nearest for unknown
+- Device: sanitize=31, ODO_SUSPECT=31 (incl. 20119 gap); CONFLICT_ODO=1
+- Tag: batch_load/builds @ 1fbe913e
+- Notes: research/batch-merge-window-odo-sanity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt
+
+- Execution start: Mark as gap, pending rebuild/dedupe, formatTimeDelta, Clear & re-scan
+- Parent tip: batch_load/builds @ 25df6455
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt done (code)
+
+- Mark as gap (blank odo/cost/vol); pending full rebuild on merge; (kind,fuelEntryId) dedupe
+- formatTimeDelta for neighbor/unknown deltas; Clear questions & re-scan button
+- Sanitizer skips already-partial / blank; clear all pending kinds per answered fuelEntryId
+- Tag: batch_load/builds @ e743f48a
+- Verify: ./build_app only — no deploy/device smoke (coder not authorized to deploy for test)
+- Notes: research/batch-pending-gap-dedupe-timefmt-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity
+
+- Execution start: MPG outlier UI clarity per batch-mpg-outlier-ui-clarity-20260727-plan.md
+- Tip: batch_load/builds @ 47ddcf81
+- Device verify only after human deploy (coder will not adb install/deploy)
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity done (code)
+
+- MPG_OUTLIER: end-only primary photos; leg start/end text; focus toggle prior/end
+- Edit/flag/ignore/gap target focusEntryId; nearby badges LEG START / THIS FILL
+- Tag: batch_load/builds @ 795c8e3b
+- No device test (await human deploy)
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity (layout v2)
+
+- Re-execute updated plan: Last/This photo blocks + 4-line context
+- Prior UI (single strip + toggle) superseded by locked two-block layout
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity layout v2 done (code)
+
+- Two-block Last/This photos above each button; 4-line text context (before/last/this/after)
+- Focus default This fill; edit/flag/ignore/gap target focus id
+- toPending: thisPhotoPaths + lastPhotoPaths
+- Tag: batch_load/builds @ c272c521
+- No device test until human deploy
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-partial-flag-semantics + sanitizer-correctness
+
+- Execution start: two plans
+  - batch-partial-flag-semantics-20260727-plan.md
+  - batch-partial-and-sanitizer-correctness-20260727-plan.md
+- No device deploy (human deploys before test)
+
+## 2026-07-27 - partial-flag + sanitizer-correctness done (code)
+
+- isPartialFill explicit-only; inserts/merge/sanitizer never auto-true for incomplete
+- FuelOdoSanitizer detect-only (reverse, digit_jump, gap with clean mpg); no demote updates
+- Checkbox SetPartialFill; clearAutoPartialFlags repair button
+- Reports display band 5–80 + formatMpg n/a outside 1–100
+- Quick Fill: isPartialFill=false on save
+- Tag: batch_load/builds @ ec44b782
+- No device test until human deploy
+- Notes: research/batch-partial-sanitizer-correctness-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill
+
+- Execution start: ODO_SUSPECT per-fill UI layout
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill done (code)
+
+- ODO_SUSPECT: ordered prev/cur/next dash-only photos + odo fields under each
+- SaveOdoPeers multi-odo write; payload prevDashPaths/curDashPaths/nextDashPaths
+- Tag: batch_load/builds @ 0da926d1
+- No device test until human deploy; re-scan after deploy
+- Notes: research/batch-odo-suspect-ui-per-fill-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar
+
+- Execution start: soft-delete sync, origin-device partials, title bar logo/version
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar (in progress)
+
+- Completing MainActivity yellow bar + remaining CTA; no device deploy
+
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar done (code)
+
+- Merge: all live partials (sync/QF/batch); soft-delete published absorbs; lat/lon later-ts
+- hasUnmatchedPartials + post-sync toast CTA (no auto-merge)
+- Yellow title-bar ?N → import?review=1 expand Review questions; Help bullets
+- Tag: batch_load/builds @ 5e7de408
+- No device test until human deploy
+- Notes: research/batch-sync-cross-device-partials-and-titlebar-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-mpg-gap-button-and-window-fills done (code)
+
+- MPG card: vertical Save / Missing data between last & this / Ignore (no clip)
+- markAsGap MPG: insert mid-leg blank; anchors preserved; dismiss if breaker exists
+- FuelEconomyChains + breaker-aware detectOutliers; windowSummary inventory
+- Post-sync applyMerge after fuel LWW; SYNC_BEHAVIOR + REPORTS_METRICS
+- Tag: batch_load/builds @ a50da18f
+- No device test until human deploy
+- Notes: research/batch-mpg-gap-button-and-window-fills-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-no-durable-photo-copy done (code)
+
+- processDash/processPump: source paths only; copyToDurable removed
+- migrateDurablePhotoRefsToSource rewrite+delete unreferenced mirrors
+- PendingPhotoUris prefer source dirs; Help note
+- Tag: batch_load/builds @ a18099d1
+- No device test until human deploy
+- Notes: research/batch-no-durable-photo-copy-20260727/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-phased-questions done (code)
+
+- StageCPhase 1–6 store + UI filter; skip/reset; clear-rescan → phase 1
+- ODO chain merge + simple length-guess mode; BAD_PUMP_RATIO phase 3
+- Gap from phase 3/5; post-sync remoteWins → phase 1 + rebuild
+- Tag: batch_load/builds @ 8ad579ef
+- No device test until human deploy
+- Notes: research/batch-stage-c-phased-questions-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-ux-skip-photos-phase-scope done (code)
+
+- Phase-scoped pending rebuild; Next phase regenerates only next kinds
+- Skip ledger same-phase; answer journal jsonl + export (no replay)
+- Unassigned vehicle id=0 fixed syncId + Fuel - Unassigned tab; picker exclusions
+- Photo role dash/pump; Close z-order; CONFLICT keep-both completes
+- Tag: batch_load/builds @ dab2e144
+- No device test until human deploy
+- Notes: research/batch-stage-c-ux-skip-photos-phase-scope-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - PR-batch_load prepared for Master review
+
+- History cleaned: 57 commits → 5 logical; backup-batch_load @ ff33f355; cleaned HEAD @ 11a2c1ca
+- PR: dev-ai-interaction/PRs/PR-batch_load.md (pre-submit review + plans)
+- Not rebased onto master (simplify_experiments); Master merge expects eng-log special handling + possible ExperimentAlignmentScreen conflict
+- Tree matches pre-cleanup tip; build_app SUCCESS after cleanup
+
+## 2026-07-30 - Master merge PR-improve-merges
+
+- Independent review APPROVE; audit_merge FF SUCCESS
+- merge-branch-into-master.sh improve-merges (FF index path); ve-englog attempted dup tail → restored index to HEAD eng-log (no branch eng-log delta)
+- Worktree ENGINEERING_LOG still has prior +a duplicate tail (skip-worktree for integrity); needs sudo chattr -a + restore when available
+- project-facts: Room v16 + MergeAck locations
+- Commit 4011fddd on tip after feature commits; builds tag @ 4011fddd
+- BUILD SUCCESSFUL; no works tag
+- Cleanup: ./remove_worktree.sh improve-merges from repo root when ready
+
+
+## 2026-07-30 - Paddle-Lite PR email rewrite
+
+- Approved plan: dev-ai-interaction/plans/paddle-upstream-fix-author-email-20260730-plan.md
+- Scope: rewrite david@example.com → david@lang.hm on pr-upstream-cleanup, pr-x86-android-mobile-gap, pr-calib-safe-uint8-dequant in Paddle-Lite-upstream; force-push to push remote (davidelang/Paddle-Lite)
+- No VehicleExpenses app source changes
+
+## 2026-07-30 - Paddle-Lite PR email rewrite complete (local)
+
+- Local identity: user.email → david@lang.hm in Paddle-Lite-upstream
+- filter-branch rewrite: pr-upstream-cleanup, pr-x86-android-mobile-gap, pr-calib-safe-uint8-dequant (+ WIP hygiene heads)
+- Trees identical to backup/*-pre-email; author+committer now david@lang.hm
+- New tips: 2ca962497 / c6a9b9ada / d718308c5
+- Force-push to davidelang/Paddle-Lite FAILED: ai-coder SSH publickey denied — user must push with credentials
+- Note: dev-ai-interaction/paddle-pr-email-rewrite-backup-20260730.txt
+
+## 2026-07-30 - TODO hygiene (master audit)
+
+- Closed two backlog items after code/PR review (user-approved):
+  - Generate UI manual / in-app guide (PR-instruction delivered)
+  - Quick Fill Settings currency/volume "use system" (already on master)
+- CHANGELOG § Backlog completed (2026-07-30) updated
+- Email/import TODOs left open (email-connection not merged)
+
+
+## 2026-07-30 - EXEC START: minor-fixes-batch-20260730-plan.md
+
+- Branch: minor-fixes
+- Plan: dev-ai-interaction/plans/minor-fixes-batch-20260730-plan.md
+- Scope: Waves A–I (settings, About feedback, debug UX, Syncing page, QF notes, photo sync refs-only, fuel download API, Fuel History/edit + on-demand fetch)
+- Wave J host research not execution-build
+
+## 2026-07-30 - EXEC DONE: minor-fixes-batch-20260730-plan.md (Waves A–I)
+
+- Wave A: fuel photos label; pump Amazon album URL; max red boxes experiment-gated
+- Wave B–C: About feedback email + DeviceFeedbackInfo; debug QF compact X/max Send Delete + info
+- Wave D: SyncingScreen + drawer route; Settings loses sync block; red ! → syncing
+- Wave E: Quick Fill Notes field + persist/clear
+- Wave F: photo FULL/PENDING no expense bulk download; pending downloads = vehicle refs only
+- Wave G: scrubUnreadable fuel/expense; downloadFuelPhoto; Fuel DAO getById + VM APIs
+- Wave H: Fuel History tabs + FuelEdit; fetch-from-archive on history/edit/expense/batch pending
+- Wave I: project-facts orientation for Syncing/Fuel History/on-demand photo policy
+- Wave J host research: not in this execution (sandbox planner)
+- builds tag tip: minor-fixes/builds @ 54f64e2f (pre–project-facts commit)
+
+## 2026-07-30 - EXEC START: reports-lab-experimental-hub-20260730-plan.md
+
+- Branch: minor-fixes
+- Scope: Reports Lab hub + 6 report sets, filters, share TEXT/CSV, Vico charts; production ReportsScreen unchanged
+- Waves A–E
+
+## 2026-07-30 - EXEC DONE: reports-lab-experimental-hub-20260730-plan.md
+
+- Reports Lab hub + 6 sets under ui/reports/lab/; drawer always visible
+- Filters + prefs (vehicle/period/custom); teaser KPIs; empty states
+- Share TEXT/CSV each set; Vehicle summary pack + VIN checkbox (default off)
+- Vico 3.2.3 compose + compose-m3: MPG line, unit-price line, monthly bars, category bars
+- Production ReportsScreen.kt UNCHANGED
+- builds: minor-fixes/builds @ 2251a8f8 (+ project-facts phase next)
+
+## 2026-07-30 - EXEC START: minor-fixes-gaps-nits-followup-20260730-plan.md
+
+- Branch: minor-fixes
+- Gaps G1–G5: expenseHasPendingWork; Fuel History fetch label/await; fuel pump_N roles; host photo-kind REPORT
+
+## 2026-07-30 - EXEC DONE: minor-fixes-gaps-nits-followup-20260730-plan.md
+
+- G2: removed dead expenseHasPendingWork + unused expenseNeedsDownload
+- G3+G4: Fuel History Fetch image from archive + await Fetching…
+- G5: fuelRoleForTag / fuelTagFromRole for pump_N; wired upload+pending+download
+- G1: photo-kind-classify script + metrics.json + REPORT.md (5-NN ~88.7%, recommendation: needs human confirm)
+- builds: minor-fixes/builds @ 7f9ab6c3
+
+## 2026-07-30 - EXEC START: unit-i18n-consistency-20260730-plan.md
+
+- Branch: minor-fixes
+- Plan path: dev-ai-interaction/plans/unit-i18n-consistency-20260730-plan.md
+
+## 2026-07-30 - EXEC DONE: unit-i18n-consistency-20260730-plan.md
+
+- VolumeUnits.formatVolume (+ Context overload); space-before-unit
+- UnitFormat: mpg / $/mi / distanceDeltaLabel façade
+- Quick Fill convert → VolumeUnits.convert; Fuel History/Edit labels; batch neighbor currency+volume
+- Lab formatVolume delegates; Reports + Lab high-traffic economy labels via UnitFormat
+- project-facts + TODO i18n deferred pointer
+- builds: minor-fixes/builds @ 04efeb68
+
+## 2026-07-30 - EXEC START: form-icons-fontscale-startup-20260730-plan.md
+
+- Branch: minor-fixes
+- Plan: form-icons-fontscale-startup-20260730-plan.md
+
+## 2026-07-30 - Phase B5 note: Quick Fill font-scale
+
+- No QF code change: existing responsive A/B/C layout retained; multi-device large-font check deferred to 5554/5556 handoff
+
+## 2026-07-30 - EXEC DONE: fix-icons-fontscale-startup-20260730-plan.md
+
+- R1: material-icons-core + extended (BOM)
+- R5: removed copyTessdataOnce
+- R2: TopAppBar wrap, Settings debug stack, Fuel History fetch multi-line, Lab banner/title softWrap
+- R3: removed dead volumeLabel
+- R4: Lab UnitFormat for MPG chart/summary
+- R2 B5: QF no change (responsive layout retained)
+- builds: minor-fixes/builds @ bb63b72f
+
+## 2026-07-30 - Startup smoke: drop Vico compose-m3
+
+- compose-m3 pulled material3 1.4 → NoSuchMethodError ExposedDropdownMenuBox on QuickFill
+- Keep vico:compose:3.2.3 only; cold start emulator-5554 OK (pid live, no Icons/tessdata FATAL)
+- Final builds: minor-fixes/builds @ 26095264 (+ facts tip)
+
+## 2026-07-30 - minor-fixes: local PR prepared (history cleanup)
+
+- Soft-reset history cleanup: `git tag -f backup-minor-fixes` @ pre-cleanup tip `c4222079`; `git reset --soft master`; six logical commits; TREE_MATCHES_BACKUP (`HEAD^{tree}` == backup tree `b434f073`).
+- Cleaned tip `d04fb7c7` (docs); post-cleanup `./build_app` SUCCESS; `minor-fixes/builds` updated to cleaned tip.
+- Pre-submit review vs five plans: scope OK; residual risks = multi-device font checklist + Lab experimental + i18n deferred.
+- `./generate_pr.sh` → `dev-ai-interaction/PRs/PR-minor-fixes.md` (plans embedded + Coder pre-submit section).
+- Ready for Master (`run-grok-master`) independent review + merge. Coder does not merge.
+
+## 2026-07-30 - Trip tracking open-only fuel tripType execution start
+
+- Approved plan: dev-ai-interaction/plans/trip-tracking-open-only-fuel-triptype-20260730-plan.md
+- Branch: trip-tracking; agent-2 coder worktree
+- First action eng-log; phases 1–8 schema→sync→UI→nav
+
+## 2026-07-30 - Phase 1 schema tripType tripTypesJson
+
+- FuelEntry.tripType; Vehicle.tripTypesJson; AppDatabase v17; MIGRATION_16_17 registered
+- Building phase 1
+
+## 2026-07-30 - Phase 2 TripTypes helper + inherit
+
+- data/trip/TripTypes.kt pure parse/format/seed/reorder
+- VehicleRepository.insertVehicle stamps tripTypesJson from inherit or seed
+
+## 2026-07-30 - Phase 3 Tabular Trip Type columns
+
+- FUEL_HEADERS Trip Type; VEHICLE_HEADERS Trip Types JSON; maps + GoogleSheetsClient delegate
+
+## 2026-07-30 - Phase 4 TripTimeline helpers
+
+- isTripStart, tripStartsForVehicle, currentOpenTrip, buildTripStart
+
+## 2026-07-30 - Phase 5+6 TripTrackingScreen manual + manage types
+
+- Manual vehicle/odo/type, Start + Close(Personal), datetime override
+- ManageTripTypesDialog add/rename/reorder → vehicle.tripTypesJson
+
+## 2026-07-30 - Phase 7 camera odo path
+
+- TripTrackingScreen CameraPreview + OcrHarness.runAutoFillPipeline fills vehicle/odo
+
+## 2026-07-30 - Phase 8 nav + docs
+
+- MainActivity route triptracking + drawer after Quick Fill; NAVIGATION_MAP; project-facts Room v17 + trip locations
+
+## 2026-07-30 - Trip tracking plan execution complete
+
+- All phases 1–8 built; tag trip-tracking/builds @ 4d54082a
+- Open-only fuel tripType + vehicle tripTypesJson + TripTrackingScreen + sync columns
+- Ready to test; no ReportsScreen edits
+
+## 2026-07-30 - merge-trip-tracking-into-minor-fixes: execution start
+
+- Magic-approved plan: dev-ai-interaction/plans/merge-trip-tracking-into-minor-fixes-20260730-plan.md
+- Branch minor-fixes @ 4cecb088; merging trip-tracking @ f135917f
+- Baseline builds tag: minor-fixes/builds
+
+## 2026-07-30 - Trip tracking open-only fuel tripType execution start
+
+- Approved plan: dev-ai-interaction/plans/trip-tracking-open-only-fuel-triptype-20260730-plan.md
+- Branch: trip-tracking; agent-2 coder worktree
+- First action eng-log; phases 1–8 schema→sync→UI→nav
+
+## 2026-07-30 - Phase 1 schema tripType tripTypesJson
+
+- FuelEntry.tripType; Vehicle.tripTypesJson; AppDatabase v17; MIGRATION_16_17 registered
+- Building phase 1
+
+## 2026-07-30 - Phase 2 TripTypes helper + inherit
+
+- data/trip/TripTypes.kt pure parse/format/seed/reorder
+- VehicleRepository.insertVehicle stamps tripTypesJson from inherit or seed
+
+## 2026-07-30 - Phase 3 Tabular Trip Type columns
+
+- FUEL_HEADERS Trip Type; VEHICLE_HEADERS Trip Types JSON; maps + GoogleSheetsClient delegate
+
+## 2026-07-30 - Phase 4 TripTimeline helpers
+
+- isTripStart, tripStartsForVehicle, currentOpenTrip, buildTripStart
+
+## 2026-07-30 - Phase 5+6 TripTrackingScreen manual + manage types
+
+- Manual vehicle/odo/type, Start + Close(Personal), datetime override
+- ManageTripTypesDialog add/rename/reorder → vehicle.tripTypesJson
+
+## 2026-07-30 - Phase 7 camera odo path
+
+- TripTrackingScreen CameraPreview + OcrHarness.runAutoFillPipeline fills vehicle/odo
+
+## 2026-07-30 - Phase 8 nav + docs
+
+- MainActivity route triptracking + drawer after Quick Fill; NAVIGATION_MAP; project-facts Room v17 + trip locations
+
+## 2026-07-30 - Trip tracking plan execution complete
+
+- All phases 1–8 built; tag trip-tracking/builds @ 4d54082a
+- Open-only fuel tripType + vehicle tripTypesJson + TripTrackingScreen + sync columns
+- Ready to test; no ReportsScreen edits
+
+## 2026-07-30 - merge-trip-tracking-into-minor-fixes: complete
+
+- Plan: dev-ai-interaction/plans/merge-trip-tracking-into-minor-fixes-20260730-plan.md
+- Merge: two-parent commit 4273b527 (trip-tracking → minor-fixes). Standard `git merge` blocked by chattr +a ENGINEERING_LOG; used trip-only checkout + manual MainActivity resolve + commit-tree.
+- A2: MainActivity Trip Tracking after Quick Fill + Lab/Fuel History/Syncing retained; build SUCCESS (after java_res META-INF perm clean).
+- A3: project-facts DB v17 + trip bullets; NAVIGATION_MAP Syncing/Fuel History/Lab; TODO phase-2 tax-mile line.
+- B/C: UnitFormat.distanceUnitShortLabel + odometerReadingLabel; TripTrackingScreen wired (no bare mi); Fuel History trip line; Fuel Edit tripType field.
+- Tip 8666c3dc; builds tag minor-fixes/builds.
+- Residual: devices on DB v16 migrate once; multi-device font checklist separate; PR-minor-fixes.md stale until re-prepare-local-pr; tax reporting deferred.
+- No deploy. Ready for user test / later PR prep.
+
+## 2026-07-30 - reports-lab-trip-miles-and-exclude-trip-from-fuel: start
+
+- Magic-approved plan: dev-ai-interaction/plans/reports-lab-trip-miles-and-exclude-trip-from-fuel-20260730-plan.md
+- Branch minor-fixes @ 94b55314; baseline builds tag minor-fixes/builds
+- Phases 1–6: trip predicate docs, production+Lab fill inventory exclude trips, trip segment helpers, Lab Trip miles screen, hub/nav/facts
+
+## 2026-07-30 - reports-lab-trip-miles-and-exclude-trip-from-fuel: complete
+
+- Phases 1–6 done; tip 8e0c6f5f; builds tag minor-fixes/builds
+- Inventory: production + Lab fill counts/lists exclude TripTimeline.isTripStart
+- Lab Trip miles: reports_lab/trips, TripSegments, UnitFormat distance labels, TEXT/CSV share
+- Residual: implicit personal miles before first start out of scope; tax PDF n/a; re-prepare PR when ready
+
+## 2026-07-30 - docs-rules-ui-compat-agent-guidance: start
+
+- Magic-approved plan: dev-ai-interaction/plans/docs-rules-ui-compat-agent-guidance-20260730-plan.md
+- Branch minor-fixes @ 6b27d49c; phases: trip-miles nits N1–N4 then UI_COMPATIBILITY + mandates/docs
+
+## 2026-07-30 - docs-rules-ui-compat-agent-guidance: complete
+
+- Plan: docs-rules-ui-compat-agent-guidance-20260730-plan.md
+- N1–N4 fixed; UI_COMPATIBILITY.md + AGENT_MANDATES Compose UI section + CONTRIBUTING/facts/metrics/USER_GUIDE
+- Tip 9174744d; builds tag minor-fixes/builds; no PR/history rewrite
+
+## 2026-07-30 - ui-consistency-cards-density-theme: start
+
+- Magic-approved plan: dev-ai-interaction/plans/ui-consistency-cards-density-theme-20260730-plan.md
+- Branch minor-fixes; shared TappableCard/AdaptiveItemGrid/empty/date/cancel + apply in-scope UIs + theme accents + Material Save icons + UI_COMPAT docs
+
+## 2026-07-30 - ui-consistency-cards-density-theme: complete
+
+- Plan: ui-consistency-cards-density-theme-20260730-plan.md
+- UiChrome primitives; Material Save/PhotoLibrary; theme accents; date/header/cancel unify
+- Lists: Expense, Fuel History, Reports multi-col AdaptiveItemGrid, Lab hub/fills Cards, Syncing TappableCard
+- UI_COMPATIBILITY.md sections 11–15 (Cards, density, theme, icons, shared controls)
+- Residual: Import pending list not fully re-gridded; experiments untouched; camera chrome fixed contrast kept
+- builds tag minor-fixes/builds
+
+## 2026-07-30 - fix-adaptive-item-grid-measure: start
+
+- Magic-approved plan: dev-ai-interaction/plans/fix-adaptive-item-grid-measure-20260730-plan.md
+- Fix natural measure (Infinity wrap), remove 148.dp floor, TappableCard wrap, strip fillMaxWidth on grid children
+
+## 2026-07-30 - fix-adaptive-item-grid-measure: complete
+
+- Natural measure: Constraints(0, Infinity) + wrapContentWidth(unbounded); clamp natural to W; no 148.dp floor
+- Layout pass: equal cellW fill; TappableCard fillMaxWidth fills cell only
+- Reports VehicleSummaryBlock / Last5 wrapContentWidth; AdaptiveStatsText handles unbounded max
+- UI_COMPATIBILITY §12 + project-facts helper contract
+- Tip builds tag minor-fixes/builds; Phase 5 device check (5554 multi-col Lab hub) for user after install
+
+## 2026-07-30 - minor-fixes: local PR prepared (history cleanup)
+
+- Soft-reset cleanup: backup-minor-fixes @ 56b83864; 33 messy commits → 10 logical; TREE_MATCHES_BACKUP.
+- Cleaned tip 3cc40826; post-cleanup ./build_app SUCCESS; minor-fixes/builds updated.
+- ./generate_pr.sh → dev-ai-interaction/PRs/PR-minor-fixes.md (11 plans + Coder pre-submit).
+- Ready for Master (run-grok-master) independent review + merge. Coder does not merge.
+
+## 2026-07-30 - Master merge PR-minor-fixes
+
+- Merged minor-fixes via merge-branch-into-master.sh (FF index path)
+- POST-MERGE: 49 .kt paths staged (gate PASS)
+- Special files: master TODO base + closed Trip recording future work; tax-mile phase-2 + i18n future kept; project-facts from branch orientation; CHANGELOG 2026-07-30 audit + minor-fixes section preserved
+- Advanced reports left open (Lab experimental)
+
+
+## 2026-08-01 - Master TODO review (code vs backlog)
+
+- Closed: Advanced reports (Reports Lab shipped on master; multi-select remains separate deferred work)
+- Kept open OnlyOffice/Collabora (real backends still wanted; stub/catalog only)
+- Annotated: Location Lookup + EXIF/GPS (done on ui-followups, not master tip)
+- Annotated: ConflictResolutionScreen exists but unwired to identification
+- Future work: trip tax free-text reworded to remaining polish
+- Still open (valid): LITE_BUILD_TAILOR, 16k pages, polarity, landmarks remove, BufferSet audit, multi-currency, expense multi-vehicle UI, email import/hook, MSAL, deep linking, GPS currency, ODB-II, Play Store, pump experiment UI removal, schema docs, NDK subproject, missed fill logging, i18n packs
+
+
 ## 2026-07-26 - reports-field-conditional-economy-chains-20260726
 
 - Execution start for approved plan: reports-field-conditional-economy-chains-20260726-plan.md

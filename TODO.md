@@ -12,7 +12,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 
 ## Backlog (OCR / alignment / identity)
 - [ ] **Dashboard Polarity:** refine polarity detection beyond simple corner sampling (Algorithm A/B fallback)
-- [ ] **Conflict resolution:** field-level UI for multi-device sync column conflicts + wire `ConflictResolutionScreen` into identification flow for ambiguous matches
+- [ ] **Conflict resolution:** field-level UI for multi-device sync column conflicts + wire `ConflictResolutionScreen` into identification flow for ambiguous matches (`ConflictResolutionScreen` **exists**; identification wiring incomplete)
 - [ ] **Landmark management:** add ability to remove landmarks (not only ignore-crop); improve landmark CRUD in Manage Vehicles
 - [ ] **BufferSet anti-pattern audit:** eliminate cached `Mat`/`Slice` pointer aliases repo-wide (see `docs/specs/BUFFER_SET_SPEC.md`)
 
@@ -21,7 +21,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] Expense multi-vehicle picker UI + multi-page receipt capture UX (schema/sync ready)
 - [ ] Import **fill data** and **expense receipts** from email and/or file pickers (not only camera / gallery)
 - [ ] **Email hook:** receive/import fill and expense data via email intent or similar
-- [ ] **OnlyOffice / Collabora** tabular sync (deferred stub; spike NO-GO for headless cell API)
+- [ ] **OnlyOffice / Collabora** tabular sync (catalog + DeferredTabularBackendStub present; **real backends still TODO** — prior “spike NO-GO” was API approach; product still wanted)
 - [ ] **MSAL app registration:** replace placeholder `msal_auth_config.json` with real Azure app registration for managed OneDrive
 - [ ] **Deep linking** (not implemented per `docs/reference/NAVIGATION_MAP.md`)
 
@@ -32,7 +32,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 ## Backlog (features / product)
 - [ ] **Expense receipt parsing:** OCR/parse store name, cost, line items from receipt photos
 - [ ] **ODB-II integration:** live odometer reading
-- [ ] **Advanced reports and charts** (beyond current Reports screen)
+- [x] **Advanced reports and charts** (beyond current Reports screen)
 - [ ] **Prepare for Play Store** (signing, listing, policy, release pipeline)
 - [x] **Generate UI manual / in-app guide** (expand beyond `docs/reference/USER_GUIDE.md`)
 - [x] Quick Fill: Settings default currency/volume to "use system"
@@ -50,23 +50,16 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 
 Missed fill logging: fuel added but not recorded so MPG/$/mi cannot span that gap; needs UX + report/side-effect handling
 
-Trip tax-mile reporting (phase-2): open→open odo deltas by tripType; zero-length segment filter; economy-chain explicit ignore of trip starts (Trip Tracking open-only is shipped)
+Trip tax-mile reporting (remaining polish): open→open packaging/export if still needed — open-only + Lab trip miles/personal filters shipped via ui-followups
 
 i18n later: language packs for LTR locales; RTL and beyond deferred — see dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md (odometers/pumps still primarily Western digits; full UI RTL/complex scripts much later)
 
 i18n language packs (later): include Help + user-manual pipeline translation; debug/failure/feedback email templates stay English; RTL/beyond still deferred
-Location multi-candidate picker: show nearby POIs ranked by distance/accuracy; pick one (accuracyM informs ranking)
 
-Post-save location confirm UI: confirm deferred/worker place fill on edit screens (silent fill uses confirmed:false)
+Location multi-candidate picker: nearby POIs ranked by distance/accuracy; pick one
 
-- [ ] Rejected: continuous/background trip GPS tracking (tracks, conditions, speed, temp)
+Post-save location confirm UI on edit screens (silent worker fill uses confirmed:false)
 
-- [ ] Rejected: tax authority rates/forms/tax-compliance product claims
+Reports multi-select vehicle checkboxes + Sum/Average (not Each-only); deferred from efficiency Each-vehicle
 
-- [ ] Rejected: dedicated end-trip event (open-only + implicit personal is enough)
-
-- [ ] Trip miles packaging polish (export labels/annual packs); core implicit personal shipped
-
-- [x] Trip miles: implicit personal in period + hub share UX (supersedes free-text Trip tax-mile reporting line above)
-
-Reports Lab: multi-select vehicle checkboxes + Sum/Average (not Each-only); deferred from reports-efficiency-mpg-dpm-each-vehicle-20260731
+Trip miles packaging polish (export labels/annual packs); core open-only + implicit personal shipped
