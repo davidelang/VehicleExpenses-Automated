@@ -16,15 +16,25 @@ object EmailReceiptIds {
     fun syncIdForGmailMessage(messageId: String): String =
         uuidFromName("email|gmail|${messageId.trim()}")
 
+    fun syncIdForImapMessage(messageId: String): String =
+        uuidFromName("email|imap|${messageId.trim()}")
+
+    fun syncIdForProviderMessage(provider: String, messageId: String): String =
+        uuidFromName("email|${provider.trim().ifBlank { "mail" }}|${messageId.trim()}")
+
     fun syncIdForShellFallback(siteId: String?, timestampLocal: String?, timestampMs: Long): String {
         val site = siteId?.takeIf { it.isNotBlank() } ?: "unknown"
         val local = timestampLocal?.takeIf { it.isNotBlank() } ?: timestampMs.toString()
         return uuidFromName("email|shell|$site|$local")
     }
 
-    fun syncIdFor(parsed: ParsedFuelReceipt, gmailMessageId: String?): String {
-        val mid = gmailMessageId?.trim().orEmpty()
-        if (mid.isNotEmpty()) return syncIdForGmailMessage(mid)
+    fun syncIdFor(
+        parsed: ParsedFuelReceipt,
+        messageId: String?,
+        provider: String = "gmail",
+    ): String {
+        val mid = messageId?.trim().orEmpty()
+        if (mid.isNotEmpty()) return syncIdForProviderMessage(provider, mid)
         return syncIdForShellFallback(parsed.siteId, parsed.timestampLocal, parsed.timestampMs)
     }
 

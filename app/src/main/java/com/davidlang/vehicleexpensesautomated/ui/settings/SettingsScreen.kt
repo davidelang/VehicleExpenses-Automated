@@ -278,15 +278,50 @@ fun SettingsScreen(navController: NavHostController) {
         // Email loyalty receipts (Gmail label → Room Unassigned fuel rows)
         val emailPrefs = remember { EmailReceiptPrefs(context) }
         var emailPollEnabled by remember { mutableStateOf(emailPrefs.enabled) }
+        var emailGmailEnabled by remember {
+            mutableStateOf(
+                emailPrefs.source != EmailReceiptPrefs.SOURCE_IMAP || !emailPrefs.imapEnabled,
+            )
+        }
+        var emailImapEnabled by remember {
+            mutableStateOf(
+                emailPrefs.imapEnabled ||
+                    emailPrefs.source == EmailReceiptPrefs.SOURCE_IMAP ||
+                    emailPrefs.source == EmailReceiptPrefs.SOURCE_BOTH,
+            )
+        }
         var emailLabel by remember {
             mutableStateOf(
                 emailPrefs.labelName.ifBlank { EmailReceiptPrefs.DEFAULT_LABEL },
             )
         }
         var emailAccount by remember { mutableStateOf(emailPrefs.accountEmail.orEmpty()) }
+        var imapHost by remember { mutableStateOf(emailPrefs.imapHost) }
+        var imapPort by remember { mutableStateOf(emailPrefs.imapPort.toString()) }
+        var imapUser by remember { mutableStateOf(emailPrefs.imapUsername) }
+        var imapPassword by remember { mutableStateOf(emailPrefs.imapPassword) }
+        var imapFolder by remember {
+            mutableStateOf(emailPrefs.imapFolder.ifBlank { EmailReceiptPrefs.DEFAULT_IMAP_FOLDER })
+        }
         var emailLastSummary by remember { mutableStateOf(emailPrefs.lastRunSummary) }
         var emailOfflineBusy by remember { mutableStateOf(false) }
         var emailPollWatchToken by remember { mutableIntStateOf(0) }
+        fun persistEmailSource() {
+            emailPrefs.enabled = emailPollEnabled
+            emailPrefs.imapEnabled = emailImapEnabled
+            emailPrefs.source = when {
+                emailGmailEnabled && emailImapEnabled -> EmailReceiptPrefs.SOURCE_BOTH
+                emailImapEnabled -> EmailReceiptPrefs.SOURCE_IMAP
+                else -> EmailReceiptPrefs.SOURCE_GMAIL
+            }
+            emailPrefs.labelName = emailLabel
+            emailPrefs.imapHost = imapHost
+            emailPrefs.imapPort = imapPort.toIntOrNull() ?: EmailReceiptPrefs.DEFAULT_IMAP_PORT
+            emailPrefs.imapUsername = imapUser
+            emailPrefs.imapPassword = imapPassword
+            emailPrefs.imapFolder = imapFolder
+            viewModel.rescheduleEmailReceiptPoll()
+        }
         // Reload last-run when Settings is shown / recomposed after nav
         LaunchedEffect(Unit) {
             emailLastSummary = emailPrefs.lastRunSummary
@@ -321,11 +356,11 @@ fun SettingsScreen(navController: NavHostController) {
         }
         Text("Email receipts (Shell + Sam's Club)", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Offline: ingest packaged Shell + Sam's Club samples into Unassigned fuel (no Gmail). " +
-                "Live: polls only a Gmail label you choose (put Shell and Sam's fuel mails on the same label). " +
-                "Vendor is auto-detected per message; unknown mail is skipped. " +
+            "Offline: packaged samples → Unassigned fuel. " +
+                "Live: Gmail label (OAuth) and/or generic IMAP folder (host + app password). " +
+                "Same label/folder may hold multiple vendors; parser auto-detects. " +
                 "Rows: vehicle Unassigned (id 0), odometer 0, Partial Fill off. " +
-                "Gmail readonly scope is broad at OAuth; label is the app filter.",
+                "IMAP uses TLS (port 993). Passwords are not written to logcat.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -361,21 +396,24 @@ fun SettingsScreen(navController: NavHostController) {
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
-        SwitchSetting("Enable Gmail receipt poll", emailPollEnabled) { enabled ->
+        SwitchSetting("Enable scheduled email poll", emailPollEnabled) { enabled ->
             emailPollEnabled = enabled
-            emailPrefs.enabled = enabled
-            emailPrefs.labelName = emailLabel
-            viewModel.rescheduleEmailReceiptPoll()
+            persistEmailSource()
+        }
+        SwitchSetting("Use Gmail (OAuth + label)", emailGmailEnabled) { on ->
+            emailGmailEnabled = on
+            if (!on && !emailImapEnabled) emailImapEnabled = true
+            persistEmailSource()
         }
         OutlinedTextField(
             value = emailLabel,
             onValueChange = {
                 emailLabel = it
                 emailPrefs.labelName = it
-                if (emailPollEnabled) viewModel.rescheduleEmailReceiptPoll()
             },
             label = { Text("Gmail label name") },
             singleLine = true,
+            enabled = emailGmailEnabled,
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -384,25 +422,76 @@ fun SettingsScreen(navController: NavHostController) {
             else "Gmail account: $emailAccount",
             style = MaterialTheme.typography.bodyMedium,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
-                emailSignInLauncher.launch(viewModel.emailReceiptSignInIntent())
-            }) {
-                Text("Sign in for Gmail")
-            }
-            OutlinedButton(
-                onClick = {
-                    emailPrefs.labelName = emailLabel
-                    emailPrefs.enabled = emailPollEnabled
-                    viewModel.pollEmailReceiptsNow()
-                    Toast.makeText(context, "Email receipt poll queued", Toast.LENGTH_SHORT).show()
-                    emailLastSummary = emailPrefs.lastRunSummary
-                    emailPollWatchToken++
-                },
-                enabled = emailPollEnabled && emailLabel.isNotBlank(),
-            ) {
-                Text("Poll now")
-            }
+        Button(
+            onClick = { emailSignInLauncher.launch(viewModel.emailReceiptSignInIntent()) },
+            enabled = emailGmailEnabled,
+        ) {
+            Text("Sign in for Gmail")
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        SwitchSetting("Use IMAP (folder)", emailImapEnabled) { on ->
+            emailImapEnabled = on
+            if (!on && !emailGmailEnabled) emailGmailEnabled = true
+            persistEmailSource()
+        }
+        OutlinedTextField(
+            value = imapHost,
+            onValueChange = { imapHost = it },
+            label = { Text("IMAP host (e.g. imap.gmail.com)") },
+            singleLine = true,
+            enabled = emailImapEnabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = imapPort,
+            onValueChange = { imapPort = it.filter { ch -> ch.isDigit() }.take(5) },
+            label = { Text("IMAP port (993 TLS)") },
+            singleLine = true,
+            enabled = emailImapEnabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = imapUser,
+            onValueChange = { imapUser = it },
+            label = { Text("IMAP username") },
+            singleLine = true,
+            enabled = emailImapEnabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = imapPassword,
+            onValueChange = { imapPassword = it },
+            label = { Text("IMAP password / app password") },
+            singleLine = true,
+            enabled = emailImapEnabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = imapFolder,
+            onValueChange = { imapFolder = it },
+            label = { Text("IMAP folder (e.g. INBOX or Receipts)") },
+            singleLine = true,
+            enabled = emailImapEnabled,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = {
+                persistEmailSource()
+                emailPrefs.enabled = true
+                emailPollEnabled = true
+                viewModel.pollEmailReceiptsNow()
+                Toast.makeText(context, "Email receipt poll queued", Toast.LENGTH_SHORT).show()
+                emailLastSummary = emailPrefs.lastRunSummary
+                emailPollWatchToken++
+            },
+            enabled = emailPollEnabled && (
+                (emailGmailEnabled && emailLabel.isNotBlank()) ||
+                    (emailImapEnabled && imapHost.isNotBlank() && imapUser.isNotBlank())
+                ),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Poll now")
         }
         TextButton(onClick = {
             emailLastSummary = viewModel.readEmailReceiptLastSummary()

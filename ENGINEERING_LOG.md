@@ -4301,3 +4301,18 @@ x
 - Offline fixtures: 2 Shell + 1 Sam's; node tests 60 pass
 - Apps Script ReceiptParsers/SamsParser; Settings copy multi-vendor
 
+
+## 2026-08-01 - Execute generic IMAP folder fetch plan
+
+- Plan: dev-ai-interaction/plans/email-receipt-generic-imap-folder-fetch-20260801-0231-plan.md
+- Branch: email-connection @ 7e5368c7
+- First action: eng-log; Status APPROVED on plan
+
+
+## 2026-08-01 - IMAP folder fetch phases done
+
+- ImapReceiptClient (IMAPS 993), prefs + encrypted password, worker gmail|imap|both
+- Settings IMAP fields; ReceiptParsers for parse; Sync ID email|imap|{id}
+
+
+## 2026-08-01 - IMAP build gate

@@ -29,9 +29,14 @@ class FuelReceiptIngest @Inject constructor(
         parsed: ParsedFuelReceipt,
         gmailMessageId: String? = null,
         originDeviceId: String = EmailReceiptIds.ORIGIN_ANDROID_EMAIL_POLLER,
+        /** Stable message key for Sync ID (Gmail id or IMAP Message-ID / folder|uid). */
+        messageId: String? = gmailMessageId,
+        /** Sync-ID provider segment: gmail | imap | fixture | … */
+        messageProvider: String = "gmail",
     ): Result {
         vehicleRepository.ensureUnassignedVehicle()
-        val syncId = EmailReceiptIds.syncIdFor(parsed, gmailMessageId)
+        val mid = messageId ?: gmailMessageId
+        val syncId = EmailReceiptIds.syncIdFor(parsed, mid, messageProvider)
         val existing = fuelEntryRepository.findBySyncId(syncId)
         if (existing != null) {
             Log.i(TAG, "skip duplicate syncId=$syncId")
@@ -41,7 +46,8 @@ class FuelReceiptIngest @Inject constructor(
             JSONObject()
                 .put("src", "email")
                 .put("provider", parsed.brand.lowercase())
-                .put("msgId", gmailMessageId ?: parsed.messageKey)
+                .put("msgId", mid ?: parsed.messageKey)
+                .put("transport", messageProvider)
                 .apply {
                     if (!parsed.siteId.isNullOrBlank()) put("siteId", parsed.siteId)
                     if (!parsed.product.isNullOrBlank()) put("product", parsed.product)
