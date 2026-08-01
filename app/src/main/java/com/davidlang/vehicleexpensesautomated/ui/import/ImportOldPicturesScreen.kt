@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,13 +24,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,6 +68,7 @@ import com.davidlang.vehicleexpensesautomated.data.batch.BatchImportResult
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingItem
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchPendingKind
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelEconomyOutliers
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelOdoReorder
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelRowMergeEngine
 import com.davidlang.vehicleexpensesautomated.data.batch.MergeApplyResult
 import com.davidlang.vehicleexpensesautomated.data.batch.PendingAnswerAction
@@ -74,11 +77,15 @@ import com.davidlang.vehicleexpensesautomated.data.batch.StageCPhase
 import com.davidlang.vehicleexpensesautomated.data.batch.StageCPhaseStore
 import com.davidlang.vehicleexpensesautomated.data.batch.dashPhotoPaths
 import com.davidlang.vehicleexpensesautomated.data.batch.dedupePhotoPaths
+import com.davidlang.vehicleexpensesautomated.data.batch.isDashPathHint
+import com.davidlang.vehicleexpensesautomated.data.batch.isPumpPathHint
 import com.davidlang.vehicleexpensesautomated.data.batch.pendingPhotoUris
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.ui.batch.BatchImportViewModel
+import com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField
+import com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog
 import com.davidlang.vehicleexpensesautomated.ui.components.fuelHasArchiveIdentity
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
@@ -118,6 +125,8 @@ fun ImportOldPicturesScreen(
     var lastResult by remember { mutableStateOf<BatchImportResult?>(null) }
     var lastMerge by remember { mutableStateOf<MergeApplyResult?>(null) }
     var mergeAfterImport by remember { mutableStateOf(false) }
+    var locationEnhanceWithImport by remember { mutableStateOf(false) }
+    var enhancingLocation by remember { mutableStateOf(false) }
     var pendingSnapshot by remember {
         mutableStateOf(BatchImportPendingStore.load(context).toList())
     }
@@ -125,10 +134,19 @@ fun ImportOldPicturesScreen(
         mutableStateOf(StageCPhaseStore.currentPhase(context))
     }
     var showQuestions by remember {
-        mutableStateOf(expandReview && pendingSnapshot.isNotEmpty())
+        // Always allow opening the phase panel (empty pending still needs Next phase).
+        mutableStateOf(expandReview)
     }
     // Pending store is phase-scoped (only current phase kinds)
     val phasePending = pendingSnapshot
+    var showReorderDialog by remember { mutableStateOf(false) }
+    var odoDisorders by remember {
+        mutableStateOf<List<FuelOdoReorder.VehicleDisorder>>(emptyList())
+    }
+    var reorderVehicleId by remember { mutableStateOf<Int?>(null) } // null = all
+    var reorderStrategy by remember {
+        mutableStateOf(FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS)
+    }
 
     val dashDir = remember { BatchFuelImportCoordinator.dashPhotoDir(context) }
     val pumpDir = remember { BatchFuelImportCoordinator.pumpPhotoDir(context) }
@@ -170,7 +188,7 @@ fun ImportOldPicturesScreen(
     }
 
     fun startIngest(maxDash: Int?, maxPump: Int?, toastLabel: String) {
-        if (running || merging) return
+        if (running || merging || enhancingLocation) return
         running = true
         lastResult = null
         scope.launch {
@@ -183,6 +201,7 @@ fun ImportOldPicturesScreen(
                     onProgress = { p -> progress = p },
                     maxDash = maxDash,
                     maxPump = maxPump,
+                    locationEnhanceWithImport = locationEnhanceWithImport,
                 )
                 lastResult = result
                 pendingSnapshot = result.pending
@@ -280,7 +299,7 @@ fun ImportOldPicturesScreen(
         }
 
         val limitN = BatchFuelImportCoordinator.LIMITED_IMPORT_COUNT
-        val busy = running || answering || merging
+        val busy = running || answering || merging || enhancingLocation
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -324,9 +343,51 @@ fun ImportOldPicturesScreen(
             Text(if (merging) "Merging…" else "Run merge")
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = locationEnhanceWithImport,
+                onCheckedChange = { locationEnhanceWithImport = it },
+                enabled = !busy,
+            )
+            Text(
+                "Location enhance with import (default off)",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
+        Button(
+            onClick = {
+                if (busy) return@Button
+                enhancingLocation = true
+                mergeStatus = "Location enhance…"
+                scope.launch {
+                    try {
+                        val msg = coordinator.runLocationEnhance { m -> mergeStatus = m }
+                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                    } catch (e: Exception) {
+                        mergeStatus = "location enhance failed: ${e.message}"
+                        Toast.makeText(
+                            context,
+                            "Location enhance failed: ${e.message}",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } finally {
+                        enhancingLocation = false
+                    }
+                }
+            },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (enhancingLocation) "Enhancing…" else "Run location enhance")
+        }
+
         OutlinedButton(
             onClick = {
-                if (running || merging || answering) return@OutlinedButton
+                if (running || merging || answering || enhancingLocation) return@OutlinedButton
                 merging = true
                 mergeStatus = "Clearing pending…"
                 scope.launch {
@@ -387,12 +448,129 @@ fun ImportOldPicturesScreen(
             )
         }
 
+        // Stage C chrome: Next phase / Reset always reachable (not gated on pending).
+        Text(
+            StageCPhaseStore.label(stagePhase),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            "Phase-scoped queue: only this phase is generated. " +
+                "Next phase rebuilds from Room after your answers. Skip hides for this phase only.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (phasePending.isEmpty()) {
+            Text(
+                "No questions in this phase. Tap Next phase to generate the next stage.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Button(
+                onClick = {
+                    if (busy || stagePhase >= StageCPhase.MAX) return@Button
+                    merging = true
+                    mergeStatus = "Next phase…"
+                    scope.launch {
+                        try {
+                            val result = coordinator.advancePhaseAndRebuild { msg ->
+                                mergeStatus = msg
+                            }
+                            lastMerge = result
+                            reloadPending()
+                            stagePhase = StageCPhaseStore.currentPhase(context)
+                            showQuestions = true
+                            Toast.makeText(
+                                context,
+                                "Phase $stagePhase: ${result.totalPending} questions",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                context,
+                                "Next phase failed: ${e.message}",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } finally {
+                            merging = false
+                        }
+                    }
+                },
+                enabled = !busy && stagePhase < StageCPhase.MAX,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Next phase")
+            }
+            OutlinedButton(
+                onClick = {
+                    StageCPhaseStore.resetToPhase1(context)
+                    stagePhase = StageCPhaseStore.currentPhase(context)
+                    runMerge(toastPrefix = "Rescan phase 1")
+                },
+                enabled = !busy,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Reset to phase 1")
+            }
+        }
+
+        val hasOdoPending = phasePending.any {
+            it.kind == BatchPendingKind.ODO_SUSPECT ||
+                it.kind == BatchPendingKind.CONFLICT_ODO
+        }
+        val reorderGatePhaseOk = stagePhase > StageCPhase.COMPLEX_ODO.number ||
+            (stagePhase >= StageCPhase.COMPLEX_ODO.number && !hasOdoPending)
+        OutlinedButton(
+            onClick = {
+                if (busy) return@OutlinedButton
+                merging = true
+                scope.launch {
+                    try {
+                        odoDisorders = withContext(Dispatchers.IO) {
+                            coordinator.analyzeOdoDisorder()
+                        }
+                        if (odoDisorders.none { it.anchorCount >= 2 }) {
+                            Toast.makeText(
+                                context,
+                                "Need a vehicle with ≥2 fills (odo > 0)",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } else {
+                            reorderVehicleId = null
+                            reorderStrategy = FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS
+                            showReorderDialog = true
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Preview failed: ${e.message}", Toast.LENGTH_LONG)
+                            .show()
+                    } finally {
+                        merging = false
+                    }
+                }
+            },
+            enabled = !busy && reorderGatePhaseOk,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                if (reorderGatePhaseOk) {
+                    "Reorder by odometer…"
+                } else {
+                    "Reorder by odometer… (finish odo phases first)"
+                },
+            )
+        }
+
         OutlinedButton(
             onClick = {
                 reloadPending()
                 showQuestions = !showQuestions
             },
-            enabled = pendingSnapshot.isNotEmpty() || showQuestions,
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
@@ -402,68 +580,6 @@ fun ImportOldPicturesScreen(
         }
 
         if (showQuestions) {
-            Text(
-                StageCPhaseStore.label(stagePhase),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                "Phase-scoped queue: only this phase is generated. " +
-                    "Next phase rebuilds from Room after your answers. Skip hides for this phase only. " +
-                    "Tap photo to enlarge.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = {
-                        if (busy || stagePhase >= StageCPhase.MAX) return@Button
-                        merging = true
-                        mergeStatus = "Next phase…"
-                        scope.launch {
-                            try {
-                                val result = coordinator.advancePhaseAndRebuild { msg ->
-                                    mergeStatus = msg
-                                }
-                                lastMerge = result
-                                reloadPending()
-                                val p = StageCPhaseStore.currentPhase(context)
-                                Toast.makeText(
-                                    context,
-                                    "Phase $p: ${result.totalPending} questions",
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(
-                                    context,
-                                    "Next phase failed: ${e.message}",
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            } finally {
-                                merging = false
-                            }
-                        }
-                    },
-                    enabled = !busy && stagePhase < StageCPhase.MAX,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Next phase")
-                }
-                OutlinedButton(
-                    onClick = {
-                        StageCPhaseStore.resetToPhase1(context)
-                        stagePhase = 1
-                        runMerge(toastPrefix = "Rescan phase 1")
-                    },
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Reset to phase 1")
-                }
-            }
             OutlinedButton(
                 onClick = {
                     scope.launch {
@@ -493,7 +609,10 @@ fun ImportOldPicturesScreen(
                 Text("Export answer journal")
             }
             if (phasePending.isEmpty()) {
-                Text("No pending items in this phase. Tap Next phase when ready.")
+                Text(
+                    "No questions in this phase. Tap Next phase to generate the next stage.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
             phasePending.forEach { item ->
                 PendingQuestionCard(
@@ -508,6 +627,46 @@ fun ImportOldPicturesScreen(
             }
         }
 
+        if (showReorderDialog) {
+            ReorderByOdometerDialog(
+                vehicles = activeVehicles,
+                disorders = odoDisorders,
+                selectedVehicleId = reorderVehicleId,
+                onVehicleChange = { reorderVehicleId = it },
+                strategy = reorderStrategy,
+                onStrategyChange = { reorderStrategy = it },
+                enabled = !busy,
+                onDismiss = { showReorderDialog = false },
+                onConfirm = {
+                    showReorderDialog = false
+                    if (busy) return@ReorderByOdometerDialog
+                    merging = true
+                    mergeStatus = "Reorder by odometer…"
+                    val vid = reorderVehicleId
+                    val strat = reorderStrategy
+                    scope.launch {
+                        try {
+                            val result = coordinator.applyOdoReorder(vid, strat) { msg ->
+                                mergeStatus = msg
+                            }
+                            lastMerge = result
+                            reloadPending()
+                            stagePhase = StageCPhaseStore.currentPhase(context)
+                            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                context,
+                                "Reorder failed: ${e.message}",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                        } finally {
+                            merging = false
+                        }
+                    }
+                },
+            )
+        }
+
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedButton(
             onClick = { navController.popBackStack() },
@@ -515,6 +674,134 @@ fun ImportOldPicturesScreen(
         ) {
             Text("Back")
         }
+    }
+}
+
+@Composable
+private fun ReorderByOdometerDialog(
+    vehicles: List<Vehicle>,
+    disorders: List<FuelOdoReorder.VehicleDisorder>,
+    selectedVehicleId: Int?,
+    onVehicleChange: (Int?) -> Unit,
+    strategy: FuelOdoReorder.Strategy,
+    onStrategyChange: (FuelOdoReorder.Strategy) -> Unit,
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val nameOf: (Int) -> String = { vid ->
+        vehicles.find { it.id == vid }?.name
+            ?: if (vid == 0) "Unknown" else "Vehicle $vid"
+    }
+    val scoped = if (selectedVehicleId == null) {
+        disorders
+    } else {
+        disorders.filter { it.vehicleId == selectedVehicleId }
+    }
+    val reverseTotal = scoped.sumOf { it.reverseSteps.size }
+    val permuteVehicles = scoped.count { it.needsTimestampPermute }
+    val confirmDestructive = strategy == FuelOdoReorder.Strategy.DELETE_OFFENDERS
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reorder by odometer") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    "Timestamps may be wrong (bad EXIF). Odometer readings are treated as truth. " +
+                        "Pick a vehicle scope and strategy.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text("Vehicle scope", style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(
+                        selected = selectedVehicleId == null,
+                        onClick = { onVehicleChange(null) },
+                        enabled = enabled,
+                    )
+                    Text("All vehicles with anchors")
+                }
+                disorders.filter { it.anchorCount >= 2 }.forEach { d ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = selectedVehicleId == d.vehicleId,
+                            onClick = { onVehicleChange(d.vehicleId) },
+                            enabled = enabled,
+                        )
+                        Text(
+                            "${nameOf(d.vehicleId)} · anchors ${d.anchorCount} · " +
+                                "reverse ${d.reverseSteps.size}" +
+                                if (d.needsTimestampPermute) " · needs permute" else "",
+                        )
+                    }
+                }
+                Text("Strategy", style = MaterialTheme.typography.titleSmall)
+                StrategyRadio(
+                    selected = strategy == FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS,
+                    label = "A. Reorder timestamps to match odo (recommended)",
+                    detail = "Permute existing times onto odo order; no invented times.",
+                    enabled = enabled,
+                    onClick = { onStrategyChange(FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS) },
+                )
+                StrategyRadio(
+                    selected = strategy == FuelOdoReorder.Strategy.ECONOMY_IGNORE,
+                    label = "B. Leave order; mark economy ignore",
+                    detail = "economyIgnored on later-by-time reverse offenders ($reverseTotal steps).",
+                    enabled = enabled,
+                    onClick = { onStrategyChange(FuelOdoReorder.Strategy.ECONOMY_IGNORE) },
+                )
+                StrategyRadio(
+                    selected = strategy == FuelOdoReorder.Strategy.DELETE_OFFENDERS,
+                    label = "C. Delete out-of-order rows",
+                    detail = "Soft-delete later-by-time reverse offenders ($reverseTotal). Destructive.",
+                    enabled = enabled,
+                    onClick = { onStrategyChange(FuelOdoReorder.Strategy.DELETE_OFFENDERS) },
+                )
+                Text(
+                    "Preview: vehicles needing permute=$permuteVehicles · reverse steps=$reverseTotal",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = enabled && scoped.any { it.anchorCount >= 2 },
+            ) {
+                Text(if (confirmDestructive) "Confirm delete" else "Apply")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun StrategyRadio(
+    selected: Boolean,
+    label: String,
+    detail: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = selected, onClick = onClick, enabled = enabled)
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+        }
+        Text(
+            detail,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 40.dp),
+        )
     }
 }
 
@@ -575,6 +862,10 @@ private fun PendingQuestionCard(
     var odoPrevPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
     var odoCurPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
     var odoNextPhotos by remember(item.id) { mutableStateOf<List<String>>(emptyList()) }
+    /** Peer FuelEntry rows for archive-identity checks (complex ODO Stage C). */
+    var odoPrevEntry by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    var odoCurEntry by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
+    var odoNextEntry by remember(item.id) { mutableStateOf<FuelEntry?>(null) }
     var odoPrevId by remember(item.id) {
         mutableStateOf(item.extra["prevEntryId"]?.toLongOrNull())
     }
@@ -687,6 +978,13 @@ private fun PendingQuestionCard(
                 fuelViewModel.downloadFuelPhoto(scrubbed)
                 val refreshed = fuelViewModel.getFuelById(entryId) ?: scrubbed
                 archiveFuel = refreshed
+                when (entryId) {
+                    odoPrevId -> odoPrevEntry = refreshed
+                    odoCurId -> odoCurEntry = refreshed
+                    odoNextId -> odoNextEntry = refreshed
+                    lastEntryId -> lastRow = refreshed
+                    thisEntryId -> thisRow = refreshed
+                }
                 val uris = FuelPhotoJson.parse(refreshed.photoUrl).map { it.uri }
                 if (uris.isNotEmpty()) {
                     onPaths(uris)
@@ -743,6 +1041,9 @@ private fun PendingQuestionCard(
                 val prevE = odoPrevId?.let { coordinator.getFuelEntry(it) }
                 val curE = odoCurId?.let { coordinator.getFuelEntry(it) }
                 val nextE = odoNextId?.let { coordinator.getFuelEntry(it) }
+                odoPrevEntry = prevE
+                odoCurEntry = curE
+                odoNextEntry = nextE
 
                 odoPrevPhotos = paths("prevDashPaths").ifEmpty {
                     prevE?.let { dashPhotoPaths(it) }.orEmpty()
@@ -930,33 +1231,43 @@ private fun PendingQuestionCard(
             } else if (item.kind == BatchPendingKind.ODO_SUSPECT &&
                 item.extra["mode"] == "simple"
             ) {
-                // Phase 1 short UI: one dash image + pre-filled guess
-                val guess = item.extra["suggestedOdo"] ?: item.extra["parsedOdo"].orEmpty()
+                // Phase 1 short UI: one dash image + pre-filled guess (or blank for odo=0)
+                val guess = item.extra["suggestedOdo"].orEmpty().ifBlank {
+                    item.extra["parsedOdo"]?.takeIf { it != "0" }.orEmpty()
+                }
                 var simpleOdo by remember(item.id) { mutableStateOf(guess) }
+                val missingZero = item.extra["reason"] == "missing_odo_dash" ||
+                    (item.extra["parsedOdo"] == "0" && guess.isBlank())
                 Text(
-                    "Suggested fix (length OCR). Edit if wrong, then Save.",
+                    if (missingZero) {
+                        "Odometer missing — read dash photo, enter value, then Save."
+                    } else {
+                        "Suggested fix (length OCR). Edit if wrong, then Save."
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 PendingPhotoRow(
-                    paths = photoPaths.ifEmpty {
-                        listOfNotNull(item.photoPath ?: item.durablePhotoPath)
-                    },
+                    paths = photoPaths
+                        .ifEmpty { listOfNotNull(item.photoPath ?: item.durablePhotoPath) }
+                        .filter { isDashPathHint(it) }
+                        .let { dedupePhotoPaths(it) },
                     conflict = false,
                     onTap = { zoomPath = it },
                     canFetchArchive = canFetchFor(archiveFuel),
                     isFetchingArchive = fetchingArchive,
                     onFetchArchive = {
-                        fetchArchiveFor(focusEntryId) { photoPaths = it }
+                        fetchArchiveFor(focusEntryId) { photoPaths = it.filter { p -> isDashPathHint(p) } }
                     },
                 )
-                OutlinedTextField(
+                com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                     value = simpleOdo,
                     onValueChange = { simpleOdo = it },
                     label = { Text("Odometer") },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = enabled,
                     singleLine = true,
+                    showCaretButtons = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
                 Button(
@@ -978,6 +1289,25 @@ private fun PendingQuestionCard(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Save odometer")
+                }
+                Text(
+                    "Gap/digit flags are detect-only. If the odometer is already right, " +
+                        "acknowledge so this chain is not re-asked after rescan.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = {
+                        onAction(
+                            PendingAnswerAction.AcknowledgeLooksCorrect(
+                                kind = "ODO_SUSPECT",
+                            ),
+                        )
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("These odometers look correct")
                 }
             } else if (item.kind == BatchPendingKind.ODO_SUSPECT) {
                 // Phase 2: per-fill dash-only blocks previous → cur → next
@@ -1019,6 +1349,13 @@ private fun PendingQuestionCard(
                     ),
                     enabled = enabled,
                     onPhotoTap = { zoomPath = it },
+                    canFetchArchive = canFetchFor(odoPrevEntry),
+                    isFetchingArchive = fetchingArchive,
+                    onFetchArchive = {
+                        fetchArchiveFor(odoPrevId) { uris ->
+                            odoPrevPhotos = dedupePhotoPaths(uris.filter { isDashPathHint(it) })
+                        }
+                    },
                 )
                 OdoPeerBlock(
                     title = if (odoSuspectId == odoCurId || odoSuspectId == null) {
@@ -1037,6 +1374,13 @@ private fun PendingQuestionCard(
                     ),
                     enabled = enabled,
                     onPhotoTap = { zoomPath = it },
+                    canFetchArchive = canFetchFor(odoCurEntry),
+                    isFetchingArchive = fetchingArchive,
+                    onFetchArchive = {
+                        fetchArchiveFor(odoCurId) { uris ->
+                            odoCurPhotos = dedupePhotoPaths(uris.filter { isDashPathHint(it) })
+                        }
+                    },
                 )
                 if (odoNextId != null) {
                     OdoPeerBlock(
@@ -1055,6 +1399,13 @@ private fun PendingQuestionCard(
                         ),
                         enabled = enabled,
                         onPhotoTap = { zoomPath = it },
+                        canFetchArchive = canFetchFor(odoNextEntry),
+                        isFetchingArchive = fetchingArchive,
+                        onFetchArchive = {
+                            fetchArchiveFor(odoNextId) { uris ->
+                                odoNextPhotos = dedupePhotoPaths(uris.filter { isDashPathHint(it) })
+                            }
+                        },
                     )
                 }
 
@@ -1075,6 +1426,25 @@ private fun PendingQuestionCard(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Save odometers")
+                }
+                Text(
+                    "Gap/digit flags are detect-only. If all peer odos are already right, " +
+                        "acknowledge so this chain is not re-asked after rescan (keeps numbers).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = {
+                        onAction(
+                            PendingAnswerAction.AcknowledgeLooksCorrect(
+                                kind = "ODO_SUSPECT",
+                            ),
+                        )
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("These odometers look correct")
                 }
                 // Optional partial on suspect if complete (cost+vol from extra)
                 val suspectComplete = run {
@@ -1122,15 +1492,30 @@ private fun PendingQuestionCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
+                val displayPaths = when (item.kind) {
+                    BatchPendingKind.BAD_PUMP_RATIO ->
+                        photoPaths.filter { isPumpPathHint(it) }.let { dedupePhotoPaths(it) }
+                    BatchPendingKind.ODO_SUSPECT ->
+                        photoPaths.filter { isDashPathHint(it) }.let { dedupePhotoPaths(it) }
+                    else -> photoPaths
+                }
                 PendingPhotoRow(
-                    paths = photoPaths,
+                    paths = displayPaths,
                     conflict = item.kind == BatchPendingKind.CONFLICT_ODO ||
                         item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
                     onTap = { zoomPath = it },
                     canFetchArchive = canFetchFor(archiveFuel),
                     isFetchingArchive = fetchingArchive,
                     onFetchArchive = {
-                        fetchArchiveFor(focusEntryId) { photoPaths = it }
+                        fetchArchiveFor(focusEntryId) { fetched ->
+                            photoPaths = when (item.kind) {
+                                BatchPendingKind.BAD_PUMP_RATIO ->
+                                    fetched.filter { isPumpPathHint(it) }
+                                BatchPendingKind.ODO_SUSPECT ->
+                                    fetched.filter { isDashPathHint(it) }
+                                else -> fetched
+                            }
+                        }
                     },
                 )
             }
@@ -1180,21 +1565,23 @@ private fun PendingQuestionCard(
             if (item.kind == BatchPendingKind.UNREADABLE_PUMP) {
                 Text("Manual pump entry:", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(
+                    CaretEnabledOutlinedTextField(
                         value = costText,
                         onValueChange = { costText = it },
                         label = { Text("Cost") },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
+                        showCaretButtons = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                     )
-                    OutlinedTextField(
+                    CaretEnabledOutlinedTextField(
                         value = volText,
                         onValueChange = { volText = it },
                         label = { Text("Volume") },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
+                        showCaretButtons = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                     )
@@ -1224,12 +1611,13 @@ private fun PendingQuestionCard(
                 item.kind == BatchPendingKind.SKIP_OR_ASSIGN_VEHICLE
             ) {
                 Text("Manual odometer:", style = MaterialTheme.typography.labelMedium)
-                OutlinedTextField(
+                CaretEnabledOutlinedTextField(
                     value = odoText,
                     onValueChange = { odoText = it },
                     label = { Text("Odometer") },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = enabled,
+                    showCaretButtons = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
@@ -1281,12 +1669,13 @@ private fun PendingQuestionCard(
                         }
                     }
                 }
-                OutlinedTextField(
+                CaretEnabledOutlinedTextField(
                     value = freeOdoText,
                     onValueChange = { freeOdoText = it },
                     label = { Text("Enter different odometer") },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = enabled,
+                    showCaretButtons = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
@@ -1411,22 +1800,24 @@ private fun PendingQuestionCard(
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    OutlinedTextField(
+                    CaretEnabledOutlinedTextField(
                         value = costText,
                         onValueChange = { costText = it },
                         label = { Text("Cost") },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
+                        showCaretButtons = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     )
-                    OutlinedTextField(
+                    CaretEnabledOutlinedTextField(
                         value = volText,
                         onValueChange = { volText = it },
                         label = { Text("Vol") },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
+                        showCaretButtons = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     )
                 }
@@ -1476,31 +1867,34 @@ private fun PendingQuestionCard(
                 }
                 Text(editLabel, style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    OutlinedTextField(
+                    CaretEnabledOutlinedTextField(
                         value = odoText,
                         onValueChange = { odoText = it },
                         label = { Text("Odo") },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
+                        showCaretButtons = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
-                    OutlinedTextField(
+                    CaretEnabledOutlinedTextField(
                         value = costText,
                         onValueChange = { costText = it },
                         label = { Text("Cost") },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
+                        showCaretButtons = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     )
-                    OutlinedTextField(
+                    CaretEnabledOutlinedTextField(
                         value = volText,
                         onValueChange = { volText = it },
                         label = { Text("Vol") },
                         modifier = Modifier.weight(1f),
                         enabled = enabled,
                         singleLine = true,
+                        showCaretButtons = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     )
                 }
@@ -1642,20 +2036,10 @@ private fun PendingQuestionCard(
     }
 
     zoomPath?.let { path ->
-        FullscreenPhotoDialog(
-            path = path,
-            item = item,
-            vehicles = vehicles,
-            enabled = enabled,
-            costText = costText,
-            volText = volText,
-            odoText = odoText,
-            freeOdoText = freeOdoText,
-            onCost = { costText = it },
-            onVol = { volText = it },
-            onOdo = { odoText = it },
-            onFreeOdo = { freeOdoText = it },
-            onAction = onAction,
+        // Shared zoom chrome (+/−, pinch, Close); edit actions stay on the card
+        ZoomablePhotoDialog(
+            uris = listOf(path),
+            title = item.kind.name + " · " + path.substringAfterLast('/'),
             onDismiss = { zoomPath = null },
         )
     }
@@ -1671,6 +2055,9 @@ private fun OdoPeerBlock(
     metaLine: String,
     enabled: Boolean,
     onPhotoTap: (String) -> Unit,
+    canFetchArchive: Boolean = false,
+    isFetchingArchive: Boolean = false,
+    onFetchArchive: (() -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
@@ -1682,7 +2069,8 @@ private fun OdoPeerBlock(
                 MaterialTheme.colorScheme.onSurface
             },
         )
-        if (photos.isEmpty()) {
+        // Empty + no archive identity → "No dash photo"; empty + archive → fetch button via PendingPhotoRow.
+        if (photos.isEmpty() && !(canFetchArchive && onFetchArchive != null)) {
             Text(
                 "No dash photo",
                 style = MaterialTheme.typography.bodySmall,
@@ -1693,6 +2081,9 @@ private fun OdoPeerBlock(
                 paths = photos,
                 conflict = photos.size > 1,
                 onTap = onPhotoTap,
+                canFetchArchive = canFetchArchive,
+                isFetchingArchive = isFetchingArchive,
+                onFetchArchive = onFetchArchive,
             )
         }
         if (metaLine.isNotBlank()) {
@@ -1702,13 +2093,14 @@ private fun OdoPeerBlock(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        OutlinedTextField(
+        CaretEnabledOutlinedTextField(
             value = odoText,
             onValueChange = onOdoChange,
             label = { Text("Odo") },
             modifier = Modifier.fillMaxWidth(),
             enabled = enabled,
             singleLine = true,
+            showCaretButtons = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         )
     }
@@ -1852,7 +2244,7 @@ private fun PendingPhotoRow(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(120.dp)
+                .height(160.dp)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
@@ -1874,29 +2266,34 @@ private fun PendingPhotoRow(
         return
     }
     val scroll = rememberScrollState()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(if (conflict || paths.size > 1) Modifier.horizontalScroll(scroll) else Modifier),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        paths.forEach { path ->
-            PendingPhotoThumb(
-                path = path,
-                modifier = Modifier
-                    .then(
-                        if (conflict || paths.size > 1) {
-                            Modifier.width(160.dp)
-                        } else {
-                            Modifier.fillMaxWidth()
-                        },
-                    )
-                    .height(160.dp),
-                onTap = { onTap(path) },
-                canFetchArchive = canFetchArchive,
-                isFetchingArchive = isFetchingArchive,
-                onFetchArchive = onFetchArchive,
-            )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val wide = maxWidth >= 600.dp
+        val thumbH = if (wide) 220.dp else 160.dp
+        val multiW = if (wide) 200.dp else 160.dp
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (conflict || paths.size > 1) Modifier.horizontalScroll(scroll) else Modifier),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            paths.forEach { path ->
+                PendingPhotoThumb(
+                    path = path,
+                    modifier = Modifier
+                        .then(
+                            if (conflict || paths.size > 1) {
+                                Modifier.width(multiW)
+                            } else {
+                                Modifier.fillMaxWidth()
+                            },
+                        )
+                        .height(thumbH),
+                    onTap = { onTap(path) },
+                    canFetchArchive = canFetchArchive,
+                    isFetchingArchive = isFetchingArchive,
+                    onFetchArchive = onFetchArchive,
+                )
+            }
         }
     }
 }
@@ -1966,361 +2363,3 @@ private fun PendingPhotoThumb(
     }
 }
 
-@Composable
-private fun FullscreenPhotoDialog(
-    path: String,
-    item: BatchPendingItem,
-    vehicles: List<Vehicle>,
-    enabled: Boolean,
-    costText: String,
-    volText: String,
-    odoText: String,
-    freeOdoText: String,
-    onCost: (String) -> Unit,
-    onVol: (String) -> Unit,
-    onOdo: (String) -> Unit,
-    onFreeOdo: (String) -> Unit,
-    onAction: (PendingAnswerAction) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var bitmap by remember(path) { mutableStateOf<Bitmap?>(null) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-
-    LaunchedEffect(path) {
-        scale = 1f
-        offset = Offset.Zero
-        bitmap = withContext(Dispatchers.IO) { decodePendingPreview(path, maxSide = 2048) }
-    }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(8.dp),
-            ) {
-                Text(
-                    item.kind.name + " · " + path.substringAfterLast('/'),
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(end = 80.dp),
-                )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(RectangleShape)
-                        .pointerInput(Unit) {
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                scale = (scale * zoom).coerceIn(1f, 10f)
-                                offset += pan
-                            }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap!!.asImageBitmap(),
-                            contentDescription = "Full photo",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer(
-                                    scaleX = scale,
-                                    scaleY = scale,
-                                    translationX = offset.x,
-                                    translationY = offset.y,
-                                ),
-                            contentScale = ContentScale.Fit,
-                        )
-                    } else {
-                        Text("Photo unavailable", color = Color.White)
-                    }
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        SmallFloatingActionButton(
-                            onClick = { scale = (scale * 1.2f).coerceIn(1f, 10f) },
-                            containerColor = Color.White.copy(alpha = 0.75f),
-                        ) { Text("+") }
-                        SmallFloatingActionButton(
-                            onClick = {
-                                scale = (scale / 1.2f).coerceIn(1f, 10f)
-                                if (scale == 1f) offset = Offset.Zero
-                            },
-                            containerColor = Color.White.copy(alpha = 0.75f),
-                        ) { Text("−") }
-                    }
-                }
-
-                // Sticky actions under image (clipped image area above)
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 280.dp)
-                        .background(Color(0xEE222222))
-                        .padding(8.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(item.message, color = Color.White, style = MaterialTheme.typography.bodySmall)
-                when (item.kind) {
-                    BatchPendingKind.UNREADABLE_PUMP -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedTextField(
-                                value = costText,
-                                onValueChange = onCost,
-                                label = { Text("Cost") },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true,
-                            )
-                            OutlinedTextField(
-                                value = volText,
-                                onValueChange = onVol,
-                                label = { Text("Vol") },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true,
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                onAction(
-                                    PendingAnswerAction.ManualPumpEntry(
-                                        costText.toDoubleOrNull() ?: 0.0,
-                                        volText.toDoubleOrNull() ?: 0.0,
-                                    ),
-                                )
-                                onDismiss()
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Save cost/vol") }
-                        OutlinedButton(
-                            onClick = {
-                                onAction(PendingAnswerAction.MarkAsGap())
-                                onDismiss()
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Mark as gap") }
-                        Button(
-                            onClick = {
-                                onAction(PendingAnswerAction.RetryPump)
-                                onDismiss()
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Retry pump") }
-                    }
-                    BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE -> {
-                        OutlinedTextField(
-                            value = odoText,
-                            onValueChange = onOdo,
-                            label = { Text("Odometer") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-                        vehicles.forEach { v ->
-                            OutlinedButton(
-                                onClick = {
-                                    val odo = odoText.toIntOrNull()
-                                    if (odo != null && odo > 0) {
-                                        onAction(PendingAnswerAction.ManualDashEntry(odo, v.id))
-                                    } else {
-                                        onAction(PendingAnswerAction.AssignVehicle(v.id))
-                                    }
-                                    onDismiss()
-                                },
-                                enabled = enabled,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text(v.name) }
-                        }
-                    }
-                    BatchPendingKind.CONFLICT_ODO -> {
-                        item.extra["odos"]?.split(',')?.mapNotNull { it.trim().toIntOrNull() }
-                            ?.forEach { odo ->
-                                Button(
-                                    onClick = {
-                                        onAction(PendingAnswerAction.ResolveConflictOdo(odo))
-                                        onDismiss()
-                                    },
-                                    enabled = enabled,
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) { Text("Keep odo $odo") }
-                            }
-                        OutlinedTextField(
-                            value = freeOdoText,
-                            onValueChange = onFreeOdo,
-                            label = { Text("Different odo") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-                        Button(
-                            onClick = {
-                                freeOdoText.toIntOrNull()?.takeIf { it > 0 }?.let {
-                                    onAction(PendingAnswerAction.ResolveConflictOdo(it))
-                                    onDismiss()
-                                }
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Use entered odo") }
-                        OutlinedButton(
-                            onClick = {
-                                onAction(PendingAnswerAction.KeepBothNoMerge)
-                                onDismiss()
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Looks correct — don't ask again") }
-                    }
-                    BatchPendingKind.ASSIGN_UNKNOWN_VEHICLE -> {
-                        vehicles.forEach { v ->
-                            Button(
-                                onClick = {
-                                    onAction(PendingAnswerAction.AssignUnknownVehicle(v.id))
-                                    onDismiss()
-                                },
-                                enabled = enabled,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text(v.name) }
-                        }
-                    }
-                    BatchPendingKind.MPG_OUTLIER,
-                    BatchPendingKind.ODO_SUSPECT,
-                    BatchPendingKind.BAD_PUMP_RATIO,
-                    BatchPendingKind.UNREADABLE_PUMP,
-                    BatchPendingKind.UNREADABLE_DASH_NO_VEHICLE,
-                    BatchPendingKind.AMBIGUOUS_MULTI_PUMP,
-                    -> {
-                        if (item.kind == BatchPendingKind.MPG_OUTLIER ||
-                            item.kind == BatchPendingKind.ODO_SUSPECT
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    onAction(
-                                        PendingAnswerAction.SetPartialFill(
-                                            partial = true,
-                                            entryId = item.fuelEntryId
-                                                ?: item.extra["suspectId"]?.toLongOrNull()
-                                                ?: item.extra["endEntryId"]?.toLongOrNull(),
-                                        ),
-                                    )
-                                    onDismiss()
-                                },
-                                enabled = enabled,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text("Treat as partial (if complete)") }
-                        }
-                        if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-                            OutlinedButton(
-                                onClick = {
-                                    onAction(
-                                        PendingAnswerAction.AcknowledgeLooksCorrect(
-                                            kind = "MPG_OUTLIER",
-                                        ),
-                                    )
-                                    onDismiss()
-                                },
-                                enabled = enabled,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text("Looks correct — don't ask again") }
-                        }
-                        if (item.kind == BatchPendingKind.AMBIGUOUS_MULTI_PUMP) {
-                            OutlinedButton(
-                                onClick = {
-                                    onAction(
-                                        PendingAnswerAction.AcknowledgeLooksCorrect(
-                                            kind = "AMBIGUOUS_MULTI_PUMP",
-                                        ),
-                                    )
-                                    onDismiss()
-                                },
-                                enabled = enabled,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text("Looks correct — don't ask again") }
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                onAction(
-                                    PendingAnswerAction.MarkAsGap(
-                                        entryId = item.fuelEntryId
-                                            ?: item.extra["suspectId"]?.toLongOrNull()
-                                            ?: item.extra["endEntryId"]?.toLongOrNull(),
-                                    ),
-                                )
-                                onDismiss()
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                when (item.kind) {
-                                    BatchPendingKind.MPG_OUTLIER ->
-                                        "Missing data between last & this"
-                                    BatchPendingKind.BAD_PUMP_RATIO ->
-                                        "Unreadable — make a gap"
-                                    else -> "This is a gap"
-                                },
-                            )
-                        }
-                        if (item.kind == BatchPendingKind.MPG_OUTLIER) {
-                            Button(
-                                onClick = {
-                                    onAction(PendingAnswerAction.SetEconomyIgnored(true))
-                                    onDismiss()
-                                },
-                                enabled = enabled,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text("Ignore in economy") }
-                        }
-                    }
-                    BatchPendingKind.ECONOMY_IGNORED -> {
-                        Button(
-                            onClick = {
-                                onAction(PendingAnswerAction.SetEconomyIgnored(false))
-                                onDismiss()
-                            },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Unignore") }
-                    }
-                    else -> {}
-                }
-                    OutlinedButton(
-                        onClick = {
-                            onAction(PendingAnswerAction.Skip)
-                            onDismiss()
-                        },
-                        enabled = enabled,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Skip") }
-                }
-            }
-            // Close always on top (not under zoomed image)
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp),
-            ) {
-                Text("Close", color = Color.White)
-            }
-        }
-    }
-}

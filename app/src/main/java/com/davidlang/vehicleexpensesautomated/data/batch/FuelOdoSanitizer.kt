@@ -44,6 +44,15 @@ object FuelOdoSanitizer {
 
         val pending = mutableListOf<BatchPendingItem>()
 
+        // Phase 1: odo ≤ 0 with dash photo (missing OCR) → simple fix, independent of chain
+        val simpleMissingIds = mutableSetOf<Long>()
+        for (e in live) {
+            if (!eligibleMissingOdoWithDash(e)) continue
+            if (e.id in simpleMissingIds) continue
+            simpleMissingIds.add(e.id)
+            pending += missingOdoDashPending(e)
+        }
+
         for ((vid, vRows) in live.groupBy { it.vehicleId }) {
             val odoRows = vRows
                 .filter { eligibleForOdoDetect(it) }
@@ -149,7 +158,10 @@ object FuelOdoSanitizer {
                                 it.timestamp > suspect.timestamp && it.id != suspect.id
                             }?.odometer,
                     )
-                    if (guess != null && suspect.id !in simpleEmitted) {
+                    if (guess != null &&
+                        suspect.id !in simpleEmitted &&
+                        suspect.id !in simpleMissingIds
+                    ) {
                         simpleEmitted.add(suspect.id)
                         pending += simpleOdoPending(
                             suspect = suspect,
@@ -161,7 +173,7 @@ object FuelOdoSanitizer {
                             next = edge.next,
                             extraFields = edge.extra,
                         )
-                    } else if (guess == null) {
+                    } else if (guess == null && suspect.id !in simpleMissingIds) {
                         residualEdges += edge
                     }
                 }
@@ -272,6 +284,53 @@ object FuelOdoSanitizer {
         val blank = e.odometer <= 0 && e.cost <= 0 && e.gallons <= 0
         if (blank) return false
         return e.odometer > 0
+    }
+
+    /**
+     * Phase 1: live assigned row with odo missing/0, has dash photo, not pure gap marker.
+     * vehicleId must be > 0 (unassigned pumps stay other phases).
+     */
+    internal fun eligibleMissingOdoWithDash(e: FuelEntry): Boolean {
+        if (e.deleted || e.vehicleId <= 0) return false
+        if (e.odometer > 0) return false
+        if (dashPhotoPaths(e).isEmpty()) return false
+        // Pure gap markers without real fill content — skip if explicitly gap-tagged and no dash would have already returned
+        val notes = e.notes.orEmpty()
+        if (notes.contains("batch_gap_marker") && dashPhotoPaths(e).isEmpty()) return false
+        // blank gap-only: no dash (already excluded); dash blanks like batch_import_dash_blank **do** qualify
+        return true
+    }
+
+    private fun missingOdoDashPending(e: FuelEntry): BatchPendingItem {
+        val dash = dashPhotoPaths(e)
+        val primary = dash.firstOrNull()
+        return BatchPendingItem(
+            kind = BatchPendingKind.ODO_SUSPECT,
+            message = "Odo missing (0) — enter from dash · vehicle=${e.vehicleId} id=${e.id}",
+            photoPath = primary,
+            durablePhotoPath = primary,
+            timestampMs = e.timestamp,
+            fuelEntryId = e.id,
+            suggestedVehicleId = e.vehicleId.takeIf { it > 0 },
+            extra = mapOf(
+                "mode" to "simple",
+                "reason" to "missing_odo_dash",
+                // Empty suggested → UI shows blank field; Save requires user odo > 0
+                "suggestedOdo" to "",
+                "parsedOdo" to "0",
+                "suspectId" to e.id.toString(),
+                "entryIds" to e.id.toString(),
+                "prevEntryId" to e.id.toString(),
+                "curEntryId" to e.id.toString(),
+                "nextEntryId" to "",
+                "prevOdo" to "0",
+                "curOdo" to "0",
+                "nextOdo" to "",
+                "prevDashPaths" to "",
+                "curDashPaths" to dash.joinToString("|"),
+                "nextDashPaths" to "",
+            ),
+        )
     }
 
     private fun isDigitJump(prev: Int, cur: Int): Boolean {

@@ -2,7 +2,9 @@ package com.davidlang.vehicleexpensesautomated.data.batch
 
 import android.content.Context
 import android.util.Log
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+// FuelLocationJson same package
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.ui.experiment.AlignmentSetJRunner
@@ -10,12 +12,21 @@ import com.davidlang.vehicleexpensesautomated.ui.experiment.PumpSetIRunner
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupResult
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
@@ -70,6 +81,9 @@ class BatchFuelImportCoordinator @Inject constructor(
 
         /** Limited import size (like experiment Golden/Problem subset buttons). */
         const val LIMITED_IMPORT_COUNT = 20
+
+        /** Min gap between outbound location lookup kickoffs (fair-use pacing). */
+        const val MIN_LOCATION_LOOKUP_GAP_MS: Long = 1000L
 
         /**
          * Fuel row with no vehicle yet (pump-only batch ingest).
@@ -136,12 +150,16 @@ class BatchFuelImportCoordinator @Inject constructor(
      *
      * @param maxDash if non-null, only the first N dash images (sorted by name) are processed.
      * @param maxPump if non-null, only the first N pump images (sorted by name) are processed.
+     * @param locationEnhanceWithImport when true, fire-and-forget POI lookup **before** OCR
+     *   for each photo with EXIF coords (U4); never awaits lookup for OCR/insert completion.
+     *   Default off (U3). Rate-limit paces next photo kickoff if gap &lt; ~1 s (U5).
      */
     suspend fun runIngest(
         vehicles: List<Vehicle>,
         onProgress: (BatchImportProgress) -> Unit = {},
         maxDash: Int? = null,
         maxPump: Int? = null,
+        locationEnhanceWithImport: Boolean = false,
     ): BatchImportResult = withContext(Dispatchers.Default) {
         clearCancel()
         val pending = BatchImportPendingStore.load(appContext).toMutableList()
@@ -149,6 +167,7 @@ class BatchFuelImportCoordinator @Inject constructor(
         var dashInserted = 0
         var pumpInserted = 0
         var errCount = 0
+        var locationLookupsStarted = 0
 
         val allDash = listImages(dashPhotoDir(appContext))
         val allPump = listImages(pumpPhotoDir(appContext))
@@ -177,7 +196,8 @@ class BatchFuelImportCoordinator @Inject constructor(
                 " (limited: dash ${dashFiles.size}/${allDash.size}, pump ${pumpFiles.size}/${allPump.size})"
             else -> ""
         }
-        report("init", "Dash ${dashFiles.size} · pump ${pumpFiles.size}$limitNote")
+        val enhanceNote = if (locationEnhanceWithImport) " · location enhance on" else ""
+        report("init", "Dash ${dashFiles.size} · pump ${pumpFiles.size}$limitNote$enhanceNote")
 
         // One-shot-ish: rewrite old durable mirrors → source paths; free disk
         try {
@@ -190,53 +210,121 @@ class BatchFuelImportCoordinator @Inject constructor(
             Log.w(TAG, "durable migrate skipped: ${e.message}")
         }
 
-        // --- Dash (Set J via AlignmentSetJRunner) ---
-        for (file in dashFiles) {
-            coroutineContext.ensureActive()
-            if (cancelFlag.get()) {
-                BatchImportPendingStore.save(appContext, pending)
-                return@withContext BatchImportResult(
-                    dashInserted, pumpInserted, pending, errors, cancelled = true,
-                )
-            }
-            done++
-            report("dash", "Dash OCR ${file.name} ($done/$total)")
-            try {
-                processDash(file, vehicles, pending)?.let { dashInserted++ }
-            } catch (e: Exception) {
-                errCount++
-                val m = "Dash ${file.name}: ${e.message}"
-                Log.e(TAG, m, e)
-                errors.add(m)
-            }
-        }
+        var cancelled = false
+        supervisorScope {
+            val lookupJobs = mutableMapOf<String, Deferred<LocationLookupResult?>>()
+            val lastKickoffMs = AtomicLong(0L)
+            val enhanceCtx = LocationEnhanceCtx(
+                enabled = locationEnhanceWithImport,
+                scope = this,
+                jobs = lookupJobs,
+                lastKickoffMs = lastKickoffMs,
+                onKickoff = { locationLookupsStarted++ },
+            )
 
-        // --- Pump (Set I): always OCR + insert; vehicleId left unassigned (0) until merge ---
-        for (file in pumpFiles) {
-            coroutineContext.ensureActive()
-            if (cancelFlag.get()) {
-                BatchImportPendingStore.save(appContext, pending)
-                return@withContext BatchImportResult(
-                    dashInserted, pumpInserted, pending, errors, cancelled = true,
+            // --- Dash (Set J via AlignmentSetJRunner) ---
+            for (file in dashFiles) {
+                coroutineContext.ensureActive()
+                if (cancelFlag.get()) {
+                    cancelled = true
+                    break
+                }
+                done++
+                report(
+                    "dash",
+                    "Dash OCR ${file.name} ($done/$total)" +
+                        if (locationEnhanceWithImport) " · loc race" else "",
                 )
+                try {
+                    if (processDash(file, vehicles, pending, enhanceCtx = enhanceCtx)) dashInserted++
+                } catch (e: Exception) {
+                    errCount++
+                    val m = "Dash ${file.name}: ${e.message}"
+                    Log.e(TAG, m, e)
+                    errors.add(m)
+                }
             }
-            done++
-            report("pump", "Pump Set I ${file.name} ($done/$total)")
-            try {
-                val inserted = processPump(file, pending)
-                if (inserted) pumpInserted++
-            } catch (e: Exception) {
-                errCount++
-                val m = "Pump ${file.name}: ${e.message}"
-                Log.e(TAG, m, e)
-                errors.add(m)
+
+            // --- Pump (Set I): always OCR + insert; vehicleId left unassigned (0) until merge ---
+            if (!cancelled) {
+                for (file in pumpFiles) {
+                    coroutineContext.ensureActive()
+                    if (cancelFlag.get()) {
+                        cancelled = true
+                        break
+                    }
+                    done++
+                    report(
+                        "pump",
+                        "Pump Set I ${file.name} ($done/$total)" +
+                            if (locationEnhanceWithImport) " · loc race" else "",
+                    )
+                    try {
+                        val inserted = processPump(file, pending, enhanceCtx = enhanceCtx)
+                        if (inserted) pumpInserted++
+                    } catch (e: Exception) {
+                        errCount++
+                        val m = "Pump ${file.name}: ${e.message}"
+                        Log.e(TAG, m, e)
+                        errors.add(m)
+                    }
+                }
             }
+
+            // Cancel unfinished races; worker fills leftovers when enhance was on
+            for ((_, job) in lookupJobs) {
+                if (!job.isCompleted) job.cancel()
+            }
+            lookupJobs.clear()
         }
 
         BatchImportPendingStore.save(appContext, pending)
-        report("done", "Finished: dash=$dashInserted pump=$pumpInserted pending=${pending.size}")
+        if (cancelled) {
+            return@withContext BatchImportResult(
+                dashInserted, pumpInserted, pending, errors, cancelled = true,
+            )
+        }
+        if (locationEnhanceWithImport && locationLookupsStarted > 0) {
+            LocationLookupScheduler.enqueueSoon(appContext)
+            report(
+                "done",
+                "Finished: dash=$dashInserted pump=$pumpInserted pending=${pending.size}" +
+                    " · location lookups started=$locationLookupsStarted (queued/in-flight)",
+            )
+        } else {
+            report("done", "Finished: dash=$dashInserted pump=$pumpInserted pending=${pending.size}")
+        }
         BatchImportResult(dashInserted, pumpInserted, pending, errors, cancelled = false)
     }
+
+    /**
+     * Enqueue background location enhance for fuel rows with coords and no place.
+     * Non-blocking — does not wait for Overpass/Nominatim.
+     */
+    suspend fun runLocationEnhance(onProgress: (String) -> Unit = {}): String =
+        withContext(Dispatchers.IO) {
+            onProgress("Scanning fuel for coords without place…")
+            val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+            val need = live.count { FuelLocationJson.hasCoordsWithoutPlace(it.location) }
+            onProgress("Enqueue location worker ($need candidates)…")
+            LocationLookupScheduler.enqueueSoon(appContext)
+            val msg = if (need == 0) {
+                "No coords-without-place rows; worker still enqueued"
+            } else {
+                "Location enhance queued for ~$need rows (background, non-blocking)"
+            }
+            onProgress(msg)
+            msg
+        }
+
+    /** Per-ingest context for optional fire-and-forget location races. */
+    private data class LocationEnhanceCtx(
+        val enabled: Boolean,
+        val scope: CoroutineScope,
+        val jobs: MutableMap<String, Deferred<LocationLookupResult?>>,
+        val lastKickoffMs: AtomicLong,
+        val onKickoff: () -> Unit,
+    )
 
     /**
      * Field-merge all live partials + **phase-scoped** pending rebuild only.
@@ -264,6 +352,131 @@ class BatchFuelImportCoordinator @Inject constructor(
         val msg = "Phase $next: ${combined.totalPending} questions · ${combined.message}"
         onProgress(msg)
         combined.copy(message = msg)
+    }
+
+    /**
+     * Time-vs-odo disorder previews for live fuel (anchors = odo > 0).
+     * @see FuelOdoReorder
+     */
+    suspend fun analyzeOdoDisorder(): List<FuelOdoReorder.VehicleDisorder> =
+        withContext(Dispatchers.IO) {
+            val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+            FuelOdoReorder.analyzeAll(live)
+        }
+
+    /**
+     * Apply reorder strategy A/B/C for one vehicle or all vehicles with work, then
+     * field-merge + rebuild current Stage C phase.
+     *
+     * **A** permutes existing timestamps onto odo order (no invented times).
+     * **B** marks [FuelEntry.economyIgnored] on later-by-time reverse offenders.
+     * **C** soft-deletes those offenders.
+     */
+    suspend fun applyOdoReorder(
+        vehicleId: Int?,
+        strategy: FuelOdoReorder.Strategy,
+        onProgress: (String) -> Unit = {},
+    ): MergeApplyResult = withContext(Dispatchers.IO) {
+        val live = fuelEntryRepository.getAllIncludingDeleted().filter { !it.deleted }
+        val disorders = FuelOdoReorder.analyzeAll(live)
+            .filter { d -> vehicleId == null || d.vehicleId == vehicleId }
+            .filter { it.hasWork || it.anchorCount >= 2 }
+        if (disorders.isEmpty()) {
+            val n = BatchImportPendingStore.load(appContext).size
+            return@withContext MergeApplyResult(
+                updated = 0,
+                deleted = 0,
+                pendingAdded = 0,
+                totalPending = n,
+                message = "No vehicles with odometer anchors to reorder",
+            )
+        }
+        var touched = 0
+        var ignored = 0
+        var deleted = 0
+        var permuted = 0
+        for (d in disorders) {
+            val anchors = FuelOdoReorder.anchorsForVehicle(live, d.vehicleId)
+            when (strategy) {
+                FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS -> {
+                    val updates = FuelOdoReorder.permuteTimestampsByOdo(anchors)
+                    if (updates.isEmpty()) {
+                        onProgress("Vehicle ${d.vehicleId}: already in odo order")
+                        continue
+                    }
+                    onProgress("Vehicle ${d.vehicleId}: permuting ${updates.size} timestamps…")
+                    for (u in updates) {
+                        fuelEntryRepository.updateFuelEntry(u)
+                        permuted++
+                        touched++
+                    }
+                }
+                FuelOdoReorder.Strategy.ECONOMY_IGNORE -> {
+                    if (d.reverseSteps.isEmpty()) {
+                        onProgress("Vehicle ${d.vehicleId}: no reverse steps to ignore")
+                        continue
+                    }
+                    val ids = d.reverseSteps.map { it.later.id }.distinct()
+                    onProgress("Vehicle ${d.vehicleId}: economyIgnored on ${ids.size} rows…")
+                    for (id in ids) {
+                        val e = live.find { it.id == id } ?: continue
+                        if (e.economyIgnored) continue
+                        fuelEntryRepository.updateFuelEntry(e.copy(economyIgnored = true))
+                        ignored++
+                        touched++
+                    }
+                }
+                FuelOdoReorder.Strategy.DELETE_OFFENDERS -> {
+                    if (d.reverseSteps.isEmpty()) {
+                        onProgress("Vehicle ${d.vehicleId}: no reverse offenders to delete")
+                        continue
+                    }
+                    val ids = d.reverseSteps.map { it.later.id }.distinct()
+                    onProgress("Vehicle ${d.vehicleId}: soft-deleting ${ids.size} rows…")
+                    for (id in ids) {
+                        val e = live.find { it.id == id } ?: continue
+                        if (e.deleted) continue
+                        fuelEntryRepository.deleteFuelEntry(e)
+                        deleted++
+                        touched++
+                    }
+                }
+            }
+        }
+        if (touched == 0) {
+            val msg = when (strategy) {
+                FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS ->
+                    "No timestamp changes (already odo-ordered or empty)"
+                FuelOdoReorder.Strategy.ECONOMY_IGNORE ->
+                    "No reverse steps to mark ignored"
+                FuelOdoReorder.Strategy.DELETE_OFFENDERS ->
+                    "No reverse offenders to delete"
+            }
+            val n = BatchImportPendingStore.load(appContext).size
+            return@withContext MergeApplyResult(
+                updated = 0,
+                deleted = 0,
+                pendingAdded = 0,
+                totalPending = n,
+                message = msg,
+            )
+        }
+        onProgress("Rescanning Stage C after reorder…")
+        val merge = applyMerge(onProgress)
+        val summary = buildString {
+            append("Reorder ")
+            append(
+                when (strategy) {
+                    FuelOdoReorder.Strategy.PERMUTE_TIMESTAMPS -> "A(timestamps=$permuted)"
+                    FuelOdoReorder.Strategy.ECONOMY_IGNORE -> "B(ignored=$ignored)"
+                    FuelOdoReorder.Strategy.DELETE_OFFENDERS -> "C(deleted=$deleted)"
+                },
+            )
+            append(" · ")
+            append(merge.message)
+        }
+        Log.i(TAG, summary)
+        merge.copy(message = summary)
     }
 
     data class FieldMergeStats(
@@ -507,7 +720,19 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
-     * Unique tank fit → time-nearest known-vehicle fill. Null if ambiguous.
+     * Suggest vehicle for unassigned pump.
+     *
+     * Priority:
+     * 1. **Time + location** within [FuelRowMergeEngine.MERGE_WINDOW_MS] against a
+     *    vehicle-known fill (dash/odo-bearing preferred): unique vehicle → assign.
+     *    Same stop → treat dash side as partial odo and pump as full cost/vol on that vehicle
+     *    (merge engine field rules; not a third fill).
+     * 2. Unique tank fit → tank-only suggest.
+     * 3. Tank + nearest in time (existing).
+     * 4. Nearest fill in 2× window if unique vehicle.
+     *
+     * Place match via [FuelStopMatch.locationsMatch] (name/address or lat/lon within
+     * [FuelStopMatch.LOCATION_MATCH_METERS]). No location data → skip step 1 (tank/time only).
      */
     private fun suggestVehicleForUnassigned(
         pump: FuelEntry,
@@ -515,6 +740,22 @@ class BatchFuelImportCoordinator @Inject constructor(
     ): Pair<Int, String>? {
         val known = allLive.filter { it.vehicleId > 0 && !it.deleted }
         if (known.isEmpty()) return null
+        val window = FuelRowMergeEngine.MERGE_WINDOW_MS
+
+        // 1) Time + location correlation (phase 4 residual; merge engine assigns first)
+        val locMatch = known.filter { other ->
+            kotlin.math.abs(other.timestamp - pump.timestamp) <= window &&
+                FuelStopMatch.locationsMatch(pump, other)
+        }
+        if (locMatch.isNotEmpty()) {
+            val vehicleIds = locMatch.map { it.vehicleId }.distinct()
+            if (vehicleIds.size == 1) {
+                val vid = vehicleIds.first()
+                val dt = locMatch.minOf { kotlin.math.abs(it.timestamp - pump.timestamp) }
+                return vid to "same location · Δt ${dt / 1000}s"
+            }
+        }
+
         val maxFillByVehicle = known
             .filter { it.gallons > 0 }
             .groupBy { it.vehicleId }
@@ -550,13 +791,13 @@ class BatchFuelImportCoordinator @Inject constructor(
             .filter { it.odometer > 0 || it.cost > 0 }
             .minByOrNull { kotlin.math.abs(it.timestamp - pump.timestamp) }
             ?: return null
-        val window = FuelRowMergeEngine.MERGE_WINDOW_MS * 2
+        val window2 = window * 2
         val nearSame = known.filter {
-            kotlin.math.abs(it.timestamp - pump.timestamp) <= window &&
+            kotlin.math.abs(it.timestamp - pump.timestamp) <= window2 &&
                 it.vehicleId != nearestAny.vehicleId
         }
         if (nearSame.isEmpty() &&
-            kotlin.math.abs(nearestAny.timestamp - pump.timestamp) <= window
+            kotlin.math.abs(nearestAny.timestamp - pump.timestamp) <= window2
         ) {
             return nearestAny.vehicleId to "nearest fill in time"
         }
@@ -707,8 +948,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                             com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_AMBIGUOUS_MULTI_PUMP
                         BatchPendingKind.CONFLICT_ODO ->
                             com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_CONFLICT_ODO
+                        BatchPendingKind.ODO_SUSPECT ->
+                            com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_ODO_SUSPECT
                         else -> item.kind.name
                     }
+                // ODO_SUSPECT / MPG: durable re-ask suppress only — not field-merge exempt.
                 val alsoExempt = kind ==
                     com.davidlang.vehicleexpensesautomated.data.model.MergeAck.KIND_CONFLICT_ODO ||
                     kind ==
@@ -1021,6 +1265,7 @@ class BatchFuelImportCoordinator @Inject constructor(
 
         // No row yet (e.g. unreadable pump with no insert): insert blank gap marker
         val photoJson = path?.let { FuelPhotoJson.single("pump", it, ts) }
+        val locJson = locationBlobFromPending(item)
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = item.suggestedVehicleId?.takeIf { it > 0 } ?: UNASSIGNED_VEHICLE_ID,
@@ -1031,11 +1276,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false,
-                latitude = item.latitude,
-                longitude = item.longitude,
+                location = locJson,
                 notes = "batch_gap_marker",
             ),
         )
+        maybeEnqueueLocationLookup(locJson)
         clearAnsweredPending(item, null)
         Log.i(TAG, "markAsGap inserted blank gap marker")
         return PendingAnswerResult("Inserted gap marker (blank chain-breaker)", remerge = true)
@@ -1171,6 +1416,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             }
         }
         val photoJson = path?.let { FuelPhotoJson.single("pump", it, ts) }
+        val locJson = locationBlobFromPending(item)
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = UNASSIGNED_VEHICLE_ID,
@@ -1181,11 +1427,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false,
-                latitude = item.latitude,
-                longitude = item.longitude,
+                location = locJson,
                 notes = "batch_manual_pump",
             ),
         )
+        maybeEnqueueLocationLookup(locJson)
         clearAnsweredPending(item, null)
         return PendingAnswerResult("Manual pump entry saved", remerge = true)
     }
@@ -1224,6 +1470,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             }
         }
         val photoJson = path?.let { FuelPhotoJson.single("dash", it, ts) }
+        val locJson = locationBlobFromPending(item)
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = vid,
@@ -1234,11 +1481,11 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false,
-                latitude = item.latitude,
-                longitude = item.longitude,
+                location = locJson,
                 notes = "batch_manual_dash",
             ),
         )
+        maybeEnqueueLocationLookup(locJson)
         clearAnsweredPending(item, null)
         return PendingAnswerResult("Manual dash odo=$odometer vehicle=$vid", remerge = true)
     }
@@ -1423,7 +1670,10 @@ class BatchFuelImportCoordinator @Inject constructor(
                 ?.split(',')
                 ?.mapNotNull { it.trim().toLongOrNull() }
                 ?.let { addAll(it) }
+            // Complex ODO peers (prev/cur/next) + MPG/simple keys
             item.extra["prevEntryId"]?.toLongOrNull()?.let { add(it) }
+            item.extra["curEntryId"]?.toLongOrNull()?.let { add(it) }
+            item.extra["nextEntryId"]?.toLongOrNull()?.let { add(it) }
             item.extra["endEntryId"]?.toLongOrNull()?.let { add(it) }
             item.extra["lastEntryId"]?.toLongOrNull()?.let { add(it) }
             item.extra["thisEntryId"]?.toLongOrNull()?.let { add(it) }
@@ -1563,6 +1813,118 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
 
     /**
+     * Lat/lon/accuracy from pending item, re-reading EXIF from photo path when any field is missing.
+     * Prefer already-set item fields over re-read.
+     */
+    private fun resolvePendingGeo(item: BatchPendingItem): Triple<Double?, Double?, Double?> {
+        var lat = item.latitude
+        var lon = item.longitude
+        var acc = item.accuracyM
+        if (lat != null && lon != null && acc != null) {
+            return Triple(lat, lon, acc)
+        }
+        val path = item.durablePhotoPath ?: item.photoPath
+        if (!path.isNullOrBlank()) {
+            val f = File(path)
+            if (f.isFile) {
+                try {
+                    val meta = PhotoExifMetaReader.read(f.absolutePath)
+                    if (lat == null) lat = meta.latitude
+                    if (lon == null) lon = meta.longitude
+                    if (acc == null) acc = meta.accuracyM
+                } catch (e: Exception) {
+                    Log.w(TAG, "EXIF re-read for pending failed: ${e.message}")
+                }
+            }
+        }
+        return Triple(lat, lon, acc)
+    }
+
+    private fun locationBlobFromPending(item: BatchPendingItem): String? {
+        val (lat, lon, acc) = resolvePendingGeo(item)
+        return FuelLocationJson.encode(
+            FuelLocationJson.fromCoords(lat, lon, acc, source = "exif"),
+        )
+    }
+
+    /** One-shot deferred POI when insert left coords without place (non-blocking). */
+    private fun maybeEnqueueLocationLookup(locationJson: String?) {
+        if (FuelLocationJson.hasCoordsWithoutPlace(locationJson)) {
+            LocationLookupScheduler.enqueueSoon(appContext)
+        }
+    }
+
+    /**
+     * Kick off non-blocking POI lookup before OCR when enhance is on and EXIF has coords.
+     * Paces kickoffs to ≥ [MIN_LOCATION_LOOKUP_GAP_MS]. Never waits for the result.
+     */
+    private suspend fun kickoffLocationLookupBeforeOcr(
+        key: String,
+        lat: Double?,
+        lon: Double?,
+        accuracyM: Double?,
+        kind: LocationLookupKind,
+        enhanceCtx: LocationEnhanceCtx?,
+    ) {
+        if (enhanceCtx == null || !enhanceCtx.enabled) return
+        if (lat == null || lon == null) return
+        if (enhanceCtx.jobs.containsKey(key)) return
+        val last = enhanceCtx.lastKickoffMs.get()
+        if (last > 0L) {
+            val gap = System.currentTimeMillis() - last
+            if (gap < MIN_LOCATION_LOOKUP_GAP_MS) {
+                delay(MIN_LOCATION_LOOKUP_GAP_MS - gap)
+            }
+        }
+        enhanceCtx.lastKickoffMs.set(System.currentTimeMillis())
+        enhanceCtx.onKickoff()
+        enhanceCtx.jobs[key] = enhanceCtx.scope.async(Dispatchers.IO) {
+            LocationLookup.lookup(
+                lat = lat,
+                lon = lon,
+                kind = kind,
+                accuracyM = accuracyM,
+                uiTimeout = false,
+            )
+        }
+        Log.i(TAG, "location race started key=${key.substringAfterLast('/')}")
+    }
+
+    /**
+     * Build location blob from EXIF coords; if a pre-OCR race finished in time, merge place.
+     * Does **not** await an in-flight lookup. Enqueues worker only when enhance was on and
+     * place still missing.
+     */
+    private suspend fun locationBlobAfterRace(
+        lat: Double?,
+        lon: Double?,
+        accuracyM: Double?,
+        key: String,
+        enhanceCtx: LocationEnhanceCtx?,
+    ): String? {
+        var locJson = FuelLocationJson.encode(
+            FuelLocationJson.fromCoords(lat, lon, accuracyM, source = "exif"),
+        )
+        val job = enhanceCtx?.jobs?.remove(key)
+        if (job != null) {
+            if (job.isCompleted) {
+                // Completed race only — never await in-flight (OCR/insert not gated)
+                val result = runCatching { job.await() }.getOrNull()
+                if (result != null && result.hasPlace()) {
+                    locJson = LocationLookup.mergePlaceIntoBlob(locJson, result, confirmed = false)
+                        ?: locJson
+                }
+            } else {
+                job.cancel()
+            }
+        }
+        if (enhanceCtx?.enabled == true) {
+            maybeEnqueueLocationLookup(locJson)
+        }
+        return locJson
+    }
+
+    /**
      * Dash: alignment **experiment Set J** pipeline via [AlignmentSetJRunner]
      * (not [com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness.runAutoFillPipeline]).
      *
@@ -1574,11 +1936,24 @@ class BatchFuelImportCoordinator @Inject constructor(
         pending: MutableList<BatchPendingItem>,
         forcedVehicleId: Int? = null,
         enqueuePendingOnFail: Boolean = true,
+        enhanceCtx: LocationEnhanceCtx? = null,
     ): Boolean {
         val meta = PhotoExifMetaReader.read(file.absolutePath)
-        val ts = meta.timestampMs ?: System.currentTimeMillis()
+        val ts = meta.timestampMs ?: System.currentTimeMillis().also {
+            Log.w(TAG, "No capture time for ${file.name} (source=${meta.source}); using now")
+        }
         // Reference source path only — never copyToDurable
         val sourcePath = file.absolutePath
+
+        // Location race before OCR when enhance on (never await for OCR)
+        kickoffLocationLookupBeforeOcr(
+            key = sourcePath,
+            lat = meta.latitude,
+            lon = meta.longitude,
+            accuracyM = meta.accuracyM,
+            kind = LocationLookupKind.FUEL_STATION,
+            enhanceCtx = enhanceCtx,
+        )
 
         val activeVehicles = vehicles.filter { !it.deleted }
         val result = AlignmentSetJRunner.runOnePhoto(
@@ -1600,6 +1975,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         timestampMs = ts,
                         latitude = meta.latitude,
                         longitude = meta.longitude,
+                        accuracyM = meta.accuracyM,
                     ),
                 )
             }
@@ -1610,6 +1986,9 @@ class BatchFuelImportCoordinator @Inject constructor(
         val photoJson = FuelPhotoJson.single("dash", sourcePath, ts)
 
         if (odo == null) {
+            val locJson = locationBlobAfterRace(
+                meta.latitude, meta.longitude, meta.accuracyM, sourcePath, enhanceCtx,
+            )
             fuelEntryRepository.insertFuelEntry(
                 FuelEntry(
                     vehicleId = result.vehicleId,
@@ -1620,8 +1999,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                     timestamp = ts,
                     photoUrl = photoJson,
                     isPartialFill = false,
-                    latitude = meta.latitude,
-                    longitude = meta.longitude,
+                    location = locJson,
                     notes = "batch_import_dash_blank:${file.name}",
                 ),
             )
@@ -1629,6 +2007,9 @@ class BatchFuelImportCoordinator @Inject constructor(
             return true
         }
 
+        val locJson = locationBlobAfterRace(
+            meta.latitude, meta.longitude, meta.accuracyM, sourcePath, enhanceCtx,
+        )
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = result.vehicleId,
@@ -1639,8 +2020,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false, // incomplete by fields only
-                latitude = meta.latitude,
-                longitude = meta.longitude,
+                location = locJson,
                 notes = "batch_import_dash:${file.name}",
             ),
         )
@@ -1660,11 +2040,23 @@ class BatchFuelImportCoordinator @Inject constructor(
         pending: MutableList<BatchPendingItem>,
         forcedVehicleId: Int? = null,
         enqueuePendingOnFail: Boolean = true,
+        enhanceCtx: LocationEnhanceCtx? = null,
     ): Boolean {
         val meta = PhotoExifMetaReader.read(file.absolutePath)
-        val ts = meta.timestampMs ?: System.currentTimeMillis()
+        val ts = meta.timestampMs ?: System.currentTimeMillis().also {
+            Log.w(TAG, "No capture time for ${file.name} (source=${meta.source}); using now")
+        }
         val sourcePath = file.absolutePath
         val vehicleId = forcedVehicleId ?: UNASSIGNED_VEHICLE_ID
+
+        kickoffLocationLookupBeforeOcr(
+            key = sourcePath,
+            lat = meta.latitude,
+            lon = meta.longitude,
+            accuracyM = meta.accuracyM,
+            kind = LocationLookupKind.FUEL_STATION,
+            enhanceCtx = enhanceCtx,
+        )
 
         // Experiment Set I path (not OcrHarness.runPumpCostVolPipelineSetI / Quick Fill G--)
         val result = PumpSetIRunner.runOnePhoto(appContext, file)
@@ -1683,6 +2075,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                         timestampMs = ts,
                         latitude = meta.latitude,
                         longitude = meta.longitude,
+                        accuracyM = meta.accuracyM,
                     ),
                 )
             }
@@ -1690,6 +2083,9 @@ class BatchFuelImportCoordinator @Inject constructor(
         }
 
         val photoJson = FuelPhotoJson.single("pump", sourcePath, ts)
+        val locJson = locationBlobAfterRace(
+            meta.latitude, meta.longitude, meta.accuracyM, sourcePath, enhanceCtx,
+        )
         fuelEntryRepository.insertFuelEntry(
             FuelEntry(
                 vehicleId = vehicleId,
@@ -1700,8 +2096,7 @@ class BatchFuelImportCoordinator @Inject constructor(
                 timestamp = ts,
                 photoUrl = photoJson,
                 isPartialFill = false, // incomplete by fields only
-                latitude = meta.latitude,
-                longitude = meta.longitude,
+                location = locJson,
                 notes = "batch_import_pump:${file.name}",
             ),
         )

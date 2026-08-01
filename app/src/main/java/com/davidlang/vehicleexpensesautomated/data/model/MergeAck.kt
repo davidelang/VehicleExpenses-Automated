@@ -17,7 +17,7 @@ data class MergeAck(
     @PrimaryKey val ackId: String,
     /**
      * One of [KIND_CONFLICT_ODO], [KIND_AMBIGUOUS_MULTI_PUMP], [KIND_MPG_OUTLIER],
-     * [KIND_MERGE_EXEMPT].
+     * [KIND_ODO_SUSPECT], [KIND_MERGE_EXEMPT]. Matches [BatchPendingKind.name] for Stage C acks.
      */
     val kind: String,
     /** Sorted CSV of fuel entry syncIds that this ack covers. */
@@ -40,6 +40,8 @@ data class MergeAck(
         const val KIND_CONFLICT_ODO = "CONFLICT_ODO"
         const val KIND_AMBIGUOUS_MULTI_PUMP = "AMBIGUOUS_MULTI_PUMP"
         const val KIND_MPG_OUTLIER = "MPG_OUTLIER"
+        /** Stage C odo gap/digit/reverse accepted as true readings (not MERGE_EXEMPT). */
+        const val KIND_ODO_SUSPECT = "ODO_SUSPECT"
         /** Field-merge suppress: members must not auto-absorb into each other. */
         const val KIND_MERGE_EXEMPT = "MERGE_EXEMPT"
 
