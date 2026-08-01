@@ -1,8 +1,12 @@
 # Reports metrics
 
-Reference for economy math in `ui/reports/ReportsScreen.kt` and shared `FuelEconomyChains`. Field presence: a numeric field is **present** iff its value **> 0** (Room stores non-null `Int`/`Double`; 0 means absent).
+Reference for economy math used by **Reports Lab** (`ui/reports/lab/*`, drawer **Reports**) and shared `FuelEconomyChains`. Field presence: a numeric field is **present** iff its value **> 0** (Room stores non-null `Int`/`Double`; 0 means absent).
+
+Legacy production `ReportsScreen.kt` was **removed**; product surface is Lab only.
 
 **UI labels / units:** display via `VolumeUnits` + `UnitFormat` + `CurrencyCodes` — see **[UI_COMPATIBILITY.md](UI_COMPATIBILITY.md)** (agents must not hardcode unit words or treat trip starts as fills).
+
+**Charts:** date-ordered X via `tsToChartX` (fractional days, **rounded to 4 decimals**). **Time based reports** (`reports_lab/time`) uses a **multi-family Canvas chart** (Vico is only 2-axis elsewhere): independent Y scales for mpg, vol/dist, $, trip miles, and trip %; left = economy families, right = $ / trip (sides fixed). Trip **% is per trip type** (only types with miles; Personal included → all-Personal shows Personal @ 100%). Trip **miles** remains total under any type. Smooth bins shared. Edge-spanning full-fill legs contribute to both bins. PDF multi-scale bitmaps + tables. Vehicle modes: **All / Each / Single**. Labels via `UnitFormat`.
 
 ## Full fill (chain anchors)
 

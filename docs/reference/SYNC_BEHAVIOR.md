@@ -37,8 +37,17 @@ Vehicle reference images, fuel dash/pump photos, and expense receipts sync **bin
 ## Background sync and failures
 
 - Periodic sync uses WorkManager with per-destination **`frequencyMinutes`** (UI shows **hours**, 0.25–24 h).
-- A destination **last failure** is persisted until the next success for that destination; Settings shows red error text and the main app bar shows a problem icon when any unfixed failure exists.
+- A destination **last failure** is persisted until the next success for that destination (`SyncFailureStore` stores the **full** API/user message, capped). **Syncing** shows a short summary + **Details** (scroll + Copy). The main app bar shows **!** → Syncing when any unfixed failure exists.
+- Failures for **deleted/recreated** destination UUIDs are **pruned** on dest save and at sync start (orphan hygiene).
+- Manual **Sync now** is available on the Syncing hub, destination lists, and each destination edit form (single dest via `destId`). Leaving the UI does **not** cancel the job (ViewModel scope); Compose dispose is not recorded as a destination failure.
 - Retry is primarily the **next scheduled interval**, not aggressive re-run of all destinations on partial failure.
+
+## Multi-destination Sheets quotas
+
+- Google Sheets enforces separate ~**60 requests/minute/user** caps for **reads** and **writes**.
+- All `GoogleSheetsClient` `.execute()` paths go through **`SyncRateLimit.withSheetsApiLimit`**: ~1.3 s pace between calls; on 429/quota wait **60–120 s** (then longer) and retry the **same** call (up to 8 attempts). Progress: `Rate limited — waiting Ns (try k/n)…`.
+- Multi-dest runs are **sequential** with inter-dest pacing + read cooldown; one process-wide mutex.
+- LWW **compare** prefetch uses **`values.batchGet`** (`batchReadTabs`) for existing Vehicles/Expenses/Merge acks/Fuel tabs so Pass 1 does not issue one GET per tab.
 
 ## Upgrade backfill
 
@@ -57,8 +66,19 @@ On first launch after a schema upgrade that introduces blank **`syncId`** values
 
 | Column | Meaning |
 |--------|---------|
-| **Location** | Station place: JSON `{"name":"Shell","address":"…"}` when known; legacy plain text still displays. Lat/long stay in **Latitude** / **Longitude**. |
+| **Location** | **Sole geo/place package** (JSON blob): `lat`/`lon`/`accuracyM`/`name`/`address`/`confirmed`/`source`/`kind`/`lookedUpAt`. Legacy plain text and name/address-only JSON still parse. **Latitude** / **Longitude** tabular columns are **removed** from schema (user may delete empty columns on existing sheets). |
 | **Notes** | Freeform + batch provenance (`batch_import_dash:…`, `batch_gap_marker`, …). New batch inserts write tags here; engine role checks read **notes** and still accept legacy tags in **location**. |
+
+### Location JSON LWW merge
+
+When two sides of a fuel/expense row differ, overall row LWW still uses **`updatedAt`**, but the **`location`** field is merged with dedicated rules (`FuelLocationJson.mergeBlobs`):
+
+1. Prefer the side that has **place** data (name/address) if the other has none.
+2. If both have place: **`confirmed: true` trumps unconfirmed** (regardless of lookedUpAt).
+3. Same confirmed-ness: later **`lookedUpAt`**, else later row **`updatedAt`**.
+4. Winner takes the **entire** location blob (coords + place + flags).
+
+Pending deferred POI fill (no flag column): blob has lat/lon but blank name and address → `LocationLookupWorker` fills silently with **`confirmed: false`**.
 
 **Default header order** (new / empty fuel tabs and CSV export): human fields first (Timestamp … Notes), machine IDs last (Vehicle Sync ID … Deleted At). Existing sheets keep their column order; missing columns (e.g. Notes) are **appended** only — never auto-reordered. Backends that rewrite the full grid after append **pad** data rows with empty cells for new columns. Reads are **name-based**.
 
