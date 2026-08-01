@@ -38,10 +38,43 @@ fun HelpScreen(navController: NavHostController? = null) {
             Text("Open full user manual")
         }
 
+        if (navController != null) {
+            SectionTitle("Setup tips (animated)")
+            Text(
+                "Short step-by-step walkthroughs with screenshots (offline). Also offered on first run when you have no vehicles. " +
+                    "Connect existing setup = join another device’s shared sheet + photo folder (not create a new blank sheet).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = {
+                    navController.navigate("tutorial/tutorial_add_vehicle")
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            ) {
+                Text("Tutorial: Add a vehicle")
+            }
+            Button(
+                onClick = {
+                    navController.navigate("tutorial/tutorial_setup_sync")
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            ) {
+                Text("Tutorial: Connect existing setup")
+            }
+            TextButton(
+                onClick = { navController.navigate("onboarding") },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Show first-run welcome choices")
+            }
+        }
+
         SectionTitle("Icons")
         Bullet("☰ (top left) — open the menu")
-        Bullet("! (red, title bar) — last spreadsheet or photo sync failed; open Settings")
-        Bullet("? (yellow, title bar) — open Import / Review questions when items need answers")
+        Bullet("ⓘ (title bar) — page help for the current screen (stays while you stay on the page)")
+        Bullet("! (red, title bar) — last spreadsheet or photo sync failed; opens Syncing")
+        Bullet("?N (title bar) — open Import / Review questions when items need answers")
         Bullet("White circle — shutter (capture dash, pump, or receipt)")
         Bullet("Disk — save fill-up or expense")
         Bullet("↕ on Quick Fill — switch odometer mode ↔ pump (cost/volume) mode")
@@ -69,12 +102,18 @@ fun HelpScreen(navController: NavHostController? = null) {
         Bullet("Disk (Save). Blank fields are allowed as a partial fill. Works offline")
 
         SectionTitle("3. Log an expense")
-        Bullet("Menu → New Expense Entry")
+        Bullet("Menu → New expense")
         Bullet("Shutter or gallery for the receipt; fill vendor, amount, category, vehicle")
-        Bullet("Save. Use Expense List to review or edit later")
+        Bullet("Save. Open expenses from Reports → Expenses list to review or edit later")
 
         SectionTitle("4. Reports")
-        Bullet("Menu → Reports & Charts for summaries, last full fills, expenses, and history")
+        Bullet("Menu → Reports — hub summary, then report cards")
+        Bullet(
+            "Time based reports — one plot with independent Y scales (mpg and G/mi on the left; \$ / trip miles / trip % by type on the right), " +
+                "optional Smooth bins",
+        )
+        Bullet("Fill history lists fills only; Trip miles has the trip-start list (tap a row to edit)")
+        Bullet("Fuel History and edit screens can Fetch image from archive when any photo destination has the file")
 
         SectionTitle("5. Backups & multi-device (optional)")
         Text(
