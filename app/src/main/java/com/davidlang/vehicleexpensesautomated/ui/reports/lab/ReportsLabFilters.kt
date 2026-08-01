@@ -13,8 +13,21 @@ enum class LabPeriod {
     CUSTOM,
 }
 
+/**
+ * Vehicle picker mode for Lab children (not hub).
+ * - [ALL]: aggregate combined series / totals (no vehicle row filter).
+ * - [EACH]: no row filter; charts/lists split by vehicleId.
+ * - [SINGLE]: filter to [ReportsLabFilterState.vehicleId].
+ */
+enum class LabVehicleMode {
+    ALL,
+    EACH,
+    SINGLE,
+}
+
 data class ReportsLabFilterState(
-    /** null = all vehicles */
+    val vehicleMode: LabVehicleMode = LabVehicleMode.ALL,
+    /** Used when [vehicleMode] is [LabVehicleMode.SINGLE]. */
     val vehicleId: Int? = null,
     val period: LabPeriod = LabPeriod.ALL_TIME,
     /** Inclusive custom bounds (ms); used when [period] is CUSTOM. */
@@ -25,6 +38,7 @@ data class ReportsLabFilterState(
 object ReportsLabPrefs {
     const val PREFS = "vehicle_settings"
     const val KEY_VEHICLE = "reports_lab_vehicle_id"
+    const val KEY_VEHICLE_MODE = "reports_lab_vehicle_mode"
     const val KEY_PERIOD = "reports_lab_period"
     const val KEY_CUSTOM_START = "reports_lab_custom_start"
     const val KEY_CUSTOM_END = "reports_lab_custom_end"
@@ -37,9 +51,25 @@ object ReportsLabPrefs {
         } catch (_: Exception) {
             LabPeriod.ALL_TIME
         }
+        val modeStr = p.getString(KEY_VEHICLE_MODE, null)
+        val mode = try {
+            if (modeStr != null) LabVehicleMode.valueOf(modeStr)
+            else {
+                // Migration: previous prefs used vehicleId null = all, non-null = single.
+                if (vidRaw < 0) LabVehicleMode.ALL else LabVehicleMode.SINGLE
+            }
+        } catch (_: Exception) {
+            if (vidRaw < 0) LabVehicleMode.ALL else LabVehicleMode.SINGLE
+        }
         val now = System.currentTimeMillis()
+        val vehicleId = if (vidRaw < 0) null else vidRaw
+        val normalizedMode = when {
+            mode == LabVehicleMode.SINGLE && vehicleId == null -> LabVehicleMode.ALL
+            else -> mode
+        }
         return ReportsLabFilterState(
-            vehicleId = if (vidRaw < 0) null else vidRaw,
+            vehicleMode = normalizedMode,
+            vehicleId = if (normalizedMode == LabVehicleMode.SINGLE) vehicleId else null,
             period = period,
             customStartMs = p.getLong(KEY_CUSTOM_START, 0L),
             customEndMs = p.getLong(KEY_CUSTOM_END, now),
@@ -48,7 +78,15 @@ object ReportsLabPrefs {
 
     fun save(context: Context, state: ReportsLabFilterState) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putInt(KEY_VEHICLE, state.vehicleId ?: -1)
+            .putString(KEY_VEHICLE_MODE, state.vehicleMode.name)
+            .putInt(
+                KEY_VEHICLE,
+                if (state.vehicleMode == LabVehicleMode.SINGLE) {
+                    state.vehicleId ?: -1
+                } else {
+                    -1
+                },
+            )
             .putString(KEY_PERIOD, state.period.name)
             .putLong(KEY_CUSTOM_START, state.customStartMs)
             .putLong(KEY_CUSTOM_END, state.customEndMs)
@@ -82,11 +120,14 @@ fun periodBounds(state: ReportsLabFilterState, nowMs: Long = System.currentTimeM
         LabPeriod.CUSTOM -> {
             val start = minOf(state.customStartMs, state.customEndMs)
             val end = maxOf(state.customStartMs, state.customEndMs)
-            // End of day for end bound if same calendar day intent — keep raw ms as user picked
             start to end
         }
     }
 }
+
+/** True when rows are not filtered to a single vehicle (ALL or EACH). */
+fun ReportsLabFilterState.isMultiVehicleScope(): Boolean =
+    vehicleMode == LabVehicleMode.ALL || vehicleMode == LabVehicleMode.EACH
 
 fun filterFuel(
     entries: List<FuelEntry>,
@@ -95,7 +136,12 @@ fun filterFuel(
 ): List<FuelEntry> {
     val (start, end) = periodBounds(state, nowMs)
     return entries.filter { e ->
-        if (state.vehicleId != null && e.vehicleId != state.vehicleId) return@filter false
+        if (state.vehicleMode == LabVehicleMode.SINGLE &&
+            state.vehicleId != null &&
+            e.vehicleId != state.vehicleId
+        ) {
+            return@filter false
+        }
         if (start != null && e.timestamp < start) return@filter false
         if (end != null && e.timestamp > end) return@filter false
         true
@@ -109,7 +155,12 @@ fun filterExpenses(
 ): List<ExpenseEntry> {
     val (start, end) = periodBounds(state, nowMs)
     return entries.filter { e ->
-        if (state.vehicleId != null && e.vehicleId != state.vehicleId) return@filter false
+        if (state.vehicleMode == LabVehicleMode.SINGLE &&
+            state.vehicleId != null &&
+            e.vehicleId != state.vehicleId
+        ) {
+            return@filter false
+        }
         if (start != null && e.date < start) return@filter false
         if (end != null && e.date > end) return@filter false
         true

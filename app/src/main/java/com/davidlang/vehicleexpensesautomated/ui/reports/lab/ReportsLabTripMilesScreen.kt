@@ -1,15 +1,13 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -26,18 +24,32 @@ import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 @Composable
 fun ReportsLabTripMilesScreen(navController: NavHostController) {
     val data = rememberLabReportData()
-    var includePersonalInTotals by remember { mutableStateOf(false) }
+    var includePersonalInTotals by remember { mutableStateOf(true) }
     var showZeroLength by remember { mutableStateOf(false) }
-    // Tax totals default exclude Personal; list may still show Personal segments.
     var showPersonalInList by remember { mutableStateOf(true) }
 
     val (periodStart, periodEnd) = remember(data.filter) { periodBounds(data.filter) }
 
-    val baseSegments = remember(data.allFuel, data.filter.vehicleId) {
+    // Natural + implicit leading Personal when no start before period (TR1–TR2)
+    val baseSegments = remember(
+        data.allFuel,
+        data.filter.vehicleMode,
+        data.filter.vehicleId,
+        periodStart,
+        periodEnd,
+    ) {
         val fuel = data.allFuel
-        when (val vid = data.filter.vehicleId) {
-            null -> TripSegments.listAllSegments(fuel)
-            else -> TripSegments.listSegments(vid, fuel)
+        when (data.filter.vehicleMode) {
+            LabVehicleMode.SINGLE -> {
+                val vid = data.filter.vehicleId
+                if (vid != null) {
+                    TripSegments.listSegmentsWithImplicitPersonal(vid, fuel, periodStart, periodEnd)
+                } else {
+                    TripSegments.listAllSegmentsWithImplicitPersonal(fuel, periodStart, periodEnd)
+                }
+            }
+            LabVehicleMode.ALL, LabVehicleMode.EACH ->
+                TripSegments.listAllSegmentsWithImplicitPersonal(fuel, periodStart, periodEnd)
         }
     }
     val inPeriod = remember(baseSegments, periodStart, periodEnd) {
@@ -50,6 +62,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             showZeroLength = showZeroLength,
         ).sortedByDescending { it.startTimestamp }
     }
+    val isEach = data.filter.vehicleMode == LabVehicleMode.EACH
     val milesByType = remember(inPeriod, includePersonalInTotals, showZeroLength) {
         TripSegments.milesByType(
             inPeriod,
@@ -57,65 +70,78 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             includeZeroLength = showZeroLength,
         )
     }
+    // Each: per-vehicle miles by type (X = type, series = vehicle)
+    val milesByVehicleAndType = remember(
+        isEach, inPeriod, includePersonalInTotals, showZeroLength, data.vehicles,
+    ) {
+        if (!isEach) emptyMap()
+        else {
+            inPeriod.groupBy { it.vehicleId }
+                .entries
+                .sortedBy { (vid, _) -> data.vehicleName(vid) }
+                .associate { (vid, segs) ->
+                    data.vehicleName(vid) to TripSegments.milesByType(
+                        segs,
+                        includePersonal = includePersonalInTotals,
+                        includeZeroLength = showZeroLength,
+                    )
+                }
+        }
+    }
+    val eachTypeLabels = remember(milesByVehicleAndType, milesByType) {
+        if (!isEach) emptyList()
+        else {
+            // Prefer global type order from aggregate map; union any extra vehicle-only types
+            val ordered = milesByType.keys.toMutableList()
+            milesByVehicleAndType.values.forEach { m ->
+                m.keys.forEach { t -> if (t !in ordered) ordered += t }
+            }
+            ordered
+        }
+    }
+    val eachChartSeries = remember(milesByVehicleAndType, eachTypeLabels) {
+        milesByVehicleAndType.mapValues { (_, mbt) ->
+            eachTypeLabels.map { t -> (mbt[t] ?: 0).toFloat() }
+        }
+    }
     val totalMiles = milesByType.values.sum()
     val openCount = remember(inPeriod) { TripSegments.openCount(inPeriod) }
     val chartY = remember(milesByType) { milesByType.values.map { it.toFloat() } }
     val chartLabels = remember(milesByType) { milesByType.keys.toList() }
+    val leadingCount = remember(inPeriod) { inPeriod.count { it.isImplicitLeading } }
 
     ReportsLabScreenScaffold(
         title = "Trip miles",
-        subtitle = "Miles by trip type from open-only segments (start→next start). " +
-            "Period uses segment **start** time. Implicit personal before first start is out of scope.",
+        infoText = TRIP_MILES_INFO,
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
-        shareRow = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(
-                        onClick = {
-                            val body = buildTextShare(
-                                data = data,
-                                milesByType = milesByType,
-                                totalMiles = totalMiles,
-                                openCount = openCount,
-                                listSegs = listSegs,
-                                includePersonalInTotals = includePersonalInTotals,
-                                showZeroLength = showZeroLength,
-                            )
-                            ReportsLabShare.shareText(data.context, "Trip miles", body)
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 48.dp),
-                    ) {
-                        Text("Share TEXT", maxLines = 2, softWrap = true)
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            val csv = buildCsvShare(
-                                data = data,
-                                milesByType = milesByType,
-                                listSegs = listSegs,
-                            )
-                            ReportsLabShare.shareCsv(
-                                data.context,
-                                "lab_trip_miles.csv",
-                                csv,
-                                "Trip miles CSV",
-                            )
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 48.dp),
-                    ) {
-                        Text("Share CSV", maxLines = 2, softWrap = true)
-                    }
-                }
+        shareActions = run {
+            val buildText = {
+                buildTextShare(
+                    data = data,
+                    milesByType = milesByType,
+                    totalMiles = totalMiles,
+                    openCount = openCount,
+                    listSegs = listSegs,
+                    includePersonalInTotals = includePersonalInTotals,
+                    showZeroLength = showZeroLength,
+                    leadingCount = leadingCount,
+                )
             }
+            ReportsLabShareActions(
+                subject = "Trip miles",
+                textBody = buildText,
+                csvFileName = "lab_trip_miles.csv",
+                csvBody = {
+                    buildCsvShare(
+                        data = data,
+                        milesByType = milesByType,
+                        listSegs = listSegs,
+                    )
+                },
+                pdfBody = { ReportsLabPdf.fromPlainText("Trip miles", buildText()) },
+            )
         },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -125,7 +151,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     onCheckedChange = { includePersonalInTotals = it },
                 )
                 Text(
-                    "Include Personal in mile totals",
+                    "Include Personal in mile totals (incl. implicit leading)",
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -165,11 +191,32 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             maxLines = 3,
         )
         Text(
-            "Closed segments in list: ${listSegs.count { !it.isOpen }} · Open: $openCount",
+            "Closed segments in list: ${listSegs.count { !it.isOpen }} · Open: $openCount" +
+                if (leadingCount > 0) " · Implicit leading Personal: $leadingCount" else "",
             style = MaterialTheme.typography.bodySmall,
             softWrap = true,
         )
-        if (milesByType.isEmpty()) {
+        if (isEach) {
+            if (milesByVehicleAndType.isEmpty() || eachTypeLabels.isEmpty()) {
+                ReportsLabEmpty("No closed trip miles for these filters/toggles.")
+            } else {
+                milesByVehicleAndType.forEach { (vName, mbt) ->
+                    Text(vName, style = MaterialTheme.typography.titleSmall, softWrap = true)
+                    mbt.forEach { (type, miles) ->
+                        Text(
+                            "  $type: ${UnitFormat.distanceDeltaLabel(miles)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            softWrap = true,
+                        )
+                    }
+                }
+                LabMultiSeriesIndexChart(
+                    series = eachChartSeries,
+                    xLabels = eachTypeLabels,
+                    caption = "Miles by type per vehicle (${UnitFormat.distanceUnitShortLabel()})",
+                )
+            }
+        } else if (milesByType.isEmpty()) {
             ReportsLabEmpty("No closed trip miles for these filters/toggles.")
         } else {
             milesByType.forEach { (type, miles) ->
@@ -181,6 +228,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             }
             LabCategoryBarsChart(
                 amounts = chartY,
+                categoryLabels = chartLabels,
                 caption = "Miles by type (${UnitFormat.distanceUnitShortLabel()})",
             )
             if (chartLabels.isNotEmpty()) {
@@ -197,18 +245,38 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             }
         }
 
-        Text("Segments", style = MaterialTheme.typography.titleMedium)
+        Text("Trip starts / segments", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Chronological trip list (separate from Fuel History fills). Tap a row to edit the start fill when it has an id.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            softWrap = true,
+        )
         if (listSegs.isEmpty()) {
             ReportsLabEmpty("No trip segments match the list filters.")
         } else {
             listSegs.forEach { seg ->
+                val canOpen = !seg.isImplicitLeading && seg.start.id > 0L
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .then(
+                            if (canOpen) {
+                                Modifier.clickable { navController.navigate("fuel/${seg.start.id}") }
+                            } else {
+                                Modifier
+                            },
+                        )
                         .padding(vertical = 4.dp),
                 ) {
+                    val typeLabel = if (seg.isImplicitLeading) {
+                        "${seg.tripType} (implicit)"
+                    } else {
+                        seg.tripType
+                    }
                     Text(
-                        "${data.vehicleName(seg.vehicleId)} · ${seg.tripType} · ${formatLabDateTime(seg.startTimestamp)}",
+                        "${data.vehicleName(seg.vehicleId)} · $typeLabel · ${formatLabDateTime(seg.startTimestamp)}" +
+                            if (canOpen) " · tap to edit" else "",
                         style = MaterialTheme.typography.titleSmall,
                         softWrap = true,
                         maxLines = 3,
@@ -216,6 +284,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     val status = when {
                         seg.isOpen -> "Open"
                         seg.isZeroLength -> "Zero-length"
+                        seg.isImplicitLeading -> "Closed · leading gap"
                         else -> "Closed"
                     }
                     val milesLabel = if (seg.isOpen) {
@@ -244,6 +313,18 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
     }
 }
 
+private const val TRIP_MILES_INFO =
+    "Miles by trip purpose from open-only segments (start → next start). " +
+        "Within a report period, miles from the period baseline odometer to the first " +
+        "Start trip count as Personal when you never started a purpose earlier " +
+        "(same as starting Personal on day 1). If a vehicle has fills but no trip starts, " +
+        "baseline → last odo in period also counts as Personal. " +
+        "Each vehicle = miles-by-type series and totals per vehicle. " +
+        "Segment list is the trip surface (Fuel History lists fills only). " +
+        "Not a tax form — export and use elsewhere. " +
+        "Period filters by segment start time. Zero-length closed segments are excluded " +
+        "from totals by default."
+
 private fun buildTextShare(
     data: LabReportData,
     milesByType: Map<String, Int>,
@@ -252,14 +333,18 @@ private fun buildTextShare(
     listSegs: List<TripSegments.Segment>,
     includePersonalInTotals: Boolean,
     showZeroLength: Boolean,
+    leadingCount: Int,
 ): String = buildString {
-    appendLine("Vehicle Expenses — Trip miles (experimental)")
+    appendLine("Vehicle Expenses — Trip miles")
     appendLine("Period: ${periodLabel(data.filter)}")
     appendLine("Vehicle: ${data.filterVehicleLabel()}")
     appendLine(
         "Totals: Personal ${if (includePersonalInTotals) "included" else "excluded"}; " +
             "zero-length ${if (showZeroLength) "included" else "excluded"}",
     )
+    if (leadingCount > 0) {
+        appendLine("Implicit leading Personal segments in window: $leadingCount")
+    }
     appendLine("Total miles: ${UnitFormat.distanceDeltaLabel(totalMiles)}")
     appendLine("Open segments (in period by start): $openCount")
     appendLine()
@@ -277,13 +362,15 @@ private fun buildTextShare(
         val status = when {
             seg.isOpen -> "Open"
             seg.isZeroLength -> "Zero"
+            seg.isImplicitLeading -> "Closed-implicit"
             else -> "Closed"
         }
         val miles = if (seg.isOpen) "n/a" else UnitFormat.distanceDeltaLabel(seg.miles)
         val endOdo = seg.endOdo?.let { UnitFormat.odometerReadingLabel(it) } ?: "…"
+        val type = if (seg.isImplicitLeading) "${seg.tripType}(implicit)" else seg.tripType
         appendLine(
             "  ${formatLabDate(seg.startTimestamp)} ${data.vehicleName(seg.vehicleId)} " +
-                "${seg.tripType} $status $miles " +
+                "$type $status $miles " +
                 "${UnitFormat.odometerReadingLabel(seg.startOdo)} → $endOdo",
         )
     }
@@ -305,7 +392,7 @@ private fun buildCsvShare(
         )
     }
     sb.appendLine(
-        "segment_header,date,vehicle,type,status,miles,start_odo,end_odo,unit",
+        "segment_header,date,vehicle,type,status,miles,start_odo,end_odo,implicit_leading,unit",
     )
     listSegs.forEach { seg ->
         val status = when {
@@ -325,6 +412,7 @@ private fun buildCsvShare(
                 miles,
                 seg.startOdo.toString(),
                 endOdo,
+                if (seg.isImplicitLeading) "1" else "0",
                 unit,
             ).joinToString(","),
         ).append('\n')
