@@ -2344,3 +2344,19 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Phase 4-6: QF/Trip/Expense lookupSource tracking; offline status; provenance on confirm-save
 - Phase 7: project-facts + SYNC_BEHAVIOR
 
+
+## 2026-08-01 - station-ground-truth Stage A execution start
+
+- Plan: dev-ai-interaction/plans/station-ground-truth-backfill-then-source-experiments-20260801-plan.md
+- Stage A0-A1 first: scaffold + pull 5554 DB + cluster + Nominatim/Photon pass (no Overpass); stop for user review before A2/A3
+
+
+## 2026-08-01 - station-ground-truth Stage A0+A1 complete (STOP for user review)
+
+- Scaffold: dev-ai-interaction/research/station-ground-truth/
+- Pulled 5554 DB: 125 fills with coords → 36 clusters (75 m link)
+- Pass 1 (no Overpass): Nominatim reverse + Photon + nearby fuel radius expand
+- Result after fuel-first reclassify: auto_ok=23 need_pick=8 weak=5 miss=0
+- Artifacts: review.tsv (lat,lon paste tokens), clusters.jsonl, PASS1_SUMMARY.md, apply_ground_truth.py
+- Next: user fills RESOLVED.tsv for non-auto; then A3 apply to 5554. Stage B after ground truth frozen.
+
