@@ -1,9 +1,10 @@
 #!/bin/bash
 # run-grok-coder — implement approved plans in agent-N worktree (ai-coder).
-# build_app only (no raw gradlew). Baseball/reset rules. Pre-PR self-review before generate_pr.sh.
+# Session prompt = compose of existing files (new_agent_prompt + role-coder.md).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+COMPOSE="$SCRIPT_DIR/.grok/prompts/compose-session-prompt.sh"
 if [ -f project.config ]; then
   . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(coder_user|GROK_BIN)')
 fi
@@ -12,7 +13,6 @@ GROK_BIN="${GROK_BIN:-$HOME/git/grok/bin/grok}"
 
 umask 002
 
-# Shared debug keystore so any gradle/signing in this session uses dlang's cert
 ANDROID_SHARED=""
 if [ -d "$SCRIPT_DIR/.android-shared" ]; then
   ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
@@ -24,6 +24,7 @@ echo "Launching Coder Grok in $(pwd)..."
 echo "Grok binary: $GROK_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
 echo "Running as: $CODER_USER (via sudo -u)"
+echo "Prompt pack: new_agent_prompt + .grok/prompts/role-coder.md"
 [ -n "$ANDROID_SHARED" ] && echo "ANDROID_USER_HOME: $ANDROID_SHARED"
 echo "Tip: Ctrl+M or /multiline for multi-line input."
 
@@ -42,19 +43,12 @@ for arg in "$@"; do
   fi
 done
 
-# umask + ANDROID_USER_HOME must be set *inside* the target user (sudo drops parent env/umask).
-exec sudo -u "$CODER_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} bash -c 'umask 002; exec "$@"' bash \
-    "$GROK_BIN" \
-    "You are the Coder agent in a feature worktree (ai-coder). Role pack: new_agent_prompt, AGENT_CONTEXT.md, GROK.md, AGENT_MANDATES.md, full project-facts.md. Mandate Acknowledgment with Role=Coder and Branch from git. Do NOT enter native plan mode. Do NOT write plans. STOP & WAIT until the user names an approved sandbox plan to implement.
+export GROK_PROMPT_ROOT="$SCRIPT_DIR"
+PROMPT="$("$COMPOSE" new_agent_prompt .grok/prompts/role-coder.md)"
 
-Standing coder rules after approval to implement:
-- Implement ONLY the approved sandbox plan path the user names. Load .grok/prompts/execution-subagent.md obligations (completeness, Status, END marker).
-- First action: ./append-to-engineering-log; set plan Status APPROVED. Never cd … && helpers — pwd once at startup.
-- Builds only via ./build_app. ./get-builds-tag.sh before allowed reset. Baseball Rule. Re-read standard-plan-compliance-block.md at execute start (cite only in plans).
-- Plan completeness before handoff: re-read plan; finish missing in-scope work or BLOCKED report — no almost-done ready-to-test. Then Status CODE LANDED + exact END marker.
-- TODO future-only; eng-log for current turn. Local PR: prepare-local-pr / generate_pr.sh — never gh pr-babysit/Graphite.
-- After handoff, stop. Feedback = new planning cycle (not more edits).
-Remind user: Ctrl+M /multiline." \
+exec sudo -u "$CODER_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} GROK_PROMPT_ROOT="$SCRIPT_DIR" bash -c 'umask 002; exec "$@"' bash \
+    "$GROK_BIN" \
+    "$PROMPT" \
     $TODO_GATE_FLAGS \
     --no-alt-screen \
     "${EXTRA_ARGS[@]}"

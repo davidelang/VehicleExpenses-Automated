@@ -20,6 +20,8 @@ This file (AGENTS.md) is the entry point for agent CLIs in this multi-agent Vehi
 
 When **spawning** planner/executor roles, load the full file under `.grok/prompts/` (see AGENT_MANDATES).
 
+**Launchers:** `run-grok*` build the session prompt by composing existing files via `.grok/prompts/compose-session-prompt.sh` (e.g. `new_agent_prompt` + `role-coder.md`). Do not re-author law in shell inject strings.
+
 ## Launchers (role → command)
 
 | Launcher | OS user | Role | Plans? | Implements app? | Native plan mode? |

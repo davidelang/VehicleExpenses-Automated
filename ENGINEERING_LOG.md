@@ -354,3 +354,19 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - No update-rules (human final sweep when ready)
 - Commit on orchestration (brain-only)
 
+
+## 2026-07-31 - Execution start: orch-launcher-packs-and-master-gaps
+
+- Approved: dev-ai-interaction/plans/orch-launcher-packs-and-master-gaps-20260731-1948-plan.md
+- Packs for run-grok*; fix master G1-G3; no bulk plan archive; no update-rules
+
+
+## 2026-07-31 - Completed: orch-launcher-packs-and-master-gaps
+
+- compose-session-prompt.sh + role-{coder,planner,master,orchestrator,primary}.md
+- All run-grok* compose file packs only; master ~2KB (was ~32KB)
+- G1 ultra-micro ban correct in role-master; G2 optional checker; G3 eng-log first
+- G4 bulk plan archive deferred
+- update-rules FILES updated; no update-rules run
+- Regenerated .planning-agent-prompt.txt from planner pack
+
