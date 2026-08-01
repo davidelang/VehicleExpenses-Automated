@@ -63,3 +63,5 @@ Post-save location confirm UI on edit screens (silent worker fill uses confirmed
 Reports multi-select vehicle checkboxes + Sum/Average (not Each-only); deferred from efficiency Each-vehicle
 
 Trip miles packaging polish (export labels/annual packs); core open-only + implicit personal shipped
+
+Vehicle preferred fuel grade/product field (e.g. regular/premium/diesel) for future auto-assignment of loyalty email fills; assignment UX remains separate work
