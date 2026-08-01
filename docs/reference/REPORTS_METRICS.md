@@ -6,7 +6,7 @@ Legacy production `ReportsScreen.kt` was **removed**; product surface is Lab onl
 
 **UI labels / units:** display via `VolumeUnits` + `UnitFormat` + `CurrencyCodes` — see **[UI_COMPATIBILITY.md](UI_COMPATIBILITY.md)** (agents must not hardcode unit words or treat trip starts as fills).
 
-**Charts:** date-ordered X via `tsToChartX` (fractional days, **rounded to 4 decimals** for Vico 3.2.3). **Time based reports** (`reports_lab/time`) is the unified time chart (former efficiency / unit-price / monthly cards). Labels via `UnitFormat` (`mpg`, `G/mi`/`L/mi`, `$/G`/`$/L`, `$/mi`). Optional metrics + **Smooth** bins; **one chart** with **fixed sides**: left = economy only (mpg and gpm **share** Start; gpm never on End); right = money + trip only (never economy). Trip miles/% from odo Δ under open trip types (**Personal included**). Edge-spanning full-fill legs contribute to both bins. PDF embeds line-chart bitmaps + tables. Vehicle modes: **All / Each / Single**.
+**Charts:** date-ordered X via `tsToChartX` (fractional days, **rounded to 4 decimals**). **Time based reports** (`reports_lab/time`) uses a **multi-family Canvas chart** (Vico is only 2-axis elsewhere): independent Y scales for mpg, vol/dist, $, trip miles, and trip %; left = economy families, right = $ / trip (sides fixed). Trip **% is per trip type** (only types with miles; Personal included → all-Personal shows Personal @ 100%). Trip **miles** remains total under any type. Smooth bins shared. Edge-spanning full-fill legs contribute to both bins. PDF multi-scale bitmaps + tables. Vehicle modes: **All / Each / Single**. Labels via `UnitFormat`.
 
 ## Full fill (chain anchors)
 

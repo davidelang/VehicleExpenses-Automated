@@ -233,24 +233,26 @@ fun unitPricePointsBinned(
 }
 
 /**
- * Trip miles and trip % from **odo timeline** (T2–T4).
- * Walk odo-bearing fills in time; assign each Δodo to the open trip type at the
- * later event (including Personal / implicit starts). Miles under any trip type
- * count toward trip miles; trip % includes Personal.
- *
- * @return Pair(tripMilesPoints, tripPctPoints) on the same Smooth grid as other series.
+ * Trip metrics from odo timeline: total trip miles + **per-type** trip % (P1–P7).
+ * Walk odo-bearing fills; assign each Δodo to the open trip type at the later event
+ * (Personal included). Types with any non-zero miles in the window get a series.
  */
-fun tripMilesAndPctFromOdo(
+data class TripOdoMetrics(
+    val milesTotal: List<LabTimeYPoint>,
+    /** Type name → % points (0–100) on the same Smooth grid. */
+    val pctByType: Map<String, List<LabTimeYPoint>>,
+)
+
+fun tripMetricsFromOdo(
     fuel: List<com.davidlang.vehicleexpensesautomated.data.model.FuelEntry>,
     mode: LabSmoothMode,
     customDays: Int,
-): Pair<List<LabTimeYPoint>, List<LabTimeYPoint>> {
+): TripOdoMetrics {
     val events = fuel
         .filter { !it.deleted && it.odometer > 0 }
         .sortedWith(compareBy({ it.timestamp }, { it.id }))
-    if (events.size < 2) return emptyList<LabTimeYPoint>() to emptyList()
+    if (events.size < 2) return TripOdoMetrics(emptyList(), emptyMap())
 
-    // Open trip type after each trip-start row (blank = not a start).
     var openType: String? = null
     val typeAtIndex = ArrayList<String?>(events.size)
     for (e in events) {
@@ -260,41 +262,64 @@ fun tripMilesAndPctFromOdo(
         typeAtIndex.add(openType)
     }
 
-    data class Acc(var trip: Float = 0f, var total: Float = 0f)
-    val bins = linkedMapOf<Long, Acc>()
-    val noneMiles = mutableListOf<LabTimeYPoint>()
-    val nonePct = mutableListOf<LabTimeYPoint>()
+    // binKey -> (total miles, miles by type)
+    data class BinAcc(
+        var total: Float = 0f,
+        val byType: MutableMap<String, Float> = linkedMapOf(),
+    )
+    val bins = linkedMapOf<Long, BinAcc>()
+    val windowTypeMiles = linkedMapOf<String, Float>()
 
     for (i in 1 until events.size) {
         val prev = events[i - 1]
         val cur = events[i]
         val delta = cur.odometer - prev.odometer
         if (delta <= 0) continue
-        // Trip type active at the end of this odo step (open-only model).
         val type = typeAtIndex[i]
-        val underTrip = type != null
         val ts = cur.timestamp
-        if (mode == LabSmoothMode.NONE) {
-            noneMiles += LabTimeYPoint(ts, if (underTrip) delta.toFloat() else 0f)
-            nonePct += LabTimeYPoint(ts, if (underTrip) 100f else 0f)
-        } else {
-            val k = binKeyMs(ts, mode, customDays)
-            val a = bins.getOrPut(k) { Acc() }
-            a.total += delta
-            if (underTrip) a.trip += delta
+        val key = if (mode == LabSmoothMode.NONE) ts else binKeyMs(ts, mode, customDays)
+        val a = bins.getOrPut(key) { BinAcc() }
+        a.total += delta
+        if (type != null) {
+            a.byType[type] = (a.byType[type] ?: 0f) + delta
+            windowTypeMiles[type] = (windowTypeMiles[type] ?: 0f) + delta
         }
     }
 
-    if (mode == LabSmoothMode.NONE) {
-        return noneMiles to nonePct
+    val milesTotal = bins.entries.sortedBy { it.key }.mapNotNull { (k, a) ->
+        val tripSum = a.byType.values.sum()
+        if (tripSum <= 0f && a.total <= 0f) null
+        else LabTimeYPoint(k, tripSum)
     }
-    val milesPts = bins.entries.sortedBy { it.key }.mapNotNull { (k, a) ->
-        if (a.trip <= 0f && a.total <= 0f) null
-        else LabTimeYPoint(k, a.trip)
+
+    // P2: only types with any non-zero miles in the filtered window
+    val types = windowTypeMiles.filter { it.value > 0f }.keys.sorted()
+    val pctByType = types.associateWith { typeName ->
+        bins.entries.sortedBy { it.key }.mapNotNull { (k, a) ->
+            if (a.total <= 0f) null
+            else {
+                val m = a.byType[typeName] ?: 0f
+                LabTimeYPoint(k, 100f * m / a.total)
+            }
+        }
+    }.filterValues { it.isNotEmpty() }
+
+    return TripOdoMetrics(milesTotal = milesTotal, pctByType = pctByType)
+}
+
+/** @deprecated Prefer [tripMetricsFromOdo]; aggregate any-trip % kept for callers. */
+fun tripMilesAndPctFromOdo(
+    fuel: List<com.davidlang.vehicleexpensesautomated.data.model.FuelEntry>,
+    mode: LabSmoothMode,
+    customDays: Int,
+): Pair<List<LabTimeYPoint>, List<LabTimeYPoint>> {
+    val m = tripMetricsFromOdo(fuel, mode, customDays)
+    // Aggregate % = sum of type % ≈ 100 when all miles under a type
+    val aggPct = m.milesTotal.map { pt ->
+        val typesAt = m.pctByType.values.mapNotNull { series ->
+            series.firstOrNull { it.timestampMs == pt.timestampMs }?.y
+        }
+        LabTimeYPoint(pt.timestampMs, typesAt.sum().coerceIn(0f, 100f))
     }
-    val pctPts = bins.entries.sortedBy { it.key }.mapNotNull { (k, a) ->
-        if (a.total <= 0f) null
-        else LabTimeYPoint(k, 100f * a.trip / a.total)
-    }
-    return milesPts to pctPts
+    return m.milesTotal to aggPct
 }

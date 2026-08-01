@@ -230,55 +230,128 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         else monthlyKindSeries(fillFuel, data.expenses, data, false, chartCurrency, mode, customDays, "Other $")
     }
 
-    // Trip miles/% from odo timeline (includes Personal) — same Smooth grid
-    val tripMilesSeries = remember(byFuelScope, toggles.tripMiles, mode, customDays, data.filter.vehicleMode) {
+    // Trip miles (total) + trip % per type (P1–P7) — same Smooth grid
+    val tripMetricsByScope = remember(byFuelScope, mode, customDays, data.filter.vehicleMode) {
+        byFuelScope.mapValues { (_, fuel) -> tripMetricsFromOdo(fuel, mode, customDays) }
+    }
+    val tripMilesSeries = remember(tripMetricsByScope, toggles.tripMiles, data.filter.vehicleMode) {
         if (!toggles.tripMiles) emptyMap()
         else buildMap {
-            for ((vid, fuel) in byFuelScope) {
-                val (milesPts, _) = tripMilesAndPctFromOdo(fuel, mode, customDays)
-                if (milesPts.isNotEmpty()) put(prefix(vid) + "Trip miles", milesPts)
+            for ((vid, m) in tripMetricsByScope) {
+                if (m.milesTotal.isNotEmpty()) put(prefix(vid) + "Trip miles", m.milesTotal)
             }
         }
     }
-    val tripPctSeries = remember(byFuelScope, toggles.tripPct, mode, customDays, data.filter.vehicleMode) {
+    val tripPctSeries = remember(tripMetricsByScope, toggles.tripPct, data.filter.vehicleMode) {
         if (!toggles.tripPct) emptyMap()
         else buildMap {
-            for ((vid, fuel) in byFuelScope) {
-                val (_, pctPts) = tripMilesAndPctFromOdo(fuel, mode, customDays)
-                if (pctPts.isNotEmpty()) put(prefix(vid) + "Trip %", pctPts)
+            for ((vid, m) in tripMetricsByScope) {
+                for ((typeName, pts) in m.pctByType) {
+                    if (pts.isNotEmpty()) put(prefix(vid) + typeName, pts)
+                }
             }
         }
     }
 
     val moneySeries = unitPriceSeries + dpmFuelSeries + dpmInclSeries + monthlyFuelSeries + monthlyOtherSeries
-    val tripSeries = tripMilesSeries + tripPctSeries
-    val hasMoneyOrTrip = moneySeries.isNotEmpty() || tripSeries.isNotEmpty()
-    val hasEconomy = mpgSeries.isNotEmpty() || gpmSeries.isNotEmpty()
+    val hasAnySeries = mpgSeries.isNotEmpty() || gpmSeries.isNotEmpty() ||
+        moneySeries.isNotEmpty() || tripMilesSeries.isNotEmpty() || tripPctSeries.isNotEmpty()
 
-    // Fixed sides (A1–A4): economy always left; money/trip always right. Never put gpm on End.
-    val startSeries = mpgSeries + gpmSeries
-    val endSeries = moneySeries + tripSeries
-    val startColor = when {
-        mpgSeries.isNotEmpty() -> LabChartColors.Mpg
-        gpmSeries.isNotEmpty() -> LabChartColors.Gpm
-        else -> null
-    }
-    val endColor = if (hasMoneyOrTrip) LabChartColors.DpmFuel else null
-    val caption = "Time based reports · economy left · \$/trip right · smooth ${mode.displayLabel(customDays)}"
-
-    val allSeriesForPdf = startSeries + endSeries
-    val seriesColorMap = remember(allSeriesForPdf.keys) {
-        allSeriesForPdf.keys.associateWith { key ->
-            familyColorForSeriesKey(key)
-                ?: when {
-                    key.contains("Trip %", ignoreCase = true) -> LabChartColors.DpmIncl
-                    key.contains("Trip miles", ignoreCase = true) -> Color(0xFFEF6C00)
-                    key.contains("Fuel $") -> LabChartColors.DpmFuel
-                    key.contains("Other $") -> Color(0xFF5D4037)
-                    else -> LabChartColors.Mpg
-                }
+    // Independent scale families (A1–A3): left economy, right $ / trip mi / trip %
+    val chartFamilies = remember(
+        mpgSeries, gpmSeries, moneySeries, tripMilesSeries, tripPctSeries,
+        mpgLabel, gpmLabel,
+    ) {
+        buildList {
+            if (mpgSeries.isNotEmpty()) {
+                add(
+                    LabAxisFamily(
+                        id = "mpg",
+                        unitLabel = mpgLabel,
+                        side = LabAxisSide.Left,
+                        axisColor = LabChartColors.Mpg,
+                        series = mpgSeries,
+                    ),
+                )
+            }
+            if (gpmSeries.isNotEmpty()) {
+                add(
+                    LabAxisFamily(
+                        id = "gpm",
+                        unitLabel = gpmLabel,
+                        side = LabAxisSide.Left,
+                        axisColor = LabChartColors.Gpm,
+                        series = gpmSeries,
+                    ),
+                )
+            }
+            if (moneySeries.isNotEmpty()) {
+                add(
+                    LabAxisFamily(
+                        id = "money",
+                        unitLabel = "$",
+                        side = LabAxisSide.Right,
+                        axisColor = LabChartColors.DpmFuel,
+                        series = moneySeries,
+                        seriesColors = moneySeries.keys.associateWith { key ->
+                            familyColorForSeriesKey(key) ?: LabChartColors.DpmFuel
+                        },
+                    ),
+                )
+            }
+            if (tripMilesSeries.isNotEmpty()) {
+                add(
+                    LabAxisFamily(
+                        id = "trip_mi",
+                        unitLabel = UnitFormat.distanceUnitShortLabel(),
+                        side = LabAxisSide.Right,
+                        axisColor = Color(0xFFEF6C00),
+                        series = tripMilesSeries,
+                    ),
+                )
+            }
+            if (tripPctSeries.isNotEmpty()) {
+                val typePalette = listOf(
+                    LabChartColors.DpmIncl,
+                    Color(0xFF1565C0),
+                    Color(0xFFC62828),
+                    Color(0xFF2E7D32),
+                    Color(0xFF6A1B9A),
+                    Color(0xFF00838F),
+                )
+                val keys = tripPctSeries.keys.toList()
+                add(
+                    LabAxisFamily(
+                        id = "trip_pct",
+                        unitLabel = "%",
+                        side = LabAxisSide.Right,
+                        axisColor = LabChartColors.DpmIncl,
+                        series = tripPctSeries,
+                        seriesColors = keys.mapIndexed { i, k ->
+                            k to typePalette[i % typePalette.size]
+                        }.toMap(),
+                    ),
+                )
+            }
         }
     }
+
+    val allSeriesForPdf = chartFamilies.flatMap { f -> f.series.entries }.associate { it.toPair() }
+    val seriesColorMap = remember(chartFamilies) {
+        buildMap {
+            chartFamilies.forEach { fam ->
+                fam.series.keys.forEachIndexed { i, name ->
+                    put(
+                        name,
+                        fam.seriesColors[name]
+                            ?: seriesStrokeColor(name, fam.axisColor, i, fam.series.size),
+                    )
+                }
+            }
+        }
+    }
+    val caption =
+        "Time based reports · multi-scale Y · economy left · \$/trip right · smooth ${mode.displayLabel(customDays)}"
 
     val metricDefs = listOf(
         MetricDef("mpg", mpgLabel, LabChartColors.Mpg, toggles.mpg) { setToggles(toggles.copy(mpg = it)) },
@@ -352,27 +425,41 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                         heading = "Metrics",
                         lines = metricDefs.filter { it.checked }.map { it.label }.ifEmpty { listOf("(none)") },
                     )
-                    if (allSeriesForPdf.isNotEmpty()) {
-                        val combinedBmp = ReportsLabPdf.renderLineChartBitmap(
-                            series = allSeriesForPdf,
-                            seriesColors = seriesColorMap,
-                            title = "Combined",
+                    sections += ReportsLabPdf.PdfSection(
+                        heading = "Y-axis families",
+                        lines = chartFamilies.map {
+                            val side = if (it.side == LabAxisSide.Left) "left" else "right"
+                            "$side ${it.unitLabel}: ${it.series.keys.joinToString(", ")}"
+                        }.ifEmpty { listOf("(none)") },
+                    )
+                    if (chartFamilies.isNotEmpty()) {
+                        val combinedBmp = renderMultiFamilyChartBitmap(
+                            families = chartFamilies,
+                            title = "Combined multi-scale",
                         )
                         sections += ReportsLabPdf.PdfSection(
                             heading = "Combined chart",
                             chartBitmap = combinedBmp,
                         )
-                        // Combined table of series names
                         sections += ReportsLabPdf.PdfSection(
                             heading = "Combined series list",
                             lines = allSeriesForPdf.map { (n, pts) -> "$n (${pts.size} points)" },
                         )
                         if (allSeriesForPdf.size > 1 || data.filter.vehicleMode == LabVehicleMode.EACH) {
                             allSeriesForPdf.forEach { (name, pts) ->
-                                val one = mapOf(name to pts)
-                                val bmp = ReportsLabPdf.renderLineChartBitmap(
-                                    series = one,
-                                    seriesColors = seriesColorMap,
+                                val fam = chartFamilies.firstOrNull { name in it.series }
+                                val oneFamily = listOf(
+                                    LabAxisFamily(
+                                        id = name,
+                                        unitLabel = fam?.unitLabel ?: "",
+                                        side = fam?.side ?: LabAxisSide.Left,
+                                        axisColor = seriesColorMap[name] ?: LabChartColors.Mpg,
+                                        series = mapOf(name to pts),
+                                        seriesColors = mapOf(name to (seriesColorMap[name] ?: LabChartColors.Mpg)),
+                                    ),
+                                )
+                                val bmp = renderMultiFamilyChartBitmap(
+                                    families = oneFamily,
                                     title = name,
                                 )
                                 sections += ReportsLabPdf.PdfSection(
@@ -482,23 +569,12 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
 
         when {
             !toggles.anyOn -> ReportsLabEmpty("No metrics selected")
-            !hasEconomy && !hasMoneyOrTrip -> ReportsLabEmpty("Not enough points for a chart.")
+            !hasAnySeries -> ReportsLabEmpty("Not enough points for a chart.")
             else -> {
-                LabMultiAxisTimeSeriesChart(
-                    startSeries = startSeries,
-                    endSeries = endSeries,
+                LabMultiFamilyTimeSeriesChart(
+                    families = chartFamilies,
                     caption = caption,
                     emptyMessage = "Not enough points for a chart.",
-                    startAxisLabel = when {
-                        startSeries.isEmpty() -> null
-                        mpgSeries.isNotEmpty() && gpmSeries.isNotEmpty() -> "$mpgLabel / $gpmLabel"
-                        mpgSeries.isNotEmpty() -> mpgLabel
-                        gpmSeries.isNotEmpty() -> gpmLabel
-                        else -> "economy"
-                    },
-                    endAxisLabel = if (endSeries.isNotEmpty()) "\$ / trip" else null,
-                    startAxisColor = startColor,
-                    endAxisColor = endColor,
                 )
             }
         }
@@ -577,9 +653,9 @@ private fun monthlyKindSeries(
 
 private const val TIME_CHARTS_INFO =
     "Time based reports: economy (mpg / vol per distance), money (unit price, cost/distance, monthly \$), " +
-        "and trip miles/%. All metrics optional. One chart: economy always left (mpg and gpm share left); " +
-        "money and trip always right — sides do not swap when toggles change. " +
-        "Smooth bins share one calendar grid across metrics. " +
-        "Trip miles/% walk odometer steps under open trip types (Personal included). " +
-        "Edge-spanning full-fill legs contribute to both bins. " +
-        "PDF includes combined + per-series charts and tables."
+        "trip miles, and trip % by type. All metrics optional. " +
+        "One plot with independent Y scales per unit family: left = mpg and G/mi (separate axes); " +
+        "right = $, trip miles, and trip % (separate axes). Sides never swap. " +
+        "Trip % is one line per trip type that has miles (Personal included; all-Personal → Personal at 100%). " +
+        "Smooth bins share one calendar grid. Edge-spanning full-fill legs contribute to both bins. " +
+        "PDF includes multi-scale combined chart + per-series charts and tables."

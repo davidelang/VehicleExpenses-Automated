@@ -2097,3 +2097,18 @@ x
 - Start = mpg∪gpm always; End = money∪trip only; dropped dual-axis gpm-on-right branch
 - build via build_app; no deploy
 
+
+## 2026-07-31 - time-report-multi-axis-trip-pct-by-type start
+
+- Plan: time-report-multi-axis-trip-pct-by-type-20260731-plan.md (historical path; named for execution)
+- Multi-family Y scales; trip % per type; custom Canvas chart; PDF parity
+- No deploy
+
+
+## 2026-07-31 - time-report-multi-axis-trip-pct-by-type complete
+
+- Plan: time-report-multi-axis-trip-pct-by-type-20260731-plan.md
+- tripMetricsFromOdo: milesTotal + pctByType; multi-family Canvas LabMultiFamilyTimeSeriesChart
+- Left mpg + G/mi axes; right $ + trip mi + trip %; PDF renderMultiFamilyChartBitmap
+- No deploy
+
