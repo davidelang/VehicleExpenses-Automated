@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,6 +24,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.PhotoDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneDestConfig
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -95,70 +98,55 @@ private fun PhotoDestList(
     viewModel: PhotoBackupViewModel,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    RegisterPageHelp(
+        title = "Photo Backup",
+        "Add Google Drive (or other) destinations. Sync now uploads vehicle refs and pending photos.",
+        "Open a destination for Test connection and Sync now (this destination).",
+        "Leaving the screen mid-sync does not cancel the backup.",
+    )
     var statusText by remember { mutableStateOf("") }
-    var syncInProgress by remember { mutableStateOf(false) }
     var statusIsError by remember { mutableStateOf(false) }
-    val onProgress = rememberMainThreadSyncProgress {
-        statusText = it
-        statusIsError = false
-    }
+    val syncInProgress by viewModel.manualSyncInProgress.collectAsState()
+    val vmStatus by viewModel.manualSyncStatus.collectAsState()
+    val vmIsError by viewModel.manualSyncIsError.collectAsState()
+    val syncResult by viewModel.manualSyncResult.collectAsState()
     val consentRecovery = rememberConsentRecoveryHandle()
+
+    // Prefer ViewModel status while a ViewModel-scoped sync is active or just finished.
+    val displayStatus = if (syncInProgress || vmStatus.isNotBlank()) vmStatus else statusText
+    val displayIsError = if (syncInProgress || vmStatus.isNotBlank()) vmIsError else statusIsError
+
+    LaunchedEffect(syncResult) {
+        val result = syncResult ?: return@LaunchedEffect
+        statusText = result.message
+        statusIsError = !result.success
+        if (result.needsRemoteConsent && result.recoveryIntent != null) {
+            consentRecovery.launch(result.recoveryIntent) {
+                viewModel.startManualSync("")
+            }
+        }
+        viewModel.clearManualSyncResult()
+    }
 
     SyncDestinationListLayout(
         title = "Photo Backup",
         description = "Add a destination (Google Drive is common: Sign in with Google (Drive) → optional folder via 🔍 → save → Sync now). Manual sync runs all configured destinations; background backup runs enabled ones only.",
-        statusText = statusText,
+        statusText = displayStatus,
         syncInProgress = syncInProgress,
-        statusIsError = statusIsError,
+        statusIsError = displayIsError,
         destinationCount = destinations.size,
         maxDestinations = SyncDestinationStore.MAX_DESTINATIONS_PER_TYPE,
         addButtonLabel = "Add photo destination",
         onAdd = onAdd,
         syncNowLabel = "Sync now (all configured)",
         onSyncNow = {
-            fun runSync(allowRecovery: Boolean) {
-                scope.launch {
-                    val configured = SyncDestinationStore(context).configuredPhoto()
-                    if (configured.isEmpty()) {
-                        statusIsError = true
-                        statusText = "No configured photo destinations"
-                        return@launch
-                    }
-                    syncInProgress = true
-                    statusIsError = false
-                    statusText = "Starting photo backup…"
-                    var awaitingConsent = false
-                    try {
-                        val result = withContext(Dispatchers.IO) {
-                            viewModel.syncNow("", onProgress)
-                        }
-                        statusText = result.message
-                        if (result.success) {
-                            statusIsError = false
-                        } else if (result.needsRemoteConsent && result.recoveryIntent != null && allowRecovery) {
-                            statusIsError = true
-                            awaitingConsent = true
-                            consentRecovery.launch(result.recoveryIntent) { runSync(allowRecovery = false) }
-                        } else {
-                            statusIsError = true
-                        }
-                    } catch (e: DriveRecoverableAuthException) {
-                        statusIsError = true
-                        statusText = e.message ?: DriveAuthRecovery.NEED_REMOTE_CONSENT_MESSAGE
-                        if (allowRecovery) {
-                            awaitingConsent = true
-                            consentRecovery.launch(e.recoveryIntent) { runSync(allowRecovery = false) }
-                        }
-                    } catch (e: Exception) {
-                        statusIsError = true
-                        statusText = DriveAuthRecovery.userMessage(e)
-                    } finally {
-                        if (!awaitingConsent) syncInProgress = false
-                    }
-                }
+            val configured = SyncDestinationStore(context).configuredPhoto()
+            if (configured.isEmpty()) {
+                statusIsError = true
+                statusText = "No configured photo destinations"
+                return@SyncDestinationListLayout
             }
-            runSync(allowRecovery = true)
+            viewModel.startManualSync("")
         },
         listContent = {
             LazyColumn(modifier = Modifier.weight(1f)) {

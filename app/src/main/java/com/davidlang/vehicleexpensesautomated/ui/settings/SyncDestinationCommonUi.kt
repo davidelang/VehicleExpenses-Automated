@@ -1,21 +1,26 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,19 +29,20 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncProgressListener
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class ConsentRecoveryHandle internal constructor(
     val launch: (Intent, () -> Unit) -> Unit,
@@ -60,12 +66,24 @@ fun rememberConsentRecoveryHandle(): ConsentRecoveryHandle {
     }
 }
 
+/**
+ * Best-effort progress for long-running sync. Uses a process main [Handler] so
+ * disposing the composition never throws into the sync job
+ * (`ForgottenCoroutineScopeException`).
+ */
 @Composable
 fun rememberMainThreadSyncProgress(onUpdate: (String) -> Unit): SyncProgressListener {
-    val scope = rememberCoroutineScope()
-    return remember(onUpdate) {
+    val latestUpdate by rememberUpdatedState(onUpdate)
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    return remember {
         SyncProgressListener { message ->
-            scope.launch(Dispatchers.Main.immediate) { onUpdate(message) }
+            mainHandler.post {
+                try {
+                    latestUpdate(message)
+                } catch (_: Throwable) {
+                    // Composition/state gone — progress is optional
+                }
+            }
         }
     }
 }
@@ -245,6 +263,9 @@ fun SyncDestinationDisplayNameField(
     )
 }
 
+/**
+ * Dest-edit footer: Test connection, optional Sync now (this dest), Remove, status, Details.
+ */
 @Composable
 fun SyncDestinationEditFooter(
     testButtonLabel: String,
@@ -252,23 +273,109 @@ fun SyncDestinationEditFooter(
     showRemove: Boolean,
     onRemove: () -> Unit,
     statusText: String,
+    syncNowLabel: String = "Sync now (this destination)",
+    onSyncNow: (() -> Unit)? = null,
+    syncInProgress: Boolean = false,
+    syncNowEnabled: Boolean = true,
+    statusIsError: Boolean = false,
+    failureDetailMessage: String? = null,
+    failureDialogTitle: String = "Sync failure",
 ) {
     Button(
         onClick = onTest,
         modifier = Modifier.fillMaxWidth(),
+        enabled = !syncInProgress,
     ) {
         Text(testButtonLabel)
+    }
+    if (onSyncNow != null) {
+        Button(
+            onClick = onSyncNow,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            enabled = syncNowEnabled && !syncInProgress,
+        ) {
+            Text(syncNowLabel)
+        }
     }
     if (showRemove) {
         OutlinedButton(
             onClick = onRemove,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            enabled = !syncInProgress,
         ) {
             Text("Remove destination")
         }
     }
-    if (statusText.isNotBlank()) {
+    if (statusText.isNotBlank() || syncInProgress) {
         Spacer(modifier = Modifier.height(8.dp))
-        Text(statusText, style = MaterialTheme.typography.bodySmall)
+        SyncStatusDisplay(
+            statusText = statusText,
+            syncInProgress = syncInProgress,
+            isError = statusIsError,
+        )
     }
+    if (!failureDetailMessage.isNullOrBlank()) {
+        Spacer(modifier = Modifier.height(4.dp))
+        SyncFailureDetailsButton(
+            detailMessage = failureDetailMessage,
+            title = failureDialogTitle,
+        )
+    }
+}
+
+/** Opens a scrollable dialog with full failure text + Copy. */
+@Composable
+fun SyncFailureDetailsButton(
+    detailMessage: String,
+    title: String = "Sync failure",
+    buttonLabel: String = "Details",
+) {
+    var show by remember { mutableStateOf(false) }
+    TextButton(onClick = { show = true }) {
+        Text(buttonLabel)
+    }
+    if (show) {
+        SyncFailureDetailsDialog(
+            title = title,
+            detailMessage = detailMessage,
+            onDismiss = { show = false },
+        )
+    }
+}
+
+@Composable
+fun SyncFailureDetailsDialog(
+    title: String,
+    detailMessage: String,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(detailMessage, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("OK") }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("sync failure", detailMessage))
+                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                },
+            ) {
+                Text("Copy")
+            }
+        },
+    )
 }

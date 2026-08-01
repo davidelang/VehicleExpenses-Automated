@@ -67,6 +67,11 @@ class SyncDestinationStore(private val appContext: Context) {
 
     fun save(destinations: SyncDestinations) {
         prefs.edit().putString(KEY_SYNC_DESTINATIONS_JSON, toJson(destinations)).apply()
+        // Drop failure entries for deleted/recreated dest UUIDs (ghost hub badge).
+        SyncFailureStore(appContext).pruneToKnownDestinations(
+            spreadsheetIds = destinations.spreadsheet.map { it.id }.toSet(),
+            photoIds = destinations.photo.map { it.id }.toSet(),
+        )
     }
 
     private fun parseJson(json: String): SyncDestinations {

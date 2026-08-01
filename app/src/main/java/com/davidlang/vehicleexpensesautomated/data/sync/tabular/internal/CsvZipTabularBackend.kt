@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal
 
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
+
 import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
@@ -354,9 +356,11 @@ class CsvZipTabularBackend @Inject constructor(
                     category = parts[4],
                     description = parts[5],
                     photoUrl = receiptPath,
-                    latitude = parts[7].toDoubleOrNull(),
-                    longitude = parts[8].toDoubleOrNull(),
-                    location = parts[9].ifBlank { null },
+                    location = FuelLocationJson.foldLegacy(
+                        parts[7].toDoubleOrNull(),
+                        parts[8].toDoubleOrNull(),
+                        parts[9].ifBlank { null },
+                    ),
                     cloudManifest = if (parts.size > 10) parts[10].ifBlank { null } else null,
                 )
                 expenseRepository.insertExpenseEntry(expense)

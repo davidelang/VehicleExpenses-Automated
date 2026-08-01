@@ -1,7 +1,6 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.widget.Toast
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,52 +15,77 @@ import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncDestinationStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
+import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
 fun SyncingScreen(navController: NavHostController) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = hiltViewModel()
-    val scope = rememberCoroutineScope()
+    RegisterPageHelp(
+        title = "Syncing",
+        "Spreadsheet sync and Photo backup open destination lists. Sync on each card runs all configured destinations.",
+        "Red ! in the title bar means a stored failure — open Details on the card for the full API message.",
+        "Leaving this screen during Sync now does not cancel the job (it continues in the background).",
+    )
     val syncStore = remember { SyncDestinationStore(context) }
     val failureStore = remember { SyncFailureStore(context) }
     var pendingBadge by remember { mutableStateOf(syncStore.pendingBadgeText()) }
     var spreadsheetError by remember { mutableStateOf<String?>(null) }
     var photoError by remember { mutableStateOf<String?>(null) }
+    var spreadsheetErrorDetails by remember { mutableStateOf<String?>(null) }
+    var photoErrorDetails by remember { mutableStateOf<String?>(null) }
     val navBackStackEntry = navController.currentBackStackEntry
     val destinations = remember(navBackStackEntry) { syncStore.load() }
+
+    val spreadsheetSyncStatus by viewModel.spreadsheetSyncStatus.collectAsState()
+    val spreadsheetSyncInProgress by viewModel.spreadsheetSyncInProgress.collectAsState()
+    val spreadsheetSyncIsError by viewModel.spreadsheetSyncIsError.collectAsState()
+    val spreadsheetSyncResult by viewModel.spreadsheetSyncResult.collectAsState()
+    val photoSyncStatus by viewModel.photoSyncStatus.collectAsState()
+    val photoSyncInProgress by viewModel.photoSyncInProgress.collectAsState()
+    val photoSyncIsError by viewModel.photoSyncIsError.collectAsState()
+    val photoSyncResult by viewModel.photoSyncResult.collectAsState()
 
     LaunchedEffect(navBackStackEntry) {
         pendingBadge = syncStore.pendingBadgeText()
         spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
         photoError = failureStore.photoFailureSummary(syncStore)
+        spreadsheetErrorDetails = failureStore.spreadsheetFailureDetails(syncStore)
+        photoErrorDetails = failureStore.photoFailureDetails(syncStore)
         withContext(Dispatchers.IO) {
             viewModel.recountPendingBadge()
         }
         pendingBadge = syncStore.pendingBadgeText()
     }
+
+    // Refresh failure lines when a ViewModel-scoped sync finishes
+    LaunchedEffect(spreadsheetSyncResult) {
+        val result = spreadsheetSyncResult ?: return@LaunchedEffect
+        spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
+        spreadsheetErrorDetails = failureStore.spreadsheetFailureDetails(syncStore)
+        if (!result.success) {
+            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+        }
+        viewModel.clearSpreadsheetSyncResult()
+    }
+    LaunchedEffect(photoSyncResult) {
+        val result = photoSyncResult ?: return@LaunchedEffect
+        pendingBadge = syncStore.pendingBadgeText()
+        photoError = failureStore.photoFailureSummary(syncStore)
+        photoErrorDetails = failureStore.photoFailureDetails(syncStore)
+        if (!result.success) {
+            Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+        }
+        viewModel.clearPhotoSyncResult()
+    }
+
     val spreadsheetDests = destinations.spreadsheet
     val photoDests = destinations.photo
     val spreadsheetConfigured = syncStore.configuredSpreadsheet().isNotEmpty()
     val photoConfigured = syncStore.configuredPhoto().isNotEmpty()
-
-    var spreadsheetSyncStatus by remember { mutableStateOf("") }
-    var photoSyncStatus by remember { mutableStateOf("") }
-    var spreadsheetSyncInProgress by remember { mutableStateOf(false) }
-    var photoSyncInProgress by remember { mutableStateOf(false) }
-    var spreadsheetSyncIsError by remember { mutableStateOf(false) }
-    var photoSyncIsError by remember { mutableStateOf(false) }
-    val spreadsheetProgress = rememberMainThreadSyncProgress {
-        spreadsheetSyncStatus = it
-        spreadsheetSyncIsError = false
-    }
-    val photoProgress = rememberMainThreadSyncProgress {
-        photoSyncStatus = it
-        photoSyncIsError = false
-    }
 
     Column(
         modifier = Modifier
@@ -83,31 +107,19 @@ fun SyncingScreen(navController: NavHostController) {
             summary = SyncDestinationStore.spreadsheetSummaryLine(spreadsheetDests),
             pendingBadge = pendingBadge,
             errorText = spreadsheetError,
+            errorDetails = spreadsheetErrorDetails,
+            errorDetailsTitle = "Spreadsheet sync failure",
             syncStatusText = spreadsheetSyncStatus,
             syncInProgress = spreadsheetSyncInProgress,
             syncStatusIsError = spreadsheetSyncIsError,
             showSyncNow = spreadsheetConfigured,
             onRowClick = { navController.navigate("settings/spreadsheet_sync") },
             onSyncNow = {
-                scope.launch {
-                    spreadsheetSyncInProgress = true
-                    spreadsheetSyncIsError = false
-                    spreadsheetSyncStatus = "Starting spreadsheet sync…"
-                    try {
-                        val result = withContext(Dispatchers.IO) {
-                            viewModel.syncSpreadsheet(spreadsheetProgress)
-                        }
-                        spreadsheetSyncStatus = result.message
-                        spreadsheetSyncIsError = !result.success
-                        spreadsheetError = failureStore.spreadsheetFailureSummary(syncStore)
-                    } catch (e: Exception) {
-                        spreadsheetSyncIsError = true
-                        spreadsheetSyncStatus = e.message ?: "Sync failed"
-                        Toast.makeText(context, spreadsheetSyncStatus, Toast.LENGTH_LONG).show()
-                    } finally {
-                        spreadsheetSyncInProgress = false
-                    }
+                if (!spreadsheetConfigured) {
+                    Toast.makeText(context, "No configured spreadsheet destinations", Toast.LENGTH_SHORT).show()
+                    return@SyncSummaryRow
                 }
+                viewModel.startSpreadsheetSync()
             },
         )
         SyncSummaryRow(
@@ -115,32 +127,19 @@ fun SyncingScreen(navController: NavHostController) {
             summary = syncStore.photoSummaryLine(photoDests),
             pendingBadge = pendingBadge,
             errorText = photoError,
+            errorDetails = photoErrorDetails,
+            errorDetailsTitle = "Photo backup failure",
             syncStatusText = photoSyncStatus,
             syncInProgress = photoSyncInProgress,
             syncStatusIsError = photoSyncIsError,
             showSyncNow = photoConfigured,
             onRowClick = { navController.navigate("settings/photo_backup") },
             onSyncNow = {
-                scope.launch {
-                    photoSyncInProgress = true
-                    photoSyncIsError = false
-                    photoSyncStatus = "Starting photo backup…"
-                    try {
-                        val result = withContext(Dispatchers.IO) {
-                            viewModel.syncPhotoBackup(photoProgress)
-                        }
-                        photoSyncStatus = result.message
-                        photoSyncIsError = !result.success
-                        pendingBadge = syncStore.pendingBadgeText()
-                        photoError = failureStore.photoFailureSummary(syncStore)
-                    } catch (e: Exception) {
-                        photoSyncIsError = true
-                        photoSyncStatus = e.message ?: "Photo sync failed"
-                        Toast.makeText(context, photoSyncStatus, Toast.LENGTH_LONG).show()
-                    } finally {
-                        photoSyncInProgress = false
-                    }
+                if (!photoConfigured) {
+                    Toast.makeText(context, "No configured photo destinations", Toast.LENGTH_SHORT).show()
+                    return@SyncSummaryRow
                 }
+                viewModel.startPhotoSync()
             },
         )
     }
@@ -152,6 +151,8 @@ internal fun SyncSummaryRow(
     summary: String,
     pendingBadge: String,
     errorText: String? = null,
+    errorDetails: String? = null,
+    errorDetailsTitle: String = "Sync failure",
     syncStatusText: String = "",
     syncInProgress: Boolean = false,
     syncStatusIsError: Boolean = false,
@@ -159,6 +160,7 @@ internal fun SyncSummaryRow(
     onRowClick: () -> Unit,
     onSyncNow: () -> Unit,
 ) {
+    var showDetails by remember { mutableStateOf(false) }
     TappableCard(
         onClick = onRowClick,
         modifier = Modifier.padding(vertical = 4.dp),
@@ -173,12 +175,23 @@ internal fun SyncSummaryRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (!errorText.isNullOrBlank()) {
-                    Text(
-                        errorText,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        softWrap = true,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            errorText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            softWrap = true,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        if (!errorDetails.isNullOrBlank()) {
+                            TextButton(
+                                onClick = { showDetails = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            ) {
+                                Text("Details", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
                 }
                 if (syncStatusText.isNotBlank() || syncInProgress) {
                     SyncStatusDisplay(
@@ -199,5 +212,12 @@ internal fun SyncSummaryRow(
             }
             Text("›", style = MaterialTheme.typography.titleLarge)
         }
+    }
+    if (showDetails && !errorDetails.isNullOrBlank()) {
+        SyncFailureDetailsDialog(
+            title = errorDetailsTitle,
+            detailMessage = errorDetails,
+            onDismiss = { showDetails = false },
+        )
     }
 }
