@@ -386,3 +386,11 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Moved remaining int8/jit/256/1024-rec experiment plans (and related patches if present) to historical-plans/
 - Active plans/ now only orch policy contracts (+ any non-int8 leftovers)
 
+
+## 2026-07-31 - Restore TODO-linked plans from archive
+
+- Rule: do not archive plans/research still referenced by any TODO.md
+- Restored ~18 pump/4box/binpeak plans + reports-efficiency plan from historical-plans/ to plans/
+- Documented rule in plan-style-guide + project-facts
+- LOCATION_LOOKUP_WORKER + i18n research already in place
+

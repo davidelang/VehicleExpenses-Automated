@@ -8,6 +8,7 @@ Read in full early on startup/new cycle.
 - Absolute path: `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/`
 - `dev-ai-interaction/plans/` — designated active plan (user names exact file)
 - `dev-ai-interaction/historical-plans/` — archived plans
+- **TODO-linked plans/research:** never archive a `plans/` or `research/` path still referenced from any `TODO.md`; restore if moved by mistake
 - `dev-ai-interaction/implementation-failure-logs/` — scan on planner startup / recovery
 - `dev-ai-interaction/PRs/PR-<branch>.md` — local PR docs for Master
 - `dev-ai-interaction/.planning-agent-prompt.txt` — optional planner prompt file
