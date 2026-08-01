@@ -299,7 +299,7 @@ Menu → **Start trip**. Capture or enter odometer, choose trip type, save with 
 
 Menu → **Reports** opens the product reports hub (all-time summary + catalog cards). Open a card for filters (vehicle All / Each / Single + period), charts, and share (TEXT / CSV / PDF).
 
-Includes **Fuel efficiency** (multi-metric chart), cost trends, monthly costs, expenses by category, fill history, vehicle summary, and **Trip miles**. Trip starts are not counted as fills.
+Includes **Time based reports** (one multi-metric chart: mpg, volume/distance, unit price, cost/distance, monthly $, trip miles/%, with optional Smooth bins), expenses by category, fill history (**fills only**), vehicle summary, and **Trip miles** (trip-start list; tap to edit). Trip starts are not counted as fills in Fuel History.
 
 ## Syncing
 

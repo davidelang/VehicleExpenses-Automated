@@ -2064,3 +2064,22 @@ x
 - D: NAVIGATION_MAP, REPORTS_METRICS, USER_GUIDE, project-facts
 - No deploy
 
+
+## 2026-07-31 - time-based-reports-ux-pdf-manual start
+
+- Plan: time-based-reports-ux-pdf-manual-20260731-plan.md
+- Rename Time based reports; UnitFormat labels; single chart; trip bins; PDF graphs; multi-dest fetch; docs/screenshots
+- No deploy
+
+
+## 2026-07-31 - time-based-reports-ux-pdf-manual complete
+
+- Plan: time-based-reports-ux-pdf-manual-20260731-plan.md
+- Rename Time based reports; UnitFormat volumePerDistance + unitPrice labels
+- Single chart: economy left, money+trip right; color chips + multi-col metrics
+- Trip miles/% from odo Δ bins (Personal included)
+- PDF combined+per-series chart bitmaps + tables
+- Multi-dest downloadFuel/Expense/VehicleIfNeeded
+- Docs Help USER_GUIDE REPORTS_METRICS user-manual+html assets; screenshots deferred to post-deploy 5556 for hub/time/edit
+- No deploy
+

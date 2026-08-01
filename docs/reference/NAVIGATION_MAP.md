@@ -53,7 +53,7 @@ Priority if space is tight: menu/back → **Info** → `?N` → `!`.
 
 - **Quick Fill-up** / **New expense** — stay in place after save (drawer for Reports)  
 - **Start trip** — writes trip-start fuel rows; no separate close column  
-- **Reports hub** → `reports_lab/time` (Fuel over time), `expenses`, `fills`, `vehicle_summary`, `trips`; hub card → `expenselist`. Legacy routes `efficiency` / `cost_trends` / `monthly` redirect to `time`.  
+- **Reports hub** → `reports_lab/time` (**Time based reports**), `expenses`, `fills`, `vehicle_summary`, `trips`; hub card → `expenselist`. Legacy routes `efficiency` / `cost_trends` / `monthly` redirect to `time`.  
 - **Syncing** → `settings/spreadsheet_sync`, `settings/photo_backup`  
 - **Fuel History** → fills only → **Edit Fill**; trip starts listed under **Trip miles**  
 

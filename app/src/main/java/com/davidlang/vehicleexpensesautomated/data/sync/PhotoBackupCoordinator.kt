@@ -709,12 +709,18 @@ class PhotoBackupCoordinator @Inject constructor(
 
     /** Phase 11/18: download vehicle assets when manifest has remote refs but local files are missing. */
     suspend fun downloadVehicleIfNeeded(vehicleId: Int): Boolean = withContext(Dispatchers.IO) {
-        val ctx = resolveContext(null) ?: return@withContext false
-        prepareRcloneDestIfNeeded(ctx.dest, ctx.hint)
         val vehicle = vehicleRepository.getVehicleById(vehicleId) ?: return@withContext false
         val rebound = rebindOnDiskVehicleRefs(vehicle)
-        val (_, changed) = downloadVehicleAssetsIfNeeded(ctx, rebound)
-        changed
+        for (ctx in photoContextsForEntity(rebound.cloudManifest)) {
+            try {
+                prepareRcloneDestIfNeeded(ctx.dest, ctx.hint)
+                val (_, changed) = downloadVehicleAssetsIfNeeded(ctx, rebound)
+                if (changed) return@withContext true
+            } catch (e: Exception) {
+                Log.w(TAG, "Vehicle download failed destId=${ctx.dest.id}", e)
+            }
+        }
+        false
     }
 
     /**
@@ -757,19 +763,64 @@ class PhotoBackupCoordinator @Inject constructor(
     }
 
     /** Download expense receipt page(s) from cloud manifest when local photos missing (primary dest). */
+    /**
+     * On-demand expense receipt download. Tries **all configured photo dests** (and
+     * manifest destIds) until one succeeds (F2 multi-dest).
+     */
     suspend fun downloadExpensePhoto(expense: ExpenseEntry): String? = withContext(Dispatchers.IO) {
-        val ctx = resolveContext(null) ?: return@withContext null
-        downloadExpensePhoto(expense, ctx)
+        for (ctx in photoContextsForEntity(expense.cloudManifest)) {
+            try {
+                val result = downloadExpensePhoto(expense, ctx)
+                if (result != null && hasReadableExpenseLocal(result)) return@withContext result
+                if (result != null) return@withContext result
+            } catch (e: Exception) {
+                Log.w(TAG, "Expense download failed destId=${ctx.dest.id}", e)
+            }
+        }
+        null
     }
 
     /**
      * On-demand download of fuel fill photos (dash/pump) from cloud manifest.
      * Never called by bulk Sync now / background worker.
+     * Tries **all configured photo dests** until one succeeds (F2 multi-dest).
      * @return new photoUrl JSON/path or null if nothing downloaded
      */
     suspend fun downloadFuelPhoto(fuel: FuelEntry): String? = withContext(Dispatchers.IO) {
-        val ctx = resolveContext(null) ?: return@withContext null
-        downloadFuelPhoto(fuel, ctx)
+        for (ctx in photoContextsForEntity(fuel.cloudManifest)) {
+            try {
+                val result = downloadFuelPhoto(fuel, ctx)
+                if (result != null && hasReadableFuelLocal(result)) return@withContext result
+                if (result != null) return@withContext result
+            } catch (e: Exception) {
+                Log.w(TAG, "Fuel download failed destId=${ctx.dest.id}", e)
+            }
+        }
+        null
+    }
+
+    private fun hasReadableFuelLocal(photoUrl: String?): Boolean =
+        FuelPhotoJson.parse(photoUrl).any { photoStorage.isLocalReadable(it.uri) }
+
+    private fun hasReadableExpenseLocal(photoUrl: String?): Boolean {
+        val pages = ExpensePhotoUrls.parse(photoUrl)
+        if (pages.isNotEmpty()) return pages.any { photoStorage.isLocalReadable(it.uri) }
+        return !photoUrl.isNullOrBlank() && photoStorage.isLocalReadable(photoUrl)
+    }
+
+    /** Manifest dests first, then all configured photo destinations. */
+    private fun photoContextsForEntity(cloudManifest: String?): List<SyncContext> {
+        val store = SyncDestinationStore(context)
+        val ordered = linkedMapOf<String, PhotoDestination>()
+        for (entry in CloudManifest.parse(cloudManifest)) {
+            store.allPhoto().find { it.id == entry.destId }?.let { ordered[it.id] = it }
+        }
+        for (d in store.enabledPhoto()) ordered[d.id] = d
+        store.photoDestination()?.let { ordered[it.id] = it }
+        for (d in store.allPhoto()) {
+            if (store.isPhotoConfigured(d)) ordered[d.id] = d
+        }
+        return ordered.values.mapNotNull { dest -> resolveContext(null, dest) }
     }
 
     private suspend fun downloadFuelPhoto(fuel: FuelEntry, ctx: SyncContext): String? =

@@ -32,9 +32,9 @@ private data class CatalogEntry(val title: String, val route: String, val blurb:
 
 private val CATALOG = listOf(
     CatalogEntry(
-        "Fuel over time",
+        "Time based reports",
         "reports_lab/time",
-        "mpg, gpm, unit price, \$/mi, monthly \$, trip miles/% with smooth bins",
+        "mpg, G/mi, \$/G, \$/mi, monthly \$, trip miles/% · one chart · smooth bins",
     ),
     CatalogEntry("Expenses by category", "reports_lab/expenses", "Category totals and list"),
     CatalogEntry("Expenses list", "expenselist", "All expenses — tap to edit"),

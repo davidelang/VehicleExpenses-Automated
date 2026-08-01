@@ -1,12 +1,17 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -22,12 +27,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import com.davidlang.vehicleexpensesautomated.data.trip.TripSegments
-import com.davidlang.vehicleexpensesautomated.data.trip.TripTypes
-import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
+import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 
 private data class TimeMetricToggles(
@@ -49,6 +53,14 @@ private data class TimeMetricToggles(
 private data class SmoothPrefs(
     val mode: LabSmoothMode = LabSmoothMode.NONE,
     val customDays: Int = 7,
+)
+
+private data class MetricDef(
+    val key: String,
+    val label: String,
+    val color: Color,
+    val checked: Boolean,
+    val onChecked: (Boolean) -> Unit,
 )
 
 private object TimeChartPrefs {
@@ -107,6 +119,11 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
     var smoothMenu by remember { mutableStateOf(false) }
     var customDaysText by remember { mutableStateOf(smooth.customDays.toString()) }
 
+    val mpgLabel = UnitFormat.economyEfficiencyLabel()
+    val gpmLabel = UnitFormat.volumePerDistanceLabel(context)
+    val unitPriceLabel = UnitFormat.unitPriceLabel(context)
+    val dpmLabel = UnitFormat.costPerDistanceLabel()
+
     fun setToggles(next: TimeMetricToggles) {
         toggles = next
         TimeChartPrefs.saveMetrics(context, next)
@@ -127,20 +144,6 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
             labLegMetrics(display, fuel, data.expenses, data.defaultStored)
         }
     }
-    val (periodStart, periodEnd) = remember(data.filter) { periodBounds(data.filter) }
-    val tripSegs = remember(data.allFuel, data.filter.vehicleMode, data.filter.vehicleId, periodStart, periodEnd) {
-        when (data.filter.vehicleMode) {
-            LabVehicleMode.SINGLE -> {
-                val vid = data.filter.vehicleId
-                if (vid != null) {
-                    TripSegments.listSegmentsWithImplicitPersonal(vid, data.allFuel, periodStart, periodEnd)
-                } else {
-                    TripSegments.listAllSegmentsWithImplicitPersonal(data.allFuel, periodStart, periodEnd)
-                }
-            }
-            else -> TripSegments.listAllSegmentsWithImplicitPersonal(data.allFuel, periodStart, periodEnd)
-        }.let { TripSegments.filterForPeriod(it, periodStart, periodEnd) }
-    }
 
     fun prefix(vid: Int?): String =
         if (data.filter.vehicleMode == LabVehicleMode.EACH && vid != null) {
@@ -152,83 +155,64 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
     val mode = smooth.mode
     val customDays = smooth.customDays
 
-    // --- Series maps ---
     val mpgSeries = remember(metricsByScope, toggles.mpg, mode, customDays, data.filter.vehicleMode) {
         if (!toggles.mpg) emptyMap()
-        else {
-            buildMap {
-                for ((vid, metrics) in metricsByScope) {
-                    val legs = metrics.map { it.leg }
-                    val pts = economyPointsFromLegsBinned(legs, mode, customDays, asGpm = false)
-                    if (pts.isNotEmpty()) {
-                        put(prefix(vid) + UnitFormat.economyEfficiencyLabel(), pts)
-                    }
-                }
+        else buildMap {
+            for ((vid, metrics) in metricsByScope) {
+                val pts = economyPointsFromLegsBinned(metrics.map { it.leg }, mode, customDays, asGpm = false)
+                if (pts.isNotEmpty()) put(prefix(vid) + mpgLabel, pts)
             }
         }
     }
     val gpmSeries = remember(metricsByScope, toggles.gpm, mode, customDays, data.filter.vehicleMode) {
         if (!toggles.gpm) emptyMap()
-        else {
-            buildMap {
-                for ((vid, metrics) in metricsByScope) {
-                    val legs = metrics.map { it.leg }
-                    val pts = economyPointsFromLegsBinned(legs, mode, customDays, asGpm = true)
-                    if (pts.isNotEmpty()) put(prefix(vid) + "gpm", pts)
-                }
+        else buildMap {
+            for ((vid, metrics) in metricsByScope) {
+                val pts = economyPointsFromLegsBinned(metrics.map { it.leg }, mode, customDays, asGpm = true)
+                if (pts.isNotEmpty()) put(prefix(vid) + gpmLabel, pts)
             }
         }
     }
     val unitPriceSeries = remember(byFuelScope, toggles.unitPrice, mode, customDays, data.filter.vehicleMode) {
         if (!toggles.unitPrice) emptyMap()
-        else {
-            buildMap {
-                for ((vid, fuel) in byFuelScope) {
-                    val cv = fuel.withoutTripStarts().mapNotNull { e ->
-                        if (e.gallons <= 0 || !e.cost.isFinite() || e.cost == 0.0) null
-                        else e.timestamp to (e.cost to e.gallons)
-                    }
-                    val pts = unitPricePointsBinned(cv, mode, customDays)
-                    if (pts.isNotEmpty()) put(prefix(vid) + "unit price", pts)
+        else buildMap {
+            for ((vid, fuel) in byFuelScope) {
+                val cv = fuel.withoutTripStarts().mapNotNull { e ->
+                    if (e.gallons <= 0 || e.cost == 0.0) null
+                    else e.timestamp to (e.cost to e.gallons)
                 }
+                val pts = unitPricePointsBinned(cv, mode, customDays)
+                if (pts.isNotEmpty()) put(prefix(vid) + unitPriceLabel, pts)
             }
         }
     }
     val dpmFuelSeries = remember(metricsByScope, toggles.dpmFuel, mode, customDays, data.filter.vehicleMode) {
         if (!toggles.dpmFuel) emptyMap()
-        else {
-            buildMap {
-                for ((vid, metrics) in metricsByScope) {
-                    val pts = averagePointsByBin(
-                        metrics.mapNotNull { m ->
-                            m.dpmFuel?.let { LabTimeYPoint(m.leg.endTimestamp, it.toFloat()) }
-                        },
-                        mode,
-                        customDays,
-                    )
-                    if (pts.isNotEmpty()) {
-                        put(prefix(vid) + UnitFormat.costPerDistanceLabel() + " fuel", pts)
-                    }
-                }
+        else buildMap {
+            for ((vid, metrics) in metricsByScope) {
+                val pts = averagePointsByBin(
+                    metrics.mapNotNull { m ->
+                        m.dpmFuel?.let { LabTimeYPoint(m.leg.endTimestamp, it.toFloat()) }
+                    },
+                    mode,
+                    customDays,
+                )
+                if (pts.isNotEmpty()) put(prefix(vid) + "$dpmLabel fuel", pts)
             }
         }
     }
     val dpmInclSeries = remember(metricsByScope, toggles.dpmIncl, mode, customDays, data.filter.vehicleMode) {
         if (!toggles.dpmIncl) emptyMap()
-        else {
-            buildMap {
-                for ((vid, metrics) in metricsByScope) {
-                    val pts = averagePointsByBin(
-                        metrics.mapNotNull { m ->
-                            m.dpmInclExp?.let { LabTimeYPoint(m.leg.endTimestamp, it.toFloat()) }
-                        },
-                        mode,
-                        customDays,
-                    )
-                    if (pts.isNotEmpty()) {
-                        put(prefix(vid) + UnitFormat.costPerDistanceLabel() + " +exp", pts)
-                    }
-                }
+        else buildMap {
+            for ((vid, metrics) in metricsByScope) {
+                val pts = averagePointsByBin(
+                    metrics.mapNotNull { m ->
+                        m.dpmInclExp?.let { LabTimeYPoint(m.leg.endTimestamp, it.toFloat()) }
+                    },
+                    mode,
+                    customDays,
+                )
+                if (pts.isNotEmpty()) put(prefix(vid) + "$dpmLabel +exp", pts)
             }
         }
     }
@@ -237,105 +221,124 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         fillFuel, data.expenses, toggles.monthlyFuel, mode, customDays, data.filter.vehicleMode, chartCurrency,
     ) {
         if (!toggles.monthlyFuel) emptyMap()
-        else monthlyKindSeries(
-            fillFuel = fillFuel,
-            expenses = data.expenses,
-            data = data,
-            fuelKind = true,
-            chartCurrency = chartCurrency,
-            mode = mode,
-            customDays = customDays,
-        )
+        else monthlyKindSeries(fillFuel, data.expenses, data, true, chartCurrency, mode, customDays, "Fuel $")
     }
     val monthlyOtherSeries = remember(
         fillFuel, data.expenses, toggles.monthlyOther, mode, customDays, data.filter.vehicleMode, chartCurrency,
     ) {
         if (!toggles.monthlyOther) emptyMap()
-        else monthlyKindSeries(
-            fillFuel = fillFuel,
-            expenses = data.expenses,
-            data = data,
-            fuelKind = false,
-            chartCurrency = chartCurrency,
-            mode = mode,
-            customDays = customDays,
-        )
+        else monthlyKindSeries(fillFuel, data.expenses, data, false, chartCurrency, mode, customDays, "Other $")
     }
-    val tripMilesSeries = remember(tripSegs, toggles.tripMiles, mode, customDays, data.filter.vehicleMode) {
+
+    // Trip miles/% from odo timeline (includes Personal) — same Smooth grid
+    val tripMilesSeries = remember(byFuelScope, toggles.tripMiles, mode, customDays, data.filter.vehicleMode) {
         if (!toggles.tripMiles) emptyMap()
-        else {
-            val segs = tripSegs.filter { !it.isOpen && !it.isZeroLength }
-            when (data.filter.vehicleMode) {
-                LabVehicleMode.EACH -> segs.groupBy { it.vehicleId }.mapKeys { (vid, _) ->
-                    data.vehicleName(vid) + " trip mi"
-                }.mapValues { (_, list) ->
-                    sumPointsByBin(
-                        list.map { it.startTimestamp to it.miles.toFloat() },
-                        mode,
-                        customDays,
-                    )
-                }.filterValues { it.isNotEmpty() }
-                else -> mapOf(
-                    "trip miles" to sumPointsByBin(
-                        segs.map { it.startTimestamp to it.miles.toFloat() },
-                        mode,
-                        customDays,
-                    ),
-                ).filterValues { it.isNotEmpty() }
+        else buildMap {
+            for ((vid, fuel) in byFuelScope) {
+                val (milesPts, _) = tripMilesAndPctFromOdo(fuel, mode, customDays)
+                if (milesPts.isNotEmpty()) put(prefix(vid) + "Trip miles", milesPts)
             }
         }
     }
-    val tripPctSeries = remember(tripSegs, toggles.tripPct, mode, customDays, data.filter.vehicleMode) {
+    val tripPctSeries = remember(byFuelScope, toggles.tripPct, mode, customDays, data.filter.vehicleMode) {
         if (!toggles.tripPct) emptyMap()
-        else {
-            fun pctPoints(list: List<TripSegments.Segment>): List<LabTimeYPoint> {
-                val closed = list.filter { !it.isOpen && !it.isZeroLength }
-                if (closed.isEmpty()) return emptyList()
-                if (mode == LabSmoothMode.NONE) {
-                    return closed.map { seg ->
-                        val trip = if (seg.isPersonal || seg.tripType.equals(TripTypes.PERSONAL, true)) {
-                            0f
-                        } else {
-                            seg.miles.toFloat()
-                        }
-                        val total = seg.miles.toFloat().coerceAtLeast(1f)
-                        LabTimeYPoint(seg.startTimestamp, 100f * trip / total)
-                    }
-                }
-                data class Acc(var trip: Float = 0f, var total: Float = 0f)
-                val bins = linkedMapOf<Long, Acc>()
-                for (seg in closed) {
-                    val k = binKeyMs(seg.startTimestamp, mode, customDays)
-                    val a = bins.getOrPut(k) { Acc() }
-                    a.total += seg.miles
-                    if (!(seg.isPersonal || seg.tripType.equals(TripTypes.PERSONAL, true))) {
-                        a.trip += seg.miles
-                    }
-                }
-                return bins.entries.sortedBy { it.key }.map { (k, a) ->
-                    val t = a.total.coerceAtLeast(1f)
-                    LabTimeYPoint(k, 100f * a.trip / t)
-                }
-            }
-            when (data.filter.vehicleMode) {
-                LabVehicleMode.EACH -> tripSegs.groupBy { it.vehicleId }.mapKeys { (vid, _) ->
-                    data.vehicleName(vid) + " trip %"
-                }.mapValues { (_, list) -> pctPoints(list) }.filterValues { it.isNotEmpty() }
-                else -> mapOf("trip %" to pctPoints(tripSegs)).filterValues { it.isNotEmpty() }
+        else buildMap {
+            for ((vid, fuel) in byFuelScope) {
+                val (_, pctPts) = tripMilesAndPctFromOdo(fuel, mode, customDays)
+                if (pctPts.isNotEmpty()) put(prefix(vid) + "Trip %", pctPts)
             }
         }
     }
 
     val moneySeries = unitPriceSeries + dpmFuelSeries + dpmInclSeries + monthlyFuelSeries + monthlyOtherSeries
     val tripSeries = tripMilesSeries + tripPctSeries
+    val hasMoneyOrTrip = moneySeries.isNotEmpty() || tripSeries.isNotEmpty()
     val hasEconomy = mpgSeries.isNotEmpty() || gpmSeries.isNotEmpty()
-    val hasMoney = moneySeries.isNotEmpty()
-    val hasTrip = tripSeries.isNotEmpty()
 
-    val allSeriesForPdf = mpgSeries + gpmSeries + moneySeries + tripSeries
+    // C1/C2 single host: Start = economy; End = money+trip (or gpm dual when End free)
+    val chartAxes = when {
+        hasMoneyOrTrip -> ChartAxes(
+            start = mpgSeries + gpmSeries,
+            end = moneySeries + tripSeries,
+            startColor = when {
+                mpgSeries.isNotEmpty() -> LabChartColors.Mpg
+                gpmSeries.isNotEmpty() -> LabChartColors.Gpm
+                else -> null
+            },
+            endColor = LabChartColors.DpmFuel,
+            caption = "Time based reports · smooth ${mode.displayLabel(customDays)}",
+        )
+        mpgSeries.isNotEmpty() && gpmSeries.isNotEmpty() -> ChartAxes(
+            start = mpgSeries,
+            end = gpmSeries,
+            startColor = LabChartColors.Mpg,
+            endColor = LabChartColors.Gpm,
+            caption = "Economy dual-axis · smooth ${mode.displayLabel(customDays)}",
+        )
+        mpgSeries.isNotEmpty() -> ChartAxes(
+            start = mpgSeries,
+            end = emptyMap(),
+            startColor = LabChartColors.Mpg,
+            endColor = null,
+            caption = "Economy · smooth ${mode.displayLabel(customDays)}",
+        )
+        gpmSeries.isNotEmpty() -> ChartAxes(
+            start = gpmSeries,
+            end = emptyMap(),
+            startColor = LabChartColors.Gpm,
+            endColor = null,
+            caption = "Economy · smooth ${mode.displayLabel(customDays)}",
+        )
+        else -> ChartAxes(emptyMap(), emptyMap(), null, null, "")
+    }
+    val startSeries = chartAxes.start
+    val endSeries = chartAxes.end
+    val startColor = chartAxes.startColor
+    val endColor = chartAxes.endColor
+    val caption = chartAxes.caption
+
+    val allSeriesForPdf = startSeries + endSeries
+    val seriesColorMap = remember(allSeriesForPdf.keys) {
+        allSeriesForPdf.keys.associateWith { key ->
+            familyColorForSeriesKey(key)
+                ?: when {
+                    key.contains("Trip %", ignoreCase = true) -> LabChartColors.DpmIncl
+                    key.contains("Trip miles", ignoreCase = true) -> Color(0xFFEF6C00)
+                    key.contains("Fuel $") -> LabChartColors.DpmFuel
+                    key.contains("Other $") -> Color(0xFF5D4037)
+                    else -> LabChartColors.Mpg
+                }
+        }
+    }
+
+    val metricDefs = listOf(
+        MetricDef("mpg", mpgLabel, LabChartColors.Mpg, toggles.mpg) { setToggles(toggles.copy(mpg = it)) },
+        MetricDef("gpm", gpmLabel, LabChartColors.Gpm, toggles.gpm) { setToggles(toggles.copy(gpm = it)) },
+        MetricDef("up", unitPriceLabel, Color(0xFF0277BD), toggles.unitPrice) {
+            setToggles(toggles.copy(unitPrice = it))
+        },
+        MetricDef("dpmf", "$dpmLabel fuel", LabChartColors.DpmFuel, toggles.dpmFuel) {
+            setToggles(toggles.copy(dpmFuel = it))
+        },
+        MetricDef("dpmi", "$dpmLabel +exp", LabChartColors.DpmIncl, toggles.dpmIncl) {
+            setToggles(toggles.copy(dpmIncl = it))
+        },
+        MetricDef("mf", "Fuel $", LabChartColors.DpmFuel, toggles.monthlyFuel) {
+            setToggles(toggles.copy(monthlyFuel = it))
+        },
+        MetricDef("mo", "Other $", Color(0xFF5D4037), toggles.monthlyOther) {
+            setToggles(toggles.copy(monthlyOther = it))
+        },
+        MetricDef("tm", "Trip miles", Color(0xFFEF6C00), toggles.tripMiles) {
+            setToggles(toggles.copy(tripMiles = it))
+        },
+        MetricDef("tp", "Trip %", LabChartColors.DpmIncl, toggles.tripPct) {
+            setToggles(toggles.copy(tripPct = it))
+        },
+    )
 
     ReportsLabScreenScaffold(
-        title = "Fuel over time",
+        title = "Time based reports",
         infoText = TIME_CHARTS_INFO,
         filterState = data.filter,
         vehicles = data.vehicles,
@@ -343,22 +346,13 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — Fuel over time")
+                    appendLine("Vehicle Expenses — Time based reports")
                     appendLine("Period: ${periodLabel(data.filter)}")
                     appendLine("Vehicle: ${data.filterVehicleLabel()}")
                     appendLine("Smooth: ${mode.displayLabel(customDays)}")
                     appendLine(
-                        "Metrics: " + listOfNotNull(
-                            if (toggles.mpg) "mpg" else null,
-                            if (toggles.gpm) "gpm" else null,
-                            if (toggles.unitPrice) "unit price" else null,
-                            if (toggles.dpmFuel) "\$/mi fuel" else null,
-                            if (toggles.dpmIncl) "\$/mi+exp" else null,
-                            if (toggles.monthlyFuel) "monthly fuel" else null,
-                            if (toggles.monthlyOther) "monthly other" else null,
-                            if (toggles.tripMiles) "trip mi" else null,
-                            if (toggles.tripPct) "trip %" else null,
-                        ).joinToString(", ").ifBlank { "(none)" },
+                        "Metrics: " + metricDefs.filter { it.checked }.joinToString(", ") { it.label }
+                            .ifBlank { "(none)" },
                     )
                     allSeriesForPdf.forEach { (name, pts) ->
                         appendLine("--- $name (${pts.size} pts) ---")
@@ -369,7 +363,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                 }
             }
             ReportsLabShareActions(
-                subject = "Fuel over time",
+                subject = "Time based reports",
                 textBody = buildText,
                 csvFileName = "lab_time_charts.csv",
                 csvBody = {
@@ -384,35 +378,57 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     sb.toString()
                 },
                 pdfBody = {
-                    val sections = mutableListOf(
-                        ReportsLabPdf.PdfSection(
-                            heading = "Combined series",
-                            lines = allSeriesForPdf.keys.toList().ifEmpty { listOf("(none)") },
-                        ),
+                    val sections = mutableListOf<ReportsLabPdf.PdfSection>()
+                    sections += ReportsLabPdf.PdfSection(
+                        heading = "Metrics",
+                        lines = metricDefs.filter { it.checked }.map { it.label }.ifEmpty { listOf("(none)") },
                     )
-                    // R4.2: combined summary + per-series sections when multi-series
-                    if (allSeriesForPdf.size > 1 || data.filter.vehicleMode == LabVehicleMode.EACH) {
-                        allSeriesForPdf.forEach { (name, pts) ->
-                            sections += ReportsLabPdf.PdfSection(
-                                heading = name,
-                                tableRows = listOf(listOf("date", "value")) +
-                                    pts.sortedBy { it.timestampMs }.map {
-                                        listOf(formatLabDate(it.timestampMs), "%.4f".format(it.y))
-                                    },
-                            )
-                        }
-                    } else {
-                        allSeriesForPdf.forEach { (name, pts) ->
-                            sections += ReportsLabPdf.PdfSection(
-                                heading = name,
-                                lines = pts.sortedBy { it.timestampMs }.map {
-                                    "${formatLabDate(it.timestampMs)}  ${"%.4f".format(it.y)}"
-                                },
-                            )
+                    if (allSeriesForPdf.isNotEmpty()) {
+                        val combinedBmp = ReportsLabPdf.renderLineChartBitmap(
+                            series = allSeriesForPdf,
+                            seriesColors = seriesColorMap,
+                            title = "Combined",
+                        )
+                        sections += ReportsLabPdf.PdfSection(
+                            heading = "Combined chart",
+                            chartBitmap = combinedBmp,
+                        )
+                        // Combined table of series names
+                        sections += ReportsLabPdf.PdfSection(
+                            heading = "Combined series list",
+                            lines = allSeriesForPdf.map { (n, pts) -> "$n (${pts.size} points)" },
+                        )
+                        if (allSeriesForPdf.size > 1 || data.filter.vehicleMode == LabVehicleMode.EACH) {
+                            allSeriesForPdf.forEach { (name, pts) ->
+                                val one = mapOf(name to pts)
+                                val bmp = ReportsLabPdf.renderLineChartBitmap(
+                                    series = one,
+                                    seriesColors = seriesColorMap,
+                                    title = name,
+                                )
+                                sections += ReportsLabPdf.PdfSection(
+                                    heading = name,
+                                    chartBitmap = bmp,
+                                    tableRows = listOf(listOf("date", "value")) +
+                                        pts.sortedBy { it.timestampMs }.map {
+                                            listOf(formatLabDate(it.timestampMs), "%.4f".format(it.y))
+                                        },
+                                )
+                            }
+                        } else {
+                            allSeriesForPdf.forEach { (name, pts) ->
+                                sections += ReportsLabPdf.PdfSection(
+                                    heading = name,
+                                    tableRows = listOf(listOf("date", "value")) +
+                                        pts.sortedBy { it.timestampMs }.map {
+                                            listOf(formatLabDate(it.timestampMs), "%.4f".format(it.y))
+                                        },
+                                )
+                            }
                         }
                     }
                     ReportsLabPdf.buildTextReportPdf(
-                        title = "Fuel over time",
+                        title = "Time based reports",
                         metaLines = listOf(
                             "Period: ${periodLabel(data.filter)}",
                             "Vehicle: ${data.filterVehicleLabel()}",
@@ -425,19 +441,9 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         },
     ) {
         Text("Metrics", style = MaterialTheme.typography.titleSmall)
-        MetricRow(UnitFormat.economyEfficiencyLabel(), toggles.mpg) { setToggles(toggles.copy(mpg = it)) }
-        MetricRow("gpm (vol / mi)", toggles.gpm) { setToggles(toggles.copy(gpm = it)) }
-        MetricRow("Unit price (cost÷vol)", toggles.unitPrice) { setToggles(toggles.copy(unitPrice = it)) }
-        MetricRow("${UnitFormat.costPerDistanceLabel()} fuel", toggles.dpmFuel) {
-            setToggles(toggles.copy(dpmFuel = it))
+        AdaptiveItemGrid(items = metricDefs) { def ->
+            MetricChipRow(def)
         }
-        MetricRow("${UnitFormat.costPerDistanceLabel()} +exp", toggles.dpmIncl) {
-            setToggles(toggles.copy(dpmIncl = it))
-        }
-        MetricRow("Monthly fuel \$", toggles.monthlyFuel) { setToggles(toggles.copy(monthlyFuel = it)) }
-        MetricRow("Monthly other \$", toggles.monthlyOther) { setToggles(toggles.copy(monthlyOther = it)) }
-        MetricRow("Trip miles", toggles.tripMiles) { setToggles(toggles.copy(tripMiles = it)) }
-        MetricRow("Trip % (non-personal / total)", toggles.tripPct) { setToggles(toggles.copy(tripPct = it)) }
 
         Text("Smooth / bin", style = MaterialTheme.typography.titleSmall)
         ExposedDropdownMenuBox(expanded = smoothMenu, onExpandedChange = { smoothMenu = !smoothMenu }) {
@@ -481,57 +487,84 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         }
 
         Spacer(Modifier.height(8.dp))
-        when {
-            !toggles.anyOn -> ReportsLabEmpty("No metrics selected")
-            !hasEconomy && !hasMoney && !hasTrip -> ReportsLabEmpty("Not enough points for a chart.")
-            else -> {
-                // Host A: economy left family (mpg Start / gpm End)
-                if (hasEconomy) {
-                    LabMultiAxisTimeSeriesChart(
-                        startSeries = mpgSeries,
-                        endSeries = gpmSeries,
-                        caption = "Economy (left family) — mpg Start / gpm End · smooth ${mode.displayLabel(customDays)}",
-                        emptyMessage = "Not enough economy points.",
-                        startAxisLabel = if (mpgSeries.isNotEmpty()) UnitFormat.economyEfficiencyLabel() else null,
-                        endAxisLabel = if (gpmSeries.isNotEmpty() && mpgSeries.isNotEmpty()) "gpm" else null,
-                        startAxisColor = when {
-                            mpgSeries.isNotEmpty() -> LabChartColors.Mpg
-                            gpmSeries.isNotEmpty() -> LabChartColors.Gpm
-                            else -> null
-                        },
-                        endAxisColor = if (mpgSeries.isNotEmpty() && gpmSeries.isNotEmpty()) {
-                            LabChartColors.Gpm
-                        } else {
-                            null
-                        },
+        // Color legend tags (match series)
+        if (allSeriesForPdf.isNotEmpty()) {
+            Text("Series", style = MaterialTheme.typography.titleSmall)
+            AdaptiveItemGrid(items = allSeriesForPdf.keys.toList()) { name ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .widthIn(max = 180.dp)
+                        .padding(vertical = 2.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .background(
+                                seriesColorMap[name] ?: MaterialTheme.colorScheme.primary,
+                                RoundedCornerShape(2.dp),
+                            ),
                     )
-                    Spacer(Modifier.height(8.dp))
-                }
-                // Host B: money / unit price / monthly $ on right family (Start-flip if alone)
-                if (hasMoney) {
-                    LabMultiAxisTimeSeriesChart(
-                        startSeries = emptyMap(),
-                        endSeries = moneySeries,
-                        caption = "Money (right family) — unit price / \$/mi / monthly",
-                        emptyMessage = "Not enough money points.",
-                        endAxisLabel = "\$",
-                        endAxisColor = LabChartColors.DpmFuel,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-                // Host C: trip miles / %
-                if (hasTrip) {
-                    LabMultiAxisTimeSeriesChart(
-                        startSeries = emptyMap(),
-                        endSeries = tripSeries,
-                        caption = "Trip (right family) — miles / %",
-                        emptyMessage = "Not enough trip points.",
-                        endAxisLabel = "trip",
-                        endAxisColor = LabChartColors.DpmIncl,
-                    )
+                    Spacer(Modifier.size(6.dp))
+                    Text(name, style = MaterialTheme.typography.labelSmall, softWrap = true, maxLines = 2)
                 }
             }
         }
+
+        when {
+            !toggles.anyOn -> ReportsLabEmpty("No metrics selected")
+            !hasEconomy && !hasMoneyOrTrip -> ReportsLabEmpty("Not enough points for a chart.")
+            else -> {
+                LabMultiAxisTimeSeriesChart(
+                    startSeries = startSeries,
+                    endSeries = endSeries,
+                    caption = caption,
+                    emptyMessage = "Not enough points for a chart.",
+                    startAxisLabel = when {
+                        startSeries.isEmpty() -> null
+                        mpgSeries.isNotEmpty() && gpmSeries.isNotEmpty() && hasMoneyOrTrip ->
+                            "$mpgLabel / $gpmLabel"
+                        mpgSeries.isNotEmpty() -> mpgLabel
+                        gpmSeries.isNotEmpty() -> gpmLabel
+                        else -> "economy"
+                    },
+                    endAxisLabel = when {
+                        endSeries.isEmpty() -> null
+                        hasMoneyOrTrip -> "\$ / trip"
+                        else -> gpmLabel
+                    },
+                    startAxisColor = startColor,
+                    endAxisColor = endColor,
+                )
+            }
+        }
+    }
+}
+
+private data class ChartAxes(
+    val start: Map<String, List<LabTimeYPoint>>,
+    val end: Map<String, List<LabTimeYPoint>>,
+    val startColor: Color?,
+    val endColor: Color?,
+    val caption: String,
+)
+
+@Composable
+private fun MetricChipRow(def: MetricDef) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .widthIn(max = 180.dp)
+            .padding(end = 4.dp),
+    ) {
+        Checkbox(checked = def.checked, onCheckedChange = def.onChecked)
+        Box(
+            Modifier
+                .size(12.dp)
+                .background(def.color, RoundedCornerShape(2.dp)),
+        )
+        Spacer(Modifier.size(6.dp))
+        Text(def.label, style = MaterialTheme.typography.bodyMedium, softWrap = true, maxLines = 2)
     }
 }
 
@@ -543,6 +576,7 @@ private fun monthlyKindSeries(
     chartCurrency: String,
     mode: LabSmoothMode,
     customDays: Int,
+    baseLabel: String,
 ): Map<String, List<LabTimeYPoint>> {
     val scopes = when (data.filter.vehicleMode) {
         LabVehicleMode.EACH -> {
@@ -559,7 +593,6 @@ private fun monthlyKindSeries(
             val (fuel, exp) = pair
             val buckets = monthlyCostBuckets(fuel, exp, data.defaultStored)
             val contrib = buckets.map { b ->
-                // mid-month timestamp for binning
                 val ts = try {
                     java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US)
                         .parse(b.key)?.time ?: 0L
@@ -577,9 +610,8 @@ private fun monthlyKindSeries(
             if (pts.isNotEmpty()) {
                 val label = when {
                     data.filter.vehicleMode == LabVehicleMode.EACH && vid != null ->
-                        data.vehicleName(vid) + if (fuelKind) " monthly fuel" else " monthly other"
-                    fuelKind -> "monthly fuel"
-                    else -> "monthly other"
+                        data.vehicleName(vid) + " " + baseLabel
+                    else -> baseLabel
                 }
                 put(label, pts)
             }
@@ -587,19 +619,10 @@ private fun monthlyKindSeries(
     }
 }
 
-@Composable
-private fun MetricRow(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = checked, onCheckedChange = onChecked)
-        Text(label, style = MaterialTheme.typography.bodyMedium, softWrap = true)
-    }
-}
-
 private const val TIME_CHARTS_INFO =
-    "Unified time charts: economy (mpg/gpm), money (unit price, \$/mi, monthly \$), " +
-        "and trip miles/%. All metrics optional. " +
-        "Axis policy: mpg/gpm on left-family host; \$ and trip metrics never steal left from economy. " +
-        "Smooth bins by calendar day/week/month/year or custom N days; None = one point per event. " +
-        "Edge-spanning full-fill legs contribute miles/volume to both bins. " +
-        "Trip % = non-personal segment miles / total segment miles in bin. " +
-        "PDF includes combined series list plus per-series tables when multi-series or Each."
+    "Time based reports: economy (mpg / vol per distance), money (unit price, cost/distance, monthly \$), " +
+        "and trip miles/%. All metrics optional. One chart: economy on the left; money and trip on the right. " +
+        "Smooth bins share one calendar grid across metrics. " +
+        "Trip miles/% walk odometer steps under open trip types (Personal included). " +
+        "Edge-spanning full-fill legs contribute to both bins. " +
+        "PDF includes combined + per-series charts and tables."

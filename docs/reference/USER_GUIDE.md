@@ -18,7 +18,7 @@ This file is a short reference for everyday use and sync behavior. Prefer the fu
 - **Start trip** — open/switch tax-style trip segments (Business / Personal / …) as fuel rows with **Trip Type** (drawer after Quick Fill).
 - **Manage Vehicles** — reference dash photo, odo/ignore crops, landmark discovery for vehicle identity.
 - **Expenses** — non-fuel costs with optional receipt photos (New expense in drawer; list via **Reports** hub).
-- **Reports** — product reports hub (Lab): efficiency multi-axis chart, cost trends, monthly costs, expenses, fill history, vehicle summary, **Trip miles**. Trip starts are **not** counted as fills. Expense list and fill inventory open from hub cards.
+- **Reports** — product reports hub (Lab): **Time based reports** (one chart), expenses, fill history (fills only), vehicle summary, **Trip miles**. Trip starts are **not** counted as fills. Expense list and fill inventory open from hub cards.
 - **Settings** — units, currency, local photo prefs, debug/experiment gates (not the main sync summary).
 - **Syncing** — spreadsheet + photo destination summary, **Sync now**, Details on failures, entry to Spreadsheet Sync / Photo Backup.
 
@@ -29,7 +29,7 @@ This file is a short reference for everyday use and sync behavior. Prefer the fu
 | Control | Meaning |
 |---------|---------|
 | ☰ | Navigation drawer |
-| **ⓘ** (title bar, next to menu) | Page help for the current screen (when registered; stays for the whole visit) |
+| **ⓘ** (title bar, next to menu) | Page help for the current screen (when registered; stays for the whole visit via generation token) |
 | **`?N`** | Pending import review questions → Import review |
 | **`!`** (title bar) | Recent sync/backup failure → open **Syncing** |
 | Shutter (white circle) | Capture for OCR / receipt |
@@ -82,7 +82,7 @@ Failures: red summary + **Details** (full API text, Copy); **!** in app bar open
 
 ## Reports
 
-Menu → **Reports** opens the product hub (all-time summary + catalog). Child reports support vehicle mode (**All / Each / Single**) and period filters. Efficiency can plot multiple metrics on one multi-axis chart. **Trip miles** uses open-only trip segments (including implicit Personal). Math: [REPORTS_METRICS.md](REPORTS_METRICS.md).
+Menu → **Reports** opens the product hub (all-time summary + catalog). Child reports support vehicle mode (**All / Each / Single**) and period filters. **Time based reports** plots optional metrics on **one** chart (economy left; money + trip right) with Smooth bins; labels use unit façades (`$/G`, `G/mi`, …). **Trip miles** lists trip starts (tap to edit); Fuel History is fills only. Photos missing locally can **Fetch from archive** using any configured photo destination. Math: [REPORTS_METRICS.md](REPORTS_METRICS.md).
 
 ## Navigation map
 

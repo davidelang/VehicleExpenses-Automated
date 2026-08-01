@@ -40,8 +40,9 @@ fun HelpScreen(navController: NavHostController? = null) {
 
         SectionTitle("Icons")
         Bullet("☰ (top left) — open the menu")
-        Bullet("! (red, title bar) — last spreadsheet or photo sync failed; open Settings")
-        Bullet("? (yellow, title bar) — open Import / Review questions when items need answers")
+        Bullet("ⓘ (title bar) — page help for the current screen (stays while you stay on the page)")
+        Bullet("! (red, title bar) — last spreadsheet or photo sync failed; opens Syncing")
+        Bullet("?N (title bar) — open Import / Review questions when items need answers")
         Bullet("White circle — shutter (capture dash, pump, or receipt)")
         Bullet("Disk — save fill-up or expense")
         Bullet("↕ on Quick Fill — switch odometer mode ↔ pump (cost/volume) mode")
@@ -74,7 +75,10 @@ fun HelpScreen(navController: NavHostController? = null) {
         Bullet("Save. Open expenses from Reports → Expenses list to review or edit later")
 
         SectionTitle("4. Reports")
-        Bullet("Menu → Reports for efficiency, costs, trips, vehicle summary, and expense list")
+        Bullet("Menu → Reports — hub summary, then report cards")
+        Bullet("Time based reports — one chart for mpg, G/mi (or L/mi), \$/G, \$/mi, monthly \$, trip miles/% with optional Smooth bins")
+        Bullet("Fill history lists fills only; Trip miles has the trip-start list (tap a row to edit)")
+        Bullet("Fuel History and edit screens can Fetch image from archive when any photo destination has the file")
 
         SectionTitle("5. Backups & multi-device (optional)")
         Text(

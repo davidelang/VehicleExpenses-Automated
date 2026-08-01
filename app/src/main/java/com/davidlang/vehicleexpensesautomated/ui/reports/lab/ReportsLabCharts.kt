@@ -56,10 +56,20 @@ fun familyColorForSeriesKey(key: String): Color? {
     val k = key.lowercase()
     return when {
         k.contains("+exp") || k.contains("incl") -> LabChartColors.DpmIncl
-        k.endsWith(" fuel") ||
+        k.contains("trip %") -> LabChartColors.DpmIncl
+        k.contains("trip miles") || k.contains("trip mi") -> Color(0xFFEF6C00)
+        // $/G, $/L unit price (not $/mi)
+        (k.contains("$/") || k.contains("\$/")) &&
+            (k.endsWith("/g") || k.endsWith("/l") || k.contains("/g") || k.contains("/l")) &&
+            !k.contains("/mi") && !k.contains("/km") -> Color(0xFF0277BD)
+        k.endsWith(" fuel") || k == "fuel $" || k.endsWith(" fuel $") ||
             (k.contains("fuel") && (k.contains("/mi") || k.contains("/km") || k.contains("per"))) ->
             LabChartColors.DpmFuel
-        k.contains("gpm") -> LabChartColors.Gpm
+        k.contains("other $") -> Color(0xFF5D4037)
+        // G/mi, L/mi volume-per-distance
+        k.contains("gpm") || k.contains("/mi") && (k.contains("g/") || k.contains("l/") ||
+            k.startsWith("g/") || k.startsWith("l/") ||
+            Regex("""\b[gl]/mi\b""").containsMatchIn(k)) -> LabChartColors.Gpm
         k.contains("mpg") || k.contains("l/100") || k.contains("km/l") || k.contains("kpl") ->
             LabChartColors.Mpg
         else -> null

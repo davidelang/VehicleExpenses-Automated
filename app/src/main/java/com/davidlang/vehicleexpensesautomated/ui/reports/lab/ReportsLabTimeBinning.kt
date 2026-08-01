@@ -231,3 +231,70 @@ fun unitPricePointsBinned(
         if (a.vol <= 0) null else LabTimeYPoint(k, (a.cost / a.vol).toFloat())
     }
 }
+
+/**
+ * Trip miles and trip % from **odo timeline** (T2–T4).
+ * Walk odo-bearing fills in time; assign each Δodo to the open trip type at the
+ * later event (including Personal / implicit starts). Miles under any trip type
+ * count toward trip miles; trip % includes Personal.
+ *
+ * @return Pair(tripMilesPoints, tripPctPoints) on the same Smooth grid as other series.
+ */
+fun tripMilesAndPctFromOdo(
+    fuel: List<com.davidlang.vehicleexpensesautomated.data.model.FuelEntry>,
+    mode: LabSmoothMode,
+    customDays: Int,
+): Pair<List<LabTimeYPoint>, List<LabTimeYPoint>> {
+    val events = fuel
+        .filter { !it.deleted && it.odometer > 0 }
+        .sortedWith(compareBy({ it.timestamp }, { it.id }))
+    if (events.size < 2) return emptyList<LabTimeYPoint>() to emptyList()
+
+    // Open trip type after each trip-start row (blank = not a start).
+    var openType: String? = null
+    val typeAtIndex = ArrayList<String?>(events.size)
+    for (e in events) {
+        if (e.tripType.isNotBlank()) {
+            openType = e.tripType
+        }
+        typeAtIndex.add(openType)
+    }
+
+    data class Acc(var trip: Float = 0f, var total: Float = 0f)
+    val bins = linkedMapOf<Long, Acc>()
+    val noneMiles = mutableListOf<LabTimeYPoint>()
+    val nonePct = mutableListOf<LabTimeYPoint>()
+
+    for (i in 1 until events.size) {
+        val prev = events[i - 1]
+        val cur = events[i]
+        val delta = cur.odometer - prev.odometer
+        if (delta <= 0) continue
+        // Trip type active at the end of this odo step (open-only model).
+        val type = typeAtIndex[i]
+        val underTrip = type != null
+        val ts = cur.timestamp
+        if (mode == LabSmoothMode.NONE) {
+            noneMiles += LabTimeYPoint(ts, if (underTrip) delta.toFloat() else 0f)
+            nonePct += LabTimeYPoint(ts, if (underTrip) 100f else 0f)
+        } else {
+            val k = binKeyMs(ts, mode, customDays)
+            val a = bins.getOrPut(k) { Acc() }
+            a.total += delta
+            if (underTrip) a.trip += delta
+        }
+    }
+
+    if (mode == LabSmoothMode.NONE) {
+        return noneMiles to nonePct
+    }
+    val milesPts = bins.entries.sortedBy { it.key }.mapNotNull { (k, a) ->
+        if (a.trip <= 0f && a.total <= 0f) null
+        else LabTimeYPoint(k, a.trip)
+    }
+    val pctPts = bins.entries.sortedBy { it.key }.mapNotNull { (k, a) ->
+        if (a.total <= 0f) null
+        else LabTimeYPoint(k, 100f * a.trip / a.total)
+    }
+    return milesPts to pctPts
+}
