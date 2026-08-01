@@ -98,7 +98,7 @@ fun SyncingScreen(navController: NavHostController) {
     ) {
         FeatureScreenHeader(
             title = stringResource(R.string.nav_syncing),
-            subtitle = "Tap Spreadsheet sync or Photo backup to add destinations. " +
+            subtitle = stringResource(R.string.settings_tap_spreadsheet_sync_or_photo_backup_to_) +
                 "Use Sync on each card after setup. A red ! in the title bar means a recent failure. " +
                 stringResource(R.string.settings_menu_help_for_google_setup_steps),
         )

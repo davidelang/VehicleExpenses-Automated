@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vehicle Expenses Automated — User Manual</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height: 1.5;
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 3rem;
+      color: #111;
+      background: #fafafa;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #eee; background: #121212; }
+      a { color: #8ab4f8; }
+      table { border-color: #444; }
+      th, td { border-color: #444; }
+      code { background: #2a2a2a; }
+      pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
+    }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
+    th { background: rgba(0,0,0,0.05); text-align: left; }
+    code { font-size: 0.9em; padding: 0.1em 0.3em; border-radius: 4px; background: #eee; }
+    pre { padding: 0.75rem; overflow: auto; border-radius: 8px; background: #f0f0f0; }
+    pre code { background: transparent; padding: 0; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    .note { font-size: 0.9rem; opacity: 0.85; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/i18n/pl/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <h1 id="wydatki-pojazdu-zautomatyzowane-instrukcja-obsugi">Wydatki pojazdu zautomatyzowane — instrukcja obsługi</h1>
+<blockquote>
+<p><strong>Edytuj źródło (Markdown).</strong> Przeglądarki i czytnik w aplikacji otwierają <strong>renderowany kod HTML</strong>:<br />
+- Sieć: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (regeneruj za pomocą <code>./scripts/render-user-manual.sh</code>)<br />
+- Aplikacja: Pomoc / Informacje → pełna instrukcja (w pakiecie HTML + zrzuty ekranu)</p>
+<p>Nie kieruj użytkowników końcowych do nieprzetworzonych adresów URL w formacie <code>.md</code> — przeglądarki wyświetlają tylko zwykły tekst.</p>
+</blockquote>
+<p>Śledzenie za pomocą kamery tankowań paliwa i wydatków na pojazd, z opcjonalną synchronizacją wielu urządzeń i tworzeniem kopii zapasowych w ramach <strong>twoich</strong> kont w chmurze.</p>
+<p>To jest <strong>pełna instrukcja</strong> (zrzuty ekranu + każdy krok). W telefonie <strong>Menu → Pomoc</strong> to krótszy przewodnik wprowadzający.</p>
+<p><strong>Nie ujęte tutaj:</strong> Importuj stare zdjęcia, eksperyment z wyrównaniem i eksperyment z pompą (narzędzia programistyczne / zaawansowane).</p>
+<hr />
+<h2 id="spis-tresci">Spis treści</h2>
+<ol>
+<li><a href="#czego-potrzebujesz">Czego potrzebujesz</a></li>
+<li><a href="#icons-at-a-glance">Ikony w skrócie</a></li>
+<li><a href="#open-the-menu">Otwórz menu</a></li>
+<li><a href="#first-time-setup-manage-vehicles">Konfiguracja po raz pierwszy: Zarządzaj pojazdami</a></li>
+<li><a href="#backups-and-multi-device-sync">Kopie zapasowe i synchronizacja wielu urządzeń</a></li>
+<li><a href="#szybkie tankowanie-paliwo">Szybkie tankowanie (paliwo)</a></li>
+<li><a href="#start-podróż">Rozpocznij podróż</a></li>
+<li><a href="#wydatki">Wydatki</a></li>
+<li><a href="#raporty">Raporty</a></li>
+<li><a href="#settings-local-preferences">Ustawienia (preferencje lokalne)</a></li>
+<li><a href="#synchronizacja">Synchronizacja</a></li>
+<li><a href="#help--about">Pomoc i informacje</a></li>
+<li><a href="#lated-docs">Powiązane dokumenty</a></li>
+</ol>
+<hr />
+<h2 id="czego-potrzebujesz">Czego potrzebujesz</h2>
+<ul>
+<li>Telefon lub tablet z Androidem.</li>
+<li>Aby uzyskać najlepszy OCR: wyraźny widok <strong>licznika przebiegu na desce rozdzielczej</strong> i <strong>sumy pomp</strong> (lub wpisz liczby ręcznie).</li>
+<li>Opcjonalnie: konta <strong>kontrolowane</strong> na potrzeby danych z arkuszy kalkulacyjnych i/lub tworzenia kopii zapasowych zdjęć (zobacz <a href="#backups-and-multi-device-sync">Kopie zapasowe i synchronizacja wielu urządzeń</a>).</li>
+</ul>
+<hr />
+<h2 id="ikony-w-skrocie">Ikony w skrócie</h2>
+<p>Pojawiają się one na ekranach głównych. Znajomość ich oszczędza wiele polowań.</p>
+<table>
+<thead>
+<tr>
+<th>Gdzie</th>
+<th>Ikona / kontrola</th>
+<th>Co to robi</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Górny pasek</td>
+<td><strong>☰ Menu</strong> (hamburger)</td>
+<td>Otwiera szufladę nawigacji</td>
+</tr>
+<tr>
+<td>Górny pasek</td>
+<td><strong>ⓘ</strong> (pomoc strony)</td>
+<td>Krótka pomoc dla <strong>bieżącej</strong> strony (obok menu, jeśli jest dostępne)</td>
+</tr>
+<tr>
+<td>Górny pasek</td>
+<td><strong><code>?N</code></strong> (żółty)</td>
+<td>Oczekujące pytania dotyczące przeglądu importu — otwiera Przegląd importu</td>
+</tr>
+<tr>
+<td>Górny pasek</td>
+<td><strong>!</strong> (czerwony)</td>
+<td>Ostatnio nie powiodło się miejsce docelowe arkusza kalkulacyjnego lub zdjęcia — otwórz <strong>Synchronizacja</strong>, aby naprawić</td>
+</tr>
+<tr>
+<td>Górny pasek</td>
+<td><strong>☰ + ←</strong></td>
+<td>Raportuj listę dzieci i wydatków, wyświetlając jednocześnie <strong>menu i tył</strong>; Centrum raportów jest dostępne tylko w menu</td>
+</tr>
+<tr>
+<td>Ustawienia / edycja paliwa</td>
+<td><strong>←</strong></td>
+<td>Wstecz (ustawienia arkusza kalkulacyjnego/edycji zdjęć i paliwa pozostają skupione na tle)</td>
+</tr>
+<tr>
+<td>Szybkie wypełnienie</td>
+<td><strong>Białe kółko</strong> (migawka)</td>
+<td>Przechwytywanie licznika przebiegu lub wyświetlacza pompy dla OCR</td>
+</tr>
+<tr>
+<td>Szybkie wypełnienie</td>
+<td><strong>Dysk / Zapisz</strong></td>
+<td>Zaoszczędź na tankowaniu (potrzebuje pojazdu i co najmniej jednego odo / objętości / kosztu)</td>
+</tr>
+<tr>
+<td>Szybkie wypełnienie</td>
+<td><strong>↕ strzałki</strong> (przełącznik trybu)</td>
+<td>Przełącz <strong>tryb licznika kilometrów</strong> vs <strong>tryb pompy (koszt/objętość)</strong>. Zielona ramka podświetla aktywną grupę pól</td>
+</tr>
+<tr>
+<td>Szybkie wypełnienie</td>
+<td><strong>↔ strzałki</strong> (pomiędzy kosztem a wolumenem)</td>
+<td>Zamień koszt i wolumen, jeśli OCR umieści je w niewłaściwych polach</td>
+</tr>
+<tr>
+<td>Szybkie wypełnienie</td>
+<td><strong>Powiększenie 1x / …</strong></td>
+<td>Współczynniki zoomu aparatu, gdy obiektyw je obsługuje</td>
+</tr>
+<tr>
+<td>Szybkie wypełnienie (po przechwyceniu)</td>
+<td><strong>Odśwież</strong> na głównym przycisku</td>
+<td>Odrzuć podgląd i wróć do kamery na żywo</td>
+</tr>
+<tr>
+<td>Szybkie wypełnianie (podczas przetwarzania)</td>
+<td><strong>X</strong> na głównym przycisku</td>
+<td>Anuluj trwające przechwytywanie/OCR</td>
+</tr>
+<tr>
+<td>Wydatek</td>
+<td><strong>Zapisz</strong></td>
+<td>Oszczędzaj wydatki</td>
+</tr>
+<tr>
+<td>Wydatek</td>
+<td><strong>Koło migawki</strong></td>
+<td>Zrób zdjęcie paragonu</td>
+</tr>
+<tr>
+<td>Wydatek</td>
+<td><strong>Galeria</strong></td>
+<td>Wybierz obraz paragonu z biblioteki</td>
+</tr>
+<tr>
+<td>Wydatek</td>
+<td><strong>Powtórz</strong></td>
+<td>Usuń bieżące zdjęcie paragonu i zrób zdjęcie ponownie</td>
+</tr>
+<tr>
+<td>Wydatki / Zarządzaj pojazdami</td>
+<td><strong>+ / −</strong> FAB-y</td>
+<td>Powiększ podgląd zdjęcia</td>
+</tr>
+<tr>
+<td>Okno dialogowe punktów orientacyjnych</td>
+<td><strong>Edytuj OCR</strong> ​​</td>
+<td>Popraw lub dodaj charakterystyczny tekst, który przeoczyły silniki</td>
+</tr>
+<tr>
+<td>Arkusz kalkulacyjny / formularze fotograficzne</td>
+<td><strong>🔍 Szukaj</strong></td>
+<td>Przeglądaj Dysk Google w poszukiwaniu arkusza lub folderu (po zalogowaniu)</td>
+</tr>
+</tbody>
+</table>
+<p>Symbole walut w polach kosztu i <strong>G/L</strong> w polach wolumenu można dotknąć: otwórz małe menu, aby zmienić walutę lub galony na litry dla tego wpisu.</p>
+<hr />
+<h2 id="otworz-menu">Otwórz menu</h2>
+<ol>
+<li>Stuknij <strong>☰</strong> w lewym górnym rogu.</li>
+<li>Wybierz stronę.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="01-drawer.jpg" src="images/01-drawer.jpg" /></p>
+<p><strong>Główna szuflada:</strong> Szybkie uzupełnianie · Rozpocznij podróż · Zarządzaj pojazdami · Nowy wydatek · <strong>Raporty</strong> · Ustawienia · Synchronizacja · Pomoc · Informacje.</p>
+<p><strong>Szuflada eksperymentów</strong> (Ustawienia → Pokaż ekrany eksperymentów): Eksperyment z wyrównaniem · Eksperyment z pompą · <strong>Importuj stare zdjęcia</strong>.</p>
+<p><strong>Za pośrednictwem centrum raportów (nie głównej szuflady):</strong> Lista wydatków · Historia wypełnień.</p>
+<hr />
+<h2 id="pierwsza-konfiguracja-zarzadzaj-pojazdami">Pierwsza konfiguracja: Zarządzaj pojazdami</h2>
+<p>OCR i <strong>automatyczne dopasowywanie pojazdów</strong> działają najlepiej po zarejestrowaniu każdego pojazdu za pomocą <strong>referencyjnego zdjęcia deski rozdzielczej</strong>, przycięciu licznika przebiegu i uruchomieniu <strong>Discovery</strong>, aby aplikacja zapisała charakterystyczny tekst dla tego myślnika. (Sposób wybierania i dopasowywania punktów orientacyjnych zostanie szczegółowo udokumentowany w późniejszej aktualizacji.)</p>
+<h3 id="otworz-opcje-zarzadzaj-pojazdami">Otwórz opcję Zarządzaj pojazdami</h3>
+<p>Menu → <strong>Zarządzaj pojazdami</strong>. Wybierz pojazd (lub <strong>Dodaj nowy pojazd</strong>).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r1-manage-vehicles-crops.jpg" src="images/r1-manage-vehicles-crops.jpg" /></p>
+<h3 id="dodaj-lub-edytuj-pojazd">Dodaj lub edytuj pojazd</h3>
+<ol>
+<li>Otwórz menu rozwijane <strong>Pojazd</strong> → wybierz pojazd lub <strong>Dodaj nowy pojazd</strong>.</li>
+<li>Zrób lub wybierz wyraźne <strong>referencyjne zdjęcie deski rozdzielczej</strong> (pełny zestaw wskaźników, dobrze oświetlony, telefon mniej więcej ustawiony prosto). Użyj <strong>Zrób zdjęcie</strong> lub <strong>Galeria</strong>.</li>
+<li>Narysuj uprawy:<br />
+   - <strong>Odo Crop</strong> — prostokąt ściśle otaczający cyfry licznika kilometrów (przycisk pokazuje <strong>Gotowe Odo</strong>, gdy ten tryb jest aktywny).<br />
+   - <strong>Ignore Crop</strong> — opcjonalny region do zignorowania (zegar, radio itp.).<br />
+   - <strong>Edytuj uprawy</strong> — dostosuj istniejące prostokąty.</li>
+<li>Kliknij <strong>Uruchom Discovery</strong> — wielosilnikowy OCR znajduje charakterystyczne słowa poza uprawami.</li>
+<li>Recenzja z opcją <strong>Pokaż punkty orientacyjne</strong>. Użyj opcji <strong>Edytuj OCR</strong>, aby naprawić błędy odczytane lub <strong>dodać</strong> pominięty tekst.</li>
+<li>Wypełnij <strong>Nazwa pojazdu</strong> (wymagane) oraz markę/model/rok/tablicę rejestracyjną, według własnego uznania.</li>
+<li>Kliknij <strong>Utwórz pojazd</strong> lub <strong>Zapisz zmiany</strong> (wymagana nazwa i zdjęcie referencyjne dla nowego pojazdu).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="03b-manage-vehicles-new.jpg" src="images/03b-manage-vehicles-new.jpg" /></p>
+<h3 id="zabytki-napraw-to-co-przeoczyo-discovery">Zabytki: napraw to, co przeoczyło Discovery</h3>
+<p>Po <strong>Pokaż punkty orientacyjne</strong> przewiń listę i popraw wartości. Silnikom czasami brakuje małych cyfr (na przykład zegara <strong>60</strong> w prawym dolnym rogu zestawu wskaźników). Użyj <strong>Edytuj OCR</strong>, aby je dodać lub naprawić, aby tożsamość pojazdu pozostała niezawodna.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r2-manage-vehicles-landmarks.jpg" src="images/r2-manage-vehicles-landmarks.jpg" /></p>
+<h3 id="pisanie-bez-idealnego-zdjecia">Pisanie bez idealnego zdjęcia</h3>
+<p>Nadal możesz korzystać z aplikacji, wybierając pojazd i <strong>wpisując</strong> licznik przebiegu, objętość i koszt w Szybkim wypełnieniu — OCR jest opcjonalny w przypadku każdego pola. Import galerii działa w przypadku zdjęcia referencyjnego, jeśli nie chcesz robić zdjęć w aplikacji.</p>
+<p><strong>Wskazówka:</strong> po zsynchronizowaniu arkusza kalkulacyjnego definicje pojazdów (uprawy, punkty orientacyjne) znajdują się w lokalnej bazie danych — nie musisz ponownie otwierać opcji Zarządzaj pojazdami w celu szybkiego wypełnienia, aby z nich skorzystać.</p>
+<hr />
+<h2 id="kopie-zapasowe-i-synchronizacja-wielu-urzadzen">Kopie zapasowe i synchronizacja wielu urządzeń</h2>
+<p>Aplikacja została stworzona w taki sposób, aby <strong>kilka telefonów lub tabletów mogło współużytkować te same dane floty</strong> i abyś mógł zachować <strong>kopię swoich danych i zdjęć poza urządzeniem</strong>. Odbywa się to za pomocą miejsc docelowych <strong>które</strong> konfigurujesz w ramach <strong>swoich</strong> kont lub <strong>swoich</strong> serwerów hostowanych samodzielnie — a nie prowadzonej przez firmę „chmurze wydatków na pojazdy”, którą widzą inne osoby.</p>
+<h3 id="co-dokad-biegnie">Co dokąd biegnie</h3>
+<table>
+<thead>
+<tr>
+<th>Miły</th>
+<th>Co przechowuje</th>
+<th>Typowe zastosowanie</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Synchronizacja arkusza kalkulacyjnego/tabelarycznego</strong></td>
+<td>Pojazdy, tankowania, wydatki (wiersze i zakładki)</td>
+<td>Scalanie wielu urządzeń + uporządkowana kopia zapasowa</td>
+</tr>
+<tr>
+<td><strong>Kopia zapasowa zdjęć</strong></td>
+<td>Obrazy binarne (kreska/pompa/paragon/zdjęcia referencyjne)</td>
+<td>Kopia zapasowa zdjęć + przywracanie brakujących plików</td>
+</tr>
+</tbody>
+</table>
+<p>Możesz skonfigurować <strong>wiele miejsc docelowych</strong> każdego rodzaju (miękki limit na typ). Ręczni pracownicy <strong>Synchronizuj teraz</strong> i <strong>w tle</strong> uruchamiają włączone.</p>
+<h3 id="najpierw-offline">Najpierw offline</h3>
+<ul>
+<li><strong>Do dodania uzupełnienia, wydatku lub rachunku nie jest wymagana żadna sieć</strong>. Wszystko jest zapisywane <strong>najpierw lokalnie</strong>.</li>
+<li>Gdy sieć jest dostępna, synchronizacja i tworzenie kopii zapasowych zdjęć działają jako <strong>zadania w tle</strong> (zgodnie z ustawionym harmonogramem i po dotknięciu <strong>Synchronizuj teraz</strong>). Błędy są wyświetlane jako czerwony tekst w wierszach Ustawienia i <strong>!</strong> na pasku tytułu aplikacji.</li>
+</ul>
+<h3 id="tylko-twoje-konta">Tylko Twoje konta</h3>
+<p>Logowanie i tokeny pozostają na urządzeniu dla wybranych dostawców (Google, Microsoft, klucze S3, własne adresy URL itp.). Miejsca docelowe znajdują się pod <strong>pełną kontrolą użytkownika</strong> — Twoim kontem Google, Twoim OneDrive, Twoim wiadra MinIO, Twoim hostem EtherCalc itp. Nic nie jest udostępniane innym użytkownikom wydatków na pojazdy poprzez współdzielony backend.</p>
+<h3 id="obsugiwane-cele-dane-arkusz-kalkulacyjny-tabela">Obsługiwane cele — dane (arkusz kalkulacyjny / tabela)</h3>
+<p>Skonfigurowane w <strong>Menu → Synchronizacja → Synchronizacja arkusza kalkulacyjnego</strong> (dostępne również z wierszy podsumowania Ustawień). Opcje pickera najwyższej klasy:</p>
+<table>
+<thead>
+<tr>
+<th>Cel</th>
+<th>Notatki</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Arkusze Google</strong></td>
+<td>Wspólne ustawienie domyślne; zakładki Pojazdy, Wydatki i paliwo na pojazd</td>
+</tr>
+<tr>
+<td><strong>Excel</strong></td>
+<td>Skoroszyt Microsoft za pośrednictwem powiązania w stylu Graph/OneDrive</td>
+</tr>
+<tr>
+<td><strong>EtherCalc</strong></td>
+<td>Własne pokoje do współpracy z arkuszami kalkulacyjnymi</td>
+</tr>
+<tr>
+<td><strong>Inne →</strong> zaimplementowane backendy</td>
+<td><strong>Baserow</strong>, <strong>NocoDB</strong>, <strong>Airtable</strong>, <strong>PocketBase</strong>, <strong>Supabase</strong>, <strong>Firebase</strong>, <strong>Arkusz Zoho</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Odroczone / jeszcze nie wdrożone (wymienione w sekcji Inne, ale nie w pełni wdrożone): OnlyOffice, Collabora. Zobacz także [indeks samodzielnego hostowania] (reference/self-host/INDEX.md).</p>
+<p>CSV <strong>eksport/import</strong> (ZIP o tym samym układzie zakładek) jest dostępny w Ustawieniach jako przenośna kopia zapasowa, niezależna od synchronizacji na żywo.</p>
+<h3 id="obsugiwane-cele-zdjecia-kopia-zapasowa-obrazu">Obsługiwane cele — zdjęcia (kopia zapasowa obrazu)</h3>
+<p>Skonfigurowane w <strong>Menu → Synchronizacja → Kopia zapasowa zdjęć</strong> (również z wierszy podsumowania Ustawień):</p>
+<table>
+<thead>
+<tr>
+<th>Cel</th>
+<th>Notatki</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Dysk Google</strong></td>
+<td>Wybrany folder (przejrzyj lub wklej adres URL)</td>
+</tr>
+<tr>
+<td><strong>OneDrive</strong></td>
+<td>Konto Microsoft + prefiks ścieżki</td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td>AWS, Wasabi, Cloudflare R2, MinIO i inne punkty końcowe kompatybilne z S3</td>
+</tr>
+<tr>
+<td><strong>Inne</strong></td>
+<td>pamięć masowa wspierana przez rclone (np. WebDAV, SFTP i inne wybrane piloty dostępne w selektorze w aplikacji)</td>
+</tr>
+</tbody>
+</table>
+<p>Skonfiguruj ściągawki dla hostowanych samodzielnie zdjęć i celów tabelarycznych: <a href="referencja/self-host/INDEX.md">indeks samodzielnego hostowania</a>.</p>
+<h3 id="zachowanie-na-wielu-urzadzeniach-krotkie">Zachowanie na wielu urządzeniach (krótkie)</h3>
+<ul>
+<li>Wiersze łączą się według <strong>ID synchronizacji</strong> z <strong>wygranymi ostatniego zapisu</strong> na <strong>zaktualizowanych</strong> znacznikach czasu.</li>
+<li>Usunięcia są miękkie; nowsza edycja na innym urządzeniu może przywrócić wiersz.</li>
+<li>Dwukrotne wprowadzenie <strong>tego samego wypełnienia</strong> na dwóch urządzeniach powoduje utworzenie <strong>dwóch wierszy</strong> — jeśli zauważysz, usuń dodatek.</li>
+<li>Więcej szczegółów: <a href="#sync-behaviour-notes">Notatki dotyczące zachowania synchronizacji</a> i <a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a>.</li>
+</ul>
+<h3 id="przykad-dodaj-arkusze-google-dane">Przykład: dodaj Arkusze Google (dane)</h3>
+<ol>
+<li><strong>Menu → Synchronizacja → Synchronizacja arkusza kalkulacyjnego</strong> (lub Ustawienia → Synchronizacja arkusza kalkulacyjnego).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="08-spreadsheet-sync.jpg" src="images/08-spreadsheet-sync.jpg" /></p>
+<ol start="2">
+<li>Stuknij <strong>Dodaj miejsce docelowe arkusza kalkulacyjnego</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="09-spreadsheet-provider-picker.jpg" src="images/09-spreadsheet-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Wybierz <strong>Arkusze Google</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="10-spreadsheet-google-form.jpg" src="images/10-spreadsheet-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Zaloguj się przez Google</strong> → nazwa wyświetlana → <strong>URL arkusza</strong> lub <strong>🔍</strong> przeglądaj/utwórz → opcje harmonogramu → włącz → zapisz.</li>
+<li><strong>Zsynchronizuj teraz</strong> raz, aby utworzyć/zaktualizować zakładki: <code>Pojazdy</code>, <code>Wydatki</code>, <code>Paliwo - {nazwa pojazdu}</code>.</li>
+</ol>
+<h3 id="przykad-dodaj-dysk-google-zdjecia">Przykład: dodaj Dysk Google (zdjęcia)</h3>
+<ol>
+<li><strong>Menu → Synchronizacja → Kopia zapasowa zdjęć</strong> (lub Ustawienia → Kopia zapasowa zdjęć).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="11-photo-backup.jpg" src="images/11-photo-backup.jpg" /></p>
+<ol start="2">
+<li>Stuknij <strong>Dodaj miejsce docelowe zdjęcia</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="12-photo-provider-picker.jpg" src="images/12-photo-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Wybierz <strong>Dysk Google</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="13-photo-google-form.jpg" src="images/13-photo-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Zaloguj się za pomocą Google (Dysk)</strong> → opcjonalny adres URL folderu/przeglądaj → włącz → zapisz → <strong>Synchronizuj teraz</strong>.</li>
+</ol>
+<p>Ręczna <strong>Synchronizacja teraz</strong> zdjęć jest pełna; kopia zapasowa w tle zazwyczaj przetwarza <strong>tylko oczekujące</strong> przesyłanie zgodnie z harmonogramem.</p>
+<h3 id="synchronizuj-notatki-dotyczace-zachowania">Synchronizuj notatki dotyczące zachowania</h3>
+<ul>
+<li>Po aktualizacji aplikacji może pojawić się na krótko komunikat <strong>„Aktualizacja bazy danych po aktualizacji…”</strong> (uzupełnianie lokalnego identyfikatora synchronizacji).</li>
+<li>Jeśli synchronizacja zostanie przerwana, następna <strong>udana</strong> synchronizacja ponownie połączy i naprawi zdalne karty.</li>
+<li>Awarie: czerwone podsumowanie na kartach Synchronizacji + <strong>*!</strong> na pasku aplikacji.</li>
+</ul>
+<hr />
+<h2 id="szybkie-tankowanie-paliwo">Szybkie tankowanie (paliwo)</h2>
+<p>To jest <strong>ekran główny</strong> po otwarciu aplikacji.</p>
+<h3 id="wybor-pojazdu-zwykle-automatyczny">Wybór pojazdu (zwykle automatyczny)</h3>
+<p><strong>Nie</strong> musisz najpierw wybierać pojazd. Gdy pojazdy mają skonfigurowane <strong>punkty orientacyjne</strong> w Zarządzaj pojazdami, funkcja Szybkie wypełnianie <strong>automatycznie wykrywa, który pojazd</strong> na podstawie obrazu tablicy rozdzielczej po zarejestrowaniu licznika przebiegu. W razie potrzeby możesz nadal otworzyć menu rozwijane <strong>Pojazd</strong>, aby je zastąpić.</p>
+<h3 id="wyceluj-w-licznik-kilometrow">Wyceluj w licznik kilometrów</h3>
+<p>Pozostań w trybie licznika kilometrów i wykadruj klaster. Instrukcja: * Celuj w licznik kilometrów. Kliknij migawkę, aby uchwycić.*</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r3-quickfill-odo-live.jpg" src="images/r3-quickfill-odo-live.jpg" /></p>
+<h3 id="za-migawka-licznika-kilometrow">Za migawką licznika kilometrów</h3>
+<p>OCR wypełnia <strong>Odo</strong> i próbuje dopasować pojazd na podstawie punktów orientacyjnych (w razie potrzeby przejrzyj oba). Główny przycisk zmieni się na <strong>Ponów próbę</strong>, aby ponownie wykonać zdjęcie. Instrukcja podsumowuje lekturę.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r4-quickfill-odo-result.jpg" src="images/r4-quickfill-odo-result.jpg" /></p>
+<h3 id="tryb-pompy-koszt-i-objetosc">Tryb pompy (koszt i objętość)</h3>
+<ol>
+<li>Naciśnij <strong>↕</strong>, aby przejść do trybu pompy: <em>Celuj na wyświetlacz pompy (koszt/objętość). Kliknij migawkę.</em></li>
+<li>Zbierz sumy pomp. Wypełnienie pól kosztu i wolumenu; użyj <strong>↔</strong>, jeśli są zamienione.</li>
+<li>W razie potrzeby dotknij waluty lub <strong>G/L</strong>, a następnie <strong>Zapisz</strong> (dysk). Puste pola powodują <strong>częściowe wypełnienie</strong> (nadal dozwolone).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r5-quickfill-pump-result.jpg" src="images/r5-quickfill-pump-result.jpg" /></p>
+<p>Pozostaniesz na opcji Szybkie wypełnianie do następnego przystanku (pola zostaną usunięte po zapisaniu). Pracuj w pełni <strong>offline</strong>; synchronizacja będzie działać później w tle, jeśli zostanie skonfigurowana.</p>
+<h3 id="wpis-reczny-brak-kamery-zy-ocr">Wpis ręczny (brak kamery / zły OCR)</h3>
+<ol>
+<li>Stuknij <strong>Odo</strong>, <strong>koszt</strong> lub <strong>objętość</strong> i wpisz wartości (w trybie pionowym używana jest klawiatura systemowa; pozioma korzysta z klawiatury ekranowej).</li>
+<li>Wybierz lub potwierdź <strong>Pojazd</strong>, jeśli automatyczne wykrywanie nie zostało uruchomione.</li>
+<li>Zapisz jak wyżej.</li>
+</ol>
+<h3 id="tryby-i-granice">Tryby i granice</h3>
+<ul>
+<li><strong>Zielona ramka</strong> wokół pojazdu+odo → przechwytywanie/edycja licznika przebiegu.</li>
+<li><strong>Zielona ramka</strong> wokół kosztu+objętości → trybu pompy.</li>
+<li><strong>Zapisywanie</strong> pozostaje wyłączone do czasu wybrania pojazdu i co najmniej jednego z danych/kosztu/objętości zawiera dane, a OCR nie jest nadal uruchomiony.</li>
+</ul>
+<p>Wskazówka ekranowa (poniżej linii instrukcji): <em>Migawka = przechwytywanie · Dysk = zapisywanie · ↕ = tryb odo/pompy · ↔ = koszt wymiany/objętość.</em></p>
+<hr />
+<h2 id="wydatki">Wydatki</h2>
+<h3 id="nowy-wydatek">Nowy wydatek</h3>
+<p>Menu → <strong>Nowy wydatek</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r6-new-expense.jpg" src="images/r6-new-expense.jpg" /></p>
+<ol>
+<li><strong>Zapisz</strong> (dysk), <strong>migawka</strong> (zdjęcie paragonu) lub <strong>galeria</strong> (wybierz obraz).</li>
+<li>Wypełnij <strong>Data</strong>, <strong>Pojazd</strong>, <strong>Sprzedawca</strong>, <strong>Opis</strong>, <strong>Kwota</strong> (możliwość dotknięcia symbolu waluty), <strong>Kategoria</strong>, opcjonalnie <strong>Przebieg</strong>.</li>
+<li>Paragony wielostronicowe: przechwytuj dodatkowe strony, jeśli interfejs użytkownika oferuje stronicowanie (strona 0 to paragon podstawowy).</li>
+<li><strong>Zapisz</strong> w sklepie (najpierw lokalnie; kopie zapasowe zdjęć i synchronizacja arkuszy kalkulacyjnych odbywają się w tle, jeśli są skonfigurowane).</li>
+</ol>
+<h3 id="lista-wydatkow">Lista wydatków</h3>
+<p>Menu → <strong>Raporty</strong> → <strong>Lista wydatków</strong> — przeglądaj dotychczasowe wydatki pozapaliwowe; otwórz element do edycji.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="05-expense-list.jpg" src="images/05-expense-list.jpg" /></p>
+<h3 id="edytuj-wydatek">Edytuj wydatek</h3>
+<p>Otwórz wiersz z listy. Popraw dostawcę, kwotę, kategorię, pojazd i opis. Jeśli paragon znajduje się tylko w kopii zapasowej zdjęcia (nie ma czytelnego pliku lokalnego), po wyświetleniu użyj opcji <strong>Pobierz obraz z archiwum</strong> (działa we wszystkich skonfigurowanych lokalizacjach docelowych zdjęć).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="expense-edit.jpg" src="images/expense-edit.jpg" /></p>
+<hr />
+<h2 id="rozpocznij-podroz">Rozpocznij podróż</h2>
+<p>Menu → <strong>Rozpocznij podróż</strong> (po wejściu do szuflady Szybkie wypełnienie). Przechwytuj lub wprowadź licznik przebiegu, wybierz typ podróży, zapisz za pomocą ikony <strong>dysku</strong>. <strong>Stop</strong> to skrót do Osobistego znajdujący się teraz w zatrzymanej lokalizacji GPS. Użyj <strong>ⓘ</strong>, aby wyświetlić przypomnienia o kontroli.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="start-trip.jpg" src="images/start-trip.jpg" /></p>
+<p>Rozpoczęcie podróży jest zapisywane jako wiersze paliwa z <strong>Typem podróży</strong> (nie normalne tankowania). Pojawiają się one w obszarze <strong>Raporty → Mile podróży</strong>, a nie w Historii paliwa.</p>
+<hr />
+<h2 id="raporty">Raporty</h2>
+<p>Menu → <strong>Raporty</strong> otwiera centrum produktów (podsumowanie wszechczasów + karty katalogowe). Jest to jedyna powierzchnia raportów o produktach — nie ma osobnej pozycji w szufladzie „Raporty i wykresy”.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="06-reports.jpg" src="images/06-reports.jpg" /></p>
+<p>Otwórz kartę trybu pojazdu (<strong>Wszystkie / Każdy / Pojedynczy</strong>), filtrów okresowych, wykresów i udostępniania (<strong>TEKST / CSV / PDF</strong>). Górny pasek na raportach podrzędnych: <strong>☰ + ←</strong> (oraz <strong>ⓘ</strong> po zarejestrowaniu).</p>
+<h3 id="raporty-oparte-na-czasie">Raporty oparte na czasie</h3>
+<p>Główna karta wykresu. Opcjonalne wskaźniki (mpg, objętość/odległość, np. G/mi, cena jednostkowa, np. $/G, koszt/odległość, miesięczne $, mile podróży, % podróży według rodzaju) z <strong>gładkimi</strong> pojemnikami i <strong>niezależnymi skalami Y</strong> (po lewej stronie ekonomicznej, po prawej rodziny pieniędzy i podróży).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports.jpg" src="images/time-based-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports-scrolled.jpg" src="images/time-based-reports-scrolled.jpg" /></p>
+<p>Szczegóły matematyki ekonomicznej: <a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a>.</p>
+<h3 id="historia-napenienia-a-historia-paliwa">Historia napełnienia a historia paliwa</h3>
+<ul>
+<li><strong>Raporty → Historia wypełnień</strong> — chronologiczne wypełnienia filtrów raportów (<strong>tylko wypełnienia</strong>; brak startów podróży).</li>
+</ul>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fill-history.jpg" src="images/fill-history.jpg" /></p>
+<ul>
+<li><strong>Historia paliwa</strong> (jeśli jest dostępna w nawigacji Twojej kompilacji) — inwentaryzacja napełnienia według pojazdu, również tylko napełnienia; dotknij wiersza, który chcesz edytować.</li>
+</ul>
+<h3 id="mile-podrozy">Mile podróży</h3>
+<p><strong>Raporty → Mile podróży</strong> – mile według rodzaju, wykresy i chronologiczna <strong>lista początków/odcinków podróży</strong>. Kliknij prawdziwy początek, aby otworzyć <strong>Edytuj wypełnienie</strong> dla tego wiersza.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="trip-miles.jpg" src="images/trip-miles.jpg" /></p>
+<h3 id="edytuj-wypenienie">Edytuj wypełnienie</h3>
+<p>W Historii wypełnień, Historii paliwa lub Mile podróży otwórz wypełnienie. Układ: pojazd i licznik kilometrów, <strong>waluta przed kosztami</strong>, objętość, notatki. Typ podróży pojawia się tylko wtedy, gdy wiersz jest początkiem podróży. Lokalizacja zawiera podsumowanie oraz <strong>Szczegóły lokalizacji</strong>. Brakuje lokalnego zdjęcia z tożsamością w chmurze: <strong>Pobierz obraz z archiwum</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fuel-edit.jpg" src="images/fuel-edit.jpg" /></p>
+<p>Inne karty katalogowe obejmują wydatki według kategorii, podsumowanie pojazdu i listę wydatków.</p>
+<p>Jeśli opcja Money jest ustawiona, używana jest waluta każdego wiersza. Sumy w walutach mieszanych pokazują <strong>sumy częściowe dla poszczególnych walut</strong> (bez cichego przeliczania walut).</p>
+<hr />
+<h2 id="synchronizacja">Synchronizacja</h2>
+<p>Menu → <strong>Synchronizacja</strong> to centrum miejsc docelowych arkuszy kalkulacyjnych i zdjęć (nie tylko ukryte w Ustawieniach).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="syncing-hub.jpg" src="images/syncing-hub.jpg" /></p>
+<ul>
+<li>Karty do <strong>Synchronizacji arkusza kalkulacyjnego</strong> i <strong>Kopia zapasowa zdjęć</strong> ze statusem krótkim, <strong>Synchronizacja</strong> dla tego rodzaju i <strong>›</strong> do listy miejsc docelowych.</li>
+<li>Otwórz miejsce docelowe dla <strong>Połączenia testowego</strong> i <strong>Synchronizuj teraz (to miejsce docelowe)</strong> / wszystko skonfigurowane.</li>
+<li>Awaria <strong>Szczegóły</strong> i czerwone <strong>!</strong> na pasku tytułu lądują tutaj.</li>
+<li>Szczegółowa konfiguracja Arkuszy Google i Dysku Google: <a href="#backups-and-multi-device-sync">Kopie zapasowe i synchronizacja wielu urządzeń</a>.</li>
+</ul>
+<hr />
+<h2 id="ustawienia-preferencje-lokalne">Ustawienia (preferencje lokalne)</h2>
+<p>Menu → <strong>Ustawienia</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07-settings.jpg" src="images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07b-settings-more.jpg" src="images/07b-settings-more.jpg" /></p>
+<p>W przypadku miejsc docelowych wybierz <strong>Menu → Synchronizacja</strong>. Ustawienia mogą nadal wyświetlać wiersze podsumowań otwierające te same listy.</p>
+<h3 id="lokalne-preferencje-wspolne">Lokalne preferencje (wspólne)</h3>
+<ul>
+<li><strong>Zapisuj zdjęcia rachunków za paliwo</strong> / <strong>Zapisuj zdjęcia wydatków lokalnie</strong> — przechowuj zdjęcia na urządzeniu (może poprosić o pozwolenie na Zdjęcia).</li>
+<li><strong>Odtwórz dźwięk migawki</strong></li>
+<li><strong>Waluta</strong> / <strong>Jednostka objętości</strong> — domyślne ustawienia aplikacji (systemowe lub jawne). Zmiana jednostki objętości przy użyciu istniejących danych dotyczących paliwa może spowodować wyświetlenie okna dialogowego konwersji.</li>
+<li><strong>Tryb ciemny</strong></li>
+<li><strong>Wskazówki dotyczące konfiguracji</strong> — ponownie otwórz samouczki dotyczące pierwszego uruchomienia pojazdu/synchronizacji.</li>
+<li><strong>Debuguj szybkie wypełnianie</strong> / <strong>Pokaż ekrany eksperymentów (dev)</strong> – zaawansowane; pozostawić do codziennego użytku. Ekrany eksperymentów nie są tutaj udokumentowane.</li>
+</ul>
+<p>CSV <strong>eksport/import</strong> (kod pocztowy pojazdów / wydatków / zakładek paliwa) jest dostępny w Ustawieniach, jeśli jest dostępny w bieżącej wersji.</p>
+<hr />
+<h2 id="pomoc-i-informacje">Pomoc i informacje</h2>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="14-help.jpg" src="images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="15-about.jpg" src="images/15-about.jpg" /></p>
+<ul>
+<li><strong>Pomoc</strong> — szybki start na urządzeniu, samouczki dotyczące konfiguracji, łącze do tej instrukcji, indeks konfiguracji samodzielnego hosta.</li>
+<li><strong>O</strong> — wersja, licencje, GitHub, ten podręcznik (w pakiecie offline + HTML online po opublikowaniu).</li>
+</ul>
+<hr />
+<h2 id="powiazane-dokumenty">Powiązane dokumenty</h2>
+<ul>
+<li><a href="reference/USER_GUIDE.md">USER_GUIDE.md</a> — skrócone odwołanie</li>
+<li><a href="reference/self-host/INDEX.md">self-host/INDEX.md</a> — konfiguracja zdjęć/tabeli na własnym serwerze</li>
+<li><a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> — scalanie, odzyskiwanie, duplikaty</li>
+<li><a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a> — szczegóły wskaźników ekonomicznych</li>
+</ul>
+</body>
+</html>

@@ -89,11 +89,11 @@ fun FuelHistoryScreen(navController: NavHostController) {
     ) {
         FeatureScreenHeader(
             title = stringResource(R.string.nav_fuel_history),
-            subtitle = "Per-vehicle fills (no trip starts). Tap a card to edit. Thumbnails fetch from archive when missing locally.",
+            subtitle = stringResource(R.string.fuel_per_vehicle_fills_no_trip_starts_tap_a_c),
         )
         Spacer(modifier = Modifier.height(8.dp))
         if (vehicleTabs.isEmpty()) {
-            EmptyStateText("No vehicles yet")
+            EmptyStateText(stringResource(R.string.fuel_no_vehicles_yet))
             return
         }
         ScrollableTabRow(selectedTabIndex = selectedTab.coerceIn(0, vehicleTabs.lastIndex)) {
@@ -107,7 +107,7 @@ fun FuelHistoryScreen(navController: NavHostController) {
         }
         Spacer(modifier = Modifier.height(8.dp))
         if (rows.isEmpty()) {
-            EmptyStateText("No fuel entries for this vehicle")
+            EmptyStateText(stringResource(R.string.fuel_no_fuel_entries_for_this_vehicle))
         } else {
             val displayRows = rows.map { base -> rowOverrides[base.id] ?: base }
             AdaptiveItemGrid(items = displayRows) { entry ->

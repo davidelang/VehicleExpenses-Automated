@@ -3491,3 +3491,10 @@ x
 - Branch: i18n_lang_packs
 - Status APPROVED
 - Phase 1: locale infrastructure + agent law skeleton
+
+## 2026-08-01 - i18n LTR Latin band language packs — execution near handoff
+
+- Plan: i18n-ltr-latin-band-language-packs-20260801-0311-plan.md
+- Phases 1–9: AppLanguage + Settings picker; product chrome → strings.xml (~478 keys); 11 locale packs complete; tutorials Context-resolved; UserManualDocs jsDelivr per language; docs/i18n/* manuals + HTML; screenshots interim English UI copies (docs/i18n/README); I18N.md / UI_COMPAT / mandates / project-facts
+- TODO plain-line i18n bullets: todo-close helper cannot match non-checkbox lines — leave for master or reformat
+- Residual: some interpolated/format/debug symbol strings remain English by nature

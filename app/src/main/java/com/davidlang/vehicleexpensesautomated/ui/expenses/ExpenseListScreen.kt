@@ -52,11 +52,11 @@ fun ExpenseListScreen(navController: NavHostController? = null) {
     ) {
         FeatureScreenHeader(
             title = stringResource(R.string.nav_expense_list),
-            subtitle = "Tap a card to edit. Add from Menu → New expense, or Reports hub.",
+            subtitle = stringResource(R.string.expense_tap_a_card_to_edit_add_from_menu_new_exp),
         )
         Spacer(modifier = Modifier.height(8.dp))
         if (expenses.isEmpty()) {
-            EmptyStateText("No expenses yet")
+            EmptyStateText(stringResource(R.string.expense_no_expenses_yet))
         } else {
             AdaptiveItemGrid(items = expenses) { expense ->
                 val vehicleName = vehicleNameById[expense.vehicleId] ?: "Vehicle ${expense.vehicleId}"

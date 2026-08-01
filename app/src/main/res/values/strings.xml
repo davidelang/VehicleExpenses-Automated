@@ -477,4 +477,19 @@
     <string name="reports_hub_fills_blurb">Chronological fills only (no trip starts)</string>
     <string name="reports_hub_vehicle_summary_blurb">Shareable history pack</string>
 
+    <!-- Residual pass product strings -->
+    <string name="conflict_conflict_detected">Conflict Detected</string>
+    <string name="conflict_local_version">Local version:</string>
+    <string name="conflict_sheet_version">Sheet version:</string>
+    <string name="conflict_how_would_you_like_to_resolve_this">How would you like to resolve this?</string>
+    <string name="conflict_keep_local_version">Keep Local Version</string>
+    <string name="conflict_keep_sheet_version">Keep Sheet Version</string>
+    <string name="conflict_merge_both_recommended">Merge Both (Recommended)</string>
+    <string name="conflict_keep_both_as_separate_entries">Keep Both as Separate Entries</string>
+    <string name="expense_no_expenses_yet">No expenses yet</string>
+    <string name="expense_tap_a_card_to_edit_add_from_menu_new_exp">Tap a card to edit. Add from Menu → New expense, or Reports hub.</string>
+    <string name="fuel_no_vehicles_yet">No vehicles yet</string>
+    <string name="fuel_no_fuel_entries_for_this_vehicle">No fuel entries for this vehicle</string>
+    <string name="fuel_per_vehicle_fills_no_trip_starts_tap_a_c">Per-vehicle fills (no trip starts). Tap a card to edit. Thumbnails fetch from archive when missing locally.</string>
+    <string name="settings_tap_spreadsheet_sync_or_photo_backup_to_">Tap Spreadsheet sync or Photo backup to add destinations. </string>
 </resources>
