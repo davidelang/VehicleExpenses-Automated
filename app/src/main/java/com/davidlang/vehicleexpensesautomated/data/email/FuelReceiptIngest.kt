@@ -60,8 +60,7 @@ class FuelReceiptIngest @Inject constructor(
             photoUrl = null,
             isPartialFill = false,
             economyIgnored = false,
-            latitude = null,
-            longitude = null,
+            // location is sole geo/place field (legacy plain text still accepted)
             location = parsed.locationText,
             cloudManifest = manifest,
             deleted = false,
