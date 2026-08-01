@@ -18,8 +18,10 @@ data class ExpenseEntry(
     /** Optional odometer at expense time. */
     val odometer: Int? = null,
     val photoUrl: String? = null,
-    val latitude: Double? = null,
-    val longitude: Double? = null,
+    /**
+     * Sole geo/place package: JSON blob (lat/lon/accuracyM/name/address/confirmed/…).
+     * See [com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson].
+     */
     val location: String? = null,
     val cloudManifest: String? = null,
     val deleted: Boolean = false,

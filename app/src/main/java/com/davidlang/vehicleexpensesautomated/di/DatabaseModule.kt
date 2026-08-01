@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.MergeAckDao
@@ -123,6 +124,120 @@ object DatabaseModule {
             db.execSQL(
                 "ALTER TABLE vehicles ADD COLUMN tripTypesJson TEXT NOT NULL DEFAULT ''",
             )
+        }
+    }
+
+    /**
+     * v18: fold latitude/longitude columns into location JSON blob; drop coord columns.
+     * Accuracy unknown for legacy rows. Place text merged with confirmed=false default.
+     */
+    val MIGRATION_17_18 = object : Migration(17, 18) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            foldLatLonIntoLocation(db, "fuel_entries")
+            foldLatLonIntoLocation(db, "expense_entries")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS fuel_entries_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    vehicleId INTEGER NOT NULL,
+                    odometer INTEGER NOT NULL,
+                    gallons REAL NOT NULL,
+                    cost REAL NOT NULL,
+                    currency TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    photoUrl TEXT,
+                    isPartialFill INTEGER NOT NULL,
+                    economyIgnored INTEGER NOT NULL,
+                    location TEXT,
+                    notes TEXT,
+                    tripType TEXT NOT NULL,
+                    cloudManifest TEXT,
+                    deleted INTEGER NOT NULL,
+                    deletedAt INTEGER,
+                    syncId TEXT NOT NULL,
+                    originDeviceId TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO fuel_entries_new (
+                    id, vehicleId, odometer, gallons, cost, currency, timestamp,
+                    photoUrl, isPartialFill, economyIgnored, location, notes, tripType,
+                    cloudManifest, deleted, deletedAt, syncId, originDeviceId, updatedAt
+                )
+                SELECT
+                    id, vehicleId, odometer, gallons, cost, currency, timestamp,
+                    photoUrl, isPartialFill, economyIgnored, location, notes, tripType,
+                    cloudManifest, deleted, deletedAt, syncId, originDeviceId, updatedAt
+                FROM fuel_entries
+                """.trimIndent(),
+            )
+            db.execSQL("DROP TABLE fuel_entries")
+            db.execSQL("ALTER TABLE fuel_entries_new RENAME TO fuel_entries")
+
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS expense_entries_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    vehicleId INTEGER NOT NULL,
+                    amount REAL NOT NULL,
+                    currency TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    vendor TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    date INTEGER NOT NULL,
+                    odometer INTEGER,
+                    photoUrl TEXT,
+                    location TEXT,
+                    cloudManifest TEXT,
+                    deleted INTEGER NOT NULL,
+                    deletedAt INTEGER,
+                    syncId TEXT NOT NULL,
+                    originDeviceId TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    vehicleSyncIdsJson TEXT NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                INSERT INTO expense_entries_new (
+                    id, vehicleId, amount, currency, description, vendor, category, date,
+                    odometer, photoUrl, location, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt, vehicleSyncIdsJson
+                )
+                SELECT
+                    id, vehicleId, amount, currency, description, vendor, category, date,
+                    odometer, photoUrl, location, cloudManifest,
+                    deleted, deletedAt, syncId, originDeviceId, updatedAt, vehicleSyncIdsJson
+                FROM expense_entries
+                """.trimIndent(),
+            )
+            db.execSQL("DROP TABLE expense_entries")
+            db.execSQL("ALTER TABLE expense_entries_new RENAME TO expense_entries")
+        }
+
+        private fun foldLatLonIntoLocation(db: SupportSQLiteDatabase, table: String) {
+            db.query("SELECT id, latitude, longitude, location FROM $table").use { c ->
+                val idIdx = c.getColumnIndex("id")
+                val latIdx = c.getColumnIndex("latitude")
+                val lonIdx = c.getColumnIndex("longitude")
+                val locIdx = c.getColumnIndex("location")
+                while (c.moveToNext()) {
+                    val id = c.getLong(idIdx)
+                    val lat = if (c.isNull(latIdx)) null else c.getDouble(latIdx)
+                    val lon = if (c.isNull(lonIdx)) null else c.getDouble(lonIdx)
+                    val loc = if (c.isNull(locIdx)) null else c.getString(locIdx)
+                    val folded = FuelLocationJson.foldLegacy(lat, lon, loc)
+                    db.execSQL(
+                        "UPDATE $table SET location = ? WHERE id = ?",
+                        arrayOf(folded, id),
+                    )
+                }
+            }
         }
     }
 
@@ -293,6 +408,18 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * v19: per-vehicle expense category catalog JSON (mirrors tripTypesJson).
+     * Blank on existing rows → seed/inherit at next local insert or UI parse seed.
+     */
+    val MIGRATION_18_19 = object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE vehicles ADD COLUMN expenseCategoriesJson TEXT NOT NULL DEFAULT ''",
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -314,6 +441,8 @@ object DatabaseModule {
             MIGRATION_14_15,
             MIGRATION_15_16,
             MIGRATION_16_17,
+            MIGRATION_17_18,
+            MIGRATION_18_19,
         )
         .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()
