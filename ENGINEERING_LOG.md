@@ -379,3 +379,10 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Report: dev-ai-interaction/research/plan-archive-review-20260731.md
 - Note: scoring favors distinctive tokens; a few weak matches possible — report lists scores/reasons
 
+
+## 2026-07-31 - Archive obsolete int8 plans
+
+- User: all int8 work obsolete
+- Moved remaining int8/jit/256/1024-rec experiment plans (and related patches if present) to historical-plans/
+- Active plans/ now only orch policy contracts (+ any non-int8 leftovers)
+
