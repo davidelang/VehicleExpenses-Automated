@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.util
 
+import android.content.Context
+
 /**
  * Central façade for economy / distance **display labels** only.
  *
@@ -13,6 +15,25 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 object UnitFormat {
     /** Efficiency unit label for full-fill economy display (currently MPG language). */
     fun economyEfficiencyLabel(): String = "mpg"
+
+    /**
+     * Volume per distance (inverse economy), e.g. `G/mi` / `L/mi`.
+     * Uses preferred volume unit from settings when [context] is provided.
+     */
+    fun volumePerDistanceLabel(context: Context? = null): String {
+        val vol = context?.let { VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(it)) }
+            ?: "G"
+        return vol + "/" + distanceUnitShortLabel()
+    }
+
+    /**
+     * Unit price (cost ÷ volume), e.g. `$/G` / `$/L`.
+     */
+    fun unitPriceLabel(context: Context? = null): String {
+        val vol = context?.let { VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(it)) }
+            ?: "G"
+        return "$/" + vol
+    }
 
     /** Cost per distance label (currently US-style). */
     fun costPerDistanceLabel(): String = "$/mi"
