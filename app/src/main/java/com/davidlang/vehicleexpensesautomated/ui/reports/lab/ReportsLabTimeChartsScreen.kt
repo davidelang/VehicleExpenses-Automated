@@ -255,47 +255,16 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
     val hasMoneyOrTrip = moneySeries.isNotEmpty() || tripSeries.isNotEmpty()
     val hasEconomy = mpgSeries.isNotEmpty() || gpmSeries.isNotEmpty()
 
-    // C1/C2 single host: Start = economy; End = money+trip (or gpm dual when End free)
-    val chartAxes = when {
-        hasMoneyOrTrip -> ChartAxes(
-            start = mpgSeries + gpmSeries,
-            end = moneySeries + tripSeries,
-            startColor = when {
-                mpgSeries.isNotEmpty() -> LabChartColors.Mpg
-                gpmSeries.isNotEmpty() -> LabChartColors.Gpm
-                else -> null
-            },
-            endColor = LabChartColors.DpmFuel,
-            caption = "Time based reports · smooth ${mode.displayLabel(customDays)}",
-        )
-        mpgSeries.isNotEmpty() && gpmSeries.isNotEmpty() -> ChartAxes(
-            start = mpgSeries,
-            end = gpmSeries,
-            startColor = LabChartColors.Mpg,
-            endColor = LabChartColors.Gpm,
-            caption = "Economy dual-axis · smooth ${mode.displayLabel(customDays)}",
-        )
-        mpgSeries.isNotEmpty() -> ChartAxes(
-            start = mpgSeries,
-            end = emptyMap(),
-            startColor = LabChartColors.Mpg,
-            endColor = null,
-            caption = "Economy · smooth ${mode.displayLabel(customDays)}",
-        )
-        gpmSeries.isNotEmpty() -> ChartAxes(
-            start = gpmSeries,
-            end = emptyMap(),
-            startColor = LabChartColors.Gpm,
-            endColor = null,
-            caption = "Economy · smooth ${mode.displayLabel(customDays)}",
-        )
-        else -> ChartAxes(emptyMap(), emptyMap(), null, null, "")
+    // Fixed sides (A1–A4): economy always left; money/trip always right. Never put gpm on End.
+    val startSeries = mpgSeries + gpmSeries
+    val endSeries = moneySeries + tripSeries
+    val startColor = when {
+        mpgSeries.isNotEmpty() -> LabChartColors.Mpg
+        gpmSeries.isNotEmpty() -> LabChartColors.Gpm
+        else -> null
     }
-    val startSeries = chartAxes.start
-    val endSeries = chartAxes.end
-    val startColor = chartAxes.startColor
-    val endColor = chartAxes.endColor
-    val caption = chartAxes.caption
+    val endColor = if (hasMoneyOrTrip) LabChartColors.DpmFuel else null
+    val caption = "Time based reports · economy left · \$/trip right · smooth ${mode.displayLabel(customDays)}"
 
     val allSeriesForPdf = startSeries + endSeries
     val seriesColorMap = remember(allSeriesForPdf.keys) {
@@ -522,17 +491,12 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     emptyMessage = "Not enough points for a chart.",
                     startAxisLabel = when {
                         startSeries.isEmpty() -> null
-                        mpgSeries.isNotEmpty() && gpmSeries.isNotEmpty() && hasMoneyOrTrip ->
-                            "$mpgLabel / $gpmLabel"
+                        mpgSeries.isNotEmpty() && gpmSeries.isNotEmpty() -> "$mpgLabel / $gpmLabel"
                         mpgSeries.isNotEmpty() -> mpgLabel
                         gpmSeries.isNotEmpty() -> gpmLabel
                         else -> "economy"
                     },
-                    endAxisLabel = when {
-                        endSeries.isEmpty() -> null
-                        hasMoneyOrTrip -> "\$ / trip"
-                        else -> gpmLabel
-                    },
+                    endAxisLabel = if (endSeries.isNotEmpty()) "\$ / trip" else null,
                     startAxisColor = startColor,
                     endAxisColor = endColor,
                 )
@@ -540,14 +504,6 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         }
     }
 }
-
-private data class ChartAxes(
-    val start: Map<String, List<LabTimeYPoint>>,
-    val end: Map<String, List<LabTimeYPoint>>,
-    val startColor: Color?,
-    val endColor: Color?,
-    val caption: String,
-)
 
 @Composable
 private fun MetricChipRow(def: MetricDef) {
@@ -621,7 +577,8 @@ private fun monthlyKindSeries(
 
 private const val TIME_CHARTS_INFO =
     "Time based reports: economy (mpg / vol per distance), money (unit price, cost/distance, monthly \$), " +
-        "and trip miles/%. All metrics optional. One chart: economy on the left; money and trip on the right. " +
+        "and trip miles/%. All metrics optional. One chart: economy always left (mpg and gpm share left); " +
+        "money and trip always right — sides do not swap when toggles change. " +
         "Smooth bins share one calendar grid across metrics. " +
         "Trip miles/% walk odometer steps under open trip types (Personal included). " +
         "Edge-spanning full-fill legs contribute to both bins. " +

@@ -2083,3 +2083,17 @@ x
 - Docs Help USER_GUIDE REPORTS_METRICS user-manual+html assets; screenshots deferred to post-deploy 5556 for hub/time/edit
 - No deploy
 
+
+## 2026-07-31 - time-report-fixed-axis-sides start
+
+- Plan: time-report-fixed-axis-sides-20260731-plan.md
+- Economy always Start; money/trip always End; no gpm-on-right dual mode
+- No deploy
+
+
+## 2026-07-31 - time-report-fixed-axis-sides complete
+
+- Plan: time-report-fixed-axis-sides-20260731-plan.md
+- Start = mpg∪gpm always; End = money∪trip only; dropped dual-axis gpm-on-right branch
+- build via build_app; no deploy
+
