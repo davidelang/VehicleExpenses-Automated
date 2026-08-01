@@ -344,3 +344,13 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Source: policy-redteam AGENT_MANDATES DRAFT v2.1 + prompt ports
 - Scope: orchestration brain only; no auto update-rules; no app Kotlin
 
+
+## 2026-07-31 - Completed: orch-brain-policy-updates
+
+- AGENT_MANDATES slim v2.1 (~12KB) + .grok/prompts/{planning,execution,dedicated}-*.md
+- AGENTS/GROK/new_agent_prompt/STANDARD BLOCK; implement disabled; coder completeness+Status
+- Launchers cleaned; planner prompt regenerated; style guide; skills archive notes
+- Mass-archived 23 CODE LANDED/superseded plans to historical-plans/
+- No update-rules (human final sweep when ready)
+- Commit on orchestration (brain-only)
+
