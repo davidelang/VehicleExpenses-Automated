@@ -397,6 +397,30 @@ fun SettingsScreen(navController: NavHostController) {
                 }
             }
         }
+        Text("Setup tips", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "First-run walkthroughs for adding a vehicle or connecting sync (also under Help).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = { navController.navigate("tutorial/tutorial_add_vehicle") },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        ) {
+            Text("Tutorial: Add a vehicle")
+        }
+        OutlinedButton(
+            onClick = { navController.navigate("tutorial/tutorial_setup_sync") },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        ) {
+            Text("Tutorial: Set up sync")
+        }
+        OutlinedButton(
+            onClick = { navController.navigate("onboarding") },
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
+        ) {
+            Text("Show first-run welcome")
+        }
         SwitchSetting("Show experiment screens (dev)", showExperimentScreens) { showExperimentScreens = it }
         if (showExperimentScreens) {
             Spacer(modifier = Modifier.height(8.dp))

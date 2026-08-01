@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,6 +68,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
+import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
+import com.davidlang.vehicleexpensesautomated.ui.onboarding.OnboardingSplashScreen
+import com.davidlang.vehicleexpensesautomated.ui.onboarding.TutorialPagerScreen
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncFailureStore
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdBackfill
@@ -300,9 +304,26 @@ class MainActivity : ComponentActivity() {
 
                 val pageHelpController = rememberPageHelpController()
 
+                // First-run splash when no user vehicles (S1/S4/S5)
+                val allVehicles by vehicleRepository.getAllVehicles()
+                    .collectAsState(initial = emptyList())
+                val userVehiclesEmpty = remember(allVehicles) {
+                    allVehicles.forUserPicker().isEmpty()
+                }
+
                 // Dynamic page title
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
+                LaunchedEffect(backfillComplete, userVehiclesEmpty, currentRoute) {
+                    if (!backfillComplete) return@LaunchedEffect
+                    if (!userVehiclesEmpty) return@LaunchedEffect
+                    // Only auto-open splash from home so we don't interrupt tutorials mid-flow.
+                    if (currentRoute == "quickfill" || currentRoute == null) {
+                        navController.navigate("onboarding") {
+                            launchSingleTop = true
+                        }
+                    }
+                }
                 val title = when {
                     currentRoute == "quickfill" -> "Quick Fill-up"
                     currentRoute == "triptracking" -> "Start trip"
@@ -322,6 +343,8 @@ class MainActivity : ComponentActivity() {
                     currentRoute == "settings/photo_backup" -> "Photo Backup"
                     currentRoute == "help" -> "Help"
                     currentRoute == "about" -> "About"
+                    currentRoute == "onboarding" -> "Welcome"
+                    currentRoute?.startsWith("tutorial/") == true -> "Setup tips"
                     currentRoute == "experiment" -> "Alignment Experiment"
                     currentRoute == "experiment_pump" -> "Gas Pump Extraction Experiment"
                     else -> "Vehicle Expenses"
@@ -612,7 +635,19 @@ class MainActivity : ComponentActivity() {
                                 composable("settings/photo_backup") {
                                     PhotoBackupScreen(navController = navController)
                                 }
-                                composable("help") { HelpScreen() }
+                                composable("onboarding") {
+                                    OnboardingSplashScreen(navController = navController)
+                                }
+                                composable(
+                                    route = "tutorial/{tutorialId}",
+                                    arguments = listOf(
+                                        navArgument("tutorialId") { type = NavType.StringType },
+                                    ),
+                                ) { entry ->
+                                    val id = entry.arguments?.getString("tutorialId").orEmpty()
+                                    TutorialPagerScreen(navController = navController, tutorialId = id)
+                                }
+                                composable("help") { HelpScreen(navController = navController) }
                                 composable("about") { AboutScreen() }
                                 composable("experiment") { ExperimentAlignmentScreen(navController = navController) }
                                 composable("experiment_pump") { ExperimentPumpScreen(navController = navController) }

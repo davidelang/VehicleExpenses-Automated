@@ -108,5 +108,6 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - Hybrid stretch helpers: `ui/util/OdometerOcrUtils.kt` — `getClipStretchLowHigh`, `getValleyPeakGrays`, `applyValleyPushWithGrays`
 - Data/UI: `Vehicle.kt`, `VehicleViewModel.kt`, `ManageVehiclesScreen.kt` — form rehydrates from Room when selected vehicle definition fields change (not only id); auto-deserializes `discoveryResults` from `landmarkTextBlocksJson` when reference image size is known
 - Quick Fill / OCR: reads `VehicleViewModel.vehicles` Room Flow at capture time — after spreadsheet sync, definitions are in Room without opening Manage Vehicles
+- First-run onboarding: route `onboarding` when `forUserPicker()` empty (re-shows until first user vehicle); tutorials `tutorial/tutorial_add_vehicle` + `tutorial/tutorial_setup_sync` (`ui/onboarding/`, assets `app/src/main/assets/tutorials/`); also Help + Settings
 
 Update only with new stable location facts valid for future unrelated work. Current-effort details go in the active plan or ENGINEERING_LOG.md.

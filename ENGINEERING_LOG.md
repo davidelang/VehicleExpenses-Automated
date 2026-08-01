@@ -2112,3 +2112,18 @@ x
 - Left mpg + G/mi axes; right $ + trip mi + trip %; PDF renderMultiFamilyChartBitmap
 - No deploy
 
+
+## 2026-07-31 - onboarding-splash-tutorials start
+
+- Plan: onboarding-splash-tutorials-20260731-plan.md
+- First-run splash; tutorial_add_vehicle + tutorial_setup_sync; Help links
+- No deploy
+
+
+## 2026-07-31 - onboarding-splash-tutorials complete
+
+- Plan: onboarding-splash-tutorials-20260731-plan.md
+- Splash when forUserPicker empty; tutorials add_vehicle + setup_sync; Help/Settings CTAs
+- Assets app/src/main/assets/tutorials/; manual composites from sandbox masked set + render
+- No deploy
+

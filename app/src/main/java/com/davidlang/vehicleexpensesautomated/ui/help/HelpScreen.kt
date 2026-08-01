@@ -38,6 +38,37 @@ fun HelpScreen(navController: NavHostController? = null) {
             Text("Open full user manual")
         }
 
+        if (navController != null) {
+            SectionTitle("Setup tips (animated)")
+            Text(
+                "Short step-by-step walkthroughs with screenshots (offline). Also offered on first run when you have no vehicles.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = {
+                    navController.navigate("tutorial/tutorial_add_vehicle")
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            ) {
+                Text("Tutorial: Add a vehicle")
+            }
+            Button(
+                onClick = {
+                    navController.navigate("tutorial/tutorial_setup_sync")
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            ) {
+                Text("Tutorial: Set up sync")
+            }
+            TextButton(
+                onClick = { navController.navigate("onboarding") },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Show first-run welcome choices")
+            }
+        }
+
         SectionTitle("Icons")
         Bullet("☰ (top left) — open the menu")
         Bullet("ⓘ (title bar) — page help for the current screen (stays while you stay on the page)")
