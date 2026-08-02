@@ -54,3 +54,11 @@ Update only with orientation facts valid for future work. Effort/plan details �
 - Library hosts: `~/git/remotetable`, `~/git/extractmail`
 - One-shot bootstrap: `bootstrap-first-party-libs.sh` + `bootstrap-first-party-libs.d/` (untracked historical)
 - Staging leftovers: `dev-ai-interaction/subprojects/` until cleaned post-merge
+
+## project.config (local only — all multi-agent hosts)
+- **Never commit** `project.config` (usernames, binary paths, sandbox dir). Track `project.config.example` only.
+- Applies to VE **and** first-party library hosts (`~/git/remotetable`, `extractmail`). Same rule for any third_party consumer machine.
+- Seed: copy example → `project.config` on each machine/worktree. Filters/smudge need the local file.
+- Library `update-rules.sh` does **not** update VE `third_party/<lib>/src` worktrees (co-dev checkouts, not dedicated lib agents).
+
+- Launchers: thin run-grok* + .grok/prompts/packs on VE and lib hosts; local PR skills prepare-local-pr / master-merge; sandbox_dir (VE dev-ai-interaction, libs sandbox).
