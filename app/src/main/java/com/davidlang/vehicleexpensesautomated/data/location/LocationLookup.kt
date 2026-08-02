@@ -56,6 +56,49 @@ object LocationLookup {
         }
     }
 
+    /**
+     * Nearby POIs for Wrong-station picker, sorted by distance ascending.
+     * ADDRESS_ONLY → empty (no picker). Overpass first; Nominatim reverse as last-resort single row if empty.
+     */
+    suspend fun listNearby(
+        lat: Double,
+        lon: Double,
+        kind: LocationLookupKind,
+        radiusM: Double,
+        uiTimeout: Boolean = true,
+    ): List<LocationLookupResult> {
+        val overpassTimeout = if (uiTimeout) OverpassClient.UI_TIMEOUT_MS else OverpassClient.WORKER_TIMEOUT_MS
+        val nominatimTimeout = if (uiTimeout) NominatimClient.UI_TIMEOUT_MS else NominatimClient.WORKER_TIMEOUT_MS
+        return try {
+            when (kind) {
+                LocationLookupKind.FUEL_STATION -> {
+                    val list = OverpassClient.listFuelStations(lat, lon, radiusM, overpassTimeout)
+                    if (list.isNotEmpty()) list
+                    else {
+                        NominatimClient.reverseAddress(lat, lon, nominatimTimeout)
+                            ?.copy(kind = LocationLookupKind.FUEL_STATION)
+                            ?.let { listOf(it) }
+                            .orEmpty()
+                    }
+                }
+                LocationLookupKind.AUTO_SERVICE -> {
+                    val list = OverpassClient.listAutoService(lat, lon, radiusM, overpassTimeout)
+                    if (list.isNotEmpty()) list
+                    else {
+                        NominatimClient.reverseAddress(lat, lon, nominatimTimeout)
+                            ?.copy(kind = LocationLookupKind.AUTO_SERVICE)
+                            ?.let { listOf(it) }
+                            .orEmpty()
+                    }
+                }
+                LocationLookupKind.ADDRESS_ONLY -> emptyList()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "listNearby failed: ${e.message}")
+            emptyList()
+        }
+    }
+
     /** Merge lookup place into existing coords blob; [confirmed] default false for silent/worker. */
     fun mergePlaceIntoBlob(
         existingLocationJson: String?,
