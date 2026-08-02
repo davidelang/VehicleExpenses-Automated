@@ -105,6 +105,27 @@ if [ $FORCE_LEVEL -lt 1 ]; then
 fi
 
 # 4. Removal of Worktree
+# third_party: detach worktrees / empty src so rm -rf of agent dir succeeds
+if [ -d "$WORKTREE_DIR/third_party" ]; then
+  echo "Cleaning third_party/*/src under $WORKTREE_DIR ..."
+  for _src in "$WORKTREE_DIR"/third_party/*/src; do
+    [ -e "$_src" ] || continue
+    chmod -R u+w "$_src" 2>/dev/null || true
+    # If this is a linked worktree of a library host, remove via that repo
+    if [ -f "$_src/.git" ]; then
+      _gitdir=$(sed -n 's/^gitdir: //p' "$_src/.git" 2>/dev/null || true)
+      if [ -n "$_gitdir" ] && [ -d "$_gitdir" ]; then
+        _common=$(cd "$_gitdir/../.." 2>/dev/null && pwd)
+        if [ -n "$_common" ] && [ -d "$_common/.git" ] || [ -f "$_common/.git" ]; then
+          git -C "$_common" worktree remove --force "$_src" 2>/dev/null || true
+        fi
+      fi
+    fi
+    rm -rf "$_src" 2>/dev/null || sudo rm -rf "$_src" 2>/dev/null || true
+    mkdir -p "$_src" 2>/dev/null || true
+  done
+fi
+
 echo "Removing worktree '$WORKTREE_DIR'..."
 git worktree remove --force "$WORKTREE_DIR" || {
     echo "git worktree remove failed (likely permissions). Re-applying permissive reset..."
