@@ -1,78 +1,12 @@
 #!/bin/bash
-# run-grok-planner — dedicated Planning Agent (@@PLANNING_USER@@).
-# Default pack: new_agent_prompt + role-planner.md + dedicated-planner.md
-# Optional: first arg = existing prompt file (e.g. .planning-agent-prompt.txt from master).
-# If default prompt file missing, compose the pack and write it for restarts.
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"
-COMPOSE="$SCRIPT_DIR/.grok/prompts/compose-session-prompt.sh"
-GROK_BIN="${GROK_BIN:-@@GROK_BIN_DEFAULT@@}"
-
-if [ -f project.config ]; then
-  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(planning_user|GROK_BIN)')
-fi
-PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
-
-umask 002
-
-ANDROID_SHARED=""
-if [ -d "$SCRIPT_DIR/.android-shared" ]; then
-  ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
-elif [ -d "$SCRIPT_DIR/../.android-shared" ]; then
-  ANDROID_SHARED="$(cd "$SCRIPT_DIR/.." && pwd)/.android-shared"
-fi
-
-DEFAULT_PLANNER_MODEL="grok-build"
-PLANNER_MODEL="${GROK_PLANNER_MODEL:-$DEFAULT_PLANNER_MODEL}"
-
-export GROK_PROMPT_ROOT="$SCRIPT_DIR"
-COMPOSE_PACK=(new_agent_prompt .grok/prompts/role-planner.md .grok/prompts/dedicated-planner.md)
-
-# Explicit prompt file path if first arg is an existing file
-if [ -n "${1:-}" ] && [ -f "$1" ]; then
-  PROMPT_FILE="$1"
-  shift
-  PLANNING_PROMPT=$(cat "$PROMPT_FILE")
-else
-  PROMPT_FILE="${SANDBOX_DIR}/.planning-agent-prompt.txt"
-  if [ -f "$PROMPT_FILE" ]; then
-    PLANNING_PROMPT=$(cat "$PROMPT_FILE")
-  else
-    echo "INFO: $PROMPT_FILE missing — composing default planner pack" >&2
-    PLANNING_PROMPT="$("$COMPOSE" "${COMPOSE_PACK[@]}")"
-    mkdir -p "$(dirname "$PROMPT_FILE")"
-    printf '%s\n' "$PLANNING_PROMPT" > "$PROMPT_FILE"
-    echo "Wrote default planner prompt to $PROMPT_FILE" >&2
-  fi
-fi
-
-echo "Launching dedicated Planning Agent in $(pwd)..."
-echo "Grok binary: $GROK_BIN"
-echo "Sandbox path: $SANDBOX_DIR"
-echo "Prompt source: $PROMPT_FILE (pack: new_agent_prompt + role-planner + dedicated-planner)"
-echo "Forcing planning model: $PLANNER_MODEL (set GROK_PLANNER_MODEL to override)"
-echo "Tip: Ctrl+M or /multiline for multi-line input."
-
-TODO_GATE_FLAGS=""
-if [ "${GROK_TODO_GATE:-0}" = "1" ] || [ "${GROK_TODO_GATE:-0}" = "true" ]; then
-  TODO_GATE_FLAGS="--todo-gate"
-fi
-
-EXTRA_ARGS=()
-FOUND_DD=0
-for arg in "$@"; do
-  if [ "$FOUND_DD" -eq 1 ]; then
-    EXTRA_ARGS+=("$arg")
-  elif [ "$arg" = "--" ]; then
-    FOUND_DD=1
-  fi
-done
-
-exec sudo -u "$PLANNING_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} GROK_PROMPT_ROOT="$SCRIPT_DIR" bash -c 'umask 002; exec "$@"' bash \
-    "$GROK_BIN" \
-    "$PLANNING_PROMPT" \
-    --model "$PLANNER_MODEL" \
-    $TODO_GATE_FLAGS \
-    --no-alt-screen \
-    "${EXTRA_ARGS[@]}"
+# run-grok-planner — generic multi-agent launcher (no project rules in this file).
+# Rules: files listed in .grok/prompts/packs/planner.pack
+# Same script body is used across VehicleExpenses and library hosts.
+set -euo pipefail
+GROK_LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export GROK_LAUNCHER_DIR
+ROLE_KEY=planner
+export ROLE_KEY
+# shellcheck source=/dev/null
+source "$GROK_LAUNCHER_DIR/.grok/lib/grok-launch-common.sh"
+grok_launch_main "$@"

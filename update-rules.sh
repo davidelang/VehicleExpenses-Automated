@@ -249,6 +249,12 @@ FILES=(
     ".grok/prompts/role-master.md"
     ".grok/prompts/role-orchestrator.md"
     ".grok/prompts/role-primary.md"
+    ".grok/lib/grok-launch-common.sh"
+    ".grok/prompts/packs/coder.pack"
+    ".grok/prompts/packs/master.pack"
+    ".grok/prompts/packs/orchestrator.pack"
+    ".grok/prompts/packs/planner.pack"
+    ".grok/prompts/packs/primary.pack"
     # Tracked human-facing ritual document (magic words, forbidden phrases, post-handoff instructions).
     # Added per approved meta-plan for plan/execute cycle enforcement; synced to all worktrees.
     "MULTI_AGENT_USER_INSTRUCTIONS.md"
@@ -273,6 +279,7 @@ FILES=(
     "run-antigravity-planner"
     ".grok/skills/prepare-local-pr/SKILL.md"
     ".grok/skills/master-merge/SKILL.md"
+    "generate_pr.sh"
     # Stable canonical guardrails block (cite by path in plans; do not paste).
     # This is the single source of truth for the short "Compliance & Execution
     # Guardrails (STANDARD BLOCK)" section. Placed at repo root (not under
