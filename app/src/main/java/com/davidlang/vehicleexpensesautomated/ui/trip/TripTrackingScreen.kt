@@ -134,7 +134,6 @@ fun TripTrackingScreen(
     var locationStatus by remember { mutableStateOf("") }
     var placeName by remember { mutableStateOf("") }
     var placeAddress by remember { mutableStateOf("") }
-    var confirmLocation by remember { mutableStateOf(true) }
     var lookupName by remember { mutableStateOf<String?>(null) }
     var lookupAddress by remember { mutableStateOf<String?>(null) }
     var lookupSource by remember { mutableStateOf<String?>(null) }
@@ -341,9 +340,10 @@ fun TripTrackingScreen(
             deviceAccuracyM,
             source = "device",
         ) ?: FuelLocationJson.Blob()
+        // Non-blank place → confirmed=true; blank → coords-only. No picker on address-only Trip.
         val placeBlank = placeName.isBlank() && placeAddress.isBlank()
-        val saveBlob = when {
-            confirmLocation && !placeBlank -> base.withPlace(
+        val saveBlob = if (!placeBlank) {
+            base.withPlace(
                 name = placeName,
                 address = placeAddress,
                 confirmed = true,
@@ -357,7 +357,8 @@ fun TripTrackingScreen(
                 kind = LocationLookupKind.ADDRESS_ONLY.blobKindTag(),
                 lookedUpAt = System.currentTimeMillis(),
             )
-            else -> base.coordsOnly()
+        } else {
+            base.coordsOnly()
         }
         val ts = if (timeIsNow) System.currentTimeMillis() else eventTimestamp
         val entry = TripTimeline.buildTripStart(
@@ -560,9 +561,6 @@ fun TripTrackingScreen(
                 onClick = {
                     // Personal now at this location: force timeIsNow + confirm location if coords.
                     timeIsNow = true
-                    if (latitude != null && longitude != null) {
-                        confirmLocation = true
-                    }
                     saveTripStart(
                         type = TripTypes.PERSONAL,
                         toastLabel = "Personal now at location",
@@ -632,33 +630,19 @@ fun TripTrackingScreen(
                 statusLine = locationStatus,
                 name = placeName,
                 address = placeAddress,
-                confirmChecked = confirmLocation,
                 onNameChange = { placeName = it },
                 onAddressChange = { placeAddress = it },
-                onConfirmChange = { confirmLocation = it },
-                confirmLabel = "Confirm this location",
-                showConfirmCheckbox = false,
+                // ADDRESS_ONLY: editable fields only (no Wrong station picker)
+                pickerKind = LocationLookupKind.ADDRESS_ONLY,
+                hasCoords = true,
             )
         }
 
-        // Confirm location + Time is now side by side
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (latitude != null && longitude != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Checkbox(
-                        checked = confirmLocation,
-                        onCheckedChange = { confirmLocation = it },
-                    )
-                    Text("Confirm this location", style = MaterialTheme.typography.bodySmall)
-                }
-            }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f),

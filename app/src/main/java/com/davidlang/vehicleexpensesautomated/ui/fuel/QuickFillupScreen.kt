@@ -63,6 +63,7 @@ import com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlined
 import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.components.RoundCaptureButton
+import com.davidlang.vehicleexpensesautomated.ui.components.StationPickerDialog
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
@@ -194,12 +195,12 @@ fun QuickFillupScreen(
     var locationStatus by remember { mutableStateOf("") }
     var placeName by remember { mutableStateOf("") }
     var placeAddress by remember { mutableStateOf("") }
-    var confirmLocation by remember { mutableStateOf(true) }
     var locationLookupDone by remember { mutableStateOf(false) }
     /** Last successful live lookup (for confirm provenance: overpass/nominatim vs user edit). */
     var lookupName by remember { mutableStateOf<String?>(null) }
     var lookupAddress by remember { mutableStateOf<String?>(null) }
     var lookupSource by remember { mutableStateOf<String?>(null) }
+    var showStationPicker by remember { mutableStateOf(false) }
 
     // One-shot device GPS on enter (not per shutter); odo+pump+row share this fix.
     LaunchedEffect(Unit) {
@@ -900,9 +901,10 @@ fun QuickFillupScreen(
                         val baseBlob = FuelLocationJson.fromLocation(deviceLocation)
                             ?: FuelLocationJson.fromCoords(lat, lon, source = "device")
                             ?: FuelLocationJson.Blob()
+                        // Non-blank place → implicit confirmed=true; blank → coords-only.
                         val placeBlank = placeName.isBlank() && placeAddress.isBlank()
-                        val saveBlob = when {
-                            confirmLocation && !placeBlank -> baseBlob.withPlace(
+                        val saveBlob = if (!placeBlank) {
+                            baseBlob.withPlace(
                                 name = placeName,
                                 address = placeAddress,
                                 confirmed = true,
@@ -916,7 +918,8 @@ fun QuickFillupScreen(
                                 kind = LocationLookupKind.FUEL_STATION.blobKindTag(),
                                 lookedUpAt = System.currentTimeMillis(),
                             )
-                            else -> baseBlob.coordsOnly() // unchecked or empty place → coords only
+                        } else {
+                            baseBlob.coordsOnly()
                         }
                         fuelViewModel.saveFuel(
                             FuelEntry(
@@ -1234,14 +1237,38 @@ fun QuickFillupScreen(
                     statusLine = locationStatus,
                     name = placeName,
                     address = placeAddress,
-                    confirmChecked = confirmLocation,
                     onNameChange = { placeName = it },
                     onAddressChange = { placeAddress = it },
-                    onConfirmChange = { confirmLocation = it },
                     modifier = Modifier
                         .padding(top = 8.dp)
                         .then(panelCTextWidth),
+                    pickerKind = LocationLookupKind.FUEL_STATION,
+                    hasCoords = true,
+                    onWrongStationClick = { showStationPicker = true },
                 )
+            }
+            if (showStationPicker) {
+                val pla = lat
+                val plo = lon
+                if (pla != null && plo != null) {
+                    StationPickerDialog(
+                        lat = pla,
+                        lon = plo,
+                        kind = LocationLookupKind.FUEL_STATION,
+                        onSelect = { picked ->
+                            placeName = picked.name
+                            placeAddress = picked.address
+                            lookupName = picked.name
+                            lookupAddress = picked.address
+                            lookupSource = "user"
+                            showStationPicker = false
+                        },
+                        onManual = { showStationPicker = false },
+                        onDismiss = { showStationPicker = false },
+                    )
+                } else {
+                    showStationPicker = false
+                }
             }
             } // pump Column
             } // fields Column
