@@ -1,23 +1,13 @@
-# Bootstrap lock — update git_sha / git_describe / artifacts when first real pin lands.
 name: extractmail
 git_ssh: "git@github.com:davidelang/extractmail.git"
 git_https: "https://github.com/davidelang/extractmail.git"
-git_sha: "d37518890ab239b77cb2a40f25008b4caf93e218"
-git_describe: "d375188"
-artifacts: []
-# Example when M1 AAR exists:
-# artifacts:
-#   - path: artifact/extractmail.aar
-#     sha256: ""
-#     build: ./build
-consumer_note: "M1 stdin goldens PASS on host 2026-08-02; pin TBD until dlang commits library + artifact"
-
-# Schema (pin contract only — mode lives in status.local):
-# track_branch: master          # optional; for refresh semantics
-# artifacts:
-#   - path: artifact/NAME.aar   # tracked under third_party/<lib>/
-#     from_src: build/out.aar   # relative to src/ after ./build
-#     sha256: ""
-# patches:                      # files under patches/ applied after clean checkout, before ro chmod
-#   - path: patches/001-foo.patch
-# build: ./build
+git_sha: "b18461f7cff03ffbc1d834e79795c3a272d60cf6"
+git_describe: "b18461f"
+artifacts:
+  - path: artifact/extractmail.aar
+    sha256: "bc57783f04a024069d1bbaa79cf73de300590e0f9f47c036d1d1245e8a00272e"
+    build: ./build
+    from_src: android/extractmail/build/outputs/aar/extractmail-release.aar
+consumer_note: "M1 b18461f: stdin goldens + YAML + android/ AAR + scripts/build-aar.sh"
+track_branch: master
+build: ./build

@@ -16,7 +16,7 @@ class ExcelGraphTabularBackend @Inject constructor(
     private val graphClient: GraphExcelClient,
 ) : TabularShareBackend {
 
-    override val provider: SpreadsheetProvider = SpreadsheetProvider.EXCEL
+    override val provider: SpreadsheetProvider = SpreadsheetProvider.EXCEL_GRAPH
 
     override fun capabilities(): TabularCapabilities = TabularCapabilities(renameTab = true, browse = false)
 

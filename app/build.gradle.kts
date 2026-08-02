@@ -138,6 +138,9 @@ dependencies {
     implementation("com.google.apis:google-api-services-sheets:v4-rev20220927-2.0.0")
     // Google Drive API for photo upload
     implementation("com.google.apis:google-api-services-drive:v3-rev20240509-2.0.0")
+    // First-party libraries (third_party pins)
+    implementation(files("../third_party/remotetable/artifact/remotetable.aar"))
+    implementation(files("../third_party/extractmail/artifact/extractmail.aar"))
     // IMAP (generic folder fetch for email fuel receipts)
     implementation("com.sun.mail:android-mail:1.6.7")
     implementation("com.sun.mail:android-activation:1.6.7")

@@ -4348,3 +4348,11 @@ x
 - Fix: chgrp -R ai-code .git/objects; chmod -R g+rwX .git/objects (both hosts)
 - Then: git commit in third_party/*/src; fetch-deps upgrade; pin artifact on VE
 
+
+## 2026-08-02 - remotetable + extractmail M1 VE pin and thin adapters
+
+- Pin remotetable @ d718ff3 + artifact/remotetable.aar; extractmail @ b18461f + artifact/extractmail.aar
+- Gradle files() deps on both AARs; FirstPartyLibsProbe compile-link surface
+- SpreadsheetProvider.EXCEL → EXCEL_GRAPH("excel-graph"); legacy wire "excel" / route "new:excel"
+- extractmail pin build → scripts/build-aar.sh; library commits android scaffold + build-aar
+- Full tabular stack cutover to remotetable AAR deferred (in-tree backends remain for Sheets/Excel/EtherCalc)

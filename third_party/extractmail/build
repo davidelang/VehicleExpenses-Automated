@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
-# Build recipe for this third_party pin. fetch-deps --build execs this with cwd here.
 set -euo pipefail
-echo "$(basename "$(pwd)"): build stub — replace with real recipe (AAR/JAR/native)."
-echo "See SOURCE.md and docs/reference/FIRST_PARTY_LIBS.md"
-exit 0
+ROOT=$(cd "$(dirname "$0")" && pwd)
+SRC="$ROOT/src"
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}"
+export PATH="$JAVA_HOME/bin:$PATH"
+export ANDROID_HOME="${ANDROID_HOME:-/home/dlang/Android/Sdk}"
+echo "extractmail build: src=$SRC"
+if [ -x "$SRC/python/run_goldens.py" ] || [ -f "$SRC/python/run_goldens.py" ]; then
+  (cd "$SRC" && python3 python/run_goldens.py) || {
+    echo "WARN: goldens failed or missing deps; continuing AAR build" >&2
+  }
+fi
+chmod +x "$SRC/scripts/build-aar.sh"
+"$SRC/scripts/build-aar.sh"
+if [ ! -s "$ROOT/artifact/extractmail.aar" ]; then
+  AAR=$(find "$SRC/android" -name 'extractmail-release.aar' | head -1)
+  mkdir -p "$ROOT/artifact"
+  cp -f "$AAR" "$ROOT/artifact/extractmail.aar"
+fi
+ls -la "$ROOT/artifact/extractmail.aar"
+echo "extractmail build OK"

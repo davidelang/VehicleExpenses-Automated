@@ -68,7 +68,7 @@ internal fun SpreadsheetDestEditForm(
     val isNew = destId.startsWith("new")
     val newProvider = TabularOtherProviderCatalog.providerFromNewDestId(destId)
         ?: when (destId) {
-            "new:excel" -> SpreadsheetProvider.EXCEL
+            "new:excel-graph", "new:excel" -> SpreadsheetProvider.EXCEL_GRAPH // legacy: new:excel
             "new:ethercalc" -> SpreadsheetProvider.ETHERCALC
             else -> SpreadsheetProvider.GOOGLE_SHEETS
         }
@@ -129,7 +129,7 @@ internal fun SpreadsheetDestEditForm(
     var accountHint by remember {
         mutableStateOf(
             existing?.accountHint ?: when (provider) {
-                SpreadsheetProvider.EXCEL -> viewModel.msAuth.getPersistedAccountEmail().orEmpty()
+                SpreadsheetProvider.EXCEL_GRAPH -> viewModel.msAuth.getPersistedAccountEmail().orEmpty()
                 SpreadsheetProvider.GOOGLE_SHEETS -> viewModel.auth.getPersistedAccountEmail().orEmpty()
                 else -> ""
             },
@@ -365,7 +365,7 @@ internal fun SpreadsheetDestEditForm(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
-            SpreadsheetProvider.EXCEL -> {
+            SpreadsheetProvider.EXCEL_GRAPH -> {
                 val activity = context as? ComponentActivity
                 OutlinedButton(
                     onClick = {
@@ -486,7 +486,7 @@ internal fun SpreadsheetDestEditForm(
                     )
                 }
             }
-            SpreadsheetProvider.EXCEL -> {
+            SpreadsheetProvider.EXCEL_GRAPH -> {
                 OutlinedTextField(
                     value = targetId,
                     onValueChange = { targetId = it },
