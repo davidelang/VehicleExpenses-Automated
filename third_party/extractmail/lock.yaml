@@ -1,0 +1,13 @@
+# Bootstrap lock — update git_sha / git_describe / artifacts when first real pin lands.
+name: extractmail
+git_ssh: "git@github.com:davidelang/extractmail.git"
+git_https: "https://github.com/davidelang/extractmail.git"
+git_sha: "TBD"
+git_describe: "TBD"
+artifacts: []
+# Example when M1 AAR exists:
+# artifacts:
+#   - path: artifact/extractmail.aar
+#     sha256: ""
+#     build: ./build
+consumer_note: "Churning first-party mail extract pipeline. Host ~/git/extractmail. Will pin remotetable separately inside its own repo later."

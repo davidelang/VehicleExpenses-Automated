@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# third_party/fetch-deps — materialize first-party / rebuild dependency sources.
+# Coding standard: long options only for user-facing flags (getopt).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODE_EDITABLE=1
+DO_BUILD=0
+DO_ALL=0
+NAMES=()
+
+usage() {
+  cat <<'EOF'
+Usage: third_party/fetch-deps [options] [NAME ...]
+
+  Fetch (default) or fetch+build sources for third_party/<NAME>/ entries.
+
+Options:
+  --all              Process every third_party/* directory that contains lock.yaml
+  --editable         Use SSH URLs from lock (default; pushable)
+  --readonly         Use HTTPS URLs from lock (audit / no SSH key)
+  --build            After fetch, exec build script(s) listed in lock / ./build
+  --worktree-search  PATH[:PATH...]  Prefer local clones for worktree attach (future)
+  -h, --help         This help
+
+Names may include shell globs relative to third_party/ (e.g. remote*).
+Default with no names and without --all: error (refuse to guess).
+
+Lock identity is authoritative (git_sha). Transport is selected by --editable/--readonly.
+Default materialization: git submodule (see docs/reference/FIRST_PARTY_LIBS.md).
+EOF
+}
+
+# Portable-ish long opts
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --all) DO_ALL=1; shift ;;
+    --editable) MODE_EDITABLE=1; shift ;;
+    --readonly) MODE_EDITABLE=0; shift ;;
+    --build) DO_BUILD=1; shift ;;
+    --worktree-search)
+      WORKTREE_SEARCH="${2:-}"
+      shift 2 || { echo "fetch-deps: --worktree-search needs PATH" >&2; exit 2; }
+      ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*)
+      echo "fetch-deps: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *) NAMES+=("$1"); shift ;;
+  esac
+done
+
+while [[ $# -gt 0 ]]; do NAMES+=("$1"); shift; done
+
+if [[ "$DO_ALL" -eq 1 ]]; then
+  NAMES=()
+  for d in "$ROOT"/*/; do
+    [[ -f "${d}lock.yaml" ]] || continue
+    NAMES+=("$(basename "$d")")
+  done
+fi
+
+if [[ ${#NAMES[@]} -eq 0 ]]; then
+  echo "fetch-deps: pass NAME(s) or --all" >&2
+  usage >&2
+  exit 2
+fi
+
+# Expand globs against third_party children
+EXPANDED=()
+for n in "${NAMES[@]}"; do
+  if [[ "$n" == *[\*\?]* ]]; then
+    matches=("$ROOT"/$n)
+    for m in "${matches[@]}"; do
+      [[ -d "$m" && -f "$m/lock.yaml" ]] && EXPANDED+=("$(basename "$m")")
+    done
+  else
+    EXPANDED+=("$n")
+  fi
+done
+
+url_field() {
+  if [[ "$MODE_EDITABLE" -eq 1 ]]; then echo git_ssh; else echo git_https; fi
+}
+
+# Minimal YAML field grab (key: value); good enough for bootstrap locks
+yaml_get() {
+  local file="$1" key="$2"
+  sed -n "s/^${key}:[[:space:]]*//p" "$file" | head -1 | sed 's/^["'\'']//;s/["'\'']$//'
+}
+
+fetch_one() {
+  local name="$1"
+  local dir="$ROOT/$name"
+  local lock="$dir/lock.yaml"
+  if [[ ! -f "$lock" ]]; then
+    echo "fetch-deps: skip $name (no lock.yaml)" >&2
+    return 1
+  fi
+  local field sha url
+  field="$(url_field)"
+  url="$(yaml_get "$lock" "$field")"
+  sha="$(yaml_get "$lock" git_sha)"
+  echo "==> $name  mode=$([[ $MODE_EDITABLE -eq 1 ]] && echo editable/ssh || echo readonly/https)"
+  echo "    url=$url"
+  echo "    sha=${sha:-'(unset — bootstrap stub)'}"
+
+  if [[ -z "$url" || "$url" == "null" || "$url" == '""' ]]; then
+    echo "    WARN: no $field in lock; nothing to fetch yet" >&2
+    return 0
+  fi
+
+  # Prefer submodule if registered
+  if [[ -f "$ROOT/../.gitmodules" ]] && grep -q "third_party/$name/src" "$ROOT/../.gitmodules" 2>/dev/null; then
+    echo "    submodule update third_party/$name/src"
+    git -C "$ROOT/.." submodule update --init -- "third_party/$name/src" || true
+    if [[ -n "$sha" && "$sha" != "null" && "$sha" != "TBD" && -d "$dir/src/.git" || -f "$dir/src/.git" ]]; then
+      git -C "$dir/src" fetch --all --tags 2>/dev/null || true
+      git -C "$dir/src" checkout "$sha" 2>/dev/null || echo "    WARN: checkout $sha failed (pin not on remote yet?)"
+    fi
+    return 0
+  fi
+
+  # Optional: non-submodule checkout into src/ (gitignored) — only with explicit env
+  if [[ "${FETCH_DEPS_ALLOW_PLAIN_CHECKOUT:-0}" == "1" ]]; then
+    mkdir -p "$dir/src"
+    if [[ ! -d "$dir/src/.git" ]]; then
+      git clone "$url" "$dir/src"
+    fi
+    if [[ -n "$sha" && "$sha" != "TBD" ]]; then
+      git -C "$dir/src" fetch --all --tags 2>/dev/null || true
+      git -C "$dir/src" checkout "$sha"
+    fi
+    return 0
+  fi
+
+  echo "    NOTE: no submodule registered yet for third_party/$name/src"
+  echo "    After first real pin: git submodule add <url> third_party/$name/src && pin sha in lock.yaml"
+  echo "    For plain gitignored checkout: FETCH_DEPS_ALLOW_PLAIN_CHECKOUT=1 $0 $name"
+}
+
+build_one() {
+  local name="$1"
+  local dir="$ROOT/$name"
+  local lock="$dir/lock.yaml"
+  local build_scripts=()
+  if [[ -x "$dir/build" ]]; then build_scripts+=("$dir/build"); fi
+  # artifacts[].build lines (simple)
+  while IFS= read -r line; do
+    case "$line" in
+      *build:*)
+        b="$(echo "$line" | sed -n 's/.*build:[[:space:]]*//p' | tr -d '"'"'")"
+        [[ -n "$b" && -x "$dir/${b#./}" ]] && build_scripts+=("$dir/${b#./}")
+        [[ -n "$b" && -x "$dir/$b" ]] && build_scripts+=("$dir/$b")
+        ;;
+    esac
+  done < "$lock" 2>/dev/null || true
+
+  if [[ ${#build_scripts[@]} -eq 0 ]]; then
+    echo "    no executable build script for $name"
+    return 0
+  fi
+  # unique
+  local seen="" s
+  for s in "${build_scripts[@]}"; do
+    [[ "$seen" == *"|$s|"* ]] && continue
+    seen+="|$s|"
+    echo "    exec $s"
+    ( cd "$dir" && exec "$s" )
+  done
+}
+
+for name in "${EXPANDED[@]}"; do
+  fetch_one "$name" || true
+  if [[ "$DO_BUILD" -eq 1 ]]; then
+    build_one "$name" || true
+  fi
+done
+
+echo "fetch-deps done (fetch-only=$([[ $DO_BUILD -eq 0 ]] && echo yes || echo no))."

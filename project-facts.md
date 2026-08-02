@@ -113,3 +113,12 @@ Read in full early on startup/new cycle to avoid find/discovery commands.
 - First-run onboarding: route `onboarding` when `forUserPicker()` empty (re-shows until first user vehicle); tutorials `tutorial/tutorial_add_vehicle` + `tutorial/tutorial_setup_sync` (`ui/onboarding/`, assets `app/src/main/assets/tutorials/`); also Help + Settings
 
 Update only with new stable location facts valid for future unrelated work. Current-effort details go in the active plan or ENGINEERING_LOG.md.
+## First-party libraries / third_party (email-connection)
+
+- Policy SoT: `docs/reference/FIRST_PARTY_LIBS.md`
+- Agent handoff: `docs/reference/THIRD_PARTY_LAYOUT_FOR_AGENTS.md`
+- Layout: `third_party/{remotetable,extractmail,rclone,paddle}/` + `third_party/fetch-deps`
+- Library hosts: `~/git/remotetable`, `~/git/extractmail` (orchestration + `master/` worktree + `sandbox/`)
+- GitHub: `davidelang/remotetable`, `davidelang/extractmail` (public, MIT, SSH remotes)
+- Pull model: libs do not push into VE; bump lock + artifact + submodule when app needs update
+- Sandbox paddle/rclone build trees remain until all worktrees past this branch merge

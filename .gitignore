@@ -116,3 +116,6 @@ gha-creds-*.json
 # Permission config (real values, gitignored)
 project.config
 
+
+# third_party: plain checkouts only (submodule gitlinks are tracked as mode 160000)
+third_party/*/src/

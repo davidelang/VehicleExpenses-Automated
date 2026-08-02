@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Build recipe for this third_party pin. fetch-deps --build execs this with cwd here.
+set -euo pipefail
+echo "$(basename "$(pwd)"): build stub — replace with real recipe (AAR/JAR/native)."
+echo "See SOURCE.md and docs/reference/FIRST_PARTY_LIBS.md"
+exit 0

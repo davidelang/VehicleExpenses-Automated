@@ -1,0 +1,13 @@
+# Bootstrap lock — update git_sha / git_describe / artifacts when first real pin lands.
+name: paddle
+git_ssh: ""
+git_https: ""
+git_sha: "TBD"
+git_describe: "TBD"
+artifacts: []
+# Example when M1 AAR exists:
+# artifacts:
+#   - path: artifact/paddle.aar
+#     sha256: ""
+#     build: ./build
+consumer_note: "Paddle special: meta+Docker build info; no docker images in git; patched sources via submodule when URL known. Set git_ssh/git_https to patched fork when published; build drives Docker recipes (no images in git)."
