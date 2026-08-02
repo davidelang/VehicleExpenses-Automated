@@ -1,56 +1,12 @@
 #!/bin/bash
-# run-grok-master — top-level Master (coordinate, execute dispatch, local PR merge).
-# Session prompt = compose of new_agent_prompt + role-master.md (no embedded policy novels).
-# On "New planning cycle", master should write planner pack via compose (see role-master.md).
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SANDBOX_DIR="$SCRIPT_DIR/@@SANDBOX_PATH@@"
-COMPOSE="$SCRIPT_DIR/.grok/prompts/compose-session-prompt.sh"
-if [ -f project.config ]; then
-  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(coder_user|master_user|GROK_BIN)')
-fi
-# Master typically runs as @@CODE_GROUP@@r in this project (merge/build); allow override
-MASTER_USER=${master_user:-${coder_user:-@@CODE_GROUP@@r}}
-GROK_BIN="${GROK_BIN:-@@GROK_BIN_DEFAULT@@}"
-
-umask 002
-
-ANDROID_SHARED=""
-if [ -d "$SCRIPT_DIR/.android-shared" ]; then
-  ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
-elif [ -d "$SCRIPT_DIR/../.android-shared" ]; then
-  ANDROID_SHARED="$(cd "$SCRIPT_DIR/.." && pwd)/.android-shared"
-fi
-
-echo "Launching Master Grok in $(pwd)..."
-echo "Grok binary: $GROK_BIN"
-echo "Sandbox path: $SANDBOX_DIR"
-echo "Running as: $MASTER_USER (via sudo -u)"
-echo "Prompt pack: new_agent_prompt + .grok/prompts/role-master.md"
-[ -n "$ANDROID_SHARED" ] && echo "ANDROID_USER_HOME: $ANDROID_SHARED"
-echo "Tip: Ctrl+M or /multiline for multi-line input."
-
-TODO_GATE_FLAGS=""
-if [ "${GROK_TODO_GATE:-0}" = "1" ] || [ "${GROK_TODO_GATE:-0}" = "true" ]; then
-  TODO_GATE_FLAGS="--todo-gate"
-fi
-
-EXTRA_ARGS=()
-FOUND_DD=0
-for arg in "$@"; do
-  if [ "$FOUND_DD" -eq 1 ]; then
-    EXTRA_ARGS+=("$arg")
-  elif [ "$arg" = "--" ]; then
-    FOUND_DD=1
-  fi
-done
-
-export GROK_PROMPT_ROOT="$SCRIPT_DIR"
-PROMPT="$("$COMPOSE" new_agent_prompt .grok/prompts/role-master.md)"
-
-exec sudo -u "$MASTER_USER" -- env ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} GROK_PROMPT_ROOT="$SCRIPT_DIR" bash -c 'umask 002; exec "$@"' bash \
-    "$GROK_BIN" \
-    "$PROMPT" \
-    $TODO_GATE_FLAGS \
-    --no-alt-screen \
-    "${EXTRA_ARGS[@]}"
+# run-grok-master — generic multi-agent launcher (no project rules in this file).
+# Rules: files listed in .grok/prompts/packs/master.pack
+# Same script body is used across VehicleExpenses and library hosts.
+set -euo pipefail
+GROK_LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export GROK_LAUNCHER_DIR
+ROLE_KEY=master
+export ROLE_KEY
+# shellcheck source=/dev/null
+source "$GROK_LAUNCHER_DIR/.grok/lib/grok-launch-common.sh"
+grok_launch_main "$@"
