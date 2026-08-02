@@ -46,3 +46,12 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] Create `docs/reference/OCR_ENGINE_STRATEGY.md`
 - [ ] Create `docs/reference/ALIGNMENT_PIPELINE.md`
 - [ ] **NDK as git subproject:** migrate standalone NDK tree to tracked `ndk/` subproject with pinned revision
+# Future work
+
+Git LFS on GitHub for VE large third_party artifacts (see third-party design)
+
+third_party: if artifact missing/unreadable, rebuild from source (build policy)
+
+Prototype bubblewrap write-sandbox for third_party builds (docs/reference/WRITE_SANDBOX_OPTIONS.md)
+
+Future: separate checkifclean H×D presets for main app vs third_party

@@ -47,3 +47,10 @@ Read in full early on startup/new cycle.
 - See `docs/specs/PERMISSIONS_MODEL.md`
 
 Update only with orientation facts valid for future work. Effort/plan details → plan file or ENGINEERING_LOG.
+
+## First-party libraries (orchestration note)
+
+- Tracked policy after agent-4 bootstrap commit: `docs/reference/FIRST_PARTY_LIBS.md` on **email-connection** / master once merged
+- Library hosts: `~/git/remotetable`, `~/git/extractmail`
+- One-shot bootstrap: `bootstrap-first-party-libs.sh` + `bootstrap-first-party-libs.d/` (untracked historical)
+- Staging leftovers: `dev-ai-interaction/subprojects/` until cleaned post-merge

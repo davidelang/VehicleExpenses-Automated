@@ -402,3 +402,21 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - Kept reports-efficiency plan (agent-1 still defers multi-select from it)
 - Rule: open TODO protects plan; obsolete plan → close TODO then archive
 
+
+## 2026-08-02 - third_party fetch-deps redesign execute start
+
+- Approved plan: dev-ai-interaction/plans/third-party-fetch-deps-and-infra-gaps-20260802-1145-plan.md
+- Status: APPROVED — begin phased implementation (ro/rw fetch-deps, checkifclean, infra gaps)
+- Branch context: tools target email-connection (agent-4); orch session driving implementation
+
+
+## 2026-08-02 - third_party plan execute complete (dlang script)
+
+- Plan: third-party-fetch-deps-and-infra-gaps-20260802-1145-plan.md → CODE LANDED
+- agent-4: 2a5a111e fetch-deps ro/rw/status/refresh/upgrade + checkifclean
+- orch: ef75a7ab remove_worktree third_party src cleanup
+- libs: setup_agent/update-rules/remove_worktree on remotetable+extractmail orchestration
+- verify RESULT=READY; ai-coder fetch-deps status OK; pins 94164ff / d375188 ro
+- checkifclean mid-run saw VE dirty (expected before commits); re-check after commit if needed
+- No push (human)
+
