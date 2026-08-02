@@ -2,8 +2,8 @@
 name: extractmail
 git_ssh: "git@github.com:davidelang/extractmail.git"
 git_https: "https://github.com/davidelang/extractmail.git"
-git_sha: "TBD"
-git_describe: "TBD"
+git_sha: "d19dc3136c90ad82de6f982e6cb608e46c96f061"
+git_describe: "d19dc31"
 artifacts: []
 # Example when M1 AAR exists:
 # artifacts:

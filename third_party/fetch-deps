@@ -1,13 +1,27 @@
 #!/usr/bin/env bash
 # third_party/fetch-deps — materialize first-party / rebuild dependency sources.
-# Coding standard: long options only for user-facing flags (getopt).
+# Coding standard: long options only for user-facing flags.
+#
+# Default (fetch-only): populate third_party/<name>/src when a URL is set.
+#   - Prefer existing git submodule if registered in .gitmodules
+#   - Else clone into gitignored src/ (or update checkout)
+#   - Resolve git_sha TBD via local $GIT_HOME/<name> master, else ls-remote
+# Agents do not push; human publishes.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VE_ROOT="$(cd "$ROOT/.." && pwd)"
 MODE_EDITABLE=1
 DO_BUILD=0
 DO_ALL=0
+WRITE_LOCK=0
+DO_SUBMODULE=0
+PREFER_WORKTREE=0
+WORKTREE_SEARCH="${WORKTREE_SEARCH:-}"
+GIT_HOME="${GIT_HOME:-$HOME/git}"
+ALL_SKIP_DEFAULT=(rclone paddle)
 NAMES=()
+FAILURES=0
 
 usage() {
   cat <<'EOF'
@@ -16,31 +30,38 @@ Usage: third_party/fetch-deps [options] [NAME ...]
   Fetch (default) or fetch+build sources for third_party/<NAME>/ entries.
 
 Options:
-  --all              Process every third_party/* directory that contains lock.yaml
-  --editable         Use SSH URLs from lock (default; pushable)
-  --readonly         Use HTTPS URLs from lock (audit / no SSH key)
-  --build            After fetch, exec build script(s) listed in lock / ./build
-  --worktree-search  PATH[:PATH...]  Prefer local clones for worktree attach (future)
-  -h, --help         This help
+  --all                 Process third_party/* with lock.yaml (skips rclone/paddle
+                        unless named explicitly; skips empty URL)
+  --editable            Use SSH URLs from lock (default)
+  --readonly            Use HTTPS URLs from lock
+  --build               After fetch, exec ./build if present
+  --write-lock          Write resolved git_sha / git_describe into lock.yaml
+  --submodule           git submodule add/update (records gitlink)
+  --prefer-worktree     Prefer worktree from $GIT_HOME/<name> or --worktree-search
+  --worktree-search P   Colon-separated extra roots for local clones
+  --git-home DIR        Default parent for local clones (default: $HOME/git)
+  -h, --help            This help
 
-Names may include shell globs relative to third_party/ (e.g. remote*).
-Default with no names and without --all: error (refuse to guess).
-
-Lock identity is authoritative (git_sha). Transport is selected by --editable/--readonly.
-Default materialization: git submodule (see docs/reference/FIRST_PARTY_LIBS.md).
+Exit 1 if any named lib fails to materialize (empty-URL skips do not count).
 EOF
 }
 
-# Portable-ish long opts
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --all) DO_ALL=1; shift ;;
     --editable) MODE_EDITABLE=1; shift ;;
     --readonly) MODE_EDITABLE=0; shift ;;
     --build) DO_BUILD=1; shift ;;
+    --write-lock) WRITE_LOCK=1; shift ;;
+    --submodule) DO_SUBMODULE=1; shift ;;
+    --prefer-worktree) PREFER_WORKTREE=1; shift ;;
     --worktree-search)
       WORKTREE_SEARCH="${2:-}"
       shift 2 || { echo "fetch-deps: --worktree-search needs PATH" >&2; exit 2; }
+      ;;
+    --git-home)
+      GIT_HOME="${2:-}"
+      shift 2 || { echo "fetch-deps: --git-home needs DIR" >&2; exit 2; }
       ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
@@ -52,14 +73,19 @@ while [[ $# -gt 0 ]]; do
     *) NAMES+=("$1"); shift ;;
   esac
 done
-
 while [[ $# -gt 0 ]]; do NAMES+=("$1"); shift; done
 
 if [[ "$DO_ALL" -eq 1 ]]; then
   NAMES=()
   for d in "$ROOT"/*/; do
     [[ -f "${d}lock.yaml" ]] || continue
-    NAMES+=("$(basename "$d")")
+    base="$(basename "$d")"
+    skip=0
+    for s in "${ALL_SKIP_DEFAULT[@]}"; do
+      [[ "$base" == "$s" ]] && skip=1 && break
+    done
+    [[ "$skip" -eq 1 ]] && continue
+    NAMES+=("$base")
   done
 fi
 
@@ -69,12 +95,10 @@ if [[ ${#NAMES[@]} -eq 0 ]]; then
   exit 2
 fi
 
-# Expand globs against third_party children
 EXPANDED=()
 for n in "${NAMES[@]}"; do
   if [[ "$n" == *[\*\?]* ]]; then
-    matches=("$ROOT"/$n)
-    for m in "${matches[@]}"; do
+    for m in "$ROOT"/$n; do
       [[ -d "$m" && -f "$m/lock.yaml" ]] && EXPANDED+=("$(basename "$m")")
     done
   else
@@ -82,95 +106,213 @@ for n in "${NAMES[@]}"; do
   fi
 done
 
-url_field() {
-  if [[ "$MODE_EDITABLE" -eq 1 ]]; then echo git_ssh; else echo git_https; fi
-}
-
-# Minimal YAML field grab (key: value); good enough for bootstrap locks
 yaml_get() {
   local file="$1" key="$2"
   sed -n "s/^${key}:[[:space:]]*//p" "$file" | head -1 | sed 's/^["'\'']//;s/["'\'']$//'
 }
 
+url_field() {
+  if [[ "$MODE_EDITABLE" -eq 1 ]]; then echo git_ssh; else echo git_https; fi
+}
+
+is_real_sha() {
+  local s="${1:-}"
+  [[ -n "$s" && "$s" != "TBD" && "$s" != "null" && "$s" != '""' && "$s" =~ ^[0-9a-fA-F]{7,40}$ ]]
+}
+
+local_repo_for() {
+  local name="$1" p
+  if [[ -d "$GIT_HOME/$name/.git" || -f "$GIT_HOME/$name/.git" ]]; then
+    echo "$GIT_HOME/$name"
+    return 0
+  fi
+  if [[ -n "$WORKTREE_SEARCH" ]]; then
+    local IFS=':'
+    for p in $WORKTREE_SEARCH; do
+      [[ -z "$p" ]] && continue
+      if [[ -d "$p/$name/.git" || -f "$p/$name/.git" ]]; then
+        echo "$p/$name"
+        return 0
+      fi
+      if [[ "$(basename "$p")" == "$name" && ( -d "$p/.git" || -f "$p/.git" ) ]]; then
+        echo "$p"
+        return 0
+      fi
+    done
+  fi
+  return 1
+}
+
+resolve_sha() {
+  local name="$1" lock="$2" url="$3"
+  local pinned host ref
+  pinned="$(yaml_get "$lock" git_sha)"
+  if is_real_sha "$pinned"; then
+    RESOLVED_SHA="$pinned"
+    RESOLVED_DESCRIBE="$(yaml_get "$lock" git_describe)"
+    [[ -n "$RESOLVED_DESCRIBE" && "$RESOLVED_DESCRIBE" != "TBD" ]] || RESOLVED_DESCRIBE="$RESOLVED_SHA"
+    return 0
+  fi
+  if host="$(local_repo_for "$name")"; then
+    RESOLVED_SHA="$(git -C "$host" rev-parse master 2>/dev/null || git -C "$host" rev-parse HEAD)"
+    RESOLVED_DESCRIBE="$(git -C "$host" describe --tags --long --always master 2>/dev/null \
+      || git -C "$host" describe --tags --long --always HEAD 2>/dev/null \
+      || echo "$RESOLVED_SHA")"
+    return 0
+  fi
+  ref="$(git ls-remote "$url" "refs/heads/master" 2>/dev/null | awk '{print $1}')"
+  [[ -n "$ref" ]] || ref="$(git ls-remote "$url" "refs/heads/main" 2>/dev/null | awk '{print $1}')"
+  [[ -n "$ref" ]] || return 1
+  RESOLVED_SHA="$ref"
+  RESOLVED_DESCRIBE="$ref"
+  return 0
+}
+
+write_lock_sha() {
+  local lock="$1" sha="$2" describe="$3" tmp
+  tmp="$(mktemp)"
+  awk -v sha="$sha" -v desc="$describe" '
+    /^git_sha:/ { print "git_sha: \"" sha "\""; next }
+    /^git_describe:/ { print "git_describe: \"" desc "\""; next }
+    { print }
+  ' "$lock" >"$tmp"
+  mv "$tmp" "$lock"
+}
+
+submodule_registered() {
+  local name="$1"
+  [[ -f "$VE_ROOT/.gitmodules" ]] && grep -q "third_party/$name/src" "$VE_ROOT/.gitmodules" 2>/dev/null
+}
+
+materialize_submodule() {
+  local name="$1"
+  local url="$2"
+  local sha="$3"
+  local rel="third_party/$name/src"
+  (
+    cd "$VE_ROOT"
+    if submodule_registered "$name"; then
+      git submodule update --init -- "$rel"
+    else
+      [[ -e "$ROOT/$name/src" ]] && rm -rf "$ROOT/$name/src"
+      git submodule add "$url" "$rel"
+    fi
+    git -C "$ROOT/$name/src" fetch --all --tags 2>/dev/null || true
+    git -C "$ROOT/$name/src" checkout "$sha"
+  )
+}
+
+materialize_worktree() {
+  local name="$1" sha="$2" host src br="ve-third-party-src"
+  host="$(local_repo_for "$name")" || return 1
+  src="$ROOT/$name/src"
+  if [[ -d "$src" || -e "$src" ]]; then
+    git -C "$host" worktree remove --force "$src" 2>/dev/null || rm -rf "$src"
+  fi
+  if git -C "$host" show-ref --verify --quiet "refs/heads/$br"; then
+    git -C "$host" branch -f "$br" "$sha"
+  else
+    git -C "$host" branch "$br" "$sha"
+  fi
+  git -C "$host" worktree add "$src" "$br"
+}
+
+materialize_clone() {
+  local name="$1"
+  local url="$2"
+  local sha="$3"
+  local src="$ROOT/$name/src"
+  if [[ -d "$src/.git" || -f "$src/.git" ]]; then
+    git -C "$src" remote set-url origin "$url" 2>/dev/null || true
+    git -C "$src" fetch --all --tags
+    git -C "$src" checkout "$sha" 2>/dev/null \
+      || { git -C "$src" fetch origin "$sha" && git -C "$src" checkout "$sha"; }
+    return 0
+  fi
+  rm -rf "$src"
+  git clone "$url" "$src"
+  git -C "$src" checkout "$sha" 2>/dev/null \
+    || { git -C "$src" fetch origin "$sha" && git -C "$src" checkout "$sha"; }
+}
+
 fetch_one() {
+  # Separate locals: bash set -u rejects "local a=1 b=$a" style (right-hand uses unbound left).
   local name="$1"
   local dir="$ROOT/$name"
   local lock="$dir/lock.yaml"
+  local field url
   if [[ ! -f "$lock" ]]; then
-    echo "fetch-deps: skip $name (no lock.yaml)" >&2
+    echo "fetch-deps: FAIL $name (no lock.yaml)" >&2
+    FAILURES=$((FAILURES + 1))
     return 1
   fi
-  local field sha url
+
   field="$(url_field)"
   url="$(yaml_get "$lock" "$field")"
-  sha="$(yaml_get "$lock" git_sha)"
+  if [[ -z "$url" || "$url" == "null" ]]; then
+    if [[ "$field" == "git_ssh" ]]; then url="$(yaml_get "$lock" git_https)"
+    else url="$(yaml_get "$lock" git_ssh)"; fi
+  fi
+
   echo "==> $name  mode=$([[ $MODE_EDITABLE -eq 1 ]] && echo editable/ssh || echo readonly/https)"
+
+  if [[ -z "$url" || "$url" == "null" ]]; then
+    echo "    SKIP: no URL in lock"
+    return 0
+  fi
   echo "    url=$url"
-  echo "    sha=${sha:-'(unset — bootstrap stub)'}"
 
-  if [[ -z "$url" || "$url" == "null" || "$url" == '""' ]]; then
-    echo "    WARN: no $field in lock; nothing to fetch yet" >&2
-    return 0
+  if ! resolve_sha "$name" "$lock" "$url"; then
+    echo "    FAIL: cannot resolve git_sha" >&2
+    FAILURES=$((FAILURES + 1))
+    return 1
+  fi
+  echo "    sha=$RESOLVED_SHA describe=$RESOLVED_DESCRIBE"
+
+  if [[ "$WRITE_LOCK" -eq 1 ]]; then
+    write_lock_sha "$lock" "$RESOLVED_SHA" "$RESOLVED_DESCRIBE"
+    echo "    wrote lock.yaml pins"
   fi
 
-  # Prefer submodule if registered
-  if [[ -f "$ROOT/../.gitmodules" ]] && grep -q "third_party/$name/src" "$ROOT/../.gitmodules" 2>/dev/null; then
-    echo "    submodule update third_party/$name/src"
-    git -C "$ROOT/.." submodule update --init -- "third_party/$name/src" || true
-    if [[ -n "$sha" && "$sha" != "null" && "$sha" != "TBD" && -d "$dir/src/.git" || -f "$dir/src/.git" ]]; then
-      git -C "$dir/src" fetch --all --tags 2>/dev/null || true
-      git -C "$dir/src" checkout "$sha" 2>/dev/null || echo "    WARN: checkout $sha failed (pin not on remote yet?)"
+  if submodule_registered "$name" || [[ "$DO_SUBMODULE" -eq 1 ]]; then
+    echo "    materialize: submodule"
+    if materialize_submodule "$name" "$url" "$RESOLVED_SHA"; then
+      echo "    OK $name/src @ $(git -C "$dir/src" rev-parse --short HEAD)"
+      return 0
     fi
-    return 0
+    echo "    FAIL submodule" >&2
+    FAILURES=$((FAILURES + 1))
+    return 1
   fi
 
-  # Optional: non-submodule checkout into src/ (gitignored) — only with explicit env
-  if [[ "${FETCH_DEPS_ALLOW_PLAIN_CHECKOUT:-0}" == "1" ]]; then
-    mkdir -p "$dir/src"
-    if [[ ! -d "$dir/src/.git" ]]; then
-      git clone "$url" "$dir/src"
+  if [[ "$PREFER_WORKTREE" -eq 1 ]] && local_repo_for "$name" >/dev/null 2>&1; then
+    echo "    materialize: worktree"
+    if materialize_worktree "$name" "$RESOLVED_SHA"; then
+      echo "    OK $name/src worktree @ $(git -C "$dir/src" rev-parse --short HEAD)"
+      return 0
     fi
-    if [[ -n "$sha" && "$sha" != "TBD" ]]; then
-      git -C "$dir/src" fetch --all --tags 2>/dev/null || true
-      git -C "$dir/src" checkout "$sha"
-    fi
-    return 0
+    echo "    worktree failed — clone fallback"
   fi
 
-  echo "    NOTE: no submodule registered yet for third_party/$name/src"
-  echo "    After first real pin: git submodule add <url> third_party/$name/src && pin sha in lock.yaml"
-  echo "    For plain gitignored checkout: FETCH_DEPS_ALLOW_PLAIN_CHECKOUT=1 $0 $name"
+  echo "    materialize: clone"
+  if materialize_clone "$name" "$url" "$RESOLVED_SHA"; then
+    echo "    OK $name/src @ $(git -C "$dir/src" rev-parse --short HEAD)"
+    return 0
+  fi
+  echo "    FAIL clone" >&2
+  FAILURES=$((FAILURES + 1))
+  return 1
 }
 
 build_one() {
   local name="$1"
   local dir="$ROOT/$name"
-  local lock="$dir/lock.yaml"
-  local build_scripts=()
-  if [[ -x "$dir/build" ]]; then build_scripts+=("$dir/build"); fi
-  # artifacts[].build lines (simple)
-  while IFS= read -r line; do
-    case "$line" in
-      *build:*)
-        b="$(echo "$line" | sed -n 's/.*build:[[:space:]]*//p' | tr -d '"'"'")"
-        [[ -n "$b" && -x "$dir/${b#./}" ]] && build_scripts+=("$dir/${b#./}")
-        [[ -n "$b" && -x "$dir/$b" ]] && build_scripts+=("$dir/$b")
-        ;;
-    esac
-  done < "$lock" 2>/dev/null || true
-
-  if [[ ${#build_scripts[@]} -eq 0 ]]; then
-    echo "    no executable build script for $name"
-    return 0
+  if [[ -x "$dir/build" ]]; then
+    echo "    exec ./build"
+    ( cd "$dir" && ./build ) || { echo "    FAIL build" >&2; FAILURES=$((FAILURES + 1)); }
+  else
+    echo "    no executable ./build"
   fi
-  # unique
-  local seen="" s
-  for s in "${build_scripts[@]}"; do
-    [[ "$seen" == *"|$s|"* ]] && continue
-    seen+="|$s|"
-    echo "    exec $s"
-    ( cd "$dir" && exec "$s" )
-  done
 }
 
 for name in "${EXPANDED[@]}"; do
@@ -180,4 +322,5 @@ for name in "${EXPANDED[@]}"; do
   fi
 done
 
-echo "fetch-deps done (fetch-only=$([[ $DO_BUILD -eq 0 ]] && echo yes || echo no))."
+echo "fetch-deps done (failures=$FAILURES)."
+[[ "$FAILURES" -eq 0 ]]

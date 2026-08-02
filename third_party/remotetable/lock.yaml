@@ -2,8 +2,8 @@
 name: remotetable
 git_ssh: "git@github.com:davidelang/remotetable.git"
 git_https: "https://github.com/davidelang/remotetable.git"
-git_sha: "TBD"
-git_describe: "TBD"
+git_sha: "adfe8419cc909fd6b372e94a938bcff8853672fd"
+git_describe: "adfe841"
 artifacts: []
 # Example when M1 AAR exists:
 # artifacts:
