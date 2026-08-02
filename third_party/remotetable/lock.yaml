@@ -2,8 +2,8 @@
 name: remotetable
 git_ssh: "git@github.com:davidelang/remotetable.git"
 git_https: "https://github.com/davidelang/remotetable.git"
-git_sha: "adfe8419cc909fd6b372e94a938bcff8853672fd"
-git_describe: "adfe841"
+git_sha: "94164ff332ba4c58b52a61c4ee58e6b7e884b7dc"
+git_describe: "94164ff"
 artifacts: []
 # Example when M1 AAR exists:
 # artifacts:
@@ -11,3 +11,13 @@ artifacts: []
 #     sha256: ""
 #     build: ./build
 consumer_note: "M1 mock conformance on host 2026-08-02; pin TBD until dlang commits library + AAR"
+
+# Schema (pin contract only — mode lives in status.local):
+# track_branch: master          # optional; for refresh semantics
+# artifacts:
+#   - path: artifact/NAME.aar   # tracked under third_party/<lib>/
+#     from_src: build/out.aar   # relative to src/ after ./build
+#     sha256: ""
+# patches:                      # files under patches/ applied after clean checkout, before ro chmod
+#   - path: patches/001-foo.patch
+# build: ./build

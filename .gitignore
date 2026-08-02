@@ -119,3 +119,5 @@ project.config
 
 # third_party: plain checkouts only (submodule gitlinks are tracked as mode 160000)
 third_party/*/src/
+third_party/*/status.local
+third_party/*/*.local

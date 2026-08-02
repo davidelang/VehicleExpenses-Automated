@@ -71,3 +71,14 @@ Until `fetch-deps` fully implements submodule update, use normal git submodule c
 Full rules: **`docs/reference/FIRST_PARTY_LIBS.md`**.  
 Orientation map: **`project-facts.md`**.  
 Bootstrap plan (historical): sandbox `dev-ai-interaction/plans/first-party-libs-third-party-bootstrap-20260802-0320-plan.md` (may not survive; prefer this docs path).
+
+## fetch-deps (agents)
+
+```bash
+./third_party/fetch-deps              # ro pin (default)
+./third_party/fetch-deps status -v
+./third_party/fetch-deps rw           # co-edit on VE branch name — then library PR
+./checkifclean -v --preset agent-4 --gate H3
+```
+
+Do not commit on **ro** trees. Do not edit `~/git/*/agent-N` from this VE agent; use `third_party/*/src` only in **rw** mode, or stay app-only.

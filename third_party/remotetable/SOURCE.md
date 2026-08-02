@@ -1,29 +1,17 @@
-# remotetable — source pin (VehicleExpenses)
+# remotetable — third_party consumer pin (VehicleExpenses)
 
-| Field | Value |
-|-------|--------|
-| Canonical | `git@github.com:davidelang/remotetable.git` |
-| Host | `/home/dlang/git/remotetable` |
-| Lock | `lock.yaml` |
-| Artifact | `artifact/remotetable.aar` (when built) |
+## Modes (`fetch-deps`)
 
-## M1 status (2026-08-02)
+| Command | Meaning |
+|---------|---------|
+| `fetch-deps remotetable` or `fetch-deps ro` | **ro** pin @ lock `git_sha`: patches, then **chmod a-w**. Detached. Do **not** commit here. |
+| `fetch-deps rw remotetable` | **rw** branch default = **current VE branch**, base = lock sha. Writable; library PR then pin promote. |
+| `fetch-deps status` | mode / HEAD / lock / dirty |
+| `fetch-deps refresh` | Explicitly advance pin to library master tip (human) |
+| `fetch-deps upgrade remotetable --ref TAG` | Try ref, build, update artifact + lock |
 
-Library host now has:
+**Develop library-only** under `~/git/remotetable/` — not from a different project's agent-N into VE.
 
-- `spec/OPS.md` + `OVERVIEW.md`
-- Python `RemoteTable` + `MockBackend`; stubs for `google-sheets`, `excel-graph`, `ethercalc`
-- `conformance/harness.py` (mock PASS)
-- Kotlin API sketch under `kotlin/`
-- Go mock package under `go/remotetable/`
+**Agents have no GitHub SSH keys** — fetch uses local `GIT_HOME` or HTTPS.
 
-**Pin still `TBD`:** library `.git` is not writable by `ai-coder` (owner `dlang:dlang`). Human must commit on library host, then set `git_sha` / `git_describe` and commit AAR here.
-
-## Build
-
-```bash
-# on library host after commit:
-python3 conformance/harness.py
-# AAR packaging TBD; third_party/remotetable/build currently stub
-./third_party/remotetable/build
-```
+Policy: `docs/reference/FIRST_PARTY_LIBS.md`, design research note under `dev-ai-interaction/research/third-party-fetch-deps-design-*`.

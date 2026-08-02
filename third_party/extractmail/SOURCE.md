@@ -1,30 +1,17 @@
-# extractmail — source pin (VehicleExpenses)
+# extractmail — third_party consumer pin (VehicleExpenses)
 
-| Field | Value |
-|-------|--------|
-| Canonical | `git@github.com:davidelang/extractmail.git` |
-| Host | `/home/dlang/git/extractmail` |
-| Lock | `lock.yaml` |
-| Artifact | `artifact/extractmail.aar` (when built) |
+## Modes (`fetch-deps`)
 
-## M1 status (2026-08-02)
+| Command | Meaning |
+|---------|---------|
+| `fetch-deps extractmail` or `fetch-deps ro` | **ro** pin @ lock `git_sha`: patches, then **chmod a-w**. Detached. Do **not** commit here. |
+| `fetch-deps rw extractmail` | **rw** branch default = **current VE branch**, base = lock sha. Writable; library PR then pin promote. |
+| `fetch-deps status` | mode / HEAD / lock / dirty |
+| `fetch-deps refresh` | Explicitly advance pin to library master tip (human) |
+| `fetch-deps upgrade extractmail --ref TAG` | Try ref, build, update artifact + lock |
 
-Library host now has:
+**Develop library-only** under `~/git/extractmail/` — not from a different project's agent-N into VE.
 
-- `spec/OVERVIEW.md`, `spec/EXTERNAL.md` (stdin / exit 0/1/2)
-- `extractors/shell-ereceipt.yaml`, `samsclub-fuel.yaml` + `reference-js/`
-- Fixtures + `python/extractmail_stdin.py` + `python/run_goldens.py` (**goldens PASS**)
-- Apps Script under `apps-script/` (same fixtures)
+**Agents have no GitHub SSH keys** — fetch uses local `GIT_HOME` or HTTPS.
 
-**Pin still `TBD`:** library `.git` not writable by `ai-coder`. Human commits on library host, then VE bumps pin + artifact.
-
-## Conformance (host)
-
-```bash
-python3 python/run_goldens.py
-# expects: 144.77/32.036, 52.34/13.12, 136.30/29.069
-```
-
-## VE app
-
-In-app Gmail/IMAP + parsers under `app/.../data/email/` remain until extractmail AAR cutover; new extract features go to extractmail first.
+Policy: `docs/reference/FIRST_PARTY_LIBS.md`, design research note under `dev-ai-interaction/research/third-party-fetch-deps-design-*`.

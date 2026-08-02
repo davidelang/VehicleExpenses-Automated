@@ -150,3 +150,20 @@ After bootstrap on `email-connection`, agents working on email / libs must read:
 3. **`project-facts.md`** pointers
 
 Library-only agents start under `~/git/<lib>/` with that repo’s AGENTS pack.
+
+## fetch-deps modes (implementation)
+
+| Command | Behavior |
+|---------|----------|
+| `fetch-deps` / `fetch-deps ro` | Readonly pin @ lock sha; patches; chmod a-w; `status.local` |
+| `fetch-deps rw` | Branch = VE branch name; base = lock sha; writable |
+| `fetch-deps status [-v\|-vv]` | Checkout state |
+| `fetch-deps refresh` | Advance pin to library master tip (explicit human) |
+| `fetch-deps upgrade NAME --ref REF` | Try ref + build + artifact + lock |
+| `fetch-deps build` | Run `./build`, copy `from_src` → `artifact/` |
+
+Lock file has **no mode**. Mode is `third_party/<lib>/status.local` (gitignored).
+
+Agents: no SSH; use `$GIT_HOME` (default monorepo sibling `…/git`) or HTTPS.
+
+See design: `docs/reference/third-party-fetch-deps-design-20260802.md` (if present) or orchestration research copy.
