@@ -2367,3 +2367,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Branch: location-fixes (baseline location-fixes/builds @ ad20ed0a)
 - Phases 1-4: listNearby APIs; StationPickerDialog + LocationConfirmBlock; wire QF/Trip/Expense save; polish
 
+
+## 2026-08-01 - wrong-station-picker complete
+
+- Phase 1: listFuelStations/listAutoService + LocationLookup.listNearby; nearest = first
+- Phase 2-3: StationPickerDialog; LocationConfirmBlock Wrong station; QF/Expense wire; Trip no picker; save implicit confirmed when place set
+- Phase 4: grepped out Confirm checkbox; project-facts updated
+- Acceptance A1-A8 in plan for device verify
+
