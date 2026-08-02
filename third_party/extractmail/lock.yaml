@@ -10,4 +10,4 @@ artifacts: []
 #   - path: artifact/extractmail.aar
 #     sha256: ""
 #     build: ./build
-consumer_note: "Churning first-party mail extract pipeline. Host ~/git/extractmail. Will pin remotetable separately inside its own repo later."
+consumer_note: "M1 stdin goldens PASS on host 2026-08-02; pin TBD until dlang commits library + artifact"

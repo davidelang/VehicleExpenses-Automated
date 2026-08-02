@@ -10,4 +10,4 @@ artifacts: []
 #   - path: artifact/remotetable.aar
 #     sha256: ""
 #     build: ./build
-consumer_note: "Churning first-party tabular lib. M1 artifact: AAR. Host ~/git/remotetable"
+consumer_note: "M1 mock conformance on host 2026-08-02; pin TBD until dlang commits library + AAR"

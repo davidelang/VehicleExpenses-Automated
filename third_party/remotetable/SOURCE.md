@@ -1,25 +1,29 @@
-# remotetable — third_party pin (VehicleExpenses)
+# remotetable — source pin (VehicleExpenses)
 
-## What this is
+| Field | Value |
+|-------|--------|
+| Canonical | `git@github.com:davidelang/remotetable.git` |
+| Host | `/home/dlang/git/remotetable` |
+| Lock | `lock.yaml` |
+| Artifact | `artifact/remotetable.aar` (when built) |
 
-Consumer-side pin directory for **remotetable** under VehicleExpenses `third_party/`.
+## M1 status (2026-08-02)
 
-- **Policy:** `docs/reference/FIRST_PARTY_LIBS.md`
-- **Agent handoff:** `docs/reference/THIRD_PARTY_LAYOUT_FOR_AGENTS.md`
-- **Lock:** `lock.yaml` (SSH + HTTPS URLs, sha, describe, artifacts)
-- **Build:** executable `build` (and/or `build-*`); run via `../fetch-deps --build remotetable`
-- **Artifact:** stable path under `artifact/` (version only in lock)
-- **Source:** prefer **git submodule** at `src/` matching `git_sha`
+Library host now has:
 
-## Audit (third party)
+- `spec/OPS.md` + `OVERVIEW.md`
+- Python `RemoteTable` + `MockBackend`; stubs for `google-sheets`, `excel-graph`, `ethercalc`
+- `conformance/harness.py` (mock PASS)
+- Kotlin API sketch under `kotlin/`
+- Go mock package under `go/remotetable/`
+
+**Pin still `TBD`:** library `.git` is not writable by `ai-coder` (owner `dlang:dlang`). Human must commit on library host, then set `git_sha` / `git_describe` and commit AAR here.
+
+## Build
 
 ```bash
-./third_party/fetch-deps --readonly remotetable
-# inspect lock.yaml git_sha + src/ tree + artifact/ + this file
+# on library host after commit:
+python3 conformance/harness.py
+# AAR packaging TBD; third_party/remotetable/build currently stub
+./third_party/remotetable/build
 ```
-
-Without reproducible builds, `artifact` sha256 (if present) detects change/tamper, not bit-identical rebuild.
-
-## Bootstrap status
-
-Seed host: ~/git/remotetable. Product seed from sandbox subprojects. No artifact yet (git_sha TBD).

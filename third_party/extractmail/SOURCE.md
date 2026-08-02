@@ -1,25 +1,30 @@
-# extractmail — third_party pin (VehicleExpenses)
+# extractmail — source pin (VehicleExpenses)
 
-## What this is
+| Field | Value |
+|-------|--------|
+| Canonical | `git@github.com:davidelang/extractmail.git` |
+| Host | `/home/dlang/git/extractmail` |
+| Lock | `lock.yaml` |
+| Artifact | `artifact/extractmail.aar` (when built) |
 
-Consumer-side pin directory for **extractmail** under VehicleExpenses `third_party/`.
+## M1 status (2026-08-02)
 
-- **Policy:** `docs/reference/FIRST_PARTY_LIBS.md`
-- **Agent handoff:** `docs/reference/THIRD_PARTY_LAYOUT_FOR_AGENTS.md`
-- **Lock:** `lock.yaml` (SSH + HTTPS URLs, sha, describe, artifacts)
-- **Build:** executable `build` (and/or `build-*`); run via `../fetch-deps --build extractmail`
-- **Artifact:** stable path under `artifact/` (version only in lock)
-- **Source:** prefer **git submodule** at `src/` matching `git_sha`
+Library host now has:
 
-## Audit (third party)
+- `spec/OVERVIEW.md`, `spec/EXTERNAL.md` (stdin / exit 0/1/2)
+- `extractors/shell-ereceipt.yaml`, `samsclub-fuel.yaml` + `reference-js/`
+- Fixtures + `python/extractmail_stdin.py` + `python/run_goldens.py` (**goldens PASS**)
+- Apps Script under `apps-script/` (same fixtures)
+
+**Pin still `TBD`:** library `.git` not writable by `ai-coder`. Human commits on library host, then VE bumps pin + artifact.
+
+## Conformance (host)
 
 ```bash
-./third_party/fetch-deps --readonly extractmail
-# inspect lock.yaml git_sha + src/ tree + artifact/ + this file
+python3 python/run_goldens.py
+# expects: 144.77/32.036, 52.34/13.12, 136.30/29.069
 ```
 
-Without reproducible builds, `artifact` sha256 (if present) detects change/tamper, not bit-identical rebuild.
+## VE app
 
-## Bootstrap status
-
-Seed host: ~/git/extractmail. No artifact yet.
+In-app Gmail/IMAP + parsers under `app/.../data/email/` remain until extractmail AAR cutover; new extract features go to extractmail first.

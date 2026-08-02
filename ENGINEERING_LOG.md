@@ -4316,3 +4316,20 @@ x
 
 
 ## 2026-08-01 - IMAP build gate
+
+## 2026-08-02 - Execute remotetable M1 + extractmail M1 plans
+
+- Plans: remotetable-m1-lib-conformance-ve-pin-20260802-0348 + extractmail-m1-extract-stdin-external-ve-pin-20260802-0348
+- Library hosts: /home/dlang/git/{remotetable,extractmail}
+- Note: ai-coder can write product dirs (ai-sandbox group) but not .git (dlang:dlang) — commits need human unless perms fixed
+- VE third_party pins still TBD until lib commits land
+
+
+## 2026-08-02 - remotetable + extractmail M1 progress (partial)
+
+- Library hosts: product trees updated (ai-sandbox dirs); .git not writable by ai-coder
+- remotetable: Python mock conformance PASS; backend stubs; Kotlin/Go sketches
+- extractmail: YAML types; stdin CLI; goldens PASS (Shell×2 + Sam's)
+- VE third_party: SOURCE/build recipes; lock still git_sha TBD — pin deferred
+- Status: BLOCKED on library git commit permissions for full CODE LANDED pin
+
