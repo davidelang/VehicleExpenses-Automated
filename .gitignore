@@ -34,6 +34,9 @@ kotlin-daemon-*.out
 dev-ai-interaction/
 bin/
 lib/
+# Track Grok pack launcher library (not Android/native lib/)
+!.grok/lib/
+!.grok/lib/**
 
 # Misc
 # Built setuid helpers — DO NOT commit binaries (arch-specific; setuid root cannot
