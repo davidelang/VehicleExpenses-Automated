@@ -20,7 +20,7 @@ This file (AGENTS.md) is the entry point for agent CLIs in this multi-agent Vehi
 
 When **spawning** planner/executor roles, load the full file under `.grok/prompts/` (see AGENT_MANDATES).
 
-**Launchers:** `run-grok*` build the session prompt by composing existing files via `.grok/prompts/compose-session-prompt.sh` (e.g. `new_agent_prompt` + `role-coder.md`). Do not re-author law in shell inject strings.
+**Launchers:** thin `run-grok*` → `.grok/lib/grok-launch-common.sh` + `.grok/prompts/packs/<role>.pack` (compose via `compose-session-prompt.sh`). Same structure on VehicleExpenses and library hosts. Do not re-author law in shell scripts. Sandbox path: `project.config` `sandbox_dir` / `sandbox_path` (VE: `dev-ai-interaction/`, libs: `sandbox/`). Local PR skills: `prepare-local-pr`, `master-merge` (same on all hosts).
 
 ## Launchers (role → command)
 

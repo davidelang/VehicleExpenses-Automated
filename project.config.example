@@ -16,7 +16,17 @@ gemini_bin_default=$HOME/git/gemini/bin/gemini
 primary_user=@@PRIMARY_USER@@
 
 # Special sandbox paths (for setup-project to create)
-sandbox_special_paths=plans,historical-plans,implementation-failure-logs
+sandbox_special_paths=plans,historical-plans,implementation-failure-logs,PRs,research
+
+# Prefer sandbox_dir for launchers/generate_pr (generic hosts).
+# VehicleExpenses default: @@SANDBOX_PATH@@
+# Library hosts default: sandbox
+# Legacy alias still accepted: sandbox_path
+# sandbox_dir=@@SANDBOX_PATH@@
+# sandbox_dir=sandbox
+
+# Optional build gate for master-merge on non-Android hosts:
+# build_command=./build
 
 # Users/groups creation (for reference in setup-project, emitted only)
 # groupadd @@CODE_GROUP@@
