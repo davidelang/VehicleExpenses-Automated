@@ -2360,3 +2360,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Artifacts: review.tsv (lat,lon paste tokens), clusters.jsonl, PASS1_SUMMARY.md, apply_ground_truth.py
 - Next: user fills RESOLVED.tsv for non-auto; then A3 apply to 5554. Stage B after ground truth frozen.
 
+
+## 2026-08-01 - wrong-station-picker execution start
+
+- Plan: dev-ai-interaction/plans/wrong-station-picker-replace-confirm-checkbox-20260801-1828-plan.md
+- Branch: location-fixes (baseline location-fixes/builds @ ad20ed0a)
+- Phases 1-4: listNearby APIs; StationPickerDialog + LocationConfirmBlock; wire QF/Trip/Expense save; polish
+

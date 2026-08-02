@@ -15,8 +15,8 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Overpass POI nearest-hit for fuel stations and auto service/parts.
- * Never throws; returns null on miss/timeout.
+ * Overpass POI list/nearest for fuel stations and auto service/parts.
+ * Never throws; returns empty/null on miss/timeout.
  */
 object OverpassClient {
     private const val TAG = "OverpassClient"
@@ -30,6 +30,10 @@ object OverpassClient {
     const val BASE_RADIUS_AUTO_M = 200.0
     const val MAX_RADIUS_AUTO_M = 400.0
     const val ACCURACY_SCALE_K = 1.0
+
+    /** Picker default / max (product). */
+    const val PICKER_INITIAL_RADIUS_M = 250.0
+    const val PICKER_MAX_RADIUS_M = 2000.0
 
     /**
      * effectiveRadius = min(maxR, max(baseR, baseR + k * accuracyM))
@@ -48,15 +52,7 @@ object OverpassClient {
         timeoutMs: Long = UI_TIMEOUT_MS,
     ): LocationLookupResult? {
         val r = effectiveRadiusM(BASE_RADIUS_FUEL_M, MAX_RADIUS_FUEL_M, accuracyM)
-        val ql = """
-            [out:json][timeout:8];
-            (
-              node(around:$r,$lat,$lon)["amenity"="fuel"];
-              way(around:$r,$lat,$lon)["amenity"="fuel"];
-            );
-            out center tags;
-        """.trimIndent()
-        return queryNearest(ql, lat, lon, LocationLookupKind.FUEL_STATION, timeoutMs)
+        return listFuelStations(lat, lon, r, timeoutMs).firstOrNull()
     }
 
     suspend fun nearestAutoService(
@@ -66,8 +62,36 @@ object OverpassClient {
         timeoutMs: Long = UI_TIMEOUT_MS,
     ): LocationLookupResult? {
         val r = effectiveRadiusM(BASE_RADIUS_AUTO_M, MAX_RADIUS_AUTO_M, accuracyM)
+        return listAutoService(lat, lon, r, timeoutMs).firstOrNull()
+    }
+
+    suspend fun listFuelStations(
+        lat: Double,
+        lon: Double,
+        radiusM: Double,
+        timeoutMs: Long = UI_TIMEOUT_MS,
+    ): List<LocationLookupResult> {
+        val r = radiusM.coerceIn(10.0, PICKER_MAX_RADIUS_M)
         val ql = """
-            [out:json][timeout:8];
+            [out:json][timeout:12];
+            (
+              node(around:$r,$lat,$lon)["amenity"="fuel"];
+              way(around:$r,$lat,$lon)["amenity"="fuel"];
+            );
+            out center tags;
+        """.trimIndent()
+        return queryList(ql, lat, lon, LocationLookupKind.FUEL_STATION, timeoutMs)
+    }
+
+    suspend fun listAutoService(
+        lat: Double,
+        lon: Double,
+        radiusM: Double,
+        timeoutMs: Long = UI_TIMEOUT_MS,
+    ): List<LocationLookupResult> {
+        val r = radiusM.coerceIn(10.0, PICKER_MAX_RADIUS_M)
+        val ql = """
+            [out:json][timeout:12];
             (
               node(around:$r,$lat,$lon)["shop"="car_repair"];
               way(around:$r,$lat,$lon)["shop"="car_repair"];
@@ -78,24 +102,24 @@ object OverpassClient {
             );
             out center tags;
         """.trimIndent()
-        return queryNearest(ql, lat, lon, LocationLookupKind.AUTO_SERVICE, timeoutMs)
+        return queryList(ql, lat, lon, LocationLookupKind.AUTO_SERVICE, timeoutMs)
     }
 
-    private suspend fun queryNearest(
+    private suspend fun queryList(
         ql: String,
         originLat: Double,
         originLon: Double,
         kind: LocationLookupKind,
         timeoutMs: Long,
-    ): LocationLookupResult? = withContext(Dispatchers.IO) {
+    ): List<LocationLookupResult> = withContext(Dispatchers.IO) {
         withTimeoutOrNull(timeoutMs) {
             try {
                 val url = URL(ENDPOINT)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
                     doOutput = true
-                    connectTimeout = timeoutMs.toInt().coerceAtMost(20_000)
-                    readTimeout = timeoutMs.toInt().coerceAtMost(20_000)
+                    connectTimeout = timeoutMs.toInt().coerceAtMost(25_000)
+                    readTimeout = timeoutMs.toInt().coerceAtMost(25_000)
                     setRequestProperty("User-Agent", USER_AGENT)
                     setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
                     setRequestProperty("Accept", "application/json")
@@ -108,31 +132,31 @@ object OverpassClient {
                     val code = conn.responseCode
                     if (code !in 200..299) {
                         Log.w(TAG, "HTTP $code Overpass")
-                        return@withTimeoutOrNull null
+                        return@withTimeoutOrNull emptyList()
                     }
                     val body = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-                    parseNearest(body, originLat, originLon, kind)
+                    parseList(body, originLat, originLon, kind)
                 } finally {
                     conn.disconnect()
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Overpass failed: ${e.message}")
-                null
+                emptyList()
             }
-        }
+        } ?: emptyList()
     }
 
-    private fun parseNearest(
+    private fun parseList(
         body: String,
         originLat: Double,
         originLon: Double,
         kind: LocationLookupKind,
-    ): LocationLookupResult? {
+    ): List<LocationLookupResult> {
         return try {
             val root = JSONObject(body)
-            val elements = root.optJSONArray("elements") ?: return null
-            var best: JSONObject? = null
-            var bestDist = Double.MAX_VALUE
+            val elements = root.optJSONArray("elements") ?: return emptyList()
+            val out = ArrayList<LocationLookupResult>()
+            val seen = HashSet<String>()
             for (i in 0 until elements.length()) {
                 val el = elements.optJSONObject(i) ?: continue
                 val lat = el.optDouble("lat", Double.NaN).takeIf { !it.isNaN() }
@@ -141,28 +165,31 @@ object OverpassClient {
                 val lon = el.optDouble("lon", Double.NaN).takeIf { !it.isNaN() }
                     ?: el.optJSONObject("center")?.optDouble("lon", Double.NaN)?.takeIf { !it.isNaN() }
                     ?: continue
+                val tags = el.optJSONObject("tags") ?: JSONObject()
+                val name = tags.optString("brand", "").ifBlank {
+                    tags.optString("name", "")
+                }.trim()
+                val address = buildAddr(tags)
+                if (name.isBlank() && address.isBlank()) continue
                 val d = haversineM(originLat, originLon, lat, lon)
-                if (d < bestDist) {
-                    bestDist = d
-                    best = el
-                }
+                val key = "${name.lowercase()}|${"%.5f".format(lat)}|${"%.5f".format(lon)}"
+                if (!seen.add(key)) continue
+                out.add(
+                    LocationLookupResult(
+                        name = name,
+                        address = address,
+                        source = "overpass",
+                        kind = kind,
+                        distanceM = d,
+                        poiLat = lat,
+                        poiLon = lon,
+                    ),
+                )
             }
-            val el = best ?: return null
-            val tags = el.optJSONObject("tags") ?: JSONObject()
-            val name = tags.optString("brand", "").ifBlank {
-                tags.optString("name", "")
-            }.trim()
-            val address = buildAddr(tags)
-            if (name.isBlank() && address.isBlank()) return null
-            LocationLookupResult(
-                name = name,
-                address = address,
-                source = "overpass",
-                kind = kind,
-            )
+            out.sortedBy { it.distanceM ?: Double.MAX_VALUE }
         } catch (e: Exception) {
-            Log.w(TAG, "parse Overpass: ${e.message}")
-            null
+            Log.w(TAG, "parse Overpass list: ${e.message}")
+            emptyList()
         }
     }
 
