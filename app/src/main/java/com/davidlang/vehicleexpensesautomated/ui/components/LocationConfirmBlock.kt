@@ -1,40 +1,53 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
 
 /**
- * Minimal location preview + confirm checkbox for Quick Fill / Trip / Expense.
- * Checkbox default checked = save place with confirmed=true; unchecked = keep coords only.
+ * Location preview + editable name/address for Quick Fill / Trip / Expense.
+ * Non-blank place is implicitly confirmed on save. **Wrong station** opens the picker
+ * for FUEL_STATION / AUTO_SERVICE when coords are known.
  */
 @Composable
 fun LocationConfirmBlock(
     statusLine: String,
     name: String,
     address: String,
-    confirmChecked: Boolean,
     onNameChange: (String) -> Unit,
     onAddressChange: (String) -> Unit,
-    onConfirmChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     editable: Boolean = true,
+    /** When non-null and coords known, show Wrong station / Wrong place. */
+    pickerKind: LocationLookupKind? = null,
+    hasCoords: Boolean = false,
+    onWrongStationClick: (() -> Unit)? = null,
 ) {
+    val showPickerButton = pickerKind != null &&
+        pickerKind != LocationLookupKind.ADDRESS_ONLY &&
+        hasCoords &&
+        onWrongStationClick != null
+    val wrongLabel = if (pickerKind == LocationLookupKind.AUTO_SERVICE) {
+        "Wrong place"
+    } else {
+        "Wrong station"
+    }
+
     Column(modifier = modifier.fillMaxWidth()) {
         if (statusLine.isNotBlank()) {
             Text(
                 text = statusLine,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                softWrap = true,
                 modifier = Modifier.padding(bottom = 4.dp),
             )
         }
@@ -56,18 +69,15 @@ fun LocationConfirmBlock(
                 maxLines = 2,
             )
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 4.dp),
-        ) {
-            Checkbox(
-                checked = confirmChecked,
-                onCheckedChange = onConfirmChange,
-            )
-            Text(
-                text = "Confirm and save this location",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+        if (showPickerButton) {
+            OutlinedButton(
+                onClick = onWrongStationClick!!,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+            ) {
+                Text(wrongLabel)
+            }
         }
     }
 }

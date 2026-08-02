@@ -71,6 +71,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.OcrHarness
 import com.davidlang.vehicleexpensesautomated.ui.components.AppDateTimeField
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
 import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
+// Trip address-only: no StationPickerDialog (product lock)
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import kotlinx.coroutines.Dispatchers
@@ -117,7 +118,6 @@ fun TripTrackingScreen(
     var locationStatus by remember { mutableStateOf("") }
     var placeName by remember { mutableStateOf("") }
     var placeAddress by remember { mutableStateOf("") }
-    var confirmLocation by remember { mutableStateOf(true) }
     var lookupName by remember { mutableStateOf<String?>(null) }
     var lookupAddress by remember { mutableStateOf<String?>(null) }
     var lookupSource by remember { mutableStateOf<String?>(null) }
@@ -310,9 +310,10 @@ fun TripTrackingScreen(
             deviceAccuracyM,
             source = "device",
         ) ?: FuelLocationJson.Blob()
+        // Non-blank place → confirmed=true; blank → coords-only. No picker on address-only Trip.
         val placeBlank = placeName.isBlank() && placeAddress.isBlank()
-        val saveBlob = when {
-            confirmLocation && !placeBlank -> base.withPlace(
+        val saveBlob = if (!placeBlank) {
+            base.withPlace(
                 name = placeName,
                 address = placeAddress,
                 confirmed = true,
@@ -326,7 +327,8 @@ fun TripTrackingScreen(
                 kind = LocationLookupKind.ADDRESS_ONLY.blobKindTag(),
                 lookedUpAt = System.currentTimeMillis(),
             )
-            else -> base.coordsOnly()
+        } else {
+            base.coordsOnly()
         }
         val entry = TripTimeline.buildTripStart(
             vehicleId = vehicleId,
@@ -560,10 +562,11 @@ fun TripTrackingScreen(
                 statusLine = locationStatus,
                 name = placeName,
                 address = placeAddress,
-                confirmChecked = confirmLocation,
                 onNameChange = { placeName = it },
                 onAddressChange = { placeAddress = it },
-                onConfirmChange = { confirmLocation = it },
+                // ADDRESS_ONLY: editable fields only (no Wrong station picker)
+                pickerKind = LocationLookupKind.ADDRESS_ONLY,
+                hasCoords = true,
             )
         }
 
