@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
-# Build recipe for this third_party pin. fetch-deps --build execs this with cwd here.
 set -euo pipefail
-echo "$(basename "$(pwd)"): build stub — replace with real recipe (AAR/JAR/native)."
-echo "See SOURCE.md and docs/reference/FIRST_PARTY_LIBS.md"
-exit 0
+ROOT=$(cd "$(dirname "$0")" && pwd)
+SRC="$ROOT/src"
+export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}"
+export PATH="$JAVA_HOME/bin:$PATH"
+export ANDROID_HOME="${ANDROID_HOME:-/home/dlang/Android/Sdk}"
+echo "remotetable build: src=$SRC"
+python3 "$SRC/conformance/harness.py"
+chmod +x "$SRC/scripts/build-aar.sh"
+"$SRC/scripts/build-aar.sh"
+# build-aar writes to src/../artifact = third_party/remotetable/artifact
+if [ ! -s "$ROOT/artifact/remotetable.aar" ]; then
+  # fallback copy
+  AAR=$(find "$SRC/android" -name 'remotetable-release.aar' | head -1)
+  mkdir -p "$ROOT/artifact"
+  cp -f "$AAR" "$ROOT/artifact/remotetable.aar"
+fi
+ls -la "$ROOT/artifact/remotetable.aar"
+echo "remotetable build OK"

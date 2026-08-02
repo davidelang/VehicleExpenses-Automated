@@ -4333,3 +4333,18 @@ x
 - VE third_party: SOURCE/build recipes; lock still git_sha TBD — pin deferred
 - Status: BLOCKED on library git commit permissions for full CODE LANDED pin
 
+
+## 2026-08-02 - Execute remotetable M1 then extractmail M1 (revised fetch-deps)
+
+- Plans: remotetable-m1-…0348 + extractmail-m1-…0348 (revised)
+- Work under third_party/*/src after fetch-deps rw
+
+
+## 2026-08-02 - M1 libs blocked on git object dir perms
+
+- remotetable/src: product tree + AAR built (9457 bytes) uncommitted
+- extractmail/src: goldens PASS uncommitted  
+- Blocker: /home/dlang/git/{remotetable,extractmail}/.git/objects/* many dirs dlang:dlang not ai-code
+- Fix: chgrp -R ai-code .git/objects; chmod -R g+rwX .git/objects (both hosts)
+- Then: git commit in third_party/*/src; fetch-deps upgrade; pin artifact on VE
+
