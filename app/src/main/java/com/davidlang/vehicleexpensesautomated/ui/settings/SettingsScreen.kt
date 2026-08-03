@@ -22,13 +22,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.davidlang.vehicleexpensesautomated.R
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
+import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
@@ -55,10 +59,10 @@ fun SettingsScreen(navController: NavHostController) {
     val prefs = remember { context.getSharedPreferences("vehicle_settings", Context.MODE_PRIVATE) }
     val viewModel: SettingsViewModel = hiltViewModel()
     RegisterPageHelp(
-        title = "Settings",
-        "Units, photo save toggles, debug Quick Fill, and experiment screens live here.",
-        "Spreadsheet and photo destinations are under Menu → Syncing (not only this page).",
-        "Show experiment screens reveals Alignment, Pump Experiment, and Import Old Pictures in the drawer.",
+        title = stringResource(R.string.nav_settings),
+        stringResource(R.string.settings_units_photo_save_toggles_debug_quick_fill_and_ex),
+        stringResource(R.string.settings_spreadsheet_and_photo_destinations_are_under_men),
+        stringResource(R.string.settings_show_experiment_screens_reveals_alignment_pump_e),
     )
     val fuelViewModel: FuelViewModel = hiltViewModel()
     val fuelEntries by fuelViewModel.fuelEntries.collectAsState(initial = emptyList())
@@ -103,6 +107,8 @@ fun SettingsScreen(navController: NavHostController) {
         )
     }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
+    var appLanguagePref by remember { mutableStateOf(AppLanguage.readPrefForUi(context)) }
+    var languageMenuExpanded by remember { mutableStateOf(false) }
     var shutterSounds by remember { mutableStateOf(prefs.getBoolean("shutter_sounds", true)) }
     var currencySymbol by remember {
         mutableStateOf(
@@ -134,6 +140,10 @@ fun SettingsScreen(navController: NavHostController) {
             }
         )
     }
+    var distanceUnit by remember {
+        mutableStateOf(UnitFormat.resolvedDistanceUnit(context))
+    }
+    var distanceMenuExpanded by remember { mutableStateOf(false) }
     var pendingVolumeUnit by remember { mutableStateOf<String?>(null) }
     var showVolumeConvertDialog by remember { mutableStateOf(false) }
     val systemVolumeLabel = remember {
@@ -179,9 +189,7 @@ fun SettingsScreen(navController: NavHostController) {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (!isGranted) {
-            Toast.makeText(
-                context,
-                "Photos permission denied. Grant Photos access in App info → Permissions so fuel photos can save to Camera roll.",
+            Toast.makeText(context, context.getString(R.string.settings_photos_permission_denied_grant_photos_access_in_),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -200,11 +208,11 @@ fun SettingsScreen(navController: NavHostController) {
     }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        uri?.let { scope.launch { csvManager.exportToZip(); status = "Exported"; Toast.makeText(context, "CSV ZIP exported", Toast.LENGTH_LONG).show() } }
+        uri?.let { scope.launch { csvManager.exportToZip(); status = "Exported"; Toast.makeText(context, context.getString(R.string.settings_csv_zip_exported), Toast.LENGTH_LONG).show() } }
     }
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { scope.launch { csvManager.importFromZip(uri); status = "Imported"; Toast.makeText(context, "CSV import complete", Toast.LENGTH_LONG).show() } }
+        uri?.let { scope.launch { csvManager.importFromZip(uri); status = "Imported"; Toast.makeText(context, context.getString(R.string.settings_csv_import_complete), Toast.LENGTH_LONG).show() } }
     }
 
     LaunchedEffect(debugMaxSessions) {
@@ -221,6 +229,7 @@ fun SettingsScreen(navController: NavHostController) {
         shutterSounds,
         currencySymbol,
         volumeUnit,
+        distanceUnit,
         pumpMaxRedBoxes,
         pumpLabelYBandExtra,
         pumpRatioBandLo,
@@ -243,6 +252,7 @@ fun SettingsScreen(navController: NavHostController) {
             putBoolean("shutter_sounds", shutterSounds)
             putString("currency_symbol", currencySymbol)
             putString("volume_unit", volumeUnit)
+            putString(UnitFormat.PREF_KEY, if (distanceUnit == UnitFormat.KM) UnitFormat.KM else UnitFormat.MI)
             putInt(
                 PumpOcrSettings.KEY_MAX_RED_BOXES,
                 pumpMaxRedBoxes.coerceIn(
@@ -263,28 +273,28 @@ fun SettingsScreen(navController: NavHostController) {
             .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Text("General Settings", style = MaterialTheme.typography.headlineMedium)
+        Text(stringResource(R.string.settings_general), style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            "Sync & backup lives under Menu → Syncing (spreadsheet + photo destinations, Sync now, failures).",
+            stringResource(R.string.settings_sync_lives_under),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        SwitchSetting("Save fuel fill photos locally", saveFuelPhotos) { enabled ->
+        SwitchSetting(stringResource(R.string.settings_save_fuel_fill_photos_locally), saveFuelPhotos) { enabled ->
             saveFuelPhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
             }
         }
-        SwitchSetting("Save Expense Photos Locally", saveExpensePhotos) { enabled ->
+        SwitchSetting(stringResource(R.string.settings_save_expense_photos_locally), saveExpensePhotos) { enabled ->
             saveExpensePhotos = enabled
             if (enabled) {
                 requestMediaPermissionIfNeeded()
             }
         }
-        SwitchSetting("Play Shutter Sound", shutterSounds) { shutterSounds = it }
+        SwitchSetting(stringResource(R.string.settings_play_shutter_sound), shutterSounds) { shutterSounds = it }
         // Order: title · Info · count/max · Delete · Send · toggle
         // Wide: one line. Narrow: line1 title·Info·toggle; line2 count·Delete·Send end-aligned.
         BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
@@ -313,14 +323,14 @@ fun SettingsScreen(navController: NavHostController) {
                 ) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Delete debug reports",
+                        contentDescription = stringResource(R.string.settings_delete_debug_reports),
                         modifier = Modifier.size(24.dp),
                     )
                 }
                 IconButton(
                     onClick = {
                         if (!hasDebugData) {
-                            Toast.makeText(context, "No debug reports to send", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.settings_no_debug_reports_to_send), Toast.LENGTH_SHORT).show()
                         } else {
                             selectedSessionPaths = emptySet()
                             selectedCrashPaths = emptySet()
@@ -331,7 +341,7 @@ fun SettingsScreen(navController: NavHostController) {
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send debug reports",
+                        contentDescription = stringResource(R.string.settings_send_debug_reports),
                         modifier = Modifier.size(24.dp),
                     )
                 }
@@ -345,8 +355,7 @@ fun SettingsScreen(navController: NavHostController) {
                         .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        "Debug Quick Fill",
+                    Text(stringResource(R.string.settings_debug_quick_fill),
                         modifier = Modifier.weight(1f),
                         maxLines = 2,
                         softWrap = true,
@@ -355,7 +364,7 @@ fun SettingsScreen(navController: NavHostController) {
                         onClick = { showDebugInfoDialog = true },
                         modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                     ) {
-                        Icon(Icons.Default.Info, contentDescription = "About Debug Quick Fill")
+                        Icon(Icons.Default.Info, contentDescription = stringResource(R.string.settings_about_debug_quick_fill))
                     }
                     countMaxBlock()
                     deleteSendBlock()
@@ -369,8 +378,7 @@ fun SettingsScreen(navController: NavHostController) {
                             .fillMaxWidth()
                             .heightIn(min = 48.dp),
                     ) {
-                        Text(
-                            "Debug Quick Fill",
+                        Text(stringResource(R.string.settings_debug_quick_fill),
                             modifier = Modifier.weight(1f),
                             maxLines = 2,
                             softWrap = true,
@@ -379,7 +387,7 @@ fun SettingsScreen(navController: NavHostController) {
                             onClick = { showDebugInfoDialog = true },
                             modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                         ) {
-                            Icon(Icons.Default.Info, contentDescription = "About Debug Quick Fill")
+                            Icon(Icons.Default.Info, contentDescription = stringResource(R.string.settings_about_debug_quick_fill))
                         }
                         Switch(checked = debugQuickFill, onCheckedChange = { debugQuickFill = it })
                     }
@@ -397,9 +405,8 @@ fun SettingsScreen(navController: NavHostController) {
                 }
             }
         }
-        Text("Setup tips", style = MaterialTheme.typography.titleSmall)
-        Text(
-            "First-run walkthroughs for adding a vehicle or connecting sync (also under Help).",
+        Text(stringResource(R.string.nav_setup_tips), style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.settings_first_run_walkthroughs_for_adding_a_vehicle_or_c),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -407,24 +414,24 @@ fun SettingsScreen(navController: NavHostController) {
             onClick = { navController.navigate("tutorial/tutorial_add_vehicle") },
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         ) {
-            Text("Tutorial: Add a vehicle")
+            Text(stringResource(R.string.settings_tutorial_add_a_vehicle))
         }
         OutlinedButton(
             onClick = { navController.navigate("tutorial/tutorial_setup_sync") },
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         ) {
-            Text("Tutorial: Connect existing setup")
+            Text(stringResource(R.string.settings_tutorial_connect_existing_setup))
         }
         OutlinedButton(
             onClick = { navController.navigate("onboarding") },
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
         ) {
-            Text("Show first-run welcome")
+            Text(stringResource(R.string.settings_show_first_run_welcome))
         }
-        SwitchSetting("Show experiment screens (dev)", showExperimentScreens) { showExperimentScreens = it }
+        SwitchSetting(stringResource(R.string.settings_show_experiment_screens_dev), showExperimentScreens) { showExperimentScreens = it }
         if (showExperimentScreens) {
             Spacer(modifier = Modifier.height(8.dp))
-            Text("Pump OCR (advanced)", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.settings_pump_ocr_advanced), style = MaterialTheme.typography.titleSmall)
             Text(
                 "Label Y-band uses smallest value-cluster rect height × extra fraction (resolution-independent). " +
                     "Ratio lo/hi are band-gated extreme checks (not a target $/gal).",
@@ -445,7 +452,7 @@ fun SettingsScreen(navController: NavHostController) {
             OutlinedTextField(
                 value = pumpLabelYBandExtra,
                 onValueChange = { pumpLabelYBandExtra = it },
-                label = { Text("Label Y-band extra (fraction of smallest value rect height, 0–1)") },
+                label = { Text(stringResource(R.string.settings_label_y_band_extra_fraction_of_smallest_value_re)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -467,15 +474,14 @@ fun SettingsScreen(navController: NavHostController) {
         if (showDebugInfoDialog) {
             AlertDialog(
                 onDismissRequest = { showDebugInfoDialog = false },
-                title = { Text("Debug Quick Fill") },
+                title = { Text(stringResource(R.string.settings_debug_quick_fill)) },
                 text = {
-                    Text(
-                        "This captures images and OCR details during a quick fill that can be emailed for debugging.",
+                    Text(stringResource(R.string.settings_this_captures_images_and_ocr_details_during_a_qu),
                     )
                 },
                 confirmButton = {
                     TextButton(onClick = { showDebugInfoDialog = false }) {
-                        Text("OK")
+                        Text(stringResource(R.string.settings_ok))
                     }
                 },
             )
@@ -483,11 +489,11 @@ fun SettingsScreen(navController: NavHostController) {
         if (showSendReportPicker) {
             AlertDialog(
                 onDismissRequest = { showSendReportPicker = false },
-                title = { Text("Select items to attach") },
+                title = { Text(stringResource(R.string.settings_select_items_to_attach)) },
                 text = {
                     LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                         if (debugSessions.isNotEmpty()) {
-                            item { Text("Quick Fill sessions", style = MaterialTheme.typography.titleSmall) }
+                            item { Text(stringResource(R.string.settings_quick_fill_sessions), style = MaterialTheme.typography.titleSmall) }
                             items(debugSessions, key = { it.absolutePath }) { session ->
                                 val path = session.absolutePath
                                 Row(
@@ -512,7 +518,7 @@ fun SettingsScreen(navController: NavHostController) {
                             }
                         }
                         if (crashReports.isNotEmpty()) {
-                            item { Text("Crash reports", style = MaterialTheme.typography.titleSmall) }
+                            item { Text(stringResource(R.string.settings_crash_reports), style = MaterialTheme.typography.titleSmall) }
                             items(crashReports, key = { it.absolutePath }) { crash ->
                                 val path = crash.absolutePath
                                 Row(
@@ -542,26 +548,24 @@ fun SettingsScreen(navController: NavHostController) {
                             selectedCrashPaths,
                         )
                         if (attachments.isEmpty()) {
-                            Toast.makeText(context, "Select at least one item", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.settings_select_at_least_one_item), Toast.LENGTH_SHORT).show()
                             return@TextButton
                         }
                         val launched = QuickFillDebugStore.launchFailureReport(context, attachments)
                         if (launched) {
                             showSendReportPicker = false
                         } else {
-                            Toast.makeText(
-                                context,
-                                "No email app found to send report",
+                            Toast.makeText(context, context.getString(R.string.settings_no_email_app_found_to_send_report),
                                 Toast.LENGTH_LONG,
                             ).show()
                         }
                     }) {
-                        Text("Send")
+                        Text(stringResource(R.string.settings_send))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showSendReportPicker = false }) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.settings_cancel))
                     }
                 },
             )
@@ -573,12 +577,12 @@ fun SettingsScreen(navController: NavHostController) {
                     pendingVolumeUnit = null
                     showVolumeConvertDialog = false
                 },
-                title = { Text("Convert fuel volumes?") },
+                title = { Text(stringResource(R.string.settings_convert_fuel_volumes)) },
                 text = {
                     Text(
                         "Convert existing fuel volumes between G and L?\n\n" +
                             "If you choose No, historical numbers keep their current values but " +
-                            "display labels will change without conversion.",
+                            stringResource(R.string.settings_display_labels_will_change_without_conversion),
                     )
                 },
                 confirmButton = {
@@ -587,14 +591,14 @@ fun SettingsScreen(navController: NavHostController) {
                             pendingVolumeUnit = null
                             showVolumeConvertDialog = false
                         }) {
-                            Text("Cancel")
+                            Text(stringResource(R.string.settings_cancel))
                         }
                         TextButton(onClick = {
                             volumeUnit = targetPref
                             pendingVolumeUnit = null
                             showVolumeConvertDialog = false
                         }) {
-                            Text("No")
+                            Text(stringResource(R.string.settings_no))
                         }
                         TextButton(onClick = {
                             val fromUnit = resolveVolumePref(volumeUnit)
@@ -605,7 +609,7 @@ fun SettingsScreen(navController: NavHostController) {
                                 showVolumeConvertDialog = false
                             }
                         }) {
-                            Text("Yes")
+                            Text(stringResource(R.string.settings_yes))
                         }
                     }
                 },
@@ -614,37 +618,101 @@ fun SettingsScreen(navController: NavHostController) {
         if (showClearDebugConfirm) {
             AlertDialog(
                 onDismissRequest = { showClearDebugConfirm = false },
-                title = { Text("Clear debug data?") },
-                text = { Text("Deletes all Quick Fill debug sessions and crash reports.") },
+                title = { Text(stringResource(R.string.settings_clear_debug_data)) },
+                text = { Text(stringResource(R.string.settings_deletes_all_quick_fill_debug_sessions_and_crash_)) },
                 confirmButton = {
                     TextButton(onClick = {
                         QuickFillDebugStore.clearAllDebugData(context)
                         debugDataRefreshKey++
                         showClearDebugConfirm = false
-                        Toast.makeText(context, "Debug data cleared", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.settings_debug_data_cleared), Toast.LENGTH_SHORT).show()
                     }) {
-                        Text("Clear")
+                        Text(stringResource(R.string.settings_clear))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showClearDebugConfirm = false }) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.settings_cancel))
                     }
                 },
             )
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text("Localization & Units", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.settings_localization_units), style = MaterialTheme.typography.titleMedium)
+        Text(
+            stringResource(R.string.settings_localization_units_blurb),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 1. Language
+        Text(stringResource(R.string.settings_language), style = MaterialTheme.typography.titleSmall)
+        val languageLabel = when (appLanguagePref) {
+            AppLanguage.SYSTEM -> stringResource(R.string.settings_language_system)
+            else -> {
+                val loc = AppLanguage.SUPPORTED.firstOrNull { it.prefTag == appLanguagePref }
+                if (loc != null) stringResource(loc.displayNameRes)
+                else stringResource(R.string.lang_name_en)
+            }
+        }
+        ExposedDropdownMenuBox(
+            expanded = languageMenuExpanded,
+            onExpandedChange = { languageMenuExpanded = it },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            OutlinedTextField(
+                value = languageLabel,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text(stringResource(R.string.settings_language)) },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = languageMenuExpanded) },
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
+            )
+            ExposedDropdownMenu(
+                expanded = languageMenuExpanded,
+                onDismissRequest = { languageMenuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.settings_language_system)) },
+                    onClick = {
+                        appLanguagePref = AppLanguage.SYSTEM
+                        AppLanguage.setPref(context, AppLanguage.SYSTEM)
+                        languageMenuExpanded = false
+                    },
+                )
+                AppLanguage.SUPPORTED.forEach { loc ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(loc.displayNameRes)) },
+                        onClick = {
+                            appLanguagePref = loc.prefTag
+                            AppLanguage.setPref(context, loc.prefTag)
+                            languageMenuExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+        Text(
+            stringResource(R.string.settings_language_restart_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 2–3. Currency | Volume
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                 DropdownSetting(
-                    label = "Default Currency",
+                    label = stringResource(R.string.settings_default_currency),
                     selectedValue = if (currencySymbol == "system") {
-                        "System default ($systemCurrencySymbol)"
+                        stringResource(R.string.settings_system_default_currency, systemCurrencySymbol)
                     } else {
                         currencySymbol
                     },
@@ -664,7 +732,7 @@ fun SettingsScreen(navController: NavHostController) {
                 }
                 AlertDialog(
                     onDismissRequest = { showMoreCurrencies = false },
-                    title = { Text("All currencies") },
+                    title = { Text(stringResource(R.string.settings_all_currencies)) },
                     text = {
                         LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                             items(allCurrencies, key = { it.currencyCode }) { currency ->
@@ -684,14 +752,14 @@ fun SettingsScreen(navController: NavHostController) {
                     },
                     confirmButton = {
                         TextButton(onClick = { showMoreCurrencies = false }) {
-                            Text("Close")
+                            Text(stringResource(R.string.settings_close))
                         }
                     },
                 )
             }
             Box(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                 DropdownSetting(
-                    label = "Default Unit",
+                    label = stringResource(R.string.settings_default_volume_unit),
                     selectedValue = volumeDisplayLabel(volumeUnit),
                     options = volumeOptions,
                     onValueChange = { label ->
@@ -709,23 +777,71 @@ fun SettingsScreen(navController: NavHostController) {
                 )
             }
         }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 4. Distance labels only (no conversion)
+        Text(stringResource(R.string.settings_distance_unit), style = MaterialTheme.typography.titleSmall)
+        val distanceLabel = when (distanceUnit) {
+            UnitFormat.KM -> stringResource(R.string.settings_distance_unit_km)
+            else -> stringResource(R.string.settings_distance_unit_mi)
+        }
+        ExposedDropdownMenuBox(
+            expanded = distanceMenuExpanded,
+            onExpandedChange = { distanceMenuExpanded = it },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            OutlinedTextField(
+                value = distanceLabel,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text(stringResource(R.string.settings_distance_unit)) },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = distanceMenuExpanded) },
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
+            )
+            ExposedDropdownMenu(
+                expanded = distanceMenuExpanded,
+                onDismissRequest = { distanceMenuExpanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.settings_distance_unit_mi)) },
+                    onClick = {
+                        distanceUnit = UnitFormat.MI
+                        distanceMenuExpanded = false
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.settings_distance_unit_km)) },
+                    onClick = {
+                        distanceUnit = UnitFormat.KM
+                        distanceMenuExpanded = false
+                    },
+                )
+            }
+        }
+        Text(
+            stringResource(R.string.settings_distance_unit_helper),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
-        Text("Dark Mode", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.settings_dark_mode), style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             RadioButton(selected = darkModePref == "system", onClick = { darkModePref = "system" })
-            Text("System")
+            Text(stringResource(R.string.settings_system))
             Spacer(modifier = Modifier.width(8.dp))
             RadioButton(selected = darkModePref == "off", onClick = { darkModePref = "off" })
-            Text("Light")
+            Text(stringResource(R.string.settings_light))
             Spacer(modifier = Modifier.width(8.dp))
             RadioButton(selected = darkModePref == "on", onClick = { darkModePref = "on" })
-            Text("Dark")
+            Text(stringResource(R.string.settings_dark))
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-        Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }, modifier = Modifier.fillMaxWidth()) { Text("Export to CSV (ZIP)") }
-        Button(onClick = { importLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Text("Import from CSV ZIP") }
+        Button(onClick = { exportLauncher.launch("vehicle_expenses_backup.zip") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.settings_export_to_csv_zip)) }
+        Button(onClick = { importLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.settings_import_from_csv_zip)) }
         if (status != "Ready") {
             Text(status, modifier = Modifier.padding(top = 8.dp))
         }

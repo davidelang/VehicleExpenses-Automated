@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.LabFullFillLeg
 import com.davidlang.vehicleexpensesautomated.ui.reports.lab.excludeMpgOutliers
@@ -39,7 +44,7 @@ fun LastFullFillLegsBlock(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, style = MaterialTheme.typography.titleSmall)
         if (displayNewestFirst.isEmpty()) {
-            Text("No full fills", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.reports_no_full_fills), style = MaterialTheme.typography.bodySmall)
         } else {
             val maxMpg = displayNewestFirst.maxOfOrNull { it.mpg }?.takeIf { it > 0 } ?: 1.0
             displayNewestFirst.forEach { leg ->
@@ -67,6 +72,8 @@ fun FullFillLegRowUi(
     mpg: Double,
     barFraction: Float,
 ) {
+    val context = LocalContext.current
+    val effLabel = UnitFormat.economyEfficiencyLabel(context)
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             "$dateLabel · odo $odo",
@@ -94,7 +101,7 @@ fun FullFillLegRowUi(
                         .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)),
                 )
                 Text(
-                    "${UnitFormat.economyEfficiencyLabel()} ${formatMpg(mpg)}",
+                    "$effLabel ${formatMpg(mpg)}",
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     modifier = Modifier.padding(horizontal = 4.dp),
@@ -109,6 +116,7 @@ fun lastFullFillLegsShareLines(
     legsChrono: List<LabFullFillLeg>,
     volumeUnitLabel: String,
     defaultSymbol: String,
+    efficiencyLabel: String = UnitFormat.economyEfficiencyLabel(),
 ): List<String> {
     val display = excludeMpgOutliers(legsChrono).asReversed().take(5)
     if (display.isEmpty()) return listOf("  (none)")
@@ -116,6 +124,6 @@ fun lastFullFillLegsShareLines(
         val cost = CurrencyCodes.formatAggregateSum(leg.sumCostByCurrency, defaultSymbol)
         val vol = formatVolume(leg.sumVol, volumeUnitLabel)
         "  ${formatLabDate(leg.endFill.timestamp)} odo ${leg.endFill.odometer} " +
-            "$cost $vol ${UnitFormat.economyEfficiencyLabel()} ${formatMpg(leg.mpg)}"
+            "$cost $vol $efficiencyLabel ${formatMpg(leg.mpg)}"
     }
 }

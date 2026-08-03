@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -45,9 +49,9 @@ fun ReportsLabCostTrendsScreen(navController: NavHostController) {
     }
 
     ReportsLabScreenScaffold(
-        title = "Fuel & cost trends",
+        title = stringResource(R.string.reports_fuel_cost_trends),
         infoText = "Unit price = cost ÷ volume when both are present. " +
-            "This is not cost-per-distance (that is on Vehicle summary / hub).",
+            stringResource(R.string.reports_this_is_not_cost_per_distance_that_is_on_vehicle),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,

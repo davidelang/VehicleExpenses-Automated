@@ -88,6 +88,8 @@ tasks.withType<JavaCompile>().configureEach {
 dependencies {
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
     implementation("androidx.core:core-ktx:1.13.1")
+    // AppCompat locales (AppCompatDelegate.setApplicationLocales) for in-app language packs
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.browser:browser:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.3")

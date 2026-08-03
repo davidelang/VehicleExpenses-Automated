@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.onboarding
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -30,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.FeatureScreenHeader
@@ -41,17 +44,17 @@ fun TutorialPagerScreen(
     navController: NavHostController,
     tutorialId: String,
 ) {
-    val tutorial = TutorialCatalog.get(tutorialId)
+    val context = LocalContext.current
+    val tutorial = remember(tutorialId, context) { TutorialCatalog.get(context, tutorialId) }
     if (tutorial == null) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Tutorial not found")
-            TextButton(onClick = { navController.popBackStack() }) { Text("Back") }
+            Text(stringResource(R.string.onboarding_tutorial_not_found))
+            TextButton(onClick = { navController.popBackStack() }) { Text(stringResource(R.string.settings_back)) }
         }
         return
     }
     val pagerState = rememberPagerState(pageCount = { tutorial.steps.size })
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -103,8 +106,7 @@ fun TutorialPagerScreen(
                                 .height(120.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(
-                                "(Illustration unavailable offline asset)",
+                            Text(stringResource(R.string.onboarding_illustration_unavailable_offline_asset),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -151,7 +153,7 @@ fun TutorialPagerScreen(
                 onClick = { navController.popBackStack() },
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
-                Text("Done without navigating")
+                Text(stringResource(R.string.onboarding_done_without_navigating))
             }
         }
     }

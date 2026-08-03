@@ -267,6 +267,7 @@ Any plan or execution that touches Compose UI, reports labels, Lab charts, photo
 
 Hard constraints (detail + grep checklist in the reference):
 
+- **User-visible product strings:** use Android string resources (`stringResource` / `getString`) for product chrome; see **`docs/reference/I18N.md`**. English-only exceptions: Import Old Pictures / batch import, experiment screens, sheet/CSV protocol headers, diagnostic email seeds. Do not re-hardcode English for new product UI.
 - **Volume / economy / distance / currency display:** `VolumeUnits`, `UnitFormat`, `CurrencyCodes` only — no hardcoded `G` / `mpg` / `mi` unit words / bare `$` in new user-visible paths; no invent display conversion.
 - **Font scale:** Material `sp` typography; `softWrap` / `maxLines` / `heightIn(min=)`; **horizontal** fit required (vertical scroll OK).
 - **Icons:** keep BOM `material-icons-core` **and** `material-icons-extended` (startup crash if dropped).

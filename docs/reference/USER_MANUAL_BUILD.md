@@ -10,24 +10,29 @@ ai_directive: "Update when the user-manual render pipeline or package paths chan
 
 | Artifact | Audience | Notes |
 |----------|----------|--------|
-| **`docs/user-manual.md`** | Authors / git | **Edit source.** Markdown is easy to review and diff. |
+| **`docs/user-manual.md`** | Authors / git | **Edit source (English).** Markdown is easy to review and diff. |
 | **`docs/user-manual.html`** | **Browsers / web** | **Rendered** with screenshots. Browsers do **not** treat raw `.md` as a document with images. |
-| **`docs/user-manual/images/*.jpg`** | Both | Screenshots (phone + chrome). |
-| **`app/src/main/assets/user-manual/`** | **In-app** | Offline HTML + images for Help / About. |
+| **`docs/user-manual/images/*.jpg`** | English web | Screenshots (phone + chrome). |
+| **`docs/i18n/<tag>/user-manual.md`** | Authors | Locale edit source (`es`, `fr`, `pt-BR`, …). |
+| **`docs/i18n/<tag>/user-manual.html` + `images/`** | **Browsers / web** | Hosted per-locale manual + screenshots. |
+| **`app/src/main/assets/user-manual/`** | Optional offline EN | English-only WebView fallback; **not** multi-locale in APK. |
 
 **Never** send end users to a raw GitHub `.md` URL for the full manual — they only see plain text.
 
-## In-app entry points
+## Hosted URLs (jsDelivr)
 
-- Help / About → `UserManualDocs.openFullManual` → `UserManualActivity` (WebView loads `file:///android_asset/user-manual/index.html`).
-- Optional published web HTML (after master has the file): `UserManualDocs.ONLINE_HTML_URL`  
-  `https://cdn.jsdelivr.net/gh/davidelang/VehicleExpenses-Automated@master/docs/user-manual.html`  
-  (no GitHub login; images via relative `user-manual/images/` paths next to the HTML).
+| Language | Path on master (after merge/publish) |
+|----------|--------------------------------------|
+| English | `https://cdn.jsdelivr.net/gh/davidelang/VehicleExpenses-Automated@master/docs/user-manual.html` |
+| Other | `https://cdn.jsdelivr.net/gh/davidelang/VehicleExpenses-Automated@master/docs/i18n/<tag>/user-manual.html` |
+
+App: `UserManualDocs.openFullManual` → Custom Tabs to `AppLanguage.onlineManualHtmlUrl` (active language). Optional offline English: `UserManualDocs.openOfflineEnglishManual`.
 
 ## How to update the manual
 
-1. Edit **`docs/user-manual.md`** (and add/replace images under **`docs/user-manual/images/`** if needed).
-2. Regenerate browser HTML + app assets:
+1. Edit **`docs/user-manual.md`** and/or **`docs/i18n/<tag>/user-manual.md`**.
+2. Screenshots: English under `docs/user-manual/images/`; other locales under `docs/i18n/<tag>/images/` (reshoot UI in that language when possible).
+3. Regenerate:
 
    ```bash
    ./scripts/render-user-manual.sh
@@ -35,17 +40,22 @@ ai_directive: "Update when the user-manual render pipeline or package paths chan
 
    (Implementation: `scripts/render_user_manual.py`. Requires Python 3; installs `markdown` if missing.)
 
-3. Commit **together**:
-   - `docs/user-manual.md`
-   - `docs/user-manual.html`
-   - `docs/user-manual/images/*` (if changed)
-   - `app/src/main/assets/user-manual/**` (regenerated)
+4. Commit **together**: md + html + images for each locale touched; English may also refresh `app/src/main/assets/user-manual/**`.
+5. `./build_app` as usual when app code changed.
 
-4. `./build_app` as usual.
+If you change only Markdown and forget the script, **web manuals will be stale**. jsDelivr reflects **published** branch content after merge.
 
-If you change only Markdown and forget the script, the **in-app and web manuals will be stale**.
+## Screenshot workflow (per language)
+
+1. Set Settings → Language to that pack.
+2. Capture the manual image set (same filenames as English where possible).
+3. Drop into `docs/i18n/<tag>/images/` (English: `docs/user-manual/images/`).
+4. Re-run `./scripts/render-user-manual.sh` and commit.
+
+Space-driven exception: until reshoot, locale trees may temporarily use English screenshots (document in PR); text should still be localized.
 
 ## Related
 
+- Language packs: [I18N.md](I18N.md)
 - Condensed user reference: [USER_GUIDE.md](USER_GUIDE.md)
 - Orientation: worktree `project-facts.md` (user-manual paths)

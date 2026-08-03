@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -26,6 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -124,13 +127,13 @@ fun LandmarkDebugDialog(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    Text("Landmarks", style = MaterialTheme.typography.headlineSmall)
+                    Text(stringResource(R.string.ui_landmarks), style = MaterialTheme.typography.headlineSmall)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         if (!isEditing) {
-                            Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 4.dp)) { Text("Edit OCR") }
+                            Button(onClick = { isEditing = true }, modifier = Modifier.padding(end = 4.dp)) { Text(stringResource(R.string.ui_edit_ocr)) }
                         } else {
                             IconButton(
                                 onClick = {
@@ -317,7 +320,7 @@ fun LandmarkDebugDialog(
                                                     )
                                                 } else {
                                                     if (lm.text.isNotBlank()) Text(lm.text, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                                                    else Text("[Container]", style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.secondary)
+                                                    else Text(stringResource(R.string.ui_container), style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp), fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.secondary)
                                                 }
 
                                                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -331,7 +334,7 @@ fun LandmarkDebugDialog(
                         }
                     } else {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("No image data available", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.ui_no_image_data_available), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }

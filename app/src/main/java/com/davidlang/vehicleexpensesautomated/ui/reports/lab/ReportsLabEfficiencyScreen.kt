@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.content.Context
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
@@ -85,7 +88,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
             buildMap {
                 for ((vid, metrics) in metricsByScope) {
                     put(
-                        seriesPrefix(vid) + UnitFormat.economyEfficiencyLabel(),
+                        seriesPrefix(vid) + UnitFormat.economyEfficiencyLabel(context),
                         metrics.map {
                             LabTimeYPoint(it.leg.endTimestamp, it.mpg.toFloat(), "mpg")
                         },
@@ -115,7 +118,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                 val prefix = seriesPrefix(vid)
                 if (toggles.dpmFuel) {
                     put(
-                        prefix + UnitFormat.costPerDistanceLabel() + " fuel",
+                        prefix + UnitFormat.costPerDistanceLabel(context) + " fuel",
                         metrics.mapNotNull { m ->
                             m.dpmFuel?.let {
                                 LabTimeYPoint(m.leg.endTimestamp, it.toFloat(), "dpmFuel")
@@ -125,7 +128,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                 }
                 if (toggles.dpmIncl) {
                     put(
-                        prefix + UnitFormat.costPerDistanceLabel() + " +exp",
+                        prefix + UnitFormat.costPerDistanceLabel(context) + " +exp",
                         metrics.mapNotNull { m ->
                             m.dpmInclExp?.let {
                                 LabTimeYPoint(m.leg.endTimestamp, it.toFloat(), "dpmIncl")
@@ -152,14 +155,14 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
     }
 
     ReportsLabScreenScaffold(
-        title = "Fuel efficiency",
+        title = stringResource(R.string.reports_fuel_efficiency),
         infoText = "Economy & cost/distance over full-fill legs (same chain rules as production). " +
-            "Toggles: mpg, gpm, ${UnitFormat.costPerDistanceLabel()} fuel-only, " +
-            "${UnitFormat.costPerDistanceLabel()} incl. expenses — all optional (including none). " +
+            "Toggles: mpg, gpm, ${UnitFormat.costPerDistanceLabel(context)} fuel-only, " +
+            "${UnitFormat.costPerDistanceLabel(context)} incl. expenses — all optional (including none). " +
             "Gpm uses its own Y scale (not shared with mpg). " +
             "When gpm and \$/mi are both on, money is a second chart below. " +
             "Charts use a date X axis and fit screen width. " +
-            "Each vehicle = multi-series per family.",
+            stringResource(R.string.reports_each_vehicle_multi_series_per_family),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
@@ -244,9 +247,9 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
             ReportsLabEmpty("No fills in this filter.")
             return@ReportsLabScreenScaffold
         }
-        Text("Metrics", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.reports_metrics), style = MaterialTheme.typography.titleSmall)
         MetricToggleRow(
-            label = UnitFormat.economyEfficiencyLabel(),
+            label = UnitFormat.economyEfficiencyLabel(context),
             checked = toggles.mpg,
             onChecked = { setToggles(toggles.copy(mpg = it)) },
         )
@@ -256,12 +259,12 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
             onChecked = { setToggles(toggles.copy(gpm = it)) },
         )
         MetricToggleRow(
-            label = "${UnitFormat.costPerDistanceLabel()} (fuel only)",
+            label = "${UnitFormat.costPerDistanceLabel(context)} (fuel only)",
             checked = toggles.dpmFuel,
             onChecked = { setToggles(toggles.copy(dpmFuel = it)) },
         )
         MetricToggleRow(
-            label = "${UnitFormat.costPerDistanceLabel()} incl. expenses",
+            label = "${UnitFormat.costPerDistanceLabel(context)} incl. expenses",
             checked = toggles.dpmIncl,
             onChecked = { setToggles(toggles.copy(dpmIncl = it)) },
         )
@@ -272,8 +275,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                 style = MaterialTheme.typography.titleSmall,
             )
         }
-        Text(
-            "Display avg/last exclude MPG outside 5–80 and 3× median outliers (same as production).",
+        Text(stringResource(R.string.reports_display_avg_last_exclude_mpg_outside_5_80_and_3_),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -292,7 +294,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                     endSeries = gpmSeries,
                     caption = "Economy — mpg (left) + gpm (right); separate scales",
                     emptyMessage = "Not enough economy points for a chart.",
-                    startAxisLabel = if (hasMpg) UnitFormat.economyEfficiencyLabel() else null,
+                    startAxisLabel = if (hasMpg) UnitFormat.economyEfficiencyLabel(context) else null,
                     endAxisLabel = "gpm",
                     startAxisColor = LabChartColors.Mpg,
                     endAxisColor = LabChartColors.Gpm,
@@ -303,7 +305,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                     endSeries = emptyMap(),
                     caption = "Cost per distance (separate chart / scale)",
                     emptyMessage = "Not enough cost/distance points for a chart.",
-                    startAxisLabel = UnitFormat.costPerDistanceLabel(),
+                    startAxisLabel = UnitFormat.costPerDistanceLabel(context),
                     startAxisColor = moneyAxisColor,
                 )
             }
@@ -317,8 +319,8 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                         else -> "Cost per distance"
                     },
                     emptyMessage = "Not enough points for a chart.",
-                    startAxisLabel = if (hasMpg) UnitFormat.economyEfficiencyLabel() else null,
-                    endAxisLabel = UnitFormat.costPerDistanceLabel(),
+                    startAxisLabel = if (hasMpg) UnitFormat.economyEfficiencyLabel(context) else null,
+                    endAxisLabel = UnitFormat.costPerDistanceLabel(context),
                     startAxisColor = if (hasMpg) LabChartColors.Mpg else null,
                     endAxisColor = moneyAxisColor,
                 )
@@ -330,11 +332,11 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                     endSeries = gpmSeries,
                     caption = when {
                         hasMpg && hasGpm -> "mpg (left) + gpm (right); separate scales"
-                        hasMpg -> UnitFormat.economyEfficiencyLabel()
+                        hasMpg -> UnitFormat.economyEfficiencyLabel(context)
                         else -> "gpm"
                     },
                     emptyMessage = "Not enough points for a chart.",
-                    startAxisLabel = if (hasMpg) UnitFormat.economyEfficiencyLabel() else null,
+                    startAxisLabel = if (hasMpg) UnitFormat.economyEfficiencyLabel(context) else null,
                     endAxisLabel = if (hasGpm) "gpm" else null,
                     startAxisColor = if (hasMpg) LabChartColors.Mpg else null,
                     endAxisColor = if (hasGpm) LabChartColors.Gpm else null,
@@ -343,7 +345,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
         }
 
         Spacer(Modifier.height(8.dp))
-        Text("Legs (newest first)", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.reports_legs_newest_first), style = MaterialTheme.typography.titleSmall)
         if (allMetricsFlat.isEmpty()) {
             ReportsLabEmpty("No valid full-fill legs in this filter.")
         } else {
@@ -373,7 +375,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                                     data.defaultSymbol,
                                 ),
                             )
-                            append(" · ${UnitFormat.distanceDeltaLabel(m.leg.miles)}")
+                            append(" · ${UnitFormat.distanceDeltaLabel(m.leg.miles, context)}")
                         },
                         style = MaterialTheme.typography.bodySmall,
                     )

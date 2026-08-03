@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vehicle Expenses Automated — User Manual</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height: 1.5;
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 3rem;
+      color: #111;
+      background: #fafafa;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #eee; background: #121212; }
+      a { color: #8ab4f8; }
+      table { border-color: #444; }
+      th, td { border-color: #444; }
+      code { background: #2a2a2a; }
+      pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
+    }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
+    th { background: rgba(0,0,0,0.05); text-align: left; }
+    code { font-size: 0.9em; padding: 0.1em 0.3em; border-radius: 4px; background: #eee; }
+    pre { padding: 0.75rem; overflow: auto; border-radius: 8px; background: #f0f0f0; }
+    pre code { background: transparent; padding: 0; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    .note { font-size: 0.9rem; opacity: 0.85; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/i18n/id/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <h1 id="pengeluaran-kendaraan-otomatis-panduan-pengguna">Pengeluaran Kendaraan Otomatis — Panduan Pengguna</h1>
+<blockquote>
+<p><strong>Edit sumber (Penurunan harga).</strong> Browser dan pembaca dalam aplikasi membuka <strong>HTML yang dirender</strong>:<br />
+- Web: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (dibuat ulang dengan <code>./scripts/render-user-manual.sh</code>)<br />
+- Aplikasi: Bantuan / Tentang → manual lengkap (paket tangkapan layar HTML +)</p>
+<p>Jangan arahkan pengguna akhir ke URL <code>.md</code> mentah — browser hanya menampilkan teks biasa.</p>
+</blockquote>
+<p>Pelacakan yang mengutamakan kamera untuk pengisian bahan bakar dan pengeluaran kendaraan, dengan sinkronisasi multi-perangkat opsional dan pencadangan di akun cloud <strong>Anda</strong>.</p>
+<p>Ini adalah <strong>panduan lengkap</strong> (tangkapan layar + setiap langkah). Di telepon, <strong>Menu → Bantuan</strong> adalah panduan singkat untuk memulai.</p>
+<p><strong>Tidak dibahas di sini:</strong> Impor Gambar Lama, Eksperimen Penyelarasan, dan Eksperimen Pompa (pengembang/alat canggih).</p>
+<hr />
+<h2 id="daftar-isi">Daftar isi</h2>
+<ol>
+<li><a href="#apa yang kamu perlukan">Apa yang kamu perlukan</a></li>
+<li><a href="#ikon-sekilas">Sekilas ikon</a></li>
+<li><a href="#buka-menu">Buka menu</a></li>
+<li><a href="#penyiapan-pertama-kelola-kendaraan">Penyiapan pertama kali: Kelola Kendaraan</a></li>
+<li><a href="#pencadangan-dan-sinkronisasi multi-perangkat">Pencadangan dan sinkronisasi multi-perangkat</a></li>
+<li><a href="#pengisian bahan bakar cepat">Pengisian Cepat (bahan bakar)</a></li>
+<li><a href="#mulai perjalanan">Mulai perjalanan</a></li>
+<li><a href="#beban">Beban</a></li>
+<li><a href="#laporan">Laporan</a></li>
+<li><a href="#pengaturan-preferensi-lokal">Pengaturan (preferensi lokal)</a></li>
+<li><a href="#sinkronisasi">Sinkronisasi</a></li>
+<li><a href="#bantuan--tentang">Bantuan &amp; Tentang</a></li>
+<li><a href="#dokumen-terkait">Dokumen terkait</a></li>
+</ol>
+<hr />
+<h2 id="apa-yang-anda-butuhkan">Apa yang Anda butuhkan</h2>
+<ul>
+<li>Ponsel atau tablet Android.</li>
+<li>Untuk OCR terbaik: tampilan jelas <strong>odometer dasbor</strong> dan <strong>total pompa</strong> Anda (atau ketik angkanya dengan tangan).</li>
+<li>Opsional: akun <strong>yang Anda kendalikan</strong> untuk data spreadsheet dan/atau pencadangan foto (lihat <a href="#pencadangan-dan-sinkronisasi multi-perangkat">Pencadangan dan sinkronisasi multi-perangkat</a>).</li>
+</ul>
+<hr />
+<h2 id="sekilas-ikon">Sekilas ikon</h2>
+<p>Ini muncul di layar utama. Mengetahui mereka menghemat banyak perburuan.</p>
+<table>
+<thead>
+<tr>
+<th>Dimana</th>
+<th>Ikon / kontrol</th>
+<th>Apa fungsinya</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bilah atas</td>
+<td><strong>☰ Menu</strong> (hamburger)</td>
+<td>Membuka panel samping navigasi</td>
+</tr>
+<tr>
+<td>Bilah atas</td>
+<td><strong>ⓘ</strong> (bantuan halaman)</td>
+<td>Bantuan singkat untuk halaman <strong>saat ini</strong> (di sebelah menu bila tersedia)</td>
+</tr>
+<tr>
+<td>Bilah atas</td>
+<td><strong><code>?N</code></strong> (kuning)</td>
+<td>Pertanyaan tinjauan impor yang tertunda — membuka Tinjauan impor</td>
+</tr>
+<tr>
+<td>Bilah atas</td>
+<td><strong>!</strong> (merah)</td>
+<td>Tujuan spreadsheet atau foto baru-baru ini gagal — buka <strong>Sinkronisasi</strong> untuk memperbaiki</td>
+</tr>
+<tr>
+<td>Bilah atas</td>
+<td><strong>☰ + ←</strong></td>
+<td>Laporkan anak-anak dan daftar Pengeluaran menunjukkan <strong>menu dan kembali</strong> secara bersamaan; Hub laporan hanya ada di menu</td>
+</tr>
+<tr>
+<td>Setting / edit bahan bakar</td>
+<td><strong>←</strong></td>
+<td>Kembali (pengaturan spreadsheet/foto dan edit bahan bakar tetap fokus ke belakang)</td>
+</tr>
+<tr>
+<td>Isi Cepat</td>
+<td><strong>Lingkaran putih</strong> (rana)</td>
+<td>Tangkap odometer atau tampilan pompa untuk OCR</td>
+</tr>
+<tr>
+<td>Isi Cepat</td>
+<td><strong>Disk / Simpan</strong></td>
+<td>Hemat pengisian (membutuhkan kendaraan dan minimal satu odo/volume/biaya)</td>
+</tr>
+<tr>
+<td>Isi Cepat</td>
+<td><strong>↕ panah</strong> (pengalih mode)</td>
+<td>Alihkan <strong>mode odometer</strong> vs <strong>mode pompa (biaya/volume)</strong>. Batas hijau menyorot grup bidang aktif</td>
+</tr>
+<tr>
+<td>Isi Cepat</td>
+<td><strong>↔ panah</strong> (antara biaya &amp; volume)</td>
+<td>Tukar biaya dan volume jika OCR memasukkannya ke kolom yang salah</td>
+</tr>
+<tr>
+<td>Isi Cepat</td>
+<td><strong>Perbesar 1x / …</strong></td>
+<td>Rasio zoom kamera bila lensa mendukungnya</td>
+</tr>
+<tr>
+<td>Isi Cepat (setelah pengambilan)</td>
+<td><strong>Segarkan</strong> pada tombol utama</td>
+<td>Buang pratinjau dan kembali ke kamera langsung</td>
+</tr>
+<tr>
+<td>Isi Cepat (saat memproses)</td>
+<td><strong>X</strong> pada tombol utama</td>
+<td>Batalkan pengambilan yang sedang berlangsung/OCR</td>
+</tr>
+<tr>
+<td>Biaya</td>
+<td><strong>Simpan</strong></td>
+<td>Hemat biaya</td>
+</tr>
+<tr>
+<td>Biaya</td>
+<td><strong>Lingkaran rana</strong></td>
+<td>Ambil foto tanda terima</td>
+</tr>
+<tr>
+<td>Biaya</td>
+<td><strong>Galeri</strong></td>
+<td>Pilih gambar tanda terima dari perpustakaan</td>
+</tr>
+<tr>
+<td>Biaya</td>
+<td><strong>Mengambil kembali</strong></td>
+<td>Hapus foto tanda terima saat ini dan potret lagi</td>
+</tr>
+<tr>
+<td>Pengeluaran / Kelola Kendaraan</td>
+<td><strong>+ / −</strong> FAB</td>
+<td>Perbesar pratinjau foto</td>
+</tr>
+<tr>
+<td>Dialog landmark</td>
+<td><strong>Edit OCR</strong> ​​</td>
+<td>Perbaiki atau tambahkan teks landmark yang terlewatkan oleh mesin</td>
+</tr>
+<tr>
+<td>Formulir Spreadsheet / Foto</td>
+<td><strong>🔍 Telusuri</strong></td>
+<td>Jelajahi Google Drive untuk mencari sheet atau folder (setelah masuk)</td>
+</tr>
+</tbody>
+</table>
+<p>Simbol mata uang pada kolom biaya dan <strong>G/L</strong> pada kolom volume dapat diketuk: buka menu kecil untuk mengubah mata uang atau galon vs liter untuk entri tersebut.</p>
+<hr />
+<h2 id="buka-menunya">Buka menunya</h2>
+<ol>
+<li>Ketuk <strong>☰</strong> di kiri atas.</li>
+<li>Pilih halaman.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="01-drawer.jpg" src="images/01-drawer.jpg" /></p>
+<p><strong>Laci utama:</strong> Pengisian Cepat · Mulai perjalanan · Kelola Kendaraan · Pengeluaran baru · <strong>Laporan</strong> · Pengaturan · Sinkronisasi · Bantuan · Tentang.</p>
+<p><strong>Laci eksperimen</strong> (Pengaturan → Tampilkan layar eksperimen): Eksperimen Penyelarasan · Eksperimen Pompa · <strong>Impor Gambar Lama</strong>.</p>
+<p><strong>Melalui hub Laporan (bukan laci utama):</strong> Daftar pengeluaran · Isi riwayat.</p>
+<hr />
+<h2 id="penyiapan-pertama-kali-kelola-kendaraan">Penyiapan pertama kali: Kelola Kendaraan</h2>
+<p>OCR dan <strong>pencocokan kendaraan otomatis</strong> berfungsi paling baik setelah Anda mendaftarkan setiap kendaraan dengan <strong>foto dasbor referensi</strong>, memotong odometer, dan menjalankan <strong>Discovery</strong> sehingga aplikasi menyimpan teks penting untuk dasbor tersebut. (Bagaimana landmark dipilih dan dicocokkan akan didokumentasikan secara lebih rinci dalam pembaruan selanjutnya.)</p>
+<h3 id="buka-kelola-kendaraan">Buka Kelola Kendaraan</h3>
+<p>Menu → <strong>Kelola Kendaraan</strong>. Pilih kendaraan (atau <strong>Tambahkan Kendaraan Baru</strong>).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r1-manage-vehicles-crops.jpg" src="images/r1-manage-vehicles-crops.jpg" /></p>
+<h3 id="menambah-atau-mengedit-kendaraan">Menambah atau mengedit kendaraan</h3>
+<ol>
+<li>Buka dropdown <strong>Kendaraan</strong> → pilih kendaraan atau <strong>Tambahkan Kendaraan Baru</strong>.</li>
+<li>Ambil atau pilih <strong>foto dasbor referensi</strong> yang jelas (kluster instrumen lengkap, penerangan cukup, ponsel dalam posisi persegi). Gunakan <strong>Ambil Foto</strong> atau <strong>Galeri</strong>.</li>
+<li>Menggambar tanaman:<br />
+   - <strong>Odo Crop</strong> — persegi panjang yang mengelilingi angka odometer (tombol menunjukkan <strong>Done Odo</strong> saat mode tersebut aktif).<br />
+   - <strong>Abaikan Pangkas</strong> — wilayah opsional untuk diabaikan (jam, radio, dll.).<br />
+   - <strong>Edit Pangkas</strong> — menyesuaikan persegi panjang yang ada.</li>
+<li>Ketuk <strong>Jalankan Penemuan</strong> — OCR multi-mesin menemukan kata-kata penting di luar hasil panen.</li>
+<li>Tinjau dengan <strong>Tampilkan Tengara</strong>. Gunakan <strong>Edit OCR</strong> ​​untuk memperbaiki kesalahan membaca atau <strong>menambahkan</strong> teks yang terlewat.</li>
+<li>Isi <strong>Nama Kendaraan</strong> (wajib diisi), ditambah merek/model/tahun/plat sesuai keinginan.</li>
+<li>Ketuk <strong>Buat Kendaraan</strong> atau <strong>Simpan Perubahan</strong> (membutuhkan nama + foto referensi untuk kendaraan baru).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="03b-manage-vehicles-new.jpg" src="images/03b-manage-vehicles-new.jpg" /></p>
+<h3 id="tengara-perbaiki-hal-yang-terlewatkan-oleh-discovery">Tengara: perbaiki hal yang terlewatkan oleh Discovery</h3>
+<p>Setelah <strong>Tampilkan Tengara</strong>, gulir daftar dan perbaiki nilainya. Mesin terkadang melewatkan angka kecil (misalnya jam <strong>60</strong> di kanan bawah cluster). Gunakan <strong>Edit OCR</strong> ​​untuk menambah atau memperbaikinya sehingga identitas kendaraan tetap dapat diandalkan.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r2-manage-vehicles-landmarks.jpg" src="images/r2-manage-vehicles-landmarks.jpg" /></p>
+<h3 id="mengetik-tanpa-foto-yang-sempurna">Mengetik tanpa foto yang sempurna</h3>
+<p>Anda masih dapat menggunakan aplikasi dengan memilih kendaraan dan <strong>mengetik</strong> odometer, volume, dan biaya pada Isi Cepat — OCR bersifat opsional untuk setiap bidang. Impor galeri berfungsi untuk foto dasbor referensi saat Anda memilih untuk tidak memotret dalam aplikasi.</p>
+<p><strong>Tips:</strong> Setelah sinkronisasi spreadsheet, definisi kendaraan (potongan, landmark) ada di database lokal — Anda tidak perlu membuka kembali Kelola Kendaraan untuk Isi Cepat untuk menggunakannya.</p>
+<hr />
+<h2 id="pencadangan-dan-sinkronisasi-multi-perangkat">Pencadangan dan sinkronisasi multi-perangkat</h2>
+<p>Aplikasi ini dibuat agar <strong>beberapa ponsel atau tablet dapat berbagi data armada yang sama</strong>, sehingga Anda dapat menyimpan <strong>salinan data dan foto Anda di luar perangkat</strong>. Hal ini dilakukan dengan tujuan yang <strong>Anda</strong> konfigurasikan di bawah akun <strong>Anda</strong> atau server <strong>Anda</strong> yang dihosting sendiri — bukan “cloud Pengeluaran Kendaraan” milik perusahaan yang dapat dilihat orang lain.</p>
+<h3 id="apa-yang-berjalan-di-mana">Apa yang berjalan di mana</h3>
+<table>
+<thead>
+<tr>
+<th>Jenis</th>
+<th>Apa yang disimpannya</th>
+<th>Penggunaan khas</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Sinkronisasi spreadsheet/tabel</strong></td>
+<td>Kendaraan, pengisian bahan bakar, pengeluaran (baris dan tab)</td>
+<td>Penggabungan multi-perangkat + pencadangan terstruktur</td>
+</tr>
+<tr>
+<td><strong>Cadangan foto</strong></td>
+<td>Gambar biner (dasbor/pompa/kwitansi/foto referensi)</td>
+<td>Cadangan foto + pulihkan file yang hilang</td>
+</tr>
+</tbody>
+</table>
+<p>Anda dapat mengonfigurasi <strong>beberapa tujuan</strong> dari setiap jenis (soft cap per jenis). Pekerja manual <strong>Sinkronkan sekarang</strong> dan <strong>latar belakang</strong> menjalankan pekerja yang diaktifkan.</p>
+<h3 id="offline-dulu">Offline dulu</h3>
+<ul>
+<li><strong>Tidak diperlukan jaringan</strong> untuk menambahkan pengisian, pengeluaran, atau tanda terima. Semuanya disimpan <strong>secara lokal terlebih dahulu</strong>.</li>
+<li>Saat jaringan tersedia, sinkronisasi dan pencadangan foto dijalankan sebagai <strong>tugas latar belakang</strong> (sesuai jadwal yang Anda atur, dan saat Anda mengetuk <strong>Sinkronkan sekarang</strong>). Kegagalan ditampilkan sebagai teks merah di bawah baris Pengaturan dan <strong>!</strong> di bilah judul aplikasi.</li>
+</ul>
+<h3 id="hanya-akun-anda">Hanya akun Anda</h3>
+<p>Proses masuk dan token tetap ada di perangkat untuk penyedia yang Anda pilih (Google, Microsoft, kunci S3, URL yang dihosting sendiri, dan sebagainya). Tujuan berada di bawah <strong>kontrol penuh pengguna</strong> — akun Google Anda, OneDrive Anda, bucket MinIO Anda, host EtherCalc Anda, dll. Tidak ada yang dibagikan dengan pengguna Pengeluaran Kendaraan lainnya melalui backend bersama.</p>
+<h3 id="target-yang-didukung-data-spreadsheet-tabel">Target yang didukung — data (spreadsheet / tabel)</h3>
+<p>Dikonfigurasi dalam <strong>Menu → Sinkronisasi → Sinkronisasi spreadsheet</strong> (juga dapat dijangkau dari baris ringkasan Pengaturan). Opsi pemilih kelas satu:</p>
+<table>
+<thead>
+<tr>
+<th>Sasaran</th>
+<th>Catatan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Spreadsheet</strong></td>
+<td>Standar umum; tab untuk Kendaraan, Pengeluaran, dan bahan bakar per kendaraan</td>
+</tr>
+<tr>
+<td><strong>Unggul</strong></td>
+<td>Buku kerja Microsoft melalui pengikatan gaya Grafik / OneDrive</td>
+</tr>
+<tr>
+<td><strong>EtherCalc</strong></td>
+<td>Ruang spreadsheet kolaboratif yang dihosting sendiri</td>
+</tr>
+<tr>
+<td><strong>Lainnya →</strong> mengimplementasikan backend</td>
+<td><strong>Baserow</strong>, <strong>NocoDB</strong>, <strong>Airtable</strong>, <strong>PocketBase</strong>, <strong>Supabase</strong>, <strong>Firebase</strong>, <strong>Zoho Sheet</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Ditangguhkan/belum tanpa kepala (tercantum di bawah Lainnya tetapi belum diterapkan sepenuhnya): OnlyOffice, Collabora. Lihat juga <a href="reference/self-host/INDEX.md">indeks self-host</a>.</p>
+<p>CSV <strong>ekspor/impor</strong> (ZIP dengan tata letak tab yang sama) tersedia dari Pengaturan sebagai cadangan portabel, terlepas dari sinkronisasi langsung.</p>
+<h3 id="target-yang-didukung-foto-cadangan-gambar">Target yang didukung — foto (cadangan gambar)</h3>
+<p>Dikonfigurasi pada <strong>Menu → Sinkronisasi → Pencadangan foto</strong> (juga dari baris ringkasan Pengaturan):</p>
+<table>
+<thead>
+<tr>
+<th>Sasaran</th>
+<th>Catatan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Drive</strong></td>
+<td>Folder yang Anda pilih (jelajahi atau tempel URL)</td>
+</tr>
+<tr>
+<td><strong>OneDrive</strong></td>
+<td>Akun Microsoft + awalan jalur</td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td>AWS, Wasabi, Cloudflare R2, MinIO, dan titik akhir lain yang kompatibel dengan S3</td>
+</tr>
+<tr>
+<td><strong>Lainnya</strong></td>
+<td>penyimpanan yang didukung rclone (misalnya WebDAV, SFTP, dan remote pilihan lainnya yang tersedia di pemilih dalam aplikasi)</td>
+</tr>
+</tbody>
+</table>
+<p>Siapkan lembar contekan untuk foto yang dihosting sendiri dan target tabel: <a href="reference/self-host/INDEX.md">indeks host mandiri</a>.</p>
+<h3 id="perilaku-multi-perangkat-pendek">Perilaku multi-perangkat (pendek)</h3>
+<ul>
+<li>Baris digabungkan berdasarkan <strong>Sync ID</strong> dengan <strong>last-write-wins</strong> pada stempel waktu <strong>Diperbarui</strong>.</li>
+<li>Penghapusannya lembut; pengeditan yang lebih baru di perangkat lain dapat memulihkan baris.</li>
+<li>Memasukkan <strong>isian yang sama dua kali</strong> pada dua perangkat akan menghasilkan <strong>dua baris</strong> — hapus baris tambahan saat Anda menyadarinya.</li>
+<li>Lebih detail: <a href="#sync-behavior-notes">Sinkronkan catatan perilaku</a> dan <a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a>.</li>
+</ul>
+<h3 id="contoh-menambahkan-google-spreadsheet-data">Contoh: menambahkan Google Spreadsheet (data)</h3>
+<ol>
+<li><strong>Menu → Sinkronisasi → Sinkronisasi spreadsheet</strong> (atau Pengaturan → Sinkronisasi spreadsheet).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="08-spreadsheet-sync.jpg" src="images/08-spreadsheet-sync.jpg" /></p>
+<ol start="2">
+<li>Ketuk <strong>Tambahkan tujuan spreadsheet</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="09-spreadsheet-provider-picker.jpg" src="images/09-spreadsheet-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Pilih <strong>Google Spreadsheet</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="10-spreadsheet-google-form.jpg" src="images/10-spreadsheet-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Masuk dengan Google</strong> → nama tampilan → <strong>URL Lembar</strong> atau <strong>🔍</strong> jelajahi/buat → opsi jadwal → aktifkan → simpan.</li>
+<li><strong>Sinkronkan sekarang</strong> sekali untuk membuat/memperbarui tab: <code>Kendaraan</code>, <code>Beban</code>, <code>Bahan Bakar - {nama kendaraan}</code>.</li>
+</ol>
+<h3 id="contoh-menambahkan-google-drive-foto">Contoh: menambahkan Google Drive (foto)</h3>
+<ol>
+<li><strong>Menu → Sinkronisasi → Pencadangan foto</strong> (atau Pengaturan → Pencadangan foto).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="11-photo-backup.jpg" src="images/11-photo-backup.jpg" /></p>
+<ol start="2">
+<li>Ketuk <strong>Tambahkan tujuan foto</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="12-photo-provider-picker.jpg" src="images/12-photo-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Pilih <strong>Google Drive</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="13-photo-google-form.jpg" src="images/13-photo-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Masuk dengan Google (Drive)</strong> → URL/jelajah folder opsional → aktifkan → simpan → <strong>Sinkronkan sekarang</strong>.</li>
+</ol>
+<p>Manual <strong>Sinkronisasi sekarang</strong> untuk foto sudah bisa dilakukan; pencadangan latar belakang biasanya memproses unggahan <strong>hanya tertunda</strong> sesuai jadwal.</p>
+<h3 id="menyinkronkan-catatan-perilaku">Menyinkronkan catatan perilaku</h3>
+<ul>
+<li>Setelah pemutakhiran aplikasi, Anda mungkin melihat sekilas <strong>"Memperbarui basis data setelah pemutakhiran..."</strong> (pengisian ulang id sinkronisasi lokal).</li>
+<li>Jika sinkronisasi terganggu, sinkronisasi berikutnya yang <strong>berhasil</strong> akan digabungkan kembali dan memperbaiki tab yang jauh.</li>
+<li>Kegagalan: ringkasan merah pada kartu Sinkronisasi + <strong>!</strong> di bilah aplikasi.</li>
+</ul>
+<hr />
+<h2 id="pengisian-cepat-bahan-bakar">Pengisian Cepat (bahan bakar)</h2>
+<p>Ini adalah <strong>layar utama</strong> saat Anda membuka aplikasi.</p>
+<h3 id="pemilihan-kendaraan-biasanya-otomatis">Pemilihan kendaraan (biasanya otomatis)</h3>
+<p>Anda <strong>tidak</strong> perlu memilih kendaraan terlebih dahulu. Saat kendaraan telah menyiapkan <strong>tengara</strong> di Kelola Kendaraan, Isi Cepat <strong>secara otomatis mendeteksi kendaraan mana</strong> dari gambar dasbor setelah Anda mengambil odometer. Anda masih dapat membuka dropdown <strong>Kendaraan</strong> untuk menggantinya jika diperlukan.</p>
+<h3 id="arahkan-ke-odometer">Arahkan ke odometer</h3>
+<p>Tetap dalam mode odometer dan bingkai cluster. Petunjuk: <em>Arahkan ke odometer. Ketuk rana untuk mengambil gambar.</em></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r3-quickfill-odo-live.jpg" src="images/r3-quickfill-odo-live.jpg" /></p>
+<h3 id="setelah-penutup-odometer">Setelah penutup odometer</h3>
+<p>OCR mengisi <strong>Odo</strong> dan mencoba mencocokkan kendaraan dari landmark (tinjau keduanya jika diperlukan). Tombol utama menjadi <strong>Coba lagi</strong> untuk memotret ulang. Instruksi merangkum bacaan.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r4-quickfill-odo-result.jpg" src="images/r4-quickfill-odo-result.jpg" /></p>
+<h3 id="mode-pompa-biaya-dan-volume">Mode pompa (biaya dan volume)</h3>
+<ol>
+<li>Ketuk <strong>↕</strong> untuk beralih ke mode pompa: <em>Arahkan ke tampilan pompa (biaya/volume). Ketuk rana.</em></li>
+<li>Tangkap total pompa. Isi kolom biaya dan volume; gunakan <strong>↔</strong> jika ditukar.</li>
+<li>Ketuk mata uang atau <strong>G/L</strong> jika diperlukan, lalu <strong>Simpan</strong> (disk). Bidang yang kosong akan diisi <strong>sebagian</strong> (masih diperbolehkan).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r5-quickfill-pump-result.jpg" src="images/r5-quickfill-pump-result.jpg" /></p>
+<p>Anda tetap berada di Isi Cepat untuk perhentian berikutnya (kolom kosong setelah disimpan). Bekerja sepenuhnya <strong>offline</strong>; sinkronisasi berjalan nanti di latar belakang saat dikonfigurasi.</p>
+<h3 id="entri-manual-tidak-ada-kamera-ocr-buruk">Entri manual (tidak ada kamera / OCR buruk)</h3>
+<ol>
+<li>Ketuk <strong>Odo</strong>, <strong>cost</strong>, atau <strong>volume</strong> dan ketik nilai (potret menggunakan keyboard sistem; lanskap menggunakan keypad di layar).</li>
+<li>Pilih atau konfirmasi <strong>Kendaraan</strong> jika deteksi otomatis tidak berjalan.</li>
+<li>Simpan seperti diatas.</li>
+</ol>
+<h3 id="mode-dan-batas">Mode dan batas</h3>
+<ul>
+<li><strong>Perbatasan hijau</strong> di sekitar kendaraan+odo → menangkap/mengedit odometer.</li>
+<li><strong>Batas hijau</strong> di sekitar biaya+volume → mode pompa.</li>
+<li><strong>Simpan</strong> tetap dinonaktifkan hingga kendaraan dipilih dan setidaknya salah satu odo/biaya/volume memiliki data, dan OCR tidak lagi berjalan.</li>
+</ul>
+<p>Tip di layar (di bawah baris instruksi): <em>Bidik = ambil · Disk = simpan · ↕ = mode odo/pompa · ↔ = biaya/volume swap.</em></p>
+<hr />
+<h2 id="biaya">Biaya</h2>
+<h3 id="pengeluaran-baru">Pengeluaran baru</h3>
+<p>Menu → <strong>Pengeluaran baru</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r6-new-expense.jpg" src="images/r6-new-expense.jpg" /></p>
+<ol>
+<li><strong>Simpan</strong> (disk), <strong>rana</strong> (foto resi), atau <strong>galeri</strong> (pilih gambar).</li>
+<li>Isi <strong>Tanggal</strong>, <strong>Kendaraan</strong>, <strong>Vendor</strong>, <strong>Deskripsi</strong>, <strong>Jumlah</strong> (simbol mata uang dapat disadap), <strong>Kategori</strong>, opsional <strong>Odometer</strong>.</li>
+<li>Tanda terima multi-halaman: ambil halaman tambahan jika UI menawarkan paging (halaman 0 adalah tanda terima utama).</li>
+<li><strong>Simpan</strong> untuk disimpan (lokal terlebih dahulu; pencadangan foto dan sinkronisasi spreadsheet terjadi di latar belakang saat dikonfigurasi).</li>
+</ol>
+<h3 id="daftar-pengeluaran">Daftar pengeluaran</h3>
+<p>Menu → <strong>Laporan</strong> → <strong>Daftar pengeluaran</strong> — menelusuri pengeluaran non-bahan bakar sebelumnya; membuka item untuk diedit.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="05-expense-list.jpg" src="images/05-expense-list.jpg" /></p>
+<h3 id="edit-pengeluaran">Edit pengeluaran</h3>
+<p>Buka satu baris dari daftar. Vendor, jumlah, kategori, kendaraan, dan deskripsi yang benar. Jika tanda terima hanya ada dalam cadangan foto (tidak ada file lokal yang dapat dibaca), gunakan <strong>Ambil gambar dari arsip</strong> saat ditampilkan (berfungsi di seluruh tujuan foto yang dikonfigurasi).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="expense-edit.jpg" src="images/expense-edit.jpg" /></p>
+<hr />
+<h2 id="mulai-perjalanan">Mulai perjalanan</h2>
+<p>Menu → <strong>Mulai perjalanan</strong> (setelah Isi Cepat di laci). Ambil atau masukkan odometer, pilih jenis perjalanan, simpan dengan ikon <strong>disk</strong>. <strong>Berhenti</strong> adalah pintasan untuk Pribadi yang sekarang berada di lokasi GPS yang disimpan. Gunakan <strong>ⓘ</strong> untuk pengingat kontrol.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="start-trip.jpg" src="images/start-trip.jpg" /></p>
+<p>Awal perjalanan disimpan sebagai baris bahan bakar dengan <strong>Jenis Perjalanan</strong> (bukan pengisian normal). Mereka muncul di <strong>Laporan → Jarak perjalanan</strong>, bukan di Riwayat Bahan Bakar.</p>
+<hr />
+<h2 id="laporan">Laporan</h2>
+<p>Menu → <strong>Laporan</strong> membuka hub produk (ringkasan sepanjang masa + kartu katalog). Ini adalah satu-satunya laporan produk yang muncul — tidak ada item laci “Laporan &amp; Bagan” yang terpisah.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="06-reports.jpg" src="images/06-reports.jpg" /></p>
+<p>Buka kartu untuk mode kendaraan (<strong>Semua / Masing-masing / Tunggal</strong>), filter periode, bagan, dan bagikan (<strong>TEKS / CSV / PDF</strong>). Bilah atas pada anak laporan: <strong>☰ + ←</strong> (dan <strong>ⓘ</strong> saat terdaftar).</p>
+<h3 id="laporan-berbasis-waktu">Laporan berbasis waktu</h3>
+<p>Kartu grafik utama. Metrik opsional (mpg, volume/jarak seperti G/mi, harga satuan seperti $/G, biaya/jarak, $ bulanan, mil perjalanan, % perjalanan menurut jenis) dengan wadah <strong>Halus</strong> dan <strong>skala Y independen</strong> (sisi kiri ekonomi; uang dan keluarga perjalanan di sebelah kanan).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports.jpg" src="images/time-based-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports-scrolled.jpg" src="images/time-based-reports-scrolled.jpg" /></p>
+<p>Detail matematika ekonomi: <a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a>.</p>
+<h3 id="riwayat-pengisian-vs-riwayat-bahan-bakar">Riwayat pengisian vs Riwayat Bahan Bakar</h3>
+<ul>
+<li><strong>Laporan → Isi riwayat</strong> — pengisian kronologis untuk filter laporan (<strong>hanya diisi</strong>; tidak ada perjalanan dimulai).</li>
+</ul>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fill-history.jpg" src="images/fill-history.jpg" /></p>
+<ul>
+<li><strong>Riwayat Bahan Bakar</strong> (jika ada di navigasi bangunan Anda) — inventaris pengisian per kendaraan, juga hanya diisi; ketuk satu baris untuk mengedit.</li>
+</ul>
+<h3 id="perjalanan-mil">Perjalanan mil</h3>
+<p><strong>Laporan → Jarak tempuh perjalanan</strong> — jarak tempuh berdasarkan jenis, bagan, dan kronologis <strong>daftar awal perjalanan / segmen</strong>. Ketuk awal yang sebenarnya untuk membuka <strong>Edit isi</strong> untuk baris tersebut.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="trip-miles.jpg" src="images/trip-miles.jpg" /></p>
+<h3 id="edit-isi">Edit isi</h3>
+<p>Dari Riwayat pengisian, Riwayat Bahan Bakar, atau Jarak perjalanan, buka pengisian. Tata letak: kendaraan dan odometer, <strong>mata uang sebelum biaya</strong>, volume, catatan. Jenis perjalanan hanya muncul bila baris tersebut merupakan awal perjalanan. Lokasi memiliki ringkasan ditambah <strong>Detail lokasi</strong>. Foto lokal dengan identitas cloud tidak ada: <strong>Ambil gambar dari arsip</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fuel-edit.jpg" src="images/fuel-edit.jpg" /></p>
+<p>Kartu katalog lainnya mencakup pengeluaran berdasarkan kategori, ringkasan kendaraan, dan daftar pengeluaran.</p>
+<p>Uang menggunakan mata uang setiap baris saat disetel. Total mata uang campuran menunjukkan <strong>subtotal per mata uang</strong> (tidak ada konversi FX senyap).</p>
+<hr />
+<h2 id="sinkronisasi">Sinkronisasi</h2>
+<p>Menu → <strong>Sinkronisasi</strong> adalah hub untuk tujuan spreadsheet dan foto (tidak hanya terkubur di bawah Pengaturan).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="syncing-hub.jpg" src="images/syncing-hub.jpg" /></p>
+<ul>
+<li>Kartu untuk <strong>Sinkronisasi spreadsheet</strong> dan <strong>Cadangan foto</strong> dengan status pendek, <strong>Sinkronisasi</strong> untuk jenis itu, dan <strong>›</strong> ke dalam daftar tujuan.</li>
+<li>Buka tujuan untuk <strong>Uji koneksi</strong> dan <strong>Sinkronkan sekarang (tujuan ini)</strong> / semua dikonfigurasi.</li>
+<li>Kegagalan <strong>Detail</strong> dan tanda merah <strong>!</strong> di bilah judul muncul di sini.</li>
+<li>Penyiapan Google Spreadsheet dan Drive langkah demi langkah: <a href="#backup-dan-sinkronisasi multi-perangkat">Pencadangan dan sinkronisasi multi-perangkat</a>.</li>
+</ul>
+<hr />
+<h2 id="pengaturan-preferensi-lokal">Pengaturan (preferensi lokal)</h2>
+<p>Menu → <strong>Pengaturan</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07-settings.jpg" src="images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07b-settings-more.jpg" src="images/07b-settings-more.jpg" /></p>
+<p>Untuk tujuan, pilih <strong>Menu → Sinkronisasi</strong>. Pengaturan mungkin masih menampilkan baris ringkasan yang membuka daftar yang sama.</p>
+<h3 id="preferensi-lokal-umum">Preferensi lokal (umum)</h3>
+<ul>
+<li><strong>Simpan Foto Tanda Terima Bahan Bakar</strong> / <strong>Simpan Foto Pengeluaran Secara Lokal</strong> — menyimpan gambar di perangkat (dapat meminta izin Foto).</li>
+<li><strong>Putar Suara Rana</strong></li>
+<li><strong>Mata Uang</strong> / <strong>Satuan volume</strong> — default aplikasi (sistem atau eksplisit). Mengubah satuan volume dengan data bahan bakar yang ada mungkin menawarkan dialog konversi.</li>
+<li><strong>Mode gelap</strong></li>
+<li><strong>Tips penyiapan</strong> — membuka kembali tutorial sinkronisasi/kendaraan yang dijalankan pertama kali.</li>
+<li><strong>Debug Quick Fill</strong> / <strong>Tampilkan layar eksperimen (dev)</strong> — lanjutan; tinggalkan untuk penggunaan sehari-hari. Layar eksperimen tidak didokumentasikan di sini.</li>
+</ul>
+<p>CSV <strong>ekspor/impor</strong> (ZIP Kendaraan / Pengeluaran / Tab Bahan Bakar) tersedia dari Pengaturan ketika ditawarkan oleh versi saat ini.</p>
+<hr />
+<h2 id="bantuan-tentang">Bantuan &amp; Tentang</h2>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="14-help.jpg" src="images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="15-about.jpg" src="images/15-about.jpg" /></p>
+<ul>
+<li><strong>Bantuan</strong> — mulai cepat di perangkat, tutorial pengaturan, tautan ke manual ini, indeks pengaturan host mandiri.</li>
+<li><strong>Tentang</strong> — versi, lisensi, GitHub, manual ini (dibundel offline + HTML online saat dipublikasikan).</li>
+</ul>
+<hr />
+<h2 id="dokumen-terkait">Dokumen terkait</h2>
+<ul>
+<li><a href="reference/USER_GUIDE.md">USER_GUIDE.md</a> — referensi ringkas</li>
+<li><a href="reference/self-host/INDEX.md">self-host/INDEX.md</a> — pengaturan foto/tabular yang dihosting sendiri</li>
+<li><a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> — penggabungan, pemulihan, duplikat</li>
+<li><a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a> — detail metrik ekonomi</li>
+</ul>
+</body>
+</html>

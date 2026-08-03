@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -9,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -25,10 +28,10 @@ fun SyncingScreen(navController: NavHostController) {
     val context = LocalContext.current
     val viewModel: SettingsViewModel = hiltViewModel()
     RegisterPageHelp(
-        title = "Syncing",
-        "Spreadsheet sync and Photo backup open destination lists. Sync on each card runs all configured destinations.",
-        "Red ! in the title bar means a stored failure — open Details on the card for the full API message.",
-        "Leaving this screen during Sync now does not cancel the job (it continues in the background).",
+        title = stringResource(R.string.nav_syncing),
+        stringResource(R.string.settings_spreadsheet_sync_and_photo_backup_open_destinati),
+        stringResource(R.string.settings_red_in_the_title_bar_means_a_stored_failure_open),
+        stringResource(R.string.settings_leaving_this_screen_during_sync_now_does_not_can),
     )
     val syncStore = remember { SyncDestinationStore(context) }
     val failureStore = remember { SyncFailureStore(context) }
@@ -94,16 +97,16 @@ fun SyncingScreen(navController: NavHostController) {
             .verticalScroll(rememberScrollState()),
     ) {
         FeatureScreenHeader(
-            title = "Syncing",
-            subtitle = "Tap Spreadsheet sync or Photo backup to add destinations. " +
+            title = stringResource(R.string.nav_syncing),
+            subtitle = stringResource(R.string.settings_tap_spreadsheet_sync_or_photo_backup_to_) +
                 "Use Sync on each card after setup. A red ! in the title bar means a recent failure. " +
-                "Menu → Help for Google setup steps.",
+                stringResource(R.string.settings_menu_help_for_google_setup_steps),
         )
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("Sync & backup", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.settings_sync_backup), style = MaterialTheme.typography.titleMedium)
         SyncSummaryRow(
-            title = "Spreadsheet sync",
+            title = stringResource(R.string.settings_spreadsheet_sync),
             summary = SyncDestinationStore.spreadsheetSummaryLine(spreadsheetDests),
             pendingBadge = pendingBadge,
             errorText = spreadsheetError,
@@ -116,14 +119,14 @@ fun SyncingScreen(navController: NavHostController) {
             onRowClick = { navController.navigate("settings/spreadsheet_sync") },
             onSyncNow = {
                 if (!spreadsheetConfigured) {
-                    Toast.makeText(context, "No configured spreadsheet destinations", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.settings_no_configured_spreadsheet_destinations), Toast.LENGTH_SHORT).show()
                     return@SyncSummaryRow
                 }
                 viewModel.startSpreadsheetSync()
             },
         )
         SyncSummaryRow(
-            title = "Photo backup",
+            title = stringResource(R.string.settings_photo_backup),
             summary = syncStore.photoSummaryLine(photoDests),
             pendingBadge = pendingBadge,
             errorText = photoError,
@@ -136,7 +139,7 @@ fun SyncingScreen(navController: NavHostController) {
             onRowClick = { navController.navigate("settings/photo_backup") },
             onSyncNow = {
                 if (!photoConfigured) {
-                    Toast.makeText(context, "No configured photo destinations", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.settings_no_configured_photo_destinations), Toast.LENGTH_SHORT).show()
                     return@SyncSummaryRow
                 }
                 viewModel.startPhotoSync()
@@ -188,7 +191,7 @@ internal fun SyncSummaryRow(
                                 onClick = { showDetails = true },
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             ) {
-                                Text("Details", style = MaterialTheme.typography.labelSmall)
+                                Text(stringResource(R.string.settings_details), style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -207,7 +210,7 @@ internal fun SyncSummaryRow(
                     onClick = onSyncNow,
                     enabled = !syncInProgress,
                 ) {
-                    Text("Sync")
+                    Text(stringResource(R.string.settings_sync))
                 }
             }
             Text("›", style = MaterialTheme.typography.titleLarge)

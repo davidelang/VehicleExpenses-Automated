@@ -198,6 +198,7 @@ object ReportsLabPdf {
     ): ByteArray {
         val allLines = plainText.lines()
         val meta = mutableListOf(
+            // Export meta stays English product name (share/PDF header; not Compose scope)
             "Vehicle Expenses",
             "Generated: ${formatGenerated(generatedMs)}",
         )

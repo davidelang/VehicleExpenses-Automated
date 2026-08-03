@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vehicle Expenses Automated — User Manual</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height: 1.5;
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 3rem;
+      color: #111;
+      background: #fafafa;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #eee; background: #121212; }
+      a { color: #8ab4f8; }
+      table { border-color: #444; }
+      th, td { border-color: #444; }
+      code { background: #2a2a2a; }
+      pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
+    }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
+    th { background: rgba(0,0,0,0.05); text-align: left; }
+    code { font-size: 0.9em; padding: 0.1em 0.3em; border-radius: 4px; background: #eee; }
+    pre { padding: 0.75rem; overflow: auto; border-radius: 8px; background: #f0f0f0; }
+    pre code { background: transparent; padding: 0; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    .note { font-size: 0.9rem; opacity: 0.85; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/i18n/tr/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <h1 id="arac-giderlerinin-otomatiklestirilmesi-kullanm-klavuzu">Araç Giderlerinin Otomatikleştirilmesi — Kullanım Kılavuzu</h1>
+<blockquote>
+<p><strong>Kaynağı düzenleyin (Markdown).</strong> Tarayıcılar ve uygulama içi okuyucu <strong>oluşturulan HTML'yi</strong> açar:<br />
+- Web: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (<code>./scripts/render-user-manual.sh</code> ile yeniden oluşturun)<br />
+- Uygulama: Yardım / Hakkında → tam kılavuz (birlikte verilen HTML + ekran görüntüleri)</p>
+<p>Son kullanıcıları ham ".md" URL'lerine yönlendirmeyin; tarayıcılar yalnızca düz metin gösterir.</p>
+</blockquote>
+<p><strong>Bulut hesaplarınız</strong> altında isteğe bağlı çoklu cihaz senkronizasyonu ve yedeklemeyle, yakıt dolumları ve araç masrafları için ilk kamera takibi.</p>
+<p>Bu <strong>tam kılavuzdur</strong> (ekran görüntüleri + her adım). Telefondaki <strong>Menü → Yardım</strong> daha kısa bir başlangıç ​​kılavuzudur.</p>
+<p><strong>Burada ele alınmayan konular:</strong> Eski Resimleri İçe Aktarma, Hizalama Deneyi ve Pompa Deneyi (geliştirici / gelişmiş araçlar).</p>
+<hr />
+<h2 id="icindekiler-tablosu">İçindekiler tablosu</h2>
+<ol>
+<li><a href="#ihtiyacınız olan şey">İhtiyacınız olan şey</a></li>
+<li><a href="#bir bakışta simgeler">Bir bakışta simgeler</a></li>
+<li><a href="#menüyü aç">Menüyü aç</a></li>
+<li><a href="#ilk kez kurulum-araçları-yönet">İlk kurulum: Araçları Yönet</a></li>
+<li><a href="#yedeklemeler ve çoklu cihaz senkronizasyonu">Yedeklemeler ve çoklu cihaz senkronizasyonu</a></li>
+<li><a href="#hızlı yakıt doldurma">Hızlı Doldurma (yakıt)</a></li>
+<li><a href="#yolculuğu başlat">Yolculuğu başlat</a></li>
+<li><a href="#giderler">Giderler</a></li>
+<li><a href="#raporlar">Raporlar</a></li>
+<li><a href="#ayarlar-yerel-tercihler">Ayarlar (yerel tercihler)</a></li>
+<li><a href="#senkronizasyon">Senkronizasyon</a></li>
+<li><a href="#help--about">Yardım ve Hakkında</a></li>
+<li><a href="#ilgili-dokümanlar">İlgili dokümanlar</a></li>
+</ol>
+<hr />
+<h2 id="ihtiyacnz-olan-sey">İhtiyacınız olan şey</h2>
+<ul>
+<li>Android telefon veya tablet.</li>
+<li>En iyi OCR için: <strong>pano kilometre sayacınızın</strong> ve <strong>pompa toplamlarının</strong> net bir görünümü (veya sayıları elle yazın).</li>
+<li>İsteğe bağlı: e-tablo verileri ve/veya fotoğraf yedekleme için <strong>kontrol ettiğiniz</strong> hesaplar (bkz. <a href="#backups-and-multi-device-sync">Yedeklemeler ve çoklu cihaz senkronizasyonu</a>).</li>
+</ul>
+<hr />
+<h2 id="bir-baksta-simgeler">Bir bakışta simgeler</h2>
+<p>Bunlar ana ekranlarda görünür. Bunları bilmek avlanmanın büyük kısmını kurtarır.</p>
+<table>
+<thead>
+<tr>
+<th>Nerede</th>
+<th>Simge / kontrol</th>
+<th>Ne işe yarar</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Üst çubuk</td>
+<td><strong>☰ Menü</strong> (hamburger)</td>
+<td>Gezinme çekmecesini açar</td>
+</tr>
+<tr>
+<td>Üst çubuk</td>
+<td><strong>ⓘ</strong> (sayfa yardımı)</td>
+<td><strong>Geçerli</strong> sayfa için kısa yardım (varsa menünün yanında)</td>
+</tr>
+<tr>
+<td>Üst çubuk</td>
+<td><strong><code>?N</code></strong> (sarı)</td>
+<td>Bekleyen içe aktarma inceleme soruları — İçe aktarma incelemesini açar</td>
+</tr>
+<tr>
+<td>Üst çubuk</td>
+<td><strong>!</strong> (kırmızı)</td>
+<td>Yakın zamanda bir e-tablo veya fotoğraf hedefi başarısız oldu — düzeltmek için <strong>Senkronizasyon</strong>'u açın</td>
+</tr>
+<tr>
+<td>Üst çubuk</td>
+<td><strong>☰ + ←</strong></td>
+<td>Çocukları rapor et ve Giderler listesi <strong>menü ve arka kısmı</strong> birlikte gösterir; Rapor merkezi yalnızca menüden oluşur</td>
+</tr>
+<tr>
+<td>Ayarlar / yakıt düzenleme</td>
+<td><strong>←</strong></td>
+<td>Geri (ayarlar elektronik tablo/fotoğraf ve yakıt düzenleme geriye odaklı kalır)</td>
+</tr>
+<tr>
+<td>Hızlı Doldur</td>
+<td><strong>Beyaz daire</strong> (deklanşör)</td>
+<td>OCR için kilometre sayacını veya pompa ekranını yakalayın</td>
+</tr>
+<tr>
+<td>Hızlı Doldur</td>
+<td><strong>Disk / Kaydet</strong></td>
+<td>Doldurmayı kaydedin (bir araca ve odo / hacim / maliyetten en az birine ihtiyaç duyar)</td>
+</tr>
+<tr>
+<td>Hızlı Doldur</td>
+<td><strong>↕ oklar</strong> (mod anahtarı)</td>
+<td><strong>kilometre sayacı modu</strong> ile <strong>pompa (maliyet/hacim) modu</strong> arasında geçiş yapın. Yeşil kenarlık etkin alan grubunu vurgular</td>
+</tr>
+<tr>
+<td>Hızlı Doldur</td>
+<td><strong>↔ okları</strong> (maliyet ve hacim arasında)</td>
+<td>OCR yanlış alanlara koyarsa maliyet ve hacmi değiştirin</td>
+</tr>
+<tr>
+<td>Hızlı Doldur</td>
+<td><strong>1x yakınlaştır /…</strong></td>
+<td>Lens desteklediğinde kamera yakınlaştırma oranları</td>
+</tr>
+<tr>
+<td>Hızlı Doldurma (yakaladıktan sonra)</td>
+<td><strong>Yenile</strong> ana düğmede</td>
+<td>Önizlemeyi atın ve canlı kameraya dönün</td>
+</tr>
+<tr>
+<td>Hızlı Doldurma (işlenirken)</td>
+<td><strong>X</strong> ana düğmede</td>
+<td>Devam eden yakalamayı/OCR'yi iptal et</td>
+</tr>
+<tr>
+<td>Gider</td>
+<td><strong>Kaydet</strong></td>
+<td>Masraflardan tasarruf edin</td>
+</tr>
+<tr>
+<td>Gider</td>
+<td><strong>Deklanşör dairesi</strong></td>
+<td>Makbuz fotoğrafı çekin</td>
+</tr>
+<tr>
+<td>Gider</td>
+<td><strong>Galeri</strong></td>
+<td>Kitaplıktan bir makbuz resmi seçin</td>
+</tr>
+<tr>
+<td>Gider</td>
+<td><strong>Yeniden çek</strong></td>
+<td>Mevcut makbuz fotoğrafını silin ve tekrar çekim yapın</td>
+</tr>
+<tr>
+<td>Gider / Araç Yönetimi</td>
+<td><strong>+ / −</strong> FAB'ler</td>
+<td>Fotoğraf önizlemesini yakınlaştırın</td>
+</tr>
+<tr>
+<td>Yer işaretleri iletişim kutusu</td>
+<td><strong>OCR'yi düzenle</strong></td>
+<td>Motorların gözden kaçırdığı önemli nokta metnini düzeltin veya ekleyin</td>
+</tr>
+<tr>
+<td>Elektronik Tablo / Fotoğraf formları</td>
+<td><strong>🔍 Ara</strong></td>
+<td>Bir sayfa veya klasör için Google Drive'a göz atın (oturum açtıktan sonra)</td>
+</tr>
+</tbody>
+</table>
+<p>Maliyet alanlarındaki para birimi simgelerine ve hacim alanlarındaki <strong>G/L</strong>'ye dokunulabilir: söz konusu giriş için para birimini veya galon ve litreyi değiştirmek için küçük bir menü açın.</p>
+<hr />
+<h2 id="menuyu-ac">Menüyü aç</h2>
+<ol>
+<li>Sol üstteki <strong>☰</strong> seçeneğine dokunun.</li>
+<li>Bir sayfa seçin.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="01-drawer.jpg" src="images/01-drawer.jpg" /></p>
+<p><strong>Ana çekmece:</strong> Hızlı Doldurma · Yolculuğu başlat · Araçları Yönet · Yeni gider · <strong>Raporlar</strong> · Ayarlar · Senkronizasyon · Yardım · Hakkında.</p>
+<p><strong>Deneme çekmecesi</strong> (Ayarlar → Deney ekranlarını göster): Hizalama Deneyi · Pompa Deneyi · <strong>Eski Resimleri İçe Aktar</strong>.</p>
+<p><strong>Raporlar merkezi aracılığıyla (ana çekmece değil):</strong> Gider listesi · Geçmişi doldur.</p>
+<hr />
+<h2 id="ilk-kurulum-araclar-yonetme">İlk kurulum: Araçları Yönetme</h2>
+<p>OCR ve <strong>otomatik araç eşleştirme</strong>, her aracı bir <strong>referans kontrol paneli fotoğrafı</strong> ile kaydettikten, kilometre sayacını kırptıktan ve <strong>Discovery</strong>'yi çalıştırdıktan sonra en iyi şekilde çalışır, böylece uygulama o çizgi için önemli metinleri depolar. (Yer işaretlerinin nasıl seçildiği ve eşleştirildiği daha sonraki bir güncellemede daha ayrıntılı olarak belgelenecektir.)</p>
+<h3 id="araclar-yoneti-acn">Araçları Yönet'i açın</h3>
+<p>Menü → <strong>Araçları Yönet</strong>. Bir araç seçin (veya <strong>Yeni Araç Ekle</strong>).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r1-manage-vehicles-crops.jpg" src="images/r1-manage-vehicles-crops.jpg" /></p>
+<h3 id="arac-ekleyin-veya-duzenleyin">Araç ekleyin veya düzenleyin</h3>
+<ol>
+<li><strong>Araç</strong> açılır menüsünü açın → bir araç seçin veya <strong>Yeni Araç Ekle</strong>.</li>
+<li>Net bir <strong>referans gösterge fotoğrafı</strong> çekin veya seçin (tam gösterge paneli, iyi aydınlatılmış, telefon kabaca kare şeklinde). <strong>Fotoğraf Çek</strong> veya <strong>Galeri</strong>'yi kullanın.</li>
+<li>Mahsulleri çizin:<br />
+   - <strong>Odo Kırp</strong> — kilometre sayacı rakamlarının etrafında sıkı bir dikdörtgen (bu mod etkinken düğme <strong>Bitti Odo</strong>'yu gösterir).<br />
+   - <strong>Kırpmayı Yoksay</strong> — yoksayılacak isteğe bağlı bölge (saat, radyo vb.).<br />
+   - <strong>Kırpmaları Düzenle</strong> — mevcut dikdörtgenleri ayarlayın.</li>
+<li><strong>Keşif'i Çalıştır</strong>'a dokunun — çok motorlu OCR, ekinlerin dışındaki önemli sözcükleri bulur.</li>
+<li><strong>Yer İşaretlerini Göster</strong> ile inceleyin. Yanlış okunanları düzeltmek veya gözden kaçan <strong>eklemek</strong> için <strong>OCR'yi düzenle</strong> seçeneğini kullanın.</li>
+<li><strong>Araç Adı</strong> (gerekli) ve marka/model/yıl/plakayı istediğiniz gibi doldurun.</li>
+<li><strong>Araç Oluştur</strong> veya <strong>Değişiklikleri Kaydet</strong>'e dokunun (yeni bir araç için ad + referans fotoğrafı gerektirir).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="03b-manage-vehicles-new.jpg" src="images/03b-manage-vehicles-new.jpg" /></p>
+<h3 id="yer-isaretleri-discoverynin-gozden-kacrdg-seyleri-duzeltin">Yer işaretleri: Discovery'nin gözden kaçırdığı şeyleri düzeltin</h3>
+<p><strong>Yer İşaretlerini Göster</strong>'in ardından listeyi kaydırın ve değerleri düzeltin. Motorlar bazen küçük rakamları kaçırır (örneğin, kümenin sağ alt köşesindeki <strong>60</strong> saati). Araç kimliğinin güvenilir kalması için <strong>OCR'yi düzenle</strong>'yi kullanarak bunları ekleyin veya düzeltin.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r2-manage-vehicles-landmarks.jpg" src="images/r2-manage-vehicles-landmarks.jpg" /></p>
+<h3 id="mukemmel-bir-fotograf-olmadan-yazmak">Mükemmel bir fotoğraf olmadan yazmak</h3>
+<p>Uygulamayı, bir araç seçip Hızlı Doldurma'ya kilometre sayacı, hacim ve maliyeti <strong>yazarak</strong> kullanmaya devam edebilirsiniz — OCR her alan için isteğe bağlıdır. Galeriyi içe aktarma, uygulama içinde çekim yapmamayı tercih ettiğinizde referans çizgi fotoğrafı için çalışır.</p>
+<p><strong>İpucu:</strong> E-tablo senkronizasyonundan sonra araç tanımları (ekinler, yer işaretleri) yerel veritabanında yayınlanır; bunları kullanmak için Hızlı Doldurma için Araçları Yönet'i yeniden açmanız gerekmez.</p>
+<hr />
+<h2 id="yedeklemeler-ve-coklu-cihaz-senkronizasyonu">Yedeklemeler ve çoklu cihaz senkronizasyonu</h2>
+<p>Uygulama, <strong>birden fazla telefon veya tabletin aynı filo verilerini paylaşabileceği</strong> şekilde tasarlanmıştır ve böylece <strong>verilerinizin ve fotoğraflarınızın bir kopyasını cihazdan</strong> saklayabilirsiniz. Bu, <strong>sizin</strong> hesaplarınız veya <strong>kendinizde barındırılan</strong> sunucularınız altında yapılandırdığınız <strong>sizin</strong> hedeflerle yapılır; diğer insanların görebileceği, şirket tarafından işletilen bir "Araç Giderleri bulutu" ile değil.</p>
+<h3 id="ne-nerede-calsr">Ne nerede çalışır</h3>
+<table>
+<thead>
+<tr>
+<th>tür</th>
+<th>Neleri saklıyor</th>
+<th>Tipik kullanım</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>E-tablo / tablo senkronizasyonu</strong></td>
+<td>Araçlar, yakıt dolumları, giderler (sıralar ve sekmeler)</td>
+<td>Çoklu cihaz birleştirme + yapılandırılmış yedekleme</td>
+</tr>
+<tr>
+<td><strong>Fotoğraf yedekleme</strong></td>
+<td>İkili resimler (tire/pompa/makbuz/referans fotoğrafları)</td>
+<td>Fotoğraf yedekleme + eksik dosyaları geri yükleme</td>
+</tr>
+</tbody>
+</table>
+<p>Her türden <strong>birden fazla hedefi</strong> yapılandırabilirsiniz (tür başına yumuşak sınır). Manuel <strong>Şimdi senkronize et</strong> ve <strong>arka planda</strong> çalışanlar etkin olanları çalıştırır.</p>
+<h3 id="once-cevrimds">Önce çevrimdışı</h3>
+<ul>
+<li>Doldurma, gider veya makbuz eklemek için <strong>ağ gerekmez</strong>. Her şey <strong>öncelikle yerel olarak</strong> kaydedilir.</li>
+<li>Ağ kullanılabilir olduğunda, senkronizasyon ve fotoğraf yedekleme <strong>arka plan görevleri</strong> olarak çalıştırılır (ayarladığınız bir programa göre ve <strong>Şimdi senkronize et</strong>'e dokunduğunuzda). Arızalar, Ayarlar satırlarının altında kırmızı metinle ve uygulama başlık çubuğunda <strong>!</strong> işaretiyle gösterilir.</li>
+</ul>
+<h3 id="yalnzca-hesaplarnz">Yalnızca hesaplarınız</h3>
+<p>Oturum açma ve jetonlar, seçtiğiniz sağlayıcılar (Google, Microsoft, S3 anahtarları, kendi kendine barındırılan URL'ler vb.) için cihazda kalır. Hedefler <strong>kullanıcının tam kontrolü</strong> altındadır (Google hesabınız, OneDrive'ınız, MinIO klasörünüz, EtherCalc ana bilgisayarınız vb.). Paylaşılan bir arka uç aracılığıyla diğer Araç Giderleri kullanıcılarıyla hiçbir şey paylaşılmaz.</p>
+<h3 id="desteklenen-hedefler-veriler-elektronik-tablo-tablo-halinde">Desteklenen hedefler — veriler (elektronik tablo / tablo halinde)</h3>
+<p><strong>Menü → Senkronizasyon → E-tablo senkronizasyonu</strong> altında yapılandırılmıştır (Ayarlar özeti satırlarından da erişilebilir). Birinci sınıf seçici seçenekleri:</p>
+<table>
+<thead>
+<tr>
+<th>Hedef</th>
+<th>Notlar</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google E-Tablolar</strong></td>
+<td>Ortak varsayılan; Araçlar, Giderler ve araç başına yakıt sekmeleri</td>
+</tr>
+<tr>
+<td><strong>Excel</strong></td>
+<td>Graph / OneDrive tarzı bağlama yoluyla Microsoft çalışma kitabı</td>
+</tr>
+<tr>
+<td><strong>EtherCalc</strong></td>
+<td>Kendi kendine barındırılan ortak çalışmaya dayalı elektronik tablo odaları</td>
+</tr>
+<tr>
+<td><strong>Diğer →</strong> uygulanan arka uçlar</td>
+<td><strong>Baserow</strong>, <strong>NocoDB</strong>, <strong>Airtable</strong>, <strong>PocketBase</strong>, <strong>Supabase</strong>, <strong>Firebase</strong>, <strong>Zoho Sheet</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Ertelendi / henüz başsız değil (Diğer altında listelenmiştir ancak tam olarak uygulanmamıştır): OnlyOffice, Collabora. Ayrıca bkz. <a href="referans/kendi kendine ana bilgisayar/INDEX.md">kendi kendine ana bilgisayar dizini</a>.</p>
+<p>CSV <strong>dışa aktarma/içe aktarma</strong> (aynı sekme düzeninin ZIP'i), canlı senkronizasyondan bağımsız olarak taşınabilir bir yedekleme olarak Ayarlar'dan edinilebilir.</p>
+<h3 id="desteklenen-hedefler-fotograflar-goruntu-yedekleme">Desteklenen hedefler — fotoğraflar (görüntü yedekleme)</h3>
+<p><strong>Menü → Senkronizasyon → Fotoğraf yedekleme</strong> altında yapılandırılmıştır (ayrıca Ayarlar özeti satırlarından):</p>
+<table>
+<thead>
+<tr>
+<th>Hedef</th>
+<th>Notlar</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Drive</strong></td>
+<td>Seçtiğiniz klasör (URL'ye göz atın veya yapıştırın)</td>
+</tr>
+<tr>
+<td><strong>OneDrive</strong></td>
+<td>Microsoft hesabı + yol öneki</td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td>AWS, Wasabi, Cloudflare R2, MinIO ve diğer S3 uyumlu uç noktalar</td>
+</tr>
+<tr>
+<td><strong>Diğer</strong></td>
+<td>rclone destekli depolama (ör. WebDAV, SFTP ve uygulama içi seçicide bulunan diğer seçilmiş uzaktan kumandalar)</td>
+</tr>
+</tbody>
+</table>
+<p>Kendi kendine barındırılan fotoğraf ve tablolu hedefler için yardımcı sayfalar oluşturun: <a href="referans/self-host/INDEX.md">kendi kendine barındırılan dizin</a>.</p>
+<h3 id="coklu-cihaz-davrans-ksa">Çoklu cihaz davranışı (kısa)</h3>
+<ul>
+<li>Satırlar <strong>Güncellenen</strong> zaman damgalarında <strong>Son Yazma Kazanımları</strong> ile <strong>Senkronizasyon Kimliği</strong> ile birleştirilir.</li>
+<li>Silme işlemleri yumuşaktır; başka bir cihazdaki daha yeni bir düzenleme, bir satırı geri yükleyebilir.</li>
+<li>İki cihazda <strong>aynı dolguyu iki kez</strong> girmek <strong>iki satır</strong> oluşturur; fark ettiğinizde fazlalıkları silin.</li>
+<li>Daha fazla ayrıntı: <a href="#sync-behavior-notes">Senkronizasyon davranış notları</a> ve <a href="referans/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a>.</li>
+</ul>
+<h3 id="ornek-google-e-tablolar-veri-ekleyin">Örnek: Google E-Tablolar'ı (veri) ekleyin</h3>
+<ol>
+<li><strong>Menü → Senkronizasyon → E-tablo senkronizasyonu</strong> (veya Ayarlar → E-tablo senkronizasyonu).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="08-spreadsheet-sync.jpg" src="images/08-spreadsheet-sync.jpg" /></p>
+<ol start="2">
+<li><strong>E-tablo hedefi ekle</strong>'ye dokunun.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="09-spreadsheet-provider-picker.jpg" src="images/09-spreadsheet-provider-picker.jpg" /></p>
+<ol start="3">
+<li><strong>Google E-Tablolar</strong>'ı seçin.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="10-spreadsheet-google-form.jpg" src="images/10-spreadsheet-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Google ile oturum açın</strong> → görünen ad → <strong>Sayfa URL'si</strong> veya <strong>🔍</strong> göz at/oluştur → planlama seçenekleri → etkinleştir → kaydet.</li>
+<li>Sekmeleri oluşturmak/güncellemek için <strong>şimdi senkronize edin</strong>: "Araçlar", "Giderler", "Yakıt - {araç adı}".</li>
+</ol>
+<h3 id="ornek-google-drive-ekleyin-fotograflar">Örnek: Google Drive'ı ekleyin (fotoğraflar)</h3>
+<ol>
+<li><strong>Menü → Senkronizasyon → Fotoğraf yedekleme</strong> (veya Ayarlar → Fotoğraf yedekleme).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="11-photo-backup.jpg" src="images/11-photo-backup.jpg" /></p>
+<ol start="2">
+<li><strong>Fotoğraf hedefi ekle</strong>'ye dokunun.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="12-photo-provider-picker.jpg" src="images/12-photo-provider-picker.jpg" /></p>
+<ol start="3">
+<li><strong>Google Drive</strong>'ı seçin.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="13-photo-google-form.jpg" src="images/13-photo-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Google (Drive) ile oturum açın</strong> → isteğe bağlı klasör URL'si/göz at → etkinleştir → kaydet → <strong>Şimdi senkronize et</strong>.</li>
+</ol>
+<p>Fotoğraflar için manuel <strong>Şimdi senkronize et</strong> tam bir geçiştir; arka plan yedeklemesi genellikle <strong>yalnızca beklemedeki</strong> yüklemeleri belirli bir programa göre işler.</p>
+<h3 id="davrans-notlarn-senkronize-et">Davranış notlarını senkronize et</h3>
+<ul>
+<li>Uygulama yükseltmesinden sonra kısaca <strong>“Yükseltmeden sonra veritabanı güncelleniyor…”</strong> (yerel senkronizasyon kimliği dolgusu) ifadesini görebilirsiniz.</li>
+<li>Bir senkronizasyon kesintiye uğrarsa, bir sonraki <strong>başarılı</strong> senkronizasyon uzak sekmeleri yeniden birleştirir ve onarır.</li>
+<li>Arızalar: Uygulama çubuğunda Senkronizasyon kartları + <strong>!</strong> üzerinde kırmızı özet.</li>
+</ul>
+<hr />
+<h2 id="hzl-doldurma-yakt">Hızlı Doldurma (yakıt)</h2>
+<p>Bu, uygulamayı açtığınızda <strong>ana ekrandır</strong>.</p>
+<h3 id="arac-secimi-genellikle-otomatik">Araç seçimi (genellikle otomatik)</h3>
+<p>Önce aracı seçmeniz <strong>gerekmez</strong>. Araçları Yönet'te araçlar <strong>yer işaretleri</strong> ayarlandığında, Hızlı Doldurma kilometre sayacını yakaladıktan sonra gösterge tablosu görüntüsünden <strong>hangi aracı</strong> otomatik olarak algılar. Gerekirse geçersiz kılmak için <strong>Araç</strong> açılır menüsünü yine de açabilirsiniz.</p>
+<h3 id="kilometre-sayacna-nisan-aln">Kilometre sayacına nişan alın</h3>
+<p>Kilometre sayacı modunda kalın ve kümeyi çerçeveleyin. Talimat: * Kilometre sayacını hedefleyin. Yakalamak için deklanşöre dokunun.*</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r3-quickfill-odo-live.jpg" src="images/r3-quickfill-odo-live.jpg" /></p>
+<h3 id="kilometre-sayac-deklansorunden-sonra">Kilometre sayacı deklanşöründen sonra</h3>
+<p>OCR <strong>Odo</strong>'yu doldurur ve aracı yer işaretlerinden eşleştirmeye çalışır (gerekirse her ikisini de inceleyin). Yeniden çekim yapmak için ana düğme <strong>Yeniden Dene</strong> olur. Talimat okumayı özetler.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r4-quickfill-odo-result.jpg" src="images/r4-quickfill-odo-result.jpg" /></p>
+<h3 id="pompa-modu-maliyet-ve-hacim">Pompa modu (maliyet ve hacim)</h3>
+<ol>
+<li>Pompa moduna geçmek için <strong>↕</strong> öğesine dokunun: <em>Pompa ekranını hedefleyin (maliyet/hacim). Deklanşöre dokunun.</em></li>
+<li>Pompa toplamlarını yakalayın. Maliyet ve hacim alanları doldurulur; eğer yer değiştirmişlerse <strong>↔</strong> kullanın.</li>
+<li>Para birimine veya gerekiyorsa <strong>G/L</strong>'ye, ardından <strong>Kaydet</strong>'e (disk) dokunun. Boş alanlar <strong>kısmi doldurma</strong> oluşturur (hala izin veriliyor).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r5-quickfill-pump-result.jpg" src="images/r5-quickfill-pump-result.jpg" /></p>
+<p>Bir sonraki durak için Hızlı Doldurma'da kalırsınız (alanlar kaydetmeden sonra temizlenir). Tamamen <strong>çevrimdışı</strong> çalışın; senkronizasyon yapılandırıldığında arka planda daha sonra çalışır.</p>
+<h3 id="manuel-giris-kamera-yok-bozuk-ocr">Manuel giriş (kamera yok / bozuk OCR)</h3>
+<ol>
+<li><strong>Odo</strong>, <strong>maliyet</strong> veya <strong>ses düzeyi</strong>'ne dokunun ve değerleri yazın (dikey sistem klavyesini, yatay ise ekran tuş takımını kullanır).</li>
+<li>Otomatik algılama çalışmadıysa <strong>Araç</strong>'ı seçin veya onaylayın.</li>
+<li>Yukarıdaki gibi kaydedin.</li>
+</ol>
+<h3 id="modlar-ve-snrlar">Modlar ve sınırlar</h3>
+<ul>
+<li>Araç+odo etrafındaki <strong>yeşil kenarlık</strong> → kilometre sayacının yakalanması/düzenlenmesi.</li>
+<li><strong>Maliyet+hacim → pompa modu etrafında </strong>yeşil kenarlık**.</li>
+<li><strong>Kaydet</strong>, bir araç seçilene ve odo/maliyet/hacim değerlerinden en az birinde veri bulunana ve OCR hala çalışmayana kadar devre dışı kalır.</li>
+</ul>
+<p>Ekran ipucu (talimat satırının altında): <em>Deklanşör = yakalama · Disk = kaydetme · ↕ = odo/pompa modu · ↔ = maliyet/hacim değiştirme.</em></p>
+<hr />
+<h2 id="giderler">Giderler</h2>
+<h3 id="yeni-gider">Yeni gider</h3>
+<p>Menü → <strong>Yeni gider</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r6-new-expense.jpg" src="images/r6-new-expense.jpg" /></p>
+<ol>
+<li><strong>Kaydet</strong> (disk), <strong>deklanşör</strong> (makbuz fotoğrafı) veya <strong>galeri</strong> (resim seç).</li>
+<li><strong>Tarih</strong>, <strong>Araç</strong>, <strong>Satıcı</strong>, <strong>Açıklama</strong>, <strong>Tutar</strong> (para birimi sembolüne dokunulabilir), <strong>Kategori</strong>, isteğe bağlı <strong>Kilometre Sayacı</strong>'nı doldurun.</li>
+<li>Çok sayfalı makbuzlar: Kullanıcı arayüzü sayfalama sunuyorsa ek sayfaları yakalayın (sayfa 0 birincil makbuzdur).</li>
+<li>Depolamaya <strong>kaydedin</strong> (öncelikle yerel; fotoğraf yedekleme ve e-tablo senkronizasyonu, yapılandırıldığında arka planda gerçekleşir).</li>
+</ol>
+<h3 id="gider-listesi">Gider listesi</h3>
+<p>Menü → <strong>Raporlar</strong> → <strong>Gider listesi</strong> — geçmiş yakıt dışı harcamalara göz atın; Düzenlenecek bir öğeyi açın.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="05-expense-list.jpg" src="images/05-expense-list.jpg" /></p>
+<h3 id="gideri-duzenle">Gideri düzenle</h3>
+<p>Listeden bir satır açın. Satıcıyı, miktarı, kategoriyi, aracı ve açıklamayı doğru yapın. Makbuz yalnızca fotoğraf yedeklemesindeyse (okunabilir yerel dosya yoksa), gösterildiğinde <strong>Resmi arşivden getir</strong> seçeneğini kullanın (yapılandırılmış fotoğraf hedeflerinde çalışır).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="expense-edit.jpg" src="images/expense-edit.jpg" /></p>
+<hr />
+<h2 id="yolculugu-baslat">Yolculuğu başlat</h2>
+<p>Menü → <strong>Yolculuğu başlat</strong> (çekmecedeki Hızlı Doldurma işleminden sonra). Kilometre sayacını yakalayın veya girin, yolculuk türünü seçin, <strong>disk</strong> simgesiyle kaydedin. <strong>Durdur</strong>, tutulan GPS konumundaki Kişisel için bir kısayoldur. Kontrol hatırlatıcıları için <strong>ⓘ</strong> kullanın.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="start-trip.jpg" src="images/start-trip.jpg" /></p>
+<p>Yolculuk başlangıçları, <strong>Açma Türü</strong> (normal dolumlar değil) ile yakıt sıraları olarak saklanır. Yakıt Geçmişi altında değil, <strong>Raporlar → Yolculuk milleri</strong> altında görünürler.</p>
+<hr />
+<h2 id="raporlar">Raporlar</h2>
+<p>Menü → <strong>Raporlar</strong> ürün merkezini açar (tüm zamanların özeti + katalog kartları). Bu, ürün raporlarının tek yüzeyidir; ayrı bir "Raporlar ve Grafikler" çekmecesi öğesi yoktur.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="06-reports.jpg" src="images/06-reports.jpg" /></p>
+<p>Araç modu (<strong>Tümü / Her Biri / Tekli</strong>), dönem filtreleri, grafikler ve paylaşım (<strong>METİN / CSV / PDF</strong>) için bir kart açın. Rapor edilen çocukların üst çubuğu: <strong>☰ + ←</strong> (ve kayıtlı olduğunda <strong>ⓘ</strong>).</p>
+<h3 id="zamana-dayal-raporlar">Zamana dayalı raporlar</h3>
+<p>Ana harita kartı. <strong>Pürüzsüz</strong> kutular ve <strong>bağımsız Y ölçekleri</strong> (ekonomi solda; para ve seyahat aileleri sağda) ile isteğe bağlı ölçümler (mpg, G/mi gibi hacim/mesafe, $/G gibi birim fiyat, maliyet/mesafe, aylık $, yolculuk milleri, türe göre yolculuk yüzdesi).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Zamana dayalı raporlar" src="images/time- Based-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Zamana dayalı raporlar — kaydırılmış metrikler" src="images/time- Based-reports-scrolled.jpg" /></p>
+<p>Ekonomi matematiğinin ayrıntıları: <a href="referans/REPORTS_METRICS.md">REPORTS_METRICS.md</a>.</p>
+<h3 id="dolum-gecmisi-ve-yakt-gecmisi-karslastrmas">Dolum geçmişi ve Yakıt Geçmişi karşılaştırması</h3>
+<ul>
+<li><strong>Raporlar → Doldurma geçmişi</strong> — rapor filtreleri için kronolojik doldurmalar (<strong>yalnızca doldurmalar</strong>; yolculuk başlamaz).</li>
+</ul>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fill-history.jpg" src="images/fill-history.jpg" /></p>
+<ul>
+<li><strong>Yakıt Geçmişi</strong> (yapınızın navigasyonunda mevcutsa) — araç başına dolum envanteri, ayrıca yalnızca dolumlar; düzenlemek için bir satıra dokunun.</li>
+</ul>
+<h3 id="yolculuk-mili">Yolculuk mili</h3>
+<p><strong>Raporlar → Yolculuk milleri</strong> — türe göre miller, grafikler ve kronolojik <strong>yolculuk başlangıç / bölüm listesi</strong>. Söz konusu satır için <strong>Dolguyu düzenle</strong>'yi açmak için gerçek bir başlangıca dokunun.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="trip-miles.jpg" src="images/trip-miles.jpg" /></p>
+<h3 id="dolguyu-duzenle">Dolguyu düzenle</h3>
+<p>Dolum geçmişi, Yakıt Geçmişi veya Yolculuk millerinden bir dolum açın. Düzen: araç ve kilometre sayacı, <strong>maliyet öncesi para birimi</strong>, hacim, notlar. Yolculuk türü yalnızca satır bir yolculuk başlangıcı olduğunda görünür. Konumun bir özeti ve <strong>Konum ayrıntıları</strong> bulunur. Bulut kimliğine sahip yerel fotoğraf eksik: <strong>Arşivden görseli getir</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fuel-edit.jpg" src="images/fuel-edit.jpg" /></p>
+<p>Diğer katalog kartlarında kategoriye göre harcamalar, araç özeti ve harcama listesi yer alır.</p>
+<p>Para, ayarlandığında her satırın para birimini kullanır. Karışık para birimi toplamları <strong>para birimi başına alt toplamları</strong> gösterir (sessiz döviz dönüşümü yoktur).</p>
+<hr />
+<h2 id="senkronizasyon">Senkronizasyon</h2>
+<p>Menü → <strong>Senkronizasyon</strong> e-tablo ve fotoğraf hedefleri için merkezdir (yalnızca Ayarlar altında gömülü değildir).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="syncing-hub.jpg" src="images/syncing-hub.jpg" /></p>
+<ul>
+<li>Kısa durumlu <strong>E-tablo senkronizasyonu</strong> ve <strong>Fotoğraf yedekleme</strong> için kartlar, bu tür için <strong>Senkronizasyon</strong> ve hedef listesine <strong>›</strong>.</li>
+<li><strong>Bağlantıyı test et</strong> ve <strong>Şimdi senkronize et (bu hedef)</strong> / tamamı yapılandırılmış için bir hedef açın.</li>
+<li>Başarısızlık <strong>Ayrıntılar</strong> ve başlık çubuğundaki kırmızı <strong>!</strong> buraya gelir.</li>
+<li>Adım adım Google E-Tablolar ve Drive kurulumu: <a href="#backups-and-multi-device-sync">Yedeklemeler ve çoklu cihaz senkronizasyonu</a>.</li>
+</ul>
+<hr />
+<h2 id="ayarlar-yerel-tercihler">Ayarlar (yerel tercihler)</h2>
+<p>Menü → <strong>Ayarlar</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07-settings.jpg" src="images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07b-settings-more.jpg" src="images/07b-settings-more.jpg" /></p>
+<p>Hedefler için <strong>Menü → Senkronizasyon</strong>'u tercih edin. Ayarlar aynı listeleri açan özet satırlarını göstermeye devam edebilir.</p>
+<h3 id="yerel-tercihler-ortak">Yerel tercihler (ortak)</h3>
+<ul>
+<li><strong>Yakıt Makbuz Fotoğraflarını Kaydet</strong> / <strong>Harcama Fotoğraflarını Yerel Olarak Kaydet</strong> — görüntüleri cihazda saklayın (Fotoğraf izni isteyebilir).</li>
+<li><strong>Deklanşör Sesini Çal</strong></li>
+<li><strong>Para birimi</strong> / <strong>Birim birimi</strong> — uygulama varsayılanları (sistem veya açık). Hacim biriminin mevcut yakıt verileriyle değiştirilmesi bir dönüştürme iletişim kutusu sunabilir.</li>
+<li><strong>Karanlık mod</strong></li>
+<li><strong>Kurulum ipuçları</strong> — İlk çalıştırmada araç/senkronizasyon eğitimlerini yeniden açın.</li>
+<li><strong>Hızlı Doldurmada Hata Ayıklama</strong> / <strong>Deneme ekranlarını göster (geliştirme)</strong> — gelişmiş; günlük kullanıma bırakın. Deney ekranları burada belgelenmemiştir.</li>
+</ul>
+<p>CSV <strong>dışa aktarma/içe aktarma</strong> (Araçların ZIP'i / Giderler / Yakıt sekmeleri), mevcut yapı tarafından sunulduğunda Ayarlar'dan edinilebilir.</p>
+<hr />
+<h2 id="yardm-ve-hakknda">Yardım ve Hakkında</h2>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="14-help.jpg" src="images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="15-about.jpg" src="images/15-about.jpg" /></p>
+<ul>
+<li><strong>Yardım</strong> — cihaz üzerinde hızlı başlangıç, kurulum eğitimleri, bu kılavuza bağlantı, kendi kendine ana bilgisayar kurulum dizini.</li>
+<li><strong>Hakkında</strong> — sürüm, lisanslar, GitHub, bu kılavuz (çevrimdışı paket halinde + yayınlandığında çevrimiçi HTML).</li>
+</ul>
+<hr />
+<h2 id="ilgili-dokumanlar">İlgili dokümanlar</h2>
+<ul>
+<li><a href="referans/USER_GUIDE.md">USER_GUIDE.md</a> — yoğunlaştırılmış referans</li>
+<li><a href="referans/self-host/INDEX.md">self-host/INDEX.md</a> — kendi kendine barındırılan fotoğraf/tablo kurulumu</li>
+<li><a href="referans/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> — birleştirme, kurtarma, kopyalar</li>
+<li><a href="referans/REPORTS_METRICS.md">REPORTS_METRICS.md</a> — ekonomi ölçüm ayrıntıları</li>
+</ul>
+</body>
+</html>

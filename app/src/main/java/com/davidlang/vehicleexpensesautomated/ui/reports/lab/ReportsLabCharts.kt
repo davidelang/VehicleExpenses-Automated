@@ -12,6 +12,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -424,10 +425,14 @@ private fun LabMultiAxisTimeSeriesChartBody(
 @Composable
 fun LabMpgLineChart(
     yValues: List<Float>,
-    emptyMessage: String = "Not enough ${UnitFormat.economyEfficiencyLabel()} legs for a chart (need ≥2).",
+    emptyMessage: String? = null,
 ) {
+    val context = LocalContext.current
+    val eff = UnitFormat.economyEfficiencyLabel(context)
+    val empty = emptyMessage
+        ?: "Not enough $eff legs for a chart (need ≥2)."
     if (yValues.size < 2) {
-        ReportsLabEmpty(emptyMessage)
+        ReportsLabEmpty(empty)
         return
     }
     val now = System.currentTimeMillis()
@@ -436,9 +441,9 @@ fun LabMpgLineChart(
         LabTimeYPoint(timestampMs = now - (yValues.size - 1 - i) * day, y = y)
     }
     LabTimeSeriesLineChart(
-        series = mapOf(UnitFormat.economyEfficiencyLabel() to pts),
-        caption = "${UnitFormat.economyEfficiencyLabel()} over full-fill legs (chronological)",
-        emptyMessage = emptyMessage,
+        series = mapOf(eff to pts),
+        caption = "$eff over full-fill legs (chronological)",
+        emptyMessage = empty,
     )
 }
 

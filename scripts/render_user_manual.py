@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Render docs/user-manual.md to HTML for browsers + app assets.
+"""Render user-manual Markdown to HTML for browsers (+ optional English app assets).
 
-Markdown is the edit source. HTML is the browser-facing / in-app document
-(with screenshots). Run: ./scripts/render-user-manual.sh
+English: docs/user-manual.md → docs/user-manual.html (+ app assets/user-manual/)
+Other locales: docs/i18n/<tag>/user-manual.md → docs/i18n/<tag>/user-manual.html
+  (images: docs/i18n/<tag>/images/ or fall back to English images for relative paths)
+
+Run: ./scripts/render-user-manual.sh
 """
 from __future__ import annotations
 
@@ -18,6 +21,11 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "markdown", "-q"])
     import markdown
 
+# Locale tags under docs/i18n/ (must match AppLanguage.manualPathSegment)
+I18N_TAGS = [
+    "es", "fr", "pt-BR", "de", "it", "nl", "pl", "ru", "id", "vi", "tr",
+]
+
 
 def normalize_md_for_html(text: str, img_prefix: str) -> str:
     def repl(m: re.Match[str]) -> str:
@@ -28,7 +36,7 @@ def normalize_md_for_html(text: str, img_prefix: str) -> str:
     return re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", repl, text)
 
 
-def render(md: str) -> str:
+def render(md: str, *, lang: str = "en", edit_hint: str = "docs/user-manual.md") -> str:
     body = markdown.markdown(
         md,
         extensions=["tables", "fenced_code", "toc", "sane_lists", "nl2br"],
@@ -39,7 +47,7 @@ def render(md: str) -> str:
         '<img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" ',
     )
     return f"""<!DOCTYPE html>
-<html lang="en">
+<html lang="{lang}">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -84,11 +92,28 @@ def render(md: str) -> str:
   </style>
 </head>
 <body>
-  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>{edit_hint}</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
   {body}
 </body>
 </html>
 """
+
+
+def render_one(
+    md_path: Path,
+    html_out: Path,
+    img_prefix: str,
+    *,
+    lang: str,
+    edit_hint: str,
+) -> None:
+    if not md_path.is_file():
+        raise SystemExit(f"missing {md_path}")
+    md_text = md_path.read_text(encoding="utf-8")
+    html = render(normalize_md_for_html(md_text, img_prefix), lang=lang, edit_hint=edit_hint)
+    html_out.parent.mkdir(parents=True, exist_ok=True)
+    html_out.write_text(html, encoding="utf-8")
+    print(f"wrote {html_out} ({html_out.stat().st_size} bytes, {html.count('<img ')} images)")
 
 
 def main() -> None:
@@ -98,24 +123,44 @@ def main() -> None:
         raise SystemExit(f"missing {md_path}")
     md_text = md_path.read_text(encoding="utf-8")
 
-    # Browser: docs/user-manual.html with relative user-manual/images/
-    web_html = render(normalize_md_for_html(md_text, "user-manual/images/"))
+    # Browser English: docs/user-manual.html with relative user-manual/images/
+    web_html = render(normalize_md_for_html(md_text, "user-manual/images/"), lang="en")
     web_out = root / "docs" / "user-manual.html"
     web_out.write_text(web_html, encoding="utf-8")
     print(f"wrote {web_out} ({web_out.stat().st_size} bytes, {web_html.count('<img ')} images)")
 
-    # App assets
+    # English offline app assets (optional; primary full manual is hosted)
     asset_root = root / "app" / "src" / "main" / "assets" / "user-manual"
     asset_img = asset_root / "images"
     asset_img.mkdir(parents=True, exist_ok=True)
-    asset_html = render(normalize_md_for_html(md_text, "images/"))
+    asset_html = render(normalize_md_for_html(md_text, "images/"), lang="en")
     (asset_root / "index.html").write_text(asset_html, encoding="utf-8")
     src_imgs = root / "docs" / "user-manual" / "images"
     n = 0
-    for p in sorted(src_imgs.glob("*.jpg")):
-        shutil.copy2(p, asset_img / p.name)
-        n += 1
+    if src_imgs.is_dir():
+        for p in sorted(src_imgs.glob("*.jpg")):
+            try:
+                shutil.copyfile(p, asset_img / p.name)
+                n += 1
+            except OSError as e:
+                print(f"warn: could not copy {p.name} to assets: {e}")
     print(f"wrote {asset_root / 'index.html'} + {n} jpgs")
+
+    # Multi-locale hosted manuals (no APK packaging)
+    for tag in I18N_TAGS:
+        loc_dir = root / "docs" / "i18n" / tag
+        loc_md = loc_dir / "user-manual.md"
+        if not loc_md.is_file():
+            print(f"skip missing {loc_md}")
+            continue
+        # Prefer locale images/; HTML uses relative images/ next to HTML
+        render_one(
+            loc_md,
+            loc_dir / "user-manual.html",
+            "images/",
+            lang=tag.split("-")[0],
+            edit_hint=f"docs/i18n/{tag}/user-manual.md",
+        )
 
 
 if __name__ == "__main__":

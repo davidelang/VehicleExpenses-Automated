@@ -24,9 +24,11 @@ Orientation pointers: **`project-facts.md`**. Economy math: **`REPORTS_METRICS.m
 
 | Do | Don’t |
 |----|--------|
-| Use `ui/util/UnitFormat.kt`: `economyEfficiencyLabel()`, `costPerDistanceLabel()`, `distanceUnitShortLabel()`, `odometerReadingLabel(odo)`, `distanceDeltaLabel(delta)` | Hardcode `"mpg"`, `"MPG"`, `"$/mi"`, `"mi"`, `"miles"` as **unit words** in new user-visible strings |
-| Treat odometer as **instrument integer** (no mi/km conversion yet) | Add km/L/100km math without an approved plan |
+| Use `ui/util/UnitFormat.kt` with **Context** when labels must follow Settings: `economyEfficiencyLabel(context)`, `costPerDistanceLabel(context)`, `distanceUnitShortLabel(context)`, `odometerReadingLabel(odo, context)`, `distanceDeltaLabel(delta, context)` | Hardcode `"mpg"`, `"MPG"`, `"$/mi"`, `"mi"`, `"miles"` as **unit words** in new user-visible strings |
+| Pref `distance_unit` = `mi` \| `km` (default `mi`) — **labels only** | Multiply odo by 1.609… or convert historical readings |
+| Treat odometer as **same-unit instrument integer** (fleet uses one unit) | Per-vehicle mi/km without conversion plan (see TODO) |
 | Open / undefined distance → **`n/a`** (no fake unit word) | Strings like `"miles n/a"` that embed a unit when value is undefined |
+| Economy label pair: `mi`→`mpg`, `km`→`km/L` (**wording only**; math still Δodo/volume) | Invent L/100km or true km/L conversion from US gallons |
 
 ## 3. Currency
 
@@ -80,14 +82,25 @@ See `REPORTS_METRICS.md` (trip row shape + inventory).
 
 Helpers: `PhotoBackupCoordinator`, `ArchivePhotoHelpers`, Fuel History / Edit / expense / batch surfaces.
 
-## 9. Deferred (do not expand casually)
+## 9. Language packs (LTR)
 
-- LTR language packs / `strings.xml` translations — TODO + later plan  
-- RTL / complex scripts — `dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md`  
+| Do | Don’t |
+|----|--------|
+| Product UI chrome via `stringResource` / `getString` — see **`docs/reference/I18N.md`** | New hardcoded English user-visible product strings (except English-only surfaces) |
+| Pref `app_language` via `ui/util/AppLanguage.kt`; unset = English | Assume system locale on first run |
+| Import (`ui/import/**`), experiment, protocol headers, diagnostic email seeds stay English | Translate sheet/CSV headers or Import experiment |
+| Hosted manuals `docs/i18n/<tag>/` + jsDelivr; English root path back-compat | Ship multi-locale manual screenshot trees in the APK |
+
+**RTL / CJK / complex scripts:** deferred — `dev-ai-interaction/research/i18n-rtl-and-beyond-languages-20260730.md`.
+
+## 10. Deferred (do not expand casually)
+
+- RTL / complex scripts / CJK packs  
 - mi/km prefs, L/100km economy mode  
-- Full illustrated `user-manual.md` rewrite (condensed guide: `USER_GUIDE.md`)
+- Per-language tutorial screenshots or overlay preprocessor  
+- Sheet second display header row  
 
-## 10. Quick grep checklist (before claiming UI done)
+## 11. Quick grep checklist (before claiming UI done)
 
 ```text
 # Unit / money hardcodes (expect none in new UI paths; allow schema "Gallons", OCR training, comments)
@@ -106,18 +119,21 @@ withoutTripStarts|isTripStart
 
 # Tight chrome (review hits; heightIn preferred)
 height\([0-9]
+
+# Language / resources
+app_language|AppLanguage|stringResource
 ```
 
-Also smoke: large system font — TopAppBar, drawer labels, Share row buttons, Lab filters wrap; no horizontal control loss.
+Also smoke: large system font — TopAppBar, drawer labels, Share row buttons, Lab filters wrap; no horizontal control loss. Language switch: Settings → Language; drawer titles follow pack.
 
-## 11. Cards (tappable only)
+## 12. Cards (tappable only)
 
 | Do | Don’t |
 |----|--------|
 | Use `ui/components/UiChrome.kt` **`TappableCard`** for rows/tiles that **navigate or activate** | Cards around static KPIs, form fields, switches, camera chrome |
 | Bare layout for non-tappable content | Bare `.clickable` list rows that navigate without Card chrome |
 
-## 12. Density (content-measured multi-column)
+## 13. Density (content-measured multi-column)
 
 | Do | Don’t |
 |----|--------|
@@ -126,14 +142,14 @@ Also smoke: large system font — TopAppBar, drawer labels, Share row buttons, L
 | Re-measure with fontScale / density / content (wider text → fewer cols) | Hardcoded **dp floors** in column-count math (e.g. 148.dp min item width) |
 | Prefer inside parent vertical scroll | Nested vertical scroll inside the grid |
 
-## 13. Theme accents (non-camera)
+## 14. Theme accents (non-camera)
 
 | Do | Don’t |
 |----|--------|
 | `MaterialTheme.colorScheme.*` for badges, efficiency bars, non-camera borders | Hardcoded amber/green hex on app chrome |
 | Camera / crop / photo viewer fixed contrast (black/white/greyscale) | Dynamic surface colors on live camera overlays |
 
-## 14. Icons (drawer + Material only)
+## 15. Icons (drawer + Material only)
 
 | Do | Don’t |
 |----|--------|
@@ -141,7 +157,7 @@ Also smoke: large system font — TopAppBar, drawer labels, Share row buttons, L
 | **No** `icon =` on navigation drawer items (labels only) | Drawer leading icons |
 | Prefer **`AppIcon`** or 24.dp + theme tint | One-off sizes/tints without reason |
 
-## 15. Shared controls
+## 16. Shared controls
 
 | Helper | Pattern |
 |--------|---------|
@@ -166,6 +182,7 @@ NavigationDrawerItem\([\s\S]*icon\s*=
 | Volume | `app/.../ui/util/VolumeUnits.kt` |
 | Distance/economy labels | `app/.../ui/util/UnitFormat.kt` |
 | Currency | `app/.../ui/util/CurrencyCodes.kt` |
+| Language packs | `app/.../ui/util/AppLanguage.kt`, `docs/reference/I18N.md` |
 | Economy chains / inventory | `app/.../data/batch/FuelEconomyChains.kt` |
 | Trip predicate / segments | `app/.../data/trip/TripTimeline.kt`, `TripSegments.kt` |
 | Lab charts | `app/.../ui/reports/lab/ReportsLabCharts.kt` |

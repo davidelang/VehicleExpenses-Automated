@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vehicle Expenses Automated — User Manual</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height: 1.5;
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 3rem;
+      color: #111;
+      background: #fafafa;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #eee; background: #121212; }
+      a { color: #8ab4f8; }
+      table { border-color: #444; }
+      th, td { border-color: #444; }
+      code { background: #2a2a2a; }
+      pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
+    }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
+    th { background: rgba(0,0,0,0.05); text-align: left; }
+    code { font-size: 0.9em; padding: 0.1em 0.3em; border-radius: 4px; background: #eee; }
+    pre { padding: 0.75rem; overflow: auto; border-radius: 8px; background: #f0f0f0; }
+    pre code { background: transparent; padding: 0; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    .note { font-size: 0.9rem; opacity: 0.85; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/i18n/vi/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <h1 id="chi-phi-phuong-tien-tu-ong-huong-dan-su-dung">Chi phí phương tiện tự động — Hướng dẫn sử dụng</h1>
+<blockquote>
+<p><strong>Chỉnh sửa nguồn (Markdown).</strong> Trình duyệt và trình đọc trong ứng dụng mở <strong>HTML được kết xuất</strong>:<br />
+- Web: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (tạo lại bằng <code>./scripts/render-user-manual.sh</code>)<br />
+- Ứng dụng: Trợ giúp / Giới thiệu → hướng dẫn đầy đủ (HTML + ảnh chụp màn hình đi kèm)</p>
+<p>Không trỏ người dùng cuối tới các URL <code>.md</code> thô — trình duyệt chỉ hiển thị văn bản thuần túy.</p>
+</blockquote>
+<p>Camera đầu tiên theo dõi việc đổ xăng và chi phí xe, với tính năng đồng bộ hóa và sao lưu đa thiết bị tùy chọn trong tài khoản đám mây <strong>của bạn</strong>.</p>
+<p>Đây là <strong>hướng dẫn đầy đủ</strong> (ảnh chụp màn hình + từng bước). Trên điện thoại, <strong>Menu → Trợ giúp</strong> là hướng dẫn bắt đầu ngắn hơn.</p>
+<p><strong>Không được đề cập ở đây:</strong> Nhập Ảnh cũ, Thử nghiệm căn chỉnh và Thử nghiệm bơm (công cụ dành cho nhà phát triển / nâng cao).</p>
+<hr />
+<h2 id="muc-luc">Mục lục</h2>
+<ol>
+<li><a href="#những gì bạn cần">Những gì bạn cần</a></li>
+<li><a href="#icons-at-a-glance">Xem nhanh biểu tượng</a></li>
+<li><a href="#open-the-menu">Mở menu</a></li>
+<li><a href="#first-time-setup-manage-vehicles">Thiết lập lần đầu: Quản lý phương tiện</a></li>
+<li><a href="#backups-and-multi-device-sync">Sao lưu và đồng bộ hóa nhiều thiết bị</a></li>
+<li><a href="#đổ đầy nhiên liệu nhanh">Đổ đầy nhanh (nhiên liệu)</a></li>
+<li><a href="#start-trip">Bắt đầu chuyến đi</a></li>
+<li><a href="#chi phí">Chi phí</a></li>
+<li><a href="#báo cáo">Báo cáo</a></li>
+<li><a href="#settings-local-preferences">Cài đặt (tùy chọn cục bộ)</a></li>
+<li><a href="#đồng bộ hóa">Đang đồng bộ hóa</a></li>
+<li><a href="#help--about">Trợ giúp &amp; Giới thiệu</a></li>
+<li><a href="# tài liệu liên quan">Tài liệu liên quan</a></li>
+</ol>
+<hr />
+<h2 id="thu-ban-can">Thứ bạn cần</h2>
+<ul>
+<li>Điện thoại hoặc máy tính bảng Android.</li>
+<li>Để có OCR tốt nhất: chế độ xem rõ ràng <strong>đồng hồ đo đường trên bảng điều khiển</strong> và <strong>tổng số máy bơm</strong> (hoặc nhập số bằng tay).</li>
+<li>Tùy chọn: các tài khoản <strong>bạn kiểm soát</strong> để sao lưu dữ liệu bảng tính và/hoặc sao lưu ảnh (xem <a href="#backups-and-multi-device-sync">Sao lưu và đồng bộ hóa đa thiết bị</a>).</li>
+</ul>
+<hr />
+<h2 id="tong-quan-ve-bieu-tuong">Tổng quan về biểu tượng</h2>
+<p>Chúng xuất hiện trên màn hình chính. Biết chúng giúp tiết kiệm rất nhiều cuộc săn bắn.</p>
+<table>
+<thead>
+<tr>
+<th>Ở đâu</th>
+<th>Biểu tượng / điều khiển</th>
+<th>Nó làm gì</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Thanh trên cùng</td>
+<td><strong>☰ Thực đơn</strong> (hamburger)</td>
+<td>Mở ngăn điều hướng</td>
+</tr>
+<tr>
+<td>Thanh trên cùng</td>
+<td><strong>ⓘ</strong> (trang trợ giúp)</td>
+<td>Trợ giúp ngắn gọn cho trang <strong>hiện tại</strong> (bên cạnh menu nếu có)</td>
+</tr>
+<tr>
+<td>Thanh trên cùng</td>
+<td><strong><code>?N</code></strong> (màu vàng)</td>
+<td>Các câu hỏi đánh giá nhập đang chờ xử lý — mở Đánh giá nhập</td>
+</tr>
+<tr>
+<td>Thanh trên cùng</td>
+<td><strong>*!</strong> (đỏ)</td>
+<td>Gần đây, đích đến của bảng tính hoặc ảnh không thành công — mở <strong>Đang đồng bộ hóa</strong> để khắc phục</td>
+</tr>
+<tr>
+<td>Thanh trên cùng</td>
+<td><strong>☰ + ←</strong></td>
+<td>Báo cáo con và danh sách Chi phí hiển thị <strong>menu và quay lại</strong> cùng nhau; Trung tâm báo cáo chỉ có trong menu</td>
+</tr>
+<tr>
+<td>Cài đặt / chỉnh sửa nhiên liệu</td>
+<td><strong>←</strong></td>
+<td>Quay lại (bảng tính cài đặt/chỉnh sửa ảnh và nhiên liệu vẫn tập trung trở lại)</td>
+</tr>
+<tr>
+<td>Điền nhanh</td>
+<td><strong>Vòng tròn màu trắng</strong> (màn trập)</td>
+<td>Chụp màn hình đồng hồ đo đường hoặc máy bơm cho OCR</td>
+</tr>
+<tr>
+<td>Điền nhanh</td>
+<td><strong>Đĩa / Lưu</strong></td>
+<td>Tiết kiệm nhiên liệu (cần một chiếc xe và ít nhất một trong số odo/khối lượng/chi phí)</td>
+</tr>
+<tr>
+<td>Điền nhanh</td>
+<td><strong>↕ mũi tên</strong> (chuyển đổi chế độ)</td>
+<td>Chuyển đổi giữa <strong>chế độ đo đường</strong> và <strong>chế độ bơm (chi phí/khối lượng)</strong>. Đường viền màu xanh lá cây làm nổi bật nhóm trường đang hoạt động</td>
+</tr>
+<tr>
+<td>Điền nhanh</td>
+<td><strong>↔ mũi tên</strong> (giữa chi phí và khối lượng)</td>
+<td>Hoán đổi chi phí và khối lượng nếu OCR đặt chúng vào sai trường</td>
+</tr>
+<tr>
+<td>Điền nhanh</td>
+<td><strong>Thu phóng 1x / …</strong></td>
+<td>Tỷ lệ thu phóng của máy ảnh khi ống kính hỗ trợ chúng</td>
+</tr>
+<tr>
+<td>Điền nhanh (sau khi chụp)</td>
+<td><strong>Làm mới</strong> trên nút chính</td>
+<td>Loại bỏ bản xem trước và quay lại camera trực tiếp</td>
+</tr>
+<tr>
+<td>Điền nhanh (trong khi xử lý)</td>
+<td><strong>X</strong> trên nút chính</td>
+<td>Hủy chụp/OCR đang thực hiện</td>
+</tr>
+<tr>
+<td>Chi phí</td>
+<td><strong>Lưu</strong></td>
+<td>Tiết kiệm chi phí</td>
+</tr>
+<tr>
+<td>Chi phí</td>
+<td><strong>Vòng màn trập</strong></td>
+<td>Chụp ảnh biên nhận</td>
+</tr>
+<tr>
+<td>Chi phí</td>
+<td><strong>Thư viện</strong></td>
+<td>Chọn hình ảnh biên nhận từ thư viện</td>
+</tr>
+<tr>
+<td>Chi phí</td>
+<td><strong>Thi lại</strong></td>
+<td>Xóa ảnh biên lai hiện tại và chụp lại</td>
+</tr>
+<tr>
+<td>Chi phí / Quản lý phương tiện</td>
+<td>*** / −** FAB</td>
+<td>Thu phóng bản xem trước ảnh</td>
+</tr>
+<tr>
+<td>Hộp thoại cột mốc</td>
+<td><strong>Chỉnh sửa OCR</strong> ​​</td>
+<td>Sửa hoặc thêm văn bản mốc mà công cụ bỏ sót</td>
+</tr>
+<tr>
+<td>Bảng tính / Biểu mẫu ảnh</td>
+<td><strong>🔍 Tìm kiếm</strong></td>
+<td>Duyệt qua Google Drive để tìm trang tính hoặc thư mục (sau khi đăng nhập)</td>
+</tr>
+</tbody>
+</table>
+<p>Bạn có thể nhấn vào ký hiệu tiền tệ trên trường chi phí và <strong>G/L</strong> trên trường khối lượng: mở một menu nhỏ để thay đổi đơn vị tiền tệ hoặc gallon so với lít cho mục nhập đó.</p>
+<hr />
+<h2 id="mo-menu">Mở menu</h2>
+<ol>
+<li>Nhấn vào <strong>☰</strong> ở trên cùng bên trái.</li>
+<li>Chọn một trang.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="01-drawer.jpg" src="images/01-drawer.jpg" /></p>
+<p><strong>Ngăn kéo chính:</strong> Điền nhanh · Bắt đầu chuyến đi · Quản lý phương tiện · Chi phí mới · <strong>Báo cáo</strong> · Cài đặt · Đồng bộ hóa · Trợ giúp · Giới thiệu.</p>
+<p><strong>Ngăn kéo thử nghiệm</strong> (Cài đặt → Hiển thị màn hình thử nghiệm): Thử nghiệm căn chỉnh · Thử nghiệm bơm · <strong>Nhập ảnh cũ</strong>.</p>
+<p><strong>Thông qua trung tâm Báo cáo (không phải ngăn kéo chính):</strong> Danh sách chi phí · Điền vào lịch sử.</p>
+<hr />
+<h2 id="thiet-lap-lan-au-quan-ly-phuong-tien">Thiết lập lần đầu: Quản lý phương tiện</h2>
+<p>OCR và <strong>so khớp xe tự động</strong> hoạt động tốt nhất sau khi bạn đăng ký mỗi chiếc xe với một <strong>ảnh bảng điều khiển tham chiếu</strong>, cắt đồng hồ đo đường và chạy <strong>Discovery</strong> để ứng dụng lưu trữ văn bản mốc cho dấu gạch ngang đó. (Cách chọn và khớp các mốc sẽ được ghi lại chi tiết hơn trong bản cập nhật sau.)</p>
+<h3 id="mo-quan-ly-phuong-tien">Mở Quản lý phương tiện</h3>
+<p>Menu → <strong>Quản lý phương tiện</strong>. Chọn một phương tiện (hoặc <strong>Thêm phương tiện mới</strong>).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r1-manage-vehicles-crops.jpg" src="images/r1-manage-vehicles-crops.jpg" /></p>
+<h3 id="them-hoac-chinh-sua-xe">Thêm hoặc chỉnh sửa xe</h3>
+<ol>
+<li>Mở menu thả xuống <strong>Phương tiện</strong> → chọn một phương tiện hoặc <strong>Thêm phương tiện mới</strong>.</li>
+<li>Chụp hoặc chọn một <strong>ảnh gạch ngang tham chiếu</strong> rõ ràng (cụm thiết bị đầy đủ, đủ ánh sáng, điện thoại gần như vuông vắn). Sử dụng <strong>Chụp ảnh</strong> hoặc <strong>Thư viện</strong>.</li>
+<li>Vẽ cây trồng:<br />
+   - <strong>Odo Crop</strong> — hình chữ nhật bao quanh các chữ số của đồng hồ đo đường (nút hiển thị <strong>Done Odo</strong> khi chế độ đó đang hoạt động).<br />
+   - <strong>Bỏ qua Cắt</strong> — vùng tùy chọn cần bỏ qua (đồng hồ, radio, v.v.).<br />
+   - <strong>Chỉnh sửa cây trồng</strong> — điều chỉnh các hình chữ nhật hiện có.</li>
+<li>Nhấn vào <strong>Chạy khám phá</strong> — OCR đa công cụ tìm thấy các từ mang tính bước ngoặt bên ngoài vùng cắt.</li>
+<li>Đánh giá với <strong>Hiển thị cột mốc</strong>. Sử dụng <strong>Chỉnh sửa OCR</strong> ​​để sửa lỗi đọc sai hoặc <strong>thêm</strong> văn bản bị bỏ sót.</li>
+<li>Điền <strong>Tên xe</strong> (bắt buộc), cộng với nhãn hiệu/model/năm/biển số tùy thích.</li>
+<li>Nhấn vào <strong>Tạo xe</strong> hoặc <strong>Lưu thay đổi</strong> (yêu cầu tên + ảnh tham chiếu cho xe mới).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="03b-manage-vehicles-new.jpg" src="images/03b-manage-vehicles-new.jpg" /></p>
+<h3 id="cot-moc-sua-nhung-gi-discovery-a-bo-lo">Cột mốc: sửa những gì Discovery đã bỏ lỡ</h3>
+<p>Sau <strong>Hiển thị cột mốc</strong>, hãy cuộn danh sách và sửa các giá trị. Động cơ đôi khi bỏ lỡ các chữ số nhỏ (ví dụ: đồng hồ <strong>60</strong> ở phía dưới bên phải của cụm). Sử dụng <strong>Chỉnh sửa OCR</strong> ​​để thêm hoặc sửa chúng để nhận dạng phương tiện luôn đáng tin cậy.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r2-manage-vehicles-landmarks.jpg" src="images/r2-manage-vehicles-landmarks.jpg" /></p>
+<h3 id="go-phim-ma-khong-co-buc-anh-hoan-hao">Gõ phím mà không có bức ảnh hoàn hảo</h3>
+<p>Bạn vẫn có thể sử dụng ứng dụng bằng cách chọn một chiếc xe và <strong>nhập</strong> đồng hồ đo đường, khối lượng và chi phí vào Điền nhanh — OCR là tùy chọn cho mọi trường. Tính năng nhập thư viện hoạt động đối với ảnh gạch ngang tham chiếu khi bạn không muốn chụp trong ứng dụng.</p>
+<p><strong>Mẹo:</strong> Sau khi đồng bộ hóa bảng tính, các định nghĩa về phương tiện (cây trồng, cột mốc) sẽ có trong cơ sở dữ liệu cục bộ — bạn không cần phải mở lại Quản lý phương tiện để Điền nhanh để sử dụng chúng.</p>
+<hr />
+<h2 id="sao-luu-va-ong-bo-hoa-nhieu-thiet-bi">Sao lưu và đồng bộ hóa nhiều thiết bị</h2>
+<p>Ứng dụng được xây dựng để <strong>một số điện thoại hoặc máy tính bảng có thể chia sẻ cùng một dữ liệu nhóm</strong> và vì vậy bạn có thể giữ <strong>bản sao dữ liệu và ảnh của mình khỏi thiết bị</strong>. Điều đó được thực hiện với các điểm đến <strong>bạn</strong> định cấu hình trong tài khoản <strong>của bạn</strong> hoặc máy chủ tự lưu trữ <strong>của bạn</strong> — không phải là “Đám mây chi phí phương tiện” do công ty điều hành mà người khác có thể nhìn thấy.</p>
+<h3 id="cai-gi-chay-o-au">Cái gì chạy ở đâu</h3>
+<table>
+<thead>
+<tr>
+<th>Loại</th>
+<th>Nó lưu trữ những gì</th>
+<th>Sử dụng điển hình</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Đồng bộ hóa bảng tính/dạng bảng</strong></td>
+<td>Xe cộ, đổ xăng, chi phí (hàng và tab)</td>
+<td>Hợp nhất nhiều thiết bị + sao lưu có cấu trúc</td>
+</tr>
+<tr>
+<td><strong>Sao lưu ảnh</strong></td>
+<td>Hình ảnh nhị phân (dấu gạch ngang/bơm/biên nhận/ảnh tham khảo)</td>
+<td>Sao lưu ảnh + khôi phục file bị thiếu</td>
+</tr>
+</tbody>
+</table>
+<p>Bạn có thể định cấu hình <strong>nhiều đích</strong> của từng loại (giới hạn mềm cho mỗi loại). Nhân viên <strong>Đồng bộ hóa ngay</strong> và <strong>nền</strong> thủ công chạy những cái đã bật.</p>
+<h3 id="ngoai-tuyen-truoc">Ngoại tuyến trước</h3>
+<ul>
+<li><strong>Không cần mạng</strong> để thêm khoản điền vào, chi phí hoặc biên lai. Mọi thứ đều được lưu <strong>cục bộ trước tiên</strong>.</li>
+<li>Khi có mạng, đồng bộ hóa và sao lưu ảnh sẽ chạy dưới dạng <strong>tác vụ nền</strong> (theo lịch bạn đặt và khi bạn nhấn vào <strong>Đồng bộ hóa ngay</strong>). Lỗi hiển thị dưới dạng văn bản màu đỏ trong hàng Cài đặt và <strong>!</strong> trên thanh tiêu đề ứng dụng.</li>
+</ul>
+<h3 id="chi-tai-khoan-cua-ban">Chỉ tài khoản của bạn</h3>
+<p>Thông tin đăng nhập và mã thông báo vẫn còn trên thiết bị đối với các nhà cung cấp mà bạn chọn (Google, Microsoft, khóa S3, URL tự lưu trữ, v.v.). Đích đến nằm dưới <strong>toàn quyền kiểm soát của người dùng</strong> — tài khoản Google, OneDrive, bộ chứa MinIO, máy chủ EtherCalc của bạn, v.v. Không có gì được chia sẻ với những người dùng Chi phí phương tiện khác thông qua chương trình phụ trợ được chia sẻ.</p>
+<h3 id="muc-tieu-uoc-ho-tro-du-lieu-bang-tinh-dang-bang">Mục tiêu được hỗ trợ — dữ liệu (bảng tính / dạng bảng)</h3>
+<p>Được định cấu hình trong <strong>Menu → Đồng bộ hóa → Đồng bộ hóa bảng tính</strong> (cũng có thể truy cập được từ các hàng tóm tắt Cài đặt). Tùy chọn bộ chọn hạng nhất:</p>
+<table>
+<thead>
+<tr>
+<th>Mục tiêu</th>
+<th>Ghi chú</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Trang tính</strong></td>
+<td>Mặc định chung; các tab dành cho Phương tiện, Chi phí và nhiên liệu trên mỗi phương tiện</td>
+</tr>
+<tr>
+<td><strong>Excel</strong></td>
+<td>Sổ làm việc của Microsoft thông qua liên kết kiểu Đồ thị / OneDrive</td>
+</tr>
+<tr>
+<td><strong>EtherCalc</strong></td>
+<td>Phòng bảng tính cộng tác tự lưu trữ</td>
+</tr>
+<tr>
+<td><strong>Khác →</strong> phụ trợ được triển khai</td>
+<td><strong>Baserow</strong>, <strong>NocoDB</strong>, <strong>Airtable</strong>, <strong>PocketBase</strong>, <strong>Supabase</strong>, <strong>Firebase</strong>, <strong>Zoho Sheet</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Deferred / not headless yet (listed under Other but not fully implemented): OnlyOffice, Collabora. Xem thêm <a href="reference/self-host/INDEX.md">chỉ mục self-host</a>.</p>
+<p>CSV <strong>xuất/nhập</strong> (ZIP có cùng bố cục tab) có sẵn trong Cài đặt dưới dạng bản sao lưu di động, độc lập với đồng bộ hóa trực tiếp.</p>
+<h3 id="muc-tieu-uoc-ho-tro-anh-sao-luu-anh">Mục tiêu được hỗ trợ — ảnh (sao lưu ảnh)</h3>
+<p>Được định cấu hình trong <strong>Menu → Đồng bộ hóa → Sao lưu ảnh</strong> (cũng từ các hàng tóm tắt Cài đặt):</p>
+<table>
+<thead>
+<tr>
+<th>Mục tiêu</th>
+<th>Ghi chú</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Drive</strong></td>
+<td>Thư mục bạn chọn (duyệt hoặc dán URL)</td>
+</tr>
+<tr>
+<td><strong>OneDrive</strong></td>
+<td>Tài khoản Microsoft + tiền tố đường dẫn</td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td>AWS, Wasabi, Cloudflare R2, MinIO, and other S3-compatible endpoints</td>
+</tr>
+<tr>
+<td><strong>Khác</strong></td>
+<td>rclone-backed storage (e.g. WebDAV, SFTP, and other curated remotes available in the in-app picker)</td>
+</tr>
+</tbody>
+</table>
+<p>Setup cheatsheets for self-hosted photo and tabular targets: <a href="reference/self-host/INDEX.md">self-host index</a>.</p>
+<h3 id="hanh-vi-tren-nhieu-thiet-bi-ngan">Hành vi trên nhiều thiết bị (ngắn)</h3>
+<ul>
+<li>Rows merge by <strong>Sync ID</strong> with <strong>last-write-wins</strong> on <strong>Updated</strong> timestamps.</li>
+<li>Xóa được mềm mại; a newer edit on another device can restore a row.</li>
+<li>Entering the <strong>same fill twice</strong> on two devices creates <strong>two rows</strong> — delete the extra when you notice.</li>
+<li>More detail: <a href="#sync-behavior-notes">Sync behavior notes</a> and <a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a>.</li>
+</ul>
+<h3 id="vi-du-them-google-sheets-du-lieu">Ví dụ: thêm Google Sheets (dữ liệu)</h3>
+<ol>
+<li><strong>Menu → Đồng bộ hóa → Đồng bộ hóa bảng tính</strong> (hoặc Cài đặt → Đồng bộ hóa bảng tính).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Danh sách đồng bộ hóa bảng tính" src="images/08-s Spreadsheet-sync.jpg" /></p>
+<ol start="2">
+<li>Nhấn <strong>Thêm đích bảng tính</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Bộ chọn nhà cung cấp" src="images/09-s Spreadsheet-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Chọn <strong>Google Trang tính</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="Biểu mẫu Google Trang tính" src="images/10-s Spreadsheet-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Sign in with Google</strong> → display name → <strong>Sheet URL</strong> or <strong>🔍</strong> browse/create → schedule options → enable → save.</li>
+<li><strong>Sync now</strong> once to create/update tabs: <code>Vehicles</code>, <code>Expenses</code>, <code>Fuel - {vehicle name}</code>.</li>
+</ol>
+<h3 id="vi-du-them-google-drive-anh">Ví dụ: thêm Google Drive (ảnh)</h3>
+<ol>
+<li><strong>Menu → Syncing → Photo backup</strong> (or Settings → Photo backup).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="11-photo-backup.jpg" src="images/11-photo-backup.jpg" /></p>
+<ol start="2">
+<li>Nhấn <strong>Thêm điểm đến ảnh</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="12-photo-provider-picker.jpg" src="images/12-photo-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Chọn <strong>Google Drive</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="13-photo-google-form.jpg" src="images/13-photo-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Sign in with Google (Drive)</strong> → optional folder URL/browse → enable → save → <strong>Sync now</strong>.</li>
+</ol>
+<p>Thủ công <strong>Đồng bộ hóa ngay</strong> cho ảnh là hoàn thành; sao lưu nền thường xử lý các tải lên <strong>chỉ đang chờ xử lý</strong> theo lịch trình.</p>
+<h3 id="ghi-chu-hanh-vi-ong-bo-hoa">Ghi chú hành vi đồng bộ hóa</h3>
+<ul>
+<li>Sau khi nâng cấp ứng dụng, bạn có thể thấy nhanh <strong>“Đang cập nhật cơ sở dữ liệu sau khi nâng cấp…”</strong> (chèn lấp id đồng bộ hóa cục bộ).</li>
+<li>Nếu quá trình đồng bộ hóa bị gián đoạn, lần đồng bộ hóa <strong>thành công</strong> tiếp theo sẽ hợp nhất lại và sửa chữa các tab từ xa.</li>
+<li>Lỗi: tóm tắt màu đỏ trên Thẻ đồng bộ hóa + <strong>*!</strong> trên thanh ứng dụng.</li>
+</ul>
+<hr />
+<h2 id="o-xang-nhanh-nhien-lieu">Đổ xăng nhanh (nhiên liệu)</h2>
+<p>Đây là <strong>màn hình chính</strong> khi bạn mở ứng dụng.</p>
+<h3 id="lua-chon-xe-thuong-la-tu-ong">Lựa chọn xe (thường là tự động)</h3>
+<p>Bạn <strong>không</strong> cần chọn xe trước. Khi xe có <strong>mốc</strong> được thiết lập trong Quản lý phương tiện, Điền nhanh <strong>tự động phát hiện phương tiện nào</strong> từ hình ảnh gạch ngang sau khi bạn chụp đồng hồ đo đường. Bạn vẫn có thể mở menu thả xuống <strong>Xe</strong> để ghi đè nếu cần.</p>
+<h3 id="nham-vao-ong-ho-o-uong">Nhắm vào đồng hồ đo đường</h3>
+<p>Ở chế độ đo đường và đóng khung cụm. Hướng dẫn: <em>Nhắm vào đồng hồ đo đường. Nhấn vào màn trập để chụp.</em></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r3-quickfill-odo-live.jpg" src="images/r3-quickfill-odo-live.jpg" /></p>
+<h3 id="sau-man-trap-ong-ho-o-uong">Sau màn trập đồng hồ đo đường</h3>
+<p>OCR điền <strong>Odo</strong> và cố gắng khớp xe từ các mốc (xem lại cả hai nếu cần). Nút chính trở thành <strong>Thử lại</strong> để chụp lại. Hướng dẫn tóm tắt bài đọc.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r4-quickfill-odo-result.jpg" src="images/r4-quickfill-odo-result.jpg" /></p>
+<h3 id="che-o-bom-chi-phi-va-khoi-luong">Chế độ bơm (chi phí và khối lượng)</h3>
+<ol>
+<li>Nhấn <strong>↕</strong> để chuyển sang chế độ bơm: <em>Nhắm vào màn hình bơm (chi phí/khối lượng). Nhấn vào màn trập.</em></li>
+<li>Ghi lại tổng số máy bơm. Các trường chi phí và khối lượng được điền vào; sử dụng <strong>↔</strong> nếu chúng được đổi chỗ.</li>
+<li>Nhấn vào loại tiền tệ hoặc <strong>G/L</strong> nếu cần, sau đó nhấn <strong>Save</strong> (đĩa). Các trường trống sẽ <strong>điền một phần</strong> (vẫn được phép).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r5-quickfill-pump-result.jpg" src="images/r5-quickfill-pump-result.jpg" /></p>
+<p>Bạn tiếp tục điền nhanh cho điểm dừng tiếp theo (các trường sẽ bị xóa sau khi lưu). Làm việc hoàn toàn <strong>ngoại tuyến</strong>; đồng bộ hóa sẽ chạy sau trong nền khi được định cấu hình.</p>
+<h3 id="nhap-thu-cong-khong-co-camera-ocr-kem">Nhập thủ công (không có camera / OCR kém)</h3>
+<ol>
+<li>Nhấn vào <strong>Odo</strong>, <strong>cost</strong> hoặc <strong>âm lượng</strong> và nhập các giá trị (dọc sử dụng bàn phím hệ thống; ngang sử dụng bàn phím trên màn hình).</li>
+<li>Chọn hoặc xác nhận <strong>Xe</strong> nếu tính năng tự động phát hiện không chạy.</li>
+<li>Lưu như trên.</li>
+</ol>
+<h3 id="che-o-va-uong-vien">Chế độ và đường viền</h3>
+<ul>
+<li><strong>Đường viền màu xanh lá cây</strong> xung quanh xe+odo → chụp/chỉnh sửa đồng hồ đo đường.</li>
+<li><strong>Đường viền màu xanh lá cây</strong> xung quanh chi phí+khối lượng → chế độ bơm.</li>
+<li><strong>Lưu</strong> vẫn bị tắt cho đến khi một phương tiện được chọn và ít nhất một trong số odo/chi phí/khối lượng có dữ liệu và OCR vẫn không chạy.</li>
+</ul>
+<p>Mẹo trên màn hình (bên dưới dòng hướng dẫn): <em>Màn trập = chụp · Đĩa = lưu · ↕ = chế độ odo/bơm · ↔ = chi phí hoán đổi/khối lượng.</em></p>
+<hr />
+<h2 id="chi-phi">Chi phí</h2>
+<h3 id="chi-phi-moi">Chi phí mới</h3>
+<p>Menu → <strong>Chi phí mới</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r6-new-expense.jpg" src="images/r6-new-expense.jpg" /></p>
+<ol>
+<li><strong>Save</strong> (đĩa), <strong>shutter</strong> (ảnh biên nhận) hoặc <strong>thư viện</strong> (chọn ảnh).</li>
+<li>Điền vào <strong>Ngày</strong>, <strong>Xe</strong>, <strong>Nhà cung cấp</strong>, <strong>Mô tả</strong>, <strong>Số tiền</strong> (ký hiệu tiền tệ có thể chạm vào), <strong>Danh mục</strong>, tùy chọn <strong>Đồng hồ đo đường</strong>.</li>
+<li>Biên nhận nhiều trang: chụp thêm các trang nếu UI cung cấp tính năng phân trang (trang 0 là biên nhận chính).</li>
+<li><strong>Lưu</strong> để lưu trữ (cục bộ trước; sao lưu ảnh và đồng bộ hóa bảng tính diễn ra ở chế độ nền khi được định cấu hình).</li>
+</ol>
+<h3 id="danh-sach-chi-phi">Danh sách chi phí</h3>
+<p>Menu → <strong>Báo cáo</strong> → <strong>Danh sách chi phí</strong> — duyệt qua các chi phí phi nhiên liệu; mở một mục để chỉnh sửa.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="05-expense-list.jpg" src="images/05-expense-list.jpg" /></p>
+<h3 id="chinh-sua-chi-phi">Chỉnh sửa chi phí</h3>
+<p>Mở một hàng từ danh sách. Nhà cung cấp, số lượng, chủng loại, xe và mô tả chính xác. Nếu biên nhận chỉ có trong bản sao lưu ảnh (không có tệp cục bộ có thể đọc được), hãy sử dụng <strong>Tìm nạp hình ảnh từ kho lưu trữ</strong> khi được hiển thị (hoạt động trên các đích ảnh đã định cấu hình).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="expense-edit.jpg" src="images/expense-edit.jpg" /></p>
+<hr />
+<h2 id="bat-au-chuyen-i">Bắt đầu chuyến đi</h2>
+<p>Menu → <strong>Bắt đầu chuyến đi</strong> (sau khi điền nhanh vào ngăn). Chụp hoặc nhập đồng hồ đo đường, chọn loại chuyến đi, lưu bằng biểu tượng <strong>đĩa</strong>. <strong>Dừng</strong> là phím tắt dành cho Cá nhân hiện tại tại vị trí GPS được giữ. Sử dụng <strong>ⓘ</strong> để nhắc nhở kiểm soát.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="start-trip.jpg" src="images/start-trip.jpg" /></p>
+<p>Số lần bắt đầu chuyến đi được lưu dưới dạng hàng nhiên liệu với <strong>Loại chuyến đi</strong> (không phải lần đổ xăng thông thường). Chúng xuất hiện trong <strong>Báo cáo → Số dặm chuyến đi</strong>, không phải trong Lịch sử nhiên liệu.</p>
+<hr />
+<h2 id="bao-cao">Báo cáo</h2>
+<p>Menu → <strong>Báo cáo</strong> mở trung tâm sản phẩm (tóm tắt mọi thời đại + thẻ danh mục). Đây là bề mặt báo cáo sản phẩm duy nhất - không có mục ngăn kéo “Báo cáo &amp; Biểu đồ” riêng biệt.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="06-reports.jpg" src="images/06-reports.jpg" /></p>
+<p>Mở thẻ cho chế độ xe (<strong>Tất cả / Mỗi / Đơn</strong>), bộ lọc thời gian, biểu đồ và chia sẻ (<strong>TEXT / CSV / PDF</strong>). Thanh trên cùng về báo cáo trẻ em: <strong>☰ + ←</strong> (và <strong>ⓘ</strong> khi đăng ký).</p>
+<h3 id="bao-cao-dua-tren-thoi-gian">Báo cáo dựa trên thời gian</h3>
+<p>Thẻ biểu đồ chính. Các số liệu tùy chọn (mpg, khối lượng/khoảng cách chẳng hạn như G/mi, đơn giá chẳng hạn như $/G, chi phí/khoảng cách, $ hàng tháng, số dặm chuyến đi, % chuyến đi theo loại) với các thùng <strong>Smooth</strong> và <strong>thang đo Y độc lập</strong> (phổ thông bên trái; tiền và nhóm chuyến đi ở bên phải).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports.jpg" src="images/time-based-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports-scrolled.jpg" src="images/time-based-reports-scrolled.jpg" /></p>
+<p>Chi tiết về toán kinh tế: <a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a>.</p>
+<h3 id="lich-su-o-xang-vs-lich-su-nhien-lieu">Lịch sử đổ xăng vs Lịch sử nhiên liệu</h3>
+<ul>
+<li><strong>Báo cáo → Lịch sử điền</strong> — điền theo trình tự thời gian cho các bộ lọc báo cáo (<strong>chỉ điền</strong>; không bắt đầu chuyến đi).</li>
+</ul>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fill-history.jpg" src="images/fill-history.jpg" /></p>
+<ul>
+<li><strong>Lịch sử nhiên liệu</strong> (nếu có trong điều hướng của công trình của bạn) — kho chứa đầy cho mỗi phương tiện, cũng chỉ đổ đầy; nhấn vào một hàng để chỉnh sửa.</li>
+</ul>
+<h3 id="dam-chuyen-i">Dặm chuyến đi</h3>
+<p><strong>Báo cáo → Số dặm chuyến đi</strong> — số dặm theo loại, biểu đồ và thứ tự thời gian <strong>danh sách chuyến đi bắt đầu / phân đoạn</strong>. Nhấn vào điểm bắt đầu thực sự để mở <strong>Chỉnh sửa điền</strong> cho hàng đó.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="trip-miles.jpg" src="images/trip-miles.jpg" /></p>
+<h3 id="chinh-sua-ien">Chỉnh sửa điền</h3>
+<p>Từ Lịch sử điền, Lịch sử nhiên liệu hoặc Số dặm chuyến đi, hãy mở lần điền. Bố cục: xe và đồng hồ đo đường, <strong>tiền tệ trước giá thành</strong>, khối lượng, ghi chú. Loại chuyến đi chỉ xuất hiện khi hàng bắt đầu chuyến đi. Vị trí có phần tóm tắt cộng với <strong>Chi tiết vị trí</strong>. Thiếu ảnh cục bộ có nhận dạng đám mây: <strong>Tìm nạp hình ảnh từ kho lưu trữ</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fuel-edit.jpg" src="images/fuel-edit.jpg" /></p>
+<p>Các thẻ danh mục khác bao gồm chi phí theo danh mục, tóm tắt phương tiện và danh sách chi phí.</p>
+<p>Tiền sử dụng đơn vị tiền tệ của mỗi hàng khi được đặt. Tổng số tiền tệ hỗn hợp hiển thị <strong>tổng phụ cho mỗi loại tiền tệ</strong> (không có chuyển đổi ngoại hối im lặng).</p>
+<hr />
+<h2 id="ang-ong-bo-hoa">Đang đồng bộ hóa</h2>
+<p>Menu → <strong>Đồng bộ hóa</strong> là trung tâm dành cho bảng tính và đích ảnh (không chỉ được chôn trong Cài đặt).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="syncing-hub.jpg" src="images/syncing-hub.jpg" /></p>
+<ul>
+<li>Thẻ <strong>Đồng bộ hóa bảng tính</strong> và <strong>Sao lưu ảnh</strong> với trạng thái ngắn, <strong>Đồng bộ hóa</strong> cho loại đó và <strong><em>*</em></strong> vào danh sách đích.</li>
+<li>Mở đích cho <strong>Kiểm tra kết nối</strong> và <strong>Đồng bộ hóa ngay (đích này)</strong> / tất cả đã được định cấu hình.</li>
+<li>Lỗi <strong>Chi tiết</strong> và màu đỏ <strong>!</strong> ở thanh tiêu đề ở đây.</li>
+<li>Thiết lập Google Trang tính và Drive từng bước: <a href="#backups-and-multi-device-sync">Sao lưu và đồng bộ hóa nhiều thiết bị</a>.</li>
+</ul>
+<hr />
+<h2 id="cai-at-tuy-chon-cuc-bo">Cài đặt (tùy chọn cục bộ)</h2>
+<p>Trình đơn → <strong>Cài đặt</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07-settings.jpg" src="images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07b-settings-more.jpg" src="images/07b-settings-more.jpg" /></p>
+<p>Đối với các điểm đến, hãy ưu tiên <strong>Menu → Đồng bộ hóa</strong>. Cài đặt có thể vẫn hiển thị các hàng tóm tắt mở cùng danh sách.</p>
+<h3 id="tuy-chon-cuc-bo-pho-bien">Tùy chọn cục bộ (phổ biến)</h3>
+<ul>
+<li><strong>Lưu ảnh biên nhận nhiên liệu</strong> / <strong>Lưu ảnh chi phí cục bộ</strong> — lưu giữ hình ảnh trên thiết bị (có thể yêu cầu quyền Ảnh).</li>
+<li><strong>Phát âm thanh màn trập</strong></li>
+<li><strong>Tiền tệ</strong> / <strong>Đơn vị khối lượng</strong> — mặc định của ứng dụng (hệ thống hoặc rõ ràng). Việc thay đổi đơn vị âm lượng với dữ liệu nhiên liệu hiện có có thể cung cấp hộp thoại chuyển đổi.</li>
+<li><strong>Chế độ tối</strong></li>
+<li><strong>Mẹo thiết lập</strong> — mở lại hướng dẫn đồng bộ / xe chạy lần đầu.</li>
+<li><strong>Gỡ lỗi Điền nhanh</strong> / <strong>Hiển thị màn hình thử nghiệm (dev)</strong> — nâng cao; để lại để sử dụng hàng ngày. Màn hình thử nghiệm không được ghi lại ở đây.</li>
+</ul>
+<p>CSV <strong>xuất/nhập</strong> (ZIP của thẻ Phương tiện / Chi phí / Nhiên liệu) có sẵn trong Cài đặt khi được bản dựng hiện tại cung cấp.</p>
+<hr />
+<h2 id="tro-giup-gioi-thieu">Trợ giúp &amp; Giới thiệu</h2>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="14-help.jpg" src="images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="15-about.jpg" src="images/15-about.jpg" /></p>
+<ul>
+<li><strong>Trợ giúp</strong> — bắt đầu nhanh trên thiết bị, hướng dẫn thiết lập, liên kết tới hướng dẫn này, chỉ mục thiết lập tự lưu trữ.</li>
+<li><strong>Giới thiệu</strong> — phiên bản, giấy phép, GitHub, hướng dẫn sử dụng này (đi kèm HTML ngoại tuyến + trực tuyến khi được xuất bản).</li>
+</ul>
+<hr />
+<h2 id="tai-lieu-lien-quan">Tài liệu liên quan</h2>
+<ul>
+<li><a href="reference/USER_GUIDE.md">USER_GUIDE.md</a> — tài liệu tham khảo cô đọng</li>
+<li><a href="reference/self-host/INDEX.md">self-host/INDEX.md</a> — thiết lập bảng/ảnh tự lưu trữ</li>
+<li><a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> — hợp nhất, khôi phục, trùng lặp</li>
+<li><a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a> — chi tiết về số liệu kinh tế</li>
+</ul>
+</body>
+</html>

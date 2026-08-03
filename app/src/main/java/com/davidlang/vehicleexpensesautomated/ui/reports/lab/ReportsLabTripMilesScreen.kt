@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.data.trip.TripSegments
@@ -23,6 +28,7 @@ import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 
 @Composable
 fun ReportsLabTripMilesScreen(navController: NavHostController) {
+    val context = LocalContext.current
     val data = rememberLabReportData()
     var includePersonalInTotals by remember { mutableStateOf(true) }
     var showZeroLength by remember { mutableStateOf(false) }
@@ -111,14 +117,14 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
     val leadingCount = remember(inPeriod) { inPeriod.count { it.isImplicitLeading } }
 
     ReportsLabScreenScaffold(
-        title = "Trip miles",
+        title = stringResource(R.string.reports_trip_miles),
         infoText = TRIP_MILES_INFO,
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
         shareActions = run {
             val buildText = {
-                buildTextShare(
+                buildTextShare(context, 
                     data = data,
                     milesByType = milesByType,
                     totalMiles = totalMiles,
@@ -134,7 +140,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                 textBody = buildText,
                 csvFileName = "lab_trip_miles.csv",
                 csvBody = {
-                    buildCsvShare(
+                    buildCsvShare(context, 
                         data = data,
                         milesByType = milesByType,
                         listSegs = listSegs,
@@ -150,8 +156,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     checked = includePersonalInTotals,
                     onCheckedChange = { includePersonalInTotals = it },
                 )
-                Text(
-                    "Include Personal in mile totals (incl. implicit leading)",
+                Text(stringResource(R.string.reports_include_personal_in_mile_totals_incl_implicit_le),
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -162,8 +167,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     checked = showPersonalInList,
                     onCheckedChange = { showPersonalInList = it },
                 )
-                Text(
-                    "Show Personal segments in list",
+                Text(stringResource(R.string.reports_show_personal_segments_in_list),
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -174,8 +178,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     checked = showZeroLength,
                     onCheckedChange = { showZeroLength = it },
                 )
-                Text(
-                    "Include zero-length segments",
+                Text(stringResource(R.string.reports_include_zero_length_segments),
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                     modifier = Modifier.weight(1f),
@@ -183,9 +186,9 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             }
         }
 
-        Text("KPIs", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.reports_kpis), style = MaterialTheme.typography.titleMedium)
         Text(
-            "Total miles: ${UnitFormat.distanceDeltaLabel(totalMiles)}" +
+            "Total miles: ${UnitFormat.distanceDeltaLabel(totalMiles, context)}" +
                 if (!includePersonalInTotals) " (Personal excluded)" else "",
             softWrap = true,
             maxLines = 3,
@@ -204,7 +207,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     Text(vName, style = MaterialTheme.typography.titleSmall, softWrap = true)
                     mbt.forEach { (type, miles) ->
                         Text(
-                            "  $type: ${UnitFormat.distanceDeltaLabel(miles)}",
+                            "  $type: ${UnitFormat.distanceDeltaLabel(miles, context)}",
                             style = MaterialTheme.typography.bodyMedium,
                             softWrap = true,
                         )
@@ -213,7 +216,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                 LabMultiSeriesIndexChart(
                     series = eachChartSeries,
                     xLabels = eachTypeLabels,
-                    caption = "Miles by type per vehicle (${UnitFormat.distanceUnitShortLabel()})",
+                    caption = "Miles by type per vehicle (${UnitFormat.distanceUnitShortLabel(context)})",
                 )
             }
         } else if (milesByType.isEmpty()) {
@@ -221,7 +224,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
         } else {
             milesByType.forEach { (type, miles) ->
                 Text(
-                    "$type: ${UnitFormat.distanceDeltaLabel(miles)}",
+                    "$type: ${UnitFormat.distanceDeltaLabel(miles, context)}",
                     style = MaterialTheme.typography.bodyMedium,
                     softWrap = true,
                 )
@@ -229,14 +232,14 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             LabCategoryBarsChart(
                 amounts = chartY,
                 categoryLabels = chartLabels,
-                caption = "Miles by type (${UnitFormat.distanceUnitShortLabel()})",
+                caption = "Miles by type (${UnitFormat.distanceUnitShortLabel(context)})",
             )
             if (chartLabels.isNotEmpty()) {
                 Text(
                     "Bar order: " +
                         chartLabels.mapIndexed { i, t ->
                             val m = milesByType[t] ?: 0
-                            "${i + 1}. $t (${UnitFormat.distanceDeltaLabel(m)})"
+                            "${i + 1}. $t (${UnitFormat.distanceDeltaLabel(m, context)})"
                         }.joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall,
                     softWrap = true,
@@ -245,9 +248,8 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
             }
         }
 
-        Text("Trip starts / segments", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Chronological trip list (separate from Fuel History fills). Tap a row to edit the start fill when it has an id.",
+        Text(stringResource(R.string.reports_trip_starts_segments), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.reports_chronological_trip_list_separate_from_fuel_histo),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             softWrap = true,
@@ -290,13 +292,13 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                     val milesLabel = if (seg.isOpen) {
                         "n/a"
                     } else {
-                        UnitFormat.distanceDeltaLabel(seg.miles)
+                        UnitFormat.distanceDeltaLabel(seg.miles, context)
                     }
                     val odoPart = buildString {
-                        append(UnitFormat.odometerReadingLabel(seg.startOdo))
+                        append(UnitFormat.odometerReadingLabel(seg.startOdo, context))
                         if (seg.endOdo != null) {
                             append(" → ")
-                            append(UnitFormat.odometerReadingLabel(seg.endOdo!!))
+                            append(UnitFormat.odometerReadingLabel(seg.endOdo!!, context))
                         } else {
                             append(" → …")
                         }
@@ -326,6 +328,7 @@ private const val TRIP_MILES_INFO =
         "from totals by default."
 
 private fun buildTextShare(
+    context: android.content.Context,
     data: LabReportData,
     milesByType: Map<String, Int>,
     totalMiles: Int,
@@ -345,7 +348,7 @@ private fun buildTextShare(
     if (leadingCount > 0) {
         appendLine("Implicit leading Personal segments in window: $leadingCount")
     }
-    appendLine("Total miles: ${UnitFormat.distanceDeltaLabel(totalMiles)}")
+    appendLine("Total miles: ${UnitFormat.distanceDeltaLabel(totalMiles, context)}")
     appendLine("Open segments (in period by start): $openCount")
     appendLine()
     appendLine("Miles by type:")
@@ -353,7 +356,7 @@ private fun buildTextShare(
         appendLine("  (none)")
     } else {
         milesByType.forEach { (t, m) ->
-            appendLine("  $t: ${UnitFormat.distanceDeltaLabel(m)}")
+            appendLine("  $t: ${UnitFormat.distanceDeltaLabel(m, context)}")
         }
     }
     appendLine()
@@ -365,23 +368,24 @@ private fun buildTextShare(
             seg.isImplicitLeading -> "Closed-implicit"
             else -> "Closed"
         }
-        val miles = if (seg.isOpen) "n/a" else UnitFormat.distanceDeltaLabel(seg.miles)
-        val endOdo = seg.endOdo?.let { UnitFormat.odometerReadingLabel(it) } ?: "…"
+        val miles = if (seg.isOpen) "n/a" else UnitFormat.distanceDeltaLabel(seg.miles, context)
+        val endOdo = seg.endOdo?.let { UnitFormat.odometerReadingLabel(it, context) } ?: "…"
         val type = if (seg.isImplicitLeading) "${seg.tripType}(implicit)" else seg.tripType
         appendLine(
             "  ${formatLabDate(seg.startTimestamp)} ${data.vehicleName(seg.vehicleId)} " +
                 "$type $status $miles " +
-                "${UnitFormat.odometerReadingLabel(seg.startOdo)} → $endOdo",
+                "${UnitFormat.odometerReadingLabel(seg.startOdo, context)} → $endOdo",
         )
     }
 }
 
 private fun buildCsvShare(
+    context: android.content.Context,
     data: LabReportData,
     milesByType: Map<String, Int>,
     listSegs: List<TripSegments.Segment>,
 ): String {
-    val unit = UnitFormat.distanceUnitShortLabel()
+    val unit = UnitFormat.distanceUnitShortLabel(context)
     val sb = StringBuilder()
     sb.appendLine("section,key,value,unit")
     sb.appendLine("meta,period,${ReportsLabShare.csvEscape(periodLabel(data.filter))},")
@@ -391,9 +395,8 @@ private fun buildCsvShare(
             "total_by_type,${ReportsLabShare.csvEscape(t)},$m,$unit",
         )
     }
-    sb.appendLine(
-        "segment_header,date,vehicle,type,status,miles,start_odo,end_odo,implicit_leading,unit",
-    )
+    // Share CSV column header (English export schema)
+    sb.appendLine("segment,date,vehicle,type,status,miles,start_odo,end_odo")
     listSegs.forEach { seg ->
         val status = when {
             seg.isOpen -> "open"

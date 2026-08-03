@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -40,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncProgressListener
@@ -216,7 +219,7 @@ fun SyncProviderChoiceScreen(
         }
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
-            Text("Cancel")
+            Text(stringResource(R.string.settings_cancel))
         }
     }
 }
@@ -234,7 +237,7 @@ fun SyncDestinationEditScaffold(
             .verticalScroll(rememberScrollState()),
     ) {
         OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-            Text("← Back to list")
+            Text(stringResource(R.string.settings_back_to_list))
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(title, style = MaterialTheme.typography.headlineMedium)
@@ -249,7 +252,7 @@ fun SyncDestinationDisplayNameField(
     onValueChange: (String) -> Unit,
     required: Boolean,
 ) {
-    Text("Destination", style = MaterialTheme.typography.titleMedium)
+    Text(stringResource(R.string.settings_destination), style = MaterialTheme.typography.titleMedium)
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -303,7 +306,7 @@ fun SyncDestinationEditFooter(
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
             enabled = !syncInProgress,
         ) {
-            Text("Remove destination")
+            Text(stringResource(R.string.settings_remove_destination))
         }
     }
     if (statusText.isNotBlank() || syncInProgress) {
@@ -364,17 +367,17 @@ fun SyncFailureDetailsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("OK") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_ok)) }
         },
         dismissButton = {
             TextButton(
                 onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("sync failure", detailMessage))
-                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.settings_copied), Toast.LENGTH_SHORT).show()
                 },
             ) {
-                Text("Copy")
+                Text(stringResource(R.string.settings_copy))
             }
         },
     )

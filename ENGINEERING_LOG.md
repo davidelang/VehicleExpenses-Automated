@@ -3484,3 +3484,54 @@ x
 - build_app: first attempt processDebugJavaRes mode 770 flake (cleaned intermediates); retry SUCCESS
 - builds tag → 6889b142 (merge commit). No works tag.
 
+
+## 2026-08-01 - i18n LTR Latin band language packs — execution start
+
+- Approved plan: dev-ai-interaction/plans/i18n-ltr-latin-band-language-packs-20260801-0311-plan.md
+- Branch: i18n_lang_packs
+- Status APPROVED
+- Phase 1: locale infrastructure + agent law skeleton
+
+## 2026-08-01 - i18n LTR Latin band language packs — execution near handoff
+
+- Plan: i18n-ltr-latin-band-language-packs-20260801-0311-plan.md
+- Phases 1–9: AppLanguage + Settings picker; product chrome → strings.xml (~478 keys); 11 locale packs complete; tutorials Context-resolved; UserManualDocs jsDelivr per language; docs/i18n/* manuals + HTML; screenshots interim English UI copies (docs/i18n/README); I18N.md / UI_COMPAT / mandates / project-facts
+- TODO plain-line i18n bullets: todo-close helper cannot match non-checkbox lines — leave for master or reformat
+- Residual: some interpolated/format/debug symbol strings remain English by nature
+
+## 2026-08-01 - i18n manual locale screenshots 5556 — execution start
+
+- Approved plan: dev-ai-interaction/plans/i18n-manual-locale-screenshots-5556-20260801-0759-plan.md
+- Device: emulator-5556 only; no deploy
+- Phase 1: device check + capture helper + Spanish pilot
+
+## 2026-08-01 - i18n screenshots phase 1 pilot es OK
+
+- Device emulator-5556; capture helper scripts/capture-manual-shot.sh + capture-i18n-manual-screenshots.py
+- Language via cmd locale set-app-locales + app_language pref
+- es: 28 jpgs, identical_to_en 0/28
+
+## 2026-08-01 - i18n manual locale screenshots 5556 — CODE LANDED
+
+- Plan: i18n-manual-locale-screenshots-5556-20260801-0759-plan.md
+- Captured 28 jpgs × 11 locales on emulator-5556 (no deploy)
+- Helpers: scripts/capture-manual-shot.sh, scripts/capture-i18n-manual-screenshots.py
+- Hash vs EN: es/fr/de/it/nl/pt-BR/pl/ru/vi/tr identical_to_en=0; id=1 (drawer flaky; still 28 files)
+- render-user-manual multi-locale HTML; docs/i18n/README updated
+- Language reset to en on device
+- Sync form shots often opened list not picker (best-effort); OCR/camera best-effort
+
+## 2026-08-01 - settings-group-i18n-units — execution start
+
+- Approved plan: dev-ai-interaction/plans/settings-group-i18n-units-20260801-1808-plan.md
+- Branch: i18n_lang_packs
+- Phase 1: UnitFormat distance label pref (no conversion)
+
+## 2026-08-01 - settings-group-i18n-units — CODE LANDED
+
+- Plan: settings-group-i18n-units-20260801-1808-plan.md
+- UnitFormat: distance_unit pref mi|km labels only (mpg/km/L, $/mi/$/km); no conversion
+- Settings: Localization & Units groups Language + Currency + Volume + Distance
+- Call sites pass Context for live labels; locale packs for new strings
+- todo-append per-vehicle distance+conversion future item
+- UI_COMPATIBILITY / project-facts / I18N updated

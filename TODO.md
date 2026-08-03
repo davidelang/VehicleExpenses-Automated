@@ -63,3 +63,5 @@ Post-save location confirm UI on edit screens (silent worker fill uses confirmed
 Reports multi-select vehicle checkboxes + Sum/Average (not Each-only); deferred from efficiency Each-vehicle
 
 Trip miles packaging polish (export labels/annual packs); core open-only + implicit personal shipped
+
+Distance units per-vehicle (mi/km): requires conversion between instruments/vehicles. Today: global display labels only; odo stored as same-unit instrument integers (no conversion).

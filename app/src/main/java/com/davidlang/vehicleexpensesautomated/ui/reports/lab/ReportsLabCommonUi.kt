@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -33,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
@@ -97,7 +100,7 @@ fun ReportsLabFilterBar(
     val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Filters", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.reports_filters), style = MaterialTheme.typography.titleSmall)
         // Simple Row — never host ExposedDropdownMenuBox inside AdaptiveItemGrid
         // (double subcompose measure yields flaky / dead menu hits).
         Row(
@@ -128,7 +131,7 @@ fun ReportsLabFilterBar(
                     value = label,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Vehicle") },
+                    label = { Text(stringResource(R.string.fuel_vehicle)) },
                     trailingIcon = {
                         ExposedDropdownMenuDefaults.TrailingIcon(expanded = vehicleExpanded)
                     },
@@ -141,7 +144,7 @@ fun ReportsLabFilterBar(
                     onDismissRequest = { vehicleExpanded = false },
                 ) {
                     DropdownMenuItem(
-                        text = { Text("All vehicles") },
+                        text = { Text(stringResource(R.string.reports_all_vehicles)) },
                         onClick = {
                             val next = state.copy(
                                 vehicleMode = LabVehicleMode.ALL,
@@ -154,7 +157,7 @@ fun ReportsLabFilterBar(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("Each vehicle") },
+                        text = { Text(stringResource(R.string.reports_each_vehicle)) },
                         onClick = {
                             val next = state.copy(
                                 vehicleMode = LabVehicleMode.EACH,
@@ -201,7 +204,7 @@ fun ReportsLabFilterBar(
                     value = periodLabelUi,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Period") },
+                    label = { Text(stringResource(R.string.reports_period)) },
                     trailingIcon = {
                         ExposedDropdownMenuDefaults.TrailingIcon(expanded = periodExpanded)
                     },
@@ -276,10 +279,10 @@ fun ReportsLabFilterBar(
                         onChange(next)
                     }
                     showStartPicker = false
-                }) { Text("OK") }
+                }) { Text(stringResource(R.string.settings_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showStartPicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showStartPicker = false }) { Text(stringResource(R.string.settings_cancel)) }
             },
         ) { DatePicker(state = pickerState) }
     }
@@ -295,10 +298,10 @@ fun ReportsLabFilterBar(
                         onChange(next)
                     }
                     showEndPicker = false
-                }) { Text("OK") }
+                }) { Text(stringResource(R.string.settings_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showEndPicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showEndPicker = false }) { Text(stringResource(R.string.settings_cancel)) }
             },
         ) { DatePicker(state = pickerState) }
     }

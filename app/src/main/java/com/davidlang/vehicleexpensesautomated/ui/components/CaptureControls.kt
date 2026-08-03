@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -59,13 +63,13 @@ fun RoundCaptureButton(
             )
             CaptureButtonState.Processing -> Icon(
                 imageVector = Icons.Filled.Close,
-                contentDescription = "Cancel processing",
+                contentDescription = stringResource(R.string.ui_cancel_processing),
                 tint = MaterialTheme.colorScheme.onError,
                 modifier = Modifier.size(32.dp),
             )
             CaptureButtonState.Results -> Icon(
                 imageVector = Icons.Filled.Refresh,
-                contentDescription = "Retry",
+                contentDescription = stringResource(R.string.settings_retry),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.size(32.dp),
             )

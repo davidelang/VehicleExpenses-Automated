@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.help
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.webkit.WebResourceRequest
@@ -32,7 +36,7 @@ class UserManualActivity : ComponentActivity() {
                 Scaffold(
                     topBar = {
                         TopAppBar(
-                            title = { Text("User Manual") },
+                            title = { Text(stringResource(R.string.user_manual_title)) },
                             navigationIcon = {
                                 IconButton(onClick = { finish() }) {
                                     Text("←")

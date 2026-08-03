@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -29,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
@@ -119,10 +122,10 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
     var smoothMenu by remember { mutableStateOf(false) }
     var customDaysText by remember { mutableStateOf(smooth.customDays.toString()) }
 
-    val mpgLabel = UnitFormat.economyEfficiencyLabel()
+    val mpgLabel = UnitFormat.economyEfficiencyLabel(context)
     val gpmLabel = UnitFormat.volumePerDistanceLabel(context)
     val unitPriceLabel = UnitFormat.unitPriceLabel(context)
-    val dpmLabel = UnitFormat.costPerDistanceLabel()
+    val dpmLabel = UnitFormat.costPerDistanceLabel(context)
 
     fun setToggles(next: TimeMetricToggles) {
         toggles = next
@@ -303,7 +306,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                 add(
                     LabAxisFamily(
                         id = "trip_mi",
-                        unitLabel = UnitFormat.distanceUnitShortLabel(),
+                        unitLabel = UnitFormat.distanceUnitShortLabel(context),
                         side = LabAxisSide.Right,
                         axisColor = Color(0xFFEF6C00),
                         series = tripMilesSeries,
@@ -379,8 +382,10 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         },
     )
 
+    val timeReportsTitle = stringResource(R.string.reports_time_based_reports)
+    val combinedMultiScaleTitle = stringResource(R.string.reports_combined_multi_scale)
     ReportsLabScreenScaffold(
-        title = "Time based reports",
+        title = timeReportsTitle,
         infoText = TIME_CHARTS_INFO,
         filterState = data.filter,
         vehicles = data.vehicles,
@@ -435,7 +440,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     if (chartFamilies.isNotEmpty()) {
                         val combinedBmp = renderMultiFamilyChartBitmap(
                             families = chartFamilies,
-                            title = "Combined multi-scale",
+                            title = combinedMultiScaleTitle,
                         )
                         sections += ReportsLabPdf.PdfSection(
                             heading = "Combined chart",
@@ -484,7 +489,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                         }
                     }
                     ReportsLabPdf.buildTextReportPdf(
-                        title = "Time based reports",
+                        title = timeReportsTitle,
                         metaLines = listOf(
                             "Period: ${periodLabel(data.filter)}",
                             "Vehicle: ${data.filterVehicleLabel()}",
@@ -496,18 +501,18 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
             )
         },
     ) {
-        Text("Metrics", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.reports_metrics), style = MaterialTheme.typography.titleSmall)
         AdaptiveItemGrid(items = metricDefs) { def ->
             MetricChipRow(def)
         }
 
-        Text("Smooth / bin", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.reports_smooth_bin), style = MaterialTheme.typography.titleSmall)
         ExposedDropdownMenuBox(expanded = smoothMenu, onExpandedChange = { smoothMenu = !smoothMenu }) {
             OutlinedTextField(
                 value = mode.displayLabel(customDays),
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Smooth") },
+                label = { Text(stringResource(R.string.reports_smooth)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = smoothMenu) },
                 modifier = Modifier.menuAnchor().fillMaxWidth(),
             )
@@ -536,7 +541,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     val n = customDaysText.toIntOrNull()?.coerceAtLeast(1)
                     if (n != null) setSmooth(smooth.copy(customDays = n))
                 },
-                label = { Text("Custom bin width (days)") },
+                label = { Text(stringResource(R.string.reports_custom_bin_width_days)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -545,7 +550,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         Spacer(Modifier.height(8.dp))
         // Color legend tags (match series)
         if (allSeriesForPdf.isNotEmpty()) {
-            Text("Series", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.reports_series), style = MaterialTheme.typography.titleSmall)
             AdaptiveItemGrid(items = allSeriesForPdf.keys.toList()) { name ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
