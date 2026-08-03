@@ -4460,3 +4460,10 @@ x
 - Built artifact/librclone.aar ~82MB; ABIs arm/arm64/x86_64; Align 0x4000.
 - App wires third_party/rclone/artifact/librclone.aar; removed app/libs/librclone.aar; UPX skip libgojni.so.
 - Upstream already has gomobile; VE carries post-clone curation forever (not fork PR for backend list).
+
+## 2026-08-03 - rclone libpin migration finished (host + docs)
+
+- ~/git/rclone: pure upstream master @ 3f9d583; email-connection retargeted (dropped ve-build commit).
+- Pin scripts/build remain SoT; sandbox rclone-build marked SUPERSEDED.md.
+- project-facts + ENVIRONMENT_SETUP + 16k notes point at third_party/rclone artifact.
+- fetch-deps ro rclone: clean @ pin, dirty=n.

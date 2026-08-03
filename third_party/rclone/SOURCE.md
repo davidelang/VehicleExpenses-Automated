@@ -16,7 +16,16 @@
 ./third_party/fetch-deps build rclone
 ```
 
-Optional: `GIT_HOME=~/git` with a full clone of rclone speeds materialize (worktree).
+Optional: `GIT_HOME=~/git` with **`~/git/rclone` pure upstream** (master) speeds materialize. Do **not** keep VE `ve-build/` on that host — recipes live only under this pin’s `scripts/`.
+
+## Host layout
+
+| Path | Role |
+|------|------|
+| `~/git/rclone` | Full upstream clone (object store); checkout at pin SHA via fetch-deps |
+| `third_party/rclone/src/` | Materialized pin tree (gitignored; RO after `ro`) |
+| `third_party/rclone/scripts/` | Docker + photo AAR bind (carry forever) |
+| `third_party/rclone/artifact/librclone.aar` | What the app links |
 
 ## Wrapper (why not just upstream?)
 

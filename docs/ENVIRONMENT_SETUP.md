@@ -19,15 +19,15 @@ There is **no** `.gitmodules` dependency for Paddle, OpenCV, or rclone. A normal
 |-----------|---------|------|----------------------|
 | App Kotlin / Compose / Hilt / Room | Yes | `app/src/main/java/…` | N/A (source of truth) |
 | JNI / C++ app code | Yes | `app/src/main/cpp/` (`BufferSet.cpp`, `NativeImageUtils.cpp`, `libraw/`, headers) | Built by CMake during Gradle |
-| OpenCV shared lib | **Yes (prebuilt)** | `app/src/main/jniLibs/<abi>/libopencv_java4.so` | Only if upgrading OpenCV |
+| OpenCV shared lib | **Yes (prebuilt pin)** | `app/src/main/jniLibs/<abi>/libopencv_java4.so` (+ `third_party/opencv/artifact/`) | `./third_party/fetch-deps build opencv` |
 | Paddle Lite JNI | **Yes (prebuilt)** | `app/src/main/jniLibs/<abi>/libpaddle_lite_jni.so` (+ optional `libpaddle_light_api_shared.so` on x86_64) | Only if upgrading Paddle Lite |
 | Paddle Java helper | **Yes** | `app/libs/PaddlePredictor.jar` | With Paddle rebuild |
 | Paddle OCR models + dict | **Yes** | `app/src/main/assets/paddle/` (`.nb` models, `en_dict.txt`, helper scripts) | Scripts under `assets/paddle/scripts/` when re-exporting models |
-| rclone Android AAR | **Yes (prebuilt)** | `app/libs/librclone.aar` | Only if rebuilding librclone from Go |
+| rclone Android AAR | **Yes (prebuilt pin)** | `third_party/rclone/artifact/librclone.aar` | `./third_party/fetch-deps build rclone` (Docker + gomobile) |
 | ML Kit text recognition | Maven | `com.google.mlkit:text-recognition` | Downloaded by Gradle |
 | Other AndroidX / Play / Hilt | Maven | `app/build.gradle.kts` | Downloaded by Gradle |
 
-**Bottom line for a first build:** you do **not** need to clone Paddle-Lite, OpenCV, or rclone repositories. Those trees under `dev-ai-interaction/` (e.g. historical Paddle-Lite build sandboxes) are **research / rebuild** artifacts, not compile prerequisites.
+**Bottom line for a first build:** you do **not** need to clone Paddle-Lite, OpenCV, or rclone repositories. Prebuilt pin artifacts ship in-tree. Rebuilds use `third_party/` + optional `~/git/<lib>` hosts (`docs/reference/THIRD_PARTY_PIN_BUILDS.md`).
 
 ### 1.2 When you *would* clone external tools
 
@@ -35,8 +35,8 @@ There is **no** `.gitmodules` dependency for Paddle, OpenCV, or rclone. A normal
 |------|----------------------|-------------------------------|
 | Upgrade Paddle Lite `.so` / jar | Paddle-Lite (or project notes under sandbox research) | `jniLibs/**`, `PaddlePredictor.jar` |
 | Re-export / quantize OCR `.nb` models | Paddle tooling + scripts in `assets/paddle/scripts/` | `assets/paddle/prod_u8fp16/*.nb` |
-| Upgrade OpenCV Android SDK | OpenCV Android pack | `jniLibs/**/libopencv_java4.so` + headers under `cpp/include/opencv2` if needed |
-| Rebuild librclone | rclone/librclone Go build | `app/libs/librclone.aar` |
+| Rebuild OpenCV pin | `~/git/opencv` optional; `third_party/opencv` | `artifact/jni/**` + `jniLibs/**` |
+| Rebuild rclone pin | `~/git/rclone` pure upstream; `third_party/rclone` | `third_party/rclone/artifact/librclone.aar` |
 
 Until you intentionally upgrade those, **ignore external clones**.
 

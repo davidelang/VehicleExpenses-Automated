@@ -1,3 +1,3 @@
 # rclone — third_party pin (VehicleExpenses)
 
-See SOURCE.md for the full narrative. Pin contract: libpin.toml.
+See SOURCE.md. Contract: libpin.toml. Host: ~/git/rclone (pure upstream).
