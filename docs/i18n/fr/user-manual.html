@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vehicle Expenses Automated — User Manual</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height: 1.5;
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 3rem;
+      color: #111;
+      background: #fafafa;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #eee; background: #121212; }
+      a { color: #8ab4f8; }
+      table { border-color: #444; }
+      th, td { border-color: #444; }
+      code { background: #2a2a2a; }
+      pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
+    }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
+    th { background: rgba(0,0,0,0.05); text-align: left; }
+    code { font-size: 0.9em; padding: 0.1em 0.3em; border-radius: 4px; background: #eee; }
+    pre { padding: 0.75rem; overflow: auto; border-radius: 8px; background: #f0f0f0; }
+    pre code { background: transparent; padding: 0; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    .note { font-size: 0.9rem; opacity: 0.85; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/i18n/fr/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <h1 id="depenses-de-vehicule-automatisees-manuel-dutilisation">Dépenses de véhicule automatisées — Manuel d'utilisation</h1>
+<blockquote>
+<p><strong>Modifier la source (Markdown).</strong> Les navigateurs et le lecteur intégré à l'application ouvrent le <strong>HTML rendu</strong> :<br />
+- Web : <a href="user-manual.html"><code>docs/user-manual.html</code></a> (régénérer avec <code>./scripts/render-user-manual.sh</code>)<br />
+- Application : Aide / À propos → manuel complet (HTML + captures d'écran fournies)</p>
+<p>Ne dirigez pas les utilisateurs finaux vers des URL brutes <code>.md</code> : les navigateurs affichent uniquement du texte brut.</p>
+</blockquote>
+<p>Suivi par caméra des pleins de carburant et des dépenses liées aux véhicules, avec synchronisation et sauvegarde multi-appareils en option sous <strong>vos</strong> comptes cloud.</p>
+<p>Ceci est le <strong>manuel complet</strong> (captures d'écran + chaque étape). Sur le téléphone, <strong>Menu → Aide</strong> est un guide de démarrage plus court.</p>
+<p><strong>Non couvert ici :</strong> Importez d'anciennes images, une expérience d'alignement et une expérience de pompe (développeur/outils avancés).</p>
+<hr />
+<h2 id="table-des-matieres">Table des matières</h2>
+<ol>
+<li><a href="#ce dont vous avez besoin">Ce dont vous avez besoin</a></li>
+<li><a href="#icons-at-a-glance">Icônes en un coup d'oeil</a></li>
+<li><a href="#ouvrir-le-menu">Ouvrir le menu</a></li>
+<li><a href="#first-time-setup-manage-vehicles">Première configuration : Gérer les véhicules</a></li>
+<li><a href="#backups-and-multi-device-sync">Sauvegardes et synchronisation multi-appareils</a></li>
+<li><a href="#quick-fill-up-fuel">Remplissage rapide (carburant)</a></li>
+<li><a href="#start-trip">Démarrer le voyage</a></li>
+<li><a href="#dépenses">Dépenses</a></li>
+<li><a href="#rapports">Rapports</a></li>
+<li><a href="#settings-local-preferences">Paramètres (préférences locales)</a></li>
+<li><a href="#syncing">Synchronisation</a></li>
+<li><a href="#help--à propos">Aide et à propos</a></li>
+<li><a href="# Related-docs">Documents associés</a></li>
+</ol>
+<hr />
+<h2 id="ce-dont-vous-avez-besoin">Ce dont vous avez besoin</h2>
+<ul>
+<li>Téléphone ou tablette Android.</li>
+<li>Pour un meilleur OCR : une vue claire de votre <strong>compteur kilométrique du tableau de bord</strong> et de vos <strong>totaux de pompe</strong> (ou saisissez les chiffres à la main).</li>
+<li>Facultatif : comptes <strong>que vous contrôlez</strong> pour les données de feuille de calcul et/ou la sauvegarde de photos (voir <a href="#sauvegardes-et-synchronisation multi-appareils">Sauvegardes et synchronisation multi-appareils</a>).</li>
+</ul>
+<hr />
+<h2 id="icones-en-un-coup-dil">Icônes en un coup d'œil</h2>
+<p>Ceux-ci apparaissent sur les écrans principaux. Les connaître évite beaucoup de chasse.</p>
+<table>
+<thead>
+<tr>
+<th>Où</th>
+<th>Icône / contrôle</th>
+<th>Ce qu'il fait</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Barre supérieure</td>
+<td><strong>☰ Menu</strong> (hamburger)</td>
+<td>Ouvre le tiroir de navigation</td>
+</tr>
+<tr>
+<td>Barre supérieure</td>
+<td><strong>ⓘ</strong> (page d'aide)</td>
+<td>Aide courte pour la page <strong>actuelle</strong> (à côté du menu lorsqu'il est disponible)</td>
+</tr>
+<tr>
+<td>Barre supérieure</td>
+<td><strong><code>?N</code></strong> (jaune)</td>
+<td>Questions de révision d'importation en attente — ouvre la révision d'importation</td>
+</tr>
+<tr>
+<td>Barre supérieure</td>
+<td><strong>!</strong> (rouge)</td>
+<td>Une feuille de calcul ou une destination de photo a récemment échoué : ouvrez <strong>Synchronisation</strong> pour corriger</td>
+</tr>
+<tr>
+<td>Barre supérieure</td>
+<td><strong>☰ + ←</strong></td>
+<td>Le rapport sur les enfants et la liste des dépenses affichent ** le menu et l'arrière ** ensemble ; Le hub de rapports est un menu uniquement</td>
+</tr>
+<tr>
+<td>Paramètres / carburant modifier</td>
+<td><strong>←</strong></td>
+<td>Retour (la feuille de calcul des paramètres/les modifications des photos et du carburant restent centrées sur l'arrière)</td>
+</tr>
+<tr>
+<td>Remplissage rapide</td>
+<td><strong>Cercle blanc</strong> (obturateur)</td>
+<td>Capturer l'affichage du compteur kilométrique ou de la pompe pour OCR</td>
+</tr>
+<tr>
+<td>Remplissage rapide</td>
+<td><strong>Disque / Enregistrer</strong></td>
+<td>Économisez le plein (nécessite un véhicule et au moins un parmi odo / volume / coût)</td>
+</tr>
+<tr>
+<td>Remplissage rapide</td>
+<td><strong>↕ flèches</strong> (commutateur de mode)</td>
+<td>Basculez le <strong>mode compteur kilométrique</strong> et le <strong>mode pompe (coût/volume)</strong>. La bordure verte met en évidence le groupe de champs actif</td>
+</tr>
+<tr>
+<td>Remplissage rapide</td>
+<td><strong>↔ flèches</strong> (entre coût et volume)</td>
+<td>Échangez le coût et le volume si l'OCR les place dans les mauvais champs</td>
+</tr>
+<tr>
+<td>Remplissage rapide</td>
+<td><strong>Zoom 1x / …</strong></td>
+<td>Rapports de zoom de l'appareil photo lorsque l'objectif les prend en charge</td>
+</tr>
+<tr>
+<td>Remplissage rapide (après capture)</td>
+<td><strong>Actualiser</strong> sur le bouton principal</td>
+<td>Supprimer l'aperçu et revenir à la caméra en direct</td>
+</tr>
+<tr>
+<td>Remplissage rapide (pendant le traitement)</td>
+<td><strong>X</strong> sur le bouton principal</td>
+<td>Annuler la capture/OCR en cours</td>
+</tr>
+<tr>
+<td>Dépense</td>
+<td><strong>Enregistrer</strong></td>
+<td>Économisez les dépenses</td>
+</tr>
+<tr>
+<td>Dépense</td>
+<td><strong>Cercle d'obturation</strong></td>
+<td>Prendre une photo du reçu</td>
+</tr>
+<tr>
+<td>Dépense</td>
+<td><strong>Galerie</strong></td>
+<td>Choisissez une image de reçu dans la bibliothèque</td>
+</tr>
+<tr>
+<td>Dépense</td>
+<td><strong>Reprendre</strong></td>
+<td>Effacer la photo du reçu actuel et prendre à nouveau</td>
+</tr>
+<tr>
+<td>Dépenses / Gérer les véhicules</td>
+<td><strong>+ / −</strong> FAB</td>
+<td>Zoomer l'aperçu de la photo</td>
+</tr>
+<tr>
+<td>Boîte de dialogue Points de repère</td>
+<td><strong>Modifier l'OCR</strong> ​​</td>
+<td>Corriger ou ajouter un texte de repère que les moteurs ont manqué</td>
+</tr>
+<tr>
+<td>Feuille de calcul / Formulaires photo</td>
+<td><strong>🔍 Recherche</strong></td>
+<td>Parcourez Google Drive pour une feuille ou un dossier (après la connexion)</td>
+</tr>
+</tbody>
+</table>
+<p>Les symboles monétaires sur les champs de coût et <strong>G/L</strong> sur les champs de volume sont accessibles : ouvrez un petit menu pour changer la devise ou les gallons par rapport aux litres pour cette entrée.</p>
+<hr />
+<h2 id="ouvrir-le-menu">Ouvrir le menu</h2>
+<ol>
+<li>Appuyez sur <strong>☰</strong> en haut à gauche.</li>
+<li>Choisissez une page.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="01-drawer.jpg" src="images/01-drawer.jpg" /></p>
+<p><strong>Tiroir principal :</strong> Remplissage rapide · Commencer le voyage · Gérer les véhicules · Nouvelles dépenses · <strong>Rapports</strong> · Paramètres · Synchronisation · Aide · À propos.</p>
+<p><strong>Tiroir d'expériences</strong> (Paramètres → Afficher les écrans d'expérience) : Expérience d'alignement · Expérience de pompe · <strong>Importer d'anciennes images</strong>.</p>
+<p><strong>Via le hub Rapports (pas le tiroir principal) :</strong> Liste des dépenses · Historique de remplissage.</p>
+<hr />
+<h2 id="premiere-configuration-gerer-les-vehicules">Première configuration : gérer les véhicules</h2>
+<p>L'OCR et la <strong>correspondance automatique des véhicules</strong> fonctionnent mieux après avoir enregistré chaque véhicule avec une <strong>photo de référence du tableau de bord</strong>, recadré le compteur kilométrique et exécuté <strong>Découverte</strong> afin que l'application stocke le texte de repère pour ce tableau de bord. (La manière dont les points de repère sont choisis et associés sera documentée plus en détail dans une mise à jour ultérieure.)</p>
+<h3 id="ouvrir-gerer-les-vehicules">Ouvrir Gérer les véhicules</h3>
+<p>Menu → <strong>Gérer les véhicules</strong>. Choisissez un véhicule (ou <strong>Ajouter un nouveau véhicule</strong>).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r1-manage-vehicles-crops.jpg" src="images/r1-manage-vehicles-crops.jpg" /></p>
+<h3 id="ajouter-ou-modifier-un-vehicule">Ajouter ou modifier un véhicule</h3>
+<ol>
+<li>Ouvrez le menu déroulant <strong>Véhicule</strong> → choisissez un véhicule ou <strong>Ajouter un nouveau véhicule</strong>.</li>
+<li>Capturez ou choisissez une <strong>photo de tableau de bord de référence</strong> claire (groupe d'instruments complet, bien éclairé, téléphone à peu près carré). Utilisez <strong>Prendre une photo</strong> ou <strong>Galerie</strong>.</li>
+<li>Dessinez des cultures :<br />
+   - <strong>Odo Crop</strong> — rectangle étroitement autour des chiffres du compteur kilométrique (le bouton affiche <strong>Done Odo</strong> lorsque ce mode est actif).<br />
+   - <strong>Ignorer le recadrage</strong> — région facultative à ignorer (horloge, radio, etc.).<br />
+   - <strong>Modifier les cultures</strong> : ajustez les rectangles existants.</li>
+<li>Appuyez sur <strong>Exécuter la découverte</strong> : l'OCR multimoteur trouve les mots marquants en dehors des cultures.</li>
+<li>Vérifiez avec <strong>Afficher les points de repère</strong>. Utilisez <strong>Modifier OCR</strong> ​​pour corriger les erreurs de lecture ou <strong>ajouter</strong> du texte manqué.</li>
+<li>Remplissez <strong>Nom du véhicule</strong> (obligatoire), plus marque/modèle/année/plaque comme vous le souhaitez.</li>
+<li>Appuyez sur <strong>Créer un véhicule</strong> ou <strong>Enregistrer les modifications</strong> (nécessite un nom + une photo de référence pour un nouveau véhicule).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="03b-manage-vehicles-new.jpg" src="images/03b-manage-vehicles-new.jpg" /></p>
+<h3 id="monuments-corrigez-ce-que-discovery-a-manque">Monuments : corrigez ce que Discovery a manqué</h3>
+<p>Après <strong>Afficher les points de repère</strong>, faites défiler la liste et corrigez les valeurs. Les moteurs manquent parfois de petits chiffres (par exemple une horloge <strong>60</strong> en bas à droite du cluster). Utilisez <strong>Modifier OCR</strong> ​​pour les ajouter ou les corriger afin que l'identité du véhicule reste fiable.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r2-manage-vehicles-landmarks.jpg" src="images/r2-manage-vehicles-landmarks.jpg" /></p>
+<h3 id="taper-sans-une-photo-parfaite">Taper sans une photo parfaite</h3>
+<p>Vous pouvez toujours utiliser l'application en sélectionnant un véhicule et en <strong>saisissant</strong> le compteur kilométrique, le volume et le coût sur Quick Fill - l'OCR est facultatif pour chaque champ. L'importation de galerie fonctionne pour la photo du tableau de bord de référence lorsque vous préférez ne pas prendre de photo dans l'application.</p>
+<p><strong>Conseil :</strong> Après la synchronisation de la feuille de calcul, les définitions de véhicules (cultures, points de repère) se trouvent dans la base de données locale. Vous n'avez pas besoin de rouvrir la gestion des véhicules pour le remplissage rapide pour les utiliser.</p>
+<hr />
+<h2 id="sauvegardes-et-synchronisation-multi-appareils">Sauvegardes et synchronisation multi-appareils</h2>
+<p>L'application est conçue pour que <strong>plusieurs téléphones ou tablettes puissent partager les mêmes données de flotte</strong>, et ainsi vous pouvez conserver une <strong>copie de vos données et photos hors de l'appareil</strong>. Cela se fait avec les destinations que <strong>vous</strong> configurez sous <strong>vos</strong> comptes ou <strong>vos</strong> serveurs auto-hébergés – et non avec un « cloud de dépenses de véhicule » géré par l'entreprise que d'autres personnes peuvent voir.</p>
+<h3 id="quest-ce-qui-se-passe-ou">Qu'est-ce qui se passe où</h3>
+<table>
+<thead>
+<tr>
+<th>Genre</th>
+<th>Ce qu'il stocke</th>
+<th>Utilisation typique</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Feuille de calcul/synchronisation tabulaire</strong></td>
+<td>Véhicules, pleins de carburant, dépenses (lignes et onglets)</td>
+<td>Fusion multi-appareils + sauvegarde structurée</td>
+</tr>
+<tr>
+<td><strong>Sauvegarde de photos</strong></td>
+<td>Images binaires (tableau de bord/pompe/reçu/photos de référence)</td>
+<td>Sauvegarde de photos + restauration des fichiers manquants</td>
+</tr>
+</tbody>
+</table>
+<p>Vous pouvez configurer <strong>plusieurs destinations</strong> de chaque type (limite souple par type). Les travailleurs manuels <strong>Synchroniser maintenant</strong> et <strong>en arrière-plan</strong> exécutent ceux activés.</p>
+<h3 id="hors-ligne-dabord">Hors ligne d'abord</h3>
+<ul>
+<li><strong>Aucun réseau n'est requis</strong> pour ajouter un remplissage, une dépense ou un reçu. Tout est enregistré <strong>localement d'abord</strong>.</li>
+<li>Lorsque le réseau est disponible, la synchronisation et la sauvegarde des photos s'exécutent en tant que <strong>tâches en arrière-plan</strong> (selon un calendrier que vous définissez et lorsque vous appuyez sur <strong>Synchroniser maintenant</strong>). Les échecs s'affichent sous forme de texte rouge sous les lignes Paramètres et d'un <strong>!</strong> dans la barre de titre de l'application.</li>
+</ul>
+<h3 id="vos-comptes-uniquement">Vos comptes uniquement</h3>
+<p>La connexion et les jetons restent sur l'appareil pour les fournisseurs que vous choisissez (Google, Microsoft, clés S3, URL auto-hébergées, etc.). Les destinations sont sous <strong>contrôle total de l'utilisateur</strong> : votre compte Google, votre OneDrive, votre compartiment MinIO, votre hôte EtherCalc, etc. Rien n'est partagé avec d'autres utilisateurs de Vehicle Expenses via un backend partagé.</p>
+<h3 id="cibles-prises-en-charge-donnees-feuille-de-calcultableau">Cibles prises en charge — données (feuille de calcul/tableau)</h3>
+<p>Configuré sous <strong>Menu → Synchronisation → Synchronisation de la feuille de calcul</strong> (également accessible à partir des lignes récapitulatives des paramètres). Options de sélection de première classe :</p>
+<table>
+<thead>
+<tr>
+<th>Cible</th>
+<th>Remarques</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Feuilles</strong></td>
+<td>Valeur par défaut commune ; onglets pour les véhicules, les dépenses et le carburant par véhicule</td>
+</tr>
+<tr>
+<td><strong>Excel</strong></td>
+<td>Classeur Microsoft via reliure de style Graph/OneDrive</td>
+</tr>
+<tr>
+<td><strong>ÉtherCalc</strong></td>
+<td>Salles de calcul collaboratives auto-hébergées</td>
+</tr>
+<tr>
+<td><strong>Autre →</strong> backends implémentés</td>
+<td><strong>Baserow</strong>, <strong>NocoDB</strong>, <strong>Airtable</strong>, <strong>PocketBase</strong>, <strong>Supabase</strong>, <strong>Firebase</strong>, <strong>Zoho Sheet</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Différé / pas encore sans tête (répertorié sous Autre mais pas entièrement implémenté) : OnlyOffice, Collabora. Voir aussi <a href="reference/self-host/INDEX.md">index auto-hôte</a>.</p>
+<p>CSV <strong>export/import</strong> (ZIP de la même disposition d'onglets) est disponible dans Paramètres en tant que sauvegarde portable, indépendante de la synchronisation en direct.</p>
+<h3 id="cibles-prises-en-charge-photos-sauvegarde-dimage">Cibles prises en charge — photos (sauvegarde d'image)</h3>
+<p>Configuré sous <strong>Menu → Synchronisation → Sauvegarde de photos</strong> (également à partir des lignes récapitulatives des paramètres) :</p>
+<table>
+<thead>
+<tr>
+<th>Cible</th>
+<th>Remarques</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Drive</strong></td>
+<td>Dossier que vous choisissez (parcourir ou coller l'URL)</td>
+</tr>
+<tr>
+<td><strong>OneDrive</strong></td>
+<td>Compte Microsoft + préfixe de chemin</td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td>AWS, Wasabi, Cloudflare R2, MinIO et autres points de terminaison compatibles S3</td>
+</tr>
+<tr>
+<td><strong>Autre</strong></td>
+<td>Stockage sauvegardé par rclone (par exemple WebDAV, SFTP et autres télécommandes organisées disponibles dans le sélecteur intégré à l'application)</td>
+</tr>
+</tbody>
+</table>
+<p>Configurez des aide-mémoire pour les cibles photo et tabulaires auto-hébergées : [index auto-hôte] (référence/auto-hôte/INDEX.md).</p>
+<h3 id="comportement-multi-appareils-court">Comportement multi-appareils (court)</h3>
+<ul>
+<li>Les lignes sont fusionnées par <strong>Sync ID</strong> avec <strong>last-write-wins</strong> sur les horodatages <strong>mis à jour</strong>.</li>
+<li>Les suppressions sont douces ; une modification plus récente sur un autre appareil peut restaurer une ligne.<br />
+- Saisir le <strong>même remplissage deux fois</strong> sur deux appareils crée <strong>deux lignes</strong> — supprimez le surplus lorsque vous le remarquez.</li>
+<li>Plus de détails : <a href="#sync-behavior-notes">Sync behavior notes</a> et <a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a>.</li>
+</ul>
+<h3 id="exemple-ajouter-google-sheets-donnees">Exemple : ajouter Google Sheets (données)</h3>
+<ol>
+<li><strong>Menu → Synchronisation → Synchronisation de la feuille de calcul</strong> (ou Paramètres → Synchronisation de la feuille de calcul).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="08-spreadsheet-sync.jpg" src="images/08-spreadsheet-sync.jpg" /></p>
+<ol start="2">
+<li>Appuyez sur <strong>Ajouter une destination de feuille de calcul</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="09-spreadsheet-provider-picker.jpg" src="images/09-spreadsheet-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Choisissez <strong>Google Sheets</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="10-spreadsheet-google-form.jpg" src="images/10-spreadsheet-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Connectez-vous avec Google</strong> → nom d'affichage → <strong>URL de la feuille</strong> ou <strong>🔍</strong> parcourir/créer → options de planification → activer → enregistrer.</li>
+<li><strong>Synchronisez maintenant</strong> une fois pour créer/mettre à jour les onglets : "Véhicules", "Dépenses", "Carburant - {nom du véhicule}".</li>
+</ol>
+<h3 id="exemple-ajouter-google-drive-photos">Exemple : ajouter Google Drive (photos)</h3>
+<ol>
+<li><strong>Menu → Synchronisation → Sauvegarde de photos</strong> (ou Paramètres → Sauvegarde de photos).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="11-photo-backup.jpg" src="images/11-photo-backup.jpg" /></p>
+<ol start="2">
+<li>Appuyez sur <strong>Ajouter une destination photo</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="12-photo-provider-picker.jpg" src="images/12-photo-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Choisissez <strong>Google Drive</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="13-photo-google-form.jpg" src="images/13-photo-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Connectez-vous avec Google (Drive)</strong> → URL/navigation du dossier facultatif → activer → enregistrer → <strong>Synchroniser maintenant</strong>.</li>
+</ol>
+<p>La <strong>Synchronisation manuelle maintenant</strong> pour les photos est une réussite complète ; la sauvegarde en arrière-plan traite généralement les téléchargements <strong>en attente uniquement</strong> selon une planification.</p>
+<h3 id="notes-sur-le-comportement-de-synchronisation">Notes sur le comportement de synchronisation</h3>
+<ul>
+<li>Après la mise à niveau de l'application, vous pouvez voir brièvement ** « Mise à jour de la base de données après la mise à niveau… »** (remplissage de l'identifiant de synchronisation local).</li>
+<li>Si une synchronisation est interrompue, la prochaine synchronisation <strong>réussie</strong> refusionne et répare les onglets distants.</li>
+<li>Échecs : résumé rouge sur les cartes de synchronisation + <strong>!</strong> dans la barre d'application.</li>
+</ul>
+<hr />
+<h2 id="remplissage-rapide-carburant">Remplissage rapide (carburant)</h2>
+<p>Il s'agit de l'<strong>écran d'accueil</strong> lorsque vous ouvrez l'application.</p>
+<h3 id="selection-du-vehicule-generalement-automatique">Sélection du véhicule (généralement automatique)</h3>
+<p>Vous n'avez <strong>pas</strong> besoin de choisir le véhicule en premier. Lorsque les véhicules ont des <strong>repères</strong> configurés dans Gérer les véhicules, Quick Fill <strong>détecte automatiquement quel véhicule</strong> à partir de l'image du tableau de bord après avoir capturé le compteur kilométrique. Vous pouvez toujours ouvrir la liste déroulante <strong>Véhicule</strong> pour remplacer si nécessaire.</p>
+<h3 id="visez-le-compteur-kilometrique">Visez le compteur kilométrique</h3>
+<p>Restez en mode compteur kilométrique et cadrez le cluster. Instruction : * Visez le compteur kilométrique. Appuyez sur l'obturateur pour capturer.*</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r3-quickfill-odo-live.jpg" src="images/r3-quickfill-odo-live.jpg" /></p>
+<h3 id="apres-lobturateur-du-compteur-kilometrique">Après l'obturateur du compteur kilométrique</h3>
+<p>L'OCR remplit <strong>Odo</strong> et essaie de faire correspondre le véhicule à partir des points de repère (vérifiez les deux si nécessaire). Le bouton principal devient <strong>Réessayer</strong> pour reprendre la photo. Les instructions résument la lecture.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r4-quickfill-odo-result.jpg" src="images/r4-quickfill-odo-result.jpg" /></p>
+<h3 id="mode-pompe-cout-et-volume">Mode pompe (coût et volume)</h3>
+<ol>
+<li>Appuyez sur <strong>↕</strong> pour passer en mode pompe : <em>Visez l'affichage de la pompe (coût/volume). Appuyez sur le déclencheur.</em></li>
+<li>Capturez les totaux de la pompe. Les champs de coût et de volume sont remplis ; utilisez <strong>↔</strong> s'ils sont échangés.</li>
+<li>Appuyez sur devise ou sur <strong>G/L</strong> si nécessaire, puis sur <strong>Enregistrer</strong> (disque). Les champs vides effectuent un <strong>remplissage partiel</strong> (toujours autorisé).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r5-quickfill-pump-result.jpg" src="images/r5-quickfill-pump-result.jpg" /></p>
+<p>Vous restez sur Quick Fill pour le prochain arrêt (les champs s'effacent après la sauvegarde). Travaillez entièrement <strong>hors ligne</strong> ; la synchronisation s'exécute plus tard en arrière-plan une fois configurée.</p>
+<h3 id="saisie-manuelle-pas-de-camera-mauvais-ocr">Saisie manuelle (pas de caméra / mauvais OCR)</h3>
+<ol>
+<li>Appuyez sur <strong>Odo</strong>, <strong>coût</strong> ou <strong>volume</strong> et saisissez les valeurs (le portrait utilise le clavier système ; le paysage utilise un clavier à l'écran).</li>
+<li>Choisissez ou confirmez le <strong>Véhicule</strong> si la détection automatique ne s'est pas exécutée.</li>
+<li>Enregistrez comme ci-dessus.</li>
+</ol>
+<h3 id="modes-et-bordures">Modes et bordures</h3>
+<ul>
+<li><strong>Bordure verte</strong> autour du véhicule+odo → capture/édition du compteur kilométrique.</li>
+<li><strong>Bordure verte</strong> autour du coût+volume → mode pompe.</li>
+<li>** Enregistrer ** reste désactivé jusqu'à ce qu'un véhicule soit sélectionné et qu'au moins un des éléments odo/coût/volume contienne des données et que l'OCR ne soit toujours pas en cours d'exécution.</li>
+</ul>
+<p>Astuce à l'écran (sous la ligne d'instructions) : <em>Obturateur = capture · Disque = sauvegarde · ↕ = mode odo/pompe · ↔ = coût d'échange/volume.</em></p>
+<hr />
+<h2 id="depenses">Dépenses</h2>
+<h3 id="nouvelle-depense">Nouvelle dépense</h3>
+<p>Menu → <strong>Nouvelle dépense</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r6-new-expense.jpg" src="images/r6-new-expense.jpg" /></p>
+<ol>
+<li><strong>Enregistrer</strong> (disque), <strong>obturateur</strong> (photo du reçu) ou <strong>galerie</strong> (sélectionner une image).</li>
+<li>Remplissez <strong>Date</strong>, <strong>Véhicule</strong>, <strong>Vendeur</strong>, <strong>Description</strong>, <strong>Montant</strong> (symbole monétaire tappable), <strong>Catégorie</strong>, <strong>Odomètre</strong> en option.</li>
+<li>Reçus multipages : capturez des pages supplémentaires si l'interface utilisateur propose la pagination (la page 0 est le reçu principal).</li>
+<li><strong>Enregistrer</strong> dans le magasin (local d'abord ; la sauvegarde des photos et la synchronisation des feuilles de calcul s'effectuent en arrière-plan une fois configurées).</li>
+</ol>
+<h3 id="liste-des-depenses">Liste des dépenses</h3>
+<p>Menu → <strong>Rapports</strong> → <strong>Liste des dépenses</strong> — parcourez les dépenses passées hors carburant ; ouvrez un élément à modifier.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="05-expense-list.jpg" src="images/05-expense-list.jpg" /></p>
+<h3 id="modifier-la-depense">Modifier la dépense</h3>
+<p>Ouvrez une ligne de la liste. Corrigez le fournisseur, le montant, la catégorie, le véhicule et la description. Si le reçu est uniquement dans une sauvegarde de photos (pas de fichier local lisible), utilisez <strong>Récupérer l'image des archives</strong> lorsqu'il est affiché (fonctionne sur les destinations photo configurées).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="expense-edit.jpg" src="images/expense-edit.jpg" /></p>
+<hr />
+<h2 id="commencer-le-voyage">Commencer le voyage</h2>
+<p>Menu → <strong>Démarrer le voyage</strong> (après remplissage rapide dans le tiroir). Capturez ou saisissez le compteur kilométrique, choisissez le type de trajet, enregistrez avec l'icône <strong>disque</strong>. <strong>Stop</strong> est un raccourci pour Personnel désormais à l'emplacement GPS retenu. Utilisez <strong>ⓘ</strong> pour les rappels de contrôle.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="start-trip.jpg" src="images/start-trip.jpg" /></p>
+<p>Les départs de voyage sont stockés sous forme de lignes de carburant avec un <strong>Type de voyage</strong> (pas de remplissages normaux). Ils apparaissent sous <strong>Rapports → Miles parcourus</strong>, et non sous Historique de carburant.</p>
+<hr />
+<h2 id="rapports">Rapports</h2>
+<p>Menu → <strong>Rapports</strong> ouvre le hub de produits (résumé de tous les temps + fiches de catalogue). Il s’agit de la seule surface de rapports sur les produits : il n’y a pas d’élément de tiroir « Rapports et graphiques » distincts.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="06-reports.jpg" src="images/06-reports.jpg" /></p>
+<p>Ouvrez une carte pour le mode véhicule (<strong>Tous / Chaque / Unique</strong>), les filtres de période, les graphiques et le partage (<strong>TEXTE / CSV / PDF</strong>). Barre supérieure sur les enfants signalés : <strong>☰ + ←</strong> (et <strong>ⓘ</strong> une fois inscrits).</p>
+<h3 id="rapports-bases-sur-le-temps">Rapports basés sur le temps</h3>
+<p>La carte graphique principale. Mesures facultatives (mpg, volume/distance tel que G/mi, prix unitaire tel que $/G, coût/distance, $ mensuel, miles parcourus, % de trajet par type) avec bacs <strong>Smooth</strong> et <strong>échelles Y indépendantes</strong> (économie à gauche ; argent et familles de voyages à droite).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports.jpg" src="images/time-based-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports-scrolled.jpg" src="images/time-based-reports-scrolled.jpg" /></p>
+<p>Détails des mathématiques économiques : <a href="référence/REPORTS_METRICS.md">REPORTS_METRICS.md</a>.</p>
+<h3 id="historique-de-remplissage-et-historique-de-carburant">Historique de remplissage et historique de carburant</h3>
+<ul>
+<li><strong>Rapports → Historique des remplissages</strong> — remplissages chronologiques pour les filtres de rapport (<strong>remplissages uniquement</strong> ; aucun voyage ne démarre).</li>
+</ul>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fill-history.jpg" src="images/fill-history.jpg" /></p>
+<ul>
+<li><strong>Historique du carburant</strong> (si présent dans la navigation de votre build) — inventaire de remplissage par véhicule, remplissage également uniquement ; appuyez sur une ligne à modifier.</li>
+</ul>
+<h3 id="milles-parcourus">Milles parcourus</h3>
+<p><strong>Rapports → Miles de voyage</strong> — miles par type, graphiques et <strong>liste chronologique de débuts de voyage/segments</strong>. Appuyez sur un véritable début pour ouvrir <strong>Modifier le remplissage</strong> pour cette ligne.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="trip-miles.jpg" src="images/trip-miles.jpg" /></p>
+<h3 id="modifier-le-remplissage">Modifier le remplissage</h3>
+<p>Dans Historique de remplissage, Historique de carburant ou Miles parcourus, ouvrez un remplissage. Mise en page : véhicule et compteur kilométrique, <strong>devise avant coût</strong>, volume, notes. Le type de voyage apparaît uniquement lorsque la ligne correspond à un début de voyage. L'emplacement comporte un résumé ainsi que des <strong>Détails de l'emplacement</strong>. Photo locale manquante avec identité cloud : <strong>Récupérer l'image des archives</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fuel-edit.jpg" src="images/fuel-edit.jpg" /></p>
+<p>D'autres fiches de catalogue incluent les dépenses par catégorie, le résumé du véhicule et la liste des dépenses.</p>
+<p>Money utilise la devise de chaque ligne lorsqu'elle est définie. Les totaux en devises mixtes affichent des <strong>sous-totaux par devise</strong> (pas de conversion FX silencieuse).</p>
+<hr />
+<h2 id="synchronisation">Synchronisation</h2>
+<p>Menu → <strong>Synchronisation</strong> est la plaque tournante des feuilles de calcul et des destinations photo (pas seulement enfouies sous Paramètres).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="syncing-hub.jpg" src="images/syncing-hub.jpg" /></p>
+<ul>
+<li>Cartes pour la <strong>synchronisation de feuille de calcul</strong> et la <strong>sauvegarde de photos</strong> avec un statut court, <strong>Sync</strong> pour ce type et <strong>›</strong> dans la liste de destinations.</li>
+<li>Ouvrez une destination pour <strong>Test de connexion</strong> et <strong>Synchroniser maintenant (cette destination)</strong> / tous configurés.</li>
+<li>L'échec <strong>Détails</strong> et le <strong>!</strong> rouge dans la barre de titre arrivent ici.</li>
+<li>Configuration étape par étape de Google Sheets et Drive : [Sauvegardes et synchronisation multi-appareils] (#sauvegardes-et-synchronisation multi-appareils).</li>
+</ul>
+<hr />
+<h2 id="parametres-preferences-locales">Paramètres (préférences locales)</h2>
+<p>Menu → <strong>Paramètres</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07-settings.jpg" src="images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07b-settings-more.jpg" src="images/07b-settings-more.jpg" /></p>
+<p>Pour les destinations, préférez <strong>Menu → Synchronisation</strong>. Les paramètres peuvent toujours afficher des lignes récapitulatives qui ouvrent les mêmes listes.</p>
+<h3 id="preferences-locales-communes">Préférences locales (communes)</h3>
+<ul>
+<li><strong>Enregistrer les photos des reçus de carburant</strong> / <strong>Enregistrer les photos des dépenses localement</strong> — conservez les images sur l'appareil (peut demander l'autorisation des photos).</li>
+<li><strong>Jouer le son de l'obturateur</strong></li>
+<li><strong>Devise</strong> / <strong>Unité de volume</strong> — valeurs par défaut de l'application (système ou explicite). La modification de l'unité de volume avec les données de carburant existantes peut offrir une boîte de dialogue de conversion.</li>
+<li><strong>Mode sombre</strong></li>
+<li><strong>Conseils de configuration</strong> : rouvrez les didacticiels de première utilisation sur les véhicules/synchronisation.</li>
+<li><strong>Debug Quick Fill</strong> / <strong>Afficher les écrans d'expérimentation (dev)</strong> — avancé ; laisser pour un usage quotidien. Les écrans d’expérimentation ne sont pas documentés ici.</li>
+</ul>
+<p>CSV <strong>export/import</strong> (ZIP des onglets Véhicules / Dépenses / Carburant) est disponible depuis Paramètres lorsqu'il est proposé par la version actuelle.</p>
+<hr />
+<h2 id="aide-et-a-propos">Aide et à propos</h2>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="14-help.jpg" src="images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="15-about.jpg" src="images/15-about.jpg" /></p>
+<ul>
+<li><strong>Aide</strong> — démarrage rapide sur l'appareil, didacticiels de configuration, lien vers ce manuel, index de configuration auto-hébergé.</li>
+<li><strong>À propos</strong> — version, licences, GitHub, ce manuel (regroupé hors ligne + HTML en ligne une fois publié).</li>
+</ul>
+<hr />
+<h2 id="documents-associes">Documents associés</h2>
+<ul>
+<li><a href="reference/USER_GUIDE.md">USER_GUIDE.md</a> — référence condensée</li>
+<li><a href="reference/self-host/INDEX.md">self-host/INDEX.md</a> — configuration photo/tabulaire auto-hébergée</li>
+<li><a href="référence/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> — fusion, récupération, doublons</li>
+<li><a href="référence/REPORTS_METRICS.md">REPORTS_METRICS.md</a> — détail des mesures économiques</li>
+</ul>
+</body>
+</html>

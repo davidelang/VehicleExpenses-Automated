@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vehicle Expenses Automated — User Manual</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height: 1.5;
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 3rem;
+      color: #111;
+      background: #fafafa;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #eee; background: #121212; }
+      a { color: #8ab4f8; }
+      table { border-color: #444; }
+      th, td { border-color: #444; }
+      code { background: #2a2a2a; }
+      pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
+    }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
+    th { background: rgba(0,0,0,0.05); text-align: left; }
+    code { font-size: 0.9em; padding: 0.1em 0.3em; border-radius: 4px; background: #eee; }
+    pre { padding: 0.75rem; overflow: auto; border-radius: 8px; background: #f0f0f0; }
+    pre code { background: transparent; padding: 0; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    .note { font-size: 0.9rem; opacity: 0.85; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/i18n/de/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <h1 id="fahrzeugkosten-automatisiert-benutzerhandbuch">Fahrzeugkosten automatisiert – Benutzerhandbuch</h1>
+<blockquote>
+<p><strong>Quelle bearbeiten (Markdown).</strong> Browser und der In-App-Reader öffnen den <strong>gerenderten HTML</strong>:<br />
+- Web: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (neu generieren mit <code>./scripts/render-user-manual.sh</code>)<br />
+- App: Hilfe / Info → vollständiges Handbuch (gebündeltes HTML + Screenshots)</p>
+<p>Weisen Sie Endbenutzer nicht auf unformatierte „.md“-URLs hin – Browser zeigen nur Klartext an.</p>
+</blockquote>
+<p>Kamerabasierte Verfolgung von Tankfüllungen und Fahrzeugkosten, mit optionaler Synchronisierung und Sicherung mehrerer Geräte unter <strong>Ihren</strong> Cloud-Konten.</p>
+<p>Dies ist das <strong>vollständige Handbuch</strong> (Screenshots + jeder Schritt). Auf dem Telefon ist <strong>Menü → Hilfe</strong> eine kürzere Kurzanleitung.</p>
+<p><strong>Hier nicht behandelt:</strong> Alte Bilder importieren, Ausrichtungsexperiment und Pumpenexperiment (Entwickler-/erweiterte Tools).</p>
+<hr />
+<h2 id="inhaltsverzeichnis">Inhaltsverzeichnis</h2>
+<ol>
+<li><a href="#what-you-need">Was Sie brauchen</a></li>
+<li><a href="#icons-at-a-glance">Symbole auf einen Blick</a></li>
+<li><a href="#open-the-menu">Menü öffnen</a></li>
+<li><a href="#first-time-setup-manage-vehicles">Erstmalige Einrichtung: Fahrzeuge verwalten</a></li>
+<li><a href="#backups-and-multi-device-sync">Backups und Multi-Device-Synchronisierung</a></li>
+<li><a href="#quick-fill-up-fuel">Schnellbetankung (Kraftstoff)</a></li>
+<li><a href="#start-trip">Reise starten</a></li>
+<li><a href="#Ausgaben">Ausgaben</a></li>
+<li><a href="#reports">Berichte</a></li>
+<li><a href="#settings-local-preferences">Einstellungen (lokale Präferenzen)</a></li>
+<li><a href="#syncing">Synchronisierung</a></li>
+<li><a href="#help--about">Hilfe und Info</a></li>
+<li><a href="#related-docs">Verwandte Dokumente</a></li>
+</ol>
+<hr />
+<h2 id="was-sie-brauchen">Was Sie brauchen</h2>
+<ul>
+<li>Android-Telefon oder -Tablet.</li>
+<li>Für beste OCR: eine klare Sicht auf Ihren <strong>Armaturenbrett-Kilometerzähler</strong> und <strong>Pumpengesamtwerte</strong> (oder geben Sie die Zahlen von Hand ein).</li>
+<li>Optional: Konten <strong>von Ihnen kontrolliert</strong> für Tabellenkalkulationsdaten und/oder Fotosicherungen (siehe <a href="#backups-and-multi-device-sync">Backups und Synchronisierung mehrerer Geräte</a>).</li>
+</ul>
+<hr />
+<h2 id="icons-auf-einen-blick">Icons auf einen Blick</h2>
+<p>Diese erscheinen auf den Hauptbildschirmen. Wenn man sie kennt, erspart man sich viel Jagd.</p>
+<table>
+<thead>
+<tr>
+<th>Wo</th>
+<th>Symbol / Steuerung</th>
+<th>Was es tut</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Obere Leiste</td>
+<td><strong>☰ Menü</strong> (Hamburger)</td>
+<td>Öffnet die Navigationsleiste</td>
+</tr>
+<tr>
+<td>Obere Leiste</td>
+<td><strong>ⓘ</strong> (Seitenhilfe)</td>
+<td>Kurzhilfe zur <strong>aktuellen</strong> Seite (neben dem Menü, sofern verfügbar)</td>
+</tr>
+<tr>
+<td>Obere Leiste</td>
+<td><strong><code>?N</code></strong> (gelb)</td>
+<td>Ausstehende Importüberprüfungsfragen – öffnet Importüberprüfung</td>
+</tr>
+<tr>
+<td>Obere Leiste</td>
+<td><strong>!</strong> (rot)</td>
+<td>Eine Tabellenkalkulation oder ein Fotoziel ist kürzlich fehlgeschlagen. Öffnen Sie <strong>Synchronisierung</strong>, um das Problem zu beheben</td>
+</tr>
+<tr>
+<td>Obere Leiste</td>
+<td><strong>☰ + ←</strong></td>
+<td>Kinder melden und Ausgabenliste zeigen <strong>Menü und zurück</strong> zusammen an; Der Berichts-Hub ist nur im Menü verfügbar</td>
+</tr>
+<tr>
+<td>Einstellungen / Kraftstoff bearbeiten</td>
+<td><strong>←</strong></td>
+<td>Zurück (Einstellungen, Tabellenkalkulation/Foto und Kraftstoffbearbeitung bleiben im Fokus)</td>
+</tr>
+<tr>
+<td>Schnellfüllung</td>
+<td><strong>Weißer Kreis</strong> (Verschluss)</td>
+<td>Erfassen Sie die Kilometerzähler- oder Pumpenanzeige für OCR</td>
+</tr>
+<tr>
+<td>Schnellfüllung</td>
+<td><strong>Datenträger / Speichern</strong></td>
+<td>Sparen Sie das Tanken (benötigt ein Fahrzeug und mindestens eines von odo / Volumen / Kosten)</td>
+</tr>
+<tr>
+<td>Schnellfüllung</td>
+<td><strong>↕ Pfeile</strong> (Modusschalter)</td>
+<td>Schalten Sie zwischen <strong>Kilometerzählermodus</strong> und <strong>Pumpenmodus (Kosten/Volumen)</strong> um. Der grüne Rand markiert die aktive Feldgruppe</td>
+</tr>
+<tr>
+<td>Schnellfüllung</td>
+<td><strong>↔ Pfeile</strong> (zwischen Kosten und Volumen)</td>
+<td>Kosten und Volumen vertauschen, wenn OCR sie in die falschen Felder einfügt</td>
+</tr>
+<tr>
+<td>Schnellfüllung</td>
+<td><strong>Zoom 1x / …</strong></td>
+<td>Zoomverhältnisse der Kamera, wenn das Objektiv sie unterstützt</td>
+</tr>
+<tr>
+<td>Quick Fill (nach der Aufnahme)</td>
+<td><strong>Aktualisieren</strong> auf der Hauptschaltfläche</td>
+<td>Vorschau verwerfen und zur Live-Kamera zurückkehren</td>
+</tr>
+<tr>
+<td>Quick Fill (während der Verarbeitung)</td>
+<td><strong>X</strong> auf der Hauptschaltfläche</td>
+<td>Laufende Erfassung/OCR abbrechen</td>
+</tr>
+<tr>
+<td>Aufwand</td>
+<td><strong>Speichern</strong></td>
+<td>Sparen Sie die Kosten</td>
+</tr>
+<tr>
+<td>Aufwand</td>
+<td><strong>Verschlusskreis</strong></td>
+<td>Machen Sie ein Quittungsfoto</td>
+</tr>
+<tr>
+<td>Aufwand</td>
+<td><strong>Galerie</strong></td>
+<td>Wählen Sie ein Belegbild aus der Bibliothek aus</td>
+</tr>
+<tr>
+<td>Aufwand</td>
+<td><strong>Wiederholung</strong></td>
+<td>Aktuelles Belegfoto löschen und erneut aufnehmen</td>
+</tr>
+<tr>
+<td>Kosten / Fahrzeuge verwalten</td>
+<td><strong>+ / −</strong> FABs</td>
+<td>Zoomen Sie die Fotovorschau</td>
+</tr>
+<tr>
+<td>Dialogfeld „Sehenswürdigkeiten“</td>
+<td><strong>OCR bearbeiten</strong></td>
+<td>Korrigieren oder fügen Sie wegweisenden Text hinzu, den die Engines übersehen haben</td>
+</tr>
+<tr>
+<td>Tabellenkalkulation / Fotoformulare</td>
+<td><strong>🔍Suche</strong></td>
+<td>Durchsuchen Sie Google Drive nach einem Blatt oder Ordner (nach der Anmeldung)</td>
+</tr>
+</tbody>
+</table>
+<p>Währungssymbole in Kostenfeldern und <strong>Hauptbuch</strong> in Volumenfeldern können angetippt werden: Öffnen Sie ein kleines Menü, um die Währung oder Gallonen vs. Liter für diesen Eintrag zu ändern.</p>
+<hr />
+<h2 id="offnen-sie-das-menu">Öffnen Sie das Menü</h2>
+<ol>
+<li>Tippen Sie oben links auf <strong>☰</strong>.</li>
+<li>Wählen Sie eine Seite.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="01-drawer.jpg" src="images/01-drawer.jpg" /></p>
+<p><strong>Hauptschublade:</strong> Schnelltanken · Fahrt starten · Fahrzeuge verwalten · Neue Ausgaben · <strong>Berichte</strong> · Einstellungen · Synchronisierung · Hilfe · Info.</p>
+<p><strong>Experimentschublade</strong> (Einstellungen → Experimentbildschirme anzeigen): Ausrichtungsexperiment · Pumpenexperiment · <strong>Alte Bilder importieren</strong>.</p>
+<p><strong>Über den Berichts-Hub (nicht über die Hauptschublade):</strong> Spesenliste · Verlauf ausfüllen.</p>
+<hr />
+<h2 id="ersteinrichtung-fahrzeuge-verwalten">Ersteinrichtung: Fahrzeuge verwalten</h2>
+<p>OCR und <strong>automatischer Fahrzeugabgleich</strong> funktionieren am besten, nachdem Sie jedes Fahrzeug mit einem <strong>Referenz-Dashboard-Foto</strong> registriert, den Kilometerzähler zugeschnitten und <strong>Discovery</strong> ausgeführt haben, damit die App Orientierungstext für dieses Armaturenbrett speichert. (Wie Orientierungspunkte ausgewählt und zugeordnet werden, wird in einem späteren Update detaillierter dokumentiert.)</p>
+<h3 id="offnen-sie-fahrzeuge-verwalten">Öffnen Sie „Fahrzeuge verwalten“.</h3>
+<p>Menü → <strong>Fahrzeuge verwalten</strong>. Wählen Sie ein Fahrzeug (oder <strong>Neues Fahrzeug hinzufügen</strong>).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r1-manage-vehicles-crops.jpg" src="images/r1-manage-vehicles-crops.jpg" /></p>
+<h3 id="ein-fahrzeug-hinzufugen-oder-bearbeiten">Ein Fahrzeug hinzufügen oder bearbeiten</h3>
+<ol>
+<li>Öffnen Sie das Dropdown-Menü <strong>Fahrzeug</strong> → wählen Sie ein Fahrzeug aus oder <strong>Neues Fahrzeug hinzufügen</strong>.</li>
+<li>Nehmen Sie ein klares <strong>Referenz-Armaturenbrettfoto</strong> auf oder wählen Sie es aus (komplettes Kombiinstrument, gut beleuchtet, Telefon ungefähr im rechten Winkel). Verwenden Sie <strong>Foto aufnehmen</strong> oder <strong>Galerie</strong>.</li>
+<li>Pflanzen zeichnen:<br />
+   - <strong>Odo Crop</strong> – Rechteck eng um die Ziffern des Kilometerzählers (auf der Schaltfläche wird <strong>Done Odo</strong> angezeigt, während dieser Modus aktiv ist).<br />
+   - <strong>Zuschnitt ignorieren</strong> – optionaler Bereich zum Ignorieren (Uhr, Radio usw.).<br />
+   - <strong>Zuschnitte bearbeiten</strong> – Vorhandene Rechtecke anpassen.</li>
+<li>Tippen Sie auf <strong>Erkennung ausführen</strong> – die mehrmotorige OCR findet wichtige Wörter außerhalb der Zuschnitte.</li>
+<li>Überprüfen Sie mit <strong>Sehenswürdigkeiten anzeigen</strong>. Verwenden Sie <strong>OCR bearbeiten</strong>, um Lesefehler zu korrigieren oder übersehenen Text hinzuzufügen.</li>
+<li>Geben Sie <strong>Fahrzeugname</strong> (erforderlich) sowie Marke/Modell/Jahr/Kennzeichen nach Wunsch ein.</li>
+<li>Tippen Sie auf <strong>Fahrzeug erstellen</strong> oder <strong>Änderungen speichern</strong> (für ein neues Fahrzeug sind Name und Referenzfoto erforderlich).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="03b-manage-vehicles-new.jpg" src="images/03b-manage-vehicles-new.jpg" /></p>
+<h3 id="sehenswurdigkeiten-korrigieren-sie-was-discovery-ubersehen-hat">Sehenswürdigkeiten: Korrigieren Sie, was Discovery übersehen hat</h3>
+<p>Scrollen Sie nach <strong>Sehenswürdigkeiten anzeigen</strong> durch die Liste und korrigieren Sie die Werte. Bei Engines fehlen manchmal kleine Ziffern (z. B. eine Uhr <strong>60</strong> unten rechts im Cluster). Verwenden Sie <strong>OCR bearbeiten</strong>, um sie hinzuzufügen oder zu korrigieren, damit die Fahrzeugidentität zuverlässig bleibt.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r2-manage-vehicles-landmarks.jpg" src="images/r2-manage-vehicles-landmarks.jpg" /></p>
+<h3 id="tippen-ohne-perfektes-foto">Tippen ohne perfektes Foto</h3>
+<p>Sie können die App weiterhin verwenden, indem Sie ein Fahrzeug auswählen und Kilometerzähler, Volumen und Kosten in Quick Fill <strong>eingeben</strong> – OCR ist für jedes Feld optional. Der Galerieimport funktioniert für das Referenz-Dash-Foto, wenn Sie nicht in der App fotografieren möchten.</p>
+<p><strong>Tipp:</strong> Nach der Synchronisierung der Tabellenkalkulation sind die Fahrzeugdefinitionen (Kulturpflanzen, Orientierungspunkte) in der lokalen Datenbank gespeichert – Sie müssen „Fahrzeuge verwalten für Quick Fill“ nicht erneut öffnen, um sie zu verwenden.</p>
+<hr />
+<h2 id="backups-und-synchronisierung-mehrerer-gerate">Backups und Synchronisierung mehrerer Geräte</h2>
+<p>Die App ist so konzipiert, dass <strong>mehrere Telefone oder Tablets dieselben Flottendaten teilen können</strong> und dass Sie eine <strong>Kopie Ihrer Daten und Fotos vom Gerät fernhalten können</strong>. Dies erfolgt über Ziele, die Sie unter <strong>Ihren</strong> Konten oder <strong>Ihren</strong> selbst gehosteten Servern konfigurieren – und nicht über eine vom Unternehmen betriebene „Fahrzeugkosten-Cloud“, die andere Personen sehen können.</p>
+<h3 id="was-lauft-wo">Was läuft wo</h3>
+<table>
+<thead>
+<tr>
+<th>Freundlich</th>
+<th>Was es speichert</th>
+<th>Typische Verwendung</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Tabellenkalkulation/Tabellensynchronisierung</strong></td>
+<td>Fahrzeuge, Tankfüllungen, Ausgaben (Zeilen und Registerkarten)</td>
+<td>Zusammenführung mehrerer Geräte + strukturiertes Backup</td>
+</tr>
+<tr>
+<td><strong>Fotosicherung</strong></td>
+<td>Binärbilder (Armaturenbrett/Pumpe/Quittung/Referenzfotos)</td>
+<td>Fotosicherung + fehlende Dateien wiederherstellen</td>
+</tr>
+</tbody>
+</table>
+<p>Sie können <strong>mehrere Ziele</strong> jedes Typs konfigurieren (Soft-Cap pro Typ). Manuelle <strong>Jetzt synchronisieren</strong>- und <strong>Hintergrund</strong>-Worker führen die aktivierten Worker aus.</p>
+<h3 id="zuerst-offline">Zuerst offline</h3>
+<ul>
+<li><strong>Es ist kein Netzwerk erforderlich</strong>, um eine Tankfüllung, eine Ausgabe oder einen Beleg hinzuzufügen. Alles wird <strong>zuerst lokal</strong> gespeichert.</li>
+<li>Wenn das Netzwerk verfügbar ist, werden Synchronisierung und Fotosicherung als <strong>Hintergrundaufgaben</strong> ausgeführt (nach einem von Ihnen festgelegten Zeitplan und wenn Sie auf <strong>Jetzt synchronisieren</strong> tippen). Fehler werden als roter Text unter den Einstellungszeilen und als <strong>!</strong> in der Titelleiste der App angezeigt.</li>
+</ul>
+<h3 id="nur-ihre-konten">Nur Ihre Konten</h3>
+<p>Anmeldung und Token bleiben für die von Ihnen ausgewählten Anbieter (Google, Microsoft, S3-Schlüssel, selbst gehostete URLs usw.) auf dem Gerät. Die Ziele unterliegen der <strong>vollständigen Kontrolle des Benutzers</strong> – Ihrem Google-Konto, Ihrem OneDrive, Ihrem MinIO-Bucket, Ihrem EtherCalc-Host usw. Über ein gemeinsames Backend wird nichts mit anderen Vehicle Expenses-Benutzern geteilt.</p>
+<h3 id="unterstutzte-ziele-daten-tabellenkalkulationtabelle">Unterstützte Ziele – Daten (Tabellenkalkulation/Tabelle)</h3>
+<p>Konfiguriert unter <strong>Menü → Synchronisierung → Tabellenkalkulationssynchronisierung</strong> (auch über die Zusammenfassungszeilen der Einstellungen erreichbar). Erstklassige Picker-Optionen:</p>
+<table>
+<thead>
+<tr>
+<th>Ziel</th>
+<th>Notizen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Sheets</strong></td>
+<td>Gemeinsamer Standard; Registerkarten für Fahrzeuge, Ausgaben und Kraftstoff pro Fahrzeug</td>
+</tr>
+<tr>
+<td><strong>Excel</strong></td>
+<td>Microsoft-Arbeitsmappe über Graph-/OneDrive-Bindung</td>
+</tr>
+<tr>
+<td><strong>EtherCalc</strong></td>
+<td>Selbstgehostete kollaborative Tabellenkalkulationsräume</td>
+</tr>
+<tr>
+<td><strong>Andere →</strong> implementierte Backends</td>
+<td><strong>Baserow</strong>, <strong>NocoDB</strong>, <strong>Airtable</strong>, <strong>PocketBase</strong>, <strong>Supabase</strong>, <strong>Firebase</strong>, <strong>Zoho Sheet</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Zurückgestellt/noch nicht Headless (unter Andere aufgeführt, aber nicht vollständig implementiert): OnlyOffice, Collabora. Siehe auch <a href="reference/self-host/INDEX.md">Self-Host-Index</a>.</p>
+<p>CSV <strong>Export/Import</strong> (ZIP mit demselben Tab-Layout) ist in den Einstellungen als tragbares Backup verfügbar, unabhängig von der Live-Synchronisierung.</p>
+<h3 id="unterstutzte-ziele-fotos-bildsicherung">Unterstützte Ziele – Fotos (Bildsicherung)</h3>
+<p>Konfiguriert unter <strong>Menü → Synchronisierung → Fotosicherung</strong> (auch aus den Zusammenfassungszeilen der Einstellungen):</p>
+<table>
+<thead>
+<tr>
+<th>Ziel</th>
+<th>Notizen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Drive</strong></td>
+<td>Von Ihnen ausgewählter Ordner (URL durchsuchen oder einfügen)</td>
+</tr>
+<tr>
+<td><strong>OneDrive</strong></td>
+<td>Microsoft-Konto + Pfadpräfix</td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td>AWS, Wasabi, Cloudflare R2, MinIO und andere S3-kompatible Endpunkte</td>
+</tr>
+<tr>
+<td><strong>Andere</strong></td>
+<td>rclone-gestützter Speicher (z. B. WebDAV, SFTP und andere kuratierte Remotes, die in der In-App-Auswahl verfügbar sind)</td>
+</tr>
+</tbody>
+</table>
+<p>Richten Sie Cheatsheets für selbst gehostete Foto- und Tabellenziele ein: <a href="reference/self-host/INDEX.md">self-host index</a>.</p>
+<h3 id="verhalten-bei-mehreren-geraten-kurz">Verhalten bei mehreren Geräten (kurz)</h3>
+<p>– Zeilen werden nach <strong>Sync-ID</strong> mit <strong>Last-Write-Wins</strong> auf <strong>Aktualisierten</strong> Zeitstempeln zusammengeführt.<br />
+- Löschvorgänge sind weich; Eine neuere Bearbeitung auf einem anderen Gerät kann eine Zeile wiederherstellen.<br />
+- Wenn Sie auf zwei Geräten die <strong>gleiche Füllung zweimal</strong> eingeben, entstehen <strong>zwei Zeilen</strong> – löschen Sie die zusätzlichen Zeilen, wenn Sie es bemerken.<br />
+- Weitere Details: <a href="#sync-behavior-notes">Verhaltenshinweise synchronisieren</a> und <a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a>.</p>
+<h3 id="beispiel-google-sheets-daten-hinzufugen">Beispiel: Google Sheets (Daten) hinzufügen</h3>
+<ol>
+<li><strong>Menü → Synchronisierung → Tabellenkalkulationssynchronisierung</strong> (oder Einstellungen → Tabellenkalkulationssynchronisierung).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="08-spreadsheet-sync.jpg" src="images/08-spreadsheet-sync.jpg" /></p>
+<ol start="2">
+<li>Tippen Sie auf <strong>Tabellenziel hinzufügen</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="09-spreadsheet-provider-picker.jpg" src="images/09-spreadsheet-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Wählen Sie <strong>Google Sheets</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="10-spreadsheet-google-form.jpg" src="images/10-spreadsheet-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Mit Google anmelden</strong> → Anzeigename → <strong>Tabellen-URL</strong> oder <strong>🔍</strong> Durchsuchen/Erstellen → Optionen planen → Aktivieren → Speichern.</li>
+<li><strong>Jetzt synchronisieren</strong> einmal, um Registerkarten zu erstellen/aktualisieren: „Fahrzeuge“, „Ausgaben“, „Kraftstoff – {Fahrzeugname}“.</li>
+</ol>
+<h3 id="beispiel-google-drive-hinzufugen-fotos">Beispiel: Google Drive hinzufügen (Fotos)</h3>
+<ol>
+<li><strong>Menü → Synchronisierung → Fotosicherung</strong> (oder Einstellungen → Fotosicherung).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="11-photo-backup.jpg" src="images/11-photo-backup.jpg" /></p>
+<ol start="2">
+<li>Tippen Sie auf <strong>Fotoziel hinzufügen</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="12-photo-provider-picker.jpg" src="images/12-photo-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Wählen Sie <strong>Google Drive</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="13-photo-google-form.jpg" src="images/13-photo-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Mit Google (Drive) anmelden</strong> → optionale Ordner-URL/Durchsuchen → Aktivieren → Speichern → <strong>Jetzt synchronisieren</strong>.</li>
+</ol>
+<p>Manuelles <strong>Jetzt synchronisieren</strong> für Fotos ist ein vollständiger Durchgang; Die Hintergrundsicherung verarbeitet normalerweise <strong>nur ausstehende</strong> Uploads nach einem Zeitplan.</p>
+<h3 id="hinweise-zum-synchronisierungsverhalten">Hinweise zum Synchronisierungsverhalten</h3>
+<ul>
+<li>Nach dem App-Upgrade wird möglicherweise kurz <strong>„Datenbank wird nach Upgrade aktualisiert…“</strong> angezeigt (lokales Synchronisierungs-ID-Backfill).</li>
+<li>Wenn eine Synchronisierung unterbrochen wird, werden bei der nächsten <strong>erfolgreichen</strong> Synchronisierung Remote-Tabs erneut zusammengeführt und repariert.</li>
+<li>Fehler: rote Zusammenfassung bei der Synchronisierung von Karten + <strong>!</strong> in der App-Leiste.</li>
+</ul>
+<hr />
+<h2 id="schnellbetankung-kraftstoff">Schnellbetankung (Kraftstoff)</h2>
+<p>Dies ist der <strong>Startbildschirm</strong>, wenn Sie die App öffnen.</p>
+<h3 id="fahrzeugauswahl-normalerweise-automatisch">Fahrzeugauswahl (normalerweise automatisch)</h3>
+<p>Sie müssen <strong>nicht</strong> zuerst das Fahrzeug auswählen. Wenn für Fahrzeuge in „Fahrzeuge verwalten“ <strong>Orientierungspunkte</strong> eingerichtet sind, erkennt Quick Fill <strong>automatisch</strong> anhand des Armaturenbrettbilds, welches Fahrzeug<strong> ist, nachdem Sie den Kilometerzähler erfasst haben. Sie können weiterhin das Dropdown-Menü </strong>Fahrzeug** öffnen, um es bei Bedarf zu überschreiben.</p>
+<h3 id="zielen-sie-auf-den-kilometerzahler">Zielen Sie auf den Kilometerzähler</h3>
+<p>Bleiben Sie im Kilometerzählermodus und rahmen Sie den Cluster ein. Anleitung: <em>Zielen Sie auf den Kilometerzähler. Tippen Sie zum Aufnehmen auf den Auslöser.</em></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r3-quickfill-odo-live.jpg" src="images/r3-quickfill-odo-live.jpg" /></p>
+<h3 id="nach-dem-kilometerzahler-verschluss">Nach dem Kilometerzähler-Verschluss</h3>
+<p>OCR füllt <strong>Odo</strong> aus und versucht, das Fahrzeug anhand von Orientierungspunkten abzugleichen (überprüfen Sie bei Bedarf beide). Die Hauptschaltfläche wird zu <strong>Wiederholen</strong>, um erneut zu schießen. Die Anleitung fasst die Lektüre zusammen.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r4-quickfill-odo-result.jpg" src="images/r4-quickfill-odo-result.jpg" /></p>
+<h3 id="pumpenmodus-kosten-und-volumen">Pumpenmodus (Kosten und Volumen)</h3>
+<ol>
+<li>Tippen Sie auf <strong>↕</strong>, um in den Pumpenmodus zu wechseln: <em>Zielen Sie auf die Pumpenanzeige (Kosten/Volumen). Tippen Sie auf den Auslöser.</em></li>
+<li>Erfassen Sie die Pumpengesamtwerte. Kosten- und Volumenfelder ausfüllen; Verwenden Sie <strong>↔</strong>, wenn sie vertauscht sind.</li>
+<li>Tippen Sie bei Bedarf auf Währung oder <strong>Sachbuch</strong> und dann auf <strong>Speichern</strong> (Datenträger). Leere Felder führen zu einer <strong>teilweisen Füllung</strong> (immer noch zulässig).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r5-quickfill-pump-result.jpg" src="images/r5-quickfill-pump-result.jpg" /></p>
+<p>Sie bleiben für den nächsten Stopp auf Quick Fill (Felder werden nach dem Speichern gelöscht). Vollständig <strong>offline</strong> arbeiten; Die Synchronisierung wird bei entsprechender Konfiguration später im Hintergrund ausgeführt.</p>
+<h3 id="manuelle-eingabe-keine-kamera-schlechte-ocr">Manuelle Eingabe (keine Kamera / schlechte OCR)</h3>
+<ol>
+<li>Tippen Sie auf <strong>Odo</strong>, <strong>Kosten</strong> oder <strong>Volumen</strong> und geben Sie Werte ein (im Hochformat wird die Systemtastatur verwendet; im Querformat wird eine Bildschirmtastatur verwendet).</li>
+<li>Wählen Sie <strong>Fahrzeug</strong> aus oder bestätigen Sie es, wenn die automatische Erkennung nicht ausgeführt wurde.</li>
+<li>Speichern Sie wie oben.</li>
+</ol>
+<h3 id="modi-und-grenzen">Modi und Grenzen</h3>
+<ul>
+<li><strong>Grüner Rand</strong> um Fahrzeug+odo → Kilometerzähler erfassen/bearbeiten.</li>
+<li><strong>Grüner Rand</strong> um Kosten+Volumen → Pumpmodus.</li>
+<li><strong>Speichern</strong> bleibt deaktiviert, bis ein Fahrzeug ausgewählt wird und mindestens eines von odo/cost/volume Daten hat und OCR noch nicht läuft.</li>
+</ul>
+<p>Tipp auf dem Bildschirm (unterhalb der Anweisungszeile): <em>Auslöser = Aufnahme · Festplatte = Speichern · ↕ = Odo-/Pumpmodus · ↔ = Kosten/Volumen tauschen.</em></p>
+<hr />
+<h2 id="ausgaben">Ausgaben</h2>
+<h3 id="neue-ausgabe">Neue Ausgabe</h3>
+<p>Menü → <strong>Neue Ausgabe</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r6-new-expense.jpg" src="images/r6-new-expense.jpg" /></p>
+<ol>
+<li><strong>Speichern</strong> (Datenträger), <strong>Auslöser</strong> (Quittungsfoto) oder <strong>Galerie</strong> (Bild auswählen).</li>
+<li>Geben Sie <strong>Datum</strong>, <strong>Fahrzeug</strong>, <strong>Anbieter</strong>, <strong>Beschreibung</strong>, <strong>Betrag</strong> (Währungssymbol antippbar), <strong>Kategorie</strong>, optional <strong>Kilometerzähler</strong> ein.</li>
+<li>Mehrseitige Belege: Erfassen Sie zusätzliche Seiten, wenn die Benutzeroberfläche Paging anbietet (Seite 0 ist der primäre Beleg).</li>
+<li><strong>Speichern</strong> zum Speichern (zuerst lokal; Fotosicherung und Tabellensynchronisierung erfolgen bei Konfiguration im Hintergrund).</li>
+</ol>
+<h3 id="spesenliste">Spesenliste</h3>
+<p>Menü → <strong>Berichte</strong> → <strong>Ausgabenliste</strong> – durchsuchen Sie vergangene Ausgaben, die nicht mit Treibstoff zusammenhängen; Öffnen Sie ein Element zum Bearbeiten.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="05-expense-list.jpg" src="images/05-expense-list.jpg" /></p>
+<h3 id="ausgabe-bearbeiten">Ausgabe bearbeiten</h3>
+<p>Öffnen Sie eine Zeile aus der Liste. Korrigieren Sie Anbieter, Menge, Kategorie, Fahrzeug und Beschreibung. Wenn sich die Quittung nur in der Fotosicherung befindet (keine lesbare lokale Datei), verwenden Sie <strong>Bild aus Archiv abrufen</strong>, wenn angezeigt (funktioniert für alle konfigurierten Fotoziele).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="expense-edit.jpg" src="images/expense-edit.jpg" /></p>
+<hr />
+<h2 id="reise-starten">Reise starten</h2>
+<p>Menü → <strong>Fahrt starten</strong> (nach Quick Fill in der Schublade). Erfassen Sie den Kilometerzähler oder geben Sie ihn ein, wählen Sie den Fahrttyp und speichern Sie ihn mit dem <strong>Diskettensymbol</strong>. <strong>Stop</strong> ist eine Abkürzung für „Persönlich jetzt“ am gehaltenen GPS-Standort. Verwenden Sie <strong>ⓘ</strong> für Kontrollerinnerungen.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="start-trip.jpg" src="images/start-trip.jpg" /></p>
+<p>Fahrtbeginne werden als Kraftstoffzeilen mit einem <strong>Fahrttyp</strong> gespeichert (keine normalen Füllungen). Sie erscheinen unter <strong>Berichte → Fahrtmeilen</strong>, nicht unter Kraftstoffverlauf.</p>
+<hr />
+<h2 id="berichte">Berichte</h2>
+<p>Menü → <strong>Berichte</strong> öffnet den Produkt-Hub (allzeitige Zusammenfassung + Katalogkarten). Dies ist die einzige Produktberichtsoberfläche – es gibt kein separates Schubladenelement „Berichte und Diagramme“.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="06-reports.jpg" src="images/06-reports.jpg" /></p>
+<p>Öffnen Sie eine Karte für den Fahrzeugmodus (<strong>Alle / Jeder / Einzeln</strong>), Zeitraumfilter, Diagramme und Teilen (<strong>TEXT / CSV / PDF</strong>). Obere Leiste bei Berichtskindern: <strong>☰ + ←</strong> (und <strong>ⓘ</strong> bei Registrierung).</p>
+<h3 id="zeitbasierte-berichte">Zeitbasierte Berichte</h3>
+<p>Die Hauptkartenkarte. Optionale Metriken (MPG, Volumen/Entfernung wie G/Meilen, Stückpreis wie $/G, Kosten/Entfernung, monatliche $, Reisemeilen, Reise-% nach Typ) mit <strong>glatten</strong> Bins und <strong>unabhängigen Y-Skalen</strong> (Economy links; Geld- und Reisefamilien rechts).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports.jpg" src="images/time-based-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports-scrolled.jpg" src="images/time-based-reports-scrolled.jpg" /></p>
+<p>Details zur Wirtschaftsmathematik: <a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a>.</p>
+<h3 id="fullverlauf-vs-kraftstoffverlauf">Füllverlauf vs. Kraftstoffverlauf</h3>
+<ul>
+<li><strong>Berichte → Ausfüllverlauf</strong> – chronologische Ausfüllungen für die Berichtsfilter (<strong>nur Ausfüllungen</strong>; keine Reisestarts).</li>
+</ul>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fill-history.jpg" src="images/fill-history.jpg" /></p>
+<ul>
+<li><strong>Kraftstoffhistorie</strong> (sofern in der Navigation Ihres Builds vorhanden) – Füllstand pro Fahrzeug, auch nur Füllungen; Tippen Sie auf eine Zeile, um sie zu bearbeiten.</li>
+</ul>
+<h3 id="reisemeilen">Reisemeilen</h3>
+<p><strong>Berichte → Reisemeilen</strong> – Meilen nach Typ, Diagramme und eine chronologische <strong>Reisestart-/Segmentliste</strong>. Tippen Sie auf einen echten Anfang, um <strong>Füllung bearbeiten</strong> für diese Zeile zu öffnen.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="trip-miles.jpg" src="images/trip-miles.jpg" /></p>
+<h3 id="fullung-bearbeiten">Füllung bearbeiten</h3>
+<p>Öffnen Sie unter Füllhistorie, Kraftstoffhistorie oder Fahrtmeilen eine Füllung. Layout: Fahrzeug und Kilometerzähler, <strong>Währung vor Kosten</strong>, Volumen, Notizen. Der Reisetyp wird nur angezeigt, wenn es sich bei der Zeile um einen Reisebeginn handelt. Der Standort verfügt über eine Zusammenfassung sowie <strong>Standortdetails</strong>. Fehlendes lokales Foto mit Cloud-Identität: <strong>Bild aus Archiv abrufen</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fuel-edit.jpg" src="images/fuel-edit.jpg" /></p>
+<p>Zu den weiteren Katalogkarten gehören Ausgaben nach Kategorie, eine Fahrzeugübersicht und eine Ausgabenliste.</p>
+<p>Für Geld wird die Währung jeder Zeile verwendet, wenn diese festgelegt ist. Gesamtsummen in gemischten Währungen zeigen <strong>Zwischensummen pro Währung</strong> (keine stille Devisenumrechnung).</p>
+<hr />
+<h2 id="synchronisierung">Synchronisierung</h2>
+<p>Menü → <strong>Synchronisierung</strong> ist die Zentrale für Tabellenkalkulations- und Fotoziele (nicht nur unter „Einstellungen“ vergraben).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="syncing-hub.jpg" src="images/syncing-hub.jpg" /></p>
+<ul>
+<li>Karten für <strong>Tabellenkalkulation</strong> und <strong>Fotosicherung</strong> mit Kurzstatus, <strong>Synchronisierung</strong> für diese Art und <strong>›</strong> in die Zielliste.</li>
+<li>Öffnen Sie ein Ziel für <strong>Verbindung testen</strong> und <strong>Jetzt synchronisieren (dieses Ziel)</strong> / alles konfiguriert.</li>
+<li>Fehler <strong>Details</strong> und das rote <strong>!</strong> in der Titelleiste landen hier.</li>
+<li>Schritt-für-Schritt-Einrichtung von Google Sheets und Drive: [Backups und Synchronisierung mehrerer Geräte] (#backups-and-multi-device-sync).</li>
+</ul>
+<hr />
+<h2 id="einstellungen-lokale-praferenzen">Einstellungen (lokale Präferenzen)</h2>
+<p>Menü → <strong>Einstellungen</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07-settings.jpg" src="images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07b-settings-more.jpg" src="images/07b-settings-more.jpg" /></p>
+<p>Für Ziele bevorzugen Sie <strong>Menü → Synchronisierung</strong>. In den Einstellungen werden möglicherweise weiterhin Zusammenfassungszeilen angezeigt, die dieselben Listen öffnen.</p>
+<h3 id="lokale-praferenzen-haufig">Lokale Präferenzen (häufig)</h3>
+<ul>
+<li><strong>Fotos von Kraftstoffbelegen speichern</strong> / <strong>Fotos von Spesen lokal speichern</strong> – Bilder auf dem Gerät behalten (evtl. um Erlaubnis für Fotos bitten).</li>
+<li><strong>Auslöserton abspielen</strong></li>
+<li><strong>Währung</strong> / <strong>Volumeneinheit</strong> – App-Standardeinstellungen (System oder explizit). Beim Ändern der Volumeneinheit mit vorhandenen Kraftstoffdaten wird möglicherweise ein Konvertierungsdialog angezeigt.</li>
+<li><strong>Dunkler Modus</strong></li>
+<li><strong>Tipps zur Einrichtung</strong> – Öffnen Sie die Tutorials zum ersten Fahrzeug/Synchronisierung erneut.</li>
+<li><strong>Debug Quick Fill</strong> / <strong>Experimentbildschirme anzeigen (Entwickler)</strong> – erweitert; Für den täglichen Gebrauch weglassen. Experimentierbildschirme werden hier nicht dokumentiert.</li>
+</ul>
+<p>CSV <strong>Export/Import</strong> (Postleitzahl der Registerkarten „Fahrzeuge/Ausgaben/Kraftstoff“) ist in den Einstellungen verfügbar, sofern dies im aktuellen Build angeboten wird.</p>
+<hr />
+<h2 id="hilfe-und-info">Hilfe und Info</h2>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="14-help.jpg" src="images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="15-about.jpg" src="images/15-about.jpg" /></p>
+<ul>
+<li><strong>Hilfe</strong> – Schnellstart auf dem Gerät, Setup-Tutorials, Link zu diesem Handbuch, Self-Host-Setup-Index.</li>
+<li><strong>Über</strong> – Version, Lizenzen, GitHub, dieses Handbuch (offline gebündelt + Online-HTML bei Veröffentlichung).</li>
+</ul>
+<hr />
+<h2 id="verwandte-dokumente">Verwandte Dokumente</h2>
+<ul>
+<li><a href="reference/USER_GUIDE.md">USER_GUIDE.md</a> – Kurzreferenz</li>
+<li><a href="reference/self-host/INDEX.md">self-host/INDEX.md</a> – selbstgehostetes Foto-/Tabellen-Setup</li>
+<li><a href="reference/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> – Zusammenführung, Wiederherstellung, Duplikate</li>
+<li><a href="reference/REPORTS_METRICS.md">REPORTS_METRICS.md</a> – Details zu Wirtschaftskennzahlen</li>
+</ul>
+</body>
+</html>

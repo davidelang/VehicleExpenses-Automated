@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Vehicle Expenses Automated — User Manual</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height: 1.5;
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 1rem 1.25rem 3rem;
+      color: #111;
+      background: #fafafa;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #eee; background: #121212; }
+      a { color: #8ab4f8; }
+      table { border-color: #444; }
+      th, td { border-color: #444; }
+      code { background: #2a2a2a; }
+      pre { background: #1e1e1e; }
+      h2 { border-bottom-color: #444; }
+    }
+    h1, h2, h3 { line-height: 1.25; }
+    h1 { font-size: 1.75rem; }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 2rem;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 0.25rem;
+    }
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+    th, td { border: 1px solid #ccc; padding: 0.4rem 0.55rem; vertical-align: top; }
+    th { background: rgba(0,0,0,0.05); text-align: left; }
+    code { font-size: 0.9em; padding: 0.1em 0.3em; border-radius: 4px; background: #eee; }
+    pre { padding: 0.75rem; overflow: auto; border-radius: 8px; background: #f0f0f0; }
+    pre code { background: transparent; padding: 0; }
+    hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+    ul, ol { padding-left: 1.4rem; }
+    .note { font-size: 0.9rem; opacity: 0.85; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <p class="note">Vehicle Expenses Automated — full illustrated user manual (HTML for browsers). Edit source: <code>docs/i18n/nl/user-manual.md</code>; regenerate with <code>./scripts/render-user-manual.sh</code>.</p>
+  <h1 id="voertuigkosten-geautomatiseerd-gebruikershandleiding">Voertuigkosten geautomatiseerd - Gebruikershandleiding</h1>
+<blockquote>
+<p><strong>Bron bewerken (Markdown).</strong> Browsers en de in-app-lezer openen de <strong>gerenderde HTML</strong>:<br />
+- Web: <a href="user-manual.html"><code>docs/user-manual.html</code></a> (opnieuw genereren met <code>./scripts/render-user-manual.sh</code>)<br />
+- App: Help / Over → volledige handleiding (gebundelde HTML + screenshots)</p>
+<p>Wijs eindgebruikers niet naar onbewerkte <code>.md</code> URL's; browsers tonen alleen platte tekst.</p>
+</blockquote>
+<p>Camera-first tracking voor tankbeurten en voertuigkosten, met optionele synchronisatie en back-up van meerdere apparaten onder <strong>uw</strong> cloudaccounts.</p>
+<p>Dit is de <strong>volledige handleiding</strong> (screenshots + elke stap). Aan de telefoon is <strong>Menu → Help</strong> een kortere handleiding om aan de slag te gaan.</p>
+<p><strong>Hier niet behandeld:</strong> Importeer oude afbeeldingen, Uitlijningsexperiment en Pompexperiment (ontwikkelaar / geavanceerde tools).</p>
+<hr />
+<h2 id="inhoudsopgave">Inhoudsopgave</h2>
+<ol>
+<li><a href="#wat-je-need">Wat je nodig hebt</a></li>
+<li><a href="#icons-at-a-glance">Pictogrammen in één oogopslag</a></li>
+<li><a href="#open-het-menu">Open het menu</a></li>
+<li><a href="#first-time-setup-manage-vehicles">Eerste installatie: Voertuigen beheren</a></li>
+<li><a href="#backups-and-multi-device-sync">Back-ups en synchronisatie van meerdere apparaten</a></li>
+<li><a href="#quick-tanken-brandstof">Snel tanken (brandstof)</a></li>
+<li><a href="#start-reis">Start reis</a></li>
+<li><a href="#kosten">Uitgaven</a></li>
+<li><a href="#rapporten">Rapporten</a></li>
+<li><a href="#settings-local-preferences">Instellingen (lokale voorkeuren)</a></li>
+<li><a href="#synchroniseren">Synchroniseren</a></li>
+<li><a href="#help--over">Hulp en over</a></li>
+<li><a href="#related-docs">Gerelateerde documenten</a></li>
+</ol>
+<hr />
+<h2 id="wat-je-nodig-hebt">Wat je nodig hebt</h2>
+<ul>
+<li>Android-telefoon of -tablet.</li>
+<li>Voor de beste OCR: een duidelijk zicht op uw <strong>dashboardkilometerteller</strong> en <strong>pomptotalen</strong> (of typ de cijfers met de hand).</li>
+<li>Optioneel: accounts <strong>die u beheert</strong> voor back-ups van spreadsheetgegevens en/of foto's (zie <a href="#backups-and-multi-device-sync">Back-ups en synchronisatie van meerdere apparaten</a>).</li>
+</ul>
+<hr />
+<h2 id="pictogrammen-in-een-oogopslag">Pictogrammen in één oogopslag</h2>
+<p>Deze verschijnen op de hoofdschermen. Als je ze kent, bespaar je een hoop jacht.</p>
+<table>
+<thead>
+<tr>
+<th>Waar</th>
+<th>Icoon / controle</th>
+<th>Wat het doet</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bovenbalk</td>
+<td><strong>☰ Menukaart</strong> (hamburger)</td>
+<td>Opent de navigatielade</td>
+</tr>
+<tr>
+<td>Bovenbalk</td>
+<td><strong>ⓘ</strong> (paginahulp)</td>
+<td>Korte hulp voor de <strong>huidige</strong> pagina (naast menu indien beschikbaar)</td>
+</tr>
+<tr>
+<td>Bovenbalk</td>
+<td><strong><code>?N</code></strong> (geel)</td>
+<td>In behandeling zijnde importcontrolevragen - opent Importcontrole</td>
+</tr>
+<tr>
+<td>Bovenbalk</td>
+<td><strong>!</strong> (rood)</td>
+<td>Een spreadsheet of fotobestemming is onlangs mislukt. Open <strong>Synchroniseren</strong> om het probleem op te lossen</td>
+</tr>
+<tr>
+<td>Bovenbalk</td>
+<td><strong>☰ + ←</strong></td>
+<td>Rapport kinderen en onkostenlijst tonen <strong>menu en terug</strong> samen; Rapportenhub is alleen menu</td>
+</tr>
+<tr>
+<td>Instellingen / brandstof bewerken</td>
+<td><strong>←</strong></td>
+<td>Terug (instellingenspreadsheet/foto en brandstofbewerking blijven teruggefocust)</td>
+</tr>
+<tr>
+<td>Snel invullen</td>
+<td><strong>Witte cirkel</strong> (sluiter)</td>
+<td>Leg kilometerteller- of pompweergave vast voor OCR</td>
+</tr>
+<tr>
+<td>Snel invullen</td>
+<td><strong>Schijf / Opslaan</strong></td>
+<td>Bespaar de tankbeurt (heeft een voertuig nodig en minstens één van odo / volume / kosten)</td>
+</tr>
+<tr>
+<td>Snel invullen</td>
+<td><strong>↕ pijlen</strong> (modusschakelaar)</td>
+<td>Schakel tussen de <strong>kilometertellermodus</strong> en de <strong>pompmodus (kosten/volume)</strong>. Groene rand markeert de actieve veldgroep</td>
+</tr>
+<tr>
+<td>Snel invullen</td>
+<td><strong>↔ pijlen</strong> (tussen kosten en volume)</td>
+<td>Wissel kosten en volume om als OCR ze in de verkeerde velden plaatst</td>
+</tr>
+<tr>
+<td>Snel invullen</td>
+<td><strong>Zoom 1x / …</strong></td>
+<td>Zoomverhoudingen van de camera wanneer de lens deze ondersteunt</td>
+</tr>
+<tr>
+<td>Snel vullen (na vastleggen)</td>
+<td><strong>Vernieuwen</strong> op hoofdknop</td>
+<td>Voorbeeld negeren en terugkeren naar livecamera</td>
+</tr>
+<tr>
+<td>Snel vullen (tijdens verwerking)</td>
+<td><strong>X</strong> op hoofdknop</td>
+<td>Lopende opname/OCR annuleren</td>
+</tr>
+<tr>
+<td>Kosten</td>
+<td><strong>Opslaan</strong></td>
+<td>Bespaar de kosten</td>
+</tr>
+<tr>
+<td>Kosten</td>
+<td><strong>Sluitercirkel</strong></td>
+<td>Maak een ontvangstfoto</td>
+</tr>
+<tr>
+<td>Kosten</td>
+<td><strong>Galerij</strong></td>
+<td>Kies een bonafbeelding uit de bibliotheek</td>
+</tr>
+<tr>
+<td>Kosten</td>
+<td><strong>Herkansing</strong></td>
+<td>Wis de huidige bonfoto en maak opnieuw een foto</td>
+</tr>
+<tr>
+<td>Uitgaven / Voertuigen beheren</td>
+<td><strong>+ / −</strong> FAB's</td>
+<td>Zoom in op het fotovoorbeeld</td>
+</tr>
+<tr>
+<td>Dialoogvenster Oriëntatiepunten</td>
+<td><strong>OCR bewerken</strong></td>
+<td>Corrigeer of voeg oriëntatiepunttekst toe die de motoren hebben gemist</td>
+</tr>
+<tr>
+<td>Spreadsheet / Fotoformulieren</td>
+<td><strong>🔍 Zoeken</strong></td>
+<td>Blader door Google Drive naar een blad of map (na inloggen)</td>
+</tr>
+</tbody>
+</table>
+<p>Valutasymbolen op kostenvelden en <strong>G/L</strong> op volumevelden kunnen worden aangetikt: open een klein menu om de valuta of gallons versus liters voor die invoer te wijzigen.</p>
+<hr />
+<h2 id="open-het-menu">Open het menu</h2>
+<ol>
+<li>Tik linksboven op <strong>☰</strong>.</li>
+<li>Kies een pagina.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="01-drawer.jpg" src="images/01-drawer.jpg" /></p>
+<p><strong>Hoofdlade:</strong> Snel tanken · Start reis · Beheer voertuigen · Nieuwe uitgaven · <strong>Rapporten</strong> · Instellingen · Synchroniseren · Help · Info.</p>
+<p><strong>Experimentlade</strong> (Instellingen → Experimentschermen tonen): Uitlijningsexperiment · Pompexperiment · <strong>Oude afbeeldingen importeren</strong>.</p>
+<p><strong>Via Rapportenhub (niet hoofdlade):</strong> Onkostenlijst · Vulgeschiedenis.</p>
+<hr />
+<h2 id="eerste-installatie-voertuigen-beheren">Eerste installatie: voertuigen beheren</h2>
+<p>OCR en <strong>automatische voertuigmatching</strong> werken het beste nadat u elk voertuig registreert met een <strong>referentiedashboardfoto</strong>, de kilometerteller bijsnijdt en <strong>Discovery</strong> uitvoert, zodat de app oriëntatiepunttekst voor dat dashboard opslaat. (Hoe oriëntatiepunten worden gekozen en op elkaar afgestemd, zal in een latere update gedetailleerder worden gedocumenteerd.)</p>
+<h3 id="open-voertuigen-beheren">Open Voertuigen beheren</h3>
+<p>Menu → <strong>Voertuigen beheren</strong>. Kies een voertuig (of <strong>Nieuw voertuig toevoegen</strong>).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r1-manage-vehicles-crops.jpg" src="images/r1-manage-vehicles-crops.jpg" /></p>
+<h3 id="een-voertuig-toevoegen-of-bewerken">Een voertuig toevoegen of bewerken</h3>
+<ol>
+<li>Open de vervolgkeuzelijst <strong>Voertuig</strong> → kies een voertuig of <strong>Nieuw voertuig toevoegen</strong>.</li>
+<li>Maak of kies een duidelijke <strong>referentiedashboardfoto</strong> (volledig instrumentenpaneel, goed verlicht, telefoon ongeveer recht gericht). Gebruik <strong>Maak foto</strong> of <strong>Galerij</strong>.</li>
+<li>Teken gewassen:<br />
+   - <strong>Odo Crop</strong> — rechthoek strak rond de kilometertellercijfers (knop toont <strong>Klaar Odo</strong> terwijl die modus actief is).<br />
+   - <strong>Bijsnijden negeren</strong> — optionele regio om te negeren (klok, radio, enz.).<br />
+   - <strong>Bijsnijden bewerken</strong> — bestaande rechthoeken aanpassen.</li>
+<li>Tik op <strong>Ontdekking uitvoeren</strong> — OCR met meerdere motoren vindt oriëntatiewoorden buiten de uitsneden.</li>
+<li>Beoordeel met <strong>Mijlpalen weergeven</strong>. Gebruik <strong>OCR bewerken</strong> om verkeerd gelezen tekst te corrigeren of <strong>toe te voegen</strong> gemiste tekst.</li>
+<li>Vul <strong>Voertuignaam</strong> in (vereist), plus merk/model/jaar/kenteken zoals u wilt.</li>
+<li>Tik op <strong>Voertuig aanmaken</strong> of <strong>Wijzigingen opslaan</strong> (vereist naam + referentiefoto voor een nieuw voertuig).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="03b-manage-vehicles-new.jpg" src="images/03b-manage-vehicles-new.jpg" /></p>
+<h3 id="bezienswaardigheden-herstel-wat-discovery-heeft-gemist">Bezienswaardigheden: herstel wat Discovery heeft gemist</h3>
+<p>Blader na <strong>Oriëntatiepunten weergeven</strong> door de lijst en corrigeer de waarden. Motoren missen soms kleine cijfers (bijvoorbeeld een klok <strong>60</strong> rechtsonder in het cluster). Gebruik <strong>OCR bewerken</strong> om ze toe te voegen of te corrigeren, zodat de voertuigidentiteit betrouwbaar blijft.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r2-manage-vehicles-landmarks.jpg" src="images/r2-manage-vehicles-landmarks.jpg" /></p>
+<h3 id="typen-zonder-een-perfecte-foto">Typen zonder een perfecte foto</h3>
+<p>U kunt de app nog steeds gebruiken door een voertuig te selecteren en de kilometerteller, het volume en de kosten te <strong>typen</strong> in Snel invullen. OCR is optioneel voor elk veld. Galerijimport werkt voor de referentiedashfoto als u liever niet in de app fotografeert.</p>
+<p><strong>Tip:</strong> Na de spreadsheetsynchronisatie staan ​​voertuigdefinities (gewassen, oriëntatiepunten) in de lokale database. U hoeft Voertuigen beheren voor Snel vullen niet opnieuw te openen om ze te gebruiken.</p>
+<hr />
+<h2 id="back-ups-en-synchronisatie-van-meerdere-apparaten">Back-ups en synchronisatie van meerdere apparaten</h2>
+<p>De app is zo gebouwd dat <strong>meerdere telefoons of tablets dezelfde wagenparkgegevens kunnen delen</strong>, en dat u een <strong>kopie van uw gegevens en foto's buiten het apparaat kunt bewaren</strong>. Dat wordt gedaan met bestemmingen die <strong>u</strong> configureert onder <strong>uw</strong> accounts of <strong>uw</strong> zelfgehoste servers – niet een door het bedrijf beheerde “Voertuigkostenwolk” die andere mensen kunnen zien.</p>
+<h3 id="wat-loopt-waar">Wat loopt waar</h3>
+<table>
+<thead>
+<tr>
+<th>Soort</th>
+<th>Wat het opslaat</th>
+<th>Typisch gebruik</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Spreadsheet-/tabelsynchronisatie</strong></td>
+<td>Voertuigen, tankbeurten, uitgaven (rijen en tabbladen)</td>
+<td>Samenvoegen van meerdere apparaten + gestructureerde back-up</td>
+</tr>
+<tr>
+<td><strong>Fotoback-up</strong></td>
+<td>Binaire afbeeldingen (streepje/pomp/bon/referentiefoto's)</td>
+<td>Fotoback-up + ontbrekende bestanden herstellen</td>
+</tr>
+</tbody>
+</table>
+<p>U kunt <strong>meerdere bestemmingen</strong> van elk type configureren (soft cap per type). Handmatige <strong>Nu synchroniseren</strong> en <strong>achtergrond</strong>-werknemers voeren de ingeschakelde werkrollen uit.</p>
+<h3 id="eerst-offline">Eerst offline</h3>
+<ul>
+<li><strong>Er is geen netwerk vereist</strong> om een tankbeurt, uitgave of bon toe te voegen. Alles wordt <strong>eerst lokaal</strong> opgeslagen.</li>
+<li>Wanneer het netwerk beschikbaar is, worden synchronisatie en fotoback-up uitgevoerd als <strong>achtergrondtaken</strong> (volgens een schema dat u instelt en wanneer u op <strong>Nu synchroniseren</strong> tikt). Fouten worden weergegeven als rode tekst onder de rijen Instellingen en een <strong>!</strong> in de titelbalk van de app.</li>
+</ul>
+<h3 id="alleen-jouw-accounts">Alleen jouw accounts</h3>
+<p>Inloggen en tokens blijven op het apparaat staan voor de providers die u kiest (Google, Microsoft, S3-sleutels, zelf-gehoste URL's, enzovoort). Bestemmingen staan ​​onder <strong>volledige controle van de gebruiker</strong>: uw Google-account, uw OneDrive, uw MiniIO-bucket, uw EtherCalc-host, enz. Er wordt niets gedeeld met andere Vehicle Expenses-gebruikers via een gedeelde backend.</p>
+<h3 id="ondersteunde-doelen-gegevens-spreadsheettabel">Ondersteunde doelen — gegevens (spreadsheet/tabel)</h3>
+<p>Geconfigureerd onder <strong>Menu → Synchroniseren → Spreadsheetsynchronisatie</strong> (ook bereikbaar via de samenvattingsrijen van Instellingen). Eersteklas pickeropties:</p>
+<table>
+<thead>
+<tr>
+<th>Doel</th>
+<th>Opmerkingen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Spreadsheets</strong></td>
+<td>Gemeenschappelijke standaard; tabbladen voor voertuigen, kosten en brandstof per voertuig</td>
+</tr>
+<tr>
+<td><strong>Excel</strong></td>
+<td>Microsoft-werkmap via binding in Graph/OneDrive-stijl</td>
+</tr>
+<tr>
+<td><strong>EtherCalc</strong></td>
+<td>Zelf-gehoste samenwerkende spreadsheetruimtes</td>
+</tr>
+<tr>
+<td><strong>Andere →</strong> geïmplementeerde backends</td>
+<td><strong>Baserow</strong>, <strong>NocoDB</strong>, <strong>Airtable</strong>, <strong>PocketBase</strong>, <strong>Supabase</strong>, <strong>Firebase</strong>, <strong>Zoho Sheet</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Uitgesteld / nog niet headless (vermeld onder Overige maar nog niet volledig geïmplementeerd): OnlyOffice, Collabora. Zie ook <a href="referentie/self-host/INDEX.md">self-host index</a>.</p>
+<p>CSV <strong>exporteren/importeren</strong> (ZIP met dezelfde tabbladindeling) is via Instellingen beschikbaar als draagbare back-up, onafhankelijk van livesynchronisatie.</p>
+<h3 id="ondersteunde-doelen-fotos-back-up-van-afbeeldingen">Ondersteunde doelen — foto's (back-up van afbeeldingen)</h3>
+<p>Geconfigureerd onder <strong>Menu → Synchroniseren → Fotoback-up</strong> (ook vanuit de overzichtsrijen van Instellingen):</p>
+<table>
+<thead>
+<tr>
+<th>Doel</th>
+<th>Opmerkingen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Google Drive</strong></td>
+<td>Map die u kiest (blader of plak URL)</td>
+</tr>
+<tr>
+<td><strong>OneDrive</strong></td>
+<td>Microsoft-account + padvoorvoegsel</td>
+</tr>
+<tr>
+<td><strong>S3</strong></td>
+<td>AWS, Wasabi, Cloudflare R2, MinIO en andere S3-compatibele eindpunten</td>
+</tr>
+<tr>
+<td><strong>Anders</strong></td>
+<td>door rclone ondersteunde opslag (bijv. WebDAV, SFTP en andere beheerde afstandsbedieningen beschikbaar in de in-app-kiezer)</td>
+</tr>
+</tbody>
+</table>
+<p>Stel cheatsheets in voor zelfgehoste foto- en tabeldoelen: <a href="reference/self-host/INDEX.md">self-host index</a>.</p>
+<h3 id="gedrag-op-meerdere-apparaten-kort">Gedrag op meerdere apparaten (kort)</h3>
+<ul>
+<li>Rijen worden samengevoegd op <strong>Sync-ID</strong> met <strong>last-write-wins</strong> op <strong>Bijgewerkte</strong> tijdstempels.</li>
+<li>Verwijderingen zijn zacht; een nieuwere bewerking op een ander apparaat kan een rij herstellen.</li>
+<li>Als u <strong>twee keer dezelfde vulling</strong> invoert op twee apparaten, worden er <strong>twee rijen</strong> gemaakt. Verwijder de extra rijen wanneer u dit opmerkt.</li>
+<li>Meer details: <a href="#sync-behavior-notes">Opmerkingen over synchronisatiegedrag</a> en <a href="referentie/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a>.</li>
+</ul>
+<h3 id="voorbeeld-google-spreadsheets-toevoegen-gegevens">Voorbeeld: Google Spreadsheets toevoegen (gegevens)</h3>
+<ol>
+<li><strong>Menu → Synchroniseren → Spreadsheetsynchronisatie</strong> (of Instellingen → Spreadsheetsynchronisatie).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="08-spreadsheet-sync.jpg" src="images/08-spreadsheet-sync.jpg" /></p>
+<ol start="2">
+<li>Tik op <strong>Spreadsheetbestemming toevoegen</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="09-spreadsheet-provider-picker.jpg" src="images/09-spreadsheet-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Kies <strong>Google Spreadsheets</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="10-spreadsheet-google-form.jpg" src="images/10-spreadsheet-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Aanmelden met Google</strong> → weergavenaam → <strong>Blad-URL</strong> of <strong>🔍</strong> bladeren/maken → planningsopties → inschakelen → opslaan.</li>
+<li><strong>Nu synchroniseren</strong> één keer om tabbladen te maken/bij te werken: <code>Voertuigen</code>, <code>Uitgaven</code>, <code>Brandstof - {voertuignaam}</code>.</li>
+</ol>
+<h3 id="voorbeeld-google-drive-toevoegen-fotos">Voorbeeld: Google Drive toevoegen (foto's)</h3>
+<ol>
+<li><strong>Menu → Synchroniseren → Fotoback-up</strong> (of Instellingen → Fotoback-up).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="11-photo-backup.jpg" src="images/11-photo-backup.jpg" /></p>
+<ol start="2">
+<li>Tik op <strong>Fotobestemming toevoegen</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="12-photo-provider-picker.jpg" src="images/12-photo-provider-picker.jpg" /></p>
+<ol start="3">
+<li>Kies <strong>Google Drive</strong>.</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="13-photo-google-form.jpg" src="images/13-photo-google-form.jpg" /></p>
+<ol start="4">
+<li><strong>Aanmelden met Google (Drive)</strong> → optionele map-URL/bladeren → inschakelen → opslaan → <strong>Nu synchroniseren</strong>.</li>
+</ol>
+<p>Handmatig <strong>Nu synchroniseren</strong> voor foto's is een volledige doorgang; back-up op de achtergrond verwerkt uploads die alleen in behandeling zijn doorgaans volgens een schema.</p>
+<h3 id="gedragsnotities-synchroniseren">Gedragsnotities synchroniseren</h3>
+<ul>
+<li>Na de app-upgrade ziet u mogelijk kort <strong>“Database bijwerken na upgrade...”</strong> (lokale synchronisatie-ID-aanvulling).</li>
+<li>Als een synchronisatie wordt onderbroken, worden de volgende <strong>succesvolle</strong> synchronisaties opnieuw samengevoegd en worden externe tabbladen gerepareerd.</li>
+<li>Mislukkingen: rood overzicht op Kaarten synchroniseren + <strong>!</strong> in de app-balk.</li>
+</ul>
+<hr />
+<h2 id="snel-tanken-brandstof">Snel tanken (brandstof)</h2>
+<p>Dit is het <strong>startscherm</strong> wanneer u de app opent.</p>
+<h3 id="voertuigselectie-meestal-automatisch">Voertuigselectie (meestal automatisch)</h3>
+<p>U hoeft <strong>niet</strong> eerst het voertuig te kiezen. Wanneer voor voertuigen <strong>oriëntatiepunten</strong> zijn ingesteld in Voertuigen beheren, detecteert Snel invullen <strong>automatisch welk voertuig</strong> op de dashboardafbeelding nadat u de kilometerteller hebt vastgelegd. U kunt indien nodig nog steeds de vervolgkeuzelijst <strong>Voertuig</strong> openen om deze te overschrijven.</p>
+<h3 id="richt-op-de-kilometerteller">Richt op de kilometerteller</h3>
+<p>Blijf in de kilometertellermodus en kader het cluster in. Instructie: * Richt op de kilometerteller. Tik op de sluiter om vast te leggen.*</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r3-quickfill-odo-live.jpg" src="images/r3-quickfill-odo-live.jpg" /></p>
+<h3 id="na-de-kilometertellersluiter">Na de kilometertellersluiter</h3>
+<p>OCR vult <strong>Odo</strong> en probeert het voertuig te matchen op basis van oriëntatiepunten (bekijk beide indien nodig). De hoofdknop wordt <strong>Opnieuw proberen</strong> om opnieuw te schieten. Instructie vat de lezing samen.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r4-quickfill-odo-result.jpg" src="images/r4-quickfill-odo-result.jpg" /></p>
+<h3 id="pompmodus-kosten-en-volume">Pompmodus (kosten en volume)</h3>
+<ol>
+<li>Tik op <strong>↕</strong> om naar de pompmodus te schakelen: <em>Richt op het pompdisplay (kosten/volume). Tik op sluiter.</em></li>
+<li>Registreer de pomptotalen. Kosten- en volumevelden vullen; gebruik <strong>↔</strong> als ze worden verwisseld.</li>
+<li>Tik indien nodig op valuta of <strong>G/L</strong> en vervolgens op <strong>Opslaan</strong> (schijf). Lege velden worden <strong>gedeeltelijk gevuld</strong> (nog steeds toegestaan).</li>
+</ol>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r5-quickfill-pump-result.jpg" src="images/r5-quickfill-pump-result.jpg" /></p>
+<p>Je blijft op Quick Fill voor de volgende stop (velden worden gewist na opslaan). Werk volledig <strong>offline</strong>; synchronisatie wordt later op de achtergrond uitgevoerd indien geconfigureerd.</p>
+<h3 id="handmatige-invoer-geen-camera-slechte-ocr">Handmatige invoer (geen camera / slechte OCR)</h3>
+<ol>
+<li>Tik op <strong>Odo</strong>, <strong>kosten</strong> of <strong>volume</strong> en typ waarden (staand gebruikt het systeemtoetsenbord; liggend gebruikt een toetsenbord op het scherm).</li>
+<li>Kies of bevestig het <strong>Voertuig</strong> als de automatische detectie niet is uitgevoerd.</li>
+<li>Bewaar zoals hierboven.</li>
+</ol>
+<h3 id="modi-en-randen">Modi en randen</h3>
+<ul>
+<li><strong>Groene rand</strong> rond voertuig+odo → kilometerteller vastleggen/bewerken.</li>
+<li><strong>Groene rand</strong> rond kosten+volume → pompmodus.</li>
+<li><strong>Opslaan</strong> blijft uitgeschakeld totdat een voertuig is geselecteerd en ten minste één van odo/kosten/volume gegevens heeft, en OCR niet nog steeds actief is.</li>
+</ul>
+<p>Tip op het scherm (onder de instructieregel): <em>Sluiter = vastleggen · Schijf = opslaan · ↕ = odo/pompmodus · ↔ = kosten/volume omwisselen.</em></p>
+<hr />
+<h2 id="kosten">Kosten</h2>
+<h3 id="nieuwe-uitgave">Nieuwe uitgave</h3>
+<p>Menu → <strong>Nieuwe uitgave</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="r6-new-expense.jpg" src="images/r6-new-expense.jpg" /></p>
+<ol>
+<li><strong>Opslaan</strong> (schijf), <strong>sluiter</strong> (bonfoto) of <strong>galerij</strong> (kies afbeelding).</li>
+<li>Vul <strong>Datum</strong>, <strong>Voertuig</strong>, <strong>Verkoper</strong>, <strong>Beschrijving</strong>, <strong>Bedrag</strong> (valutasymbool tikbaar), <strong>Categorie</strong>, optioneel <strong>Kilometerteller</strong> in.</li>
+<li>Ontvangsten van meerdere pagina's: leg extra pagina's vast als de gebruikersinterface paging aanbiedt (pagina 0 is de primaire ontvangst).</li>
+<li><strong>Opslaan</strong> om op te slaan (eerst lokaal; fotoback-up en spreadsheetsynchronisatie gebeuren op de achtergrond indien geconfigureerd).</li>
+</ol>
+<h3 id="onkostenlijst">Onkostenlijst</h3>
+<p>Menu → <strong>Rapporten</strong> → <strong>Onkostenlijst</strong> — blader door de niet-brandstofkosten; open een item om te bewerken.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="05-expense-list.jpg" src="images/05-expense-list.jpg" /></p>
+<h3 id="onkosten-bewerken">Onkosten bewerken</h3>
+<p>Open een rij uit de lijst. Correcte leverancier, bedrag, categorie, voertuig en beschrijving. Als de kassabon alleen in een fotoback-up staat (geen leesbaar lokaal bestand), gebruik dan <strong>Afbeelding ophalen uit archief</strong> wanneer deze wordt weergegeven (werkt op geconfigureerde fotobestemmingen).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="expense-edit.jpg" src="images/expense-edit.jpg" /></p>
+<hr />
+<h2 id="begin-reis">Begin reis</h2>
+<p>Menu → <strong>Start rit</strong> (na Quick Fill in de lade). Leg de kilometerteller vast of voer deze in, kies het rittype en sla op met het <strong>schijf</strong>-pictogram. <strong>Stop</strong> is een snelkoppeling voor Persoonlijk nu op de vastgehouden GPS-locatie. Gebruik <strong>ⓘ</strong> voor controleherinneringen.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="start-trip.jpg" src="images/start-trip.jpg" /></p>
+<p>Tripstarts worden opgeslagen als brandstofrijen met een <strong>Triptype</strong> (geen normale tankbeurten). Ze verschijnen onder <strong>Rapporten → Ritmijlen</strong>, niet onder Brandstofgeschiedenis.</p>
+<hr />
+<h2 id="rapporten">Rapporten</h2>
+<p>Menu → <strong>Rapporten</strong> opent de producthub (overzicht aller tijden + cataloguskaarten). Dit is het enige oppervlak met productrapporten; er is geen afzonderlijk lade-item 'Rapporten en grafieken'.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="06-reports.jpg" src="images/06-reports.jpg" /></p>
+<p>Open een kaart voor de voertuigmodus (<strong>Alles / Elk / Enkel</strong>), periodefilters, grafieken en delen (<strong>TEKST / CSV / PDF</strong>). Bovenste balk op rapport kinderen: <strong>☰ + ←</strong> (en <strong>ⓘ</strong> indien geregistreerd).</p>
+<h3 id="tijdgebaseerde-rapporten">Tijdgebaseerde rapporten</h3>
+<p>De hoofdkaartkaart. Optionele statistieken (mpg, volume/afstand zoals G/mi, eenheidsprijs zoals $/G, kosten/afstand, maandelijks $, ritmijlen, rit% per type) met <strong>Vloeiende</strong> bakken en <strong>onafhankelijke Y-schalen</strong> (economie links; geld- en reisfamilies aan de rechterkant).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports.jpg" src="images/time-based-reports.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="time-based-reports-scrolled.jpg" src="images/time-based-reports-scrolled.jpg" /></p>
+<p>Details van economische wiskunde: <a href="referentie/REPORTS_METRICS.md">REPORTS_METRICS.md</a>.</p>
+<h3 id="vul-geschiedenis-versus-brandstofgeschiedenis">Vul geschiedenis versus brandstofgeschiedenis</h3>
+<ul>
+<li><strong>Rapporten → Vulgeschiedenis</strong> — chronologische vullingen voor de rapportfilters (<strong>alleen vullingen</strong>; er wordt geen reis gestart).</li>
+</ul>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fill-history.jpg" src="images/fill-history.jpg" /></p>
+<ul>
+<li><strong>Brandstofgeschiedenis</strong> (indien aanwezig in de navigatie van uw build) — vul de inventaris per voertuig, vult ook alleen; tik op een rij om te bewerken.</li>
+</ul>
+<h3 id="tripmijlen">Tripmijlen</h3>
+<p><strong>Rapporten → Ritmijlen</strong> — mijlen per type, grafieken en een chronologische <strong>reisstart-/segmentlijst</strong>. Tik op een echt begin om <strong>Opvulling bewerken</strong> voor die rij te openen.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="trip-miles.jpg" src="images/trip-miles.jpg" /></p>
+<h3 id="vulling-bewerken">Vulling bewerken</h3>
+<p>Open een tankbeurt vanuit Vulgeschiedenis, Brandstofgeschiedenis of Ritmijlen. Indeling: voertuig en kilometerteller, <strong>valuta vóór kosten</strong>, volume, aantekeningen. Het reistype wordt alleen weergegeven als de rij een reisbegin is. Locatie heeft een samenvatting plus <strong>Locatiedetails</strong>. Ontbrekende lokale foto met cloudidentiteit: <strong>Afbeelding ophalen uit archief</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="fuel-edit.jpg" src="images/fuel-edit.jpg" /></p>
+<p>Andere cataloguskaarten omvatten uitgaven per categorie, voertuigoverzicht en uitgavenlijst.</p>
+<p>Geld gebruikt de valuta van elke rij wanneer deze is ingesteld. Totalen voor gemengde valuta tonen <strong>subtotalen per valuta</strong> (geen stille valutaconversie).</p>
+<hr />
+<h2 id="synchroniseren">Synchroniseren</h2>
+<p>Menu → <strong>Synchroniseren</strong> is de hub voor spreadsheet- en fotobestemmingen (niet alleen verborgen onder Instellingen).</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="syncing-hub.jpg" src="images/syncing-hub.jpg" /></p>
+<ul>
+<li>Kaarten voor <strong>Spreadsheetsynchronisatie</strong> en <strong>Fotoback-up</strong> met korte status, <strong>Synchronisatie</strong> voor dat soort, en <strong>›</strong> in de bestemmingslijst.</li>
+<li>Open een bestemming voor <strong>Testverbinding</strong> en <strong>Synchroniseer nu (deze bestemming)</strong> / allemaal geconfigureerd.</li>
+<li>Fout <strong>Details</strong> en de rode <strong>!</strong> in de titelbalk komen hier terecht.</li>
+<li>Stapsgewijze installatie van Google Spreadsheets en Drive: [Back-ups en synchronisatie van meerdere apparaten] (#backups-and-multi-device-sync).</li>
+</ul>
+<hr />
+<h2 id="instellingen-lokale-voorkeuren">Instellingen (lokale voorkeuren)</h2>
+<p>Menu → <strong>Instellingen</strong>.</p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07-settings.jpg" src="images/07-settings.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="07b-settings-more.jpg" src="images/07b-settings-more.jpg" /></p>
+<p>Voor bestemmingen geeft u de voorkeur aan <strong>Menu → Synchroniseren</strong>. Instellingen tonen mogelijk nog steeds samenvattingsrijen die dezelfde lijsten openen.</p>
+<h3 id="lokale-voorkeuren-algemeen">Lokale voorkeuren (algemeen)</h3>
+<ul>
+<li><strong>Foto's van brandstofbonnen opslaan</strong> / <strong>Onkostenfoto's lokaal opslaan</strong> — bewaar afbeeldingen op het apparaat (kan om toestemming voor foto's vragen).</li>
+<li><strong>Speel sluitergeluid af</strong></li>
+<li><strong>Valuta</strong> / <strong>Volume-eenheid</strong> — standaardinstellingen van de app (systeem of expliciet). Het wijzigen van de volume-eenheid met bestaande brandstofgegevens kan een conversiedialoog bieden.</li>
+<li><strong>Donkere modus</strong></li>
+<li><strong>Installatietips</strong> — heropen eerst zelfstudies over voertuigen/synchronisatie.</li>
+<li><strong>Debug Quick Fill</strong> / <strong>Experimentschermen weergeven (dev)</strong> — geavanceerd; laat staan ​​voor dagelijks gebruik. Experimentschermen worden hier niet gedocumenteerd.</li>
+</ul>
+<p>CSV <strong>exporteren/importeren</strong> (ZIP van tabbladen Voertuigen / Uitgaven / Brandstof) is beschikbaar via Instellingen wanneer dit wordt aangeboden door de huidige build.</p>
+<hr />
+<h2 id="hulp-en-informatie">Hulp en informatie</h2>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="14-help.jpg" src="images/14-help.jpg" /></p>
+<p><img loading="lazy" style="max-width:100%;height:auto;border:1px solid #333;border-radius:8px;margin:12px 0;" alt="15-about.jpg" src="images/15-about.jpg" /></p>
+<ul>
+<li><strong>Help</strong> — snelle start op het apparaat, installatiehandleidingen, link naar deze handleiding, index voor zelfhostinstallatie.</li>
+<li><strong>Over</strong> — versie, licenties, GitHub, deze handleiding (offline gebundeld + online HTML indien gepubliceerd).</li>
+</ul>
+<hr />
+<h2 id="gerelateerde-documenten">Gerelateerde documenten</h2>
+<ul>
+<li><a href="referentie/USER_GUIDE.md">USER_GUIDE.md</a> — verkorte referentie</li>
+<li><a href="referentie/self-host/INDEX.md">self-host/INDEX.md</a> — zelf-gehoste foto/tabelconfiguratie</li>
+<li><a href="referentie/SYNC_BEHAVIOR.md">SYNC_BEHAVIOR.md</a> — samenvoegen, herstellen, duplicaten</li>
+<li><a href="referentie/REPORTS_METRICS.md">REPORTS_METRICS.md</a> — detail van de economische statistieken</li>
+</ul>
+</body>
+</html>
