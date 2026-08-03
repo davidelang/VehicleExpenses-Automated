@@ -1,0 +1,16 @@
+name = "remotetable"
+git_ssh = "git@github.com:davidelang/remotetable.git"
+git_https = "https://github.com/davidelang/remotetable.git"
+git_sha = "5eca9dd0d6517a19cea4be378714fe028b9b7629"
+git_describe = "5eca9dd"
+track_branch = "master"
+reproducible = false
+build_time = "minutes"
+requires_writable_src = false
+build = ["./build"]
+consumer_note = "M3 5eca9dd: Firebase+Zoho + deferred OnlyOffice/Collabora"
+
+[[artifact]]
+path = "artifact/remotetable.aar"
+sha256 = "751d70a125105576068d36ecad1b99f38fa8618bcf2f0ecf735384fcf8eb490a"
+from = "src/android/remotetable/build/outputs/aar/remotetable-release.aar"

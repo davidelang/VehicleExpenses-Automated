@@ -1,0 +1,14 @@
+# Bootstrap — set git_sha / artifacts when first real pin lands.
+name = "paddle"
+git_ssh = ""
+git_https = ""
+git_sha = "TBD"
+git_describe = "TBD"
+track_branch = ""
+reproducible = false
+build_time = "tens_of_hours"
+requires_writable_src = false
+build = ["./build"]
+consumer_note = "Paddle special: Docker build meta; no image blobs in git. Set git_ssh/git_https to patched fork when published."
+
+# artifacts = []  # empty until first pin

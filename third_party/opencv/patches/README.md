@@ -1,4 +1,4 @@
-# OpenCV patches (applied on top of lock.yaml git_sha by fetch-deps only)
+# OpenCV patches (applied on top of libpin.toml git_sha by fetch-deps only)
 
 Currently **empty**: all VE changes are build-script flags (16KB page size, module list, optim).
 

@@ -4435,3 +4435,10 @@ x
 - libpin name free on GitHub/PyPI/npm; stay in-tree for now. Copied tooling into extractmail/third_party.
 - TODO already covers remotetable/extractmail ro-build hygiene later.
 
+
+## 2026-08-03 - libpin.toml rename + docs cleanup
+
+- Config file is libpin.toml (TOML, [[artifact]] singular); tools parse via tomllib.
+- Removed docs/reference/FIRST_PARTY_LIBS.md and THIRD_PARTY_LAYOUT_FOR_AGENTS.md.
+- Example + opencv get-artifacts verified with libpin.toml.
+
