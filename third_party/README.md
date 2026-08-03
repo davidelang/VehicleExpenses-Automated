@@ -67,7 +67,7 @@ Optional local accelerator: full clone under `GIT_HOME` (e.g. `~/git/opencv`). f
 | Options-only | **opencv** | pin SHA | Script + flags (ABIs, 16k pages, module list) |
 | Patch + wrap | **rclone** | pin + patches | Script (± Docker) → Kotlin/gomobile lib |
 | Docker + models | **paddle** | pin (fork commit) | Containers, old toolchains, model post-steps |
-| Active co-dev | **remotetable / extractmail** (near term) | often `rw` | Develop lib + app together; still collect to `artifact/` |
+| Active co-dev | **remotetable / extractmail** | `ro` for audit/rebuild; `rw` while co-developing | Kotlin AAR via Gradle; RO unlocks only `android/.gradle` + module `build/`; **reproducible=true** (same toolchain) |
 
 ---
 

@@ -617,8 +617,14 @@ cmd_build() {
   mode="$(yaml_get "$(status_path "$name")" mode 2>/dev/null || echo ro)"
   if [[ "$mode" == "ro" && "$need_rw" != "true" ]]; then
     make_readonly_tree "$src"
-    # allow build/bin to remain writable for iterate
+    # allow common build scratch dirs to remain writable for iterate
     chmod -R u+w "$src/build" "$src/bin" 2>/dev/null || true
+    # Android library pins (remotetable/extractmail): Gradle outputs under android/
+    chmod -R u+w "$src/android/.gradle" "$src/android"/*/build 2>/dev/null || true
+    # local.properties is machine-local (gitignored in lib trees)
+    if [[ -f "$src/android/local.properties" ]]; then
+      chmod u+w "$src/android/local.properties" 2>/dev/null || true
+    fi
   fi
   echo "    OK build $name"
 }

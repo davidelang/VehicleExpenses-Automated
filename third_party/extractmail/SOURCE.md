@@ -1,10 +1,41 @@
-# extractmail — VE pin
+# extractmail pin
 
-- Remote: git@github.com:davidelang/extractmail.git
-- Worktree: third_party/extractmail/src (email-connection)
-- Pin: see libpin.toml (M2.5 YAML dispatch + goldens export @ 9c22953)
-- Goldens: python3 src/python/run_goldens.py
-- CLI: src/scripts/extractmail
-- Host: /home/dlang/git/extractmail
-- Shared remotetable: host may symlink third_party/remotetable → VE pin tree
-- Build: ./third_party/extractmail/build (optional goldens + AAR)
+| | |
+|--|--|
+| **Upstream** | `davidelang/extractmail` @ `327ebf00dc1694ba3d9b29d559460e1a318d6100` |
+| **Profile** | Co-dev library + consumer pin (RO builds supported) |
+| **build_time** | `minutes` |
+| **reproducible** | `true` (same pin + AGP/Kotlin/JDK; verified bit-identical host rebuild) |
+| **Product** | `artifact/extractmail.aar` (~3.5KB, thin Kotlin API surface) |
+
+## Reproduce (RO)
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export ANDROID_HOME=$HOME/Android/Sdk
+./third_party/fetch-deps ro extractmail
+./third_party/fetch-deps build extractmail
+```
+
+Optional host: `~/git/extractmail`.
+
+## RO build hygiene
+
+- Pin sources stay RO after `fetch-deps ro`.
+- `./build` only unlocks `src/android/.gradle` and `src/android/extractmail/` (Gradle outputs).
+- Does **not** require `requires_writable_src`.
+- Product path: `src/android/extractmail/build/outputs/aar/extractmail-release.aar` → `get-artifacts`.
+
+## Tests in build
+
+1. Optional: `python3 python/run_goldens.py` (non-fatal if deps missing)
+2. `src/scripts/build-aar.sh` → `assembleRelease`
+
+## Co-develop (rw)
+
+```bash
+./third_party/fetch-deps rw extractmail
+# edit under src/
+./third_party/fetch-deps build extractmail
+# promote: library PR → bump libpin.toml git_sha + artifact
+```

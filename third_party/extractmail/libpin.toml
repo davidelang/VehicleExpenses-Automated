@@ -4,13 +4,14 @@ git_https = "https://github.com/davidelang/extractmail.git"
 git_sha = "327ebf00dc1694ba3d9b29d559460e1a318d6100"
 git_describe = "327ebf0"
 track_branch = "master"
-reproducible = false
+# Same pin + AGP 8.5.2 + Kotlin 1.9.24 + JDK 17: verified bit-identical AAR on host rebuild (clean android/**/build).
+reproducible = true
 build_time = "minutes"
 requires_writable_src = false
 build = ["./build"]
-consumer_note = "M3 327ebf0: detectType+fuel contract for VE thin live path"
+consumer_note = "Kotlin AAR (HTML fuel extract). RO pin: unlock only android/.gradle + module build/. Goldens optional then assembleRelease."
 
 [[artifact]]
 path = "artifact/extractmail.aar"
-sha256 = "fcac2d7c720eac8ffd2d7369261d6a4a24638c1ce09998f7bfe55e751bb70dee"
 from = "src/android/extractmail/build/outputs/aar/extractmail-release.aar"
+sha256 = "fcac2d7c720eac8ffd2d7369261d6a4a24638c1ce09998f7bfe55e751bb70dee"

@@ -1,9 +1,41 @@
-# remotetable — VE pin
+# remotetable pin
 
-- Remote: git@github.com:davidelang/remotetable.git
-- Worktree: third_party/remotetable/src (email-connection)
-- Pin: see libpin.toml (M2.5 CLI flag order @ cb4c2e4; live AAR product 4fd9013)
-- Build: ./third_party/remotetable/build (conformance + AAR)
-- Host: /home/dlang/git/remotetable
-- Tests: `python3 src/conformance/harness.py`
-- CLI: `src/scripts/remotetable …`
+| | |
+|--|--|
+| **Upstream** | `davidelang/remotetable` @ `5eca9dd0d6517a19cea4be378714fe028b9b7629` |
+| **Profile** | Co-dev library + consumer pin (RO builds supported) |
+| **build_time** | `minutes` |
+| **reproducible** | `true` (same pin + AGP/Kotlin/JDK; verified bit-identical host rebuild) |
+| **Product** | `artifact/remotetable.aar` (~95KB, pure Kotlin library) |
+
+## Reproduce (RO)
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export ANDROID_HOME=$HOME/Android/Sdk
+./third_party/fetch-deps ro remotetable
+./third_party/fetch-deps build remotetable
+```
+
+Optional host: `~/git/remotetable` (orchestration + `master/` worktree).
+
+## RO build hygiene
+
+- Pin sources stay RO after `fetch-deps ro`.
+- `./build` only unlocks `src/android/.gradle` and `src/android/remotetable/` (Gradle outputs).
+- Does **not** require `requires_writable_src`.
+- Product path: `src/android/remotetable/build/outputs/aar/remotetable-release.aar` → `get-artifacts`.
+
+## Tests in build
+
+1. `python3 src/conformance/harness.py` (mock; live smoke optional via env)
+2. `src/scripts/build-aar.sh` → `assembleRelease`
+
+## Co-develop (rw)
+
+```bash
+./third_party/fetch-deps rw remotetable   # branch = VE branch
+# edit under src/
+./third_party/fetch-deps build remotetable
+# promote: library PR → bump libpin.toml git_sha + artifact
+```

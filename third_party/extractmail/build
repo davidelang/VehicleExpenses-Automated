@@ -1,22 +1,45 @@
 #!/usr/bin/env bash
+# extractmail pin build — RO src OK; Gradle scratch under src/android only.
+# Product: src/android/extractmail/build/outputs/aar/extractmail-release.aar
+# Collect: get-artifacts → artifact/extractmail.aar
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")" && pwd)
 SRC="$ROOT/src"
 export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}"
 export PATH="$JAVA_HOME/bin:$PATH"
-export ANDROID_HOME="${ANDROID_HOME:-/home/dlang/Android/Sdk}"
-echo "extractmail build: src=$SRC"
-if [ -x "$SRC/python/run_goldens.py" ] || [ -f "$SRC/python/run_goldens.py" ]; then
+export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+[[ -d "$ANDROID_HOME" ]] || export ANDROID_HOME=/home/dlang/Android/Sdk
+
+[[ -d "$SRC" ]] || { echo "ERROR: no src — run: ./third_party/fetch-deps ro extractmail" >&2; exit 1; }
+[[ -f "$SRC/scripts/build-aar.sh" ]] || { echo "ERROR: missing src/scripts/build-aar.sh" >&2; exit 1; }
+
+unlock_tree() {
+  local d="$1"
+  chmod u+w "$SRC" 2>/dev/null || true
+  [[ -d "$SRC/android" ]] && chmod u+w "$SRC/android" 2>/dev/null || true
+  mkdir -p "$d" 2>/dev/null || true
+  chmod -R u+w "$d" 2>/dev/null || true
+}
+unlock_tree "$SRC/android/.gradle"
+unlock_tree "$SRC/android/extractmail"
+chmod -R u+w "$SRC/android/extractmail/build" "$SRC/android/.gradle" 2>/dev/null || true
+chmod u+w "$SRC/android" 2>/dev/null || true
+
+
+echo "extractmail build: src=$SRC head=$(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo '?')"
+
+# Goldens optional (network/deps may fail in minimal env)
+if [[ -f "$SRC/python/run_goldens.py" ]]; then
   (cd "$SRC" && python3 python/run_goldens.py) || {
     echo "WARN: goldens failed or missing deps; continuing AAR build" >&2
   }
 fi
-chmod +x "$SRC/scripts/build-aar.sh"
-"$SRC/scripts/build-aar.sh"
-if [ ! -s "$ROOT/artifact/extractmail.aar" ]; then
-  AAR=$(find "$SRC/android" -name 'extractmail-release.aar' | head -1)
-  mkdir -p "$ROOT/artifact"
-  cp -f "$AAR" "$ROOT/artifact/extractmail.aar"
+
+bash "$SRC/scripts/build-aar.sh"
+
+AAR_SRC="$SRC/android/extractmail/build/outputs/aar/extractmail-release.aar"
+if [[ ! -s "$AAR_SRC" ]]; then
+  AAR_SRC=$(find "$SRC/android" -name 'extractmail-release.aar' 2>/dev/null | head -1 || true)
 fi
-ls -la "$ROOT/artifact/extractmail.aar"
-echo "extractmail build OK"
+[[ -n "${AAR_SRC:-}" && -s "$AAR_SRC" ]] || { echo "ERROR: AAR not produced under src/android" >&2; exit 1; }
+echo "OK product: $AAR_SRC ($(du -h "$AAR_SRC" | cut -f1))"

@@ -4467,3 +4467,11 @@ x
 - Pin scripts/build remain SoT; sandbox rclone-build marked SUPERSEDED.md.
 - project-facts + ENVIRONMENT_SETUP + 16k notes point at third_party/rclone artifact.
 - fetch-deps ro rclone: clean @ pin, dirty=n.
+
+## 2026-08-03 - remotetable + extractmail libpin RO builds + reproducible
+
+- Both pins: fetch-deps ro + build OK; status dirty=n after build.
+- Pin ./build unlocks only android/.gradle + module tree for Gradle; requires_writable_src=false.
+- fetch-deps post-build leaves android scratch dirs writable for iterate.
+- Double clean rebuild: remotetable + extractmail AAR bit-identical (reproducible=true in libpin).
+- SOURCE.md rewritten; sha256 unchanged (751d70a1… / fcac2d7c…).
