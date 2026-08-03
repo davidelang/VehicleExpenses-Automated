@@ -1,6 +1,34 @@
 #!/usr/bin/env bash
-# Build recipe for this third_party pin. fetch-deps --build execs this with cwd here.
+# Build photo-curated librclone AAR via Docker (recipes live in ~/git/rclone/ve-build).
 set -euo pipefail
-echo "$(basename "$(pwd)"): build stub — replace with real recipe (AAR/JAR/native)."
-echo "See SOURCE.md and docs/reference/FIRST_PARTY_LIBS.md"
-exit 0
+HERE=$(cd "$(dirname "$0")" && pwd)
+GIT_HOME=${GIT_HOME:-$HOME/git}
+RCLONE_SRC=${RCLONE_SRC:-$GIT_HOME/rclone}
+VE_BUILD="$RCLONE_SRC/ve-build"
+OUT="$HERE/artifact"
+mkdir -p "$OUT"
+
+if [[ ! -d "$RCLONE_SRC/.git" ]]; then
+  echo "ERROR: rclone src not found at $RCLONE_SRC — clone/setup ~/git/rclone first" >&2
+  exit 1
+fi
+if [[ ! -f "$VE_BUILD/Dockerfile" ]]; then
+  echo "ERROR: missing $VE_BUILD/Dockerfile" >&2
+  exit 1
+fi
+
+echo "Building ve-rclone-build image..."
+docker build -t ve-rclone-build -f "$VE_BUILD/Dockerfile" "$VE_BUILD"
+mkdir -p "$VE_BUILD/output"
+docker run --rm \
+  -v "$RCLONE_SRC:/workspace/rclone" \
+  -v "$VE_BUILD/build_photo.sh:/workspace/build_photo.sh:ro" \
+  -v "$VE_BUILD/output:/output" \
+  ve-rclone-build bash /workspace/build_photo.sh
+if [[ -f "$VE_BUILD/output/librclone_photo.aar" ]]; then
+  cp -f "$VE_BUILD/output/librclone_photo.aar" "$OUT/librclone.aar"
+  echo "Wrote $OUT/librclone.aar"
+else
+  echo "ERROR: build did not produce librclone_photo.aar" >&2
+  exit 1
+fi

@@ -1,13 +1,13 @@
 name: extractmail
 git_ssh: "git@github.com:davidelang/extractmail.git"
 git_https: "https://github.com/davidelang/extractmail.git"
-git_sha: "9c2295373d3fb3dde103076b6c602709e467f541"
-git_describe: "9c22953"
+git_sha: "0806a42c7b011757c43f29f50a757362190e7d27"
+git_describe: "0806a42"
 artifacts:
   - path: artifact/extractmail.aar
     sha256: "8249e27fc805f0b3b3069160457376465a83167df91b0573a420b83614e39e5c"
     build: ./build
     from_src: android/extractmail/build/outputs/aar/extractmail-release.aar
-consumer_note: "M2.5 9c22953: YAML module/export dispatch + offline_offline_goldens; AAR v2 constants"
+consumer_note: "M3 0806a42: xpath/external/fetch CLI + Go wrapper"
 track_branch: master
 build: ./build

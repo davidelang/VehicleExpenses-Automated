@@ -23,3 +23,10 @@ Without reproducible builds, `artifact` sha256 (if present) detects change/tampe
 ## Bootstrap status
 
 Point build at sandbox/dev-ai-interaction/rclone-build recipes until migrated. Artifact may later mirror app/libs/librclone.aar.
+
+## Local multi-agent host (2026-08-02)
+
+- Checkout: `~/git/rclone` (branch `email-connection` includes `ve-build/` recipes)
+- VE pin: this directory (`lock.yaml` + `artifact/librclone.aar`)
+- Rebuild: `./third_party/rclone/build` (Docker) or `cd ~/git/rclone/ve-build && docker build ...`
+- Interim artifact: photo AAR copied from historical sandbox `rclone-build/librclone_photo.aar`

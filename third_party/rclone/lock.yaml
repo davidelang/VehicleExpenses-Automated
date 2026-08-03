@@ -1,13 +1,13 @@
-# Bootstrap lock — update git_sha / git_describe / artifacts when first real pin lands.
 name: rclone
 git_ssh: "git@github.com:rclone/rclone.git"
 git_https: "https://github.com/rclone/rclone.git"
-git_sha: "TBD"
-git_describe: "TBD"
-artifacts: []
-# Example when M1 AAR exists:
-# artifacts:
-#   - path: artifact/rclone.aar
-#     sha256: ""
-#     build: ./build
-consumer_note: "Options-only rebuild profile; VE ships librclone AAR. Sandbox rclone-build remains until post-merge cleanup. VE applies curated gomobile/backend options via build; ship AAR artifact."
+git_sha: "2ba0605c77f6cfcffa6f4c0bcb80f6c4905634fb"
+git_describe: "2ba0605"
+artifacts:
+  - path: artifact/librclone.aar
+    sha256: "192fc39f7c221eaca3482bb58a5ce2439a85a300a74a3b99ae667dd4f3b019fc"
+    build: ./build
+    from_src: ve-build/output/librclone_photo.aar
+consumer_note: "M3 pin: local ~/git/rclone email-connection + photo AAR from sandbox recipe; rebuild via ve-build/build_photo.sh in Docker"
+track_branch: master
+build: ./build
