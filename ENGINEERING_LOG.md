@@ -3535,3 +3535,11 @@ x
 - Call sites pass Context for live labels; locale packs for new strings
 - todo-append per-vehicle distance+conversion future item
 - UI_COMPATIBILITY / project-facts / I18N updated
+
+## 2026-08-02 - Local PR prepared: i18n_lang_packs
+
+- History cleanup: soft-reset onto master → **3 logical commits**; `backup-i18n_lang_packs` @ messy tip; **TREE_MATCHES_BACKUP**
+- Cleaned HEAD: see `git rev-parse HEAD` in PR doc
+- PR doc: `dev-ai-interaction/PRs/PR-i18n_lang_packs.md` (pre-submit review + 3 plans)
+- Archived CODE LANDED plans → historical-plans/: latin-band packs, 5556 screenshots, settings-group-i18n-units (+ superseded en-es-fr stub)
+- Ready for Master (`run-grok-master`) independent review + merge. No deploy/merge by coder.
