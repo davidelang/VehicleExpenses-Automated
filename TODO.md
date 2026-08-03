@@ -65,3 +65,5 @@ Reports multi-select vehicle checkboxes + Sum/Average (not Each-only); deferred 
 Trip miles packaging polish (export labels/annual packs); core open-only + implicit personal shipped
 
 Vehicle preferred fuel grade/product field (e.g. regular/premium/diesel) for future auto-assignment of loyalty email fills; assignment UX remains separate work
+
+extractmail: browser-based human-confirm extract helper (open file/email; avoid auto-picking non-visible fields)

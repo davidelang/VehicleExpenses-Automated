@@ -4383,3 +4383,12 @@ x
 - Start goal autopilot: port row-DB backends into remotetable; expand Go/Python CLIs; EtherCalc docker smoke.
 - Google live CLI deferred (needs human token). Local git only.
 
+
+## 2026-08-02 - M3 remotetable row-db cutover landed
+
+- remotetable lib @ 472eab9: row-db backends (Kotlin+Python), Go CLI mock/ethercalc, AAR rebuilt (JDK 17).
+- VE pin + thin RemoteTableRowDbTabularBackend for Baserow/NocoDB/PocketBase/Supabase/Airtable; removed in-app clients.
+- ./build_app green; tag email-connection/builds → email-connection-start-76-g79072b28.
+- EtherCalc one-shot: ~/git/ethercalc/start.sh (docker run). Google live CLI still needs human token.
+- Still open: Firebase, Zoho, OnlyOffice/Collabora, then extractmail full stack.
+
