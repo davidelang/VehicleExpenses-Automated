@@ -1,10 +1,15 @@
 package com.davidlang.vehicleexpensesautomated.data.email
 
-import java.util.Locale
+import com.davidelang.extractmail.Extractmail
 
 /**
- * Multi-vendor autodetect for email fuel receipts.
- * Order: Shell exclusive markers → Sam's Club → null.
+ * Multi-vendor autodetect for email fuel receipts (live HTML path).
+ *
+ * **Type detect SoT:** [Extractmail.detectType] (extractmail AAR).
+ * HTML field extraction remains in-app Kotlin ([ShellReceiptParser] /
+ * [SamsClubReceiptParser]) until a pure-Kotlin port of host goldens —
+ * no Node on device. Offline samples use extractmail golden JSON
+ * ([EmailReceiptFixtureIngest]).
  */
 object ReceiptParsers {
 
@@ -16,21 +21,23 @@ object ReceiptParsers {
         val emailDateHeader: String? = null,
     )
 
+    /**
+     * Detect extractmail type key for logging / future dispatch.
+     * @return [Extractmail.TYPE_SHELL], [Extractmail.TYPE_SAMS_CLUB], or null
+     */
+    fun detectType(html: String?, meta: Meta = Meta()): String? =
+        Extractmail.detectType(html, meta.fromHeader, meta.subject)
+
     fun tryParse(html: String?, meta: Meta = Meta()): ParsedFuelReceipt? {
         if (html.isNullOrBlank()) return null
-        val blob = listOf(html, meta.fromHeader.orEmpty(), meta.subject.orEmpty())
-            .joinToString("\n")
-            .lowercase(Locale.US)
-
-        if (looksShell(blob)) {
-            return ShellReceiptParser.parse(
+        val type = Extractmail.detectType(html, meta.fromHeader, meta.subject)
+        return when (type) {
+            Extractmail.TYPE_SHELL -> ShellReceiptParser.parse(
                 html = html,
                 messageKey = meta.messageKey,
                 gmailMessageId = meta.gmailMessageId,
             )
-        }
-        if (looksSams(blob)) {
-            return SamsClubReceiptParser.parse(
+            Extractmail.TYPE_SAMS_CLUB -> SamsClubReceiptParser.parse(
                 html = html,
                 messageKey = meta.messageKey,
                 gmailMessageId = meta.gmailMessageId,
@@ -38,30 +45,24 @@ object ReceiptParsers {
                 subject = meta.subject,
                 emailDateHeader = meta.emailDateHeader,
             )
+            else -> {
+                // Fallback self-rejecting tries (unknown brand markers)
+                ShellReceiptParser.parse(html, meta.messageKey, meta.gmailMessageId)
+                    ?: SamsClubReceiptParser.parse(
+                        html = html,
+                        messageKey = meta.messageKey,
+                        gmailMessageId = meta.gmailMessageId,
+                        fromHeader = meta.fromHeader,
+                        subject = meta.subject,
+                        emailDateHeader = meta.emailDateHeader,
+                    )
+            }
         }
-        // Fallback self-rejecting tries
-        ShellReceiptParser.parse(html, meta.messageKey, meta.gmailMessageId)?.let { return it }
-        return SamsClubReceiptParser.parse(
-            html = html,
-            messageKey = meta.messageKey,
-            gmailMessageId = meta.gmailMessageId,
-            fromHeader = meta.fromHeader,
-            subject = meta.subject,
-            emailDateHeader = meta.emailDateHeader,
-        )
     }
 
-    fun looksShell(blob: String): Boolean =
-        blob.contains("ereceiptshell") ||
-            blob.contains("mail.ereceiptshell.com") ||
-            blob.contains("shell e-receipt") ||
-            (blob.contains("welcome to shell") && blob.contains("amount paid"))
+    /** @deprecated Prefer [Extractmail.looksShell] / [detectType]. */
+    fun looksShell(blob: String): Boolean = Extractmail.looksShell(blob)
 
-    fun looksSams(blob: String): Boolean {
-        if (blob.contains("ereceiptshell")) return false
-        return blob.contains("samsclub.com") ||
-            blob.contains("sam's club fuel") ||
-            blob.contains("fuel station receipt") ||
-            (blob.contains("sam's club") && blob.contains("total paid"))
-    }
+    /** @deprecated Prefer [Extractmail.looksSamsClub] / [detectType]. */
+    fun looksSams(blob: String): Boolean = Extractmail.looksSamsClub(blob)
 }

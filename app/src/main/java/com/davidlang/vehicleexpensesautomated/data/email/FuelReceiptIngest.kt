@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.email
 
 import android.util.Log
+import com.davidelang.extractmail.Extractmail
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
@@ -10,7 +11,8 @@ import javax.inject.Singleton
 
 /**
  * Room writer for parsed email fuel receipts.
- * vehicleId=0, odo=0, isPartialFill=false, economyIgnored=false; skip if syncId exists.
+ * Contract from [Extractmail]: vehicleId=0, odo=0, isPartialFill=false, economyIgnored=false;
+ * skip if syncId exists.
  * Does not reimplement Unassigned vehicle creation (uses [VehicleRepository.ensureUnassignedVehicle]).
  */
 @Singleton
@@ -57,15 +59,15 @@ class FuelReceiptIngest @Inject constructor(
             null
         }
         val entry = FuelEntry(
-            vehicleId = EmailReceiptIds.UNASSIGNED_VEHICLE_ID,
-            odometer = 0,
+            vehicleId = Extractmail.FUEL_VEHICLE_ID_UNASSIGNED,
+            odometer = Extractmail.FUEL_ODOMETER,
             gallons = parsed.gallons,
             cost = parsed.cost,
             currency = parsed.currency.ifBlank { "USD" },
             timestamp = parsed.timestampMs,
             photoUrl = null,
-            isPartialFill = false,
-            economyIgnored = false,
+            isPartialFill = Extractmail.FUEL_PARTIAL_FILL,
+            economyIgnored = Extractmail.FUEL_ECONOMY_IGNORED,
             // location is sole geo/place field (legacy plain text still accepted)
             location = parsed.locationText,
             cloudManifest = manifest,

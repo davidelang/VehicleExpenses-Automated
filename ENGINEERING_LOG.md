@@ -4406,3 +4406,9 @@ x
 - opencv: ~/git/opencv 4.10.0 clone + ve-build notes; third_party bootstrap lock (TBD pin).
 - Still open: full extractmail Apps Script parity in lib, VE live Gmail worker thin, OpenCV 16k rebuild, paddle third_party Docker wire-up, CsvZip, real OnlyOffice/Collabora.
 
+
+## 2026-08-02 - Continue migration (email thin + opencv/paddle)
+
+- Thin VE live HTML parse dispatch via extractmail AAR type detect contract.
+- OpenCV 16k build script scaffolding; paddle host wire notes.
+

@@ -93,18 +93,18 @@ class EmailReceiptWorker @AssistedInject constructor(
             }
             for (msg in messages) {
                 scanned++
-                val receipt = ReceiptParsers.tryParse(
-                    html = msg.htmlBody,
-                    meta = ReceiptParsers.Meta(
-                        messageKey = msg.id,
-                        gmailMessageId = msg.id,
-                        fromHeader = msg.from,
-                        subject = msg.subject,
-                        emailDateHeader = msg.dateHeader,
-                    ),
+                val meta = ReceiptParsers.Meta(
+                    messageKey = msg.id,
+                    gmailMessageId = msg.id,
+                    fromHeader = msg.from,
+                    subject = msg.subject,
+                    emailDateHeader = msg.dateHeader,
                 )
+                val typeKey = ReceiptParsers.detectType(msg.htmlBody, meta)
+                val receipt = ReceiptParsers.tryParse(html = msg.htmlBody, meta = meta)
                 if (receipt == null) {
                     skippedParse++
+                    Log.i(TAG, "gmail parse skip id=${msg.id} type=${typeKey ?: "none"}")
                     continue
                 }
                 parsed++
@@ -150,19 +150,22 @@ class EmailReceiptWorker @AssistedInject constructor(
             }
             for (msg in fetch.messages) {
                 scanned++
-                val receipt = ReceiptParsers.tryParse(
-                    html = msg.htmlOrTextBody,
-                    meta = ReceiptParsers.Meta(
-                        messageKey = msg.stableId,
-                        gmailMessageId = msg.stableId,
-                        fromHeader = msg.from,
-                        subject = msg.subject,
-                        emailDateHeader = msg.dateHeader,
-                    ),
+                val meta = ReceiptParsers.Meta(
+                    messageKey = msg.stableId,
+                    gmailMessageId = msg.stableId,
+                    fromHeader = msg.from,
+                    subject = msg.subject,
+                    emailDateHeader = msg.dateHeader,
                 )
+                val typeKey = ReceiptParsers.detectType(msg.htmlOrTextBody, meta)
+                val receipt = ReceiptParsers.tryParse(html = msg.htmlOrTextBody, meta = meta)
                 if (receipt == null) {
                     skippedParse++
-                    Log.i(TAG, "imap parse skip id=${msg.stableId} subject=${msg.subject.take(40)}")
+                    Log.i(
+                        TAG,
+                        "imap parse skip id=${msg.stableId} type=${typeKey ?: "none"} " +
+                            "subject=${msg.subject.take(40)}",
+                    )
                     continue
                 }
                 parsed++
