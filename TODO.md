@@ -63,3 +63,6 @@ Post-save location confirm UI on edit screens (silent worker fill uses confirmed
 Reports multi-select vehicle checkboxes + Sum/Average (not Each-only); deferred from efficiency Each-vehicle
 
 Trip miles packaging polish (export labels/annual packs); core open-only + implicit personal shipped
+
+
+Expense receipt field extraction helper (assistive OCR propose vendor/amount/line items; HITL confirm; offline): research cache + open decisions — dev-ai-interaction/research/expense-receipt-field-extraction-deep-research-20260801.md (also see RECEIPT_PARSING_RESEARCH.md; existing backlog bullet "Expense receipt parsing")
