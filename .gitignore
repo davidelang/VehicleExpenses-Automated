@@ -113,3 +113,7 @@ gha-creds-*.json
 # Permission config (real values, gitignored)
 project.config
 
+
+# Track Grok pack launcher library (not Android/native lib/)
+!.grok/lib/
+!.grok/lib/**
