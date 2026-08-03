@@ -1,13 +1,13 @@
 name: remotetable
 git_ssh: "git@github.com:davidelang/remotetable.git"
 git_https: "https://github.com/davidelang/remotetable.git"
-git_sha: "4fd9013a215d9825bf262fabc32e389e3a79ea9d"
-git_describe: "4fd9013"
+git_sha: "70d57bbab811cbbc4851c5aa3fa59c026ff00759"
+git_describe: "70d57bb"
 artifacts:
   - path: artifact/remotetable.aar
     sha256: "fdeae58ae919f895b145b95147976ad4e16b9c54b07d5e013d77dc1912156b1f"
     build: ./build
     from_src: android/remotetable/build/outputs/aar/remotetable-release.aar
-consumer_note: "M2 4fd9013: CLI + mock harness + live AAR backends (sheets/excel-graph/ethercalc)"
+consumer_note: "M2 70d57bb: CLI + harness + live AAR (product @ 4fd9013) + TODO note"
 track_branch: master
 build: ./build
