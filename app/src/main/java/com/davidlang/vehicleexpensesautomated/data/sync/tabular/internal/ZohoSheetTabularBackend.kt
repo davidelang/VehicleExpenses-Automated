@@ -1,5 +1,8 @@
 package com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal
 
+import com.davidelang.remotetable.Backends
+import com.davidelang.remotetable.RemoteTable
+import com.davidelang.remotetable.TabData
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.ZohoSheetAuth
@@ -7,12 +10,17 @@ import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularCapabilit
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareBackend
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularTestResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Zoho Sheet tabular I/O via **remotetable** AAR.
+ * OAuth refresh stays in-app ([ZohoSheetAuth]).
+ */
 @Singleton
 class ZohoSheetTabularBackend @Inject constructor(
-    private val client: ZohoSheetClient,
     private val zohoAuth: ZohoSheetAuth,
 ) : TabularShareBackend {
 
@@ -33,8 +41,7 @@ class ZohoSheetTabularBackend @Inject constructor(
     override fun parseTargetIdFromUrl(url: String): String? {
         val trimmed = url.trim()
         if (trimmed.isBlank()) return null
-        val openRegex = Regex("""/open/([a-zA-Z0-9]+)""")
-        openRegex.find(trimmed)?.groupValues?.get(1)?.let { return it }
+        Regex("""/open/([a-zA-Z0-9]+)""").find(trimmed)?.groupValues?.get(1)?.let { return it }
         return trimmed.takeIf { it.matches(Regex("""[a-zA-Z0-9]{8,}""")) }
     }
 
@@ -54,26 +61,32 @@ class ZohoSheetTabularBackend @Inject constructor(
         config.sheetForTab(tabName)
             ?: throw IllegalStateException("Worksheet not mapped for tab \"$tabName\"")
 
+    private fun table(config: ZohoSheetConfig): RemoteTable =
+        RemoteTable(
+            Backends.zohoSheet(
+                accessToken = config.accessToken,
+                workbookId = config.workbookId,
+                apiDomain = config.apiDomain,
+                sheets = config.sheets,
+            ),
+        )
+
+    private fun TabData.toGrid(): List<List<String>> =
+        if (headers.isEmpty() && rows.isEmpty()) emptyList()
+        else listOf(headers) + rows
+
     override suspend fun ensureHeaders(
         dest: SpreadsheetDestination,
         tabName: String,
         headers: List<String>,
         accountHint: String?,
     ) {
-        val config = resolvedConfig(dest)
-        val sheet = worksheetForTab(config, tabName)
-        client.ensureWorksheet(config, sheet)
-        val rows = client.readAllRows(config, sheet)
-        if (rows.isEmpty() || rows.first().isEmpty()) {
-            client.writeAllRows(config, sheet, listOf(headers))
-        } else {
-            val existing = rows.first().map { it.trim() }.filter { it.isNotEmpty() }
-            val merged = TabularSchema.mergeHeaderOrder(existing, headers)
-            if (merged != existing) {
-                // Append missing only; pad data rows so new columns stay empty (no misalign).
-                val dataRows = TabularSchema.padDataRowsToWidth(rows.drop(1), merged.size)
-                client.writeAllRows(config, sheet, listOf(merged) + dataRows)
-            }
+        withContext(Dispatchers.IO) {
+            val config = resolvedConfig(dest)
+            // Library uses sheet map; ensure tab key maps before call
+            val sheet = worksheetForTab(config, tabName)
+            val cfg = config.copy(sheets = config.sheets + (tabName to sheet))
+            table(cfg).ensureHeaders(tabName, headers)
         }
     }
 
@@ -81,9 +94,10 @@ class ZohoSheetTabularBackend @Inject constructor(
         dest: SpreadsheetDestination,
         tabName: String,
         accountHint: String?,
-    ): List<List<String>> {
+    ): List<List<String>> = withContext(Dispatchers.IO) {
         val config = resolvedConfig(dest)
-        return client.readAllRows(config, worksheetForTab(config, tabName))
+        val sheet = worksheetForTab(config, tabName)
+        table(config.copy(sheets = config.sheets + (tabName to sheet))).readRows(tabName).toGrid()
     }
 
     override suspend fun listTabTitles(dest: SpreadsheetDestination, accountHint: String?): List<String> {
@@ -101,16 +115,20 @@ class ZohoSheetTabularBackend @Inject constructor(
         oldTitle: String,
         newTitle: String,
         accountHint: String?,
-    ): Boolean {
+    ): Boolean = withContext(Dispatchers.IO) {
         val config = resolvedConfig(dest)
-        val oldSheet = config.sheetForTab(oldTitle) ?: oldTitle
-        val newSheet = config.sheetForTab(newTitle) ?: newTitle
-        return client.renameWorksheet(config, oldSheet, newSheet)
+        table(config).renameTab(
+            config.sheetForTab(oldTitle) ?: oldTitle,
+            config.sheetForTab(newTitle) ?: newTitle,
+        )
     }
 
     override suspend fun deleteTab(dest: SpreadsheetDestination, tabName: String, accountHint: String?) {
-        val config = resolvedConfig(dest)
-        client.deleteWorksheet(config, worksheetForTab(config, tabName))
+        withContext(Dispatchers.IO) {
+            val config = resolvedConfig(dest)
+            val sheet = worksheetForTab(config, tabName)
+            table(config.copy(sheets = config.sheets + (tabName to sheet))).deleteTab(tabName)
+        }
     }
 
     override suspend fun appendRows(
@@ -120,12 +138,14 @@ class ZohoSheetTabularBackend @Inject constructor(
         accountHint: String?,
     ) {
         if (rows.isEmpty()) return
-        val config = resolvedConfig(dest)
-        val sheet = worksheetForTab(config, tabName)
-        val existing = client.readAllRows(config, sheet)
-        val header = existing.firstOrNull().orEmpty()
-        val data = existing.drop(1) + rows
-        client.writeAllRows(config, sheet, if (header.isEmpty()) data else listOf(header) + data)
+        withContext(Dispatchers.IO) {
+            val config = resolvedConfig(dest)
+            val sheet = worksheetForTab(config, tabName)
+            val rt = table(config.copy(sheets = config.sheets + (tabName to sheet)))
+            val data = rt.readRows(tabName)
+            val headers = data.headers.ifEmpty { TabularSchema.VEHICLE_HEADERS }
+            rt.writeRows(tabName, headers, rows, mode = "append")
+        }
     }
 
     override suspend fun updateRows(
@@ -136,26 +156,24 @@ class ZohoSheetTabularBackend @Inject constructor(
         accountHint: String?,
     ) {
         if (rows.isEmpty()) return
-        val config = resolvedConfig(dest)
-        val sheet = worksheetForTab(config, tabName)
-        val existing = client.readAllRows(config, sheet).toMutableList()
-        if (existing.isEmpty()) {
-            client.writeAllRows(config, sheet, rows)
-            return
-        }
-        val header = existing.first()
-        val data = existing.drop(1).toMutableList()
-        val zeroBased = (startRow - 2).coerceAtLeast(0)
-        rows.forEachIndexed { i, row ->
-            val idx = zeroBased + i
-            if (idx < data.size) {
-                data[idx] = row
-            } else {
-                while (data.size < idx) data.add(emptyList())
-                data.add(row)
+        withContext(Dispatchers.IO) {
+            val config = resolvedConfig(dest)
+            val sheet = worksheetForTab(config, tabName)
+            val rt = table(config.copy(sheets = config.sheets + (tabName to sheet)))
+            val data = rt.readRows(tabName)
+            val headers = data.headers.ifEmpty { rows.firstOrNull()?.let { List(it.size) { i -> "C$i" } }.orEmpty() }
+            val body = data.rows.toMutableList()
+            val zeroBased = (startRow - 2).coerceAtLeast(0)
+            rows.forEachIndexed { i, row ->
+                val idx = zeroBased + i
+                if (idx < body.size) body[idx] = row
+                else {
+                    while (body.size < idx) body.add(emptyList())
+                    body.add(row)
+                }
             }
+            rt.writeRows(tabName, headers, body, mode = "replace")
         }
-        client.writeAllRows(config, sheet, listOf(header) + data)
     }
 
     override suspend fun clearTrailing(
@@ -164,14 +182,15 @@ class ZohoSheetTabularBackend @Inject constructor(
         startRow: Int,
         accountHint: String?,
     ) {
-        val config = resolvedConfig(dest)
-        val sheet = worksheetForTab(config, tabName)
-        val existing = client.readAllRows(config, sheet)
-        if (existing.isEmpty()) return
-        val header = existing.first()
-        val keepCount = (startRow - 1).coerceAtLeast(1)
-        val trimmed = existing.take(keepCount)
-        client.writeAllRows(config, sheet, trimmed.ifEmpty { listOf(header) })
+        withContext(Dispatchers.IO) {
+            val config = resolvedConfig(dest)
+            val sheet = worksheetForTab(config, tabName)
+            val rt = table(config.copy(sheets = config.sheets + (tabName to sheet)))
+            val data = rt.readRows(tabName)
+            if (data.headers.isEmpty() && data.rows.isEmpty()) return@withContext
+            val keep = (startRow - 2).coerceAtLeast(0)
+            rt.writeRows(tabName, data.headers, data.rows.take(keep), mode = "replace")
+        }
     }
 
     override suspend fun writeAllRows(
@@ -181,8 +200,12 @@ class ZohoSheetTabularBackend @Inject constructor(
         rows: List<List<String>>,
         accountHint: String?,
     ) {
-        val config = resolvedConfig(dest)
-        client.writeAllRows(config, worksheetForTab(config, tabName), listOf(headers) + rows)
+        withContext(Dispatchers.IO) {
+            val config = resolvedConfig(dest)
+            val sheet = worksheetForTab(config, tabName)
+            table(config.copy(sheets = config.sheets + (tabName to sheet)))
+                .writeRows(tabName, headers, rows, mode = "replace")
+        }
     }
 
     override suspend fun testConnection(dest: SpreadsheetDestination, accountHint: String?): TabularTestResult {
@@ -191,40 +214,20 @@ class ZohoSheetTabularBackend @Inject constructor(
         if (config.accessToken.isBlank()) {
             return TabularTestResult(false, "Sign in with Zoho or paste an access token")
         }
-        val sheetName = config.sheetForTab(TabularSchema.TAB_VEHICLES)
-            ?: config.sheets.values.firstOrNull()
-            ?: return TabularTestResult(false, "Map at least one worksheet (Vehicles recommended)")
-        return try {
-            val resolved = resolvedConfig(dest)
-            val probeSyncId = ".ve_probe_${System.currentTimeMillis()}"
-            val headers = TabularSchema.VEHICLE_HEADERS
-            val probeRow = headers.map { header ->
-                when (header) {
-                    RowDbTabularConfig.FIELD_SYNC_ID -> probeSyncId
-                    "Name" -> "VE probe"
-                    else -> ""
-                }
+        if (config.sheets.isEmpty()) {
+            return TabularTestResult(false, "Map at least one worksheet (Vehicles recommended)")
+        }
+        return withContext(Dispatchers.IO) {
+            try {
+                val resolved = resolvedConfig(dest)
+                val result = table(resolved).testConnection()
+                val ok = result["ok"] as? Boolean ?: false
+                val msg = result["message"]?.toString().orEmpty()
+                if (!ok) TabularTestResult(false, msg.ifBlank { "Connection test failed" })
+                else TabularTestResult(true, msg.ifBlank { "Connection test passed" })
+            } catch (e: Exception) {
+                TabularTestResult(false, e.message ?: "Connection test failed")
             }
-            client.ensureWorksheet(resolved, sheetName)
-            val before = client.readAllRows(resolved, sheetName)
-            val header = before.firstOrNull()?.takeIf { it.isNotEmpty() } ?: headers
-            val data = before.drop(1) + listOf(probeRow)
-            client.writeAllRows(resolved, sheetName, listOf(header) + data)
-            val after = client.readAllRows(resolved, sheetName)
-            val syncIndex = header.indexOf(RowDbTabularConfig.FIELD_SYNC_ID)
-            val found = after.drop(1).any { row ->
-                row.getOrElse(syncIndex) { "" } == probeSyncId
-            }
-            if (!found) {
-                return TabularTestResult(false, "Probe row not visible after write")
-            }
-            val cleaned = after.drop(1).filter { row ->
-                row.getOrElse(syncIndex) { "" } != probeSyncId
-            }
-            client.writeAllRows(resolved, sheetName, listOf(header) + cleaned)
-            TabularTestResult(true, "Connection test passed")
-        } catch (e: Exception) {
-            TabularTestResult(false, e.message ?: "Connection test failed")
         }
     }
 }

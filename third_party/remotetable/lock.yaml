@@ -1,13 +1,13 @@
 name: remotetable
 git_ssh: "git@github.com:davidelang/remotetable.git"
 git_https: "https://github.com/davidelang/remotetable.git"
-git_sha: "472eab9760be7ca14e3d1a5bc2ef7b4d50bd6762"
-git_describe: "472eab9"
+git_sha: "5eca9dd0d6517a19cea4be378714fe028b9b7629"
+git_describe: "5eca9dd"
 artifacts:
   - path: artifact/remotetable.aar
-    sha256: "2d7059d771d020ccda2f276c6c1974ab50073d72499841faaaa846dca4418587"
+    sha256: "751d70a125105576068d36ecad1b99f38fa8618bcf2f0ecf735384fcf8eb490a"
     build: ./build
     from_src: android/remotetable/build/outputs/aar/remotetable-release.aar
-consumer_note: "M3 472eab9: row-db backends + Go CLI + EtherCalc smoke"
+consumer_note: "M3 5eca9dd: Firebase+Zoho + deferred OnlyOffice/Collabora"
 track_branch: master
 build: ./build

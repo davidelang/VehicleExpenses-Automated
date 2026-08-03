@@ -4392,3 +4392,8 @@ x
 - EtherCalc one-shot: ~/git/ethercalc/start.sh (docker run). Google live CLI still needs human token.
 - Still open: Firebase, Zoho, OnlyOffice/Collabora, then extractmail full stack.
 
+
+## 2026-08-02 - M3 continue Firebase/Zoho + extractmail
+
+- Resume: port Firebase + Zoho into remotetable; OnlyOffice/Collabora stubs; then extractmail stack.
+
