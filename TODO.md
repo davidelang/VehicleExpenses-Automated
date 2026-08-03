@@ -67,3 +67,7 @@ Trip miles packaging polish (export labels/annual packs); core open-only + impli
 Vehicle preferred fuel grade/product field (e.g. regular/premium/diesel) for future auto-assignment of loyalty email fills; assignment UX remains separate work
 
 extractmail: browser-based human-confirm extract helper (open file/email; avoid auto-picking non-visible fields)
+
+After third_party pin/fetch-deps/get-artifacts happy path (OpenCV first): make remotetable + extractmail well-behaved — build from fetch-deps ro src (out-of-tree build dirs under src), get-artifacts to artifact/; reproducible builds nice-to-have only (low effort). Scope: third_party process project + VE pin alignment.
+
+third_party get-artifacts pick=smart (future): try tiers to pick best artifact when from uses globs — best-to-worst: (1) release *x.y.z (numeric per-tier, y/z optional; 1.10>1.9); (2) RC *x.y.z-rcN (higher N better); (3) nightly *x.y.z-N-gHASH (git describe); plus common naming practices. Fallback mtime. pick=mtime/sort/sort-n remain explicit; smart = try-everything.

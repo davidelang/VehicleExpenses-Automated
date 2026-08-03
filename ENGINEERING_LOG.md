@@ -4426,3 +4426,12 @@ x
 - Staged under third_party/opencv/artifact/arm64-v8a/. java4 wrapper blocked (android_sdk cmake path).
 - VE email thin + extractmail v3 already green (start-83).
 
+
+## 2026-08-03 - third_party pin docs + get-artifacts + OpenCV happy path
+
+- Docs: third_party/README.md, docs/reference/THIRD_PARTY_PIN_BUILDS.md; layout handoff thinned.
+- get-artifacts + fetch-deps build collect; example pin with glob/pick.
+- OpenCV pin 71d3237: fetch-deps ro (src worktree) + patch skip android_sdk; fat libopencv_java4.so arm64 (~8.5MB) + x86_64 (~11.6MB), LOAD Align 0x4000; artifact/jni/.
+- libpin name free on GitHub/PyPI/npm; stay in-tree for now. Copied tooling into extractmail/third_party.
+- TODO already covers remotetable/extractmail ro-build hygiene later.
+

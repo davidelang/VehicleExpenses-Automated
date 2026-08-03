@@ -233,6 +233,15 @@ materialize_at_sha() {
   [[ "$url_https" == "null" ]] && url_https=""
   [[ "$url_ssh" == "null" ]] && url_ssh=""
 
+  # Local toy pins (seed-src, no remote) — always re-seed for a clean base before patches
+  if [[ -x "$ROOT/$name/seed-src" && -z "$url_https" && -z "$url_ssh" ]]; then
+    echo "    seed-src (no remote)"
+    ensure_writable_tree "$src"
+    rm -rf "$src"
+    ( cd "$ROOT/$name" && ./seed-src ) || return 1
+    return 0
+  fi
+
   ensure_writable_tree "$src"
 
   if [[ -d "$src/.git" || -f "$src/.git" ]]; then
@@ -295,6 +304,13 @@ materialize_at_sha() {
       git -C "$src" checkout --detach "$sha" 2>/dev/null && return 0
     fi
     rm -rf "$src"
+  fi
+  # Local-only toy pins (e.g. third_party/example) with no remote
+  if [[ -x "$ROOT/$name/seed-src" ]]; then
+    echo "    seed-src (no remote)"
+    rm -rf "$src"
+    ( cd "$ROOT/$name" && ./seed-src ) || return 1
+    return 0
   fi
   echo "    FAIL: materialize $name" >&2
   return 1
@@ -367,18 +383,29 @@ cmd_ro() {
   [[ -r "$lock" ]] || { echo "FAIL $name: cannot read lock" >&2; return 1; }
   echo "==> $name  mode=ro  GIT_HOME=$GIT_HOME"
   if ! resolve_pin_sha "$name"; then
-    echo "    FAIL: no git_sha in lock and no local host" >&2
-    return 1
+    if [[ -x "$ROOT/$name/seed-src" ]]; then
+      RESOLVED_SHA="seed"
+    else
+      echo "    FAIL: no git_sha in lock and no local host" >&2
+      return 1
+    fi
   fi
   sha="$RESOLVED_SHA"
   echo "    pin=$sha"
   if ! materialize_at_sha "$name" "$sha"; then return 1; fi
   ensure_writable_tree "$src"
   if ! apply_patches "$name" "$src" "$lock"; then return 1; fi
-  make_readonly_tree "$src"
-  write_status "$name" "ro" "" "$sha" "readonly: true"
+  local need_rw
+  need_rw="$(yaml_get "$lock" requires_writable_src 2>/dev/null || echo false)"
+  if [[ "$need_rw" == "true" || "$need_rw" == "yes" || "$need_rw" == "1" ]]; then
+    write_status "$name" "ro" "" "$sha" "readonly: false  # requires_writable_src"
+    echo "    WRITABLE SRC (requires_writable_src)"
+  else
+    make_readonly_tree "$src"
+    write_status "$name" "ro" "" "$sha" "readonly: true"
+    echo "    READ-ONLY PIN: build scripts may chmod only build/bin dirs under src"
+  fi
   offer_mainish_retarget "$name" "$sha"
-  echo "    READ-ONLY PIN: do not commit in $src — use 'fetch-deps rw' to work, or develop under $GIT_HOME/$name"
   echo "    OK $name @ $(git -C "$src" rev-parse --short HEAD 2>/dev/null)"
 }
 
@@ -494,7 +521,9 @@ cmd_refresh() {
 }
 
 cmd_build() {
-  local name="$1" dir="$ROOT/$name" lock src from path
+  local name="$1"
+  local dir="$ROOT/$name"
+  local lock src
   lock="$(lock_path "$name")"
   src="$(src_path "$name")"
   echo "==> $name  build"
@@ -502,46 +531,45 @@ cmd_build() {
     echo "    FAIL: no src — run fetch-deps first" >&2
     return 1
   fi
-  ensure_writable_tree "$src"
-  if [[ -x "$dir/build" ]]; then
-    ( cd "$dir" && ./build ) || { echo "    FAIL build" >&2; return 1; }
-  else
-    echo "    no ./build — skip exec"
+  # Prefer RO sources: only unlock whole tree if lock requires it.
+  local need_rw
+  need_rw="$(yaml_get "$lock" requires_writable_src 2>/dev/null || echo false)"
+  if [[ "$need_rw" == "true" || "$need_rw" == "yes" || "$need_rw" == "1" ]]; then
+    ensure_writable_tree "$src"
   fi
-  # copy artifacts from_src if listed (simple grep)
-  mkdir -p "$dir/artifact"
-  local line rel dest
-  while IFS= read -r line; do
-    if [[ "$line" =~ from_src:[[:space:]]*(.*) ]]; then
-      rel="${BASH_REMATCH[1]}"
-      rel="${rel//\"/}"
-      rel="${rel//\'/}"
+  # Run build entries from lock (build: list) or default ./build
+  local ran=0
+  if grep -q '^build:' "$lock" 2>/dev/null; then
+    local bline bcmd
+    while IFS= read -r bline; do
+      [[ "$bline" =~ ^[[:space:]]*-[[:space:]]*(.*) ]] || continue
+      bcmd="${BASH_REMATCH[1]}"
+      bcmd="${bcmd//\"/}"
+      bcmd="${bcmd//\'/}"
+      [[ -z "$bcmd" ]] && continue
+      echo "    run $bcmd"
+      ( cd "$dir" && eval "$bcmd" ) || { echo "    FAIL build: $bcmd" >&2; return 1; }
+      ran=1
+    done < <(awk '/^build:/{f=1;next} f&&/^[^[:space:]-]/{exit} f&&/^-/{print}' "$lock")
+  fi
+  if [[ "$ran" -eq 0 ]]; then
+    if [[ -x "$dir/build" ]]; then
+      ( cd "$dir" && ./build ) || { echo "    FAIL build" >&2; return 1; }
+    else
+      echo "    no ./build — skip exec"
     fi
-    if [[ "$line" =~ ^[[:space:]]*path:[[:space:]]*(.*) ]]; then
-      dest="${BASH_REMATCH[1]}"
-      dest="${dest//\"/}"
-      dest="${dest//\'/}"
-      if [[ -n "${rel:-}" && -n "$dest" ]]; then
-        if [[ -f "$src/$rel" ]]; then
-          mkdir -p "$(dirname "$dir/$dest")"
-          cp -a "$src/$rel" "$dir/$dest"
-          echo "    copied $rel → $dest"
-        elif [[ -f "$dir/$rel" ]]; then
-          mkdir -p "$(dirname "$dir/$dest")"
-          cp -a "$dir/$rel" "$dir/$dest"
-          echo "    copied $rel → $dest"
-        else
-          echo "    WARN: from_src missing: $rel" >&2
-        fi
-        rel=""
-      fi
-    fi
-  done < "$lock"
-  # re-apply ro if status says ro
+  fi
+  # Collect stable artifacts (normative)
+  if [[ -x "$ROOT/get-artifacts" ]]; then
+    "$ROOT/get-artifacts" "$name" || { echo "    FAIL get-artifacts" >&2; return 1; }
+  fi
+  # re-apply ro if status says ro (build dirs under src may stay rw — best-effort)
   local mode
   mode="$(yaml_get "$(status_path "$name")" mode 2>/dev/null || echo ro)"
-  if [[ "$mode" == "ro" ]]; then
+  if [[ "$mode" == "ro" && "$need_rw" != "true" ]]; then
     make_readonly_tree "$src"
+    # allow build/bin to remain writable for iterate
+    chmod -R u+w "$src/build" "$src/bin" 2>/dev/null || true
   fi
   echo "    OK build $name"
 }

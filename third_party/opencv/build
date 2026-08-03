@@ -1,22 +1,7 @@
 #!/usr/bin/env bash
-# Delegate to host OpenCV ve-build 16k script.
+# OpenCV pin build — sources in ./src (materialized by fetch-deps).
+# Writes under src/build/<abi> (CMake binary dir) and src/bin/<abi>/libopencv_java4.so
+# get-artifacts copies to artifact/jni/<abi>/
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-GIT_HOME=${GIT_HOME:-$HOME/git}
-SCRIPT="${OPENCV_BUILD_SCRIPT:-$GIT_HOME/opencv/ve-build/build-android-16k.sh}"
-if [[ ! -x "$SCRIPT" && -f "$SCRIPT" ]]; then
-  chmod +x "$SCRIPT"
-fi
-if [[ ! -f "$SCRIPT" ]]; then
-  echo "ERROR: missing $SCRIPT — clone OpenCV to ~/git/opencv and ensure ve-build exists" >&2
-  exit 1
-fi
-"$SCRIPT"
-# Stage any outputs into artifact/
-OUT="$GIT_HOME/opencv/ve-build/out"
-ART="$HERE/artifact"
-mkdir -p "$ART"
-if [[ -d "$OUT" ]]; then
-  cp -a "$OUT/." "$ART/" 2>/dev/null || true
-  echo "Staged outputs into $ART"
-fi
+exec bash "$HERE/scripts/build-android-16k.sh"

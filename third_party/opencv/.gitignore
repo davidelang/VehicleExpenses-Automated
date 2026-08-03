@@ -1,0 +1,4 @@
+src/
+.build/
+.tools/
+artifact/BUILD_INFO.txt

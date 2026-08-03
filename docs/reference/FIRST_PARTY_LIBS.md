@@ -1,8 +1,11 @@
 # First-party libraries and `third_party/` (VehicleExpenses)
 
-**Status:** Authoritative policy (2026-08-02).  
-**Audience:** Humans, orchestrator, agent-4 (`email-connection`), library multi-agent hosts.  
+**Status:** Authoritative policy (2026-08-03).  
+**Audience:** developers working on libraries this project maintains (remotetable, extractmail) and multi-worktree hosts.  
+**Pin/build/audit contract (all third_party libs, including pure upstream):** start with **`third_party/README.md`** and **`docs/reference/THIRD_PARTY_PIN_BUILDS.md`**.  
 **Supersedes:** Sandbox-only notes under `dev-ai-interaction/research/first-party-libs-*` and staging `subprojects/DECISIONS.md` process sections (product milestones in those dirs may still apply until moved into the library repos).
+
+> **Layout is not ownership.** remotetable, extractmail, opencv, rclone, and paddle all use the same `third_party/<name>/` pin shape. “First-party” here means we also host multi-agent development of those repos — not different pin rules.
 
 ---
 
