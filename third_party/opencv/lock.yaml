@@ -1,0 +1,9 @@
+name: opencv
+git_ssh: "git@github.com:opencv/opencv.git"
+git_https: "https://github.com/opencv/opencv.git"
+git_sha: "TBD"
+git_describe: "4.10.0-pending-16k"
+artifacts: []
+consumer_note: "Planned 16KB page rebuild; host ~/git/opencv@4.10.0 + ve-build notes. VE still uses Maven opencv:4.10.0 + jniLibs until pin lands."
+track_branch: 4.10.0
+build: ./build

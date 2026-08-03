@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "opencv: 16KB Android rebuild not automated yet — see SOURCE.md and ~/git/opencv/ve-build/README.md"
+exit 1

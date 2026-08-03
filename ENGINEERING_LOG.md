@@ -4397,3 +4397,12 @@ x
 
 - Resume: port Firebase + Zoho into remotetable; OnlyOffice/Collabora stubs; then extractmail stack.
 
+
+## 2026-08-02 - M3 progress batch (remotetable+extractmail+rclone host)
+
+- remotetable @ 5eca9dd: Firebase+Zoho backends; OnlyOffice/Collabora DeferredBackend; VE cutover; dead RowDb stack removed; build green.
+- extractmail @ 0806a42: xpath/css configs, EXTERNAL.md, IMAP fetch_mail.py, Go CLI; pin + AAR.
+- rclone: ~/git/rclone email-connection + ve-build recipes; third_party lock + photo AAR artifact; Docker build script.
+- opencv: ~/git/opencv 4.10.0 clone + ve-build notes; third_party bootstrap lock (TBD pin).
+- Still open: full extractmail Apps Script parity in lib, VE live Gmail worker thin, OpenCV 16k rebuild, paddle third_party Docker wire-up, CsvZip, real OnlyOffice/Collabora.
+
