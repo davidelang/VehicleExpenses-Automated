@@ -91,7 +91,8 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+    // Local jars only (PaddlePredictor, opencv-java). AARs come from third_party pins.
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.browser:browser:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
@@ -159,8 +160,6 @@ dependencies {
     // override / bloat the pin .so.
     // ML Kit Text Recognition (High-performance Tensor-optimized OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
-    // Native Paddle-Lite Java wrapper + other local jars (not AARs — rclone is pin path above)
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
 }
 
 // No more PaddleOCR validation — model has been removed
