@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Build recipe for this third_party pin. fetch-deps --build execs this with cwd here.
+# Placeholder: full paddle Android Docker rebuild is multi-hour; see SOURCE.md + docs/specs/PADDLE_BUILD.md
 set -euo pipefail
-echo "$(basename "$(pwd)"): build stub — replace with real recipe (AAR/JAR/native)."
-echo "See SOURCE.md and docs/reference/FIRST_PARTY_LIBS.md"
-exit 0
+SANDBOX="${PADDLE_BUILD_DIR:-/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/paddle-build}"
+echo "paddle build not fully automated in third_party yet."
+echo "Use sandbox recipes: $SANDBOX"
+echo "Docs: docs/specs/PADDLE_BUILD.md"
+ls -la "$SANDBOX" | head -20
+exit 1

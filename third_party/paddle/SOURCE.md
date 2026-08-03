@@ -1,25 +1,22 @@
 # paddle — third_party pin (VehicleExpenses)
 
-## What this is
+## Policy
+`docs/reference/FIRST_PARTY_LIBS.md` (Docker **build instructions** in meta; **no** image blobs in git).
 
-Consumer-side pin directory for **paddle** under VehicleExpenses `third_party/`.
+## Authoritative build docs (tracked app docs)
+- `docs/specs/PADDLE_BUILD.md`
+- `docs/specs/BUILD_ENVIRONMENT.md`
+- `docs/specs/HOST_PADDLE_USE.md`
+- `docs/specs/PADDLE_PR_DESCRIPTIONS.md`
 
-- **Policy:** `docs/reference/FIRST_PARTY_LIBS.md`
-- **Agent handoff:** `docs/reference/THIRD_PARTY_LAYOUT_FOR_AGENTS.md`
-- **Lock:** `lock.yaml` (SSH + HTTPS URLs, sha, describe, artifacts)
-- **Build:** executable `build` (and/or `build-*`); run via `../fetch-deps --build paddle`
-- **Artifact:** stable path under `artifact/` (version only in lock)
-- **Source:** prefer **git submodule** at `src/` matching `git_sha`
+## Sandbox recipes (until fully migrated)
+`/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/paddle-build/`
+- `Dockerfile`, `Dockerfile.int8`, `apply_int8_patches.sh`, slim arm64/x86_64 scripts
+- Significant INT8/u8 patches + `patchelf` soname fix for JNI
 
-## Audit (third party)
+## Host setup (planned)
+- `~/git/paddle` — patched fork checkout (URL TBD in lock when published)
+- VE pin: this directory; artifacts land as jniLibs / predictor jar when build script is wired
 
-```bash
-./third_party/fetch-deps --readonly paddle
-# inspect lock.yaml git_sha + src/ tree + artifact/ + this file
-```
-
-Without reproducible builds, `artifact` sha256 (if present) detects change/tamper, not bit-identical rebuild.
-
-## Bootstrap status
-
-Sandbox paddle-build remains until post-merge cleanup. lock URLs TBD for internal fork.
+## Current ship path
+App still uses checked-in `app/src/main/jniLibs/**` + `app/libs/PaddlePredictor.jar` + prod models under assets.
