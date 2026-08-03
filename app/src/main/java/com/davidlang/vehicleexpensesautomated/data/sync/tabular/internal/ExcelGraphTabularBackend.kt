@@ -1,19 +1,26 @@
 package com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal
 
+import com.davidelang.remotetable.Backends
+import com.davidelang.remotetable.RemoteTable
+import com.davidelang.remotetable.TabData
 import com.davidlang.vehicleexpensesautomated.data.sync.MicrosoftOneDriveAuth
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularCapabilities
-import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareBackend
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularTestResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Excel Online (excel-graph) via **remotetable** AAR.
+ * MSAL token still from [MicrosoftOneDriveAuth].
+ */
 @Singleton
 class ExcelGraphTabularBackend @Inject constructor(
     private val msAuth: MicrosoftOneDriveAuth,
-    private val graphClient: GraphExcelClient,
 ) : TabularShareBackend {
 
     override val provider: SpreadsheetProvider = SpreadsheetProvider.EXCEL_GRAPH
@@ -34,7 +41,6 @@ class ExcelGraphTabularBackend @Inject constructor(
     }
 
     override fun parseTargetIdFromUrl(url: String): String? {
-        // OneDrive/SharePoint item URLs vary; user binds via targetId field.
         val regex = Regex("""items/([^/?]+)""")
         return regex.find(url.trim())?.groupValues?.get(1)
     }
@@ -49,7 +55,15 @@ class ExcelGraphTabularBackend @Inject constructor(
         return auth.accessToken
     }
 
-    private fun workbookId(dest: SpreadsheetDestination): String = resolveTargetId(dest)
+    private suspend fun table(dest: SpreadsheetDestination, accountHint: String?): RemoteTable =
+        withContext(Dispatchers.IO) {
+            val token = accessToken(accountHint)
+            RemoteTable(Backends.excelGraph(token, resolveTargetId(dest)))
+        }
+
+    private fun TabData.toGrid(): List<List<String>> =
+        if (headers.isEmpty() && rows.isEmpty()) emptyList()
+        else listOf(headers) + rows
 
     override suspend fun ensureHeaders(
         dest: SpreadsheetDestination,
@@ -57,19 +71,8 @@ class ExcelGraphTabularBackend @Inject constructor(
         headers: List<String>,
         accountHint: String?,
     ) {
-        val token = accessToken(accountHint)
-        val wb = workbookId(dest)
-        graphClient.ensureWorksheet(token, wb, tabName)
-        val rows = graphClient.readRange(token, wb, tabName)
-        val firstRow = rows.firstOrNull()
-        if (firstRow.isNullOrEmpty()) {
-            graphClient.writeRange(token, wb, tabName, "A1", listOf(headers))
-        } else {
-            val existing = firstRow.map { it.trim() }.filter { it.isNotEmpty() }
-            val merged = TabularSchema.mergeHeaderOrder(existing, headers)
-            if (merged != existing) {
-                graphClient.writeRange(token, wb, tabName, "A1", listOf(merged))
-            }
+        withContext(Dispatchers.IO) {
+            table(dest, accountHint).ensureHeaders(tabName, headers)
         }
     }
 
@@ -77,29 +80,28 @@ class ExcelGraphTabularBackend @Inject constructor(
         dest: SpreadsheetDestination,
         tabName: String,
         accountHint: String?,
-    ): List<List<String>> {
-        val token = accessToken(accountHint)
-        return graphClient.readRange(token, workbookId(dest), tabName)
+    ): List<List<String>> = withContext(Dispatchers.IO) {
+        table(dest, accountHint).readRows(tabName).toGrid()
     }
 
-    override suspend fun listTabTitles(dest: SpreadsheetDestination, accountHint: String?): List<String> {
-        val token = accessToken(accountHint)
-        return graphClient.listWorksheets(token, workbookId(dest))
-    }
+    override suspend fun listTabTitles(dest: SpreadsheetDestination, accountHint: String?): List<String> =
+        withContext(Dispatchers.IO) {
+            table(dest, accountHint).listTabs()
+        }
 
     override suspend fun renameTab(
         dest: SpreadsheetDestination,
         oldTitle: String,
         newTitle: String,
         accountHint: String?,
-    ): Boolean {
-        val token = accessToken(accountHint)
-        return graphClient.renameWorksheet(token, workbookId(dest), oldTitle, newTitle)
+    ): Boolean = withContext(Dispatchers.IO) {
+        table(dest, accountHint).renameTab(oldTitle, newTitle)
     }
 
     override suspend fun deleteTab(dest: SpreadsheetDestination, tabName: String, accountHint: String?) {
-        val token = accessToken(accountHint)
-        graphClient.deleteWorksheet(token, workbookId(dest), tabName)
+        withContext(Dispatchers.IO) {
+            table(dest, accountHint).deleteTab(tabName)
+        }
     }
 
     override suspend fun appendRows(
@@ -109,11 +111,14 @@ class ExcelGraphTabularBackend @Inject constructor(
         accountHint: String?,
     ) {
         if (rows.isEmpty()) return
-        val token = accessToken(accountHint)
-        val wb = workbookId(dest)
-        val existing = graphClient.readRange(token, wb, tabName)
-        val startRow = (existing.size + 1).coerceAtLeast(2)
-        graphClient.writeRange(token, wb, tabName, "A$startRow", rows)
+        withContext(Dispatchers.IO) {
+            val rt = table(dest, accountHint)
+            val existing = rt.readRows(tabName)
+            val headers = existing.headers.ifEmpty {
+                List(rows.maxOfOrNull { it.size } ?: 0) { "Col$it" }
+            }
+            rt.writeRows(tabName, headers, rows, mode = "append")
+        }
     }
 
     override suspend fun updateRows(
@@ -124,8 +129,22 @@ class ExcelGraphTabularBackend @Inject constructor(
         accountHint: String?,
     ) {
         if (rows.isEmpty()) return
-        val token = accessToken(accountHint)
-        graphClient.writeRange(token, workbookId(dest), tabName, "A$startRow", rows)
+        withContext(Dispatchers.IO) {
+            val rt = table(dest, accountHint)
+            val existing = rt.readRows(tabName)
+            val headers = existing.headers
+            val data = existing.rows.toMutableList()
+            val zeroBased = (startRow - 2).coerceAtLeast(0)
+            rows.forEachIndexed { i, row ->
+                val idx = zeroBased + i
+                if (idx < data.size) data[idx] = row
+                else {
+                    while (data.size < idx) data.add(emptyList())
+                    data.add(row)
+                }
+            }
+            rt.writeRows(tabName, headers.ifEmpty { rows.first() }, data, mode = "replace")
+        }
     }
 
     override suspend fun clearTrailing(
@@ -134,8 +153,9 @@ class ExcelGraphTabularBackend @Inject constructor(
         startRow: Int,
         accountHint: String?,
     ) {
-        val token = accessToken(accountHint)
-        graphClient.clearFromRow(token, workbookId(dest), tabName, startRow)
+        withContext(Dispatchers.IO) {
+            table(dest, accountHint).clearFromRow(tabName, startRow)
+        }
     }
 
     override suspend fun writeAllRows(
@@ -145,20 +165,26 @@ class ExcelGraphTabularBackend @Inject constructor(
         rows: List<List<String>>,
         accountHint: String?,
     ) {
-        val token = accessToken(accountHint)
-        val allRows = listOf(headers) + rows
-        graphClient.writeRange(token, workbookId(dest), tabName, "A1", allRows)
+        withContext(Dispatchers.IO) {
+            table(dest, accountHint).writeRows(tabName, headers, rows, mode = "replace")
+        }
     }
 
     override suspend fun testConnection(dest: SpreadsheetDestination, accountHint: String?): TabularTestResult {
-        val wb = workbookId(dest)
+        val wb = resolveTargetId(dest)
         if (wb.isBlank()) {
             return TabularTestResult(false, "Workbook not configured")
         }
         return try {
-            val token = accessToken(accountHint)
-            val ok = graphClient.testWorkbook(token, wb)
-            TabularTestResult(ok, if (ok) "Connection test passed" else "Connection test failed")
+            val conn = withContext(Dispatchers.IO) {
+                table(dest, accountHint).testConnection()
+            }
+            val ok = conn["ok"] == true
+            TabularTestResult(
+                ok,
+                conn["message"]?.toString()
+                    ?: if (ok) "Connection test passed" else "Connection test failed",
+            )
         } catch (e: Exception) {
             TabularTestResult(false, e.message ?: "Excel connection test failed")
         }

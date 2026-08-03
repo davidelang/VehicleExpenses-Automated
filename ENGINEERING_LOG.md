@@ -4356,3 +4356,11 @@ x
 - SpreadsheetProvider.EXCEL → EXCEL_GRAPH("excel-graph"); legacy wire "excel" / route "new:excel"
 - extractmail pin build → scripts/build-aar.sh; library commits android scaffold + build-aar
 - Full tabular stack cutover to remotetable AAR deferred (in-tree backends remain for Sheets/Excel/EtherCalc)
+
+## 2026-08-02 - first-party libs M2: tests CLI VE cutover
+
+- remotetable @ 4fd9013: CLI, harness, live AAR backends; pin AAR sha fdeae58a…
+- extractmail @ 5547073: YAML type registry, scripts/extractmail, external 0/1/2; AAR v2
+- VE cutover: GoogleSheets/ExcelGraph/EtherCalc TabularShareBackend → remotetable AAR
+- Auth remains in-app (GoogleAuthUtil / MSAL); tokens passed into Backends.*
+- Phase 6: offline email still in-app parsers; probe uses extractmail VERSION/types (Gmail/IMAP workers unchanged)
