@@ -3571,3 +3571,11 @@ x
 - Plan: i18n-residual-english-nits-cleanup-20260802-1856-plan.md (user implement = approve)
 - Scope: Lab period chips, share/PDF chrome, QF odo msg, Rclone setup, Settings matchers
 
+
+## 2026-08-02 - i18n residual English nits cleanup — CODE LANDED
+
+- Lab period chips + share/PDF Period/Generated prefixes localized; PDF meta uses resource prefixes
+- QF odo review message; Rclone setup help; trip miles info string
+- Settings volume/currency match by exact resource labels only
+- New keys + all packs including values-in; build green
+
