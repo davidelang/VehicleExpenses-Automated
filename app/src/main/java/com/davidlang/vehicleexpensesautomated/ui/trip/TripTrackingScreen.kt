@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.trip
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.app.TimePickerDialog
 import android.util.Log
 import android.widget.Toast
@@ -58,6 +60,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -140,12 +143,12 @@ fun TripTrackingScreen(
     var timeIsNow by rememberSaveable { mutableStateOf(true) }
 
     RegisterPageHelp(
-        title = "Start trip",
+        title = stringResource(R.string.nav_start_trip),
         "Open-only: each Start (or Close→Personal) writes a fuel row with Trip Type. " +
-            "Next open on this vehicle ends the prior segment.",
+            stringResource(R.string.trip_next_open_on_this_vehicle_ends_the_prior_segment),
         "White circle — capture odometer with the camera. Disk — start trip with selected type. " +
-            "Stop — Personal now at this location (time is now + confirm location if GPS held).",
-        "Time is now (default) stamps the save with wall-clock time; uncheck to pick a date/time.",
+            stringResource(R.string.trip_stop_personal_now_at_this_location_time_is_now_c),
+        stringResource(R.string.trip_time_is_now_default_stamps_the_save_with_wall_cl),
     )
     var capturePending by remember { mutableStateOf(false) }
     var isProcessingOcr by remember { mutableStateOf(false) }
@@ -267,10 +270,10 @@ fun TripTrackingScreen(
                             false,
                         ).show()
                     },
-                ) { Text("OK") }
+                ) { Text(stringResource(R.string.settings_ok)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showDatePicker = false }) { Text(stringResource(R.string.settings_cancel)) }
             },
         ) {
             DatePicker(state = state)
@@ -286,7 +289,7 @@ fun TripTrackingScreen(
                     try {
                         vehicleViewModel.updateVehicle(updated)
                         showManageTypes = false
-                        Toast.makeText(context, "Trip types saved", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.trip_trip_types_saved), Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         Toast.makeText(
                             context,
@@ -302,17 +305,17 @@ fun TripTrackingScreen(
     fun saveTripStart(type: String, toastLabel: String) {
         val vehicleId = selectedVehicleId
         if (vehicleId == null) {
-            Toast.makeText(context, "Select a vehicle", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.expense_select_a_vehicle), Toast.LENGTH_SHORT).show()
             return
         }
         val odo = odometer.trim().toIntOrNull()
         if (odo == null || odo <= 0) {
-            Toast.makeText(context, "Odometer is required", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.trip_odometer_is_required), Toast.LENGTH_SHORT).show()
             return
         }
         val tripType = type.trim()
         if (tripType.isEmpty()) {
-            Toast.makeText(context, "Trip type is required", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.trip_trip_type_is_required), Toast.LENGTH_SHORT).show()
             return
         }
         val base = FuelLocationJson.fromCoords(
@@ -348,7 +351,7 @@ fun TripTrackingScreen(
         if (saveBlob.hasCoordsWithoutPlace()) {
             LocationLookupScheduler.enqueueSoon(context)
         }
-        statusLine = "$toastLabel: $tripType @ ${UnitFormat.odometerReadingLabel(odo)}"
+        statusLine = "$toastLabel: $tripType @ ${UnitFormat.odometerReadingLabel(odo, context)}"
         Toast.makeText(context, statusLine, Toast.LENGTH_SHORT).show()
         eventTimestamp = System.currentTimeMillis()
         timeIsNow = true
@@ -385,7 +388,7 @@ fun TripTrackingScreen(
                     if (!isDirect) {
                         imageProxy.close()
                         isProcessingOcr = false
-                        Toast.makeText(context, "Error: Image buffer is not direct", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, context.getString(R.string.fuel_error_image_buffer_is_not_direct), Toast.LENGTH_LONG).show()
                         return@CameraPreview
                     }
                     val bufferSet = NativePaddleEngine.bufferSetA
@@ -505,7 +508,7 @@ fun TripTrackingScreen(
                     )
                 },
                 enabled = canStart && !isProcessingOcr,
-                contentDescription = "Start trip",
+                contentDescription = stringResource(R.string.nav_start_trip),
             )
             RoundCaptureButton(
                 viewState = if (isProcessingOcr) {
@@ -547,7 +550,7 @@ fun TripTrackingScreen(
             ) {
                 Icon(
                     Icons.Filled.Stop,
-                    contentDescription = "Personal now at this location",
+                    contentDescription = stringResource(R.string.trip_personal_now_at_this_location),
                     tint = if (canPersonalNow && !isProcessingOcr) {
                         MaterialTheme.colorScheme.error
                     } else {
@@ -569,7 +572,7 @@ fun TripTrackingScreen(
                 value = selectedVehicle?.name ?: "Select vehicle",
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Vehicle") },
+                label = { Text(stringResource(R.string.fuel_vehicle)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = vehicleMenuExpanded) },
                 modifier = Modifier
                     .menuAnchor()
@@ -595,7 +598,7 @@ fun TripTrackingScreen(
             value = odometer,
             onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
             showCaretButtons = true,
-            label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel()})") },
+            label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel(context)})") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
@@ -630,7 +633,7 @@ fun TripTrackingScreen(
                         checked = confirmLocation,
                         onCheckedChange = { confirmLocation = it },
                     )
-                    Text("Confirm this location", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.trip_confirm_this_location), style = MaterialTheme.typography.bodySmall)
                 }
             }
             Row(
@@ -644,7 +647,7 @@ fun TripTrackingScreen(
                         if (checked) eventTimestamp = System.currentTimeMillis()
                     },
                 )
-                Text("Time is now", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.expense_time_is_now), style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -656,7 +659,7 @@ fun TripTrackingScreen(
                 value = selectedTripType.ifBlank { typeOptions.firstOrNull().orEmpty() },
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Trip type") },
+                label = { Text(stringResource(R.string.fuel_trip_type)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeMenuExpanded) },
                 modifier = Modifier
                     .menuAnchor()
@@ -674,7 +677,7 @@ fun TripTrackingScreen(
                 onManageClick = {
                     typeMenuExpanded = false
                     if (selectedVehicle == null) {
-                        Toast.makeText(context, "Select a vehicle first", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.expense_select_a_vehicle_first), Toast.LENGTH_SHORT).show()
                     } else {
                         showManageTypes = true
                     }
@@ -693,15 +696,14 @@ fun TripTrackingScreen(
             text = when {
                 openTrip == null -> "No open trip on this vehicle (implicit personal)."
                 else ->
-                    "Open: ${openTrip.tripType} since ${UnitFormat.odometerReadingLabel(openTrip.odometer)}"
+                    "Open: ${openTrip.tripType} since ${UnitFormat.odometerReadingLabel(openTrip.odometer, context)}"
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.primary,
         )
 
         if (canClose) {
-            Text(
-                "Stop icon = Personal now (also closes open non-Personal). Disk = Start with selected type.",
+            Text(stringResource(R.string.trip_stop_icon_personal_now_also_closes_open_non_pers),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -740,8 +742,7 @@ internal fun ManageTripTypesDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    "First item is the Start-trip default. Renames do not rewrite past fuel Trip Type strings.",
+                Text(stringResource(R.string.trip_first_item_is_the_start_trip_default_renames_do_),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 types.forEachIndexed { index, name ->
@@ -761,7 +762,7 @@ internal fun ManageTripTypesDialog(
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowUp,
-                                contentDescription = "Move up",
+                                contentDescription = stringResource(R.string.expense_move_up),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -772,7 +773,7 @@ internal fun ManageTripTypesDialog(
                         ) {
                             Icon(
                                 Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Move down",
+                                contentDescription = stringResource(R.string.expense_move_down),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -781,7 +782,7 @@ internal fun ManageTripTypesDialog(
                                 renameIndex = index
                                 renameText = name
                             },
-                        ) { Text("Rename") }
+                        ) { Text(stringResource(R.string.expense_rename)) }
                         IconButton(
                             onClick = {
                                 if (types.size <= 1) {
@@ -800,7 +801,7 @@ internal fun ManageTripTypesDialog(
                         ) {
                             Icon(
                                 Icons.Default.Delete,
-                                contentDescription = "Delete type",
+                                contentDescription = stringResource(R.string.trip_delete_type),
                                 modifier = Modifier.size(24.dp),
                             )
                         }
@@ -810,7 +811,7 @@ internal fun ManageTripTypesDialog(
                     CaretEnabledOutlinedTextField(
                         value = renameText,
                         onValueChange = { renameText = it },
-                        label = { Text("New name") },
+                        label = { Text(stringResource(R.string.expense_new_name)) },
                         singleLine = true,
                         showCaretButtons = false,
                         modifier = Modifier.fillMaxWidth(),
@@ -822,8 +823,8 @@ internal fun ManageTripTypesDialog(
                                 types = TripTypes.rename(types, i, renameText).toMutableList()
                                 renameIndex = null
                             },
-                        ) { Text("Apply rename") }
-                        TextButton(onClick = { renameIndex = null }) { Text("Cancel") }
+                        ) { Text(stringResource(R.string.expense_apply_rename)) }
+                        TextButton(onClick = { renameIndex = null }) { Text(stringResource(R.string.settings_cancel)) }
                     }
                 }
                 Row(
@@ -834,7 +835,7 @@ internal fun ManageTripTypesDialog(
                     CaretEnabledOutlinedTextField(
                         value = newName,
                         onValueChange = { newName = it },
-                        label = { Text("New Type") },
+                        label = { Text(stringResource(R.string.trip_new_type)) },
                         singleLine = true,
                         showCaretButtons = false,
                         modifier = Modifier.weight(1f),
@@ -845,7 +846,7 @@ internal fun ManageTripTypesDialog(
                             newName = ""
                         },
                         modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text("Add") }
+                    ) { Text(stringResource(R.string.expense_add)) }
                 }
             }
         },
@@ -855,10 +856,10 @@ internal fun ManageTripTypesDialog(
                     val json = TripTypes.format(types)
                     onSave(vehicle.copy(tripTypesJson = json))
                 },
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.fuel_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
         },
     )
 }

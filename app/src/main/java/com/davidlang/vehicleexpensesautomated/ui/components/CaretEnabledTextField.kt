@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -208,7 +212,7 @@ fun CaretEnabledOutlinedTextField(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                        contentDescription = "Move caret left",
+                        contentDescription = stringResource(R.string.ui_move_caret_left),
                         modifier = Modifier.size(22.dp),
                     )
                 }
@@ -218,7 +222,7 @@ fun CaretEnabledOutlinedTextField(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = "Move caret right",
+                        contentDescription = stringResource(R.string.ui_move_caret_right),
                         modifier = Modifier.size(22.dp),
                     )
                 }

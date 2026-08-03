@@ -234,6 +234,7 @@ fun renderMultiFamilyChartBitmap(
     widthPx: Int = 1100,
     heightPx: Int = 560,
     title: String = "",
+    emptyChartLabel: String = "",
 ): android.graphics.Bitmap {
     val active = families.mapNotNull { it.nonempty() }
     val bmp = android.graphics.Bitmap.createBitmap(widthPx, heightPx, android.graphics.Bitmap.Config.ARGB_8888)
@@ -245,7 +246,8 @@ fun renderMultiFamilyChartBitmap(
             color = 0xFF666666.toInt()
             textSize = 28f
         }
-        canvas.drawText("No chart data", 40f, heightPx / 2f, p)
+        // Callers should pass localized R.string.reports_no_chart_data; English only as last-resort default.
+        canvas.drawText(emptyChartLabel.ifBlank { "No chart data" }, 40f, heightPx / 2f, p)
         return bmp
     }
     val left = active.filter { it.side == LabAxisSide.Left }

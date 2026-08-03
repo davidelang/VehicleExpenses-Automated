@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -11,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
@@ -50,7 +53,7 @@ fun PhotoPicker(
                     onPhotoUrlChanged(savedUrl)
                 } else {
                     loadingPath = null
-                    Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.ui_failed_to_save_photo), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -68,7 +71,7 @@ fun PhotoPicker(
                     onPhotoUrlChanged(savedUrl)
                 } else {
                     loadingPath = null
-                    Toast.makeText(context, "Failed to save photo", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.ui_failed_to_save_photo), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -101,14 +104,14 @@ fun PhotoPicker(
                     photoUri = uri
                     cameraLauncher.launch(uri)
                 } else {
-                    Toast.makeText(context, "Failed to create photo storage location", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.ui_failed_to_create_photo_storage_location), Toast.LENGTH_SHORT).show()
                 }
             }, modifier = Modifier.weight(1f)) {
-                Text("📸 Take Photo")
+                Text(stringResource(R.string.ui_take_photo))
             }
 
             Button(onClick = { galleryLauncher.launch(arrayOf("image/jpeg", "image/png", "image/x-adobe-dng")) }, modifier = Modifier.weight(1f)) {
-                Text("🖼️ Gallery")
+                Text(stringResource(R.string.ui_gallery))
             }
         }
     }

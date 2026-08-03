@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.vehicle
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -28,6 +30,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -261,22 +264,22 @@ fun ManageVehiclesScreen(
     }
 
     RegisterPageHelp(
-        title = "Manage Vehicles",
+        title = stringResource(R.string.nav_manage_vehicles),
         "Set up each vehicle once: reference dash photo → Odo Crop → Run Discovery → name → Create/Save. " +
-            "Crops and landmarks improve odometer OCR on Quick Fill. Menu → Help for a short walkthrough.",
+            stringResource(R.string.vehicle_crops_and_landmarks_improve_odometer_ocr_on_quic),
     )
     Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
         var dropdownExpanded by remember { mutableStateOf(false) }
         ExposedDropdownMenuBox(expanded = dropdownExpanded, onExpandedChange = { dropdownExpanded = it }) {
             OutlinedTextField(
                 value = if (isNewVehicle) "Add New Vehicle" else (editingVehicle?.name ?: "Select vehicle"),
-                onValueChange = {}, label = { Text("Vehicle") },
+                onValueChange = {}, label = { Text(stringResource(R.string.fuel_vehicle)) },
                 modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
                 readOnly = true
             )
             ExposedDropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
                 vehicles.forEach { vehicle -> DropdownMenuItem(text = { Text(vehicle.name) }, onClick = { selectedVehicleId = vehicle.id; isNewVehicle = false; dropdownExpanded = false }) }
-                DropdownMenuItem(text = { Text("Add New Vehicle") }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; otherTextCropRect = null; dropdownExpanded = false })
+                DropdownMenuItem(text = { Text(stringResource(R.string.vehicle_add_new_vehicle)) }, onClick = { selectedVehicleId = null; editingVehicle = null; isNewVehicle = true; name = ""; make = ""; model = ""; year = ""; licensePlate = ""; odometerReading = ""; pickedPhotoUrl = null; referencePhotoUrl = null; landmarkTextBlocksJson = null; odometerCropRect = null; otherTextCropRect = null; dropdownExpanded = false })
             }
         }
 
@@ -286,12 +289,12 @@ fun ManageVehiclesScreen(
             if (referencePhotoUrl != null) {
                 var showFullPhoto by remember(referencePhotoUrl) { mutableStateOf(false) }
                 TextButton(onClick = { showFullPhoto = true }) {
-                    Text("View full photo (zoom +/−)")
+                    Text(stringResource(R.string.vehicle_view_full_photo_zoom))
                 }
                 if (showFullPhoto) {
                     com.davidlang.vehicleexpensesautomated.ui.components.ZoomablePhotoDialog(
                         uris = listOf(referencePhotoUrl!!),
-                        title = "Reference dash photo",
+                        title = stringResource(R.string.vehicle_reference_dash_photo),
                         onDismiss = { showFullPhoto = false },
                     )
                 }
@@ -320,7 +323,7 @@ fun ManageVehiclesScreen(
                         if (isLoadingDiscovery) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                         } else {
-                            Text("Run Discovery")
+                            Text(stringResource(R.string.vehicle_run_discovery))
                         }
                     }
 
@@ -340,13 +343,13 @@ fun ManageVehiclesScreen(
                         modifier = Modifier.weight(1f),
                         enabled = !landmarkTextBlocksJson.isNullOrEmpty() && !isLoadingDiscovery
                     ) {
-                        Text("Show Landmarks")
+                        Text(stringResource(R.string.vehicle_show_landmarks))
                     }
                 }
 
                 if (discoveryResults != null) {
-                    Text("Discovery Results (Excluding Crop Areas):", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
-                    Text("Tap card to see full debug pass", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                    Text(stringResource(R.string.vehicle_discovery_results_excluding_crop_areas), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+                    Text(stringResource(R.string.vehicle_tap_card_to_see_full_debug_pass), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
 
                     Surface(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -371,11 +374,11 @@ fun ManageVehiclesScreen(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Vehicle Name") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text("Make") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text("Year") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text("License Plate") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text(stringResource(R.string.vehicle_vehicle_name)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = make, onValueChange = { make = it }, label = { Text(stringResource(R.string.vehicle_make)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text(stringResource(R.string.vehicle_model)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text(stringResource(R.string.vehicle_year)) }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text(stringResource(R.string.vehicle_license_plate)) }, modifier = Modifier.fillMaxWidth())
 
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { scope.launch { if (isNewVehicle) { vehicleViewModel.createNewVehicleWithReference(name, make, model, year.toIntOrNull() ?: 0, licensePlate, referencePhotoUrl, referencePhotoUrl, odometerCropRect, otherTextCropRect, odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson) } else { editingVehicle?.let { val updated = it.copy(name = name, make = make, model = model, year = year.toIntOrNull() ?: 0, licensePlate = licensePlate, referenceDashPhotoUrl = referencePhotoUrl, cleanedReferenceDashPhotoUrl = referencePhotoUrl, odometerCropLeft = odometerCropRect?.left, odometerCropTop = odometerCropRect?.top, odometerCropRight = odometerCropRect?.right, odometerCropBottom = odometerCropRect?.bottom, otherTextCropLeft = otherTextCropRect?.left, otherTextCropTop = otherTextCropRect?.top, otherTextCropRight = otherTextCropRect?.right, otherTextCropBottom = otherTextCropRect?.bottom, landmarkTextBlocksJson = landmarkTextBlocksJson); vehicleViewModel.updateVehicle(updated) } }; navController.popBackStack() } }, modifier = Modifier.fillMaxWidth(), enabled = name.isNotBlank() && referencePhotoUrl != null) { Text(if (isNewVehicle) "Create Vehicle" else "Save Changes") }
