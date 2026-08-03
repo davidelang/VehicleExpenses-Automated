@@ -150,8 +150,11 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
-    // OpenCV for dashboard image alignment and preprocessing
-    implementation("org.opencv:opencv:4.10.0")
+    // OpenCV Java bindings (natives: jniLibs from third_party/opencv pin artifact)
+    // Jar extracted from org.opencv:opencv:4.10.0 AAR classes.jar; natives are pin-built
+    // fat libopencv_java4.so (core+imgproc+imgcodecs, 16KB pages) under jniLibs.
+    // Do not re-add Maven org.opencv:opencv AAR — it ships full multi-ABI natives and would
+    // override / bloat the pin .so.
     // ML Kit Text Recognition (High-performance Tensor-optimized OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // Native Paddle-Lite Java Wrapper
@@ -172,7 +175,8 @@ tasks.whenTaskAdded {
             if (nativeLibsDir.exists()) {
                 println(">>> UPX: Starting compression pass in $nativeLibsDir")
                 nativeLibsDir.walkTopDown().forEach { file ->
-                    if (file.extension == "so") {
+                    // Skip OpenCV: pin-built for 16KB max-page-size; UPX would break alignment.
+                    if (file.extension == "so" && file.name != "libopencv_java4.so") {
                         println(">>> UPX: Compressing ${file.name}")
                         try {
                             ProcessBuilder("upx", "--best", file.absolutePath)
