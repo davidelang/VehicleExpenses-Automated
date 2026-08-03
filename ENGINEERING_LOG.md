@@ -4412,3 +4412,17 @@ x
 - Thin VE live HTML parse dispatch via extractmail AAR type detect contract.
 - OpenCV 16k build script scaffolding; paddle host wire notes.
 
+
+## 2026-08-02 - Email thin + OpenCV cmake progress
+
+- extractmail AAR v3 @ 327ebf0: detectType + fuel contract; VE ReceiptParsers/Worker/FuelReceiptIngest thinned; build email-connection-start-83-gaa49da01.
+- Apps Script README Shell+Sam's. OpenCV arm64 cmake configure OK (SDK cmake); full compile running; ant missing so java wrappers off — may still get native libs.
+- paddle-ve-meta host pointer under ~/git/paddle-ve-meta.
+
+
+## 2026-08-02 - OpenCV arm64 16k native libs staged
+
+- Built core/imgproc/imgcodecs .so with Align 0x4000 (16KB) via NDK 28 + max-page-size=16384.
+- Staged under third_party/opencv/artifact/arm64-v8a/. java4 wrapper blocked (android_sdk cmake path).
+- VE email thin + extractmail v3 already green (start-83).
+

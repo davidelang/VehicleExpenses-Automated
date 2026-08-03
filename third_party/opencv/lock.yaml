@@ -1,9 +1,15 @@
 name: opencv
 git_ssh: "git@github.com:opencv/opencv.git"
 git_https: "https://github.com/opencv/opencv.git"
-git_sha: "TBD"
-git_describe: "4.10.0-pending-16k"
-artifacts: []
-consumer_note: "Planned 16KB page rebuild; host ~/git/opencv@4.10.0 + ve-build notes. VE still uses Maven opencv:4.10.0 + jniLibs until pin lands."
+git_sha: "TBD-4.10.0-host"
+git_describe: "4.10.0-arm64-16k-partial"
+artifacts:
+  - path: artifact/arm64-v8a/libopencv_core.so
+    sha256: "95d3596a8d2071a90199e7a2365accc22d388c91938666eee5bea7317dcd851b"
+  - path: artifact/arm64-v8a/libopencv_imgcodecs.so
+    sha256: "669f6f8cd206f1c4097dbd65413d2b2aa854059d7ff2b4832b73c3846bc29c1e"
+  - path: artifact/arm64-v8a/libopencv_imgproc.so
+    sha256: "9f835069306bb9fa1fc32f4eeaa244f5e35b07afbe0157780c604cfa1998a3b0"
+consumer_note: "arm64-v8a core/imgproc/imgcodecs with 16KB LOAD Align=0x4000. libopencv_java4.so pending (OpenCV java/android_sdk path needs fix). VE still on Maven until java4 pin."
 track_branch: 4.10.0
 build: ./build
