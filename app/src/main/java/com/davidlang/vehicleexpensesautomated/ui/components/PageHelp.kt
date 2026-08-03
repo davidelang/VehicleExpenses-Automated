@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.sizeIn
@@ -94,7 +98,7 @@ fun PageHelpTopBarAction(
     ) {
         Icon(
             Icons.Filled.Info,
-            contentDescription = "Page help",
+            contentDescription = stringResource(R.string.ui_page_help),
             tint = MaterialTheme.colorScheme.primary,
         )
     }
@@ -110,7 +114,7 @@ fun PageHelpTopBarAction(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { show = false }) { Text("OK") }
+                TextButton(onClick = { show = false }) { Text(stringResource(R.string.settings_ok)) }
             },
         )
     }

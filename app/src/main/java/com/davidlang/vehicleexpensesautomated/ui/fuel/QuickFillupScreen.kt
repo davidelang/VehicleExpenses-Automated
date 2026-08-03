@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.fuel
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.graphics.Bitmap
 import android.util.Log
 import android.widget.Toast
@@ -45,6 +47,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -248,12 +251,12 @@ fun QuickFillupScreen(
     var isPhotoSaving by remember { mutableStateOf(false) }
 
     RegisterPageHelp(
-        title = "Quick Fill controls",
-        "White circle — shutter (capture dash or pump).",
-        "Disk — save the fill when fields are ready.",
-        "↕ — switch odometer mode ↔ pump (cost/volume) mode.",
-        "↔ — swap cost and volume fields.",
-        "Type odo/cost/volume anytime (custom keypad). Menu → Help for the full walkthrough.",
+        title = stringResource(R.string.fuel_quick_fill_controls),
+        stringResource(R.string.fuel_white_circle_shutter_capture_dash_or_pump),
+        stringResource(R.string.fuel_disk_save_the_fill_when_fields_are_ready),
+        stringResource(R.string.fuel_switch_odometer_mode_pump_cost_volume_mode),
+        stringResource(R.string.fuel_swap_cost_and_volume_fields),
+        stringResource(R.string.fuel_type_odo_cost_volume_anytime_custom_keypad_menu_),
     )
     /** Null when idle/ok; set while saving or after a failed Camera-roll save. */
     var photoSaveStatus by remember { mutableStateOf<String?>(null) }
@@ -494,7 +497,7 @@ fun QuickFillupScreen(
             if (displayBitmap != null) {
                 Image(
                     bitmap = displayBitmap!!.asImageBitmap(),
-                    contentDescription = "Odometer Crop",
+                    contentDescription = stringResource(R.string.fuel_odometer_crop),
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
                 )
@@ -528,7 +531,7 @@ fun QuickFillupScreen(
                                 imageProxy.close()
                                 scope.launch(Dispatchers.Main) {
                                     captureViewState = CaptureViewState.Live
-                                    Toast.makeText(context, "Error: Image buffer is not direct", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, context.getString(R.string.fuel_error_image_buffer_is_not_direct), Toast.LENGTH_LONG).show()
                                 }
                                 return@CameraPreview
                             }
@@ -928,16 +931,14 @@ fun QuickFillupScreen(
                         photoSaveStatus = null
                         capturePending = false
                         captureViewState = CaptureViewState.Live
-                        Toast.makeText(
-                            context,
-                            "Fill-up saved",
+                        Toast.makeText(context, context.getString(R.string.fuel_fill_up_saved),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                 },
                 enabled = canSave,
             ) {
-                Icon(Icons.Filled.Save, contentDescription = "Save")
+                Icon(Icons.Filled.Save, contentDescription = stringResource(R.string.fuel_save))
             }
         }
     }
@@ -981,7 +982,7 @@ fun QuickFillupScreen(
                     OutlinedTextField(
                         value = vehicleName,
                         onValueChange = {},
-                        label = { Text("Vehicle") },
+                        label = { Text(stringResource(R.string.fuel_vehicle)) },
                         modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
                         readOnly = true,
                         singleLine = true,
@@ -1005,7 +1006,7 @@ fun QuickFillupScreen(
                 CaretEnabledOutlinedTextField(
                     value = odometer,
                     onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
-                    label = { Text("Odo") },
+                    label = { Text(stringResource(R.string.fuel_odo)) },
                     // Custom NumericKeypad is the only soft digit UI (both orientations).
                     showCaretButtons = false,
                     caretIndex = odoCaret,
@@ -1194,7 +1195,7 @@ fun QuickFillupScreen(
             com.davidlang.vehicleexpensesautomated.ui.components.CaretEnabledOutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
-                label = { Text("Notes") },
+                label = { Text(stringResource(R.string.fuel_notes)) },
                 // Landscape: match Panel C sibling width (not full remaining A+B space).
                 // Portrait: full width of Panel C.
                 modifier = panelCTextWidth,
@@ -1290,9 +1291,7 @@ fun QuickFillupScreen(
                             android.util.Log.i("QuickFill", "Photo saved directly to MediaStore: $savedUri")
                             if (savedUri == null) {
                                 photoSaveStatus = "Photo save failed — entry will have no photo"
-                                Toast.makeText(
-                                    context,
-                                    "Could not save fuel photo to Camera roll: missing MediaStore URI",
+                                Toast.makeText(context, context.getString(R.string.fuel_could_not_save_fuel_photo_to_camera_roll_missing),
                                     Toast.LENGTH_LONG
                                 ).show()
                             } else {
@@ -1310,7 +1309,7 @@ fun QuickFillupScreen(
                                     ts = captureTs
                                 )
                                 photoSaveStatus = null
-                                Toast.makeText(context, "Photo saved to Camera", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.fuel_photo_saved_to_camera), Toast.LENGTH_SHORT).show()
                             }
                             isPhotoSaving = false
                         }
@@ -1338,9 +1337,7 @@ fun QuickFillupScreen(
                                     ts = captureTs
                                 )
                                 photoSaveStatus = null
-                                Toast.makeText(
-                                    context,
-                                    "Photo saved to Camera (fallback frame)",
+                                Toast.makeText(context, context.getString(R.string.fuel_photo_saved_to_camera_fallback_frame),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             } else {
@@ -1673,7 +1670,7 @@ private fun NumericKeypad(
                         when (key) {
                             "blank" -> Icon(
                                 imageVector = Icons.Filled.KeyboardArrowDown,
-                                contentDescription = "Dismiss keypad"
+                                contentDescription = stringResource(R.string.fuel_dismiss_keypad)
                             )
                             "◀" -> Text("◀", style = MaterialTheme.typography.titleMedium)
                             "▶" -> Text("▶", style = MaterialTheme.typography.titleMedium)

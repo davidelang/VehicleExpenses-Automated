@@ -12,9 +12,12 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.davidlang.vehicleexpensesautomated.R
 import com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.axis.Axis
@@ -424,10 +427,14 @@ private fun LabMultiAxisTimeSeriesChartBody(
 @Composable
 fun LabMpgLineChart(
     yValues: List<Float>,
-    emptyMessage: String = "Not enough ${UnitFormat.economyEfficiencyLabel()} legs for a chart (need ≥2).",
+    emptyMessage: String? = null,
 ) {
+    val context = LocalContext.current
+    val eff = UnitFormat.economyEfficiencyLabel(context)
+    val empty = emptyMessage
+        ?: "Not enough $eff legs for a chart (need ≥2)."
     if (yValues.size < 2) {
-        ReportsLabEmpty(emptyMessage)
+        ReportsLabEmpty(empty)
         return
     }
     val now = System.currentTimeMillis()
@@ -436,17 +443,19 @@ fun LabMpgLineChart(
         LabTimeYPoint(timestampMs = now - (yValues.size - 1 - i) * day, y = y)
     }
     LabTimeSeriesLineChart(
-        series = mapOf(UnitFormat.economyEfficiencyLabel() to pts),
-        caption = "${UnitFormat.economyEfficiencyLabel()} over full-fill legs (chronological)",
-        emptyMessage = emptyMessage,
+        series = mapOf(eff to pts),
+        caption = "$eff over full-fill legs (chronological)",
+        emptyMessage = empty,
     )
 }
 
 /** Prefer [LabTimeSeriesLineChart] with real timestamps. This keeps index-based y-only callers. */
 @Composable
 fun LabUnitPriceLineChart(yValues: List<Float>) {
+    val notEnough = stringResource(R.string.reports_not_enough_unit_price_points)
+    val caption = stringResource(R.string.reports_unit_price_caption)
     if (yValues.size < 2) {
-        ReportsLabEmpty("Not enough unit-price points for a chart (need ≥2 fills with cost and volume).")
+        ReportsLabEmpty(notEnough)
         return
     }
     val base = System.currentTimeMillis() - yValues.size * TimeUnit.DAYS.toMillis(1)
@@ -455,8 +464,8 @@ fun LabUnitPriceLineChart(yValues: List<Float>) {
     }
     LabTimeSeriesLineChart(
         series = mapOf("unit price" to pts),
-        caption = "Unit price (cost ÷ volume) over fills (date axis)",
-        emptyMessage = "Not enough unit-price points for a chart (need ≥2 fills with cost and volume).",
+        caption = caption,
+        emptyMessage = notEnough,
     )
 }
 

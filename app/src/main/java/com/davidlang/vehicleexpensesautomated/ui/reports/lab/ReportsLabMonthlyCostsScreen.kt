@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,9 +66,9 @@ fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
     }
 
     ReportsLabScreenScaffold(
-        title = "Monthly costs",
+        title = stringResource(R.string.reports_monthly_costs),
         infoText = "Fuel vs other expenses by calendar month. Mixed currency: per-currency lines (no FX). " +
-            "Each vehicle = one series of monthly total cost per vehicle (month labels on X).",
+            stringResource(R.string.reports_each_vehicle_one_series_of_monthly_total_cost_pe),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
@@ -168,9 +172,24 @@ fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
                 }
                 Column(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     Text(b.key, style = MaterialTheme.typography.titleSmall)
-                    Text("Fuel: ${CurrencyCodes.formatAggregateSum(b.fuelByCurrency, data.defaultSymbol)}")
-                    Text("Other: ${CurrencyCodes.formatAggregateSum(b.otherByCurrency, data.defaultSymbol)}")
-                    Text("Total: ${CurrencyCodes.formatAggregateSum(total, data.defaultSymbol)}")
+                    Text(
+                        stringResource(
+                            R.string.reports_fuel_amount,
+                            CurrencyCodes.formatAggregateSum(b.fuelByCurrency, data.defaultSymbol),
+                        ),
+                    )
+                    Text(
+                        stringResource(
+                            R.string.reports_other_amount,
+                            CurrencyCodes.formatAggregateSum(b.otherByCurrency, data.defaultSymbol),
+                        ),
+                    )
+                    Text(
+                        stringResource(
+                            R.string.reports_total_amount,
+                            CurrencyCodes.formatAggregateSum(total, data.defaultSymbol),
+                        ),
+                    )
                 }
             }
         }

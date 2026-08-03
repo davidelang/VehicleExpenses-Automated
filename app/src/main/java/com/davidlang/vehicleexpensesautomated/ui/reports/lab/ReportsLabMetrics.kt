@@ -430,6 +430,7 @@ fun hubVehicleStatsLine(
     stats: HubVehicleSummary,
     volumeLabel: String,
     defaultSymbol: String,
+    costPerDistanceLabel: String = com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel(),
 ): String {
     val dpm = if (stats.dollarsPerMile == null) {
         "n/a"
@@ -441,7 +442,7 @@ fun hubVehicleStatsLine(
         "${formatVolume(stats.gallons, volumeLabel)} · " +
         "fills ${stats.fillCount}(${stats.partialCount}p) · " +
         "last ${formatMpg(stats.lastMpg)} · avg ${formatMpg(stats.avgMpg)} · " +
-        "${com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel()} $dpm"
+        "$costPerDistanceLabel $dpm"
 }
 
 fun hubVehicleExpenseLine(stats: HubVehicleSummary, defaultSymbol: String): String {

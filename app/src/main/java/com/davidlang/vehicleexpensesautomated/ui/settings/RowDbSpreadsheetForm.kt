@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +15,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -51,10 +54,14 @@ fun RowDbSpreadsheetForm(
         else -> "tabular/README"
     }
     TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.tabular(docsStem)) }) {
-        Text("Setup help — ${provider.displayLabel()}")
+        Text(
+            stringResource(
+                R.string.settings_setup_help_provider_fmt,
+                provider.displayLabel(),
+            ),
+        )
     }
-    Text(
-        "Create tables/collections with fields matching app headers (Sync ID first). Map table ids below.",
+    Text(stringResource(R.string.settings_create_tables_collections_with_fields_matching_a),
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(modifier = Modifier.height(8.dp))
@@ -100,7 +107,7 @@ fun RowDbSpreadsheetForm(
         OutlinedTextField(
             value = databaseId,
             onValueChange = onDatabaseIdChange,
-            label = { Text("Database id (optional)") },
+            label = { Text(stringResource(R.string.settings_database_id_optional)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
@@ -109,7 +116,7 @@ fun RowDbSpreadsheetForm(
         OutlinedTextField(
             value = projectId,
             onValueChange = onProjectIdChange,
-            label = { Text("Project / base id (optional)") },
+            label = { Text(stringResource(R.string.settings_project_base_id_optional)) },
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
     }
@@ -117,28 +124,37 @@ fun RowDbSpreadsheetForm(
         OutlinedTextField(
             value = baseId,
             onValueChange = onBaseIdChange,
-            label = { Text("Airtable base id") },
+            label = { Text(stringResource(R.string.settings_airtable_base_id)) },
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
     }
     OutlinedTextField(
         value = vehiclesTableId,
         onValueChange = onVehiclesTableIdChange,
-        label = { Text("${TabularSchema.TAB_VEHICLES} table id") },
+        label = {
+            Text(stringResource(R.string.settings_table_id_fmt, TabularSchema.TAB_VEHICLES))
+        },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = expensesTableId,
         onValueChange = onExpensesTableIdChange,
-        label = { Text("${TabularSchema.TAB_EXPENSES} table id") },
+        label = {
+            Text(stringResource(R.string.settings_table_id_fmt, TabularSchema.TAB_EXPENSES))
+        },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = fuelTableIds,
         onValueChange = onFuelTableIdsChange,
-        label = { Text("Fuel tab table ids (optional)") },
+        label = { Text(stringResource(R.string.settings_fuel_tab_table_ids_optional)) },
         supportingText = {
-            Text("One per line: Fuel - VehicleName=tableId (e.g. ${TabularSchema.FUEL_TAB_PREFIX}Honda=12)")
+            Text(
+                stringResource(
+                    R.string.settings_one_per_line_fuel_table_id,
+                    TabularSchema.FUEL_TAB_PREFIX,
+                ),
+            )
         },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         minLines = 2,

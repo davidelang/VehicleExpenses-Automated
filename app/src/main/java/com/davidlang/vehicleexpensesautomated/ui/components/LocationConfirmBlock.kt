@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.components
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,7 +63,7 @@ fun LocationConfirmBlock(
                 CaretEnabledOutlinedTextField(
                     value = name,
                     onValueChange = onNameChange,
-                    label = { Text("Place name") },
+                    label = { Text(stringResource(R.string.fuel_place_name)) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     showCaretButtons = false,
@@ -67,7 +71,7 @@ fun LocationConfirmBlock(
                 CaretEnabledOutlinedTextField(
                     value = address,
                     onValueChange = onAddressChange,
-                    label = { Text("Address") },
+                    label = { Text(stringResource(R.string.fuel_address)) },
                     modifier = Modifier.weight(1f),
                     singleLine = false,
                     maxLines = 2,

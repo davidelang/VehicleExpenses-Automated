@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -30,20 +33,37 @@ import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 
 private data class CatalogEntry(val title: String, val route: String, val blurb: String)
 
-private val CATALOG = listOf(
+@Composable
+private fun reportsLabCatalog(): List<CatalogEntry> = listOf(
     CatalogEntry(
-        "Time based reports",
+        stringResource(R.string.reports_time_based_reports),
         "reports_lab/time",
-        "mpg, G/mi, \$/G, \$/mi, monthly \$, trip miles/% · one chart · smooth bins",
+        stringResource(R.string.reports_hub_time_blurb),
     ),
-    CatalogEntry("Expenses by category", "reports_lab/expenses", "Category totals and list"),
-    CatalogEntry("Expenses list", "expenselist", "All expenses — tap to edit"),
-    CatalogEntry("Fill history", "reports_lab/fills", "Chronological fills only (no trip starts)"),
-    CatalogEntry("Vehicle summary", "reports_lab/vehicle_summary", "Shareable history pack"),
     CatalogEntry(
-        "Trip miles",
+        stringResource(R.string.reports_expenses_by_category),
+        "reports_lab/expenses",
+        stringResource(R.string.reports_hub_expenses_blurb),
+    ),
+    CatalogEntry(
+        stringResource(R.string.nav_expense_list),
+        "expenselist",
+        stringResource(R.string.reports_hub_expense_list_blurb),
+    ),
+    CatalogEntry(
+        stringResource(R.string.reports_fill_history),
+        "reports_lab/fills",
+        stringResource(R.string.reports_hub_fills_blurb),
+    ),
+    CatalogEntry(
+        stringResource(R.string.reports_vehicle_summary),
+        "reports_lab/vehicle_summary",
+        stringResource(R.string.reports_hub_vehicle_summary_blurb),
+    ),
+    CatalogEntry(
+        stringResource(R.string.reports_trip_miles),
         "reports_lab/trips",
-        "Miles by type + trip start list (tap to edit)",
+        stringResource(R.string.reports_miles_by_type_trip_start_list_tap_to_edit),
     ),
 )
 
@@ -100,7 +120,7 @@ fun ReportsLabHubScreen(navController: NavHostController) {
             ReportsLabEmpty("No vehicles or rows yet. Add data, then revisit Reports.")
         }
 
-        Text("Summary (all time)", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.reports_summary_all_time), style = MaterialTheme.typography.titleMedium)
         if (allFuel.isEmpty() && allExp.isEmpty()) {
             ReportsLabEmpty("No fuel or expenses yet.")
         } else {
@@ -120,7 +140,12 @@ fun ReportsLabHubScreen(navController: NavHostController) {
                     ) {
                         Text(stats.name, style = MaterialTheme.typography.titleSmall, softWrap = true)
                         Text(
-                            hubVehicleStatsLine(stats, volumeLabel, defaultSymbol),
+                            hubVehicleStatsLine(
+                                stats,
+                                volumeLabel,
+                                defaultSymbol,
+                                costPerDistanceLabel = com.davidlang.vehicleexpensesautomated.ui.util.UnitFormat.costPerDistanceLabel(context),
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             softWrap = true,
                         )
@@ -134,8 +159,8 @@ fun ReportsLabHubScreen(navController: NavHostController) {
             }
         }
 
-        Text("Report sets", style = MaterialTheme.typography.titleMedium)
-        AdaptiveItemGrid(items = CATALOG) { entry ->
+        Text(stringResource(R.string.reports_report_sets), style = MaterialTheme.typography.titleMedium)
+        AdaptiveItemGrid(items = reportsLabCatalog()) { entry ->
             TappableCard(onClick = { navController.navigate(entry.route) }) {
                 Text(entry.title, style = MaterialTheme.typography.titleMedium, softWrap = true, maxLines = 2)
                 Text(entry.blurb, style = MaterialTheme.typography.bodySmall, softWrap = true, maxLines = 3)

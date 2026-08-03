@@ -10,6 +10,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.RcloneLoader
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneRuntime
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdBackfill
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
+import com.davidlang.vehicleexpensesautomated.ui.util.AppLanguage
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import dagger.hilt.android.HiltAndroidApp
@@ -45,6 +46,9 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
     }
 
     override fun onCreate() {
+        // Apply in-app language before UI attaches (unset pref → English; system → match or English).
+        AppLanguage.applyFromPrefs(this)
+
         val defaultUncaughtHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {

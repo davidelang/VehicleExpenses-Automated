@@ -1,5 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import com.davidlang.vehicleexpensesautomated.R
+
 import android.widget.Toast
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -15,6 +17,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
@@ -99,10 +102,10 @@ private fun PhotoDestList(
 ) {
     val context = LocalContext.current
     RegisterPageHelp(
-        title = "Photo Backup",
-        "Add Google Drive (or other) destinations. Sync now uploads vehicle refs and pending photos.",
-        "Open a destination for Test connection and Sync now (this destination).",
-        "Leaving the screen mid-sync does not cancel the backup.",
+        title = stringResource(R.string.nav_photo_backup),
+        stringResource(R.string.settings_add_google_drive_or_other_destinations_sync_now_),
+        stringResource(R.string.settings_open_a_destination_for_test_connection_and_sync_),
+        stringResource(R.string.settings_leaving_the_screen_mid_sync_does_not_cancel_the_),
     )
     var statusText by remember { mutableStateOf("") }
     var statusIsError by remember { mutableStateOf(false) }
@@ -129,7 +132,7 @@ private fun PhotoDestList(
     }
 
     SyncDestinationListLayout(
-        title = "Photo Backup",
+        title = stringResource(R.string.nav_photo_backup),
         description = "Add a destination (Google Drive is common: Sign in with Google (Drive) → optional folder via 🔍 → save → Sync now). Manual sync runs all configured destinations; background backup runs enabled ones only.",
         statusText = displayStatus,
         syncInProgress = syncInProgress,
@@ -204,7 +207,7 @@ private fun PhotoProviderPicker(
     onCancel: () -> Unit,
 ) {
     SyncProviderChoiceScreen(
-        title = "Add photo destination",
+        title = stringResource(R.string.settings_add_photo_destination),
         choices = listOf(
             "Google Drive" to { onPick(PhotoProvider.GOOGLE_DRIVE) },
             "OneDrive" to { onPick(PhotoProvider.ONEDRIVE) },

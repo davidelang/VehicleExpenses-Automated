@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.reports.lab
 
+import com.davidlang.vehicleexpensesautomated.R
+
+import androidx.compose.ui.res.stringResource
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,12 +14,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 @Composable
 fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
+    val context = LocalContext.current
     val data = rememberLabReportData(LabVehicleMembership.EXPENSE)
     val isEach = data.filter.vehicleMode == LabVehicleMode.EACH
 
@@ -64,9 +70,9 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
     }
 
     ReportsLabScreenScaffold(
-        title = "Expenses by category",
+        title = stringResource(R.string.reports_expenses_by_category),
         infoText = "Category totals for the filtered period. Chart uses one currency series (caption). " +
-            "Each vehicle = multi-series (categories on X, one series per vehicle).",
+            stringResource(R.string.reports_each_vehicle_multi_series_categories_on_x_one_se),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
@@ -141,12 +147,17 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                     }
                     sb.toString()
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText("Expenses by category", buildText()) },
+                pdfBody = {
+                    ReportsLabPdf.fromPlainText(
+                        context.getString(R.string.reports_expenses_by_category),
+                        buildText(),
+                    )
+                },
             )
         },
     ) {
         if (data.expenses.isEmpty()) {
-            ReportsLabEmpty("No expenses in this filter.")
+            ReportsLabEmpty(stringResource(R.string.expense_no_expenses_yet))
             return@ReportsLabScreenScaffold
         }
         if (isEach) {
@@ -156,7 +167,7 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                 caption = "Category amounts per vehicle (currency $chartCurrency, no FX).",
             )
             Spacer(Modifier.height(8.dp))
-            Text("Per-vehicle category totals", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.reports_per_vehicle_category_totals), style = MaterialTheme.typography.titleSmall)
             eachByVehicleTotals.forEach { (vName, cats) ->
                 Text(vName, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
                 cats.entries
@@ -175,16 +186,18 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                 caption = "Category bars for currency $chartCurrency (no FX). Other currencies listed in tables.",
             )
             Spacer(Modifier.height(8.dp))
-            Text("Category totals", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.reports_category_totals), style = MaterialTheme.typography.titleSmall)
             sortedCats.forEach { (cat, m) ->
                 Text("$cat · ${CurrencyCodes.formatAggregateSum(m, data.defaultSymbol)}")
             }
         }
         Spacer(Modifier.height(8.dp))
-        Text("All expenses in period", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.reports_all_expenses_in_period), style = MaterialTheme.typography.titleSmall)
         data.expenses.sortedByDescending { it.date }.forEach { e ->
             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                Text("${formatLabDate(e.date)} · ${e.category.ifBlank { "Other" }} · ${data.vehicleName(e.vehicleId)}")
+                Text(
+                    "${formatLabDate(e.date)} · ${e.category.ifBlank { stringResource(R.string.reports_other_category) }} · ${data.vehicleName(e.vehicleId)}",
+                )
                 Text(
                     "${CurrencyCodes.formatAmount(e.amount, e.currency, data.defaultSymbol)} · ${e.description.ifBlank { "(no description)" }}",
                     style = MaterialTheme.typography.bodySmall,
