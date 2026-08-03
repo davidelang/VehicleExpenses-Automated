@@ -1,14 +1,30 @@
-# Bootstrap — set git_sha / artifacts when first real pin lands.
 name = "paddle"
-git_ssh = ""
-git_https = ""
-git_sha = "TBD"
-git_describe = "TBD"
-track_branch = ""
+git_ssh = "git@github.com:davidelang/Paddle-Lite.git"
+git_https = "https://github.com/davidelang/Paddle-Lite.git"
+# Pin tip = pr-x86-android-mobile-gap (includes pr-upstream-cleanup stack).
+# INT8 calib + analytic quant layer: third_party/paddle/patches-int8/ (see SOURCE.md).
+git_sha = "c6a9b9ada00e3b37aa80c21407e7d8e240595ebb"
+git_describe = "v2.0.0-beta1-prerel-4122-gc6a9b9ad"
+track_branch = "pr-x86-android-mobile-gap"
 reproducible = false
-build_time = "tens_of_hours"
+build_time = "few_hours"
 requires_writable_src = false
 build = ["./build"]
-consumer_note = "Paddle special: Docker build meta; no image blobs in git. Set git_ssh/git_https to patched fork when published."
+consumer_note = "Paddle-Lite Android JNI (slim): arm64+x86_64 (+ optional armv7). Docker+NDK. INT8 layer via patches-int8 after pin checkout. Models (nb) built separately with host opt — see docs/reference/PADDLE_PIN_BUILDS.md"
 
-# artifacts = []  # empty until first pin
+# Populated after successful pin build (sha256 filled by get-artifacts / human bump)
+[[artifact]]
+path = "artifact/jni/arm64-v8a/libpaddle_lite_jni.so"
+from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
+
+[[artifact]]
+path = "artifact/jni/x86_64/libpaddle_lite_jni.so"
+from = "src/bin/x86_64/libpaddle_lite_jni.so"
+
+[[artifact]]
+path = "artifact/jni/x86_64/libpaddle_light_api_shared.so"
+from = "src/bin/x86_64/libpaddle_light_api_shared.so"
+
+[[artifact]]
+path = "artifact/PaddlePredictor.jar"
+from = "src/bin/PaddlePredictor.jar"

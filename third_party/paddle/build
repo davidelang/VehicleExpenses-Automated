@@ -1,9 +1,75 @@
 #!/usr/bin/env bash
-# Placeholder: full paddle Android Docker rebuild is multi-hour; see SOURCE.md + docs/specs/PADDLE_BUILD.md
+# paddle pin build — slim Android JNI (+ light_api on x86_64) via Docker.
+# Requires: docker, pin src @ libpin.toml (pr-x86-android-mobile-gap tip).
+# Products under src/bin/<abi>/… then get-artifacts → artifact/
+#
+# Env:
+#   PADDLE_ABIS="arm64-v8a x86_64"   (default; add armeabi-v7a if needed)
+#   PADDLE_SKIP_IMAGE_BUILD=1        reuse existing ve-paddle-int8 image
+#   PADDLE_DOCKER_IMAGE=ve-paddle-int8
 set -euo pipefail
-SANDBOX="${PADDLE_BUILD_DIR:-/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/paddle-build}"
-echo "paddle build not fully automated in third_party yet."
-echo "Use sandbox recipes: $SANDBOX"
-echo "Docs: docs/specs/PADDLE_BUILD.md"
-ls -la "$SANDBOX" | head -20
-exit 1
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC=${PADDLE_SRC:-"$HERE/src"}
+SCRIPTS="$HERE/scripts"
+OUT="$SRC/bin"
+IMAGE=${PADDLE_DOCKER_IMAGE:-ve-paddle-int8}
+ABIS=${PADDLE_ABIS:-"arm64-v8a x86_64"}
+
+[[ -d "$SRC/.git" || -f "$SRC/.git" ]] || {
+  echo "ERROR: no src — run: ./third_party/fetch-deps ro paddle" >&2
+  exit 1
+}
+command -v docker >/dev/null || { echo "ERROR: docker required" >&2; exit 1; }
+
+# Writable product dirs under RO pin
+mkdir -p "$OUT" 2>/dev/null || true
+if [[ ! -w "$OUT" ]]; then
+  chmod u+w "$SRC" 2>/dev/null || true
+  mkdir -p "$OUT"
+  chmod -R u+w "$SRC/bin" "$SRC/build" 2>/dev/null || true
+fi
+for a in $ABIS; do mkdir -p "$OUT/$a"; chmod -R u+w "$OUT/$a" 2>/dev/null || true; done
+
+echo "paddle src=$(git -C "$SRC" rev-parse --short HEAD) abis=$ABIS"
+
+if [[ "${PADDLE_SKIP_IMAGE_BUILD:-0}" != "1" ]]; then
+  echo "Building Docker image $IMAGE (tens of minutes first time)…"
+  docker build -t "$IMAGE" -f "$SCRIPTS/Dockerfile.int8" "$HERE"
+fi
+
+# Map ABI name → build_android.sh --arch=
+arch_for() {
+  case "$1" in
+    arm64-v8a) echo armv8 ;;
+    armeabi-v7a) echo armv7 ;;
+    x86_64) echo x86_64 ;;
+    x86) echo x86 ;;
+    *) echo "$1" ;;
+  esac
+}
+
+for abi in $ABIS; do
+  arch=$(arch_for "$abi")
+  echo "=== Android slim build abi=$abi arch=$arch ==="
+  EXTRA_FLAGS=""
+  [[ "$arch" == "armv8" ]] && EXTRA_FLAGS="--with_arm82_fp16=ON"
+  docker run --rm \
+    -v "$SRC:/pin-src:ro" \
+    -v "$HERE/patches-int8:/patches-int8:ro" \
+    -v "$SCRIPTS/apply_int8_patches.sh:/apply_int8_patches.sh:ro" \
+    -v "$SCRIPTS/run-android-slim.sh:/run-android-slim.sh:ro" \
+    -v "$OUT:/output" \
+    -e ABI="$abi" \
+    -e ARCH="$arch" \
+    -e EXTRA_FLAGS="$EXTRA_FLAGS" \
+    "$IMAGE" \
+    bash /run-android-slim.sh
+done
+
+# Collect Java predictor jar if present in last build tree (optional)
+if [[ ! -f "$OUT/PaddlePredictor.jar" ]]; then
+  echo "NOTE: PaddlePredictor.jar not produced in this pass — copy from app/libs or prior build if needed"
+fi
+
+echo "OK paddle products under $OUT:"
+find "$OUT" -type f \( -name '*.so' -o -name '*.jar' \) -ls 2>/dev/null || true

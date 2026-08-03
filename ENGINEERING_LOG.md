@@ -4488,3 +4488,10 @@ x
 - libpin-sandbox: bwrap outer + landlock inner; either optional.
 - fetch-deps / get-artifacts use libpin-sandbox; --no-landlock flag.
 - Docs: README, ENVIRONMENT_SETUP, third_party/README, THIRD_PARTY_PIN_BUILDS.
+
+## 2026-08-03 - paddle libpin scaffold + pin build docs
+
+- libpin.toml pin c6a9b9ad (pr-x86-android-mobile-gap = cleanup+x86 gap).
+- Validated: pr-calib-safe-uint8-dequant is NOT git-stacked on x86-gap (develop tip +1).
+- patches-int8/ vendored; Docker+run-android-slim build path; docs/reference/PADDLE_PIN_BUILDS.md.
+- Models remain separate host opt pipeline (scripts under assets/paddle/scripts).
