@@ -125,3 +125,7 @@ third_party/*/src/
 third_party/*/status.local
 third_party/*/*.local
 # --- end third_party consumer ---
+
+# Track Grok pack launcher library (not Android/native lib/)
+!.grok/lib/
+!.grok/lib/**
