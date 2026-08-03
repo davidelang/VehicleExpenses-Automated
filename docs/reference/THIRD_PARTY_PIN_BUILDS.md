@@ -25,7 +25,9 @@ third_party/
   README.md                 # do-this-first
   fetch-deps                # materialize + optional build orchestration
   get-artifacts             # libpin.toml-driven copy src outputs → artifact/
-  libpin-bwrap              # optional bubblewrap write confinement
+  libpin-sandbox            # optional bwrap + Landlock orchestration
+  libpin-bwrap              # bubblewrap helper
+  libpin-landlock           # Landlock helper (Python/ctypes; Linux)
   example/                  # hello-world pin
   <lib>/
     libpin.toml
@@ -47,19 +49,20 @@ third_party/
 
 Dirty `src` **only** from fetch-deps patches is acceptable. Other dirt means the tree is not a clean pin.
 
-### Optional bubblewrap confinement
+### Optional write confinement (bubblewrap + Landlock)
 
-When `bwrap` is available, `fetch-deps` / `get-artifacts` invoke `libpin-bwrap` so each step may only **write** to a declared surface (RO root filesystem + bind-mounted RW hole). This does **not** change pin semantics; it only limits damage from a bad build script or patch.
+`libpin-sandbox` may apply **bubblewrap** and/or **Landlock** so each step may only **mutate** a declared surface. Pin semantics unchanged; missing tools → unsandboxed.
 
-| Mode | Used for | RW bind |
-|------|----------|---------|
-| `lib` | materialize, status.local, rw checkout | `third_party/<lib>/` |
+| Mode | Used for | Mutation allowed under |
+|------|----------|-------------------------|
+| `lib` | materialize, status.local, rw | `third_party/<lib>/` |
 | `src` | patches, pin `./build` | `third_party/<lib>/src/` |
 | `artifact` | get-artifacts | `third_party/<lib>/artifact/` |
 
-- **Required?** No. If `bwrap` is missing, tools run unsandboxed (same results).
-- **Disable:** `LIBPIN_NO_BWRAP=1` or `--no-bwrap`.
-- **Do not nest** user namespaces (kernel typically rejects nested bwrap); helpers re-enter with `LIBPIN_SANDBOX` set instead of stacking.
+- **Landlock** handles write/create/remove/truncate/refer only; **read and execute stay unrestricted** (toolchains work).
+- **bwrap** (if present): single-level outer jail; then Landlock inside. Nested bwrap is avoided (`LIBPIN_SANDBOX`).
+- **Disable:** `LIBPIN_NO_BWRAP=1`, `LIBPIN_NO_LANDLOCK=1`, `--no-bwrap`, `--no-landlock`.
+- **Non-Linux:** both no-ops.
 - Host notes: `docs/ENVIRONMENT_SETUP.md` §2.4; quick start: `third_party/README.md`.
 
 ---

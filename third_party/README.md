@@ -26,20 +26,25 @@ Same pattern for `remotetable`, `extractmail`, `rclone`, `paddle` (when pins are
 | 2. Build | `./build` (or scripts listed in lock) | Create/chmod **writable** `src/build`, `src/bin` (or upstream-equivalent dirs); compile; leave products under `src/…` |
 | 3. Collect | `get-artifacts` (called by `fetch-deps build`) | Copy products into **stable** `artifact/` names using lock |
 
-### Optional write sandbox (bubblewrap)
+### Optional write sandbox (bubblewrap and/or Landlock)
 
-If `bwrap` is installed, the tools above **automatically** confine writes via `libpin-bwrap` (single-level; no nested userns):
+`libpin-sandbox` wraps pin steps when available (Linux). **Missing tools → unsandboxed, still correct.**
 
-| Step | Writable only |
-|------|----------------|
+| Layer | What | Install / detect |
+|-------|------|------------------|
+| **bubblewrap** | Outer mount jail: RO root + RW hole | `sudo apt install bubblewrap` (`bwrap`) |
+| **Landlock** | LSM: mutation only under allowed dirs (read/exec unrestricted) | Kernel with `landlock` in LSM (`./third_party/libpin-landlock --status`) |
+
+Order: **bwrap outer → Landlock inner** (Landlock stacks; nested bwrap does not).
+
+| Step | Writable only (mutation) |
+|------|---------------------------|
 | Materialize + `status.local` | `third_party/<lib>/` |
-| Patches | `third_party/<lib>/src/` |
-| Build (from `fetch-deps build`) | `third_party/<lib>/src/` |
+| Patches / build | `third_party/<lib>/src/` (+ `/tmp` under Landlock) |
 | `get-artifacts` | `third_party/<lib>/artifact/` |
 
-**Without bubblewrap, everything still works** — sandbox is hardening, not a hard dependency.  
-Disable: `LIBPIN_NO_BWRAP=1` or `--no-bwrap`. Debug: `LIBPIN_BWRAP_DEBUG=1`.  
-Install: `sudo apt install bubblewrap` (Linux).
+Disable: `LIBPIN_NO_BWRAP=1`, `LIBPIN_NO_LANDLOCK=1`, or `--no-bwrap` / `--no-landlock`.  
+Debug: `LIBPIN_BWRAP_DEBUG=1`, `LIBPIN_LANDLOCK_DEBUG=1`.
 
 **Committed pin surface for the app:** `libpin.toml` + `artifact/*` (+ build scripts + patches).  
 **Not committed on a fresh clone:** usually `src/` contents (materialize with fetch-deps). `src` must still be a **real git checkout** when present (submodule, worktree, or clone) so `git status` works.

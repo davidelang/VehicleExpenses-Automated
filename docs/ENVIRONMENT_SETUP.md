@@ -54,7 +54,8 @@ Until you intentionally upgrade those, **ignore external clones**.
 | **CMake 3.22.1** | Requested in `app/build.gradle.kts` `externalNativeBuild.cmake.version` (SDK CMake package is fine) |
 | **Network** once | Gradle downloads Maven deps |
 | **Optional: `adb`** | Only for device install (`./deploy` — **humans only**) |
-| **Optional: `bwrap` (bubblewrap)** | Write-sandboxes pin tooling under `third_party/` (see §2.4). Not required for `./build_app` or app compile |
+| **Optional: `bwrap` (bubblewrap)** | Write-sandboxes pin tooling (with Landlock when kernel supports it; §2.4). Not required for `./build_app` |
+| **Optional: Landlock** | Linux LSM used by `libpin-landlock` when available (no package; kernel feature). Same pin tooling as bwrap |
 
 ### 2.1 Point Gradle at the SDK
 
@@ -84,30 +85,30 @@ If agents build as a non-primary user:
 
 Foreign per-user keys cause `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on devices. Phones already on the shared cert stay fine; a device installed with a foreign cert needs **one** uninstall then re-deploy by a human.
 
-### 2.4 Optional bubblewrap for third-party pin rebuilds
+### 2.4 Optional write sandbox for third-party pin rebuilds
 
-**App builds do not need bubblewrap.** Only pin rebuild/audit tooling uses it when present.
+**App builds do not need this.** Only `./third_party/fetch-deps` / `get-artifacts` use it when present.
 
-| | |
-|--|--|
-| **Package** | `bubblewrap` (`bwrap`) |
-| **Install (Debian/Ubuntu)** | `sudo apt install bubblewrap` |
-| **What it does** | When `bwrap` is on `PATH`, `./third_party/fetch-deps` and `./third_party/get-artifacts` run write-confined helpers via `third_party/libpin-bwrap` |
-| **Without bwrap** | Same commands run **unsandboxed** (correctness unchanged; one less safety net) |
-| **Disable** | `LIBPIN_NO_BWRAP=1` or `./third_party/fetch-deps --no-bwrap …` |
+| Layer | Requirement | Role |
+|-------|-------------|------|
+| **bubblewrap** | `sudo apt install bubblewrap` | Outer: RO filesystem view + RW bind hole |
+| **Landlock** | Linux kernel LSM (`libpin-landlock --status`) | Inner: mutation only under allowed dirs; **read/exec stay open** for JDKs/SDKs |
+| **Neither** | — | Commands still work unsandboxed |
 
-Write surfaces when sandboxed:
+Wiring: `libpin-sandbox` → optional bwrap → optional Landlock → command.  
+Disable: `LIBPIN_NO_BWRAP=1`, `LIBPIN_NO_LANDLOCK=1`, `--no-bwrap`, `--no-landlock`.
+
+Write surfaces (mutation):
 
 | Step | Writable |
 |------|----------|
-| `fetch-deps ro` / `rw` (materialize + `status.local`) | `third_party/<lib>/` |
-| Patch apply | `third_party/<lib>/src/` |
-| `fetch-deps build` (pin `./build`) | `third_party/<lib>/src/` |
+| `fetch-deps ro` / `rw` | `third_party/<lib>/` |
+| Patch / build | `third_party/<lib>/src/` |
 | `get-artifacts` | `third_party/<lib>/artifact/` |
 
-**Safety:** a buggy pin build or hostile patch cannot overwrite app sources, Gradle homes outside the pin, or arbitrary paths under the worktree — only the declared pin directories. Nested user namespaces are not used (single-level only).
+Landlock also allows `/tmp` and essential `/dev/null` etc. so tools work. Nested **bwrap** is not used; Landlock **can** stack under bwrap or under an agent Landlock later.
 
-Rebuild example (with or without bwrap):
+Rebuild example:
 
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64

@@ -122,6 +122,8 @@ third_party/*
 !third_party/fetch-deps
 !third_party/get-artifacts
 !third_party/libpin-bwrap
+!third_party/libpin-landlock
+!third_party/libpin-sandbox
 !third_party/README.md
 !third_party/*/
 third_party/*/src/

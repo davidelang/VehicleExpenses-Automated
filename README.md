@@ -22,22 +22,26 @@ Prebuilt libraries (OpenCV, rclone, remotetable, extractmail, …) are **pinned*
 
 Details: [`third_party/README.md`](third_party/README.md), [`docs/reference/THIRD_PARTY_PIN_BUILDS.md`](docs/reference/THIRD_PARTY_PIN_BUILDS.md), host setup: [`docs/ENVIRONMENT_SETUP.md`](docs/ENVIRONMENT_SETUP.md).
 
-### Optional: bubblewrap write sandbox
+### Optional: write sandbox (bubblewrap and/or Landlock)
 
-If **`bwrap` (bubblewrap)** is installed, `fetch-deps` / `get-artifacts` confine writes automatically:
+Linux only; **optional**. `libpin-sandbox` confines **mutation** of pin steps (read/exec stay open for toolchains):
 
 | Operation | Writable surface |
 |-----------|------------------|
-| materialize / status | `third_party/<lib>/` only |
-| patches + build | `third_party/<lib>/src/` only |
-| collect artifacts | `third_party/<lib>/artifact/` only |
+| materialize / status | `third_party/<lib>/` |
+| patches + build | `third_party/<lib>/src/` |
+| collect artifacts | `third_party/<lib>/artifact/` |
 
-This limits blast radius if a pin build or patch misbehaves (no writing into the app tree, home dir, or host SDK). **Bubblewrap is optional** — without it, the same commands work unsandboxed. Disable explicitly: `LIBPIN_NO_BWRAP=1` or `./third_party/fetch-deps --no-bwrap …`.
+- **bubblewrap** (if installed): outer RO root + RW hole  
+- **Landlock** (if kernel supports): LSM write scope; stacks under bwrap  
+- **Neither:** commands still work  
 
 ```bash
-# Debian/Ubuntu
-sudo apt install bubblewrap
+sudo apt install bubblewrap   # optional
+./third_party/libpin-landlock --status
 ```
+
+Disable: `LIBPIN_NO_BWRAP=1`, `LIBPIN_NO_LANDLOCK=1`, or `--no-bwrap` / `--no-landlock`.
 
 ---
 ## Repository History

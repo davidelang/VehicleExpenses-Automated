@@ -4481,3 +4481,10 @@ x
 - third_party/libpin-bwrap: confine writes (lib/src/artifact modes); no-op if bwrap missing or LIBPIN_NO_BWRAP=1.
 - fetch-deps/get-artifacts wire single-level sandbox; nested userns avoided.
 - Docs: README.md, ENVIRONMENT_SETUP §2.4, third_party/README, THIRD_PARTY_PIN_BUILDS.
+
+## 2026-08-03 - libpin Landlock write confinement
+
+- libpin-landlock (Python): mutation-only Landlock; RW under mode paths + /tmp + essential /dev nodes.
+- libpin-sandbox: bwrap outer + landlock inner; either optional.
+- fetch-deps / get-artifacts use libpin-sandbox; --no-landlock flag.
+- Docs: README, ENVIRONMENT_SETUP, third_party/README, THIRD_PARTY_PIN_BUILDS.

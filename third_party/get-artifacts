@@ -29,21 +29,27 @@ libpin.toml [[artifact]] fields:
 
 If from is not a glob, pick is ignored.
 
-Sandbox: with bwrap, each collect writes only under that lib's artifact/
-  (disable: LIBPIN_NO_BWRAP=1 or --no-bwrap).
+Sandbox (optional): each collect under artifact write confinement
+  (libpin-sandbox: Landlock and/or bwrap).
+  Disable: LIBPIN_NO_BWRAP=1 LIBPIN_NO_LANDLOCK=1 or --no-bwrap / --no-landlock.
 EOF
 }
 
+NO_LANDLOCK=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --no-bwrap) NO_BWRAP=1; shift ;;
+    --no-landlock) NO_LANDLOCK=1; shift ;;
     *) NAMES+=("$1"); shift ;;
   esac
 done
 
 if [[ "$NO_BWRAP" -eq 1 ]]; then
   export LIBPIN_NO_BWRAP=1
+fi
+if [[ "$NO_LANDLOCK" -eq 1 ]]; then
+  export LIBPIN_NO_LANDLOCK=1
 fi
 
 if [[ ${#NAMES[@]} -eq 0 ]]; then
@@ -56,13 +62,15 @@ if [[ ${#NAMES[@]} -eq 0 ]]; then
 fi
 
 # Multi-lib standalone: re-exec each name under artifact sandbox
-if [[ -z "${LIBPIN_SANDBOX:-}" && "${LIBPIN_NO_BWRAP:-0}" != "1" && -x "$ROOT/libpin-bwrap" && ${#NAMES[@]} -gt 0 ]]; then
-  for n in "${NAMES[@]}"; do
-    "$ROOT/libpin-bwrap" --mode artifact --lib "$n" -- \
-      env LIBPIN_SANDBOX=artifact \
-      "$0" --no-bwrap "$n" || FAILURES=$((FAILURES + 1))
-  done
-  exit "$FAILURES"
+if [[ -z "${LIBPIN_LANDLOCK:-}" && -z "${LIBPIN_SANDBOX:-}" && -x "$ROOT/libpin-sandbox" && ${#NAMES[@]} -gt 0 ]]; then
+  # Only re-wrap when neither layer already active
+  if [[ "${LIBPIN_NO_BWRAP:-0}" != "1" || "${LIBPIN_NO_LANDLOCK:-0}" != "1" ]]; then
+    for n in "${NAMES[@]}"; do
+      "$ROOT/libpin-sandbox" --mode artifact --lib "$n" -- \
+        "$0" --no-bwrap --no-landlock "$n" || FAILURES=$((FAILURES + 1))
+    done
+    exit "$FAILURES"
+  fi
 fi
 
 # Lines: path<TAB>from<TAB>pick
