@@ -112,6 +112,8 @@ class EmailReceiptFixtureIngest @Inject constructor(
                 }
                 else -> ""
             }
+            fun optStr(key: String): String? =
+                if (o.has(key) && !o.isNull(key)) o.optString(key).takeIf { it.isNotBlank() } else null
             ParsedFuelReceipt(
                 cost = cost,
                 gallons = gallons,
@@ -120,10 +122,10 @@ class EmailReceiptFixtureIngest @Inject constructor(
                 currency = o.optString("currency", "USD").ifBlank { "USD" },
                 brand = o.optString("brand", "Shell").ifBlank { "Shell" },
                 messageKey = fx.messageKey,
-                timestampLocal = o.optString("timestampLocal", null).takeIf { !it.isNullOrBlank() },
-                siteId = o.optString("siteId", null).takeIf { !it.isNullOrBlank() },
-                pump = o.optString("pump", null).takeIf { !it.isNullOrBlank() },
-                product = o.optString("product", null).takeIf { !it.isNullOrBlank() },
+                timestampLocal = optStr("timestampLocal"),
+                siteId = optStr("siteId"),
+                pump = optStr("pump"),
+                product = optStr("product"),
             )
         } catch (e: Exception) {
             Log.e(TAG, "parseGoldenJson ${fx.expectedJsonAsset}", e)
