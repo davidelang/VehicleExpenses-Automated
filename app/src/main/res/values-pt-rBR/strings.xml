@@ -546,4 +546,17 @@ Se escolher Não, os números históricos mantêm os valores, mas os rótulos mu
     <string name="settings_setup_help_provider_fmt">Ajuda de configuração — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Um por linha: Fuel - NomeVeículo=tableId (ex. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Crie coleções Firestore com campos string iguais aos cabeçalhos do app (Sync ID primeiro). Mapeie os ids de coleção abaixo.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Todo o período</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">Últimos 12 meses</string>
+    <string name="reports_period_last_90_days">Últimos 90 dias</string>
+    <string name="reports_period_custom_range">Intervalo personalizado</string>
+    <string name="reports_period_custom_range_dates">Personalizado (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Despesas do veículo — %1$s</string>
+    <string name="reports_vehicle_label">Veículo: %1$s</string>
+    <string name="reports_trip_miles_info">Milhas por finalidade da viagem a partir de segmentos só de início (início → próximo início). No período, milhas do odômetro base até o primeiro início contam como Pessoal se você não iniciou uma finalidade antes (como iniciar Pessoal no dia 1). Se um veículo tem abastecimentos sem inícios de viagem, base → último odo do período também conta como Pessoal. Cada veículo = séries de milhas por tipo e totais. A lista de segmentos é a superfície de viagens (Histórico de combustível lista só abastecimentos). Não é formulário fiscal — exporte e use em outro lugar. Filtros de período usam o horário de início do segmento. Segmentos fechados de comprimento zero são excluídos dos totais por padrão.</string>
+    <string name="fuel_odometer_review_then_save">Odômetro: %1$s. Revise os campos e depois Salve.</string>
 </resources>

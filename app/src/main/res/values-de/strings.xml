@@ -546,4 +546,17 @@ Bei Nein behalten historische Zahlen ihre Werte, Anzeige-Labels ändern sich ohn
     <string name="settings_setup_help_provider_fmt">Einrichtungshilfe — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Eine pro Zeile: Fuel - Fahrzeugname=tableId (z. B. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Erstellen Sie Firestore-Sammlungen mit String-Feldern passend zu App-Headern (Sync ID zuerst). Mappen Sie die Sammlungs-IDs unten.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Gesamte Zeit</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">Letzte 12 Monate</string>
+    <string name="reports_period_last_90_days">Letzte 90 Tage</string>
+    <string name="reports_period_custom_range">Benutzerdefinierter Zeitraum</string>
+    <string name="reports_period_custom_range_dates">Benutzerdefiniert (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Fahrzeugausgaben — %1$s</string>
+    <string name="reports_vehicle_label">Fahrzeug: %1$s</string>
+    <string name="reports_trip_miles_info">Meilen nach Fahrtzweck aus offenen Segmenten (Start → nächster Start). In einem Zeitraum zählen Meilen vom Basis-Kilometerstand bis zum ersten Trip-Start als Persönlich, wenn Sie keinen Zweck früher gestartet haben (wie Persönlich am Tag 1). Hat ein Fahrzeug Tankungen ohne Trip-Starts, zählt Basis → letzter Odo im Zeitraum auch als Persönlich. Jedes Fahrzeug = Meilen-nach-Typ-Serien und Summen. Segmentliste ist die Trip-Oberfläche (Tankhistorie listet nur Tankungen). Kein Steuerformular — exportieren und woanders nutzen. Zeitraumfilter nutzt Segmentstartzeit. Geschlossene Segmente mit Länge null sind standardmäßig von Summen ausgeschlossen.</string>
+    <string name="fuel_odometer_review_then_save">Tachometer: %1$s. Felder prüfen, dann Speichern.</string>
 </resources>

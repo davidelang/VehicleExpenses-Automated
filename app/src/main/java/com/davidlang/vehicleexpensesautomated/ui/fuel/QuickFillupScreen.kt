@@ -580,7 +580,11 @@ fun QuickFillupScreen(
                                                 result.vehicleId?.let { selectedVehicleId = it }
                                                 result.odometer?.let { odometer = it }
                                                 instructionLine = when {
-                                                    result.odometer != null -> "Odometer: ${result.odometer}. Review fields, then Save."
+                                                    result.odometer != null ->
+                                                        context.getString(
+                                                            R.string.fuel_odometer_review_then_save,
+                                                            result.odometer.toString(),
+                                                        )
                                                     else -> "Dash captured. Enter odometer if needed, or switch to pump."
                                                 }
                                             }

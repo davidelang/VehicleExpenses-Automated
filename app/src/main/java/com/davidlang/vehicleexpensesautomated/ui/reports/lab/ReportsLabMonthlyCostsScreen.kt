@@ -14,12 +14,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 @Composable
 fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
+    val context = LocalContext.current
     val data = rememberLabReportData(LabVehicleMembership.FUEL_OR_EXPENSE)
     val fillFuel = remember(data.fuel) { data.fuel.withoutTripStarts() }
     val isEach = data.filter.vehicleMode == LabVehicleMode.EACH
@@ -75,9 +77,9 @@ fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — Monthly costs")
-                    appendLine("Period: ${periodLabel(data.filter)}")
-                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
+                    appendLine(labShareAppTitle(context, context.getString(R.string.reports_monthly_costs)))
+                    appendLine(labSharePeriodLine(context, data.filter))
+                    appendLine(labShareVehicleLine(context, data.filterVehicleLabel()))
                     if (isEach) {
                         eachVehicleSeries.forEach { (vName, amounts) ->
                             appendLine("--- $vName ---")
@@ -127,7 +129,19 @@ fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
                     }
                     sb.toString()
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText("Monthly costs", buildText()) },
+                pdfBody = {
+                    ReportsLabPdf.fromPlainText(
+                        context.getString(R.string.reports_monthly_costs),
+                        buildText(),
+                        generatedLabel = context.getString(
+                            R.string.reports_generated_at,
+                            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date()),
+                        ),
+                        periodLinePrefix = labPeriodLinePrefix(context),
+                        vehicleLinePrefix = labVehicleLinePrefix(context),
+                    )
+                },
             )
         },
     ) {

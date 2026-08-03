@@ -393,9 +393,9 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — Time based reports")
-                    appendLine("Period: ${periodLabel(data.filter)}")
-                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
+                    appendLine(labShareAppTitle(context, context.getString(R.string.reports_time_based_reports)))
+                    appendLine(labSharePeriodLine(context, data.filter))
+                    appendLine(labShareVehicleLine(context, data.filterVehicleLabel()))
                     appendLine("Smooth: ${mode.displayLabel(customDays)}")
                     appendLine(
                         "Metrics: " + metricDefs.filter { it.checked }.joinToString(", ") { it.label }
@@ -410,7 +410,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                 }
             }
             ReportsLabShareActions(
-                subject = "Time based reports",
+                subject = context.getString(R.string.reports_time_based_reports),
                 textBody = buildText,
                 csvFileName = "lab_time_charts.csv",
                 csvBody = {
@@ -491,7 +491,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                     ReportsLabPdf.buildTextReportPdf(
                         title = timeReportsTitle,
                         metaLines = listOf(
-                            "Period: ${periodLabel(data.filter)}",
+                            labSharePeriodLine(context, data.filter),
                             "Vehicle: ${data.filterVehicleLabel()}",
                             "Smooth: ${mode.displayLabel(customDays)}",
                         ),

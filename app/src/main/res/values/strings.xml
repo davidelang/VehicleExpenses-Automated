@@ -564,4 +564,17 @@
     <string name="settings_setup_help_provider_fmt">Setup help — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">One per line: Fuel - VehicleName=tableId (e.g. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Create Firestore collections with string fields matching app headers (Sync ID first). Map collection ids below.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">All time</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">Last 12 months</string>
+    <string name="reports_period_last_90_days">Last 90 days</string>
+    <string name="reports_period_custom_range">Custom range</string>
+    <string name="reports_period_custom_range_dates">Custom (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Vehicle Expenses — %1$s</string>
+    <string name="reports_vehicle_label">Vehicle: %1$s</string>
+    <string name="reports_trip_miles_info">Miles by trip purpose from open-only segments (start → next start). Within a report period, miles from the period baseline odometer to the first Start trip count as Personal when you never started a purpose earlier (same as starting Personal on day 1). If a vehicle has fills but no trip starts, baseline → last odo in period also counts as Personal. Each vehicle = miles-by-type series and totals per vehicle. Segment list is the trip surface (Fuel History lists fills only). Not a tax form — export and use elsewhere. Period filters by segment start time. Zero-length closed segments are excluded from totals by default.</string>
+    <string name="fuel_odometer_review_then_save">Odometer: %1$s. Review fields, then Save.</string>
 </resources>

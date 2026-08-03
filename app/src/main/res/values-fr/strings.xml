@@ -546,4 +546,17 @@ Si vous choisissez Non, les valeurs historiques restent, mais les libellés d’
     <string name="settings_setup_help_provider_fmt">Aide à la configuration — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Un par ligne : Fuel - NomVéhicule=tableId (ex. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Créez des collections Firestore avec des champs texte correspondant aux en-têtes de l’app (Sync ID en premier). Mappez les id de collection ci-dessous.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Tout le temps</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">12 derniers mois</string>
+    <string name="reports_period_last_90_days">90 derniers jours</string>
+    <string name="reports_period_custom_range">Plage personnalisée</string>
+    <string name="reports_period_custom_range_dates">Perso. (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Dépenses véhicule — %1$s</string>
+    <string name="reports_vehicle_label">Véhicule : %1$s</string>
+    <string name="reports_trip_miles_info">Miles par motif de trajet à partir des segments ouverts (début → début suivant). Dans une période, les miles de l’odomètre de base au premier démarrage de trajet comptent comme Personnel si vous n’avez pas démarré un motif plus tôt (comme démarrer Personnel le jour 1). Si un véhicule a des pleins sans démarrages, base → dernier odo de la période compte aussi comme Personnel. Chaque véhicule = séries miles par type et totaux. La liste des segments est la surface trajets (l’historique carburant liste seulement les pleins). Pas un formulaire fiscal — exportez ailleurs. Les filtres de période utilisent l’heure de début du segment. Les segments fermés de longueur nulle sont exclus des totaux par défaut.</string>
+    <string name="fuel_odometer_review_then_save">Odomètre : %1$s. Vérifiez les champs, puis Enregistrer.</string>
 </resources>

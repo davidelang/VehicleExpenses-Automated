@@ -546,4 +546,17 @@ Se scegli No, i numeri storici restano ma le etichette cambiano senza conversion
     <string name="settings_setup_help_provider_fmt">Guida configurazione — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Uno per riga: Fuel - NomeVeicolo=tableId (es. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Crea collezioni Firestore con campi stringa allineati alle intestazioni app (Sync ID prima). Mappa gli id collezione sotto.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Tutto il tempo</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">Ultimi 12 mesi</string>
+    <string name="reports_period_last_90_days">Ultimi 90 giorni</string>
+    <string name="reports_period_custom_range">Intervallo personalizzato</string>
+    <string name="reports_period_custom_range_dates">Personalizzato (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Spese veicolo — %1$s</string>
+    <string name="reports_vehicle_label">Veicolo: %1$s</string>
+    <string name="reports_trip_miles_info">Miglia per scopo di viaggio da segmenti solo-inizio (inizio → inizio successivo). Nel periodo, le miglia dall’odometro di base al primo avvio viaggio contano come Personale se non hai avviato uno scopo prima (come avviare Personale il giorno 1). Se un veicolo ha rifornimenti senza avvii, base → ultimo odo del periodo conta pure come Personale. Ogni veicolo = serie miglia per tipo e totali. L’elenco segmenti è la superficie viaggi (Cronologia carburante elenca solo rifornimenti). Non è un modulo fiscale — esporta e usa altrove. I filtri periodo usano l’ora di inizio del segmento. I segmenti chiusi di lunghezza zero sono esclusi dai totali per impostazione predefinita.</string>
+    <string name="fuel_odometer_review_then_save">Contachilometri: %1$s. Controlla i campi, poi Salva.</string>
 </resources>

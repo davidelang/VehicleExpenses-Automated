@@ -176,10 +176,11 @@ fun SettingsScreen(navController: NavHostController) {
         else -> systemVolumeLabel
     }
 
-    fun volumePrefFromLabel(label: String): String = when {
-        label == systemVolumeLabel || label.startsWith("System default") ||
-            label == volumeSystemGallons || label == volumeSystemLiters -> "system"
-        label == volumeGallonsG || label.startsWith("Gallons") -> VolumeUnits.GALLONS
+    // Options list is always built from current stringResource values — match by equality only.
+    fun volumePrefFromLabel(label: String): String = when (label) {
+        systemVolumeLabel, volumeSystemGallons, volumeSystemLiters -> "system"
+        volumeGallonsG -> VolumeUnits.GALLONS
+        volumeLitersL -> VolumeUnits.LITERS
         else -> VolumeUnits.LITERS
     }
 
@@ -718,17 +719,16 @@ fun SettingsScreen(navController: NavHostController) {
                 DropdownSetting(
                     label = stringResource(R.string.settings_default_currency),
                     selectedValue = if (currencySymbol == "system") {
-                        stringResource(R.string.settings_system_default_currency, systemCurrencySymbol)
+                        systemDefaultCurrencyLabel
                     } else {
                         currencySymbol
                     },
                     options = shortCurrencyOptions,
                     onValueChange = { selected ->
-                        when {
-                            selected == systemDefaultCurrencyLabel ||
-                                selected.startsWith("System default") -> currencySymbol = "system"
-                            selected == seeMoreCurrenciesLabel || selected == "See more" ->
-                                showMoreCurrencies = true
+                        // Options are built from stringResource each composition — exact match only.
+                        when (selected) {
+                            systemDefaultCurrencyLabel -> currencySymbol = "system"
+                            seeMoreCurrenciesLabel -> showMoreCurrencies = true
                             else -> currencySymbol = selected
                         }
                     },

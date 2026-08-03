@@ -546,4 +546,17 @@ Si elige No, los números históricos conservan sus valores actuales, pero las e
     <string name="settings_setup_help_provider_fmt">Ayuda de configuración — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Uno por línea: Fuel - NombreVehículo=tableId (p. ej. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Cree colecciones Firestore con campos de texto que coincidan con los encabezados de la app (Sync ID primero). Asigne los id de colección abajo.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Todo el tiempo</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">Últimos 12 meses</string>
+    <string name="reports_period_last_90_days">Últimos 90 días</string>
+    <string name="reports_period_custom_range">Rango personalizado</string>
+    <string name="reports_period_custom_range_dates">Personalizado (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Gastos de vehículos — %1$s</string>
+    <string name="reports_vehicle_label">Vehículo: %1$s</string>
+    <string name="reports_trip_miles_info">Millas por propósito del viaje desde segmentos solo-inicio (inicio → siguiente inicio). Dentro de un período, las millas desde el odómetro base hasta el primer inicio de viaje cuentan como Personal si no inició un propósito antes (igual que iniciar Personal el día 1). Si un vehículo tiene cargas pero no inicios de viaje, base → último odo del período también cuenta como Personal. Cada vehículo = series de millas por tipo y totales. La lista de segmentos es la superficie de viajes (Historial de combustible solo lista cargas). No es un formulario fiscal — exporte y úselo en otro lugar. Los filtros de período usan la hora de inicio del segmento. Los segmentos cerrados de longitud cero se excluyen de los totales por defecto.</string>
+    <string name="fuel_odometer_review_then_save">Odómetro: %1$s. Revise los campos y luego Guarde.</string>
 </resources>

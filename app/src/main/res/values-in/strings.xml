@@ -546,4 +546,17 @@ Jika memilih Tidak, angka historis tetap, tetapi label tampilan berubah tanpa ko
     <string name="settings_setup_help_provider_fmt">Bantuan penyiapan — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Satu per baris: Fuel - NamaKendaraan=tableId (mis. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Buat koleksi Firestore dengan field string yang cocok header app (Sync ID dulu). Petakan id koleksi di bawah.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Semua waktu</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">12 bulan terakhir</string>
+    <string name="reports_period_last_90_days">90 hari terakhir</string>
+    <string name="reports_period_custom_range">Rentang kustom</string>
+    <string name="reports_period_custom_range_dates">Kustom (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Pengeluaran Kendaraan — %1$s</string>
+    <string name="reports_vehicle_label">Kendaraan: %1$s</string>
+    <string name="reports_trip_miles_info">Mil menurut tujuan perjalanan dari segmen hanya-mulai (mulai → mulai berikutnya). Dalam periode laporan, mil dari odometer dasar ke mulai perjalanan pertama dihitung sebagai Personal jika Anda belum memulai tujuan lebih awal (sama seperti memulai Personal di hari 1). Jika kendaraan punya pengisian tanpa mulai perjalanan, dasar → odo terakhir dalam periode juga dihitung Personal. Setiap kendaraan = deret mil per jenis dan total. Daftar segmen adalah permukaan perjalanan (Riwayat BBM hanya mencantumkan pengisian). Bukan formulir pajak — ekspor dan gunakan di tempat lain. Filter periode memakai waktu mulai segmen. Segmen tertutup panjang nol dikecualikan dari total secara default.</string>
+    <string name="fuel_odometer_review_then_save">Odometer: %1$s. Tinjau bidang, lalu Simpan.</string>
 </resources>

@@ -442,7 +442,12 @@ fun RcloneRemoteWizardDialog(
                                         SyncSetupDocs.open(context, SyncSetupDocs.photoUrlForRcloneType(provider.name))
                                     },
                                 ) {
-                                    Text("Setup help — ${provider.name}")
+                                    Text(
+                                        stringResource(
+                                            R.string.settings_setup_help_provider_fmt,
+                                            provider.name,
+                                        ),
+                                    )
                                 }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {

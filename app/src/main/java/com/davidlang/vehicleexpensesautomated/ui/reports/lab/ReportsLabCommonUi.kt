@@ -193,13 +193,7 @@ fun ReportsLabFilterBar(
                     .weight(1f)
                     .widthIn(min = 140.dp, max = 280.dp),
             ) {
-                val periodLabelUi = when (state.period) {
-                    LabPeriod.ALL_TIME -> "All time"
-                    LabPeriod.YTD -> "YTD"
-                    LabPeriod.LAST_12_MONTHS -> "Last 12 months"
-                    LabPeriod.LAST_90_DAYS -> "Last 90 days"
-                    LabPeriod.CUSTOM -> "Custom range"
-                }
+                val periodLabelUi = labPeriodChipLabel(state.period, context)
                 OutlinedTextField(
                     value = periodLabelUi,
                     onValueChange = {},
@@ -219,15 +213,7 @@ fun ReportsLabFilterBar(
                     LabPeriod.entries.forEach { p ->
                         DropdownMenuItem(
                             text = {
-                                Text(
-                                    when (p) {
-                                        LabPeriod.ALL_TIME -> "All time"
-                                        LabPeriod.YTD -> "YTD"
-                                        LabPeriod.LAST_12_MONTHS -> "Last 12 months"
-                                        LabPeriod.LAST_90_DAYS -> "Last 90 days"
-                                        LabPeriod.CUSTOM -> "Custom range"
-                                    },
-                                )
+                                Text(labPeriodChipLabel(p, context))
                             },
                             onClick = {
                                 val next = state.copy(period = p)
@@ -271,7 +257,7 @@ fun ReportsLabFilterBar(
             }
         }
         Text(
-            periodLabel(state),
+            periodLabel(state, context),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

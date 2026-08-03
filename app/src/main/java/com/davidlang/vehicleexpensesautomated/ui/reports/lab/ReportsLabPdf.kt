@@ -196,6 +196,10 @@ object ReportsLabPdf {
         plainText: String,
         generatedMs: Long = System.currentTimeMillis(),
         generatedLabel: String? = null,
+        /** Localized prefix for share lines like "Period: …" (from [R.string.reports_period_label] with empty arg). */
+        periodLinePrefix: String = "Period:",
+        /** Localized prefix for share lines like "Vehicle: …". */
+        vehicleLinePrefix: String = "Vehicle:",
     ): ByteArray {
         val allLines = plainText.lines()
         val genLine = generatedLabel ?: "Generated: ${formatGenerated(generatedMs)}"
@@ -204,13 +208,15 @@ object ReportsLabPdf {
             "Vehicle Expenses",
             genLine,
         )
-        // Promote Period: / Vehicle: lines into header when present
+        // Promote Period / Vehicle lines into header (prefixes from same resources as share text)
         val body = mutableListOf<String>()
+        val periodPref = periodLinePrefix.trimEnd()
+        val vehiclePref = vehicleLinePrefix.trimEnd()
         for (line in allLines) {
             val t = line.trim()
             when {
-                t.startsWith("Period:", ignoreCase = true) -> meta.add(t)
-                t.startsWith("Vehicle:", ignoreCase = true) -> meta.add(t)
+                periodPref.isNotEmpty() && t.startsWith(periodPref, ignoreCase = true) -> meta.add(t)
+                vehiclePref.isNotEmpty() && t.startsWith(vehiclePref, ignoreCase = true) -> meta.add(t)
                 t.startsWith("Vehicle Expenses", ignoreCase = true) -> { /* skip redundant title line */ }
                 else -> body.add(line)
             }
@@ -238,8 +244,9 @@ object ReportsLabPdf {
         widthPx: Int = 1000,
         heightPx: Int = 480,
         title: String = "",
-        emptyChartLabel: String = "No chart data",
+        emptyChartLabel: String = "",
     ): Bitmap {
+        val emptyLabel = emptyChartLabel.ifBlank { "No chart data" }
         val bmp = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
         canvas.drawColor(0xFFFFFFFF.toInt())
@@ -255,7 +262,7 @@ object ReportsLabPdf {
                 color = 0xFF666666.toInt()
                 textSize = 28f
             }
-            canvas.drawText(emptyChartLabel, padL, heightPx / 2f, p)
+            canvas.drawText(emptyLabel, padL, heightPx / 2f, p)
             return bmp
         }
         val minX = allPts.minOf { it.timestampMs }.toDouble()

@@ -546,4 +546,17 @@
     <string name="settings_setup_help_provider_fmt">Справка по настройке — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">По одному в строке: Fuel - ИмяТС=tableId (напр. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Создайте коллекции Firestore со строковыми полями как заголовки приложения (сначала Sync ID). Сопоставьте id коллекций ниже.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Всё время</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">Последние 12 месяцев</string>
+    <string name="reports_period_last_90_days">Последние 90 дней</string>
+    <string name="reports_period_custom_range">Произвольный период</string>
+    <string name="reports_period_custom_range_dates">Свой (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Расходы на ТС — %1$s</string>
+    <string name="reports_vehicle_label">ТС: %1$s</string>
+    <string name="reports_trip_miles_info">Мили по цели поездки из сегментов только-старт (старт → следующий старт). В периоде мили от базового одометра до первого старта поездки считаются Личными, если цель не начинали раньше (как Личные в день 1). Если у ТС есть заправки без стартов, база → последний одо в периоде тоже считается Личными. Каждое ТС = ряды миль по типу и итоги. Список сегментов — поверхность поездок (История топлива только заправки). Не налоговая форма — экспортируйте и используйте иначе. Фильтры периода по времени начала сегмента. Закрытые сегменты нулевой длины по умолчанию исключены из итогов.</string>
+    <string name="fuel_odometer_review_then_save">Одометр: %1$s. Проверьте поля, затем Сохранить.</string>
 </resources>

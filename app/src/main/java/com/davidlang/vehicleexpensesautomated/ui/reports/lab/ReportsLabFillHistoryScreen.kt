@@ -34,8 +34,8 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — $fillHistoryTitle")
-                    appendLine(context.getString(R.string.reports_period_label, periodLabel(data.filter)))
+                    appendLine(labShareAppTitle(context, fillHistoryTitle))
+                    appendLine(context.getString(R.string.reports_period_label, periodLabel(data.filter, context)))
                     appendLine("Vehicle: ${data.filterVehicleLabel()}")
                     appendLine("Count: ${rows.size}")
                     rows.forEach { e ->
@@ -79,6 +79,13 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
                     ReportsLabPdf.fromPlainText(
                         fillHistoryTitle,
                         buildText(),
+                        generatedLabel = context.getString(
+                            R.string.reports_generated_at,
+                            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date()),
+                        ),
+                        periodLinePrefix = labPeriodLinePrefix(context),
+                        vehicleLinePrefix = labVehicleLinePrefix(context),
                     )
                 },
             )

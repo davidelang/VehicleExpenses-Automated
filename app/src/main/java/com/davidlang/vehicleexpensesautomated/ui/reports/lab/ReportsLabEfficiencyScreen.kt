@@ -169,9 +169,9 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — Fuel efficiency")
-                    appendLine("Period: ${periodLabel(data.filter)}")
-                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
+                    appendLine(labShareAppTitle(context, context.getString(R.string.reports_fuel_efficiency)))
+                    appendLine(labSharePeriodLine(context, data.filter))
+                    appendLine(labShareVehicleLine(context, data.filterVehicleLabel()))
                     appendLine(
                         "Metrics: " +
                             listOfNotNull(
@@ -207,7 +207,7 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                 }
             }
             ReportsLabShareActions(
-                subject = "Fuel efficiency",
+                subject = context.getString(R.string.reports_fuel_efficiency),
                 textBody = buildText,
                 csvFileName = "lab_efficiency.csv",
                 csvBody = {
@@ -243,6 +243,13 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                     ReportsLabPdf.fromPlainText(
                         context.getString(R.string.reports_fuel_efficiency),
                         buildText(),
+                        generatedLabel = context.getString(
+                            R.string.reports_generated_at,
+                            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date()),
+                        ),
+                        periodLinePrefix = labPeriodLinePrefix(context),
+                        vehicleLinePrefix = labVehicleLinePrefix(context),
                     )
                 },
             )

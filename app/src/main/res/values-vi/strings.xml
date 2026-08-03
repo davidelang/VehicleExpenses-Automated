@@ -546,4 +546,17 @@ Nếu chọn Không, số liệu lịch sử giữ nguyên nhưng nhãn hiển t
     <string name="settings_setup_help_provider_fmt">Trợ giúp thiết lập — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Mỗi dòng một: Fuel - TênXe=tableId (vd. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Tạo collection Firestore với trường chuỗi khớp header ứng dụng (Sync ID trước). Ánh xạ id collection bên dưới.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Mọi thời gian</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">12 tháng gần nhất</string>
+    <string name="reports_period_last_90_days">90 ngày gần nhất</string>
+    <string name="reports_period_custom_range">Khoảng tùy chỉnh</string>
+    <string name="reports_period_custom_range_dates">Tùy chỉnh (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Chi phí xe — %1$s</string>
+    <string name="reports_vehicle_label">Xe: %1$s</string>
+    <string name="reports_trip_miles_info">Dặm theo mục đích chuyến đi từ các đoạn chỉ-bắt-đầu (bắt đầu → bắt đầu kế). Trong kỳ, dặm từ đồng hồ cơ sở đến lần bắt đầu chuyến đầu được tính Cá nhân nếu bạn chưa bắt đầu mục đích sớm hơn (như Cá nhân ngày 1). Nếu xe có lần đổ mà không có bắt đầu chuyến, cơ sở → odo cuối kỳ cũng tính Cá nhân. Mỗi xe = chuỗi dặm theo loại và tổng. Danh sách đoạn là bề mặt chuyến (Lịch sử nhiên liệu chỉ liệt kê lần đổ). Không phải biểu mẫu thuế — xuất và dùng nơi khác. Bộ lọc kỳ dùng thời điểm bắt đầu đoạn. Đoạn đóng dài bằng 0 mặc định loại khỏi tổng.</string>
+    <string name="fuel_odometer_review_then_save">Đồng hồ km: %1$s. Kiểm tra các trường, rồi Lưu.</string>
 </resources>

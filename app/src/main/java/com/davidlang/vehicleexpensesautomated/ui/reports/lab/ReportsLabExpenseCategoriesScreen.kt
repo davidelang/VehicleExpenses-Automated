@@ -79,9 +79,9 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — Expenses by category")
-                    appendLine("Period: ${periodLabel(data.filter)}")
-                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
+                    appendLine(labShareAppTitle(context, context.getString(R.string.reports_expenses_by_category)))
+                    appendLine(labSharePeriodLine(context, data.filter))
+                    appendLine(labShareVehicleLine(context, data.filterVehicleLabel()))
                     if (isEach) {
                         eachByVehicleTotals.forEach { (vName, cats) ->
                             appendLine("--- $vName ---")
@@ -151,6 +151,13 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                     ReportsLabPdf.fromPlainText(
                         context.getString(R.string.reports_expenses_by_category),
                         buildText(),
+                        generatedLabel = context.getString(
+                            R.string.reports_generated_at,
+                            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date()),
+                        ),
+                        periodLinePrefix = labPeriodLinePrefix(context),
+                        vehicleLinePrefix = labVehicleLinePrefix(context),
                     )
                 },
             )

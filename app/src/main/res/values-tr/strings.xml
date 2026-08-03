@@ -546,4 +546,17 @@ Hayır derseniz geçmiş sayılar kalır; görünen etiketler dönüşümsüz de
     <string name="settings_setup_help_provider_fmt">Kurulum yardımı — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Satır başına bir: Fuel - AraçAdı=tableId (ör. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Uygulama başlıklarıyla eşleşen string alanlı Firestore koleksiyonları oluşturun (önce Sync ID). Aşağıda koleksiyon id’lerini eşleyin.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Tüm zaman</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">Son 12 ay</string>
+    <string name="reports_period_last_90_days">Son 90 gün</string>
+    <string name="reports_period_custom_range">Özel aralık</string>
+    <string name="reports_period_custom_range_dates">Özel (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Araç giderleri — %1$s</string>
+    <string name="reports_vehicle_label">Araç: %1$s</string>
+    <string name="reports_trip_miles_info">Açık-yalnızca segmentlerden yolculuk amacına göre mil (başlangıç → sonraki başlangıç). Dönemde, temel kilometreden ilk yolculuk başlangıcına kadar mil, daha önce amaç başlatmadıysanız Kişisel sayılır (1. günde Kişisel başlatmak gibi). Araçta dolum var ama yolculuk başlangıcı yoksa temel → dönemdeki son odo da Kişisel sayılır. Her araç = türe göre mil serileri ve toplamlar. Segment listesi yolculuk yüzeyidir (Yakıt geçmişi yalnızca dolumları listeler). Vergi formu değil — dışa aktarıp başka yerde kullanın. Dönem filtreleri segment başlangıç zamanını kullanır. Sıfır uzunlukta kapalı segmentler varsayılan olarak toplamların dışındadır.</string>
+    <string name="fuel_odometer_review_then_save">Kilometre: %1$s. Alanları gözden geçirin, sonra Kaydet.</string>
 </resources>

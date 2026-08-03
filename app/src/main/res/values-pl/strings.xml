@@ -546,4 +546,17 @@ Jeśli wybierzesz Nie, historyczne wartości zostaną, ale etykiety zmienią si�
     <string name="settings_setup_help_provider_fmt">Pomoc konfiguracji — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Jeden w wierszu: Fuel - NazwaPojazdu=tableId (np. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Utwórz kolekcje Firestore z polami tekstowymi jak nagłówki aplikacji (najpierw Sync ID). Zmapuj id kolekcji poniżej.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Cały czas</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">Ostatnie 12 miesięcy</string>
+    <string name="reports_period_last_90_days">Ostatnie 90 dni</string>
+    <string name="reports_period_custom_range">Zakres niestandardowy</string>
+    <string name="reports_period_custom_range_dates">Niestandardowy (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Wydatki pojazdu — %1$s</string>
+    <string name="reports_vehicle_label">Pojazd: %1$s</string>
+    <string name="reports_trip_miles_info">Mile według celu podróży z segmentów tylko-start (start → następny start). W okresie mile od licznika bazowego do pierwszego startu podróży liczą się jako Osobiste, jeśli wcześniej nie rozpoczęto celu (jak Osobiste w dniu 1). Jeśli pojazd ma tankowania bez startów, baza → ostatni odo w okresie też liczy się jako Osobiste. Każdy pojazd = serie mil wg typu i sumy. Lista segmentów to powierzchnia podróży (Historia paliwa wymienia tylko tankowania). To nie formularz podatkowy — eksportuj i użyj gdzie indziej. Filtry okresu używają czasu startu segmentu. Zamknięte segmenty zerowej długości są domyślnie wykluczone z sum.</string>
+    <string name="fuel_odometer_review_then_save">Licznik: %1$s. Sprawdź pola, potem Zapisz.</string>
 </resources>

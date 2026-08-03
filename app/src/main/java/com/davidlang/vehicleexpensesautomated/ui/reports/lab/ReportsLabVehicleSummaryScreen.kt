@@ -57,11 +57,11 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
             .take(5)
         val dpm = dollarsPerMile(fuelAll, exp, data.defaultStored)
         return buildString {
-            appendLine("Vehicle Expenses — ${context.getString(R.string.reports_vehicle_summary)}")
+            appendLine(labShareAppTitle(context, context.getString(R.string.reports_vehicle_summary)))
             appendLine(
                 context.getString(R.string.reports_generated_at, formatLabDateTime(System.currentTimeMillis())),
             )
-            appendLine(context.getString(R.string.reports_period_label, periodLabel(data.filter)))
+            appendLine(labSharePeriodLine(context, data.filter))
             val identity = buildList {
                 v?.name?.takeIf { it.isNotBlank() }?.let { add(it) }
                 listOfNotNull(v?.make, v?.model).joinToString(" ").trim().takeIf { it.isNotEmpty() }?.let { add(it) }
@@ -70,7 +70,7 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
                     add(context.getString(R.string.reports_plate_label, it))
                 }
             }.joinToString(" · ").ifBlank { data.filterVehicleLabel() }
-            appendLine("Vehicle: $identity")
+            appendLine(labShareVehicleLine(context, identity))
             if (includeVinInShare && !v?.vin.isNullOrBlank()) {
                 appendLine(context.getString(R.string.reports_vin_label, v?.vin.orEmpty()))
             }
@@ -147,7 +147,7 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
             ).append('\n')
         }
         row("meta", "generated", formatLabDateTime(System.currentTimeMillis()))
-        row("meta", "period", periodLabel(data.filter))
+        row("meta", "period", periodLabel(data.filter, context))
         row("meta", "vehicle_filter", data.filterVehicleLabel())
         targets.forEach { v ->
             val vid = v?.id
@@ -218,7 +218,18 @@ fun ReportsLabVehicleSummaryScreen(navController: NavHostController) {
                 textBody = buildText,
                 csvFileName = "lab_vehicle_summary.csv",
                 csvBody = { csvPack() },
-                pdfBody = { ReportsLabPdf.fromPlainText("Vehicle summary", buildText()) },
+                pdfBody = {
+                    ReportsLabPdf.fromPlainText(
+                        context.getString(R.string.reports_vehicle_summary),
+                        buildText(),
+                        generatedLabel = context.getString(
+                            R.string.reports_generated_at,
+                            formatLabDateTime(System.currentTimeMillis()),
+                        ),
+                        periodLinePrefix = labPeriodLinePrefix(context),
+                        vehicleLinePrefix = labVehicleLinePrefix(context),
+                    )
+                },
             )
         },
     ) {
@@ -265,7 +276,7 @@ private fun VehicleSummarySection(
                 stringResource(R.string.reports_generated_at, formatLabDateTime(System.currentTimeMillis())),
                 style = MaterialTheme.typography.labelSmall,
             )
-            Text(stringResource(R.string.reports_period_label, periodLabel(data.filter)))
+            Text(stringResource(R.string.reports_period_label, periodLabel(data.filter, context)))
             Text(
                 buildList {
                     vehicle?.name?.let { add(it) }

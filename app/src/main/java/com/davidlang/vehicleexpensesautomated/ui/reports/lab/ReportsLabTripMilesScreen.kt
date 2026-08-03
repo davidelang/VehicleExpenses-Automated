@@ -118,7 +118,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
 
     ReportsLabScreenScaffold(
         title = stringResource(R.string.reports_trip_miles),
-        infoText = TRIP_MILES_INFO,
+        infoText = stringResource(R.string.reports_trip_miles_info),
         filterState = data.filter,
         vehicles = data.vehicles,
         onFilterChange = data.setFilter,
@@ -146,7 +146,19 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
                         listSegs = listSegs,
                     )
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText("Trip miles", buildText()) },
+                pdfBody = {
+                    ReportsLabPdf.fromPlainText(
+                        context.getString(R.string.reports_trip_miles),
+                        buildText(),
+                        generatedLabel = context.getString(
+                            R.string.reports_generated_at,
+                            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date()),
+                        ),
+                        periodLinePrefix = labPeriodLinePrefix(context),
+                        vehicleLinePrefix = labVehicleLinePrefix(context),
+                    )
+                },
             )
         },
     ) {
@@ -317,17 +329,7 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
     }
 }
 
-private const val TRIP_MILES_INFO =
-    "Miles by trip purpose from open-only segments (start → next start). " +
-        "Within a report period, miles from the period baseline odometer to the first " +
-        "Start trip count as Personal when you never started a purpose earlier " +
-        "(same as starting Personal on day 1). If a vehicle has fills but no trip starts, " +
-        "baseline → last odo in period also counts as Personal. " +
-        "Each vehicle = miles-by-type series and totals per vehicle. " +
-        "Segment list is the trip surface (Fuel History lists fills only). " +
-        "Not a tax form — export and use elsewhere. " +
-        "Period filters by segment start time. Zero-length closed segments are excluded " +
-        "from totals by default."
+// Trip miles page help lives in R.string.reports_trip_miles_info
 
 private fun buildTextShare(
     context: android.content.Context,
@@ -340,9 +342,9 @@ private fun buildTextShare(
     showZeroLength: Boolean,
     leadingCount: Int,
 ): String = buildString {
-    appendLine("Vehicle Expenses — Trip miles")
-    appendLine("Period: ${periodLabel(data.filter)}")
-    appendLine("Vehicle: ${data.filterVehicleLabel()}")
+    appendLine(labShareAppTitle(context, context.getString(R.string.reports_trip_miles)))
+    appendLine(labSharePeriodLine(context, data.filter))
+    appendLine(labShareVehicleLine(context, data.filterVehicleLabel()))
     appendLine(
         "Totals: Personal ${if (includePersonalInTotals) "included" else "excluded"}; " +
             "zero-length ${if (showZeroLength) "included" else "excluded"}",
@@ -390,7 +392,7 @@ private fun buildCsvShare(
     val unit = UnitFormat.distanceUnitShortLabel(context)
     val sb = StringBuilder()
     sb.appendLine("section,key,value,unit")
-    sb.appendLine("meta,period,${ReportsLabShare.csvEscape(periodLabel(data.filter))},")
+    sb.appendLine("meta,period,${ReportsLabShare.csvEscape(periodLabel(data.filter, context))},")
     sb.appendLine("meta,vehicle,${ReportsLabShare.csvEscape(data.filterVehicleLabel())},")
     milesByType.forEach { (t, m) ->
         sb.appendLine(

@@ -60,9 +60,9 @@ fun ReportsLabCostTrendsScreen(navController: NavHostController) {
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — Fuel & cost trends")
-                    appendLine("Period: ${periodLabel(data.filter)}")
-                    appendLine("Vehicle: ${data.filterVehicleLabel()}")
+                    appendLine(labShareAppTitle(context, context.getString(R.string.reports_fuel_cost_trends)))
+                    appendLine(labSharePeriodLine(context, data.filter))
+                    appendLine(labShareVehicleLine(context, data.filterVehicleLabel()))
                     appendLine("Fuel total: ${CurrencyCodes.formatAggregateSum(totals, data.defaultSymbol)}")
                     appendLine("Unit-price rows: ${rows.size}")
                     rows.forEach { (e, up) ->
@@ -75,7 +75,7 @@ fun ReportsLabCostTrendsScreen(navController: NavHostController) {
                 }
             }
             ReportsLabShareActions(
-                subject = "Fuel & cost trends",
+                subject = context.getString(R.string.reports_fuel_cost_trends),
                 textBody = buildText,
                 csvFileName = "lab_cost_trends.csv",
                 csvBody = {
@@ -98,6 +98,13 @@ fun ReportsLabCostTrendsScreen(navController: NavHostController) {
                     ReportsLabPdf.fromPlainText(
                         context.getString(R.string.reports_fuel_cost_trends),
                         buildText(),
+                        generatedLabel = context.getString(
+                            R.string.reports_generated_at,
+                            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date()),
+                        ),
+                        periodLinePrefix = labPeriodLinePrefix(context),
+                        vehicleLinePrefix = labVehicleLinePrefix(context),
                     )
                 },
             )

@@ -546,4 +546,17 @@ Kies Je Nee, dan blijven historische getallen, maar labels wijzigen zonder conve
     <string name="settings_setup_help_provider_fmt">Installatiehulp — %1$s</string>
     <string name="settings_one_per_line_fuel_table_id">Eén per regel: Fuel - Voertuignaam=tableId (bijv. %1$sHonda=12)</string>
     <string name="settings_firebase_collections_blurb">Maak Firestore-collecties met stringvelden die overeenkomen met app-headers (Sync ID eerst). Map collectie-ids hieronder.</string>
+
+    <!-- Residual English nits 20260802-1856 -->
+    <string name="reports_period_all_time">Alle tijd</string>
+    <string name="reports_period_ytd">YTD</string>
+    <string name="reports_period_ytd_range">YTD (%1$s – %2$s)</string>
+    <string name="reports_period_last_12_months">Laatste 12 maanden</string>
+    <string name="reports_period_last_90_days">Laatste 90 dagen</string>
+    <string name="reports_period_custom_range">Aangepast bereik</string>
+    <string name="reports_period_custom_range_dates">Aangepast (%1$s – %2$s)</string>
+    <string name="reports_share_app_title_fmt">Voertuiguitgaven — %1$s</string>
+    <string name="reports_vehicle_label">Voertuig: %1$s</string>
+    <string name="reports_trip_miles_info">Mijlen per reisdoel uit open-only segmenten (start → volgende start). In een periode tellen mijlen van basisodometer tot eerste tripstart als Privé als je eerder geen doel startte (zoals Privé op dag 1). Heeft een voertuig vulbeurten zonder tripstarts, dan telt basis → laatste odo in de periode ook als Privé. Elk voertuig = mijl-per-type reeksen en totalen. Segmentlijst is het trip-oppervlak (Brandstofgeschiedenis toont alleen vulbeurten). Geen belastingformulier — exporteer en gebruik elders. Periodefilters gebruiken de starttijd van het segment. Gesloten segmenten met lengte nul zijn standaard uitgesloten van totalen.</string>
+    <string name="fuel_odometer_review_then_save">Kilometerteller: %1$s. Controleer velden, daarna Opslaan.</string>
 </resources>

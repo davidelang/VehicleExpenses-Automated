@@ -3565,3 +3565,9 @@ x
 - PR doc: dev-ai-interaction/PRs/PR-i18n_lang_packs.md
 - Ready for Master independent review + merge
 
+
+## 2026-08-02 - i18n residual English nits cleanup — start
+
+- Plan: i18n-residual-english-nits-cleanup-20260802-1856-plan.md (user implement = approve)
+- Scope: Lab period chips, share/PDF chrome, QF odo msg, Rclone setup, Settings matchers
+
