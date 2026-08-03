@@ -6,11 +6,14 @@
 #   third_party/get-artifacts --help
 #
 # Called by fetch-deps build; also usable alone when iterating builds.
+# When invoked for a single NAME (and not already sandboxed), re-exec under
+# bubblewrap with write access only to third_party/<NAME>/artifact/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMES=()
 FAILURES=0
+NO_BWRAP=0
 
 usage() {
   cat <<'EOF'
@@ -25,15 +28,23 @@ libpin.toml [[artifact]] fields:
          smart — reserved (version tiers; not implemented yet)
 
 If from is not a glob, pick is ignored.
+
+Sandbox: with bwrap, each collect writes only under that lib's artifact/
+  (disable: LIBPIN_NO_BWRAP=1 or --no-bwrap).
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
+    --no-bwrap) NO_BWRAP=1; shift ;;
     *) NAMES+=("$1"); shift ;;
   esac
 done
+
+if [[ "$NO_BWRAP" -eq 1 ]]; then
+  export LIBPIN_NO_BWRAP=1
+fi
 
 if [[ ${#NAMES[@]} -eq 0 ]]; then
   for d in "$ROOT"/*/; do
@@ -42,6 +53,16 @@ if [[ ${#NAMES[@]} -eq 0 ]]; then
     [[ "$base" == "example" ]] && continue
     NAMES+=("$base")
   done
+fi
+
+# Multi-lib standalone: re-exec each name under artifact sandbox
+if [[ -z "${LIBPIN_SANDBOX:-}" && "${LIBPIN_NO_BWRAP:-0}" != "1" && -x "$ROOT/libpin-bwrap" && ${#NAMES[@]} -gt 0 ]]; then
+  for n in "${NAMES[@]}"; do
+    "$ROOT/libpin-bwrap" --mode artifact --lib "$n" -- \
+      env LIBPIN_SANDBOX=artifact \
+      "$0" --no-bwrap "$n" || FAILURES=$((FAILURES + 1))
+  done
+  exit "$FAILURES"
 fi
 
 # Lines: path<TAB>from<TAB>pick

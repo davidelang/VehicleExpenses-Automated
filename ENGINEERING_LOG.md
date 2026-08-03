@@ -4475,3 +4475,9 @@ x
 - fetch-deps post-build leaves android scratch dirs writable for iterate.
 - Double clean rebuild: remotetable + extractmail AAR bit-identical (reproducible=true in libpin).
 - SOURCE.md rewritten; sha256 unchanged (751d70a1… / fcac2d7c…).
+
+## 2026-08-03 - bubblewrap optional sandbox for libpin tooling
+
+- third_party/libpin-bwrap: confine writes (lib/src/artifact modes); no-op if bwrap missing or LIBPIN_NO_BWRAP=1.
+- fetch-deps/get-artifacts wire single-level sandbox; nested userns avoided.
+- Docs: README.md, ENVIRONMENT_SETUP §2.4, third_party/README, THIRD_PARTY_PIN_BUILDS.

@@ -25,6 +25,7 @@ third_party/
   README.md                 # do-this-first
   fetch-deps                # materialize + optional build orchestration
   get-artifacts             # libpin.toml-driven copy src outputs → artifact/
+  libpin-bwrap              # optional bubblewrap write confinement
   example/                  # hello-world pin
   <lib>/
     libpin.toml
@@ -45,6 +46,21 @@ third_party/
 | `patches/` | Diffs applied **only** at materialize |
 
 Dirty `src` **only** from fetch-deps patches is acceptable. Other dirt means the tree is not a clean pin.
+
+### Optional bubblewrap confinement
+
+When `bwrap` is available, `fetch-deps` / `get-artifacts` invoke `libpin-bwrap` so each step may only **write** to a declared surface (RO root filesystem + bind-mounted RW hole). This does **not** change pin semantics; it only limits damage from a bad build script or patch.
+
+| Mode | Used for | RW bind |
+|------|----------|---------|
+| `lib` | materialize, status.local, rw checkout | `third_party/<lib>/` |
+| `src` | patches, pin `./build` | `third_party/<lib>/src/` |
+| `artifact` | get-artifacts | `third_party/<lib>/artifact/` |
+
+- **Required?** No. If `bwrap` is missing, tools run unsandboxed (same results).
+- **Disable:** `LIBPIN_NO_BWRAP=1` or `--no-bwrap`.
+- **Do not nest** user namespaces (kernel typically rejects nested bwrap); helpers re-enter with `LIBPIN_SANDBOX` set instead of stacking.
+- Host notes: `docs/ENVIRONMENT_SETUP.md` §2.4; quick start: `third_party/README.md`.
 
 ---
 

@@ -26,6 +26,21 @@ Same pattern for `remotetable`, `extractmail`, `rclone`, `paddle` (when pins are
 | 2. Build | `./build` (or scripts listed in lock) | Create/chmod **writable** `src/build`, `src/bin` (or upstream-equivalent dirs); compile; leave products under `src/…` |
 | 3. Collect | `get-artifacts` (called by `fetch-deps build`) | Copy products into **stable** `artifact/` names using lock |
 
+### Optional write sandbox (bubblewrap)
+
+If `bwrap` is installed, the tools above **automatically** confine writes via `libpin-bwrap` (single-level; no nested userns):
+
+| Step | Writable only |
+|------|----------------|
+| Materialize + `status.local` | `third_party/<lib>/` |
+| Patches | `third_party/<lib>/src/` |
+| Build (from `fetch-deps build`) | `third_party/<lib>/src/` |
+| `get-artifacts` | `third_party/<lib>/artifact/` |
+
+**Without bubblewrap, everything still works** — sandbox is hardening, not a hard dependency.  
+Disable: `LIBPIN_NO_BWRAP=1` or `--no-bwrap`. Debug: `LIBPIN_BWRAP_DEBUG=1`.  
+Install: `sudo apt install bubblewrap` (Linux).
+
 **Committed pin surface for the app:** `libpin.toml` + `artifact/*` (+ build scripts + patches).  
 **Not committed on a fresh clone:** usually `src/` contents (materialize with fetch-deps). `src` must still be a **real git checkout** when present (submodule, worktree, or clone) so `git status` works.
 

@@ -54,6 +54,7 @@ Until you intentionally upgrade those, **ignore external clones**.
 | **CMake 3.22.1** | Requested in `app/build.gradle.kts` `externalNativeBuild.cmake.version` (SDK CMake package is fine) |
 | **Network** once | Gradle downloads Maven deps |
 | **Optional: `adb`** | Only for device install (`./deploy` — **humans only**) |
+| **Optional: `bwrap` (bubblewrap)** | Write-sandboxes pin tooling under `third_party/` (see §2.4). Not required for `./build_app` or app compile |
 
 ### 2.1 Point Gradle at the SDK
 
@@ -82,6 +83,40 @@ If agents build as a non-primary user:
 | Runtime env | `build_app` / `deploy` / `ve-env` / `run-grok*` set `ANDROID_USER_HOME` → `.android-shared` |
 
 Foreign per-user keys cause `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on devices. Phones already on the shared cert stay fine; a device installed with a foreign cert needs **one** uninstall then re-deploy by a human.
+
+### 2.4 Optional bubblewrap for third-party pin rebuilds
+
+**App builds do not need bubblewrap.** Only pin rebuild/audit tooling uses it when present.
+
+| | |
+|--|--|
+| **Package** | `bubblewrap` (`bwrap`) |
+| **Install (Debian/Ubuntu)** | `sudo apt install bubblewrap` |
+| **What it does** | When `bwrap` is on `PATH`, `./third_party/fetch-deps` and `./third_party/get-artifacts` run write-confined helpers via `third_party/libpin-bwrap` |
+| **Without bwrap** | Same commands run **unsandboxed** (correctness unchanged; one less safety net) |
+| **Disable** | `LIBPIN_NO_BWRAP=1` or `./third_party/fetch-deps --no-bwrap …` |
+
+Write surfaces when sandboxed:
+
+| Step | Writable |
+|------|----------|
+| `fetch-deps ro` / `rw` (materialize + `status.local`) | `third_party/<lib>/` |
+| Patch apply | `third_party/<lib>/src/` |
+| `fetch-deps build` (pin `./build`) | `third_party/<lib>/src/` |
+| `get-artifacts` | `third_party/<lib>/artifact/` |
+
+**Safety:** a buggy pin build or hostile patch cannot overwrite app sources, Gradle homes outside the pin, or arbitrary paths under the worktree — only the declared pin directories. Nested user namespaces are not used (single-level only).
+
+Rebuild example (with or without bwrap):
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export ANDROID_HOME=$HOME/Android/Sdk
+./third_party/fetch-deps ro remotetable
+./third_party/fetch-deps build remotetable
+```
+
+Full contract: `docs/reference/THIRD_PARTY_PIN_BUILDS.md`, `third_party/README.md`.
 
 ---
 

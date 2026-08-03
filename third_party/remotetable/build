@@ -35,13 +35,28 @@ if [[ -f "$SRC/conformance/harness.py" ]]; then
   python3 "$SRC/conformance/harness.py"
 fi
 
-# Prefer library script; ensure executable even if RO (run via bash)
-bash "$SRC/scripts/build-aar.sh"
+# Keep all Gradle caches under src (required when bwrap mode=src)
+export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$SRC/android/.gradle-user-home}"
+mkdir -p "$GRADLE_USER_HOME"
+chmod -R u+w "$GRADLE_USER_HOME" 2>/dev/null || true
 
-# Canonical product path for get-artifacts (libpin.toml from=)
+# Assemble under src only — do not use library build-aar.sh (it copies to ../artifact).
+AAR_MOD="$SRC/android"
+cd "$AAR_MOD"
+if [[ ! -x ./gradlew ]]; then
+  if command -v gradle >/dev/null 2>&1; then
+    gradle wrapper --gradle-version 8.7
+  else
+    echo "ERROR: no gradlew and no gradle on PATH" >&2
+    exit 1
+  fi
+fi
+chmod u+w gradlew 2>/dev/null || true
+bash ./gradlew :remotetable:assembleRelease --no-daemon
+
 AAR_SRC="$SRC/android/remotetable/build/outputs/aar/remotetable-release.aar"
 if [[ ! -s "$AAR_SRC" ]]; then
   AAR_SRC=$(find "$SRC/android" -name 'remotetable-release.aar' 2>/dev/null | head -1 || true)
 fi
 [[ -n "${AAR_SRC:-}" && -s "$AAR_SRC" ]] || { echo "ERROR: AAR not produced under src/android" >&2; exit 1; }
-echo "OK product: $AAR_SRC ($(du -h "$AAR_SRC" | cut -f1))"
+echo "OK product: $AAR_SRC ($(du -h "$AAR_SRC" | cut -f1)) — collect via get-artifacts"

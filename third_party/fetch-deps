@@ -13,12 +13,20 @@
 #
 # Pin file: third_party/<name>/libpin.toml
 # Transport: local GIT_HOME → HTTPS; SSH only with --allow-ssh.
+#
+# Sandbox (bubblewrap, if available):
+#   fetch-deps itself   → write only under third_party/
+#   build steps         → write only under third_party/<lib>/src/
+#   get-artifacts       → write only under third_party/<lib>/artifact/
+#   patches             → applied inside that lib's src/ (same as build surface)
+# Disable: LIBPIN_NO_BWRAP=1 or --no-bwrap
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VE_ROOT="$(cd "$ROOT/.." && pwd)"
 CMD=""
 ALLOW_SSH=0
+NO_BWRAP=0
 DEPTH=""
 BASE_REF=""
 BRANCH_OVERRIDE=""
@@ -60,10 +68,17 @@ Options:
   --ref REF            upgrade source ref
   --depth N            optional shallow clone (not default)
   --worktree-search P  extra local roots (colon-separated)
+  --no-bwrap           Disable bubblewrap sandbox (or LIBPIN_NO_BWRAP=1)
   -v, -vv              status verbosity
   -h, --help
 
 libpin.toml = pin contract only (no checkout mode). Mode is status.local (gitignored).
+
+Sandbox (bubblewrap, single-level — no nesting):
+  materialize + status.local  write → third_party/<lib>/  (mode=lib)
+  patches                     write → third_party/<lib>/src/ only
+  build steps                 write → third_party/<lib>/src/ only
+  get-artifacts               write → third_party/<lib>/artifact/ only
 EOF
 }
 
@@ -74,6 +89,7 @@ while [[ $# -gt 0 ]]; do
     ro|rw|status|refresh|upgrade|build)
       if [[ -z "$CMD" ]]; then CMD="$1"; shift; else NAMES+=("$1"); shift; fi ;;
     --allow-ssh) ALLOW_SSH=1; shift ;;
+    --no-bwrap) NO_BWRAP=1; shift ;;
     --git-home) GIT_HOME="$2"; shift 2 ;;
     --branch) BRANCH_OVERRIDE="$2"; shift 2 ;;
     --base) BASE_REF="$2"; shift 2 ;;
@@ -95,6 +111,40 @@ while [[ $# -gt 0 ]]; do NAMES+=("$1"); shift; done
 
 CMD="${CMD:-ro}"
 GIT_HOME="${GIT_HOME:-$(default_git_home)}"
+
+if [[ "$NO_BWRAP" -eq 1 ]]; then
+  export LIBPIN_NO_BWRAP=1
+fi
+export GIT_HOME
+
+# Single-level bwrap helpers (do not nest — nested userns fails)
+bwrap_lib() {
+  local name="$1"; shift
+  if [[ "${LIBPIN_NO_BWRAP:-0}" != "1" && -x "$ROOT/libpin-bwrap" ]]; then
+    local allow=0
+    [[ "$CMD" == "rw" || "$CMD" == "upgrade" ]] && allow=1
+    LIBPIN_ALLOW_GIT_HOME=$allow \
+      "$ROOT/libpin-bwrap" --mode lib --lib "$name" -- "$@"
+  else
+    "$@"
+  fi
+}
+bwrap_src() {
+  local name="$1"; shift
+  if [[ "${LIBPIN_NO_BWRAP:-0}" != "1" && -x "$ROOT/libpin-bwrap" ]]; then
+    "$ROOT/libpin-bwrap" --mode src --lib "$name" -- "$@"
+  else
+    "$@"
+  fi
+}
+bwrap_artifact() {
+  local name="$1"; shift
+  if [[ "${LIBPIN_NO_BWRAP:-0}" != "1" && -x "$ROOT/libpin-bwrap" ]]; then
+    "$ROOT/libpin-bwrap" --mode artifact --lib "$name" -- "$@"
+  else
+    "$@"
+  fi
+}
 
 if [[ "$CMD" != "status" && "$CMD" != "upgrade" && ${#NAMES[@]} -eq 0 ]]; then
   for d in "$ROOT"/*/; do
@@ -251,8 +301,8 @@ apply_patches() {
   shopt -s nullglob
   for f in "$pdir"/*.patch "$pdir"/*.diff; do
     [[ -f "$f" ]] || continue
-    echo "    apply patch $(basename "$f")"
-    if ! ( cd "$src" && git apply --whitespace=nowarn "$f" ); then
+    echo "    apply patch $(basename "$f")  [sandbox=src]"
+    if ! bwrap_src "$name" bash -c "cd $(printf %q "$src") && git apply --whitespace=nowarn $(printf %q "$f")"; then
       echo "    FAIL: patch $f" >&2
       return 1
     fi
@@ -432,6 +482,13 @@ offer_mainish_retarget() {
 
 cmd_ro() {
   local name="$1"
+  # Single-level: re-enter self under lib sandbox (writes only third_party/<lib>/)
+  if [[ "${LIBPIN_NO_BWRAP:-0}" != "1" && -z "${LIBPIN_SANDBOX:-}" && -x "$ROOT/libpin-bwrap" ]]; then
+    echo "    [sandbox=lib $name]"
+    bwrap_lib "$name" env LIBPIN_NO_BWRAP=1 LIBPIN_SANDBOX=lib \
+      "$ROOT/fetch-deps" --no-bwrap ro "$name"
+    return $?
+  fi
   local lock src sha
   lock="$(lock_path "$name")"
   src="$(src_path "$name")"
@@ -467,6 +524,13 @@ cmd_ro() {
 
 cmd_rw() {
   local name="$1"
+  # lib sandbox + optional GIT_HOME for worktrees
+  if [[ "${LIBPIN_NO_BWRAP:-0}" != "1" && -z "${LIBPIN_SANDBOX:-}" && -x "$ROOT/libpin-bwrap" ]]; then
+    echo "    [sandbox=lib $name + GIT_HOME]"
+    LIBPIN_ALLOW_GIT_HOME=1 bwrap_lib "$name" env LIBPIN_NO_BWRAP=1 LIBPIN_SANDBOX=lib LIBPIN_ALLOW_GIT_HOME=1 \
+      "$ROOT/fetch-deps" --no-bwrap rw "$name"
+    return $?
+  fi
   local lock src sha branch base host
   lock="$(lock_path "$name")"
   src="$(src_path "$name")"
@@ -593,24 +657,30 @@ cmd_build() {
   if [[ "$need_rw" == "true" || "$need_rw" == "yes" || "$need_rw" == "1" ]]; then
     ensure_writable_tree "$src"
   fi
-  # Run build[] steps from libpin.toml
+  # Build steps: write only third_party/<lib>/src (single-level bwrap)
+  run_build_cmd() {
+    local bcmd="$1"
+    echo "    run $bcmd  [sandbox=src]"
+    bwrap_src "$name" bash -c "cd $(printf %q "$dir") && eval $(printf %q "$bcmd")"
+  }
   local ran=0 bcmd
   while IFS= read -r bcmd; do
     [[ -z "$bcmd" ]] && continue
-    echo "    run $bcmd"
-    ( cd "$dir" && eval "$bcmd" ) || { echo "    FAIL build: $bcmd" >&2; return 1; }
+    run_build_cmd "$bcmd" || { echo "    FAIL build: $bcmd" >&2; return 1; }
     ran=1
   done < <(pin_build_steps "$lock")
   if [[ "$ran" -eq 0 ]]; then
     if [[ -x "$dir/build" ]]; then
-      ( cd "$dir" && ./build ) || { echo "    FAIL build" >&2; return 1; }
+      run_build_cmd "./build" || { echo "    FAIL build" >&2; return 1; }
     else
       echo "    no build steps — skip exec"
     fi
   fi
-  # Collect stable artifacts (normative)
+  # Collect: write only third_party/<lib>/artifact
   if [[ -x "$ROOT/get-artifacts" ]]; then
-    "$ROOT/get-artifacts" "$name" || { echo "    FAIL get-artifacts" >&2; return 1; }
+    echo "    get-artifacts  [sandbox=artifact]"
+    bwrap_artifact "$name" "$ROOT/get-artifacts" --no-bwrap "$name" \
+      || { echo "    FAIL get-artifacts" >&2; return 1; }
   fi
   # re-apply ro if status says ro (build dirs under src may stay rw — best-effort)
   local mode

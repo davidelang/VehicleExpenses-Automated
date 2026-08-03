@@ -35,11 +35,26 @@ if [[ -f "$SRC/python/run_goldens.py" ]]; then
   }
 fi
 
-bash "$SRC/scripts/build-aar.sh"
+export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$SRC/android/.gradle-user-home}"
+mkdir -p "$GRADLE_USER_HOME"
+chmod -R u+w "$GRADLE_USER_HOME" 2>/dev/null || true
+
+AAR_MOD="$SRC/android"
+cd "$AAR_MOD"
+if [[ ! -x ./gradlew ]]; then
+  if command -v gradle >/dev/null 2>&1; then
+    gradle wrapper --gradle-version 8.7
+  else
+    echo "ERROR: no gradlew and no gradle on PATH" >&2
+    exit 1
+  fi
+fi
+chmod u+w gradlew 2>/dev/null || true
+bash ./gradlew :extractmail:assembleRelease --no-daemon
 
 AAR_SRC="$SRC/android/extractmail/build/outputs/aar/extractmail-release.aar"
 if [[ ! -s "$AAR_SRC" ]]; then
   AAR_SRC=$(find "$SRC/android" -name 'extractmail-release.aar' 2>/dev/null | head -1 || true)
 fi
 [[ -n "${AAR_SRC:-}" && -s "$AAR_SRC" ]] || { echo "ERROR: AAR not produced under src/android" >&2; exit 1; }
-echo "OK product: $AAR_SRC ($(du -h "$AAR_SRC" | cut -f1))"
+echo "OK product: $AAR_SRC ($(du -h "$AAR_SRC" | cut -f1)) — collect via get-artifacts"
