@@ -6,7 +6,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 
 ## Backlog (native / paddle)
 - [ ] True `LITE_BUILD_TAILOR` for **x86_64** emulator (space only; prod-path speed matches fat kernels)
-- [ ] True `LITE_BUILD_TAILOR` for **armeabi-v7a** or drop the ABI (space only if kept)
+- [ ] Keep **armeabi-v7a** (aftermarket car head units): true `LITE_BUILD_TAILOR` for Paddle Lite + pin-build OpenCV fat `libopencv_java4.so` for armv7 (16KB pages); do not drop the ABI
 - [ ] Strip debug information and excessive logging from Paddle Lite **x86_64** Android build (binary size)
 - [ ] **16KB page size alignment:** rebuild OpenCV, rclone/gomobile, and other prebuilt `.so` libs with 16KB ELF segment alignment (see `docs/reference/16k-pages-compatibility-notes.md`)
 

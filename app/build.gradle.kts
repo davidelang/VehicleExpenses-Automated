@@ -141,6 +141,8 @@ dependencies {
     // First-party libraries (third_party pins)
     implementation(files("../third_party/remotetable/artifact/remotetable.aar"))
     implementation(files("../third_party/extractmail/artifact/extractmail.aar"))
+    // rclone photo-curated librclone AAR (gomobile; pin under third_party/rclone)
+    implementation(files("../third_party/rclone/artifact/librclone.aar"))
     // IMAP (generic folder fetch for email fuel receipts)
     implementation("com.sun.mail:android-mail:1.6.7")
     implementation("com.sun.mail:android-activation:1.6.7")
@@ -157,8 +159,8 @@ dependencies {
     // override / bloat the pin .so.
     // ML Kit Text Recognition (High-performance Tensor-optimized OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
-    // Native Paddle-Lite Java Wrapper
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+    // Native Paddle-Lite Java wrapper + other local jars (not AARs — rclone is pin path above)
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
 }
 
 // No more PaddleOCR validation — model has been removed
@@ -175,8 +177,11 @@ tasks.whenTaskAdded {
             if (nativeLibsDir.exists()) {
                 println(">>> UPX: Starting compression pass in $nativeLibsDir")
                 nativeLibsDir.walkTopDown().forEach { file ->
-                    // Skip OpenCV: pin-built for 16KB max-page-size; UPX would break alignment.
-                    if (file.extension == "so" && file.name != "libopencv_java4.so") {
+                    // Skip pin-built 16KB-aligned natives (UPX would break max-page-size).
+                    if (file.extension == "so" &&
+                        file.name != "libopencv_java4.so" &&
+                        file.name != "libgojni.so"
+                    ) {
                         println(">>> UPX: Compressing ${file.name}")
                         try {
                             ProcessBuilder("upx", "--best", file.absolutePath)

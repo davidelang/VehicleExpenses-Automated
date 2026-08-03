@@ -4442,3 +4442,21 @@ x
 - Removed docs/reference/FIRST_PARTY_LIBS.md and THIRD_PARTY_LAYOUT_FOR_AGENTS.md.
 - Example + opencv get-artifacts verified with libpin.toml.
 
+
+## 2026-08-03 - OpenCV pin wired + 5554 First 10 before/after match
+
+- Built/used third_party/opencv pin artifacts (71d3237 / 4.10.0 fat libopencv_java4.so, 16KB, arm64+x86_64).
+- Wired app: opencv-java-4.10.0.jar in app/libs; jniLibs arm64+x86_64 from artifact; dropped Maven OpenCV AAR natives; UPX skip for libopencv_java4.so.
+- Commit 80d75c65; deployed to emulator-5554.
+- Baseline + after First 10 alignment and pump short reports.
+- Semantic JSON match (strip timings/thumbs/version/ts): alignment OK, pump OK.
+- Scratch: dev-ai-interaction/scratch/opencv-5554-before-after/
+
+## 2026-08-03 - rclone pin: Docker wrapper + photo AAR rebuild (16KB)
+
+- fetch-deps: fix lock/pin unbound variable (ro/rw/status/build/resolve).
+- rclone pin @ pure upstream 3f9d583 (not local ve-build commit); scripts/Dockerfile + build-photo-aar.sh (curated backends, CGO 16KB).
+- Product path src/build/out/ (not upstream src/bin/ tools tree).
+- Built artifact/librclone.aar ~82MB; ABIs arm/arm64/x86_64; Align 0x4000.
+- App wires third_party/rclone/artifact/librclone.aar; removed app/libs/librclone.aar; UPX skip libgojni.so.
+- Upstream already has gomobile; VE carries post-clone curation forever (not fork PR for backend list).
