@@ -14,9 +14,9 @@ consumer_note = "Upstream 4.10.0 pin; fat libopencv_java4.so (core+imgproc+imgco
 [[artifact]]
 path = "artifact/jni/arm64-v8a/libopencv_java4.so"
 from = "src/bin/arm64-v8a/libopencv_java4.so"
-sha256 = "adbbd36f0a9d2758859939c174ae7a60c359f8617cdce5bb89c37d62c2630a52"
+sha256 = "89d21dfd6f88b249d467569e2be2821080dfdb538599f4932b5afe007aea7a95"
 
 [[artifact]]
 path = "artifact/jni/x86_64/libopencv_java4.so"
 from = "src/bin/x86_64/libopencv_java4.so"
-sha256 = "6ad3c76cba59cd37804a4dd0de92f0dc5a81296ec1ee4b9d40334ba7d9b228ea"
+sha256 = "b0a8bdc27b823916a9c1d01f3eaefbef5667897064dbc8c809ba598023c3cd17"
