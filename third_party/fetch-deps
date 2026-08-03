@@ -12,7 +12,9 @@
 #   fetch-deps build [name…]     # run build[] then get-artifacts
 #
 # Pin file: third_party/<name>/libpin.toml
-# Transport: local GIT_HOME → HTTPS; SSH only with --allow-ssh.
+# Transport: local GIT_HOME path → HTTPS (git_https). SSH only with --allow-ssh.
+# Network fetch always prefers HTTPS. Linked worktrees are converted to standalone
+# clones under third_party/<lib>/src so landlock/bwrap can write .git (no host gitdir).
 #
 # Sandbox (optional; Linux):
 #   bubblewrap and/or Landlock via libpin-sandbox
@@ -280,6 +282,42 @@ repo_has_commit() {
   git -C "$1" cat-file -e "${2}^{commit}" 2>/dev/null
 }
 
+# Detach at pin sha and discard local mods so patches re-apply cleanly.
+# Keeps untracked build products (bin/, build/, android/.gradle*) for iterate.
+checkout_pin_clean() {
+  local src="$1" sha="$2"
+  git -C "$src" checkout --detach "$sha" 2>/dev/null || return 1
+  git -C "$src" reset --hard "$sha" 2>/dev/null || return 1
+  return 0
+}
+
+# Linked worktree: .git is a file pointing at host gitdir (outside third_party/).
+is_linked_worktree() {
+  [[ -f "${1:-}/.git" ]]
+}
+
+# Prefer git_https origin; never leave git@ as fetch URL unless --allow-ssh only path.
+set_origin_https() {
+  local src="$1" url="$2"
+  [[ -n "$url" && -d "$src" ]] || return 0
+  if git -C "$src" remote get-url origin >/dev/null 2>&1; then
+    git -C "$src" remote set-url origin "$url" 2>/dev/null || true
+  else
+    git -C "$src" remote add origin "$url" 2>/dev/null || true
+  fi
+}
+
+# Drop a linked worktree checkout and clear host registration when possible.
+remove_linked_worktree_src() {
+  local name="$1" src="$2" host
+  ensure_writable_tree "$src"
+  if host="$(local_repo_for "$name" 2>/dev/null)"; then
+    # May fail under sandbox without LIBPIN_ALLOW_GIT_HOME — ignore; rm -rf still frees pin path.
+    git -C "$host" worktree remove --force "$src" 2>/dev/null || true
+  fi
+  rm -rf "$src"
+}
+
 ensure_writable_tree() {
   local src="$1"
   [[ -d "$src" ]] || return 0
@@ -345,28 +383,44 @@ materialize_at_sha() {
     return 0
   fi
 
+  # Linked worktree: .git → host …/.git/worktrees/… — landlock/bwrap cannot write FETCH_HEAD.
+  # Convert to standalone clone under third_party (origin HTTPS). Prefer local objects, then HTTPS.
+  if is_linked_worktree "$src"; then
+    echo "    linked worktree → standalone (HTTPS origin; sandbox-safe .git)"
+    remove_linked_worktree_src "$name" "$src"
+  fi
+
   ensure_writable_tree "$src"
 
-  if [[ -d "$src/.git" || -f "$src/.git" ]]; then
-    if repo_has_commit "$src" "$sha" && git -C "$src" checkout --detach "$sha" 2>/dev/null; then
+  if [[ -d "$src/.git" ]]; then
+    set_origin_https "$src" "$url_https"
+    if repo_has_commit "$src" "$sha" && checkout_pin_clean "$src" "$sha"; then
       echo "    checkout existing src @ $sha (no network)"
+      set_origin_https "$src" "$url_https"
       return 0
     fi
     if host="$(local_repo_for "$name")"; then
       echo "    fetch local $host"
       git -C "$src" fetch "$host" "+refs/*:refs/remotes/local/*" 2>/dev/null || git -C "$src" fetch "$host" 2>/dev/null || true
-      if repo_has_commit "$src" "$sha" && git -C "$src" checkout --detach "$sha" 2>/dev/null; then
+      if repo_has_commit "$src" "$sha" && checkout_pin_clean "$src" "$sha"; then
+        set_origin_https "$src" "$url_https"
         return 0
       fi
     fi
+    # Network: HTTPS first (default). SSH only with --allow-ssh.
     local u tries=()
     [[ -n "$url_https" ]] && tries+=("$url_https")
     [[ "$ALLOW_SSH" -eq 1 && -n "$url_ssh" ]] && tries+=("$url_ssh")
     for u in "${tries[@]}"; do
       echo "    fetch $u"
-      git -C "$src" remote set-url origin "$u" 2>/dev/null || true
-      git -C "$src" fetch origin "$sha" 2>/dev/null || git -C "$src" fetch --all --tags 2>/dev/null || true
-      if repo_has_commit "$src" "$sha" && git -C "$src" checkout --detach "$sha" 2>/dev/null; then
+      if [[ "$u" == https://* || "$u" == http://* ]]; then
+        set_origin_https "$src" "$u"
+      else
+        git -C "$src" remote set-url origin "$u" 2>/dev/null || true
+      fi
+      git -C "$src" fetch origin "$sha" 2>/dev/null || git -C "$src" fetch origin 2>/dev/null || true
+      if repo_has_commit "$src" "$sha" && checkout_pin_clean "$src" "$sha"; then
+        set_origin_https "$src" "$url_https"
         return 0
       fi
     done
@@ -380,8 +434,8 @@ materialize_at_sha() {
     echo "    clone local $host"
     if git clone "$host" "$src" 2>/dev/null; then
       git -C "$src" fetch "$host" 2>/dev/null || true
-      if git -C "$src" checkout --detach "$sha" 2>/dev/null; then
-        [[ -n "$url_https" ]] && git -C "$src" remote set-url origin "$url_https" 2>/dev/null || true
+      if checkout_pin_clean "$src" "$sha"; then
+        set_origin_https "$src" "$url_https"
         return 0
       fi
     fi
@@ -394,8 +448,9 @@ materialize_at_sha() {
     local depth_args=()
     [[ -n "$DEPTH" ]] && depth_args=(--depth "$DEPTH")
     if git clone "${depth_args[@]}" "$u" "$src" 2>/dev/null; then
-      if git -C "$src" checkout --detach "$sha" 2>/dev/null \
-        || { git -C "$src" fetch origin "$sha" 2>/dev/null && git -C "$src" checkout --detach "$sha" 2>/dev/null; }; then
+      if checkout_pin_clean "$src" "$sha" \
+        || { git -C "$src" fetch origin "$sha" 2>/dev/null && checkout_pin_clean "$src" "$sha"; }; then
+        set_origin_https "$src" "$url_https"
         return 0
       fi
     fi
@@ -404,7 +459,10 @@ materialize_at_sha() {
   if [[ "$ALLOW_SSH" -eq 1 && -n "$url_ssh" ]]; then
     echo "    clone $url_ssh"
     if git clone "$url_ssh" "$src" 2>/dev/null; then
-      git -C "$src" checkout --detach "$sha" 2>/dev/null && return 0
+      if checkout_pin_clean "$src" "$sha"; then
+        set_origin_https "$src" "$url_https"
+        return 0
+      fi
     fi
     rm -rf "$src"
   fi

@@ -12,19 +12,24 @@ requires_writable_src = false
 build = ["./build"]
 consumer_note = "Paddle-Lite Android JNI (slim): arm64+x86_64 (+ optional armv7). Docker+NDK. INT8 layer via patches-int8 after pin checkout. Models (nb) built separately with host opt — see docs/reference/PADDLE_PIN_BUILDS.md"
 
-# Populated after successful pin build (sha256 filled by get-artifacts / human bump)
+# Pin slim build (pr-x86 + patches-int8 + x86 OpenBLAS overlay); strip-unneeded.
+# Larger than app tailored/slim jni — promote after 5554 parity check if desired.
 [[artifact]]
 path = "artifact/jni/arm64-v8a/libpaddle_lite_jni.so"
 from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
+sha256 = "2476f557be8d5cbc78b9f10f18fff5aa2c5ef3f6212dd6759ff01f6ca2c26393"
 
 [[artifact]]
 path = "artifact/jni/x86_64/libpaddle_lite_jni.so"
 from = "src/bin/x86_64/libpaddle_lite_jni.so"
+sha256 = "a19ee9a62418082317b1963c4fa89f017910490ae51ebbc9f140b9e096c51f21"
 
 [[artifact]]
 path = "artifact/jni/x86_64/libpaddle_light_api_shared.so"
 from = "src/bin/x86_64/libpaddle_light_api_shared.so"
+sha256 = "115637f8c2aa2049ea66e94673ab59f089880f1642d06e93d27839a1ef6d8864"
 
 [[artifact]]
 path = "artifact/PaddlePredictor.jar"
 from = "src/bin/PaddlePredictor.jar"
+sha256 = "630c768fafaa1627f6b51bcff5a44d7120b5326a1df6dc8b9645136056825439"

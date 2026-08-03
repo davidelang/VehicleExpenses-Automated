@@ -173,6 +173,10 @@ collect_one() {
     fi
     chosen="$(pick_file "$pick" "${matches[@]}")"
     mkdir -p "$(dirname "$dir/$path")"
+    # Prior collect may have left a-w artifacts (RO pin hygiene)
+    if [[ -e "$dir/$path" ]]; then
+      chmod u+w "$dir/$path" 2>/dev/null || true
+    fi
     cp -a "$chosen" "$dir/$path"
     echo "    $chosen → $path"
   done < <(parse_artifacts "$pin")

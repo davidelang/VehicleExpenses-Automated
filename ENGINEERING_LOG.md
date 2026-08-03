@@ -4495,3 +4495,21 @@ x
 - Validated: pr-calib-safe-uint8-dequant is NOT git-stacked on x86-gap (develop tip +1).
 - patches-int8/ vendored; Docker+run-android-slim build path; docs/reference/PADDLE_PIN_BUILDS.md.
 - Models remain separate host opt pipeline (scripts under assets/paddle/scripts).
+
+## 2026-08-03 - libpin sandboxed rebuild testing
+
+- RO materialize: worktree→standalone + HTTPS origin; checkout_pin_clean so patches re-apply (opencv).
+- Builds OK under sandbox: example, remotetable AAR, extractmail AAR, opencv fat jni (arm64+x86_64), rclone librclone.aar (sha e4f26a7d…).
+- Paddle: arm64 slim + patches-int8 OK (uint8 calib stamps; jni ~188MB unstripped); x86_64 still fails (DENSE_TENSOR C++ vs LOD_TENSOR flatbuffers on pr-x86 pin).
+- Tooling fixes: paddle RO script copy-before-chmod, third-party tarball when stub dirs, get-artifacts chmod dest, kernel check via grep -aF, patches-int8 LOD→DENSE in light_api.cc.
+- Logs: /tmp/libpin-rebuild-round2.log /tmp/libpin-paddle-rebuild.log
+
+
+## 2026-08-03 - paddle pin slim arm64+x86_64 build success
+
+- Fixed x86: preserve pin flatbuffers pre-build (DENSE) over third-party tarball; patches-x86-openblas mklml LITE_WITH_MKL gate (no mkl.h on NDK).
+- Fixed earlier: LOD→DENSE in patches-int8 light_api.cc; third-party stub re-fetch; RO script chmod.
+- Built arm64-v8a + x86_64 slim JNI/light with int8/uint8 calib stamps; strip-unneeded → ~5.1MB arm64 jni, ~8.8MB x86 jni + light.
+- Artifacts under third_party/paddle/artifact/; libpin.toml sha256 updated.
+- Note: still larger than app tailored arm64 (~1.6MB) / thin x86 jni (~0.7MB); not auto-promoted to jniLibs.
+

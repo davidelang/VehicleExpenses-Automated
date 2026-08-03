@@ -56,6 +56,7 @@ for abi in $ABIS; do
   docker run --rm \
     -v "$SRC:/pin-src:ro" \
     -v "$HERE/patches-int8:/patches-int8:ro" \
+    -v "$HERE/patches-x86-openblas:/patches-x86-openblas:ro" \
     -v "$SCRIPTS/apply_int8_patches.sh:/apply_int8_patches.sh:ro" \
     -v "$SCRIPTS/run-android-slim.sh:/run-android-slim.sh:ro" \
     -v "$OUT:/output" \
@@ -69,6 +70,15 @@ done
 # Collect Java predictor jar if present in last build tree (optional)
 if [[ ! -f "$OUT/PaddlePredictor.jar" ]]; then
   echo "NOTE: PaddlePredictor.jar not produced in this pass — copy from app/libs or prior build if needed"
+fi
+
+# Strip debug (full slim is ~200–270MB unstripped; ~5–9MB after)
+STRIP=$(ls "${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk}"/*/toolchains/llvm/prebuilt/*/bin/llvm-strip 2>/dev/null | head -1 || true)
+if [[ -n "${STRIP:-}" ]]; then
+  echo "Stripping with $STRIP"
+  find "$OUT" -type f -name '*.so' -print0 | while IFS= read -r -d '' f; do
+    "$STRIP" --strip-unneeded "$f" 2>/dev/null || true
+  done
 fi
 
 echo "OK paddle products under $OUT:"
