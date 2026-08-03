@@ -392,7 +392,7 @@ fun SettingsScreen(navController: NavHostController) {
         ) {
             Text(
                 if (emailOfflineBusy) "Ingesting sample receipts…"
-                else "Ingest sample receipts (offline)",
+                else "Ingest sample receipts (offline goldens)",
             )
         }
         Spacer(modifier = Modifier.height(8.dp))

@@ -145,7 +145,7 @@ class SettingsViewModel @Inject constructor(
 
     fun pollEmailReceiptsNow() = emailReceiptManager.enqueueOneShot()
 
-    /** Offline: package Shell HTML fixtures → Room (no network). Updates last-run prefs. */
+    /** Offline: extractmail golden JSON fixtures → Room (no network). Updates last-run prefs. */
     suspend fun ingestOfflineShellFixtures(): String =
         emailReceiptFixtureIngest.ingestSampleShellReceipts().summary
 

@@ -2,12 +2,15 @@ package com.davidlang.vehicleexpensesautomated.data.email
 
 import android.content.Context
 import android.util.Log
+import com.davidelang.extractmail.Extractmail
 import dagger.hilt.android.qualifiers.ApplicationContext
+import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Offline ingest of packaged Shell + Sam's Club fixture HTML (no Gmail).
+ * Offline ingest of packaged **extractmail golden JSON** (no Gmail, no HTML re-parse).
+ * Numbers match extractmail fixtures/expected-*.json (Shell×2 + Sam's).
  * Message keys are stable so re-run is idempotent (dups only).
  */
 @Singleton
@@ -23,48 +26,39 @@ class EmailReceiptFixtureIngest @Inject constructor(
     )
 
     data class FixtureSpec(
-        val assetName: String,
+        val expectedJsonAsset: String,
         val messageKey: String,
-        val fromHeader: String? = null,
-        val subject: String? = null,
-        val emailDateHeader: String? = null,
+        val typeKey: String,
     )
 
     /**
-     * Parse + insert all packaged sample receipts. Writes nothing to Gmail.
+     * Load golden JSON + insert all packaged sample receipts. Writes nothing to Gmail.
      */
     suspend fun ingestSampleShellReceipts(): Aggregate = ingestAllSampleReceipts()
 
-    /** Alias: Shell + Sam's offline samples. */
+    /** Alias: Shell + Sam's offline samples via extractmail goldens. */
     suspend fun ingestAllSampleReceipts(): Aggregate {
         var inserted = 0
         var duplicates = 0
         var parseSkip = 0
         for (fx in FIXTURES) {
-            val html = readAsset(fx.assetName)
-            if (html == null) {
+            val raw = readAsset(fx.expectedJsonAsset)
+            if (raw == null) {
                 parseSkip++
-                Log.w(TAG, "missing asset ${fx.assetName}")
+                Log.w(TAG, "missing asset ${fx.expectedJsonAsset}")
                 continue
             }
-            val parsed = ReceiptParsers.tryParse(
-                html = html,
-                meta = ReceiptParsers.Meta(
-                    messageKey = fx.messageKey,
-                    gmailMessageId = fx.messageKey,
-                    fromHeader = fx.fromHeader,
-                    subject = fx.subject,
-                    emailDateHeader = fx.emailDateHeader,
-                ),
-            )
+            val parsed = parseGoldenJson(raw, fx)
             if (parsed == null) {
                 parseSkip++
-                Log.w(TAG, "parse failed for ${fx.messageKey}")
+                Log.w(TAG, "golden parse failed for ${fx.messageKey}")
                 continue
             }
             val result = ingest.ingest(
                 parsed = parsed,
                 gmailMessageId = fx.messageKey,
+                messageId = fx.messageKey,
+                messageProvider = MESSAGE_PROVIDER,
                 originDeviceId = ORIGIN_OFFLINE_FIXTURE,
             )
             when {
@@ -73,12 +67,14 @@ class EmailReceiptFixtureIngest @Inject constructor(
             }
             Log.i(
                 TAG,
-                "fixture ${fx.messageKey} brand=${parsed.brand} cost=${parsed.cost} gal=${parsed.gallons} " +
+                "fixture ${fx.messageKey} type=${fx.typeKey} brand=${parsed.brand} " +
+                    "cost=${parsed.cost} gal=${parsed.gallons} " +
                     "inserted=${result.inserted} dup=${result.skippedDuplicate}",
             )
         }
         val summary =
-            "offlineFixtures inserted=$inserted dup=$duplicates parseSkip=$parseSkip"
+            "offlineFixtures extractmail=v${Extractmail.VERSION} " +
+                "inserted=$inserted dup=$duplicates parseSkip=$parseSkip"
         val prefs = EmailReceiptPrefs(context)
         prefs.lastRunSummary = summary
         prefs.lastRunAtMs = System.currentTimeMillis()
@@ -89,6 +85,50 @@ class EmailReceiptFixtureIngest @Inject constructor(
             duplicates = duplicates,
             parseSkip = parseSkip,
         )
+    }
+
+    private fun parseGoldenJson(raw: String, fx: FixtureSpec): ParsedFuelReceipt? {
+        return try {
+            val o = JSONObject(raw)
+            val cost = o.getDouble("cost")
+            val gallons = o.getDouble("gallons")
+            val timestampMs = o.optLong("timestampMs", 0L)
+            if (timestampMs <= 0L) {
+                Log.w(TAG, "${fx.messageKey}: missing timestampMs")
+                return null
+            }
+            val location = when {
+                o.has("locationText") && !o.isNull("locationText") ->
+                    o.optString("locationText", "")
+                o.has("locationTextContains") -> {
+                    val arr = o.optJSONArray("locationTextContains")
+                    if (arr != null) {
+                        buildList {
+                            for (i in 0 until arr.length()) add(arr.optString(i))
+                        }.joinToString(" ")
+                    } else {
+                        ""
+                    }
+                }
+                else -> ""
+            }
+            ParsedFuelReceipt(
+                cost = cost,
+                gallons = gallons,
+                timestampMs = timestampMs,
+                locationText = location,
+                currency = o.optString("currency", "USD").ifBlank { "USD" },
+                brand = o.optString("brand", "Shell").ifBlank { "Shell" },
+                messageKey = fx.messageKey,
+                timestampLocal = o.optString("timestampLocal", null).takeIf { !it.isNullOrBlank() },
+                siteId = o.optString("siteId", null).takeIf { !it.isNullOrBlank() },
+                pump = o.optString("pump", null).takeIf { !it.isNullOrBlank() },
+                product = o.optString("product", null).takeIf { !it.isNullOrBlank() },
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "parseGoldenJson ${fx.expectedJsonAsset}", e)
+            null
+        }
     }
 
     private fun readAsset(name: String): String? {
@@ -104,16 +144,27 @@ class EmailReceiptFixtureIngest @Inject constructor(
         private const val TAG = "EmailReceiptFixtureIngest"
         private const val ASSET_DIR = "email-receipt"
         private const val ORIGIN_OFFLINE_FIXTURE = "android-email-fixture"
-        /** Stable keys — second ingest → dups only. */
+        private const val MESSAGE_PROVIDER = "fixture"
+
+        /**
+         * Stable keys — second ingest → dups only.
+         * Type keys from [Extractmail] (extractmail AAR).
+         */
         val FIXTURES: List<FixtureSpec> = listOf(
-            FixtureSpec("shell-receipt1.html", "fixture|shell-receipt1"),
-            FixtureSpec("shell-receipt2.html", "fixture|shell-receipt2"),
             FixtureSpec(
-                assetName = "sams-club-receipt1.html",
+                expectedJsonAsset = "expected-shell-receipt1.json",
+                messageKey = "fixture|shell-receipt1",
+                typeKey = Extractmail.TYPE_SHELL,
+            ),
+            FixtureSpec(
+                expectedJsonAsset = "expected-shell-receipt2.json",
+                messageKey = "fixture|shell-receipt2",
+                typeKey = Extractmail.TYPE_SHELL,
+            ),
+            FixtureSpec(
+                expectedJsonAsset = "expected-sams-club-receipt1.json",
                 messageKey = "fixture|sams-club-receipt1",
-                fromHeader = "Sam's Club <transaction@info.samsclub.com>",
-                subject = "Here's your fuel station receipt",
-                emailDateHeader = "Fri, 31 Jul 2026 21:48:47 -0600",
+                typeKey = Extractmail.TYPE_SAMS_CLUB,
             ),
         )
     }

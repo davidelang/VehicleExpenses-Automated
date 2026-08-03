@@ -4364,3 +4364,16 @@ x
 - VE cutover: GoogleSheets/ExcelGraph/EtherCalc TabularShareBackend → remotetable AAR
 - Auth remains in-app (GoogleAuthUtil / MSAL); tokens passed into Backends.*
 - Phase 6: offline email still in-app parsers; probe uses extractmail VERSION/types (Gmail/IMAP workers unchanged)
+
+## 2026-08-02 - M2.5 start: offline email + CLI harden + dead HTTP cleanup
+
+- Plan: first-party-libs-m2.5-offline-email-harden-cleanup-20260802-1735-plan.md
+- Baseline remotetable 70d57bb / extractmail 8155a5d; offline harness/goldens PASS
+
+## 2026-08-02 - M2.5 offline email goldens + CLI harden + dead HTTP cleanup
+
+- remotetable @ cb4c2e4: CLI flags before/after subcommand; live smoke docs
+- extractmail @ 9c22953: YAML module/export dispatch; export_offline_goldens.sh
+- VE offline Settings: expected-*.json assets (extractmail goldens) → FuelReceiptIngest; Extractmail.TYPE_*
+- Deleted GraphExcelClient; EtherCalcClient slim to config/room only
+- Gmail/IMAP workers unchanged (still ReceiptParsers HTML)
