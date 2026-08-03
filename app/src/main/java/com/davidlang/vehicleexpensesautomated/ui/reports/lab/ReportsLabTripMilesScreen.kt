@@ -188,8 +188,10 @@ fun ReportsLabTripMilesScreen(navController: NavHostController) {
 
         Text(stringResource(R.string.reports_kpis), style = MaterialTheme.typography.titleMedium)
         Text(
-            "Total miles: ${UnitFormat.distanceDeltaLabel(totalMiles, context)}" +
-                if (!includePersonalInTotals) " (Personal excluded)" else "",
+            stringResource(
+                R.string.reports_total_miles,
+                UnitFormat.distanceDeltaLabel(totalMiles, context),
+            ) + if (!includePersonalInTotals) " (Personal excluded)" else "",
             softWrap = true,
             maxLines = 3,
         )

@@ -3543,3 +3543,9 @@ x
 - PR doc: `dev-ai-interaction/PRs/PR-i18n_lang_packs.md` (pre-submit review + 3 plans)
 - Archived CODE LANDED plans → historical-plans/: latin-band packs, 5556 screenshots, settings-group-i18n-units (+ superseded en-es-fr stub)
 - Ready for Master (`run-grok-master`) independent review + merge. No deploy/merge by coder.
+
+## 2026-08-02 - i18n residual English + id screenshots — execution start
+
+- Approved plan: dev-ai-interaction/plans/i18n-residual-english-and-id-screenshots-20260802-1730-plan.md
+- Device: emulator-5556 on Quick Fill; no deploy
+- Phase 1: Fuel Edit + About + Expense categories

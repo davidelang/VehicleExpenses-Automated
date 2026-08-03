@@ -486,4 +486,64 @@
     <string name="settings_distance_unit_mi">Mijlen (mi)</string>
     <string name="settings_distance_unit_km">Kilometers (km)</string>
     <string name="settings_distance_unit_helper">Alleen labels: het zuinigheidsnummer is nog steeds kilometerteller-delta ÷ volume in uw volume-eenheid; geen mi↔km-conversie. Alle voertuigen moeten dezelfde kilometerteller gebruiken.</string>
+
+    <!-- Residual English pass 20260802 -->
+    <string name="fuel_no_location">Geen locatie</string>
+    <string name="fuel_fetch_image_from_archive">Afbeelding uit archief ophalen</string>
+    <string name="fuel_fetching">Ophalen…</string>
+    <string name="fuel_odometer_with_unit">Kilometerteller (%1$s)</string>
+    <string name="fuel_vol_with_unit">Vol (%1$s)</string>
+    <string name="fuel_datetime_label">Datum/tijd: %1$s</string>
+    <string name="fuel_location_details">Locatiedetails</string>
+    <string name="fuel_hide_details">Details verbergen</string>
+    <string name="fuel_saving">Opslaan…</string>
+    <string name="fuel_vehicle_id_fallback">Voertuig %1$d</string>
+    <string name="about_version_fmt">Versie %1$s</string>
+    <string name="expense_categories_title">Uitgavencategorieën — %1$s</string>
+    <string name="reports_start_date">Start %1$s</string>
+    <string name="reports_end_date">Einde %1$s</string>
+    <string name="reports_gpm_vol_per_distance">gpm (vol / %1$s)</string>
+    <string name="reports_cost_per_distance_fuel_only">%1$s (alleen brandstof)</string>
+    <string name="reports_cost_per_distance_incl_expenses">%1$s incl. uitgaven</string>
+    <string name="reports_expenses_by_category_title">Uitgaven per categorie</string>
+    <string name="reports_other_category">Overig</string>
+    <string name="reports_fill_history_title">Vulgeschiedenis</string>
+    <string name="reports_n_fills">%1$d vulbeurten</string>
+    <string name="reports_monthly_costs_title">Maandelijkse kosten</string>
+    <string name="reports_fuel_amount">Brandstof: %1$s</string>
+    <string name="reports_other_amount">Overig: %1$s</string>
+    <string name="reports_total_amount">Totaal: %1$s</string>
+    <string name="reports_no_chart_data">Geen grafiekgegevens</string>
+    <string name="reports_trip_miles_title">Trip-mijlen</string>
+    <string name="reports_vehicle_summary_title">Voertuigoverzicht</string>
+    <string name="reports_generated_at">Gegenereerd: %1$s</string>
+    <string name="reports_period_label">Periode: %1$s</string>
+    <string name="reports_vin_label">VIN: %1$s</string>
+    <string name="reports_expenses_amount">Uitgaven: %1$s</string>
+    <string name="reports_odometer_range">Kilometerteller: %1$s</string>
+    <string name="reports_odometer_na">n.v.t.</string>
+    <string name="reports_fills_partial_line">Vulbeurten: %1$d (%2$d partieel) · %3$s</string>
+    <string name="reports_last_avg_dpm_line">Laatste %1$s %2$s · Gem. %3$s %4$s · %5$s %6$s</string>
+    <string name="reports_plate_label">kenteken %1$s</string>
+    <string name="settings_volume_system_default_gallons">Systeemstandaard (gallons)</string>
+    <string name="settings_volume_system_default_liters">Systeemstandaard (liters)</string>
+    <string name="settings_volume_gallons_g">Gallons (G)</string>
+    <string name="settings_volume_liters_l">Liters (L)</string>
+    <string name="settings_convert_volumes_body">Bestaande brandstofvolumes tussen G en L converteren?
+
+Kies Je Nee, dan blijven historische getallen, maar labels wijzigen zonder conversie.</string>
+    <string name="settings_see_more_currencies">Meer zien</string>
+    <string name="settings_system_default_with_symbol">Systeemstandaard (%1$s)</string>
+    <string name="reports_no_fills_in_this_filter">Geen vulbeurten voor dit filter.</string>
+    <string name="reports_last_5_full_fills">Laatste 5 volle vulbeurten</string>
+    <string name="reports_fuel_total_with_unit_price">Brandstof totaal: %1$s · vulbeurten met eenheidsprijs: %2$d</string>
+    <string name="reports_unit_price_caption">Eenheidsprijs (kosten ÷ volume) over vulbeurten (datum-as)</string>
+    <string name="reports_not_enough_unit_price_points">Niet genoeg eenheidsprijspunten voor een grafiek (≥2 vulbeurten met kosten en volume).</string>
+    <string name="reports_total_miles">Totale mijlen: %1$s</string>
+    <string name="settings_worksheet_name_fmt">Werkbladnaam %1$s</string>
+    <string name="settings_collection_fmt">Collectie %1$s</string>
+    <string name="settings_table_id_fmt">Tabel-id %1$s</string>
+    <string name="settings_setup_help_provider_fmt">Installatiehulp — %1$s</string>
+    <string name="settings_one_per_line_fuel_table_id">Eén per regel: Fuel - Voertuignaam=tableId (bijv. %1$sHonda=12)</string>
+    <string name="settings_firebase_collections_blurb">Maak Firestore-collecties met stringvelden die overeenkomen met app-headers (Sync ID eerst). Map collectie-ids hieronder.</string>
 </resources>

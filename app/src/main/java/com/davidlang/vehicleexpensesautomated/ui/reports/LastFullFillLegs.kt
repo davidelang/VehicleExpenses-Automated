@@ -38,11 +38,12 @@ fun LastFullFillLegsBlock(
     volumeUnitLabel: String,
     defaultSymbol: String,
     modifier: Modifier = Modifier,
-    title: String = "Last 5 full fills",
+    title: String? = null,
 ) {
+    val resolvedTitle = title ?: stringResource(R.string.reports_last_5_full_fills)
     val displayNewestFirst = excludeMpgOutliers(legsChrono).asReversed().take(5)
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall)
+        Text(resolvedTitle, style = MaterialTheme.typography.titleSmall)
         if (displayNewestFirst.isEmpty()) {
             Text(stringResource(R.string.reports_no_full_fills), style = MaterialTheme.typography.bodySmall)
         } else {

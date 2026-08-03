@@ -37,7 +37,7 @@ fun FirebaseSpreadsheetForm(
         Text(stringResource(R.string.settings_setup_help_firebase))
     }
     Text(
-        "Create Firestore collections with string fields matching app headers (Sync ID first). " +
+        stringResource(R.string.settings_firebase_collections_blurb) + " " +
             stringResource(R.string.settings_use_a_short_lived_id_token_or_power_user_access_),
         style = MaterialTheme.typography.bodySmall,
     )
@@ -59,13 +59,17 @@ fun FirebaseSpreadsheetForm(
     OutlinedTextField(
         value = vehiclesCollection,
         onValueChange = onVehiclesCollectionChange,
-        label = { Text("${TabularSchema.TAB_VEHICLES} collection") },
+        label = {
+            Text(stringResource(R.string.settings_collection_fmt, TabularSchema.TAB_VEHICLES))
+        },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = expensesCollection,
         onValueChange = onExpensesCollectionChange,
-        label = { Text("${TabularSchema.TAB_EXPENSES} collection") },
+        label = {
+            Text(stringResource(R.string.settings_collection_fmt, TabularSchema.TAB_EXPENSES))
+        },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(

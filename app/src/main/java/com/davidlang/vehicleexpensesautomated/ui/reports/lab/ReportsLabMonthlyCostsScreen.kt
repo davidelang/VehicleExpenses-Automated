@@ -172,9 +172,24 @@ fun ReportsLabMonthlyCostsScreen(navController: NavHostController) {
                 }
                 Column(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     Text(b.key, style = MaterialTheme.typography.titleSmall)
-                    Text("Fuel: ${CurrencyCodes.formatAggregateSum(b.fuelByCurrency, data.defaultSymbol)}")
-                    Text("Other: ${CurrencyCodes.formatAggregateSum(b.otherByCurrency, data.defaultSymbol)}")
-                    Text("Total: ${CurrencyCodes.formatAggregateSum(total, data.defaultSymbol)}")
+                    Text(
+                        stringResource(
+                            R.string.reports_fuel_amount,
+                            CurrencyCodes.formatAggregateSum(b.fuelByCurrency, data.defaultSymbol),
+                        ),
+                    )
+                    Text(
+                        stringResource(
+                            R.string.reports_other_amount,
+                            CurrencyCodes.formatAggregateSum(b.otherByCurrency, data.defaultSymbol),
+                        ),
+                    )
+                    Text(
+                        stringResource(
+                            R.string.reports_total_amount,
+                            CurrencyCodes.formatAggregateSum(total, data.defaultSymbol),
+                        ),
+                    )
                 }
             }
         }

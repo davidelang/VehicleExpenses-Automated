@@ -54,7 +54,12 @@ fun RowDbSpreadsheetForm(
         else -> "tabular/README"
     }
     TextButton(onClick = { SyncSetupDocs.open(context, SyncSetupDocs.tabular(docsStem)) }) {
-        Text("Setup help — ${provider.displayLabel()}")
+        Text(
+            stringResource(
+                R.string.settings_setup_help_provider_fmt,
+                provider.displayLabel(),
+            ),
+        )
     }
     Text(stringResource(R.string.settings_create_tables_collections_with_fields_matching_a),
         style = MaterialTheme.typography.bodySmall,
@@ -126,13 +131,17 @@ fun RowDbSpreadsheetForm(
     OutlinedTextField(
         value = vehiclesTableId,
         onValueChange = onVehiclesTableIdChange,
-        label = { Text("${TabularSchema.TAB_VEHICLES} table id") },
+        label = {
+            Text(stringResource(R.string.settings_table_id_fmt, TabularSchema.TAB_VEHICLES))
+        },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = expensesTableId,
         onValueChange = onExpensesTableIdChange,
-        label = { Text("${TabularSchema.TAB_EXPENSES} table id") },
+        label = {
+            Text(stringResource(R.string.settings_table_id_fmt, TabularSchema.TAB_EXPENSES))
+        },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
@@ -140,7 +149,12 @@ fun RowDbSpreadsheetForm(
         onValueChange = onFuelTableIdsChange,
         label = { Text(stringResource(R.string.settings_fuel_tab_table_ids_optional)) },
         supportingText = {
-            Text("One per line: Fuel - VehicleName=tableId (e.g. ${TabularSchema.FUEL_TAB_PREFIX}Honda=12)")
+            Text(
+                stringResource(
+                    R.string.settings_one_per_line_fuel_table_id,
+                    TabularSchema.FUEL_TAB_PREFIX,
+                ),
+            )
         },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         minLines = 2,

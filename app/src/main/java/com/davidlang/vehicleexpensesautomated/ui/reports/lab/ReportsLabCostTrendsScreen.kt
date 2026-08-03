@@ -14,12 +14,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 @Composable
 fun ReportsLabCostTrendsScreen(navController: NavHostController) {
+    val context = LocalContext.current
     val data = rememberLabReportData()
     val fillFuel = remember(data.fuel) { data.fuel.withoutTripStarts() }
     val rows = remember(fillFuel) {
@@ -92,22 +94,31 @@ fun ReportsLabCostTrendsScreen(navController: NavHostController) {
                     }
                     sb.toString()
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText("Fuel & cost trends", buildText()) },
+                pdfBody = {
+                    ReportsLabPdf.fromPlainText(
+                        context.getString(R.string.reports_fuel_cost_trends),
+                        buildText(),
+                    )
+                },
             )
         },
     ) {
         if (data.fuel.isEmpty()) {
-            ReportsLabEmpty("No fills in this filter.")
+            ReportsLabEmpty(stringResource(R.string.reports_no_fills_in_this_filter))
             return@ReportsLabScreenScaffold
         }
         Text(
-            "Fuel total: ${CurrencyCodes.formatAggregateSum(totals, data.defaultSymbol)} · fills with unit price: ${rows.size}",
+            stringResource(
+                R.string.reports_fuel_total_with_unit_price,
+                CurrencyCodes.formatAggregateSum(totals, data.defaultSymbol),
+                rows.size,
+            ),
             style = MaterialTheme.typography.titleSmall,
         )
         LabTimeSeriesLineChart(
             series = chartSeries,
-            caption = "Unit price (cost ÷ volume) over fills (date axis)",
-            emptyMessage = "Not enough unit-price points for a chart (need ≥2 fills with cost and volume).",
+            caption = stringResource(R.string.reports_unit_price_caption),
+            emptyMessage = stringResource(R.string.reports_not_enough_unit_price_points),
         )
         Spacer(Modifier.height(8.dp))
         rows.asReversed().forEach { (e, up) ->

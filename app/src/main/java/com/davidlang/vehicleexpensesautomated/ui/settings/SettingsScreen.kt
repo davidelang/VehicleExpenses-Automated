@@ -128,9 +128,14 @@ fun SettingsScreen(navController: NavHostController) {
         }
     }
     val shortCurrencySymbols = listOf("system", "$", "€", "£", "CA$", "A$", "¥")
+    val systemDefaultCurrencyLabel = stringResource(
+        R.string.settings_system_default_with_symbol,
+        systemCurrencySymbol,
+    )
+    val seeMoreCurrenciesLabel = stringResource(R.string.settings_see_more_currencies)
     val shortCurrencyOptions = shortCurrencySymbols.map { sym ->
-        if (sym == "system") "System default ($systemCurrencySymbol)" else sym
-    } + "See more"
+        if (sym == "system") systemDefaultCurrencyLabel else sym
+    } + seeMoreCurrenciesLabel
     var volumeUnit by remember {
         mutableStateOf(
             if (prefs.contains("volume_unit")) {
@@ -146,14 +151,18 @@ fun SettingsScreen(navController: NavHostController) {
     var distanceMenuExpanded by remember { mutableStateOf(false) }
     var pendingVolumeUnit by remember { mutableStateOf<String?>(null) }
     var showVolumeConvertDialog by remember { mutableStateOf(false) }
-    val systemVolumeLabel = remember {
+    val volumeSystemGallons = stringResource(R.string.settings_volume_system_default_gallons)
+    val volumeSystemLiters = stringResource(R.string.settings_volume_system_default_liters)
+    val volumeGallonsG = stringResource(R.string.settings_volume_gallons_g)
+    val volumeLitersL = stringResource(R.string.settings_volume_liters_l)
+    val systemVolumeLabel = remember(volumeSystemGallons, volumeSystemLiters) {
         if (VolumeUnits.systemDefaultUnit() == VolumeUnits.LITERS) {
-            "System default (Liters)"
+            volumeSystemLiters
         } else {
-            "System default (Gallons)"
+            volumeSystemGallons
         }
     }
-    val volumeOptions = listOf(systemVolumeLabel, "Gallons (G)", "Liters (L)")
+    val volumeOptions = listOf(systemVolumeLabel, volumeGallonsG, volumeLitersL)
 
     fun resolveVolumePref(pref: String): String {
         if (pref == VolumeUnits.GALLONS || pref == VolumeUnits.LITERS) return pref
@@ -162,14 +171,15 @@ fun SettingsScreen(navController: NavHostController) {
 
     fun volumeDisplayLabel(pref: String): String = when (pref) {
         "system" -> systemVolumeLabel
-        VolumeUnits.GALLONS -> "Gallons (G)"
-        VolumeUnits.LITERS -> "Liters (L)"
+        VolumeUnits.GALLONS -> volumeGallonsG
+        VolumeUnits.LITERS -> volumeLitersL
         else -> systemVolumeLabel
     }
 
     fun volumePrefFromLabel(label: String): String = when {
-        label.startsWith("System default") -> "system"
-        label.startsWith("Gallons") -> VolumeUnits.GALLONS
+        label == systemVolumeLabel || label.startsWith("System default") ||
+            label == volumeSystemGallons || label == volumeSystemLiters -> "system"
+        label == volumeGallonsG || label.startsWith("Gallons") -> VolumeUnits.GALLONS
         else -> VolumeUnits.LITERS
     }
 
@@ -579,11 +589,7 @@ fun SettingsScreen(navController: NavHostController) {
                 },
                 title = { Text(stringResource(R.string.settings_convert_fuel_volumes)) },
                 text = {
-                    Text(
-                        "Convert existing fuel volumes between G and L?\n\n" +
-                            "If you choose No, historical numbers keep their current values but " +
-                            stringResource(R.string.settings_display_labels_will_change_without_conversion),
-                    )
+                    Text(stringResource(R.string.settings_convert_volumes_body))
                 },
                 confirmButton = {
                     Row {
@@ -719,8 +725,10 @@ fun SettingsScreen(navController: NavHostController) {
                     options = shortCurrencyOptions,
                     onValueChange = { selected ->
                         when {
-                            selected.startsWith("System default") -> currencySymbol = "system"
-                            selected == "See more" -> showMoreCurrencies = true
+                            selected == systemDefaultCurrencyLabel ||
+                                selected.startsWith("System default") -> currencySymbol = "system"
+                            selected == seeMoreCurrenciesLabel || selected == "See more" ->
+                                showMoreCurrencies = true
                             else -> currencySymbol = selected
                         }
                     },

@@ -250,13 +250,23 @@ fun ReportsLabFilterBar(
                     onClick = { showStartPicker = true },
                     modifier = Modifier.wrapContentWidth(),
                 ) {
-                    Text("Start ${dateFmt.format(Date(state.customStartMs))}")
+                    Text(
+                        stringResource(
+                            R.string.reports_start_date,
+                            dateFmt.format(Date(state.customStartMs)),
+                        ),
+                    )
                 }
                 OutlinedButton(
                     onClick = { showEndPicker = true },
                     modifier = Modifier.wrapContentWidth(),
                 ) {
-                    Text("End ${dateFmt.format(Date(state.customEndMs))}")
+                    Text(
+                        stringResource(
+                            R.string.reports_end_date,
+                            dateFmt.format(Date(state.customEndMs)),
+                        ),
+                    )
                 }
             }
         }

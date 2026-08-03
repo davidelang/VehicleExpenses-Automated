@@ -168,7 +168,7 @@ fun FuelEditScreen(
             locName.isNotBlank() -> locName
             locAddress.isNotBlank() -> locAddress
             locLat.isNotBlank() && locLon.isNotBlank() -> "$locLat, $locLon"
-            else -> "No location"
+            else -> context.getString(R.string.fuel_no_location)
         }
     }
 
@@ -179,7 +179,7 @@ fun FuelEditScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        FeatureScreenHeader("Edit fill")
+        FeatureScreenHeader(stringResource(R.string.nav_edit_fill))
 
         when {
             thumbUri != null -> {
@@ -214,7 +214,10 @@ fun FuelEditScreen(
                         },
                         enabled = !isFetching,
                     ) {
-                        Text(if (isFetching) "Fetching…" else "Fetch image from archive")
+                        Text(
+                            if (isFetching) stringResource(R.string.fuel_fetching)
+                            else stringResource(R.string.fuel_fetch_image_from_archive),
+                        )
                     }
                 }
             }
@@ -238,7 +241,14 @@ fun FuelEditScreen(
                 CaretEnabledOutlinedTextField(
                     value = odometer,
                     onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
-                    label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel(context)})") },
+                    label = {
+                        Text(
+                            stringResource(
+                                R.string.fuel_odometer_with_unit,
+                                UnitFormat.distanceUnitShortLabel(context),
+                            ),
+                        )
+                    },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     showCaretButtons = true,
@@ -256,7 +266,14 @@ fun FuelEditScreen(
             CaretEnabledOutlinedTextField(
                 value = odometer,
                 onValueChange = { odometer = it.filter { ch -> ch.isDigit() } },
-                label = { Text("Odometer (${UnitFormat.distanceUnitShortLabel(context)})") },
+                label = {
+                        Text(
+                            stringResource(
+                                R.string.fuel_odometer_with_unit,
+                                UnitFormat.distanceUnitShortLabel(context),
+                            ),
+                        )
+                    },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 showCaretButtons = true,
@@ -300,7 +317,10 @@ fun FuelEditScreen(
                     onValueChange = { volume = it },
                     label = {
                         Text(
-                            "Vol (${VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context))})",
+                            stringResource(
+                                R.string.fuel_vol_with_unit,
+                                VolumeUnits.shortLabel(VolumeUnits.resolvedPreferredVolumeUnit(context)),
+                            ),
                         )
                     },
                     modifier = Modifier.weight(1f),
@@ -339,7 +359,10 @@ fun FuelEditScreen(
         }
 
         AppDateTimeField(
-            label = "Date/time: ${dateFmt.format(Date(timestampMs))}",
+            label = stringResource(
+                R.string.fuel_datetime_label,
+                dateFmt.format(Date(timestampMs)),
+            ),
             onClick = { showDatePicker = true },
         )
         CaretEnabledOutlinedTextField(
@@ -367,7 +390,10 @@ fun FuelEditScreen(
                 )
             }
             TextButton(onClick = { locationExpanded = !locationExpanded }) {
-                Text(if (locationExpanded) "Hide details" else "Location details")
+                Text(
+                    if (locationExpanded) stringResource(R.string.fuel_hide_details)
+                    else stringResource(R.string.fuel_location_details),
+                )
             }
         }
         if (locationExpanded) {
@@ -474,7 +500,10 @@ fun FuelEditScreen(
             enabled = !isSaving,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (isSaving) "Saving…" else "Save")
+            Text(
+                if (isSaving) stringResource(R.string.fuel_saving)
+                else stringResource(R.string.fuel_save),
+            )
         }
         AppOutlinedBack(onClick = { navController.popBackStack() })
     }
@@ -523,7 +552,8 @@ private fun VehiclePickerField(
         onExpandedChange = onExpandedChange,
         modifier = modifier,
     ) {
-        val name = vehicles.firstOrNull { it.id == vehicleId }?.name ?: "Vehicle $vehicleId"
+        val name = vehicles.firstOrNull { it.id == vehicleId }?.name
+            ?: stringResource(R.string.fuel_vehicle_id_fallback, vehicleId)
         OutlinedTextField(
             value = name,
             onValueChange = {},

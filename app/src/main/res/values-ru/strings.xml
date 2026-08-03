@@ -486,4 +486,64 @@
     <string name="settings_distance_unit_mi">Майлз (ми)</string>
     <string name="settings_distance_unit_km">Километры (км)</string>
     <string name="settings_distance_unit_helper">Только этикетки — экономическое число по-прежнему представляет собой дельта одометра ÷ объем в ваших единицах объема; нет конвертации миль↔км. Все транспортные средства должны использовать один и тот же блок одометра.</string>
+
+    <!-- Residual English pass 20260802 -->
+    <string name="fuel_no_location">Нет местоположения</string>
+    <string name="fuel_fetch_image_from_archive">Загрузить изображение из архива</string>
+    <string name="fuel_fetching">Загрузка…</string>
+    <string name="fuel_odometer_with_unit">Одометр (%1$s)</string>
+    <string name="fuel_vol_with_unit">Объём (%1$s)</string>
+    <string name="fuel_datetime_label">Дата/время: %1$s</string>
+    <string name="fuel_location_details">Сведения о местоположении</string>
+    <string name="fuel_hide_details">Скрыть сведения</string>
+    <string name="fuel_saving">Сохранение…</string>
+    <string name="fuel_vehicle_id_fallback">ТС %1$d</string>
+    <string name="about_version_fmt">Версия %1$s</string>
+    <string name="expense_categories_title">Категории расходов — %1$s</string>
+    <string name="reports_start_date">Начало %1$s</string>
+    <string name="reports_end_date">Конец %1$s</string>
+    <string name="reports_gpm_vol_per_distance">gpm (объём / %1$s)</string>
+    <string name="reports_cost_per_distance_fuel_only">%1$s (только топливо)</string>
+    <string name="reports_cost_per_distance_incl_expenses">%1$s с расходами</string>
+    <string name="reports_expenses_by_category_title">Расходы по категориям</string>
+    <string name="reports_other_category">Прочее</string>
+    <string name="reports_fill_history_title">История заправок</string>
+    <string name="reports_n_fills">%1$d заправок</string>
+    <string name="reports_monthly_costs_title">Месячные затраты</string>
+    <string name="reports_fuel_amount">Топливо: %1$s</string>
+    <string name="reports_other_amount">Прочее: %1$s</string>
+    <string name="reports_total_amount">Итого: %1$s</string>
+    <string name="reports_no_chart_data">Нет данных для диаграммы</string>
+    <string name="reports_trip_miles_title">Мили поездок</string>
+    <string name="reports_vehicle_summary_title">Сводка по ТС</string>
+    <string name="reports_generated_at">Создано: %1$s</string>
+    <string name="reports_period_label">Период: %1$s</string>
+    <string name="reports_vin_label">VIN: %1$s</string>
+    <string name="reports_expenses_amount">Расходы: %1$s</string>
+    <string name="reports_odometer_range">Одометр: %1$s</string>
+    <string name="reports_odometer_na">н/д</string>
+    <string name="reports_fills_partial_line">Заправки: %1$d (%2$d частичные) · %3$s</string>
+    <string name="reports_last_avg_dpm_line">Посл. %1$s %2$s · Ср. %3$s %4$s · %5$s %6$s</string>
+    <string name="reports_plate_label">номер %1$s</string>
+    <string name="settings_volume_system_default_gallons">Системное (галлоны)</string>
+    <string name="settings_volume_system_default_liters">Системное (литры)</string>
+    <string name="settings_volume_gallons_g">Галлоны (G)</string>
+    <string name="settings_volume_liters_l">Литры (L)</string>
+    <string name="settings_convert_volumes_body">Пересчитать объёмы топлива между G и L?
+
+Если выбрать Нет, исторические числа сохранятся, а подписи изменятся без пересчёта.</string>
+    <string name="settings_see_more_currencies">Ещё</string>
+    <string name="settings_system_default_with_symbol">Системное (%1$s)</string>
+    <string name="reports_no_fills_in_this_filter">Нет заправок для этого фильтра.</string>
+    <string name="reports_last_5_full_fills">Последние 5 полных заправок</string>
+    <string name="reports_fuel_total_with_unit_price">Итого топливо: %1$s · заправки с ценой за единицу: %2$d</string>
+    <string name="reports_unit_price_caption">Цена за единицу (стоимость ÷ объём) по заправкам (ось дат)</string>
+    <string name="reports_not_enough_unit_price_points">Недостаточно точек цены за единицу для диаграммы (нужно ≥2 заправки с суммой и объёмом).</string>
+    <string name="reports_total_miles">Всего миль: %1$s</string>
+    <string name="settings_worksheet_name_fmt">Имя листа %1$s</string>
+    <string name="settings_collection_fmt">Коллекция %1$s</string>
+    <string name="settings_table_id_fmt">Id таблицы %1$s</string>
+    <string name="settings_setup_help_provider_fmt">Справка по настройке — %1$s</string>
+    <string name="settings_one_per_line_fuel_table_id">По одному в строке: Fuel - ИмяТС=tableId (напр. %1$sHonda=12)</string>
+    <string name="settings_firebase_collections_blurb">Создайте коллекции Firestore со строковыми полями как заголовки приложения (сначала Sync ID). Сопоставьте id коллекций ниже.</string>
 </resources>

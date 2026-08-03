@@ -32,7 +32,7 @@ fun AboutScreen() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(stringResource(R.string.app_name_long), style = MaterialTheme.typography.headlineMedium)
-            Text("Version $version", style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.about_version_fmt, version), style = MaterialTheme.typography.bodyLarge)
             Spacer(modifier = Modifier.height(32.dp))
             Text(stringResource(R.string.about_open_source_libraries), style = MaterialTheme.typography.titleMedium)
             Text(stringResource(R.string.about_room_hilt_jetpack_compose_workmanager_google_sig))

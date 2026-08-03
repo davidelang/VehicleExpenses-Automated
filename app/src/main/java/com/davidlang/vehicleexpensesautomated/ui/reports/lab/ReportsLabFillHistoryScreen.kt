@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.components.AdaptiveItemGrid
 import com.davidlang.vehicleexpensesautomated.ui.components.TappableCard
@@ -15,13 +16,15 @@ import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 @Composable
 fun ReportsLabFillHistoryScreen(navController: NavHostController) {
+    val context = LocalContext.current
     val data = rememberLabReportData()
     val rows = remember(data.fuel) {
         data.fuel.withoutTripStarts().sortedByDescending { it.timestamp }
     }
+    val fillHistoryTitle = stringResource(R.string.reports_fill_history)
 
     ReportsLabScreenScaffold(
-        title = stringResource(R.string.reports_fill_history),
+        title = fillHistoryTitle,
         infoText = "Chronological fills for current filters (trip starts excluded). " +
             "Each vehicle uses the same multi-vehicle list as All (vehicle name on each row). " +
             stringResource(R.string.reports_tap_a_row_to_edit),
@@ -31,8 +34,8 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
         shareActions = run {
             val buildText = {
                 buildString {
-                    appendLine("Vehicle Expenses — Fill history")
-                    appendLine("Period: ${periodLabel(data.filter)}")
+                    appendLine("Vehicle Expenses — $fillHistoryTitle")
+                    appendLine(context.getString(R.string.reports_period_label, periodLabel(data.filter)))
                     appendLine("Vehicle: ${data.filterVehicleLabel()}")
                     appendLine("Count: ${rows.size}")
                     rows.forEach { e ->
@@ -50,7 +53,7 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
                 }
             }
             ReportsLabShareActions(
-                subject = "Fill history",
+                subject = fillHistoryTitle,
                 textBody = buildText,
                 csvFileName = "lab_fills.csv",
                 csvBody = {
@@ -72,15 +75,23 @@ fun ReportsLabFillHistoryScreen(navController: NavHostController) {
                     }
                     sb.toString()
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText("Fill history", buildText()) },
+                pdfBody = {
+                    ReportsLabPdf.fromPlainText(
+                        fillHistoryTitle,
+                        buildText(),
+                    )
+                },
             )
         },
     ) {
         if (rows.isEmpty()) {
-            ReportsLabEmpty("No fills in this filter.")
+            ReportsLabEmpty(stringResource(R.string.reports_no_fills_in_this_filter))
             return@ReportsLabScreenScaffold
         }
-        Text("${rows.size} fills", style = MaterialTheme.typography.titleSmall)
+        Text(
+            stringResource(R.string.reports_n_fills, rows.size),
+            style = MaterialTheme.typography.titleSmall,
+        )
         AdaptiveItemGrid(items = rows) { e ->
             val flags = buildList {
                 if (e.isPartialFill) add("partial")

@@ -92,13 +92,21 @@ fun ZohoSheetSpreadsheetForm(
     OutlinedTextField(
         value = vehiclesSheet,
         onValueChange = onVehiclesSheetChange,
-        label = { Text("${TabularSchema.TAB_VEHICLES} worksheet name") },
+        label = {
+            Text(
+                stringResource(R.string.settings_worksheet_name_fmt, TabularSchema.TAB_VEHICLES),
+            )
+        },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(
         value = expensesSheet,
         onValueChange = onExpensesSheetChange,
-        label = { Text("${TabularSchema.TAB_EXPENSES} worksheet name") },
+        label = {
+            Text(
+                stringResource(R.string.settings_worksheet_name_fmt, TabularSchema.TAB_EXPENSES),
+            )
+        },
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
     )
     OutlinedTextField(

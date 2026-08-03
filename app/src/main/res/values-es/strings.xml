@@ -486,4 +486,64 @@
     <string name="settings_distance_unit_mi">Millas (mi)</string>
     <string name="settings_distance_unit_km">Kilómetros (km)</string>
     <string name="settings_distance_unit_helper">Solo etiquetas: el número económico sigue siendo delta del odómetro ÷ volumen en su unidad de volumen; sin conversión de mi↔km. Todos los vehículos deben utilizar la misma unidad de odómetro.</string>
+
+    <!-- Residual English pass 20260802 -->
+    <string name="fuel_no_location">Sin ubicación</string>
+    <string name="fuel_fetch_image_from_archive">Obtener imagen del archivo</string>
+    <string name="fuel_fetching">Obteniendo…</string>
+    <string name="fuel_odometer_with_unit">Odómetro (%1$s)</string>
+    <string name="fuel_vol_with_unit">Vol (%1$s)</string>
+    <string name="fuel_datetime_label">Fecha/hora: %1$s</string>
+    <string name="fuel_location_details">Detalles de ubicación</string>
+    <string name="fuel_hide_details">Ocultar detalles</string>
+    <string name="fuel_saving">Guardando…</string>
+    <string name="fuel_vehicle_id_fallback">Vehículo %1$d</string>
+    <string name="about_version_fmt">Versión %1$s</string>
+    <string name="expense_categories_title">Categorías de gastos — %1$s</string>
+    <string name="reports_start_date">Inicio %1$s</string>
+    <string name="reports_end_date">Fin %1$s</string>
+    <string name="reports_gpm_vol_per_distance">gpm (vol / %1$s)</string>
+    <string name="reports_cost_per_distance_fuel_only">%1$s (solo combustible)</string>
+    <string name="reports_cost_per_distance_incl_expenses">%1$s con gastos</string>
+    <string name="reports_expenses_by_category_title">Gastos por categoría</string>
+    <string name="reports_other_category">Otros</string>
+    <string name="reports_fill_history_title">Historial de cargas</string>
+    <string name="reports_n_fills">%1$d cargas</string>
+    <string name="reports_monthly_costs_title">Costos mensuales</string>
+    <string name="reports_fuel_amount">Combustible: %1$s</string>
+    <string name="reports_other_amount">Otros: %1$s</string>
+    <string name="reports_total_amount">Total: %1$s</string>
+    <string name="reports_no_chart_data">Sin datos de gráfico</string>
+    <string name="reports_trip_miles_title">Millas de viaje</string>
+    <string name="reports_vehicle_summary_title">Resumen del vehículo</string>
+    <string name="reports_generated_at">Generado: %1$s</string>
+    <string name="reports_period_label">Período: %1$s</string>
+    <string name="reports_vin_label">VIN: %1$s</string>
+    <string name="reports_expenses_amount">Gastos: %1$s</string>
+    <string name="reports_odometer_range">Odómetro: %1$s</string>
+    <string name="reports_odometer_na">n/d</string>
+    <string name="reports_fills_partial_line">Cargas: %1$d (%2$d parciales) · %3$s</string>
+    <string name="reports_last_avg_dpm_line">Últ. %1$s %2$s · Prom. %3$s %4$s · %5$s %6$s</string>
+    <string name="reports_plate_label">placa %1$s</string>
+    <string name="settings_volume_system_default_gallons">Predeterminado del sistema (galones)</string>
+    <string name="settings_volume_system_default_liters">Predeterminado del sistema (litros)</string>
+    <string name="settings_volume_gallons_g">Galones (G)</string>
+    <string name="settings_volume_liters_l">Litros (L)</string>
+    <string name="settings_convert_volumes_body">¿Convertir volúmenes de combustible existentes entre G y L?
+
+Si elige No, los números históricos conservan sus valores actuales, pero las etiquetas de visualización cambiarán sin conversión.</string>
+    <string name="settings_see_more_currencies">Ver más</string>
+    <string name="settings_system_default_with_symbol">Predeterminado del sistema (%1$s)</string>
+    <string name="reports_no_fills_in_this_filter">No hay cargas en este filtro.</string>
+    <string name="reports_last_5_full_fills">Últimas 5 cargas completas</string>
+    <string name="reports_fuel_total_with_unit_price">Total combustible: %1$s · cargas con precio unitario: %2$d</string>
+    <string name="reports_unit_price_caption">Precio unitario (costo ÷ volumen) por cargas (eje fecha)</string>
+    <string name="reports_not_enough_unit_price_points">No hay suficientes puntos de precio unitario para un gráfico (se necesitan ≥2 cargas con costo y volumen).</string>
+    <string name="reports_total_miles">Millas totales: %1$s</string>
+    <string name="settings_worksheet_name_fmt">Nombre de hoja %1$s</string>
+    <string name="settings_collection_fmt">Colección %1$s</string>
+    <string name="settings_table_id_fmt">Id de tabla %1$s</string>
+    <string name="settings_setup_help_provider_fmt">Ayuda de configuración — %1$s</string>
+    <string name="settings_one_per_line_fuel_table_id">Uno por línea: Fuel - NombreVehículo=tableId (p. ej. %1$sHonda=12)</string>
+    <string name="settings_firebase_collections_blurb">Cree colecciones Firestore con campos de texto que coincidan con los encabezados de la app (Sync ID primero). Asigne los id de colección abajo.</string>
 </resources>

@@ -14,12 +14,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.davidlang.vehicleexpensesautomated.ui.util.CurrencyCodes
 
 @Composable
 fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
+    val context = LocalContext.current
     val data = rememberLabReportData(LabVehicleMembership.EXPENSE)
     val isEach = data.filter.vehicleMode == LabVehicleMode.EACH
 
@@ -145,12 +147,17 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
                     }
                     sb.toString()
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText("Expenses by category", buildText()) },
+                pdfBody = {
+                    ReportsLabPdf.fromPlainText(
+                        context.getString(R.string.reports_expenses_by_category),
+                        buildText(),
+                    )
+                },
             )
         },
     ) {
         if (data.expenses.isEmpty()) {
-            ReportsLabEmpty("No expenses in this filter.")
+            ReportsLabEmpty(stringResource(R.string.expense_no_expenses_yet))
             return@ReportsLabScreenScaffold
         }
         if (isEach) {
@@ -188,7 +195,9 @@ fun ReportsLabExpenseCategoriesScreen(navController: NavHostController) {
         Text(stringResource(R.string.reports_all_expenses_in_period), style = MaterialTheme.typography.titleSmall)
         data.expenses.sortedByDescending { it.date }.forEach { e ->
             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                Text("${formatLabDate(e.date)} · ${e.category.ifBlank { "Other" }} · ${data.vehicleName(e.vehicleId)}")
+                Text(
+                    "${formatLabDate(e.date)} · ${e.category.ifBlank { stringResource(R.string.reports_other_category) }} · ${data.vehicleName(e.vehicleId)}",
+                )
                 Text(
                     "${CurrencyCodes.formatAmount(e.amount, e.currency, data.defaultSymbol)} · ${e.description.ifBlank { "(no description)" }}",
                     style = MaterialTheme.typography.bodySmall,

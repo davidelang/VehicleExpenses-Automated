@@ -486,4 +486,64 @@
     <string name="settings_distance_unit_mi">Dặm (dặm)</string>
     <string name="settings_distance_unit_km">Km (km)</string>
     <string name="settings_distance_unit_helper">Chỉ nhãn - số tiết kiệm vẫn là đồng hồ đo đường-delta ÷ âm lượng trong đơn vị thể tích của bạn; không chuyển đổi mi↔km. Tất cả các phương tiện phải sử dụng cùng một đơn vị đo đường.</string>
+
+    <!-- Residual English pass 20260802 -->
+    <string name="fuel_no_location">Không có vị trí</string>
+    <string name="fuel_fetch_image_from_archive">Lấy ảnh từ kho lưu trữ</string>
+    <string name="fuel_fetching">Đang tải…</string>
+    <string name="fuel_odometer_with_unit">Đồng hồ km (%1$s)</string>
+    <string name="fuel_vol_with_unit">Thể tích (%1$s)</string>
+    <string name="fuel_datetime_label">Ngày/giờ: %1$s</string>
+    <string name="fuel_location_details">Chi tiết vị trí</string>
+    <string name="fuel_hide_details">Ẩn chi tiết</string>
+    <string name="fuel_saving">Đang lưu…</string>
+    <string name="fuel_vehicle_id_fallback">Xe %1$d</string>
+    <string name="about_version_fmt">Phiên bản %1$s</string>
+    <string name="expense_categories_title">Danh mục chi phí — %1$s</string>
+    <string name="reports_start_date">Bắt đầu %1$s</string>
+    <string name="reports_end_date">Kết thúc %1$s</string>
+    <string name="reports_gpm_vol_per_distance">gpm (thể tích / %1$s)</string>
+    <string name="reports_cost_per_distance_fuel_only">%1$s (chỉ nhiên liệu)</string>
+    <string name="reports_cost_per_distance_incl_expenses">%1$s gồm chi phí</string>
+    <string name="reports_expenses_by_category_title">Chi phí theo danh mục</string>
+    <string name="reports_other_category">Khác</string>
+    <string name="reports_fill_history_title">Lịch sử đổ xăng</string>
+    <string name="reports_n_fills">%1$d lần đổ</string>
+    <string name="reports_monthly_costs_title">Chi phí hàng tháng</string>
+    <string name="reports_fuel_amount">Nhiên liệu: %1$s</string>
+    <string name="reports_other_amount">Khác: %1$s</string>
+    <string name="reports_total_amount">Tổng: %1$s</string>
+    <string name="reports_no_chart_data">Không có dữ liệu biểu đồ</string>
+    <string name="reports_trip_miles_title">Dặm chuyến đi</string>
+    <string name="reports_vehicle_summary_title">Tóm tắt xe</string>
+    <string name="reports_generated_at">Tạo lúc: %1$s</string>
+    <string name="reports_period_label">Kỳ: %1$s</string>
+    <string name="reports_vin_label">VIN: %1$s</string>
+    <string name="reports_expenses_amount">Chi phí: %1$s</string>
+    <string name="reports_odometer_range">Đồng hồ km: %1$s</string>
+    <string name="reports_odometer_na">n/a</string>
+    <string name="reports_fills_partial_line">Lần đổ: %1$d (%2$d một phần) · %3$s</string>
+    <string name="reports_last_avg_dpm_line">Gần nhất %1$s %2$s · TB %3$s %4$s · %5$s %6$s</string>
+    <string name="reports_plate_label">biển %1$s</string>
+    <string name="settings_volume_system_default_gallons">Mặc định hệ thống (gallon)</string>
+    <string name="settings_volume_system_default_liters">Mặc định hệ thống (lít)</string>
+    <string name="settings_volume_gallons_g">Gallon (G)</string>
+    <string name="settings_volume_liters_l">Lít (L)</string>
+    <string name="settings_convert_volumes_body">Chuyển đổi thể tích nhiên liệu hiện có giữa G và L?
+
+Nếu chọn Không, số liệu lịch sử giữ nguyên nhưng nhãn hiển thị đổi mà không quy đổi.</string>
+    <string name="settings_see_more_currencies">Xem thêm</string>
+    <string name="settings_system_default_with_symbol">Mặc định hệ thống (%1$s)</string>
+    <string name="reports_no_fills_in_this_filter">Không có lần đổ trong bộ lọc này.</string>
+    <string name="reports_last_5_full_fills">5 lần đổ đầy gần nhất</string>
+    <string name="reports_fuel_total_with_unit_price">Tổng nhiên liệu: %1$s · lần đổ có đơn giá: %2$d</string>
+    <string name="reports_unit_price_caption">Đơn giá (chi phí ÷ thể tích) theo lần đổ (trục ngày)</string>
+    <string name="reports_not_enough_unit_price_points">Không đủ điểm đơn giá cho biểu đồ (cần ≥2 lần đổ có chi phí và thể tích).</string>
+    <string name="reports_total_miles">Tổng dặm: %1$s</string>
+    <string name="settings_worksheet_name_fmt">Tên trang %1$s</string>
+    <string name="settings_collection_fmt">Bộ sưu tập %1$s</string>
+    <string name="settings_table_id_fmt">Id bảng %1$s</string>
+    <string name="settings_setup_help_provider_fmt">Trợ giúp thiết lập — %1$s</string>
+    <string name="settings_one_per_line_fuel_table_id">Mỗi dòng một: Fuel - TênXe=tableId (vd. %1$sHonda=12)</string>
+    <string name="settings_firebase_collections_blurb">Tạo collection Firestore với trường chuỗi khớp header ứng dụng (Sync ID trước). Ánh xạ id collection bên dưới.</string>
 </resources>

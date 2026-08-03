@@ -486,4 +486,64 @@
     <string name="settings_distance_unit_mi">Mil (mil)</string>
     <string name="settings_distance_unit_km">Kilometre (km)</string>
     <string name="settings_distance_unit_helper">Yalnızca etiketler — ekonomi numarası hala hacim biriminizde kilometre sayacı-delta ÷ hacimdir; mi↔km dönüşümü yok. Tüm araçlar aynı kilometre sayacı ünitesini kullanmalıdır.</string>
+
+    <!-- Residual English pass 20260802 -->
+    <string name="fuel_no_location">Konum yok</string>
+    <string name="fuel_fetch_image_from_archive">Arşivden görsel getir</string>
+    <string name="fuel_fetching">Getiriliyor…</string>
+    <string name="fuel_odometer_with_unit">Kilometre sayacı (%1$s)</string>
+    <string name="fuel_vol_with_unit">Hacim (%1$s)</string>
+    <string name="fuel_datetime_label">Tarih/saat: %1$s</string>
+    <string name="fuel_location_details">Konum ayrıntıları</string>
+    <string name="fuel_hide_details">Ayrıntıları gizle</string>
+    <string name="fuel_saving">Kaydediliyor…</string>
+    <string name="fuel_vehicle_id_fallback">Araç %1$d</string>
+    <string name="about_version_fmt">Sürüm %1$s</string>
+    <string name="expense_categories_title">Gider kategorileri — %1$s</string>
+    <string name="reports_start_date">Başlangıç %1$s</string>
+    <string name="reports_end_date">Bitiş %1$s</string>
+    <string name="reports_gpm_vol_per_distance">gpm (hacim / %1$s)</string>
+    <string name="reports_cost_per_distance_fuel_only">%1$s (yalnızca yakıt)</string>
+    <string name="reports_cost_per_distance_incl_expenses">%1$s giderler dahil</string>
+    <string name="reports_expenses_by_category_title">Kategoriye göre giderler</string>
+    <string name="reports_other_category">Diğer</string>
+    <string name="reports_fill_history_title">Dolum geçmişi</string>
+    <string name="reports_n_fills">%1$d dolum</string>
+    <string name="reports_monthly_costs_title">Aylık maliyetler</string>
+    <string name="reports_fuel_amount">Yakıt: %1$s</string>
+    <string name="reports_other_amount">Diğer: %1$s</string>
+    <string name="reports_total_amount">Toplam: %1$s</string>
+    <string name="reports_no_chart_data">Grafik verisi yok</string>
+    <string name="reports_trip_miles_title">Yolculuk milleri</string>
+    <string name="reports_vehicle_summary_title">Araç özeti</string>
+    <string name="reports_generated_at">Oluşturuldu: %1$s</string>
+    <string name="reports_period_label">Dönem: %1$s</string>
+    <string name="reports_vin_label">VIN: %1$s</string>
+    <string name="reports_expenses_amount">Giderler: %1$s</string>
+    <string name="reports_odometer_range">Kilometre: %1$s</string>
+    <string name="reports_odometer_na">yok</string>
+    <string name="reports_fills_partial_line">Dolum: %1$d (%2$d kısmi) · %3$s</string>
+    <string name="reports_last_avg_dpm_line">Son %1$s %2$s · Ort. %3$s %4$s · %5$s %6$s</string>
+    <string name="reports_plate_label">plaka %1$s</string>
+    <string name="settings_volume_system_default_gallons">Sistem varsayılanı (galon)</string>
+    <string name="settings_volume_system_default_liters">Sistem varsayılanı (litre)</string>
+    <string name="settings_volume_gallons_g">Galon (G)</string>
+    <string name="settings_volume_liters_l">Litre (L)</string>
+    <string name="settings_convert_volumes_body">Mevcut yakıt hacimlerini G ve L arasında dönüştür?
+
+Hayır derseniz geçmiş sayılar kalır; görünen etiketler dönüşümsüz değişir.</string>
+    <string name="settings_see_more_currencies">Daha fazla</string>
+    <string name="settings_system_default_with_symbol">Sistem varsayılanı (%1$s)</string>
+    <string name="reports_no_fills_in_this_filter">Bu filtrede dolum yok.</string>
+    <string name="reports_last_5_full_fills">Son 5 tam dolum</string>
+    <string name="reports_fuel_total_with_unit_price">Yakıt toplamı: %1$s · birim fiyatlı dolum: %2$d</string>
+    <string name="reports_unit_price_caption">Birim fiyat (maliyet ÷ hacim) dolumlar (tarih ekseni)</string>
+    <string name="reports_not_enough_unit_price_points">Grafik için yeterli birim fiyat noktası yok (≥2 maliyet ve hacimli dolum gerekir).</string>
+    <string name="reports_total_miles">Toplam mil: %1$s</string>
+    <string name="settings_worksheet_name_fmt">%1$s çalışma sayfası adı</string>
+    <string name="settings_collection_fmt">%1$s koleksiyonu</string>
+    <string name="settings_table_id_fmt">%1$s tablo kimliği</string>
+    <string name="settings_setup_help_provider_fmt">Kurulum yardımı — %1$s</string>
+    <string name="settings_one_per_line_fuel_table_id">Satır başına bir: Fuel - AraçAdı=tableId (ör. %1$sHonda=12)</string>
+    <string name="settings_firebase_collections_blurb">Uygulama başlıklarıyla eşleşen string alanlı Firestore koleksiyonları oluşturun (önce Sync ID). Aşağıda koleksiyon id’lerini eşleyin.</string>
 </resources>

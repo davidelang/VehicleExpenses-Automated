@@ -486,4 +486,64 @@
     <string name="settings_distance_unit_mi">Mil (mil)</string>
     <string name="settings_distance_unit_km">Kilometer (km)</string>
     <string name="settings_distance_unit_helper">Hanya label — angka ekonomi tetap berupa odometer-delta ± volume dalam satuan volume Anda; tidak ada konversi mi↔km. Semua kendaraan harus menggunakan unit odometer yang sama.</string>
+
+    <!-- Residual English pass 20260802 -->
+    <string name="fuel_no_location">Tidak ada lokasi</string>
+    <string name="fuel_fetch_image_from_archive">Ambil gambar dari arsip</string>
+    <string name="fuel_fetching">Mengambil…</string>
+    <string name="fuel_odometer_with_unit">Odometer (%1$s)</string>
+    <string name="fuel_vol_with_unit">Vol (%1$s)</string>
+    <string name="fuel_datetime_label">Tanggal/waktu: %1$s</string>
+    <string name="fuel_location_details">Detail lokasi</string>
+    <string name="fuel_hide_details">Sembunyikan detail</string>
+    <string name="fuel_saving">Menyimpan…</string>
+    <string name="fuel_vehicle_id_fallback">Kendaraan %1$d</string>
+    <string name="about_version_fmt">Versi %1$s</string>
+    <string name="expense_categories_title">Kategori pengeluaran — %1$s</string>
+    <string name="reports_start_date">Mulai %1$s</string>
+    <string name="reports_end_date">Selesai %1$s</string>
+    <string name="reports_gpm_vol_per_distance">gpm (vol / %1$s)</string>
+    <string name="reports_cost_per_distance_fuel_only">%1$s (hanya BBM)</string>
+    <string name="reports_cost_per_distance_incl_expenses">%1$s termasuk pengeluaran</string>
+    <string name="reports_expenses_by_category_title">Pengeluaran per kategori</string>
+    <string name="reports_other_category">Lainnya</string>
+    <string name="reports_fill_history_title">Riwayat pengisian</string>
+    <string name="reports_n_fills">%1$d pengisian</string>
+    <string name="reports_monthly_costs_title">Biaya bulanan</string>
+    <string name="reports_fuel_amount">BBM: %1$s</string>
+    <string name="reports_other_amount">Lainnya: %1$s</string>
+    <string name="reports_total_amount">Total: %1$s</string>
+    <string name="reports_no_chart_data">Tidak ada data bagan</string>
+    <string name="reports_trip_miles_title">Mil perjalanan</string>
+    <string name="reports_vehicle_summary_title">Ringkasan kendaraan</string>
+    <string name="reports_generated_at">Dibuat: %1$s</string>
+    <string name="reports_period_label">Periode: %1$s</string>
+    <string name="reports_vin_label">VIN: %1$s</string>
+    <string name="reports_expenses_amount">Pengeluaran: %1$s</string>
+    <string name="reports_odometer_range">Odometer: %1$s</string>
+    <string name="reports_odometer_na">t/a</string>
+    <string name="reports_fills_partial_line">Pengisian: %1$d (%2$d parsial) · %3$s</string>
+    <string name="reports_last_avg_dpm_line">Terakhir %1$s %2$s · Rata-rata %3$s %4$s · %5$s %6$s</string>
+    <string name="reports_plate_label">plat %1$s</string>
+    <string name="settings_volume_system_default_gallons">Default sistem (Galon)</string>
+    <string name="settings_volume_system_default_liters">Default sistem (Liter)</string>
+    <string name="settings_volume_gallons_g">Galon (G)</string>
+    <string name="settings_volume_liters_l">Liter (L)</string>
+    <string name="settings_convert_volumes_body">Konversi volume BBM yang ada antara G dan L?
+
+Jika memilih Tidak, angka historis tetap, tetapi label tampilan berubah tanpa konversi.</string>
+    <string name="settings_see_more_currencies">Lihat lainnya</string>
+    <string name="settings_system_default_with_symbol">Default sistem (%1$s)</string>
+    <string name="reports_no_fills_in_this_filter">Tidak ada pengisian pada filter ini.</string>
+    <string name="reports_last_5_full_fills">5 pengisian penuh terakhir</string>
+    <string name="reports_fuel_total_with_unit_price">Total BBM: %1$s · pengisian dengan harga satuan: %2$d</string>
+    <string name="reports_unit_price_caption">Harga satuan (biaya ÷ volume) per pengisian (sumbu tanggal)</string>
+    <string name="reports_not_enough_unit_price_points">Titik harga satuan tidak cukup untuk bagan (perlu ≥2 pengisian dengan biaya dan volume).</string>
+    <string name="reports_total_miles">Total mil: %1$s</string>
+    <string name="settings_worksheet_name_fmt">Nama lembar %1$s</string>
+    <string name="settings_collection_fmt">Koleksi %1$s</string>
+    <string name="settings_table_id_fmt">Id tabel %1$s</string>
+    <string name="settings_setup_help_provider_fmt">Bantuan penyiapan — %1$s</string>
+    <string name="settings_one_per_line_fuel_table_id">Satu per baris: Fuel - NamaKendaraan=tableId (mis. %1$sHonda=12)</string>
+    <string name="settings_firebase_collections_blurb">Buat koleksi Firestore dengan field string yang cocok header app (Sync ID dulu). Petakan id koleksi di bawah.</string>
 </resources>

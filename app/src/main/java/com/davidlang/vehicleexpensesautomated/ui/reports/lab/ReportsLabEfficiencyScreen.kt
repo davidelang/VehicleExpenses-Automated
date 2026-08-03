@@ -239,12 +239,17 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
                     }
                     sb.toString()
                 },
-                pdfBody = { ReportsLabPdf.fromPlainText("Fuel efficiency", buildText()) },
+                pdfBody = {
+                    ReportsLabPdf.fromPlainText(
+                        context.getString(R.string.reports_fuel_efficiency),
+                        buildText(),
+                    )
+                },
             )
         },
     ) {
         if (data.fuel.isEmpty()) {
-            ReportsLabEmpty("No fills in this filter.")
+            ReportsLabEmpty(stringResource(R.string.reports_no_fills_in_this_filter))
             return@ReportsLabScreenScaffold
         }
         Text(stringResource(R.string.reports_metrics), style = MaterialTheme.typography.titleSmall)
@@ -254,17 +259,26 @@ fun ReportsLabEfficiencyScreen(navController: NavHostController) {
             onChecked = { setToggles(toggles.copy(mpg = it)) },
         )
         MetricToggleRow(
-            label = "gpm (vol / mi)",
+            label = stringResource(
+                R.string.reports_gpm_vol_per_distance,
+                UnitFormat.distanceUnitShortLabel(context),
+            ),
             checked = toggles.gpm,
             onChecked = { setToggles(toggles.copy(gpm = it)) },
         )
         MetricToggleRow(
-            label = "${UnitFormat.costPerDistanceLabel(context)} (fuel only)",
+            label = stringResource(
+                R.string.reports_cost_per_distance_fuel_only,
+                UnitFormat.costPerDistanceLabel(context),
+            ),
             checked = toggles.dpmFuel,
             onChecked = { setToggles(toggles.copy(dpmFuel = it)) },
         )
         MetricToggleRow(
-            label = "${UnitFormat.costPerDistanceLabel(context)} incl. expenses",
+            label = stringResource(
+                R.string.reports_cost_per_distance_incl_expenses,
+                UnitFormat.costPerDistanceLabel(context),
+            ),
             checked = toggles.dpmIncl,
             onChecked = { setToggles(toggles.copy(dpmIncl = it)) },
         )

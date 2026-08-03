@@ -195,12 +195,14 @@ object ReportsLabPdf {
         title: String,
         plainText: String,
         generatedMs: Long = System.currentTimeMillis(),
+        generatedLabel: String? = null,
     ): ByteArray {
         val allLines = plainText.lines()
+        val genLine = generatedLabel ?: "Generated: ${formatGenerated(generatedMs)}"
         val meta = mutableListOf(
             // Export meta stays English product name (share/PDF header; not Compose scope)
             "Vehicle Expenses",
-            "Generated: ${formatGenerated(generatedMs)}",
+            genLine,
         )
         // Promote Period: / Vehicle: lines into header when present
         val body = mutableListOf<String>()
@@ -236,6 +238,7 @@ object ReportsLabPdf {
         widthPx: Int = 1000,
         heightPx: Int = 480,
         title: String = "",
+        emptyChartLabel: String = "No chart data",
     ): Bitmap {
         val bmp = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
@@ -252,7 +255,7 @@ object ReportsLabPdf {
                 color = 0xFF666666.toInt()
                 textSize = 28f
             }
-            canvas.drawText("No chart data", padL, heightPx / 2f, p)
+            canvas.drawText(emptyChartLabel, padL, heightPx / 2f, p)
             return bmp
         }
         val minX = allPts.minOf { it.timestampMs }.toDouble()

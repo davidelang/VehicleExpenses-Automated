@@ -54,7 +54,7 @@ fun ManageExpenseCategoriesDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Expense categories — ${vehicle.name}") },
+        title = { Text(stringResource(R.string.expense_categories_title, vehicle.name)) },
         text = {
             Column(
                 modifier = Modifier

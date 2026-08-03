@@ -503,4 +503,65 @@
     <string name="settings_distance_unit_km">Kilometers (km)</string>
     <string name="settings_distance_unit_helper">Labels only — economy number is still odometer-delta ÷ volume in your volume unit; no mi↔km conversion. All vehicles should use the same odometer unit.</string>
 
+
+    <!-- Residual English pass 20260802 -->
+    <string name="fuel_no_location">No location</string>
+    <string name="fuel_fetch_image_from_archive">Fetch image from archive</string>
+    <string name="fuel_fetching">Fetching…</string>
+    <string name="fuel_odometer_with_unit">Odometer (%1$s)</string>
+    <string name="fuel_vol_with_unit">Vol (%1$s)</string>
+    <string name="fuel_datetime_label">Date/time: %1$s</string>
+    <string name="fuel_location_details">Location details</string>
+    <string name="fuel_hide_details">Hide details</string>
+    <string name="fuel_saving">Saving…</string>
+    <string name="fuel_vehicle_id_fallback">Vehicle %1$d</string>
+    <string name="about_version_fmt">Version %1$s</string>
+    <string name="expense_categories_title">Expense categories — %1$s</string>
+
+
+    <string name="reports_start_date">Start %1$s</string>
+    <string name="reports_end_date">End %1$s</string>
+    <string name="reports_gpm_vol_per_distance">gpm (vol / %1$s)</string>
+    <string name="reports_cost_per_distance_fuel_only">%1$s (fuel only)</string>
+    <string name="reports_cost_per_distance_incl_expenses">%1$s incl. expenses</string>
+    <string name="reports_expenses_by_category_title">Expenses by category</string>
+    <string name="reports_other_category">Other</string>
+    <string name="reports_fill_history_title">Fill history</string>
+    <string name="reports_n_fills">%1$d fills</string>
+    <string name="reports_monthly_costs_title">Monthly costs</string>
+    <string name="reports_fuel_amount">Fuel: %1$s</string>
+    <string name="reports_other_amount">Other: %1$s</string>
+    <string name="reports_total_amount">Total: %1$s</string>
+    <string name="reports_no_chart_data">No chart data</string>
+    <string name="reports_trip_miles_title">Trip miles</string>
+    <string name="reports_vehicle_summary_title">Vehicle summary</string>
+    <string name="reports_generated_at">Generated: %1$s</string>
+    <string name="reports_period_label">Period: %1$s</string>
+    <string name="reports_vin_label">VIN: %1$s</string>
+    <string name="reports_expenses_amount">Expenses: %1$s</string>
+    <string name="reports_odometer_range">Odometer: %1$s</string>
+    <string name="reports_odometer_na">n/a</string>
+    <string name="reports_fills_partial_line">Fills: %1$d (%2$d partial) · %3$s</string>
+    <string name="reports_last_avg_dpm_line">Last %1$s %2$s · Avg %3$s %4$s · %5$s %6$s</string>
+    <string name="reports_plate_label">plate %1$s</string>
+    <string name="settings_volume_system_default_gallons">System default (Gallons)</string>
+    <string name="settings_volume_system_default_liters">System default (Liters)</string>
+    <string name="settings_volume_gallons_g">Gallons (G)</string>
+    <string name="settings_volume_liters_l">Liters (L)</string>
+    <string name="settings_convert_volumes_body">Convert existing fuel volumes between G and L?\n\nIf you choose No, historical numbers keep their current values but display labels will change without conversion.</string>
+    <string name="settings_see_more_currencies">See more</string>
+    <string name="settings_system_default_with_symbol">System default (%1$s)</string>
+
+    <string name="reports_no_fills_in_this_filter">No fills in this filter.</string>
+    <string name="reports_last_5_full_fills">Last 5 full fills</string>
+    <string name="reports_fuel_total_with_unit_price">Fuel total: %1$s · fills with unit price: %2$d</string>
+    <string name="reports_unit_price_caption">Unit price (cost ÷ volume) over fills (date axis)</string>
+    <string name="reports_not_enough_unit_price_points">Not enough unit-price points for a chart (need ≥2 fills with cost and volume).</string>
+    <string name="reports_total_miles">Total miles: %1$s</string>
+    <string name="settings_worksheet_name_fmt">%1$s worksheet name</string>
+    <string name="settings_collection_fmt">%1$s collection</string>
+    <string name="settings_table_id_fmt">%1$s table id</string>
+    <string name="settings_setup_help_provider_fmt">Setup help — %1$s</string>
+    <string name="settings_one_per_line_fuel_table_id">One per line: Fuel - VehicleName=tableId (e.g. %1$sHonda=12)</string>
+    <string name="settings_firebase_collections_blurb">Create Firestore collections with string fields matching app headers (Sync ID first). Map collection ids below.</string>
 </resources>
