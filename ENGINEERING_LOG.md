@@ -4377,3 +4377,9 @@ x
 - VE offline Settings: expected-*.json assets (extractmail goldens) → FuelReceiptIngest; Extractmail.TYPE_*
 - Deleted GraphExcelClient; EtherCalcClient slim to config/room only
 - Gmail/IMAP workers unchanged (still ReceiptParsers HTML)
+
+## 2026-08-02 - M3 remotetable residual backends + CLI expansion
+
+- Start goal autopilot: port row-DB backends into remotetable; expand Go/Python CLIs; EtherCalc docker smoke.
+- Google live CLI deferred (needs human token). Local git only.
+

@@ -1,13 +1,13 @@
 name: remotetable
 git_ssh: "git@github.com:davidelang/remotetable.git"
 git_https: "https://github.com/davidelang/remotetable.git"
-git_sha: "cb4c2e48615243e9911ca7911691cc86c8f40783"
-git_describe: "cb4c2e4"
+git_sha: "472eab9760be7ca14e3d1a5bc2ef7b4d50bd6762"
+git_describe: "472eab9"
 artifacts:
   - path: artifact/remotetable.aar
-    sha256: "fdeae58ae919f895b145b95147976ad4e16b9c54b07d5e013d77dc1912156b1f"
+    sha256: "2d7059d771d020ccda2f276c6c1974ab50073d72499841faaaa846dca4418587"
     build: ./build
     from_src: android/remotetable/build/outputs/aar/remotetable-release.aar
-consumer_note: "M2.5 cb4c2e4: CLI flags before/after subcommand + live smoke docs (AAR same as M2 live backends)"
+consumer_note: "M3 472eab9: row-db backends + Go CLI + EtherCalc smoke"
 track_branch: master
 build: ./build
