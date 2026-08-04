@@ -7199,3 +7199,8 @@ x
 
 - Plan complete: local/json-book/csv-dir; harness offline PASS; pin b4baf3b; VE ac135520
 - No coordinator rewrite
+
+## 2026-08-04 - ve-sheets-sync-device-acceptance-5554 — execution start
+
+- Plan: dev-ai-interaction/plans/ve-sheets-sync-device-acceptance-5554-20260804-2236-plan.md
+- Preflight pin/build; dump logcat after human Sync now; residual fix only if needed
