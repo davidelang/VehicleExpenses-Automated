@@ -7194,3 +7194,8 @@ x
 
 - Library b4baf3b: local/json-book (Kotlin+Python), csv-dir Python host-only; harness offline PASS
 - Pin+AAR promoted; project-facts offline endpoints note
+
+## 2026-08-04 - remotetable-local-file-backends — CODE LANDED
+
+- Plan complete: local/json-book/csv-dir; harness offline PASS; pin b4baf3b; VE ac135520
+- No coordinator rewrite
