@@ -1,32 +1,57 @@
 #!/bin/bash
-# run-antigravity
-# Launch Antigravity CLI in the current agent worktree as the ai-orchestrator user.
-# Sandbox is provided via the ./dev-ai-interaction symlink (created by setup_agent or enable-full-orchestration.sh).
-# Full orchestration layout expected.
+# run-antigravity — primary Antigravity launcher (orchestrator user by default).
+# Machine paths via project.config + manage-configs smudge (@@ tokens).
 
+set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SANDBOX_DIR="$SCRIPT_DIR/dev-ai-interaction"
+cd "$SCRIPT_DIR" || exit 1
 
-# Load permission config if present (populated by smudge filter / setup)
+# Stamped defaults (smudge replaces @@…@@ from project.config)
+sandbox_path=@@SANDBOX_PATH@@
+antigravity_bin=@@ANTIGRAVITY_BIN@@
+orchestrator_user=@@ORCHESTRATOR_USER@@
+
 if [ -f project.config ]; then
-  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(orchestrator_user|antigravity_bin)')
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]] || continue
+    export "$line"
+  done < project.config || true
 fi
-ORCHESTRATOR_USER=${orchestrator_user:-ai-orchestrator}
 
-# Ensure all files created during this session are group-writable (multi-user env)
+# Prefer project.config; fall back to stamp if still unsmudged use layout name
+SANDBOX_REL="${sandbox_dir:-${sandbox_path:-}}"
+if [[ -z "$SANDBOX_REL" || "$SANDBOX_REL" == @@* ]]; then
+  if [[ -d "$SCRIPT_DIR/dev-ai-interaction" || -L "$SCRIPT_DIR/dev-ai-interaction" ]]; then
+    SANDBOX_REL="dev-ai-interaction"
+  elif [[ -d "$SCRIPT_DIR/sandbox" || -L "$SCRIPT_DIR/sandbox" ]]; then
+    SANDBOX_REL="sandbox"
+  else
+    SANDBOX_REL="dev-ai-interaction"
+  fi
+fi
+SANDBOX_DIR="$SCRIPT_DIR/$SANDBOX_REL"
+
+ORCHESTRATOR_USER="${orchestrator_user:-ai-orchestrator}"
+if [[ "$ORCHESTRATOR_USER" == @@* ]]; then ORCHESTRATOR_USER=ai-orchestrator; fi
+
+ANTIGRAVITY_BIN="${ANTIGRAVITY_BIN:-${antigravity_bin:-}}"
+if [[ -z "$ANTIGRAVITY_BIN" || "$ANTIGRAVITY_BIN" == @@* ]]; then
+  ANTIGRAVITY_BIN="${HOME}/git/antigravity/agy"
+fi
+# expand $HOME in value if literal
+ANTIGRAVITY_BIN="${ANTIGRAVITY_BIN//\$HOME/$HOME}"
+
 umask 002
-
-ANTIGRAVITY_BIN="${ANTIGRAVITY_BIN:-${antigravity_bin:-$HOME/git/antigravity/agy}}"
 
 echo "Launching Antigravity agent in $(pwd)..."
 echo "Antigravity binary: $ANTIGRAVITY_BIN"
 echo "Sandbox path: $SANDBOX_DIR"
 echo "Running as: $ORCHESTRATOR_USER (via sudo -u)"
+echo "Tip: Ctrl+M or /multiline for multi-line input."
 
-# Tip similar to other launchers
-echo "Tip: For easier multi-line plans and prompts, focus the input and press Ctrl+M (or type /multiline or /ml) to enable multiline input mode (Enter inserts newline; Shift+Enter or Alt+Enter sends)."
-
-# Support -- to pass raw params to antigravity.
 EXTRA_ARGS=()
 FOUND_DD=0
 for arg in "$@"; do
