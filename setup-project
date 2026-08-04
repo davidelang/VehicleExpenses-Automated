@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-SANDBOX="/home/dlang/git/VehicleExpenses-automated/@@SANDBOX_PATH@@"
+SANDBOX="@@GIT_HOME@@/VehicleExpenses-automated/dev-ai-interaction"
 CONFIG_EXAMPLE="$SANDBOX/project.config.example"
 CONFIG_REAL="$SANDBOX/project.config"
 EXEC_DIR="$SANDBOX/permissions-bootstrap-execution"
@@ -28,34 +28,34 @@ echo ""
 echo "=== Step 1: Unix users/groups (EMIT ONLY - review and run manually as root) ==="
 cat <<'USERCMDS'
 # Recommended (adjust names from project.config):
-groupadd @@CODE_GROUP@@ || true
-groupadd @@SANDBOX_GROUP@@ || true
-groupadd @@SHARED_GROUP@@ || true
-useradd -m -g @@SANDBOX_GROUP@@ @@PLANNING_USER@@ || true
-useradd -m -g @@CODE_GROUP@@ @@CODE_GROUP@@r || true
-useradd -m -g @@CODE_GROUP@@ -G @@SHARED_GROUP@@ @@ORCHESTRATOR_USER@@ || true
-usermod -aG @@CODE_GROUP@@ @@ORCHESTRATOR_USER@@ || true
-usermod -aG @@CODE_GROUP@@,@@SHARED_GROUP@@ @@PLANNING_USER@@ || true
-usermod -aG @@SANDBOX_GROUP@@,@@SHARED_GROUP@@ @@CODE_GROUP@@r || true
-usermod -aG @@SANDBOX_GROUP@@ @@ORCHESTRATOR_USER@@ || true
-# Add the primary human/developer user (the one running setup) to @@CODE_GROUP@@ so they can access worktree files via group
+groupadd ai-code || true
+groupadd ai-sandbox || true
+groupadd ai-shared || true
+useradd -m -g ai-sandbox ai-planner || true
+useradd -m -g ai-code ai-coder || true
+useradd -m -g ai-code -G ai-shared ai-orchestrator || true
+usermod -aG ai-code ai-orchestrator || true
+usermod -aG ai-code,ai-shared ai-planner || true
+usermod -aG ai-sandbox,ai-shared ai-coder || true
+usermod -aG ai-sandbox ai-orchestrator || true
+# Add the primary human/developer user (the one running setup) to ai-code so they can access worktree files via group
 # Replace 'dlang' with your username if different
-usermod -aG @@CODE_GROUP@@ dlang || true
+usermod -aG ai-code dlang || true
 echo "Users created (if not exist)."
-echo "IMPORTANT: If you are dlang (or the developer), run 'newgrp @@CODE_GROUP@@' or log out/in so your current shell sees the group."
+echo "IMPORTANT: If you are dlang (or the developer), run 'newgrp ai-code' or log out/in so your current shell sees the group."
 
 # Git safe.directory (critical for modern git >= 2.35.2)
 # Git refuses to operate in a repo "owned by someone else" unless the path is whitelisted.
 # Use the wildcard form so any subdirectory, worktree, or sandbox created under the project is trusted.
 # These must be executed as each relevant user (the human + the ai-* users).
 echo "# For each user who will use git in this project (run the command as that user):"
-echo "git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "git config --global --add safe.directory '@@GIT_HOME@@/VehicleExpenses-automated/*'"
 echo ""
 echo "# Examples (as root you can use sudo -u):"
-echo "#   sudo -u dlang            git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
-echo "#   sudo -u @@ORCHESTRATOR_USER@@  git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
-echo "#   sudo -u @@CODE_GROUP@@r         git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
-echo "#   sudo -u @@PLANNING_USER@@       git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*'"
+echo "#   sudo -u dlang            git config --global --add safe.directory '@@GIT_HOME@@/VehicleExpenses-automated/*'"
+echo "#   sudo -u ai-orchestrator  git config --global --add safe.directory '@@GIT_HOME@@/VehicleExpenses-automated/*'"
+echo "#   sudo -u ai-coder         git config --global --add safe.directory '@@GIT_HOME@@/VehicleExpenses-automated/*'"
+echo "#   sudo -u ai-planner       git config --global --add safe.directory '@@GIT_HOME@@/VehicleExpenses-automated/*'"
 echo ""
 echo "This wildcard is the recommended form because it will automatically cover any future worktrees or sandboxes."
 echo "# STAMP NOTE: These paths are for the CURRENT project. When stamping a different"
@@ -66,7 +66,7 @@ echo "# owned by the target; no link back to this orchestration source is requir
 cat <<'SUDOERS'
 # Run as root to set up passwordless sudo:
 cat > /etc/sudoers.d/vehicle-permissions << 'EOF'
-dlang ALL=(@@PLANNING_USER@@,@@CODE_GROUP@@r,@@ORCHESTRATOR_USER@@) NOPASSWD: /home/dlang/git/grok/bin/grok
+dlang ALL=(ai-planner,ai-coder,ai-orchestrator) NOPASSWD: @@GIT_HOME@@/grok/bin/grok
 EOF
 chmod 440 /etc/sudoers.d/vehicle-permissions
 visudo -c   # validate
