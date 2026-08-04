@@ -30,10 +30,8 @@ export PADDLE_ABIS="arm64-v8a x86_64"
 export PADDLE_ARM64_PROFILE=tailor   # or slim
 export PADDLE_X86_PROFILE=slim
 ./third_party/paddle/build
+# Collect: pin-local artifact/ *and* app jniLibs/libs (independent [[artifact]] rows)
 ./third_party/get-artifacts paddle
-# promote into app:
-#   artifact/jni/* → app/src/main/jniLibs/*
-#   artifact/PaddlePredictor.jar → app/libs/
 ```
 
 ### What `./build` does (matches Jul-2026 working path)

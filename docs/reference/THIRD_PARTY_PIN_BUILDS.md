@@ -105,7 +105,7 @@ Optional. If `~/git/<lib>` (or `GIT_HOME/<lib>`) exists, fetch-deps may material
 |-------|------|----------|
 | **fetch-deps** | Materialize `src` @ `git_sha`; apply `patches/`; set RO (unless lib requires RW); run `build[]` from libpin.toml; call **get-artifacts** | Invent build flags; leave app binaries only under `src` |
 | **build script(s)** | Given already-patched tree: make build/output dirs writable; compile; write products under `src/…` (paths libpin.toml understands) | Apply patches; write final pin names under `artifact/` (get-artifacts is normative) |
-| **get-artifacts** | Read libpin.toml; resolve `from` globs; **pick** if needed; copy to stable `artifact/` paths | Materialize sources |
+| **get-artifacts** | Read libpin.toml; resolve `from` globs; **pick** if needed; copy to each `path` (pin-local `artifact/…` and/or consumer `app/…`); optional `sha256` check. No landlock by default. | Materialize sources; execute pin build |
 
 ### RO sources
 

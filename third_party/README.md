@@ -15,7 +15,7 @@
 ./third_party/fetch-deps ro opencv          # materialize src @ lock SHA, apply patches, sources RO
 ./third_party/fetch-deps build opencv       # run build script(s), then collect → artifact/
 # or, when iterating a build only:
-./third_party/get-artifacts opencv          # copy from src build outputs → artifact/ using libpin.toml
+./third_party/get-artifacts opencv          # copy from src build outputs → destinations in libpin.toml
 ```
 
 Same pattern for `remotetable`, `extractmail`, `rclone`, `paddle` (when pins are real).
@@ -24,11 +24,24 @@ Same pattern for `remotetable`, `extractmail`, `rclone`, `paddle` (when pins are
 |------|------|----------------|
 | 1. Materialize | `fetch-deps ro` / `rw` | `src/` as a **git** tree at pin; **apply `patches/`**; default RO tree |
 | 2. Build | `./build` (or scripts listed in lock) | Create/chmod **writable** `src/build`, `src/bin` (or upstream-equivalent dirs); compile; leave products under `src/…` |
-| 3. Collect | `get-artifacts` (called by `fetch-deps build`) | Copy products into **stable** `artifact/` names using lock |
+| 3. Collect | `get-artifacts` (called by `fetch-deps build`) | Copy products to **`path`** destinations in `libpin.toml` (pin `artifact/` and/or consumer paths like `app/src/main/jniLibs/…`) |
+
+### `[[artifact]]` destinations
+
+Each section is independent (same `from` may appear twice).
+
+| `path` | Resolved as |
+|--------|-------------|
+| `artifact/…` or other pin-relative | `third_party/<lib>/<path>` |
+| `app/…` | `<repo-root>/app/…` (VE jniLibs, jars, …) |
+| absolute | as written |
+
+Optional `sha256` — row fails if the chosen `from` file does not match.
 
 ### Optional write sandbox (bubblewrap and/or Landlock)
 
-`libpin-sandbox` wraps pin steps when available (Linux). **Missing tools → unsandboxed, still correct.**
+`libpin-sandbox` wraps **fetch-deps / build** when available (Linux). **Missing tools → unsandboxed, still correct.**  
+Landlock matters most when **executing retrieved sources**, not when copying our own build outputs.
 
 | Layer | What | Install / detect |
 |-------|------|------------------|
@@ -41,12 +54,12 @@ Order: **bwrap outer → Landlock inner** (Landlock stacks; nested bwrap does no
 |------|---------------------------|
 | Materialize + `status.local` | `third_party/<lib>/` |
 | Patches / build | `third_party/<lib>/src/` (+ `/tmp` under Landlock) |
-| `get-artifacts` | `third_party/<lib>/artifact/` |
+| `get-artifacts` | **No sandbox by default** (may write `app/…`). Opt-in: `LIBPIN_GET_ARTIFACTS_SANDBOX=1` (artifact dir only). |
 
-Disable: `LIBPIN_NO_BWRAP=1`, `LIBPIN_NO_LANDLOCK=1`, or `--no-bwrap` / `--no-landlock`.  
+Disable fetch/build sandbox: `LIBPIN_NO_BWRAP=1`, `LIBPIN_NO_LANDLOCK=1`, or `--no-bwrap` / `--no-landlock`.  
 Debug: `LIBPIN_BWRAP_DEBUG=1`, `LIBPIN_LANDLOCK_DEBUG=1`.
 
-**Committed pin surface for the app:** `libpin.toml` + `artifact/*` (+ build scripts + patches).  
+**Committed pin surface for the app:** `libpin.toml` + build scripts + patches (+ often `artifact/*` and/or app `jniLibs` after collect).  
 **Not committed on a fresh clone:** usually `src/` contents (materialize with fetch-deps). `src` must still be a **real git checkout** when present (submodule, worktree, or clone) so `git status` works.
 
 ---

@@ -4600,3 +4600,18 @@ x
 - Is-vs-should report: dev-ai-interaction/scratch/paddle-pin-is-vs-should-20260804.md (follow-up after merge).
 - Deprecated run-android-slim.sh (int8-only + strip-debug path).
 
+
+## 2026-08-04 - First 10 after historical paddle ship (b8449343)
+
+- Pulled start-109 reports → scratch/pin-device-test-20260804-b8449343/{emu5554,pixel6pro}/
+- EMU vs baseline and vs start-107: PASS 10/10 align+pump outcomes
+- Pixel vs start-107: PASS 10/10; Pixel vs EMU still differs (ABI) as before
+- REPORT.md in that scratch dir
+
+
+## 2026-08-04 - get-artifacts promotes to app paths (libpin)
+
+- get-artifacts: path app/… → repo root; optional sha256; no landlock by default (opt-in LIBPIN_GET_ARTIFACTS_SANDBOX=1).
+- paddle/opencv libpin.toml: independent [[artifact]] rows for artifact/ and app jniLibs (and jar).
+- ./third_party/get-artifacts paddle opencv verified.
+
