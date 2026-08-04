@@ -4553,3 +4553,10 @@ x
 - armv7 plan: dev-ai-interaction/plans/paddle-armv7-fp16-and-functional-calib-20260803-plan.md
 - Human: deploy to emulator-5554 + Pixel; First 10 align/pump; compare to libpin-5554-first10 baseline.
 
+
+## 2026-08-03 - App paddle hybrid for NDK28 link
+
+- x86_64 jniLibs: pin slim strip-debug (fresh rebuild) for emulator-5554
+- arm64 jniLibs: keep model-tailored SO (3ad8acd5) — slim arm64 from NDK r20 has LOCAL ABS symbols lld rejects
+- Plan armv7+NDK bump: paddle-armv7-fp16-and-functional-calib-20260803-plan.md
+
