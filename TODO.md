@@ -6,8 +6,9 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 
 ## Backlog (native / paddle)
 - [ ] True `LITE_BUILD_TAILOR` for **x86_64** emulator (space only; prod-path speed matches fat kernels)
-- [ ] True `LITE_BUILD_TAILOR` for **armeabi-v7a** or drop the ABI (space only if kept)
-- [ ] Strip debug information and excessive logging from Paddle Lite **x86_64** Android build (binary size)
+- [ ] Keep **armeabi-v7a** (aftermarket car head units): true `LITE_BUILD_TAILOR` for Paddle Lite + pin-build OpenCV fat `libopencv_java4.so` for armv7 (16KB pages); do not drop the ABI
+- [x] Strip debug (`llvm-strip --strip-unneeded`) on pin slim **arm64-v8a** + **x86_64** (validated `file … stripped`; ~5.4MB / ~9.2MB) — 2026-08-03 libpin rebuild
+- [ ] Pin slim **armeabi-v7a** with same strip path; collect `artifact/jni/armeabi-v7a/libpaddle_lite_jni.so` + wire app jniLibs (in progress / build)
 - [ ] **16KB page size alignment:** rebuild OpenCV, rclone/gomobile, and other prebuilt `.so` libs with 16KB ELF segment alignment (see `docs/reference/16k-pages-compatibility-notes.md`)
 
 ## Backlog (OCR / alignment / identity)
@@ -63,3 +64,11 @@ Post-save location confirm UI on edit screens (silent worker fill uses confirmed
 Reports multi-select vehicle checkboxes + Sum/Average (not Each-only); deferred from efficiency Each-vehicle
 
 Trip miles packaging polish (export labels/annual packs); core open-only + implicit personal shipped
+
+Vehicle preferred fuel grade/product field (e.g. regular/premium/diesel) for future auto-assignment of loyalty email fills; assignment UX remains separate work
+
+extractmail: browser-based human-confirm extract helper (open file/email; avoid auto-picking non-visible fields)
+
+After third_party pin/fetch-deps/get-artifacts happy path (OpenCV first): make remotetable + extractmail well-behaved — build from fetch-deps ro src (out-of-tree build dirs under src), get-artifacts to artifact/; reproducible builds nice-to-have only (low effort). Scope: third_party process project + VE pin alignment.
+
+third_party get-artifacts pick=smart (future): try tiers to pick best artifact when from uses globs — best-to-worst: (1) release *x.y.z (numeric per-tier, y/z optional; 1.10>1.9); (2) RC *x.y.z-rcN (higher N better); (3) nightly *x.y.z-N-gHASH (git describe); plus common naming practices. Fallback mtime. pick=mtime/sort/sort-n remain explicit; smart = try-everything.
