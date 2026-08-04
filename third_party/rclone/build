@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# rclone pin build — photo-curated librclone AAR via Docker wrapper.
+# Materialized sources: ./src (RO pin OK). Build copies into container; products:
+#   src/build/out/librclone_photo.aar  → get-artifacts → artifact/librclone.aar
+# NOTE: upstream rclone already uses src/bin/ for helper scripts — do NOT write AAR there.
+set -euo pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC=${RCLONE_SRC:-"$HERE/src"}
+SCRIPT_DIR="$HERE/scripts"
+# Writable scratch under src (pin contract); not the upstream rclone `bin/` tools tree
+OUT_DIR="$SRC/build/out"
+IMAGE_TAG=${RCLONE_DOCKER_IMAGE:-ve-rclone-build}
+
+[[ -d "$SRC/.git" || -f "$SRC/.git" ]] || {
+  echo "ERROR: no git tree at $SRC — run: ./third_party/fetch-deps ro rclone" >&2
+  exit 1
+}
+[[ -f "$SRC/librclone/gomobile/gomobile.go" ]] || {
+  echo "ERROR: missing librclone/gomobile under $SRC" >&2
+  exit 1
+}
+command -v docker >/dev/null || { echo "ERROR: docker required for rclone pin build" >&2; exit 1; }
+
+# Ensure writable product dir (src may be RO after fetch-deps)
+if ! mkdir -p "$OUT_DIR" 2>/dev/null || [[ ! -w "$OUT_DIR" ]]; then
+  chmod u+w "$SRC" 2>/dev/null || true
+  mkdir -p "$SRC/build" "$OUT_DIR"
+  chmod -R u+w "$SRC/build"
+fi
+
+echo "rclone src=$SRC head=$(git -C "$SRC" rev-parse --short HEAD)"
+echo "Building Docker image $IMAGE_TAG ..."
+docker build -t "$IMAGE_TAG" -f "$SCRIPT_DIR/Dockerfile" "$SCRIPT_DIR"
+
+echo "Running photo AAR build (gomobile; tens of minutes)..."
+# Mount pin src RO; copy to writable tree inside container; AAR to src/build/out
+docker run --rm \
+  -v "$SRC:/pin-src:ro" \
+  -v "$SCRIPT_DIR/build-photo-aar.sh:/scripts/build-photo-aar.sh:ro" \
+  -v "$OUT_DIR:/output" \
+  -e WORKDIR=/workspace/rclone \
+  -e OUT_AAR=/output/librclone_photo.aar \
+  -e CGO_LDFLAGS="-Wl,-z,max-page-size=16384" \
+  "$IMAGE_TAG" \
+  bash -c 'set -euo pipefail
+    rm -rf /workspace/rclone
+    mkdir -p /workspace/rclone
+    # Copy pin tree; exclude build scratch if present on host
+    tar -C /pin-src --exclude=./build -cf - . | tar -C /workspace/rclone -xf -
+    bash /scripts/build-photo-aar.sh
+  '
+
+if [[ ! -f "$OUT_DIR/librclone_photo.aar" ]]; then
+  echo "ERROR: missing $OUT_DIR/librclone_photo.aar" >&2
+  exit 1
+fi
+echo "OK product: $OUT_DIR/librclone_photo.aar ($(du -h "$OUT_DIR/librclone_photo.aar" | cut -f1))"

@@ -19,15 +19,15 @@ There is **no** `.gitmodules` dependency for Paddle, OpenCV, or rclone. A normal
 |-----------|---------|------|----------------------|
 | App Kotlin / Compose / Hilt / Room | Yes | `app/src/main/java/…` | N/A (source of truth) |
 | JNI / C++ app code | Yes | `app/src/main/cpp/` (`BufferSet.cpp`, `NativeImageUtils.cpp`, `libraw/`, headers) | Built by CMake during Gradle |
-| OpenCV shared lib | **Yes (prebuilt)** | `app/src/main/jniLibs/<abi>/libopencv_java4.so` | Only if upgrading OpenCV |
+| OpenCV shared lib | **Yes (prebuilt pin)** | `app/src/main/jniLibs/<abi>/libopencv_java4.so` (+ `third_party/opencv/artifact/`) | `./third_party/fetch-deps build opencv` |
 | Paddle Lite JNI | **Yes (prebuilt)** | `app/src/main/jniLibs/<abi>/libpaddle_lite_jni.so` (+ optional `libpaddle_light_api_shared.so` on x86_64) | Only if upgrading Paddle Lite |
 | Paddle Java helper | **Yes** | `app/libs/PaddlePredictor.jar` | With Paddle rebuild |
 | Paddle OCR models + dict | **Yes** | `app/src/main/assets/paddle/` (`.nb` models, `en_dict.txt`, helper scripts) | Scripts under `assets/paddle/scripts/` when re-exporting models |
-| rclone Android AAR | **Yes (prebuilt)** | `app/libs/librclone.aar` | Only if rebuilding librclone from Go |
+| rclone Android AAR | **Yes (prebuilt pin)** | `third_party/rclone/artifact/librclone.aar` | `./third_party/fetch-deps build rclone` (Docker + gomobile) |
 | ML Kit text recognition | Maven | `com.google.mlkit:text-recognition` | Downloaded by Gradle |
 | Other AndroidX / Play / Hilt | Maven | `app/build.gradle.kts` | Downloaded by Gradle |
 
-**Bottom line for a first build:** you do **not** need to clone Paddle-Lite, OpenCV, or rclone repositories. Those trees under `dev-ai-interaction/` (e.g. historical Paddle-Lite build sandboxes) are **research / rebuild** artifacts, not compile prerequisites.
+**Bottom line for a first build:** you do **not** need to clone Paddle-Lite, OpenCV, or rclone repositories. Prebuilt pin artifacts ship in-tree. Rebuilds use `third_party/` + optional `~/git/<lib>` hosts (`docs/reference/THIRD_PARTY_PIN_BUILDS.md`).
 
 ### 1.2 When you *would* clone external tools
 
@@ -35,8 +35,8 @@ There is **no** `.gitmodules` dependency for Paddle, OpenCV, or rclone. A normal
 |------|----------------------|-------------------------------|
 | Upgrade Paddle Lite `.so` / jar | Paddle-Lite (or project notes under sandbox research) | `jniLibs/**`, `PaddlePredictor.jar` |
 | Re-export / quantize OCR `.nb` models | Paddle tooling + scripts in `assets/paddle/scripts/` | `assets/paddle/prod_u8fp16/*.nb` |
-| Upgrade OpenCV Android SDK | OpenCV Android pack | `jniLibs/**/libopencv_java4.so` + headers under `cpp/include/opencv2` if needed |
-| Rebuild librclone | rclone/librclone Go build | `app/libs/librclone.aar` |
+| Rebuild OpenCV pin | `~/git/opencv` optional; `third_party/opencv` | `artifact/jni/**` + `jniLibs/**` |
+| Rebuild rclone pin | `~/git/rclone` pure upstream; `third_party/rclone` | `third_party/rclone/artifact/librclone.aar` |
 
 Until you intentionally upgrade those, **ignore external clones**.
 
@@ -54,6 +54,8 @@ Until you intentionally upgrade those, **ignore external clones**.
 | **CMake 3.22.1** | Requested in `app/build.gradle.kts` `externalNativeBuild.cmake.version` (SDK CMake package is fine) |
 | **Network** once | Gradle downloads Maven deps |
 | **Optional: `adb`** | Only for device install (`./deploy` — **humans only**) |
+| **Optional: `bwrap` (bubblewrap)** | Write-sandboxes pin tooling (with Landlock when kernel supports it; §2.4). Not required for `./build_app` |
+| **Optional: Landlock** | Linux LSM used by `libpin-landlock` when available (no package; kernel feature). Same pin tooling as bwrap |
 
 ### 2.1 Point Gradle at the SDK
 
@@ -82,6 +84,40 @@ If agents build as a non-primary user:
 | Runtime env | `build_app` / `deploy` / `ve-env` / `run-grok*` set `ANDROID_USER_HOME` → `.android-shared` |
 
 Foreign per-user keys cause `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on devices. Phones already on the shared cert stay fine; a device installed with a foreign cert needs **one** uninstall then re-deploy by a human.
+
+### 2.4 Optional write sandbox for third-party pin rebuilds
+
+**App builds do not need this.** Only `./third_party/fetch-deps` / `get-artifacts` use it when present.
+
+| Layer | Requirement | Role |
+|-------|-------------|------|
+| **bubblewrap** | `sudo apt install bubblewrap` | Outer: RO filesystem view + RW bind hole |
+| **Landlock** | Linux kernel LSM (`libpin-landlock --status`) | Inner: mutation only under allowed dirs; **read/exec stay open** for JDKs/SDKs |
+| **Neither** | — | Commands still work unsandboxed |
+
+Wiring: `libpin-sandbox` → optional bwrap → optional Landlock → command.  
+Disable: `LIBPIN_NO_BWRAP=1`, `LIBPIN_NO_LANDLOCK=1`, `--no-bwrap`, `--no-landlock`.
+
+Write surfaces (mutation):
+
+| Step | Writable |
+|------|----------|
+| `fetch-deps ro` / `rw` | `third_party/<lib>/` |
+| Patch / build | `third_party/<lib>/src/` |
+| `get-artifacts` | `third_party/<lib>/artifact/` |
+
+Landlock also allows `/tmp` and essential `/dev/null` etc. so tools work. Nested **bwrap** is not used; Landlock **can** stack under bwrap or under an agent Landlock later.
+
+Rebuild example:
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export ANDROID_HOME=$HOME/Android/Sdk
+./third_party/fetch-deps ro remotetable
+./third_party/fetch-deps build remotetable
+```
+
+Full contract: `docs/reference/THIRD_PARTY_PIN_BUILDS.md`, `third_party/README.md`.
 
 ---
 

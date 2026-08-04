@@ -1,0 +1,31 @@
+name = "opencv"
+git_ssh = "git@github.com:opencv/opencv.git"
+git_https = "https://github.com/opencv/opencv.git"
+git_sha = "71d3237a093b60a27601c20e9ee6c3e52154e8b1"
+git_describe = "4.10.0"
+track_branch = "4.10.0"
+reproducible = false
+build_time = "tens_of_minutes"
+requires_writable_src = false
+build = ["./build"]
+consumer_note = "Upstream 4.10.0 pin; fat libopencv_java4.so (core+imgproc+imgcodecs), 16KB pages, arm64+x86_64. get-artifacts can promote to app jniLibs."
+
+[[artifact]]
+from = "src/bin/arm64-v8a/libopencv_java4.so"
+path = "artifact/jni/arm64-v8a/libopencv_java4.so"
+sha256 = "7d57348b66aa623090a5f3474d19cd34df47ca34afe81544860a69c94501a00a"
+
+[[artifact]]
+from = "src/bin/x86_64/libopencv_java4.so"
+path = "artifact/jni/x86_64/libopencv_java4.so"
+sha256 = "e7f0d1b89c307d4a96168b25208651bf92a03c3148bb571adf7352143830e308"
+
+[[artifact]]
+from = "src/bin/arm64-v8a/libopencv_java4.so"
+path = "app/src/main/jniLibs/arm64-v8a/libopencv_java4.so"
+sha256 = "7d57348b66aa623090a5f3474d19cd34df47ca34afe81544860a69c94501a00a"
+
+[[artifact]]
+from = "src/bin/x86_64/libopencv_java4.so"
+path = "app/src/main/jniLibs/x86_64/libopencv_java4.so"
+sha256 = "e7f0d1b89c307d4a96168b25208651bf92a03c3148bb571adf7352143830e308"

@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+# paddle pin build — restore Jul-2026 historical Docker recipe under third_party/paddle.
+#
+# Products land in src/bin/<abi>/ then are intended for get-artifacts → artifact/.
+#
+# Historical working app shape (3ad8acd5):
+#   arm64: LITE_BUILD_TAILOR ~1.6MB jni  (PADDLE_ARM64_PROFILE=tailor, default if tailor_models present)
+#   x86_64: thin jni ~0.75MB + light ~10MB (slim + thin-jni patch)
+#
+# Env:
+#   PADDLE_ABIS="arm64-v8a x86_64"     (default; no armv7)
+#   PADDLE_ARM64_PROFILE=tailor|slim  (default: tailor if tailor_models/armv8 exists else slim)
+#   PADDLE_X86_PROFILE=slim           (default slim)
+#   PADDLE_SKIP_IMAGE_BUILD=1
+#   PADDLE_DOCKER_IMAGE=ve-paddle-int8   (or paddle-build-int8-20.04)
+set -euo pipefail
+# Fail if any pipeline stage fails (e.g. docker | tee in wrappers).
+set -o pipefail 2>/dev/null || true
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC=${PADDLE_SRC:-"$HERE/src"}
+SCRIPTS="$HERE/scripts"
+PATCHES="$HERE/patches"
+PATCHES_INT8="$HERE/patches-int8"
+OUT="$SRC/bin"
+IMAGE=${PADDLE_DOCKER_IMAGE:-ve-paddle-int8}
+# Prefer historical image name if present
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  if docker image inspect paddle-build-int8-20.04 >/dev/null 2>&1; then
+    IMAGE=paddle-build-int8-20.04
+  fi
+fi
+ABIS=${PADDLE_ABIS:-"arm64-v8a x86_64"}
+
+[[ -d "$SRC/.git" || -f "$SRC/.git" ]] || {
+  echo "ERROR: no src — run: ./third_party/fetch-deps ro paddle" >&2
+  exit 1
+}
+command -v docker >/dev/null || { echo "ERROR: docker required" >&2; exit 1; }
+[[ -d "$PATCHES/build-system" ]] || {
+  echo "ERROR: missing $PATCHES (historical full-file patches)" >&2
+  exit 1
+}
+
+mkdir -p "$OUT" 2>/dev/null || true
+if [[ ! -w "$OUT" ]]; then
+  chmod u+w "$SRC" 2>/dev/null || true
+  mkdir -p "$OUT"
+fi
+for a in $ABIS; do mkdir -p "$OUT/$a"; chmod -R u+w "$OUT/$a" 2>/dev/null || true; done
+
+echo "paddle src=$(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo '?') abis=$ABIS image=$IMAGE"
+
+if [[ "${PADDLE_SKIP_IMAGE_BUILD:-0}" != "1" ]]; then
+  if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    echo "Reusing Docker image $IMAGE (set PADDLE_SKIP_IMAGE_BUILD=0 to force rebuild)"
+  else
+    echo "Building Docker image $IMAGE …"
+    docker build -t "$IMAGE" -f "$SCRIPTS/Dockerfile.int8" "$HERE"
+  fi
+else
+  docker image inspect "$IMAGE" >/dev/null 2>&1 || {
+    echo "ERROR: image $IMAGE missing and PADDLE_SKIP_IMAGE_BUILD=1" >&2
+    exit 1
+  }
+fi
+
+arch_for() {
+  case "$1" in
+    arm64-v8a) echo armv8 ;;
+    armeabi-v7a) echo armv7 ;;
+    x86_64) echo x86_64 ;;
+    x86) echo x86 ;;
+    *) echo "$1" ;;
+  esac
+}
+
+profile_for() {
+  local abi=$1
+  case "$abi" in
+    arm64-v8a)
+      if [[ -n "${PADDLE_ARM64_PROFILE:-}" ]]; then
+        echo "$PADDLE_ARM64_PROFILE"
+      elif [[ -d "$HERE/tailor_models/armv8" ]]; then
+        echo tailor
+      else
+        echo slim
+      fi
+      ;;
+    x86_64|x86)
+      echo "${PADDLE_X86_PROFILE:-slim}"
+      ;;
+    *)
+      echo slim
+      ;;
+  esac
+}
+
+for abi in $ABIS; do
+  arch=$(arch_for "$abi")
+  profile=$(profile_for "$abi")
+  echo "=== Android historical build abi=$abi arch=$arch profile=$profile ==="
+  EXTRA_FLAGS=""
+  [[ "$arch" == "armv8" ]] && EXTRA_FLAGS="--with_arm82_fp16=ON"
+
+  DOCKER_MOUNTS=(
+    -v "$SRC:/pin-src:ro"
+    -v "$PATCHES:/patches:ro"
+    -v "$PATCHES_INT8:/patches-int8:ro"
+    -v "$SCRIPTS/apply_patches.sh:/apply_patches.sh:ro"
+    -v "$SCRIPTS/apply_int8_patches.sh:/apply_int8_patches.sh:ro"
+    -v "$SCRIPTS/patch_x86_thin_jni.py:/patch_x86_thin_jni.py:ro"
+    -v "$SCRIPTS/run-android-historical.sh:/run-android-historical.sh:ro"
+    -v "$OUT:/output"
+  )
+  if [[ -f "$SCRIPTS/patch_tailor_depthwise_common.py" ]]; then
+    DOCKER_MOUNTS+=(-v "$SCRIPTS/patch_tailor_depthwise_common.py:/patch_tailor_depthwise_common.py:ro")
+  fi
+  if [[ -d "$HERE/tailor_models" ]]; then
+    DOCKER_MOUNTS+=(-v "$HERE/tailor_models:/tailor_models:ro")
+  fi
+
+  docker run --rm \
+    "${DOCKER_MOUNTS[@]}" \
+    -e ABI="$abi" \
+    -e ARCH="$arch" \
+    -e EXTRA_FLAGS="$EXTRA_FLAGS" \
+    -e PADDLE_PROFILE="$profile" \
+    "$IMAGE" \
+    bash /run-android-historical.sh
+done
+
+# Host strip: historical recipe used --strip-unneeded (produces link-clean dynsym
+# when the SO itself was linked correctly with c++_static + full patches).
+STRIP=$(ls "${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk}"/*/toolchains/llvm/prebuilt/*/bin/llvm-strip 2>/dev/null | head -1 || true)
+if [[ -n "${STRIP:-}" ]]; then
+  echo "Stripping with $STRIP --strip-unneeded (historical)"
+  find "$OUT" -type f -name '*.so' -print0 | while IFS= read -r -d '' f; do
+    "$STRIP" --strip-unneeded "$f" 2>/dev/null || true
+  done
+else
+  echo "WARN: llvm-strip not found; leaving unstripped products"
+fi
+
+# Link gate: NDK28 lld must accept each SO as a shared link input (app native_ocr).
+NDK_PRE=$(ls -d "${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk}"/*/toolchains/llvm/prebuilt/linux-x86_64/bin 2>/dev/null | sort -V | tail -1 || true)
+if [[ -n "${NDK_PRE:-}" && -x "$NDK_PRE/aarch64-linux-android26-clang++" ]]; then
+  echo "NDK28 link gate…"
+  TMP=$(mktemp -d)
+  echo 'extern "C" int Java_x(){return 0;}' >"$TMP/t.cpp"
+  fail=0
+  for so in "$OUT"/arm64-v8a/*.so; do
+    [[ -f "$so" ]] || continue
+    "$NDK_PRE/aarch64-linux-android26-clang++" -c -fPIC -o "$TMP/t.o" "$TMP/t.cpp"
+    if "$NDK_PRE/aarch64-linux-android26-clang++" -shared -o "$TMP/o.so" "$TMP/t.o" "$so" -llog 2>"$TMP/e.txt"; then
+      echo "  LINK_OK  $so"
+    else
+      echo "  LINK_FAIL $so" >&2
+      head -5 "$TMP/e.txt" >&2 || true
+      fail=1
+    fi
+  done
+  for so in "$OUT"/x86_64/*.so; do
+    [[ -f "$so" ]] || continue
+    "$NDK_PRE/x86_64-linux-android26-clang++" -c -fPIC -o "$TMP/t64.o" "$TMP/t.cpp"
+    if "$NDK_PRE/x86_64-linux-android26-clang++" -shared -o "$TMP/o.so" "$TMP/t64.o" "$so" -llog 2>"$TMP/e.txt"; then
+      echo "  LINK_OK  $so"
+    else
+      echo "  LINK_FAIL $so" >&2
+      head -5 "$TMP/e.txt" >&2 || true
+      fail=1
+    fi
+  done
+  rm -rf "$TMP"
+  [[ "$fail" -eq 0 ]] || { echo "ERROR: NDK28 link gate failed" >&2; exit 1; }
+else
+  echo "WARN: skip NDK28 link gate (ndk clang++ not found)"
+fi
+
+echo "OK paddle products under $OUT:"
+find "$OUT" -type f \( -name '*.so' -o -name '*.jar' \) -ls 2>/dev/null || true
