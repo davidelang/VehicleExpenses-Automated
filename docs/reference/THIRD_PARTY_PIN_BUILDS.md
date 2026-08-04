@@ -149,6 +149,7 @@ consumer_note = "…"
 [[artifact]]
 path = "artifact/jni/arm64-v8a/libopencv_java4.so"
 from = "src/bin/arm64-v8a/libopencv_java4.so"
+sha256 = "…"   # optional; fail row if mismatch
 
 [[artifact]]
 path = "artifact/jni/x86_64/libopencv_java4.so"
@@ -156,7 +157,14 @@ from = "src/bin/x86_64/libopencv_java4.so"
 # glob example:
 # from = "src/build/x86_64/**/libopencv_java4.so"
 # pick = "newest"
+
+# Independent second row: same from → consumer tree (repo-relative app/…)
+[[artifact]]
+path = "app/src/main/jniLibs/arm64-v8a/libopencv_java4.so"
+from = "src/bin/arm64-v8a/libopencv_java4.so"
 ```
+
+`path` resolution: absolute as-is; `app/…` under repo root; else under `third_party/<lib>/`.
 
 ### `[[artifact]]` fields (`from` + `pick`)
 
