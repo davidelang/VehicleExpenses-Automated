@@ -207,19 +207,33 @@ object TabularSchema {
     )
 
     /**
+     * True when [firstRow] is a usable tabular header for VE entity tabs.
+     *
+     * **Hard requirement:** trimmed cell equal to **`Sync ID`** must appear
+     * (poison grids that treat a UUID data row as headers fail this).
+     * [expected] is reserved for future minimum-set checks; currently unused
+     * beyond documentation that Sync ID is on all entity schemas.
+     */
+    fun isValidHeaderRow(firstRow: List<String>?, expected: List<String> = emptyList()): Boolean {
+        val first = firstRow.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }
+        if (first.isEmpty()) return false
+        return "Sync ID" in first
+    }
+
+    /**
      * Preserve [existingHeader] order; append any [canonical] names not already present.
-     * Empty existing → [canonical] (new / headerless tab).
+     * Empty **or invalid** existing → [canonical] (new / headerless / poison tab).
      *
      * Used by every tabular [ensureHeaders] implementation:
      * - empty / no usable header → write full canonical list
-     * - non-empty → this merge only (**never reorder** known columns)
+     * - valid non-empty → this merge only (**never reorder** known columns)
      *
      * When a backend rewrites the full grid after appending headers, also call
      * [padDataRowsToWidth] so each data row has empty cells for new columns.
      */
     fun mergeHeaderOrder(existingHeader: List<String>, canonical: List<String>): List<String> {
         val existing = existingHeader.map { it.trim() }.filter { it.isNotEmpty() }
-        if (existing.isEmpty()) return canonical
+        if (existing.isEmpty() || !isValidHeaderRow(existing, canonical)) return canonical
         val have = existing.toSet()
         return existing + canonical.filter { it !in have }
     }

@@ -297,9 +297,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
     ): Int {
-        val remoteRows = resolveRemoteTabRows(
+        val resolved = resolveRemoteTabRows(
             dest, backend, TabularSchema.TAB_MERGE_ACKS, TabularSchema.MERGE_ACK_HEADERS, accountHint, bulk,
         )
+        val remoteRows = resolved.rows
         val headerRow = remoteRows.firstOrNull() ?: TabularSchema.MERGE_ACK_HEADERS
         val headerIndex = TabularSchema.headerIndex(headerRow)
         val remoteDataRows = remoteRows.drop(1)
@@ -336,6 +337,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             headerIndex = headerIndex,
             accountHint = accountHint,
             logTag = "MergeAcks",
+            forceFullRewrite = resolved.forceFullRewrite,
         )
         return count
     }
@@ -525,8 +527,20 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     }
 
     /**
-     * Resolve full tab body for LWW: use bulk cache when headers look OK;
-     * otherwise ensureHeaders + single-tab re-read (new tab or missing columns).
+     * Resolved sheet grid for LWW + write-back.
+     * [forceFullRewrite] when remote data empty or headers were invalid (poison → no LWW import).
+     */
+    private data class ResolvedRemoteTab(
+        /** Header row + data rows (or [expectedHeaders] only when empty/invalid). */
+        val rows: List<List<String>>,
+        val forceFullRewrite: Boolean,
+    )
+
+    /**
+     * Resolve full tab body for LWW.
+     * - **Valid** headers (must include `Sync ID`): use bulk cache or re-read after ensuring missing cols.
+     * - **Missing / empty / invalid** (data row as "headers"): ensureHeaders (lib clears+rewrites A1),
+     *   treat remote entity rows as **empty** for LWW, [forceFullRewrite] for write-back.
      */
     private suspend fun resolveRemoteTabRows(
         dest: SpreadsheetDestination,
@@ -535,23 +549,56 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         expectedHeaders: List<String>,
         accountHint: String?,
         bulk: Map<String, List<List<String>>>?,
-    ): List<List<String>> {
+    ): ResolvedRemoteTab {
+        fun firstNames(grid: List<List<String>>): List<String> =
+            grid.firstOrNull()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+
         val cached = bulk?.get(tabName)
         if (cached != null) {
-            val first = cached.firstOrNull()
-                ?.map { it.trim() }
-                ?.filter { it.isNotEmpty() }
-                .orEmpty()
-            val needsHeaderWork = first.isEmpty() || expectedHeaders.any { it !in first }
-            if (!needsHeaderWork) {
-                return cached
+            val first = firstNames(cached)
+            val valid = TabularSchema.isValidHeaderRow(first, expectedHeaders)
+            val complete = valid && expectedHeaders.all { it in first }
+            if (complete) {
+                val dataEmpty = cached.drop(1).none { row -> row.any { it.isNotBlank() } }
+                return ResolvedRemoteTab(cached, forceFullRewrite = dataEmpty)
             }
-            Log.i(TAG, "Bulk cache header incomplete for $tabName — ensureHeaders + re-read")
+            val wasInvalid = !valid
+            if (wasInvalid) {
+                Log.i(
+                    TAG,
+                    "invalid remote header on $tabName — ensureHeaders rewrite, treating as empty for LWW",
+                )
+            } else {
+                Log.i(TAG, "Bulk cache header incomplete for $tabName — ensureHeaders + re-read")
+            }
             backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
-            return backend.readAllRows(dest, tabName, accountHint)
+            val after = backend.readAllRows(dest, tabName, accountHint)
+            val afterFirst = firstNames(after)
+            if (wasInvalid || !TabularSchema.isValidHeaderRow(afterFirst, expectedHeaders)) {
+                // Poison grid or still invalid: do not LWW-parse residual data rows
+                if (!TabularSchema.isValidHeaderRow(afterFirst, expectedHeaders)) {
+                    Log.w(TAG, "headers still invalid on $tabName after ensure — empty remote + full rewrite")
+                }
+                return ResolvedRemoteTab(
+                    rows = listOf(expectedHeaders),
+                    forceFullRewrite = true,
+                )
+            }
+            // Valid headers, only missing columns were appended — use re-read body
+            val dataEmpty = after.drop(1).none { row -> row.any { it.isNotBlank() } }
+            return ResolvedRemoteTab(after, forceFullRewrite = dataEmpty)
         }
+        // Tab missing from bulk (does not exist yet) or no bulk map
+        Log.i(TAG, "No bulk cache for $tabName — ensureHeaders (create/empty)")
         backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
-        return backend.readAllRows(dest, tabName, accountHint)
+        val after = backend.readAllRows(dest, tabName, accountHint)
+        val afterFirst = firstNames(after)
+        if (!TabularSchema.isValidHeaderRow(afterFirst, expectedHeaders)) {
+            Log.w(TAG, "headers invalid on new/empty $tabName after ensure — empty remote + full rewrite")
+            return ResolvedRemoteTab(listOf(expectedHeaders), forceFullRewrite = true)
+        }
+        val dataEmpty = after.drop(1).none { row -> row.any { it.isNotBlank() } }
+        return ResolvedRemoteTab(after, forceFullRewrite = true) // new/empty tab: always full rewrite
     }
 
     private suspend fun syncVehiclesTab(
@@ -560,11 +607,13 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
     ): Int {
-        val remoteRows = resolveRemoteTabRows(
+        val resolved = resolveRemoteTabRows(
             dest, backend, TabularSchema.TAB_VEHICLES, TabularSchema.VEHICLE_HEADERS, accountHint, bulk,
         )
+        val remoteRows = resolved.rows
         val headerRow = remoteRows.firstOrNull() ?: TabularSchema.VEHICLE_HEADERS
-        val headerIndex = TabularSchema.headerIndex(headerRow)
+        val writeHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.VEHICLE_HEADERS)
+        val headerIndex = TabularSchema.headerIndex(writeHeaders)
         val remoteDataRows = remoteRows.drop(1)
             .filter { it.any { cell -> cell.isNotBlank() } }
         val remoteVehicles = remoteDataRows
@@ -596,13 +645,14 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             dest = dest,
             backend = backend,
             tabName = TabularSchema.TAB_VEHICLES,
-            headers = TabularSchema.VEHICLE_HEADERS,
+            headers = writeHeaders,
             sortedRows = sortedMerged.map { TabularSchema.vehicleToRow(it) },
             sortedSyncIds = sortedMerged.map { it.syncId },
             remoteDataRows = remoteDataRows,
             headerIndex = headerIndex,
             accountHint = accountHint,
             logTag = "Vehicles",
+            forceFullRewrite = resolved.forceFullRewrite,
         )
         return count
     }
@@ -613,11 +663,13 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
     ): Int {
-        val remoteRows = resolveRemoteTabRows(
+        val resolved = resolveRemoteTabRows(
             dest, backend, TabularSchema.TAB_EXPENSES, TabularSchema.EXPENSE_HEADERS, accountHint, bulk,
         )
+        val remoteRows = resolved.rows
         val headerRow = remoteRows.firstOrNull() ?: TabularSchema.EXPENSE_HEADERS
-        val headerIndex = TabularSchema.headerIndex(headerRow)
+        val writeHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.EXPENSE_HEADERS)
+        val headerIndex = TabularSchema.headerIndex(writeHeaders)
         val allVehicles = vehicleRepository.getAllIncludingDeleted().filter { it.syncId.isNotBlank() }
         val vehicleIdBySyncId = allVehicles.associate { it.syncId to it.id }
         val vehicleSyncIdById = allVehicles.associate { it.id to it.syncId }
@@ -653,7 +705,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             dest = dest,
             backend = backend,
             tabName = TabularSchema.TAB_EXPENSES,
-            headers = TabularSchema.EXPENSE_HEADERS,
+            headers = writeHeaders,
             sortedRows = sortedMerged.map { entry ->
                 TabularSchema.expenseToRow(entry, vehicleSyncIdById[entry.vehicleId].orEmpty())
             },
@@ -662,6 +714,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             headerIndex = headerIndex,
             accountHint = accountHint,
             logTag = "Expenses",
+            forceFullRewrite = resolved.forceFullRewrite,
         )
         return count
     }
@@ -879,6 +932,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             val writeHeaders: List<String>,
             val headerIndex: Map<String, Int>,
             val remoteDataRows: List<List<String>>,
+            val forceFullRewrite: Boolean,
         )
         val snapshots = mutableListOf<FuelTabSnapshot>()
 
@@ -899,15 +953,16 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 hintStore,
                 bulkRows,
             )
-            val remoteRows = resolveRemoteTabRows(
+            val resolved = resolveRemoteTabRows(
                 dest, backend, tabName, TabularSchema.FUEL_HEADERS, accountHint, bulkRows,
             )
+            val remoteRows = resolved.rows
             // Keep cache in sync after resolve (may have re-read after ensureHeaders).
             bulkRows[tabName] = remoteRows
             val headerRow = remoteRows.firstOrNull()?.map { it.trim() }?.filter { it.isNotEmpty() }
                 ?.takeIf { it.isNotEmpty() }
                 ?: TabularSchema.FUEL_HEADERS
-            // Preserve existing column order; only append any still-missing canonical cols.
+            // Valid headers: preserve order; invalid path already returned canonical-only rows.
             val writeHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.FUEL_HEADERS)
             val headerIndex = TabularSchema.headerIndex(writeHeaders)
             val remoteDataRows = remoteRows.drop(1)
@@ -958,6 +1013,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                     writeHeaders = writeHeaders,
                     headerIndex = headerIndex,
                     remoteDataRows = remoteDataRows,
+                    forceFullRewrite = resolved.forceFullRewrite,
                 ),
             )
         }
@@ -1008,6 +1064,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 headerIndex = snap.headerIndex,
                 accountHint = accountHint,
                 logTag = "Fuel-${vehicle.name}",
+                forceFullRewrite = snap.forceFullRewrite,
             )
         }
         return FuelTabSyncStats(upserted = total, remoteWins = remoteWins)
@@ -1151,7 +1208,21 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         headerIndex: Map<String, Int>,
         accountHint: String?,
         logTag: String,
+        forceFullRewrite: Boolean = false,
     ): SheetWriteStats {
+        // Empty remote (new/empty tab) or repaired invalid headers → always header+body replace.
+        // Never appendDataRows onto a headerless or just-created tab without asserting headers.
+        if (forceFullRewrite || remoteDataRows.isEmpty()) {
+            Log.i(
+                TAG,
+                "$logTag sheet write: fullRewrite " +
+                    "(force=$forceFullRewrite emptyRemote=${remoteDataRows.isEmpty()})",
+            )
+            backend.writeAllRows(dest, tabName, headers, sortedRows, accountHint)
+            backend.clearTrailing(dest, tabName, sortedRows.size + 2, accountHint)
+            return SheetWriteStats(appended = sortedRows.size, fullRewrite = true)
+        }
+
         val sheetSyncIds = remoteDataRows
             .map { TabularSchema.syncIdFromRow(it, headerIndex) }
             .filter { it.isNotBlank() }

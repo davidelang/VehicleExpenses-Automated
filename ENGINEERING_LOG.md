@@ -7235,3 +7235,14 @@ x
 - STOP: no Sync acceptance / no postdeploy log as PASS
 - Ready APK: app/build/outputs/apk/debug/app-debug.apk pin b4baf3b HEAD 1fa0af0b
 - Human must install then Sync now; agent will not adb install
+
+## 2026-08-04 - fix-sheets-tab-states-headers-and-rewrite — execution start
+
+- Plan: dev-ai-interaction/plans/fix-sheets-tab-states-headers-and-rewrite-20260804-2344-plan.md
+- Three cases: no tab / empty / data-without-headers; valid Sync ID; force writeAllRows
+
+## 2026-08-04 - fix-sheets-tab-states — pre-build
+
+- TabularSchema.isValidHeaderRow (Sync ID); mergeHeaderOrder invalid→canonical
+- Lib ensureHeaders clear+rewrite on invalid; pin 04ee2d2
+- Coordinator: resolve poison→empty LWW + forceFullRewrite writeAllRows; empty remote no appendDataRows
