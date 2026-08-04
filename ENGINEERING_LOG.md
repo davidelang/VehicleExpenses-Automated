@@ -7169,3 +7169,13 @@ x
 - Plan complete: docs hygiene, appendDataRows, all HTTP backends paced, type coerce, CLI/harness test surface
 - Library pin 17cf482; VE build 463181fb; tag fix-syncing/builds
 - Optional 5554 not required by plan
+
+## 2026-08-04 - remotetable-l3-ab-merge — execution start
+
+- Plan: dev-ai-interaction/plans/remotetable-l3-ab-merge-union-lww-fieldfill-20260804-2209-plan.md
+- Library L3 merge modes union/lww_row/field_fill; harness+CLI; pin promote; no VE coordinator rewrite
+
+## 2026-08-04 - remotetable-l3-ab-merge — pin promote
+
+- Library 570237b: MergeSync union/lww_row/field_fill; harness+CLI merge; CONTRACT L3
+- Pin+AAR promoted; VE build link check (no coordinator rewrite)
