@@ -128,6 +128,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var photoBackupManager: PhotoBackupManager
 
+    @Inject
+    lateinit var emailReceiptManager: com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptManager
+
     private val mediaPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -272,6 +275,7 @@ class MainActivity : ComponentActivity() {
                                 vehicleRepository.ensureUnassignedVehicle()
                                 syncManager.scheduleFromDestination()
                                 photoBackupManager.scheduleFromDestination()
+                                emailReceiptManager.rescheduleFromPrefs()
                             }
                         } catch (e: Exception) {
                             Log.e("MainActivity", "sync-id backfill failed", e)
