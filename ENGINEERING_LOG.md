@@ -7227,3 +7227,11 @@ x
 - STOP per plan: no Sync acceptance / no postdeploy log as PASS
 - Worktree ready: pin b4baf3b, HEAD 47e629a6, APK app/build/outputs/apk/debug/app-debug.apk
 - Human: install that APK on 5554, confirm versionName ≠ email-connection-start-111…, Sync now, re-approve resume or say continue
+
+## 2026-08-04 - ve-sheets-sync human-deploy plan — BLOCKED Phase 1
+
+- Plan: dev-ai-interaction/plans/ve-sheets-sync-device-acceptance-human-deploy-20260804-2324-plan.md
+- adb 5554: versionName still email-connection-start-111-g1f95c129 lastUpdate=2026-08-04 09:01:25
+- STOP: no Sync acceptance / no postdeploy log as PASS
+- Ready APK: app/build/outputs/apk/debug/app-debug.apk pin b4baf3b HEAD 1fa0af0b
+- Human must install then Sync now; agent will not adb install
