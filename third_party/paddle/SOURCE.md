@@ -7,7 +7,8 @@
 | **Stack** | `pr-upstream-cleanup` ⊂ `pr-x86-android-mobile-gap` (validated). INT8 runtime/opt layer is **not** fully stacked as a third git branch — see below. |
 | **build_time** | `few_hours` (Docker image once + per-ABI Android build; historical runs `few_hours`–`tens_of_hours` with restarts) |
 | **reproducible** | `false` (NDK, Docker base, third-party tarball, timestamps) |
-| **Products** | `artifact/jni/{arm64-v8a,x86_64}/libpaddle_*.so`, optional `PaddlePredictor.jar` |
+| **Products** | `artifact/jni/{arm64-v8a,armeabi-v7a,x86_64}/libpaddle_*.so`, optional `PaddlePredictor.jar` |
+| **Strip** | Host `llvm-strip --strip-debug` only (not `--strip-unneeded` — breaks NDK r28 `lld` when app links JNI) |
 
 **Authoritative process doc:** `docs/reference/PADDLE_PIN_BUILDS.md`  
 **Upstream PR stack / bodies / restack notes (durable):** `third_party/paddle/docs/upstream/`  

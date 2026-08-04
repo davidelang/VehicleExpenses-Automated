@@ -4545,3 +4545,11 @@ x
 - App jniLibs paddle: replace tailored/old with pin slim strip arm64+x86_64; drop old armv7 paddle until pin armv7 build lands
 - libpin: prefer host linked worktree; sandbox allow only $GIT_HOME/<lib>/.git
 
+
+## 2026-08-03 - Pin paddle strip-debug arm64/x86 + armv7 plan
+
+- Rebuilt slim arm64+x86 unstripped then llvm-strip --strip-debug; wired app jniLibs (no armv7 paddle until separate plan).
+- extractmail pin 0dc3f80; remotetable 65366fc; libpin linked worktree + host .git only.
+- armv7 plan: dev-ai-interaction/plans/paddle-armv7-fp16-and-functional-calib-20260803-plan.md
+- Human: deploy to emulator-5554 + Pixel; First 10 align/pump; compare to libpin-5554-first10 baseline.
+

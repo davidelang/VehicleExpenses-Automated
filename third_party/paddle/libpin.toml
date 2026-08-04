@@ -10,24 +10,24 @@ reproducible = false
 build_time = "few_hours"
 requires_writable_src = false
 build = ["./build"]
-consumer_note = "Paddle-Lite Android JNI (slim): arm64+x86_64 (+ optional armv7). Docker+NDK. INT8 layer via patches-int8 after pin checkout. Models (nb) built separately with host opt — see docs/reference/PADDLE_PIN_BUILDS.md"
+consumer_note = "Paddle-Lite Android JNI (slim): arm64+x86_64 (+ optional armv7). Docker+NDK. INT8 layer via patches-int8 after pin checkout. Models (nb) built separately with host opt — see docs/reference/PADDLE_PIN_BUILDS.md. Strip: llvm-strip --strip-debug only (not --strip-unneeded)."
 
-# Pin slim build (pr-x86 + patches-int8 + x86 OpenBLAS overlay); strip-unneeded.
-# Larger than app tailored/slim jni — promote after 5554 parity check if desired.
+# Pin slim build (pr-x86 + patches-int8 + x86 OpenBLAS overlay); strip-debug (linkable with NDK28 lld).
+# armv7 pin artifact optional until armv7 plan lands — see dev-ai-interaction/plans/paddle-armv7-fp16-and-functional-calib-20260803-plan.md
 [[artifact]]
 path = "artifact/jni/arm64-v8a/libpaddle_lite_jni.so"
 from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
-sha256 = "2476f557be8d5cbc78b9f10f18fff5aa2c5ef3f6212dd6759ff01f6ca2c26393"
+sha256 = "bc65e560de28c639291e8f30cc943031e8e137a8f8768f136594f7d1d733d4ff"
 
 [[artifact]]
 path = "artifact/jni/x86_64/libpaddle_lite_jni.so"
 from = "src/bin/x86_64/libpaddle_lite_jni.so"
-sha256 = "a19ee9a62418082317b1963c4fa89f017910490ae51ebbc9f140b9e096c51f21"
+sha256 = "e6c5251d2cd7927009c7d11c4d8f0c8fbb0a4d7abd12291cd25a7500587c552b"
 
 [[artifact]]
 path = "artifact/jni/x86_64/libpaddle_light_api_shared.so"
 from = "src/bin/x86_64/libpaddle_light_api_shared.so"
-sha256 = "115637f8c2aa2049ea66e94673ab59f089880f1642d06e93d27839a1ef6d8864"
+sha256 = "621b9e8940a5f97897e73b74a518b4c2cc643966db3949a7e7d56c3bbd88c5cf"
 
 [[artifact]]
 path = "artifact/PaddlePredictor.jar"

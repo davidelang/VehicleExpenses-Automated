@@ -101,19 +101,59 @@ fi
 echo "=== kernel string checks ($ABI) ==="
 # Prefer light_api (kernels); fall back to jni. Use grep -a (binary-safe) — some
 # images lack binutils strings or pipefail-false-negative on short stamps.
+#
+# Required stamps are ABI-specific:
+#   all ARM/x86: int8_to_fp32, uint8_to_fp32, fp32_to_uint8
+#   arm64-v8a + x86*: also int8_to_fp16, uint8_to_fp16
+#   armeabi-v7a: fp16 calib kernels are N/A (ENABLE_ARM_FP16 only with
+#     --with_arm82_fp16=ON / aarch64 ARMv8.2); report SKIP not FAIL for those.
 CHECKS=()
 [[ -f "/output/$ABI/libpaddle_light_api_shared.so" ]] && CHECKS+=("/output/$ABI/libpaddle_light_api_shared.so")
 [[ -f "/output/$ABI/libpaddle_lite_jni.so" ]] && CHECKS+=("/output/$ABI/libpaddle_lite_jni.so")
 [[ ${#CHECKS[@]} -gt 0 ]] || { echo "FAIL: no .so to check under /output/$ABI"; exit 1; }
-for need in int8_to_fp32 int8_to_fp16 uint8_to_fp32 uint8_to_fp16 fp32_to_uint8; do
-  found=0
-  for CHECK in "${CHECKS[@]}"; do
-    if grep -aFq "$need" "$CHECK" 2>/dev/null; then
-      found=1
-      break
-    fi
+
+stamp_present() {
+  local need="$1" f
+  for f in "${CHECKS[@]}"; do
+    grep -aFq "$need" "$f" 2>/dev/null && return 0
   done
-  [[ "$found" -eq 1 ]] || { echo "FAIL missing $need in ${CHECKS[*]}"; exit 1; }
+  return 1
+}
+
+REQUIRED=(int8_to_fp32 uint8_to_fp32 fp32_to_uint8)
+OPTIONAL_FP16=(int8_to_fp16 uint8_to_fp16)
+case "$ABI" in
+  arm64-v8a|x86_64|x86) REQUIRE_FP16=1 ;;
+  armeabi-v7a) REQUIRE_FP16=0 ;;
+  *)
+    echo "FAIL: unknown ABI for kernel checks: $ABI" >&2
+    exit 1
+    ;;
+esac
+
+fail=0
+for need in "${REQUIRED[@]}"; do
+  if stamp_present "$need"; then
+    echo "  PASS  $need"
+  else
+    echo "  FAIL  $need  (required for $ABI)"
+    fail=1
+  fi
 done
+for need in "${OPTIONAL_FP16[@]}"; do
+  if stamp_present "$need"; then
+    echo "  PASS  $need"
+  elif [[ "$REQUIRE_FP16" -eq 1 ]]; then
+    echo "  FAIL  $need  (required for $ABI — ENABLE_ARM_FP16 / x86 fp16 calib)"
+    fail=1
+  else
+    echo "  SKIP  $need  (not expected on $ABI — no ARMv8.2 FP16)"
+  fi
+done
+if [[ "$fail" -ne 0 ]]; then
+  echo "FAIL kernel string checks for $ABI" >&2
+  exit 1
+fi
+echo "  STATUS: PASS ($ABI)"
 ls -lh "/output/$ABI/"
 echo "SLIM_BUILD_DONE abi=$ABI"

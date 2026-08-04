@@ -144,8 +144,14 @@ Common flags (slim):
 --with_log=OFF --with_benchmark=OFF --android_stl=c++_static --with_exception=ON
 ```
 
-**Post-check:** `strings` on jni/light must contain  
-`int8_to_fp32`, `int8_to_fp16`, `uint8_to_fp32`, `uint8_to_fp16`, `fp32_to_uint8`.
+**Post-check** (`run-android-slim.sh` kernel string stamps on jni/light):
+
+| Stamp | arm64-v8a | x86_64 | armeabi-v7a |
+|-------|-----------|--------|-------------|
+| `int8_to_fp32`, `uint8_to_fp32`, `fp32_to_uint8` | required | required | required |
+| `int8_to_fp16`, `uint8_to_fp16` | required (`--with_arm82_fp16=ON`) | required (x86 software fp16) | **not expected** (no `ENABLE_ARM_FP16` on armv7) |
+
+armeabi-v7a reports those fp16 stamps as **SKIP**, not FAIL.
 
 **Tailor (`LITE_BUILD_TAILOR`):** separate scripts historically under sandbox (`build_tailored_*`); optional later pin profile — **not** the default slim path.
 
