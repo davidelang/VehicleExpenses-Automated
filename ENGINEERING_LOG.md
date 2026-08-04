@@ -7204,3 +7204,13 @@ x
 
 - Plan: dev-ai-interaction/plans/ve-sheets-sync-device-acceptance-5554-20260804-2236-plan.md
 - Preflight pin/build; dump logcat after human Sync now; residual fix only if needed
+
+## 2026-08-04 - ve-sheets-sync-device-acceptance-5554 — BLOCKED (wrong APK)
+
+- emulator-5554 online; pin on tree b4baf3b; builds tag fix-syncing/builds → 0faad378 (v0.98-24-g0faad378)
+- Device installed versionName=email-connection-start-111-g1f95c129 (2026-08-04 09:01) — pre-rate-limit AAR
+- Log dump: dev-ai-interaction/device-logcat-emulator-5554-sync-accept-20260804-preflight.log
+- Evidence 14:57:26 hard fail HTTP 429 Read requests on GoogleSheetsBackend.readRows via OLD updateRows (line 130 stack) — no RateLimiter wait
+- WorkManager RETRY then Sync complete 14:58:06 Honda/Ford writes OK (old APK worker retry, not lib pace acceptance)
+- Human must ./deploy or install app/build/outputs/apk/debug/app-debug.apk on 5554 then Sync now; reply to resume Phase 2 on fixed build
+- No residual code change this turn (stack proves stale binary)
