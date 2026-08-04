@@ -4560,3 +4560,9 @@ x
 - arm64 jniLibs: keep model-tailored SO (3ad8acd5) — slim arm64 from NDK r20 has LOCAL ABS symbols lld rejects
 - Plan armv7+NDK bump: paddle-armv7-fp16-and-functional-calib-20260803-plan.md
 
+
+## 2026-08-03 - Restore interim armv7 paddle SO for multi-ABI link
+
+- Keep fat interim armv7 until pin armv7 plan; arm64 tailored; x86 pin slim for 5554.
+
+
