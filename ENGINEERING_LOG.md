@@ -7179,3 +7179,8 @@ x
 
 - Library 570237b: MergeSync union/lww_row/field_fill; harness+CLI merge; CONTRACT L3
 - Pin+AAR promoted; VE build link check (no coordinator rewrite)
+
+## 2026-08-04 - remotetable-l3-ab-merge — CODE LANDED
+
+- Plan complete: L3 merge union/lww_row/field_fill; harness+CLI; pin 570237b; VE build 0825f08b
+- No VE coordinator rewrite; push regression PASS
