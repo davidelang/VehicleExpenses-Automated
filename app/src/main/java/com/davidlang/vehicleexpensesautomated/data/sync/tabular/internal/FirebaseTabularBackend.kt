@@ -5,10 +5,10 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Firebase/Firestore via remotetable AAR. */
 @Singleton
-class FirebaseTabularBackend @Inject constructor(
-    client: FirebaseTabularClient,
-) : RowDbTabularBackend(client, SpreadsheetProvider.FIREBASE, "firebase") {
+class FirebaseTabularBackend @Inject constructor() :
+    RemoteTableRowDbTabularBackend(SpreadsheetProvider.FIREBASE, "firebase") {
 
     override fun parseConfig(dest: SpreadsheetDestination): RowDbTabularConfig? =
         FirebaseTabularConfig.parse(dest.configJson, dest.targetUrl)
