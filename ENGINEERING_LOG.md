@@ -7184,3 +7184,13 @@ x
 
 - Plan complete: L3 merge union/lww_row/field_fill; harness+CLI; pin 570237b; VE build 0825f08b
 - No VE coordinator rewrite; push regression PASS
+
+## 2026-08-04 - remotetable-local-file-backends — execution start
+
+- Plan: dev-ai-interaction/plans/remotetable-local-file-backends-and-offline-copy-20260804-2225-plan.md
+- local/json-book/csv-dir L0 backends; offline push/merge; Kotlin local+json; pin if AAR changes
+
+## 2026-08-04 - remotetable-local-file-backends — CODE LANDED prep
+
+- Library b4baf3b: local/json-book (Kotlin+Python), csv-dir Python host-only; harness offline PASS
+- Pin+AAR promoted; project-facts offline endpoints note
