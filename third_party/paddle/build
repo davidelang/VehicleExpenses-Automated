@@ -72,12 +72,13 @@ if [[ ! -f "$OUT/PaddlePredictor.jar" ]]; then
   echo "NOTE: PaddlePredictor.jar not produced in this pass — copy from app/libs or prior build if needed"
 fi
 
-# Strip debug (full slim is ~200–270MB unstripped; ~5–9MB after)
+# Strip debug only (--strip-unneeded breaks NDK r28 lld: "invalid local symbol in global
+# part of symbol table" when app native_ocr links the JNI .so). Prefer NDK llvm-strip.
 STRIP=$(ls "${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk}"/*/toolchains/llvm/prebuilt/*/bin/llvm-strip 2>/dev/null | head -1 || true)
 if [[ -n "${STRIP:-}" ]]; then
-  echo "Stripping with $STRIP"
+  echo "Stripping debug with $STRIP --strip-debug"
   find "$OUT" -type f -name '*.so' -print0 | while IFS= read -r -d '' f; do
-    "$STRIP" --strip-unneeded "$f" 2>/dev/null || true
+    "$STRIP" --strip-debug "$f" 2>/dev/null || true
   done
 fi
 
