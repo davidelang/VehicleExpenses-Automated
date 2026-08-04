@@ -62,7 +62,7 @@ fun SpreadsheetSyncScreen(
                     pickingOtherKind = true
                 } else {
                     editingId = when (provider) {
-                        SpreadsheetProvider.EXCEL -> "new:excel"
+                        SpreadsheetProvider.EXCEL_GRAPH -> "new:excel-graph"
                         SpreadsheetProvider.ETHERCALC -> "new:ethercalc"
                         else -> "new:sheets"
                     }

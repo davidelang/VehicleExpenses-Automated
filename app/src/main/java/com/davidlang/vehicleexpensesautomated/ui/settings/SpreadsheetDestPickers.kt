@@ -65,7 +65,7 @@ internal fun SpreadsheetProviderPicker(
         title = "Add spreadsheet destination",
         choices = listOf(
             "Google Sheets" to { onPick(SpreadsheetProvider.GOOGLE_SHEETS) },
-            "Excel" to { onPick(SpreadsheetProvider.EXCEL) },
+            "Excel" to { onPick(SpreadsheetProvider.EXCEL_GRAPH) },
             "EtherCalc" to { onPick(SpreadsheetProvider.ETHERCALC) },
             "Other" to { onPick(SpreadsheetProvider.OTHER) },
         ),

@@ -7,7 +7,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 ## Backlog (native / paddle)
 - [ ] True `LITE_BUILD_TAILOR` for **x86_64** emulator (space only; prod-path speed matches fat kernels)
 - [ ] True `LITE_BUILD_TAILOR` for **armeabi-v7a** or drop the ABI (space only if kept)
-- [ ] Strip debug information and excessive logging from Paddle Lite **x86_64** Android build (binary size)
+- [x] Strip debug information and excessive logging from Paddle Lite **x86_64** Android build (binary size)
 - [ ] **16KB page size alignment:** rebuild OpenCV, rclone/gomobile, and other prebuilt `.so` libs with 16KB ELF segment alignment (see `docs/reference/16k-pages-compatibility-notes.md`)
 
 ## Backlog (OCR / alignment / identity)
@@ -66,3 +66,15 @@ Trip miles packaging polish (export labels/annual packs); core open-only + impli
 
 
 Expense receipt field extraction helper (assistive OCR propose vendor/amount/line items; HITL confirm; offline): research cache + open decisions — dev-ai-interaction/research/expense-receipt-field-extraction-deep-research-20260801.md (also see RECEIPT_PARSING_RESEARCH.md; existing backlog bullet "Expense receipt parsing")
+
+Keep **armeabi-v7a** (aftermarket head units): true LITE_BUILD_TAILOR + pin-build OpenCV fat jni for armv7 (16KB); wire app jniLibs — see plans/paddle-armv7-fp16-and-functional-calib-20260803-plan.md
+
+Pin slim **armeabi-v7a** paddle JNI with strip path; collect third_party/paddle/artifact/jni/armeabi-v7a + app jniLibs
+
+Email loyalty: live Gmail/IMAP production hardening + expense-from-email path still open; fuel Shell/Sam's Room ingest shipped on master
+
+extractmail: browser-based human-confirm extract helper (open file/email; avoid auto-picking non-visible fields)
+
+Vehicle preferred fuel grade/product field for future auto-assignment of loyalty email fills
+
+third_party get-artifacts pick=smart (release/RC/nightly tiers) when from uses globs; fallback mtime

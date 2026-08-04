@@ -1,15 +1,23 @@
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
+import android.content.Context
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptFixtureIngest
+import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptManager
+import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptPrefs
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
 import com.davidlang.vehicleexpensesautomated.data.sync.CsvManager
+import com.davidlang.vehicleexpensesautomated.data.sync.GoogleLegacySignIn
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupCoordinator
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupResult
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetSyncCoordinator
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncProgressListener
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncResult
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -21,10 +29,14 @@ import kotlinx.coroutines.withContext
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @param:ApplicationContext private val appContext: Context,
     val csvManager: CsvManager,
     val photoStorageManager: PhotoStorageManager,
     private val syncCoordinator: SpreadsheetSyncCoordinator,
     private val photoBackupCoordinator: PhotoBackupCoordinator,
+    private val emailReceiptManager: EmailReceiptManager,
+    private val emailReceiptFixtureIngest: EmailReceiptFixtureIngest,
+    private val googleLegacySignIn: GoogleLegacySignIn,
 ) : ViewModel() {
 
     private val _spreadsheetSyncStatus = MutableStateFlow("")
@@ -122,4 +134,21 @@ class SettingsViewModel @Inject constructor(
         photoBackupCoordinator.syncNow(onProgress = onProgress)
 
     suspend fun recountPendingBadge(): Int = photoBackupCoordinator.recountPending()
+
+    fun emailReceiptSignInIntent(): Intent =
+        googleLegacySignIn.signInClient(EmailReceiptPrefs.GMAIL_READONLY_SCOPE).signInIntent
+
+    fun parseEmailReceiptSignIn(data: Intent?): GoogleSignInAccount =
+        googleLegacySignIn.parseSignInResult(data)
+
+    fun rescheduleEmailReceiptPoll() = emailReceiptManager.rescheduleFromPrefs()
+
+    fun pollEmailReceiptsNow() = emailReceiptManager.enqueueOneShot()
+
+    /** Offline: extractmail golden JSON fixtures → Room (no network). Updates last-run prefs. */
+    suspend fun ingestOfflineShellFixtures(): String =
+        emailReceiptFixtureIngest.ingestSampleShellReceipts().summary
+
+    fun readEmailReceiptLastSummary(): String =
+        EmailReceiptPrefs(appContext).lastRunSummary
 }

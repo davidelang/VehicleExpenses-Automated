@@ -4,7 +4,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** NocoDB via remotetable AAR. */
 @Singleton
-class NocoDbTabularBackend @Inject constructor(
-    client: NocoDbClient,
-) : RowDbTabularBackend(client, SpreadsheetProvider.NOCODB, "nocodb")
+class NocoDbTabularBackend @Inject constructor() :
+    RemoteTableRowDbTabularBackend(SpreadsheetProvider.NOCODB, "nocodb")

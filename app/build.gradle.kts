@@ -34,11 +34,12 @@ android {
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
-                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+                // armv7 deferred — historical pin product is arm64 + x86_64 only
+                abiFilters += listOf("arm64-v8a", "x86_64")
             }
         }
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
     buildTypes {
@@ -73,6 +74,11 @@ android {
         resources {
             excludes.add("META-INF/DEPENDENCIES")
             excludes.add("META-INF/INDEX.LIST")
+            // android-mail + android-activation both ship these
+            excludes.add("META-INF/LICENSE.md")
+            excludes.add("META-INF/NOTICE.md")
+            excludes.add("META-INF/LICENSE.txt")
+            excludes.add("META-INF/NOTICE.txt")
         }
     }
 }
@@ -86,7 +92,8 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+    // Local jars only (PaddlePredictor, opencv-java). AARs come from third_party pins.
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.browser:browser:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-metadata-jvm:0.9.0")
@@ -133,16 +140,27 @@ dependencies {
     implementation("com.google.apis:google-api-services-sheets:v4-rev20220927-2.0.0")
     // Google Drive API for photo upload
     implementation("com.google.apis:google-api-services-drive:v3-rev20240509-2.0.0")
+    // First-party libraries (third_party pins)
+    implementation(files("../third_party/remotetable/artifact/remotetable.aar"))
+    implementation(files("../third_party/extractmail/artifact/extractmail.aar"))
+    // rclone photo-curated librclone AAR (gomobile; pin under third_party/rclone)
+    implementation(files("../third_party/rclone/artifact/librclone.aar"))
+    // IMAP (generic folder fetch for email fuel receipts)
+    implementation("com.sun.mail:android-mail:1.6.7")
+    implementation("com.sun.mail:android-activation:1.6.7")
+    // Encrypted prefs for IMAP app passwords
+    implementation("androidx.security:security-crypto:1.0.0")
     // CameraX for the new fillup screen
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")
     implementation("androidx.camera:camera-view:1.3.4")
-    // OpenCV for dashboard image alignment and preprocessing
-    implementation("org.opencv:opencv:4.10.0")
+    // OpenCV Java bindings (natives: jniLibs from third_party/opencv pin artifact)
+    // Jar extracted from org.opencv:opencv:4.10.0 AAR classes.jar; natives are pin-built
+    // fat libopencv_java4.so (core+imgproc+imgcodecs, 16KB pages) under jniLibs.
+    // Do not re-add Maven org.opencv:opencv AAR — it ships full multi-ABI natives and would
+    // override / bloat the pin .so.
     // ML Kit Text Recognition (High-performance Tensor-optimized OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
-    // Native Paddle-Lite Java Wrapper
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
 }
 
 // No more PaddleOCR validation — model has been removed
@@ -159,7 +177,11 @@ tasks.whenTaskAdded {
             if (nativeLibsDir.exists()) {
                 println(">>> UPX: Starting compression pass in $nativeLibsDir")
                 nativeLibsDir.walkTopDown().forEach { file ->
-                    if (file.extension == "so") {
+                    // Skip pin-built 16KB-aligned natives (UPX would break max-page-size).
+                    if (file.extension == "so" &&
+                        file.name != "libopencv_java4.so" &&
+                        file.name != "libgojni.so"
+                    ) {
                         println(">>> UPX: Compressing ${file.name}")
                         try {
                             ProcessBuilder("upx", "--best", file.absolutePath)
