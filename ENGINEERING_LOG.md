@@ -7163,3 +7163,9 @@ x
 
 - Library 17cf482: all HTTP backends RateLimiter; CellTypes+PolicySync coerce; appendDataRows; CLI conformance/push; harness PASS
 - VE: project-facts+API hygiene; GoogleSheetsTabularBackend.appendRows→appendDataRows; pin+AAR promote
+
+## 2026-08-04 - remotetable-gaps-hygiene-and-cli-test — CODE LANDED
+
+- Plan complete: docs hygiene, appendDataRows, all HTTP backends paced, type coerce, CLI/harness test surface
+- Library pin 17cf482; VE build 463181fb; tag fix-syncing/builds
+- Optional 5554 not required by plan
