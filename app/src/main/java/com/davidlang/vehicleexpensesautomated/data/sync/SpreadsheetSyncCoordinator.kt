@@ -454,7 +454,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     private fun isAccountReady(dest: SpreadsheetDestination, backend: TabularShareBackend, hint: String?): Boolean =
         when (dest.provider) {
             SpreadsheetProvider.ETHERCALC -> true
-            SpreadsheetProvider.EXCEL -> backend.resolveAccountName(hint) != null
+            SpreadsheetProvider.EXCEL_GRAPH -> backend.resolveAccountName(hint) != null
             SpreadsheetProvider.GOOGLE_SHEETS -> backend.resolveAccountName(hint) != null
             SpreadsheetProvider.BASEROW,
             SpreadsheetProvider.NOCODB,
@@ -471,7 +471,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         }
 
     private fun authRequiredMessage(provider: SpreadsheetProvider): String = when (provider) {
-        SpreadsheetProvider.EXCEL -> "Sign in with Microsoft first"
+        SpreadsheetProvider.EXCEL_GRAPH -> "Sign in with Microsoft first"
         SpreadsheetProvider.GOOGLE_SHEETS -> "Sign in with Google first"
         else -> "Destination not configured"
     }

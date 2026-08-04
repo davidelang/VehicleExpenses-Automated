@@ -20,13 +20,9 @@ To achieve 16KB page size compatibility, the build process must satisfy two core
 * **OpenCV 5.x Status:** Although source-level fixes were introduced in the 4.12.0+ branch, the official prebuilt 5.x packages still default to 4KB alignment. Simply upgrading the package version will not resolve the warning.
 * **Resolution:** OpenCV must be compiled from source using NDK r28c and target CMake flag `-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`.
 
-### Go-based Rclone (`librclone.aar` / full backends)
-* **Build System:** The Go build workspace and scripts (`build_lite.sh`) are located in the sandbox under `/home/dlang/git/VehicleExpenses-automated/dev-ai-interaction/rclone-build/`.
-* **Resolution:** Since Go runtime is page-size agnostic but `gomobile bind` relies on `cgo` utilizing the system's C linker, alignment must be forced by setting:
-  ```bash
-  export CGO_LDFLAGS="-Wl,-z,max-page-size=16384"
-  ```
-  before executing the `gomobile bind` compilation.
+### Go-based Rclone (`librclone.aar` / photo pin)
+* **Build System:** `third_party/rclone/` (`libpin.toml`, `scripts/build-photo-aar.sh`, Docker). Historical sandbox: `dev-ai-interaction/rclone-build/` (superseded).
+* **Resolution:** `CGO_LDFLAGS=-Wl,-z,max-page-size=16384` is set in the pin build script before `gomobile bind`.
 
 ### ABI Compatibility
 * **x86 & x86_64:** These architectures must not be dropped. They are required for emulator support. Both OpenCV and Rclone must be built for `arm64-v8a`, `armeabi-v7a`, `x86_64`, and `x86`.

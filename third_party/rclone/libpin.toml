@@ -1,0 +1,16 @@
+name = "rclone"
+git_ssh = "git@github.com:rclone/rclone.git"
+git_https = "https://github.com/rclone/rclone.git"
+git_sha = "3f9d583cffd94105f3ae2cde2cc6c0d5a2c9d631"
+git_describe = "3f9d583"
+track_branch = "master"
+reproducible = false
+build_time = "tens_of_minutes"
+requires_writable_src = false
+build = ["./build"]
+consumer_note = "Photo-curated librclone.aar via Docker+gomobile wrapper (scripts/). Backend list patched at build time in a container copy; pin src stays clean. 16KB max-page-size. ABIs: arm, arm64, amd64."
+
+[[artifact]]
+path = "artifact/librclone.aar"
+from = "src/build/out/librclone_photo.aar"
+sha256 = "e4f26a7d1d5acf4baa69e242c141aaff0e675058f0e472c743857dc007337580"

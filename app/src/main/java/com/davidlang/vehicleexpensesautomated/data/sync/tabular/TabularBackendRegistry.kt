@@ -34,7 +34,7 @@ class TabularBackendRegistry @Inject constructor(
 ) {
     fun forProvider(provider: SpreadsheetProvider): TabularShareBackend? = when (provider) {
         SpreadsheetProvider.GOOGLE_SHEETS -> googleSheetsBackend
-        SpreadsheetProvider.EXCEL -> excelBackend
+        SpreadsheetProvider.EXCEL_GRAPH -> excelBackend
         SpreadsheetProvider.ETHERCALC -> etherCalcBackend
         SpreadsheetProvider.BASEROW -> baserowBackend
         SpreadsheetProvider.NOCODB -> nocoDbBackend

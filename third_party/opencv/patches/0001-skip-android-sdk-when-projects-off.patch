@@ -1,0 +1,16 @@
+diff --git a/modules/java/CMakeLists.txt b/modules/java/CMakeLists.txt
+index 7207997..dd08132 100644
+--- a/modules/java/CMakeLists.txt
++++ b/modules/java/CMakeLists.txt
+@@ -57,7 +57,10 @@ endmacro()
+ 
+ add_subdirectory(jni)  # generates ${the_module} target (${the_module}_jni doesn't work properly with Android non-gradle samples)
+ if(ANDROID)
+-  add_subdirectory(android_sdk)  # generates ${the_module}_android target
++  # VE pin: skip android_sdk packaging when BUILD_ANDROID_PROJECTS=OFF (fat JNI .so only)
++  if(BUILD_ANDROID_PROJECTS)
++    add_subdirectory(android_sdk)  # generates ${the_module}_android target
++  endif()
+ else()
+   add_subdirectory(jar)  # generates ${the_module}_jar target
+ endif()

@@ -1,0 +1,4 @@
+# paddle — third_party pin (VehicleExpenses)
+
+See SOURCE.md and docs/reference/PADDLE_PIN_BUILDS.md.
+Fork: github.com/davidelang/Paddle-Lite @ pr-x86-android-mobile-gap + patches-int8/.

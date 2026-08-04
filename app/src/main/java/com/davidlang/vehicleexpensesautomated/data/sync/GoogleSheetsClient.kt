@@ -6,6 +6,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
+import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.model.AddSheetRequest
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest
@@ -74,6 +75,20 @@ class GoogleSheetsClient @Inject constructor(
 
     fun resolveAccountNamePublic(hint: String?): String? =
         auth.resolveAccountFromHint(hint)?.name
+
+    /**
+     * OAuth access token for remotetable [com.davidelang.remotetable.GoogleSheetsBackend].
+     * Blocks on IO; call from Dispatchers.IO.
+     */
+    fun accessToken(accountHint: String? = null): String {
+        val account = auth.resolveAccountFromHint(accountHint)
+            ?: throw IllegalStateException("No Google account signed in for Sheets")
+        return GoogleAuthUtil.getToken(
+            context,
+            account,
+            "oauth2:${GoogleSheetsAuth.SHEETS_SCOPE}",
+        )
+    }
 
     private fun sheetsService(accountHint: String? = null): Sheets {
         val account = auth.resolveAccountFromHint(accountHint)
