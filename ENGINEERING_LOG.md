@@ -7145,3 +7145,11 @@ x
 - Approved plan: dev-ai-interaction/plans/remotetable-contract-strategy-and-foundation-20260804-2024-plan.md
 - Library-first: materialize, CONTRACT, L0 rate limits + Sheets efficiency, L1/L2 many-ops, pin + thin VE adapter, optional directional push MVP
 - Phase 6 device deferred
+
+## 2026-08-04 - remotetable-contract-strategy foundation — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/remotetable-contract-strategy-and-foundation-20260804-2024-plan.md
+- Library commit 37c61a9 (fix-syncing): CONTRACT schema_v1, RateLimiter, Sheets batch/range/pace, L1/L2 ops, PolicySync push; harness PASS
+- VE pin + AAR promoted; GoogleSheetsTabularBackend thin (readMany/updateRangeRows); SyncRateLimit.notifyProgress; SYNC_BEHAVIOR docs
+- ./build_app OK; tag fix-syncing/builds → 7dfe1523
+- Phase 6 device (5554) deferred by plan
