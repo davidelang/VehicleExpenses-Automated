@@ -106,6 +106,9 @@ alignment_results_*.json
 # Offline illustrated user manual (HTML + screenshots)
 !app/src/main/assets/user-manual/
 !app/src/main/assets/user-manual/**
+# Shell e-receipt fixtures for offline Email receipts ingest (manual test path)
+!app/src/main/assets/email-receipt/
+!app/src/main/assets/email-receipt/**
 
 .gemini/
 gha-creds-*.json
@@ -113,3 +116,21 @@ gha-creds-*.json
 # Permission config (real values, gitignored)
 project.config
 
+# --- third_party consumer (managed by apply-third-party-gitignore.sh) ---
+# third_party: ignore checkouts/local state; track tool + pin contract under each lib dir
+third_party/*
+!third_party/fetch-deps
+!third_party/get-artifacts
+!third_party/libpin-bwrap
+!third_party/libpin-landlock
+!third_party/libpin-sandbox
+!third_party/README.md
+!third_party/*/
+third_party/*/src/
+third_party/*/status.local
+third_party/*/*.local
+# --- end third_party consumer ---
+
+# Track Grok pack launcher library (not Android/native lib/)
+!.grok/lib/
+!.grok/lib/**
