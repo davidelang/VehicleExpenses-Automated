@@ -7246,3 +7246,8 @@ x
 - TabularSchema.isValidHeaderRow (Sync ID); mergeHeaderOrder invalid→canonical
 - Lib ensureHeaders clear+rewrite on invalid; pin 04ee2d2
 - Coordinator: resolve poison→empty LWW + forceFullRewrite writeAllRows; empty remote no appendDataRows
+
+## 2026-08-04 - fix-sheets-tab-states-headers-and-rewrite — CODE LANDED
+
+- Plan complete: three-case headers; pin 04ee2d2; VE 3623d9ea; tag fix-syncing/builds
+- Human: install APK, clear junk tabs if needed, Sync now — confirm row 1 has Sync ID + data below
