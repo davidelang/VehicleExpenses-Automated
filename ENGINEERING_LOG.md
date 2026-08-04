@@ -7139,3 +7139,9 @@ x
 
 ## 2026-08-04 - Merge email-connection into master
 - Non-FF merge 61ded60d; build_app SUCCESS; builds tag updated; specials reconciled; armv7 deferred
+
+## 2026-08-04 - remotetable-contract-strategy foundation — execution start
+
+- Approved plan: dev-ai-interaction/plans/remotetable-contract-strategy-and-foundation-20260804-2024-plan.md
+- Library-first: materialize, CONTRACT, L0 rate limits + Sheets efficiency, L1/L2 many-ops, pin + thin VE adapter, optional directional push MVP
+- Phase 6 device deferred

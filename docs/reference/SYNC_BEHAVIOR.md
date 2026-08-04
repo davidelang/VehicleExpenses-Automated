@@ -45,9 +45,10 @@ Vehicle reference images, fuel dash/pump photos, and expense receipts sync **bin
 ## Multi-destination Sheets quotas
 
 - Google Sheets enforces separate ~**60 requests/minute/user** caps for **reads** and **writes**.
-- All `GoogleSheetsClient` `.execute()` paths go through **`SyncRateLimit.withSheetsApiLimit`**: ~1.3 s pace between calls; on 429/quota wait **60–120 s** (then longer) and retry the **same** call (up to 8 attempts). Progress: `Rate limited — waiting Ns (try k/n)…`.
+- **Production spreadsheet I/O** for Google Sheets goes through **remotetable** (`GoogleSheetsTabularBackend` → AAR). Sheets HTTP **pace (~1.3 s / ~45/min), 429 backoff/retry, `values.batchGet`, range update/append/clear** are implemented **inside the library** (see remotetable `spec/CONTRACT.md`). UI progress still uses `SyncRateLimit.installProgress` / `notifyProgress`.
+- Legacy in-app `GoogleSheetsClient` (browse/create and residual helpers) still wraps `.execute()` with **`SyncRateLimit.withSheetsApiLimit`** (same numbers). App multi-dest cooldowns remain app-level.
 - Multi-dest runs are **sequential** with inter-dest pacing + read cooldown; one process-wide mutex.
-- LWW **compare** prefetch uses **`values.batchGet`** (`batchReadTabs`) for existing Vehicles/Expenses/Merge acks/Fuel tabs so Pass 1 does not issue one GET per tab.
+- LWW **compare** prefetch uses remotetable **`readMany`** → Sheets **`values.batchGet`** (`batchReadTabs`) for existing Vehicles/Expenses/Merge acks/Fuel tabs so Pass 1 does not issue one GET per tab.
 
 ## Upgrade backfill
 

@@ -2,11 +2,11 @@
 
 | | |
 |--|--|
-| **Upstream** | `davidelang/remotetable` @ `65366fc917a5abcc8efc74014be4d524226ffbb3` (`master`) |
+| **Upstream** | `davidelang/remotetable` @ `37c61a984ff37ea9a463aca5bbb0b5616fb54d61` (`master`) |
 | **Profile** | Co-dev library + consumer pin (RO builds supported) |
 | **build_time** | `minutes` |
 | **reproducible** | `true` (same pin + AGP/Kotlin/JDK; verified bit-identical host rebuild) |
-| **Product** | `artifact/remotetable.aar` (~95KB, pure Kotlin library) |
+| **Product** | `artifact/remotetable.aar` (~148KB, pure Kotlin library) |
 
 ## Reproduce (RO)
 

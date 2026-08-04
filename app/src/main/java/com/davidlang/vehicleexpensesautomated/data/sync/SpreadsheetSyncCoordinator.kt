@@ -378,9 +378,11 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     }
 
     /**
-     * Sync one destination once. Rate limits are handled **per Sheets API call**
-     * (reads and writes) in [GoogleSheetsClient] / [SyncRateLimit.withSheetsApiLimit]
-     * — no whole-dest restart that re-merges completed tabs.
+     * Sync one destination once. Google Sheets HTTP pace / 429 retry live in
+     * **remotetable** L0 ([com.davidelang.remotetable.GoogleSheetsBackend]);
+     * [SyncRateLimit] still supplies multi-dest cooldowns and UI progress bridge.
+     * Legacy [GoogleSheetsClient] paths (browse/create) retain [SyncRateLimit.withSheetsApiLimit].
+     * No whole-dest restart that re-merges completed tabs.
      */
     private suspend fun syncSingleDestination(
         dest: SpreadsheetDestination,

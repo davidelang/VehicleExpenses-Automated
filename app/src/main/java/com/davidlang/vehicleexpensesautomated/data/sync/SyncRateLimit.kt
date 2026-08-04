@@ -73,6 +73,12 @@ object SyncRateLimit {
         }
     }
 
+    /**
+     * Forward status from remotetable (or other L0) rate-limit waits to the
+     * listener installed via [installProgress] during spreadsheet sync.
+     */
+    fun notifyProgress(message: String) = notifyStatus(message)
+
     fun isRateLimitError(throwable: Throwable): Boolean {
         var t: Throwable? = throwable
         while (t != null) {
