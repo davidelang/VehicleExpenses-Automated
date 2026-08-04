@@ -4,99 +4,80 @@
 |--|--|
 | **Fork** | `https://github.com/davidelang/Paddle-Lite.git` |
 | **Pin SHA** | `c6a9b9ada00e3b37aa80c21407e7d8e240595ebb` = tip of **`pr-x86-android-mobile-gap`** |
-| **Stack** | `pr-upstream-cleanup` ⊂ `pr-x86-android-mobile-gap` (validated). INT8 runtime/opt layer is **not** fully stacked as a third git branch — see below. |
-| **build_time** | `few_hours` (Docker image once + per-ABI Android build; historical runs `few_hours`–`tens_of_hours` with restarts) |
+| **Stack** | pin SHA + **full historical patches/** + **patches-int8/** (see build recipe below) |
+| **build_time** | `few_hours` (Docker image once + per-ABI Android build) |
 | **reproducible** | `false` (NDK, Docker base, third-party tarball, timestamps) |
-| **Products** | `artifact/jni/{arm64-v8a,armeabi-v7a,x86_64}/libpaddle_*.so`, optional `PaddlePredictor.jar` |
-| **Strip** | Host `llvm-strip --strip-debug` only (not `--strip-unneeded` — breaks NDK r28 `lld` when app links JNI) |
+| **Products** | `artifact/jni/{arm64-v8a,x86_64}/libpaddle_*.so`, optional `PaddlePredictor.jar` |
+| **Strip** | Host `llvm-strip --strip-unneeded` (historical Jul-2026 recipe; NDK28 link gate in `./build`) |
 
 **Authoritative process doc:** `docs/reference/PADDLE_PIN_BUILDS.md`  
-**Upstream PR stack / bodies / restack notes (durable):** `third_party/paddle/docs/upstream/`  
-**Locked intent specs (do not edit lightly):** `docs/specs/PADDLE_BUILD.md`, `HOST_PADDLE_USE.md`, `PADDLE_PR_DESCRIPTIONS.md`
+**Is-vs-should report (post-merge cleanup):** `dev-ai-interaction/scratch/paddle-pin-is-vs-should-20260804.md`
 
 ---
 
-## Reproduce (library binaries)
+## Reproduce (library binaries) — historical recipe under third_party
+
+Build runs in Docker (NDK r20b), sources from **`third_party/paddle/src`**, products to **`src/bin/<abi>/`**.
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-# Docker + network for image + third-party tarball
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64   # host; container uses JDK8
 ./third_party/fetch-deps ro paddle
-./third_party/fetch-deps build paddle
-# After success, copy into app when promoting:
+# optional: skip image rebuild if ve-paddle-int8 or paddle-build-int8-20.04 exists
+export PADDLE_SKIP_IMAGE_BUILD=1
+export PADDLE_DOCKER_IMAGE=paddle-build-int8-20.04   # or ve-paddle-int8
+export PADDLE_ABIS="arm64-v8a x86_64"
+# arm64 defaults to tailor if third_party/paddle/tailor_models/armv8 exists
+export PADDLE_ARM64_PROFILE=tailor   # or slim
+export PADDLE_X86_PROFILE=slim
+./third_party/paddle/build
+./third_party/get-artifacts paddle
+# promote into app:
 #   artifact/jni/* → app/src/main/jniLibs/*
 #   artifact/PaddlePredictor.jar → app/libs/
 ```
 
-Env knobs: `PADDLE_ABIS`, `PADDLE_SKIP_IMAGE_BUILD=1`, `PADDLE_DOCKER_IMAGE`.
+### What `./build` does (matches Jul-2026 working path)
+
+1. Copy pin `src` into container workdir  
+2. **`patches/`** full-file apply (`scripts/apply_patches.sh`) — build-system + external glog/gflags/openblas + code  
+3. **`patches-int8/`** apply (`scripts/apply_int8_patches.sh`)  
+4. **x86:** `patch_x86_thin_jni.py` → thin jni + light  
+5. **arm64 tailor:** `--with_strip=ON --opt_model_dir=tailor_models/armv8` when profile=tailor  
+6. `build_android.sh` with `--android_stl=c++_static`, `--with_arm82_fp16=ON` on armv8  
+7. Host **`llvm-strip --strip-unneeded`**  
+8. **NDK28 link gate** (minimal shared link against each `.so`)  
+
+Env: `PADDLE_ABIS`, `PADDLE_SKIP_IMAGE_BUILD`, `PADDLE_DOCKER_IMAGE`, `PADDLE_ARM64_PROFILE`, `PADDLE_X86_PROFILE`.
+
+**Deprecated:** `scripts/run-android-slim.sh` (int8-only + strip-debug) — kept for reference; do not use for product.
 
 ---
 
-## Git branch stack (validated 2026-08-03)
+## Git branch stack
 
 | Branch | Tip (short) | Role |
 |--------|-------------|------|
-| `pr-upstream-cleanup` | `2ca96249` | Foundational build/robustness (AVX-512 CRF, INT8 link, CMake, packaging) |
-| `pr-x86-android-mobile-gap` | `c6a9b9ad` | **Includes cleanup** + Android x86_64 “mobile gap” + OpenBLAS strip |
-| `pr-calib-safe-uint8-dequant` | `d718308c` | ARM int8/uint8 calib dequant overread fix — **based on `develop`, not on x86-gap** |
+| `pr-upstream-cleanup` | `2ca96249` | Foundational build/robustness |
+| `pr-x86-android-mobile-gap` | `c6a9b9ad` | **libpin git_sha** + x86 mobile gap |
+| Full-file `patches/` | (vendored under `third_party/paddle/patches/`) | Jul historical overlay — required for link-clean arm64 c++_static products |
+| `patches-int8/` | file copies | INT8/uint8 calib + analytic quant |
 
-```text
-develop ──┬── pr-upstream-cleanup ── pr-x86-android-mobile-gap   ← libpin git_sha
-          └── pr-calib-safe-uint8-dequant   (single commit; not git-stacked on x86-gap)
-```
-
-**VE production needs both:**
-
-1. Pin checkout = **x86-gap tip** (mobile + cleanup).  
-2. **INT8 layer** = `patches-int8/` file copies (`apply_int8_patches.sh`) — includes analytic quant pass, keep_quantized_weights, calib kernels, JNI MobileConfig, **and** content aligned with the calib PR; plus post-build `patchelf` soname helper.
-
-Ideal future cleanup: rebase/cherry-pick `pr-calib-safe-uint8-dequant` onto `pr-x86-android-mobile-gap` and fold remaining `patches-int8` into a fourth PR; until then **pin SHA + patches-int8** is the contract.
-
-Historical sandbox still has full-file `patches/` applied onto `release/v2.14` inside Docker (`dev-ai-interaction/paddle-build/`). Libpin prefers **git pin + int8 layer** instead of re-applying the entire PR tree as copies.
+Ideal later: fold remaining patch deltas into git PRs so full-file copies shrink (see is-vs-should report).
 
 ---
 
-## What the app ships today
+## What the app should ship (historical working shape)
 
-| Asset | Location |
-|-------|----------|
-| JNI | `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/libpaddle_lite_jni.so` (+ `libpaddle_light_api_shared.so` on x86_64) |
-| Java | `app/libs/PaddlePredictor.jar` |
-| Models | `app/src/main/assets/paddle/prod_u8fp16/*.nb` (+ `en_dict.txt`) |
+| ABI | Product | Approx size |
+|-----|---------|-------------|
+| arm64-v8a | model-tailored `libpaddle_lite_jni.so` | ~1.6 MB |
+| x86_64 | thin `libpaddle_lite_jni.so` + `libpaddle_light_api_shared.so` | ~0.75 MB + ~10 MB |
+| armeabi-v7a | **not** in default `PADDLE_ABIS` | deferred |
 
-Models are **not** produced by `./third_party/paddle/build` — separate **host `opt`** pipeline (below).
+Models: `app/src/main/assets/paddle/prod_u8fp16/*.nb` (host `opt`, not this build).
 
 ---
 
 ## Model artifact matrix (separate from lib build)
 
-Pipeline lives under `app/src/main/assets/paddle/scripts/` + host `opt` from an INT8-capable build:
-
-| Stage | Script / tool | Output idea |
-|-------|----------------|-------------|
-| FP32 3ch / mono graphs | `convert_mono.py`, training export | `inference.pdmodel` + params |
-| FP32 `.nb` | `optimize_models.sh` + host `opt` | det/rec ARGB + mono, armv7 + x86_64, dynamic shapes |
-| INT8 mono `.nb` | `optimize_mono_int8_models.sh` + `opt` with quant flags | `*_int8_*.nb` with analytic input quant |
-| Prod ship | copy into `prod_u8fp16/` | u8 input + fp16 path as used by app |
-
-Channel axis: **mono = 1**, **ARGB path = 3**. Runtime uint8→int8 contract: `q = b ^ 128` (see `HOST_PADDLE_USE.md`).
-
-Dynamic shape env for `opt`: `NNADAPTER_DYNAMIC_SHAPE_INFO` (tables in that spec).
-
----
-
-## Docker / time
-
-| Step | Typical time |
-|------|----------------|
-| Docker image `ve-paddle-int8` (first) | tens of minutes |
-| Each Android ABI slim build | ~tens of minutes–hours |
-| Full matrix + models + restarts | historically **hours–low tens of hours** |
-
-Failures usually: NDK/toolchain, missing third-party tarball, kernel string check fail, disk.
-
----
-
-## Sandbox (historical)
-
-`dev-ai-interaction/paddle-build/` — Dockerfile, `patches/`, `patches-int8/`, slim/tailored scripts, `output/`. Superseded as **SoT** by this pin; keep as research cache until deleted intentionally.
+See `docs/reference/PADDLE_PIN_BUILDS.md`. Tailor lists for arm64 live in `third_party/paddle/tailor_models/armv8/`.

@@ -4566,3 +4566,37 @@ x
 - Keep fat interim armv7 until pin armv7 plan; arm64 tailored; x86 pin slim for 5554.
 
 
+
+## 2026-08-03 - Pin device First 10 (start-107) both devices PASS
+
+- Pulled reports → `dev-ai-interaction/scratch/pin-device-test-20260803/` (emu5554 + pixel6pro); MD5 match device.
+- APK: email-connection-start-107-g00a1c331. Baseline: libpin-5554-first10-20260803-1524 (start-100).
+- EMU vs baseline: PASS — alignment winners/angles 10/10; pump Set G-- & Set I cost/vol 10/10. Residual float/hist/timing only.
+- Pixel: smoke PASS — winners 10/10 same as EMU; cost/vol ABI diffs (armv8) documented; no degraded/errors.
+- Full write-up: scratch/pin-device-test-20260803/REPORT.md.
+
+
+## 2026-08-03 - Note: EMU vs Pixel First 10 not bit-identical
+
+- Same APK start-107: emulator-5554 and Pixel 6 Pro produce slightly different First 10 results (deskew angles on some photos, ML Kit box counts, several pump cost/vol).
+- Alignment winners still 10/10 same; no degraded/errors. Primary gate remains EMU vs same-device baseline (PASS). Pixel is arm64 smoke only.
+- Documented in scratch/pin-device-test-20260803/REPORT.md.
+
+
+## 2026-08-03 - Pixel prior (Jul27) vs First10 start-107
+
+- Prior on device: align n=160 / pump n=167 `batch_load-start-53-g1ba4c0d2` (2026-07-27).
+- Same First10 filenames: winners+angles 10/10 MATCH; Set G-- & Set I cost/vol 10/10 MATCH (extra D/E/G/G- only on prior).
+- Slim subsets: scratch/pin-device-test-20260803/pixel6pro-prior-20260727/.
+- Merge readiness: NOT ready — see chat (history not cleaned, hybrid/interim jni, dirty tree, pin sha drift).
+
+
+## 2026-08-04 - Restore historical paddle build under third_party/paddle
+
+- Ported Jul working recipe into third_party/paddle: patches/ (full), apply_patches.sh, run-android-historical.sh, patch_x86_thin_jni, tailor_models/armv8.
+- ./third_party/paddle/build: Docker NDK r20, strip-unneeded, NDK28 link gate. Default ABIs arm64+x86_64.
+- Rebuilt: arm64 tailor jni ~1.65MB LINK_OK; x86 thin jni ~31KB + light ~9.9MB LINK_OK (all four SOs).
+- get-artifacts + libpin.toml SHAs updated; jniLibs wired; abiFilters drop armv7.
+- Is-vs-should report: dev-ai-interaction/scratch/paddle-pin-is-vs-should-20260804.md (follow-up after merge).
+- Deprecated run-android-slim.sh (int8-only + strip-debug path).
+

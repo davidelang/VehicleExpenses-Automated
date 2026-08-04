@@ -2,7 +2,7 @@ name = "paddle"
 git_ssh = "git@github.com:davidelang/Paddle-Lite.git"
 git_https = "https://github.com/davidelang/Paddle-Lite.git"
 # Pin tip = pr-x86-android-mobile-gap (includes pr-upstream-cleanup stack).
-# INT8 calib + analytic quant layer: third_party/paddle/patches-int8/ (see SOURCE.md).
+# Full historical patches/ + patches-int8/ applied in Docker (see SOURCE.md).
 git_sha = "c6a9b9ada00e3b37aa80c21407e7d8e240595ebb"
 git_describe = "v2.0.0-beta1-prerel-4122-gc6a9b9ad"
 track_branch = "pr-x86-android-mobile-gap"
@@ -10,26 +10,30 @@ reproducible = false
 build_time = "few_hours"
 requires_writable_src = false
 build = ["./build"]
-consumer_note = "Paddle-Lite Android JNI (slim): arm64+x86_64 (+ optional armv7). Docker+NDK. INT8 layer via patches-int8 after pin checkout. Models (nb) built separately with host opt — see docs/reference/PADDLE_PIN_BUILDS.md. Strip: llvm-strip --strip-debug only (not --strip-unneeded)."
+consumer_note = "Historical Jul-2026 Docker recipe under third_party/paddle: full patches/ + patches-int8, arm64 LITE_BUILD_TAILOR (~1.6MB jni), x86 thin jni+light. Strip: llvm-strip --strip-unneeded. Default ABIs arm64-v8a+x86_64. See SOURCE.md and scratch/paddle-pin-is-vs-should-20260804.md."
 
-# Pin slim build (pr-x86 + patches-int8 + x86 OpenBLAS overlay); strip-debug (linkable with NDK28 lld).
-# armv7 pin artifact optional until armv7 plan lands — see dev-ai-interaction/plans/paddle-armv7-fp16-and-functional-calib-20260803-plan.md
+# 2026-08-04 historical rebuild (arm64 tailor + x86 slim thin)
 [[artifact]]
 path = "artifact/jni/arm64-v8a/libpaddle_lite_jni.so"
 from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
-sha256 = "bc65e560de28c639291e8f30cc943031e8e137a8f8768f136594f7d1d733d4ff"
+sha256 = "0334a8c864b491052f47870900537408db3508d9e909438998c7d79afb0c762a"
+
+[[artifact]]
+path = "artifact/jni/arm64-v8a/libpaddle_light_api_shared.so"
+from = "src/bin/arm64-v8a/libpaddle_light_api_shared.so"
+sha256 = "96fbc6a55468d7042d57f427b21aa2427af58ecbad20dadf4c7df921ac03f8d7"
 
 [[artifact]]
 path = "artifact/jni/x86_64/libpaddle_lite_jni.so"
 from = "src/bin/x86_64/libpaddle_lite_jni.so"
-sha256 = "e6c5251d2cd7927009c7d11c4d8f0c8fbb0a4d7abd12291cd25a7500587c552b"
+sha256 = "09b58ad0368274fc4d4429cfbf78432b9b42e30b917e2293c0a00a492870982e"
 
 [[artifact]]
 path = "artifact/jni/x86_64/libpaddle_light_api_shared.so"
 from = "src/bin/x86_64/libpaddle_light_api_shared.so"
-sha256 = "621b9e8940a5f97897e73b74a518b4c2cc643966db3949a7e7d56c3bbd88c5cf"
+sha256 = "ebff745447ab9262100b126582274a5062cf6af97ed49df70b1bcf9034655388"
 
 [[artifact]]
 path = "artifact/PaddlePredictor.jar"
 from = "src/bin/PaddlePredictor.jar"
-sha256 = "630c768fafaa1627f6b51bcff5a44d7120b5326a1df6dc8b9645136056825439"
+sha256 = "8b71ac436ad1607c78088123f45a4f46c7416be205c0f4e544d68fadb19dfe6d"

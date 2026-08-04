@@ -34,11 +34,12 @@ android {
         externalNativeBuild {
             cmake {
                 arguments += "-DANDROID_STL=c++_shared"
-                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+                // armv7 deferred — historical pin product is arm64 + x86_64 only
+                abiFilters += listOf("arm64-v8a", "x86_64")
             }
         }
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
     buildTypes {
