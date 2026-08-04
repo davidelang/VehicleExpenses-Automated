@@ -4615,3 +4615,10 @@ x
 - paddle/opencv libpin.toml: independent [[artifact]] rows for artifact/ and app jniLibs (and jar).
 - ./third_party/get-artifacts paddle opencv verified.
 
+
+## 2026-08-04 - libpin promote + 5554 First 10 (start-111)
+
+- get-artifacts: app/ paths, sha256, no default landlock; paddle/opencv toml dual artifact+jniLibs rows.
+- Built/deployed email-connection-start-111-g1f95c129 to emulator-5554.
+- First 10 align+pump: PASS vs baseline and vs b8449343 (10/10). Reports: scratch/pin-device-test-20260804-libpin-promote/emu5554/
+
