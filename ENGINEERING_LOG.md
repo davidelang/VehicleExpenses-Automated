@@ -7136,3 +7136,6 @@ x
 - get-artifacts: app/ paths, sha256, no default landlock; paddle/opencv toml dual artifact+jniLibs rows.
 - Built/deployed email-connection-start-111-g1f95c129 to emulator-5554.
 - First 10 align+pump: PASS vs baseline and vs b8449343 (10/10). Reports: scratch/pin-device-test-20260804-libpin-promote/emu5554/
+
+## 2026-08-04 - Merge email-connection into master
+- Non-FF merge 61ded60d; build_app SUCCESS; builds tag updated; specials reconciled; armv7 deferred
