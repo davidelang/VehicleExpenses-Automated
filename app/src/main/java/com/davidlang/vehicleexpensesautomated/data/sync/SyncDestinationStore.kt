@@ -292,7 +292,7 @@ class SyncDestinationStore(private val appContext: Context) {
             return when (dest.provider) {
                 SpreadsheetProvider.GOOGLE_SHEETS ->
                     dest.targetId.isNotBlank() || dest.targetUrl.isNotBlank()
-                SpreadsheetProvider.EXCEL ->
+                SpreadsheetProvider.EXCEL_GRAPH ->
                     dest.targetId.isNotBlank() || dest.configJson.isNotBlank()
                 SpreadsheetProvider.ETHERCALC ->
                     dest.configJson.isNotBlank() || dest.targetUrl.isNotBlank()

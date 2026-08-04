@@ -4,7 +4,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Baserow via remotetable AAR. */
 @Singleton
-class BaserowTabularBackend @Inject constructor(
-    client: BaserowClient,
-) : RowDbTabularBackend(client, SpreadsheetProvider.BASEROW, "baserow")
+class BaserowTabularBackend @Inject constructor() :
+    RemoteTableRowDbTabularBackend(SpreadsheetProvider.BASEROW, "baserow")

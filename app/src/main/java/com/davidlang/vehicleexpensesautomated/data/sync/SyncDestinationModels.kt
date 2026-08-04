@@ -13,7 +13,8 @@ enum class SyncDestinationScope {
 
 enum class SpreadsheetProvider(val jsonValue: String) {
     GOOGLE_SHEETS("google_sheets"),
-    EXCEL("excel"),
+    /** Microsoft Graph Excel Online (capability id excel-graph; legacy wire value was "excel"). */
+    EXCEL_GRAPH("excel-graph"),
     ETHERCALC("ethercalc"),
     BASEROW("baserow"),
     NOCODB("nocodb"),
@@ -28,13 +29,15 @@ enum class SpreadsheetProvider(val jsonValue: String) {
     OTHER("other");
 
     companion object {
-        fun fromJson(value: String): SpreadsheetProvider =
-            entries.find { it.jsonValue == value } ?: GOOGLE_SHEETS
+        fun fromJson(value: String): SpreadsheetProvider = when (value) {
+            "excel" -> EXCEL_GRAPH // legacy pin/UI wire
+            else -> entries.find { it.jsonValue == value } ?: GOOGLE_SHEETS
+        }
     }
 
     fun displayLabel(): String = when (this) {
         GOOGLE_SHEETS -> "Google Sheets"
-        EXCEL -> "Excel"
+        EXCEL_GRAPH -> "Excel (Graph)"
         ETHERCALC -> "EtherCalc"
         BASEROW -> "Baserow"
         NOCODB -> "NocoDB"
