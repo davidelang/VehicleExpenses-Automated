@@ -7153,3 +7153,13 @@ x
 - VE pin + AAR promoted; GoogleSheetsTabularBackend thin (readMany/updateRangeRows); SyncRateLimit.notifyProgress; SYNC_BEHAVIOR docs
 - ./build_app OK; tag fix-syncing/builds → 7dfe1523
 - Phase 6 device (5554) deferred by plan
+
+## 2026-08-04 - remotetable-gaps-hygiene-and-cli-test — execution start
+
+- Approved plan: dev-ai-interaction/plans/remotetable-gaps-hygiene-and-cli-test-20260804-2119-plan.md
+- Phases: VE docs hygiene; appendRows no double-read; rate-limit all HTTP backends; type coerce; CLI/harness test surface; pin promote + build_app
+
+## 2026-08-04 - remotetable-gaps-hygiene-and-cli-test — pre-build
+
+- Library 17cf482: all HTTP backends RateLimiter; CellTypes+PolicySync coerce; appendDataRows; CLI conformance/push; harness PASS
+- VE: project-facts+API hygiene; GoogleSheetsTabularBackend.appendRows→appendDataRows; pin+AAR promote

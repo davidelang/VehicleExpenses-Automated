@@ -1,8 +1,8 @@
 name = "remotetable"
 git_ssh = "git@github.com:davidelang/remotetable.git"
 git_https = "https://github.com/davidelang/remotetable.git"
-git_sha = "37c61a984ff37ea9a463aca5bbb0b5616fb54d61"
-git_describe = "37c61a9"
+git_sha = "17cf482f72718a377914d7d03731626256623525"
+git_describe = "17cf482"
 track_branch = "master"
 # Same pin + AGP 8.5.2 + Kotlin 1.9.24 + JDK 17: verified bit-identical AAR on host rebuild (clean android/**/build).
 reproducible = true
@@ -14,4 +14,4 @@ consumer_note = "Kotlin AAR (tabular backends). RO pin: unlock only android/.gra
 [[artifact]]
 path = "artifact/remotetable.aar"
 from = "src/android/remotetable/build/outputs/aar/remotetable-release.aar"
-sha256 = "dcec1cc2976631a0c7e7f596e01e06f719797e6663d8a147cce0cf15f5e055ed"
+sha256 = "03eaa979a3598831981d31677371958f2bf2b5938d94494b880971e975063725"

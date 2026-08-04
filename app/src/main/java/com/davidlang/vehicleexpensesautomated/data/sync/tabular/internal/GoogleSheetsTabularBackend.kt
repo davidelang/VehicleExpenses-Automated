@@ -135,13 +135,9 @@ class GoogleSheetsTabularBackend @Inject constructor(
     ) {
         if (rows.isEmpty()) return
         withContext(Dispatchers.IO) {
-            val rt = table(dest, accountHint)
-            val existing = rt.readRows(tabName)
-            val headers = existing.headers.ifEmpty {
-                List(rows.maxOfOrNull { it.size } ?: 0) { "Col$it" }
-            }
-            // Library append uses values:append (no full-tab rewrite).
-            rt.writeRows(tabName, headers, rows, mode = "append")
+            // No adapter pre-read for headers: remotetable appendDataRows → values:append.
+            // Coordinator/ensureHeaders is expected before append when the tab is new.
+            table(dest, accountHint).appendDataRows(tabName, rows)
         }
     }
 
