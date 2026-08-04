@@ -4,19 +4,42 @@
 
 sandbox_path=@@SANDBOX_PATH@@
 planning_user=@@PLANNING_USER@@
-coder_user=@@CODE_GROUP@@r
+coder_user=@@CODER_USER@@
 orchestrator_user=@@ORCHESTRATOR_USER@@
 code_group=@@CODE_GROUP@@
 sandbox_group=@@SANDBOX_GROUP@@
 shared_group=@@SHARED_GROUP@@
 
-# Example paths (will be @@ substituted in scripts)
+# Example paths (will be @@ substituted in scripts via manage-configs filter)
+# Bin paths may use $HOME/… (expanded at runtime by launchers).
 grok_bin_default=@@GROK_BIN_DEFAULT@@
-gemini_bin_default=$HOME/git/gemini/bin/gemini
+antigravity_bin=@@ANTIGRAVITY_BIN@@
+gemini_bin_default=@@GEMINI_BIN_DEFAULT@@
 primary_user=@@PRIMARY_USER@@
 
+# Absolute directory holding first-party / pin host clones (remotetable, extractmail, …).
+# MUST be absolute on this machine (e.g. /home/you/git), NOT ~/git:
+#   - @@CODER_USER@@ / @@PLANNING_USER@@ have different $HOME; ~/git is not shared.
+#   - Landlock and open() need a concrete path.
+# Checked-in templates use @@GIT_HOME@@; local project.config has the real path.
+# landlock.config (tracked) is smudged from the same git_home= / sandbox_path=.
+git_home=@@GIT_HOME@@
+
 # Special sandbox paths (for setup-project to create)
-sandbox_special_paths=plans,historical-plans,implementation-failure-logs
+sandbox_special_paths=plans,historical-plans,implementation-failure-logs,PRs,research
+
+# Prefer sandbox_dir for launchers/generate_pr (generic hosts).
+# VehicleExpenses default: @@SANDBOX_PATH@@
+# Library hosts default: sandbox
+# Legacy alias still accepted: sandbox_path
+# sandbox_dir=@@SANDBOX_PATH@@
+# sandbox_dir=sandbox
+
+# Optional build gate for master-merge on non-Android hosts:
+# build_command=./build
+
+# landlock.config is smudged separately (landlock.config.example); it may
+# reference @@GIT_HOME@@ for host .git allow paths.
 
 # Users/groups creation (for reference in setup-project, emitted only)
 # groupadd @@CODE_GROUP@@

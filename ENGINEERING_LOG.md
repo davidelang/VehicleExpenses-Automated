@@ -970,6 +970,415 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - build_app OK → master commit 194123c7; builds tag updated
 - No works tag. Cleanup: ./remove_worktree.sh simplify_experiments from repo root when ready
 
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726
+
+- Execution start for approved plan: reports-field-conditional-economy-chains-20260726-plan.md
+- Branch: batch_load; no prior batch_load/builds tag (first successful ./build_app will create it)
+- Scope: ReportsScreen.kt field-conditional MPG/$/mi chains + REPORTS_METRICS.md; phase 5 emulator probe after user deploy
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726 phases 1-4 done
+
+- Phases 1-4 implemented and built on batch_load
+- ReportsScreen.kt: full fill = odo+cost+vol+!partial; MPG breakers; $/mi segment sum
+- docs/reference/REPORTS_METRICS.md rewritten to match
+- Tag: batch_load/builds @ 3d29b986 (batch_load-start-4-g3d29b986)
+- Phase 5 blocked on user APK deploy to emulator-5554 (device currently has versionName=instruction-start-8-g7d8aa877, not batch_load build)
+
+## 2026-07-26 - reports-field-conditional-economy-chains phase 5 probe PASS
+
+- Backup: test-data-backups/emulator-5554-20260726-095208
+- App on emulator-5554: batch_load-start-5-ge76bbc73
+- Probe cases odo_only / blank / cost_only / volume_only on Honda between full fills 2→3
+- UI Honda: baseline last 15.8 avg 17.0 $/mi 0.259; odo_only same; blank avg 15.8 $/mi 0.260; cost_only avg 15.8 $/mi 0.276; volume_only avg 14.5 $/mi 0.260
+- Evidence: dev-ai-interaction/research/reports-chain-probe-20260726/
+- DB restored from pre-probe backup; no leftover PROBE rows
+
+## 2026-07-26 - reports-field-conditional-economy-chains PR prepared
+
+- Pre-submit review PASS vs plan; device probe PASS; DB restored
+- Local PR: dev-ai-interaction/PRs/PR-batch_load.md
+- Tag: batch_load/builds @ 1de13e02; backup-batch_load set
+- Ready for Master independent review + merge
+
+## 2026-07-26 - batch-load-ingest-merge-questions-20260726
+
+- Execution start: Stage A (batch ingest) per approved plan batch-load-ingest-merge-questions-20260726-plan.md
+- Baseline tag: batch_load/builds @ a02dc9bc; Stages B–C deferred to later turn if A fills the turn
+
+## 2026-07-26 - batch-load Stage A complete (ingest)
+
+- Plan: batch-load-ingest-merge-questions-20260726-plan.md Stage A only
+- Added: PhotoExifMeta, FuelPhotoJson, BatchImportPending, BatchFuelImportCoordinator, hardDeleteFuelEntry
+- Set I hybrid in PumpCostVolUtils.runSetICostVolExtraction + OcrHarness.runPumpCostVolPipelineSetI
+- Import Old Pictures UI: Run batch import / Cancel / Review questions (list-only)
+- Hilt ViewModel in ui.batch (not ui.import — Java keyword breaks KSP)
+- Builds tag: batch_load/builds @ 6efd2743
+- Stages B (merge) and C (apply answers) remain on same plan path — not in this turn
+
+## 2026-07-26 - batch-dash-match-experiment-set-j-20260726
+
+- Execution start: unify Set J (experiment + batch + Quick Fill) per plan
+- Baseline: batch_load/builds @ 99d1043c
+
+## 2026-07-26 - batch-setj approach: copy experiment logic into production
+
+- User direction: do NOT extract shared dual-call API; copy experiment Set J into production
+- Experiment remains free to tinker (future compile-out); production batch/Quick Fill own a frozen copy
+- Continue plan batch-dash-match-experiment-set-j-20260726-plan.md with this approach
+
+## 2026-07-26 - batch-dash-match-experiment-set-j production copy done
+
+- OcrHarness.runSetJPipeline rewritten as independent copy of experiment Set J (Raw+Bin-Trials+connectSegmentsH+pickBestOdometer)
+- ExperimentAlignmentScreen NOT shared — free to tinker
+- Batch parseSetJOdometer: 4-7 pure digits only (no concat soup)
+- Tag: batch_load/builds @ 38186950
+- Device parity CSV pending user deploy + re-import after purging old batch dash rows
+- Notes: dev-ai-interaction/research/batch-setj-parity-20260726/NOTES.md
+
+## 2026-07-26 - production-setj-ref-geometry-parity-20260726
+
+- Execution start: fix production Set J ref geometry (probe/4080, ICRS crop, Raw nestFilter)
+- Baseline: batch_load/builds @ d51f30d9
+
+## 2026-07-26 - production-setj-ref-geometry-parity done
+
+- Probed ref dims for landmarks+align; fallback 4080×3072
+- ICRS Float createCrop for odo window; Raw no nestFilter
+- Experiment screen untouched (independent copy)
+- Tag: batch_load/builds @ de113410
+- Device compare pending user deploy; notes in research/setj-geometry-parity-20260726/
+
+## 2026-07-26 - batch import limited button (first 20+20)
+
+- Import UI: OutlinedButton "First 20 dash + first 20 pump" (name-sorted take)
+- BatchFuelImportCoordinator.runIngest(maxDash, maxPump); LIMITED_IMPORT_COUNT=20
+
+## 2026-07-26 - batch pump ingest without vehicle
+
+- processPump always runs Set I; inserts with UNASSIGNED_VEHICLE_ID=0
+- No ASSIGN_VEHICLE gate; merge later assigns vehicle via time/location pairing
+- Unreadable pumps still pending only
+
+## 2026-07-26 - batch-setj-reverify-and-pending-answers-20260726
+
+- Execution start; device versionName=batch_load-start-21-gf43bb991 (geometry + unassigned pump)
+- Part A first-20 re-verify then Part B clickable pending answers
+
+## 2026-07-26 - batch-setj-reverify + pending answers
+
+- Part A first-20 re-verify on f43bb991: 17 dash inserts + 20 pump vehicleId=0
+- first20 score: see research/batch-setj-parity-20260726/first20-after-geometry.txt (gate FAIL — residual leading-digit/blank DIFFs)
+- Part B: clickable pending UI + forcedVehicleId dash reprocess + skip/retry pump (build 06707a0a)
+- Experiment untouched; deploy needed for Part B on device
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti
+
+- Execution start: batch must run experiment Set J / Set I pipelines, not OcrHarness reinvented front-end
+- Baseline tag: batch_load/builds @ c112e80e
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti done (code)
+
+- AlignmentSetJRunner: experiment Set A ID lock + Set J runPaddleValleyIterative for batch dash
+- PumpSetIRunner: experiment-equivalent Set I for batch pump
+- BatchFuelImportCoordinator no longer uses runAutoFillPipeline / runPumpCostVolPipelineSetI
+- Tag: batch_load/builds @ 7653d156
+- Device parity first-20 still needs deploy of this APK + re-run (prior c112e80e re-verify failed)
+
+## 2026-07-27 - Batch Stage A full-run parity PASS; Stage B plan ready
+
+- Full batch finished (~02:35 PDT); app idle after last pump `PXL_20260411_201506380.jpg`.
+- Selective purge: deleted 74 old `batch_import%` rows (`updatedAt < 1785142500000`); kept 12 non-batch + 290 this-run (ids 219–508); pending cleaned to 6 this-run items.
+- Parity vs experiment: dash Set J 142 OK / 0 DIFF (4 no-vehicle pending); pump Set I 148 OK / 0 DIFF (2 unreadable both sides). Report: `dev-ai-interaction/research/batch-run-parity-20260727/`.
+- Next coder plan: `dev-ai-interaction/plans/batch-stage-b-merge-engine-coder-20260727-plan.md` (merge engine + Run merge). Durable B+C: `batch-stage-b-merge-and-stage-c-questions-20260727-plan.md`.
+
+## 2026-07-27 - batch-stage-b-merge-engine
+
+- Execution start: Stage B merge engine per batch-stage-b-merge-engine-coder-20260727-plan.md
+- Stage A parity PASS; baseline tag 83e36ca0
+
+## 2026-07-27 - batch-stage-b-merge-engine B1–B4 code
+
+- B1: FuelPhotoJson.unionPhotos / addPumpPhoto / addDashPhoto
+- B2: FuelRowMergeEngine.planMerge (vehicle clusters ±45m, vehicleId=0 pump pair, sequence vs re-shot, CONFLICT_ODO + photo paths, hard-delete list)
+- B3: BatchFuelImportCoordinator.applyMerge + Import **Run merge** button
+- B4: Merge after import checkbox default **off**
+- Fixtures notes: dev-ai-interaction/research/batch-stage-b-merge-fixtures-20260727.md
+- Tag: batch_load/builds @ 13d7c06b
+- Device Run merge still to verify after deploy
+
+## 2026-07-27 - batch-stage-b-merge-engine device Run merge
+
+- Deploy: adb install -r (./deploy re-exec loop as ai-coder; used direct install)
+- Pre: 302 rows, v0=148, fulls=6, odo_only=140, pump_only=154
+- applyMerge: updated=133 deleted=129 pending+=2 → tag code 13d7c06b
+- Post: 173 rows, v0=14, fulls=130, odo_only=16, pump_only=25
+- Non-batch: 9 kept (absorbed re-shot ids 6–8 same $18.40); full non-batch fills preserved
+- CONFLICT_ODO pending: 9594 vs 9698; 198699 vs 98699 (photo paths attached)
+- Summary: dev-ai-interaction/research/batch-stage-b-merge-20260727/merge-run-summary.txt
+- Stage C deferred (image-first questions, assign→re-merge UI)
+
+## 2026-07-27 - batch-stage-c-image-questions
+
+- Execution start: Stage C image-first pending questions per batch-stage-c-image-questions-coder-20260727-plan.md
+- Stage B done on device; tip batch_load/builds @ 0c93922c
+
+## 2026-07-27 - batch-stage-c-image-questions done
+
+- C1: pendingPhotoUris + image thumbs/zoom; DNG placeholder; filename secondary only
+- C2: CONFLICT_ODO Keep odo / Keep both; pure wrong-odo hard-delete; pump data odo zeroed
+- C3: successful answers auto applyMerge; skip does not re-merge
+- Device: Keep odo 9594 → pending 8→7 + remerge updated=16 deleted=1; Skip → pending 6
+- Tag: batch_load/builds @ f360ce24
+- Notes: dev-ai-interaction/research/batch-stage-c-questions-20260727/smoke-notes.txt
+- Residual: 1 CONFLICT_ODO, 3 no-vehicle dash, 2 unreadable pump; AMBIGUOUS_MULTI_PUMP unused
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry
+
+- Execution start: photo UX, manual entry, economyIgnored sync, tank heuristic, unknown vehicle, outliers
+- Parent tip: batch_load/builds @ 27d92a09
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry done
+
+- Photo stem-dedupe; DNG OpenCV preview; fullscreen +/− + sticky actions
+- Manual pump/dash/conflict odo; economyIgnored Room v14 + sync column Economy Ignored
+- Reports: fills N(Mp); Unknown label; economy excludes ignored; avg filters 3× outliers
+- Merge: tank maxFill+5 auto-assign; post-merge enqueue unknown + MPG_OUTLIER
+- Device: merge pending+=52 (9 unknown, 42 outliers); tag batch_load/builds @ aa9b1e53
+- Notes: research/batch-stage-c-photo-ux-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-merge-window-odo-sanity
+
+- Execution start: 15m merge window, tight dash/pump pairs, odo reverse/gap sanitizer, Flag partial, per-vehicle unknown context
+- Parent tip: batch_load/builds @ 3f915150
+
+## 2026-07-27 - batch-merge-window-odo-sanity done
+
+- MERGE_WINDOW_MS=15m; splitTightDashPumpPairs for multi dash+pump
+- FuelOdoSanitizer: gap (maxVol×mpg×3, no fallback) then reverse; bias demote later
+- ODO_SUSPECT pending; FlagPartial action; per-vehicle nearest for unknown
+- Device: sanitize=31, ODO_SUSPECT=31 (incl. 20119 gap); CONFLICT_ODO=1
+- Tag: batch_load/builds @ 1fbe913e
+- Notes: research/batch-merge-window-odo-sanity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt
+
+- Execution start: Mark as gap, pending rebuild/dedupe, formatTimeDelta, Clear & re-scan
+- Parent tip: batch_load/builds @ 25df6455
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt done (code)
+
+- Mark as gap (blank odo/cost/vol); pending full rebuild on merge; (kind,fuelEntryId) dedupe
+- formatTimeDelta for neighbor/unknown deltas; Clear questions & re-scan button
+- Sanitizer skips already-partial / blank; clear all pending kinds per answered fuelEntryId
+- Tag: batch_load/builds @ e743f48a
+- Verify: ./build_app only — no deploy/device smoke (coder not authorized to deploy for test)
+- Notes: research/batch-pending-gap-dedupe-timefmt-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity
+
+- Execution start: MPG outlier UI clarity per batch-mpg-outlier-ui-clarity-20260727-plan.md
+- Tip: batch_load/builds @ 47ddcf81
+- Device verify only after human deploy (coder will not adb install/deploy)
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity done (code)
+
+- MPG_OUTLIER: end-only primary photos; leg start/end text; focus toggle prior/end
+- Edit/flag/ignore/gap target focusEntryId; nearby badges LEG START / THIS FILL
+- Tag: batch_load/builds @ 795c8e3b
+- No device test (await human deploy)
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity (layout v2)
+
+- Re-execute updated plan: Last/This photo blocks + 4-line context
+- Prior UI (single strip + toggle) superseded by locked two-block layout
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity layout v2 done (code)
+
+- Two-block Last/This photos above each button; 4-line text context (before/last/this/after)
+- Focus default This fill; edit/flag/ignore/gap target focus id
+- toPending: thisPhotoPaths + lastPhotoPaths
+- Tag: batch_load/builds @ c272c521
+- No device test until human deploy
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-partial-flag-semantics + sanitizer-correctness
+
+- Execution start: two plans
+  - batch-partial-flag-semantics-20260727-plan.md
+  - batch-partial-and-sanitizer-correctness-20260727-plan.md
+- No device deploy (human deploys before test)
+
+## 2026-07-27 - partial-flag + sanitizer-correctness done (code)
+
+- isPartialFill explicit-only; inserts/merge/sanitizer never auto-true for incomplete
+- FuelOdoSanitizer detect-only (reverse, digit_jump, gap with clean mpg); no demote updates
+- Checkbox SetPartialFill; clearAutoPartialFlags repair button
+- Reports display band 5–80 + formatMpg n/a outside 1–100
+- Quick Fill: isPartialFill=false on save
+- Tag: batch_load/builds @ ec44b782
+- No device test until human deploy
+- Notes: research/batch-partial-sanitizer-correctness-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill
+
+- Execution start: ODO_SUSPECT per-fill UI layout
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill done (code)
+
+- ODO_SUSPECT: ordered prev/cur/next dash-only photos + odo fields under each
+- SaveOdoPeers multi-odo write; payload prevDashPaths/curDashPaths/nextDashPaths
+- Tag: batch_load/builds @ 0da926d1
+- No device test until human deploy; re-scan after deploy
+- Notes: research/batch-odo-suspect-ui-per-fill-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar
+
+- Execution start: soft-delete sync, origin-device partials, title bar logo/version
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar (in progress)
+
+- Completing MainActivity yellow bar + remaining CTA; no device deploy
+
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar done (code)
+
+- Merge: all live partials (sync/QF/batch); soft-delete published absorbs; lat/lon later-ts
+- hasUnmatchedPartials + post-sync toast CTA (no auto-merge)
+- Yellow title-bar ?N → import?review=1 expand Review questions; Help bullets
+- Tag: batch_load/builds @ 5e7de408
+- No device test until human deploy
+- Notes: research/batch-sync-cross-device-partials-and-titlebar-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-mpg-gap-button-and-window-fills done (code)
+
+- MPG card: vertical Save / Missing data between last & this / Ignore (no clip)
+- markAsGap MPG: insert mid-leg blank; anchors preserved; dismiss if breaker exists
+- FuelEconomyChains + breaker-aware detectOutliers; windowSummary inventory
+- Post-sync applyMerge after fuel LWW; SYNC_BEHAVIOR + REPORTS_METRICS
+- Tag: batch_load/builds @ a50da18f
+- No device test until human deploy
+- Notes: research/batch-mpg-gap-button-and-window-fills-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-no-durable-photo-copy done (code)
+
+- processDash/processPump: source paths only; copyToDurable removed
+- migrateDurablePhotoRefsToSource rewrite+delete unreferenced mirrors
+- PendingPhotoUris prefer source dirs; Help note
+- Tag: batch_load/builds @ a18099d1
+- No device test until human deploy
+- Notes: research/batch-no-durable-photo-copy-20260727/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-phased-questions done (code)
+
+- StageCPhase 1–6 store + UI filter; skip/reset; clear-rescan → phase 1
+- ODO chain merge + simple length-guess mode; BAD_PUMP_RATIO phase 3
+- Gap from phase 3/5; post-sync remoteWins → phase 1 + rebuild
+- Tag: batch_load/builds @ 8ad579ef
+- No device test until human deploy
+- Notes: research/batch-stage-c-phased-questions-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-ux-skip-photos-phase-scope done (code)
+
+- Phase-scoped pending rebuild; Next phase regenerates only next kinds
+- Skip ledger same-phase; answer journal jsonl + export (no replay)
+- Unassigned vehicle id=0 fixed syncId + Fuel - Unassigned tab; picker exclusions
+- Photo role dash/pump; Close z-order; CONFLICT keep-both completes
+- Tag: batch_load/builds @ dab2e144
+- No device test until human deploy
+- Notes: research/batch-stage-c-ux-skip-photos-phase-scope-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - PR-batch_load prepared for Master review
+
+- History cleaned: 57 commits → 5 logical; backup-batch_load @ ff33f355; cleaned HEAD @ 11a2c1ca
+- PR: dev-ai-interaction/PRs/PR-batch_load.md (pre-submit review + plans)
+- Not rebased onto master (simplify_experiments); Master merge expects eng-log special handling + possible ExperimentAlignmentScreen conflict
+- Tree matches pre-cleanup tip; build_app SUCCESS after cleanup
+
+
+## 2026-07-28 - Master merge PR-batch_load
+
+- Independent review PASS; non-FF merge with simplify_experiments overlap
+- merge-branch-into-master failed on +a eng-log (double/triple append side effect); completed via merge-tree + manual resolve
+- ExperimentAlignmentScreen: keep Set-J-only simplify + internal helpers for AlignmentSetJRunner (dropped batch dead createScaledBase64/drawCropBoxes conflict side)
+- project-facts: batch orientation + Room v14 from branch; TODO unchanged
+- Commit 1bfab017; build SUCCESS after java_res permission retry; builds tag updated
+- Worktree ENGINEERING_LOG.md may still have triple-appended tail (+a); committed blob is single third-version + this note — fix with sudo chattr -a when available
+- No works tag. Cleanup: ./remove_worktree.sh batch_load when ready
+
+## 2026-07-28 - Merge master into email-connection (pre Wave 0)
+
+- Special-file protocol: index-first FF (chattr +a blocked plain git merge)
+- App/docs = master tip 43bd3839 (batch_load, Unassigned, economyIgnored, FUEL_HEADERS)
+- eng-log: ve-englog append of master-only tail
+- TODO/project-facts: master base + todo-append preferred fuel grade
+- Merge commit: e3693de3 (parents 91e94f53 + 43bd3839)
+- Next: Wave 0 of email-loyalty-receipt plan after build verify
+
+
+## 2026-07-28 - Execute email-loyalty-receipt plan (approved)
+
+- Plan: dev-ai-interaction/plans/email-loyalty-receipt-fuel-fills-20260728-plan.md
+- Branch: email-connection @ 0bc7af98
+- Scope: full plan approval; start Wave 0 (Track A sandbox), then Wave 1
+- First action: eng-log (this entry); no ritual TODO
+
+
+## 2026-07-28 - email-loyalty Wave 0+1 implementation
+
+- Wave 0 (sandbox): dev-ai-interaction/email-receipt/ parser+encoder+Apps Script+tests (43 pass)
+- Wave 1 (app): data/email/* ShellReceiptParser, FuelReceiptIngest, Gmail client, WorkManager, Settings UI
+- Contract: vehicleId=0, odo=0, partial/economyIgnored false, stable Sync ID, Fuel - Unassigned sheet path
+
+
+## 2026-07-28 - email-loyalty plan ready to test
+
+- Wave 0: sandbox email-receipt (node 43 pass); Wave 1: app data/email + Settings + builds
+- Tag: email-connection/builds @ 7f610576
+- Human test: Apps Script dry-run and/or Settings Email receipts poll with labeled Shell mail
+
+
+## 2026-07-28 - Execute email-loyalty-pre-manual-test plan
+
+- Plan: dev-ai-interaction/plans/email-loyalty-pre-manual-test-20260728-plan.md
+- Branch: email-connection @ 930f7b76
+- Scope: offline fixture assets + ingest, Settings last-run refresh, MANUAL_TEST.md
+
+
+## 2026-07-28 - pre-manual-test phases 1-4 done
+
+- Assets email-receipt fixtures; EmailReceiptFixtureIngest; Settings offline + last-run refresh
+- MANUAL_TEST.md offline-first; project-facts pointer
+- Building for human test handoff
+
+
+## 2026-07-28 - track email-receipt assets (gitignore exception)
+
+- .gitignore allow app/src/main/assets/email-receipt/** (was ignored by assets/*)
+- Force-add shell-receipt1/2.html so offline ingest ships in APK
+
+
+## 2026-07-29 - Local PR-email-connection prepared for Master
+
+- Pre-submit review vs both email-loyalty plans: intent PASS; no merge-engine creep
+- History: 2 logical commits; backup-email-connection @ d26c7960; cleaned HEAD @ 24e173ae
+- PR: dev-ai-interaction/PRs/PR-email-connection.md
+- Ask Master: Please review PR-email-connection
+
+
+## 2026-08-01 - Recover agent-4 worktree after rebase
+
+- git reset --hard email-connection @ 1dcc9e65 (stale disk after ref update without checkout)
+- FuelReceiptIngest: drop obsolete latitude/longitude (FuelEntry location-only on master tip)
+- NDK o+r fixed by human; ./build_app after recovery
+
 
 ## 2026-07-26 - reports-field-conditional-economy-chains-20260726
 
@@ -3483,4 +3892,733 @@ x
 - project-facts: branch orientation (Room v19, Lab Reports, onboarding, sync rate-limit)
 - build_app: first attempt processDebugJavaRes mode 770 flake (cleaned intermediates); retry SUCCESS
 - builds tag → 6889b142 (merge commit). No works tag.
+
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726
+
+- Execution start for approved plan: reports-field-conditional-economy-chains-20260726-plan.md
+- Branch: batch_load; no prior batch_load/builds tag (first successful ./build_app will create it)
+- Scope: ReportsScreen.kt field-conditional MPG/$/mi chains + REPORTS_METRICS.md; phase 5 emulator probe after user deploy
+
+## 2026-07-26 - reports-field-conditional-economy-chains-20260726 phases 1-4 done
+
+- Phases 1-4 implemented and built on batch_load
+- ReportsScreen.kt: full fill = odo+cost+vol+!partial; MPG breakers; $/mi segment sum
+- docs/reference/REPORTS_METRICS.md rewritten to match
+- Tag: batch_load/builds @ 3d29b986 (batch_load-start-4-g3d29b986)
+- Phase 5 blocked on user APK deploy to emulator-5554 (device currently has versionName=instruction-start-8-g7d8aa877, not batch_load build)
+
+## 2026-07-26 - reports-field-conditional-economy-chains phase 5 probe PASS
+
+- Backup: test-data-backups/emulator-5554-20260726-095208
+- App on emulator-5554: batch_load-start-5-ge76bbc73
+- Probe cases odo_only / blank / cost_only / volume_only on Honda between full fills 2→3
+- UI Honda: baseline last 15.8 avg 17.0 $/mi 0.259; odo_only same; blank avg 15.8 $/mi 0.260; cost_only avg 15.8 $/mi 0.276; volume_only avg 14.5 $/mi 0.260
+- Evidence: dev-ai-interaction/research/reports-chain-probe-20260726/
+- DB restored from pre-probe backup; no leftover PROBE rows
+
+## 2026-07-26 - reports-field-conditional-economy-chains PR prepared
+
+- Pre-submit review PASS vs plan; device probe PASS; DB restored
+- Local PR: dev-ai-interaction/PRs/PR-batch_load.md
+- Tag: batch_load/builds @ 1de13e02; backup-batch_load set
+- Ready for Master independent review + merge
+
+## 2026-07-26 - batch-load-ingest-merge-questions-20260726
+
+- Execution start: Stage A (batch ingest) per approved plan batch-load-ingest-merge-questions-20260726-plan.md
+- Baseline tag: batch_load/builds @ a02dc9bc; Stages B–C deferred to later turn if A fills the turn
+
+## 2026-07-26 - batch-load Stage A complete (ingest)
+
+- Plan: batch-load-ingest-merge-questions-20260726-plan.md Stage A only
+- Added: PhotoExifMeta, FuelPhotoJson, BatchImportPending, BatchFuelImportCoordinator, hardDeleteFuelEntry
+- Set I hybrid in PumpCostVolUtils.runSetICostVolExtraction + OcrHarness.runPumpCostVolPipelineSetI
+- Import Old Pictures UI: Run batch import / Cancel / Review questions (list-only)
+- Hilt ViewModel in ui.batch (not ui.import — Java keyword breaks KSP)
+- Builds tag: batch_load/builds @ 6efd2743
+- Stages B (merge) and C (apply answers) remain on same plan path — not in this turn
+
+## 2026-07-26 - batch-dash-match-experiment-set-j-20260726
+
+- Execution start: unify Set J (experiment + batch + Quick Fill) per plan
+- Baseline: batch_load/builds @ 99d1043c
+
+## 2026-07-26 - batch-setj approach: copy experiment logic into production
+
+- User direction: do NOT extract shared dual-call API; copy experiment Set J into production
+- Experiment remains free to tinker (future compile-out); production batch/Quick Fill own a frozen copy
+- Continue plan batch-dash-match-experiment-set-j-20260726-plan.md with this approach
+
+## 2026-07-26 - batch-dash-match-experiment-set-j production copy done
+
+- OcrHarness.runSetJPipeline rewritten as independent copy of experiment Set J (Raw+Bin-Trials+connectSegmentsH+pickBestOdometer)
+- ExperimentAlignmentScreen NOT shared — free to tinker
+- Batch parseSetJOdometer: 4-7 pure digits only (no concat soup)
+- Tag: batch_load/builds @ 38186950
+- Device parity CSV pending user deploy + re-import after purging old batch dash rows
+- Notes: dev-ai-interaction/research/batch-setj-parity-20260726/NOTES.md
+
+## 2026-07-26 - production-setj-ref-geometry-parity-20260726
+
+- Execution start: fix production Set J ref geometry (probe/4080, ICRS crop, Raw nestFilter)
+- Baseline: batch_load/builds @ d51f30d9
+
+## 2026-07-26 - production-setj-ref-geometry-parity done
+
+- Probed ref dims for landmarks+align; fallback 4080×3072
+- ICRS Float createCrop for odo window; Raw no nestFilter
+- Experiment screen untouched (independent copy)
+- Tag: batch_load/builds @ de113410
+- Device compare pending user deploy; notes in research/setj-geometry-parity-20260726/
+
+## 2026-07-26 - batch import limited button (first 20+20)
+
+- Import UI: OutlinedButton "First 20 dash + first 20 pump" (name-sorted take)
+- BatchFuelImportCoordinator.runIngest(maxDash, maxPump); LIMITED_IMPORT_COUNT=20
+
+## 2026-07-26 - batch pump ingest without vehicle
+
+- processPump always runs Set I; inserts with UNASSIGNED_VEHICLE_ID=0
+- No ASSIGN_VEHICLE gate; merge later assigns vehicle via time/location pairing
+- Unreadable pumps still pending only
+
+## 2026-07-26 - batch-setj-reverify-and-pending-answers-20260726
+
+- Execution start; device versionName=batch_load-start-21-gf43bb991 (geometry + unassigned pump)
+- Part A first-20 re-verify then Part B clickable pending answers
+
+## 2026-07-26 - batch-setj-reverify + pending answers
+
+- Part A first-20 re-verify on f43bb991: 17 dash inserts + 20 pump vehicleId=0
+- first20 score: see research/batch-setj-parity-20260726/first20-after-geometry.txt (gate FAIL — residual leading-digit/blank DIFFs)
+- Part B: clickable pending UI + forcedVehicleId dash reprocess + skip/retry pump (build 06707a0a)
+- Experiment untouched; deploy needed for Part B on device
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti
+
+- Execution start: batch must run experiment Set J / Set I pipelines, not OcrHarness reinvented front-end
+- Baseline tag: batch_load/builds @ c112e80e
+
+## 2026-07-27 - batch-mirror-experiment-pipelines-setj-seti done (code)
+
+- AlignmentSetJRunner: experiment Set A ID lock + Set J runPaddleValleyIterative for batch dash
+- PumpSetIRunner: experiment-equivalent Set I for batch pump
+- BatchFuelImportCoordinator no longer uses runAutoFillPipeline / runPumpCostVolPipelineSetI
+- Tag: batch_load/builds @ 7653d156
+- Device parity first-20 still needs deploy of this APK + re-run (prior c112e80e re-verify failed)
+
+## 2026-07-27 - Batch Stage A full-run parity PASS; Stage B plan ready
+
+- Full batch finished (~02:35 PDT); app idle after last pump `PXL_20260411_201506380.jpg`.
+- Selective purge: deleted 74 old `batch_import%` rows (`updatedAt < 1785142500000`); kept 12 non-batch + 290 this-run (ids 219–508); pending cleaned to 6 this-run items.
+- Parity vs experiment: dash Set J 142 OK / 0 DIFF (4 no-vehicle pending); pump Set I 148 OK / 0 DIFF (2 unreadable both sides). Report: `dev-ai-interaction/research/batch-run-parity-20260727/`.
+- Next coder plan: `dev-ai-interaction/plans/batch-stage-b-merge-engine-coder-20260727-plan.md` (merge engine + Run merge). Durable B+C: `batch-stage-b-merge-and-stage-c-questions-20260727-plan.md`.
+
+## 2026-07-27 - batch-stage-b-merge-engine
+
+- Execution start: Stage B merge engine per batch-stage-b-merge-engine-coder-20260727-plan.md
+- Stage A parity PASS; baseline tag 83e36ca0
+
+## 2026-07-27 - batch-stage-b-merge-engine B1–B4 code
+
+- B1: FuelPhotoJson.unionPhotos / addPumpPhoto / addDashPhoto
+- B2: FuelRowMergeEngine.planMerge (vehicle clusters ±45m, vehicleId=0 pump pair, sequence vs re-shot, CONFLICT_ODO + photo paths, hard-delete list)
+- B3: BatchFuelImportCoordinator.applyMerge + Import **Run merge** button
+- B4: Merge after import checkbox default **off**
+- Fixtures notes: dev-ai-interaction/research/batch-stage-b-merge-fixtures-20260727.md
+- Tag: batch_load/builds @ 13d7c06b
+- Device Run merge still to verify after deploy
+
+## 2026-07-27 - batch-stage-b-merge-engine device Run merge
+
+- Deploy: adb install -r (./deploy re-exec loop as ai-coder; used direct install)
+- Pre: 302 rows, v0=148, fulls=6, odo_only=140, pump_only=154
+- applyMerge: updated=133 deleted=129 pending+=2 → tag code 13d7c06b
+- Post: 173 rows, v0=14, fulls=130, odo_only=16, pump_only=25
+- Non-batch: 9 kept (absorbed re-shot ids 6–8 same $18.40); full non-batch fills preserved
+- CONFLICT_ODO pending: 9594 vs 9698; 198699 vs 98699 (photo paths attached)
+- Summary: dev-ai-interaction/research/batch-stage-b-merge-20260727/merge-run-summary.txt
+- Stage C deferred (image-first questions, assign→re-merge UI)
+
+## 2026-07-27 - batch-stage-c-image-questions
+
+- Execution start: Stage C image-first pending questions per batch-stage-c-image-questions-coder-20260727-plan.md
+- Stage B done on device; tip batch_load/builds @ 0c93922c
+
+## 2026-07-27 - batch-stage-c-image-questions done
+
+- C1: pendingPhotoUris + image thumbs/zoom; DNG placeholder; filename secondary only
+- C2: CONFLICT_ODO Keep odo / Keep both; pure wrong-odo hard-delete; pump data odo zeroed
+- C3: successful answers auto applyMerge; skip does not re-merge
+- Device: Keep odo 9594 → pending 8→7 + remerge updated=16 deleted=1; Skip → pending 6
+- Tag: batch_load/builds @ f360ce24
+- Notes: dev-ai-interaction/research/batch-stage-c-questions-20260727/smoke-notes.txt
+- Residual: 1 CONFLICT_ODO, 3 no-vehicle dash, 2 unreadable pump; AMBIGUOUS_MULTI_PUMP unused
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry
+
+- Execution start: photo UX, manual entry, economyIgnored sync, tank heuristic, unknown vehicle, outliers
+- Parent tip: batch_load/builds @ 27d92a09
+
+## 2026-07-27 - batch-stage-c-photo-ux-manual-entry done
+
+- Photo stem-dedupe; DNG OpenCV preview; fullscreen +/− + sticky actions
+- Manual pump/dash/conflict odo; economyIgnored Room v14 + sync column Economy Ignored
+- Reports: fills N(Mp); Unknown label; economy excludes ignored; avg filters 3× outliers
+- Merge: tank maxFill+5 auto-assign; post-merge enqueue unknown + MPG_OUTLIER
+- Device: merge pending+=52 (9 unknown, 42 outliers); tag batch_load/builds @ aa9b1e53
+- Notes: research/batch-stage-c-photo-ux-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-merge-window-odo-sanity
+
+- Execution start: 15m merge window, tight dash/pump pairs, odo reverse/gap sanitizer, Flag partial, per-vehicle unknown context
+- Parent tip: batch_load/builds @ 3f915150
+
+## 2026-07-27 - batch-merge-window-odo-sanity done
+
+- MERGE_WINDOW_MS=15m; splitTightDashPumpPairs for multi dash+pump
+- FuelOdoSanitizer: gap (maxVol×mpg×3, no fallback) then reverse; bias demote later
+- ODO_SUSPECT pending; FlagPartial action; per-vehicle nearest for unknown
+- Device: sanitize=31, ODO_SUSPECT=31 (incl. 20119 gap); CONFLICT_ODO=1
+- Tag: batch_load/builds @ 1fbe913e
+- Notes: research/batch-merge-window-odo-sanity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt
+
+- Execution start: Mark as gap, pending rebuild/dedupe, formatTimeDelta, Clear & re-scan
+- Parent tip: batch_load/builds @ 25df6455
+
+## 2026-07-27 - batch-pending-gap-dedupe-timefmt done (code)
+
+- Mark as gap (blank odo/cost/vol); pending full rebuild on merge; (kind,fuelEntryId) dedupe
+- formatTimeDelta for neighbor/unknown deltas; Clear questions & re-scan button
+- Sanitizer skips already-partial / blank; clear all pending kinds per answered fuelEntryId
+- Tag: batch_load/builds @ e743f48a
+- Verify: ./build_app only — no deploy/device smoke (coder not authorized to deploy for test)
+- Notes: research/batch-pending-gap-dedupe-timefmt-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity
+
+- Execution start: MPG outlier UI clarity per batch-mpg-outlier-ui-clarity-20260727-plan.md
+- Tip: batch_load/builds @ 47ddcf81
+- Device verify only after human deploy (coder will not adb install/deploy)
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity done (code)
+
+- MPG_OUTLIER: end-only primary photos; leg start/end text; focus toggle prior/end
+- Edit/flag/ignore/gap target focusEntryId; nearby badges LEG START / THIS FILL
+- Tag: batch_load/builds @ 795c8e3b
+- No device test (await human deploy)
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity (layout v2)
+
+- Re-execute updated plan: Last/This photo blocks + 4-line context
+- Prior UI (single strip + toggle) superseded by locked two-block layout
+
+## 2026-07-27 - batch-mpg-outlier-ui-clarity layout v2 done (code)
+
+- Two-block Last/This photos above each button; 4-line text context (before/last/this/after)
+- Focus default This fill; edit/flag/ignore/gap target focus id
+- toPending: thisPhotoPaths + lastPhotoPaths
+- Tag: batch_load/builds @ c272c521
+- No device test until human deploy
+- Notes: research/batch-mpg-outlier-ui-clarity-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-partial-flag-semantics + sanitizer-correctness
+
+- Execution start: two plans
+  - batch-partial-flag-semantics-20260727-plan.md
+  - batch-partial-and-sanitizer-correctness-20260727-plan.md
+- No device deploy (human deploys before test)
+
+## 2026-07-27 - partial-flag + sanitizer-correctness done (code)
+
+- isPartialFill explicit-only; inserts/merge/sanitizer never auto-true for incomplete
+- FuelOdoSanitizer detect-only (reverse, digit_jump, gap with clean mpg); no demote updates
+- Checkbox SetPartialFill; clearAutoPartialFlags repair button
+- Reports display band 5–80 + formatMpg n/a outside 1–100
+- Quick Fill: isPartialFill=false on save
+- Tag: batch_load/builds @ ec44b782
+- No device test until human deploy
+- Notes: research/batch-partial-sanitizer-correctness-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill
+
+- Execution start: ODO_SUSPECT per-fill UI layout
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-odo-suspect-ui-per-fill done (code)
+
+- ODO_SUSPECT: ordered prev/cur/next dash-only photos + odo fields under each
+- SaveOdoPeers multi-odo write; payload prevDashPaths/curDashPaths/nextDashPaths
+- Tag: batch_load/builds @ 0da926d1
+- No device test until human deploy; re-scan after deploy
+- Notes: research/batch-odo-suspect-ui-per-fill-20260727/smoke-notes.txt
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar
+
+- Execution start: soft-delete sync, origin-device partials, title bar logo/version
+- No device deploy until human deploys
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar (in progress)
+
+- Completing MainActivity yellow bar + remaining CTA; no device deploy
+
+
+## 2026-07-27 - batch-sync-cross-device-partials-and-titlebar done (code)
+
+- Merge: all live partials (sync/QF/batch); soft-delete published absorbs; lat/lon later-ts
+- hasUnmatchedPartials + post-sync toast CTA (no auto-merge)
+- Yellow title-bar ?N → import?review=1 expand Review questions; Help bullets
+- Tag: batch_load/builds @ 5e7de408
+- No device test until human deploy
+- Notes: research/batch-sync-cross-device-partials-and-titlebar-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-mpg-gap-button-and-window-fills done (code)
+
+- MPG card: vertical Save / Missing data between last & this / Ignore (no clip)
+- markAsGap MPG: insert mid-leg blank; anchors preserved; dismiss if breaker exists
+- FuelEconomyChains + breaker-aware detectOutliers; windowSummary inventory
+- Post-sync applyMerge after fuel LWW; SYNC_BEHAVIOR + REPORTS_METRICS
+- Tag: batch_load/builds @ a50da18f
+- No device test until human deploy
+- Notes: research/batch-mpg-gap-button-and-window-fills-20260727/smoke-notes.txt
+
+
+## 2026-07-27 - batch-no-durable-photo-copy done (code)
+
+- processDash/processPump: source paths only; copyToDurable removed
+- migrateDurablePhotoRefsToSource rewrite+delete unreferenced mirrors
+- PendingPhotoUris prefer source dirs; Help note
+- Tag: batch_load/builds @ a18099d1
+- No device test until human deploy
+- Notes: research/batch-no-durable-photo-copy-20260727/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-phased-questions done (code)
+
+- StageCPhase 1–6 store + UI filter; skip/reset; clear-rescan → phase 1
+- ODO chain merge + simple length-guess mode; BAD_PUMP_RATIO phase 3
+- Gap from phase 3/5; post-sync remoteWins → phase 1 + rebuild
+- Tag: batch_load/builds @ 8ad579ef
+- No device test until human deploy
+- Notes: research/batch-stage-c-phased-questions-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - batch-stage-c-ux-skip-photos-phase-scope done (code)
+
+- Phase-scoped pending rebuild; Next phase regenerates only next kinds
+- Skip ledger same-phase; answer journal jsonl + export (no replay)
+- Unassigned vehicle id=0 fixed syncId + Fuel - Unassigned tab; picker exclusions
+- Photo role dash/pump; Close z-order; CONFLICT keep-both completes
+- Tag: batch_load/builds @ dab2e144
+- No device test until human deploy
+- Notes: research/batch-stage-c-ux-skip-photos-phase-scope-20260728/smoke-notes.txt
+
+
+## 2026-07-28 - PR-batch_load prepared for Master review
+
+- History cleaned: 57 commits → 5 logical; backup-batch_load @ ff33f355; cleaned HEAD @ 11a2c1ca
+- PR: dev-ai-interaction/PRs/PR-batch_load.md (pre-submit review + plans)
+- Not rebased onto master (simplify_experiments); Master merge expects eng-log special handling + possible ExperimentAlignmentScreen conflict
+- Tree matches pre-cleanup tip; build_app SUCCESS after cleanup
+
+
+## 2026-07-28 - Master merge PR-batch_load
+
+- Independent review PASS; non-FF merge with simplify_experiments overlap
+- merge-branch-into-master failed on +a eng-log (double/triple append side effect); completed via merge-tree + manual resolve
+- ExperimentAlignmentScreen: keep Set-J-only simplify + internal helpers for AlignmentSetJRunner (dropped batch dead createScaledBase64/drawCropBoxes conflict side)
+- project-facts: batch orientation + Room v14 from branch; TODO unchanged
+- Commit 1bfab017; build SUCCESS after java_res permission retry; builds tag updated
+- Worktree ENGINEERING_LOG.md may still have triple-appended tail (+a); committed blob is single third-version + this note — fix with sudo chattr -a when available
+- No works tag. Cleanup: ./remove_worktree.sh batch_load when ready
+
+## 2026-07-28 - Merge master into email-connection (pre Wave 0)
+
+- Special-file protocol: index-first FF (chattr +a blocked plain git merge)
+- App/docs = master tip 43bd3839 (batch_load, Unassigned, economyIgnored, FUEL_HEADERS)
+- eng-log: ve-englog append of master-only tail
+- TODO/project-facts: master base + todo-append preferred fuel grade
+- Merge commit: e3693de3 (parents 91e94f53 + 43bd3839)
+- Next: Wave 0 of email-loyalty-receipt plan after build verify
+
+
+## 2026-07-28 - Execute email-loyalty-receipt plan (approved)
+
+- Plan: dev-ai-interaction/plans/email-loyalty-receipt-fuel-fills-20260728-plan.md
+- Branch: email-connection @ 0bc7af98
+- Scope: full plan approval; start Wave 0 (Track A sandbox), then Wave 1
+- First action: eng-log (this entry); no ritual TODO
+
+
+## 2026-07-28 - email-loyalty Wave 0+1 implementation
+
+- Wave 0 (sandbox): dev-ai-interaction/email-receipt/ parser+encoder+Apps Script+tests (43 pass)
+- Wave 1 (app): data/email/* ShellReceiptParser, FuelReceiptIngest, Gmail client, WorkManager, Settings UI
+- Contract: vehicleId=0, odo=0, partial/economyIgnored false, stable Sync ID, Fuel - Unassigned sheet path
+
+
+## 2026-07-28 - email-loyalty plan ready to test
+
+- Wave 0: sandbox email-receipt (node 43 pass); Wave 1: app data/email + Settings + builds
+- Tag: email-connection/builds @ 7f610576
+- Human test: Apps Script dry-run and/or Settings Email receipts poll with labeled Shell mail
+
+
+## 2026-07-28 - Execute email-loyalty-pre-manual-test plan
+
+- Plan: dev-ai-interaction/plans/email-loyalty-pre-manual-test-20260728-plan.md
+- Branch: email-connection @ 930f7b76
+- Scope: offline fixture assets + ingest, Settings last-run refresh, MANUAL_TEST.md
+
+
+## 2026-07-28 - pre-manual-test phases 1-4 done
+
+- Assets email-receipt fixtures; EmailReceiptFixtureIngest; Settings offline + last-run refresh
+- MANUAL_TEST.md offline-first; project-facts pointer
+- Building for human test handoff
+
+
+## 2026-07-28 - track email-receipt assets (gitignore exception)
+
+- .gitignore allow app/src/main/assets/email-receipt/** (was ignored by assets/*)
+- Force-add shell-receipt1/2.html so offline ingest ships in APK
+
+## 2026-08-01 - Execute email-receipt Sam's Club + Shell autodetect
+
+- Plan: dev-ai-interaction/plans/email-receipt-sams-club-plus-shell-autodetect-20260801-plan.md
+- Branch: email-connection @ c73f1a68
+- Scope: Sam's parser, label-only Gmail list, ReceiptParsers facade, offline fixtures
+
+
+## 2026-08-01 - Sam's Club + Shell autodetect (code)
+
+- SamsClubReceiptParser + ReceiptParsers facade; Gmail label-only list
+- Offline fixtures: 2 Shell + 1 Sam's; node tests 60 pass
+- Apps Script ReceiptParsers/SamsParser; Settings copy multi-vendor
+
+
+## 2026-08-01 - Execute generic IMAP folder fetch plan
+
+- Plan: dev-ai-interaction/plans/email-receipt-generic-imap-folder-fetch-20260801-0231-plan.md
+- Branch: email-connection @ 7e5368c7
+- First action: eng-log; Status APPROVED on plan
+
+
+## 2026-08-01 - IMAP folder fetch phases done
+
+- ImapReceiptClient (IMAPS 993), prefs + encrypted password, worker gmail|imap|both
+- Settings IMAP fields; ReceiptParsers for parse; Sync ID email|imap|{id}
+
+
+## 2026-08-01 - IMAP build gate
+
+## 2026-08-02 - Execute remotetable M1 + extractmail M1 plans
+
+- Plans: remotetable-m1-lib-conformance-ve-pin-20260802-0348 + extractmail-m1-extract-stdin-external-ve-pin-20260802-0348
+- Library hosts: /home/dlang/git/{remotetable,extractmail}
+- Note: ai-coder can write product dirs (ai-sandbox group) but not .git (dlang:dlang) — commits need human unless perms fixed
+- VE third_party pins still TBD until lib commits land
+
+
+## 2026-08-02 - remotetable + extractmail M1 progress (partial)
+
+- Library hosts: product trees updated (ai-sandbox dirs); .git not writable by ai-coder
+- remotetable: Python mock conformance PASS; backend stubs; Kotlin/Go sketches
+- extractmail: YAML types; stdin CLI; goldens PASS (Shell×2 + Sam's)
+- VE third_party: SOURCE/build recipes; lock still git_sha TBD — pin deferred
+- Status: BLOCKED on library git commit permissions for full CODE LANDED pin
+
+
+## 2026-08-02 - Execute remotetable M1 then extractmail M1 (revised fetch-deps)
+
+- Plans: remotetable-m1-…0348 + extractmail-m1-…0348 (revised)
+- Work under third_party/*/src after fetch-deps rw
+
+
+## 2026-08-02 - M1 libs blocked on git object dir perms
+
+- remotetable/src: product tree + AAR built (9457 bytes) uncommitted
+- extractmail/src: goldens PASS uncommitted  
+- Blocker: /home/dlang/git/{remotetable,extractmail}/.git/objects/* many dirs dlang:dlang not ai-code
+- Fix: chgrp -R ai-code .git/objects; chmod -R g+rwX .git/objects (both hosts)
+- Then: git commit in third_party/*/src; fetch-deps upgrade; pin artifact on VE
+
+
+## 2026-08-02 - remotetable + extractmail M1 VE pin and thin adapters
+
+- Pin remotetable @ d718ff3 + artifact/remotetable.aar; extractmail @ b18461f + artifact/extractmail.aar
+- Gradle files() deps on both AARs; FirstPartyLibsProbe compile-link surface
+- SpreadsheetProvider.EXCEL → EXCEL_GRAPH("excel-graph"); legacy wire "excel" / route "new:excel"
+- extractmail pin build → scripts/build-aar.sh; library commits android scaffold + build-aar
+- Full tabular stack cutover to remotetable AAR deferred (in-tree backends remain for Sheets/Excel/EtherCalc)
+
+## 2026-08-02 - first-party libs M2: tests CLI VE cutover
+
+- remotetable @ 4fd9013: CLI, harness, live AAR backends; pin AAR sha fdeae58a…
+- extractmail @ 5547073: YAML type registry, scripts/extractmail, external 0/1/2; AAR v2
+- VE cutover: GoogleSheets/ExcelGraph/EtherCalc TabularShareBackend → remotetable AAR
+- Auth remains in-app (GoogleAuthUtil / MSAL); tokens passed into Backends.*
+- Phase 6: offline email still in-app parsers; probe uses extractmail VERSION/types (Gmail/IMAP workers unchanged)
+
+## 2026-08-02 - M2.5 start: offline email + CLI harden + dead HTTP cleanup
+
+- Plan: first-party-libs-m2.5-offline-email-harden-cleanup-20260802-1735-plan.md
+- Baseline remotetable 70d57bb / extractmail 8155a5d; offline harness/goldens PASS
+
+## 2026-08-02 - M2.5 offline email goldens + CLI harden + dead HTTP cleanup
+
+- remotetable @ cb4c2e4: CLI flags before/after subcommand; live smoke docs
+- extractmail @ 9c22953: YAML module/export dispatch; export_offline_goldens.sh
+- VE offline Settings: expected-*.json assets (extractmail goldens) → FuelReceiptIngest; Extractmail.TYPE_*
+- Deleted GraphExcelClient; EtherCalcClient slim to config/room only
+- Gmail/IMAP workers unchanged (still ReceiptParsers HTML)
+
+## 2026-08-02 - M3 remotetable residual backends + CLI expansion
+
+- Start goal autopilot: port row-DB backends into remotetable; expand Go/Python CLIs; EtherCalc docker smoke.
+- Google live CLI deferred (needs human token). Local git only.
+
+
+## 2026-08-02 - M3 remotetable row-db cutover landed
+
+- remotetable lib @ 472eab9: row-db backends (Kotlin+Python), Go CLI mock/ethercalc, AAR rebuilt (JDK 17).
+- VE pin + thin RemoteTableRowDbTabularBackend for Baserow/NocoDB/PocketBase/Supabase/Airtable; removed in-app clients.
+- ./build_app green; tag email-connection/builds → email-connection-start-76-g79072b28.
+- EtherCalc one-shot: ~/git/ethercalc/start.sh (docker run). Google live CLI still needs human token.
+- Still open: Firebase, Zoho, OnlyOffice/Collabora, then extractmail full stack.
+
+
+## 2026-08-02 - M3 continue Firebase/Zoho + extractmail
+
+- Resume: port Firebase + Zoho into remotetable; OnlyOffice/Collabora stubs; then extractmail stack.
+
+
+## 2026-08-02 - M3 progress batch (remotetable+extractmail+rclone host)
+
+- remotetable @ 5eca9dd: Firebase+Zoho backends; OnlyOffice/Collabora DeferredBackend; VE cutover; dead RowDb stack removed; build green.
+- extractmail @ 0806a42: xpath/css configs, EXTERNAL.md, IMAP fetch_mail.py, Go CLI; pin + AAR.
+- rclone: ~/git/rclone email-connection + ve-build recipes; third_party lock + photo AAR artifact; Docker build script.
+- opencv: ~/git/opencv 4.10.0 clone + ve-build notes; third_party bootstrap lock (TBD pin).
+- Still open: full extractmail Apps Script parity in lib, VE live Gmail worker thin, OpenCV 16k rebuild, paddle third_party Docker wire-up, CsvZip, real OnlyOffice/Collabora.
+
+
+## 2026-08-02 - Continue migration (email thin + opencv/paddle)
+
+- Thin VE live HTML parse dispatch via extractmail AAR type detect contract.
+- OpenCV 16k build script scaffolding; paddle host wire notes.
+
+
+## 2026-08-02 - Email thin + OpenCV cmake progress
+
+- extractmail AAR v3 @ 327ebf0: detectType + fuel contract; VE ReceiptParsers/Worker/FuelReceiptIngest thinned; build email-connection-start-83-gaa49da01.
+- Apps Script README Shell+Sam's. OpenCV arm64 cmake configure OK (SDK cmake); full compile running; ant missing so java wrappers off — may still get native libs.
+- paddle-ve-meta host pointer under ~/git/paddle-ve-meta.
+
+
+## 2026-08-02 - OpenCV arm64 16k native libs staged
+
+- Built core/imgproc/imgcodecs .so with Align 0x4000 (16KB) via NDK 28 + max-page-size=16384.
+- Staged under third_party/opencv/artifact/arm64-v8a/. java4 wrapper blocked (android_sdk cmake path).
+- VE email thin + extractmail v3 already green (start-83).
+
+
+## 2026-08-03 - third_party pin docs + get-artifacts + OpenCV happy path
+
+- Docs: third_party/README.md, docs/reference/THIRD_PARTY_PIN_BUILDS.md; layout handoff thinned.
+- get-artifacts + fetch-deps build collect; example pin with glob/pick.
+- OpenCV pin 71d3237: fetch-deps ro (src worktree) + patch skip android_sdk; fat libopencv_java4.so arm64 (~8.5MB) + x86_64 (~11.6MB), LOAD Align 0x4000; artifact/jni/.
+- libpin name free on GitHub/PyPI/npm; stay in-tree for now. Copied tooling into extractmail/third_party.
+- TODO already covers remotetable/extractmail ro-build hygiene later.
+
+
+## 2026-08-03 - libpin.toml rename + docs cleanup
+
+- Config file is libpin.toml (TOML, [[artifact]] singular); tools parse via tomllib.
+- Removed docs/reference/FIRST_PARTY_LIBS.md and THIRD_PARTY_LAYOUT_FOR_AGENTS.md.
+- Example + opencv get-artifacts verified with libpin.toml.
+
+
+## 2026-08-03 - OpenCV pin wired + 5554 First 10 before/after match
+
+- Built/used third_party/opencv pin artifacts (71d3237 / 4.10.0 fat libopencv_java4.so, 16KB, arm64+x86_64).
+- Wired app: opencv-java-4.10.0.jar in app/libs; jniLibs arm64+x86_64 from artifact; dropped Maven OpenCV AAR natives; UPX skip for libopencv_java4.so.
+- Commit 80d75c65; deployed to emulator-5554.
+- Baseline + after First 10 alignment and pump short reports.
+- Semantic JSON match (strip timings/thumbs/version/ts): alignment OK, pump OK.
+- Scratch: dev-ai-interaction/scratch/opencv-5554-before-after/
+
+## 2026-08-03 - rclone pin: Docker wrapper + photo AAR rebuild (16KB)
+
+- fetch-deps: fix lock/pin unbound variable (ro/rw/status/build/resolve).
+- rclone pin @ pure upstream 3f9d583 (not local ve-build commit); scripts/Dockerfile + build-photo-aar.sh (curated backends, CGO 16KB).
+- Product path src/build/out/ (not upstream src/bin/ tools tree).
+- Built artifact/librclone.aar ~82MB; ABIs arm/arm64/x86_64; Align 0x4000.
+- App wires third_party/rclone/artifact/librclone.aar; removed app/libs/librclone.aar; UPX skip libgojni.so.
+- Upstream already has gomobile; VE carries post-clone curation forever (not fork PR for backend list).
+
+## 2026-08-03 - rclone libpin migration finished (host + docs)
+
+- ~/git/rclone: pure upstream master @ 3f9d583; email-connection retargeted (dropped ve-build commit).
+- Pin scripts/build remain SoT; sandbox rclone-build marked SUPERSEDED.md.
+- project-facts + ENVIRONMENT_SETUP + 16k notes point at third_party/rclone artifact.
+- fetch-deps ro rclone: clean @ pin, dirty=n.
+
+## 2026-08-03 - remotetable + extractmail libpin RO builds + reproducible
+
+- Both pins: fetch-deps ro + build OK; status dirty=n after build.
+- Pin ./build unlocks only android/.gradle + module tree for Gradle; requires_writable_src=false.
+- fetch-deps post-build leaves android scratch dirs writable for iterate.
+- Double clean rebuild: remotetable + extractmail AAR bit-identical (reproducible=true in libpin).
+- SOURCE.md rewritten; sha256 unchanged (751d70a1… / fcac2d7c…).
+
+## 2026-08-03 - bubblewrap optional sandbox for libpin tooling
+
+- third_party/libpin-bwrap: confine writes (lib/src/artifact modes); no-op if bwrap missing or LIBPIN_NO_BWRAP=1.
+- fetch-deps/get-artifacts wire single-level sandbox; nested userns avoided.
+- Docs: README.md, ENVIRONMENT_SETUP §2.4, third_party/README, THIRD_PARTY_PIN_BUILDS.
+
+## 2026-08-03 - libpin Landlock write confinement
+
+- libpin-landlock (Python): mutation-only Landlock; RW under mode paths + /tmp + essential /dev nodes.
+- libpin-sandbox: bwrap outer + landlock inner; either optional.
+- fetch-deps / get-artifacts use libpin-sandbox; --no-landlock flag.
+- Docs: README, ENVIRONMENT_SETUP, third_party/README, THIRD_PARTY_PIN_BUILDS.
+
+## 2026-08-03 - paddle libpin scaffold + pin build docs
+
+- libpin.toml pin c6a9b9ad (pr-x86-android-mobile-gap = cleanup+x86 gap).
+- Validated: pr-calib-safe-uint8-dequant is NOT git-stacked on x86-gap (develop tip +1).
+- patches-int8/ vendored; Docker+run-android-slim build path; docs/reference/PADDLE_PIN_BUILDS.md.
+- Models remain separate host opt pipeline (scripts under assets/paddle/scripts).
+
+## 2026-08-03 - libpin sandboxed rebuild testing
+
+- RO materialize: worktree→standalone + HTTPS origin; checkout_pin_clean so patches re-apply (opencv).
+- Builds OK under sandbox: example, remotetable AAR, extractmail AAR, opencv fat jni (arm64+x86_64), rclone librclone.aar (sha e4f26a7d…).
+- Paddle: arm64 slim + patches-int8 OK (uint8 calib stamps; jni ~188MB unstripped); x86_64 still fails (DENSE_TENSOR C++ vs LOD_TENSOR flatbuffers on pr-x86 pin).
+- Tooling fixes: paddle RO script copy-before-chmod, third-party tarball when stub dirs, get-artifacts chmod dest, kernel check via grep -aF, patches-int8 LOD→DENSE in light_api.cc.
+- Logs: /tmp/libpin-rebuild-round2.log /tmp/libpin-paddle-rebuild.log
+
+
+## 2026-08-03 - paddle pin slim arm64+x86_64 build success
+
+- Fixed x86: preserve pin flatbuffers pre-build (DENSE) over third-party tarball; patches-x86-openblas mklml LITE_WITH_MKL gate (no mkl.h on NDK).
+- Fixed earlier: LOD→DENSE in patches-int8 light_api.cc; third-party stub re-fetch; RO script chmod.
+- Built arm64-v8a + x86_64 slim JNI/light with int8/uint8 calib stamps; strip-unneeded → ~5.1MB arm64 jni, ~8.8MB x86 jni + light.
+- Artifacts under third_party/paddle/artifact/; libpin.toml sha256 updated.
+- Note: still larger than app tailored arm64 (~1.6MB) / thin x86 jni (~0.7MB); not auto-promoted to jniLibs.
+
+
+## 2026-08-03 - 5554 First 10 after libpin rebuild (semantic JSON)
+
+- build_app → email-connection-start-100-g80d85d52; installed emulator-5554.
+- Ran Alignment + Pump First 10; reports in scratch/libpin-5554-first10-20260803-1524/.
+- Semantic strip (version/ts/device/images/t_*/time/best_post): last-round OpenCV pre/post still MATCH; this-run vs last-after alignment+pump MATCH.
+
+
+## 2026-08-03 - Paddle PR restack + local CI smoke
+
+- Restacked on upstream/develop: cleanup ⊂ x86-gap ⊂ uint8 (local branches *-restack).
+- All commits include test=develop (Paddle docs: required to trigger CI). Stalled #10712/#10713/#10714 only had CLA.
+- Folded mklml LITE_WITH_MKL + OpenBLAS strip into x86 PR; dropped local PR markdown from stack.
+- Local smokes on tip: Android x86_64 JNI OK; armv8 JNI with uint8_to_fp16/int8 stamps OK (docker ve-paddle-int8).
+- Notes: ~/git/paddle/UPSTREAM_RESTACK_NOTES.md. Push requires user SSH (agent HTTPS no auth).
+
+
+## 2026-08-03 - Paddle upstream PR messages + durable notes + pre-commit
+
+- PR bodies (template-complete) under third_party/paddle/docs/upstream/PR_*.md; restack notes same dir (not only ~/git/paddle).
+- SOURCE.md points at docs/upstream/.
+- Travis-like pre-commit: non-format hooks pass; clang-format requires 3.8 (docker xenial); reformatted stack with 3.8; cpplint nits on im2col match develop style.
+- Restack tips local: cleanup 81b6abea0, x86 44b78dc75, uint8 4563e88bd. No agent push.
+
+
+## 2026-08-03 - Pins + paddle pin JNI + libpin linked-worktree cleanup
+
+- extractmail pin → 0dc3f80 (master with third_party/remotetable)
+- remotetable pin → 65366fc
+- App jniLibs paddle: replace tailored/old with pin slim strip arm64+x86_64; drop old armv7 paddle until pin armv7 build lands
+- libpin: prefer host linked worktree; sandbox allow only $GIT_HOME/<lib>/.git
+
+
+## 2026-08-03 - Pin paddle strip-debug arm64/x86 + armv7 plan
+
+- Rebuilt slim arm64+x86 unstripped then llvm-strip --strip-debug; wired app jniLibs (no armv7 paddle until separate plan).
+- extractmail pin 0dc3f80; remotetable 65366fc; libpin linked worktree + host .git only.
+- armv7 plan: dev-ai-interaction/plans/paddle-armv7-fp16-and-functional-calib-20260803-plan.md
+- Human: deploy to emulator-5554 + Pixel; First 10 align/pump; compare to libpin-5554-first10 baseline.
+
+
+## 2026-08-03 - App paddle hybrid for NDK28 link
+
+- x86_64 jniLibs: pin slim strip-debug (fresh rebuild) for emulator-5554
+- arm64 jniLibs: keep model-tailored SO (3ad8acd5) — slim arm64 from NDK r20 has LOCAL ABS symbols lld rejects
+- Plan armv7+NDK bump: paddle-armv7-fp16-and-functional-calib-20260803-plan.md
+
+
+## 2026-08-03 - Restore interim armv7 paddle SO for multi-ABI link
+
+- Keep fat interim armv7 until pin armv7 plan; arm64 tailored; x86 pin slim for 5554.
+
+
+
+## 2026-08-03 - Pin device First 10 (start-107) both devices PASS
+
+- Pulled reports → `dev-ai-interaction/scratch/pin-device-test-20260803/` (emu5554 + pixel6pro); MD5 match device.
+- APK: email-connection-start-107-g00a1c331. Baseline: libpin-5554-first10-20260803-1524 (start-100).
+- EMU vs baseline: PASS — alignment winners/angles 10/10; pump Set G-- & Set I cost/vol 10/10. Residual float/hist/timing only.
+- Pixel: smoke PASS — winners 10/10 same as EMU; cost/vol ABI diffs (armv8) documented; no degraded/errors.
+- Full write-up: scratch/pin-device-test-20260803/REPORT.md.
+
+
+## 2026-08-03 - Note: EMU vs Pixel First 10 not bit-identical
+
+- Same APK start-107: emulator-5554 and Pixel 6 Pro produce slightly different First 10 results (deskew angles on some photos, ML Kit box counts, several pump cost/vol).
+- Alignment winners still 10/10 same; no degraded/errors. Primary gate remains EMU vs same-device baseline (PASS). Pixel is arm64 smoke only.
+- Documented in scratch/pin-device-test-20260803/REPORT.md.
+
+
+## 2026-08-03 - Pixel prior (Jul27) vs First10 start-107
+
+- Prior on device: align n=160 / pump n=167 `batch_load-start-53-g1ba4c0d2` (2026-07-27).
+- Same First10 filenames: winners+angles 10/10 MATCH; Set G-- & Set I cost/vol 10/10 MATCH (extra D/E/G/G- only on prior).
+- Slim subsets: scratch/pin-device-test-20260803/pixel6pro-prior-20260727/.
+- Merge readiness: NOT ready — see chat (history not cleaned, hybrid/interim jni, dirty tree, pin sha drift).
+
+
+## 2026-08-04 - Restore historical paddle build under third_party/paddle
+
+- Ported Jul working recipe into third_party/paddle: patches/ (full), apply_patches.sh, run-android-historical.sh, patch_x86_thin_jni, tailor_models/armv8.
+- ./third_party/paddle/build: Docker NDK r20, strip-unneeded, NDK28 link gate. Default ABIs arm64+x86_64.
+- Rebuilt: arm64 tailor jni ~1.65MB LINK_OK; x86 thin jni ~31KB + light ~9.9MB LINK_OK (all four SOs).
+- get-artifacts + libpin.toml SHAs updated; jniLibs wired; abiFilters drop armv7.
+- Is-vs-should report: dev-ai-interaction/scratch/paddle-pin-is-vs-should-20260804.md (follow-up after merge).
+- Deprecated run-android-slim.sh (int8-only + strip-debug path).
+
+
+## 2026-08-04 - First 10 after historical paddle ship (b8449343)
+
+- Pulled start-109 reports → scratch/pin-device-test-20260804-b8449343/{emu5554,pixel6pro}/
+- EMU vs baseline and vs start-107: PASS 10/10 align+pump outcomes
+- Pixel vs start-107: PASS 10/10; Pixel vs EMU still differs (ABI) as before
+- REPORT.md in that scratch dir
+
+
+## 2026-08-04 - get-artifacts promotes to app paths (libpin)
+
+- get-artifacts: path app/… → repo root; optional sha256; no landlock by default (opt-in LIBPIN_GET_ARTIFACTS_SANDBOX=1).
+- paddle/opencv libpin.toml: independent [[artifact]] rows for artifact/ and app jniLibs (and jar).
+- ./third_party/get-artifacts paddle opencv verified.
+
+
+## 2026-08-04 - libpin promote + 5554 First 10 (start-111)
+
+- get-artifacts: app/ paths, sha256, no default landlock; paddle/opencv toml dual artifact+jniLibs rows.
+- Built/deployed email-connection-start-111-g1f95c129 to emulator-5554.
+- First 10 align+pump: PASS vs baseline and vs b8449343 (10/10). Reports: scratch/pin-device-test-20260804-libpin-promote/emu5554/
 
