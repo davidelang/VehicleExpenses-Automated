@@ -1,8 +1,8 @@
 name = "remotetable"
 git_ssh = "git@github.com:davidelang/remotetable.git"
 git_https = "https://github.com/davidelang/remotetable.git"
-git_sha = "5eca9dd0d6517a19cea4be378714fe028b9b7629"
-git_describe = "5eca9dd"
+git_sha = "65366fc917a5abcc8efc74014be4d524226ffbb3"
+git_describe = "65366fc"
 track_branch = "master"
 # Same pin + AGP 8.5.2 + Kotlin 1.9.24 + JDK 17: verified bit-identical AAR on host rebuild (clean android/**/build).
 reproducible = true

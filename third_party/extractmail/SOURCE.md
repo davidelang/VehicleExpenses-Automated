@@ -2,7 +2,7 @@
 
 | | |
 |--|--|
-| **Upstream** | `davidelang/extractmail` @ `327ebf00dc1694ba3d9b29d559460e1a318d6100` |
+| **Upstream** | `davidelang/extractmail` @ `0dc3f80ad8c9d3bf0fe6a127649b44e60cd64f81` (`master`; includes third_party/remotetable pin) |
 | **Profile** | Co-dev library + consumer pin (RO builds supported) |
 | **build_time** | `minutes` |
 | **reproducible** | `true` (same pin + AGP/Kotlin/JDK; verified bit-identical host rebuild) |

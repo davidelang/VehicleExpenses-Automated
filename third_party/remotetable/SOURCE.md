@@ -2,7 +2,7 @@
 
 | | |
 |--|--|
-| **Upstream** | `davidelang/remotetable` @ `5eca9dd0d6517a19cea4be378714fe028b9b7629` |
+| **Upstream** | `davidelang/remotetable` @ `65366fc917a5abcc8efc74014be4d524226ffbb3` (`master`) |
 | **Profile** | Co-dev library + consumer pin (RO builds supported) |
 | **build_time** | `minutes` |
 | **reproducible** | `true` (same pin + AGP/Kotlin/JDK; verified bit-identical host rebuild) |

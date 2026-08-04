@@ -12,13 +12,16 @@
 #   fetch-deps build [name…]     # run build[] then get-artifacts
 #
 # Pin file: third_party/<name>/libpin.toml
-# Transport: local GIT_HOME path → HTTPS (git_https). SSH only with --allow-ssh.
-# Network fetch always prefers HTTPS. Linked worktrees are converted to standalone
-# clones under third_party/<lib>/src so landlock/bwrap can write .git (no host gitdir).
+# Transport: prefer linked worktree of $GIT_HOME/<lib> when host has pin commit;
+# else HTTPS clone (git_https). SSH only with --allow-ssh.
+# Sandbox: third_party/<lib>/… plus only $GIT_HOME/<lib>/.git (never whole GIT_HOME).
+#
+# git_home=@@GIT_HOME@@ smudged from project.config; runtime export GIT_HOME.
+# Override: --git-home DIR. Unsubstituted token / missing host → network clone.
 #
 # Sandbox (optional; Linux):
 #   bubblewrap and/or Landlock via libpin-sandbox
-#   materialize (ro/rw)  → write under third_party/<lib>/
+#   materialize (ro/rw)  → write under third_party/<lib>/ (+ host .git if linked)
 #   patches + build      → write under third_party/<lib>/src/
 #   get-artifacts        → write under third_party/<lib>/artifact/
 # Disable: LIBPIN_NO_BWRAP=1 LIBPIN_NO_LANDLOCK=1 or --no-bwrap / --no-landlock
@@ -37,16 +40,10 @@ REF_UPGRADE=""
 VERBOSE=0
 NAMES=()
 FAILURES=0
-GIT_HOME=""
+# Smudged LHS must be lowercase git_home= so filter-clean-config restores @@GIT_HOME@@.
+# (project.config key is git_home=; do not use GIT_HOME= for the stamped line.)
+git_home=@@GIT_HOME@@
 WORKTREE_SEARCH="${WORKTREE_SEARCH:-}"
-
-default_git_home() {
-  local cand
-  cand="$(cd "$VE_ROOT/../.." 2>/dev/null && pwd)" || cand=""
-  if [[ -n "$cand" && -d "$cand/remotetable" ]]; then echo "$cand"; return; fi
-  if [[ -d /home/dlang/git/remotetable ]]; then echo /home/dlang/git; return; fi
-  echo "${HOME}/git"
-}
 
 usage() {
   cat <<'EOF'
@@ -65,7 +62,7 @@ Commands:
 
 Options:
   --allow-ssh          Permit git@ (maintainer machines)
-  --git-home DIR       Library host parent (default: monorepo sibling …/git)
+  --git-home DIR       Override smudged git_home
   --branch NAME        rw branch name (default: VE HEAD branch)
   --base REF           rw base (default: pin git_sha)
   --ref REF            upgrade source ref
@@ -97,7 +94,7 @@ while [[ $# -gt 0 ]]; do
     --allow-ssh) ALLOW_SSH=1; shift ;;
     --no-bwrap) NO_BWRAP=1; shift ;;
     --no-landlock) NO_LANDLOCK=1; shift ;;
-    --git-home) GIT_HOME="$2"; shift 2 ;;
+    --git-home) git_home="$2"; shift 2 ;;
     --branch) BRANCH_OVERRIDE="$2"; shift 2 ;;
     --base) BASE_REF="$2"; shift 2 ;;
     --ref) REF_UPGRADE="$2"; shift 2 ;;
@@ -117,7 +114,18 @@ done
 while [[ $# -gt 0 ]]; do NAMES+=("$1"); shift; done
 
 CMD="${CMD:-ro}"
-GIT_HOME="${GIT_HOME:-$(default_git_home)}"
+
+# Runtime export name (children / messages). Sourced from smudged git_home=.
+GIT_HOME="${git_home:-}"
+
+# Unsubstituted smudge token → no host (network clone only).
+if [[ -z "${GIT_HOME}" || "$GIT_HOME" == @@* || "$GIT_HOME" == *"@@"* ]]; then
+  if [[ -n "${GIT_HOME}" && "$GIT_HOME" == *"@@"* ]]; then
+    echo "fetch-deps: note: git_home still has smudge token ($GIT_HOME) — host clone disabled; using network" >&2
+  fi
+  GIT_HOME=""
+  git_home=""
+fi
 
 if [[ "$NO_BWRAP" -eq 1 ]]; then
   export LIBPIN_NO_BWRAP=1
@@ -127,18 +135,22 @@ if [[ "$NO_LANDLOCK" -eq 1 ]]; then
 fi
 export GIT_HOME
 
-# Optional Landlock + bwrap via libpin-sandbox (falls back to bare if neither works)
+# Optional Landlock + bwrap via libpin-sandbox (falls back to bare if neither works).
+# Host .git for this lib is auto-narrowed inside libpin-sandbox when GIT_HOME is set.
 sandbox_run() {
   local mode="$1" name="$2"
   shift 2
   if [[ -x "$ROOT/libpin-sandbox" ]]; then
-    local allow=0
-    [[ "$CMD" == "rw" || "$CMD" == "upgrade" ]] && allow=1
-    LIBPIN_ALLOW_GIT_HOME=$allow \
-      "$ROOT/libpin-sandbox" --mode "$mode" --lib "$name" -- "$@"
+    "$ROOT/libpin-sandbox" --mode "$mode" --lib "$name" -- "$@"
   else
     "$@"
   fi
+}
+
+# Preserve GIT_HOME across single-level sandbox re-entry of this script.
+reenter_args() {
+  REENTER_GH=()
+  [[ -n "${GIT_HOME:-}" ]] && REENTER_GH=(--git-home "$GIT_HOME")
 }
 bwrap_lib() {
   local name="$1"; shift
@@ -234,21 +246,48 @@ is_real_sha() {
   [[ -n "$s" && "$s" != "TBD" && "$s" != "null" && "$s" =~ ^[0-9a-fA-F]{7,40}$ ]]
 }
 
+# True if path is a usable git work tree / repo (has .git file or dir).
+is_git_repo() {
+  local p="${1:-}"
+  [[ -n "$p" && ( -d "$p/.git" || -f "$p/.git" ) ]] && git -C "$p" rev-parse --git-dir >/dev/null 2>&1
+}
+
+# Resolve host repo for lib name under GIT_HOME (or WORKTREE_SEARCH). Empty GIT_HOME → fail.
 local_repo_for() {
   local name="$1" p
-  if [[ -d "$GIT_HOME/$name/.git" || -f "$GIT_HOME/$name/.git" ]]; then
-    echo "$GIT_HOME/$name"; return 0
+  if [[ -n "${GIT_HOME}" ]]; then
+    p="$GIT_HOME/$name"
+    if is_git_repo "$p"; then
+      echo "$p"; return 0
+    fi
+    if [[ -e "$p" ]]; then
+      echo "    note: GIT_HOME host $p is not a valid git repo — ignoring" >&2
+    fi
   fi
   if [[ -n "$WORKTREE_SEARCH" ]]; then
     local IFS=':'
     for p in $WORKTREE_SEARCH; do
       [[ -z "$p" ]] && continue
-      if [[ -d "$p/$name/.git" || -f "$p/$name/.git" ]]; then
+      if is_git_repo "$p/$name"; then
         echo "$p/$name"; return 0
       fi
     done
   fi
   return 1
+}
+
+# Host usable for this pin SHA? Prints host path on success; reports and fails otherwise.
+local_repo_with_commit() {
+  local name="$1" sha="$2" host
+  if ! host="$(local_repo_for "$name")"; then
+    return 1
+  fi
+  if [[ -n "$sha" ]] && ! repo_has_commit "$host" "$sha"; then
+    echo "    note: host $host lacks commit $sha — will try network clone" >&2
+    return 1
+  fi
+  echo "$host"
+  return 0
 }
 
 pin_path() { echo "$ROOT/$1/libpin.toml"; }
@@ -383,29 +422,47 @@ materialize_at_sha() {
     return 0
   fi
 
-  # Linked worktree: .git → host …/.git/worktrees/… — landlock/bwrap cannot write FETCH_HEAD.
-  # Convert to standalone clone under third_party (origin HTTPS). Prefer local objects, then HTTPS.
-  if is_linked_worktree "$src"; then
-    echo "    linked worktree → standalone (HTTPS origin; sandbox-safe .git)"
-    remove_linked_worktree_src "$name" "$src"
-  fi
-
   ensure_writable_tree "$src"
 
+  # --- Prefer linked worktree of host repo (one object store) ---
+  if host="$(local_repo_with_commit "$name" "$sha")"; then
+    if is_linked_worktree "$src"; then
+      if repo_has_commit "$src" "$sha" && checkout_pin_clean "$src" "$sha"; then
+        echo "    linked worktree checkout @ $sha (host $host)"
+        return 0
+      fi
+      echo "    note: linked worktree cannot reach $sha — recreate" >&2
+      remove_linked_worktree_src "$name" "$src"
+    elif [[ -d "$src/.git" ]]; then
+      # Existing standalone: try local checkout first (no forced convert)
+      set_origin_https "$src" "$url_https"
+      if repo_has_commit "$src" "$sha" && checkout_pin_clean "$src" "$sha"; then
+        echo "    checkout existing standalone src @ $sha"
+        set_origin_https "$src" "$url_https"
+        return 0
+      fi
+      echo "    note: replacing standalone src with linked worktree from $host"
+      rm -rf "$src"
+    elif [[ -e "$src" ]]; then
+      rm -rf "$src"
+    fi
+    mkdir -p "$(dirname "$src")"
+    echo "    worktree add --detach $src @ $sha (from $host)"
+    if git -C "$host" worktree add --detach "$src" "$sha" 2>/dev/null; then
+      echo "    linked worktree OK @ $sha"
+      return 0
+    fi
+    echo "    note: worktree add failed — falling back to clone/network" >&2
+    rm -rf "$src" 2>/dev/null || true
+  fi
+
+  # --- Existing standalone .git (no usable host) ---
   if [[ -d "$src/.git" ]]; then
     set_origin_https "$src" "$url_https"
     if repo_has_commit "$src" "$sha" && checkout_pin_clean "$src" "$sha"; then
       echo "    checkout existing src @ $sha (no network)"
       set_origin_https "$src" "$url_https"
       return 0
-    fi
-    if host="$(local_repo_for "$name")"; then
-      echo "    fetch local $host"
-      git -C "$src" fetch "$host" "+refs/*:refs/remotes/local/*" 2>/dev/null || git -C "$src" fetch "$host" 2>/dev/null || true
-      if repo_has_commit "$src" "$sha" && checkout_pin_clean "$src" "$sha"; then
-        set_origin_https "$src" "$url_https"
-        return 0
-      fi
     fi
     # Network: HTTPS first (default). SSH only with --allow-ssh.
     local u tries=()
@@ -428,18 +485,11 @@ materialize_at_sha() {
     return 1
   fi
 
+  # --- Fresh clone (no host or worktree add failed) ---
   rm -rf "$src"
   mkdir -p "$(dirname "$src")"
-  if host="$(local_repo_for "$name")"; then
-    echo "    clone local $host"
-    if git clone "$host" "$src" 2>/dev/null; then
-      git -C "$src" fetch "$host" 2>/dev/null || true
-      if checkout_pin_clean "$src" "$sha"; then
-        set_origin_https "$src" "$url_https"
-        return 0
-      fi
-    fi
-    rm -rf "$src"
+  if [[ -n "${GIT_HOME}" ]] && ! local_repo_for "$name" >/dev/null; then
+    echo "    note: no valid host repo at \$GIT_HOME/$name — full clone from network" >&2
   fi
   local u
   for u in $url_https; do
@@ -545,11 +595,12 @@ offer_mainish_retarget() {
 
 cmd_ro() {
   local name="$1"
-  # Single-level: re-enter self under lib sandbox (writes only third_party/<lib>/)
+  # Single-level: re-enter self under lib sandbox (writes third_party/<lib>/ + host .git)
   if [[ "${LIBPIN_NO_BWRAP:-0}" != "1" && -z "${LIBPIN_SANDBOX:-}" && -x "$ROOT/libpin-bwrap" ]]; then
     echo "    [sandbox=lib $name]"
-    bwrap_lib "$name" env LIBPIN_NO_BWRAP=1 LIBPIN_SANDBOX=lib \
-      "$ROOT/fetch-deps" --no-bwrap ro "$name"
+    reenter_args
+    bwrap_lib "$name" env LIBPIN_NO_BWRAP=1 LIBPIN_SANDBOX=lib ${GIT_HOME:+GIT_HOME="$GIT_HOME"} \
+      "$ROOT/fetch-deps" --no-bwrap "${REENTER_GH[@]}" ro "$name"
     return $?
   fi
   local lock src sha
@@ -587,11 +638,12 @@ cmd_ro() {
 
 cmd_rw() {
   local name="$1"
-  # lib sandbox + optional GIT_HOME for worktrees
+  # lib sandbox + host .git for worktree add
   if [[ "${LIBPIN_NO_BWRAP:-0}" != "1" && -z "${LIBPIN_SANDBOX:-}" && -x "$ROOT/libpin-bwrap" ]]; then
-    echo "    [sandbox=lib $name + GIT_HOME]"
-    LIBPIN_ALLOW_GIT_HOME=1 bwrap_lib "$name" env LIBPIN_NO_BWRAP=1 LIBPIN_SANDBOX=lib LIBPIN_ALLOW_GIT_HOME=1 \
-      "$ROOT/fetch-deps" --no-bwrap rw "$name"
+    echo "    [sandbox=lib $name + host .git]"
+    reenter_args
+    bwrap_lib "$name" env LIBPIN_NO_BWRAP=1 LIBPIN_SANDBOX=lib ${GIT_HOME:+GIT_HOME="$GIT_HOME"} \
+      "$ROOT/fetch-deps" --no-bwrap "${REENTER_GH[@]}" rw "$name"
     return $?
   fi
   local lock src sha branch base host

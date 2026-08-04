@@ -7,7 +7,8 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 ## Backlog (native / paddle)
 - [ ] True `LITE_BUILD_TAILOR` for **x86_64** emulator (space only; prod-path speed matches fat kernels)
 - [ ] Keep **armeabi-v7a** (aftermarket car head units): true `LITE_BUILD_TAILOR` for Paddle Lite + pin-build OpenCV fat `libopencv_java4.so` for armv7 (16KB pages); do not drop the ABI
-- [ ] Strip debug information and excessive logging from Paddle Lite **x86_64** Android build (binary size)
+- [x] Strip debug (`llvm-strip --strip-unneeded`) on pin slim **arm64-v8a** + **x86_64** (validated `file … stripped`; ~5.4MB / ~9.2MB) — 2026-08-03 libpin rebuild
+- [ ] Pin slim **armeabi-v7a** with same strip path; collect `artifact/jni/armeabi-v7a/libpaddle_lite_jni.so` + wire app jniLibs (in progress / build)
 - [ ] **16KB page size alignment:** rebuild OpenCV, rclone/gomobile, and other prebuilt `.so` libs with 16KB ELF segment alignment (see `docs/reference/16k-pages-compatibility-notes.md`)
 
 ## Backlog (OCR / alignment / identity)

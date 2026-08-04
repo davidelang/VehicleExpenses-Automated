@@ -4513,3 +4513,35 @@ x
 - Artifacts under third_party/paddle/artifact/; libpin.toml sha256 updated.
 - Note: still larger than app tailored arm64 (~1.6MB) / thin x86 jni (~0.7MB); not auto-promoted to jniLibs.
 
+
+## 2026-08-03 - 5554 First 10 after libpin rebuild (semantic JSON)
+
+- build_app → email-connection-start-100-g80d85d52; installed emulator-5554.
+- Ran Alignment + Pump First 10; reports in scratch/libpin-5554-first10-20260803-1524/.
+- Semantic strip (version/ts/device/images/t_*/time/best_post): last-round OpenCV pre/post still MATCH; this-run vs last-after alignment+pump MATCH.
+
+
+## 2026-08-03 - Paddle PR restack + local CI smoke
+
+- Restacked on upstream/develop: cleanup ⊂ x86-gap ⊂ uint8 (local branches *-restack).
+- All commits include test=develop (Paddle docs: required to trigger CI). Stalled #10712/#10713/#10714 only had CLA.
+- Folded mklml LITE_WITH_MKL + OpenBLAS strip into x86 PR; dropped local PR markdown from stack.
+- Local smokes on tip: Android x86_64 JNI OK; armv8 JNI with uint8_to_fp16/int8 stamps OK (docker ve-paddle-int8).
+- Notes: ~/git/paddle/UPSTREAM_RESTACK_NOTES.md. Push requires user SSH (agent HTTPS no auth).
+
+
+## 2026-08-03 - Paddle upstream PR messages + durable notes + pre-commit
+
+- PR bodies (template-complete) under third_party/paddle/docs/upstream/PR_*.md; restack notes same dir (not only ~/git/paddle).
+- SOURCE.md points at docs/upstream/.
+- Travis-like pre-commit: non-format hooks pass; clang-format requires 3.8 (docker xenial); reformatted stack with 3.8; cpplint nits on im2col match develop style.
+- Restack tips local: cleanup 81b6abea0, x86 44b78dc75, uint8 4563e88bd. No agent push.
+
+
+## 2026-08-03 - Pins + paddle pin JNI + libpin linked-worktree cleanup
+
+- extractmail pin → 0dc3f80 (master with third_party/remotetable)
+- remotetable pin → 65366fc
+- App jniLibs paddle: replace tailored/old with pin slim strip arm64+x86_64; drop old armv7 paddle until pin armv7 build lands
+- libpin: prefer host linked worktree; sandbox allow only $GIT_HOME/<lib>/.git
+

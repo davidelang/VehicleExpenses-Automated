@@ -15,8 +15,8 @@
 #   LIBPIN_NO_BWRAP=1          skip sandbox (run bare)
 #   LIBPIN_SANDBOX=<mode>      already sandboxed — do not nest (nested userns fails)
 #   LIBPIN_BWRAP_DEBUG=1       print bwrap argv
-#   LIBPIN_ALLOW_GIT_HOME=1    also RW-bind $GIT_HOME (rw/worktree)
-#   GIT_HOME                   used when LIBPIN_ALLOW_GIT_HOME=1
+#   LIBPIN_HOST_GIT=/path/to/<lib>/.git   RW-bind only that dir (linked worktree metadata)
+#   (set by libpin-sandbox from GIT_HOME + --lib; never whole $GIT_HOME)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -128,9 +128,9 @@ case "$MODE" in
   artifact)    BWRAP+=(--bind "$ART_DIR" "$ART_DIR") ;;
 esac
 
-if [[ "${LIBPIN_ALLOW_GIT_HOME:-0}" == "1" && -n "${GIT_HOME:-}" && -d "${GIT_HOME}" ]]; then
-  GH="$(abs "$GIT_HOME")"
-  BWRAP+=(--bind "$GH" "$GH")
+if [[ -n "${LIBPIN_HOST_GIT:-}" && -d "${LIBPIN_HOST_GIT}" ]]; then
+  HG="$(abs "$LIBPIN_HOST_GIT")"
+  BWRAP+=(--bind "$HG" "$HG")
 fi
 
 # Docker client → host daemon (rclone). Real path only (no /var/run alias).

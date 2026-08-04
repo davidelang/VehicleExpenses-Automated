@@ -1,8 +1,8 @@
 name = "extractmail"
 git_ssh = "git@github.com:davidelang/extractmail.git"
 git_https = "https://github.com/davidelang/extractmail.git"
-git_sha = "327ebf00dc1694ba3d9b29d559460e1a318d6100"
-git_describe = "327ebf0"
+git_sha = "0dc3f80ad8c9d3bf0fe6a127649b44e60cd64f81"
+git_describe = "0dc3f80"
 track_branch = "master"
 # Same pin + AGP 8.5.2 + Kotlin 1.9.24 + JDK 17: verified bit-identical AAR on host rebuild (clean android/**/build).
 reproducible = true

@@ -10,6 +10,7 @@
 | **Products** | `artifact/jni/{arm64-v8a,x86_64}/libpaddle_*.so`, optional `PaddlePredictor.jar` |
 
 **Authoritative process doc:** `docs/reference/PADDLE_PIN_BUILDS.md`  
+**Upstream PR stack / bodies / restack notes (durable):** `third_party/paddle/docs/upstream/`  
 **Locked intent specs (do not edit lightly):** `docs/specs/PADDLE_BUILD.md`, `HOST_PADDLE_USE.md`, `PADDLE_PR_DESCRIPTIONS.md`
 
 ---

@@ -16,7 +16,7 @@ Modes (same as libpin-bwrap; resolved under third_party/):
 Env:
   LIBPIN_NO_LANDLOCK=1   skip (exec command bare)
   LIBPIN_LANDLOCK_DEBUG=1
-  LIBPIN_ALLOW_GIT_HOME=1 + GIT_HOME  extra RW roots for co-dev
+  --path DIR             extra RW root (libpin-sandbox passes $GIT_HOME/<lib>/.git)
   TMPDIR /tmp /var/tmp     always granted for mutation when any path is set
     (builds need temp files; corruption bound is still not the app tree)
 
@@ -280,13 +280,18 @@ def resolve_mode_paths(mode: str, lib: Optional[str], tp_root: Path) -> List[str
             art = lib_dir / "artifact"
             art.mkdir(parents=True, exist_ok=True)
             paths.append(str(art.resolve()))
+        # Narrow host allow: only this lib's .git (linked worktree object store / refs)
+        gh = os.environ.get("GIT_HOME", "")
+        host_git = os.environ.get("LIBPIN_HOST_GIT", "")
+        if host_git and os.path.isdir(host_git):
+            paths.append(str(Path(host_git).resolve()))
+        elif gh and lib:
+            candidate = Path(gh) / lib / ".git"
+            if candidate.is_dir():
+                paths.append(str(candidate.resolve()))
     else:
         raise SystemExit(f"libpin-landlock: unknown mode {mode}")
 
-    if os.environ.get("LIBPIN_ALLOW_GIT_HOME", "0") == "1":
-        gh = os.environ.get("GIT_HOME", "")
-        if gh and os.path.isdir(gh):
-            paths.append(str(Path(gh).resolve()))
     return paths
 
 
