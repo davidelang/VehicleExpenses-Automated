@@ -7347,3 +7347,11 @@ x
 - Plan: dev-ai-interaction/plans/ve-policysync-expenses-pilot-20260805-0128-plan.md
 - PolicySync/MergeSync pilot for Expenses tab; flag default off
 
+
+## 2026-08-05 - ve-policysync-expenses-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-expenses-pilot-20260805-0128-plan.md
+- PolicySyncBridge expenses LWW + pref use_policy_sync_expenses default false
+- syncExpensesTab gated; flag-off legacy LWW; build green VE 541fad1c
+- Human optional: vehicle_settings use_policy_sync_expenses=true then Sync now; log Expenses via PolicySync/MergeSync; set false after
+
