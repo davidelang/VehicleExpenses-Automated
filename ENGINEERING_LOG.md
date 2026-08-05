@@ -7479,3 +7479,9 @@ x
 
 - Plan: dev-ai-interaction/plans/vehicle-definition-overlay-unit-tests-20260805-1359-plan.md
 
+
+## 2026-08-05 - vehicle-definition-overlay-unit-tests — CODE LANDED
+
+- VehicleDefinitionOverlayTest 8 cases green; LocationBlobOverlayTest still green
+- Plan: vehicle-definition-overlay-unit-tests-20260805-1359-plan.md
+
