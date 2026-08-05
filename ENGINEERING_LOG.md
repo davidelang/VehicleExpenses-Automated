@@ -7312,3 +7312,18 @@ x
 - Harness PASS offline; CONTRACT updated; pin 14b97be AAR sha 59a07946…
 - VE coordinator not switched (out of scope)
 
+
+## 2026-08-05 - ve-room-to-ethercalc-e2e-export-validation — execution start
+
+- Plan: dev-ai-interaction/plans/ve-room-to-ethercalc-e2e-export-validation-20260805-0044-plan.md
+- E2E: Room export → EtherCalc path validation
+
+
+## 2026-08-05 - ve-room-to-ethercalc-e2e-export-validation — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-room-to-ethercalc-e2e-export-validation-20260805-0044-plan.md
+- Offline: room_export_to_ethercalc_smoke + fixture Vehicles/Sync ID; harness PASS
+- EtherCalc e2e PASS with up.sh (unique room); SKIP without env
+- scripts/room-export-ethercalc-smoke.sh pointer; pin dbb7068 (python/docs only; AAR sha unchanged)
+- Sheets production path untouched
+
