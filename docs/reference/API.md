@@ -44,8 +44,9 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 - `NativeImageUtils` (Object): JNI-accelerated image operations (grayscale, bilateral, deskew, histograms).
 
 ## Synchronization & Storage
-- `SpreadsheetSyncCoordinator.kt` / `SyncWorker.kt` / `TabularShareApi` / `GoogleSheetsClient.kt`: Multi-destination spreadsheet sync (mutex, multi-dest sequential, bulk `batchGet` compare, `SyncRateLimit` per API call).
-- `SyncFailureStore.kt` / `SyncRateLimit.kt`: Per-dest last failure (full message + prune orphans); Sheets read/write rate-limit wait/retry.
+- `SpreadsheetSyncCoordinator.kt` / `SyncWorker.kt` / `TabularShareApi` / `GoogleSheetsTabularBackend` → **remotetable** AAR: multi-destination spreadsheet sync (mutex, multi-dest sequential; production Sheets pace/429/`batchGet`/range ops in library L0).
+- `GoogleSheetsClient.kt`: residual browse/create + OAuth token for remotetable (not the live multi-tab transport).
+- `SyncFailureStore.kt` / `SyncRateLimit.kt`: per-dest last failure (full message + prune); multi-dest cooldowns + UI progress bridge; legacy `withSheetsApiLimit` only for residual `GoogleSheetsClient` / photo helpers.
 - `PhotoBackupCoordinator.kt` / `PhotoBackupWorker.kt` / `PhotoStorageManager.kt`: Multi-destination photo backup (Google Drive, OneDrive, S3, rclone Other); manual Sync now is ViewModel-scoped.
 
 ## UI Components (production)
