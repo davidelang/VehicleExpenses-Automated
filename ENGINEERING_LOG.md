@@ -7462,3 +7462,8 @@ x
 - LocationBlobOverlay + wire fuel Pass1 and expenses after library LWW
 - FuelLocationJson.mergeBlobs unchanged; build d45524e2; scenarios S1–S7 PASS
 
+
+## 2026-08-05 - location-blob-overlay-scenario-tests — execution start
+
+- Plan: dev-ai-interaction/plans/location-blob-overlay-scenario-tests-20260805-0830-plan.md
+
