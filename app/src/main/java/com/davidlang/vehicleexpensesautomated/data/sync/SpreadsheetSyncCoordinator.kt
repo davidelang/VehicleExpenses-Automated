@@ -15,6 +15,7 @@ import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryReposi
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
+import com.davidlang.vehicleexpensesautomated.data.sync.tabular.PolicySyncBridge
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareApi
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareBackend
@@ -290,6 +291,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     /**
      * LWW "Merge acks" tab by ackId (Sync ID column). Includes soft-deleted acks
      * so tombstones propagate.
+     *
+     * When prefs [PolicySyncBridge.PREF_USE_POLICY_SYNC_MERGE_ACKS] is true (default false),
+     * merge uses remotetable [com.davidelang.remotetable.MergeSync] lww_row via [PolicySyncBridge]
+     * (pilot; fuel/vehicles unchanged).
      */
     private suspend fun syncMergeAcksTab(
         dest: SpreadsheetDestination,
@@ -305,26 +310,53 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         val headerIndex = TabularSchema.headerIndex(headerRow)
         val remoteDataRows = remoteRows.drop(1)
             .filter { it.any { cell -> cell.isNotBlank() } }
-        val remoteAcks = remoteDataRows.map { TabularSchema.rowToAck(it, headerIndex) }
+
+        val usePolicy = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(PolicySyncBridge.PREF_USE_POLICY_SYNC_MERGE_ACKS, false)
 
         val localAcks = mergeAckStore.getAllIncludingDeleted()
-        val localById = localAcks.filter { it.ackId.isNotBlank() }.associateBy { it.ackId }
-        val remoteById = remoteAcks.filter { it.ackId.isNotBlank() }.associateBy { it.ackId }
-        val allIds = (localById.keys + remoteById.keys).toSet()
-
-        val merged = mutableListOf<MergeAck>()
-        var count = 0
-        for (ackId in allIds) {
-            val local = localById[ackId]
-            val remote = remoteById[ackId]
-            val winner = mergeLww(local, remote)
-            if (winner != null && winner.ackId.isNotBlank()) {
-                mergeAckStore.upsertFromSync(winner)
-                merged.add(winner)
-                count++
+        val merged: List<MergeAck> = if (usePolicy) {
+            Log.i(TAG, "Merge acks via PolicySync/MergeSync (lww_row pilot)")
+            PolicySyncBridge.mergeAcksViaLwwRow(localAcks, remoteRows)
+        } else {
+            // Legacy coordinator LWW (default; production path).
+            val remoteAcks = remoteDataRows.map { TabularSchema.rowToAck(it, headerIndex) }
+            val localById = localAcks.filter { it.ackId.isNotBlank() }.associateBy { it.ackId }
+            val remoteById = remoteAcks.filter { it.ackId.isNotBlank() }.associateBy { it.ackId }
+            val allIds = (localById.keys + remoteById.keys).toSet()
+            val out = mutableListOf<MergeAck>()
+            for (ackId in allIds) {
+                val winner = mergeLww(localById[ackId], remoteById[ackId])
+                if (winner != null && winner.ackId.isNotBlank()) {
+                    out.add(winner)
+                }
             }
+            out
         }
 
+        for (ack in merged) {
+            if (ack.ackId.isBlank()) continue
+            mergeAckStore.upsertFromSync(ack)
+        }
+
+        val n = writeMergedAcksAndReturn(
+            dest, backend, accountHint, resolved, headerIndex, remoteDataRows, merged,
+        )
+        if (usePolicy) {
+            Log.i(TAG, "Merge acks PolicySync pilot wrote $n rows")
+        }
+        return n
+    }
+
+    private suspend fun writeMergedAcksAndReturn(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+        resolved: ResolvedRemoteTab,
+        headerIndex: Map<String, Int>,
+        remoteDataRows: List<List<String>>,
+        merged: List<MergeAck>,
+    ): Int {
         val sortedMerged = merged.sortedWith(compareBy({ it.kind }, { it.ackId }))
         writeRowsIncremental(
             dest = dest,
@@ -339,7 +371,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             logTag = "MergeAcks",
             forceFullRewrite = resolved.forceFullRewrite,
         )
-        return count
+        return sortedMerged.size
     }
 
     private fun resolveLegacyOrPrimaryDest(store: SyncDestinationStore): SpreadsheetDestination {

@@ -7284,3 +7284,8 @@ x
 - EtherCalc: up/down + smoke PASS; lib commit 8f4901b (python/docs; AAR pin unchanged)
 - RoomVehiclesBackend pilot + exportJsonBook; VE 8775c03d
 - Production Sheets path unchanged
+
+## 2026-08-05 - ve-policysync-merge-acks-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-merge-acks-pilot-20260805-0025-plan.md
+- PolicySync bridge for Merge acks; flag use_policy_sync_merge_acks default false

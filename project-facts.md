@@ -121,5 +121,6 @@ Update only with new stable location facts valid for future unrelated work. Curr
 - Layout: `third_party/{opencv,rclone,remotetable,extractmail,paddle}/` (+ example)
 - Library hosts: `$GIT_HOME/remotetable`, `$GIT_HOME/extractmail` (absolute `git_home` in project.config); rclone pure upstream; opencv optional
 - **Room tabular pilot:** `data/sync/tabular/internal/RoomVehiclesBackend.kt` (read-only remotetable Backend over Room Vehicles; `exportJsonBook`; not a Sheets dest). **remotetable offline endpoints** (host CLI + AAR where noted): `mock` / `local` / `json-book` file book; `csv-dir` **Python host-only**; push/merge without network — see pin `spec/CONTRACT.md` Local/file backends. Room is a future consumer `Backend` adapter, not in-lib.
+- **PolicySync Merge acks pilot:** `data/sync/tabular/PolicySyncBridge.kt` — Merge acks only via remotetable `MergeSync` lww_row (or `PolicySync.push`); gated by prefs `use_policy_sync_merge_acks` in `vehicle_settings` (**default false**). Wire: `SpreadsheetSyncCoordinator.syncMergeAcksTab`. Fuel/vehicles unchanged.
 - Pull model: libs do not push into VE; bump `libpin.toml` + `artifact/` when app needs update
 - App product ABIs currently arm64-v8a + x86_64 (armeabi-v7a pin follow-up: paddle-armv7 plan)
