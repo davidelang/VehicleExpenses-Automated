@@ -7278,3 +7278,9 @@ x
 
 - remotetable 8f4901b: local EtherCalc up/down + live smoke PASS
 - RoomVehiclesBackend read-only pilot + exportJsonBook; project-facts pointer
+
+## 2026-08-05 - ethercalc harness + Room pilot — CODE LANDED
+
+- EtherCalc: up/down + smoke PASS; lib commit 8f4901b (python/docs; AAR pin unchanged)
+- RoomVehiclesBackend pilot + exportJsonBook; VE 8775c03d
+- Production Sheets path unchanged
