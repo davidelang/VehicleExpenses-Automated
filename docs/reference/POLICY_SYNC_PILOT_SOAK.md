@@ -26,6 +26,10 @@ conformance/ethercalc/up.sh
 REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/policysync_scenarios.py  # + S8
 conformance/ethercalc/down.sh
 # also: python3 conformance/harness.py
+
+# Location blob overlay (VE) — Robolectric unit tests
+./build_app "test" -- testDebugUnitTest
+# optional filter: -- testDebugUnitTest --tests '*LocationBlobOverlayTest'
 ```
 
 | Scenario | What it proves |
@@ -34,5 +38,6 @@ conformance/ethercalc/down.sh
 | S6 | Thin remote + thick local → crops/landmarks filled |
 | S7 | Two fuel tabs independent LWW |
 | S8 | Real EtherCalc remote grid merge |
+| **LocationBlobOverlayTest** | Fuel/expense `mergeBlobs` after LWW (place/thin, confirmed, empty, list) |
 
 Device/Sheets Sync is optional field confidence; rollback if broken = install master APK.

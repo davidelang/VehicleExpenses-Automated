@@ -166,8 +166,10 @@ dependencies {
     // ML Kit Text Recognition (High-performance Tensor-optimized OCR)
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // Unit tests (LocationBlobOverlay / pure helpers) — agent-run via ./build_app … -- testDebugUnitTest
+    // Robolectric: real org.json.JSONObject (android.jar stubs break encode/parse under JVM).
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.21")
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
 
 // No more PaddleOCR validation — model has been removed
