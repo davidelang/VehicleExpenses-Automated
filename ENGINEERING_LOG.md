@@ -7298,3 +7298,17 @@ x
 - build_app green; VE 03dca84e
 - Human optional: set vehicle_settings boolean use_policy_sync_merge_acks=true then Sync now; log line Merge acks via PolicySync/MergeSync; set false after
 
+
+## 2026-08-05 - remotetable-richer-filters-in-isempty — execution start
+
+- Plan: dev-ai-interaction/plans/remotetable-richer-filters-in-isempty-20260805-0033-plan.md
+- Library: IN + is_empty filter ops on remotetable
+
+
+## 2026-08-05 - remotetable-richer-filters-in-isempty — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/remotetable-richer-filters-in-isempty-20260805-0033-plan.md
+- Filter v1.1: in: / is_empty: / empty: / not_empty: + equality; Kotlin RowOps + Python parity
+- Harness PASS offline; CONTRACT updated; pin 14b97be AAR sha 59a07946…
+- VE coordinator not switched (out of scope)
+

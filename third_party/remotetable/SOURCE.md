@@ -2,11 +2,11 @@
 
 | | |
 |--|--|
-| **Upstream** | `davidelang/remotetable` @ `04ee2d298ce91a459c5e4e5d6c206bd1434b8709` (`master`) |
+| **Upstream** | `davidelang/remotetable` @ `3a83e579ad8a11f83f2976b2a802f8a13439a3f0` (`master` co-dev; filter v1.1) |
 | **Profile** | Co-dev library + consumer pin (RO builds supported) |
 | **build_time** | `minutes` |
 | **reproducible** | `true` (same pin + AGP/Kotlin/JDK; verified bit-identical host rebuild) |
-| **Product** | `artifact/remotetable.aar` (~148KB, pure Kotlin library) |
+| **Product** | `artifact/remotetable.aar` (pure Kotlin library) |
 
 ## Reproduce (RO)
 
@@ -28,14 +28,4 @@ Optional host: `~/git/remotetable` (orchestration + `master/` worktree).
 
 ## Tests in build
 
-1. `python3 src/conformance/harness.py` (mock; live smoke optional via env)
-2. `src/scripts/build-aar.sh` → `assembleRelease`
-
-## Co-develop (rw)
-
-```bash
-./third_party/fetch-deps rw remotetable   # branch = VE branch
-# edit under src/
-./third_party/fetch-deps build remotetable
-# promote: library PR → bump libpin.toml git_sha + artifact
-```
+- `python3 conformance/harness.py` (offline) before AAR assemble.
