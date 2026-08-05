@@ -7341,3 +7341,9 @@ x
 - Golden fixture + room_fuel_export_smoke offline PASS; EtherCalc one-tab PASS with up.sh
 - Sheets/coordinator fuel LWW untouched; build via build_app next
 
+
+## 2026-08-05 - ve-policysync-expenses-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-expenses-pilot-20260805-0128-plan.md
+- PolicySync/MergeSync pilot for Expenses tab; flag default off
+

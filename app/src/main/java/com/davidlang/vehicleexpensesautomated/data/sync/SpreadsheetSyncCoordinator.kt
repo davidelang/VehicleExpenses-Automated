@@ -725,6 +725,13 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         return count
     }
 
+    /**
+     * LWW "Expenses" tab by Sync ID. Soft-deleted expenses included for tombstones.
+     *
+     * When prefs [PolicySyncBridge.PREF_USE_POLICY_SYNC_EXPENSES] is true (default false),
+     * merge uses remotetable [com.davidelang.remotetable.MergeSync] lww_row via [PolicySyncBridge]
+     * (pilot; fuel/vehicles/merge-acks flags independent).
+     */
     private suspend fun syncExpensesTab(
         dest: SpreadsheetDestination,
         backend: TabularShareBackend,
@@ -744,28 +751,42 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
         val remoteDataRows = remoteRows.drop(1)
             .filter { it.any { cell -> cell.isNotBlank() } }
-        val remoteExpenses = remoteDataRows.map { row ->
-            val parsed = TabularSchema.rowToExpense(row, headerIndex)
-            val vehicleSyncIds = TabularSchema.rowToExpenseVehicleSyncIds(row, headerIndex)
-            ExpenseVehicleSyncIds.applyResolvedVehicles(parsed, vehicleSyncIds, vehicleIdBySyncId)
-        }
+
+        val usePolicy = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(PolicySyncBridge.PREF_USE_POLICY_SYNC_EXPENSES, false)
 
         val localExpenses = expenseRepository.getAllIncludingDeleted()
-        val localBySyncId = localExpenses.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-        val remoteBySyncId = remoteExpenses.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-        val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
-
-        val merged = mutableListOf<ExpenseEntry>()
-        var count = 0
-        for (syncId in allSyncIds) {
-            val local = localBySyncId[syncId]
-            val remote = remoteBySyncId[syncId]
-            val winner = mergeLww(local, remote)
-            if (winner != null && winner.syncId.isNotBlank()) {
-                expenseRepository.upsertFromSync(winner)
-                merged.add(winner)
-                count++
+        val merged: List<ExpenseEntry> = if (usePolicy) {
+            Log.i(TAG, "Expenses via PolicySync/MergeSync (lww_row pilot)")
+            PolicySyncBridge.mergeExpensesViaLwwRow(
+                localExpenses = localExpenses,
+                remoteGrid = remoteRows,
+                vehicleSyncIdById = vehicleSyncIdById,
+                vehicleIdBySyncId = vehicleIdBySyncId,
+            )
+        } else {
+            // Legacy coordinator LWW (default; production path).
+            val remoteExpenses = remoteDataRows.map { row ->
+                val parsed = TabularSchema.rowToExpense(row, headerIndex)
+                val vehicleSyncIds = TabularSchema.rowToExpenseVehicleSyncIds(row, headerIndex)
+                ExpenseVehicleSyncIds.applyResolvedVehicles(parsed, vehicleSyncIds, vehicleIdBySyncId)
             }
+            val localBySyncId = localExpenses.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+            val remoteBySyncId = remoteExpenses.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+            val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
+            val out = mutableListOf<ExpenseEntry>()
+            for (syncId in allSyncIds) {
+                val winner = mergeLww(localBySyncId[syncId], remoteBySyncId[syncId])
+                if (winner != null && winner.syncId.isNotBlank()) {
+                    out.add(winner)
+                }
+            }
+            out
+        }
+
+        for (entry in merged) {
+            if (entry.syncId.isBlank()) continue
+            expenseRepository.upsertFromSync(entry)
         }
 
         val sortedMerged = merged.sortedWith(compareBy({ it.date }, { it.syncId }))
@@ -784,7 +805,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             logTag = "Expenses",
             forceFullRewrite = resolved.forceFullRewrite,
         )
-        return count
+        if (usePolicy) {
+            Log.i(TAG, "Expenses PolicySync pilot wrote ${sortedMerged.size} rows")
+        }
+        return sortedMerged.size
     }
 
     private suspend fun findOrphanFuelTabs(
