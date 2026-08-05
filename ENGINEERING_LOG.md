@@ -7424,3 +7424,16 @@ x
 - Defaults still all false; STOP for human soak / go on which prefs to default true
 - Proposed tranche (not applied): merge_acks+expenses+vehicles true; fuel false
 
+
+## 2026-08-05 - policysync-scenario-tests-local-ethercalc — execution start
+
+- Plan: dev-ai-interaction/plans/policysync-scenario-tests-local-ethercalc-20260805-0826-plan.md
+
+
+## 2026-08-05 - policysync-scenario-tests-local-ethercalc — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/policysync-scenario-tests-local-ethercalc-20260805-0826-plan.md
+- S1–S7 offline PASS in harness; S8 multi-entity + multi-tab fuel EtherCalc PASS
+- Defaults still false; soak doc updated for automated evidence
+- pin 188b328
+

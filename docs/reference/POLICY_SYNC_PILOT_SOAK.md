@@ -32,7 +32,29 @@ Gated prefs in SharedPreferences **`vehicle_settings`**. Wire: `PolicySyncBridge
 
 Also still see `Fuel field-merge before sheet write` after fuel LWW (both flag paths).
 
-## Soak sequence (human + real sheet)
+## Automated evidence (primary for agents)
+
+Local EtherCalc + pure MergeSync scenarios — **no Google account / emulator required**.
+
+```bash
+# from third_party/remotetable/src (or pin src)
+python3 conformance/policysync_scenarios.py          # S1–S7 offline always
+conformance/ethercalc/up.sh
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/policysync_scenarios.py  # + S8 HTTP
+conformance/ethercalc/down.sh
+# also included in: python3 conformance/harness.py
+```
+
+| Scenario | What it proves |
+|----------|----------------|
+| S1–S5 | Local/remote/tie/tombstone/key-only LWW for acks, expenses, vehicles, fuel |
+| S6 | Thin remote win + thick local → crops/landmarks filled (VehicleDefinitionOverlay rules) |
+| S7 | Two fuel tabs independent LWW |
+| S8 | Real EtherCalc remote grid read + merge (per entity + multi-tab fuel rooms) |
+
+**PASS offline + S8 with up.sh** is sufficient agent evidence for LWW correctness. Device/Sheets soak remains optional product confidence.
+
+## Soak sequence (optional human + real sheet)
 
 Use a **non-prod or backup sheet** if possible. Install build that has all four pilots. Prefs editor or adb write on `vehicle_settings`.
 

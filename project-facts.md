@@ -132,7 +132,7 @@ Update only with new stable location facts valid for future unrelated work. Curr
   | `use_policy_sync_vehicles` | Vehicles | **false** | Library LWW + `VehicleDefinitionOverlay` |
   | `use_policy_sync_fuel` | Fuel tabs Pass 1 | **false** | Field-merge still app after LWW |
 
-  Soak / default-on evaluation: `docs/reference/POLICY_SYNC_PILOT_SOAK.md` (no default flip without human go). Force false always restores legacy path.
+  Soak / default-on evaluation: `docs/reference/POLICY_SYNC_PILOT_SOAK.md` (no default flip without human go). Force false always restores legacy path. **Automated LWW scenarios:** `third_party/remotetable/src/conformance/policysync_scenarios.py` (S1–S7 offline always in harness; S8 EtherCalc with `REMOTETABLE_ETHERCALC_LOCAL=1`).
 - **remotetable filter v1.1:** `RowOps.matchesFilter` / Python `matches_filter` — equality + `in:a,b` + `empty:`/`is_empty:`/`not_empty:` (CONTRACT Filter language); used by `updateWhere` / softDelete / expunge. Pin `libpin.toml` + AAR when Kotlin changes.
 - Pull model: libs do not push into VE; bump `libpin.toml` + `artifact/` when app needs update
 - App product ABIs currently arm64-v8a + x86_64 (armeabi-v7a pin follow-up: paddle-armv7 plan)
