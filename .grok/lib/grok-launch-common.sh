@@ -29,41 +29,46 @@ if [[ -f "$SCRIPT_DIR/project.config" ]]; then
 fi
 
 # Prefer explicit GROK_BIN, then project.config keys (VE uses grok_bin_default).
-# project.config often has grok_bin_default=$HOME/git/grok/bin/grok as *literal*
-# text — expand $HOME/… after load (export "$line" does not re-expand).
+# project.config may use $HOME/… as literal text — expand after load.
+# git_home from project.config is ABSOLUTE (e.g. /home/you/git), not ~/git.
 _expand_path() {
   local p="$1"
   p="${p/#\~/$HOME}"
-  # Only expand a leading $HOME/ for safety (no general eval of config).
-  if [[ "$p" == '$HOME/'* ]]; then
-    p="${HOME}/${p#\$HOME/}"
-  elif [[ "$p" == "\$HOME/"* ]]; then
-    p="${HOME}/${p#\\\$HOME/}"
+  if [[ "$p" == *'$HOME'* ]]; then
+    p="${p//\$HOME/$HOME}"
   fi
-  # If still contains literal $HOME as prefix from unexpanded export:
-  case "$p" in
-    '$HOME'/*) p="${HOME}/${p#\$HOME/}" ;;
-  esac
   printf '%s' "$p"
 }
-_raw_bin="${GROK_BIN:-${grok_bin:-${grok_bin_default:-$HOME/git/grok/bin/grok}}}"
+_raw_bin="${GROK_BIN:-${grok_bin:-${grok_bin_default:-}}}"
+if [[ -z "$_raw_bin" || "$_raw_bin" == @@* ]]; then
+  _raw_bin="${HOME}/git/grok/bin/grok"
+fi
 GROK_BIN="$(_expand_path "$_raw_bin")"
-# If still looks like unexpanded $HOME...
-if [[ "$GROK_BIN" == *'$HOME'* ]]; then
-  GROK_BIN="${GROK_BIN//\$HOME/$HOME}"
+
+# Shared host-clone root for third_party / landlock (absolute path in project.config)
+GIT_HOME_CONFIG="${git_home:-}"
+if [[ -n "$GIT_HOME_CONFIG" && "$GIT_HOME_CONFIG" != @@* ]]; then
+  export GIT_HOME="${GIT_HOME:-$GIT_HOME_CONFIG}"
 fi
 
-# Prefer sandbox_dir; accept legacy sandbox_path (VE filters/example).
+# Prefer sandbox_dir / sandbox_path from project.config; stamped default:
+# sandbox_path=@@SANDBOX_PATH@@  (smudge from project.config; clean restores token)
+_sandbox_stamp="@@SANDBOX_PATH@@"
 SANDBOX_REL="${sandbox_dir:-${sandbox_path:-}}"
-if [[ -z "$SANDBOX_REL" ]]; then
+if [[ -z "$SANDBOX_REL" || "$SANDBOX_REL" == @@* ]]; then
+  if [[ "$_sandbox_stamp" != @@* && -n "$_sandbox_stamp" ]]; then
+    SANDBOX_REL="$_sandbox_stamp"
+  fi
+fi
+if [[ -z "$SANDBOX_REL" || "$SANDBOX_REL" == @@* ]]; then
+  # Layout discovery only (no machine-absolute paths)
   if [[ -d "$SCRIPT_DIR/dev-ai-interaction" || -L "$SCRIPT_DIR/dev-ai-interaction" ]]; then
     SANDBOX_REL="dev-ai-interaction"
   elif [[ -d "$SCRIPT_DIR/sandbox" || -L "$SCRIPT_DIR/sandbox" ]]; then
     SANDBOX_REL="sandbox"
-  elif [[ -d "$SCRIPT_DIR/../dev-ai-interaction" ]]; then
-    # Launcher lives in a worktree; monorepo sandbox is one level up (VE layout).
+  elif [[ -d "$SCRIPT_DIR/../dev-ai-interaction" || -L "$SCRIPT_DIR/../dev-ai-interaction" ]]; then
     SANDBOX_REL="../dev-ai-interaction"
-  elif [[ -d "$SCRIPT_DIR/../sandbox" ]]; then
+  elif [[ -d "$SCRIPT_DIR/../sandbox" || -L "$SCRIPT_DIR/../sandbox" ]]; then
     SANDBOX_REL="../sandbox"
   else
     SANDBOX_REL="sandbox"
@@ -261,11 +266,30 @@ launch_grok_with_prompt() {
   fi
   echo "Tip: Ctrl+M or /multiline for multi-line input."
 
+  # Mutation-only Landlock (agent-landlock) as the role user, immediately before grok.
+  # AGENT_LANDLOCK_DISABLE=1 skips; missing ABI warns and continues (helper soft-fail).
+  local landlock_helper="${SCRIPT_DIR}/agent-landlock"
+  local landlock_args=()
+  if [[ -x "$landlock_helper" || -f "$landlock_helper" ]]; then
+    [[ -x "$landlock_helper" ]] || chmod +x "$landlock_helper" 2>/dev/null || true
+    landlock_args=(
+      "$landlock_helper"
+      --role "${ROLE_KEY:-primary}"
+      --worktree "$SCRIPT_DIR"
+      --
+    )
+    echo "Landlock: $landlock_helper role=${ROLE_KEY:-primary}"
+  else
+    echo "Landlock: helper missing at $landlock_helper — launching without session Landlock" >&2
+  fi
+
   # shellcheck disable=SC2086
   exec sudo -u "$run_user" -- env \
     ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} \
     GROK_PROMPT_ROOT="$SCRIPT_DIR" \
+    GIT_HOME="${GIT_HOME:-}" \
     bash -c 'umask '"${umask_launch:-002}"'; exec "$@"' bash \
+      ${landlock_args[@]+"${landlock_args[@]}"} \
       "$GROK_BIN" \
       "$prompt" \
       ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \

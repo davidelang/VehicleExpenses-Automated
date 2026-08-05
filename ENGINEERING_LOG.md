@@ -420,3 +420,55 @@ Completed planning-policy-baseball-rule-and-block-slim-20260630-plan. Tracked: A
 - checkifclean mid-run saw VE dirty (expected before commits); re-check after commit if needed
 - No push (human)
 
+
+## 2026-08-02 - finish-lib-ve-workflow-parity W1/W2
+
+VE orch: pack launchers + sandbox-aware generate_pr/skills (commit 9f0ff809).
+W3: dlang bash finish-parity-dlang-remaining.sh [--push].
+Plan: dev-ai-interaction/plans/finish-lib-ve-workflow-parity-and-third-party-20260802-1430-plan.md
+
+
+## 2026-08-02 - finish-parity continue
+
+VE master: pack launchers + .grok/lib gitignore exception committed (90378d8f); push/master ahead.
+Lib master workflow files still untracked — dlang: commit-lib-master-workflow-parity.sh --push
+W5 helper: promote-third-party-pins.sh [--apply|--commit]
+
+
+## 2026-08-02 - finish-lib-ve-workflow-parity CODE LANDED
+
+Workflow parity: pack launchers + prepare-local-pr/master-merge/generate_pr on VE and remotetable/extractmail (orch+master).
+Audit FAIL=0 WARN=11 (hygiene/accept). Residual: push VE master+email-connection; optional pin promote; one-shot cleanup.
+Plan: dev-ai-interaction/plans/finish-lib-ve-workflow-parity-and-third-party-20260802-1430-plan.md
+
+
+## 2026-08-03 - landlock.config + launcher clean/smudge
+
+- **landlock.config:** tracked with @@ tokens (NOT gitignored); tailored via project.config smudge (same pattern as launchers).
+- **Filters:** expanded manage-configs tokens (git_home, primary_user, antigravity_bin, gemini_bin); clean uses assignment scrub for shell/landlock; install with %f.
+- **Launchers:** run-antigravity* stamp sandbox_path/antigravity_bin; planner PROMPT→PLANNING_PROMPT sandbox rewrite fix; setup-project uses SCRIPT_DIR + stamped users/paths (no /home/dlang embeds).
+- **Local project.config:** git_home=/home/dlang/git absolute; antigravity_bin added.
+- **agent-4 fetch-deps:** already git_home=@@GIT_HOME@@; ready when update-rules propagates.
+
+
+## 2026-08-03 - test branch smudge/fetch-deps verification
+
+- Created worktree `test-smudge-filters` branch `test/smudge-fetch-deps-20260803` from agent-4/email-connection @ 478c8c78.
+- Overlay filter stack + project.config git_home=/home/dlang/git.
+- **PASS:** smudge fetch-deps → git_home=/home/dlang/git; git add index → @@GIT_HOME@@; hosts remotetable+extractmail resolve; fetch-deps status uses GIT_HOME.
+- **BUG FIXED:** clean only scrubbed assignments → comments still held /home/dlang after smudge. Now path-like values (/ or $) free-form scrubbed after assignment scrub; short fallbacks (ai-planner) preserved.
+
+
+## 2026-08-04 - mandate: fail-loud config defaults (no dev-machine traps)
+
+AGENT_MANDATES §9.1 + PROJECT_CONFIG_LOCAL_ONLY: automatic fallbacks correct only on the SoT machine are forbidden; require explicit config or fail loudly; portable defaults only after deliberate agreement.
+
+
+## 2026-08-05 - agent-session Landlock for run-grok*
+
+- Implemented agent-landlock (mutation-only, role grants, warn if ABI missing).
+- Wired .grok/lib/grok-launch-common.sh to exec agent-landlock after sudo -u before grok.
+- landlock.config profiles (android/gradle); smoke matrix PASS abi=8 on agent-landlock-smoke.
+- Evidence: dev-ai-interaction/research/landlock-smoke-evidence.md
+- Design status updated; antigravity residual optional.
+
