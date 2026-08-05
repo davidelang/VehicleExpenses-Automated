@@ -7474,3 +7474,8 @@ x
 - Plan: location-blob-overlay-scenario-tests-20260805-0830-plan.md
 - S1–S7 still PASS
 
+
+## 2026-08-05 - vehicle-definition-overlay-unit-tests — execution start
+
+- Plan: dev-ai-interaction/plans/vehicle-definition-overlay-unit-tests-20260805-1359-plan.md
+
