@@ -68,8 +68,36 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedTierBuffers = mutableMapOf<Int, FloatArray>()
         val sharedTiersInt8 = mutableMapOf<Int, ByteArray>()
 
-        /** Production path id (det/rec uint8 raw → fp16 compute + uint8 heatmap). */
+        /** Production path id for arm64/x86 (uint8 feed → fp16 compute + uint8 heatmap). */
         const val PROD_PATH_ID = "uint8_fp16_u8"
+
+        /** Production path for true ARMv7 head units (uint8 feed → fp32 compute + uint8 heatmap). */
+        const val PROD_PATH_ID_ARMV7 = "uint8_fp32_u8"
+
+        /**
+         * Primary ABI → model arch suffix + assets directory.
+         * armv7 uses [PROD_PATH_ID_ARMV7] under assets paddle/prod_u8fp32_u8 (no HW fp16).
+         * arm64 / x86 use [PROD_PATH_ID] under assets paddle/prod_u8fp16.
+         */
+        fun productArchAndDir(): Pair<String, String> {
+            val primary = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+            return when {
+                primary == "armeabi-v7a" || primary.startsWith("armeabi") ->
+                    "armv7" to "prod_u8fp32_u8"
+                primary.contains("64") && primary.contains("arm") ->
+                    "armv8" to "prod_u8fp16"
+                primary.contains("x86") ->
+                    "x86_64" to "prod_u8fp16"
+                primary.contains("arm") ->
+                    // Generic "arm" without 64 → treat as armv7-class only if no arm64 listed first
+                    if (Build.SUPPORTED_ABIS.any { it.contains("arm64") })
+                        "armv8" to "prod_u8fp16"
+                    else
+                        "armv7" to "prod_u8fp32_u8"
+                else ->
+                    "x86_64" to "prod_u8fp16"
+            }
+        }
 
         /**
          * Last pipeline stage name for hang diagnosis (ingest / deskew / det / rec / …).
@@ -326,12 +354,19 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
         }
 
-        /** Load production det/rec models (uint8 feed, fp16 compute graphs). */
+        /**
+         * Load production det/rec models for the device primary ABI.
+         * arm64/x86: uint8→fp16→uint8 (`prod_u8fp16`).
+         * armv7: uint8→fp32→uint8 (`prod_u8fp32_u8`) — true v7, no ARM82_FP16.
+         */
         fun loadProductionModels(context: Context) {
-            val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
-            val arch = if (isArm) "armv8" else "x86_64"
-            Log.i("PaddleLite", "loadProductionModels arch=$arch path=$PROD_PATH_ID")
-            heartbeat("load_models_begin path=$PROD_PATH_ID")
+            val (arch, prodDir) = productArchAndDir()
+            val pathId = if (arch == "armv7") PROD_PATH_ID_ARMV7 else PROD_PATH_ID
+            Log.i(
+                "PaddleLite",
+                "loadProductionModels arch=$arch path=$pathId dir=$prodDir abis=${Build.SUPPORTED_ABIS.joinToString()}"
+            )
+            heartbeat("load_models_begin path=$pathId")
             releaseAllPredictors("loadProductionModels")
 
             fun copyAsset(p: String): String {
@@ -341,7 +376,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
 
             fun resolveModel(baseName: String): String {
-                val prodAsset = "paddle/prod_u8fp16/${baseName}_$arch.nb"
+                val prodAsset = "paddle/$prodDir/${baseName}_$arch.nb"
                 try {
                     context.assets.open(prodAsset).close()
                     Log.i("PaddleLite", "Using production asset $prodAsset")
@@ -356,7 +391,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val recNumPath = resolveModel("rec_numeric")
             Log.i(
                 "PaddleLite",
-                "models path=$PROD_PATH_ID detU8=true recU8=true det=$detPath rec_v3=$recV3Path rec_num=$recNumPath"
+                "models path=$pathId detU8=true recU8=true det=$detPath rec_v3=$recV3Path rec_num=$recNumPath"
             )
 
             val config = MobileConfig()
@@ -383,7 +418,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config)
                 ?: throw IllegalStateException("createPaddlePredictor rec_numeric null file=$recNumPath")
             sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
-            heartbeat("load_models_done path=$PROD_PATH_ID tiers=${sharedTiers.size}")
+            heartbeat("load_models_done path=$pathId tiers=${sharedTiers.size}")
         }
     }
 
