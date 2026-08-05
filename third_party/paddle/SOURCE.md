@@ -12,13 +12,15 @@
 | **Build NDK** | **r28c** verified 2026-08-04 (`PADDLE_NDK_VERSION=r28c`, image `ve-paddle-ndk28c`); historical r20b still supported |
 | **Tailor inputs** | Prefer `third_party/paddle-models` (non-git `[[source]]` pin); fallback `tailor_models/` |
 
-### Verified products (NDK r28c, 2026-08-04)
+### Verified products (shipped pin)
 
-| ABI | Profile | jni (strip-unneeded) | light | NDK28 link | INT8 notes |
-|-----|---------|----------------------|-------|------------|------------|
-| arm64-v8a | tailor + fp16 | ~1.8 MB | ~1.8 MB | OK | jni: `uint8_to_fp16`, `int8_to_fp16`, `fp32_to_uint8` |
-| armeabi-v7a | **tailor** + int8 | **~0.75 MB** | **~0.75 MB** | OK | jni: `uint8_to_fp32`, `int8_to_fp32`, `fp32_to_uint8` (no fp16; no `PADDLE_WITH_ARMV7_FP16`) |
-| x86_64 | slim thin-jni | ~52 KB | ~10 MB | OK | calib stamps on **light** (thin jni is wrapper). **Do not default tailor** — see below |
+| ABI | Profile | jni | light | Notes |
+|-----|---------|-----|-------|--------|
+| arm64-v8a | tailor + fp16 | ~1.6 MB | ~1.6 MB | **Frozen to `b8449343` pin ship** (2026-08-04 First 10 good). Later NDK r28c rebuild regressed emu heatmaps/cost-vol vs that baseline — do not re-promote without First 10 golden gate. |
+| armeabi-v7a | **tailor** + int8 (fp32 calib) | **~0.75–3 MB** | same | Branch product path `prod_u8fp32_u8` (no HW fp16). |
+| x86_64 | slim thin-jni | ~31 KB | ~9.5 MB | **Same freeze as arm64** (`b8449343` / First-10-good). Models still `prod_u8fp16/*_x86_64.nb` (mid-graph often fp32 demote; not identical to armv8). |
+
+**Regression note (2026-08-05):** Rebuilding arm64/x86 under this branch’s NDK r28c recipe changed SO bytes and **broke** emulator First 10 pump L1 vs pin/libpin/Jul27 goldens (heatmap mass ~36k→~9–17k; cost 84.50→N/A/51). Restored pin-era arm64+x86 artifacts; re-validate before any future SO promote.
 
 ### Precision policy by ABI (product decision)
 
