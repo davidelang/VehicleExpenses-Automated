@@ -8,9 +8,9 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 
 Bidirectional sync merges local Room data with remote tabular destinations (Google Sheets, Excel, EtherCalc, row databases, etc.) and optional photo backup (Google Drive, OneDrive, S3, rclone-backed targets). Merge key is **`syncId`** per row; last-write-wins (**LWW**) uses **`updatedAt`** (milliseconds) on the full row, including **`deleted`** / **`deletedAt`** tombstones.
 
-### PolicySync LWW pilots (gated)
+### Tab LWW via remotetable
 
-Optional remotetable `MergeSync` lww_row for Merge acks / Expenses / Vehicles / Fuel (Pass 1 only). Prefs in `vehicle_settings`, currently **default false**. Soak checklist + log lines: **`docs/reference/POLICY_SYNC_PILOT_SOAK.md`**.
+Merge acks / Expenses / Vehicles / Fuel (Pass 1) use remotetable `MergeSync` lww_row through `PolicySyncBridge` (no prefs). Fuel field-merge remains app-side after LWW. Agent scenarios: **`docs/reference/POLICY_SYNC_PILOT_SOAK.md`** (filename historical).
 
 ## Mid-sync interruption (#8)
 

@@ -6,11 +6,9 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
  * Shared vehicle **definition-field** overlay after LWW.
  *
  * When the LWW winner is "thin" (missing crops / landmarks / manifest / local photos),
- * fill from the non-winning side. Used by:
- * - Coordinator legacy [mergeVehicleLww]
- * - PolicySync vehicles path (after [PolicySyncBridge.mergeVehiclesViaLwwRow])
- *
- * Domain logic stays in VE (not remotetable MergeSync).
+ * fill from the non-winning side. Used by coordinator after
+ * [PolicySyncBridge.mergeVehiclesViaLwwRow]. Domain logic stays in VE
+ * (not remotetable MergeSync).
  */
 object VehicleDefinitionOverlay {
 

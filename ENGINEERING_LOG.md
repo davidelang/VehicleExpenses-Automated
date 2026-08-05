@@ -7437,3 +7437,16 @@ x
 - Defaults still false; soak doc updated for automated evidence
 - pin 188b328
 
+
+## 2026-08-05 - PolicySync cutover: drop pilot prefs, library LWW is the path
+
+- Human: no production phase-in flags; implement + test; rollback = master APK
+- Remove use_policy_sync_* gates; always MergeSync lww_row for acks/expenses/vehicles/fuel Pass1
+
+
+## 2026-08-05 - PolicySync cutover CODE LANDED (no pilot prefs)
+
+- Always library MergeSync LWW for acks/expenses/vehicles/fuel Pass1; vehicle overlay after
+- Fuel field-merge still app; removed use_policy_sync_* prefs and dual paths
+- Scenarios S1–S7 PASS; S8 when docker available
+

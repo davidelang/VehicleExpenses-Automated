@@ -17,36 +17,16 @@ import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 
 /**
- * Bridge between VE entity tabs and remotetable L3 policy (pilot).
+ * VE ↔ remotetable L3 bridge: map entity grids and call [MergeSync] / [PolicySync].
  *
- * Default production path remains coordinator LWW; enable via prefs
- * [PREF_USE_POLICY_SYNC_MERGE_ACKS] / [PREF_USE_POLICY_SYNC_EXPENSES] /
- * [PREF_USE_POLICY_SYNC_VEHICLES] / [PREF_USE_POLICY_SYNC_FUEL]
- * (all default **false** until human soak + go — see `docs/reference/POLICY_SYNC_PILOT_SOAK.md`).
+ * Library stays domain-agnostic (keys, timestamps, grids). This object holds VE
+ * header/row mapping only. Coordinator always uses these helpers for tab LWW
+ * (merge-acks, expenses, vehicles, fuel Pass 1). No prefs / pilot flags.
  *
- * Uses [MergeSync] **lww_row** for bidirectional key+timestamp merge
- * (PolicySync.push is also available for one-way experiments).
- *
- * **Vehicles:** library merge is full-row pick; coordinator applies
- * [VehicleDefinitionOverlay] after merge (same as legacy) so crops/landmarks/photos
- * from the thin side are not dropped when the flag is on.
- *
- * **Fuel caveat:** library LWW is full-row pick only (no location-blob field merge).
- * App **field-merge** (absorb partials) still runs after LWW when flag is on.
+ * **Vehicles:** [mergeVehiclesViaLwwRow] then [VehicleDefinitionOverlay] in coordinator.
+ * **Fuel:** full-row LWW here; app field-merge still runs after LWW.
  */
 object PolicySyncBridge {
-
-    /** vehicle_settings / SyncDestinationStore prefs key. Default false. */
-    const val PREF_USE_POLICY_SYNC_MERGE_ACKS = "use_policy_sync_merge_acks"
-
-    /** vehicle_settings prefs key for Expenses tab pilot. Default false. */
-    const val PREF_USE_POLICY_SYNC_EXPENSES = "use_policy_sync_expenses"
-
-    /** vehicle_settings prefs key for Vehicles tab pilot. Default false. */
-    const val PREF_USE_POLICY_SYNC_VEHICLES = "use_policy_sync_vehicles"
-
-    /** vehicle_settings prefs key for Fuel tabs pilot (Pass 1 LWW only). Default false. */
-    const val PREF_USE_POLICY_SYNC_FUEL = "use_policy_sync_fuel"
 
     private const val TAB_LOCAL = "LocalAcks"
     private const val TAB_REMOTE = "RemoteAcks"
