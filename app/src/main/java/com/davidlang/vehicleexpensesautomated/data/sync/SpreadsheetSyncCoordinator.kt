@@ -15,9 +15,12 @@ import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryReposi
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
+import com.davidlang.vehicleexpensesautomated.data.sync.tabular.LocationBlobOverlay
+import com.davidlang.vehicleexpensesautomated.data.sync.tabular.PolicySyncBridge
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareApi
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareBackend
+import com.davidlang.vehicleexpensesautomated.data.sync.tabular.VehicleDefinitionOverlay
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -288,8 +291,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     }
 
     /**
-     * LWW "Merge acks" tab by ackId (Sync ID column). Includes soft-deleted acks
-     * so tombstones propagate.
+     * LWW "Merge acks" tab by ackId (Sync ID column). Soft-deleted acks included.
+     * Uses remotetable [MergeSync] lww_row via [PolicySyncBridge] (no pilot pref).
      */
     private suspend fun syncMergeAcksTab(
         dest: SpreadsheetDestination,
@@ -297,33 +300,35 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
     ): Int {
-        val remoteRows = resolveRemoteTabRows(
+        val resolved = resolveRemoteTabRows(
             dest, backend, TabularSchema.TAB_MERGE_ACKS, TabularSchema.MERGE_ACK_HEADERS, accountHint, bulk,
         )
+        val remoteRows = resolved.rows
         val headerRow = remoteRows.firstOrNull() ?: TabularSchema.MERGE_ACK_HEADERS
         val headerIndex = TabularSchema.headerIndex(headerRow)
         val remoteDataRows = remoteRows.drop(1)
             .filter { it.any { cell -> cell.isNotBlank() } }
-        val remoteAcks = remoteDataRows.map { TabularSchema.rowToAck(it, headerIndex) }
 
         val localAcks = mergeAckStore.getAllIncludingDeleted()
-        val localById = localAcks.filter { it.ackId.isNotBlank() }.associateBy { it.ackId }
-        val remoteById = remoteAcks.filter { it.ackId.isNotBlank() }.associateBy { it.ackId }
-        val allIds = (localById.keys + remoteById.keys).toSet()
-
-        val merged = mutableListOf<MergeAck>()
-        var count = 0
-        for (ackId in allIds) {
-            val local = localById[ackId]
-            val remote = remoteById[ackId]
-            val winner = mergeLww(local, remote)
-            if (winner != null && winner.ackId.isNotBlank()) {
-                mergeAckStore.upsertFromSync(winner)
-                merged.add(winner)
-                count++
-            }
+        val merged = PolicySyncBridge.mergeAcksViaLwwRow(localAcks, remoteRows)
+        for (ack in merged) {
+            if (ack.ackId.isBlank()) continue
+            mergeAckStore.upsertFromSync(ack)
         }
+        return writeMergedAcksAndReturn(
+            dest, backend, accountHint, resolved, headerIndex, remoteDataRows, merged,
+        )
+    }
 
+    private suspend fun writeMergedAcksAndReturn(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+        resolved: ResolvedRemoteTab,
+        headerIndex: Map<String, Int>,
+        remoteDataRows: List<List<String>>,
+        merged: List<MergeAck>,
+    ): Int {
         val sortedMerged = merged.sortedWith(compareBy({ it.kind }, { it.ackId }))
         writeRowsIncremental(
             dest = dest,
@@ -336,8 +341,9 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             headerIndex = headerIndex,
             accountHint = accountHint,
             logTag = "MergeAcks",
+            forceFullRewrite = resolved.forceFullRewrite,
         )
-        return count
+        return sortedMerged.size
     }
 
     private fun resolveLegacyOrPrimaryDest(store: SyncDestinationStore): SpreadsheetDestination {
@@ -378,9 +384,11 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     }
 
     /**
-     * Sync one destination once. Rate limits are handled **per Sheets API call**
-     * (reads and writes) in [GoogleSheetsClient] / [SyncRateLimit.withSheetsApiLimit]
-     * — no whole-dest restart that re-merges completed tabs.
+     * Sync one destination once. Google Sheets HTTP pace / 429 retry live in
+     * **remotetable** L0 ([com.davidelang.remotetable.GoogleSheetsBackend]);
+     * [SyncRateLimit] still supplies multi-dest cooldowns and UI progress bridge.
+     * Legacy [GoogleSheetsClient] paths (browse/create) retain [SyncRateLimit.withSheetsApiLimit].
+     * No whole-dest restart that re-merges completed tabs.
      */
     private suspend fun syncSingleDestination(
         dest: SpreadsheetDestination,
@@ -420,6 +428,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 fuelMerged = fuel.upserted,
                 fuelRemoteWins = fuel.remoteWins,
             )
+        } catch (e: SpreadsheetMissingColumnsException) {
+            // User-visible: wrong/corrupt sheet headers — do not wrap as generic network error.
+            Log.e(TAG, "Sync aborted for dest=${dest.id}: ${e.message}")
+            SyncResult(false, e.message ?: SpreadsheetMissingColumnsException.formatUserMessage(e.tabName, e.missingColumns))
         } catch (e: Exception) {
             // Compose dispose / structured cancel must not become a stored spreadsheet failure.
             if (e.isNonFailureCancel()) throw e
@@ -523,8 +535,38 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     }
 
     /**
-     * Resolve full tab body for LWW: use bulk cache when headers look OK;
-     * otherwise ensureHeaders + single-tab re-read (new tab or missing columns).
+     * Resolved sheet grid for LWW + write-back.
+     * [forceFullRewrite] when remote data empty (new/blank tab → writeAllRows with headers).
+     * Corrupt headers throw [SpreadsheetMissingColumnsException] — never silent rewrite.
+     */
+    private data class ResolvedRemoteTab(
+        /** Header row + data rows. */
+        val rows: List<List<String>>,
+        val forceFullRewrite: Boolean,
+    )
+
+    /**
+     * Thrown when a tab has non-blank content but row 1 lacks required columns (e.g. Sync ID).
+     * Aborts the whole destination sync so we never LWW/write into a wrong spreadsheet.
+     */
+    class SpreadsheetMissingColumnsException(
+        val tabName: String,
+        val missingColumns: List<String>,
+    ) : Exception(formatUserMessage(tabName, missingColumns)) {
+        companion object {
+            fun formatUserMessage(tabName: String, missing: List<String>): String {
+                val cols = missing.joinToString(", ")
+                return "$tabName: sheet is missing required column(s): $cols. " +
+                    "Fix row 1 headers (or clear the tab) and sync again."
+            }
+        }
+    }
+
+    /**
+     * Resolve full tab body for LWW.
+     * - **Missing tab / blank tab:** ensureHeaders creates canonical headers; empty remote; full rewrite write.
+     * - **Valid headers:** cache or ensure missing optional cols; incremental write when ordered.
+     * - **Corrupt headers** (cells present, required names missing): **fail** with named columns — no ensureHeaders merge, no LWW, no writeAllRows.
      */
     private suspend fun resolveRemoteTabRows(
         dest: SpreadsheetDestination,
@@ -533,117 +575,178 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         expectedHeaders: List<String>,
         accountHint: String?,
         bulk: Map<String, List<List<String>>>?,
-    ): List<List<String>> {
+    ): ResolvedRemoteTab {
+        fun firstNames(grid: List<List<String>>): List<String> =
+            grid.firstOrNull()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+
+        fun failCorrupt(grid: List<List<String>>) {
+            val first = firstNames(grid)
+            val missing = TabularSchema.missingRequiredHeaders(first)
+            Log.e(
+                TAG,
+                "Corrupt/missing headers on $tabName — abort dest sync. missing=$missing firstRow=$first",
+            )
+            throw SpreadsheetMissingColumnsException(tabName, missing.ifEmpty { listOf("Sync ID") })
+        }
+
         val cached = bulk?.get(tabName)
         if (cached != null) {
-            val first = cached.firstOrNull()
-                ?.map { it.trim() }
-                ?.filter { it.isNotEmpty() }
-                .orEmpty()
-            val needsHeaderWork = first.isEmpty() || expectedHeaders.any { it !in first }
-            if (!needsHeaderWork) {
-                return cached
+            // Case 2: blank tab (exists but no cells)
+            if (TabularSchema.isCompletelyBlankGrid(cached)) {
+                Log.i(TAG, "Blank tab $tabName — ensureHeaders + empty remote")
+                backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
+                val after = backend.readAllRows(dest, tabName, accountHint)
+                return ResolvedRemoteTab(
+                    rows = if (TabularSchema.isValidHeaderRow(firstNames(after))) after
+                    else listOf(expectedHeaders),
+                    forceFullRewrite = true,
+                )
+            }
+            // Case 3: non-blank but missing required columns
+            val first = firstNames(cached)
+            val missing = TabularSchema.missingRequiredHeaders(first)
+            if (missing.isNotEmpty()) {
+                failCorrupt(cached)
+            }
+            // Valid identity headers; maybe missing optional expected cols
+            val complete = expectedHeaders.all { it in first }
+            if (complete) {
+                val dataEmpty = cached.drop(1).none { row -> row.any { it.isNotBlank() } }
+                return ResolvedRemoteTab(cached, forceFullRewrite = dataEmpty)
             }
             Log.i(TAG, "Bulk cache header incomplete for $tabName — ensureHeaders + re-read")
             backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
-            return backend.readAllRows(dest, tabName, accountHint)
+            val after = backend.readAllRows(dest, tabName, accountHint)
+            val afterFirst = firstNames(after)
+            val afterMissing = TabularSchema.missingRequiredHeaders(afterFirst)
+            if (afterMissing.isNotEmpty()) {
+                failCorrupt(after)
+            }
+            val dataEmpty = after.drop(1).none { row -> row.any { it.isNotBlank() } }
+            return ResolvedRemoteTab(after, forceFullRewrite = dataEmpty)
         }
+        // Case 1: tab not on sheet (not in bulk) — create
+        Log.i(TAG, "No bulk cache for $tabName — ensureHeaders (create tab)")
         backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
-        return backend.readAllRows(dest, tabName, accountHint)
+        val after = backend.readAllRows(dest, tabName, accountHint)
+        if (!TabularSchema.isCompletelyBlankGrid(after) &&
+            TabularSchema.missingRequiredHeaders(firstNames(after)).isNotEmpty()
+        ) {
+            // Unexpected: created tab still corrupt
+            failCorrupt(after)
+        }
+        return ResolvedRemoteTab(
+            rows = if (TabularSchema.isValidHeaderRow(firstNames(after))) after else listOf(expectedHeaders),
+            forceFullRewrite = true,
+        )
     }
 
+    /**
+     * LWW "Vehicles" tab by Sync ID. Soft-deleted included.
+     * remotetable MergeSync lww_row then [VehicleDefinitionOverlay] (crops/landmarks/photos).
+     */
     private suspend fun syncVehiclesTab(
         dest: SpreadsheetDestination,
         backend: TabularShareBackend,
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
     ): Int {
-        val remoteRows = resolveRemoteTabRows(
+        val resolved = resolveRemoteTabRows(
             dest, backend, TabularSchema.TAB_VEHICLES, TabularSchema.VEHICLE_HEADERS, accountHint, bulk,
         )
+        val remoteRows = resolved.rows
         val headerRow = remoteRows.firstOrNull() ?: TabularSchema.VEHICLE_HEADERS
-        val headerIndex = TabularSchema.headerIndex(headerRow)
+        val writeHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.VEHICLE_HEADERS)
+        val headerIndex = TabularSchema.headerIndex(writeHeaders)
         val remoteDataRows = remoteRows.drop(1)
             .filter { it.any { cell -> cell.isNotBlank() } }
-        val remoteVehicles = remoteDataRows
-            .map { TabularSchema.rowToVehicle(it, headerIndex) }
 
         val localVehicles = vehicleRepository.getAllIncludingDeleted()
         val localBySyncId = localVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        val remoteVehicles = remoteDataRows.map { TabularSchema.rowToVehicle(it, headerIndex) }
         val remoteBySyncId = remoteVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-        val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
 
-        val merged = mutableListOf<Vehicle>()
-        var count = 0
-        for (syncId in allSyncIds) {
-            val local = localBySyncId[syncId]
-            val remote = remoteBySyncId[syncId]
-            val winner = mergeVehicleLww(local, remote)
-            if (winner != null && winner.syncId.isNotBlank()) {
-                vehicleRepository.upsertFromSync(winner)
-                merged.add(winner)
-                count++
-            }
+        val winners = PolicySyncBridge.mergeVehiclesViaLwwRow(localVehicles, remoteRows)
+        val merged = VehicleDefinitionOverlay.applyToMergedList(
+            winners = winners,
+            localBySyncId = localBySyncId,
+            remoteBySyncId = remoteBySyncId,
+            pickPhoto = { a, b -> photoStorage.pickPreferredLocalPath(a, b) },
+            log = { msg -> Log.i(TAG, msg) },
+        )
+
+        for (v in merged) {
+            if (v.syncId.isBlank()) continue
+            vehicleRepository.upsertFromSync(v)
         }
 
         val withLandmarks = merged.count { !it.landmarkTextBlocksJson.isNullOrBlank() }
-        Log.i(TAG, "Vehicles tab merged: upserted=$count withLandmarks=$withLandmarks")
+        Log.i(TAG, "Vehicles tab merged: upserted=${merged.size} withLandmarks=$withLandmarks")
 
         val sortedMerged = merged.sortedWith(compareBy({ it.name.lowercase() }, { it.syncId }))
         writeRowsIncremental(
             dest = dest,
             backend = backend,
             tabName = TabularSchema.TAB_VEHICLES,
-            headers = TabularSchema.VEHICLE_HEADERS,
+            headers = writeHeaders,
             sortedRows = sortedMerged.map { TabularSchema.vehicleToRow(it) },
             sortedSyncIds = sortedMerged.map { it.syncId },
             remoteDataRows = remoteDataRows,
             headerIndex = headerIndex,
             accountHint = accountHint,
             logTag = "Vehicles",
+            forceFullRewrite = resolved.forceFullRewrite,
         )
-        return count
+        return sortedMerged.size
     }
 
+    /**
+     * LWW "Expenses" tab by Sync ID. Soft-deleted included.
+     * remotetable MergeSync lww_row via [PolicySyncBridge], then [LocationBlobOverlay].
+     */
     private suspend fun syncExpensesTab(
         dest: SpreadsheetDestination,
         backend: TabularShareBackend,
         accountHint: String?,
         bulk: Map<String, List<List<String>>> = emptyMap(),
     ): Int {
-        val remoteRows = resolveRemoteTabRows(
+        val resolved = resolveRemoteTabRows(
             dest, backend, TabularSchema.TAB_EXPENSES, TabularSchema.EXPENSE_HEADERS, accountHint, bulk,
         )
+        val remoteRows = resolved.rows
         val headerRow = remoteRows.firstOrNull() ?: TabularSchema.EXPENSE_HEADERS
-        val headerIndex = TabularSchema.headerIndex(headerRow)
+        val writeHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.EXPENSE_HEADERS)
+        val headerIndex = TabularSchema.headerIndex(writeHeaders)
         val allVehicles = vehicleRepository.getAllIncludingDeleted().filter { it.syncId.isNotBlank() }
         val vehicleIdBySyncId = allVehicles.associate { it.syncId to it.id }
         val vehicleSyncIdById = allVehicles.associate { it.id to it.syncId }
 
         val remoteDataRows = remoteRows.drop(1)
             .filter { it.any { cell -> cell.isNotBlank() } }
-        val remoteExpenses = remoteDataRows.map { row ->
-            val parsed = TabularSchema.rowToExpense(row, headerIndex)
-            val vehicleSyncIds = TabularSchema.rowToExpenseVehicleSyncIds(row, headerIndex)
-            ExpenseVehicleSyncIds.applyResolvedVehicles(parsed, vehicleSyncIds, vehicleIdBySyncId)
-        }
 
         val localExpenses = expenseRepository.getAllIncludingDeleted()
         val localBySyncId = localExpenses.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-        val remoteBySyncId = remoteExpenses.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-        val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
+        val winners = PolicySyncBridge.mergeExpensesViaLwwRow(
+            localExpenses = localExpenses,
+            remoteGrid = remoteRows,
+            vehicleSyncIdById = vehicleSyncIdById,
+            vehicleIdBySyncId = vehicleIdBySyncId,
+        )
+        val remoteExpensesBySyncId = remoteDataRows.map { row ->
+            val parsed = TabularSchema.rowToExpense(row, headerIndex)
+            val vehicleSyncIds = TabularSchema.rowToExpenseVehicleSyncIds(row, headerIndex)
+            ExpenseVehicleSyncIds.applyResolvedVehicles(parsed, vehicleSyncIds, vehicleIdBySyncId)
+        }.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
 
-        val merged = mutableListOf<ExpenseEntry>()
-        var count = 0
-        for (syncId in allSyncIds) {
-            val local = localBySyncId[syncId]
-            val remote = remoteBySyncId[syncId]
-            val winner = mergeLww(local, remote)
-            if (winner != null && winner.syncId.isNotBlank()) {
-                expenseRepository.upsertFromSync(winner)
-                merged.add(winner)
-                count++
-            }
+        val merged = LocationBlobOverlay.applyToExpenseList(
+            winners = winners,
+            localBySyncId = localBySyncId,
+            remoteBySyncId = remoteExpensesBySyncId,
+        )
+
+        for (entry in merged) {
+            if (entry.syncId.isBlank()) continue
+            expenseRepository.upsertFromSync(entry)
         }
 
         val sortedMerged = merged.sortedWith(compareBy({ it.date }, { it.syncId }))
@@ -651,7 +754,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             dest = dest,
             backend = backend,
             tabName = TabularSchema.TAB_EXPENSES,
-            headers = TabularSchema.EXPENSE_HEADERS,
+            headers = writeHeaders,
             sortedRows = sortedMerged.map { entry ->
                 TabularSchema.expenseToRow(entry, vehicleSyncIdById[entry.vehicleId].orEmpty())
             },
@@ -660,8 +763,9 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             headerIndex = headerIndex,
             accountHint = accountHint,
             logTag = "Expenses",
+            forceFullRewrite = resolved.forceFullRewrite,
         )
-        return count
+        return sortedMerged.size
     }
 
     private suspend fun findOrphanFuelTabs(
@@ -846,9 +950,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     }
 
     /**
-     * Fuel sync order (locked product):
-     * 1) LWW all vehicle fuel tabs into Room
-     * 2) Field-merge (absorb partials; soft-delete losers) — **before** sheet write
+     * Fuel sync order (product):
+     * 1) LWW each `Fuel - {name}` tab via remotetable MergeSync lww_row, then
+     *    [LocationBlobOverlay] (FuelLocationJson.mergeBlobs) — domain stays in VE
+     * 2) Field-merge (absorb partials; soft-delete losers) — app, **before** sheet write
      * 3) Write each fuel tab from **fresh** Room (incl. tombstones)
      * Stage C question rebuild stays in post-sync after this returns.
      */
@@ -877,10 +982,11 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             val writeHeaders: List<String>,
             val headerIndex: Map<String, Int>,
             val remoteDataRows: List<List<String>>,
+            val forceFullRewrite: Boolean,
         )
         val snapshots = mutableListOf<FuelTabSnapshot>()
 
-        // --- Pass 1: LWW only (no sheet write yet); use bulk cache for tab bodies ---
+        // --- Pass 1: library LWW only (no sheet write yet); use bulk cache for tab bodies ---
         for (vehicle in vehicles) {
             val tabName = TabularSchema.fuelTabName(vehicle.name)
             sheetTitles = migrateFuelTabRenameIfNeeded(
@@ -897,56 +1003,63 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 hintStore,
                 bulkRows,
             )
-            val remoteRows = resolveRemoteTabRows(
+            val resolved = resolveRemoteTabRows(
                 dest, backend, tabName, TabularSchema.FUEL_HEADERS, accountHint, bulkRows,
             )
+            val remoteRows = resolved.rows
             // Keep cache in sync after resolve (may have re-read after ensureHeaders).
             bulkRows[tabName] = remoteRows
             val headerRow = remoteRows.firstOrNull()?.map { it.trim() }?.filter { it.isNotEmpty() }
                 ?.takeIf { it.isNotEmpty() }
                 ?: TabularSchema.FUEL_HEADERS
-            // Preserve existing column order; only append any still-missing canonical cols.
+            // Valid headers: preserve order; invalid path already returned canonical-only rows.
             val writeHeaders = TabularSchema.mergeHeaderOrder(headerRow, TabularSchema.FUEL_HEADERS)
             val headerIndex = TabularSchema.headerIndex(writeHeaders)
             val remoteDataRows = remoteRows.drop(1)
                 .filter { it.any { cell -> cell.isNotBlank() } }
-            val remoteFuel = parseFuelEntriesFromRows(remoteRows, vehicle, vehicleIdBySyncId)
 
             val localFuel = fuelRepository.getAllIncludingDeleted()
                 .filter { it.vehicleId == vehicle.id }
             val localBySyncId = localFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-            val remoteBySyncId = remoteFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-            val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
 
+            val winners = PolicySyncBridge.mergeFuelViaLwwRow(
+                localEntries = localFuel,
+                remoteGrid = remoteRows,
+                vehicleId = vehicle.id,
+                vehicleSyncId = vehicle.syncId,
+            )
+            val remoteFuel = parseFuelEntriesFromRows(remoteRows, vehicle, vehicleIdBySyncId)
+            val remoteBySyncId = remoteFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+            val merged = LocationBlobOverlay.applyToFuelList(
+                winners = winners,
+                localBySyncId = localBySyncId,
+                remoteBySyncId = remoteBySyncId,
+            )
             Log.i(
                 TAG,
-                "Fuel LWW ${vehicle.name}: local=${localFuel.size} remote=${remoteFuel.size} keys=${allSyncIds.size}",
+                "Fuel LWW ${vehicle.name}: local=${localFuel.size} remote=${remoteFuel.size} " +
+                    "merged=${merged.size}",
             )
-
-            for (syncId in allSyncIds) {
-                val local = localBySyncId[syncId]
-                val remote = remoteBySyncId[syncId]
-                val winner = mergeLww(local, remote)?.let { entry ->
-                    (entry as FuelEntry).copy(vehicleId = vehicle.id)
-                }
-                if (winner != null && winner.syncId.isNotBlank()) {
-                    val remoteWon = remote != null && (
-                        local == null || remote.updatedAt > local.updatedAt
+            for (winner in merged) {
+                if (winner.syncId.isBlank()) continue
+                val local = localBySyncId[winner.syncId]
+                val remote = remoteBySyncId[winner.syncId]
+                val remoteWon = remote != null && (
+                    local == null || remote.updatedAt > local.updatedAt
+                    )
+                if (remoteWon) {
+                    remoteWins++
+                    if (remote.deleted && local != null && !local.deleted) {
+                        Log.i(
+                            TAG,
+                            "LWW: remote tombstone wins syncId=${winner.syncId} over local live " +
+                                "id=${local.id} remoteUpdatedAt=${remote.updatedAt} " +
+                                "localUpdatedAt=${local.updatedAt}",
                         )
-                    if (remoteWon) {
-                        remoteWins++
-                        if (remote.deleted && local != null && !local.deleted) {
-                            Log.i(
-                                TAG,
-                                "LWW: remote tombstone wins syncId=$syncId over local live " +
-                                    "id=${local.id} remoteUpdatedAt=${remote.updatedAt} " +
-                                    "localUpdatedAt=${local.updatedAt}",
-                            )
-                        }
                     }
-                    fuelRepository.upsertFromSync(winner)
-                    total++
                 }
+                fuelRepository.upsertFromSync(winner)
+                total++
             }
 
             snapshots.add(
@@ -956,11 +1069,13 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                     writeHeaders = writeHeaders,
                     headerIndex = headerIndex,
                     remoteDataRows = remoteDataRows,
+                    forceFullRewrite = resolved.forceFullRewrite,
                 ),
             )
         }
 
         // --- Pass 2: field-merge on full Room (absorb partials before write-back) ---
+        // Domain fuel merge stays in app after library LWW.
         val liveBefore = fuelRepository.getAllIncludingDeleted().filter { !it.deleted }.size
         Log.i(TAG, "Fuel field-merge before sheet write; live=$liveBefore")
         val mergeStats = try {
@@ -1006,6 +1121,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 headerIndex = snap.headerIndex,
                 accountHint = accountHint,
                 logTag = "Fuel-${vehicle.name}",
+                forceFullRewrite = snap.forceFullRewrite,
             )
         }
         return FuelTabSyncStats(upserted = total, remoteWins = remoteWins)
@@ -1022,69 +1138,6 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         if (fallbackVehicleId != 0) return fallbackVehicleId
         return null
     }
-
-    private fun mergeVehicleLww(local: Vehicle?, remote: Vehicle?): Vehicle? {
-        val base = mergeLww(local, remote) ?: return null
-        if (local == null || remote == null) return base
-        val loser = when {
-            remote.updatedAt > local.updatedAt -> local
-            local.updatedAt > remote.updatedAt -> remote
-            else -> remote
-        }
-        return overlayVehicleDefinitionFields(base, loser)
-    }
-
-    private fun overlayVehicleDefinitionFields(winner: Vehicle, loser: Vehicle): Vehicle {
-        var result = winner
-        if (!hasCompleteOdoCrops(result) && hasCompleteOdoCrops(loser)) {
-            Log.i(TAG, "Vehicle overlay: odo crops from syncId=${loser.syncId} onto winner=${winner.syncId}")
-            result = result.copy(
-                odometerCropLeft = loser.odometerCropLeft,
-                odometerCropTop = loser.odometerCropTop,
-                odometerCropRight = loser.odometerCropRight,
-                odometerCropBottom = loser.odometerCropBottom,
-            )
-        }
-        if (!hasCompleteOtherCrops(result) && hasCompleteOtherCrops(loser)) {
-            Log.i(TAG, "Vehicle overlay: other-text crops from syncId=${loser.syncId} onto winner=${winner.syncId}")
-            result = result.copy(
-                otherTextCropLeft = loser.otherTextCropLeft,
-                otherTextCropTop = loser.otherTextCropTop,
-                otherTextCropRight = loser.otherTextCropRight,
-                otherTextCropBottom = loser.otherTextCropBottom,
-            )
-        }
-        if (result.landmarkTextBlocksJson.isNullOrBlank() && !loser.landmarkTextBlocksJson.isNullOrBlank()) {
-            Log.i(TAG, "Vehicle overlay: landmarks from syncId=${loser.syncId} onto winner=${winner.syncId}")
-            result = result.copy(landmarkTextBlocksJson = loser.landmarkTextBlocksJson)
-        }
-        if (result.cloudManifest.isNullOrBlank() && !loser.cloudManifest.isNullOrBlank()) {
-            result = result.copy(cloudManifest = loser.cloudManifest)
-        }
-        val ref = photoStorage.pickPreferredLocalPath(
-            result.referenceDashPhotoUrl,
-            loser.referenceDashPhotoUrl,
-        )
-        val cleaned = photoStorage.pickPreferredLocalPath(
-            result.cleanedReferenceDashPhotoUrl,
-            loser.cleanedReferenceDashPhotoUrl,
-        )
-        if (ref != result.referenceDashPhotoUrl || cleaned != result.cleanedReferenceDashPhotoUrl) {
-            result = result.copy(
-                referenceDashPhotoUrl = ref,
-                cleanedReferenceDashPhotoUrl = cleaned,
-            )
-        }
-        return result
-    }
-
-    private fun hasCompleteOdoCrops(vehicle: Vehicle): Boolean =
-        vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null &&
-            vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null
-
-    private fun hasCompleteOtherCrops(vehicle: Vehicle): Boolean =
-        vehicle.otherTextCropLeft != null && vehicle.otherTextCropTop != null &&
-            vehicle.otherTextCropRight != null && vehicle.otherTextCropBottom != null
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> mergeLww(local: T?, remote: T?): T? {
@@ -1149,7 +1202,21 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         headerIndex: Map<String, Int>,
         accountHint: String?,
         logTag: String,
+        forceFullRewrite: Boolean = false,
     ): SheetWriteStats {
+        // Empty remote (new/empty tab) or repaired invalid headers → always header+body replace.
+        // Never appendDataRows onto a headerless or just-created tab without asserting headers.
+        if (forceFullRewrite || remoteDataRows.isEmpty()) {
+            Log.i(
+                TAG,
+                "$logTag sheet write: fullRewrite " +
+                    "(force=$forceFullRewrite emptyRemote=${remoteDataRows.isEmpty()})",
+            )
+            backend.writeAllRows(dest, tabName, headers, sortedRows, accountHint)
+            backend.clearTrailing(dest, tabName, sortedRows.size + 2, accountHint)
+            return SheetWriteStats(appended = sortedRows.size, fullRewrite = true)
+        }
+
         val sheetSyncIds = remoteDataRows
             .map { TabularSchema.syncIdFromRow(it, headerIndex) }
             .filter { it.isNotBlank() }
