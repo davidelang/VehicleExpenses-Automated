@@ -224,7 +224,10 @@ verify_smudge() {
   fi
   for f in "${STAMPED_FILES[@]}"; do
     [ -f "$f" ] || continue
-    if grep -q '@@' "$f" 2>/dev/null; then
+    # Match real tokens only (@@SANDBOX_PATH@@). Do NOT match:
+    # - comments mentioning "@@ tokens"
+    # - intentional runtime checks like: [[ "$1" == @@* ]]
+    if grep -qE '@@[A-Z0-9_]+@@' "$f" 2>/dev/null; then
       echo "Error: Unsubstituted @@ tokens remain in $f (smudge filter did not run correctly)."
       failed=1
     fi
