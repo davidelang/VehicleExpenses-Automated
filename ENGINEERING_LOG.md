@@ -7355,3 +7355,9 @@ x
 - syncExpensesTab gated; flag-off legacy LWW; build green VE 541fad1c
 - Human optional: vehicle_settings use_policy_sync_expenses=true then Sync now; log Expenses via PolicySync/MergeSync; set false after
 
+
+## 2026-08-05 - ve-policysync-vehicles-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-vehicles-pilot-20260805-0137-plan.md
+- PolicySync/MergeSync pilot for Vehicles tab; flag default off
+

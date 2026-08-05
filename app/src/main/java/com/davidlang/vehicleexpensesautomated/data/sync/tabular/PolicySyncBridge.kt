@@ -13,16 +13,21 @@ import com.davidelang.remotetable.TombstoneConfig
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
+import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 
 /**
  * Bridge between VE entity tabs and remotetable L3 policy (pilot).
  *
  * Default production path remains coordinator LWW; enable via prefs
- * [PREF_USE_POLICY_SYNC_MERGE_ACKS] / [PREF_USE_POLICY_SYNC_EXPENSES] (default **false**).
+ * [PREF_USE_POLICY_SYNC_MERGE_ACKS] / [PREF_USE_POLICY_SYNC_EXPENSES] /
+ * [PREF_USE_POLICY_SYNC_VEHICLES] (default **false**).
  *
  * Uses [MergeSync] **lww_row** for bidirectional key+timestamp merge
  * (PolicySync.push is also available for one-way experiments).
  * Fuel is **out of scope** for this bridge pilot.
+ *
+ * **Vehicles caveat:** library path is full-row pick only — it does **not** apply
+ * coordinator [overlayVehicleDefinitionFields] (crops/landmarks/photo fill from loser).
  */
 object PolicySyncBridge {
 
@@ -32,10 +37,15 @@ object PolicySyncBridge {
     /** vehicle_settings prefs key for Expenses tab pilot. Default false. */
     const val PREF_USE_POLICY_SYNC_EXPENSES = "use_policy_sync_expenses"
 
+    /** vehicle_settings prefs key for Vehicles tab pilot. Default false. */
+    const val PREF_USE_POLICY_SYNC_VEHICLES = "use_policy_sync_vehicles"
+
     private const val TAB_LOCAL = "LocalAcks"
     private const val TAB_REMOTE = "RemoteAcks"
     private const val TAB_LOCAL_EXP = "LocalExpenses"
     private const val TAB_REMOTE_EXP = "RemoteExpenses"
+    private const val TAB_LOCAL_VEH = "LocalVehicles"
+    private const val TAB_REMOTE_VEH = "RemoteVehicles"
 
     private val TOMBSTONE = TombstoneConfig(
         column = "Deleted",
@@ -253,5 +263,99 @@ object PolicySyncBridge {
         val pushResult = PolicySync.push(a, b, expensesPushUnit())
         val after = b.readRows(TAB_REMOTE_EXP)
         return expensesFromTabData(after, vehicleIdBySyncId) to pushResult
+    }
+
+    // ── Vehicles pilot ──────────────────────────────────────────────────────
+
+    fun vehicleColumnDefs(): List<ColumnDef> =
+        TabularSchema.VEHICLE_HEADERS.map { name ->
+            val type = when (name) {
+                "Updated At", "Deleted At" -> "timestamp"
+                "Deleted" -> "checkbox"
+                "Year",
+                "Odo Crop L", "Odo Crop T", "Odo Crop R", "Odo Crop B",
+                "Other Crop L", "Other Crop T", "Other Crop R", "Other Crop B",
+                -> "number"
+                else -> "string"
+            }
+            ColumnDef(name, type)
+        }
+
+    fun vehiclesMergeUnit(
+        mode: MergeMode = MergeMode.LWW_ROW,
+        writeTarget: String = "none",
+    ): MergeUnit = MergeUnit(
+        id = "vehicles-pilot",
+        mergeMode = mode,
+        writeTarget = writeTarget,
+        tableA = TAB_LOCAL_VEH,
+        tableB = TAB_REMOTE_VEH,
+        columns = vehicleColumnDefs(),
+        columnMapA = emptyMap(),
+        columnMapB = emptyMap(),
+        keys = listOf("Sync ID"),
+        timestamp = "Updated At",
+        tombstone = TOMBSTONE,
+    )
+
+    fun vehiclesPushUnit(): TableSyncUnit = TableSyncUnit(
+        id = "vehicles-push-pilot",
+        direction = "push",
+        sourceTable = TAB_LOCAL_VEH,
+        destTable = TAB_REMOTE_VEH,
+        columns = vehicleColumnDefs(),
+        columnMap = emptyMap(),
+        keys = listOf("Sync ID"),
+        timestamp = "Updated At",
+        tombstone = TOMBSTONE,
+    )
+
+    fun tabDataFromVehicles(vehicles: List<Vehicle>): TabData {
+        val rows = vehicles
+            .filter { it.syncId.isNotBlank() }
+            .sortedWith(compareBy({ it.name.lowercase() }, { it.syncId }))
+            .map { TabularSchema.vehicleToRow(it) }
+        return TabData(TabularSchema.VEHICLE_HEADERS, rows)
+    }
+
+    fun vehiclesFromTabData(data: TabData): List<Vehicle> {
+        val idx = TabularSchema.headerIndex(data.headers)
+        return data.rows
+            .filter { row -> row.any { it.isNotBlank() } }
+            .map { TabularSchema.rowToVehicle(it, idx) }
+            .filter { it.syncId.isNotBlank() }
+    }
+
+    /**
+     * Bidirectional LWW merge of local Room vehicles with remote sheet grid via [MergeSync].
+     *
+     * **Full-row pick only** — does **not** apply coordinator definition-field overlay
+     * (crops / landmarks / photo paths from the non-winning side). Prefer flag-off
+     * production path when those overlays matter.
+     */
+    fun mergeVehiclesViaLwwRow(
+        localVehicles: List<Vehicle>,
+        remoteGrid: List<List<String>>,
+    ): List<Vehicle> {
+        val localData = tabDataFromVehicles(localVehicles)
+        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.VEHICLE_HEADERS)
+        val a = Backends.mock(mapOf(TAB_LOCAL_VEH to localData))
+        val b = Backends.mock(mapOf(TAB_REMOTE_VEH to remoteData))
+        val result = MergeSync.merge(a, b, vehiclesMergeUnit(writeTarget = "none"))
+        return vehiclesFromTabData(result.data)
+    }
+
+    /** One-way PolicySync.push for vehicles experiments. */
+    fun pushVehiclesViaPolicy(
+        localVehicles: List<Vehicle>,
+        remoteGrid: List<List<String>>,
+    ): Pair<List<Vehicle>, PushResult> {
+        val localData = tabDataFromVehicles(localVehicles)
+        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.VEHICLE_HEADERS)
+        val a = Backends.mock(mapOf(TAB_LOCAL_VEH to localData))
+        val b = Backends.mock(mapOf(TAB_REMOTE_VEH to remoteData))
+        val pushResult = PolicySync.push(a, b, vehiclesPushUnit())
+        val after = b.readRows(TAB_REMOTE_VEH)
+        return vehiclesFromTabData(after) to pushResult
     }
 }

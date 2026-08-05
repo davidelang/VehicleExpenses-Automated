@@ -669,6 +669,14 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         )
     }
 
+    /**
+     * LWW "Vehicles" tab by Sync ID. Soft-deleted included for tombstones.
+     *
+     * When prefs [PolicySyncBridge.PREF_USE_POLICY_SYNC_VEHICLES] is true (default false),
+     * merge uses remotetable [com.davidelang.remotetable.MergeSync] **lww_row** full-row pick
+     * via [PolicySyncBridge] — **no** [overlayVehicleDefinitionFields] (crops/landmarks/photos
+     * from the non-winning side). Flag-off keeps legacy [mergeVehicleLww] + overlay.
+     */
     private suspend fun syncVehiclesTab(
         dest: SpreadsheetDestination,
         backend: TabularShareBackend,
@@ -684,29 +692,37 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         val headerIndex = TabularSchema.headerIndex(writeHeaders)
         val remoteDataRows = remoteRows.drop(1)
             .filter { it.any { cell -> cell.isNotBlank() } }
-        val remoteVehicles = remoteDataRows
-            .map { TabularSchema.rowToVehicle(it, headerIndex) }
+
+        val usePolicy = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(PolicySyncBridge.PREF_USE_POLICY_SYNC_VEHICLES, false)
 
         val localVehicles = vehicleRepository.getAllIncludingDeleted()
-        val localBySyncId = localVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-        val remoteBySyncId = remoteVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-        val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
-
-        val merged = mutableListOf<Vehicle>()
-        var count = 0
-        for (syncId in allSyncIds) {
-            val local = localBySyncId[syncId]
-            val remote = remoteBySyncId[syncId]
-            val winner = mergeVehicleLww(local, remote)
-            if (winner != null && winner.syncId.isNotBlank()) {
-                vehicleRepository.upsertFromSync(winner)
-                merged.add(winner)
-                count++
+        val merged: List<Vehicle> = if (usePolicy) {
+            Log.i(TAG, "Vehicles via PolicySync/MergeSync (lww_row pilot; no definition overlay)")
+            PolicySyncBridge.mergeVehiclesViaLwwRow(localVehicles, remoteRows)
+        } else {
+            // Legacy coordinator LWW + definition overlay (default; production path).
+            val remoteVehicles = remoteDataRows.map { TabularSchema.rowToVehicle(it, headerIndex) }
+            val localBySyncId = localVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+            val remoteBySyncId = remoteVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+            val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
+            val out = mutableListOf<Vehicle>()
+            for (syncId in allSyncIds) {
+                val winner = mergeVehicleLww(localBySyncId[syncId], remoteBySyncId[syncId])
+                if (winner != null && winner.syncId.isNotBlank()) {
+                    out.add(winner)
+                }
             }
+            out
+        }
+
+        for (v in merged) {
+            if (v.syncId.isBlank()) continue
+            vehicleRepository.upsertFromSync(v)
         }
 
         val withLandmarks = merged.count { !it.landmarkTextBlocksJson.isNullOrBlank() }
-        Log.i(TAG, "Vehicles tab merged: upserted=$count withLandmarks=$withLandmarks")
+        Log.i(TAG, "Vehicles tab merged: upserted=${merged.size} withLandmarks=$withLandmarks")
 
         val sortedMerged = merged.sortedWith(compareBy({ it.name.lowercase() }, { it.syncId }))
         writeRowsIncremental(
@@ -722,7 +738,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             logTag = "Vehicles",
             forceFullRewrite = resolved.forceFullRewrite,
         )
-        return count
+        if (usePolicy) {
+            Log.i(TAG, "Vehicles PolicySync pilot wrote ${sortedMerged.size} rows")
+        }
+        return sortedMerged.size
     }
 
     /**
