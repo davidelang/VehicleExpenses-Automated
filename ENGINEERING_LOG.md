@@ -7139,3 +7139,394 @@ x
 
 ## 2026-08-04 - Merge email-connection into master
 - Non-FF merge 61ded60d; build_app SUCCESS; builds tag updated; specials reconciled; armv7 deferred
+
+## 2026-08-04 - remotetable-contract-strategy foundation — execution start
+
+- Approved plan: dev-ai-interaction/plans/remotetable-contract-strategy-and-foundation-20260804-2024-plan.md
+- Library-first: materialize, CONTRACT, L0 rate limits + Sheets efficiency, L1/L2 many-ops, pin + thin VE adapter, optional directional push MVP
+- Phase 6 device deferred
+
+## 2026-08-04 - remotetable-contract-strategy foundation — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/remotetable-contract-strategy-and-foundation-20260804-2024-plan.md
+- Library commit 37c61a9 (fix-syncing): CONTRACT schema_v1, RateLimiter, Sheets batch/range/pace, L1/L2 ops, PolicySync push; harness PASS
+- VE pin + AAR promoted; GoogleSheetsTabularBackend thin (readMany/updateRangeRows); SyncRateLimit.notifyProgress; SYNC_BEHAVIOR docs
+- ./build_app OK; tag fix-syncing/builds → 7dfe1523
+- Phase 6 device (5554) deferred by plan
+
+## 2026-08-04 - remotetable-gaps-hygiene-and-cli-test — execution start
+
+- Approved plan: dev-ai-interaction/plans/remotetable-gaps-hygiene-and-cli-test-20260804-2119-plan.md
+- Phases: VE docs hygiene; appendRows no double-read; rate-limit all HTTP backends; type coerce; CLI/harness test surface; pin promote + build_app
+
+## 2026-08-04 - remotetable-gaps-hygiene-and-cli-test — pre-build
+
+- Library 17cf482: all HTTP backends RateLimiter; CellTypes+PolicySync coerce; appendDataRows; CLI conformance/push; harness PASS
+- VE: project-facts+API hygiene; GoogleSheetsTabularBackend.appendRows→appendDataRows; pin+AAR promote
+
+## 2026-08-04 - remotetable-gaps-hygiene-and-cli-test — CODE LANDED
+
+- Plan complete: docs hygiene, appendDataRows, all HTTP backends paced, type coerce, CLI/harness test surface
+- Library pin 17cf482; VE build 463181fb; tag fix-syncing/builds
+- Optional 5554 not required by plan
+
+## 2026-08-04 - remotetable-l3-ab-merge — execution start
+
+- Plan: dev-ai-interaction/plans/remotetable-l3-ab-merge-union-lww-fieldfill-20260804-2209-plan.md
+- Library L3 merge modes union/lww_row/field_fill; harness+CLI; pin promote; no VE coordinator rewrite
+
+## 2026-08-04 - remotetable-l3-ab-merge — pin promote
+
+- Library 570237b: MergeSync union/lww_row/field_fill; harness+CLI merge; CONTRACT L3
+- Pin+AAR promoted; VE build link check (no coordinator rewrite)
+
+## 2026-08-04 - remotetable-l3-ab-merge — CODE LANDED
+
+- Plan complete: L3 merge union/lww_row/field_fill; harness+CLI; pin 570237b; VE build 0825f08b
+- No VE coordinator rewrite; push regression PASS
+
+## 2026-08-04 - remotetable-local-file-backends — execution start
+
+- Plan: dev-ai-interaction/plans/remotetable-local-file-backends-and-offline-copy-20260804-2225-plan.md
+- local/json-book/csv-dir L0 backends; offline push/merge; Kotlin local+json; pin if AAR changes
+
+## 2026-08-04 - remotetable-local-file-backends — CODE LANDED prep
+
+- Library b4baf3b: local/json-book (Kotlin+Python), csv-dir Python host-only; harness offline PASS
+- Pin+AAR promoted; project-facts offline endpoints note
+
+## 2026-08-04 - remotetable-local-file-backends — CODE LANDED
+
+- Plan complete: local/json-book/csv-dir; harness offline PASS; pin b4baf3b; VE ac135520
+- No coordinator rewrite
+
+## 2026-08-04 - ve-sheets-sync-device-acceptance-5554 — execution start
+
+- Plan: dev-ai-interaction/plans/ve-sheets-sync-device-acceptance-5554-20260804-2236-plan.md
+- Preflight pin/build; dump logcat after human Sync now; residual fix only if needed
+
+## 2026-08-04 - ve-sheets-sync-device-acceptance-5554 — BLOCKED (wrong APK)
+
+- emulator-5554 online; pin on tree b4baf3b; builds tag fix-syncing/builds → 0faad378 (v0.98-24-g0faad378)
+- Device installed versionName=email-connection-start-111-g1f95c129 (2026-08-04 09:01) — pre-rate-limit AAR
+- Log dump: dev-ai-interaction/device-logcat-emulator-5554-sync-accept-20260804-preflight.log
+- Evidence 14:57:26 hard fail HTTP 429 Read requests on GoogleSheetsBackend.readRows via OLD updateRows (line 130 stack) — no RateLimiter wait
+- WorkManager RETRY then Sync complete 14:58:06 Honda/Ford writes OK (old APK worker retry, not lib pace acceptance)
+- Human must ./deploy or install app/build/outputs/apk/debug/app-debug.apk on 5554 then Sync now; reply to resume Phase 2 on fixed build
+- No residual code change this turn (stack proves stale binary)
+
+## 2026-08-04 - ve-sheets-sync-device-acceptance-resume — execution start
+
+- Plan: dev-ai-interaction/plans/ve-sheets-sync-device-acceptance-resume-20260804-2309-plan.md
+- Phase 1 deploy gate: verify versionName on emulator-5554
+
+## 2026-08-04 - ve-sheets-sync-device-acceptance-resume — BLOCKED (Phase 1 deploy gate)
+
+- Plan: ve-sheets-sync-device-acceptance-resume-20260804-2309-plan.md
+- adb 5554 versionName still email-connection-start-111-g1f95c129 (unchanged since 09:01)
+- STOP per plan: no Sync acceptance / no postdeploy log as PASS
+- Worktree ready: pin b4baf3b, HEAD 47e629a6, APK app/build/outputs/apk/debug/app-debug.apk
+- Human: install that APK on 5554, confirm versionName ≠ email-connection-start-111…, Sync now, re-approve resume or say continue
+
+## 2026-08-04 - ve-sheets-sync human-deploy plan — BLOCKED Phase 1
+
+- Plan: dev-ai-interaction/plans/ve-sheets-sync-device-acceptance-human-deploy-20260804-2324-plan.md
+- adb 5554: versionName still email-connection-start-111-g1f95c129 lastUpdate=2026-08-04 09:01:25
+- STOP: no Sync acceptance / no postdeploy log as PASS
+- Ready APK: app/build/outputs/apk/debug/app-debug.apk pin b4baf3b HEAD 1fa0af0b
+- Human must install then Sync now; agent will not adb install
+
+## 2026-08-04 - fix-sheets-tab-states-headers-and-rewrite — execution start
+
+- Plan: dev-ai-interaction/plans/fix-sheets-tab-states-headers-and-rewrite-20260804-2344-plan.md
+- Three cases: no tab / empty / data-without-headers; valid Sync ID; force writeAllRows
+
+## 2026-08-04 - fix-sheets-tab-states — pre-build
+
+- TabularSchema.isValidHeaderRow (Sync ID); mergeHeaderOrder invalid→canonical
+- Lib ensureHeaders clear+rewrite on invalid; pin 04ee2d2
+- Coordinator: resolve poison→empty LWW + forceFullRewrite writeAllRows; empty remote no appendDataRows
+
+## 2026-08-04 - fix-sheets-tab-states-headers-and-rewrite — CODE LANDED
+
+- Plan complete: three-case headers; pin 04ee2d2; VE 3623d9ea; tag fix-syncing/builds
+- Human: install APK, clear junk tabs if needed, Sync now — confirm row 1 has Sync ID + data below
+
+## 2026-08-05 - fix-sheets-missing-columns-report-not-silent — execution start
+
+- Plan: dev-ai-interaction/plans/fix-sheets-missing-columns-report-not-silent-20260805-0000-plan.md
+- Case 3: fail with named missing columns; no silent rewrite/poison LWW
+
+## 2026-08-05 - fix-sheets-missing-columns-report-not-silent — pre-build
+
+- missingRequiredHeaders + isCompletelyBlankGrid
+- Case 3: SpreadsheetMissingColumnsException aborts dest; message names tab + columns
+- No silent ensureHeaders merge/rewrite or poison LWW; cases 1–2 still ensure+fullRewrite
+
+## 2026-08-05 - fix-sheets-missing-columns-report-not-silent — CODE LANDED
+
+- Case 3 fails with named missing columns; no silent rewrite/poison LWW
+- Cases 1–2 keep ensureHeaders; build 04e5bfc2 / fix-syncing/builds
+- Human: install; corrupt fuel row1 → expect failure in Syncing Details
+
+## 2026-08-05 - ethercalc harness + Room pilot — execution start
+
+- Plans: remotetable-local-ethercalc-validation-harness-20260805-0011-plan.md; ve-room-tabular-backend-pilot-20260805-0011-plan.md
+- Local EtherCalc compose+smoke; read-only Room Vehicles Backend + export path
+
+## 2026-08-05 - ethercalc harness + Room pilot — pre-build
+
+- remotetable 8f4901b: local EtherCalc up/down + live smoke PASS
+- RoomVehiclesBackend read-only pilot + exportJsonBook; project-facts pointer
+
+## 2026-08-05 - ethercalc harness + Room pilot — CODE LANDED
+
+- EtherCalc: up/down + smoke PASS; lib commit 8f4901b (python/docs; AAR pin unchanged)
+- RoomVehiclesBackend pilot + exportJsonBook; VE 8775c03d
+- Production Sheets path unchanged
+
+## 2026-08-05 - ve-policysync-merge-acks-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-merge-acks-pilot-20260805-0025-plan.md
+- PolicySync bridge for Merge acks; flag use_policy_sync_merge_acks default false
+
+## 2026-08-05 - ve-policysync-merge-acks-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-merge-acks-pilot-20260805-0025-plan.md
+- PolicySyncBridge + syncMergeAcksTab gate; prefs use_policy_sync_merge_acks default false
+- Merge acks only via MergeSync lww_row when flag on; fuel/vehicles unchanged
+- build_app green; VE 03dca84e
+- Human optional: set vehicle_settings boolean use_policy_sync_merge_acks=true then Sync now; log line Merge acks via PolicySync/MergeSync; set false after
+
+
+## 2026-08-05 - remotetable-richer-filters-in-isempty — execution start
+
+- Plan: dev-ai-interaction/plans/remotetable-richer-filters-in-isempty-20260805-0033-plan.md
+- Library: IN + is_empty filter ops on remotetable
+
+
+## 2026-08-05 - remotetable-richer-filters-in-isempty — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/remotetable-richer-filters-in-isempty-20260805-0033-plan.md
+- Filter v1.1: in: / is_empty: / empty: / not_empty: + equality; Kotlin RowOps + Python parity
+- Harness PASS offline; CONTRACT updated; pin 14b97be AAR sha 59a07946…
+- VE coordinator not switched (out of scope)
+
+
+## 2026-08-05 - ve-room-to-ethercalc-e2e-export-validation — execution start
+
+- Plan: dev-ai-interaction/plans/ve-room-to-ethercalc-e2e-export-validation-20260805-0044-plan.md
+- E2E: Room export → EtherCalc path validation
+
+
+## 2026-08-05 - ve-room-to-ethercalc-e2e-export-validation — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-room-to-ethercalc-e2e-export-validation-20260805-0044-plan.md
+- Offline: room_export_to_ethercalc_smoke + fixture Vehicles/Sync ID; harness PASS
+- EtherCalc e2e PASS with up.sh (unique room); SKIP without env
+- scripts/room-export-ethercalc-smoke.sh pointer; pin dbb7068 (python/docs only; AAR sha unchanged)
+- Sheets production path untouched
+
+
+## 2026-08-05 - ve-room-fuel-tabs-backend-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-room-fuel-tabs-backend-pilot-20260805-0121-plan.md
+- Room Fuel tabs Backend pilot (read-only default)
+
+
+## 2026-08-05 - ve-room-fuel-tabs-backend-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-room-fuel-tabs-backend-pilot-20260805-0121-plan.md
+- RoomFuelBackend read-only multi-tab + exportJsonBook; FUEL_HEADERS/Sync ID
+- Golden fixture + room_fuel_export_smoke offline PASS; EtherCalc one-tab PASS with up.sh
+- Sheets/coordinator fuel LWW untouched; build via build_app next
+
+
+## 2026-08-05 - ve-policysync-expenses-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-expenses-pilot-20260805-0128-plan.md
+- PolicySync/MergeSync pilot for Expenses tab; flag default off
+
+
+## 2026-08-05 - ve-policysync-expenses-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-expenses-pilot-20260805-0128-plan.md
+- PolicySyncBridge expenses LWW + pref use_policy_sync_expenses default false
+- syncExpensesTab gated; flag-off legacy LWW; build green VE 541fad1c
+- Human optional: vehicle_settings use_policy_sync_expenses=true then Sync now; log Expenses via PolicySync/MergeSync; set false after
+
+
+## 2026-08-05 - ve-policysync-vehicles-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-vehicles-pilot-20260805-0137-plan.md
+- PolicySync/MergeSync pilot for Vehicles tab; flag default off
+
+
+## 2026-08-05 - ve-policysync-vehicles-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-vehicles-pilot-20260805-0137-plan.md
+- PolicySyncBridge mergeVehiclesViaLwwRow; pref use_policy_sync_vehicles default false
+- syncVehiclesTab gated; flag-off keeps mergeVehicleLww+overlay; flag-on full-row only
+- build green VE a4dc7d9c
+- Human optional: vehicle_settings use_policy_sync_vehicles=true; Sync now; log Vehicles via PolicySync/MergeSync; set false after
+
+
+## 2026-08-05 - ve-policysync-fuel-tabs-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-fuel-tabs-pilot-20260805-0634-plan.md
+- PolicySync/MergeSync pilot for Fuel tabs; flag default off
+
+
+## 2026-08-05 - ve-policysync-fuel-tabs-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-fuel-tabs-pilot-20260805-0634-plan.md
+- PolicySyncBridge mergeFuelViaLwwRow; pref use_policy_sync_fuel default false
+- syncFuelTabs Pass 1 gated; Pass 2 field-merge + Pass 3 write always app-side
+- build green VE 130a5d28
+- Human optional: vehicle_settings use_policy_sync_fuel=true; Sync now; log Fuel LWW via PolicySync/MergeSync; set false after
+
+
+## 2026-08-05 - ve-room-fuel-multi-tab-ethercalc-export — execution start
+
+- Plan: dev-ai-interaction/plans/ve-room-fuel-multi-tab-ethercalc-export-20260805-0713-plan.md
+- Multi-tab Room fuel → EtherCalc export validation
+
+
+## 2026-08-05 - ve-room-fuel-multi-tab-ethercalc-export — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-room-fuel-multi-tab-ethercalc-export-20260805-0713-plan.md
+- room_fuel_export_smoke: multi-room EtherCalc (each Fuel tab); offline still PASS
+- pin 883cda7; Sheets/production untouched
+
+
+## 2026-08-05 - ve-policysync-vehicles-definition-overlay — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-vehicles-definition-overlay-20260805-0731-plan.md
+- PolicySync vehicles path: port definition overlay after library LWW
+
+
+## 2026-08-05 - ve-policysync-vehicles-definition-overlay — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-vehicles-definition-overlay-20260805-0731-plan.md
+- VehicleDefinitionOverlay shared helper; flag-on PolicySync LWW + same overlay as legacy
+- build green VE ae05af7a
+
+
+## 2026-08-05 - ve-policysync-pilots-default-on-evaluation — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-pilots-default-on-evaluation-20260805-0815-plan.md
+
+
+## 2026-08-05 - ve-policysync-pilots-default-on-evaluation — PHASE1_SOAK (no default flip)
+
+- Plan: dev-ai-interaction/plans/ve-policysync-pilots-default-on-evaluation-20260805-0815-plan.md
+- Checklist: docs/reference/POLICY_SYNC_PILOT_SOAK.md; project-facts defaults table
+- Defaults still all false; STOP for human soak / go on which prefs to default true
+- Proposed tranche (not applied): merge_acks+expenses+vehicles true; fuel false
+
+
+## 2026-08-05 - policysync-scenario-tests-local-ethercalc — execution start
+
+- Plan: dev-ai-interaction/plans/policysync-scenario-tests-local-ethercalc-20260805-0826-plan.md
+
+
+## 2026-08-05 - policysync-scenario-tests-local-ethercalc — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/policysync-scenario-tests-local-ethercalc-20260805-0826-plan.md
+- S1–S7 offline PASS in harness; S8 multi-entity + multi-tab fuel EtherCalc PASS
+- Defaults still false; soak doc updated for automated evidence
+- pin 188b328
+
+
+## 2026-08-05 - PolicySync cutover: drop pilot prefs, library LWW is the path
+
+- Human: no production phase-in flags; implement + test; rollback = master APK
+- Remove use_policy_sync_* gates; always MergeSync lww_row for acks/expenses/vehicles/fuel Pass1
+
+
+## 2026-08-05 - PolicySync cutover CODE LANDED (no pilot prefs)
+
+- Always library MergeSync LWW for acks/expenses/vehicles/fuel Pass1; vehicle overlay after
+- Fuel field-merge still app; removed use_policy_sync_* prefs and dual paths
+- Scenarios S1–S7 PASS; S8 when docker available
+
+
+## 2026-08-05 - ve-location-blob-merge-after-library-lww — execution start
+
+- Plan: dev-ai-interaction/plans/ve-location-blob-merge-after-library-lww-20260805-0631-plan.md
+- Restore FuelLocationJson.mergeBlobs after library LWW for fuel + expenses
+
+
+## 2026-08-05 - ve-location-blob-merge-after-library-lww — CODE LANDED
+
+- LocationBlobOverlay + wire fuel Pass1 and expenses after library LWW
+- FuelLocationJson.mergeBlobs unchanged; build d45524e2; scenarios S1–S7 PASS
+
+
+## 2026-08-05 - location-blob-overlay-scenario-tests — execution start
+
+- Plan: dev-ai-interaction/plans/location-blob-overlay-scenario-tests-20260805-0830-plan.md
+
+
+## 2026-08-05 - location-blob-overlay-scenario-tests — CODE LANDED
+
+- LocationBlobOverlayTest 6 cases green (Robolectric); build_app -- testDebugUnitTest
+- Plan: location-blob-overlay-scenario-tests-20260805-0830-plan.md
+- S1–S7 still PASS
+
+
+## 2026-08-05 - vehicle-definition-overlay-unit-tests — execution start
+
+- Plan: dev-ai-interaction/plans/vehicle-definition-overlay-unit-tests-20260805-1359-plan.md
+
+
+## 2026-08-05 - vehicle-definition-overlay-unit-tests — CODE LANDED
+
+- VehicleDefinitionOverlayTest 8 cases green; LocationBlobOverlayTest still green
+- Plan: vehicle-definition-overlay-unit-tests-20260805-1359-plan.md
+
+
+## 2026-08-05 - fuel-field-merge-unit-tests-after-library-lww — execution start
+
+- Plan: dev-ai-interaction/plans/fuel-field-merge-unit-tests-after-library-lww-20260805-1405-plan.md
+
+
+## 2026-08-05 - fuel-field-merge-unit-tests-after-library-lww — CODE LANDED
+
+- FuelRowMergeEngineFieldMergeTest 8 cases green via build_app -- testDebugUnitTest
+- Plan: fuel-field-merge-unit-tests-after-library-lww-20260805-1405-plan.md
+
+
+## 2026-08-05 - sync-architecture-hygiene-archive-obsolete-plans — execution start
+
+- Plan: dev-ai-interaction/plans/sync-architecture-hygiene-archive-obsolete-plans-20260805-1440-plan.md
+
+
+## 2026-08-05 - sync-architecture-hygiene-archive-obsolete-plans — CODE LANDED
+
+- Plan: sync-architecture-hygiene-archive-obsolete-plans-20260805-1440-plan.md
+- Architecture map: dev-ai-interaction/research/sync-remotetable-architecture-map-20260805.md
+- Archived 29 obsolete sync/remotetable/policysync plans → historical-plans/
+- Renamed POLICY_SYNC_PILOT_SOAK.md → docs/reference/SYNC_TAB_LWW_AND_TESTS.md
+- No app behavior change
+
+
+## 2026-08-05 - sync-always-on-device-confidence — execution start
+
+- Plan: dev-ai-interaction/plans/sync-always-on-device-confidence-20260805-1622-plan.md
+
+
+## 2026-08-05 - sync-always-on-device-confidence — preflight PASS (awaiting human Sync)
+
+- Plan: sync-always-on-device-confidence-20260805-1622-plan.md
+- Harness PASS; EC S8 PASS; unit tests 3 classes PASS
+- Installed APK on emulator-5554 versionName=fix-syncing-start-48-gcc2ed4dd
+- STOP for human: Sync now on good re-seeded sheet; report result
+
+
+## 2026-08-05 - sync-always-on-device-confidence CODE LANDED
+
+- Plan: sync-always-on-device-confidence-20260805-1622-plan.md
+- Device Sync complete ~10:04-10:10; Honda update=214 paced; Ford Van update=81; no Sync failed
+- Log: device-logcat-emulator-5554-confidence-sync-done-20260805.log
+
