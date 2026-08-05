@@ -7327,3 +7327,17 @@ x
 - scripts/room-export-ethercalc-smoke.sh pointer; pin dbb7068 (python/docs only; AAR sha unchanged)
 - Sheets production path untouched
 
+
+## 2026-08-05 - ve-room-fuel-tabs-backend-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-room-fuel-tabs-backend-pilot-20260805-0121-plan.md
+- Room Fuel tabs Backend pilot (read-only default)
+
+
+## 2026-08-05 - ve-room-fuel-tabs-backend-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-room-fuel-tabs-backend-pilot-20260805-0121-plan.md
+- RoomFuelBackend read-only multi-tab + exportJsonBook; FUEL_HEADERS/Sync ID
+- Golden fixture + room_fuel_export_smoke offline PASS; EtherCalc one-tab PASS with up.sh
+- Sheets/coordinator fuel LWW untouched; build via build_app next
+
