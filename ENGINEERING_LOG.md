@@ -7289,3 +7289,12 @@ x
 
 - Plan: dev-ai-interaction/plans/ve-policysync-merge-acks-pilot-20260805-0025-plan.md
 - PolicySync bridge for Merge acks; flag use_policy_sync_merge_acks default false
+
+## 2026-08-05 - ve-policysync-merge-acks-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-merge-acks-pilot-20260805-0025-plan.md
+- PolicySyncBridge + syncMergeAcksTab gate; prefs use_policy_sync_merge_acks default false
+- Merge acks only via MergeSync lww_row when flag on; fuel/vehicles unchanged
+- build_app green; VE 03dca84e
+- Human optional: set vehicle_settings boolean use_policy_sync_merge_acks=true then Sync now; log line Merge acks via PolicySync/MergeSync; set false after
+
