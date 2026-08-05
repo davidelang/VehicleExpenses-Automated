@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License
 
-cmake_minimum_required(VERSION 3.0)
+# 3.16: Ubuntu 20.04 baseline; 3.19+ preferred with NDK r23+. CMake 4.x rejects 3.0.
+cmake_minimum_required(VERSION 3.16)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(PADDLE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(PADDLE_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
@@ -34,8 +35,9 @@ include(os/common)
 # Paddlelite project
 project(paddle CXX C)
 if(ANDROID AND ARM_TARGET_ARCH_ABI STREQUAL "x86_64")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --target=x86_64-none-linux-android21 --sysroot=/opt/android-ndk-r20b/toolchains/llvm/prebuilt/linux-x86_64/sysroot -stdlib=libc++ -msse4.1 -msse4.2 -mavx")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --target=x86_64-none-linux-android21 --sysroot=/opt/android-ndk-r20b/toolchains/llvm/prebuilt/linux-x86_64/sysroot -msse4.1 -msse4.2 -mavx")
+  # ANDROID_NDK from toolchain/env (not hardcoded r20b path)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --target=x86_64-none-linux-android21 --sysroot=${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot -stdlib=libc++ -msse4.1 -msse4.2 -mavx")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --target=x86_64-none-linux-android21 --sysroot=${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot -msse4.1 -msse4.2 -mavx")
   add_definitions(-DLITE_WITH_ANDROID -DLITE_WITH_LINUX)
 endif()
 

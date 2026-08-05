@@ -133,9 +133,9 @@ The container **copies** pin `src` to a writable workdir, applies `patches-int8`
 
 | Target | `--arch` | Notes |
 |--------|----------|--------|
-| arm64-v8a | `armv8` | `--with_arm82_fp16=ON`; patchelf SONAME on jni |
-| x86_64 | `x86_64` | Emulator; often also `libpaddle_light_api_shared.so` |
-| armeabi-v7a | `armv7` | Optional; head-unit ABI backlog |
+| arm64-v8a | `armv8` | `--with_arm82_fp16=ON`; patchelf SONAME on jni; **tailor** default when models present |
+| x86_64 | `x86_64` | Emulator; thin jni + **light**; **no HW fp16 backbone** (see §4.1) |
+| armeabi-v7a | `armv7` | Real limited **ARMv7 head units**; **fp32 calib only** — never `ARM82_FP16` for product (see §4.1) |
 
 Common flags (slim):
 
@@ -144,16 +144,41 @@ Common flags (slim):
 --with_log=OFF --with_benchmark=OFF --android_stl=c++_static --with_exception=ON
 ```
 
-**Post-check** (`run-android-slim.sh` kernel string stamps on jni/light):
+**Post-check** (kernel string stamps on jni/light):
 
 | Stamp | arm64-v8a | x86_64 | armeabi-v7a |
 |-------|-----------|--------|-------------|
-| `int8_to_fp32`, `uint8_to_fp32`, `fp32_to_uint8` | required | required | required |
-| `int8_to_fp16`, `uint8_to_fp16` | required (`--with_arm82_fp16=ON`) | required (x86 software fp16) | **not expected** (no `ENABLE_ARM_FP16` on armv7) |
+| `int8_to_fp32`, `uint8_to_fp32`, `fp32_to_uint8` | required on jni or light | required on **light** (thin jni is wrapper) | required (product path) |
+| `int8_to_fp16`, `uint8_to_fp16` | required (`--with_arm82_fp16=ON`) | optional on light (soft); backbone still fp32 | **SKIP / not product** — true v7 does not use HW fp16 |
 
-armeabi-v7a reports those fp16 stamps as **SKIP**, not FAIL.
+### 4.1 Precision limitations (by design)
 
-**Tailor (`LITE_BUILD_TAILOR`):** separate scripts historically under sandbox (`build_tailored_*`); optional later pin profile — **not** the default slim path.
+**armeabi-v7a (true ARMv7-A head units):**  
+Do not ship Paddle’s `LITE_WITH_ARM82_FP16` for this ABI. That flag compiles with `-march=armv8.2-a+fp16` (wrong ISA class for limited v7 chips → SIGILL risk).  
+“Soft fp16” (store half, compute via convert + fp32 NEON) is **not** a free win: on weak v7 CPUs convert overhead usually makes it **worse or no better than fp32**. **Product decision: fp32 calib path only; do not implement soft-fp16 for head units.**
+
+**x86_64 / AMD64 Android emulator:**  
+No competitive HW fp16 conv stack in this pin. Host `opt` may enable kFP16 places so analytic quant can insert `int8_to_fp16` / `uint8_to_fp16`, then **type-precision cast demotes the backbone to float** (`opt_base.cc` comment). Same class of limitation as “could not get real fp16 match on AMD64” — accept fp32 mid-graph; do not block on “true” x86 fp16 parity with arm64.
+
+**arm64-v8a:** HW fp16 is the product path (`prod_u8fp16/*_armv8.nb`).
+
+### 4.2 Tailor and size (library, not precision)
+
+`LITE_BUILD_TAILOR` drops unused kernels using model lists (`.nb` + `.tailored_*`). **This is the main SO size lever**, independent of fp16 on armv7.
+
+| Historical (sandbox Jul 2026) | Slim | Tailored |
+|-------------------------------|------|----------|
+| arm64 jni | ~5.5 MB | **~1.6 MB** |
+| x86_64 light | ~9.5 MB | **~3.7 MB** |
+| x86_64 jni | ~0.7 MB | ~30–50 KB (thin/tailor) |
+
+| Current pin (NDK r28c, 2026-08-04) | Profile | Size |
+|------------------------------------|---------|------|
+| arm64 | tailor | ~1.8 MB |
+| armv7 | **tailor** (2026-08-04 pin) | **~0.75 MB** (was slim ~3.0 MB) |
+| x86_64 light | **slim** (default) | ~10 MB; x86 tailor experimental (android-x86 drops KernelRegistrar) |
+
+**armv7 tailor landed** with `paddle-models` armv7 lists (fp32 calib, no arm82 FP16). **x86_64** stays slim by default (`PADDLE_X86_PROFILE=slim`) until a force-keep/whole-archive fix lands for strip-kernel registries.
 
 ---
 

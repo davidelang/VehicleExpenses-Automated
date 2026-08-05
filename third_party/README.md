@@ -22,9 +22,31 @@ Same pattern for `remotetable`, `extractmail`, `rclone`, `paddle` (when pins are
 
 | Step | Tool | Responsibility |
 |------|------|----------------|
-| 1. Materialize | `fetch-deps ro` / `rw` | `src/` as a **git** tree at pin; **apply `patches/`**; default RO tree |
-| 2. Build | `./build` (or scripts listed in lock) | Create/chmod **writable** `src/build`, `src/bin` (or upstream-equivalent dirs); compile; leave products under `src/…` |
+| 1. Materialize | `fetch-deps ro` / `rw` | **Git pins:** `src/` at `git_sha` (+ `patches/`). **File pins:** `[[source]]` rows (HTTPS/`file:`/`seed` + required `sha256`; **no SSH**). Default RO tree |
+| 2. Build | `./build` (or scripts listed in lock) | Create/chmod **writable** `src/build`, `src/bin` (or upstream-equivalent dirs); compile; leave products under `src/…`. Explicit `build = []` skips exec (pure source pins) |
 | 3. Collect | `get-artifacts` (called by `fetch-deps build`) | Copy products to **`path`** destinations in `libpin.toml` (pin `artifact/` and/or consumer paths like `app/src/main/jniLibs/…`) |
+
+### Non-git pins (`[[source]]`)
+
+For content that is not a git tree (e.g. tailor `.nb` inputs):
+
+```toml
+name = "paddle-models"
+source_kind = "files"
+build = []
+
+[[source]]
+seed = "seed/armv8/det_armv8.nb"   # offline copy under the pin
+# url = "https://example.com/det_armv8.nb"  # optional remote (never git@)
+path = "armv8/det_armv8.nb"        # under src/ after materialize
+sha256 = "…"
+```
+
+```bash
+./third_party/fetch-deps ro paddle-models   # → third_party/paddle-models/src/…
+```
+
+**Hash policy:** `sha256` is the pin. Cache hit only if hash matches. Stale cache → **one** re-fetch, then **hard fail** if still wrong. If a remote URL moves, update `sha256` (and seed) in `libpin.toml` — fetch-deps will not spin waiting for the old bytes to return.
 
 ### `[[artifact]]` destinations
 

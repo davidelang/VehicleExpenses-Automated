@@ -133,3 +133,4 @@ third_party/*/src/
 third_party/*/status.local
 third_party/*/*.local
 # --- end third_party consumer ---
+third_party/paddle/tests/paddle_so_smoke/out/
