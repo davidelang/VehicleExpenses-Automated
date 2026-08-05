@@ -7376,3 +7376,12 @@ x
 - Plan: dev-ai-interaction/plans/ve-policysync-fuel-tabs-pilot-20260805-0634-plan.md
 - PolicySync/MergeSync pilot for Fuel tabs; flag default off
 
+
+## 2026-08-05 - ve-policysync-fuel-tabs-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-fuel-tabs-pilot-20260805-0634-plan.md
+- PolicySyncBridge mergeFuelViaLwwRow; pref use_policy_sync_fuel default false
+- syncFuelTabs Pass 1 gated; Pass 2 field-merge + Pass 3 write always app-side
+- build green VE 130a5d28
+- Human optional: vehicle_settings use_policy_sync_fuel=true; Sync now; log Fuel LWW via PolicySync/MergeSync; set false after
+
