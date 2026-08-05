@@ -123,10 +123,16 @@ Update only with new stable location facts valid for future unrelated work. Curr
 - **Room tabular pilot:** `data/sync/tabular/internal/RoomVehiclesBackend.kt` (read-only remotetable Backend over Room Vehicles; `exportJsonBook`; not a Sheets dest). **remotetable offline endpoints** (host CLI + AAR where noted): `mock` / `local` / `json-book` file book; `csv-dir` **Python host-only**; push/merge without network — see pin `spec/CONTRACT.md` Local/file backends. Room is a future consumer `Backend` adapter, not in-lib.
 - **Room → EtherCalc e2e validation:** `third_party/remotetable/src/conformance/room_export_to_ethercalc_smoke.py` + fixture `fixtures/room_vehicles_export.json` (Vehicles + Sync ID). Offline json-book always in harness; EtherCalc half with `REMOTETABLE_ETHERCALC_LOCAL=1` + `conformance/ethercalc/up.sh`. Docs: `conformance/README.md` / `ethercalc/README.md`.
 - **Room Fuel multi-tab pilot:** `data/sync/tabular/internal/RoomFuelBackend.kt` — read-only default; tabs `Fuel - {name}` via `TabularSchema.fuelTabName`; soft-deleted fuel included; `exportJsonBook` multi-tab. Golden `fixtures/room_fuel_export.json` + `room_fuel_export_smoke.py` (offline always; **multi-room** EtherCalc opt-in — each fuel tab → unique room). Not a production Sheets dest; coordinator fuel LWW unchanged.
-- **PolicySync Merge acks pilot:** `data/sync/tabular/PolicySyncBridge.kt` — Merge acks only via remotetable `MergeSync` lww_row (or `PolicySync.push`); gated by prefs `use_policy_sync_merge_acks` in `vehicle_settings` (**default false**). Wire: `SpreadsheetSyncCoordinator.syncMergeAcksTab`. Fuel/vehicles unchanged.
-- **PolicySync Expenses pilot:** same `PolicySyncBridge` — Expenses via `MergeSync` lww_row; pref `use_policy_sync_expenses` (**default false**); wire `SpreadsheetSyncCoordinator.syncExpensesTab`. Missing-column fail-loud unchanged. Fuel path not switched.
-- **PolicySync Vehicles pilot:** same `PolicySyncBridge` — Vehicles via `MergeSync` lww_row; pref `use_policy_sync_vehicles` (**default false**); wire `SpreadsheetSyncCoordinator.syncVehiclesTab`. Flag-on: library LWW then shared **`VehicleDefinitionOverlay`** (crops/landmarks/manifest/local photos from thin side) — same rules as flag-off `mergeVehicleLww`. Helper: `data/sync/tabular/VehicleDefinitionOverlay.kt`.
-- **PolicySync Fuel tabs pilot:** same `PolicySyncBridge` — per-tab fuel LWW via `MergeSync` lww_row; pref `use_policy_sync_fuel` (**default false**); wire **Pass 1 only** of `SpreadsheetSyncCoordinator.syncFuelTabs`. Pass 2 **field-merge** (absorb partials) and Pass 3 write-back always app-side. Flag-on full-row only (no location-blob merge in library).
+- **PolicySync LWW pilots** (`PolicySyncBridge` + coordinator gates; prefs in `vehicle_settings`):
+
+  | Pref | Surface | Default | Notes |
+  |------|---------|---------|--------|
+  | `use_policy_sync_merge_acks` | Merge acks | **false** | Full-row library LWW |
+  | `use_policy_sync_expenses` | Expenses | **false** | Full-row library LWW |
+  | `use_policy_sync_vehicles` | Vehicles | **false** | Library LWW + `VehicleDefinitionOverlay` |
+  | `use_policy_sync_fuel` | Fuel tabs Pass 1 | **false** | Field-merge still app after LWW |
+
+  Soak / default-on evaluation: `docs/reference/POLICY_SYNC_PILOT_SOAK.md` (no default flip without human go). Force false always restores legacy path.
 - **remotetable filter v1.1:** `RowOps.matchesFilter` / Python `matches_filter` — equality + `in:a,b` + `empty:`/`is_empty:`/`not_empty:` (CONTRACT Filter language); used by `updateWhere` / softDelete / expunge. Pin `libpin.toml` + AAR when Kotlin changes.
 - Pull model: libs do not push into VE; bump `libpin.toml` + `artifact/` when app needs update
 - App product ABIs currently arm64-v8a + x86_64 (armeabi-v7a pin follow-up: paddle-armv7 plan)

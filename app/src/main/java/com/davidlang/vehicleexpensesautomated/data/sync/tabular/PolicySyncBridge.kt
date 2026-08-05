@@ -21,7 +21,8 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
  *
  * Default production path remains coordinator LWW; enable via prefs
  * [PREF_USE_POLICY_SYNC_MERGE_ACKS] / [PREF_USE_POLICY_SYNC_EXPENSES] /
- * [PREF_USE_POLICY_SYNC_VEHICLES] / [PREF_USE_POLICY_SYNC_FUEL] (default **false**).
+ * [PREF_USE_POLICY_SYNC_VEHICLES] / [PREF_USE_POLICY_SYNC_FUEL]
+ * (all default **false** until human soak + go — see `docs/reference/POLICY_SYNC_PILOT_SOAK.md`).
  *
  * Uses [MergeSync] **lww_row** for bidirectional key+timestamp merge
  * (PolicySync.push is also available for one-way experiments).

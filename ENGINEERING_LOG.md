@@ -7411,3 +7411,16 @@ x
 - VehicleDefinitionOverlay shared helper; flag-on PolicySync LWW + same overlay as legacy
 - build green VE ae05af7a
 
+
+## 2026-08-05 - ve-policysync-pilots-default-on-evaluation — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-pilots-default-on-evaluation-20260805-0815-plan.md
+
+
+## 2026-08-05 - ve-policysync-pilots-default-on-evaluation — PHASE1_SOAK (no default flip)
+
+- Plan: dev-ai-interaction/plans/ve-policysync-pilots-default-on-evaluation-20260805-0815-plan.md
+- Checklist: docs/reference/POLICY_SYNC_PILOT_SOAK.md; project-facts defaults table
+- Defaults still all false; STOP for human soak / go on which prefs to default true
+- Proposed tranche (not applied): merge_acks+expenses+vehicles true; fuel false
+
