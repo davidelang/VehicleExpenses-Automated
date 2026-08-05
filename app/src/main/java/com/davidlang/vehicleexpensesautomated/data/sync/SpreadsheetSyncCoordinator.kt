@@ -424,6 +424,10 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 fuelMerged = fuel.upserted,
                 fuelRemoteWins = fuel.remoteWins,
             )
+        } catch (e: SpreadsheetMissingColumnsException) {
+            // User-visible: wrong/corrupt sheet headers — do not wrap as generic network error.
+            Log.e(TAG, "Sync aborted for dest=${dest.id}: ${e.message}")
+            SyncResult(false, e.message ?: SpreadsheetMissingColumnsException.formatUserMessage(e.tabName, e.missingColumns))
         } catch (e: Exception) {
             // Compose dispose / structured cancel must not become a stored spreadsheet failure.
             if (e.isNonFailureCancel()) throw e
@@ -528,19 +532,37 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
     /**
      * Resolved sheet grid for LWW + write-back.
-     * [forceFullRewrite] when remote data empty or headers were invalid (poison → no LWW import).
+     * [forceFullRewrite] when remote data empty (new/blank tab → writeAllRows with headers).
+     * Corrupt headers throw [SpreadsheetMissingColumnsException] — never silent rewrite.
      */
     private data class ResolvedRemoteTab(
-        /** Header row + data rows (or [expectedHeaders] only when empty/invalid). */
+        /** Header row + data rows. */
         val rows: List<List<String>>,
         val forceFullRewrite: Boolean,
     )
 
     /**
+     * Thrown when a tab has non-blank content but row 1 lacks required columns (e.g. Sync ID).
+     * Aborts the whole destination sync so we never LWW/write into a wrong spreadsheet.
+     */
+    class SpreadsheetMissingColumnsException(
+        val tabName: String,
+        val missingColumns: List<String>,
+    ) : Exception(formatUserMessage(tabName, missingColumns)) {
+        companion object {
+            fun formatUserMessage(tabName: String, missing: List<String>): String {
+                val cols = missing.joinToString(", ")
+                return "$tabName: sheet is missing required column(s): $cols. " +
+                    "Fix row 1 headers (or clear the tab) and sync again."
+            }
+        }
+    }
+
+    /**
      * Resolve full tab body for LWW.
-     * - **Valid** headers (must include `Sync ID`): use bulk cache or re-read after ensuring missing cols.
-     * - **Missing / empty / invalid** (data row as "headers"): ensureHeaders (lib clears+rewrites A1),
-     *   treat remote entity rows as **empty** for LWW, [forceFullRewrite] for write-back.
+     * - **Missing tab / blank tab:** ensureHeaders creates canonical headers; empty remote; full rewrite write.
+     * - **Valid headers:** cache or ensure missing optional cols; incremental write when ordered.
+     * - **Corrupt headers** (cells present, required names missing): **fail** with named columns — no ensureHeaders merge, no LWW, no writeAllRows.
      */
     private suspend fun resolveRemoteTabRows(
         dest: SpreadsheetDestination,
@@ -553,52 +575,66 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         fun firstNames(grid: List<List<String>>): List<String> =
             grid.firstOrNull()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
 
+        fun failCorrupt(grid: List<List<String>>) {
+            val first = firstNames(grid)
+            val missing = TabularSchema.missingRequiredHeaders(first)
+            Log.e(
+                TAG,
+                "Corrupt/missing headers on $tabName — abort dest sync. missing=$missing firstRow=$first",
+            )
+            throw SpreadsheetMissingColumnsException(tabName, missing.ifEmpty { listOf("Sync ID") })
+        }
+
         val cached = bulk?.get(tabName)
         if (cached != null) {
+            // Case 2: blank tab (exists but no cells)
+            if (TabularSchema.isCompletelyBlankGrid(cached)) {
+                Log.i(TAG, "Blank tab $tabName — ensureHeaders + empty remote")
+                backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
+                val after = backend.readAllRows(dest, tabName, accountHint)
+                return ResolvedRemoteTab(
+                    rows = if (TabularSchema.isValidHeaderRow(firstNames(after))) after
+                    else listOf(expectedHeaders),
+                    forceFullRewrite = true,
+                )
+            }
+            // Case 3: non-blank but missing required columns
             val first = firstNames(cached)
-            val valid = TabularSchema.isValidHeaderRow(first, expectedHeaders)
-            val complete = valid && expectedHeaders.all { it in first }
+            val missing = TabularSchema.missingRequiredHeaders(first)
+            if (missing.isNotEmpty()) {
+                failCorrupt(cached)
+            }
+            // Valid identity headers; maybe missing optional expected cols
+            val complete = expectedHeaders.all { it in first }
             if (complete) {
                 val dataEmpty = cached.drop(1).none { row -> row.any { it.isNotBlank() } }
                 return ResolvedRemoteTab(cached, forceFullRewrite = dataEmpty)
             }
-            val wasInvalid = !valid
-            if (wasInvalid) {
-                Log.i(
-                    TAG,
-                    "invalid remote header on $tabName — ensureHeaders rewrite, treating as empty for LWW",
-                )
-            } else {
-                Log.i(TAG, "Bulk cache header incomplete for $tabName — ensureHeaders + re-read")
-            }
+            Log.i(TAG, "Bulk cache header incomplete for $tabName — ensureHeaders + re-read")
             backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
             val after = backend.readAllRows(dest, tabName, accountHint)
             val afterFirst = firstNames(after)
-            if (wasInvalid || !TabularSchema.isValidHeaderRow(afterFirst, expectedHeaders)) {
-                // Poison grid or still invalid: do not LWW-parse residual data rows
-                if (!TabularSchema.isValidHeaderRow(afterFirst, expectedHeaders)) {
-                    Log.w(TAG, "headers still invalid on $tabName after ensure — empty remote + full rewrite")
-                }
-                return ResolvedRemoteTab(
-                    rows = listOf(expectedHeaders),
-                    forceFullRewrite = true,
-                )
+            val afterMissing = TabularSchema.missingRequiredHeaders(afterFirst)
+            if (afterMissing.isNotEmpty()) {
+                failCorrupt(after)
             }
-            // Valid headers, only missing columns were appended — use re-read body
             val dataEmpty = after.drop(1).none { row -> row.any { it.isNotBlank() } }
             return ResolvedRemoteTab(after, forceFullRewrite = dataEmpty)
         }
-        // Tab missing from bulk (does not exist yet) or no bulk map
-        Log.i(TAG, "No bulk cache for $tabName — ensureHeaders (create/empty)")
+        // Case 1: tab not on sheet (not in bulk) — create
+        Log.i(TAG, "No bulk cache for $tabName — ensureHeaders (create tab)")
         backend.ensureHeaders(dest, tabName, expectedHeaders, accountHint)
         val after = backend.readAllRows(dest, tabName, accountHint)
-        val afterFirst = firstNames(after)
-        if (!TabularSchema.isValidHeaderRow(afterFirst, expectedHeaders)) {
-            Log.w(TAG, "headers invalid on new/empty $tabName after ensure — empty remote + full rewrite")
-            return ResolvedRemoteTab(listOf(expectedHeaders), forceFullRewrite = true)
+        if (!TabularSchema.isCompletelyBlankGrid(after) &&
+            TabularSchema.missingRequiredHeaders(firstNames(after)).isNotEmpty()
+        ) {
+            // Unexpected: created tab still corrupt
+            failCorrupt(after)
         }
-        val dataEmpty = after.drop(1).none { row -> row.any { it.isNotBlank() } }
-        return ResolvedRemoteTab(after, forceFullRewrite = true) // new/empty tab: always full rewrite
+        return ResolvedRemoteTab(
+            rows = if (TabularSchema.isValidHeaderRow(firstNames(after))) after else listOf(expectedHeaders),
+            forceFullRewrite = true,
+        )
     }
 
     private suspend fun syncVehiclesTab(

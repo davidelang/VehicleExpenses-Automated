@@ -7251,3 +7251,14 @@ x
 
 - Plan complete: three-case headers; pin 04ee2d2; VE 3623d9ea; tag fix-syncing/builds
 - Human: install APK, clear junk tabs if needed, Sync now — confirm row 1 has Sync ID + data below
+
+## 2026-08-05 - fix-sheets-missing-columns-report-not-silent — execution start
+
+- Plan: dev-ai-interaction/plans/fix-sheets-missing-columns-report-not-silent-20260805-0000-plan.md
+- Case 3: fail with named missing columns; no silent rewrite/poison LWW
+
+## 2026-08-05 - fix-sheets-missing-columns-report-not-silent — pre-build
+
+- missingRequiredHeaders + isCompletelyBlankGrid
+- Case 3: SpreadsheetMissingColumnsException aborts dest; message names tab + columns
+- No silent ensureHeaders merge/rewrite or poison LWW; cases 1–2 still ensure+fullRewrite

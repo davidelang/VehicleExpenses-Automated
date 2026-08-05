@@ -206,34 +206,59 @@ object TabularSchema {
         "Deleted At" to (entry.deletedAt?.toString() ?: ""),
     )
 
+    /** Default hard-required columns for entity tabs (Vehicles / Expenses / Fuel / Merge acks). */
+    val REQUIRED_IDENTITY_HEADERS: List<String> = listOf("Sync ID")
+
+    /**
+     * Required header names from [required] that are **not** present in [firstRow]
+     * (trimmed, non-empty cells only). Empty [firstRow] → all [required] missing.
+     * Callers treat a **completely blank grid** as case 2 (not missing columns).
+     */
+    fun missingRequiredHeaders(
+        firstRow: List<String>?,
+        required: List<String> = REQUIRED_IDENTITY_HEADERS,
+    ): List<String> {
+        val present = firstRow.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        return required.map { it.trim() }.filter { it.isNotEmpty() && it !in present }
+    }
+
+    /**
+     * True when the entire grid has no non-empty cells (blank tab / empty values).
+     * Distinct from corrupt headers (cells exist but required names missing).
+     */
+    fun isCompletelyBlankGrid(grid: List<List<String>>?): Boolean {
+        if (grid.isNullOrEmpty()) return true
+        return grid.none { row -> row.any { it.isNotBlank() } }
+    }
+
     /**
      * True when [firstRow] is a usable tabular header for VE entity tabs.
      *
      * **Hard requirement:** trimmed cell equal to **`Sync ID`** must appear
      * (poison grids that treat a UUID data row as headers fail this).
-     * [expected] is reserved for future minimum-set checks; currently unused
-     * beyond documentation that Sync ID is on all entity schemas.
      */
     fun isValidHeaderRow(firstRow: List<String>?, expected: List<String> = emptyList()): Boolean {
-        val first = firstRow.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }
-        if (first.isEmpty()) return false
-        return "Sync ID" in first
+        return missingRequiredHeaders(firstRow, REQUIRED_IDENTITY_HEADERS).isEmpty() &&
+            firstRow.orEmpty().any { it.isNotBlank() }
     }
 
     /**
      * Preserve [existingHeader] order; append any [canonical] names not already present.
-     * Empty **or invalid** existing → [canonical] (new / headerless / poison tab).
+     * Empty existing → [canonical] (new / blank tab).
+     * **Corrupt** headers (cells present without required identity) are **not** silently
+     * replaced here — coordinator fails the dest sync instead (see missing-columns plan).
      *
-     * Used by every tabular [ensureHeaders] implementation:
+     * Used by tabular [ensureHeaders] when the header row is already valid:
      * - empty / no usable header → write full canonical list
      * - valid non-empty → this merge only (**never reorder** known columns)
-     *
-     * When a backend rewrites the full grid after appending headers, also call
-     * [padDataRowsToWidth] so each data row has empty cells for new columns.
      */
     fun mergeHeaderOrder(existingHeader: List<String>, canonical: List<String>): List<String> {
         val existing = existingHeader.map { it.trim() }.filter { it.isNotEmpty() }
-        if (existing.isEmpty() || !isValidHeaderRow(existing, canonical)) return canonical
+        if (existing.isEmpty()) return canonical
+        if (!isValidHeaderRow(existing, canonical)) {
+            // Caller should have failed already; fall back to canonical without inventing layout.
+            return canonical
+        }
         val have = existing.toSet()
         return existing + canonical.filter { it !in have }
     }
