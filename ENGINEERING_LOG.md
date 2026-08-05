@@ -7361,3 +7361,12 @@ x
 - Plan: dev-ai-interaction/plans/ve-policysync-vehicles-pilot-20260805-0137-plan.md
 - PolicySync/MergeSync pilot for Vehicles tab; flag default off
 
+
+## 2026-08-05 - ve-policysync-vehicles-pilot — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-vehicles-pilot-20260805-0137-plan.md
+- PolicySyncBridge mergeVehiclesViaLwwRow; pref use_policy_sync_vehicles default false
+- syncVehiclesTab gated; flag-off keeps mergeVehicleLww+overlay; flag-on full-row only
+- build green VE a4dc7d9c
+- Human optional: vehicle_settings use_policy_sync_vehicles=true; Sync now; log Vehicles via PolicySync/MergeSync; set false after
+
