@@ -1,6 +1,7 @@
 package com.davidlang.vehicleexpensesautomated.data.sync.tabular.internal
 
 import com.davidelang.remotetable.Backends
+import com.davidelang.remotetable.RateLimitProgress
 import com.davidelang.remotetable.RemoteTable
 import com.davidelang.remotetable.TabData
 import com.davidlang.vehicleexpensesautomated.data.sync.GoogleSheetsClient
@@ -8,6 +9,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SheetsAuthRecovery
 import com.davidlang.vehicleexpensesautomated.data.sync.SheetsRecoverableAuthException
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetDestination
 import com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetProvider
+import com.davidlang.vehicleexpensesautomated.data.sync.SyncRateLimit
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularCapabilities
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareBackend
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularTestResult
@@ -18,7 +20,14 @@ import javax.inject.Singleton
 
 /**
  * Google Sheets tabular I/O via **remotetable** AAR ([GoogleSheetsBackend]).
+ *
  * Auth still uses in-app Google Sign-In; token is passed into the library.
+ * **Sheets HTTP pace, 429 retry, batchGet, range updates** live in remotetable L0
+ * (see library `spec/CONTRACT.md`). App-level multi-dest cooldowns stay in
+ * [SyncRateLimit] / [com.davidlang.vehicleexpensesautomated.data.sync.SpreadsheetSyncCoordinator].
+ *
+ * This adapter stays thin: no reimplementation of transport; [updateRows] uses
+ * library range update (not read+full-tab-replace).
  */
 @Singleton
 class GoogleSheetsTabularBackend @Inject constructor(
@@ -26,6 +35,11 @@ class GoogleSheetsTabularBackend @Inject constructor(
 ) : TabularShareBackend {
 
     override val provider: SpreadsheetProvider = SpreadsheetProvider.GOOGLE_SHEETS
+
+    /** Bridge remotetable 429/pace waits into coordinator-installed UI progress. */
+    private val rateLimitProgress = RateLimitProgress { message ->
+        SyncRateLimit.notifyProgress(message)
+    }
 
     override fun capabilities(): TabularCapabilities = TabularCapabilities(renameTab = true, browse = true)
 
@@ -53,7 +67,7 @@ class GoogleSheetsTabularBackend @Inject constructor(
         withContext(Dispatchers.IO) {
             val token = sheetsClient.accessToken(accountHint)
             val id = resolveTargetId(dest)
-            RemoteTable(Backends.googleSheets(token, id))
+            RemoteTable(Backends.googleSheets(token, id, progress = rateLimitProgress))
         }
 
     private fun TabData.toGrid(): List<List<String>> =
@@ -77,6 +91,20 @@ class GoogleSheetsTabularBackend @Inject constructor(
         accountHint: String?,
     ): List<List<String>> = withContext(Dispatchers.IO) {
         table(dest, accountHint).readRows(tabName).toGrid()
+    }
+
+    /**
+     * Bulk compare read via remotetable [RemoteTable.readMany] → Sheets `values.batchGet`.
+     */
+    override suspend fun batchReadTabs(
+        dest: SpreadsheetDestination,
+        tabNames: List<String>,
+        accountHint: String?,
+    ): Map<String, List<List<String>>> = withContext(Dispatchers.IO) {
+        val names = tabNames.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (names.isEmpty()) return@withContext emptyMap()
+        val many = table(dest, accountHint).readMany(names)
+        many.mapValues { (_, data) -> data.toGrid() }
     }
 
     override suspend fun listTabTitles(dest: SpreadsheetDestination, accountHint: String?): List<String> =
@@ -107,16 +135,16 @@ class GoogleSheetsTabularBackend @Inject constructor(
     ) {
         if (rows.isEmpty()) return
         withContext(Dispatchers.IO) {
-            val rt = table(dest, accountHint)
-            val existing = rt.readRows(tabName)
-            val headers = existing.headers.ifEmpty {
-                // append without headers: treat first data as-is under empty header pad
-                List(rows.maxOfOrNull { it.size } ?: 0) { "Col$it" }
-            }
-            rt.writeRows(tabName, headers, rows, mode = "append")
+            // No adapter pre-read for headers: remotetable appendDataRows → values:append.
+            // Coordinator/ensureHeaders is expected before append when the tab is new.
+            table(dest, accountHint).appendDataRows(tabName, rows)
         }
     }
 
+    /**
+     * Point update via remotetable [RemoteTable.updateRangeRows] — contiguous range write.
+     * Does **not** read+full-replace the tab.
+     */
     override suspend fun updateRows(
         dest: SpreadsheetDestination,
         tabName: String,
@@ -126,20 +154,7 @@ class GoogleSheetsTabularBackend @Inject constructor(
     ) {
         if (rows.isEmpty()) return
         withContext(Dispatchers.IO) {
-            val rt = table(dest, accountHint)
-            val existing = rt.readRows(tabName)
-            val headers = existing.headers
-            val data = existing.rows.toMutableList()
-            val zeroBased = (startRow - 2).coerceAtLeast(0)
-            rows.forEachIndexed { i, row ->
-                val idx = zeroBased + i
-                if (idx < data.size) data[idx] = row
-                else {
-                    while (data.size < idx) data.add(emptyList())
-                    data.add(row)
-                }
-            }
-            rt.writeRows(tabName, headers.ifEmpty { rows.first() }, data, mode = "replace")
+            table(dest, accountHint).updateRangeRows(tabName, startRow, rows)
         }
     }
 

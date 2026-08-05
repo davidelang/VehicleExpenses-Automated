@@ -198,12 +198,20 @@ class GoogleSheetsClient @Inject constructor(
             service.spreadsheets().values().get(sheetId, range).execute()
         }
         val firstRow = current.getValues()?.firstOrNull()
+        val existing = firstRow?.map { it?.toString() ?: "" }?.map { it.trim() }?.filter { it.isNotBlank() }
+            .orEmpty()
         if (firstRow.isNullOrEmpty()) {
-            // New / empty tab: write full canonical header order (human-first for fuel).
+            // New / blank tab: write full canonical headers.
             writeAllRows(sheetId, tabName, headers, emptyList(), accountHint)
+        } else if (!TabularSchema.isValidHeaderRow(existing, headers)) {
+            // Corrupt header: do not silently rewrite (coordinator fails dest sync with named columns).
+            val missing = TabularSchema.missingRequiredHeaders(existing)
+            Log.w(
+                TAG,
+                "ensureHeaders skipped rewrite on $tabName — missing required columns: $missing",
+            )
         } else {
-            // Existing header: keep order; append missing only (do not reorder known columns).
-            val existing = firstRow.map { it?.toString() ?: "" }.filter { it.isNotBlank() }
+            // Valid existing header: keep order; append missing only (do not reorder known columns).
             val merged = TabularSchema.mergeHeaderOrder(existing, headers)
             if (merged != existing) {
                 val missingHeaders = merged.filter { it !in existing.toSet() }
