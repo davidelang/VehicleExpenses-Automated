@@ -7510,3 +7510,8 @@ x
 - Renamed POLICY_SYNC_PILOT_SOAK.md → docs/reference/SYNC_TAB_LWW_AND_TESTS.md
 - No app behavior change
 
+
+## 2026-08-05 - sync-always-on-device-confidence — execution start
+
+- Plan: dev-ai-interaction/plans/sync-always-on-device-confidence-20260805-1622-plan.md
+
