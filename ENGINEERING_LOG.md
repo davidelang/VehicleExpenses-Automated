@@ -7398,3 +7398,9 @@ x
 - room_fuel_export_smoke: multi-room EtherCalc (each Fuel tab); offline still PASS
 - pin 883cda7; Sheets/production untouched
 
+
+## 2026-08-05 - ve-policysync-vehicles-definition-overlay — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-vehicles-definition-overlay-20260805-0731-plan.md
+- PolicySync vehicles path: port definition overlay after library LWW
+

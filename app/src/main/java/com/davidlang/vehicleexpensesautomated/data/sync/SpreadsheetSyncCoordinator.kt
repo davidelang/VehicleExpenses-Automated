@@ -19,6 +19,7 @@ import com.davidlang.vehicleexpensesautomated.data.sync.tabular.PolicySyncBridge
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareApi
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareBackend
+import com.davidlang.vehicleexpensesautomated.data.sync.tabular.VehicleDefinitionOverlay
 import dagger.Lazy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -673,9 +674,9 @@ class SpreadsheetSyncCoordinator @Inject constructor(
      * LWW "Vehicles" tab by Sync ID. Soft-deleted included for tombstones.
      *
      * When prefs [PolicySyncBridge.PREF_USE_POLICY_SYNC_VEHICLES] is true (default false),
-     * merge uses remotetable [com.davidelang.remotetable.MergeSync] **lww_row** full-row pick
-     * via [PolicySyncBridge] — **no** [overlayVehicleDefinitionFields] (crops/landmarks/photos
-     * from the non-winning side). Flag-off keeps legacy [mergeVehicleLww] + overlay.
+     * merge uses remotetable [com.davidelang.remotetable.MergeSync] **lww_row** then
+     * [VehicleDefinitionOverlay] (same crops/landmarks/manifest/photo rules as legacy).
+     * Flag-off: [mergeVehicleLww] (coordinator LWW + same overlay helper).
      */
     private suspend fun syncVehiclesTab(
         dest: SpreadsheetDestination,
@@ -697,14 +698,26 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             .getBoolean(PolicySyncBridge.PREF_USE_POLICY_SYNC_VEHICLES, false)
 
         val localVehicles = vehicleRepository.getAllIncludingDeleted()
+        val localBySyncId = localVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        val remoteVehicles = remoteDataRows.map { TabularSchema.rowToVehicle(it, headerIndex) }
+        val remoteBySyncId = remoteVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+
+        val pickPhoto: (String?, String?) -> String? =
+            { a, b -> photoStorage.pickPreferredLocalPath(a, b) }
+        val overlayLog: (String) -> Unit = { msg -> Log.i(TAG, msg) }
+
         val merged: List<Vehicle> = if (usePolicy) {
-            Log.i(TAG, "Vehicles via PolicySync/MergeSync (lww_row pilot; no definition overlay)")
-            PolicySyncBridge.mergeVehiclesViaLwwRow(localVehicles, remoteRows)
+            Log.i(TAG, "Vehicles via PolicySync/MergeSync (lww_row + definition overlay)")
+            val winners = PolicySyncBridge.mergeVehiclesViaLwwRow(localVehicles, remoteRows)
+            VehicleDefinitionOverlay.applyToMergedList(
+                winners = winners,
+                localBySyncId = localBySyncId,
+                remoteBySyncId = remoteBySyncId,
+                pickPhoto = pickPhoto,
+                log = overlayLog,
+            )
         } else {
             // Legacy coordinator LWW + definition overlay (default; production path).
-            val remoteVehicles = remoteDataRows.map { TabularSchema.rowToVehicle(it, headerIndex) }
-            val localBySyncId = localVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-            val remoteBySyncId = remoteVehicles.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
             val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
             val out = mutableListOf<Vehicle>()
             for (syncId in allSyncIds) {
@@ -1244,66 +1257,14 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
     private fun mergeVehicleLww(local: Vehicle?, remote: Vehicle?): Vehicle? {
         val base = mergeLww(local, remote) ?: return null
-        if (local == null || remote == null) return base
-        val loser = when {
-            remote.updatedAt > local.updatedAt -> local
-            local.updatedAt > remote.updatedAt -> remote
-            else -> remote
-        }
-        return overlayVehicleDefinitionFields(base, loser)
-    }
-
-    private fun overlayVehicleDefinitionFields(winner: Vehicle, loser: Vehicle): Vehicle {
-        var result = winner
-        if (!hasCompleteOdoCrops(result) && hasCompleteOdoCrops(loser)) {
-            Log.i(TAG, "Vehicle overlay: odo crops from syncId=${loser.syncId} onto winner=${winner.syncId}")
-            result = result.copy(
-                odometerCropLeft = loser.odometerCropLeft,
-                odometerCropTop = loser.odometerCropTop,
-                odometerCropRight = loser.odometerCropRight,
-                odometerCropBottom = loser.odometerCropBottom,
-            )
-        }
-        if (!hasCompleteOtherCrops(result) && hasCompleteOtherCrops(loser)) {
-            Log.i(TAG, "Vehicle overlay: other-text crops from syncId=${loser.syncId} onto winner=${winner.syncId}")
-            result = result.copy(
-                otherTextCropLeft = loser.otherTextCropLeft,
-                otherTextCropTop = loser.otherTextCropTop,
-                otherTextCropRight = loser.otherTextCropRight,
-                otherTextCropBottom = loser.otherTextCropBottom,
-            )
-        }
-        if (result.landmarkTextBlocksJson.isNullOrBlank() && !loser.landmarkTextBlocksJson.isNullOrBlank()) {
-            Log.i(TAG, "Vehicle overlay: landmarks from syncId=${loser.syncId} onto winner=${winner.syncId}")
-            result = result.copy(landmarkTextBlocksJson = loser.landmarkTextBlocksJson)
-        }
-        if (result.cloudManifest.isNullOrBlank() && !loser.cloudManifest.isNullOrBlank()) {
-            result = result.copy(cloudManifest = loser.cloudManifest)
-        }
-        val ref = photoStorage.pickPreferredLocalPath(
-            result.referenceDashPhotoUrl,
-            loser.referenceDashPhotoUrl,
+        return VehicleDefinitionOverlay.applyAfterLww(
+            winner = base,
+            local = local,
+            remote = remote,
+            pickPhoto = { a, b -> photoStorage.pickPreferredLocalPath(a, b) },
+            log = { msg -> Log.i(TAG, msg) },
         )
-        val cleaned = photoStorage.pickPreferredLocalPath(
-            result.cleanedReferenceDashPhotoUrl,
-            loser.cleanedReferenceDashPhotoUrl,
-        )
-        if (ref != result.referenceDashPhotoUrl || cleaned != result.cleanedReferenceDashPhotoUrl) {
-            result = result.copy(
-                referenceDashPhotoUrl = ref,
-                cleanedReferenceDashPhotoUrl = cleaned,
-            )
-        }
-        return result
     }
-
-    private fun hasCompleteOdoCrops(vehicle: Vehicle): Boolean =
-        vehicle.odometerCropLeft != null && vehicle.odometerCropTop != null &&
-            vehicle.odometerCropRight != null && vehicle.odometerCropBottom != null
-
-    private fun hasCompleteOtherCrops(vehicle: Vehicle): Boolean =
-        vehicle.otherTextCropLeft != null && vehicle.otherTextCropTop != null &&
-            vehicle.otherTextCropRight != null && vehicle.otherTextCropBottom != null
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> mergeLww(local: T?, remote: T?): T? {

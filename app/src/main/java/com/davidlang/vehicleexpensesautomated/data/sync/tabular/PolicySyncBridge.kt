@@ -26,8 +26,9 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
  * Uses [MergeSync] **lww_row** for bidirectional key+timestamp merge
  * (PolicySync.push is also available for one-way experiments).
  *
- * **Vehicles caveat:** library path is full-row pick only — it does **not** apply
- * coordinator definition-field overlay (crops/landmarks/photo fill from loser).
+ * **Vehicles:** library merge is full-row pick; coordinator applies
+ * [VehicleDefinitionOverlay] after merge (same as legacy) so crops/landmarks/photos
+ * from the thin side are not dropped when the flag is on.
  *
  * **Fuel caveat:** library LWW is full-row pick only (no location-blob field merge).
  * App **field-merge** (absorb partials) still runs after LWW when flag is on.
@@ -337,9 +338,8 @@ object PolicySyncBridge {
     /**
      * Bidirectional LWW merge of local Room vehicles with remote sheet grid via [MergeSync].
      *
-     * **Full-row pick only** — does **not** apply coordinator definition-field overlay
-     * (crops / landmarks / photo paths from the non-winning side). Prefer flag-off
-     * production path when those overlays matter.
+     * Full-row pick only at library layer. Callers (coordinator) should apply
+     * [VehicleDefinitionOverlay.applyToMergedList] so definition fields match legacy path.
      */
     fun mergeVehiclesViaLwwRow(
         localVehicles: List<Vehicle>,
