@@ -10,7 +10,7 @@ Bidirectional sync merges local Room data with remote tabular destinations (Goog
 
 ### Tab LWW via remotetable
 
-Merge acks / Expenses / Vehicles / Fuel (Pass 1) use remotetable `MergeSync` lww_row through `PolicySyncBridge` (no prefs). Fuel field-merge remains app-side after LWW. Agent scenarios: **`docs/reference/POLICY_SYNC_PILOT_SOAK.md`** (filename historical).
+Merge acks / Expenses / Vehicles / Fuel (Pass 1) use remotetable `MergeSync` lww_row through `PolicySyncBridge`. After LWW, VE applies domain overlays: **vehicles** → `VehicleDefinitionOverlay`; **fuel/expenses location** → `LocationBlobOverlay` (`FuelLocationJson.mergeBlobs`). Fuel field-merge remains app-side after that. Agent scenarios: **`docs/reference/POLICY_SYNC_PILOT_SOAK.md`**.
 
 ## Mid-sync interruption (#8)
 

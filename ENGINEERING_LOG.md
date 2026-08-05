@@ -7450,3 +7450,9 @@ x
 - Fuel field-merge still app; removed use_policy_sync_* prefs and dual paths
 - Scenarios S1–S7 PASS; S8 when docker available
 
+
+## 2026-08-05 - ve-location-blob-merge-after-library-lww — execution start
+
+- Plan: dev-ai-interaction/plans/ve-location-blob-merge-after-library-lww-20260805-0631-plan.md
+- Restore FuelLocationJson.mergeBlobs after library LWW for fuel + expenses
+

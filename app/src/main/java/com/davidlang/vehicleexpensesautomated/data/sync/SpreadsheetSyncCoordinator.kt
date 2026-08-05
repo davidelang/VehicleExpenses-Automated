@@ -15,6 +15,7 @@ import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryReposi
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.storage.PhotoStorageManager
+import com.davidlang.vehicleexpensesautomated.data.sync.tabular.LocationBlobOverlay
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.PolicySyncBridge
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularSchema
 import com.davidlang.vehicleexpensesautomated.data.sync.tabular.TabularShareApi
@@ -701,7 +702,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
     /**
      * LWW "Expenses" tab by Sync ID. Soft-deleted included.
-     * remotetable MergeSync lww_row via [PolicySyncBridge].
+     * remotetable MergeSync lww_row via [PolicySyncBridge], then [LocationBlobOverlay].
      */
     private suspend fun syncExpensesTab(
         dest: SpreadsheetDestination,
@@ -724,11 +725,23 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             .filter { it.any { cell -> cell.isNotBlank() } }
 
         val localExpenses = expenseRepository.getAllIncludingDeleted()
-        val merged = PolicySyncBridge.mergeExpensesViaLwwRow(
+        val localBySyncId = localExpenses.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        val winners = PolicySyncBridge.mergeExpensesViaLwwRow(
             localExpenses = localExpenses,
             remoteGrid = remoteRows,
             vehicleSyncIdById = vehicleSyncIdById,
             vehicleIdBySyncId = vehicleIdBySyncId,
+        )
+        val remoteExpensesBySyncId = remoteDataRows.map { row ->
+            val parsed = TabularSchema.rowToExpense(row, headerIndex)
+            val vehicleSyncIds = TabularSchema.rowToExpenseVehicleSyncIds(row, headerIndex)
+            ExpenseVehicleSyncIds.applyResolvedVehicles(parsed, vehicleSyncIds, vehicleIdBySyncId)
+        }.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+
+        val merged = LocationBlobOverlay.applyToExpenseList(
+            winners = winners,
+            localBySyncId = localBySyncId,
+            remoteBySyncId = remoteExpensesBySyncId,
         )
 
         for (entry in merged) {
@@ -938,8 +951,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
 
     /**
      * Fuel sync order (product):
-     * 1) LWW each `Fuel - {name}` tab into Room via remotetable MergeSync lww_row
-     *    (full-row; location-blob domain merge is not library-side)
+     * 1) LWW each `Fuel - {name}` tab via remotetable MergeSync lww_row, then
+     *    [LocationBlobOverlay] (FuelLocationJson.mergeBlobs) — domain stays in VE
      * 2) Field-merge (absorb partials; soft-delete losers) — app, **before** sheet write
      * 3) Write each fuel tab from **fresh** Room (incl. tombstones)
      * Stage C question rebuild stays in post-sync after this returns.
@@ -1009,7 +1022,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                 .filter { it.vehicleId == vehicle.id }
             val localBySyncId = localFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
 
-            val merged = PolicySyncBridge.mergeFuelViaLwwRow(
+            val winners = PolicySyncBridge.mergeFuelViaLwwRow(
                 localEntries = localFuel,
                 remoteGrid = remoteRows,
                 vehicleId = vehicle.id,
@@ -1017,6 +1030,11 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             )
             val remoteFuel = parseFuelEntriesFromRows(remoteRows, vehicle, vehicleIdBySyncId)
             val remoteBySyncId = remoteFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+            val merged = LocationBlobOverlay.applyToFuelList(
+                winners = winners,
+                localBySyncId = localBySyncId,
+                remoteBySyncId = remoteBySyncId,
+            )
             Log.i(
                 TAG,
                 "Fuel LWW ${vehicle.name}: local=${localFuel.size} remote=${remoteFuel.size} " +

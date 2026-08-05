@@ -11,11 +11,11 @@ VE no longer gates library LWW behind per-entity prefs. Coordinator always:
 | Surface | LWW | Then |
 |---------|-----|------|
 | Merge acks | `PolicySyncBridge.mergeAcksViaLwwRow` | write-back |
-| Expenses | `mergeExpensesViaLwwRow` | write-back |
+| Expenses | `mergeExpensesViaLwwRow` | `LocationBlobOverlay` then write-back |
 | Vehicles | `mergeVehiclesViaLwwRow` | `VehicleDefinitionOverlay` then write-back |
-| Fuel tabs | `mergeFuelViaLwwRow` per tab | **app field-merge**, then write-back |
+| Fuel tabs | `mergeFuelViaLwwRow` per tab | `LocationBlobOverlay`, then **app field-merge**, then write-back |
 
-Library remains domain-agnostic (keys / timestamps / grids). VE owns headers and fuel field-merge.
+Library remains domain-agnostic (keys / timestamps / grids). VE owns headers, location blobs, and fuel field-merge.
 
 ## Automated evidence (agents run this)
 
