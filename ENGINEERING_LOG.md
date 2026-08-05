@@ -7404,3 +7404,10 @@ x
 - Plan: dev-ai-interaction/plans/ve-policysync-vehicles-definition-overlay-20260805-0731-plan.md
 - PolicySync vehicles path: port definition overlay after library LWW
 
+
+## 2026-08-05 - ve-policysync-vehicles-definition-overlay — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-policysync-vehicles-definition-overlay-20260805-0731-plan.md
+- VehicleDefinitionOverlay shared helper; flag-on PolicySync LWW + same overlay as legacy
+- build green VE ae05af7a
+
