@@ -7456,3 +7456,9 @@ x
 - Plan: dev-ai-interaction/plans/ve-location-blob-merge-after-library-lww-20260805-0631-plan.md
 - Restore FuelLocationJson.mergeBlobs after library LWW for fuel + expenses
 
+
+## 2026-08-05 - ve-location-blob-merge-after-library-lww — CODE LANDED
+
+- LocationBlobOverlay + wire fuel Pass1 and expenses after library LWW
+- FuelLocationJson.mergeBlobs unchanged; build d45524e2; scenarios S1–S7 PASS
+
