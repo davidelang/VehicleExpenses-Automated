@@ -7530,3 +7530,11 @@ x
 - Device Sync complete ~10:04-10:10; Honda update=214 paced; Ford Van update=81; no Sync failed
 - Log: device-logcat-emulator-5554-confidence-sync-done-20260805.log
 
+
+## 2026-08-05 - local PR-fix-syncing prepared (two-stage: remotetable then VE)
+
+- **Stage 1 remotetable:** nested `third_party/remotetable/src` rebased onto origin/master; 11 logical commits (+ eng-log); `backup-fix-syncing` @ ad97c08; cleaned product tip 8f7b67b; TREE_MATCHES_BACKUP YES; PR `/home/dlang/git/remotetable/sandbox/PRs/PR-fix-syncing.md`
+- **Stage 2 VE:** soft-reset cleanup ~50→8 logical commits; `backup-fix-syncing` @ bf02effd; cleaned HEAD 8da29f16; TREE_MATCHES_BACKUP YES (52e2a463); PR `dev-ai-interaction/PRs/PR-fix-syncing.md`
+- **Merge order:** remotetable first → pin+AAR to merged library master tip → then VE. Current VE pin still 188b328 (pre-Stage-1); do not merge VE until pin updated.
+- Archived to historical-plans: device-confidence + architecture-hygiene plans (CODE LANDED).
+- Ready for Master independent review; no merge/push by coder.
