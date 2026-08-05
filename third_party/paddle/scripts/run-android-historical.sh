@@ -117,6 +117,31 @@ else
   echo "PROFILE=slim (tiny_publish, full kernel set, host strip-unneeded later)"
 fi
 
+# Product FP stability (First 10 goldens):
+# Pin-era SOs (b8449343) were NDK r20b / clang 8.0.7. NDK r28c / clang 19.0.1
+# with historical -ffast-math -Ofast regressed emu pump heatmaps/cost-vol vs that
+# baseline (same calib stamps, different codegen). Prefer -O2 without fast-math
+# for product ABIs so r28c rebuilds can match pre-migration outcomes.
+# Override: PADDLE_ALLOW_FAST_MATH=1 to keep upstream -Ofast -ffast-math.
+if [[ "${PADDLE_ALLOW_FAST_MATH:-0}" != "1" ]]; then
+  for f in cmake/postproject.cmake cmake/os/common.cmake lite/CMakeLists.txt; do
+    [[ -f "$f" ]] || continue
+    if grep -q -- '-ffast-math\|-Ofast' "$f" 2>/dev/null; then
+      sed -i \
+        -e 's/-ffast-math//g' \
+        -e 's/-Ofast/-O2/g' \
+        -e 's/-funsafe-math-optimizations//g' \
+        "$f" || true
+      # Ensure fp-contract off where we still have a CXX_FLAGS line
+      if grep -q 'CMAKE_CXX_FLAGS' "$f" && ! grep -q 'ffp-contract' "$f"; then
+        sed -i 's/set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")/set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -ffp-contract=off")/' \
+          "$f" 2>/dev/null || true
+      fi
+      echo "product-fp: stripped fast-math/Ofast in $f (PADDLE_ALLOW_FAST_MATH=0)"
+    fi
+  done
+fi
+
 # LTO + --gc-sections drops static KernelRegistrar (x86 tailor historically;
 # armv7 slim/tailor product also: light API Run() + all-zero heatmaps despite
 # stamp substrings in the SO). Apply keep-registry for ALL Android builds.
