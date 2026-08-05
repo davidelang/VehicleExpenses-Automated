@@ -7268,3 +7268,13 @@ x
 - Case 3 fails with named missing columns; no silent rewrite/poison LWW
 - Cases 1–2 keep ensureHeaders; build 04e5bfc2 / fix-syncing/builds
 - Human: install; corrupt fuel row1 → expect failure in Syncing Details
+
+## 2026-08-05 - ethercalc harness + Room pilot — execution start
+
+- Plans: remotetable-local-ethercalc-validation-harness-20260805-0011-plan.md; ve-room-tabular-backend-pilot-20260805-0011-plan.md
+- Local EtherCalc compose+smoke; read-only Room Vehicles Backend + export path
+
+## 2026-08-05 - ethercalc harness + Room pilot — pre-build
+
+- remotetable 8f4901b: local EtherCalc up/down + live smoke PASS
+- RoomVehiclesBackend read-only pilot + exportJsonBook; project-facts pointer
