@@ -124,7 +124,7 @@ if [[ -z "${GIT_HOME}" || "$GIT_HOME" == @@* || "$GIT_HOME" == *"@@"* ]]; then
     echo "fetch-deps: note: git_home still has smudge token ($GIT_HOME) — host clone disabled; using network" >&2
   fi
   GIT_HOME=""
-  git_home=""
+  git_home=@@GIT_HOME@@
 fi
 
 if [[ "$NO_BWRAP" -eq 1 ]]; then
