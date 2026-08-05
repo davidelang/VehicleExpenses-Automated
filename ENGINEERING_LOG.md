@@ -7547,3 +7547,6 @@ x
 - Commit: `d266c6a6` chore: pin remotetable to master 50b376a
 - Stage 2 PR refreshed: `dev-ai-interaction/PRs/PR-fix-syncing.md` (pin gate CLEARED; ready for Master merge)
 - HEAD: `d266c6a6e0b2d703a665bc33f8c4eda72443a13a`
+
+## 2026-08-05 - Merge fix-syncing into master
+- Stage 2 VE merged (FF lineage via fix-syncing tip 4eb46e4c + cleanup b82ef2dd). Pin remotetable 50b376a. Kept master set-*-perms @@ tokens. PolicySync always-on LWW + overlays + Room pilots + fail-loud. ./build_app SUCCESS; builds @ HEAD. No works tag.
