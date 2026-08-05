@@ -145,7 +145,7 @@ else ()
 endif()
 
 if (LITE_ON_TINY_PUBLISH)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffast-math -Ofast -Os -fomit-frame-pointer")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Os -fomit-frame-pointer -ffp-contract=off -fno-fast-math -DVE_PRODUCT_FP=1")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections")
     # 1. strip useless symbols from third-party libs
     # exclude-libs is not supported on macOs system
