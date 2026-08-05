@@ -7496,3 +7496,17 @@ x
 - FuelRowMergeEngineFieldMergeTest 8 cases green via build_app -- testDebugUnitTest
 - Plan: fuel-field-merge-unit-tests-after-library-lww-20260805-1405-plan.md
 
+
+## 2026-08-05 - sync-architecture-hygiene-archive-obsolete-plans — execution start
+
+- Plan: dev-ai-interaction/plans/sync-architecture-hygiene-archive-obsolete-plans-20260805-1440-plan.md
+
+
+## 2026-08-05 - sync-architecture-hygiene-archive-obsolete-plans — CODE LANDED
+
+- Plan: sync-architecture-hygiene-archive-obsolete-plans-20260805-1440-plan.md
+- Architecture map: dev-ai-interaction/research/sync-remotetable-architecture-map-20260805.md
+- Archived 29 obsolete sync/remotetable/policysync plans → historical-plans/
+- Renamed POLICY_SYNC_PILOT_SOAK.md → docs/reference/SYNC_TAB_LWW_AND_TESTS.md
+- No app behavior change
+

@@ -1,12 +1,12 @@
 ---
 type: implementation-reference
 status: dynamic
-ai_directive: "PolicySync pilot prefs were removed. Tab LWW always uses library MergeSync via PolicySyncBridge. Update if that architecture changes."
+ai_directive: "Tab LWW always uses library MergeSync via PolicySyncBridge (no pilot prefs). Update when paths or test commands change. Architecture map: sandbox research/sync-remotetable-architecture-map-20260805.md"
 ---
 
-# Tab LWW via remotetable (agent test evidence)
+# Tab LWW + domain overlays — agent test runbook
 
-VE no longer gates library LWW behind per-entity prefs. Coordinator always:
+VE sync tab LWW always uses remotetable `MergeSync` lww_row through `PolicySyncBridge` (no prefs). Domain overlays and fuel field-merge stay in the app.
 
 | Surface | LWW | Then |
 |---------|-----|------|
@@ -27,7 +27,7 @@ REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/policysync_scenarios.py  # + S
 conformance/ethercalc/down.sh
 # also: python3 conformance/harness.py
 
-# VE domain overlays — unit tests
+# VE domain overlays + field-merge — unit tests
 ./build_app "test" -- testDebugUnitTest
 # filters:
 #   -- testDebugUnitTest --tests '*LocationBlobOverlayTest'
@@ -41,8 +41,10 @@ conformance/ethercalc/down.sh
 | S6 | Thin remote + thick local → crops/landmarks (Python mirror; Kotlin tests authoritative) |
 | S7 | Two fuel tabs independent LWW |
 | S8 | Real EtherCalc remote grid merge |
-| **LocationBlobOverlayTest** | Fuel/expense `mergeBlobs` after LWW (place/thin, confirmed, empty, list) |
-| **VehicleDefinitionOverlayTest** | Odo/other crops, landmarks, photos, loserOfPair, applyToMergedList |
-| **FuelRowMergeEngineFieldMergeTest** | Pass 2 field-merge: absorb partials, conflict fulls, window, MERGE_EXEMPT |
+| **LocationBlobOverlayTest** | Fuel/expense `mergeBlobs` after LWW |
+| **VehicleDefinitionOverlayTest** | Odo/other crops, landmarks, photos, loserOfPair, list |
+| **FuelRowMergeEngineFieldMergeTest** | Pass 2 field-merge: absorb, conflict, window, MERGE_EXEMPT |
 
-Device/Sheets Sync is optional field confidence; rollback if broken = install master APK.
+Orientation map (sandbox): `dev-ai-interaction/research/sync-remotetable-architecture-map-20260805.md`.
+
+Device Sync is optional field confidence; rollback if broken = install master APK.
