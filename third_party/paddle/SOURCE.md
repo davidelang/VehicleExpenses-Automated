@@ -20,7 +20,14 @@
 | armeabi-v7a | **tailor** + int8 (fp32 calib) | **~0.75–3 MB** | same | Branch product path `prod_u8fp32_u8` (no HW fp16). |
 | x86_64 | slim thin-jni | ~31 KB | ~9.5 MB | **Same freeze as arm64** (`b8449343` / First-10-good). Models still `prod_u8fp16/*_x86_64.nb` (mid-graph often fp32 demote; not identical to armv8). |
 
-**Regression note (2026-08-05):** Rebuilding arm64/x86 under this branch’s NDK r28c recipe changed SO bytes and **broke** emulator First 10 pump L1 vs pin/libpin/Jul27 goldens (heatmap mass ~36k→~9–17k; cost 84.50→N/A/51). Restored pin-era arm64+x86 artifacts; re-validate before any future SO promote.
+**Regression note (2026-08-05):** Rebuilding arm64/x86 under NDK **r28c / clang 19** (vs pin **r20b / clang 8**) changed SO bytes and **broke** emulator First 10 pump L1 vs pin/libpin/Jul27 goldens (heatmap mass ~36k→~9–17k; cost 84.50→N/A/51). Calib stamps still present — **codegen / -ffast-math -Ofast** difference. Restored pin-era arm64+x86 artifacts; human dual-device First 10 on `v0.98-21-gbe84776b` **PASS**.
+
+**r28c re-promote (mandatory):**
+1. Historical Docker recipe with **product FP** (`run-android-historical.sh` strips `-ffast-math`, maps `-Ofast`→`-O2`; opt-out `PADDLE_ALLOW_FAST_MATH=1`).
+2. `./third_party/paddle/test` (SO smoke + OCR QEMU).
+3. Candidate APK + First 10 on emu (Pixel for arm64).
+4. `scripts/first10-golden-compare.py --current … --golden pin_… --require-mass` **PASS**.
+5. Only then update `libpin.toml` / ship jniLibs.
 
 ### Precision policy by ABI (product decision)
 
