@@ -7262,3 +7262,9 @@ x
 - missingRequiredHeaders + isCompletelyBlankGrid
 - Case 3: SpreadsheetMissingColumnsException aborts dest; message names tab + columns
 - No silent ensureHeaders merge/rewrite or poison LWW; cases 1–2 still ensure+fullRewrite
+
+## 2026-08-05 - fix-sheets-missing-columns-report-not-silent — CODE LANDED
+
+- Case 3 fails with named missing columns; no silent rewrite/poison LWW
+- Cases 1–2 keep ensureHeaders; build 04e5bfc2 / fix-syncing/builds
+- Human: install; corrupt fuel row1 → expect failure in Syncing Details
