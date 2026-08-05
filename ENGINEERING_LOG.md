@@ -7370,3 +7370,9 @@ x
 - build green VE a4dc7d9c
 - Human optional: vehicle_settings use_policy_sync_vehicles=true; Sync now; log Vehicles via PolicySync/MergeSync; set false after
 
+
+## 2026-08-05 - ve-policysync-fuel-tabs-pilot — execution start
+
+- Plan: dev-ai-interaction/plans/ve-policysync-fuel-tabs-pilot-20260805-0634-plan.md
+- PolicySync/MergeSync pilot for Fuel tabs; flag default off
+

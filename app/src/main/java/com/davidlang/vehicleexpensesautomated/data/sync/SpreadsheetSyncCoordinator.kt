@@ -1014,6 +1014,9 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     /**
      * Fuel sync order (locked product):
      * 1) LWW all vehicle fuel tabs into Room
+     *    — default: coordinator [mergeLww]
+     *    — pref [PolicySyncBridge.PREF_USE_POLICY_SYNC_FUEL] true: library MergeSync lww_row
+     *      (full-row only; no location-blob merge). Field-merge still app-side in pass 2.
      * 2) Field-merge (absorb partials; soft-delete losers) — **before** sheet write
      * 3) Write each fuel tab from **fresh** Room (incl. tombstones)
      * Stage C question rebuild stays in post-sync after this returns.
@@ -1034,6 +1037,12 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         var remoteWins = 0
         // Mutable bulk map: rename migrations may invalidate cache entries.
         val bulkRows = bulk.toMutableMap()
+
+        val usePolicyFuel = context.getSharedPreferences(SyncDestinationStore.PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(PolicySyncBridge.PREF_USE_POLICY_SYNC_FUEL, false)
+        if (usePolicyFuel) {
+            Log.i(TAG, "Fuel LWW via PolicySync/MergeSync (lww_row pilot; field-merge still app-side)")
+        }
 
         // Snapshot remote headers/rows per vehicle for write-back after merge
         data class FuelTabSnapshot(
@@ -1078,26 +1087,29 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             val headerIndex = TabularSchema.headerIndex(writeHeaders)
             val remoteDataRows = remoteRows.drop(1)
                 .filter { it.any { cell -> cell.isNotBlank() } }
-            val remoteFuel = parseFuelEntriesFromRows(remoteRows, vehicle, vehicleIdBySyncId)
 
             val localFuel = fuelRepository.getAllIncludingDeleted()
                 .filter { it.vehicleId == vehicle.id }
             val localBySyncId = localFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-            val remoteBySyncId = remoteFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
-            val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
 
-            Log.i(
-                TAG,
-                "Fuel LWW ${vehicle.name}: local=${localFuel.size} remote=${remoteFuel.size} keys=${allSyncIds.size}",
-            )
-
-            for (syncId in allSyncIds) {
-                val local = localBySyncId[syncId]
-                val remote = remoteBySyncId[syncId]
-                val winner = mergeLww(local, remote)?.let { entry ->
-                    (entry as FuelEntry).copy(vehicleId = vehicle.id)
-                }
-                if (winner != null && winner.syncId.isNotBlank()) {
+            if (usePolicyFuel) {
+                val merged = PolicySyncBridge.mergeFuelViaLwwRow(
+                    localEntries = localFuel,
+                    remoteGrid = remoteRows,
+                    vehicleId = vehicle.id,
+                    vehicleSyncId = vehicle.syncId,
+                )
+                val remoteFuel = parseFuelEntriesFromRows(remoteRows, vehicle, vehicleIdBySyncId)
+                val remoteBySyncId = remoteFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+                Log.i(
+                    TAG,
+                    "Fuel LWW ${vehicle.name} (PolicySync): local=${localFuel.size} " +
+                        "remote=${remoteFuel.size} merged=${merged.size}",
+                )
+                for (winner in merged) {
+                    if (winner.syncId.isBlank()) continue
+                    val local = localBySyncId[winner.syncId]
+                    val remote = remoteBySyncId[winner.syncId]
                     val remoteWon = remote != null && (
                         local == null || remote.updatedAt > local.updatedAt
                         )
@@ -1106,7 +1118,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                         if (remote.deleted && local != null && !local.deleted) {
                             Log.i(
                                 TAG,
-                                "LWW: remote tombstone wins syncId=$syncId over local live " +
+                                "LWW: remote tombstone wins syncId=${winner.syncId} over local live " +
                                     "id=${local.id} remoteUpdatedAt=${remote.updatedAt} " +
                                     "localUpdatedAt=${local.updatedAt}",
                             )
@@ -1114,6 +1126,42 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                     }
                     fuelRepository.upsertFromSync(winner)
                     total++
+                }
+            } else {
+                // Legacy coordinator LWW (default; production path).
+                val remoteFuel = parseFuelEntriesFromRows(remoteRows, vehicle, vehicleIdBySyncId)
+                val remoteBySyncId = remoteFuel.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+                val allSyncIds = (localBySyncId.keys + remoteBySyncId.keys).toSet()
+
+                Log.i(
+                    TAG,
+                    "Fuel LWW ${vehicle.name}: local=${localFuel.size} remote=${remoteFuel.size} keys=${allSyncIds.size}",
+                )
+
+                for (syncId in allSyncIds) {
+                    val local = localBySyncId[syncId]
+                    val remote = remoteBySyncId[syncId]
+                    val winner = mergeLww(local, remote)?.let { entry ->
+                        (entry as FuelEntry).copy(vehicleId = vehicle.id)
+                    }
+                    if (winner != null && winner.syncId.isNotBlank()) {
+                        val remoteWon = remote != null && (
+                            local == null || remote.updatedAt > local.updatedAt
+                            )
+                        if (remoteWon) {
+                            remoteWins++
+                            if (remote.deleted && local != null && !local.deleted) {
+                                Log.i(
+                                    TAG,
+                                    "LWW: remote tombstone wins syncId=$syncId over local live " +
+                                        "id=${local.id} remoteUpdatedAt=${remote.updatedAt} " +
+                                        "localUpdatedAt=${local.updatedAt}",
+                                )
+                            }
+                        }
+                        fuelRepository.upsertFromSync(winner)
+                        total++
+                    }
                 }
             }
 
@@ -1130,6 +1178,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         }
 
         // --- Pass 2: field-merge on full Room (absorb partials before write-back) ---
+        // Always runs for both policy and legacy LWW (product: domain merge stays in app).
         val liveBefore = fuelRepository.getAllIncludingDeleted().filter { !it.deleted }.size
         Log.i(TAG, "Fuel field-merge before sheet write; live=$liveBefore")
         val mergeStats = try {

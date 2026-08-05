@@ -12,6 +12,7 @@ import com.davidelang.remotetable.TableSyncUnit
 import com.davidelang.remotetable.TombstoneConfig
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
+import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 
@@ -20,14 +21,16 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
  *
  * Default production path remains coordinator LWW; enable via prefs
  * [PREF_USE_POLICY_SYNC_MERGE_ACKS] / [PREF_USE_POLICY_SYNC_EXPENSES] /
- * [PREF_USE_POLICY_SYNC_VEHICLES] (default **false**).
+ * [PREF_USE_POLICY_SYNC_VEHICLES] / [PREF_USE_POLICY_SYNC_FUEL] (default **false**).
  *
  * Uses [MergeSync] **lww_row** for bidirectional key+timestamp merge
  * (PolicySync.push is also available for one-way experiments).
- * Fuel is **out of scope** for this bridge pilot.
  *
  * **Vehicles caveat:** library path is full-row pick only — it does **not** apply
- * coordinator [overlayVehicleDefinitionFields] (crops/landmarks/photo fill from loser).
+ * coordinator definition-field overlay (crops/landmarks/photo fill from loser).
+ *
+ * **Fuel caveat:** library LWW is full-row pick only (no location-blob field merge).
+ * App **field-merge** (absorb partials) still runs after LWW when flag is on.
  */
 object PolicySyncBridge {
 
@@ -40,12 +43,17 @@ object PolicySyncBridge {
     /** vehicle_settings prefs key for Vehicles tab pilot. Default false. */
     const val PREF_USE_POLICY_SYNC_VEHICLES = "use_policy_sync_vehicles"
 
+    /** vehicle_settings prefs key for Fuel tabs pilot (Pass 1 LWW only). Default false. */
+    const val PREF_USE_POLICY_SYNC_FUEL = "use_policy_sync_fuel"
+
     private const val TAB_LOCAL = "LocalAcks"
     private const val TAB_REMOTE = "RemoteAcks"
     private const val TAB_LOCAL_EXP = "LocalExpenses"
     private const val TAB_REMOTE_EXP = "RemoteExpenses"
     private const val TAB_LOCAL_VEH = "LocalVehicles"
     private const val TAB_REMOTE_VEH = "RemoteVehicles"
+    private const val TAB_LOCAL_FUEL = "LocalFuel"
+    private const val TAB_REMOTE_FUEL = "RemoteFuel"
 
     private val TOMBSTONE = TombstoneConfig(
         column = "Deleted",
@@ -357,5 +365,109 @@ object PolicySyncBridge {
         val pushResult = PolicySync.push(a, b, vehiclesPushUnit())
         val after = b.readRows(TAB_REMOTE_VEH)
         return vehiclesFromTabData(after) to pushResult
+    }
+
+    // ── Fuel pilot (per-tab LWW only; field-merge stays in app) ──────────────
+
+    fun fuelColumnDefs(): List<ColumnDef> =
+        TabularSchema.FUEL_HEADERS.map { name ->
+            val type = when (name) {
+                "Timestamp", "Updated At", "Deleted At" -> "timestamp"
+                "Deleted", "Partial Fill", "Economy Ignored" -> "checkbox"
+                "Odometer", "Gallons", "Cost" -> "number"
+                else -> "string"
+            }
+            ColumnDef(name, type)
+        }
+
+    fun fuelMergeUnit(
+        mode: MergeMode = MergeMode.LWW_ROW,
+        writeTarget: String = "none",
+    ): MergeUnit = MergeUnit(
+        id = "fuel-pilot",
+        mergeMode = mode,
+        writeTarget = writeTarget,
+        tableA = TAB_LOCAL_FUEL,
+        tableB = TAB_REMOTE_FUEL,
+        columns = fuelColumnDefs(),
+        columnMapA = emptyMap(),
+        columnMapB = emptyMap(),
+        keys = listOf("Sync ID"),
+        timestamp = "Updated At",
+        tombstone = TOMBSTONE,
+    )
+
+    fun fuelPushUnit(): TableSyncUnit = TableSyncUnit(
+        id = "fuel-push-pilot",
+        direction = "push",
+        sourceTable = TAB_LOCAL_FUEL,
+        destTable = TAB_REMOTE_FUEL,
+        columns = fuelColumnDefs(),
+        columnMap = emptyMap(),
+        keys = listOf("Sync ID"),
+        timestamp = "Updated At",
+        tombstone = TOMBSTONE,
+    )
+
+    fun tabDataFromFuel(
+        entries: List<FuelEntry>,
+        vehicleSyncId: String = "",
+        columnOrder: List<String> = TabularSchema.FUEL_HEADERS,
+    ): TabData {
+        val rows = entries
+            .filter { it.syncId.isNotBlank() }
+            .sortedWith(compareBy({ it.timestamp }, { it.odometer }, { it.syncId }))
+            .map { TabularSchema.fuelToRow(it, vehicleSyncId, columnOrder) }
+        return TabData(columnOrder, rows)
+    }
+
+    fun fuelFromTabData(
+        data: TabData,
+        vehicleId: Int,
+    ): List<FuelEntry> {
+        val idx = TabularSchema.headerIndex(data.headers)
+        return data.rows
+            .filter { row -> row.any { it.isNotBlank() } }
+            .map { TabularSchema.rowToFuel(it, idx).copy(vehicleId = vehicleId) }
+            .filter { it.syncId.isNotBlank() }
+    }
+
+    /**
+     * Bidirectional LWW merge of local Room fuel with remote sheet grid via [MergeSync].
+     *
+     * Full-row pick only (no coordinator location-blob merge). Caller must still run
+     * app field-merge (absorb partials) after upserting results.
+     *
+     * @param vehicleId forced on all returned rows
+     * @param vehicleSyncId used when encoding local rows (Vehicle Sync ID column)
+     */
+    fun mergeFuelViaLwwRow(
+        localEntries: List<FuelEntry>,
+        remoteGrid: List<List<String>>,
+        vehicleId: Int,
+        vehicleSyncId: String = "",
+    ): List<FuelEntry> {
+        val localData = tabDataFromFuel(localEntries, vehicleSyncId)
+        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.FUEL_HEADERS)
+        val a = Backends.mock(mapOf(TAB_LOCAL_FUEL to localData))
+        val b = Backends.mock(mapOf(TAB_REMOTE_FUEL to remoteData))
+        val result = MergeSync.merge(a, b, fuelMergeUnit(writeTarget = "none"))
+        return fuelFromTabData(result.data, vehicleId)
+    }
+
+    /** One-way PolicySync.push for fuel experiments (single tab). */
+    fun pushFuelViaPolicy(
+        localEntries: List<FuelEntry>,
+        remoteGrid: List<List<String>>,
+        vehicleId: Int,
+        vehicleSyncId: String = "",
+    ): Pair<List<FuelEntry>, PushResult> {
+        val localData = tabDataFromFuel(localEntries, vehicleSyncId)
+        val remoteData = tabDataFromGrid(remoteGrid, TabularSchema.FUEL_HEADERS)
+        val a = Backends.mock(mapOf(TAB_LOCAL_FUEL to localData))
+        val b = Backends.mock(mapOf(TAB_REMOTE_FUEL to remoteData))
+        val pushResult = PolicySync.push(a, b, fuelPushUnit())
+        val after = b.readRows(TAB_REMOTE_FUEL)
+        return fuelFromTabData(after, vehicleId) to pushResult
     }
 }
