@@ -32,6 +32,7 @@ conformance/ethercalc/down.sh
 # filters:
 #   -- testDebugUnitTest --tests '*LocationBlobOverlayTest'
 #   -- testDebugUnitTest --tests '*VehicleDefinitionOverlayTest'
+#   -- testDebugUnitTest --tests '*FuelRowMergeEngineFieldMergeTest'
 ```
 
 | Scenario | What it proves |
@@ -42,5 +43,6 @@ conformance/ethercalc/down.sh
 | S8 | Real EtherCalc remote grid merge |
 | **LocationBlobOverlayTest** | Fuel/expense `mergeBlobs` after LWW (place/thin, confirmed, empty, list) |
 | **VehicleDefinitionOverlayTest** | Odo/other crops, landmarks, photos, loserOfPair, applyToMergedList |
+| **FuelRowMergeEngineFieldMergeTest** | Pass 2 field-merge: absorb partials, conflict fulls, window, MERGE_EXEMPT |
 
 Device/Sheets Sync is optional field confidence; rollback if broken = install master APK.
