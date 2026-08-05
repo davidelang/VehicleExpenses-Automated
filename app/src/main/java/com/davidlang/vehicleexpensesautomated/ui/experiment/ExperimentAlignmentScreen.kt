@@ -99,7 +99,10 @@ data class PhotoResultSummary(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExperimentAlignmentScreen(navController: NavHostController) {
+fun ExperimentAlignmentScreen(
+    navController: NavHostController,
+    autoFirst10: Boolean = false,
+) {
     val context = LocalContext.current
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val vehicles by vehicleViewModel.vehicles.collectAsState()
@@ -112,12 +115,48 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
     var currentPhotoName by remember { mutableStateOf("") }
     var totalPhotos by remember { mutableIntStateOf(0) }
     val resultsList = remember { mutableStateListOf<PhotoResultSummary>() }
+    var autoStarted by remember { mutableStateOf(false) }
 
     val experimentDir = File(context.filesDir, "experiment_photos")
     experimentDir.mkdirs()
     val reportDir = File(context.filesDir, "experiment_reports")
 
     if (!reportDir.exists()) reportDir.mkdirs()
+
+    val runFirst10: () -> Unit = {
+        if (vehicles.isEmpty()) {
+            status = "Error: No vehicles in DB."
+        } else {
+            scope.launch {
+                val allFiles = experimentDir.listFiles { f ->
+                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+                } ?: emptyArray()
+                val first10 = allFiles.sortedBy { it.name }.take(10)
+                val subsetMap = first10.mapIndexed { i, f -> f.name to (i + 1) }.toMap()
+                Log.d(TAG, "First 10 listFiles: dir=${experimentDir.absolutePath} count=${first10.size}")
+                totalPhotos = first10.size
+                isRunning = true
+                resultsList.clear()
+                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, subsetMap) { res, p ->
+                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
+                }
+                isRunning = false
+                status = "Complete! First 10 report saved."
+            }
+        }
+    }
+
+    // Deep link: vehicleexpenses://experiment/align?auto=first10
+    LaunchedEffect(autoFirst10, vehicles.size) {
+        if (!autoFirst10 || autoStarted || isRunning) return@LaunchedEffect
+        if (vehicles.isEmpty()) {
+            Log.w(TAG, "autoFirst10 waiting for vehicles…")
+            return@LaunchedEffect
+        }
+        autoStarted = true
+        Log.i(TAG, "autoFirst10 starting with ${vehicles.size} vehicles")
+        runFirst10()
+    }
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { u ->
@@ -163,23 +202,11 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
                 isRunning = false; status = "Complete! Reports saved."
             }
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
-        Button(onClick = {
-            if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
-            scope.launch {
-                val allFiles = experimentDir.listFiles { f ->
-                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
-                } ?: emptyArray()
-                val first10 = allFiles.sortedBy { it.name }.take(10)
-                val subsetMap = first10.mapIndexed { i, f -> f.name to (i + 1) }.toMap()
-                Log.d(TAG, "First 10 listFiles: dir=${experimentDir.absolutePath} count=${first10.size}")
-                totalPhotos = first10.size
-                isRunning = true; resultsList.clear()
-                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, subsetMap) { res, p ->
-                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
-                }
-                isRunning = false; status = "Complete! First 10 report saved."
-            }
-        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("First 10") }
+        Button(
+            onClick = runFirst10,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("First 10") }
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->

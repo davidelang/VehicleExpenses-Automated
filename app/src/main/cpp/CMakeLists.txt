@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project("native_components")
 
+# 16KB ELF max-page-size for Android 15+ (all ABIs; critical for armeabi-v7a on NDK r28).
+add_link_options(-Wl,-z,max-page-size=16384)
+
 # LibRaw Configuration
 set(LIBRAW_PATH ${CMAKE_SOURCE_DIR}/libraw)
 add_definitions(-DLIBRAW_NOTHREADS -DLIBRAW_NODISPLAY)

@@ -51,6 +51,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Device automation: adb shell am start -a VIEW -d vehicleexpenses://experiment/... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vehicleexpenses" android:host="experiment" />
+            </intent-filter>
         </activity>
         <activity
             android:name=".ui.help.UserManualActivity"

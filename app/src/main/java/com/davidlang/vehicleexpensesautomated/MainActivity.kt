@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -39,9 +40,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,6 +67,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
@@ -109,6 +111,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -210,6 +213,12 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // Re-composition reads intent via setContent; force recreate for deep-link re-entry
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -233,6 +242,36 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(backfillComplete, navController.currentBackStackEntry) {
                     refreshChromeIndicators()
+                }
+
+                // Explicit deep-link routing for experiment automation:
+                // adb shell am start -a android.intent.action.VIEW \
+                //   -d 'vehicleexpenses://experiment/align?auto=first10'
+                val deepLinkKey = intent?.dataString
+                LaunchedEffect(backfillComplete, deepLinkKey) {
+                    if (!backfillComplete) return@LaunchedEffect
+                    val data = intent?.data ?: return@LaunchedEffect
+                    if (data.scheme != "vehicleexpenses" || data.host != "experiment") return@LaunchedEffect
+                    val path = data.path.orEmpty()
+                    val auto = data.getQueryParameter("auto").orEmpty()
+                    val q = if (auto.isNotEmpty()) "?auto=$auto" else ""
+                    val route = when {
+                        path.contains("align") -> "experiment$q"
+                        path.contains("pump") -> "experiment_pump$q"
+                        else -> return@LaunchedEffect
+                    }
+                    // Let NavHost finish composing before navigating.
+                    delay(400)
+                    Log.i("MainActivity", "Deep link navigate → $route from $data")
+                    try {
+                        navController.navigate(route) {
+                            launchSingleTop = true
+                            // Drop any restored settings stack so experiment is visible.
+                            popUpTo("quickfill") { inclusive = false }
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Deep link navigate failed for $route", e)
+                    }
                 }
 
                 // Refresh yellow ? when app returns to foreground (after merge/answer/sync)
@@ -308,11 +347,14 @@ class MainActivity : ComponentActivity() {
 
                 val pageHelpController = rememberPageHelpController()
 
-                // First-run splash when no user vehicles (S1/S4/S5)
-                val allVehicles by vehicleRepository.getAllVehicles()
-                    .collectAsState(initial = emptyList())
+                // First-run splash when no *user* vehicles (S1/S4/S5).
+                // null until Room Flow's first emission — do not treat collectAsState's
+                // empty placeholder as "no vehicles" (that raced and forced welcome on every cold start).
+                val allVehicles by produceState<List<Vehicle>?>(initialValue = null) {
+                    vehicleRepository.getAllVehicles().collect { value = it }
+                }
                 val userVehiclesEmpty = remember(allVehicles) {
-                    allVehicles.forUserPicker().isEmpty()
+                    allVehicles?.forUserPicker()?.isEmpty()
                 }
 
                 // Dynamic page title
@@ -320,8 +362,10 @@ class MainActivity : ComponentActivity() {
                 val currentRoute = navBackStackEntry?.destination?.route
                 LaunchedEffect(backfillComplete, userVehiclesEmpty, currentRoute) {
                     if (!backfillComplete) return@LaunchedEffect
-                    if (!userVehiclesEmpty) return@LaunchedEffect
+                    // null = vehicles not loaded yet; wait (do not open onboarding).
+                    if (userVehiclesEmpty != true) return@LaunchedEffect
                     // Only auto-open splash from home so we don't interrupt tutorials mid-flow.
+                    // (Manual "Show first-run welcome" from Help/Settings still works.)
                     if (currentRoute == "quickfill" || currentRoute == null) {
                         navController.navigate("onboarding") {
                             launchSingleTop = true
@@ -437,7 +481,7 @@ class MainActivity : ComponentActivity() {
                                     label = { Text("Alignment Experiment") },
                                     selected = false,
                                     onClick = {
-                                        navController.navigate("experiment")
+                                        navController.navigate("experiment?auto=")
                                         scope.launch { drawerState.close() }
                                     }
                                 )
@@ -445,7 +489,7 @@ class MainActivity : ComponentActivity() {
                                     label = { Text("Pump Experiment") },
                                     selected = false,
                                     onClick = {
-                                        navController.navigate("experiment_pump")
+                                        navController.navigate("experiment_pump?auto=")
                                         scope.launch { drawerState.close() }
                                     }
                                 )
@@ -653,8 +697,54 @@ class MainActivity : ComponentActivity() {
                                 }
                                 composable("help") { HelpScreen(navController = navController) }
                                 composable("about") { AboutScreen() }
-                                composable("experiment") { ExperimentAlignmentScreen(navController = navController) }
-                                composable("experiment_pump") { ExperimentPumpScreen(navController = navController) }
+                                composable(
+                                    route = "experiment?auto={auto}",
+                                    arguments = listOf(
+                                        navArgument("auto") {
+                                            type = NavType.StringType
+                                            defaultValue = ""
+                                            nullable = true
+                                        },
+                                    ),
+                                    deepLinks = listOf(
+                                        navDeepLink {
+                                            uriPattern = "vehicleexpenses://experiment/align?auto={auto}"
+                                        },
+                                        navDeepLink {
+                                            uriPattern = "vehicleexpenses://experiment/align"
+                                        },
+                                    ),
+                                ) { entry ->
+                                    val auto = entry.arguments?.getString("auto").orEmpty()
+                                    ExperimentAlignmentScreen(
+                                        navController = navController,
+                                        autoFirst10 = auto == "first10",
+                                    )
+                                }
+                                composable(
+                                    route = "experiment_pump?auto={auto}",
+                                    arguments = listOf(
+                                        navArgument("auto") {
+                                            type = NavType.StringType
+                                            defaultValue = ""
+                                            nullable = true
+                                        },
+                                    ),
+                                    deepLinks = listOf(
+                                        navDeepLink {
+                                            uriPattern = "vehicleexpenses://experiment/pump?auto={auto}"
+                                        },
+                                        navDeepLink {
+                                            uriPattern = "vehicleexpenses://experiment/pump"
+                                        },
+                                    ),
+                                ) { entry ->
+                                    val auto = entry.arguments?.getString("auto").orEmpty()
+                                    ExperimentPumpScreen(
+                                        navController = navController,
+                                        autoFirst10 = auto == "first10",
+                                    )
+                                }
                             }
                         }
                     }

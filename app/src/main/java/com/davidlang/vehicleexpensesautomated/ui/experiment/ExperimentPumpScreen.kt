@@ -112,7 +112,10 @@ data class PumpPhotoResultSummary(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExperimentPumpScreen(navController: NavHostController) {
+fun ExperimentPumpScreen(
+    navController: NavHostController,
+    autoFirst10: Boolean = false,
+) {
     val context = LocalContext.current
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val vehicles by vehicleViewModel.vehicles.collectAsState()
@@ -125,12 +128,39 @@ fun ExperimentPumpScreen(navController: NavHostController) {
     var currentPhotoName by remember { mutableStateOf("") }
     var totalPhotos by remember { mutableIntStateOf(0) }
     val resultsList = remember { mutableStateListOf<PumpPhotoResultSummary>() }
+    var autoStarted by remember { mutableStateOf(false) }
 
     val experimentDir = File(context.getExternalFilesDir(null), "pump_photos")
     experimentDir.mkdirs()
     val reportDir = File(context.getExternalFilesDir(null), "pump_reports")
 
     if (!reportDir.exists()) reportDir.mkdirs()
+
+    val runFirst10: () -> Unit = {
+        scope.launch {
+            val allFiles = experimentDir.listFiles { f ->
+                f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+            } ?: emptyArray()
+            val first10Names = allFiles.sortedBy { it.name }.take(10).map { it.name }
+            Log.d(TAG, "First 10 listFiles: dir=${experimentDir.absolutePath} count=${first10Names.size}")
+            totalPhotos = first10Names.size
+            isRunning = true
+            resultsList.clear()
+            runPumpExperiment(experimentDir, reportDir, context, { detailLog = it }, first10Names) { res, p ->
+                resultsList.add(res); progress = p; currentPhotoName = res.photoName
+            }
+            isRunning = false
+            status = "Complete! First 10 report saved."
+        }
+    }
+
+    // Deep link: vehicleexpenses://experiment/pump?auto=first10
+    LaunchedEffect(autoFirst10) {
+        if (!autoFirst10 || autoStarted || isRunning) return@LaunchedEffect
+        autoStarted = true
+        Log.i(TAG, "autoFirst10 starting pump First 10")
+        runFirst10()
+    }
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { u ->
@@ -175,21 +205,11 @@ fun ExperimentPumpScreen(navController: NavHostController) {
                 isRunning = false; status = "Complete! Reports saved."
             }
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
-        Button(onClick = {
-            scope.launch {
-                val allFiles = experimentDir.listFiles { f ->
-                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
-                } ?: emptyArray()
-                val first10Names = allFiles.sortedBy { it.name }.take(10).map { it.name }
-                Log.d(TAG, "First 10 listFiles: dir=${experimentDir.absolutePath} count=${first10Names.size}")
-                totalPhotos = first10Names.size
-                isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, context, { detailLog = it }, first10Names) { res, p ->
-                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
-                }
-                isRunning = false; status = "Complete! First 10 report saved."
-            }
-        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("First 10") }
+        Button(
+            onClick = runFirst10,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("First 10") }
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->

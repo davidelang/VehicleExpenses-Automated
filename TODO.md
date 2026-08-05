@@ -5,10 +5,13 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [x] History purge: strip git blobs >100MB (fat Paddle JNI); see `docs/reference/GIT_HISTORY_OVERSIZE_BLOB_PURGE_20260713.md` (2026-07-13).
 
 ## Backlog (native / paddle)
-- [ ] True `LITE_BUILD_TAILOR` for **x86_64** emulator (space only; prod-path speed matches fat kernels)
-- [ ] True `LITE_BUILD_TAILOR` for **armeabi-v7a** or drop the ABI (space only if kept)
+- [ ] True `LITE_BUILD_TAILOR` for **x86_64** emulator (space only; pin stays slim — android-x86 LITE_BUILD_TAILOR drops KernelRegistrar / calib kernels on NDK r28c)
+- [x] **armeabi-v7a** product path: tailor + int8 fp32-calib (no arm82 fp16), ~0.75MB jni/light, abiFilters, models `prod_u8fp32_u8` (libpin-paddle-cleanup 2026-08-04)
+- [x] Non-git `[[source]]` + **paddle-models** pin; NDK **r28c** three-ABI products; multi-ABI SO smoke under QEMU; pin `./build`/`./test` gates
+- [x] Multi-ABI OCR functional harness under QEMU (arm64 + x86 + **armv7** full det→deskew→crop→rec PASS)
+- [x] **BUG: armv7 det heatmap all-zero** — root cause: `--quant_model=true` on armv7 opt (broken det.nb). Fixed 2026-08-04: analytic u8 only (no weight quant); rec float CTC out; slim armv7 SO default. QEMU+Pixel PASS `ABCD12345`.
 - [x] Strip debug information and excessive logging from Paddle Lite **x86_64** Android build (binary size)
-- [ ] **16KB page size alignment:** rebuild OpenCV, rclone/gomobile, and other prebuilt `.so` libs with 16KB ELF segment alignment (see `docs/reference/16k-pages-compatibility-notes.md`)
+- [ ] **16KB residual (armv7 multi-ABI purity only)** (see `docs/reference/16k-pages-compatibility-notes.md`): OpenCV **armv7** pin still 4KB; paddle armv7 max-page-size. **Done (Play/64-bit path):** `useLegacyPackaging=false`; app CMake `-Wl,-z,max-page-size=16384` + `ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`; rclone 16KB; OpenCV arm64/x86_64 pin; CameraX→1.6.1; drop UPX; NDK `libc++_shared`; First 10 before/after on emu-5554 PASS (`dev-ai-interaction/scratch/16k-5554-first10-20260805/`).
 
 ## Backlog (OCR / alignment / identity)
 - [ ] **Dashboard Polarity:** refine polarity detection beyond simple corner sampling (Algorithm A/B fallback)
@@ -23,7 +26,7 @@ Backlog only. Completed items → `CHANGELOG.md` § Backlog completed. Journal �
 - [ ] **Email hook:** receive/import fill and expense data via email intent or similar
 - [ ] **OnlyOffice / Collabora** tabular sync (catalog + DeferredTabularBackendStub present; **real backends still TODO** — prior “spike NO-GO” was API approach; product still wanted)
 - [ ] **MSAL app registration:** replace placeholder `msal_auth_config.json` with real Azure app registration for managed OneDrive
-- [ ] **Deep linking** (not implemented per `docs/reference/NAVIGATION_MAP.md`)
+- [ ] **Deep linking** (product routes still open per `docs/reference/NAVIGATION_MAP.md`; experiment automation only: `vehicleexpenses://experiment/{align,pump}?auto=first10`)
 
 ## Backlog (location)
 - [x] **Location Lookup Worker:** background POI resolution (Overpass/OSM; `dev-ai-interaction/LOCATION_LOOKUP_WORKER.md`)
@@ -67,10 +70,9 @@ Trip miles packaging polish (export labels/annual packs); core open-only + impli
 
 Expense receipt field extraction helper (assistive OCR propose vendor/amount/line items; HITL confirm; offline): research cache + open decisions — dev-ai-interaction/research/expense-receipt-field-extraction-deep-research-20260801.md (also see RECEIPT_PARSING_RESEARCH.md; existing backlog bullet "Expense receipt parsing")
 
-Keep **armeabi-v7a** (aftermarket head units): true LITE_BUILD_TAILOR + pin-build OpenCV fat jni for armv7 (16KB); wire app jniLibs — see plans/paddle-armv7-fp16-and-functional-calib-20260803-plan.md
+~~Keep armeabi-v7a: true LITE_BUILD_TAILOR + pin jniLibs~~ — **done** (slim default ~3.1MB after zero-heatmap fix; analytic models; abiFilters). Remaining: OpenCV armv7 16KB fat jni if still needed; optional re-tailor after lists match. No hand-copied `libc++_shared` (NDK packaging).
 
-Pin slim **armeabi-v7a** paddle JNI with strip path; collect third_party/paddle/artifact/jni/armeabi-v7a + app jniLibs
-
+~~Pin slim armeabi-v7a paddle JNI + artifact/app jniLibs~~ — **done** (strip-unneeded; get-artifacts rows).
 Email loyalty: live Gmail/IMAP production hardening + expense-from-email path still open; fuel Shell/Sam's Room ingest shipped on master
 
 extractmail: browser-based human-confirm extract helper (open file/email; avoid auto-picking non-visible fields)
