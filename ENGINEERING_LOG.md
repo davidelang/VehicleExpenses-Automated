@@ -472,3 +472,8 @@ AGENT_MANDATES §9.1 + PROJECT_CONFIG_LOCAL_ONLY: automatic fallbacks correct on
 - Evidence: dev-ai-interaction/research/landlock-smoke-evidence.md
 - Design status updated; antigravity residual optional.
 
+
+## 2026-08-05 - landlock: grant $HOME/.grok for Grok sessions
+
+Without PATH_BENEATH on role $HOME/.grok, trust/session creation fails with FS_PERMISSION_DENIED (EACCES) under Landlock. All roles now always get $HOME/.grok (+ XDG_RUNTIME_DIR, existing .cache/.local grok dirs).
+
