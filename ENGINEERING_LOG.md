@@ -7385,3 +7385,16 @@ x
 - build green VE 130a5d28
 - Human optional: vehicle_settings use_policy_sync_fuel=true; Sync now; log Fuel LWW via PolicySync/MergeSync; set false after
 
+
+## 2026-08-05 - ve-room-fuel-multi-tab-ethercalc-export — execution start
+
+- Plan: dev-ai-interaction/plans/ve-room-fuel-multi-tab-ethercalc-export-20260805-0713-plan.md
+- Multi-tab Room fuel → EtherCalc export validation
+
+
+## 2026-08-05 - ve-room-fuel-multi-tab-ethercalc-export — CODE LANDED
+
+- Plan: dev-ai-interaction/plans/ve-room-fuel-multi-tab-ethercalc-export-20260805-0713-plan.md
+- room_fuel_export_smoke: multi-room EtherCalc (each Fuel tab); offline still PASS
+- pin 883cda7; Sheets/production untouched
+
