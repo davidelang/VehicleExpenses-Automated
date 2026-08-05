@@ -395,7 +395,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             )
 
             val config = MobileConfig()
-            config.setThreads(4)
+            // Single-thread det/rec: multi-thread (4) + LITE_POWER_HIGH produced run-to-run
+            // heatmap divergence on hard goldens (First 10 L1 mass/cost not matching pin-era
+            // 84.50 baseline). Prefer deterministic product math on emu and devices.
+            config.setThreads(1)
             config.setPowerMode(PowerMode.LITE_POWER_HIGH)
 
             TIER_SCALES.forEach { scale ->
