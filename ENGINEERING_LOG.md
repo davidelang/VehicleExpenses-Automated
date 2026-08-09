@@ -488,3 +488,9 @@ Without PATH_BENEATH on role $HOME/.grok, trust/session creation fails with FS_P
 - Evidence: dev-ai-interaction/research/grok1-infra-evidence-20260809.md
 - grok-worktrees/ gitignored pool; freeform policy research note
 
+
+## 2026-08-09 - grok1 goal CODE LANDED with residuals
+
+Commit a4c76187 on orchestration. Dual landlock matrix PASS. Stop gate opt-in dry-tested.
+RESIDUAL for dlang: ./fix-multiuser-git-hosts.sh (VE+example .git DAC); ./deploy-landlock-fix.sh --commit as dlang for host publish (orch cannot write many worktrees).
+
