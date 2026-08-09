@@ -75,6 +75,11 @@ LANDLOCK_FILES=(
   landlock-write-probe
   landlock-smoke-matrix
   .grok/lib/grok-launch-common.sh
+  fix-multiuser-git-hosts.sh
+  fix-ve-git-shared.sh
+  deploy-landlock-fix.sh
+  .grok/hooks/stop-completeness-gate.sh
+  .grok/hooks/stop-completeness-gate.json
 )
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -216,6 +221,11 @@ commit_target() {
       landlock-write-probe \
       landlock-smoke-matrix \
       .grok/lib/grok-launch-common.sh \
+      fix-multiuser-git-hosts.sh \
+      fix-ve-git-shared.sh \
+      deploy-landlock-fix.sh \
+      .grok/hooks/stop-completeness-gate.sh \
+      .grok/hooks/stop-completeness-gate.json \
       .gitattributes \
       .gitignore \
       2>/dev/null || true
@@ -226,22 +236,27 @@ commit_target() {
     fi
 
     git -c "safe.directory=$dest" -c "safe.directory=*" commit -m "$(cat <<'EOF'
-fix: landlock session grants $HOME/.grok + launch wire
+chore: landlock + multi-user git fix scripts + free-form launcher flags
 
-Publish agent-landlock (mutation-only; always allow CLI ~/.grok sessions),
-landlock.config, smoke probes, and grok-launch-common wire from VE SoT.
-Without ~/.grok grants, trust/session creation fails with FS_PERMISSION_DENIED.
+Publish agent-landlock (.grok grants), smoke matrix, grok-launch-common
+(GROK_SANDBOX/GROK_WORKTREE), fix-multiuser-git-hosts, Stop completeness
+hook (opt-in VE_STOP_COMPLETENESS=1). From VE SoT.
 EOF
 )"
     echo "  committed $(git -c "safe.directory=$dest" -c "safe.directory=*" rev-parse --short HEAD) on $(git -c "safe.directory=$dest" -c "safe.directory=*" branch --show-current 2>/dev/null || echo '?') [$label]"
 
     if [[ "$DO_PUSH" -eq 1 ]]; then
+      local push_rc=0
       if git -c "safe.directory=$dest" -c "safe.directory=*" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
-        git -c "safe.directory=$dest" -c "safe.directory=*" push
+        git -c "safe.directory=$dest" -c "safe.directory=*" push || push_rc=$?
       else
-        git -c "safe.directory=$dest" -c "safe.directory=*" push -u origin "$(git -c "safe.directory=$dest" -c "safe.directory=*" branch --show-current)"
+        git -c "safe.directory=$dest" -c "safe.directory=*" push -u origin "$(git -c "safe.directory=$dest" -c "safe.directory=*" branch --show-current)" || push_rc=$?
       fi
-      echo "  pushed"
+      if [[ "$push_rc" -eq 0 ]]; then
+        echo "  pushed"
+      else
+        echo "  WARN push failed (rc=$push_rc) — commit is local only [$label]" >&2
+      fi
     fi
   )
 }

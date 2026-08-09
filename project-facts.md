@@ -62,3 +62,10 @@ Update only with orientation facts valid for future work. Effort/plan details �
 - Library `update-rules.sh` does **not** update VE `third_party/<lib>/src` worktrees (co-dev checkouts, not dedicated lib agents).
 
 - Launchers: thin run-grok* + .grok/prompts/packs on VE and lib hosts; local PR skills prepare-local-pr / master-merge; sandbox_dir (VE dev-ai-interaction, libs sandbox).
+
+- 2026-08-02 workflow parity CODE LANDED: same pack launchers + local PR skills on VE and ~/git/{remotetable,extractmail}; sandbox_dir; third_party pin promote optional via promote-third-party-pins.sh.
+
+- Multi-user git (all hosts): `.git` group **ai-shared** (not ai-code), dirs **2770** setgid, `core.sharedRepository=group`. Doc: `docs/reference/MULTIUSER_GIT_VE_PARITY.md`. Repair: `./fix-multiuser-git-hosts.sh` (VE + libs + orchestration-example) or `./fix-ve-git-shared.sh` (VE only). Run as **dlang** with sudo. Partial chgrp of `.git` top only is insufficient — children re-infect via setgid.
+- Session Landlock: `agent-landlock` + wire in `.grok/lib/grok-launch-common.sh`; always grants `$HOME/.grok` (session/trust). Smoke: `./landlock-smoke-matrix`. Publish: `./deploy-landlock-fix.sh [--commit] [--also-ve]`.
+- Grok 1.0 free-form (primary/orch): optional `GROK_SANDBOX=workspace` and/or `GROK_WORKTREE=1|name` (or args after `--`). Does **not** enable native plan mode. Local pool dir `grok-worktrees/` (gitignored). Master: Grok worktrees for merge **dry-run** only; final merge on real `master/`.
+- Stance: avoid native plan mode for multi-agent; capability_mode not general policy; personas held; memory ⊂ project-facts; `/goal` `/deep-research` workflows opt-in. Completeness Stop hook opt-in: `VE_STOP_COMPLETENESS=1` (`.grok/hooks/stop-completeness-gate.*`).

@@ -1,0 +1,224 @@
+/goal Harden VE multi-agent infra for Grok Build 1.0 and fix known host issues:
+multi-user git ownership (ai-planner blocked on VE), Landlock/session grants already
+landed but may need follow-through, optional free-form damage limits (Grok worktrees +
+optional Grok --sandbox for primary/orch), deploy/publish story for orchestration
+branches on VE + remotetable + extractmail + orchestration-example.
+
+CONTEXT (agreed product stance — do not reopen without human override):
+- KEEP avoiding Grok native plan mode for the multi-agent path (edit-tool gate improved
+  but bash hole, subagents not gated, session plan.md ≠ sandbox plan SoT, no enforced
+  re-plan after implement). Bi-modal + magic path approval of sandbox plans remains law.
+- Subagent capability_mode is NOT general policy — only when a parent explicitly spins a
+  special-purpose child (e.g. pure inspect). Default children stay full toolset; OS user
+  + agent-landlock + prompts enforce write scope.
+- HOLD personas — do not create project personas or wire personas into run-grok* now.
+  Main-session law stays .grok/prompts/packs/<role>.pack.
+- Grok memory is a soft subset of project-facts.md; durable shared orientation →
+  project-facts (and eng-log), not /memory as SoT.
+- Goals / deep-research / named workflows /loop remain EXPLICIT human opt-in — do not
+  make them silent defaults on every launcher.
+- Research findings: chat by default; durable cache only when needed; still state issues
+  in chat.
+
+YOU own the plan: write/revise a sandbox execute plan under
+dev-ai-interaction/plans/*grok1*infra*-YYYYMMDD-HHMM-plan.md with full phases;
+implement ALL of them. Scaffold, docs-only, eng-log-only, or “deploy script exists”
+alone is NEVER complete. Prefer Grok git worktrees (and/or a project-local
+grok-worktrees/ pool if path control is proven) to implement and prove changes BEFORE
+merging into orchestration (and other integration branches). Merge only after evidence.
+Then publish to other hosts’ orchestration (and listed worktrees) with commits.
+
+================================================================
+A. SCOPE — MUST IMPLEMENT AND PROVE
+================================================================
+
+### A1. Multi-user git ownership / DAC (KNOWN BREAKAGE)
+
+Problem (audited): VE monorepo `.git` top is dlang:ai-shared 2770, but bulk of
+objects/refs/logs/HEAD/config are dlang:ai-code (often 660/2775 setgid). ai-planner is
+in ai-shared NOT ai-code → cannot read HEAD/config → git log/status fail (Unix, not
+Landlock). remotetable/extractmail already OK; orchestration-example wrong model
+(ai-code / incomplete setgid).
+
+Requirements:
+1) Repair VE common `.git` to documented model (docs/reference/MULTIUSER_GIT_VE_PARITY.md):
+   - group ai-shared recursively on .git
+   - every directory under .git: 2770 setgid
+   - core.sharedRepository=group
+   - HEAD/config/packed-refs/refs/logs metadata ug+rw for group
+2) Repair orchestration-example the same way (under GIT_HOME).
+3) Re-audit remotetable + extractmail (expect already OK; fix if drifted).
+4) Land fix scripts in-tree if not committed: fix-multiuser-git-hosts.sh,
+   fix-ve-git-shared.sh (or equivalent). Prefer one SoT script; wrappers OK.
+5) Prove as non-interactive checks where possible:
+   - paths not group ai-shared under .git: 0 (or documented residual)
+   - dirs without setgid under .git: 0
+   - simulated or real: ai-planner can read HEAD + config + run `git log -1`
+     (sudo -u ai-planner … when available; else DAC simulation + dlang-runbook)
+6) Root-cause note in evidence: setgid ai-code on objects/refs + ongoing commits
+   re-infect; partial chgrp of .git top only is insufficient. Prevention note:
+   set-worktree-perms / ops must not leave common .git children on ai-code.
+
+### A2. Landlock follow-through (already mostly landed — verify + gaps)
+
+1) agent-landlock must grant $HOME/.grok (session/trust/worktrees.db) for all roles —
+   already fixed once; re-verify after any edit.
+2) Re-run landlock-smoke-matrix (or equivalent) on a throwaway worktree; dual run;
+   evidence under sandbox (update or new file).
+3) If Grok worktree checkout parent is outside current grants, extend grants or force
+   create under known grants (start worktree / git_home / ~/.grok / tmp) — document.
+4) deploy-landlock-fix.sh (or successor) remains the publish path for landlock stack;
+   fix false “pushed” on failed git push if still present.
+
+### A3. Grok 1.0 free-form damage limits (primary + orchestrator; optional master dry-run)
+
+Implement support WITHOUT enabling native plan mode or personas:
+
+1) Document and optionally wire launcher flags/env for:
+   - Grok --sandbox workspace (or project custom profile: write CWD + sandbox path +
+     ~/.grok + tmp) for run-grok and run-grok-orchestrator
+   - Optional --worktree=… for those launchers (forward via EXTRA_ARGS or env)
+2) Discover real Grok worktree on-disk path (probe as role user when possible):
+   grok worktree list / worktrees.db path column / git worktree list.
+3) Design decision (implement if feasible): project-local pool
+   `<repo>/grok-worktrees/` sibling to sandbox (gitignored), under monorepo so orch
+   Landlock PATH_BENEATH covers it. If Grok cannot set base path, document and either
+   wrap (pre git worktree add + --cwd) or grant whatever path Grok uses.
+4) Master: document that Grok worktrees are for merge dry-run / conflict exploration
+   only; final merge-branch-into-master stays on real master/ worktree.
+5) Cleanup runbook: grok worktree rm/gc + git worktree prune; optional automation.
+
+### A4. Completeness / anti-stub (Stop hook or equivalent — thin)
+
+1) Project Stop hook (or documented manual gate) that blocks claiming ready-to-test /
+   CODE LANDED / goal complete without:
+   - plan Status CODE LANDED or BLOCKED with residuals, when a sandbox plan was used
+   - and/or evidence file path for this goal
+   Cap continuations; fail-open already exists — do not hang sessions forever.
+2) Do NOT implement full “auto re-enter plan mode” (we avoid native plan mode).
+
+### A5. Policy docs (orientation only — short)
+
+Update orientation so next agents do not invent the wrong stack:
+- project-facts.md pointers: multi-user git fix scripts; landlock; Grok 1.0 stance
+  (no native plan mode; capability modes special-case; personas held; memory ⊂ facts;
+  goal/workflows opt-in; worktrees for free-form damage limit).
+- Optional short research note under dev-ai-interaction/research/ if durable.
+
+### A6. Merge + publish
+
+1) All code changes developed/proven in isolated worktree(s) first.
+2) Merge into VE orchestration (and any required integration branch) only after
+   verification section PASS.
+3) Publish landlock + launcher + fix scripts to:
+   - VE worktrees as needed (prefer update-rules or deploy-landlock-fix --also-ve)
+   - remotetable, extractmail, orchestration-example — all git worktrees under each
+     host (same pattern as deploy-landlock-fix.sh)
+4) Commit on each dirty target for the published paths only (no scooping unrelated dirt).
+5) Push only when human-equivalent policy allows; if push fails, do not print success.
+   orchestration-example may lack origin — commit local + document residual.
+
+================================================================
+B. OUT OF SCOPE (non-goals — must not claim complete via these)
+================================================================
+
+- Enabling Grok native plan mode as multi-agent default
+- Project personas or persona-per-launcher wiring
+- Default capability_mode on all subagents
+- Making /goal, /deep-research, /workflow, /loop auto-start on every session
+- Replacing project-facts with Grok memory
+- Full run-antigravity* parity (note residual only)
+- Device/emulator deploy, APK install, product UI tests
+- Rewriting MASTER_AGENT_MANDATE merge ritual
+- “Docs only” or eng-log only as success
+
+================================================================
+C. WORKTREE / IMPLEMENTATION METHOD (required process)
+================================================================
+
+1) YOU write the sandbox plan first (phases with observable success).
+2) Implement inside Grok and/or git worktrees so live orchestration is not the
+   scratchpad. Prefer:
+   - git worktree add under monorepo (e.g. grok-worktrees/infra-… or agent-style name)
+   - seed project.config, agent-landlock, filters from SoT
+   - sandbox: shared dev-ai-interaction symlink OR explicit note if private
+3) Prove in the implement worktree (or with scripts that don’t need interactive grok).
+4) Only then merge to orchestration / publish.
+5) Clean up throwaway worktrees/branches/symlinks or document residual cleanup.
+
+Do not implement solely on live orchestration without isolation unless a phase is
+explicitly “merge only” or “publish only.”
+
+================================================================
+D. SUCCESS / ACCEPTANCE (all required; record in evidence file)
+================================================================
+
+Evidence path (required):
+  dev-ai-interaction/research/grok1-infra-evidence-YYYYMMDD.md
+  (or plans companion). Include commands + outcomes. Dual-run flaky checks once.
+
+### D1. Multi-user git
+| Check | Pass criterion |
+|-------|----------------|
+| VE .git group | Recursive ai-shared (bad count 0 or residual listed + fixed) |
+| VE .git dirs | 2770 setgid |
+| sharedRepository | group |
+| Planner git log | ai-planner (or DAC sim + sudo -u) can `git log -1` on VE |
+| Libs + orchestration-example | audit OK or fixed |
+
+### D2. Landlock
+| Check | Pass criterion |
+|-------|----------------|
+| agent-landlock --status | available abi=N or honest BLOCKED |
+| dump-grants | includes role HOME/.grok |
+| smoke matrix | dual run exit 0, 0 FAIL when enforced=1 |
+| Session trust | no FS_PERMISSION_DENIED on trust/session when landlock on (or AGENT_LANDLOCK_DISABLE contrast) |
+
+### D3. Grok 1.0 free-form support
+| Check | Pass criterion |
+|-------|----------------|
+| Path discovery | Documented real worktree path from probe |
+| Launcher support | Env/flag or documented EXTRA_ARGS for sandbox and/or --worktree on primary+orch |
+| Landlock vs path | Grants cover create path OR pool under monorepo |
+| Cleanup | Runbook commands work (list/rm/gc or git prune) |
+| Master policy | Written: dry-run worktree OK; final merge on master/ |
+
+### D4. Completeness gate
+| Check | Pass criterion |
+|-------|----------------|
+| Stop hook or equivalent | Documented path; dry test blocks a fake “ready to test” without evidence (or honest skip if hook infra blocked) |
+
+### D5. Merge + publish
+| Check | Pass criterion |
+|-------|----------------|
+| VE orchestration | Changes committed (not only untracked) |
+| Hosts | remotetable + extractmail (+ orchestration-example) have landlock/fix scripts as applicable, committed per worktree policy |
+| Evidence | Lists SHAs or commit subjects per host |
+
+================================================================
+E. VERIFICATION PLAN (run yourself; save logs under goal scratch if any)
+================================================================
+
+1) fix-multiuser-git-hosts.sh --audit-only → then fix → audit-only again (PASS).
+2) sudo -u ai-planner git -C $VE log -1 --oneline (or residual).
+3) landlock-smoke-matrix dual run; capture logs.
+4) Grok worktree probe (interactive may need human; if blocked, git worktree + documented launcher --cwd path).
+5) Publish dry-run then --commit; show no false push success.
+6) Forensic: no native plan mode forced on planner/coder packs; no new default personas;
+   capability_mode not defaulted on all spawns.
+
+================================================================
+F. PROCESS RULES
+================================================================
+
+- Prefer behavioral proofs over narrative.
+- Keep working until every in-scope phase is done OR Status BLOCKED with residual list —
+  never mark goal complete after only phase 1 or “scripts exist.”
+- append-to-engineering-log for milestones; no ritual TODO spam.
+- Do not deploy APK / adb install.
+- Do not claim product-intent PASS; plan-scope complete or blocked only.
+- Commits required for “done” on tracked changes (uncommitted = not done).
+
+DONE when: D1–D5 all PASS (or honest BLOCKED with exact human actions), evidence file
+written, throwaway worktrees cleaned or cleanup residual explicit, VE orchestration
+and publish targets committed for in-scope paths.

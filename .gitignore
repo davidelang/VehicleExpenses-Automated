@@ -122,3 +122,6 @@ third_party/*/src/
 third_party/*/status.local
 third_party/*/*.local
 # --- end third_party consumer ---
+
+# Grok session/subagent worktree pool (local)
+grok-worktrees/

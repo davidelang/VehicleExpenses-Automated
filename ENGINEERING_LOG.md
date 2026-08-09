@@ -477,3 +477,14 @@ AGENT_MANDATES §9.1 + PROJECT_CONFIG_LOCAL_ONLY: automatic fallbacks correct on
 
 Without PATH_BENEATH on role $HOME/.grok, trust/session creation fails with FS_PERMISSION_DENIED (EACCES) under Landlock. All roles now always get $HOME/.grok (+ XDG_RUNTIME_DIR, existing .cache/.local grok dirs).
 
+
+## 2026-08-09 - grok1 infra harden (goal)
+
+- Sandbox plan: dev-ai-interaction/plans/grok1-infra-harden-20260809-0346-plan.md
+- Landlock dual matrix PASS abi=8; smoke OS-writecheck fix; deploy push honesty
+- Launchers: GROK_SANDBOX / GROK_WORKTREE free-form flags (primary/orch)
+- Stop completeness gate opt-in VE_STOP_COMPLETENESS=1
+- fix-multiuser-git-hosts.sh + fix-ve-git-shared.sh; VE DAC still needs dlang sudo chgrp (orch no new privileges)
+- Evidence: dev-ai-interaction/research/grok1-infra-evidence-20260809.md
+- grok-worktrees/ gitignored pool; freeform policy research note
+
