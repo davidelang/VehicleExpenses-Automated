@@ -514,3 +514,13 @@ Policy: permission denials → report human / script residual; no creative worka
 - build_app committed but refused builds tag: pre-existing unrelated tracked dirt (not in plan scope)
 - Residual for dlang (do not skip): cp already done for live hook; run ./fix-multiuser-git-hosts.sh as dlang; sudo -u ai-planner git -C ~/git/VehicleExpenses-automated log -1
 
+
+## 2026-08-09 - Verify post-checkout fix + deploy residual
+
+- VE .git: 0 non-ai-shared; HEAD/config/objects/refs ai-shared 660/2770
+- User: planner git log works (c4d207c1)
+- Test worktree: file checkout, branch switches, commits → still 0 non-ai-shared; new objects ai-shared
+- Concurrent agent-4 commits also writing ai-shared objects (setgid OK)
+- Live hook matches tracked safe post-checkout
+- Propagate blocked for ai-orchestrator (EACCES on lib trees) → ./deploy-postcheckout-git-safe.sh for dlang
+
