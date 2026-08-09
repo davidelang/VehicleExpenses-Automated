@@ -501,3 +501,9 @@ dlang ran ./fix-multiuser-git-hosts.sh: VE+libs+orchestration-example FIXED_OK; 
 dlang ran ./deploy-landlock-fix.sh --commit --also-ve: scripts/hooks published across VE worktrees + remotetable + extractmail + orchestration-example.
 Policy: permission denials → report human / script residual; no creative workarounds. project-facts pointer added.
 
+
+## 2026-08-09 - Start execution: post-checkout-scoped-perms-and-fix-perms-git-safe-20260809-0900-plan
+
+- Plan Status: APPROVED → implementing
+- Scope: post-checkout no fix-perms --all; fix-perms git-safe; docs/call sites
+

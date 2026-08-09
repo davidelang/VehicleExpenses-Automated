@@ -14,5 +14,6 @@ Thin overlay. Shared law: `AGENT_MANDATES.md`.
 - Git reset: three contexts + `./get-builds-tag.sh` preflight.
 - No deployment.
 - Worktree deploy: no uncommitted tracked dirt after `cp` (use `update-rules` or commit).
+- **Permission denials:** `AGENT_MANDATES.md` §1.1 — report to human; no creative workarounds (chmod/chown games, identity laundering, path dodges, Landlock disable).
 
 **Re-read after compaction:** role pack in `AGENTS.md` (not every turn).

@@ -23,6 +23,28 @@ Overlays + this file take absolute precedence. Bypassing protocol for speed is a
 - Version integrity: commit via `./build_app` before builds that matter for `git describe`. Prefer `./build_app @phase_summary.txt …` for multi-line phase summaries; single-line `-m` only for trivial steps. Plan + eng-log + git carry “why”; tags carry state.
 - Native Android/Kotlin/Gradle — ignore default web-stack advice.
 
+### 1.1 Permission denials — report; do not work around
+
+If a Unix DAC, Landlock, sudo, group-membership, or filesystem permission denial blocks a required action, **stop and report to the human**. Do **not** invent creative workarounds.
+
+**Report (in chat):** exact command, full error text, path(s), OS user (`whoami` / `id`), and whether a known recovery script already exists (name only — do not run destructive host fixers unless the user asked).
+
+**Forbidden workarounds (non-exhaustive):**
+
+- `chmod` / `chown` / `setfacl` games to “make it work”
+- Alternate paths, copies, or bind-mounts to dodge the denied path
+- Variable/indirection tricks so a denied or non-allow-listed form still “matches”
+- Switching OS user / `sudo -u` / `sg` / nested shells to launder identity
+- Running as a different role’s tree to bypass multi-user git or sandbox DAC
+- Disabling Landlock, widening grants, or editing `landlock.config*` ad hoc unless the user ordered that change
+- Treating “I can still make progress somehow” as success when the mandated path failed
+
+**Allowed:** re-try the **same** mandated helper/path after the human fixes host state; use project wrappers already intended for the action (e.g. `./append-to-engineering-log`); read-only diagnosis the agent can run without escalating privileges.
+
+**Rationale:** Multi-user DAC (`ai-shared` vs `ai-code`, setgid `.git`, Landlock) is load-bearing. Silent bypasses re-break planner/coder isolation and hide real defects (see multi-user git repair docs / `./fix-multiuser-git-hosts.sh --audit-only`).
+
+This is **policy** (this file). Orientation map only: `project-facts.md`.
+
 ---
 
 ## 2. Write authority
@@ -163,6 +185,20 @@ Single `adb logcat -d` (or device-specific) dump into sandbox; analyze locally. 
 - `jq` for JSON. OCR multi-engine, no silent fallbacks. 4-DOF affine. Automated Word Veto primary.
 - **Coordinates:** ICRS or raw pixels only — `docs/specs/ISOTROPIC_COORDINATE_SPEC.md`.
 - **UI display:** `docs/reference/UI_COMPATIBILITY.md` (cite; do not paste). Code wins if conflict — update doc same commit.
+
+### 9.1 Config and path defaults — fail loud (no dev-machine traps)
+
+**Automatic fallbacks that are correct only on the development machine are a trap.** They paper over missing config so tests pass here, then fail later on another host, user, or checkout.
+
+| Prefer | Avoid |
+|--------|--------|
+| **Require** explicit config (`project.config`, env, stamped `@@` + smudge) and **fail loudly** when unset/unsmudged | Silent defaults to this machine’s absolute paths, usernames, or layout |
+| Tokens / empty → refuse host access or abort with a clear error | “If missing, use `/home/…` or `$HOME/git/…` so it still works for me” |
+| Defaults only when **discussed and agreed** as the right thing for **anyone** using the tool, **wherever** they run it | Escape hatches like “allow non-\<primary user\>” that encode one human as the normal case |
+
+**When a default is justified:** document why it is portable (not “works on the SoT laptop”). Machine-local values live in **gitignored** `project.config` (or equivalent), never as the success path in committed scripts.
+
+Related: `docs/reference/PROJECT_CONFIG_LOCAL_ONLY.md` (local wiring; smudged tokens in tracked files).
 
 ---
 

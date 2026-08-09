@@ -69,6 +69,7 @@ Putting `.git` on `ai-code` with mode `2770` **locks out ai-planner** (and anyon
 | **`sudo ./script` without fixed `GIT_HOME`** | Script uses `/root/git/...` → MISSING |
 | Treating **worktree path layout** as a substitute for fixing **group/setgid** | Layout can matter later; it does **not** replace VE git parity |
 | Multiple conflicting “fix-*-git-*.sh” inventing different groups | Future agents re-break production |
+| **`post-checkout` → `fix-perms --all`** (or any hook chown/chmod of common `.git`) | Re-poisons `objects`/`refs`/`HEAD` to `ai-code`; planner git fails. Hooks must **not** repair or touch common `.git` DAC. |
 
 ---
 

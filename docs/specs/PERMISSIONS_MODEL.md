@@ -118,15 +118,26 @@ See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-2026
 
 **Already-poisoned device:** uninstall once (`adb uninstall …` or `PRESERVE_DATA=1 ./deploy`), then human re-deploy with the unified key. Phones already on the shared cert are unaffected.
 
+## Git hooks vs recovery scripts
+
+| Mechanism | May do | Must not |
+|-----------|--------|----------|
+| **`post-checkout`** | Soft `@@` warnings; on **branch** checkout only, light `chmod` on paths from `git diff --name-only old new` (worktree files; cap count) | Call `fix-perms` / `--all`; whole-tree `find`/`chown`; any chown/chmod under the **common** `.git` store (`objects`, `refs`, `HEAD`, `config`, …) |
+| **`fix-perms`** | Explicit recovery (human, `setup_agent` new worktree, rare systemic break) | Assign **`ai-code`** to common `.git`; `chmod 660` on a **directory** `.git` (strips search bit) |
+| **`fix-multiuser-git-hosts.sh`** | Canonical common-`.git` DAC repair (`ai-shared` 2770 setgid) | Be invoked from checkout hooks |
+
+**Checkout ≠ whole-tree DAC.** File checkout (hook 3rd arg `0`) does not walk permissions. Common `.git` repair is never a hook side effect.
+
 ## When to Run Fixers / env helpers
 | Symptom | Run |
 |---------|-----|
 | New shell, unsure umask/groups | `source ./ve-env` or `./ve-env check` |
 | Agent/build created wrong modes | next `./build_app` / `./deploy` (normalize) |
 | Deploy: Unable to delete `app/build/generated/ksp/...` (Hilt .pro) | Owner wipe: `sudo -u ai-coder rm -rf app/build/generated app/build/kspCaches app/build/intermediates` (or chown tree); then `./deploy`. Fixed scripts fail-fast with this message. |
-| Root-owned / systemic breakage | `sudo ./fix-perms` (**rare**) |
+| Root-owned / systemic worktree breakage | `sudo ./fix-perms` (**rare**; does not replace multiuser git repair) |
+| Planner cannot `git log` / `.git` group drift | `./fix-multiuser-git-hosts.sh --audit-only` then full repair as **dlang** |
 | `ai-coder` NDK Permission denied on `libc++_shared.so` | `./fix-android-sdk-perms` as **dlang** |
-| Daily work | Do **not** run fix-perms habitually |
+| Daily work / every checkout | Do **not** run fix-perms habitually; hooks must not run it |
 
 - dlang builds/deploys must leave the tree in a state where ai-coder can continue (enforced by scripts + 2770 build dirs + 664 sources).
 
