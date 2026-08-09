@@ -507,3 +507,10 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan Status: APPROVED → implementing
 - Scope: post-checkout no fix-perms --all; fix-perms git-safe; docs/call sites
 
+
+## 2026-08-09 - CODE LANDED: post-checkout-scoped-perms plan
+
+- Commit b75389a9: hooks/post-checkout, fix-perms git-safe, docs, setup_agent notes, AGENT_MANDATES §1.1
+- build_app committed but refused builds tag: pre-existing unrelated tracked dirt (not in plan scope)
+- Residual for dlang (do not skip): cp already done for live hook; run ./fix-multiuser-git-hosts.sh as dlang; sudo -u ai-planner git -C ~/git/VehicleExpenses-automated log -1
+
