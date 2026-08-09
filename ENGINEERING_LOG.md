@@ -494,3 +494,10 @@ Without PATH_BENEATH on role $HOME/.grok, trust/session creation fails with FS_P
 Commit a4c76187 on orchestration. Dual landlock matrix PASS. Stop gate opt-in dry-tested.
 RESIDUAL for dlang: ./fix-multiuser-git-hosts.sh (VE+example .git DAC); ./deploy-landlock-fix.sh --commit as dlang for host publish (orch cannot write many worktrees).
 
+
+## 2026-08-09 - multi-user git FIXED (dlang) + deploy published
+
+dlang ran ./fix-multiuser-git-hosts.sh: VE+libs+orchestration-example FIXED_OK; planner git log works (fed11f93).
+dlang ran ./deploy-landlock-fix.sh --commit --also-ve: scripts/hooks published across VE worktrees + remotetable + extractmail + orchestration-example.
+Policy: permission denials → report human / script residual; no creative workarounds. project-facts pointer added.
+
