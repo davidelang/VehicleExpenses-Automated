@@ -524,3 +524,11 @@ Policy: permission denials → report human / script residual; no creative worka
 - Live hook matches tracked safe post-checkout
 - Propagate blocked for ai-orchestrator (EACCES on lib trees) → ./deploy-postcheckout-git-safe.sh for dlang
 
+
+## 2026-08-09 - Live hook group after deploy
+
+- Deploy content OK (safe post-checkout md5 matches VE) on remotetable/extractmail/orchestration-example
+- Audit NEEDS_FIX only: live hook dlang:ai-code not ai-shared (cp preserved template group)
+- deploy script now chowns :ai-shared after install
+- dlang one-liner residual: chown :ai-shared on the three live hooks or full fix-multiuser
+
