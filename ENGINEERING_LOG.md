@@ -2412,3 +2412,9 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - acceptAuto ratio d2 >= max(d1+40, 2*d1), d1<=150; reverse street is not a station name
 - Picker merges table + Photon + Nominatim + optional Overpass; unnamed (fuel)
 - Overpass not required for QF auto-suggest
+
+## 2026-08-12 - Known stations execution complete
+
+- Plan known-stations-tab-and-qf-lookup-20260812-1056-plan.md Status: CODE LANDED
+- Phases 1–4 built; tag location-fixes/builds → 193a482e
+- Ready to test: deploy, sync (Stations tab + seed), QF at a known pump offline and online
