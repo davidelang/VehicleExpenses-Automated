@@ -2405,3 +2405,10 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Save and Wrong-station pick upsert station (75 m); fill coords unchanged
 - Picker lists table hits offline
 - Next: Phase 4 Photon + Nominatim fuel + ratio gate
+
+## 2026-08-12 - Known stations Phase 4 free-network fallback
+
+- PhotonClient + NominatimClient.searchFuel
+- acceptAuto ratio d2 >= max(d1+40, 2*d1), d1<=150; reverse street is not a station name
+- Picker merges table + Photon + Nominatim + optional Overpass; unnamed (fuel)
+- Overpass not required for QF auto-suggest
