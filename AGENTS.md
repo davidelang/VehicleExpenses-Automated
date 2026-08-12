@@ -40,6 +40,19 @@ When **spawning** planner/executor roles, load the full file under `.grok/prompt
 
 `/code-review` only when user explicitly wants ambitious restructure (separate planned turn).
 
+## Grok 4.6 / Build 1.0 — VE wins (see `AGENT_MANDATES.md` §3.5a)
+
+| Built-in default | VE |
+|------------------|-----|
+| “Do clear reversible work without asking” | No tracked non-sandbox edits without named-plan magic approval |
+| Native plan **`a`** / `exit_plan_mode` starts building | Not execute. Work plan is only `dev-ai-interaction/plans/…-plan.md` |
+| Subagents on (incl. during planning) | Planner: `GROK_SUBAGENTS=0`. No spawn while planning |
+| Workflows / `/goal` on | Planner + coder: `GROK_WORKFLOWS=0`. Orch/bare may opt in |
+| Shift+Tab → Plan / always-approve | Launchers stay ask. Do not cycle modes on role sessions |
+| `grok -c` uses new default model | `-c` keeps **stored** model; `/model grok-4.6` to switch |
+
+`ask_user_question` stays on; answers are not approval.
+
 ## Key file disambiguation
 
 | File | Purpose |

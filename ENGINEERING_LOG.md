@@ -532,3 +532,16 @@ Policy: permission denials → report human / script residual; no creative worka
 - deploy script now chowns :ai-shared after install
 - dlang one-liner residual: chown :ai-shared on the three live hooks or full fix-multiuser
 
+
+## 2026-08-12 - Start execution: grok46-policy-overrides-planner-launch-20260812-0956-plan
+
+- Plan Status: APPROVED → implementing
+- Scope: VE overrides for Grok 4.6; planner GROK_SUBAGENTS/WORKFLOWS=0; coder WORKFLOWS=0 via sudo -u env
+
+
+## 2026-08-12 - CODE LANDED: grok46-policy-overrides-planner-launch-20260812-0956-plan
+
+- AGENT_MANDATES §3.5/§3.5a + §10 auto-compact; AGENTS/GROK tables; project-facts 4.6/-c bullet
+- grok-launch-common: planner GROK_SUBAGENTS=0 GROK_WORKFLOWS=0; coder GROK_WORKFLOWS=0; passed on sudo -u env
+- Planner/coder packs: no enter_plan_mode; question ≠ approval
+

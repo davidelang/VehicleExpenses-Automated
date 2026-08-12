@@ -116,6 +116,17 @@ When spawning in allowed contexts, load the **full** prompt file for that role (
 
 Harness details. Real approval = path-named magic phrase. Continued draft feedback ≠ abandon unless user says start over / new cycle / abandon. Who may use native plan mode: **`AGENTS.md`** (planner/coder avoid; bare `run-grok` + orchestrator optional).
 
+Native `enter_plan_mode` / `exit_plan_mode` / TUI **`a` (approve and start building)** is **not** VE execute. Harness `plan.md` and `.grok/plan.md` are process logs only — never the approved work plan. Planner/coder must not enter native plan mode (it cannot write `dev-ai-interaction/plans/`).
+
+### 3.5a Grok 4.6 / Build 1.0 defaults do not override VE
+
+Product defaults (4.6 “just do reversible work,” native plan **`a`**, background subagents, workflows/`/goal` on) **never** weaken §2–§3.
+
+- Built-in “do clear reversible local work without asking” **never** authorizes tracked non-sandbox edits. Named sandbox plan + magic path approval still required.
+- `ask_user_question` stays **on**. Answers inform the sandbox plan only — they are **not** magic approval and **not** permission to implement.
+- Planner launchers force `GROK_SUBAGENTS=0` and `GROK_WORKFLOWS=0` (explicit `=1` may override for debug). Coder launchers force `GROK_WORKFLOWS=0` only. Orch / bare / master are unset unless the human sets env.
+- `grok -c` / `--resume` keeps the transcript and the session’s **stored** model. It does **not** upgrade 4.5 → 4.6. Switch with `/model grok-4.6` after resume. Role launchers without `-c` start a **new** session.
+
 ### 3.6 Skills
 
 `AGENTS.md` + `.grok/config.toml` `[skills].disabled` are authoritative. Do not treat bundled design/execute-plan/implement/pr-babysit/check-work as encouraged.
@@ -204,7 +215,9 @@ Related: `docs/reference/PROJECT_CONFIG_LOCAL_ONLY.md` (local wiring; smudged to
 
 ## 10. Re-read policy
 
-**Mandatory role pack** at: session start; after compact; new planning cycle; execution start for a new approved plan.
+**Mandatory role pack** at: session start; after **`/compact` or harness auto-compact** (~85% context — same event); new planning cycle; execution start for a new approved plan.
+
+A harness “plan mode still on” blurb after compact is **not** the role pack. Re-read the files in the table (not every file every turn).
 
 | Everyone | + Planner | + Coder | + Master / orch after handoff |
 |----------|-----------|---------|--------------------------------|
