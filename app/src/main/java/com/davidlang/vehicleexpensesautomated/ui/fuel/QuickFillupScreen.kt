@@ -54,6 +54,8 @@ import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
+import com.davidlang.vehicleexpensesautomated.data.location.StationMatch
+import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
 import com.davidlang.vehicleexpensesautomated.data.repository.forUserPicker
 import com.davidlang.vehicleexpensesautomated.ui.components.CameraPreview
@@ -224,23 +226,50 @@ fun QuickFillupScreen(
             lookupSource = null
             return@LaunchedEffect
         }
-        if (!NetworkStatus.hasUsableNetwork(context)) {
-            locationStatus = "Offline — place lookup when online"
+        locationStatus = "Looking up place…"
+        locationLookupDone = false
+        val acc = deviceLocation?.takeIf { it.hasAccuracy() }?.accuracy?.toDouble()
+        val online = NetworkStatus.hasUsableNetwork(context)
+        val tableMatch = fuelViewModel.matchKnownStation(la, lo)
+        when (tableMatch) {
+            is StationMatch.Unique -> {
+                val station = tableMatch.station
+                placeName = station.name
+                placeAddress = station.address
+                lookupName = station.name
+                lookupAddress = station.address
+                lookupSource = KnownStation.SOURCE_STATIONS
+                locationStatus = "Known station: ${
+                    LocationLookup.fromKnownStation(station, tableMatch.distanceM).displayLine()
+                }"
+                locationLookupDone = true
+                return@LaunchedEffect
+            }
+            is StationMatch.Ambiguous -> {
+                lookupName = null
+                lookupAddress = null
+                lookupSource = null
+                locationStatus = "Ambiguous — pick a station"
+                locationLookupDone = true
+                return@LaunchedEffect
+            }
+            is StationMatch.None -> Unit
+        }
+        if (!online) {
+            locationStatus = "Offline — no known station nearby"
             locationLookupDone = true
             lookupName = null
             lookupAddress = null
             lookupSource = null
             return@LaunchedEffect
         }
-        locationStatus = "Looking up place…"
-        locationLookupDone = false
-        val acc = deviceLocation?.takeIf { it.hasAccuracy() }?.accuracy?.toDouble()
         val result = LocationLookup.lookup(
             lat = la,
             lon = lo,
             kind = LocationLookupKind.FUEL_STATION,
             accuracyM = acc,
             uiTimeout = true,
+            stationStore = fuelViewModel.knownStationStore,
         )
         if (result != null && result.hasPlace()) {
             placeName = result.name
@@ -248,8 +277,7 @@ fun QuickFillupScreen(
             lookupName = result.name
             lookupAddress = result.address
             lookupSource = result.source
-            // Happy path: address fields only — no duplicate "Resolved:" banner.
-            locationStatus = ""
+            locationStatus = "Network: ${result.displayLine()}"
         } else {
             lookupName = null
             lookupAddress = null
@@ -1255,13 +1283,25 @@ fun QuickFillupScreen(
                         lat = pla,
                         lon = plo,
                         kind = LocationLookupKind.FUEL_STATION,
+                        stationStore = fuelViewModel.knownStationStore,
                         onSelect = { picked ->
                             placeName = picked.name
                             placeAddress = picked.address
                             lookupName = picked.name
                             lookupAddress = picked.address
-                            lookupSource = "user"
+                            lookupSource = picked.source.ifBlank { KnownStation.SOURCE_USER }
                             showStationPicker = false
+                            val acc = deviceLocation?.takeIf { it.hasAccuracy() }?.accuracy?.toDouble()
+                            scope.launch {
+                                fuelViewModel.upsertKnownStation(
+                                    name = picked.name,
+                                    address = picked.address,
+                                    lat = pla,
+                                    lon = plo,
+                                    accuracyM = acc,
+                                    source = KnownStation.SOURCE_USER,
+                                )
+                            }
                         },
                         onManual = { showStationPicker = false },
                         onDismiss = { showStationPicker = false },
