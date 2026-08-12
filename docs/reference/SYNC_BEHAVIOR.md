@@ -66,6 +66,17 @@ On first launch after a schema upgrade that introduces blank **`syncId`** values
 | **Field merge (partials)** | After fuel LWW, **before** sheet write-back: same **Run merge** engine (`fieldMergeForSync`): 15m window, tight pairs, soft-delete published absorbs. Second pass if unmatched odo/pump pairs remain. **MERGE_EXEMPT** acks suppress absorb of acked member `syncId` sets. | Once per successful fuel sync session |
 | **Question rebuild** | Pending JSON is **local-only** (not LWW’d). After field-merge: phase-scoped detectors; durable **Merge acks** drop re-asks for acked CONFLICT / AMBIGUOUS / MPG fingerprints. | Post-sync after fuel is stable |
 | **Merge acks tab** | Sheet tab **Merge acks** LWW by `ackId` (Sync ID column). Survives multi-device; kinds include `CONFLICT_ODO`, `AMBIGUOUS_MULTI_PUMP`, `MPG_OUTLIER`, `MERGE_EXEMPT`. CSV zip includes **`Merge acks.csv`** (import no-op if missing). | Same sync as fuel |
+| **Stations tab** | Sheet tab **Stations** — global known-station directory (not per-vehicle). LWW by `syncId` (Sync ID column) + `updatedAt`, including `deleted` / `deletedAt` tombstones. Columns: Name, Address, **Lat**, **Lon** (decimal, paste-friendly), Accuracy M, Kind (`fuel_station`), Source (`seed` / `user` / `history` / later API). Seeded locally from confirmed fuel Location blobs (75 m cluster); QF confirm upserts. Fuel **Location** JSON on fills is unchanged (per-fill snapshot). CSV zip includes **`Stations.csv`** (import no-op if missing). | Same sync as merge acks |
+
+## Stations tab
+
+Global directory of learned / edited fuel stations. One row per 75 m cluster (same place, different brand string → one row). Distinct complexes stay separate.
+
+- **Identity:** `syncId` (sheet **Sync ID**). No vehicle id.
+- **Geo:** explicit **Lat** / **Lon** cells (not Location JSON). Fuel tabs stay Location-JSON-only.
+- **Reads:** name-based headers.
+- **Write-back:** incremental append/update by Sync ID order (name then syncId); same LWW rules as Merge acks.
+- **Does not** replace per-fill Location blobs.
 
 ### Fuel columns: Location vs Notes
 
@@ -99,8 +110,9 @@ Local CSV zip export mirrors the spreadsheet tabular surface (not a remote desti
 | `Expenses.csv` | Expenses tab | Included |
 | `Fuel - {name}.csv` | Per live vehicle fuel tab (incl. Unassigned) | Soft-deleted fuel included |
 | `Merge acks.csv` | Merge acks tab | Included |
+| `Stations.csv` | Stations tab | Included |
 
-Import: missing entries (old zips without Merge acks / Notes column) are no-ops; fuel/expense columns resolve by header name. Fuel export header always includes **Notes** and **Sync ID**.
+Import: missing entries (old zips without Merge acks / Stations / Notes column) are no-ops; fuel/expense columns resolve by header name. Fuel export header always includes **Notes** and **Sync ID**.
 
 **Complete fulls in a 15 m cluster:** ≥2 complete fills with distinct odos → silent keep-both; same odo → `CONFLICT_ODO` pending (no silent absorb). Keep both / Looks correct write durable acks as before.
 
