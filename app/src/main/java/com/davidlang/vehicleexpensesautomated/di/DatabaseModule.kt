@@ -7,6 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
+import com.davidlang.vehicleexpensesautomated.data.dao.KnownStationDao
 import com.davidlang.vehicleexpensesautomated.data.dao.MergeAckDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.BuildConfig
@@ -241,6 +242,33 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * v20: known_stations directory. Seed is app-side (not SQL) after open.
+     * Master's v19 is expenseCategoriesJson.
+     */
+    val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS known_stations (
+                    syncId TEXT NOT NULL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    address TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    accuracyM REAL,
+                    kind TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    originDeviceId TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    deleted INTEGER NOT NULL,
+                    deletedAt INTEGER
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
     val MIGRATION_12_13 = object : Migration(12, 13) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -443,6 +471,7 @@ object DatabaseModule {
             MIGRATION_16_17,
             MIGRATION_17_18,
             MIGRATION_18_19,
+            MIGRATION_19_20,
         )
         .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()
@@ -459,4 +488,7 @@ object DatabaseModule {
 
     @Provides
     fun provideMergeAckDao(database: AppDatabase): MergeAckDao = database.mergeAckDao()
+
+    @Provides
+    fun provideKnownStationDao(database: AppDatabase): KnownStationDao = database.knownStationDao()
 }
