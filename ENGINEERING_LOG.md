@@ -2397,3 +2397,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - CsvZip Stations.csv export/import (missing file is no-op)
 - SYNC_BEHAVIOR.md § Stations tab; project-facts Room 19 + Stations pointer
 - Next: Phase 3 QF table-first match + upsert
+
+## 2026-08-12 - Known stations Phase 3 QF table-first
+
+- LocationLookup.lookup/listNearby: known_stations first (unique ≤100 m; ambiguous → no auto)
+- QF status: Known station / Ambiguous / Offline / Network
+- Save and Wrong-station pick upsert station (75 m); fill coords unchanged
+- Picker lists table hits offline
+- Next: Phase 4 Photon + Nominatim fuel + ratio gate

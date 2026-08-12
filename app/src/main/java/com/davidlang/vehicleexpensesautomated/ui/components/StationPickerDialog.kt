@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.davidlang.vehicleexpensesautomated.data.location.KnownStationStore
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupResult
@@ -47,6 +48,7 @@ fun StationPickerDialog(
     onSelect: (LocationLookupResult) -> Unit,
     onManual: () -> Unit,
     onDismiss: () -> Unit,
+    stationStore: KnownStationStore? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -57,12 +59,6 @@ fun StationPickerDialog(
     val online = NetworkStatus.hasUsableNetwork(context)
 
     fun reload(r: Double) {
-        if (!online) {
-            loading = false
-            results = emptyList()
-            errorLine = "Offline — no station search. Enter place manually."
-            return
-        }
         loading = true
         errorLine = null
         scope.launch {
@@ -72,11 +68,16 @@ fun StationPickerDialog(
                 kind = kind,
                 radiusM = r,
                 uiTimeout = true,
+                stationStore = stationStore,
             )
             results = list
             loading = false
             errorLine = if (list.isEmpty()) {
-                "No stations found within ${r.roundToInt()} m"
+                if (!online) {
+                    "Offline — no known stations in range. Enter place manually."
+                } else {
+                    "No stations found within ${r.roundToInt()} m"
+                }
             } else {
                 null
             }
@@ -162,7 +163,7 @@ fun StationPickerDialog(
                         reload(next)
                     }
                 },
-                enabled = !loading && online,
+                enabled = !loading && (online || stationStore != null),
             ) {
                 Text("Extend range")
             }
