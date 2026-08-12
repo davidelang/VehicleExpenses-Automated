@@ -2389,3 +2389,11 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - MIGRATION_18_19 creates table only (no SQL seed)
 - Application seeds in background after open
 - Next: Phase 2 Stations tab + CSV
+
+## 2026-08-12 - Known stations Phase 2 Stations tab
+
+- TabularSchema TAB_STATIONS + name-based Lat/Lon mappers
+- SpreadsheetSyncCoordinator LWW syncStationsTab (merge-acks pattern)
+- CsvZip Stations.csv export/import (missing file is no-op)
+- SYNC_BEHAVIOR.md § Stations tab; project-facts Room 19 + Stations pointer
+- Next: Phase 3 QF table-first match + upsert
