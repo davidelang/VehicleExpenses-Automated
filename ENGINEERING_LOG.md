@@ -2375,3 +2375,17 @@ build_app SUCCESS; tag fix_syncing_and_settings/builds @ 52047138
 - Phase 4: grepped out Confirm checkbox; project-facts updated
 - Acceptance A1-A8 in plan for device verify
 
+
+## 2026-08-12 - Execute known-stations-tab-and-qf-lookup
+
+- Execution start: approved plan dev-ai-interaction/plans/known-stations-tab-and-qf-lookup-20260812-1056-plan.md
+- Branch: location-fixes (agent-2)
+- Scope: Room v19 Known stations + Stations tab + QF table-first lookup/upsert + Photon/Nominatim fuel fallback
+- Status: APPROVED → implementing Phase 1
+
+## 2026-08-12 - Known stations Phase 1 Room v19
+
+- Entity known_stations + DAO + KnownStationStore seed (75 m single-linkage, skip if table non-empty)
+- MIGRATION_18_19 creates table only (no SQL seed)
+- Application seeds in background after open
+- Next: Phase 2 Stations tab + CSV
