@@ -194,7 +194,7 @@ private fun StationPickerRow(
             .padding(vertical = 10.dp, horizontal = 4.dp),
     ) {
         Text(
-            text = item.name.ifBlank { "(unnamed)" },
+            text = item.name.ifBlank { LocationLookup.UNNAMED_FUEL },
             style = MaterialTheme.typography.bodyLarge,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
