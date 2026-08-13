@@ -24,6 +24,7 @@ class LocationLookupWorker @AssistedInject constructor(
     @Assisted workerParams: WorkerParameters,
     private val fuelRepository: FuelEntryRepository,
     private val expenseRepository: ExpenseEntryRepository,
+    private val knownStationStore: KnownStationStore,
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -50,6 +51,7 @@ class LocationLookupWorker @AssistedInject constructor(
                     kind = kind,
                     accuracyM = blob.accuracyM,
                     uiTimeout = false,
+                    stationStore = if (kind == LocationLookupKind.FUEL_STATION) knownStationStore else null,
                 )
                 if (result != null && result.hasPlace()) {
                     val updated = LocationLookup.mergePlaceIntoBlob(entry.location, result, confirmed = false)
