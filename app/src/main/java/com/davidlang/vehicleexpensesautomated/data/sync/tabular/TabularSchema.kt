@@ -1,9 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.data.sync.tabular
 
-import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.sync.SyncIdGenerator
@@ -17,6 +17,8 @@ object TabularSchema {
     const val TAB_SYNC_TEST = "__sync_test"
     /** Durable merge / Stage C “looks correct” acks (LWW by Sync ID = ackId). */
     const val TAB_MERGE_ACKS = "Merge acks"
+    /** Global known-station directory (LWW by Sync ID). Not per-vehicle. */
+    const val TAB_STATIONS = "Stations"
     const val FUEL_TAB_PREFIX = "Fuel - "
 
     val VEHICLE_HEADERS = listOf(
@@ -72,6 +74,10 @@ object TabularSchema {
     val MERGE_ACK_HEADERS = listOf(
         "Sync ID", "Kind", "Member Sync IDs",
         "Created At", "Origin Device ID", "Updated At", "Deleted", "Deleted At",
+    )
+    val STATION_HEADERS = listOf(
+        "Sync ID", "Name", "Address", "Lat", "Lon", "Accuracy M",
+        "Kind", "Source", "Origin Device ID", "Updated At", "Deleted", "Deleted At",
     )
 
     fun fuelTabName(vehicleName: String): String = FUEL_TAB_PREFIX + sanitizeTabName(vehicleName)
@@ -341,12 +347,8 @@ object TabularSchema {
             photoUrl = cell("Photo URL").ifBlank { null },
             isPartialFill = cell("Partial Fill").equals("true", ignoreCase = true),
             economyIgnored = cell("Economy Ignored").equals("true", ignoreCase = true),
-            // Prefer Location JSON blob; fold legacy Latitude/Longitude cells if still present on sheet
-            location = FuelLocationJson.foldLegacy(
-                cell("Latitude").toDoubleOrNull(),
-                cell("Longitude").toDoubleOrNull(),
-                cell("Location").ifBlank { null },
-            ),
+            // Sole geo carrier: Location JSON (no sheet Latitude/Longitude fold)
+            location = cell("Location").ifBlank { null },
             notes = cell("Notes").ifBlank { null },
             tripType = cell("Trip Type"),
             cloudManifest = cell("Cloud Manifest").ifBlank { null },
@@ -393,11 +395,8 @@ object TabularSchema {
             category = category,
             vendor = vendor,
             odometer = cell("Odometer").toIntOrNull(),
-            location = FuelLocationJson.foldLegacy(
-                cell("Latitude").toDoubleOrNull(),
-                cell("Longitude").toDoubleOrNull(),
-                cell("Location").ifBlank { null },
-            ),
+            // Sole geo carrier: Location JSON (no sheet Latitude/Longitude fold)
+            location = cell("Location").ifBlank { null },
             cloudManifest = cell("Cloud Manifest").ifBlank { null },
             originDeviceId = cell("Origin Device ID"),
             updatedAt = cell("Updated At").toLongOrNull() ?: 0L,
@@ -437,6 +436,54 @@ object TabularSchema {
         ack.deleted.toString(),
         ack.deletedAt?.toString() ?: "",
     )
+
+    fun stationToRow(station: KnownStation): List<String> = listOf(
+        station.syncId,
+        station.name,
+        station.address,
+        formatStationCoord(station.lat),
+        formatStationCoord(station.lon),
+        station.accuracyM?.let { formatStationCoord(it) } ?: "",
+        station.kind,
+        station.source,
+        station.originDeviceId,
+        station.updatedAt.toString(),
+        station.deleted.toString(),
+        station.deletedAt?.toString() ?: "",
+    )
+
+    fun rowToStation(row: List<String>, headerIndex: Map<String, Int>): KnownStation? {
+        fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }
+        val lat = parseStationCoord(cell("Lat")) ?: return null
+        val lon = parseStationCoord(cell("Lon")) ?: return null
+        val syncId = cell("Sync ID").ifBlank { SyncIdGenerator.randomSyncId() }
+        return KnownStation(
+            syncId = syncId,
+            name = cell("Name").trim(),
+            address = cell("Address").trim(),
+            lat = lat,
+            lon = lon,
+            accuracyM = parseStationCoord(cell("Accuracy M")),
+            kind = cell("Kind").ifBlank { KnownStation.KIND_FUEL_STATION },
+            source = cell("Source").ifBlank { KnownStation.SOURCE_SEED },
+            originDeviceId = cell("Origin Device ID"),
+            updatedAt = cell("Updated At").toLongOrNull() ?: 0L,
+            deleted = cell("Deleted").equals("true", ignoreCase = true),
+            deletedAt = cell("Deleted At").toLongOrNull(),
+        )
+    }
+
+    /** Decimal lat/lon/accuracy without extra characters (sheet paste-friendly). */
+    fun formatStationCoord(value: Double): String {
+        if (!value.isFinite()) return ""
+        return value.toString()
+    }
+
+    fun parseStationCoord(raw: String): Double? {
+        val t = raw.trim()
+        if (t.isEmpty()) return null
+        return t.toDoubleOrNull()
+    }
 
     fun rowToAck(row: List<String>, headerIndex: Map<String, Int>): MergeAck {
         fun cell(name: String) = row.getOrElse(headerIndex[name] ?: -1) { "" }

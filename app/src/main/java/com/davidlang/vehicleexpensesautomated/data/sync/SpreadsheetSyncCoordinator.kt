@@ -6,9 +6,11 @@ import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.batch.BatchFuelImportCoordinator
 import com.davidlang.vehicleexpensesautomated.data.batch.FuelLocationJson
 import com.davidlang.vehicleexpensesautomated.data.batch.MergeAckStore
+import com.davidlang.vehicleexpensesautomated.data.location.KnownStationStore
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseVehicleSyncIds
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.ExpenseEntryRepository
@@ -62,6 +64,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
     /** Post-fuel LWW: field-merge partials + breaker-aware question rebuild. */
     private val batchFuelImportCoordinator: Lazy<BatchFuelImportCoordinator>,
     private val mergeAckStore: MergeAckStore,
+    private val knownStationStore: KnownStationStore,
 ) {
 
     /**
@@ -346,6 +349,60 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         return sortedMerged.size
     }
 
+    /**
+     * LWW "Stations" tab by syncId. Includes tombstones so deletes propagate.
+     */
+    private suspend fun syncStationsTab(
+        dest: SpreadsheetDestination,
+        backend: TabularShareBackend,
+        accountHint: String?,
+        bulk: Map<String, List<List<String>>> = emptyMap(),
+    ): Int {
+        val resolved = resolveRemoteTabRows(
+            dest, backend, TabularSchema.TAB_STATIONS, TabularSchema.STATION_HEADERS, accountHint, bulk,
+        )
+        val remoteRows = resolved.rows
+        val headerRow = remoteRows.firstOrNull() ?: TabularSchema.STATION_HEADERS
+        val headerIndex = TabularSchema.headerIndex(headerRow)
+        val remoteDataRows = remoteRows.drop(1)
+            .filter { it.any { cell -> cell.isNotBlank() } }
+        val remoteStations = remoteDataRows.mapNotNull { TabularSchema.rowToStation(it, headerIndex) }
+
+        val localStations = knownStationStore.getAllIncludingDeleted()
+        val localById = localStations.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        val remoteById = remoteStations.filter { it.syncId.isNotBlank() }.associateBy { it.syncId }
+        val allIds = (localById.keys + remoteById.keys).toSet()
+
+        val merged = mutableListOf<KnownStation>()
+        var count = 0
+        for (syncId in allIds) {
+            val local = localById[syncId]
+            val remote = remoteById[syncId]
+            val winner = mergeLww(local, remote)
+            if (winner != null && winner.syncId.isNotBlank()) {
+                knownStationStore.upsertFromSync(winner)
+                merged.add(winner)
+                count++
+            }
+        }
+
+        val sortedMerged = merged.sortedWith(compareBy({ it.name.lowercase() }, { it.syncId }))
+        writeRowsIncremental(
+            dest = dest,
+            backend = backend,
+            tabName = TabularSchema.TAB_STATIONS,
+            headers = TabularSchema.STATION_HEADERS,
+            sortedRows = sortedMerged.map { TabularSchema.stationToRow(it) },
+            sortedSyncIds = sortedMerged.map { it.syncId },
+            remoteDataRows = remoteDataRows,
+            headerIndex = headerIndex,
+            accountHint = accountHint,
+            logTag = "Stations",
+            forceFullRewrite = resolved.forceFullRewrite,
+        )
+        return count
+    }
+
     private fun resolveLegacyOrPrimaryDest(store: SyncDestinationStore): SpreadsheetDestination {
         store.spreadsheetDestination()?.let { return it }
         val legacyId = legacySheetId()
@@ -415,6 +472,8 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             val fuel = syncFuelTabs(dest, backend, hint, bulk, sheetTitles)
             val mergeAcksMerged = syncMergeAcksTab(dest, backend, hint, bulk)
             Log.i(TAG, "Merge acks tab upserted=$mergeAcksMerged")
+            val stationsMerged = syncStationsTab(dest, backend, hint, bulk)
+            Log.i(TAG, "Stations tab upserted=$stationsMerged")
             SyncResult(
                 success = true,
                 message = buildString {
@@ -422,6 +481,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
                     append("${fuel.upserted} fuel")
                     if (fuel.remoteWins > 0) append(" (${fuel.remoteWins} remote/new)")
                     if (mergeAcksMerged > 0) append(", $mergeAcksMerged merge-acks")
+                    if (stationsMerged > 0) append(", $stationsMerged stations")
                 },
                 vehiclesMerged = vehiclesMerged,
                 expensesMerged = expensesMerged,
@@ -527,6 +587,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             if (TabularSchema.TAB_VEHICLES in titleSet) add(TabularSchema.TAB_VEHICLES)
             if (TabularSchema.TAB_EXPENSES in titleSet) add(TabularSchema.TAB_EXPENSES)
             if (TabularSchema.TAB_MERGE_ACKS in titleSet) add(TabularSchema.TAB_MERGE_ACKS)
+            if (TabularSchema.TAB_STATIONS in titleSet) add(TabularSchema.TAB_STATIONS)
             sheetTitles.filterTo(this) { it.startsWith(TabularSchema.FUEL_TAB_PREFIX) }
         }.distinct()
         if (names.isEmpty()) return emptyMap()
@@ -1181,6 +1242,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         is FuelEntry -> item.updatedAt
         is ExpenseEntry -> item.updatedAt
         is MergeAck -> item.updatedAt
+        is KnownStation -> item.updatedAt
         else -> 0L
     }
 
