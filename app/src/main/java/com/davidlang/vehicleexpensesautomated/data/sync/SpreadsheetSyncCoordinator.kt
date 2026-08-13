@@ -356,9 +356,12 @@ class SpreadsheetSyncCoordinator @Inject constructor(
         dest: SpreadsheetDestination,
         backend: TabularShareBackend,
         accountHint: String?,
+        bulk: Map<String, List<List<String>>> = emptyMap(),
     ): Int {
-        backend.ensureHeaders(dest, TabularSchema.TAB_STATIONS, TabularSchema.STATION_HEADERS, accountHint)
-        val remoteRows = backend.readAllRows(dest, TabularSchema.TAB_STATIONS, accountHint)
+        val resolved = resolveRemoteTabRows(
+            dest, backend, TabularSchema.TAB_STATIONS, TabularSchema.STATION_HEADERS, accountHint, bulk,
+        )
+        val remoteRows = resolved.rows
         val headerRow = remoteRows.firstOrNull() ?: TabularSchema.STATION_HEADERS
         val headerIndex = TabularSchema.headerIndex(headerRow)
         val remoteDataRows = remoteRows.drop(1)
@@ -395,6 +398,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             headerIndex = headerIndex,
             accountHint = accountHint,
             logTag = "Stations",
+            forceFullRewrite = resolved.forceFullRewrite,
         )
         return count
     }
@@ -468,7 +472,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             val fuel = syncFuelTabs(dest, backend, hint, bulk, sheetTitles)
             val mergeAcksMerged = syncMergeAcksTab(dest, backend, hint, bulk)
             Log.i(TAG, "Merge acks tab upserted=$mergeAcksMerged")
-            val stationsMerged = syncStationsTab(dest, backend, hint)
+            val stationsMerged = syncStationsTab(dest, backend, hint, bulk)
             Log.i(TAG, "Stations tab upserted=$stationsMerged")
             SyncResult(
                 success = true,
@@ -583,6 +587,7 @@ class SpreadsheetSyncCoordinator @Inject constructor(
             if (TabularSchema.TAB_VEHICLES in titleSet) add(TabularSchema.TAB_VEHICLES)
             if (TabularSchema.TAB_EXPENSES in titleSet) add(TabularSchema.TAB_EXPENSES)
             if (TabularSchema.TAB_MERGE_ACKS in titleSet) add(TabularSchema.TAB_MERGE_ACKS)
+            if (TabularSchema.TAB_STATIONS in titleSet) add(TabularSchema.TAB_STATIONS)
             sheetTitles.filterTo(this) { it.startsWith(TabularSchema.FUEL_TAB_PREFIX) }
         }.distinct()
         if (names.isEmpty()) return emptyMap()
