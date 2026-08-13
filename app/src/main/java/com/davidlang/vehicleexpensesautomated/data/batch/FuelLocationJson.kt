@@ -257,7 +257,28 @@ object FuelLocationJson {
     }
 
     /**
-     * Fold legacy column lat/lon + existing location text into one blob (migration).
+     * Place provenance for confirm-save: keep Overpass/Nominatim source when user confirms
+     * without editing name/address; otherwise `"user"`.
+     */
+    fun placeSourceForConfirm(
+        name: String,
+        address: String,
+        lookupName: String?,
+        lookupAddress: String?,
+        lookupSource: String?,
+    ): String {
+        val n = name.trim()
+        val a = address.trim()
+        val ln = lookupName?.trim().orEmpty()
+        val la = lookupAddress?.trim().orEmpty()
+        val src = lookupSource?.trim().orEmpty()
+        if (src.isNotBlank() && n == ln && a == la) return src
+        return "user"
+    }
+
+    /**
+     * Fold legacy **Room column** lat/lon + existing location text into one blob.
+     * **Device DB upgrade only** ([MIGRATION_17_18]) — not for sheet/CSV import.
      */
     fun foldLegacy(
         columnLat: Double?,
