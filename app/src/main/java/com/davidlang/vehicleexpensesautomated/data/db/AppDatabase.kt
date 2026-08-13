@@ -4,16 +4,18 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import com.davidlang.vehicleexpensesautomated.data.dao.ExpenseEntryDao
 import com.davidlang.vehicleexpensesautomated.data.dao.FuelEntryDao
+import com.davidlang.vehicleexpensesautomated.data.dao.KnownStationDao
 import com.davidlang.vehicleexpensesautomated.data.dao.MergeAckDao
 import com.davidlang.vehicleexpensesautomated.data.dao.VehicleDao
 import com.davidlang.vehicleexpensesautomated.data.model.ExpenseEntry
 import com.davidlang.vehicleexpensesautomated.data.model.FuelEntry
+import com.davidlang.vehicleexpensesautomated.data.model.KnownStation
 import com.davidlang.vehicleexpensesautomated.data.model.MergeAck
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 
 @Database(
-    entities = [Vehicle::class, FuelEntry::class, ExpenseEntry::class, MergeAck::class],
-    version = 19,
+    entities = [Vehicle::class, FuelEntry::class, ExpenseEntry::class, MergeAck::class, KnownStation::class],
+    version = 20,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -22,4 +24,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun fuelEntryDao(): FuelEntryDao
     abstract fun expenseEntryDao(): ExpenseEntryDao
     abstract fun mergeAckDao(): MergeAckDao
+    abstract fun knownStationDao(): KnownStationDao
 }
