@@ -4,7 +4,7 @@ This file (AGENTS.md) is the entry point for agent CLIs in this multi-agent Vehi
 
 ## Immediate reads (session start / after compact / new cycle)
 
-**Role pack** (full read — not every message):
+**Role pack** (full read on each **event** below — law: `AGENT_MANDATES.md` §10):
 
 1. `./AGENT_CONTEXT.md` — identity, branch/role, sandbox.
 2. CLI overlay: `./GROK.md` or `./GEMINI.md`.
@@ -16,7 +16,11 @@ This file (AGENTS.md) is the entry point for agent CLIs in this multi-agent Vehi
 8. **Master / orch after handoff:** also `MULTI_AGENT_USER_INSTRUCTIONS.md`.
 9. Confirm **`pwd` once** — never `cd … && ./helper` (breaks allow-lists).
 
-**Do not** re-read the full pack every turn. Critical rules are not optional “on demand if you guess.”
+**Events (re-read is mandatory, even mid-process):** launch; **`/compact` or auto-compact** (first turn after); new planning cycle; execute start.
+
+**Skip** only ordinary turns *between* events. “Don’t re-read every turn” **never** cancels a compact. Compacted memory of the pack is untrusted.
+
+Critical rules are not optional “on demand if you guess.”
 
 When **spawning** planner/executor roles, load the full file under `.grok/prompts/` (see AGENT_MANDATES).
 

@@ -545,3 +545,10 @@ Policy: permission denials → report human / script residual; no creative worka
 - grok-launch-common: planner GROK_SUBAGENTS=0 GROK_WORKFLOWS=0; coder GROK_WORKFLOWS=0; passed on sudo -u env
 - Planner/coder packs: no enter_plan_mode; question ≠ approval
 
+
+## 2026-08-13 - Compact re-read wins over skip-every-turn
+
+- Drift: agents treated mid-process + "don't re-read every turn" as trumping post-compact pack read
+- AGENT_MANDATES §10 rewritten: events win; forbidden rationalization added §3.3
+- AGENTS.md / GROK.md / new_agent_prompt / STANDARD BLOCK / planner+coder packs aligned
+

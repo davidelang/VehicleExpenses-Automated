@@ -104,6 +104,7 @@ Follow boundaries in letter and spirit. You may **not** justify illegal edits/bu
 - “Session/historical plan.md authorizes work”
 - “Helpful/proactive/efficient means implement/build now”
 - “Variable-wrap or indirect a whitelisted command so the allow pattern still ‘works’”
+- “Don’t re-read every turn, so skip the pack after compact / auto-compact”
 
 **Shell allow-list:** literal `./helper` at command start. **Never** `cd … && ./helper`. **Never** construct blessed helper invocations via variables/indirection to dodge patterns. `pwd` once at startup; keep cwd at worktree root.
 
@@ -215,15 +216,26 @@ Related: `docs/reference/PROJECT_CONFIG_LOCAL_ONLY.md` (local wiring; smudged to
 
 ## 10. Re-read policy
 
-**Mandatory role pack** at: session start; after **`/compact` or harness auto-compact** (~85% context — same event); new planning cycle; execution start for a new approved plan.
+**Event-triggered pack reads win.** “Do not re-read every turn” only skips *routine* mid-phase chatter. It does **not** apply after a listed event — including while you are mid-plan, mid-execute, or “still in the same process.”
 
-A harness “plan mode still on” blurb after compact is **not** the role pack. Re-read the files in the table (not every file every turn).
+**Must re-read the role pack (table below) immediately after any of:**
+
+- session start / fresh launch
+- **`/compact` or harness auto-compact** (same event; ~85% context). Do this on the **first turn after** the compact, before other work
+- new planning cycle
+- execution start for a newly approved plan
+
+A harness “plan mode still on” or compacted summary is **not** the pack. Memory of the pack after compact is **untrusted**.
 
 | Everyone | + Planner | + Coder | + Master / orch after handoff |
 |----------|-----------|---------|--------------------------------|
 | `AGENT_CONTEXT.md`, overlay, this file, full `project-facts.md` | STANDARD BLOCK path, plan-style-guide, designated plan if any, full spawn prompt file when spawning | STANDARD BLOCK, **approved plan**, execution prompt file when spawning | `MASTER_AGENT_MANDATE.md` when master; **`MULTI_AGENT_USER_INSTRUCTIONS.md`** |
 
-**Not** every message / every phase. Critical rules are **not** optional on-demand guesses.
+**Do not** re-read the full pack every ordinary turn or every phase gate. **Do not** use that skip to dodge an event above.
+
+**Forbidden after compact:** “still the same process,” “don’t re-read every turn,” “I remember the mandates,” “compact reminder is enough.”
+
+Critical rules are **not** optional on-demand guesses.
 
 ---
 
