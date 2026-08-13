@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.davidlang.vehicleexpensesautomated.data.location.KnownStationStore
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupScheduler
 import com.davidlang.vehicleexpensesautomated.data.sync.PhotoBackupManager
 import com.davidlang.vehicleexpensesautomated.data.sync.RcloneLoader
@@ -13,6 +14,10 @@ import com.davidlang.vehicleexpensesautomated.data.sync.SyncManager
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -32,6 +37,9 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
 
     @Inject
     lateinit var rcloneRuntime: RcloneRuntime
+
+    @Inject
+    lateinit var knownStationStore: KnownStationStore
 
     override val workManagerConfiguration: Configuration
         get() {
@@ -87,6 +95,17 @@ class VehicleExpensesApplication : Application(), Configuration.Provider {
             )
         }
         smokeRcloneOnStartup()
+        seedKnownStationsInBackground()
+    }
+
+    private fun seedKnownStationsInBackground() {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                knownStationStore.seedFromConfirmedFuelsIfEmpty()
+            } catch (e: Exception) {
+                android.util.Log.w("VehicleExpensesApp", "known stations seed failed", e)
+            }
+        }
     }
 
     private fun smokeRcloneOnStartup() {
