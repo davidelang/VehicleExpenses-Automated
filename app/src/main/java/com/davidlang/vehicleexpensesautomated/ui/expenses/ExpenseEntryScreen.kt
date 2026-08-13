@@ -10,6 +10,7 @@ import androidx.camera.core.ImageCaptureException
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraCaptureProfile
 import com.davidlang.vehicleexpensesautomated.ui.util.CameraResolutionPicker
 import com.davidlang.vehicleexpensesautomated.ui.util.CaptureLocation
+import com.davidlang.vehicleexpensesautomated.ui.util.NetworkStatus
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifWriter
 import androidx.compose.foundation.Image
@@ -58,6 +59,8 @@ import com.davidlang.vehicleexpensesautomated.ui.components.CameraZoomControl
 import com.davidlang.vehicleexpensesautomated.ui.components.ExposedDropdownMenuWithManageFooter
 import com.davidlang.vehicleexpensesautomated.ui.components.LocationConfirmBlock
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
+import com.davidlang.vehicleexpensesautomated.ui.components.StationPickerDialog
+import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
 import com.davidlang.vehicleexpensesautomated.ui.components.expenseHasArchiveIdentity
 import com.davidlang.vehicleexpensesautomated.ui.components.expenseLocalMissingOrDead
 import com.davidlang.vehicleexpensesautomated.ui.settings.SettingsViewModel
@@ -176,7 +179,10 @@ private fun ExpenseEntryScreenBody(
     var locationStatus by remember { mutableStateOf("") }
     var placeName by remember { mutableStateOf("") }
     var placeAddress by remember { mutableStateOf("") }
-    var confirmLocation by remember { mutableStateOf(true) }
+    var lookupName by remember { mutableStateOf<String?>(null) }
+    var lookupAddress by remember { mutableStateOf<String?>(null) }
+    var lookupSource by remember { mutableStateOf<String?>(null) }
+    var showStationPicker by remember { mutableStateOf(false) }
     val photoDest = remember { SyncDestinationStore(context).photoDestination() }
 
     // One-shot device GPS for camera path (not re-fetched per shutter).
@@ -195,6 +201,16 @@ private fun ExpenseEntryScreenBody(
         val lo = rowLon
         if (la == null || lo == null) {
             locationStatus = ""
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
+            return@LaunchedEffect
+        }
+        if (!NetworkStatus.hasUsableNetwork(context)) {
+            locationStatus = "Offline — place lookup when online"
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
             return@LaunchedEffect
         }
         locationStatus = "Looking up place…"
@@ -209,9 +225,15 @@ private fun ExpenseEntryScreenBody(
         if (result != null && result.hasPlace()) {
             placeName = result.name
             placeAddress = result.address
+            lookupName = result.name
+            lookupAddress = result.address
+            lookupSource = result.source
             // Happy path: address fields only — no duplicate "Resolved:" banner.
             locationStatus = ""
         } else {
+            lookupName = null
+            lookupAddress = null
+            lookupSource = null
             locationStatus = "No place found (will retry after save if online)"
         }
     }
@@ -254,7 +276,6 @@ private fun ExpenseEntryScreenBody(
                     val blob = FuelLocationJson.parseBlob(e.location)
                     placeName = blob?.name.orEmpty()
                     placeAddress = blob?.address.orEmpty()
-                    confirmLocation = blob?.confirmed == true || blob?.hasPlace() == true
                     photoFromGallery = false
                     showLiveCamera = expenseLocalMissingOrDead(e.photoUrl, photoStorage) &&
                         !expenseHasArchiveIdentity(e, photoDest?.id)
@@ -349,16 +370,24 @@ private fun ExpenseEntryScreenBody(
                 ) ?: FuelLocationJson.Blob()
                 val placeBlank = placeName.isBlank() && placeAddress.isBlank()
                 val kind = LocationLookup.kindForExpenseCategory(category)
-                val saveBlob = when {
-                    confirmLocation && !placeBlank -> base.withPlace(
+                // Non-blank place → confirmed=true; blank → coords-only.
+                val saveBlob = if (!placeBlank) {
+                    base.withPlace(
                         name = placeName,
                         address = placeAddress,
                         confirmed = true,
-                        source = "user",
+                        source = FuelLocationJson.placeSourceForConfirm(
+                            placeName,
+                            placeAddress,
+                            lookupName,
+                            lookupAddress,
+                            lookupSource,
+                        ),
                         kind = kind.blobKindTag(),
                         lookedUpAt = System.currentTimeMillis(),
                     )
-                    else -> base.coordsOnly()
+                } else {
+                    base.coordsOnly()
                 }
                 if (saveBlob.hasCoordsWithoutPlace()) {
                     LocationLookupScheduler.enqueueSoon(context)
@@ -931,16 +960,45 @@ private fun ExpenseEntryScreenBody(
             )
 
             if (rowLat != null && rowLon != null) {
+                val expenseKind = LocationLookup.kindForExpenseCategory(category)
                 LocationConfirmBlock(
                     statusLine = locationStatus,
                     name = placeName,
                     address = placeAddress,
-                    confirmChecked = confirmLocation,
                     onNameChange = { placeName = it },
                     onAddressChange = { placeAddress = it },
-                    onConfirmChange = { confirmLocation = it },
-                    confirmLabel = "Confirm this location",
+                    pickerKind = expenseKind,
+                    hasCoords = true,
+                    onWrongStationClick = if (expenseKind != LocationLookupKind.ADDRESS_ONLY) {
+                        { showStationPicker = true }
+                    } else {
+                        null
+                    },
                 )
+            }
+            if (showStationPicker) {
+                val pla = rowLat
+                val plo = rowLon
+                val expenseKind = LocationLookup.kindForExpenseCategory(category)
+                if (pla != null && plo != null && expenseKind != LocationLookupKind.ADDRESS_ONLY) {
+                    StationPickerDialog(
+                        lat = pla,
+                        lon = plo,
+                        kind = expenseKind,
+                        onSelect = { picked ->
+                            placeName = picked.name
+                            placeAddress = picked.address
+                            lookupName = picked.name
+                            lookupAddress = picked.address
+                            lookupSource = "user"
+                            showStationPicker = false
+                        },
+                        onManual = { showStationPicker = false },
+                        onDismiss = { showStationPicker = false },
+                    )
+                } else {
+                    showStationPicker = false
+                }
             }
         }
     }
