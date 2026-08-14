@@ -563,3 +563,10 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - AT_ORCHESTRATION is now realpath(SCRIPT_DIR)==orch_root, not "update-rules.sh exists"
 - ensure_shared_build_homes only under stamped orch; does not mkdir worktree .gradle-shared
+
+## 2026-08-14 - Phase 3: consumers use orch_root; Kotlin in-process
+
+- build_app/deploy/ve-env/launchers/sync-debug-keystores resolve orch via ve-resolve-orch
+- GRADLE_USER_HOME + ANDROID_USER_HOME at orch; dropped home Gradle daemon registry
+- gradlew -Dkotlin.compiler.execution.strategy=in-process
+- agent-landlock grants orch .gradle-shared and .android-shared

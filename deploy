@@ -440,19 +440,18 @@ if [ "$DATA_ONLY_MODE" != "true" ]; then
   fi
 fi
 
-# Use project-local shared Gradle home (not per-user ~/.gradle).
-# Required for multi-user builds: same users serve different projects.
-ORCH_ROOT="$(cd "$(dirname "$0")" && pwd)"
-# For worktrees, the orchestration root is the parent
-[ -d "$ORCH_ROOT/../.gradle-shared" ] && ORCH_ROOT="$(cd "$ORCH_ROOT/.." && pwd)"
-if [ -d "$ORCH_ROOT/.gradle-shared" ]; then
-  export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
-  export GRADLE_OPTS="-Dorg.gradle.daemon.registry.base=/home/\$(id -un)/.gradle/daemon"
+# Artifact cache + keystore at orch (orch_root=). Compile state stays in this worktree.
+_DEP_HERE="$(cd "$(dirname "$0")" && pwd)"
+if [ ! -f "$_DEP_HERE/ve-resolve-orch" ]; then
+  echo "ERROR: missing $_DEP_HERE/ve-resolve-orch (run ./update-rules.sh from orchestration root)." >&2
+  exit 1
 fi
-# Shared Android home: consistent debug keystore for all builders
-if [ -d "$ORCH_ROOT/.android-shared" ]; then
-  export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
-fi
+# shellcheck source=/dev/null
+. "$_DEP_HERE/ve-resolve-orch"
+ve_resolve_orch "$_DEP_HERE" || exit 1
+export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
+unset GRADLE_OPTS
 
 # Early recovery for build dir perms/ownership (prevents "Permission denied" on cxx logs,
 # configuration cache stale outputs, etc. from previous root/wrong-group runs).
@@ -629,10 +628,12 @@ run_package_install() {
   fi
   echo "  --rebuild: Gradle installDebug (--no-daemon)..."
   if [ -n "$device_id" ]; then
-    (umask 007; ANDROID_SERIAL="$device_id" ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+    (umask 007; ANDROID_SERIAL="$device_id" ./gradlew --no-daemon --no-configuration-cache \
+      -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_ARGS[@]}" installDebug)
   else
     # All-devices / default installDebug (AGP targets connected devices).
-    (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_ARGS[@]}" installDebug)
+    (umask 007; ./gradlew --no-daemon --no-configuration-cache \
+      -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_ARGS[@]}" installDebug)
   fi
   ret=$?
   repair_shared_cache

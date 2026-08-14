@@ -90,11 +90,16 @@ fi
 [[ -x "$COMPOSE" ]] || chmod +x "$COMPOSE" 2>/dev/null || true
 
 ANDROID_SHARED=""
-if [[ -d "$SCRIPT_DIR/.android-shared" ]]; then
-  ANDROID_SHARED="$SCRIPT_DIR/.android-shared"
-elif [[ -d "$SCRIPT_DIR/../.android-shared" ]]; then
-  ANDROID_SHARED="$(cd "$SCRIPT_DIR/.." && pwd)/.android-shared"
+if [[ ! -f "$SCRIPT_DIR/ve-resolve-orch" ]]; then
+  echo "ERROR: missing $SCRIPT_DIR/ve-resolve-orch (run ./update-rules.sh from orchestration root)." >&2
+  exit 1
 fi
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/ve-resolve-orch"
+ve_resolve_orch "$SCRIPT_DIR" || exit 1
+ANDROID_SHARED="$ORCH_ROOT/.android-shared"
+export ORCH_ROOT
+export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
 
 umask "${umask_launch:-002}"
 
@@ -337,6 +342,8 @@ launch_grok_with_prompt() {
   # shellcheck disable=SC2086
   exec sudo -u "$run_user" -- env \
     ${ANDROID_SHARED:+ANDROID_USER_HOME="$ANDROID_SHARED"} \
+    ${ORCH_ROOT:+ORCH_ROOT="$ORCH_ROOT"} \
+    ${GRADLE_USER_HOME:+GRADLE_USER_HOME="$GRADLE_USER_HOME"} \
     GROK_PROMPT_ROOT="$SCRIPT_DIR" \
     GIT_HOME="${GIT_HOME:-}" \
     ${grok_role_env[@]+"${grok_role_env[@]}"} \
