@@ -178,11 +178,20 @@ seed_smudge_inputs() {
   if [ -f "$orch_root/project.config" ]; then
     cp "$orch_root/project.config" ./project.config
   fi
-  for f in filter-apply-config filter-clean-config; do
+  for f in filter-apply-config filter-clean-config ve-resolve-orch; do
     if [ -f "$orch_root/$f" ]; then
       cp "$orch_root/$f" "./$f"
     fi
   done
+  if [ -f ./ve-resolve-orch ]; then
+    # shellcheck source=/dev/null
+    . ./ve-resolve-orch
+    ve_upsert_project_config_key ./project.config orch_root "$orch_root"
+  elif [ -f "$orch_root/ve-resolve-orch" ]; then
+    # shellcheck source=/dev/null
+    . "$orch_root/ve-resolve-orch"
+    ve_upsert_project_config_key ./project.config orch_root "$orch_root"
+  fi
 }
 
 re_smudge_stamped_files() {

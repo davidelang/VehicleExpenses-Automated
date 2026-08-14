@@ -552,3 +552,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - AGENT_MANDATES §10 rewritten: events win; forbidden rationalization added §3.3
 - AGENTS.md / GROK.md / new_agent_prompt / STANDARD BLOCK / planner+coder packs aligned
 
+
+## 2026-08-14 - orch_root stamp + split build caches (execute start)
+
+- Approved plan: `dev-ai-interaction/plans/orch-root-stamp-and-split-build-caches-20260814-0715-plan.md`
+- Request: stamp orch_root; share Maven/JDK/keystore at orch; keep compile state per worktree
+- First action: this log entry; then Phase 1 resolver + project.config upsert
