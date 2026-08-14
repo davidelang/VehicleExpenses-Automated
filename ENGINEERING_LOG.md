@@ -7550,3 +7550,6 @@ x
 
 ## 2026-08-05 - Merge fix-syncing into master
 - Stage 2 VE merged (FF lineage via fix-syncing tip 4eb46e4c + cleanup b82ef2dd). Pin remotetable 50b376a. Kept master set-*-perms @@ tokens. PolicySync always-on LWW + overlays + Room pilots + fail-loud. ./build_app SUCCESS; builds @ HEAD. No works tag.
+
+## 2026-08-13 - Merge location-fixes into master (specials corrected)
+- Product FF lineage at 7a274012 + project-facts reconcile from branch tip (Stations/v20/Wrong-station orientation). TODO unchanged. Eng-log via wrapper. Continuing ./build_app for builds tag.
