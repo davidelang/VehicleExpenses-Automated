@@ -17,8 +17,11 @@ Read in full early on startup/new cycle.
 - Prefer `adb logcat -d` (or device-specific) into sandbox once; analyze locally. Do **not** start broad `find … *.log` hunts on the host.
 
 ## At orchestration root
-- `.gradle-shared/` — project `GRADLE_USER_HOME` (multi-user)
-- `.android-shared/` — shared Android home / debug keystore
+- `.gradle-shared/` — **orch only**: shared Gradle *artifact* home (Maven/JDK/wrapper). Not this tree’s compile.
+- `.android-shared/` — **orch only**: shared debug keystore. `ANDROID_USER_HOME` points here.
+- `orch_root=` in gitignored `project.config` — absolute orchestration root. Worktrees do **not** guess via `../.gradle-shared`. Resolve: `./ve-resolve-orch`. `update-rules.sh` / `setup_agent.sh` stamp it.
+- Per worktree compile state: `app/build/`, `.gradle/`. Agent `./build_app` uses Kotlin in-process (no `~/.local/share/kotlin` daemon).
+- Launch master from `master/` (`./run-grok-master` there). Orch `./run-grok-master` binds `--worktree` to orch.
 - `ENGINEERING_LOG.md` — append only via `./append-to-engineering-log`
 - `TODO.md` — future backlog via `todo-append` / `todo-close`
 - Launchers: `run-grok-orchestrator`, `run-grok-master`, `run-grok-planner`, `run-grok-coder`, bare `run-grok` (dlang)

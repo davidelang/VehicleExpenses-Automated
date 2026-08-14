@@ -570,3 +570,8 @@ Policy: permission denials → report human / script residual; no creative worka
 - GRADLE_USER_HOME + ANDROID_USER_HOME at orch; dropped home Gradle daemon registry
 - gradlew -Dkotlin.compiler.execution.strategy=in-process
 - agent-landlock grants orch .gradle-shared and .android-shared
+
+## 2026-08-14 - Phase 4: orientation + orch_root stamped on all worktree project.config
+
+- project-facts, ENVIRONMENT_SETUP, PERMISSIONS_MODEL describe artifact/keystore at orch vs compile per WT
+- Seeded orch_root= on every git worktree project.config (gitignored; not a tracked update-rules sweep)

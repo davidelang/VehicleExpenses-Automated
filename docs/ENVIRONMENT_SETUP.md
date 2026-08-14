@@ -145,9 +145,10 @@ VehicleExpenses-automated/          # orchestration branch (managing root)
 ├── master/                         # worktree → branch master
 ├── agent-N/                        # worktrees → feature branches
 ├── dev-ai-interaction/             # shared sandbox (plans, PRs, logs)
-├── .gradle-shared/                 # shared Gradle user home (multi-user)
+├── .gradle-shared/                 # orch Maven/JDK/wrapper cache (not compile)
 ├── .android-shared/                # shared debug keystore
-├── update-rules.sh                 # push brain FILES into worktrees + commit
+├── ve-resolve-orch                 # print/source orch_root (no parent walk)
+├── update-rules.sh                 # push brain FILES; stamp orch_root= in project.config
 ├── setup_agent.sh                  # create agent-N worktree
 ├── run-grok-*                      # role launchers
 └── build_app, deploy, fix-perms, sync-debug-keystores, ve-env, …
@@ -160,7 +161,7 @@ App worktrees symlink: `dev-ai-interaction` → `../dev-ai-interaction`.
 1. **Users/groups** (names from `project.config` / example):  
    `ai-code`, `ai-shared`, `ai-sandbox`; users `ai-coder`, `ai-orchestrator`, `ai-planner`, primary `dlang`.  
    See `docs/specs/PERMISSIONS_MODEL.md` and comments in `project.config.example` / `setup-project` (emit-only user commands).
-2. **Copy** `project.config.example` → **`project.config`** (gitignored); fill real usernames/paths.
+2. **Copy** `project.config.example` → **`project.config`** (gitignored); fill real usernames/paths including absolute **`orch_root=`** (or run `./update-rules.sh` from this root to stamp it on orch + every worktree).
 3. Clone or worktree the **orchestration** branch as the managing root (or run `./enable-full-orchestration.sh` from a plain tree for guidance).
 4. **`sudo ./fix-perms`** (rare) for systemic ownership/setgid; day-to-day prefer `source ./ve-env`.
 5. **`./install-ve-refresh-shell.sh --all`** (or via fix-perms) for setuid group refresh helper.
@@ -176,7 +177,7 @@ App worktrees symlink: `dev-ai-interaction` → `../dev-ai-interaction`.
 source ./ve-env          # umask 002 + groups; ANDROID_USER_HOME
 ./setup_agent.sh my-feature
 cd my-feature            # or agent-N
-../run-grok-coder        # or run-grok-planner / run-grok-master from appropriate trees
+../run-grok-coder        # or run-grok-planner / run-grok-master *from that worktree*
 
 # Builds: always inside the worktree
 ./build_app "msg" changed.kt …
@@ -212,7 +213,7 @@ Equal content is always a no-op. Host installers (`grok-install.sh`, `antigravit
 | `app/build/`, `.gradle/`, `.cxx/` | build outputs |
 | `ve-refresh-shell` binary | setuid; built by `install-ve-refresh-shell.sh` |
 | `run-as-primary` binary | optional setuid helper |
-| `.android-shared/`, `.gradle-shared/` | shared state outside normal “source” sync |
+| `.android-shared/`, `.gradle-shared/` | **orch only** — keystore + Maven/JDK cache. Discovery is `orch_root=` in `project.config` (`./ve-resolve-orch`), not `../.gradle-shared`. Worktree `.gradle/` and `app/build/` are per-tree compile state. |
 
 ### 4.5 Orchestration root vs app worktree
 
