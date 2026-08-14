@@ -558,3 +558,8 @@ Policy: permission denials → report human / script residual; no creative worka
 - Approved plan: `dev-ai-interaction/plans/orch-root-stamp-and-split-build-caches-20260814-0715-plan.md`
 - Request: stamp orch_root; share Maven/JDK/keystore at orch; keep compile state per worktree
 - First action: this log entry; then Phase 1 resolver + project.config upsert
+
+## 2026-08-14 - Phase 2: fix-perms uses orch_root
+
+- AT_ORCHESTRATION is now realpath(SCRIPT_DIR)==orch_root, not "update-rules.sh exists"
+- ensure_shared_build_homes only under stamped orch; does not mkdir worktree .gradle-shared
