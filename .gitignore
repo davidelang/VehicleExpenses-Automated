@@ -54,6 +54,10 @@ Thumbs.db
 *.swp
 *.swo
 *.bak
+# Timestamped leftovers: foo.nb.bak.20260807..., foo.nb.bak.fp16.20260810
+*.bak.*
+*.nb.bak*
+*.so.fat.bak
 *.tmp
 *.log
 
@@ -112,6 +116,10 @@ alignment_results_*.json
 # Shell e-receipt fixtures for offline Email receipts ingest (manual test path)
 !app/src/main/assets/email-receipt/
 !app/src/main/assets/email-receipt/**
+# Multi-scale det expense stand-in (Circuit Cellar page / receipt proxy)
+!app/src/main/assets/experiment/
+!app/src/main/assets/experiment/**
+# Experiment multi-det A/B packs (under paddle/ already un-ignored via paddle/**)
 
 .gemini/
 gha-creds-*.json
@@ -133,3 +141,5 @@ third_party/*/src/
 third_party/*/status.local
 third_party/*/*.local
 # --- end third_party consumer ---
+third_party/paddle/tests/paddle_so_smoke/out/
+__pycache__/
