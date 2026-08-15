@@ -440,7 +440,7 @@ if [ "$DATA_ONLY_MODE" != "true" ]; then
   fi
 fi
 
-# Artifact cache + keystore at orch (orch_root=). Compile state stays in this worktree.
+# Homes under this worktree. orch_root is read/seed only (keystore copy).
 _DEP_HERE="$(cd "$(dirname "$0")" && pwd)"
 if [ ! -f "$_DEP_HERE/ve-resolve-orch" ]; then
   echo "ERROR: missing $_DEP_HERE/ve-resolve-orch (run ./update-rules.sh from orchestration root)." >&2
@@ -449,8 +449,7 @@ fi
 # shellcheck source=/dev/null
 . "$_DEP_HERE/ve-resolve-orch"
 ve_resolve_orch "$_DEP_HERE" || exit 1
-export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
-export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
+ve_setup_worktree_build_homes "$_DEP_HERE" || exit 1
 unset GRADLE_OPTS
 
 # Early recovery for build dir perms/ownership (prevents "Permission denied" on cxx logs,
@@ -484,7 +483,7 @@ prepare_build_tree_for_deploy() {
   fi
   rm -rf app/build/kspCaches app/build/intermediates app/build/generated 2>/dev/null || true
 
-  # Project-local .gradle (NOT GRADLE_USER_HOME): fileHashes.lock etc. after ai-coder builds
+  # Worktree .gradle (GRADLE_USER_HOME): fileHashes.lock etc. after ai-coder builds
   if [ -d .gradle ]; then
     chmod -R u+rX,g+rX .gradle 2>/dev/null || true
     chmod -R u+rwX,g+rwX .gradle 2>/dev/null || true
@@ -658,15 +657,11 @@ if [ "$DATA_ONLY_MODE" != "true" ] && [ "$REBUILD" = "true" ]; then
 fi
 
 repair_shared_cache() {
-  # Post-build permission repair for all shared build directories
-  for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
+  # Post-build permission repair for this worktree only (not orch caches).
+  for gdir in .gradle app/build; do
     if [ -d "$gdir" ]; then
       echo "  Quick $gdir permission repair (group sync + setgid + ug+rwX)..."
-      local grp="ai-code"
-      if [[ "$gdir" == *".gradle-shared"* || "$gdir" == *".android-shared"* ]]; then
-        grp="ai-shared"
-      fi
-      chgrp -R "$grp" "$gdir" 2>/dev/null || true
+      chgrp -R ai-code "$gdir" 2>/dev/null || true
       find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
       chmod -R ug+rwX,o-rwx "$gdir" 2>/dev/null || true
     fi

@@ -97,9 +97,9 @@ fi
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/ve-resolve-orch"
 ve_resolve_orch "$SCRIPT_DIR" || exit 1
-ANDROID_SHARED="$ORCH_ROOT/.android-shared"
+ve_setup_worktree_build_homes "$SCRIPT_DIR" || exit 1
+ANDROID_SHARED="$ANDROID_USER_HOME"
 export ORCH_ROOT
-export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
 
 umask "${umask_launch:-002}"
 

@@ -5,7 +5,7 @@ This is the **source of truth** for bringing up Vehicle Expenses Automated:
 1. **Plain app environment** — clean `git clone` of `master` → successful `./build_app` / Gradle assemble.
 2. **Full multi-worktree environment** — orchestration root + `master/` + `agent-N/` + shared sandbox (current primary workflow).
 
-Related docs: `docs/specs/PERMISSIONS_MODEL.md`, `README-multi-agent.md`, `docs/specs/OPERATIONAL_HANDBOOK.md` (agent protocol, not host bootstrap). **User manual (edit Markdown → render HTML for browsers/app):** `docs/reference/USER_MANUAL_BUILD.md` (`./scripts/render-user-manual.sh`).
+Related docs: `docs/specs/PERMISSIONS_MODEL.md`, `README-multi-agent.md`, `docs/specs/OPERATIONAL_HANDBOOK.md` (agent protocol, not host bootstrap).
 
 ---
 
@@ -19,15 +19,15 @@ There is **no** `.gitmodules` dependency for Paddle, OpenCV, or rclone. A normal
 |-----------|---------|------|----------------------|
 | App Kotlin / Compose / Hilt / Room | Yes | `app/src/main/java/…` | N/A (source of truth) |
 | JNI / C++ app code | Yes | `app/src/main/cpp/` (`BufferSet.cpp`, `NativeImageUtils.cpp`, `libraw/`, headers) | Built by CMake during Gradle |
-| OpenCV shared lib | **Yes (prebuilt pin)** | `app/src/main/jniLibs/<abi>/libopencv_java4.so` (+ `third_party/opencv/artifact/`) | `./third_party/fetch-deps build opencv` |
+| OpenCV shared lib | **Yes (prebuilt)** | `app/src/main/jniLibs/<abi>/libopencv_java4.so` | Only if upgrading OpenCV |
 | Paddle Lite JNI | **Yes (prebuilt)** | `app/src/main/jniLibs/<abi>/libpaddle_lite_jni.so` (+ optional `libpaddle_light_api_shared.so` on x86_64) | Only if upgrading Paddle Lite |
 | Paddle Java helper | **Yes** | `app/libs/PaddlePredictor.jar` | With Paddle rebuild |
 | Paddle OCR models + dict | **Yes** | `app/src/main/assets/paddle/` (`.nb` models, `en_dict.txt`, helper scripts) | Scripts under `assets/paddle/scripts/` when re-exporting models |
-| rclone Android AAR | **Yes (prebuilt pin)** | `third_party/rclone/artifact/librclone.aar` | `./third_party/fetch-deps build rclone` (Docker + gomobile) |
+| rclone Android AAR | **Yes (prebuilt)** | `app/libs/librclone.aar` | Only if rebuilding librclone from Go |
 | ML Kit text recognition | Maven | `com.google.mlkit:text-recognition` | Downloaded by Gradle |
 | Other AndroidX / Play / Hilt | Maven | `app/build.gradle.kts` | Downloaded by Gradle |
 
-**Bottom line for a first build:** you do **not** need to clone Paddle-Lite, OpenCV, or rclone repositories. Prebuilt pin artifacts ship in-tree. Rebuilds use `third_party/` + optional `~/git/<lib>` hosts (`docs/reference/THIRD_PARTY_PIN_BUILDS.md`).
+**Bottom line for a first build:** you do **not** need to clone Paddle-Lite, OpenCV, or rclone repositories. Those trees under `dev-ai-interaction/` (e.g. historical Paddle-Lite build sandboxes) are **research / rebuild** artifacts, not compile prerequisites.
 
 ### 1.2 When you *would* clone external tools
 
@@ -35,8 +35,8 @@ There is **no** `.gitmodules` dependency for Paddle, OpenCV, or rclone. A normal
 |------|----------------------|-------------------------------|
 | Upgrade Paddle Lite `.so` / jar | Paddle-Lite (or project notes under sandbox research) | `jniLibs/**`, `PaddlePredictor.jar` |
 | Re-export / quantize OCR `.nb` models | Paddle tooling + scripts in `assets/paddle/scripts/` | `assets/paddle/prod_u8fp16/*.nb` |
-| Rebuild OpenCV pin | `~/git/opencv` optional; `third_party/opencv` | `artifact/jni/**` + `jniLibs/**` |
-| Rebuild rclone pin | `~/git/rclone` pure upstream; `third_party/rclone` | `third_party/rclone/artifact/librclone.aar` |
+| Upgrade OpenCV Android SDK | OpenCV Android pack | `jniLibs/**/libopencv_java4.so` + headers under `cpp/include/opencv2` if needed |
+| Rebuild librclone | rclone/librclone Go build | `app/libs/librclone.aar` |
 
 Until you intentionally upgrade those, **ignore external clones**.
 
@@ -54,8 +54,6 @@ Until you intentionally upgrade those, **ignore external clones**.
 | **CMake 3.22.1** | Requested in `app/build.gradle.kts` `externalNativeBuild.cmake.version` (SDK CMake package is fine) |
 | **Network** once | Gradle downloads Maven deps |
 | **Optional: `adb`** | Only for device install (`./deploy` — **humans only**) |
-| **Optional: `bwrap` (bubblewrap)** | Write-sandboxes pin tooling (with Landlock when kernel supports it; §2.4). Not required for `./build_app` |
-| **Optional: Landlock** | Linux LSM used by `libpin-landlock` when available (no package; kernel feature). Same pin tooling as bwrap |
 
 ### 2.1 Point Gradle at the SDK
 
@@ -81,43 +79,9 @@ If agents build as a non-primary user:
 |------|----------|
 | Canonical keystore | `<repo-or-orchestration>/.android-shared/debug.keystore` (seeded from primary `~/.android/debug.keystore`) |
 | Unify role homes | **`./sync-debug-keystores`** (also from `fix-perms`) |
-| Runtime env | `build_app` / `deploy` / `ve-env` / `run-grok*` set `ANDROID_USER_HOME` → `.android-shared` |
+| Runtime env | `build_app` / `deploy` / `ve-env` / `run-grok*` set `ANDROID_USER_HOME` → **worktree** `.android-shared` (copy from orch if missing) |
 
 Foreign per-user keys cause `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on devices. Phones already on the shared cert stay fine; a device installed with a foreign cert needs **one** uninstall then re-deploy by a human.
-
-### 2.4 Optional write sandbox for third-party pin rebuilds
-
-**App builds do not need this.** Only `./third_party/fetch-deps` / `get-artifacts` use it when present.
-
-| Layer | Requirement | Role |
-|-------|-------------|------|
-| **bubblewrap** | `sudo apt install bubblewrap` | Outer: RO filesystem view + RW bind hole |
-| **Landlock** | Linux kernel LSM (`libpin-landlock --status`) | Inner: mutation only under allowed dirs; **read/exec stay open** for JDKs/SDKs |
-| **Neither** | — | Commands still work unsandboxed |
-
-Wiring: `libpin-sandbox` → optional bwrap → optional Landlock → command.  
-Disable: `LIBPIN_NO_BWRAP=1`, `LIBPIN_NO_LANDLOCK=1`, `--no-bwrap`, `--no-landlock`.
-
-Write surfaces (mutation):
-
-| Step | Writable |
-|------|----------|
-| `fetch-deps ro` / `rw` | `third_party/<lib>/` |
-| Patch / build | `third_party/<lib>/src/` |
-| `get-artifacts` | `third_party/<lib>/artifact/` |
-
-Landlock also allows `/tmp` and essential `/dev/null` etc. so tools work. Nested **bwrap** is not used; Landlock **can** stack under bwrap or under an agent Landlock later.
-
-Rebuild example:
-
-```bash
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-export ANDROID_HOME=$HOME/Android/Sdk
-./third_party/fetch-deps ro remotetable
-./third_party/fetch-deps build remotetable
-```
-
-Full contract: `docs/reference/THIRD_PARTY_PIN_BUILDS.md`, `third_party/README.md`.
 
 ---
 
@@ -181,9 +145,10 @@ VehicleExpenses-automated/          # orchestration branch (managing root)
 ├── master/                         # worktree → branch master
 ├── agent-N/                        # worktrees → feature branches
 ├── dev-ai-interaction/             # shared sandbox (plans, PRs, logs)
-├── .gradle-shared/                 # shared Gradle user home (multi-user)
-├── .android-shared/                # shared debug keystore
-├── update-rules.sh                 # push brain FILES into worktrees + commit
+├── .gradle-shared/                 # leftover orch Maven cache (not agent GRADLE_USER_HOME)
+├── .android-shared/                # canonical debug keystore (copy into each worktree)
+├── ve-resolve-orch                 # print/source orch_root (no parent walk)
+├── update-rules.sh                 # push brain FILES; stamp orch_root= in project.config
 ├── setup_agent.sh                  # create agent-N worktree
 ├── run-grok-*                      # role launchers
 └── build_app, deploy, fix-perms, sync-debug-keystores, ve-env, …
@@ -196,13 +161,13 @@ App worktrees symlink: `dev-ai-interaction` → `../dev-ai-interaction`.
 1. **Users/groups** (names from `project.config` / example):  
    `ai-code`, `ai-shared`, `ai-sandbox`; users `ai-coder`, `ai-orchestrator`, `ai-planner`, primary `dlang`.  
    See `docs/specs/PERMISSIONS_MODEL.md` and comments in `project.config.example` / `setup-project` (emit-only user commands).
-2. **Copy** `project.config.example` → **`project.config`** (gitignored); fill real usernames/paths.
+2. **Copy** `project.config.example` → **`project.config`** (gitignored); fill real usernames/paths including absolute **`orch_root=`** (or run `./update-rules.sh` from this root to stamp it on orch + every worktree).
 3. Clone or worktree the **orchestration** branch as the managing root (or run `./enable-full-orchestration.sh` from a plain tree for guidance).
 4. **`sudo ./fix-perms`** (rare) for systemic ownership/setgid; day-to-day prefer `source ./ve-env`.
 5. **`./install-ve-refresh-shell.sh --all`** (or via fix-perms) for setuid group refresh helper.
 6. **`./sync-debug-keystores`** (prefer once with sudo for correct home ownership).
 7. **`./fix-android-sdk-perms`** as primary after NDK install.
-8. Seed **`.android-shared`** / **`.gradle-shared`** if missing (fix-perms / setup_agent also help).
+8. Seed orch **`.android-shared`** (canonical keystore). Worktree `.android-shared` / `.gradle` are created on first `ve-env` / `build_app`.
 9. Install **Grok CLI** (or Gemini) binaries referenced by launchers (`GROK_BIN` / project.config).
 
 ### 4.3 Daily multi-agent flow
@@ -212,7 +177,7 @@ App worktrees symlink: `dev-ai-interaction` → `../dev-ai-interaction`.
 source ./ve-env          # umask 002 + groups; ANDROID_USER_HOME
 ./setup_agent.sh my-feature
 cd my-feature            # or agent-N
-../run-grok-coder        # or run-grok-planner / run-grok-master from appropriate trees
+../run-grok-coder        # or run-grok-planner / run-grok-master *from that worktree*
 
 # Builds: always inside the worktree
 ./build_app "msg" changed.kt …
@@ -248,7 +213,7 @@ Equal content is always a no-op. Host installers (`grok-install.sh`, `antigravit
 | `app/build/`, `.gradle/`, `.cxx/` | build outputs |
 | `ve-refresh-shell` binary | setuid; built by `install-ve-refresh-shell.sh` |
 | `run-as-primary` binary | optional setuid helper |
-| `.android-shared/`, `.gradle-shared/` | shared state outside normal “source” sync |
+| `.android-shared/`, `.gradle-shared/` | **orch** — canonical keystore + leftover Maven cache. Not live agent homes. Discovery is `orch_root=` in `project.config` (`./ve-resolve-orch`). Worktree `.gradle/` (`GRADLE_USER_HOME`), `.android-shared/` (`ANDROID_USER_HOME`), and `app/build/` are per-tree writes. |
 
 ### 4.5 Orchestration root vs app worktree
 

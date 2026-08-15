@@ -8,9 +8,9 @@ git_home=@@GIT_HOME@@
 # Default sandbox dirname under worktree
 sandbox_path=@@SANDBOX_PATH@@
 
-# Shared Gradle artifact cache + debug keystore: $orch_root/.gradle-shared
-# and $orch_root/.android-shared (agent-landlock reads orch_root from project.config).
-# Do not treat worktree .gradle-shared as the live Gradle user home.
+# Live Gradle/Android writes are per worktree (.gradle, .android-shared).
+# orch .android-shared is the canonical keystore to copy, not a live agent home.
+# Do not set GRADLE_USER_HOME to $orch_root/.gradle-shared.
 
 [profile.android]
 path=.android-shared
