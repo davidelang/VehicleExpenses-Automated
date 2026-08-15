@@ -17,10 +17,10 @@ Read in full early on startup/new cycle.
 - Prefer `adb logcat -d` (or device-specific) into sandbox once; analyze locally. Do **not** start broad `find … *.log` hunts on the host.
 
 ## At orchestration root
-- `.gradle-shared/` — **orch only**: shared Gradle *artifact* home (Maven/JDK/wrapper). Not this tree’s compile.
-- `.android-shared/` — **orch only**: shared debug keystore. `ANDROID_USER_HOME` points here.
+- `.gradle-shared/` — **orch leftover** Maven/JDK/wrapper cache. Not agent `GRADLE_USER_HOME` (landlocked worktrees must not write orch).
+- `.android-shared/` — **orch**: canonical debug keystore to **copy**. Not a live agent `ANDROID_USER_HOME`.
 - `orch_root=` in gitignored `project.config` — absolute orchestration root. Worktrees do **not** guess via `../.gradle-shared`. Resolve: `./ve-resolve-orch`. `update-rules.sh` / `setup_agent.sh` stamp it.
-- Per worktree compile state: `app/build/`, `.gradle/`. Agent `./build_app` uses Kotlin in-process (no `~/.local/share/kotlin` daemon).
+- Per worktree writes: `app/build/`, `.gradle/` (`GRADLE_USER_HOME`), `.android-shared/` (`ANDROID_USER_HOME`, seeded from orch keystore). Agent `./build_app` uses Kotlin in-process (no `~/.local/share/kotlin` daemon).
 - Launch master from `master/` (`./run-grok-master` there). Orch `./run-grok-master` binds `--worktree` to orch.
 - `ENGINEERING_LOG.md` — append only via `./append-to-engineering-log`
 - `TODO.md` — future backlog via `todo-append` / `todo-close`
@@ -29,7 +29,7 @@ Read in full early on startup/new cycle.
 - **Deploy (orch root):** default is **APK-first** (`adb install -r` last APK); `./deploy --rebuild` for wipe+Gradle path. Version from APK `versionName` when not rebuilding.
 - Scripts: `update-rules.sh`, `build_app` and `deploy` (no raw gradlew; both pass `--no-daemon`; deploy wipes `kspCaches`/`intermediates`/`generated` and **fails fast** if residual foreign 2755 dirs block wipe), `get-builds-tag.sh`, `fix-perms` (rare), `setup_agent.sh` — on success **exec**s a shell in the new worktree with ve-env semantics (`VE_ENV_CWD` + setuid `ve-refresh-shell` for full groups + umask 002). `project.config` is gitignored; setup seeds it before checkout. **`ve-refresh-shell` binary is not in git** (setuid root + arch-specific); source `ve-refresh-shell.c` is tracked. Install/deploy with `./install-ve-refresh-shell.sh` [dir|`--all`] — called from `setup_agent`, `fix-perms`, and `update-rules` so each worktree gets a correct root:root 4755 binary. `run-as-primary` similarly gitignored. `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`
 - **Launcher umask:** `run-grok*` set `umask 002` **inside** `sudo -u <role>` (not only in the parent shell). Parent-only umask is ignored by sudo → agents create 2755 build dirs.
-- **Debug keystore:** one key only — `.android-shared/debug.keystore` (same SHA as dlang). `./sync-debug-keystores` copies it into each role’s `~/.android/`; launchers/`ve-env`/`build_app`/`deploy` set `ANDROID_USER_HOME`. Foreign keys cause `UPDATE_INCOMPATIBLE` on devices.
+- **Debug keystore:** one key only — orch `.android-shared/debug.keystore` (same SHA as dlang). `./sync-debug-keystores` copies it into each role’s `~/.android/` and worktree `.android-shared/`. Launchers/`ve-env`/`build_app`/`deploy` set `ANDROID_USER_HOME` to the **worktree** `.android-shared`. Foreign keys cause `UPDATE_INCOMPATIBLE` on devices.
 - Master merge specials: `./merge-branch-into-master.sh <branch>` (tries `git merge --no-autostash`; index-first +a-safe fallback for eng-log), `./install-merge-drivers.sh` (`merge.autostash=false`), `git-merge-drivers/ve-englog` (eng-log third-version via `append-to-engineering-log`), `git-merge-drivers/ve-special-ours` (keep master TODO/project-facts; refuse path is legacy alias). Every merge re-validates TODO (todo-close) and project-facts (prune) against the **branch delta**. Handoff/recovery: `docs/reference/ORCHESTRATION_MERGE_INFRA_SYNC.md`.
 - **Worktree file deploy:** copying tracked files into agent-N/master without a commit dirties the tree and **blocks `./build_app`**. Prefer `./update-rules.sh` (cp + per-worktree commit). Ad-hoc `cp` of tracked paths must be followed by commit on that worktree. Gitignored binaries (`ve-refresh-shell`) do not need commit.
 - `.grok/config.toml` + `.grok/hooks/` + `.grok/skills/` (prepare-local-pr, master-merge)

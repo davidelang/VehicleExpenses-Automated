@@ -581,3 +581,14 @@ Policy: permission denials → report human / script residual; no creative worka
 - Approved: `dev-ai-interaction/plans/deploy-orch-root-minimal-update-rules-hosts-20260814-1724-plan.md`
 - Agent scope: `--minimal` on grok-launch-common + project-facts. No update-rules, no host writes.
 - Human next: `bash dev-ai-interaction/scripts/deploy-orch-root-minimal-hosts.sh --dry-run` then `--apply`
+
+## 2026-08-15 - Per-worktree Gradle/Android homes (execute)
+
+- Approved: `dev-ai-interaction/plans/worktree-local-gradle-android-homes-20260815-0939-plan.md`
+- Agent writes stay under the worktree (.gradle, .android-shared). orch is read/seed only for the debug keystore.
+- No chmod of orch .gradle-shared/daemon. No full update-rules sweep.
+
+## 2026-08-15 - Resume worktree-local Gradle/Android homes after compact
+
+- Approved plan: `dev-ai-interaction/plans/worktree-local-gradle-android-homes-20260815-0939-plan.md`
+- Phase 1: `ve_setup_worktree_build_homes` + wrappers write only under `$WT`.

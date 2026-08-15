@@ -79,7 +79,7 @@ If agents build as a non-primary user:
 |------|----------|
 | Canonical keystore | `<repo-or-orchestration>/.android-shared/debug.keystore` (seeded from primary `~/.android/debug.keystore`) |
 | Unify role homes | **`./sync-debug-keystores`** (also from `fix-perms`) |
-| Runtime env | `build_app` / `deploy` / `ve-env` / `run-grok*` set `ANDROID_USER_HOME` → `.android-shared` |
+| Runtime env | `build_app` / `deploy` / `ve-env` / `run-grok*` set `ANDROID_USER_HOME` → **worktree** `.android-shared` (copy from orch if missing) |
 
 Foreign per-user keys cause `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on devices. Phones already on the shared cert stay fine; a device installed with a foreign cert needs **one** uninstall then re-deploy by a human.
 
@@ -145,8 +145,8 @@ VehicleExpenses-automated/          # orchestration branch (managing root)
 ├── master/                         # worktree → branch master
 ├── agent-N/                        # worktrees → feature branches
 ├── dev-ai-interaction/             # shared sandbox (plans, PRs, logs)
-├── .gradle-shared/                 # orch Maven/JDK/wrapper cache (not compile)
-├── .android-shared/                # shared debug keystore
+├── .gradle-shared/                 # leftover orch Maven cache (not agent GRADLE_USER_HOME)
+├── .android-shared/                # canonical debug keystore (copy into each worktree)
 ├── ve-resolve-orch                 # print/source orch_root (no parent walk)
 ├── update-rules.sh                 # push brain FILES; stamp orch_root= in project.config
 ├── setup_agent.sh                  # create agent-N worktree
@@ -167,7 +167,7 @@ App worktrees symlink: `dev-ai-interaction` → `../dev-ai-interaction`.
 5. **`./install-ve-refresh-shell.sh --all`** (or via fix-perms) for setuid group refresh helper.
 6. **`./sync-debug-keystores`** (prefer once with sudo for correct home ownership).
 7. **`./fix-android-sdk-perms`** as primary after NDK install.
-8. Seed **`.android-shared`** / **`.gradle-shared`** if missing (fix-perms / setup_agent also help).
+8. Seed orch **`.android-shared`** (canonical keystore). Worktree `.android-shared` / `.gradle` are created on first `ve-env` / `build_app`.
 9. Install **Grok CLI** (or Gemini) binaries referenced by launchers (`GROK_BIN` / project.config).
 
 ### 4.3 Daily multi-agent flow
@@ -213,7 +213,7 @@ Equal content is always a no-op. Host installers (`grok-install.sh`, `antigravit
 | `app/build/`, `.gradle/`, `.cxx/` | build outputs |
 | `ve-refresh-shell` binary | setuid; built by `install-ve-refresh-shell.sh` |
 | `run-as-primary` binary | optional setuid helper |
-| `.android-shared/`, `.gradle-shared/` | **orch only** — keystore + Maven/JDK cache. Discovery is `orch_root=` in `project.config` (`./ve-resolve-orch`), not `../.gradle-shared`. Worktree `.gradle/` and `app/build/` are per-tree compile state. |
+| `.android-shared/`, `.gradle-shared/` | **orch** — canonical keystore + leftover Maven cache. Not live agent homes. Discovery is `orch_root=` in `project.config` (`./ve-resolve-orch`). Worktree `.gradle/` (`GRADLE_USER_HOME`), `.android-shared/` (`ANDROID_USER_HOME`), and `app/build/` are per-tree writes. |
 
 ### 4.5 Orchestration root vs app worktree
 

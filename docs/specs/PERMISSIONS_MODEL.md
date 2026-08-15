@@ -63,7 +63,7 @@ New files inherit group via setgid. **General/project shells and agent launchers
 - `ai-coder` builds (via `build_app`) → files `ai-coder:ai-code 660` or inherited group. **`build_app` does not re-exec as dlang** for agents (only root→primary).
 - `dlang` deploys → re-exec as primary; member of ai-code; dir write bit allows delete/overwrite of other-group-member files (standard Unix behavior in non-sticky dir).
 - **No Gradle daemon:** both `build_app` and `deploy` pass `--no-daemon`; `org.gradle.daemon=false`. Daemon reuse across uids caused KSP/cache Permission denied after agent builds.
-- **Split caches:** `GRADLE_USER_HOME` / `ANDROID_USER_HOME` are `$orch_root/.gradle-shared` (artifacts) and `$orch_root/.android-shared` (one debug key). `orch_root` comes from `project.config` via `./ve-resolve-orch` — no parent-directory walk. Incremental compile stays in the worktree (`app/build`, `.gradle`). Wrappers pass `-Dkotlin.compiler.execution.strategy=in-process` so the Kotlin daemon does not write `~/.local/share/kotlin`.
+- **Per-worktree homes:** `GRADLE_USER_HOME` is `$WT/.gradle` and `ANDROID_USER_HOME` is `$WT/.android-shared`. `orch_root` (from `project.config` via `./ve-resolve-orch`) is **read/seed only** — copy the canonical debug keystore into the worktree; do not use orch `.gradle-shared` as a live agent Gradle home (Landlock blocks orch writes from worktree sessions). Incremental compile stays in the worktree (`app/build`, `.gradle`). Wrappers pass `-Dkotlin.compiler.execution.strategy=in-process` so the Kotlin daemon does not write `~/.local/share/kotlin`.
 - `deploy` wipes `app/build/kspCaches` (and intermediates/generated/config-cache) before compile so foreign-owned incremental state is not required.
 - Scripts always: `umask 007; sg ai-code` (and `sudo -u dlang` only for keystore/signing if needed).
 - No direct `gradlew` or `gradlew.bat`. Agent builds through `build_app`; device install through `deploy` (human/primary).
@@ -108,14 +108,14 @@ See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-2026
 
 | Bad | Good |
 |-----|------|
-| Each `ai-*` user has a unique auto-generated `~/.android/debug.keystore` | All role homes copy the shared key; `ANDROID_USER_HOME` points at `.android-shared` |
+| Each `ai-*` user has a unique auto-generated `~/.android/debug.keystore` | All role homes copy the shared key; `ANDROID_USER_HOME` is the worktree `.android-shared` (copy of orch) |
 | Raw `./gradlew installDebug` as `ai-coder` with private key → device poison | `./build_app` / human `./deploy` + unified keys |
 
 **Symptom:** `INSTALL_FAILED_UPDATE_INCOMPATIBLE` on one device after another was installed with a foreign cert.
 
 **Fix keys (idempotent):** `./sync-debug-keystores` (also invoked from `fix-perms` / `ensure_shared_build_homes`). Prefer `sudo ./sync-debug-keystores` once so homes get correct ownership.
 
-**Runtime:** `build_app`/`deploy`/`ve-env`/`run-grok*` export `ANDROID_USER_HOME` to **`$orch_root/.android-shared`** (absolute orch path from `project.config`).
+**Runtime:** `build_app`/`deploy`/`ve-env`/`run-grok*` export `ANDROID_USER_HOME` to the **worktree** `.android-shared` (seeded from `$orch_root/.android-shared` if missing).
 
 **Already-poisoned device:** uninstall once (`adb uninstall …` or `PRESERVE_DATA=1 ./deploy`), then human re-deploy with the unified key. Phones already on the shared cert are unaffected.
 

@@ -296,16 +296,16 @@ _ve_activate() {
   umask 002
   echo "umask set to $(umask) in this shell"
 
-  # Shared debug keystore + Gradle artifact home at orch (not this worktree, not ~).
+  # Worktree-local Gradle/Android homes (orch is read/seed only).
   if [ -f "$SCRIPT_DIR/ve-resolve-orch" ]; then
     # shellcheck source=/dev/null
     . "$SCRIPT_DIR/ve-resolve-orch"
-    if ve_resolve_orch "$SCRIPT_DIR"; then
-      export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
-      export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+    if ve_resolve_orch "$SCRIPT_DIR" && ve_setup_worktree_build_homes "$SCRIPT_DIR"; then
       echo "ANDROID_USER_HOME=$ANDROID_USER_HOME"
       echo "GRADLE_USER_HOME=$GRADLE_USER_HOME"
       echo "ORCH_ROOT=$ORCH_ROOT"
+    else
+      echo "ERROR: could not set worktree Gradle/Android homes (orch_root / keystore)." >&2
     fi
   fi
 

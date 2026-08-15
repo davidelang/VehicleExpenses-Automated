@@ -134,7 +134,7 @@ else
     if [ ${#GRADLE_ARGS[@]} -gt 0 ]; then
       echo "Passing gradle flags: ${GRADLE_ARGS[*]}"
     fi
-    # Artifact cache + keystore at orch (orch_root=). Compile state stays in this worktree.
+    # Homes under this worktree. orch_root is read/seed only (keystore copy).
     _BA_HERE="$(cd "$(dirname "$0")" && pwd)"
     if [ ! -f "$_BA_HERE/ve-resolve-orch" ]; then
       echo "ERROR: missing $_BA_HERE/ve-resolve-orch (run ./update-rules.sh from orchestration root)." >&2
@@ -143,8 +143,7 @@ else
     # shellcheck source=/dev/null
     . "$_BA_HERE/ve-resolve-orch"
     ve_resolve_orch "$_BA_HERE" || exit 1
-    export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
-    export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
+    ve_setup_worktree_build_homes "$_BA_HERE" || exit 1
     unset GRADLE_OPTS
     PLANNING_USER=$(sed -n 's/^planning_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
     PLANNING_USER=${PLANNING_USER:-ai-planner}
@@ -159,15 +158,11 @@ else
       -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_CMD[@]}")
     RET_VAL=$?
 
-    # Post-build permission repair for shared build directories (660/2770)
-    for gdir in "${GRADLE_USER_HOME:-}" .gradle app/build; do
+    # Post-build permission repair for this worktree only (not orch caches).
+    for gdir in .gradle app/build; do
       if [ -d "$gdir" ]; then
         echo "Quick $gdir permission repair (group sync + setgid + ug+rwX)..."
-        grp="ai-code"
-        if [[ "$gdir" == *".gradle-shared"* || "$gdir" == *".android-shared"* ]]; then
-          grp="ai-shared"
-        fi
-        chgrp -R "$grp" "$gdir" 2>/dev/null || true
+        chgrp -R ai-code "$gdir" 2>/dev/null || true
         find "$gdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
         chmod -R ug+rwX,o-rwx "$gdir" 2>/dev/null || true
       fi
