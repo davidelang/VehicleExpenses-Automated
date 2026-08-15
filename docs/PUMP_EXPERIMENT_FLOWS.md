@@ -64,7 +64,7 @@ Format: magic `HMU8`, w/h LE u32, comp=1 (zlib), raw_len, payload. See `HeatmapU
 
 **Energy traces:** On for **every photo** on **P4-jump** and **P4-rot** (not the 34-name coverage subset). Sidecar `expand_energy_<ts>/jump_<file>.json` and `rot_<file>.json`. Payload is **lossless zlib** deskewed gray u8 + Sobel mag u16le (plus 1px energy/count profiles). JPEG is not used for this ROI — Sobel-x p90 and gx-run-count valleys do not survive DCT ringing/quantization. ~16 MB × 167 × 2 ≈ 5 GB/device.
 
-**Edge-count (same run):** After energy stop, additive run-count valley pullback. Never grows, never retracts into the seed. Official `final` stays `energy` / `energy_or_g`. Extra `scaleVariants` entry `kind=energy_count` is scored unofficially only.
+**Edge-count (same run):** After energy stop, additive run-count valley pullback, then a **one-direction** pad: pulled tip steps back toward energy by `0.10×seedH` (not past energy); energy-stop tip whose run-count is still ≥ `0.45×cSeed` grows that tip only by `0.08×seedH`. Cap-stops do not grow. Grow is skipped when the energy box is already `> 2.4×seedH` so the 48 px rec crop does not shrink the digits. A few pixels into the neighboring row is acceptable. Official `final` stays `energy` / `energy_or_g`. Extra `scaleVariants` entry `kind=energy_count` is scored unofficially only.
 
 * AABB (`countPullbackVertical`): Sobel-x on image rows at seed width; walk image y.
 * Oriented (`countPullbackOriented`): walk **±v** (normal to the long edges). Each step is a seed-width strip of **|∇I·û|** (derivative along the text axis). Do **not** AABB the quad first — that walk is a different geometry.
