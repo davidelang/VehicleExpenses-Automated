@@ -82,11 +82,11 @@ for SANDBOX_DIR in "${SANDBOX_DIRS[@]}"; do
   # Also ensure the main project wildcard (user requested form) is set for this context
   # This covers the main tree + all worktrees from the sandbox perms run as well.
   if [ -n "$TARGET_OWNER" ]; then
-    sudo -u "$TARGET_OWNER" git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*' 2>/dev/null || true
+    sudo -u "$TARGET_OWNER" git config --global --add safe.directory '@@GIT_HOME@@/VehicleExpenses-automated/*' 2>/dev/null || true
   fi
   for aiuser in "$PLANNING_USER" "$CODER_USER" "$ORCHESTRATOR_USER"; do
     if [ -n "$aiuser" ] && id "$aiuser" >/dev/null 2>&1; then
-      sudo -u "$aiuser" git config --global --add safe.directory '/home/dlang/git/VehicleExpenses-automated/*' 2>/dev/null || true
+      sudo -u "$aiuser" git config --global --add safe.directory '@@GIT_HOME@@/VehicleExpenses-automated/*' 2>/dev/null || true
     fi
   done
 done
