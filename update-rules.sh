@@ -53,6 +53,13 @@ echo "--- Rule Update Sync Starting ---"
 echo "Source: $SOURCE_DIR"
 echo "Mode: force=$FORCE dry_run=$DRY_RUN"
 
+if [ ! -f "$SOURCE_DIR/ve-resolve-orch" ]; then
+    echo "ERROR: missing $SOURCE_DIR/ve-resolve-orch" >&2
+    exit 1
+fi
+# shellcheck source=/dev/null
+. "$SOURCE_DIR/ve-resolve-orch"
+
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "ERROR: This script must be run from inside a Git worktree."
     exit 1
@@ -324,6 +331,10 @@ FILES=(
     "merge-branch-into-master.sh"
     "hooks/post-checkout"
     "install-ve-refresh-shell.sh"
+    "ve-resolve-orch"
+    "agent-landlock"
+    "landlock.config"
+    "landlock.config.example"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
@@ -351,6 +362,7 @@ STAMP_FILES=(
     "build_app"
     "sync_infrastructure.sh"
     "update-rules.sh"
+    "ve-resolve-orch"
 )
 
 # 4. Push updates to all other worktrees
@@ -358,12 +370,25 @@ CURRENT_WT=$(git rev-parse --show-toplevel)
 # Get absolute paths of all worktrees from git
 WORKTREES=$(git worktree list --porcelain | grep "^worktree " | cut -d' ' -f2-)
 
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo ">>> would seed orch_root=$SOURCE_DIR into $SOURCE_DIR/project.config"
+else
+    ve_seed_worktree_project_config "$SOURCE_DIR" "$SOURCE_DIR"
+    echo ">>> seeded orch_root=$SOURCE_DIR into $SOURCE_DIR/project.config"
+fi
+
 for WT in $WORKTREES; do
     if [ "$WT" == "$CURRENT_WT" ]; then
         continue
     fi
 
     echo ">>> Syncing rules to worktree: $WT"
+    if [ "$DRY_RUN" -eq 1 ]; then
+        echo "    would seed orch_root=$SOURCE_DIR into $WT/project.config"
+    else
+        ve_seed_worktree_project_config "$WT" "$SOURCE_DIR"
+        echo "    seeded orch_root=$SOURCE_DIR into $WT/project.config"
+    fi
 
     # Dual-mode decision (language-agnostic, no hard-coded app/ paths):
     # If the target already has full brain markers (launchers or is agent-* style)
@@ -452,6 +477,7 @@ for WT in $WORKTREES; do
 
     # Ensure management/orchestration scripts end up executable (right perms).
     for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
+                "$WT"/ve-resolve-orch \
                 "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh; do
       [ -f "$_exe" ] || continue
       chown "$PRIMARY_USER:$CODE_GROUP" "$_exe" 2>/dev/null || true
@@ -511,6 +537,7 @@ for WT in $WORKTREES; do
 
     # Re-assert executables after commit (git may not preserve all mode bits in WT)
     for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
+                "$WT"/ve-resolve-orch \
                 "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh; do
       [ -f "$_exe" ] || continue
       chown "$PRIMARY_USER:$CODE_GROUP" "$_exe" 2>/dev/null || true

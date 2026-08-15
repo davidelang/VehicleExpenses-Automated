@@ -20,7 +20,7 @@ if [ -z "$BRANCH_NAME" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
-# So post-checkout does not run fix-perms --all mid-setup or warn about gitignored project.config
+# So post-checkout is a no-op mid-setup (hook no longer runs fix-perms; still skip until seeded)
 export VE_SETUP_AGENT=1
 # shellcheck disable=SC2064
 trap 'unset VE_SETUP_AGENT' EXIT
@@ -102,7 +102,7 @@ fi
 ORCH_ROOT="$(pwd)"
 
 # Ensure shared git hooks are executable BEFORE worktree add / checkout.
-# fix-perms historically chmod 660'd all of .git (strips +x); post-checkout must run.
+# fix-perms must not assign ai-code to common .git; hooks no longer re-run fix-perms.
 ensure_common_hooks_executable() {
   local common hooks
   common=$(git rev-parse --git-common-dir 2>/dev/null || echo .git)
@@ -178,11 +178,20 @@ seed_smudge_inputs() {
   if [ -f "$orch_root/project.config" ]; then
     cp "$orch_root/project.config" ./project.config
   fi
-  for f in filter-apply-config filter-clean-config; do
+  for f in filter-apply-config filter-clean-config ve-resolve-orch; do
     if [ -f "$orch_root/$f" ]; then
       cp "$orch_root/$f" "./$f"
     fi
   done
+  if [ -f ./ve-resolve-orch ]; then
+    # shellcheck source=/dev/null
+    . ./ve-resolve-orch
+    ve_upsert_project_config_key ./project.config orch_root "$orch_root"
+  elif [ -f "$orch_root/ve-resolve-orch" ]; then
+    # shellcheck source=/dev/null
+    . "$orch_root/ve-resolve-orch"
+    ve_upsert_project_config_key ./project.config orch_root "$orch_root"
+  fi
 }
 
 re_smudge_stamped_files() {
@@ -224,7 +233,10 @@ verify_smudge() {
   fi
   for f in "${STAMPED_FILES[@]}"; do
     [ -f "$f" ] || continue
-    if grep -q '@@' "$f" 2>/dev/null; then
+    # Match real tokens only (@@SANDBOX_PATH@@). Do NOT match:
+    # - comments mentioning "@@ tokens"
+    # - intentional runtime checks like: [[ "$1" == @@* ]]
+    if grep -qE '@@[A-Z0-9_]+@@' "$f" 2>/dev/null; then
       echo "Error: Unsubstituted @@ tokens remain in $f (smudge filter did not run correctly)."
       failed=1
     fi
@@ -248,7 +260,7 @@ seed_smudge_inputs "$ORCH_ROOT"
 
 # After --no-checkout the index is empty; 'git checkout .' matches nothing.
 # Bypass git smudge on bulk checkout — feature branches may carry broken filter scripts.
-# VE_SETUP_AGENT=1 makes post-checkout a no-op (avoids mid-setup sudo fix-perms --all).
+# VE_SETUP_AGENT=1 makes post-checkout a no-op during worktree populate.
 if ! git -c filter.manage-configs.smudge=cat -c filter.manage-configs.clean=cat checkout HEAD -- .; then
   echo "Error: Failed to populate worktree (git checkout HEAD -- .)."
   cd ..
@@ -349,7 +361,7 @@ cd "$ORCH_ROOT" || cd "$PARENT_ROOT" || true
 # Use unified fix-perms for the new tree (pass --skip-sudoers so sudoers rules
 # are only (re)installed at true initial setup-project time).
 # Silent on success (no output if it works).
-# Note: fix-perms blanket-chmods .git then restores hook +x (ensure_git_hooks_executable).
+# Scoped recovery for the new worktree only (fix-perms excludes common .git from ai-code chown).
 sudo ./fix-perms --skip-sudoers "$AGENT_ABS" 2>/dev/null || true
 
 # Re-lock setuid binaries silently (in case not covered).
