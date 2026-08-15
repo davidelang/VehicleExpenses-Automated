@@ -145,7 +145,7 @@ else ()
 endif()
 
 if (LITE_ON_TINY_PUBLISH)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffast-math -Ofast -Os -fomit-frame-pointer")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -Os -fomit-frame-pointer -ffp-contract=off -fno-fast-math -DVE_PRODUCT_FP=1")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden -fvisibility-inlines-hidden -ffunction-sections")
     # 1. strip useless symbols from third-party libs
     # exclude-libs is not supported on macOs system
@@ -170,7 +170,9 @@ endif()
 message(STATUS "ANDROID_NDK_MAJOR: ${ANDROID_NDK_MAJOR}")
 
 if(LITE_WITH_OPENMP)
-    if (ARM_TARGET_LANG STREQUAL "gcc")
+    # Android NDK clang + CMake 3.16 FindOpenMP often fails (esp. NDK r21+ / r28):
+    # seed OpenMP vars and skip broken find_package when ANDROID.
+    if (ARM_TARGET_LANG STREQUAL "gcc" OR ARM_TARGET_LANG STREQUAL "clang" OR ANDROID)
         set(OpenMP_C_FLAGS "-fopenmp")
         set(OpenMP_C_LIB_NAMES "omp")
         set(OpenMP_CXX_FLAGS "-fopenmp")
@@ -181,7 +183,14 @@ if(LITE_WITH_OPENMP)
         set(OpenMP_CXX_FLAGS_WORK "-fopenmp")
         set(OpenMP_CXX_LIB_NAMES_WORK "omp")
     endif()
-    find_package(OpenMP REQUIRED)
+    if(ANDROID)
+        set(OPENMP_FOUND TRUE)
+        set(OpenMP_C_FOUND TRUE)
+        set(OpenMP_CXX_FOUND TRUE)
+        message(STATUS "Android: using NDK OpenMP flags without FindOpenMP probe")
+    else()
+        find_package(OpenMP REQUIRED)
+    endif()
     set(LIBOMP_ENABLE_SHARED OFF)
     if(OPENMP_FOUND OR OpenMP_CXX_FOUND)
         add_definitions(-DARM_WITH_OMP)
@@ -192,6 +201,8 @@ if(LITE_WITH_OPENMP)
             else()
                 set(OPENMP_LINK_FLAGS "-fopenmp")
             endif()
+        else()
+            set(OPENMP_LINK_FLAGS "-fopenmp")
         endif()
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
@@ -232,8 +243,8 @@ if(ANDROID)
         "-DANDROID_TOOLCHAIN=${ARM_TARGET_LANG}"
         "-DANDROID_STL=${CMAKE_ANDROID_STL_TYPE}"
         "-DCMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR}"
-          "-DCMAKE_SYSROOT=/opt/android-ndk-r20b/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-          "-DCMAKE_TOOLCHAIN_FILE=/opt/android-ndk-r20b/build/cmake/android.toolchain.cmake"
+        "-DCMAKE_SYSROOT=${CMAKE_ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+        "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_ANDROID_NDK}/build/cmake/android.toolchain.cmake"
         "-DCMAKE_ANDROID_NDK_TOOLCHAIN_VERSION=${CMAKE_ANDROID_NDK_TOOLCHAIN_VERSION}"
         "-DANDROID_PLATFORM=android-${ANDROID_NATIVE_API_LEVEL}"
         "-D__ANDROID_API__=${ANDROID_NATIVE_API_LEVEL}"

@@ -8,44 +8,114 @@
 | **build_time** | `few_hours` (Docker image once + per-ABI Android build) |
 | **reproducible** | `false` (NDK, Docker base, third-party tarball, timestamps) |
 | **Products** | `artifact/jni/{arm64-v8a,x86_64}/libpaddle_*.so`, optional `PaddlePredictor.jar` |
-| **Strip** | Host `llvm-strip --strip-unneeded` (historical Jul-2026 recipe; NDK28 link gate in `./build`) |
+| **Strip** | Host `llvm-strip` via `PADDLE_STRIP_MODE` (default `unneeded`; NDK app link gate in `./build`) |
+| **Build NDK** | **r28c** verified 2026-08-04 (`PADDLE_NDK_VERSION=r28c`, image `ve-paddle-ndk28c`); historical r20b still supported |
+| **Tailor inputs** | Prefer `third_party/paddle-models` (non-git `[[source]]` pin); fallback `tailor_models/` |
+
+### Verified products (shipped pin)
+
+| ABI | Profile | jni | light | Notes |
+|-----|---------|-----|-------|--------|
+| arm64-v8a | tailor + fp16 | ~1.6 MB | ~1.6 MB | **Frozen to `b8449343` pin ship** (2026-08-04 First 10 good). Later NDK r28c rebuild regressed emu heatmaps/cost-vol vs that baseline — do not re-promote without First 10 golden gate. |
+| armeabi-v7a | **tailor** + int8 (fp32 calib) | **~0.75–3 MB** | same | Branch product path `prod_u8fp32_u8` (no HW fp16). |
+| x86_64 | slim thin-jni | ~31 KB | ~9.5 MB | **Same freeze as arm64** (`b8449343` / First-10-good). Models still `prod_u8fp16/*_x86_64.nb` (mid-graph often fp32 demote; not identical to armv8). |
+
+**Regression note (2026-08-05):** Rebuilding arm64/x86 under NDK **r28c / clang 19** (vs pin **r20b / clang 8**) changed SO bytes and **broke** emulator First 10 pump L1 vs pin/libpin/Jul27 goldens (heatmap mass ~36k→~9–17k; cost 84.50→N/A/51). Calib stamps still present — **codegen / -ffast-math -Ofast** difference. Restored pin-era arm64+x86 artifacts; human dual-device First 10 on `v0.98-21-gbe84776b` **PASS**.
+
+**r28c re-promote (mandatory):**
+1. Historical Docker recipe with **product FP** (`run-android-historical.sh` strips `-ffast-math`, maps `-Ofast`→`-O2`; opt-out `PADDLE_ALLOW_FAST_MATH=1`).
+2. `./third_party/paddle/test` (SO smoke + OCR QEMU).
+3. Candidate APK + First 10 on emu (Pixel for arm64).
+4. `scripts/first10-golden-compare.py --current … --golden pin_… --require-mass` **PASS**.
+5. Only then update `libpin.toml` / ship jniLibs.
+
+### Precision policy by ABI (product decision)
+
+Target **armeabi-v7a** = real, limited **ARMv7-A head units** (not “32-bit ABI on ARMv8.2 FP16 HW”).
+
+| ABI | Mid-graph precision | Why |
+|-----|---------------------|-----|
+| **arm64-v8a** | **HW fp16** (`--with_arm82_fp16=ON`) | Real half-precision NEON; matches `prod_u8fp16/*_armv8.nb` |
+| **armeabi-v7a** | **fp32 calib only** (`int8/uint8→fp32`) | True v7 chips must **not** assume `ARM82_FP16` / `-march=armv8.2-a+fp16` (SIGILL risk). Soft/storage fp16 (store f16, compute via convert+fp32) is **usually worse or equal** to pure fp32 on these CPUs (convert cost, no HW half ALU). **Not worth a product soft-fp16 path.** Keep fp32 library path. |
+| **x86_64 (emulator / AMD64 Android)** | **fp32 backbone after input calib** | x86 has no useful HW fp16 conv path in this stack. `opt` may advertise kFP16 so analytic quant can insert `*_to_fp16`, then **type-precision cast demotes the backbone to float** (`opt_base.cc`). Same family of limitation as “no real fp16 match on AMD64” — document, don’t chase. |
+
+Do **not** enable `PADDLE_WITH_ARMV7_FP16` for head-unit product pins.
+
+### Library size: tailor (where the real win is)
+
+`LITE_BUILD_TAILOR` keeps only kernels needed by given `.nb` models. Historical sandbox sizes (Jul 2026, same class of recipe):
+
+| ABI | Slim (full kernel set) | Tailored | Approx gain |
+|-----|------------------------|----------|-------------|
+| arm64-v8a | ~5.5 MB jni | **~1.6 MB** | ~3.4× smaller |
+| x86_64 light | ~9.5–10 MB | (broken on NDK r28c android-x86) | pin default **slim**; `PADDLE_X86_PROFILE=tailor` experimental only |
+| x86_64 jni | ~0.7 MB (or thin ~50 KB) | thin ~30–50 KB | already small wrapper |
+| armeabi-v7a | ~3.0 MB | **~0.75 MB** (2026-08-04 pin) | ~4× smaller with `paddle-models` armv7 lists |
+
+**armeabi-v7a tailor landed** (fp32 calib, no arm82 fp16): jni/light ~0.75 MB strip-unneeded with stamps `uint8_to_fp32`, `int8_to_fp32`, `fp32_to_uint8`.
+
+**x86_64:** thin jni is already tiny. `LITE_BUILD_TAILOR` on android-x86 (NDK r28c) **drops static `KernelRegistrar`** from strip TUs (final light SO missing `fp32_to_uint8` / calib kernels) even after no-LTO and `__attribute__((used))` experiments. **Default `PADDLE_X86_PROFILE` = slim.** Revisit tailor only with a proven force-keep / whole-archive fix.
+
+Tailor does **not** require fp16 on armv7 — tailor works with fp32 calib graphs too.
+
+**Implemented multi-ABI tailor:** `paddle-models` packs `armv8` + `armv7` + `x86_64`; `./build` selects **tailor** when that subdir exists. Rebuild:
+
+```bash
+./third_party/fetch-deps ro paddle-models
+PADDLE_ABIS="arm64-v8a armeabi-v7a x86_64" PADDLE_SKIP_IMAGE_BUILD=1 \
+  PADDLE_DOCKER_IMAGE=ve-paddle-ndk28c PADDLE_NDK_VERSION=r28c \
+  ./third_party/paddle/build
+```
+
+**Multi-ABI emulator matrix:** `docs/reference/PADDLE_ABI_EMULATOR_TEST.md`
 
 **Authoritative process doc:** `docs/reference/PADDLE_PIN_BUILDS.md`  
-**Is-vs-should report (post-merge cleanup):** `dev-ai-interaction/scratch/paddle-pin-is-vs-should-20260804.md`
+**Is-vs-should report (post-merge cleanup):** `dev-ai-interaction/scratch/paddle-pin-is-vs-should-20260804.md`  
+**armv7 plan (fp32 product; FP16 workstream B declined for true-v7):** `dev-ai-interaction/plans/paddle-armv7-fp16-and-functional-calib-20260803-plan.md`
 
 ---
 
 ## Reproduce (library binaries) — historical recipe under third_party
 
-Build runs in Docker (NDK r20b), sources from **`third_party/paddle/src`**, products to **`src/bin/<abi>/`**.
+Build runs in Docker (default **NDK r20b**), sources from **`third_party/paddle/src`**, products to **`src/bin/<abi>/`**.
 
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64   # host; container uses JDK8
 ./third_party/fetch-deps ro paddle
+./third_party/fetch-deps ro paddle-models            # tailor .nb inputs → paddle-models/src
 # optional: skip image rebuild if ve-paddle-int8 or paddle-build-int8-20.04 exists
 export PADDLE_SKIP_IMAGE_BUILD=1
 export PADDLE_DOCKER_IMAGE=paddle-build-int8-20.04   # or ve-paddle-int8
-export PADDLE_ABIS="arm64-v8a x86_64"
-# arm64 defaults to tailor if third_party/paddle/tailor_models/armv8 exists
-export PADDLE_ARM64_PROFILE=tailor   # or slim
-export PADDLE_X86_PROFILE=slim
+export PADDLE_ABIS="arm64-v8a armeabi-v7a x86_64"
+# Defaults: tailor per ABI if paddle-models/src/{armv8,armv7,x86_64} exists
+# export PADDLE_ARM64_PROFILE=tailor
+# export PADDLE_ARMV7_PROFILE=tailor
+# export PADDLE_X86_PROFILE=tailor
+export PADDLE_STRIP_MODE=unneeded
+export PADDLE_DOCKER_IMAGE=ve-paddle-ndk28c
+export PADDLE_NDK_VERSION=r28c
+export PADDLE_SKIP_IMAGE_BUILD=1
 ./third_party/paddle/build
-# Collect: pin-local artifact/ *and* app jniLibs/libs (independent [[artifact]] rows)
 ./third_party/get-artifacts paddle
 ```
 
-### What `./build` does (matches Jul-2026 working path)
+### What `./build` does (sequenced tools)
 
-1. Copy pin `src` into container workdir  
-2. **`patches/`** full-file apply (`scripts/apply_patches.sh`) — build-system + external glog/gflags/openblas + code  
-3. **`patches-int8/`** apply (`scripts/apply_int8_patches.sh`)  
-4. **x86:** `patch_x86_thin_jni.py` → thin jni + light  
-5. **arm64 tailor:** `--with_strip=ON --opt_model_dir=tailor_models/armv8` when profile=tailor  
-6. `build_android.sh` with `--android_stl=c++_static`, `--with_arm82_fp16=ON` on armv8  
-7. Host **`llvm-strip --strip-unneeded`**  
-8. **NDK28 link gate** (minimal shared link against each `.so`)  
+1. Resolve **tailor dir** (`paddle-models/src` → `tailor_models` → env override)  
+2. Ensure Docker image (`PADDLE_NDK_VERSION`, default r20b; product image **r28c** as `ve-paddle-ndk28c`)  
+3. Per ABI: copy pin `src` → container; apply **`patches/`** + **`patches-int8/`**; x86 thin jni; `build_android.sh`  
+4. **Tailor** when profile=tailor: `--with_strip=ON --opt_model_dir=/tailor_models/{armv8|armv7|x86_64}`  
+5. **armv7:** fp32 calib only (no `ARM82_FP16` product)  
+6. Host strip per `PADDLE_STRIP_MODE` (default `--strip-unneeded`)  
+7. **App NDK link gate** for arm64, x86_64, and armeabi-v7a when products exist  
+8. **`paddle_so_smoke`** multi-ABI ELF/stamp gate (`./third_party/paddle/test` → `scripts/paddle-so-smoke.sh`); skip with `PADDLE_SKIP_SO_SMOKE=1`
+9. **`paddle_ocr_qemu`** multi-ABI functional OCR under QEMU (det→deskew→crop→rec); **default on** for pin `./build` and `./test`; skip with `PADDLE_SKIP_OCR_QEMU=1`
 
-Env: `PADDLE_ABIS`, `PADDLE_SKIP_IMAGE_BUILD`, `PADDLE_DOCKER_IMAGE`, `PADDLE_ARM64_PROFILE`, `PADDLE_X86_PROFILE`.
+Standalone re-test (no rebuild): `./third_party/paddle/test`  
+(SO smoke + OCR QEMU by default. Device Kotlin path: `PADDLE_OCR_FUNCTIONAL=1`.)  
+Docs: `docs/reference/PADDLE_SO_SMOKE.md`
+
+Env: `PADDLE_ABIS`, `PADDLE_SKIP_IMAGE_BUILD`, `PADDLE_DOCKER_IMAGE`, `PADDLE_ARM64_PROFILE`, `PADDLE_ARMV7_PROFILE`, `PADDLE_X86_PROFILE`, `PADDLE_TAILOR_DIR`, `PADDLE_STRIP_MODE`, `PADDLE_NDK_VERSION`, `PADDLE_WITH_ARMV7_FP16`.
 
 **Deprecated:** `scripts/run-android-slim.sh` (int8-only + strip-debug) — kept for reference; do not use for product.
 
@@ -70,12 +140,31 @@ Ideal later: fold remaining patch deltas into git PRs so full-file copies shrink
 |-----|---------|-------------|
 | arm64-v8a | model-tailored `libpaddle_lite_jni.so` | ~1.6 MB |
 | x86_64 | thin `libpaddle_lite_jni.so` + `libpaddle_light_api_shared.so` | ~0.75 MB + ~10 MB |
-| armeabi-v7a | **not** in default `PADDLE_ABIS` | deferred |
+| armeabi-v7a | **not** in default `PADDLE_ABIS` | opt-in: `PADDLE_ABIS="… armeabi-v7a"` (slim+int8; see armv7 plan) |
 
-Models: `app/src/main/assets/paddle/prod_u8fp16/*.nb` (host `opt`, not this build).
+Runtime models:
+
+| ABI | Assets | Path id |
+|-----|--------|---------|
+| arm64-v8a | `prod_u8fp16/*_armv8.nb` | `uint8_fp16_u8` |
+| x86_64 | `prod_u8fp16/*_x86_64.nb` | `uint8_fp16_u8` |
+| **armeabi-v7a** | `prod_u8fp32_u8/*_armv7.nb` | `uint8_fp32_u8` |
+
+Rebuild armv7 models: `app/src/main/assets/paddle/scripts/optimize_armv7_prod_u8fp32_u8.sh` (host INT8 `opt`).
 
 ---
 
-## Model artifact matrix (separate from lib build)
+## Model / tailor inputs (separate pin)
 
-See `docs/reference/PADDLE_PIN_BUILDS.md`. Tailor lists for arm64 live in `third_party/paddle/tailor_models/armv8/`.
+| Pin | Role |
+|-----|------|
+| `third_party/paddle-models` | Non-git `[[source]]` pack: armv8 `.nb` + `.tailored_*` for **library** tailor |
+| `third_party/paddle/tailor_models/` | Historical fallback mount (same files; prefer paddle-models) |
+| `app/…/assets/paddle/` | **Runtime** OCR models shipped in the APK |
+
+```bash
+./third_party/fetch-deps ro paddle-models
+# ./build mounts paddle-models/src as /tailor_models when present
+```
+
+See `docs/reference/PADDLE_PIN_BUILDS.md` and `third_party/paddle-models/SOURCE.md`.

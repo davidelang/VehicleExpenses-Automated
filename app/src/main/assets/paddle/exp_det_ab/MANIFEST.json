@@ -1,0 +1,63 @@
+{
+  "note": "Experiment det A/B: mono 1ch dets with the SAME product I/O recipe (uint8 analytic → fp16/fp32 mid → uint8 heat). They differ by architecture/weights, not by feed path.",
+  "apk_packaging": "Scheduled nbs live in ABI flavor trees (app/src/arm64|x86_64/assets/paddle/exp_det_ab/). Unscheduled: third_party/paddle/exp_det_ab_unscheduled/.",
+  "pipeline": {
+    "v5_pir_to_classic": "Paddle 3.x paddle2onnx (inference.json+pdiparams) → onnxsim (server BN fold) → Paddle 2.6 x2paddle dynamic [-1,3,-1,-1] → classic inference.pdmodel/pdiparams under research/models/det_ab_classic_from_pir/",
+    "mono": "convert_mono mean first-conv RGB→1ch; feed shape [-1,1,-1,-1] → det_ab_mono_product/",
+    "opt": "opt_linux_x86_int8; --analytic_input_quant=true --analytic_input_dtype=uint8 --output_calib_precision=uint8; no --quant_model",
+    "armv8_mobile_product": "--valid_targets=arm --enable_fp16=true → uint8_to_fp16 mid + fp32_to_uint8 heat",
+    "armv8_server": "--valid_targets=arm --enable_fp16=false → uint8_to_fp32 mid + fp32_to_uint8 heat (REQUIRED on phone; fp16 mid → all-zero heatmaps)",
+    "x86_64": "--valid_targets=x86 --enable_fp16=false → uint8_to_fp32 mid + fp32_to_uint8 heat",
+    "script": "app/src/main/assets/paddle/scripts/convert_v5_pir_to_nb.sh",
+    "server_phone_limits": "2026-08-10 probe: server arm fp16 mid = zero heat at all safe sides; server arm fp32 mid = non-zero heat for side≤640; side≳640 SIGSEGV (NX memory) on both precisions. Cap phone server tile/side ≤640. Host x86 was always fp32 mid so host multi-scale looked fine.",
+    "server_reopt": "2026-08-09 max1024 re-opt for v4 after phone SIGSEGV (did not fix zeros or ≥640 SEGV); 2026-08-10 arm server re-opt with enable_fp16=false restores heat ≤640"
+  },
+  "models": {
+    "product_det": {
+      "source": "prod_u8fp16/det_*.nb (shipping product det mono)",
+      "family": "en_PP-OCRv3_det-class",
+      "feed": "1,1,H,W uint8 mono",
+      "approx_nb_size": "~2.6 MB arm",
+      "first_conv_out_channels": 8,
+      "note": "Same bytes as assets/paddle/prod_u8fp16/det_{arch}.nb"
+    },
+    "PP-OCRv4_mobile_det": {
+      "source": "ch_PP-OCRv4_det classic → det_ab_mono_product/PP-OCRv4_mobile_det → product opt",
+      "family": "v4_mobile",
+      "feed": "1,1,H,W uint8 mono",
+      "approx_nb_size": "~4.8 MB arm",
+      "first_conv_out_channels": 16
+    },
+    "PP-OCRv4_server_det": {
+      "source": "ch_PP-OCRv4_det_server classic → det_ab_mono_product/PP-OCRv4_server_det → product opt",
+      "family": "v4_server",
+      "feed": "1,1,H,W uint8 mono (phone tile/side ≤640; multi-scale host canvas may be 2048/4096)",
+      "approx_nb_size": "~109 MB arm",
+      "first_conv_out_channels": 64,
+      "arm_mid": "fp32 (do not enable_fp16 for server on phone)"
+    },
+    "PP-OCRv5_mobile_det": {
+      "source": "det_ab_src PIR → paddle2onnx → x2paddle@paddle2.6 → mono → product opt (2026-08-10)",
+      "family": "v5_mobile",
+      "feed": "1,1,H,W uint8 mono",
+      "approx_nb_size": "~5.0 MB arm",
+      "first_conv_out_channels": 16,
+      "note": "Converted from official inference.json (PIR). Not a product_det stand-in."
+    },
+    "PP-OCRv5_server_det": {
+      "source": "det_ab_src PIR → paddle2onnx → onnxsim (BN fold) → x2paddle@paddle2.6 → mono → product opt (2026-08-10)",
+      "family": "v5_server",
+      "feed": "1,1,H,W uint8 mono (phone tile/side ≤640)",
+      "approx_nb_size": "~84 MB arm",
+      "first_conv_out_channels": 32,
+      "arm_mid": "fp32 (do not enable_fp16 for server on phone)",
+      "note": "Server needed onnxsim to fold BatchNorm (x2paddle BN op failed on raw export). onnxsim uses fixed 1x3x640x640 for fold only; mono keeps dynamic H/W. Phone: arm fp16 mid = zero heat; arm fp32 mid OK ≤640; SEGV above."
+    }
+  },
+  "why_sizes_differ": "File size tracks network capacity (more filters/layers/weights), not missing u8-fp16. first_conv_out_channels is only the width of the first layer — an architecture label, not a precision path.",
+  "precision": {
+    "armv8_mobile_product": "fp16 mid-graph (prod_u8fp16 recipe): uint8_to_fp16 + fp32_to_uint8",
+    "armv8_server": "fp32 mid-graph on phone: uint8_to_fp32 + fp32_to_uint8 (fp16 mid broken for server)",
+    "x86_64": "fp32 mid-graph (prod analytic uint8 recipe)"
+  }
+}

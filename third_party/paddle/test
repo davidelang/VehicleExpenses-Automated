@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# third_party/paddle/test — pin gates after build / collect
+#
+# Default (both run):
+#   1) multi-ABI paddle_so_smoke (ELF / dynsym / stamps under QEMU)
+#   2) multi-ABI OCR functional under QEMU (det→deskew→crop→rec)
+#
+# Prefer after ./build (and optionally get-artifacts). Uses:
+#   1) artifact/jni/<abi>/ if present (post get-artifacts)
+#   2) else src/bin/<abi>/ (post build, pre-collect)
+#
+# Env:
+#   PADDLE_SMOKE_ABIS="arm64-v8a armeabi-v7a x86_64"   (default: ABIs that have .so)
+#   PADDLE_SMOKE_REBUILD=0|1
+#   PADDLE_JNI_ROOT=…   force SO root
+#   PADDLE_SMOKE_REPORT=… report dir
+#   PADDLE_SKIP_SO_SMOKE=1      skip SO smoke
+#   PADDLE_SKIP_OCR_QEMU=1      skip OCR QEMU functional
+#   PADDLE_OCR_QEMU=0|1         default 1 (on); 0 skips OCR QEMU
+#   PADDLE_OCR_*                forwarded to scripts/paddle-ocr-qemu.sh
+#   PADDLE_OCR_FUNCTIONAL=1     also run VE Kotlin instrumented (device; opt-in)
+#   ANDROID_SERIAL / PADDLE_OCR_SERIAL  device for instrumented gate
+#
+# Full docs: docs/reference/PADDLE_SO_SMOKE.md
+#            third_party/paddle/tests/ocr_functional/README.md
+# Packages (Ubuntu 26.04+): qemu-user qemu-user-binfmt bubblewrap build-essential
+# OCR QEMU also needs NDK + one-time adb rootfs seed (see prepare-bionic-rootfs.sh)
+set -euo pipefail
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+VE_ROOT=$(cd "$HERE/../.." && pwd)
+DRIVER="${PADDLE_SMOKE_DRIVER:-$VE_ROOT/scripts/paddle-so-smoke.sh}"
+
+# Resolve jni product root
+if [[ -n "${PADDLE_JNI_ROOT:-}" ]]; then
+  :
+elif [[ -d "$HERE/artifact/jni" ]] && compgen -G "$HERE/artifact/jni/*/*.so" >/dev/null 2>&1; then
+  export PADDLE_JNI_ROOT="$HERE/artifact/jni"
+elif [[ -d "$HERE/src/bin" ]] && compgen -G "$HERE/src/bin/*/*.so" >/dev/null 2>&1; then
+  export PADDLE_JNI_ROOT="$HERE/src/bin"
+else
+  echo "ERROR: no paddle SOs under $HERE/artifact/jni or $HERE/src/bin" >&2
+  echo "  Run: ./third_party/paddle/build  (and optionally ./third_party/get-artifacts paddle)" >&2
+  exit 2
+fi
+
+# Default ABIs = those with a jni SO present
+if [[ -z "${PADDLE_SMOKE_ABIS:-}" ]]; then
+  abis=()
+  for abi in arm64-v8a armeabi-v7a x86_64; do
+    if [[ -f "$PADDLE_JNI_ROOT/$abi/libpaddle_lite_jni.so" ]]; then
+      abis+=("$abi")
+    fi
+  done
+  if [[ ${#abis[@]} -eq 0 ]]; then
+    echo "ERROR: no libpaddle_lite_jni.so under $PADDLE_JNI_ROOT" >&2
+    exit 2
+  fi
+  export PADDLE_SMOKE_ABIS="${abis[*]}"
+fi
+
+echo "paddle/test: PADDLE_JNI_ROOT=$PADDLE_JNI_ROOT ABIS=$PADDLE_SMOKE_ABIS"
+
+# --- 1) SO smoke (default on) ---
+if [[ "${PADDLE_SKIP_SO_SMOKE:-0}" == "1" ]]; then
+  echo "paddle/test: SO smoke skipped (PADDLE_SKIP_SO_SMOKE=1)"
+else
+  if [[ ! -x "$DRIVER" ]]; then
+    echo "ERROR: smoke driver missing: $DRIVER" >&2
+    exit 2
+  fi
+  echo "paddle/test: === paddle_so_smoke ==="
+  if ! "$DRIVER"; then
+    echo "ERROR: paddle_so_smoke failed" >&2
+    exit 1
+  fi
+fi
+
+# --- 2) OCR functional QEMU (default on; pin-build gate) ---
+# PADDLE_SKIP_OCR_QEMU=1 wins; else PADDLE_OCR_QEMU defaults to 1
+if [[ "${PADDLE_SKIP_OCR_QEMU:-0}" == "1" ]]; then
+  echo "paddle/test: OCR QEMU skipped (PADDLE_SKIP_OCR_QEMU=1)"
+elif [[ "${PADDLE_OCR_QEMU:-1}" == "0" ]]; then
+  echo "paddle/test: OCR QEMU skipped (PADDLE_OCR_QEMU=0)"
+else
+  OCR_QEMU="${PADDLE_OCR_QEMU_DRIVER:-$VE_ROOT/scripts/paddle-ocr-qemu.sh}"
+  if [[ ! -x "$OCR_QEMU" ]]; then
+    echo "ERROR: OCR QEMU driver missing: $OCR_QEMU" >&2
+    exit 2
+  fi
+  echo "paddle/test: === paddle_ocr_qemu (PADDLE_OCR_QEMU=1) ==="
+  if ! "$OCR_QEMU"; then
+    echo "ERROR: paddle_ocr_qemu failed — fix models/SOs/rootfs or set PADDLE_SKIP_OCR_QEMU=1" >&2
+    exit 1
+  fi
+fi
+
+# --- 3) Optional device instrumented (opt-in only) ---
+if [[ "${PADDLE_OCR_FUNCTIONAL:-0}" == "1" ]]; then
+  OCR_DRIVER="${PADDLE_OCR_FUNCTIONAL_DRIVER:-$VE_ROOT/scripts/paddle-ocr-functional.sh}"
+  if [[ ! -x "$OCR_DRIVER" ]]; then
+    echo "ERROR: OCR functional driver missing: $OCR_DRIVER" >&2
+    exit 2
+  fi
+  echo "paddle/test: PADDLE_OCR_FUNCTIONAL=1 → $OCR_DRIVER"
+  SERIAL_ARGS=()
+  if [[ -n "${PADDLE_OCR_SERIAL:-${ANDROID_SERIAL:-}}" ]]; then
+    SERIAL_ARGS=(--serial "${PADDLE_OCR_SERIAL:-$ANDROID_SERIAL}")
+  fi
+  "$OCR_DRIVER" "${SERIAL_ARGS[@]}" || exit $?
+fi
+
+echo "paddle/test: all requested gates PASS"
+exit 0

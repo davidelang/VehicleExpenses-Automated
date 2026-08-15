@@ -169,8 +169,9 @@ if(ARM_TARGET_LANG STREQUAL "clang")
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=sign-compare")
-    set(CMAKE_SYSROOT "/opt/android-ndk-r20b/toolchains/llvm/prebuilt/linux-x86_64/sysroot")
-    set(CMAKE_TOOLCHAIN_FILE "/opt/android-ndk-r20b/build/cmake/android.toolchain.cmake")
+    # Use ANDROID_NDK from env/image (r20b, r28c, …) — do not hardcode /opt/android-ndk-r20b
+    set(CMAKE_SYSROOT "${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot")
+    set(CMAKE_TOOLCHAIN_FILE "${ANDROID_NDK}/build/cmake/android.toolchain.cmake")
     message(STATUS "CMAKE_CXX_COMPILER_TARGET: ${triple}")
 endif()
 

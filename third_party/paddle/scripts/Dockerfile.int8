@@ -1,8 +1,16 @@
-# VE Paddle-Lite build image: Ubuntu 20.04 + NDK r20b + JDK8 + patchelf.
+# VE Paddle-Lite build image: Ubuntu 20.04 + Android NDK + JDK8 + patchelf.
 # Source tree is NOT baked in — mount pin src at runtime (libpin).
+#
+# Default NDK = r20b (historical VE working products + full patches).
+# Newer NDK (toward app NDK 28): rebuild with
+#   docker build --build-arg NDK_VERSION=r26b -t ve-paddle-ndk26 -f scripts/Dockerfile.int8 .
+#   PADDLE_DOCKER_IMAGE=ve-paddle-ndk26 PADDLE_NDK_VERSION=r26b ./build
+# Zip names follow Google's layout: android-ndk-<ver>-linux{,-x86_64}.zip
 FROM ubuntu:20.04
 
+ARG NDK_VERSION=r20b
 ENV DEBIAN_FRONTEND=noninteractive
+ENV NDK_VERSION=${NDK_VERSION}
 
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -19,19 +27,42 @@ RUN apt-get update && apt-get install -y \
     curl \
     openjdk-8-jdk \
     patchelf \
+    ca-certificates \
+    gnupg \
+    software-properties-common \
     && rm -rf /var/lib/apt/lists/*
 
-# NDK r20b (matches historical VE paddle-build)
-RUN wget -q https://dl.google.com/android/repository/android-ndk-r20b-linux-x86_64.zip && \
-    unzip -q android-ndk-r20b-linux-x86_64.zip -d /opt && \
-    rm android-ndk-r20b-linux-x86_64.zip && \
-    sed -i 's/list(APPEND ANDROID_LINKER_FLAGS "-static-libstdc++")/# list(APPEND ANDROID_LINKER_FLAGS "-static-libstdc++")/g' \
-      /opt/android-ndk-r20b/build/cmake/android.toolchain.cmake
+# NDK r23+ wants CMake >= 3.19. Distro is 3.16; Kitware "latest" is CMake 4.x which
+# rejects cmake_minimum_required(VERSION 3.0). Pin 3.28 via pip (on PATH as cmake).
+RUN pip3 install --no-cache-dir 'cmake>=3.28,<4' \
+    && cmake --version \
+    && python3 -c "import shutil; print('cmake at', shutil.which('cmake'))"
 
-ENV NDK_ROOT=/opt/android-ndk-r20b
-ENV ANDROID_NDK=/opt/android-ndk-r20b
+# Download NDK. r20b uses linux-x86_64 suffix; r23+ often "linux".
+RUN set -e; \
+    ver="$NDK_VERSION"; \
+    for suffix in linux-x86_64 linux; do \
+      zip="android-ndk-${ver}-${suffix}.zip"; \
+      url="https://dl.google.com/android/repository/${zip}"; \
+      echo "Trying $url"; \
+      if wget -q "$url" -O "/tmp/ndk.zip"; then \
+        break; \
+      fi; \
+      rm -f /tmp/ndk.zip; \
+    done; \
+    test -f /tmp/ndk.zip || { echo "FATAL: no NDK zip for $ver"; exit 1; }; \
+    unzip -q /tmp/ndk.zip -d /opt; \
+    rm -f /tmp/ndk.zip; \
+    test -d "/opt/android-ndk-${ver}"; \
+    if [ -f "/opt/android-ndk-${ver}/build/cmake/android.toolchain.cmake" ]; then \
+      sed -i 's/list(APPEND ANDROID_LINKER_FLAGS "-static-libstdc++")/# list(APPEND ANDROID_LINKER_FLAGS "-static-libstdc++")/g' \
+        "/opt/android-ndk-${ver}/build/cmake/android.toolchain.cmake" || true; \
+    fi
+
+ENV NDK_ROOT=/opt/android-ndk-${NDK_VERSION}
+ENV ANDROID_NDK=/opt/android-ndk-${NDK_VERSION}
 ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
 
 WORKDIR /workspace
 # third-party tarball expected at runtime under pin src or downloaded once:
-# see run-android-slim.sh
+# see run-android-historical.sh

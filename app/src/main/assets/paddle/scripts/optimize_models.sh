@@ -38,7 +38,7 @@ optimize_model() {
 
 echo "Generating ARGB Models (3 Channels)..."
 # 1. Detection ARGB (128-4000, optimized for 1280)
-optimize_model "det" "det_v4_4000" "x:1,3,128,128:1,3,1280,1280:1,3,4000,4000"
+optimize_model "det" "det_v4_4000" "x:1,3,64,64:1,3,1280,1280:1,3,4096,4096"
 # 2. Recognition V3 ARGB
 optimize_model "rec_v3" "rec_v3" "x:1,3,48,32:1,3,48,320:1,3,48,1280"
 # 3. Numeric V2 ARGB
@@ -46,7 +46,7 @@ optimize_model "en_number/en_number_mobile_v2.0_rec_infer" "rec_numeric" "x:1,3,
 
 echo -e "\nGenerating Monochrome Models (1 Channel)..."
 # 1. Detection Mono
-optimize_model "det_mono" "det_v4_4000_mono" "x:1,1,128,128:1,1,1280,1280:1,1,4000,4000"
+optimize_model "det_mono" "det_v4_4000_mono" "x:1,1,64,64:1,1,1280,1280:1,1,4096,4096"
 # 2. Recognition V3 Mono
 optimize_model "rec_v3_mono" "rec_v3_mono" "x:1,1,48,32:1,1,48,320:1,1,48,1280"
 # 3. Numeric V2 Mono

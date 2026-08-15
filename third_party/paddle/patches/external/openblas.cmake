@@ -32,7 +32,14 @@ IF(NOT ${CBLAS_FOUND})
     ENDIF(WIN32)
 
     IF (NOT WIN32)
-    SET(OPENBLAS_CC "${CMAKE_C_COMPILER} --target=x86_64-none-linux-android21 --sysroot=/opt/android-ndk-r20b/toolchains/llvm/prebuilt/linux-x86_64/sysroot -Wno-unused-but-set-variable -Wno-unused-variable")
+    # Prefer ANDROID_NDK / CMAKE_ANDROID_NDK so NDK r28c images work (no hardcoded r20b)
+    if(NOT ANDROID_NDK AND CMAKE_ANDROID_NDK)
+      set(ANDROID_NDK "${CMAKE_ANDROID_NDK}")
+    endif()
+    if(NOT ANDROID_NDK AND DEFINED ENV{NDK_ROOT})
+      set(ANDROID_NDK "$ENV{NDK_ROOT}")
+    endif()
+    SET(OPENBLAS_CC "${CMAKE_C_COMPILER} --target=x86_64-none-linux-android21 --sysroot=${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot -Wno-unused-but-set-variable -Wno-unused-variable")
     SET(OPENBLAS_COMMIT "v0.3.27")
 
     IF(APPLE)
@@ -40,7 +47,12 @@ IF(NOT ${CBLAS_FOUND})
     ENDIF()
     SET(OPTIONAL_ARGS "")
     IF(CMAKE_SYSTEM_PROCESSOR MATCHES "^x86(_64)?$")
-        SET(OPTIONAL_ARGS DYNAMIC_ARCH=0 TARGET=CORE2 NUM_THREADS=1)
+        # Android x86_64 emulator: multi-thread OpenBLAS (guest AVD is typically
+        # 4 vCPUs). NUM_THREADS=1 disables USE_THREAD entirely — goto_set_num_threads
+        # becomes a no-op and openblas_get_num_threads hardcodes 1, so Java
+        # setThreads(4) / set_x86_math_num_threads cannot use more than ~1 host core.
+        # DYNAMIC_ARCH=0 + TARGET=CORE2 + ONLY_CBLAS keep size reasonable (PADDLE_BUILD.md).
+        SET(OPTIONAL_ARGS DYNAMIC_ARCH=0 TARGET=CORE2 USE_THREAD=1 NUM_THREADS=4)
     ENDIF()
 
     SET(COMMON_ARGS CC=${OPENBLAS_CC} HOSTCC=gcc NO_SHARED=1 NO_LAPACK=1 ONLY_CBLAS=1 libs)

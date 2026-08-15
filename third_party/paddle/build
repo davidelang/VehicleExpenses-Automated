@@ -1,35 +1,95 @@
 #!/usr/bin/env bash
-# paddle pin build — restore Jul-2026 historical Docker recipe under third_party/paddle.
+# paddle pin build — multi-step host wrapper around Docker Android recipes.
 #
-# Products land in src/bin/<abi>/ then are intended for get-artifacts → artifact/.
+# Steps (each is a discrete tool; this script sequences them):
+#   1. resolve tailor inputs (prefer paddle-models pin)
+#   2. ensure Docker image (NDK; default r20b historical)
+#   3. per-ABI: run-android-historical.sh (patches + int8 + thin-x86 + build)
+#   4. host strip (policy via PADDLE_STRIP_MODE)
+#   5. NDK app link-gate (lld must accept each .so)
+#   6. multi-ABI paddle_so_smoke (host ELF + qemu-user; skip: PADDLE_SKIP_SO_SMOKE=1)
+#   7. multi-ABI OCR functional under QEMU (det→deskew→crop→rec; skip: PADDLE_SKIP_OCR_QEMU=1)
+#      via ./test when PADDLE_OCR_QEMU is not 0 (default: run)
+#
+# Products: src/bin/<abi>/ then get-artifacts → artifact/ and/or app jniLibs.
+# Standalone re-test without rebuild: ./third_party/paddle/test
 #
 # Historical working app shape (3ad8acd5):
-#   arm64: LITE_BUILD_TAILOR ~1.6MB jni  (PADDLE_ARM64_PROFILE=tailor, default if tailor_models present)
+#   arm64: LITE_BUILD_TAILOR ~1.6MB jni  (PADDLE_ARM64_PROFILE=tailor)
 #   x86_64: thin jni ~0.75MB + light ~10MB (slim + thin-jni patch)
+#   armeabi-v7a: slim + int8 (fp32 calib); opt-in via PADDLE_ABIS
 #
 # Env:
-#   PADDLE_ABIS="arm64-v8a x86_64"     (default; no armv7)
-#   PADDLE_ARM64_PROFILE=tailor|slim  (default: tailor if tailor_models/armv8 exists else slim)
-#   PADDLE_X86_PROFILE=slim           (default slim)
+#   PADDLE_ABIS="arm64-v8a x86_64"          default (add armeabi-v7a when ready)
+#   PADDLE_ARM64_PROFILE=tailor|slim
+#   PADDLE_ARMV7_PROFILE=slim              (default slim; no arm82 fp16 unless set)
+#   PADDLE_X86_PROFILE=slim
+#   PADDLE_TAILOR_DIR=…                   override tailor inputs dir (armv8/)
+#   PADDLE_STRIP_MODE=unneeded|debug|none  default: unneeded (historical link-clean)
 #   PADDLE_SKIP_IMAGE_BUILD=1
-#   PADDLE_DOCKER_IMAGE=ve-paddle-int8   (or paddle-build-int8-20.04)
+#   PADDLE_DOCKER_IMAGE=ve-paddle-int8
+#   PADDLE_NDK_VERSION=r20b|r26b|r28b…    Docker ARG (image rebuild required)
+#   PADDLE_WITH_ARMV7_FP16=1              pass --with_arm82_fp16 for armv7 (needs NDK>21)
+#   PADDLE_SKIP_SO_SMOKE=1                skip step 6 multi-ABI smoke (default: run)
+#   PADDLE_SMOKE_*                        forwarded to scripts/paddle-so-smoke.sh
+#   PADDLE_SKIP_OCR_QEMU=1                skip step 7 OCR functional QEMU (default: run)
+#   PADDLE_OCR_QEMU=0                     same as SKIP for ./test (build sets OCR on unless SKIP)
+#   PADDLE_OCR_* / PADDLE_OCR_ARMV7_FULL  forwarded to scripts/paddle-ocr-qemu.sh
 set -euo pipefail
-# Fail if any pipeline stage fails (e.g. docker | tee in wrappers).
 set -o pipefail 2>/dev/null || true
+
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=${PADDLE_SRC:-"$HERE/src"}
 SCRIPTS="$HERE/scripts"
 PATCHES="$HERE/patches"
 PATCHES_INT8="$HERE/patches-int8"
 OUT="$SRC/bin"
-IMAGE=${PADDLE_DOCKER_IMAGE:-ve-paddle-int8}
-# Prefer historical image name if present
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  if docker image inspect paddle-build-int8-20.04 >/dev/null 2>&1; then
-    IMAGE=paddle-build-int8-20.04
+# Image tag: explicit PADDLE_DOCKER_IMAGE always wins (never silently retarget).
+# Default name encodes NDK so r28 rebuilds do not overwrite historical r20b images.
+NDK_VERSION=${PADDLE_NDK_VERSION:-r20b}
+STRIP_MODE=${PADDLE_STRIP_MODE:-unneeded}
+ABIS=${PADDLE_ABIS:-"arm64-v8a x86_64"}
+if [[ -n "${PADDLE_DOCKER_IMAGE:-}" ]]; then
+  IMAGE="$PADDLE_DOCKER_IMAGE"
+else
+  IMAGE="ve-paddle-ndk${NDK_VERSION}"
+  # Friendly aliases only when that image is missing and we are on default r20b
+  if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    if [[ "$NDK_VERSION" == "r20b" ]]; then
+      if docker image inspect ve-paddle-int8 >/dev/null 2>&1; then
+        IMAGE=ve-paddle-int8
+      elif docker image inspect paddle-build-int8-20.04 >/dev/null 2>&1; then
+        IMAGE=paddle-build-int8-20.04
+      fi
+    fi
   fi
 fi
-ABIS=${PADDLE_ABIS:-"arm64-v8a x86_64"}
+
+# --- 1) Tailor inputs: paddle-models pin first, then local tailor_models ---
+resolve_tailor_dir() {
+  local candidates=(
+    "${PADDLE_TAILOR_DIR:-}"
+    "$HERE/../paddle-models/src"
+    "$HERE/tailor_models"
+  )
+  local c
+  for c in "${candidates[@]}"; do
+    [[ -z "$c" ]] && continue
+    if [[ -d "$c/armv8" ]]; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+TAILOR_DIR=""
+if TAILOR_DIR="$(resolve_tailor_dir)"; then
+  echo "paddle tailor inputs: $TAILOR_DIR"
+else
+  TAILOR_DIR=""
+  echo "paddle: no tailor inputs (paddle-models/src or tailor_models); arm64 defaults to slim unless PADDLE_ARM64_PROFILE set"
+fi
 
 [[ -d "$SRC/.git" || -f "$SRC/.git" ]] || {
   echo "ERROR: no src — run: ./third_party/fetch-deps ro paddle" >&2
@@ -48,14 +108,17 @@ if [[ ! -w "$OUT" ]]; then
 fi
 for a in $ABIS; do mkdir -p "$OUT/$a"; chmod -R u+w "$OUT/$a" 2>/dev/null || true; done
 
-echo "paddle src=$(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo '?') abis=$ABIS image=$IMAGE"
+echo "paddle src=$(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo '?') abis=$ABIS image=$IMAGE ndk=$NDK_VERSION strip=$STRIP_MODE"
 
+# --- 2) Docker image ---
 if [[ "${PADDLE_SKIP_IMAGE_BUILD:-0}" != "1" ]]; then
-  if docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    echo "Reusing Docker image $IMAGE (set PADDLE_SKIP_IMAGE_BUILD=0 to force rebuild)"
+  if docker image inspect "$IMAGE" >/dev/null 2>&1 && [[ -z "${PADDLE_FORCE_IMAGE_BUILD:-}" ]]; then
+    echo "Reusing Docker image $IMAGE (PADDLE_FORCE_IMAGE_BUILD=1 to rebuild; NDK=$NDK_VERSION at bake time)"
   else
-    echo "Building Docker image $IMAGE …"
-    docker build -t "$IMAGE" -f "$SCRIPTS/Dockerfile.int8" "$HERE"
+    echo "Building Docker image $IMAGE (NDK_VERSION=$NDK_VERSION) …"
+    docker build -t "$IMAGE" \
+      --build-arg "NDK_VERSION=$NDK_VERSION" \
+      -f "$SCRIPTS/Dockerfile.int8" "$HERE"
   fi
 else
   docker image inspect "$IMAGE" >/dev/null 2>&1 || {
@@ -74,20 +137,37 @@ arch_for() {
   esac
 }
 
+# Tailor when per-ABI pack exists under paddle-models (or PADDLE_*_PROFILE override).
 profile_for() {
   local abi=$1
   case "$abi" in
     arm64-v8a)
       if [[ -n "${PADDLE_ARM64_PROFILE:-}" ]]; then
         echo "$PADDLE_ARM64_PROFILE"
-      elif [[ -d "$HERE/tailor_models/armv8" ]]; then
+      elif [[ -n "$TAILOR_DIR" && -d "$TAILOR_DIR/armv8" ]]; then
         echo tailor
       else
         echo slim
       fi
       ;;
+    armeabi-v7a)
+      # Default slim: product path is analytic u8→fp32 models + full kernels.
+      # Tailor is opt-in (PADDLE_ARMV7_PROFILE=tailor) after lists match models.
+      if [[ -n "${PADDLE_ARMV7_PROFILE:-}" ]]; then
+        echo "$PADDLE_ARMV7_PROFILE"
+      else
+        echo slim
+      fi
+      ;;
     x86_64|x86)
-      echo "${PADDLE_X86_PROFILE:-slim}"
+      # Default slim: android-x86 LITE_BUILD_TAILOR drops KernelRegistrar statics
+      # (calib stamps missing) even with no-LTO / used attrs. Historical product is
+      # slim+thin-jni. Opt-in: PADDLE_X86_PROFILE=tailor (experimental).
+      if [[ -n "${PADDLE_X86_PROFILE:-}" ]]; then
+        echo "$PADDLE_X86_PROFILE"
+      else
+        echo slim
+      fi
       ;;
     *)
       echo slim
@@ -95,12 +175,31 @@ profile_for() {
   esac
 }
 
+extra_flags_for() {
+  local arch=$1
+  case "$arch" in
+    armv8)
+      echo "--with_arm82_fp16=ON"
+      ;;
+    armv7)
+      if [[ "${PADDLE_WITH_ARMV7_FP16:-0}" == "1" ]]; then
+        echo "--with_arm82_fp16=ON"
+      else
+        echo ""
+      fi
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
+}
+
+# --- 3) Per-ABI Docker builds ---
 for abi in $ABIS; do
   arch=$(arch_for "$abi")
   profile=$(profile_for "$abi")
-  echo "=== Android historical build abi=$abi arch=$arch profile=$profile ==="
-  EXTRA_FLAGS=""
-  [[ "$arch" == "armv8" ]] && EXTRA_FLAGS="--with_arm82_fp16=ON"
+  EXTRA_FLAGS=$(extra_flags_for "$arch")
+  echo "=== Android historical build abi=$abi arch=$arch profile=$profile extra='$EXTRA_FLAGS' ==="
 
   DOCKER_MOUNTS=(
     -v "$SRC:/pin-src:ro"
@@ -115,8 +214,11 @@ for abi in $ABIS; do
   if [[ -f "$SCRIPTS/patch_tailor_depthwise_common.py" ]]; then
     DOCKER_MOUNTS+=(-v "$SCRIPTS/patch_tailor_depthwise_common.py:/patch_tailor_depthwise_common.py:ro")
   fi
-  if [[ -d "$HERE/tailor_models" ]]; then
-    DOCKER_MOUNTS+=(-v "$HERE/tailor_models:/tailor_models:ro")
+  if [[ -f "$SCRIPTS/patch_tailor_conv_copy_safe.py" ]]; then
+    DOCKER_MOUNTS+=(-v "$SCRIPTS/patch_tailor_conv_copy_safe.py:/patch_tailor_conv_copy_safe.py:ro")
+  fi
+  if [[ -n "$TAILOR_DIR" && -d "$TAILOR_DIR" ]]; then
+    DOCKER_MOUNTS+=(-v "$TAILOR_DIR:/tailor_models:ro")
   fi
 
   docker run --rm \
@@ -129,51 +231,135 @@ for abi in $ABIS; do
     bash /run-android-historical.sh
 done
 
-# Host strip: historical recipe used --strip-unneeded (produces link-clean dynsym
-# when the SO itself was linked correctly with c++_static + full patches).
-STRIP=$(ls "${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk}"/*/toolchains/llvm/prebuilt/*/bin/llvm-strip 2>/dev/null | head -1 || true)
-if [[ -n "${STRIP:-}" ]]; then
-  echo "Stripping with $STRIP --strip-unneeded (historical)"
-  find "$OUT" -type f -name '*.so' -print0 | while IFS= read -r -d '' f; do
-    "$STRIP" --strip-unneeded "$f" 2>/dev/null || true
-  done
-else
-  echo "WARN: llvm-strip not found; leaving unstripped products"
-fi
+# --- 4) Host strip ---
+# Historical VE products: --strip-unneeded after correct c++_static link → NDK28 lld OK.
+# If a bad recipe produced broken dynsym, strip-unneeded alone will not fix it; rebuild
+# with full patches. --strip-debug is a fallback experiment (PADDLE_STRIP_MODE=debug).
+find_llvm_strip() {
+  ls "${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk}"/*/toolchains/llvm/prebuilt/*/bin/llvm-strip 2>/dev/null | sort -V | tail -1 || true
+}
 
-# Link gate: NDK28 lld must accept each SO as a shared link input (app native_ocr).
+STRIP=$(find_llvm_strip)
+case "$STRIP_MODE" in
+  none)
+    echo "Strip skipped (PADDLE_STRIP_MODE=none)"
+    ;;
+  debug|strip-debug)
+    if [[ -n "${STRIP:-}" ]]; then
+      echo "Stripping with $STRIP --strip-debug"
+      find "$OUT" -type f -name '*.so' -print0 | while IFS= read -r -d '' f; do
+        "$STRIP" --strip-debug "$f" 2>/dev/null || true
+      done
+    else
+      echo "WARN: llvm-strip not found; leaving unstripped products"
+    fi
+    ;;
+  unneeded|strip-unneeded|*)
+    if [[ -n "${STRIP:-}" ]]; then
+      echo "Stripping with $STRIP --strip-unneeded (historical)"
+      find "$OUT" -type f -name '*.so' -print0 | while IFS= read -r -d '' f; do
+        "$STRIP" --strip-unneeded "$f" 2>/dev/null || true
+      done
+    else
+      echo "WARN: llvm-strip not found; leaving unstripped products"
+    fi
+    ;;
+esac
+
+# --- 5) Link gate: app NDK lld must accept each SO ---
 NDK_PRE=$(ls -d "${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk}"/*/toolchains/llvm/prebuilt/linux-x86_64/bin 2>/dev/null | sort -V | tail -1 || true)
-if [[ -n "${NDK_PRE:-}" && -x "$NDK_PRE/aarch64-linux-android26-clang++" ]]; then
-  echo "NDK28 link gate…"
+link_gate_abi() {
+  local abi="$1" clang="$2"
+  local so fail_local=0
+  [[ -x "$clang" ]] || return 0
+  for so in "$OUT"/"$abi"/*.so; do
+    [[ -f "$so" ]] || continue
+    "$clang" -c -fPIC -o "$TMP/t.o" "$TMP/t.cpp"
+    if "$clang" -shared -o "$TMP/o.so" "$TMP/t.o" "$so" -llog 2>"$TMP/e.txt"; then
+      echo "  LINK_OK  $so"
+    else
+      echo "  LINK_FAIL $so" >&2
+      head -5 "$TMP/e.txt" >&2 || true
+      fail_local=1
+    fi
+  done
+  return "$fail_local"
+}
+
+if [[ -n "${NDK_PRE:-}" ]]; then
+  echo "NDK link gate (host toolchain under $NDK_PRE)…"
   TMP=$(mktemp -d)
   echo 'extern "C" int Java_x(){return 0;}' >"$TMP/t.cpp"
   fail=0
-  for so in "$OUT"/arm64-v8a/*.so; do
-    [[ -f "$so" ]] || continue
-    "$NDK_PRE/aarch64-linux-android26-clang++" -c -fPIC -o "$TMP/t.o" "$TMP/t.cpp"
-    if "$NDK_PRE/aarch64-linux-android26-clang++" -shared -o "$TMP/o.so" "$TMP/t.o" "$so" -llog 2>"$TMP/e.txt"; then
-      echo "  LINK_OK  $so"
-    else
-      echo "  LINK_FAIL $so" >&2
-      head -5 "$TMP/e.txt" >&2 || true
-      fail=1
-    fi
-  done
-  for so in "$OUT"/x86_64/*.so; do
-    [[ -f "$so" ]] || continue
-    "$NDK_PRE/x86_64-linux-android26-clang++" -c -fPIC -o "$TMP/t64.o" "$TMP/t.cpp"
-    if "$NDK_PRE/x86_64-linux-android26-clang++" -shared -o "$TMP/o.so" "$TMP/t64.o" "$so" -llog 2>"$TMP/e.txt"; then
-      echo "  LINK_OK  $so"
-    else
-      echo "  LINK_FAIL $so" >&2
-      head -5 "$TMP/e.txt" >&2 || true
-      fail=1
-    fi
-  done
+  link_gate_abi arm64-v8a "$NDK_PRE/aarch64-linux-android26-clang++" || fail=1
+  link_gate_abi x86_64 "$NDK_PRE/x86_64-linux-android26-clang++" || fail=1
+  # armv7 when present
+  if compgen -G "$OUT/armeabi-v7a/*.so" >/dev/null 2>&1; then
+    link_gate_abi armeabi-v7a "$NDK_PRE/armv7a-linux-androideabi26-clang++" || fail=1
+  fi
   rm -rf "$TMP"
-  [[ "$fail" -eq 0 ]] || { echo "ERROR: NDK28 link gate failed" >&2; exit 1; }
+  [[ "$fail" -eq 0 ]] || { echo "ERROR: NDK link gate failed" >&2; exit 1; }
 else
-  echo "WARN: skip NDK28 link gate (ndk clang++ not found)"
+  echo "WARN: skip NDK link gate (ndk clang++ not found)"
+fi
+
+# --- 6–7) Multi-ABI gates via ./test (SO smoke + OCR functional QEMU) ---
+# Prefer src/bin here (just built). After get-artifacts, re-run ./third_party/paddle/test
+# which prefers artifact/jni.
+#
+# Defaults: both gates run. Skip independently:
+#   PADDLE_SKIP_SO_SMOKE=1
+#   PADDLE_SKIP_OCR_QEMU=1
+export PADDLE_JNI_ROOT="${PADDLE_JNI_ROOT:-$OUT}"
+if [[ -z "${PADDLE_SMOKE_ABIS:-}" ]]; then
+  smoke_abis=()
+  for a in $ABIS; do
+    [[ -f "$OUT/$a/libpaddle_lite_jni.so" ]] && smoke_abis+=("$a")
+  done
+  # also any extra ABIs already on disk (e.g. armv7 kept from prior build)
+  for a in arm64-v8a armeabi-v7a x86_64; do
+    [[ -f "$OUT/$a/libpaddle_lite_jni.so" ]] || continue
+    skip=0
+    for b in "${smoke_abis[@]+"${smoke_abis[@]}"}"; do
+      [[ "$a" == "$b" ]] && skip=1 && break
+    done
+    [[ "$skip" -eq 0 ]] && smoke_abis+=("$a")
+  done
+  export PADDLE_SMOKE_ABIS="${smoke_abis[*]}"
+fi
+
+# SO smoke: on unless explicitly skipped
+if [[ "${PADDLE_SKIP_SO_SMOKE:-0}" == "1" ]]; then
+  export PADDLE_SKIP_SO_SMOKE=1
+  echo "paddle_so_smoke will be skipped (PADDLE_SKIP_SO_SMOKE=1)"
+else
+  export PADDLE_SKIP_SO_SMOKE=0
+fi
+
+# OCR functional QEMU: on unless explicitly skipped (pin-build default)
+if [[ "${PADDLE_SKIP_OCR_QEMU:-0}" == "1" ]]; then
+  export PADDLE_OCR_QEMU=0
+  echo "paddle_ocr_qemu will be skipped (PADDLE_SKIP_OCR_QEMU=1)"
+else
+  export PADDLE_OCR_QEMU=1
+fi
+
+if [[ -z "${PADDLE_SMOKE_ABIS// /}" ]] && [[ "${PADDLE_SKIP_SO_SMOKE:-0}" != "1" ]]; then
+  echo "WARN: no jni SOs under $OUT — SO smoke has nothing to run"
+fi
+
+if [[ ! -x "$HERE/test" ]]; then
+  echo "WARN: $HERE/test missing — run scripts/paddle-so-smoke.sh / paddle-ocr-qemu.sh manually" >&2
+else
+  echo "=== pin gates via ./test (SO smoke skip=${PADDLE_SKIP_SO_SMOKE:-0} OCR_QEMU=${PADDLE_OCR_QEMU:-0} ABIS=$PADDLE_SMOKE_ABIS JNI=$PADDLE_JNI_ROOT) ==="
+  # Avoid rebuilding smoke bins every full paddle rebuild unless asked
+  export PADDLE_SMOKE_REBUILD="${PADDLE_SMOKE_REBUILD:-0}"
+  # OCR harness may rebuild once; keep rebuild default on for first pin build
+  export PADDLE_OCR_REBUILD="${PADDLE_OCR_REBUILD:-1}"
+  if ! "$HERE/test"; then
+    echo "ERROR: paddle pin test failed — fix SOs/OCR or set PADDLE_SKIP_SO_SMOKE=1 / PADDLE_SKIP_OCR_QEMU=1" >&2
+    exit 1
+  fi
 fi
 
 echo "OK paddle products under $OUT:"

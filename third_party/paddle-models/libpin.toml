@@ -1,0 +1,118 @@
+# paddle-models — non-git pin of tailor / opt inputs (.nb + lists)
+# Materialize: ./third_party/fetch-deps ro paddle-models
+# Layout: src/armv8|armv7|x86_64/
+name = "paddle-models"
+source_kind = "files"
+reproducible = true
+build_time = "minutes"
+requires_writable_src = false
+build = []
+consumer_note = "armv8: HW fp16 OCR tailor. armv7: real u8→fp32→u8 prod models + lists (true v7). x86_64: float backbone lists + nbs."
+
+# --- armv7 ---
+[[source]]
+seed = "seed/armv7/.tailored_kernels_list"
+path = "armv7/.tailored_kernels_list"
+sha256 = "28329e0d1e382ae5b0c2e3b441555df60473f663ba7b5d26d319e2a080ca0aad"
+
+[[source]]
+seed = "seed/armv7/.tailored_kernels_source_list"
+path = "armv7/.tailored_kernels_source_list"
+sha256 = "e5bb76bc9687ddd4781c8d032d2b14f428009ebefcdfc4c2da297201ce8a182f"
+
+[[source]]
+seed = "seed/armv7/.tailored_ops_list"
+path = "armv7/.tailored_ops_list"
+sha256 = "caf994e6ba4218370a3406cf2759a6ef2d9c04859436c3f55815ef5d3ece91b4"
+
+[[source]]
+seed = "seed/armv7/.tailored_ops_source_list"
+path = "armv7/.tailored_ops_source_list"
+sha256 = "073fb095d5703c79b1de8da2123eca8bb0b36f910ac1ddbd9beecf337be1ee33"
+
+[[source]]
+seed = "seed/armv7/det_armv7.nb"
+path = "armv7/det_armv7.nb"
+sha256 = "f014a32a0345a1f4ab0ce41baf008bf52859bc8999672cc024529ec1554ab614"
+
+[[source]]
+seed = "seed/armv7/rec_numeric_armv7.nb"
+path = "armv7/rec_numeric_armv7.nb"
+sha256 = "7c721767344e9958bd98bf5ae760763b3e657cdea2e55c5fbc25529aaa5afde9"
+
+[[source]]
+seed = "seed/armv7/rec_v3_armv7.nb"
+path = "armv7/rec_v3_armv7.nb"
+sha256 = "3fcbf5be399946b43de9e17494629115f6ff1e68f9903ba487c0bbe59cecd850"
+
+# --- armv8 ---
+[[source]]
+seed = "seed/armv8/.tailored_kernels_list"
+path = "armv8/.tailored_kernels_list"
+sha256 = "0ab3955609f4475f29303765efc7411b3e17994a1cfee0c42773b31d4efd51e5"
+
+[[source]]
+seed = "seed/armv8/.tailored_kernels_source_list"
+path = "armv8/.tailored_kernels_source_list"
+sha256 = "250970dd49ed37f4398c027d51214aaabab3f2a7e7b24def19b74fbdd48d5eae"
+
+[[source]]
+seed = "seed/armv8/.tailored_ops_list"
+path = "armv8/.tailored_ops_list"
+sha256 = "caf994e6ba4218370a3406cf2759a6ef2d9c04859436c3f55815ef5d3ece91b4"
+
+[[source]]
+seed = "seed/armv8/.tailored_ops_source_list"
+path = "armv8/.tailored_ops_source_list"
+sha256 = "690bb24e2cfff3e9cba313db1e247d36c5399c4dbcf4e07fcfe797ba87d80272"
+
+[[source]]
+seed = "seed/armv8/det_armv8.nb"
+path = "armv8/det_armv8.nb"
+sha256 = "1aed5cf5e0e685403fb426b9eddb2c1cf29e6efa1f2aa8f28d4fdab576656b2f"
+
+[[source]]
+seed = "seed/armv8/rec_numeric_armv8.nb"
+path = "armv8/rec_numeric_armv8.nb"
+sha256 = "a1b6ab5e8efb5cb96d4f8d1d194a5dce0f5fd96abc65568f41a98538eb8d1bbc"
+
+[[source]]
+seed = "seed/armv8/rec_v3_armv8.nb"
+path = "armv8/rec_v3_armv8.nb"
+sha256 = "269d184e0490c048e832915391c494fa8c0780082e145fe084353c6834e85539"
+
+# --- x86_64 ---
+[[source]]
+seed = "seed/x86_64/.tailored_kernels_list"
+path = "x86_64/.tailored_kernels_list"
+sha256 = "3f5eedecbc93d899e5ff55917cd6d22ef490c218c15e748fce31590b87c4846d"
+
+[[source]]
+seed = "seed/x86_64/.tailored_kernels_source_list"
+path = "x86_64/.tailored_kernels_source_list"
+sha256 = "bbecb05592fd5b17e1ebf160837c834c9f8316b9581025d6641baa34a5ac97c4"
+
+[[source]]
+seed = "seed/x86_64/.tailored_ops_list"
+path = "x86_64/.tailored_ops_list"
+sha256 = "62c56faa9e4a243b44b92b54cf07267bd820b9b5e268af5a8535deb1817c9b23"
+
+[[source]]
+seed = "seed/x86_64/.tailored_ops_source_list"
+path = "x86_64/.tailored_ops_source_list"
+sha256 = "9d12fb41ea8c6923060eca288d87955d45778aa95dbf2b33d293eeda58580e0b"
+
+[[source]]
+seed = "seed/x86_64/det_x86_64.nb"
+path = "x86_64/det_x86_64.nb"
+sha256 = "0d1548c3e569f201272f6edc874844f78b193fcb08091a988235e11e87b322ea"
+
+[[source]]
+seed = "seed/x86_64/rec_numeric_x86_64.nb"
+path = "x86_64/rec_numeric_x86_64.nb"
+sha256 = "600cf82fe52ff452a997b152cbbcad054ee34816557e0bf1ce6ee6b133928853"
+
+[[source]]
+seed = "seed/x86_64/rec_v3_x86_64.nb"
+path = "x86_64/rec_v3_x86_64.nb"
+sha256 = "80bebd6629b9aa83de6244f0686538264f7db25ab9f0d0517c8f57fcd941ef98"
