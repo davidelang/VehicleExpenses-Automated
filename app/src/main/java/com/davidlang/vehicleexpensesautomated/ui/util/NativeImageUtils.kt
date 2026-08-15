@@ -164,6 +164,15 @@ object NativeImageUtils {
     }
 
     /**
+     * Triage dump: LibRaw unpack CRC + developed RGB + Y after RGB2YUV.
+     * Writes [rgbPath] (W*H*3 RGB u8) and [yPath] (W*H Y u8).
+     * Returns JSON: ok, w, h, raw_crc32, rgb_crc32, rgb_sum, y_crc32, y_sum, …
+     */
+    fun dumpDngDevelopStages(path: String, rgbPath: String, yPath: String): String {
+        return nativeDumpDngDevelopStages(path, rgbPath, yPath)
+    }
+
+    /**
      * High-performance population of a mono (1-channel) float tensor from an OpenCV Mat.
      * Enforces strict dimension parity.
      */
@@ -278,15 +287,82 @@ object NativeImageUtils {
     }
 
     /**
+     * Paddle det head operates on 4×4 feed cells. The tensor we threshold is often
+     * already upsampled 1:1 with the feed, so [heatW]/[feedW] cannot reveal that.
+     * One cell outward is this many pixels on that output array (far side of the
+     * 4×4), not 1. Applied in native `packHeatmapBoxes` for every heat→rect path.
+     */
+    const val PADDLE_DET_HEAT_CELL_PX: Int = 4
+
+    /** Production: rotated min-area rect on supra-threshold heat pixels. */
+    const val HEATMAP_BOX_MIN_AREA_RECT: Int = 0
+    /** Experiment Set K: axis-aligned min/max of the same on-mask connected component. */
+    const val HEATMAP_BOX_AABB: Int = 1
+
+    /**
      * Offload Paddle heatmap post-processing (threshold, contours, geometry) to C++.
      * Returns a flattened array of bounding boxes: [x1, y1, x2, y2, x3, y3, x4, y4, confidence, ...]
+     * then 100 histogram bins.
+     *
+     * When the det tensor is **kUInt8** (product heatmaps), thr / CC / AABB|minAreaRect / hist
+     * run entirely on the u8 plane — **no full fp32 heat buffer**. float/fp16 still convert once.
+     *
+     * @param boxMode [HEATMAP_BOX_MIN_AREA_RECT] (default) or [HEATMAP_BOX_AABB]
      */
-    fun processHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray? {
-        return nativeProcessHeatmap(tensor, threshold, minArea)
+    /** Default CC box pack cap (production / pump / non-expense multi-scale). */
+    const val HEATMAP_MAX_BOXES_DEFAULT: Int = 200
+    /** Dense expense receipts in multi-scale det (page text lines). */
+    const val HEATMAP_MAX_BOXES_EXPENSE: Int = 2000
+
+    fun processHeatmap(
+        tensor: Any,
+        threshold: Float,
+        minArea: Float,
+        boxMode: Int = HEATMAP_BOX_MIN_AREA_RECT,
+        /** 3x3 morph dilate passes on binary thr mask before CC (merges nearby heat). 0 = off. */
+        maskDilatePasses: Int = 0,
+        /** Hard cap on packed boxes after minArea filter (native packHeatmapBoxes). */
+        maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
+    ): FloatArray? {
+        return nativeProcessHeatmap(tensor, threshold, minArea, boxMode, maskDilatePasses, maxBoxes)
     }
 
+    /**
+     * Product u8 heatmap post from a host plane (e.g. tiled max-merge). Same thr/CC/box path as tensor u8.
+     */
+    fun processHeatmapU8(
+        heatU8: ByteArray,
+        width: Int,
+        height: Int,
+        threshold: Float,
+        minArea: Float,
+        boxMode: Int = HEATMAP_BOX_MIN_AREA_RECT,
+        maskDilatePasses: Int = 0,
+        maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
+    ): FloatArray? {
+        return nativeProcessHeatmapU8(
+            heatU8, width, height, threshold, minArea, boxMode, maskDilatePasses, maxBoxes,
+        )
+    }
+
+    /**
+     * Path taken by the most recent [processHeatmap] on this process: `"u8"` or `"float"`.
+     * Used for speed/accuracy experiment metadata (not a concurrency-safe multi-engine API).
+     */
+    fun lastHeatmapPostPath(): String = nativeLastHeatmapPostPath() ?: "unknown"
+
+    /**
+     * Deskew angle from det heatmap (degrees, ~[-45, 45]).
+     * Production: Hough lines on thresholded heat (phase-2 GT winner `hough_thr0.2`);
+     * falls back to legacy CC + minAreaRect 0.5° buckets if no lines.
+     */
     fun heatmapToAngle(tensor: Any, threshold: Float): Float {
         return nativeHeatmapToAngle(tensor, threshold)
+    }
+
+    /** Deskew angle from host u8 heat plane (tiled det). thr is float on heat in [0,1] (u8/255). */
+    fun heatmapToAngleU8(heatU8: ByteArray, width: Int, height: Int, threshold: Float): Float {
+        return nativeHeatmapToAngleU8(heatU8, width, height, threshold)
     }
 
     /**
@@ -297,6 +373,14 @@ object NativeImageUtils {
         return nativeHeatmapToFloatArray(tensor)
     }
 
+    /**
+     * Raw product heatmap as uint8 plane (row-major w*h). Prefers native u8 tensor copy;
+     * float/fp16 tensors are quantized via round(x*255).
+     */
+    fun heatmapToUInt8Array(tensor: Any): ByteArray? {
+        return nativeHeatmapToUInt8Array(tensor)
+    }
+
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
@@ -304,6 +388,7 @@ object NativeImageUtils {
     private external fun nativeProbeDngResolution(path: String): String
     private external fun nativeIngestJpegToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
+    private external fun nativeDumpDngDevelopStages(path: String, rgbPath: String, yPath: String): String
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
@@ -318,15 +403,56 @@ object NativeImageUtils {
     fun populateMonoUInt8(src: Mat, dst: ByteArray, tensorW: Int, tensorH: Int) {
         nativePopulateMonoUInt8(src.nativeObj, dst, tensorW, tensorH)
     }
+
+    /**
+     * Point Lite **input** [tensor] at [data][offset..offset+nbytes) via ShareExternalMemory.
+     * Hold pin until [releaseSharedTensorInputU8]. Returns 1 = zero-copy pin, 2 = JVM copied
+     * the full array (still usable, not ideal), 0 = fail (caller should densify + setData).
+     */
+    fun shareTensorInputU8(tensor: Any, data: ByteArray, offset: Int, nbytes: Int): Int =
+        nativeShareTensorInputU8(tensor, data, offset, nbytes)
+
+    fun releaseSharedTensorInputU8() {
+        nativeReleaseSharedTensorInputU8()
+    }
+
+    private external fun nativeShareTensorInputU8(
+        tensor: Any,
+        data: ByteArray,
+        offset: Int,
+        nbytes: Int,
+    ): Int
+
+    private external fun nativeReleaseSharedTensorInputU8()
     external fun nativeExpandByValley(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     external fun nativeExpandByValleyDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeExpandByCharacterAwareDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeBinarizeRange(srcPtr: Long, dstPtr: Long, low: Int, high: Int)
-    private external fun nativeProcessHeatmap(tensor: Any, threshold: Float, minArea: Float): FloatArray?
+    private external fun nativeProcessHeatmap(
+        tensor: Any,
+        threshold: Float,
+        minArea: Float,
+        boxMode: Int,
+        maskDilatePasses: Int,
+        maxBoxes: Int,
+    ): FloatArray?
+    private external fun nativeProcessHeatmapU8(
+        heatU8: ByteArray,
+        width: Int,
+        height: Int,
+        threshold: Float,
+        minArea: Float,
+        boxMode: Int,
+        maskDilatePasses: Int,
+        maxBoxes: Int,
+    ): FloatArray?
+    private external fun nativeLastHeatmapPostPath(): String?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
+    private external fun nativeHeatmapToAngleU8(heatU8: ByteArray, width: Int, height: Int, threshold: Float): Float
     private external fun nativeHeatmapToFloatArray(tensor: Any): FloatArray?
+    private external fun nativeHeatmapToUInt8Array(tensor: Any): ByteArray?
 
     // --------------------------------------------------------
     // SET H MODULAR PIPELINE — New granular JNI bindings.

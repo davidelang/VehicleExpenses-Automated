@@ -98,14 +98,18 @@ object OdometerOcrUtils {
         val metadata: Map<String, String> = emptyMap()
     )
 
-    suspend fun calculateAverageTextAngle(input: Any): DeskewResult {
+    /**
+     * @param longEdgeTarget long-edge letterbox size for det heatmap used for angle
+     *   (alignment + pump experiments: 256; production default 2048).
+     */
+    suspend fun calculateAverageTextAngle(input: Any, longEdgeTarget: Int = 2048): DeskewResult {
         val t0 = System.currentTimeMillis()
+        val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
 
         // 1. Optimized Paddle Path (Benchmark/Production Version)
-        val (optAngle, optTime) = calculatePaddleAngleOptimized(input)
+        val (optAngle, optTime) = calculatePaddleAngleOptimized(input, pTargetSize)
 
         // 2. Unified Preparation for Legacy Path (Bitmap or BufferSet.Slice)
-        val pTargetSize = 2048
         val bufferSet = NativePaddleEngine.deskewBufferSetLarge
 
         val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
@@ -171,13 +175,16 @@ object OdometerOcrUtils {
             paddleBlocks = pdRes.blocks,
             paddleCppBlocks = pdRes.cppBlocks,
             engines = results,
-            metadata = mapOf("t_prep_ms" to tPrep.toString())
+            metadata = mapOf(
+                "t_prep_ms" to tPrep.toString(),
+                "deskew_long_edge" to pTargetSize.toString(),
+            ),
         )
     }
 
-    suspend fun calculateDeskewAngleMlOnly(input: Any): DeskewResult {
+    suspend fun calculateDeskewAngleMlOnly(input: Any, longEdgeTarget: Int = 2048): DeskewResult {
         val t0 = System.currentTimeMillis()
-        val pTargetSize = 2048
+        val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
         val bufferSet = NativePaddleEngine.deskewBufferSetLarge
 
         val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
@@ -229,13 +236,20 @@ object OdometerOcrUtils {
             paddleOptimizedTimeMs = 0L,
             mlBlocks = mlRes.blocks,
             engines = results,
-            metadata = mapOf("t_prep_ms" to tPrep.toString())
+            metadata = mapOf(
+                "t_prep_ms" to tPrep.toString(),
+                "deskew_long_edge" to pTargetSize.toString(),
+            ),
         )
     }
 
-    suspend fun calculateDeskewAnglePaddleOnly(input: Any): DeskewResult {
+    /**
+     * @param longEdgeTarget long-edge letterbox for paddle det angle
+     *   (pump experiment: 256; production default 2048).
+     */
+    suspend fun calculateDeskewAnglePaddleOnly(input: Any, longEdgeTarget: Int = 2048): DeskewResult {
         val t0 = System.currentTimeMillis()
-        val pTargetSize = 2048
+        val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
         val bufferSet = NativePaddleEngine.deskewBufferSetLarge
 
         val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
@@ -290,13 +304,16 @@ object OdometerOcrUtils {
             paddleBlocks = pdRes.blocks,
             paddleCppBlocks = pdRes.cppBlocks,
             engines = results,
-            metadata = mapOf("t_prep_ms" to tPrep.toString())
+            metadata = mapOf(
+                "t_prep_ms" to tPrep.toString(),
+                "deskew_long_edge" to pTargetSize.toString(),
+            ),
         )
     }
 
-    suspend fun calculatePaddleAngleOptimized(input: Any): Pair<Float, Long> {
+    suspend fun calculatePaddleAngleOptimized(input: Any, longEdgeTarget: Int = 2048): Pair<Float, Long> {
         val t0 = System.currentTimeMillis()
-        val pTargetSize = 2048
+        val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
         val bufferSet = NativePaddleEngine.deskewBufferSetLarge
         val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
         val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
@@ -319,8 +336,8 @@ object OdometerOcrUtils {
 
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return Pair(0f, 0L)
         val det = paddleEngine.detect(bufferSet.c[outerId].mat, alignedW, alignedH, copyHeatmap = false)
-        val cppAngle = if (det?.outputTensor != null) NativeImageUtils.heatmapToAngle(det.outputTensor, 0.20f) else 0f
-        
+        val cppAngle = det?.deskewAngleCpp(0.20f) ?: 0f
+
         bufferSet.c[innerId].release(); bufferSet.c[outerId].release()
         return Pair(cppAngle, System.currentTimeMillis() - t0)
     }
@@ -390,7 +407,7 @@ object OdometerOcrUtils {
 
         // Parallel Angle Calculation
         val tAngleCpp0 = System.currentTimeMillis()
-        val cppAngle = if (det.outputTensor != null) NativeImageUtils.heatmapToAngle(det.outputTensor, 0.20f) else 0f
+        val cppAngle = det.deskewAngleCpp(0.20f)
         val tAngleCpp = System.currentTimeMillis() - tAngleCpp0
 
         val newMeta = det.metadata.toMutableMap()
@@ -1118,10 +1135,50 @@ object OdometerOcrUtils {
         return Bitmap.createBitmap(bitmap, left, top, width, height)
     }
 
-    fun pickBestOdometer(results: List<OcrStepResult>): String? {
-        val candidates = results.mapNotNull { it.text }.filter { it.length in 4..7 && it.all { c -> c.isDigit() } }
-        if (candidates.isEmpty()) return null
-        return candidates.groupBy { it }.maxByOrNull { it.value.size }?.key ?: candidates.maxByOrNull { it.length }
+    /**
+     * Choose among stage texts (Raw / Bin-Trials) for a pure-digit odometer (face digits).
+     *
+     * @param preferredLen face width from [Vehicle.odometerDigitCount] (default 6)
+     * @param allowLenPlusOne allow preferredLen+1 (alignment always; Quick Fill when last face starts with 9)
+     * @param preferBin when true, within the chosen length pool prefer texts that appear on a Bin stage
+     */
+    fun pickBestOdometer(
+        results: List<OcrStepResult>,
+        preferredLen: Int = OdometerTracking.DEFAULT_DIGIT_COUNT,
+        allowLenPlusOne: Boolean = false,
+        preferBin: Boolean = true,
+    ): String? {
+        data class Cand(val text: String, val fromBin: Boolean)
+        val pref = OdometerTracking.preferredLength(preferredLen)
+        val band = OdometerTracking.allowedLengths(pref, allowLenPlusOne)
+        val tagged = results.mapNotNull { step ->
+            val t = step.text?.trim().orEmpty()
+            if (t.isEmpty() || !t.all { it.isDigit() }) return@mapNotNull null
+            val fromBin = step.stageName.contains("Bin", ignoreCase = true)
+            Cand(t, fromBin)
+        }
+        if (tagged.isEmpty()) return null
+
+        fun pool(minL: Int, maxL: Int): List<Cand> {
+            val p = tagged.filter { it.text.length in minL..maxL }
+            if (!preferBin) return p
+            val binOnly = p.filter { it.fromBin }
+            return if (binOnly.isNotEmpty()) binOnly else p
+        }
+
+        fun majority(list: List<Cand>): String? {
+            if (list.isEmpty()) return null
+            return list.groupBy { it.text }.maxByOrNull { it.value.size }?.key
+                ?: list.maxByOrNull { it.text.length }?.text
+        }
+
+        // Prefer exact face length; then face+1 if allowed; then band; then any 4–7.
+        majority(pool(pref, pref))?.let { return it }
+        if (allowLenPlusOne) {
+            majority(pool(pref + 1, pref + 1))?.let { return it }
+        }
+        majority(pool(band.first, band.last))?.let { return it }
+        return majority(pool(4, 7))
     }
 
     fun findValleyMidpoints(bins: FloatArray): List<Int> {

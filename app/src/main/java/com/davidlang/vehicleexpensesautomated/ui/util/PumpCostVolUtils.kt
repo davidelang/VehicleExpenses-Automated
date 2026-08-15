@@ -17,7 +17,11 @@ data class PumpRectOcrLists(
     val asis: List<String>,
     val digits: List<String>,
     val asisProbs: List<String> = emptyList(),
-    val digitsProbs: List<String> = emptyList()
+    val digitsProbs: List<String> = emptyList(),
+    /** JPEG preview of the 48×W crop actually fed to recognize (same crop for asis and digits). */
+    val recB64: List<String> = emptyList(),
+    val recW: List<Int> = emptyList(),
+    val recH: List<Int> = emptyList(),
 )
 
 data class RedBoxOcrCandidate(
@@ -26,7 +30,10 @@ data class RedBoxOcrCandidate(
     val digits: String,
     val asisProbs: String = "",
     val digitsProbs: String = "",
-    val rect: Rect? = null
+    val rect: Rect? = null,
+    val recB64: String = "",
+    val recW: Int = 0,
+    val recH: Int = 0,
 )
 
 data class CostVolClassifyResult(
@@ -48,7 +55,141 @@ val SET_G_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.6f, 1.1f,
 val SET_G_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.6f, 1.3f)
 /** Set G-- = shared reduce k=4; Quick Fill uses this; phone loss 4 / emu loss 5 vs full cand */
 val SET_G_MINUS_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.3f, 0.4f, 1.1f)
+/**
+ * Experiment-only dense vertical expansion for Set G-dense / Set K.
+ * v → blue height multiple (1+2v).
+ * **Below 1.0:** fine grid 0…0.8 step 0.1, plus 0.25 and 0.75 (continuity with prior runs).
+ * **≥1.0:** keep previous coarse steps (1.0…2.5 / 0.25) so large-pad cases are not dropped.
+ * Not for Quick Fill.
+ */
+val SET_G_DENSE_VERT_FACTORS: List<Float> = listOf(
+    // fine low band
+    0.0f, 0.1f, 0.2f, 0.25f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.75f, 0.8f,
+    // keep prior high band
+    1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f,
+)
+/**
+ * Set G4 live verts. After v0.98-212 167×2 combo cover of the 0–0.3 union:
+ * 0+0.1+0.3 misses 1 phone / 2 tablet vs that union; 0.2 and 0.25 add almost
+ * nothing on top. Half-glyph leftovers still need v>0.3 and are not targeted.
+ */
+val SET_G4_VERT_FACTORS: List<Float> = listOf(0.0f, 0.1f, 0.3f)
+/**
+ * Energy G-on-cap verts (m65 / gx / xycut / P4-rot / Prod-rot). v0.98-230
+ * sweep first-unique clustered at 0.00 / 0.05 / 0.15. Used only when energy
+ * hits maxFrac — not a per-seed sweep. P4-jump still uses G4 0/0.1/0.3.
+ */
+val SET_M65_CAP_VERT_FACTORS: List<Float> = listOf(0.0f, 0.05f, 0.15f)
+/** Production / G-- horizontal pad as fraction of *expanded blue height* (each side). */
 const val SET_G_HORIZ_FACTOR: Float = 0.5f
+/**
+ * Experiment G-dense / K: **2×** [SET_G_HORIZ_FACTOR] (each side = full expanded blue height).
+ * May pull in display bezel noise (often OCR'd as a leading/trailing **1**); watch false extras.
+ */
+const val SET_G_DENSE_HORIZ_FACTOR: Float = 1.0f
+
+/**
+ * Horiz-reach A/B campaign: each side pad = factor × expanded blue height.
+ * Fixed verts ([SET_G_MINUS_MINUS_VERT_FACTORS]) so only horiz varies.
+ * Source analysis: phone G-dense horiz 0.5 (07-23-32) vs 1.0 (09-25-33) on shared verts.
+ */
+val SET_HORIZ_REACH_FACTORS: List<Float> = listOf(
+    0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f,
+)
+
+/**
+ * Photos where exact-pool min_v changed between horiz 0.5 and 1.0 (helped or regressed),
+ * phone full-run pair 2026-08-08 (shared verts only). Used by Experiment Pump
+ * "Horiz-affected" subset button (~76 images).
+ * See dev-ai-interaction/latest-report/horiz_reach_affected_images_20260808.json.
+ */
+val HORIZ_REACH_AFFECTED_FILENAMES: List<String> = listOf(
+    "PXL_20220701_020625793.dng",
+    "PXL_20221121_195449335.jpg",
+    "PXL_20221126_210421897.jpg",
+    "PXL_20221128_172956178.jpg",
+    "PXL_20221221_210212750.dng",
+    "PXL_20230101_055935720.dng",
+    "PXL_20230113_231616307.dng",
+    "PXL_20230225_040459673.dng",
+    "PXL_20230318_232827961.jpg",
+    "PXL_20230414_023123861.dng",
+    "PXL_20230520_194628805.dng",
+    "PXL_20230625_225655795.dng",
+    "PXL_20231008_022308667.jpg",
+    "PXL_20231120_002742785.dng",
+    "PXL_20231120_210527402.dng",
+    "PXL_20231211_004047524.jpg",
+    "PXL_20231221_210417588.jpg",
+    "PXL_20231221_213627643.jpg",
+    "PXL_20231226_184548623.jpg",
+    "PXL_20240131_013430374.jpg",
+    "PXL_20240228_211544792.jpg",
+    "PXL_20240325_035731504.jpg",
+    "PXL_20240326_014922448.jpg",
+    "PXL_20240521_025057693.jpg",
+    "PXL_20240608_005034875.jpg",
+    "PXL_20240708_222637707.jpg",
+    "PXL_20240718_000403216.jpg",
+    "PXL_20240808_211542775.jpg",
+    "PXL_20241104_014027473.jpg",
+    "PXL_20241130_183108905.jpg",
+    "PXL_20241202_143338144.jpg",
+    "PXL_20241213_220345190.jpg",
+    "PXL_20250101_020218807.jpg",
+    "PXL_20250224_001547856.jpg",
+    "PXL_20250303_172259346.jpg",
+    "PXL_20250408_223113314.jpg",
+    "PXL_20250415_213030478.jpg",
+    "PXL_20250425_030838626.jpg",
+    "PXL_20250426_024053319.jpg",
+    "PXL_20250426_042852976.jpg",
+    "PXL_20250426_084222634.jpg",
+    "PXL_20250501_160616426.jpg",
+    "PXL_20250516_042722105.jpg",
+    "PXL_20250528_213707194.jpg",
+    "PXL_20250617_052502070.jpg",
+    "PXL_20250726_211343400.jpg",
+    "PXL_20250808_234426044.jpg",
+    "PXL_20250822_062416579.jpg",
+    "PXL_20250823_031728508.jpg",
+    "PXL_20250830_221843009.jpg",
+    "PXL_20250906_001113787.jpg",
+    "PXL_20250911_214550967.jpg",
+    "PXL_20250926_031353327.jpg",
+    "PXL_20251016_032043998.jpg",
+    "PXL_20251103_024204090.jpg",
+    "PXL_20251107_064636287.jpg",
+    "PXL_20251108_025727627.jpg",
+    "PXL_20251111_013744030.jpg",
+    "PXL_20251111_071903596.jpg",
+    "PXL_20251220_040853040.jpg",
+    "PXL_20251223_044233818.jpg",
+    "PXL_20260131_023636224.jpg",
+    "PXL_20260202_204443784.jpg",
+    "PXL_20260202_225555167.jpg",
+    "PXL_20260214_204206758.jpg",
+    "PXL_20260219_050715169.jpg",
+    "PXL_20260220_043453305.jpg",
+    "PXL_20260220_061303418.jpg",
+    "PXL_20260311_180433036.jpg",
+    "PXL_20260411_201506380.jpg",
+    "PXL_20260426_081506806.jpg",
+    "PXL_20260626_042657943.jpg",
+    "PXL_20260626_225456569.jpg",
+    "PXL_20260703_031558607.jpg",
+    "PXL_20260706_190516439.jpg",
+    "PXL_20260706_214711042.jpg",
+)
+
+/**
+ * Det heatmap thr for product **kUInt8** heat (OpenCV THRESH_BINARY uses `>`).
+ * - [HEAT_THR_U8_GE1]: float 0 → u8 &gt; 0 → on if **u8 ≥ 1** (production / G-dense).
+ * - [HEAT_THR_U8_GE2]: float 1/255 → u8 &gt; 1 → on if **u8 ≥ 2** (Set K A/B only).
+ * Not previously A/B'd systematically; K matches G-dense except this thr.
+ */
+const val HEAT_THR_U8_GE1: Float = 0.0f
+const val HEAT_THR_U8_GE2: Float = 1.0f / 255.0f
 
 private const val TAG = "PumpCostVolUtils"
 
@@ -110,8 +251,11 @@ object PumpCostVolUtils {
         digitsList: List<String>,
         asisProbsList: List<String> = emptyList(),
         digitsProbsList: List<String> = emptyList(),
+        recB64List: List<String> = emptyList(),
         /** Label prefix: "Blue" / "Orange" / "Red" (legacy). */
         labelPrefix: String = "Red",
+        recWList: List<Int> = emptyList(),
+        recHList: List<Int> = emptyList(),
     ): List<RedBoxOcrCandidate> {
         val n = minOf(boxRects.size, asisList.size, digitsList.size)
         return (0 until n).map { i ->
@@ -121,7 +265,10 @@ object PumpCostVolUtils {
                 digitsList[i],
                 asisProbsList.getOrElse(i) { "" },
                 digitsProbsList.getOrElse(i) { "" },
-                boxRects[i]
+                boxRects[i],
+                recB64List.getOrElse(i) { "" },
+                recWList.getOrElse(i) { 0 },
+                recHList.getOrElse(i) { 0 },
             )
         }
     }
@@ -190,6 +337,9 @@ object PumpCostVolUtils {
             .put("digits", c.digits)
             .put("asisProbs", c.asisProbs)
             .put("digitsProbs", c.digitsProbs)
+        if (c.recB64.isNotEmpty()) j.put("recB64", c.recB64)
+        if (c.recW > 0) j.put("recW", c.recW)
+        if (c.recH > 0) j.put("recH", c.recH)
         c.rect?.let { j.put("rect", rectToJson(it)) }
         return j
     }
@@ -262,8 +412,63 @@ object PumpCostVolUtils {
         return protrPx <= 40 && hasOverlap
     }
 
+    /**
+     * Collapse near-duplicate reds (multi-scale copies of the same field) into one AABB.
+     *
+     * Exact-contain + 3-sides-≤40px miss the common case: two similar-size boxes with
+     * high overlap but the inner one sticks out more than 40px. Those stay drawn as
+     * stacked reds. Union only when the pair is similar height so a one-line cost
+     * is not swallowed into a cost∪vol wrapper.
+     */
+    fun mergeSimilarOverlapRects(rects: MutableList<Rect>) {
+        if (rects.size < 2) return
+        fun area(r: Rect) = r.width().coerceAtLeast(0) * r.height().coerceAtLeast(0)
+        fun inter(a: Rect, b: Rect): Int {
+            val l = max(a.left, b.left)
+            val t = max(a.top, b.top)
+            val rr = min(a.right, b.right)
+            val btm = min(a.bottom, b.bottom)
+            return max(0, rr - l) * max(0, btm - t)
+        }
+        var changed = true
+        var guard = 0
+        while (changed && guard++ < 16) {
+            changed = false
+            rects.sortByDescending { area(it) }
+            val used = BooleanArray(rects.size)
+            val out = ArrayList<Rect>(rects.size)
+            for (i in rects.indices) {
+                if (used[i]) continue
+                val cur = Rect(rects[i])
+                for (j in i + 1 until rects.size) {
+                    if (used[j]) continue
+                    val o = rects[j]
+                    val interA = inter(cur, o)
+                    if (interA <= 0) continue
+                    val aCur = area(cur).toFloat()
+                    val aO = area(o).toFloat()
+                    val unionA = aCur + aO - interA
+                    val iou = if (unionA > 0f) interA / unionA else 0f
+                    val coverMin = interA / min(aCur, aO).coerceAtLeast(1f)
+                    val hRatio = min(cur.height(), o.height()).toFloat() /
+                        max(cur.height(), o.height()).coerceAtLeast(1)
+                    if (iou >= 0.50f || (coverMin >= 0.80f && hRatio >= 0.70f)) {
+                        cur.union(o)
+                        used[j] = true
+                        changed = true
+                    }
+                }
+                out.add(cur)
+            }
+            rects.clear()
+            rects.addAll(out)
+        }
+    }
+
     fun doCrossScaleRedboxFilterPixel(redRects: MutableList<Rect>) {
         if (redRects.isEmpty()) return
+        mergeSimilarOverlapRects(redRects)
+        redRects.sortByDescending { it.width() * it.height() }
         val kept = mutableListOf<Rect>()
         for (r1 in redRects) {
             val isContained = kept.any { r2 ->
@@ -327,56 +532,16 @@ object PumpCostVolUtils {
 
     fun doCrossScaleRedboxFilter(pdHunksRawTotal: MutableList<PumpHunk>, imgW: Int, imgH: Int) {
         if (pdHunksRawTotal.isEmpty()) return
-        val kept = mutableListOf<PumpHunk>()
-        for (h1 in pdHunksRawTotal) {
-            val r1 = hunkToRect(h1)
-            val isContained = kept.any { h2 ->
-                h1 !== h2 && run {
-                    val r2 = hunkToRect(h2)
-                    r2.contains(r1.left, r1.top, r1.right, r1.bottom)
-                }
-            }
-            if (!isContained) kept.add(h1)
-        }
-        val toProcess = kept.toMutableList()
-        val extended = mutableListOf<PumpHunk>()
-        for (i in toProcess.indices) {
-            var cur = toProcess[i]
-            for (j in toProcess.indices) {
-                if (i == j) continue
-                val oth = toProcess[j]
-                val cR = hunkToRect(cur)
-                val oR = hunkToRect(oth)
-                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                if (qualifiesFor3SidesNearExtend(cR, oR)) {
-                    val newL = if (!insides[0]) min(cur.rect.left, oth.rect.left) else cur.rect.left
-                    val newT = if (!insides[1]) min(cur.rect.top, oth.rect.top) else cur.rect.top
-                    val newR = if (!insides[2]) max(cur.rect.right, oth.rect.right) else cur.rect.right
-                    val newB = if (!insides[3]) max(cur.rect.bottom, oth.rect.bottom) else cur.rect.bottom
-                    var nl = newL; var nr = newR; var nt = newT; var nb = newB
-                    if (nl > nr) { val t = nl; nl = nr; nr = t }
-                    if (nt > nb) { val t = nt; nt = nb; nb = t }
-                    cur = PumpHunk(cur.text, RectF(nl, nt, nr, nb))
-                }
-            }
-            if (extended.none { it.rect == cur.rect }) extended.add(cur)
-        }
-        val cleaned = extended.filter { b ->
-            val bR = hunkToRect(b)
-            !extended.any { o ->
-                if (o === b) false else {
-                    val oR = hunkToRect(o)
-                    oR.contains(bR)
-                }
-            }
-        }.toMutableList()
+        val rects = hunksToRects(pdHunksRawTotal).toMutableList()
+        doCrossScaleRedboxFilterPixel(rects)
         pdHunksRawTotal.clear()
-        pdHunksRawTotal.addAll(cleaned)
+        pdHunksRawTotal.addAll(rectsToHunks(rects))
     }
 
     fun pruneRectsToTopN(
         rects: MutableList<Rect>,
         maxCount: Int = PumpOcrSettings.DEFAULT_MAX_RED_BOXES,
+        @Suppress("UNUSED_PARAMETER") imgH: Int = 0,
     ) {
         doCrossScaleRedboxFilterPixel(rects)
         if (rects.size > maxCount) {
@@ -409,14 +574,30 @@ object PumpCostVolUtils {
         contentW: Int,
         contentH: Int,
         scale: Int,
-        metadata: MutableMap<String, String>? = null
+        metadata: MutableMap<String, String>? = null,
+        boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+        heatDumpU8z: java.io.File? = null,
+        hmThresh: Float = HEAT_THR_U8_GE1,
+        maskDilatePasses: Int = 0,
     ): List<List<PumpHunk>> {
         // copyHeatmap=false: campaign only needs boxes; floatData/getFloatData crashes on uint8 heatmaps
-        val res = paddleEngine.detect(buffer.c[id], copyHeatmap = false)
-            ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+        val res = paddleEngine.detect(
+            buffer.c[id],
+            copyHeatmap = false,
+            boxMode = boxMode,
+            heatDumpU8z = heatDumpU8z,
+            hmThresh = hmThresh,
+            maskDilatePasses = maskDilatePasses,
+        ) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
         if (metadata != null) {
             metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
             metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
+            // "u8" = thr/CC/AABB|minAreaRect without float heat buffer; "float" = converted path
+            metadata["heatmap_post_path_${scale}"] = res.metadata["heatmap_post_path"] ?: "unknown"
+            metadata["heatmap_box_mode_${scale}"] = res.metadata["box_mode"] ?: boxMode.toString()
+            metadata["hm_thresh_${scale}"] = res.metadata["hm_thresh"] ?: hmThresh.toString()
+            metadata["mask_dilate_passes_${scale}"] = res.metadata["mask_dilate_passes"] ?: maskDilatePasses.toString()
+            metadata["heatmap_cell_px_${scale}"] = NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
         }
         val masterW = buffer.c[id].width
         val masterH = buffer.c[id].height
@@ -444,16 +625,8 @@ object PumpCostVolUtils {
             val fb = mb * fullH.toFloat() / contentH
             hunksDetected.add(PumpHunk("", RectF(fl, ft, fr, fb)))
         }
-        val expandedRects = rawRects.map { r ->
-            Rect(
-                (r.left - 1).coerceAtLeast(0),
-                (r.top - 1).coerceAtLeast(0),
-                (r.right + 1).coerceAtMost(masterW - 1),
-                (r.bottom + 1).coerceAtMost(masterH - 1)
-            )
-        }
-        val nonNestedRects = expandedRects.filter { r1 ->
-            expandedRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
+        val nonNestedRects = rawRects.filter { r1 ->
+            rawRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
         }
         val consolidated = OdometerOcrUtils.consolidateRects(nonNestedRects, 0.75f)
         val hunksRaw = mutableListOf<PumpHunk>()
@@ -504,6 +677,25 @@ object PumpCostVolUtils {
         return listOf(hunksDetected, hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
     }
 
+    suspend fun snapRecCrop(
+        recBuffer: BufferSet,
+        recCropId: Int,
+        targetW: Int,
+        targetH: Int,
+    ): String = try {
+        OcrUtils.takeSnapshot(
+            recBuffer.c[recCropId],
+            null,
+            targetW.coerceAtLeast(2),
+            targetH.coerceAtLeast(2),
+            emptyList(),
+            null,
+            recBuffer,
+        ).first
+    } catch (_: Exception) {
+        ""
+    }
+
     suspend fun ocrPumpRectsAsisAndDigits(
         workspace: BufferSet,
         paddleEngine: NativePaddleEngine,
@@ -512,49 +704,45 @@ object PumpCostVolUtils {
         imgW: Int,
         imgH: Int
     ): PumpRectOcrLists {
-        val asisPairs = rects.map { r ->
+        val asis = ArrayList<String>(rects.size)
+        val digits = ArrayList<String>(rects.size)
+        val asisProbs = ArrayList<String>(rects.size)
+        val digitsProbs = ArrayList<String>(rects.size)
+        val recB64 = ArrayList<String>(rects.size)
+        val recW = ArrayList<Int>(rects.size)
+        val recH = ArrayList<Int>(rects.size)
+        for (r in rects) {
             val pW = r.width(); val pH = r.height()
-            if (pW < 2 || pH < 2) "?" to "" else {
-                val l = r.left.coerceIn(0, imgW - 1)
-                val t = r.top.coerceIn(0, imgH - 1)
-                val rr = r.right.coerceIn(l + 1, imgW)
-                val bb = r.bottom.coerceIn(t + 1, imgH)
-                val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
-                recBuffer.p.clear()
-                val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
-                val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
-                Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                val res = paddleEngine.recognize(recBuffer.c[recCropId])
-                recBuffer.c[recCropId].release(); workspace.c[cropId].release()
-                pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
+            if (pW < 2 || pH < 2) {
+                asis.add("?"); digits.add("?")
+                asisProbs.add(""); digitsProbs.add(""); recB64.add("")
+                recW.add(0); recH.add(0)
+                continue
             }
-        }
-        val digitsPairs = rects.map { rp ->
-            val pW = rp.width(); val pH = rp.height()
-            if (pW < 2 || pH < 2) "?" to "" else {
-                val l = rp.left.coerceIn(0, imgW - 1)
-                val t = rp.top.coerceIn(0, imgH - 1)
-                val rr = rp.right.coerceIn(l + 1, imgW)
-                val bb = rp.bottom.coerceIn(t + 1, imgH)
-                val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
-                recBuffer.p.clear()
-                val recCropId = recBuffer.createCrop(4, 4, targetW, targetH)
-                val interp = if (pW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
-                Imgproc.resize(workspace.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                val res = paddleEngine.recognizeNumericDecimal(recBuffer.c[recCropId])
-                recBuffer.c[recCropId].release(); workspace.c[cropId].release()
-                pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
-            }
+            val fed = RecBufferFeed.feedSourceBorderHeightStrip(
+                workspace, r, imgW, imgH, recBuffer,
+                targetH = 48, maxW = 320,
+            )
+            val snap = snapRecCrop(recBuffer, fed.recCropId, fed.targetW, fed.targetH)
+            val asisRes = paddleEngine.recognize(recBuffer.c[fed.recCropId])
+            val asisPair = pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
+            val digitsRes = paddleEngine.recognizeNumericDecimal(recBuffer.c[fed.recCropId])
+            val digitsPair = pumpOcrCleanAndProbs(digitsRes.debugText, digitsRes.perCharProbs)
+            recBuffer.c[fed.recCropId].release()
+            asis.add(asisPair.first); asisProbs.add(asisPair.second)
+            digits.add(digitsPair.first); digitsProbs.add(digitsPair.second)
+            recB64.add(snap)
+            recW.add(fed.targetW)
+            recH.add(fed.targetH)
         }
         return PumpRectOcrLists(
-            asis = asisPairs.map { it.first },
-            digits = digitsPairs.map { it.first },
-            asisProbs = asisPairs.map { it.second },
-            digitsProbs = digitsPairs.map { it.second }
+            asis = asis,
+            digits = digits,
+            asisProbs = asisProbs,
+            digitsProbs = digitsProbs,
+            recB64 = recB64,
+            recW = recW,
+            recH = recH,
         )
     }
 
@@ -639,7 +827,7 @@ object PumpCostVolUtils {
         doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
 
         val redPixelList = hunksToRects(pdHunksRawTotal).toMutableList()
-        pruneRectsToTopN(redPixelList, PumpOcrSettings.DEFAULT_MAX_RED_BOXES)
+        pruneRectsToTopN(redPixelList, PumpOcrSettings.DEFAULT_MAX_RED_BOXES, imgH)
         pdHunksRawTotal.clear()
         pdHunksRawTotal.addAll(rectsToHunks(redPixelList))
         val tRed = System.currentTimeMillis() - tRed0
@@ -686,7 +874,10 @@ object PumpCostVolUtils {
         val blueCands = buildRedBoxCandidates(
             customBluePixelG, ocrBlue.asis, ocrBlue.digits,
             ocrBlue.asisProbs, ocrBlue.digitsProbs,
+            ocrBlue.recB64,
             labelPrefix = "Blue",
+            recWList = ocrBlue.recW,
+            recHList = ocrBlue.recH,
         )
         val tRecBlue = System.currentTimeMillis() - tRec0
         val tOrange0 = System.currentTimeMillis()
@@ -700,7 +891,10 @@ object PumpCostVolUtils {
         val orangeCands = buildRedBoxCandidates(
             customOrangePixelG, ocrOrange.asis, ocrOrange.digits,
             ocrOrange.asisProbs, ocrOrange.digitsProbs,
+            ocrOrange.recB64,
             labelPrefix = "Orange",
+            recWList = ocrOrange.recW,
+            recHList = ocrOrange.recH,
         )
         val tRecOrange = System.currentTimeMillis() - tOrange0
         // Classification unchanged: blue OCR only.
@@ -770,7 +964,7 @@ object PumpCostVolUtils {
         doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
         val redPixelList = hunksToRects(pdHunksRawTotal).toMutableList()
         doCrossScaleRedboxFilterPixel(redPixelList)
-        pruneRectsToTopN(redPixelList, PumpOcrSettings.DEFAULT_MAX_RED_BOXES)
+        pruneRectsToTopN(redPixelList, PumpOcrSettings.DEFAULT_MAX_RED_BOXES, imgH)
         return rectsToHunks(redPixelList)
     }
 

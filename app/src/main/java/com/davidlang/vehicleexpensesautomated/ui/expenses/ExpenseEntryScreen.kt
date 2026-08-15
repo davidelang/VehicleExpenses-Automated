@@ -293,7 +293,7 @@ private fun ExpenseEntryScreenBody(
             if (selectedVehicleId == null && vehicles.isNotEmpty()) {
                 selectedVehicleId = vehicles.first().id
             }
-            if (editId == null && photoUrl == null) {
+            if (photoUrl == null) {
                 showLiveCamera = true
             }
         }

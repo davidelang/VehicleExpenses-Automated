@@ -14,7 +14,13 @@ import kotlin.math.max
 
 data class AutoFillResult(
     val vehicleId: Int? = null,
+    /**
+     * Tracking odometer digits for [com.davidlang.vehicleexpensesautomated.data.model.FuelEntry.odometer]
+     * (includes rollover encoding). Null if OCR failed.
+     */
     val odometer: String? = null,
+    /** Updated [com.davidlang.vehicleexpensesautomated.data.model.Vehicle.odometerRolloverCount] if wrap detected. */
+    val newRolloverCount: Int? = null,
     val error: String? = null,
     val debugJson: String? = null
 )
@@ -27,13 +33,23 @@ data class PumpCostVolResult(
 )
 
 /**
+ * Live / production odometer red→orange expand.
+ * Alignment experiment: Set J = [CHAR_AWARE], Set V = [VALLEY].
+ */
+enum class OdoExpandKind {
+    CHAR_AWARE,
+    VALLEY,
+}
+
+/**
  * Orchestrates OCR pipelines for automated data entry.
  */
 object OcrHarness {
 
     /**
-     * Unified entry point for Quick Fill.
-     * Executes: Deskew -> Landmark Discovery -> Vehicle Identification -> Odometer Extraction.
+     * Unified entry point for Quick Fill (and Start trip dash OCR).
+     * Deskew → landmarks → vehicle ID → odometer. Default expand is alignment **Set V**
+     * (product det + valley), not Set J char-aware.
      */
     suspend fun runAutoFillPipeline(
         context: Context,
@@ -42,8 +58,19 @@ object OcrHarness {
         debug: Boolean,
         cameraRotationDegrees: Int = 0,
         onStage: (suspend (String, Bitmap) -> Unit)? = null,
-        /** When set, skip Tier-1 vehicle ID and use this vehicle for Set J (batch pending answers). */
+        /** When set, skip Tier-1 vehicle ID and use this vehicle. */
         forcedVehicleId: Int? = null,
+        /**
+         * Last fill’s **tracking** odometer for the winning vehicle (from fuel_entries).
+         * Used for PreferLen / rollover (+1 digit when last face started with 9).
+         */
+        lastTrackingOdometer: Int? = null,
+        /**
+         * Optional map vehicleId → last tracking odo when winner is unknown until after ID.
+         * [lastTrackingOdometer] wins if both set for the winner.
+         */
+        lastTrackingByVehicleId: Map<Int, Int?> = emptyMap(),
+        odoExpand: OdoExpandKind = OdoExpandKind.VALLEY,
     ): AutoFillResult {
         val t0 = System.currentTimeMillis()
         val jsonDebug = if (debug) JsonObject() else null
@@ -117,7 +144,7 @@ object OcrHarness {
                 if (forcedVehicleId != null) addProperty("forced_vehicle", true)
             }
 
-            // 4. Extraction (Set J) — ref geometry must match real reference dash (probe or 4080×3072)
+            // 4. Extraction (Set V valley by default) — ref geometry = real reference dash
             val (refW, refH) = if (!winningVehicle.referenceDashPhotoUrl.isNullOrEmpty()) {
                 NativePaddleEngine.getReferenceDimensions(context, winningVehicle.referenceDashPhotoUrl)
             } else {
@@ -131,19 +158,39 @@ object OcrHarness {
                 OdometerOcrUtils.getFullLandmarksFromJson(it, "ML Kit", refW, refH)
             } ?: emptyList()
 
+            val lastTrack = lastTrackingOdometer
+                ?: lastTrackingByVehicleId[winningVehicle.id]
+            val dc = OdometerTracking.digitCount(winningVehicle)
+            val allowExtra = OdometerTracking.lastFillStartsWithNine(lastTrack, dc)
             val setJResult = runSetJPipeline(
                 context, masterBuffer, winningVehicle, referenceLandmarks, queryLandmarks,
                 debug, onStage, refW, refH,
+                preferredDigitLen = dc,
+                allowLenPlusOne = allowExtra,
+                odoExpand = odoExpand,
             )
+
+            val rawOdo = setJResult.odometerValue
+            val resolved = rawOdo?.let {
+                OdometerTracking.resolveFromOcr(it, winningVehicle, lastTrack)
+            }
             
             jsonDebug?.apply {
                 add("set_j", setJResult.jsonSection)
+                addProperty("odo_expand", odoExpand.name)
+                addProperty("odo_digit_count", dc)
+                addProperty("odo_allow_len_plus_one", allowExtra)
+                addProperty("odo_last_tracking", lastTrack ?: -1)
+                addProperty("odo_raw_ocr", rawOdo)
+                addProperty("odo_tracking", resolved?.trackingOdometer)
+                addProperty("odo_new_rollover", resolved?.newRolloverCount)
                 addProperty("total_pipeline_time_ms", System.currentTimeMillis() - t0)
             }
 
             return AutoFillResult(
                 vehicleId = winningVehicle.id,
-                odometer = setJResult.odometerValue,
+                odometer = resolved?.trackingOdometer?.toString(),
+                newRolloverCount = resolved?.newRolloverCount,
                 debugJson = jsonDebug?.toString()
             )
             
@@ -194,7 +241,7 @@ object OcrHarness {
         PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
 
         val redPixelList = PumpCostVolUtils.hunksToRects(pdHunksRawTotal).toMutableList()
-        PumpCostVolUtils.pruneRectsToTopN(redPixelList, PumpOcrSettings.maxRedBoxes(context))
+        PumpCostVolUtils.pruneRectsToTopN(redPixelList, PumpOcrSettings.maxRedBoxes(context), imgH)
         pdHunksRawTotal.clear()
         pdHunksRawTotal.addAll(PumpCostVolUtils.rectsToHunks(redPixelList))
         if (pdHunksRawTotal.isEmpty()) return na
@@ -336,14 +383,13 @@ object OcrHarness {
     }
 
     /**
-     * Production Set J odometer extraction (batch import + Quick Fill).
+     * Production odometer extraction (Quick Fill / Start trip).
      *
-     * **Independent copy** of alignment experiment Set J (experiment may change / compile-out).
-     * Geometry inputs must match experiment at Jul 15 baseline:
-     * - [refW]/[refH] = probed reference dash size (fallback 4080×3072, not 4000)
-     * - Odo window: **ICRS Float** `createCrop` on aligned master (not pre-converted pixel Int crop)
-     * - Raw: detect → expand on **unfiltered** det boxes (no nestFilter on Raw)
-     * - Bin-Trials: nestFilter + full-mat hist + connectSegmentsH + pickBestOdometer (4–7 digits)
+     * Same geometry as the alignment experiment: probed ref dash, ICRS odo crop,
+     * Raw on unfiltered det boxes, Bin-Trials nestFilter + PreferLen + prefer-Bin.
+     * [odoExpand] [OdoExpandKind.VALLEY] = experiment Set V (`expandByValleyDiagnostic`).
+     * [OdoExpandKind.CHAR_AWARE] = experiment Set J (connectSegmentsH union).
+     * Batch import still uses [com.davidlang.vehicleexpensesautomated.ui.experiment.AlignmentSetJRunner].
      */
     suspend fun runSetJPipeline(
         context: Context,
@@ -355,6 +401,9 @@ object OcrHarness {
         onStage: (suspend (String, Bitmap) -> Unit)? = null,
         refW: Int = NativePaddleEngine.DEFAULT_REF_DASH_W,
         refH: Int = NativePaddleEngine.DEFAULT_REF_DASH_H,
+        preferredDigitLen: Int = OdometerTracking.digitCount(vehicle),
+        allowLenPlusOne: Boolean = false,
+        odoExpand: OdoExpandKind = OdoExpandKind.VALLEY,
     ): OcrHarnessResult {
         val t0 = System.currentTimeMillis()
         val jsonDebug = if (debug) JsonObject() else null
@@ -380,7 +429,7 @@ object OcrHarness {
         }
         if (!alignRes.success) {
             return OcrHarnessResult(
-                "Set J failed", "Alignment failed", jsonDebug ?: JsonObject(), null,
+                "Odo extract failed", "Alignment failed", jsonDebug ?: JsonObject(), null,
                 totalTimeMs = System.currentTimeMillis() - t0,
             )
         }
@@ -472,17 +521,8 @@ object OcrHarness {
                 val sR = tBox.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
                 val sB = tBox.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
                 if (sR <= sL || sB <= sT) continue
-                val bRecMat = odoBuffer.p.mat.submat(
-                    org.opencv.core.Rect(sL, sT, sR - sL, sB - sT),
-                )
-                recBuffer.p.clear()
-                val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows())
-                val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2
-                val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
-                val rCrId = recBuffer.createCrop(4, 4, ew, eh)
-                org.opencv.imgproc.Imgproc.resize(
-                    bRecMat, recBuffer.c[rCrId].mat, recBuffer.c[rCrId].mat.size(),
-                    0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA,
+                val fed = RecBufferFeed.feedSourceBorderLetterbox(
+                    odoBuffer.p.mat, sL, sT, sR, sB, recBuffer,
                 )
                 val ocrR = paddleEngine.recognizeNumeric(recBuffer.p)
                 if (ocrR.debugText.isNotBlank()) {
@@ -495,8 +535,7 @@ object OcrHarness {
                     confAcc += (ocrR.textBlocks.firstOrNull()?.confidence ?: 0f) * ocrR.debugText.length
                     confLen += ocrR.debugText.length
                 }
-                recBuffer.c[rCrId].release()
-                bRecMat.release()
+                recBuffer.c[fed.recCropId].release()
             }
             val text = odoB.toString().trim()
             val sumP = probs.sum()
@@ -509,7 +548,12 @@ object OcrHarness {
         onStage?.invoke("Odometer Crop", odoBuffer.p.toBitmap())
         val rawFull = detectBoxesOnOdo()
         val rawValley = rawFull.map {
-            NativeImageUtils.expandByCharacterAwareDiagnostic(odoBuffer.p.mat, it.boundingBox)
+            when (odoExpand) {
+                OdoExpandKind.VALLEY ->
+                    NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox, 0.40f)
+                OdoExpandKind.CHAR_AWARE ->
+                    NativeImageUtils.expandByCharacterAwareDiagnostic(odoBuffer.p.mat, it.boundingBox)
+            }
         }
         val rawFrags = rawValley.map { it.first }
         val rawCons = OdometerOcrUtils.clusterRects(rawFrags).sortedBy { it.left }
@@ -573,25 +617,35 @@ object OcrHarness {
                 return@forEach
             }
 
-            // set_j: NO filterComponents re-detect path — connectSegmentsH path
-            NativeImageUtils.blackOutLargeAndSmallComponentsH(
-                odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols(),
-            )
-            val connectCount = NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
-            Log.d("OcrHarness", "SetJ trial T=$threshold connectSegmentsH count=$connectCount")
-            NativeImageUtils.blackOutRollingDigitsH(odoBuffer.p.mat, vSW, hSW)
-            val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
-            // set_j: union of component rects into one orange (experiment tCons for set_j)
-            val tCons = if (compRects.isNotEmpty()) {
-                listOf(
-                    Rect(
-                        compRects.minOf { it.left },
-                        compRects.minOf { it.top },
-                        compRects.maxOf { it.right },
-                        compRects.maxOf { it.bottom },
-                    ),
+            val tCons: List<Rect>
+            var connectCount = -1
+            if (odoExpand == OdoExpandKind.CHAR_AWARE) {
+                NativeImageUtils.blackOutLargeAndSmallComponentsH(
+                    odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols(),
                 )
-            } else emptyList()
+                connectCount = NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
+                Log.d("OcrHarness", "SetJ trial T=$threshold connectSegmentsH count=$connectCount")
+                NativeImageUtils.blackOutRollingDigitsH(odoBuffer.p.mat, vSW, hSW)
+                val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
+                tCons = if (compRects.isNotEmpty()) {
+                    listOf(
+                        Rect(
+                            compRects.minOf { it.left },
+                            compRects.minOf { it.top },
+                            compRects.maxOf { it.right },
+                            compRects.maxOf { it.bottom },
+                        ),
+                    )
+                } else emptyList()
+            } else {
+                // Set V: valley-expand nest-filtered reds on the binary, then cluster.
+                val tFrags = tRawB.map { seed ->
+                    NativeImageUtils.expandByValleyDiagnostic(
+                        odoBuffer.p.mat, seed.boundingBox, 0.40f,
+                    ).first
+                }
+                tCons = OdometerOcrUtils.clusterRects(tFrags).sortedBy { it.left }
+            }
 
             val (tText, sumMin) = ocrUnionRects(tCons)
             if (tText.isNotBlank()) {
@@ -605,7 +659,8 @@ object OcrHarness {
                             addProperty("min_prob", sumMin.second)
                             addProperty("vSW", vSW)
                             addProperty("hSW", hSW)
-                            addProperty("connect_count", connectCount)
+                            addProperty("expand", odoExpand.name)
+                            if (connectCount >= 0) addProperty("connect_count", connectCount)
                         },
                     )
                 }
@@ -626,8 +681,13 @@ object OcrHarness {
             ),
         )
 
-        // Final filter: 4–7 pure digits only (experiment pickBestOdometer)
-        val winnerOdo = OdometerOcrUtils.pickBestOdometer(steps)
+        // Prefer vehicle face length; +1 digit when caller says last fill started with 9
+        val winnerOdo = OdometerOcrUtils.pickBestOdometer(
+            steps,
+            preferredLen = preferredDigitLen,
+            allowLenPlusOne = allowLenPlusOne,
+            preferBin = true,
+        )
 
         jsonDebug?.apply {
             addProperty("odometer", winnerOdo)
@@ -635,12 +695,18 @@ object OcrHarness {
             addProperty("bin_trials_best", binText)
             addProperty("winner_threshold", binWinner?.thresh)
             addProperty("valleys_found", midpoints.size)
-            addProperty("pipeline", "SetJ_experiment_copy")
+            addProperty("preferred_digit_len", preferredDigitLen)
+            addProperty("allow_len_plus_one", allowLenPlusOne)
+            addProperty(
+                "pipeline",
+                if (odoExpand == OdoExpandKind.VALLEY) "SetV_prod_valley" else "SetJ_experiment_copy",
+            )
+            addProperty("odo_expand", odoExpand.name)
             add("trials", trialJsonArray)
         }
 
         return OcrHarnessResult(
-            htmlHeader = "Set J Pipeline",
+            htmlHeader = if (odoExpand == OdoExpandKind.VALLEY) "Set V Pipeline" else "Set J Pipeline",
             htmlCell = "Result: $winnerOdo",
             jsonSection = jsonDebug ?: JsonObject().apply { addProperty("odometer", winnerOdo) },
             odometerValue = winnerOdo,

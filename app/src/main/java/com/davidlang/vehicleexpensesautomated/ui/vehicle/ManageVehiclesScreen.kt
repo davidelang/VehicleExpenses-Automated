@@ -81,6 +81,10 @@ fun ManageVehiclesScreen(
     var year by remember { mutableStateOf("") }
     var licensePlate by remember { mutableStateOf("") }
     var odometerReading by remember { mutableStateOf("") }
+    /** Face width in digits (default 6). */
+    var odometerDigitCount by remember { mutableStateOf("6") }
+    /** How many times the face has rolled past 10^digitCount. */
+    var odometerRolloverCount by remember { mutableStateOf("0") }
     var pickedPhotoUrl by remember { mutableStateOf<String?>(null) }
     var referencePhotoUrl by remember { mutableStateOf<String?>(null) }
     var landmarkTextBlocksJson by remember { mutableStateOf<String?>(null) }
@@ -143,6 +147,8 @@ fun ManageVehiclesScreen(
         year = v.year?.toString() ?: ""
         licensePlate = v.licensePlate ?: ""
         odometerReading = ""
+        odometerDigitCount = v.odometerDigitCount.coerceIn(3, 9).toString()
+        odometerRolloverCount = v.odometerRolloverCount.coerceAtLeast(0).toString()
         pickedPhotoUrl = v.referenceDashPhotoUrl
         referencePhotoUrl = v.referenceDashPhotoUrl
         landmarkTextBlocksJson = v.landmarkTextBlocksJson
@@ -376,9 +382,78 @@ fun ManageVehiclesScreen(
             OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = year, onValueChange = { year = it }, label = { Text("Year") }, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(value = licensePlate, onValueChange = { licensePlate = it }, label = { Text("License Plate") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = odometerDigitCount,
+                onValueChange = { v -> if (v.length <= 1 && v.all { it.isDigit() }) odometerDigitCount = v },
+                label = { Text("Odometer digits (face width)") },
+                supportingText = {
+                    Text("Default 6. OCR prefers this length; near 9xxxxx allows one extra digit before rollover.")
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = odometerRolloverCount,
+                onValueChange = { v -> if (v.length <= 3 && v.all { it.isDigit() }) odometerRolloverCount = v },
+                label = { Text("Odometer rollover count") },
+                supportingText = {
+                    Text("Times face rolled past max. Fills store tracking = rollover×10^digits + face.")
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { scope.launch { if (isNewVehicle) { vehicleViewModel.createNewVehicleWithReference(name, make, model, year.toIntOrNull() ?: 0, licensePlate, referencePhotoUrl, referencePhotoUrl, odometerCropRect, otherTextCropRect, odometerReading.toIntOrNull() ?: 0, landmarkTextBlocksJson) } else { editingVehicle?.let { val updated = it.copy(name = name, make = make, model = model, year = year.toIntOrNull() ?: 0, licensePlate = licensePlate, referenceDashPhotoUrl = referencePhotoUrl, cleanedReferenceDashPhotoUrl = referencePhotoUrl, odometerCropLeft = odometerCropRect?.left, odometerCropTop = odometerCropRect?.top, odometerCropRight = odometerCropRect?.right, odometerCropBottom = odometerCropRect?.bottom, otherTextCropLeft = otherTextCropRect?.left, otherTextCropTop = otherTextCropRect?.top, otherTextCropRight = otherTextCropRect?.right, otherTextCropBottom = otherTextCropRect?.bottom, landmarkTextBlocksJson = landmarkTextBlocksJson); vehicleViewModel.updateVehicle(updated) } }; navController.popBackStack() } }, modifier = Modifier.fillMaxWidth(), enabled = name.isNotBlank() && referencePhotoUrl != null) { Text(if (isNewVehicle) "Create Vehicle" else "Save Changes") }
+            Button(
+                onClick = {
+                    scope.launch {
+                        val dig = odometerDigitCount.toIntOrNull()?.coerceIn(3, 9) ?: 6
+                        val rolls = odometerRolloverCount.toIntOrNull()?.coerceAtLeast(0) ?: 0
+                        if (isNewVehicle) {
+                            vehicleViewModel.createNewVehicleWithReference(
+                                name,
+                                make,
+                                model,
+                                year.toIntOrNull() ?: 0,
+                                licensePlate,
+                                referencePhotoUrl,
+                                referencePhotoUrl,
+                                odometerCropRect,
+                                otherTextCropRect,
+                                odometerReading.toIntOrNull() ?: 0,
+                                landmarkTextBlocksJson,
+                                odometerDigitCount = dig,
+                                odometerRolloverCount = rolls,
+                            )
+                        } else {
+                            editingVehicle?.let {
+                                val updated = it.copy(
+                                    name = name,
+                                    make = make,
+                                    model = model,
+                                    year = year.toIntOrNull() ?: 0,
+                                    licensePlate = licensePlate,
+                                    referenceDashPhotoUrl = referencePhotoUrl,
+                                    cleanedReferenceDashPhotoUrl = referencePhotoUrl,
+                                    odometerCropLeft = odometerCropRect?.left,
+                                    odometerCropTop = odometerCropRect?.top,
+                                    odometerCropRight = odometerCropRect?.right,
+                                    odometerCropBottom = odometerCropRect?.bottom,
+                                    otherTextCropLeft = otherTextCropRect?.left,
+                                    otherTextCropTop = otherTextCropRect?.top,
+                                    otherTextCropRight = otherTextCropRect?.right,
+                                    otherTextCropBottom = otherTextCropRect?.bottom,
+                                    landmarkTextBlocksJson = landmarkTextBlocksJson,
+                                    odometerDigitCount = dig,
+                                    odometerRolloverCount = rolls,
+                                )
+                                vehicleViewModel.updateVehicle(updated)
+                            }
+                        }
+                        navController.popBackStack()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = name.isNotBlank() && referencePhotoUrl != null,
+            ) { Text(if (isNewVehicle) "Create Vehicle" else "Save Changes") }
         }
     }
 

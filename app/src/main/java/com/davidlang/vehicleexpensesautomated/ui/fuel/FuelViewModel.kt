@@ -76,6 +76,10 @@ class FuelViewModel @Inject constructor(
 
     suspend fun getFuelById(id: Long): FuelEntry? = fuelEntryRepository.getById(id)
 
+    /** Latest non-zero tracking odometer for vehicle (fill table). */
+    suspend fun getLastOdometerForVehicle(vehicleId: Int): Int? =
+        fuelEntryRepository.getLastOdometerForVehicle(vehicleId)
+
     suspend fun downloadFuelPhoto(entry: FuelEntry): String? =
         photoBackupCoordinator.downloadFuelPhoto(entry)
 

@@ -19,6 +19,12 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
 
+    <!-- Long experiment runs (multi-scale det, etc.) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:name=".VehicleExpensesApplication"
         android:allowBackup="true"
@@ -55,6 +61,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Device automation: adb shell am start -a VIEW -d vehicleexpenses://experiment/... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vehicleexpenses" android:host="experiment" />
+            </intent-filter>
         </activity>
         <activity
             android:name=".ui.help.UserManualActivity"
@@ -75,6 +88,10 @@
                     android:path="/oauth" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".ui.experiment.ExperimentForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <activity
             android:name="com.microsoft.identity.client.BrowserTabActivity"
             android:exported="true">

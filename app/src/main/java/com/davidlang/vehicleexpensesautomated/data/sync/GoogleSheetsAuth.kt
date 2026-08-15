@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.davidlang.vehicleexpensesautomated.data.sync
 
 import android.accounts.Account

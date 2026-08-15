@@ -107,7 +107,11 @@ object AlignmentSetJRunner {
         NativePaddleEngine.bufferSetA.p.uvMat.copyTo(NativePaddleEngine.bufferSetB.p.uvMat)
 
         // Experiment deskew: calculateAverageTextAngle on A (not paddle-optimized-only Quick Fill path)
-        val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
+        // Deskew angle on a 256 long-edge letterbox (same as pump experiment).
+        val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(
+            NativePaddleEngine.bufferSetA.p,
+            longEdgeTarget = 256,
+        )
 
         suspend fun rotate(set: BufferSet, angle: Float) {
             val src = set.p.mat
