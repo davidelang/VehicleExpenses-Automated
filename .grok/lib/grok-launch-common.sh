@@ -354,6 +354,7 @@ launch_grok_with_prompt() {
       ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
       ${TODO_GATE_FLAGS[@]+"${TODO_GATE_FLAGS[@]}"} \
       --no-alt-screen \
+      --minimal \
       ${freeform_args[@]+"${freeform_args[@]}"} \
       ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 }

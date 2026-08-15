@@ -575,3 +575,9 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - project-facts, ENVIRONMENT_SETUP, PERMISSIONS_MODEL describe artifact/keystore at orch vs compile per WT
 - Seeded orch_root= on every git worktree project.config (gitignored; not a tracked update-rules sweep)
+
+## 2026-08-15 - Deploy orch_root/--minimal: Phase 1 SoT only
+
+- Approved: `dev-ai-interaction/plans/deploy-orch-root-minimal-update-rules-hosts-20260814-1724-plan.md`
+- Agent scope: `--minimal` on grok-launch-common + project-facts. No update-rules, no host writes.
+- Human next: `bash dev-ai-interaction/scripts/deploy-orch-root-minimal-hosts.sh --dry-run` then `--apply`
