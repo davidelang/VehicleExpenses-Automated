@@ -1,0 +1,17 @@
+{
+  "id": "skewed_hello",
+  "image": "skewed_hello.png",
+  "description": "Synthetic black text on white; source text rotated +15 deg (PIL rotate = CCW). Text avoids O/0 I/1 ambiguity.",
+  "source_text": "ABCD12345",
+  "source_angle_deg": 15.0,
+  "angle_sign": "PIL positive = CCW; VE heatmapToAngle returns deskew correction (expect ~source angle magnitude)",
+  "expect_text_normalized": "ABCD12345",
+  "expect_text_contains": [
+    "ABCD",
+    "12345"
+  ],
+  "max_edit_distance": 2,
+  "angle_abs_tolerance_deg": 8.0,
+  "min_detected_boxes": 1,
+  "notes": "Instrumented test uses VE calculatePaddleAngleOptimized + rotate + detect + crop + recognize(V3)."
+}

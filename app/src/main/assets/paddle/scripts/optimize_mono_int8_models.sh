@@ -44,7 +44,7 @@ optimize_model_int8() {
 }
 
 # Detection (128-4000)
-optimize_model_int8 "det_mono" "det_v4_4000_mono" "x:1,1,128,128:1,1,1280,1280:1,1,4000,4000"
+optimize_model_int8 "det_mono" "det_v4_4000_mono" "x:1,1,64,64:1,1,1280,1280:1,1,4096,4096"
 
 # Recognition V3 + Numeric (simplified to 48 high / 1024 wide per current 1024x48 rec buffer; dropped legacy 32/320)
 optimize_model_int8 "rec_v3_mono" "rec_v3_mono" "x:1,1,48,1024:1,1,48,1024:1,1,48,1024"

@@ -79,24 +79,131 @@ fi
 
 chmod +x lite/tools/build_android.sh
 
+# Map ARCH/ABI → subdirectory under /tailor_models (paddle-models pin layout).
+tailor_subdir_for() {
+  case "$1" in
+    armv8|arm64-v8a) echo armv8 ;;
+    armv7|armeabi-v7a) echo armv7 ;;
+    x86_64|x86) echo x86_64 ;;
+    *) echo "$1" ;;
+  esac
+}
+
 STRIP_FLAGS=""
 if [[ "$PROFILE" == "tailor" ]]; then
-  if [[ "$ARCH" != "armv8" && "$ABI" != "arm64-v8a" ]]; then
-    echo "FAIL: tailor profile only supported for armv8/arm64-v8a (got ARCH=$ARCH ABI=$ABI)" >&2
+  TAILOR_SUB="$(tailor_subdir_for "$ARCH")"
+  if [[ ! -d "/tailor_models/$TAILOR_SUB" ]]; then
+    # fallback: ABI-named dir
+    TAILOR_SUB="$(tailor_subdir_for "$ABI")"
+  fi
+  if [[ ! -d "/tailor_models/$TAILOR_SUB" ]]; then
+    echo "FAIL: tailor profile needs /tailor_models/$TAILOR_SUB (.nb + .tailored_*)" >&2
+    echo "  (mounted from paddle-models/src or PADDLE_TAILOR_DIR; have: $(ls /tailor_models 2>/dev/null | tr '\n' ' '))" >&2
     exit 1
   fi
-  if [[ ! -d /tailor_models/armv8 ]]; then
-    echo "FAIL: tailor profile needs /tailor_models/armv8 (.nb + .tailored_*)" >&2
+  if [[ ! -f "/tailor_models/$TAILOR_SUB/.tailored_kernels_list" ]]; then
+    echo "FAIL: missing /tailor_models/$TAILOR_SUB/.tailored_kernels_list" >&2
     exit 1
   fi
   if [[ -f /patch_tailor_depthwise_common.py ]]; then
     python3 /patch_tailor_depthwise_common.py lite/kernels/CMakeLists.txt || true
   fi
-  STRIP_FLAGS="--with_strip=ON --opt_model_dir=/tailor_models/armv8"
-  echo "PROFILE=tailor (LITE_BUILD_TAILOR via --with_strip=ON)"
+  if [[ -f /patch_tailor_conv_copy_safe.py ]]; then
+    python3 /patch_tailor_conv_copy_safe.py lite/kernels/CMakeLists.txt || true
+  fi
+  STRIP_FLAGS="--with_strip=ON --opt_model_dir=/tailor_models/$TAILOR_SUB"
+  echo "PROFILE=tailor (LITE_BUILD_TAILOR opt_model_dir=/tailor_models/$TAILOR_SUB)"
 else
   echo "PROFILE=slim (tiny_publish, full kernel set, host strip-unneeded later)"
 fi
+
+# Product FP stability (First 10 goldens):
+# Pin-era SOs (b8449343) were NDK r20b / clang 8.0.7. NDK r28c / clang 19.0.1
+# with historical -ffast-math -Ofast regressed emu pump heatmaps/cost-vol vs that
+# baseline (same calib stamps, different codegen). Prefer -O2 without fast-math
+# for product ABIs so r28c rebuilds can match pre-migration outcomes.
+# Override: PADDLE_ALLOW_FAST_MATH=1 to keep upstream -Ofast -ffast-math.
+if [[ "${PADDLE_ALLOW_FAST_MATH:-0}" != "1" ]]; then
+  for f in cmake/postproject.cmake cmake/os/common.cmake lite/CMakeLists.txt; do
+    [[ -f "$f" ]] || continue
+    if grep -q -- '-ffast-math\|-Ofast' "$f" 2>/dev/null; then
+      sed -i \
+        -e 's/-ffast-math//g' \
+        -e 's/-Ofast/-O2/g' \
+        -e 's/-funsafe-math-optimizations//g' \
+        "$f" || true
+      # Ensure fp-contract off where we still have a CXX_FLAGS line
+      if grep -q 'CMAKE_CXX_FLAGS' "$f" && ! grep -q 'ffp-contract' "$f"; then
+        sed -i 's/set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")/set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -ffp-contract=off")/' \
+          "$f" 2>/dev/null || true
+      fi
+      echo "product-fp: stripped fast-math/Ofast in $f (PADDLE_ALLOW_FAST_MATH=0)"
+    fi
+  done
+fi
+
+# LTO + --gc-sections drops static KernelRegistrar (x86 tailor historically;
+# armv7 slim/tailor product also: light API Run() + all-zero heatmaps despite
+# stamp substrings in the SO). Apply keep-registry for ALL Android builds.
+# Do NOT use USE_LITE_KERNEL force-refs: touch_* is DCE'd within strip TUs at -O3
+# (unreferenced), so those refs become undefined symbols at link.
+if [[ -f cmake/os/common.cmake ]]; then
+  sed -i -E 's/-flto(=thin)?//g' cmake/os/common.cmake
+  echo "keep-registry: stripped -flto from cmake/os/common.cmake"
+fi
+if [[ -f cmake/postproject.cmake ]]; then
+  sed -i 's/check_linker_flag(-Wl,--gc-sections)/# check_linker_flag(-Wl,--gc-sections)  # keep registries/' \
+    cmake/postproject.cmake 2>/dev/null || true
+fi
+for f in cmake/postproject.cmake lite/CMakeLists.txt; do
+  [[ -f "$f" ]] || continue
+  sed -i 's/-Wl,--gc-sections//g' "$f" 2>/dev/null || true
+done
+# Also strip LTO from CMAKE_CXX_FLAGS_RELEASE if set in toolchain files.
+for f in cmake/os/common.cmake cmake/linux.cmake cmake/cross_compiling/android.cmake; do
+  [[ -f "$f" ]] || continue
+  sed -i -E 's/-flto(=thin)?//g' "$f" 2>/dev/null || true
+done
+if [[ -f lite/core/op_registry.h ]] && ! grep -q 'TAILOR_KEEP_REGISTRY' lite/core/op_registry.h; then
+  sed -i 's/static paddle::lite::KernelRegistrar  */static paddle::lite::KernelRegistrar __attribute__((used)) /' \
+    lite/core/op_registry.h && \
+    echo "/* TAILOR_KEEP_REGISTRY */" >>lite/core/op_registry.h && \
+    echo "keep-registry: marked KernelRegistrar used in op_registry.h"
+fi
+
+# Always try to harvest products into /output (even if a later step fails).
+copy_products_to_output() {
+  local abi="${ABI:-unknown}"
+  local bd jni light jar
+  mkdir -p "/output/$abi"
+  # Prefer newest build.lite.android.* dir (avoid ls/glob parse edge cases).
+  bd="$(find . -maxdepth 1 -type d -name 'build.lite.android.*' -printf '%T@ %p\n' 2>/dev/null \
+    | sort -nr | head -1 | cut -d' ' -f2- || true)"
+  if [[ -z "$bd" || ! -d "$bd" ]]; then
+    echo "copy_products: no build.lite.android.* under $(pwd)" >&2
+    return 1
+  fi
+  echo "copy_products: BUILD_DIR=$bd"
+  jni="$(find "$bd" -name 'libpaddle_lite_jni.so' -print -quit 2>/dev/null || true)"
+  light="$(find "$bd" -name 'libpaddle_light_api_shared.so' -print -quit 2>/dev/null || true)"
+  jar="$(find "$bd" -name 'PaddlePredictor.jar' -print -quit 2>/dev/null || true)"
+  if [[ -n "$jni" && -f "$jni" ]]; then
+    cp -f "$jni" "/output/$abi/libpaddle_lite_jni.so"
+    echo "copy_products: jni $(stat -c%s "/output/$abi/libpaddle_lite_jni.so") bytes"
+  else
+    echo "copy_products: jni missing under $bd" >&2
+    find "$bd" -name '*.so' 2>/dev/null | head -40 >&2 || true
+    return 1
+  fi
+  if [[ -n "$light" && -f "$light" ]]; then
+    cp -f "$light" "/output/$abi/libpaddle_light_api_shared.so"
+    echo "copy_products: light $(stat -c%s "/output/$abi/libpaddle_light_api_shared.so") bytes"
+  fi
+  if [[ -n "$jar" && -f "$jar" ]]; then
+    cp -f "$jar" /output/PaddlePredictor.jar
+  fi
+  return 0
+}
 
 # shellcheck disable=SC2086
 ./lite/tools/build_android.sh --arch="$ARCH" --toolchain=clang \
@@ -104,29 +211,17 @@ fi
   --with_benchmark=OFF \
   --android_stl=c++_static \
   --with_exception=ON \
-  $EXTRA_FLAGS \
-  $STRIP_FLAGS
+  ${EXTRA_FLAGS:-} \
+  ${STRIP_FLAGS:-}
 
-BUILD_DIR=$(ls -d build.lite.android.* 2>/dev/null | head -1)
-test -n "$BUILD_DIR" || { echo "FAIL: no build.lite.android.* dir"; ls -la; exit 1; }
-
-mkdir -p "/output/$ABI"
-JNI=$(find "$BUILD_DIR" -name 'libpaddle_lite_jni.so' | head -1)
-LIGHT=$(find "$BUILD_DIR" -name 'libpaddle_light_api_shared.so' | head -1 || true)
-test -n "$JNI" && test -f "$JNI" || { echo "FAIL: jni missing"; find "$BUILD_DIR" -name '*.so' | head -40; exit 1; }
-
-cp -f "$JNI" "/output/$ABI/libpaddle_lite_jni.so"
-if [[ -n "${LIGHT:-}" && -f "$LIGHT" ]]; then
-  cp -f "$LIGHT" "/output/$ABI/libpaddle_light_api_shared.so"
-fi
+echo "build_android.sh finished (pwd=$(pwd)); harvesting products…"
+copy_products_to_output || {
+  echo "FAIL: could not copy paddle products for ABI=$ABI" >&2
+  exit 1
+}
 
 # Do NOT patchelf arm dynsym here — historical working SOs did not need it;
 # patchelf can leave LOCAL ABS markers that NDK28 lld rejects.
-
-JAR=$(find "$BUILD_DIR" -name 'PaddlePredictor.jar' | head -1 || true)
-if [[ -n "${JAR:-}" && -f "$JAR" ]]; then
-  cp -f "$JAR" /output/PaddlePredictor.jar
-fi
 
 echo "=== kernel string checks ($ABI profile=$PROFILE) ==="
 CHECKS=()
@@ -141,36 +236,44 @@ stamp_present() {
   return 1
 }
 
-if [[ "$PROFILE" == "tailor" ]]; then
-  # prod u8fp16 path stamps
-  for need in uint8_to_fp16 fp32_to_uint8; do
-    if stamp_present "$need"; then
-      echo "  PASS  $need"
-    else
-      echo "  FAIL  $need (tailor prod path)" >&2
-      exit 1
-    fi
-  done
-else
-  REQUIRED=(int8_to_fp32 uint8_to_fp32 fp32_to_uint8)
-  OPTIONAL_FP16=(int8_to_fp16 uint8_to_fp16)
-  case "$ABI" in
-    arm64-v8a|x86_64|x86) REQUIRE_FP16=1 ;;
-    armeabi-v7a) REQUIRE_FP16=0 ;;
-    *) echo "FAIL: unknown ABI $ABI" >&2; exit 1 ;;
-  esac
-  fail=0
-  for need in "${REQUIRED[@]}"; do
-    if stamp_present "$need"; then echo "  PASS  $need"
-    else echo "  FAIL  $need"; fail=1; fi
-  done
-  for need in "${OPTIONAL_FP16[@]}"; do
-    if stamp_present "$need"; then echo "  PASS  $need"
-    elif [[ "$REQUIRE_FP16" -eq 1 ]]; then echo "  FAIL  $need"; fail=1
-    else echo "  SKIP  $need"; fi
-  done
-  [[ "$fail" -eq 0 ]] || exit 1
-fi
+# Stamp expectations depend on ABI product precision (see SOURCE.md §Precision policy).
+fail=0
+case "$ABI" in
+  arm64-v8a)
+    # HW fp16 prod path
+    for need in uint8_to_fp16 fp32_to_uint8; do
+      if stamp_present "$need"; then echo "  PASS  $need"
+      else echo "  FAIL  $need (arm64 fp16 prod)"; fail=1; fi
+    done
+    ;;
+  armeabi-v7a)
+    # True v7: fp32 calib only (no ARM82_FP16 product)
+    for need in uint8_to_fp32 int8_to_fp32 fp32_to_uint8; do
+      if stamp_present "$need"; then echo "  PASS  $need"
+      else echo "  FAIL  $need (armv7 fp32 calib)"; fail=1; fi
+    done
+    for need in uint8_to_fp16 int8_to_fp16; do
+      if stamp_present "$need"; then echo "  WARN  $need present (unexpected on true-v7 product)"
+      else echo "  SKIP  $need (not product on armv7)"; fi
+    done
+    ;;
+  x86_64|x86)
+    # Soft input calib may expose fp16 stamps on light; backbone is float
+    for need in fp32_to_uint8; do
+      if stamp_present "$need"; then echo "  PASS  $need"
+      else echo "  FAIL  $need (x86)"; fail=1; fi
+    done
+    for need in uint8_to_fp32 int8_to_fp32 uint8_to_fp16 int8_to_fp16; do
+      if stamp_present "$need"; then echo "  PASS  $need"
+      else echo "  SKIP  $need (optional on x86 thin/tailor)"; fi
+    done
+    ;;
+  *)
+    echo "FAIL: unknown ABI $ABI" >&2
+    exit 1
+    ;;
+esac
+[[ "$fail" -eq 0 ]] || exit 1
 
 echo "  STATUS: PASS ($ABI profile=$PROFILE)"
 ls -lh "/output/$ABI/"
