@@ -38,6 +38,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.util.*
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -99,25 +100,136 @@ data class PhotoResultSummary(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExperimentAlignmentScreen(navController: NavHostController) {
+fun ExperimentAlignmentScreen(
+    navController: NavHostController,
+    autoFirst10: Boolean = false,
+    /** Deep link: vehicleexpenses://experiment/align?auto=selected — coverage selected sample (dash only). */
+    autoSelectedSample: Boolean = false,
+) {
     val context = LocalContext.current
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val vehicles by vehicleViewModel.vehicles.collectAsState()
     val scope = rememberCoroutineScope()
+    val jobState by ExperimentJobRunner.state.collectAsState()
 
     var status by remember { mutableStateOf("Ready to run experiment") }
     var detailLog by remember { mutableStateOf("") }
-    var isRunning by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var currentPhotoName by remember { mutableStateOf("") }
     var totalPhotos by remember { mutableIntStateOf(0) }
     val resultsList = remember { mutableStateListOf<PhotoResultSummary>() }
+    var autoStarted by remember { mutableStateOf(false) }
+    val isRunning = jobState.active && jobState.kind == "align"
 
     val experimentDir = File(context.filesDir, "experiment_photos")
     experimentDir.mkdirs()
     val reportDir = File(context.filesDir, "experiment_reports")
 
     if (!reportDir.exists()) reportDir.mkdirs()
+
+    fun startAlignJob(subsetMap: Map<String, Int>?, n: Int, label: String) {
+        if (vehicles.isEmpty()) {
+            status = "Error: No vehicles in DB."
+            return
+        }
+        val vehicleSnap = vehicles.toList()
+        totalPhotos = n
+        resultsList.clear()
+        val ok = ExperimentJobRunner.start(context.applicationContext, kind = "align") { progressCb, log, statusLine ->
+            statusLine(label)
+            val out = runAlignmentExperiment(
+                experimentDir,
+                reportDir,
+                vehicleSnap,
+                context.applicationContext,
+                log,
+                subsetMap,
+            ) { res, p ->
+                val done = (p * n.toFloat()).toInt().coerceIn(1, n.coerceAtLeast(1))
+                progressCb(done, n.coerceAtLeast(1), res.photoName)
+            }
+            out?.absolutePath
+        }
+        if (!ok) {
+            status = "Another experiment is already running (${ExperimentJobRunner.state.value.kind})"
+        } else {
+            status = label
+        }
+    }
+
+    val runFirst10: () -> Unit = {
+        val allFiles = experimentDir.listFiles { f ->
+            f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+        } ?: emptyArray()
+        val first10 = allFiles.sortedBy { it.name }.take(10)
+        val subsetMap = first10.mapIndexed { i, f -> f.name to (i + 1) }.toMap()
+        Log.d(TAG, "First 10 listFiles: dir=${experimentDir.absolutePath} count=${first10.size}")
+        startAlignJob(subsetMap, first10.size, "First 10 (${first10.size})…")
+    }
+
+    /** Coverage selected sample — dash/odo domain only (see [SelectedSamplePhotos.DASH]). */
+    val runSelectedSample: () -> Unit = {
+        val subsetMap = SelectedSamplePhotos.subsetMapPresent(
+            experimentDir,
+            SelectedSamplePhotos.DASH,
+        )
+        val missing = SelectedSamplePhotos.DASH.size - subsetMap.size
+        Log.d(
+            TAG,
+            "Selected sample (dash): dir=${experimentDir.absolutePath} " +
+                "matched=${subsetMap.size}/${SelectedSamplePhotos.DASH.size} missing=$missing",
+        )
+        if (subsetMap.isEmpty()) {
+            status =
+                "Selected sample: 0 dash photos present " +
+                    "(need up to ${SelectedSamplePhotos.DASH.size} in experiment_photos)"
+        } else {
+            startAlignJob(
+                subsetMap,
+                subsetMap.size,
+                "Selected sample (${subsetMap.size} dash)…" +
+                    if (missing > 0) " ($missing not on device)" else "",
+            )
+        }
+    }
+
+    LaunchedEffect(jobState) {
+        if (jobState.kind != "align") return@LaunchedEffect
+        when (jobState.status) {
+            "running", "starting" -> {
+                status = jobState.status
+                currentPhotoName = jobState.current
+                progress = jobState.progress
+                if (jobState.detail.isNotEmpty()) detailLog = jobState.detail.takeLast(800)
+            }
+            "done" -> {
+                progress = 1f
+                status = "Complete! ${jobState.resultPath.ifEmpty { "Reports saved." }}"
+            }
+            "failed" -> status = "FAILED: ${jobState.error}"
+        }
+    }
+
+    // Deep link: vehicleexpenses://experiment/align?auto=first10 | auto=selected
+    LaunchedEffect(autoFirst10, autoSelectedSample, vehicles.size) {
+        if (autoStarted || ExperimentJobRunner.isRunning()) return@LaunchedEffect
+        if (!autoFirst10 && !autoSelectedSample) return@LaunchedEffect
+        if (vehicles.isEmpty()) {
+            Log.w(TAG, "auto subset waiting for vehicles…")
+            return@LaunchedEffect
+        }
+        autoStarted = true
+        when {
+            autoSelectedSample -> {
+                Log.i(TAG, "autoSelectedSample starting dash coverage subset")
+                runSelectedSample()
+            }
+            else -> {
+                Log.i(TAG, "autoFirst10 starting with ${vehicles.size} vehicles")
+                runFirst10()
+            }
+        }
+    }
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { u ->
@@ -132,11 +244,20 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text(status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text(
+            "Jobs use ExperimentJobRunner + FGS — screen lock / leaving this page does not cancel.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
         if (detailLog.isNotEmpty()) { Text(detailLog, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
         if (isRunning) {
             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "${minOf(resultsList.size + 1, totalPhotos)} of $totalPhotos",
+                    text = jobState.current.ifEmpty {
+                        "${minOf(resultsList.size + 1, totalPhotos)} of $totalPhotos"
+                    },
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -152,34 +273,32 @@ fun ExperimentAlignmentScreen(navController: NavHostController) {
         Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
         Button(onClick = {
             if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
-            scope.launch {
-                val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
-                Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
-                totalPhotos = allFiles.size
-                isRunning = true; resultsList.clear()
-                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, null) { res, p ->
-                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
-                }
-                isRunning = false; status = "Complete! Reports saved."
-            }
+            val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+            Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
+            startAlignJob(null, allFiles.size, "Run Test (${allFiles.size})…")
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
-        Button(onClick = {
-            if (vehicles.isEmpty()) { status = "Error: No vehicles in DB."; return@Button }
-            scope.launch {
-                val allFiles = experimentDir.listFiles { f ->
-                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
-                } ?: emptyArray()
-                val first10 = allFiles.sortedBy { it.name }.take(10)
-                val subsetMap = first10.mapIndexed { i, f -> f.name to (i + 1) }.toMap()
-                Log.d(TAG, "First 10 listFiles: dir=${experimentDir.absolutePath} count=${first10.size}")
-                totalPhotos = first10.size
-                isRunning = true; resultsList.clear()
-                runExperiment(experimentDir, reportDir, vehicles, context, { detailLog = it }, subsetMap) { res, p ->
-                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
-                }
-                isRunning = false; status = "Complete! First 10 report saved."
-            }
-        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("First 10") }
+        Button(
+            onClick = runFirst10,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("First 10") }
+        Button(
+            onClick = runSelectedSample,
+            enabled = !isRunning && experimentDir.exists() && vehicles.isNotEmpty(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                "Selected sample (${SelectedSamplePhotos.DASH.size} dash)",
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Text(
+            "Selected sample = coverage subset (low→high alignment zoom). " +
+                "Dash photos only — no pump. Deep link: vehicleexpenses://experiment/align?auto=selected",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->
@@ -208,7 +327,85 @@ data class PipelineConfig(
     val getAngle: (OdometerOcrUtils.DeskewResult) -> Float
 )
 
-private suspend fun runExperiment(
+/**
+ * Alignment matrix (det × expand), all columns share PreferLen / prefer-Bin / source-border rec.
+ *
+ * | key    | det     | expand                          |
+ * |--------|---------|---------------------------------|
+ * | set_j  | product | char-aware                      |
+ * | set_l  | product | P = INTERIOR_ENERGY + jump      |
+ * | set_v  | product | valley                          |
+ * | set_o  | v4 mob  | char-aware                      |
+ * | set_n  | v4 mob  | P = INTERIOR_ENERGY + jump      |
+ * | set_w  | v4 mob  | valley                          |
+ *
+ * Dropped as duplicates once shared fixes applied: set_k (old P+legacy sel), set_m (old v4+P without src-border).
+ */
+private fun usesCharAwareExpand(pipelineKey: String): Boolean =
+    pipelineKey == "set_j" || pipelineKey == "set_o"
+
+/** Pump Set-P style: ContentExpand INTERIOR_ENERGY + height jump. */
+private fun usesPExpand(pipelineKey: String): Boolean =
+    pipelineKey == "set_l" || pipelineKey == "set_n"
+
+private fun usesValleyExpand(pipelineKey: String): Boolean =
+    pipelineKey == "set_v" || pipelineKey == "set_w"
+
+/** @deprecated use [usesPExpand] */
+private fun isPExpandKey(pipelineKey: String): Boolean = usesPExpand(pipelineKey)
+
+/** All columns: PreferLen from vehicle digit count + mean (+tail strip). */
+private fun usesLenMeanBinSelection(pipelineKey: String): Boolean = true
+
+/** v4 mobile det columns. */
+private fun usesV4MobileDet(pipelineKey: String): Boolean =
+    pipelineKey == "set_o" || pipelineKey == "set_n" || pipelineKey == "set_w"
+
+/** All columns: source-border rec (no black 4px insert). */
+private fun usesSourceBorderRec(pipelineKey: String): Boolean = true
+
+/**
+ * Odo ROI → rec buffer. Always source-border via [RecBufferFeed] (shared with pump).
+ * @return pair of (content scale, source pad px) for meta
+ */
+private fun feedOdoRoiToRecBuffer(
+    srcMat: org.opencv.core.Mat,
+    srcLeft: Int,
+    srcTop: Int,
+    srcRight: Int,
+    srcBottom: Int,
+    recBuffer: BufferSet,
+    @Suppress("UNUSED_PARAMETER") useSourceBorder: Boolean,
+): Pair<Float, Int> {
+    val fed = RecBufferFeed.feedSourceBorderLetterbox(
+        srcMat, srcLeft, srcTop, srcRight, srcBottom, recBuffer,
+    )
+    // Crop released by caller after OCR (alignment keeps buffer until recognizeNumeric).
+    // feedSourceBorderLetterbox leaves rec crop allocated; alignment code does not release
+    // via Result — it recognizes on full recBuffer.p. Release crop after stamp for parity.
+    recBuffer.c[fed.recCropId].release()
+    return fed.contentScale to fed.sourcePadPx
+}
+
+/**
+ * Parse recorded OCR digit probs: "1(0.906) 6(0.998) 1(0.121!)".
+ * Includes pruned (!) digits so selection can keep them.
+ */
+private fun parseOcrDigitProbs(probsStr: String): List<Pair<Char, Float>> {
+    val re = Regex("""([0-9])\(([0-9]*\.?[0-9]+)(!?)\)""")
+    return re.findAll(probsStr).map { m ->
+        m.groupValues[1][0] to (m.groupValues[2].toFloatOrNull() ?: 0f)
+    }.toList()
+}
+
+private fun meanProb(probs: List<Float>): Float =
+    if (probs.isEmpty()) 0f else probs.sum() / probs.size
+
+/**
+ * Full alignment experiment. Returns the main JSON results file, or null if no photos.
+ * Package-visible for [ExperimentPrecisionAbScreen].
+ */
+suspend fun runAlignmentExperiment(
     experimentDir: File,
     reportDir: File,
     vehicles: List<Vehicle>,
@@ -216,10 +413,10 @@ private suspend fun runExperiment(
     onLog: (String) -> Unit,
     subsetMap: Map<String, Int>?,
     onProgress: (PhotoResultSummary, Float) -> Unit
-) = withContext(Dispatchers.IO) {
+): File? = withContext(Dispatchers.IO) {
     val allPhotos = experimentDir.listFiles { f ->
         f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
-    }?.sortedBy { it.name } ?: return@withContext
+    }?.sortedBy { it.name } ?: return@withContext null
     Log.d(TAG, "runExperiment listFiles: dir=${experimentDir.absolutePath} count=${allPhotos.size}")
 
     val photos = if (subsetMap != null) {
@@ -248,7 +445,7 @@ private suspend fun runExperiment(
             "Restore vehicle refs (e.g. deploy --restore-data / --install-data) before running alignment experiment."
         Log.e(TAG, msg)
         onLog(msg)
-        return@withContext
+        return@withContext null
     }
 
     val vehicleBufferSets = mutableMapOf<Int, BufferSet>()
@@ -289,7 +486,7 @@ private suspend fun runExperiment(
     val jsonFile = File(reportDir, "alignment_results_$timestamp.json")
     val deviceModel = Build.MODEL
     jsonFile.writeText(
-        "{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"device\": \"$deviceModel\",\n" +
+        "{\n  \"timestamp\": \"$timestamp\",\n${ExperimentReportMeta.jsonFields()},\n  \"device\": \"$deviceModel\",\n" +
             "  \"usable_vehicle_refs\": ${cachedRefs.size},\n  \"vehicles_in_db\": ${vehicles.size},\n" +
             "  \"total_photos\": $total,\n  \"results\": [\n"
     )
@@ -304,10 +501,17 @@ private suspend fun runExperiment(
     val experimentRecSet320x48 = BufferSet(320, 48)
     val experimentDetSet512x128 = BufferSet(512, 128)
 
-    // Report column: Set J only. Silent mlAngle vehicle-ID lock runs before the loop (parity with multi-set A-first lock).
-    // See docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md + tag obsolete-experiment-alignment-sets-a-e.
+    // Report columns: 2 det (product / v4) × 3 expand (char-aware / P / valley).
+    // Shared on every column: PreferLen(vehicle digit count), prefer-Bin final pick, source-border rec.
+    // Face digits only (no rollover timeline in experiment).
+    // Silent mlAngle vehicle-ID lock before loop. See docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md.
     val pipelines = listOf(
-        PipelineConfig("set_j", "Set J (CC Speedup)", { it.paddleTimeMs }) { it.paddleOptimizedAngle }
+        PipelineConfig("set_j", "Set J (prod+charAware)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
+        PipelineConfig("set_l", "Set L (prod+P-expand)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
+        PipelineConfig("set_v", "Set V (prod+valley)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
+        PipelineConfig("set_o", "Set O (v4+charAware)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
+        PipelineConfig("set_n", "Set N (v4+P-expand)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
+        PipelineConfig("set_w", "Set W (v4+valley)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
     )
     val harnessEngineNames = pipelines.map { "${it.displayName} Paddle" }
     val pipelineNames = pipelines.map { it.displayName }
@@ -329,7 +533,7 @@ private suspend fun runExperiment(
         var finalWinnerName = "No match"
 
         try {
-            withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name} (#$originalLineNumber)") }
+            onLog("Processing ${index + 1}/$total: ${file.name} (#$originalLineNumber)")
             val (imgW, imgH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
 
             // Sequential A/B Ingestion
@@ -360,7 +564,11 @@ private suspend fun runExperiment(
             try {
                 // Step 2 (Deskew): Calculate tilt independently for Set A/E
                 logAlignSliceDiag("deskew", NativePaddleEngine.bufferSetA, "A.p", NativePaddleEngine.bufferSetA.p)
-                val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(NativePaddleEngine.bufferSetA.p)
+                // Deskew angle on a 256 long-edge letterbox (same as pump experiment).
+                val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(
+                    NativePaddleEngine.bufferSetA.p,
+                    longEdgeTarget = 256,
+                )
                 
                 val tilt = deskewResA.angle
                 val tMl = deskewResA.mlTimeMs
@@ -433,7 +641,7 @@ private suspend fun runExperiment(
                     }
                 }
 
-                // Set J only report pass (same body as multi-set set_j iteration — paddleOptimizedAngle + char-aware iterative).
+                // Set J / Set K report passes (shared deskew angle; expand path differs by pipelineKey).
                 pipelines.forEach { pipeline ->
                     // Reset work buffer Set B by copying from ingested original Set A
                     logAlignBufDiag("pipeline_reset", "A.p", NativePaddleEngine.bufferSetA.p.mat, "B.p", NativePaddleEngine.bufferSetB.p.mat)
@@ -533,8 +741,48 @@ private suspend fun runExperiment(
 
                             val iterativeStages = listOf("Raw", "Bin-Trials")
 
-                            // Set J: char-aware paddle iterative only (no Set A ML iterative report path)
-                            runPaddleValleyIterative("${pipeline.displayName} Paddle", NativePaddleEngine.bufferSetB, imgW, imgH, globalWinnerRef, vehicleBufferSets, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, hMap, refinementTraces, isNumeric = true, iterativeStages, extraImages, useCharAware = (pipeline.key == "set_j"), pipelineKey = pipeline.key)
+                            // O/N/W: swap to PP-OCRv4_mobile_det for this column only (restore after).
+                            val swappedDet = usesV4MobileDet(pipeline.key)
+                            if (swappedDet) {
+                                try {
+                                    NativePaddleEngine.loadExperimentDetTiers(context, "PP-OCRv4_mobile_det")
+                                    onLog("${pipeline.displayName}: loaded PP-OCRv4_mobile_det tiers")
+                                } catch (t: Throwable) {
+                                    Log.e(TAG, "${pipeline.key} det swap failed", t)
+                                    onLog("${pipeline.displayName}: det swap FAILED ${t.message}")
+                                }
+                            }
+                            try {
+                                // Expand: J/O char-aware | L/N P(INTERIOR_ENERGY+jump) | V/W valley.
+                                // All columns: PreferLen(digitCount), prefer-Bin final, source-border rec.
+                                runPaddleValleyIterative(
+                                    "${pipeline.displayName} Paddle",
+                                    NativePaddleEngine.bufferSetB,
+                                    imgW,
+                                    imgH,
+                                    globalWinnerRef,
+                                    vehicleBufferSets,
+                                    experimentDetSet512x128,
+                                    experimentRecSet320x48,
+                                    paddleEngine,
+                                    hMap,
+                                    refinementTraces,
+                                    isNumeric = true,
+                                    iterativeStages,
+                                    extraImages,
+                                    useCharAware = usesCharAwareExpand(pipeline.key),
+                                    pipelineKey = pipeline.key,
+                                )
+                            } finally {
+                                if (swappedDet) {
+                                    try {
+                                        NativePaddleEngine.restoreProductionDetTiers(context)
+                                    } catch (t: Throwable) {
+                                        Log.e(TAG, "${pipeline.key} det restore failed", t)
+                                        onLog("${pipeline.displayName}: det restore FAILED ${t.message}")
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -607,13 +855,11 @@ private suspend fun runExperiment(
                 firstJsonResult = false
 
                 val resultSummary = PhotoResultSummary(file.name, finalWinnerName, 1.0f)
-
-                // Ensure UI update is dispatched BEFORE we move to cleanup
-                withContext(Dispatchers.Main) {
-                    onProgress(resultSummary, (index + 1).toFloat() / total)
-                }
+                onProgress(resultSummary, (index + 1).toFloat() / total)
 
                 delay(150)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 Log.e(TAG, "Processing failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
                 val errorJson = JSONObject().apply {
@@ -630,6 +876,8 @@ private suspend fun runExperiment(
             } finally {
                 // BufferSets are cleaned up globally or at end of session
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
         }
@@ -642,6 +890,8 @@ private suspend fun runExperiment(
     experimentDetSet512x128.release()
     vehicleBufferSets.values.forEach { it.release() }
     vehicleBufferSets.clear()
+    Log.i(TAG, "runAlignmentExperiment:end json=${jsonFile.absolutePath} total=$total")
+    jsonFile
 }
 
 private fun serializePhotoResultToJson(
@@ -672,8 +922,17 @@ private fun serializePhotoResultToJson(
         }
         put("pathways", pathwaysJson)
 
-        // Top-level Metrics (outer convenience; nested pathways["set_j"] serialize is authoritative for Set J)
-        put("winner", photoResult.pathways["set_j"]?.winnerName ?: "No match")
+        // Top-level Metrics (outer convenience; nested pathways are authoritative per set)
+        put(
+            "winner",
+            photoResult.pathways["set_j"]?.winnerName
+                ?: photoResult.pathways["set_l"]?.winnerName
+                ?: photoResult.pathways["set_v"]?.winnerName
+                ?: photoResult.pathways["set_o"]?.winnerName
+                ?: photoResult.pathways["set_n"]?.winnerName
+                ?: photoResult.pathways["set_w"]?.winnerName
+                ?: "No match",
+        )
 
 
         // Deskew Data (Source from Path A)
@@ -1023,7 +1282,9 @@ internal suspend fun runBinTrialsPaddle(
     rawBins: FloatArray,
     useCharAware: Boolean,
     steps: List<OcrStepResult>,
-    pipelineKey: String = ""
+    pipelineKey: String = "",
+    preferredDigitLen: Int = OdometerTracking.DEFAULT_DIGIT_COUNT,
+    allowLenPlusOne: Boolean = true,
 ): Pair<String, Map<String, String>> {
     val midpoints = findValleyMidpoints(rawBins)
     val trialsHtml = StringBuilder("<div style='border:1px solid #ccc; padding:4px; margin-top:4px;'><b>Bin-Trials:</b><br>")
@@ -1137,7 +1398,9 @@ internal suspend fun runBinTrialsPaddle(
         val vSW_red = rbCached?.first?.second?.get(0)?.toFloat() ?: -1f
         val hSW_red = rbCached?.first?.second?.get(1)?.toFloat() ?: -1f
 
-        if (vSW_red <= 0f || hSW_red <= 0f) {
+        // Stroke-width peaks feed char-aware clean + valley filter paths.
+        // P-expand uses ContentExpand (no SW needed) — do not abort those trials on peak fail.
+        if (!usesPExpand(pipelineKey) && (vSW_red <= 0f || hSW_red <= 0f)) {
             Log.i("HIST_DIAG", "ERR rawPeakFail vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} vSW_red=$vSW_red hSW_red=$hSW_red factor=$thresholdFactor bb=${rb.boundingBox}")
             val histsHtml = StringBuilder()
             tRawB.forEachIndexed { rIdx, b ->
@@ -1166,7 +1429,8 @@ internal suspend fun runBinTrialsPaddle(
 
         var vSW = vSW_red
         var hSW = hSW_red
-        if (pipelineKey != "set_j") {
+        // Valley expand only: stroke-width component filter + re-detect.
+        if (usesValleyExpand(pipelineKey)) {
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
 
@@ -1202,7 +1466,7 @@ internal suspend fun runBinTrialsPaddle(
             hSW = hRes?.second?.get(1)?.toFloat() ?: -1f
         }
 
-        if (pipelineKey != "set_j" && (vSW <= 0f || hSW <= 0f)) {
+        if (usesValleyExpand(pipelineKey) && (vSW <= 0f || hSW <= 0f)) {
             Log.i("HIST_DIAG", "ERR cleanedPeakFail vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} vSW=$vSW hSW=$hSW factor=$thresholdFactor bb=${rb.boundingBox}")
             val histsHtml = StringBuilder()
 
@@ -1261,55 +1525,72 @@ internal suspend fun runBinTrialsPaddle(
 
         var tPlainPreRollingB64 = ""
         var postCleaningP4 = ""
-        val valleyResults = if (pipelineKey == "set_j") {
-            val preCleanedP4 = matToPbmP4Base64(odoBuffer.p.mat)
-            // trialsMeta["trial_${vIdx}_pre_cleaned_1bpp"] = preCleanedP4
+        // After threshold+flip: .p is the live working plane (binary). Everything after that —
+        // detect, expand, OCR — reads .p only. .s is scratch (do not treat as a second source).
+        val valleyResults = when {
+            usesCharAwareExpand(pipelineKey) -> {
+                val preCleanedP4 = matToPbmP4Base64(odoBuffer.p.mat)
+                // trialsMeta["trial_${vIdx}_pre_cleaned_1bpp"] = preCleanedP4
 
-            NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
-            postCleaningP4 = matToPbmP4Base64(odoBuffer.p.mat)
-            // trialsMeta["trial_${vIdx}_post_cleaning_1bpp"] = postCleaningP4
+                NativeImageUtils.blackOutLargeAndSmallComponentsH(odoBuffer.p.mat, vSW, hSW, 0.20f * odoBuffer.p.mat.cols())
+                postCleaningP4 = matToPbmP4Base64(odoBuffer.p.mat)
+                // trialsMeta["trial_${vIdx}_post_cleaning_1bpp"] = postCleaningP4
 
-            val connectCount = NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
-            trialsMeta["trial_${vIdx}_connect_count"] = connectCount.toString()
-            android.util.Log.i("NativeImage", "TRIAL $vIdx CONNECT COUNT: $connectCount")
+                val connectCount = NativeImageUtils.connectSegmentsH(odoBuffer.p.mat, vSW, hSW)
+                trialsMeta["trial_${vIdx}_connect_count"] = connectCount.toString()
+                android.util.Log.i("NativeImage", "TRIAL $vIdx CONNECT COUNT: $connectCount")
 
-            val preRollP4 = matToPbmP4Base64(odoBuffer.p.mat)
-            // trialsMeta["trial_${vIdx}_pre_roll_1bpp"] = preRollP4
+                val preRollP4 = matToPbmP4Base64(odoBuffer.p.mat)
+                // trialsMeta["trial_${vIdx}_pre_roll_1bpp"] = preRollP4
 
-            val (snapB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
-            tPlainPreRollingB64 = snapB64
-            NativeImageUtils.blackOutRollingDigitsH(odoBuffer.p.mat, vSW, hSW)
-            val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
-            compRects.map { Pair(it, trialMetaMap) }
-        } else {
-            val initialBounds = NativeImageUtils.expandBoundsH(odoBuffer.p.mat, rb.boundingBox, thresholdFactor, vSW, hSW)
-            val pitchData = NativeImageUtils.calculatePitchH(odoBuffer.p.mat, initialBounds, thresholdFactor, vSW, hSW)
-            val pitch      = pitchData?.get(0) ?: 0
-            val anchorMode = pitchData?.get(1) ?: 0
-            val bestShift  = pitchData?.get(2) ?: 0
-
-            val gridResult = if (pitch > 0) NativeImageUtils.alignGridH(
-                odoBuffer.p.mat, initialBounds, pitch, bestShift, anchorMode,
-                vSW, hSW, thresholdFactor
-            ) else null
-
-            val finalBounds = if (useCharAware) initialBounds else (gridResult?.first ?: initialBounds)
-            val matchedSlots = gridResult?.second ?: IntArray(0)
-            val failedSlots  = gridResult?.third  ?: IntArray(0)
-
-            trialMetaMap["charaware_pitch"] = pitch.toString()
-            trialMetaMap["charaware_matched_slots"] = matchedSlots.joinToString(",")
-            trialMetaMap["charaware_failed_slots"] = failedSlots.joinToString(",")
-            trialMetaMap["charaware_vlimit"] = String.format("%.1f", vSW * 0.5f)
-            trialMetaMap["charaware_hlimit"] = String.format("%.1f", hSW * 0.75f)
-
-            val tValleyResults = tRawB.map { Pair(finalBounds, trialMetaMap) }
-            if (useCharAware) tValleyResults
-            else tRawB.map { NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox, 0.40f) }
+                val (snapB64, _) = OcrUtils.takeSnapshot(odoBuffer.p.mat, null, 320, 48, emptyList(), null, NativePaddleEngine.bufferSetA)
+                tPlainPreRollingB64 = snapB64
+                NativeImageUtils.blackOutRollingDigitsH(odoBuffer.p.mat, vSW, hSW)
+                val compRects = NativeImageUtils.findAllComponentsH(odoBuffer.p.mat, vSW, hSW)
+                compRects.map { Pair(it, trialMetaMap) }
+            }
+            usesPExpand(pipelineKey) -> {
+                // Live data is odoBuffer.p after threshold+flip.
+                // Expand = P INTERIOR_ENERGY + jump (pump Set-P).
+                val expandOpts = ContentExpandUtils.ExpandOptions(
+                    maxFrac = 1.0f,
+                    enableJump = true,
+                    jumpFrac = 0.40f,
+                )
+                trialsMeta["trial_${vIdx}_content_expand_mode"] = "INTERIOR_ENERGY"
+                trialsMeta["trial_${vIdx}_content_expand_jump"] = "true"
+                trialsMeta["trial_${vIdx}_content_expand_jump_frac"] = "0.40"
+                tRawB.map { seed ->
+                    val exp = ContentExpandUtils.expand(
+                        odoBuffer.p.mat,
+                        seed.boundingBox,
+                        ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                        expandOpts,
+                    )
+                    Pair(
+                        exp,
+                        trialMetaMap + mapOf(
+                            "content_expand_mode" to "INTERIOR_ENERGY",
+                            "content_expand_jump" to "true",
+                            "content_expand_jump_frac" to "0.40",
+                            "seed_rect" to "${seed.boundingBox.left},${seed.boundingBox.top},${seed.boundingBox.right},${seed.boundingBox.bottom}",
+                            "orange_rect" to "${exp.left},${exp.top},${exp.right},${exp.bottom}",
+                        ),
+                    )
+                }
+            }
+            else -> {
+                // Valley expand (sets V / W and any non-char / non-P path).
+                tRawB.map { seed ->
+                    NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, seed.boundingBox, 0.40f)
+                }
+            }
         }
 
         val tFrags = valleyResults.map { it.first }
-        val tCons = if (pipelineKey == "set_j") {
+        // Char-aware: component frags → one union orange.
+        // P / valley: expanded reds → cluster (same post-expand step as Raw).
+        val tCons = if (usesCharAwareExpand(pipelineKey)) {
             if (tFrags.isNotEmpty()) {
                 var minL = Int.MAX_VALUE
                 var minT = Int.MAX_VALUE
@@ -1338,19 +1619,30 @@ internal suspend fun runBinTrialsPaddle(
             res.second.forEach { (k, v) -> trialsMeta["trial_${vIdx}_frag_${vI}_$k"] = v }
         }
 
-        tCons.forEach { tBox ->
+        // OCR from live .p (same plane as detect/expand).
+        tCons.forEachIndexed { bIdx, tBox ->
             val sL = tBox.left.coerceIn(0, odoBuffer.p.mat.cols() - 1)
             val sT = tBox.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
             val sR = tBox.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
             val sB = tBox.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
             if (sR > sL && sB > sT) {
-                val bRecMat = odoBuffer.p.mat.submat(org.opencv.core.Rect(sL, sT, sR - sL, sB - sT))
-                experimentRecSet320x48.p.clear()
-                val rSc = kotlin.math.min(312f / bRecMat.cols(), 40f / bRecMat.rows())
-                val ew = ((bRecMat.cols() * rSc + 1).toInt() / 2) * 2
-                val eh = ((bRecMat.rows() * rSc + 1).toInt() / 2) * 2
-                val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
-                org.opencv.imgproc.Imgproc.resize(bRecMat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
+                val (rScMeta, padMeta) = feedOdoRoiToRecBuffer(
+                    odoBuffer.p.mat,
+                    sL, sT, sR, sB,
+                    experimentRecSet320x48,
+                    useSourceBorder = usesSourceBorderRec(pipelineKey),
+                )
+                trialsMeta["trial_${vIdx}_rec_scale_$bIdx"] = "%.4f".format(rScMeta)
+                trialsMeta["trial_${vIdx}_rec_src_pad_px_$bIdx"] = padMeta.toString()
+                trialsMeta["trial_${vIdx}_rec_feed"] =
+                    if (usesSourceBorderRec(pipelineKey)) "source_border" else "black_pad_4px"
+                // Exact rec buffer fed to recognizeNumeric (for debug of lead-digit / hallucination).
+                val (recB64, _) = OcrUtils.takeSnapshot(
+                    experimentRecSet320x48.p, null,
+                    experimentRecSet320x48.p.width, experimentRecSet320x48.p.height,
+                    emptyList(), null, experimentRecSet320x48,
+                )
+                if (recB64.isNotEmpty()) trialsMeta["trial_${vIdx}_ocr_rec_thumb_$bIdx"] = recB64
                 val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
                 if (ocrR.debugText.isNotBlank()) {
                     tOdoB.append(ocrR.debugText).append(" ")
@@ -1358,8 +1650,6 @@ internal suspend fun runBinTrialsPaddle(
                 }
                 tCf += (ocrR.textBlocks.firstOrNull()?.confidence ?: 0f) * ocrR.debugText.length
                 tCnt += ocrR.debugText.length
-                experimentRecSet320x48.c[rCrId].release()
-                bRecMat.release()
             }
         }
         val tText = tOdoB.toString().trim(); val tProbsStr = tProbsB.toString().trim(); val tAvg = if (tCnt > 0) tCf / tCnt else 0f
@@ -1368,12 +1658,9 @@ internal suspend fun runBinTrialsPaddle(
 
         val annsPost = mutableListOf<SnapshotAnnotation>()
         tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
-        if (pipelineKey == "set_j") {
-            tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.BLUE, 2)) }
-            tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
-        } else {
-            tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
-        }
+        // Blue = expand frags, orange = OCR cluster/union.
+        tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.BLUE, 2)) }
+        tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
 
         val histsHtml = StringBuilder()
         if (useCharAware && valleyResults.isNotEmpty()) {
@@ -1436,48 +1723,148 @@ internal suspend fun runBinTrialsPaddle(
         trialsMeta["trial_${vIdx}_annotations"] = annStr
     }
 
-    val highQual = trialsList.filter { it.minProb >= 0.40f }
-    val winner = if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb } else trialsList.maxByOrNull { it.sumProb }
+    // --- Bin-trial selection ---
+    // J/K (legacy): minProb>=0.40 then max sumProb (length-biased; kept for A/B).
+    // L/M: no min gate; build tail-strip hyps; prefer Vehicle.odometerDigitCount then +1
+    //    (extension when rollover-pending); max mean digit prob. M also uses v4 mobile det.
+    data class BinHyp(
+        val trial: TrialData,
+        val text: String,
+        val probs: List<Float>,
+        val label: String,
+    )
+    fun formatProbs(text: String, probs: List<Float>): String =
+        text.mapIndexed { i, ch ->
+            val p = probs.getOrNull(i) ?: 0f
+            "%s(%.3f)".format(ch, p)
+        }.joinToString(" ")
 
-    // Set winning binarization state
-    if (winner != null) {
+    val winnerTrial: TrialData?
+    val winnerText: String
+    val winnerProbsStr: String
+    val selectionLogic: String
+
+    if (usesLenMeanBinSelection(pipelineKey)) {
+        val hyps = mutableListOf<BinHyp>()
+        for (t in trialsList) {
+            if (t.text.startsWith("ERR")) continue
+            val tokens = parseOcrDigitProbs(t.probsStr)
+            if (tokens.isEmpty()) {
+                val d = t.text.filter { it.isDigit() }
+                if (d.isNotEmpty()) {
+                    hyps.add(BinHyp(t, d, List(d.length) { 0.5f }, "noprob"))
+                }
+                continue
+            }
+            // Keep pruned (!) digits so weak trailing digits remain scoreable.
+            val fullText = tokens.joinToString("") { it.first.toString() }
+            val fullProbs = tokens.map { it.second }
+            hyps.add(BinHyp(t, fullText, fullProbs, "full"))
+            val maxStrip = minOf(3, fullText.length - 1)
+            for (k in 1..maxStrip) {
+                hyps.add(
+                    BinHyp(
+                        t,
+                        fullText.dropLast(k),
+                        fullProbs.dropLast(k),
+                        "strip$k",
+                    ),
+                )
+            }
+        }
+        val digitHyps = hyps.filter { h -> h.text.isNotEmpty() && h.text.all { it.isDigit() } }
+        val pref = OdometerTracking.preferredLength(preferredDigitLen)
+        val atPref = digitHyps.filter { it.text.length == pref }
+        val atPrefPlus = if (allowLenPlusOne) {
+            digitHyps.filter { it.text.length == pref + 1 }
+        } else {
+            emptyList()
+        }
+        val bandRange = OdometerTracking.allowedLengths(pref, allowLenPlusOne)
+        val band = digitHyps.filter { it.text.length in bandRange }
+        val pool = when {
+            atPref.isNotEmpty() -> atPref
+            atPrefPlus.isNotEmpty() -> atPrefPlus
+            band.isNotEmpty() -> band
+            else -> digitHyps
+        }
+        val best = pool.maxByOrNull { meanProb(it.probs) }
+        if (best != null) {
+            winnerTrial = best.trial
+            winnerText = best.text
+            winnerProbsStr = formatProbs(best.text, best.probs)
+            selectionLogic = when {
+                atPref.isNotEmpty() -> "PreferLen$pref->Mean(+tailStrip)"
+                atPrefPlus.isNotEmpty() -> "PreferLen${pref + 1}->Mean(+tailStrip)"
+                band.isNotEmpty() -> "Band${bandRange.first}-${bandRange.last}->Mean(+tailStrip)"
+                else -> "AnyLen->Mean(+tailStrip)"
+            }
+            trialsMeta["selection_hyp_label"] = best.label
+            trialsMeta["selection_hyp_len"] = best.text.length.toString()
+            trialsMeta["selection_mean"] = "%.4f".format(meanProb(best.probs))
+        } else {
+            winnerTrial = trialsList.maxByOrNull { it.avgConf }
+            winnerText = winnerTrial?.text ?: ""
+            winnerProbsStr = winnerTrial?.probsStr ?: ""
+            selectionLogic = "Fallback(AvgConf)"
+        }
+    } else {
+        val highQual = trialsList.filter { it.minProb >= 0.40f }
+        winnerTrial = if (highQual.isNotEmpty()) highQual.maxByOrNull { it.sumProb } else trialsList.maxByOrNull { it.sumProb }
+        winnerText = winnerTrial?.text ?: ""
+        winnerProbsStr = winnerTrial?.probsStr ?: ""
+        selectionLogic = if (winnerTrial != null && winnerTrial.minProb >= 0.40f) {
+            "Filter(Min>=0.40)->Sum"
+        } else {
+            "Fallback(Sum)"
+        }
+    }
+
+    // Set winning binarization state (threshold from selected trial)
+    if (winnerTrial != null) {
         odoBuffer.p.clear()
         val interp = if (masterBuffer.c[vehicleId].mat.cols() > odoBuffer.p.mat.cols()) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
         org.opencv.imgproc.Imgproc.resize(masterBuffer.c[vehicleId].mat, odoBuffer.p.mat, odoBuffer.p.mat.size(), 0.0, 0.0, interp)
 
         odoBuffer.s.clear()
-        org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, winner.thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
+        org.opencv.imgproc.Imgproc.threshold(odoBuffer.p.mat, odoBuffer.s.mat, winnerTrial.thresh, 255.0, org.opencv.imgproc.Imgproc.THRESH_BINARY)
         odoBuffer.flip()
     }
 
     trialsList.forEachIndexed { idx, t ->
-        val isWinner = (t == winner)
+        val isWinner = (t === winnerTrial)
         val border = if (isWinner) "2px solid #00ff00" else "1px dashed #eee"
-        val status = if (isWinner) "<b>[SELECTED]</b> " else if (t.minProb < 0.40f) "<span style=\"color:red\">[REJECTED: Min Prob < 0.40]</span> " else "[REJECTED: Sum defeated]"
+        val status = when {
+            isWinner -> "<b>[SELECTED]</b> "
+            usesLenMeanBinSelection(pipelineKey) -> "[not selected] "
+            t.minProb < 0.40f -> "<span style=\"color:red\">[REJECTED: Min Prob < 0.40]</span> "
+            else -> "[REJECTED: Sum defeated]"
+        }
+        val shownText = if (isWinner && winnerText.isNotEmpty()) winnerText else t.text
 
-        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>${t.text}</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>${t.histB64}</div>")
+        trialsHtml.append("<div style=\"margin-bottom:8px; border-bottom:$border; padding:2px;\">$status T=${t.thresh.toInt()}: <b>$shownText</b> (Conf: ${"%.2f".format(t.avgConf)})<br><small>${t.probsStr}</small><br>${t.histB64}</div>")
 
         trialsMeta["trial_$idx"] = "${t.thresh}|${t.text}|${t.avgConf}"
         if (t.probsStr.isNotEmpty()) trialsMeta["trial_${idx}_probs"] = t.probsStr
     }
 
-    val winnerMeta = if (winner != null) {
+    val winnerMeta = if (winnerTrial != null) {
         mutableMapOf(
-            "best_threshold" to winner.thresh.toString(),
-            "best_text" to winner.text,
-            // "best_thumb" to winner.annotatedPostB64,
-            "best_probs" to winner.probsStr,
-            "selection_logic" to (if (winner.minProb >= 0.40f) "Filter(Min>=0.40)->Sum" else "Fallback(Sum)")
+            "best_threshold" to winnerTrial.thresh.toString(),
+            "best_text" to winnerText,
+            // "best_thumb" to winnerTrial.annotatedPostB64,
+            "best_probs" to winnerProbsStr,
+            "selection_logic" to selectionLogic,
         ).apply {
-            putAll(winner.metadata)
-            // put("best_plain_pre", winner.plainPreB64)
-            // put("best_plain_pre_rolling", winner.plainPreRollingB64)
-            // put("best_annotated_pre", winner.annotatedPreB64)
-            // put("best_plain_post", winner.plainPostB64)
-            // put("best_annotated_post", winner.annotatedPostB64)
-            put("best_post_1bpp", winner.post1bppB64)
-            put("best_post_cleaning_1bpp", winner.postCleaning1bppB64)
-            put("best_annotations", winner.annotationsStr)
+            putAll(winnerTrial.metadata)
+            // put("best_plain_pre", winnerTrial.plainPreB64)
+            // put("best_plain_pre_rolling", winnerTrial.plainPreRollingB64)
+            // put("best_annotated_pre", winnerTrial.annotatedPreB64)
+            // put("best_plain_post", winnerTrial.plainPostB64)
+            // put("best_annotated_post", winnerTrial.annotatedPostB64)
+            put("best_post_1bpp", winnerTrial.post1bppB64)
+            put("best_post_cleaning_1bpp", winnerTrial.postCleaning1bppB64)
+            put("best_annotations", winnerTrial.annotationsStr)
         }
     } else emptyMap()
     trialsMeta.putAll(winnerMeta)
@@ -1863,8 +2250,13 @@ internal suspend fun runPaddleValleyIterative(
     targetRefMap: MutableMap<String, RefinementTrace>,
     isNumeric: Boolean = false,
     stages: List<String> = listOf("Raw", "80%"),
-    extraImages: Map<String, String> = emptyMap(), useCharAware: Boolean = false, pipelineKey: String = ""
+    extraImages: Map<String, String> = emptyMap(),
+    useCharAware: Boolean = false,
+    pipelineKey: String = "",
 ) {
+    val preferredDigitLen = OdometerTracking.digitCount(winnerRef.vehicle)
+    // Alignment has no per-photo last-fill: allow face+1 so rollover-edge photos stay selectable.
+    val allowLenPlusOne = true
     val tH0 = System.currentTimeMillis()
     val odoBuffer = vehicleBufferSets[winnerRef.vehicle.id] ?: return
     val htmlOutput = StringBuilder("<b>$displayName:</b><br>")
@@ -1917,7 +2309,20 @@ internal suspend fun runPaddleValleyIterative(
             stageMeta["after_hist"] = h2
         } else if (stage == "Bin-Trials") {
             val stats = getHistStats(odoBuffer.p.mat)
-            val (tHtml, tMeta) = runBinTrialsPaddle(odoBuffer, masterBuffer as BufferSet, winnerRef.vehicle.id, experimentDetSet512x128, experimentRecSet320x48, paddleEngine, stats.rawBins, useCharAware, steps, pipelineKey)
+            val (tHtml, tMeta) = runBinTrialsPaddle(
+                odoBuffer,
+                masterBuffer as BufferSet,
+                winnerRef.vehicle.id,
+                experimentDetSet512x128,
+                experimentRecSet320x48,
+                paddleEngine,
+                stats.rawBins,
+                useCharAware,
+                steps,
+                pipelineKey,
+                preferredDigitLen = preferredDigitLen,
+                allowLenPlusOne = allowLenPlusOne,
+            )
             trialsHtmlStr = tHtml
             stageMeta["trials_html"] = trialsHtmlStr
             stageMeta.putAll(tMeta)
@@ -1959,13 +2364,59 @@ internal suspend fun runPaddleValleyIterative(
         } else emptyList<TextBlock>()
         experimentDetSet512x128.c[detCropId].release()
 
-        val valleyResults = rawB.map { if (useCharAware) NativeImageUtils.expandByCharacterAwareDiagnostic(odoBuffer.p.mat, it.boundingBox) else NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox) }
+        // Red → orange expand by column axis:
+        //   char-aware (J/O) | P INTERIOR_ENERGY+jump (L/N) | valley (V/W)
+        val expandOptsP = ContentExpandUtils.ExpandOptions(
+            maxFrac = 1.0f,
+            enableJump = true,
+            jumpFrac = 0.40f,
+        )
+        val valleyResults = when {
+            usesPExpand(pipelineKey) -> rawB.map { tb ->
+                val exp = ContentExpandUtils.expand(
+                    odoBuffer.p.mat,
+                    tb.boundingBox,
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    expandOptsP,
+                )
+                Pair(
+                    exp,
+                    mapOf(
+                        "content_expand_mode" to "INTERIOR_ENERGY",
+                        "content_expand_jump" to "true",
+                        "content_expand_jump_frac" to "0.40",
+                    ),
+                )
+            }
+            usesCharAwareExpand(pipelineKey) || useCharAware -> rawB.map {
+                NativeImageUtils.expandByCharacterAwareDiagnostic(odoBuffer.p.mat, it.boundingBox)
+            }
+            else -> rawB.map {
+                NativeImageUtils.expandByValleyDiagnostic(odoBuffer.p.mat, it.boundingBox)
+            }
+        }
         val frags = valleyResults.map { it.first }
 
         val cons = OdometerOcrUtils.clusterRects(frags).sortedBy { it.left }
         val odoB = StringBuilder()
         val fBoxes = mutableListOf<android.graphics.Rect>()
         val jMeta = com.google.gson.JsonObject()
+        when {
+            usesPExpand(pipelineKey) -> {
+                jMeta.addProperty("content_expand_mode", "INTERIOR_ENERGY")
+                jMeta.addProperty("content_expand_jump", "true")
+                jMeta.addProperty("content_expand_jump_frac", "0.40")
+            }
+            usesCharAwareExpand(pipelineKey) -> jMeta.addProperty("content_expand_mode", "char_aware")
+            usesValleyExpand(pipelineKey) -> jMeta.addProperty("content_expand_mode", "valley")
+        }
+        if (usesV4MobileDet(pipelineKey)) jMeta.addProperty("det_model", "PP-OCRv4_mobile_det")
+        jMeta.addProperty(
+            "bin_selection",
+            "PreferLen${OdometerTracking.digitCount(winnerRef.vehicle)}->Mean(+tailStrip)",
+        )
+        jMeta.addProperty("rec_feed", "source_border")
+        jMeta.addProperty("final_pick", "preferBin+PreferLen")
 
         valleyResults.forEachIndexed { vIdx, res ->
             res.second.forEach { (k, v) -> jMeta.addProperty("${k}_${vIdx}", v) }
@@ -1976,15 +2427,26 @@ internal suspend fun runPaddleValleyIterative(
             val sT = box.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
             val sR = box.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
             val sB = box.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
-            val rSrcId = odoBuffer.createCrop(sL, sT, sR - sL, sB - sT)
-            experimentRecSet320x48.p.clear()
-            val rSc = minOf(312f / (sR - sL), 40f / (sB - sT))
-            val ew = (( (sR - sL) * rSc + 1).toInt() / 2) * 2
-            val eh = (( (sB - sT) * rSc + 1).toInt() / 2) * 2
-            val rCrId = experimentRecSet320x48.createCrop(4, 4, ew, eh)
-            org.opencv.imgproc.Imgproc.resize(odoBuffer.c[rSrcId].mat, experimentRecSet320x48.c[rCrId].mat, experimentRecSet320x48.c[rCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            odoBuffer.c[rSrcId].release()
-            experimentRecSet320x48.c[rCrId].release()
+            val (rScMeta, padMeta) = feedOdoRoiToRecBuffer(
+                odoBuffer.p.mat,
+                sL, sT, sR, sB,
+                experimentRecSet320x48,
+                useSourceBorder = usesSourceBorderRec(pipelineKey),
+            )
+            jMeta.addProperty("rec_scale_$bIdx", "%.4f".format(rScMeta))
+            jMeta.addProperty("rec_src_pad_px_$bIdx", padMeta)
+            jMeta.addProperty(
+                "rec_feed",
+                if (usesSourceBorderRec(pipelineKey)) "source_border" else "black_pad_4px",
+            )
+
+            // Exact rec buffer fed to recognizeNumeric.
+            val (recB64, _) = OcrUtils.takeSnapshot(
+                experimentRecSet320x48.p, null,
+                experimentRecSet320x48.p.width, experimentRecSet320x48.p.height,
+                emptyList(), null, experimentRecSet320x48,
+            )
+            if (recB64.isNotEmpty()) jMeta.addProperty("ocr_rec_thumb_$bIdx", recB64)
 
             val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
             if (ocrR.debugText.isNotBlank()) { odoB.append(ocrR.debugText).append(" "); fBoxes.add(box) }
@@ -2039,13 +2501,28 @@ internal suspend fun runPaddleValleyIterative(
             htmlOutput.append("$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
         } else {
             val thumbImg = if (lastThumb.isNotEmpty()) "<img src='data:image/jpeg;base64,$lastThumb'>" else ""
-            htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg$thumbImg$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
+            // Exact 320×48 rec buffers sent to recognizeNumeric (Raw: ocr_rec_thumb_*; Bin: trial_*_ocr_rec_thumb_*).
+            val recBufHtml = buildString {
+                val recKeys = stageMeta.keys.filter {
+                    it.startsWith("ocr_rec_thumb_") || it.contains("ocr_rec_thumb_")
+                }.sorted()
+                if (recKeys.isNotEmpty()) {
+                    append("<br><small>OCR rec buffers (exact input to recognizeNumeric):</small><br>")
+                    recKeys.forEach { k ->
+                        val b64 = stageMeta[k] ?: return@forEach
+                        if (b64.length < 32) return@forEach
+                        append("<img src='data:image/jpeg;base64,$b64' style='margin:2px;border:1px solid #888;' title='$k'>")
+                    }
+                }
+            }
+            htmlOutput.append("<div class='ocr-step'><b>$stage:</b> ($tL ms)<br>$plainImg$thumbImg$histImg$hT${trialsHtmlStr}$recBufHtml<br>$currentOdoStr</div>")
         }
 
         val sObj = com.google.gson.JsonObject()
         sObj.addProperty("text", currentOdoStr)
         sObj.addProperty("time", tL)
         stageMeta.forEach { (k, v) ->
+            // Keep ocr_rec_thumb_* in JSON for debug; skip only huge trial HTML/hist dumps.
             if (k != "best_plain_pre" && k != "best_plain_pre_rolling" && k != "best_annotated_pre" && k != "best_plain_post" && k != "best_annotated_post" &&
                 k != "trials_html" && k != "before_hist" && k != "after_hist") {
                 sObj.addProperty(k, v)
@@ -2056,7 +2533,22 @@ internal suspend fun runPaddleValleyIterative(
 
     }
 
-    val result = OcrHarnessResult(displayName, htmlOutput.toString(), com.google.gson.JsonObject().apply { add("stages", jsonStages) }, OdometerOcrUtils.pickBestOdometer(steps), lastThumb, System.currentTimeMillis() - tH0, tSnTotal, extraImages)
+    val bestOdo = OdometerOcrUtils.pickBestOdometer(
+        steps,
+        preferredLen = preferredDigitLen,
+        allowLenPlusOne = allowLenPlusOne,
+        preferBin = true,
+    )
+    val result = OcrHarnessResult(
+        displayName,
+        htmlOutput.toString(),
+        com.google.gson.JsonObject().apply { add("stages", jsonStages) },
+        bestOdo,
+        lastThumb,
+        System.currentTimeMillis() - tH0,
+        tSnTotal,
+        extraImages,
+    )
     report[displayName] = result
     targetRefMap[displayName] = RefinementTrace(displayName, System.currentTimeMillis() - tH0, steps)
 }

@@ -39,6 +39,7 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.ui.util.*
 import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -58,8 +59,144 @@ import kotlin.math.min
 
 private const val TAG = "ExperimentPump"
 
-private fun pruneRedPixelsTopN(rects: MutableList<Rect>, context: Context) {
-    PumpCostVolUtils.pruneRectsToTopN(rects, PumpOcrSettings.maxRedBoxes(context))
+/**
+ * Pump experiment precision pack for phone vs emulator A/B:
+ * - Emulator (x86 / ranchu / sdk fingerprint): [prod_u8fp32_u8] true fp32 mid-graph
+ * - Physical phone (arm): [prod_u8fp16] true fp16 mid-graph
+ */
+private fun experimentPumpProductDir(): String {
+    val isEmu =
+        Build.FINGERPRINT.contains("generic", ignoreCase = true) ||
+            Build.FINGERPRINT.contains("emulator", ignoreCase = true) ||
+            Build.FINGERPRINT.contains("sdk_", ignoreCase = true) ||
+            Build.HARDWARE.contains("ranchu", ignoreCase = true) ||
+            Build.HARDWARE.contains("goldfish", ignoreCase = true) ||
+            Build.PRODUCT.contains("sdk", ignoreCase = true) ||
+            Build.MODEL.contains("sdk", ignoreCase = true) ||
+            Build.SUPPORTED_ABIS.any { it.startsWith("x86") }
+    return if (isEmu) "prod_u8fp32_u8" else "prod_u8fp16"
+}
+
+private fun pruneRedPixelsTopN(rects: MutableList<Rect>, context: Context, imgH: Int = 0) {
+    PumpCostVolUtils.pruneRectsToTopN(rects, PumpOcrSettings.maxRedBoxes(context), imgH)
+}
+
+private fun safeTraceName(fileName: String): String =
+    fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+private fun rectJson(r: Rect): JSONObject =
+    JSONObject().put("l", r.left).put("t", r.top).put("r", r.right).put("b", r.bottom)
+
+private fun samplesJson(samples: List<ContentExpandUtils.VertEnergySample>): JSONArray {
+    val arr = JSONArray()
+    samples.forEach { s ->
+        arr.put(
+            JSONArray()
+                .put(s.dy)
+                .put(s.energy)
+                .put(s.ratio)
+                .put(s.width)
+                .put(s.count),
+        )
+    }
+    return arr
+}
+
+private fun countPullJson(p: ContentExpandUtils.CountPullInfo?): Any {
+    if (p == null) return JSONObject.NULL
+    val counts = JSONArray()
+    p.counts.forEach { counts.put(it) }
+    return JSONObject()
+        .put("pulledTop", p.pulledTop)
+        .put("pulledBot", p.pulledBot)
+        .put("cSeed", p.cSeed)
+        .put("countThr", p.countThr)
+        .put("gxThr", p.gxThr)
+        .put("tBefore", p.tBefore)
+        .put("bBefore", p.bBefore)
+        .put("tAfter", p.tAfter)
+        .put("bAfter", p.bAfter)
+        .put("y0", p.y0)
+        .put("counts", counts)
+        .put("axis", p.axis)
+        .put("vNegBefore", p.vNegBefore)
+        .put("vPosBefore", p.vPosBefore)
+        .put("vNegAfter", p.vNegAfter)
+        .put("vPosAfter", p.vPosAfter)
+}
+
+private fun rawRoiJson(roi: ContentExpandUtils.EnergyPixelRoi?): Any {
+    if (roi == null) return JSONObject.NULL
+    return JSONObject()
+        .put("l", roi.l)
+        .put("t", roi.t)
+        .put("w", roi.w)
+        .put("h", roi.h)
+        .put("look", roi.look)
+        .put("hPad", roi.hPad)
+        .put("sobelScale", roi.sobelScale.toDouble())
+        .put("gray_u8_zlib_b64", Base64.encodeToString(roi.grayU8Zlib, Base64.NO_WRAP))
+        .put("sobel_u16le_zlib_b64", Base64.encodeToString(roi.sobelU16leZlib, Base64.NO_WRAP))
+}
+
+/** Sidecar lossless energy grow traces (P4-jump and P4-rot, every photo). */
+private fun writeExpandEnergyTrace(
+    out: File,
+    fileName: String,
+    maxFrac: Float,
+    traces: List<ContentExpandUtils.VertEnergyTrace>,
+    column: String,
+) {
+    val boxes = JSONArray()
+    traces.forEachIndexed { i, tr ->
+        val box = JSONObject()
+            .put("i", i)
+            .put("seed", rectJson(tr.seed))
+            .put("final", rectJson(tr.final))
+            .put("base", tr.base)
+            .put("thr", tr.thr)
+            .put("energyRatio", tr.energyRatio.toDouble())
+            .put("stopUp", tr.stopUp)
+            .put("stopDown", tr.stopDown)
+            .put("stopEnergyUp", tr.stopEnergyUp)
+            .put("stopEnergyDown", tr.stopEnergyDown)
+            .put("up", samplesJson(tr.up))
+            .put("down", samplesJson(tr.down))
+            .put("inside", samplesJson(tr.inside))
+            .put("scanUp", samplesJson(tr.scanUp))
+            .put("scanDown", samplesJson(tr.scanDown))
+            .put("afterUp", samplesJson(tr.afterUp))
+            .put("afterDown", samplesJson(tr.afterDown))
+            .put("lookAhead", tr.lookAhead)
+            .put("raw", rawRoiJson(tr.rawRoi))
+            .put("countPull", countPullJson(tr.countPull))
+        tr.finalCount?.let { box.put("finalCount", rectJson(it)) }
+        boxes.put(box)
+    }
+    val root = JSONObject()
+        .put("file", fileName)
+        .put("column", column)
+        .put("maxFrac", maxFrac.toDouble())
+        .put("sample", "[dy, energy, energy/base, width, gxRunCount]")
+        .put(
+            "scan",
+            "inside/scanUp/scanDown/after*: every 1px at stop width, no 0.45 gate. " +
+                "up/down = grow-accepted only. scan* from seed edge through grow+lookAhead " +
+                "(min ${ContentExpandUtils.VERT_ENERGY_LOOKAHEAD_MIN_PX} or seedH). " +
+                "after* = scan* past the stop. Fifth sample is smoothed gx-run-count.",
+        )
+        .put(
+            "raw",
+            "Lossless zlib only (not JPEG): raw.gray_u8_zlib_b64 + raw.sobel_u16le_zlib_b64 " +
+                "are deskewed gray and Sobel mag, row-major, seed ± " +
+                "${ContentExpandUtils.VERT_ENERGY_RAW_LOOK_FRAC}·seedH vert and ± " +
+                "${ContentExpandUtils.VERT_ENERGY_RAW_HPAD_FRAC}·seedW horiz. " +
+                "sobel_u16 = round(mag*${ContentExpandUtils.VERT_ENERGY_RAW_SCALE}). " +
+                "Replay stop rules and edge-count from gray; do not use only the strip mean.",
+        )
+        .put("boxes", boxes)
+    out.parentFile?.mkdirs()
+    out.writeText(root.toString())
 }
 
 private fun getPhotoFragmentFile(reportDir: File, ts: String, idx: Int): File {
@@ -96,8 +233,10 @@ private fun logHeapState(context: Context, label: String) {
         TAG,
         "heap[$label] memoryClass=${am.memoryClass}MB largeMemoryClass=${am.largeMemoryClass}MB " +
             "runtime max=${runtime.maxMemory()} total=${runtime.totalMemory()} free=${runtime.freeMemory()} " +
-            "availMem=${mi.availMem} threshold=${mi.threshold} lowMemory=${mi.lowMemory}"
+            "availMem=${mi.availMem} threshold=${mi.threshold} lowMemory=${mi.lowMemory}",
     )
+    // Same PSS / sys / swap lines as multi-scale det (compare first paddle detect jump).
+    ProcessMemProbe.log("pump_$label")
 }
 
 @Immutable
@@ -112,25 +251,188 @@ data class PumpPhotoResultSummary(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExperimentPumpScreen(navController: NavHostController) {
+fun ExperimentPumpScreen(
+    navController: NavHostController,
+    autoFirst10: Boolean = false,
+    /** Deep link: vehicleexpenses://experiment/pump?auto=l1debug — dump L1 SO buffers only. */
+    autoL1Debug: Boolean = false,
+    /** Deep link: vehicleexpenses://experiment/pump?auto=horiz — horiz-affected subset. */
+    autoHorizAffected: Boolean = false,
+    /** Deep link: vehicleexpenses://experiment/pump?auto=selected — coverage selected sample (pump only). */
+    autoSelectedSample: Boolean = false,
+) {
     val context = LocalContext.current
     val vehicleViewModel: VehicleViewModel = hiltViewModel()
     val vehicles by vehicleViewModel.vehicles.collectAsState()
     val scope = rememberCoroutineScope()
+    val jobState by ExperimentJobRunner.state.collectAsState()
 
     var status by remember { mutableStateOf("Ready to run experiment") }
     var detailLog by remember { mutableStateOf("") }
-    var isRunning by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
     var currentPhotoName by remember { mutableStateOf("") }
     var totalPhotos by remember { mutableIntStateOf(0) }
     val resultsList = remember { mutableStateListOf<PumpPhotoResultSummary>() }
+    var autoStarted by remember { mutableStateOf(false) }
+    val isRunning = jobState.active && jobState.kind == "pump"
 
     val experimentDir = File(context.getExternalFilesDir(null), "pump_photos")
     experimentDir.mkdirs()
     val reportDir = File(context.getExternalFilesDir(null), "pump_reports")
 
     if (!reportDir.exists()) reportDir.mkdirs()
+
+    fun startPumpJob(subsetNames: List<String>?, label: String) {
+        val n = if (subsetNames != null) {
+            subsetNames.size
+        } else {
+            experimentDir.listFiles { f ->
+                f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+            }?.size ?: 0
+        }
+        totalPhotos = n
+        resultsList.clear()
+        val ok = ExperimentJobRunner.start(context.applicationContext, kind = "pump") { progressCb, log, statusLine ->
+            statusLine(label)
+            val out = runPumpExperiment(
+                experimentDir,
+                reportDir,
+                context.applicationContext,
+                log,
+                subsetNames,
+            ) { res, p ->
+                val done = (p * n.toFloat()).toInt().coerceIn(1, n.coerceAtLeast(1))
+                progressCb(done, n.coerceAtLeast(1), res.photoName)
+            }
+            out?.absolutePath
+        }
+        if (!ok) {
+            status = "Another experiment is already running (${ExperimentJobRunner.state.value.kind})"
+        } else {
+            status = label
+        }
+    }
+
+    val runFirst10: () -> Unit = {
+        val allFiles = experimentDir.listFiles { f ->
+            f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+        } ?: emptyArray()
+        val first10Names = allFiles.sortedBy { it.name }.take(10).map { it.name }
+        Log.d(TAG, "First 10 listFiles: dir=${experimentDir.absolutePath} count=${first10Names.size}")
+        startPumpJob(first10Names, "First 10 (${first10Names.size})…")
+    }
+
+    /** Coverage selected sample — pump domain only (see [SelectedSamplePhotos.PUMP]). */
+    val runSelectedSample: () -> Unit = {
+        val names = SelectedSamplePhotos.presentInOrder(experimentDir, SelectedSamplePhotos.PUMP)
+        val missing = SelectedSamplePhotos.PUMP.size - names.size
+        Log.d(
+            TAG,
+            "Selected sample (pump): dir=${experimentDir.absolutePath} " +
+                "matched=${names.size}/${SelectedSamplePhotos.PUMP.size} missing=$missing",
+        )
+        if (names.isEmpty()) {
+            status =
+                "Selected sample: 0 pump photos present " +
+                    "(need up to ${SelectedSamplePhotos.PUMP.size} in pump_photos)"
+        } else {
+            startPumpJob(
+                names,
+                "Selected sample (${names.size} pump)…" +
+                    if (missing > 0) " ($missing not on device)" else "",
+            )
+        }
+    }
+
+    /** Photos whose exact-pool min_v changed between horiz 0.5 and 1.0 (phone 08-08 pair). */
+    val runHorizAffected: () -> Unit = {
+        val allFiles = experimentDir.listFiles { f ->
+            f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+        } ?: emptyArray()
+        val want = HORIZ_REACH_AFFECTED_FILENAMES.toSet()
+        val names = allFiles.map { it.name }.filter { it in want }.sorted()
+        val missing = want.size - names.size
+        Log.d(
+            TAG,
+            "Horiz-affected listFiles: dir=${experimentDir.absolutePath} " +
+                "matched=${names.size}/${want.size} missing=$missing",
+        )
+        if (names.isEmpty()) {
+            status = "Horiz-affected: 0 photos present (need ${want.size} in pump_photos)"
+        } else {
+            startPumpJob(
+                names,
+                "Horiz-affected (${names.size})…" +
+                    if (missing > 0) " ($missing not on device)" else "",
+            )
+        }
+    }
+
+    val runL1SoDebug: () -> Unit = {
+        val ok = ExperimentJobRunner.start(context.applicationContext, kind = "pump") { _, log, statusLine ->
+            statusLine("L1 SO debug dump…")
+            val label = BuildConfig.VERSION_NAME
+            val res = PumpSoDebugDump.run(
+                context = context.applicationContext,
+                photoName = PumpSoDebugDump.DEFAULT_L1_NAME,
+                label = label,
+                onLog = log,
+            )
+            res.message
+        }
+        if (!ok) {
+            status = "Another experiment is already running (${ExperimentJobRunner.state.value.kind})"
+        } else {
+            totalPhotos = 1
+            currentPhotoName = PumpSoDebugDump.DEFAULT_L1_NAME
+            status = "L1 SO debug dump…"
+        }
+    }
+
+    LaunchedEffect(jobState) {
+        if (jobState.kind != "pump" && jobState.kind != "") return@LaunchedEffect
+        if (jobState.kind != "pump") return@LaunchedEffect
+        when (jobState.status) {
+            "running", "starting" -> {
+                status = jobState.status
+                currentPhotoName = jobState.current
+                progress = jobState.progress
+                if (jobState.detail.isNotEmpty()) detailLog = jobState.detail.takeLast(800)
+            }
+            "done" -> {
+                progress = 1f
+                status = "Complete! ${jobState.resultPath.ifEmpty { "Reports saved." }}"
+            }
+            "failed" -> status = "FAILED: ${jobState.error}"
+        }
+    }
+
+    // Deep link: vehicleexpenses://experiment/pump?auto=first10 | auto=l1debug | auto=horiz | auto=selected
+    LaunchedEffect(autoFirst10, autoL1Debug, autoHorizAffected, autoSelectedSample) {
+        if (autoStarted || ExperimentJobRunner.isRunning()) return@LaunchedEffect
+        when {
+            autoL1Debug -> {
+                autoStarted = true
+                Log.i(TAG, "autoL1Debug starting PumpSoDebugDump")
+                runL1SoDebug()
+            }
+            autoHorizAffected -> {
+                autoStarted = true
+                Log.i(TAG, "autoHorizAffected starting horiz-affected subset")
+                runHorizAffected()
+            }
+            autoSelectedSample -> {
+                autoStarted = true
+                Log.i(TAG, "autoSelectedSample starting pump coverage subset")
+                runSelectedSample()
+            }
+            autoFirst10 -> {
+                autoStarted = true
+                Log.i(TAG, "autoFirst10 starting pump First 10")
+                runFirst10()
+            }
+        }
+    }
 
     val zipLauncher = rememberLauncherForActivityResult(contract = ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         uri?.let { u ->
@@ -145,11 +447,20 @@ fun ExperimentPumpScreen(navController: NavHostController) {
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text(status, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text(
+            "Jobs use ExperimentJobRunner + FGS — screen lock / leaving this page does not cancel.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
         if (detailLog.isNotEmpty()) { Text(detailLog, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
         if (isRunning) {
             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "${minOf(resultsList.size + 1, totalPhotos)} of $totalPhotos",
+                    text = jobState.current.ifEmpty {
+                        "${minOf(resultsList.size + 1, totalPhotos)} of $totalPhotos"
+                    },
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -164,32 +475,58 @@ fun ExperimentPumpScreen(navController: NavHostController) {
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
         Button(onClick = {
-            scope.launch {
-                val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
-                Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
-                totalPhotos = allFiles.size
-                isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, context, { detailLog = it }, null) { res, p ->
-                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
-                }
-                isRunning = false; status = "Complete! Reports saved."
-            }
+            val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
+            Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
+            startPumpJob(null, "Run Test (${allFiles.size})…")
         }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
-        Button(onClick = {
-            scope.launch {
-                val allFiles = experimentDir.listFiles { f ->
-                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
-                } ?: emptyArray()
-                val first10Names = allFiles.sortedBy { it.name }.take(10).map { it.name }
-                Log.d(TAG, "First 10 listFiles: dir=${experimentDir.absolutePath} count=${first10Names.size}")
-                totalPhotos = first10Names.size
-                isRunning = true; resultsList.clear()
-                runPumpExperiment(experimentDir, reportDir, context, { detailLog = it }, first10Names) { res, p ->
-                    resultsList.add(res); progress = p; currentPhotoName = res.photoName
-                }
-                isRunning = false; status = "Complete! First 10 report saved."
-            }
-        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("First 10") }
+        Button(
+            onClick = runFirst10,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("First 10") }
+        Button(
+            onClick = runSelectedSample,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Selected sample (${SelectedSamplePhotos.PUMP.size} pump)", fontWeight = FontWeight.Bold)
+        }
+        Text(
+            "Selected sample = coverage subset (small→large text, GT-matched; 34 pump). " +
+                "Pump photos only — no dash. Deep link: vehicleexpenses://experiment/pump?auto=selected",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+        Button(
+            onClick = runHorizAffected,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Horiz-affected (${HORIZ_REACH_AFFECTED_FILENAMES.size})")
+        }
+        Text(
+            "Horiz-affected = photos where exact min_v changed between horiz 0.5 and 1.0 " +
+                "(phone 08-08). Columns: G-- / G4 / P4-jump / m65 / gx / xycut / rot / Prod. " +
+                "Deep link: vehicleexpenses://experiment/pump?auto=horiz",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+        Button(
+            onClick = runL1SoDebug,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("L1 SO debug dump (buffers + heatmaps)")
+        }
+        Text(
+            "L1 dump writes under files/pump_so_debug/ — pull after pin SO and after new SO. " +
+                "Target: ${PumpSoDebugDump.DEFAULT_L1_NAME}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->
@@ -227,18 +564,22 @@ data class PumpBranch(
     }
 }
 
-private suspend fun runPumpExperiment(
+/**
+ * Full pump experiment. Returns the main JSON results file, or null if no photos.
+ * Package-visible for [ExperimentPrecisionAbScreen].
+ */
+suspend fun runPumpExperiment(
     experimentDir: File,
     reportDir: File,
     context: Context,
     onLog: (String) -> Unit,
     subsetNames: List<String>?,
     onProgress: (PumpPhotoResultSummary, Float) -> Unit
-) = withContext(Dispatchers.IO) {
+): File? = withContext(Dispatchers.IO) {
     logHeapState(context, "runPumpExperiment:start")
     val allPhotos = experimentDir.listFiles { f ->
         f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
-    }?.sortedBy { it.name } ?: return@withContext
+    }?.sortedBy { it.name } ?: return@withContext null
     Log.d(TAG, "runPumpExperiment listFiles: dir=${experimentDir.absolutePath} count=${allPhotos.size}")
 
     val photos = if (subsetNames != null) {
@@ -246,12 +587,19 @@ private suspend fun runPumpExperiment(
     } else allPhotos
 
     val total = photos.size
+    if (total == 0) return@withContext null
     val timestamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
+    // Precision A/B for parallel phone+emu runs: true fp16 pack on device, true fp32 pack on emulator.
+    // ABI-split APKs: x86_64 ships prod_u8fp32_u8; arm64 ships prod_u8fp16.
+    val experimentProdDir = experimentPumpProductDir()
+    onLog("loadProductionModels forceProdDir=$experimentProdDir (fp16 phone / fp32 emu)")
+    Log.i(TAG, "experiment product pack: $experimentProdDir")
+    NativePaddleEngine.loadProductionModels(context, forceProdDir = experimentProdDir)
     val paddleEngine = NativePaddleEngine(context)
 
     val jsonFile = File(reportDir, "pump_results_$timestamp.json")
     val deviceModel = Build.MODEL
-    val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n  \"version\": \"${BuildConfig.VERSION_NAME}\",\n  \"device\": \"$deviceModel\",\n  \"total_photos\": $total,\n  \"results\": [\n"
+    val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n${ExperimentReportMeta.jsonFields()},\n  \"device\": \"$deviceModel\",\n  \"total_photos\": $total,\n  \"results\": [\n"
     val jsonFooter = "\n  ]\n}"
     var firstPhoto = true
     val jsonWriter = jsonFile.bufferedWriter()
@@ -268,19 +616,20 @@ private suspend fun runPumpExperiment(
     val experimentDetSet512x128 = BufferSet(512, 128)
     val masterBuffer = BufferSet(1, 1)
 
-    // Define flows for N-sets support
-    // Configure experiment flows here. (See: docs/PUMP_EXPERIMENT_FLOWS.md for instructions)
-    // Active sets: G--, I only — each column gets a fresh master copy. Processors bit-identical to multi-set era.
-    // Retired (docs/obsolete/EXPERIMENT_PUMP_SETS.md + tag obsolete-experiment-pump-multi-sets):
-    // A (ML+Paddle), B/C/F (binPeak), D, E, G, G-, H.
-    // G--: SET_G_MINUS_MINUS_VERT_FACTORS k=4 [0.1,0.3,0.4,1.1]; Quick Fill production path.
-    // Set I (D+E+G hybrid, calculated): deskew once, G (iGVert), clip + adjust p/v grays, D (iDVert), valley push, E (iEVert); one combined classify.
-    // I Both stage lists: iGVert=[0.1,0.2,0.3,0.4,0.6,1.1,1.5] iDVert=[0.1,0.2] iEVert=[0.3,0.7] (cover 268+261).
-    // Label convention: active sets use "Set X (stretch-type, blue-method)" self-describing columns.
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
-        "Set I (D+E+G hybrid, calculated)"
+        "Set G4 (v4 det, calculated 0.0-2.5)",
+        "Set P4-jump (v4 + energy + jump, S OCR)",
+        "Set P4-m65 (v4 + mean0.65 frozen + jump)",
+        "Set P4-gx (v4 + gx0.55 frozen + jump)",
+        "Set P4-xycut (v4 + xycut-gx frozen + jump)",
+        "Set P4-rot-jump (v4 oriented + jump, S OCR)",
+        "Set Prod-jump (product + energy + jump, S OCR)",
+        "Set Prod-m65 (product + mean0.65 frozen + jump)",
+        "Set Prod-rot (product oriented + jump, S OCR)",
     )
+    val heatDumpRoot = File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
+    val energyTraceRoot = File(reportDir, "expand_energy_$timestamp").also { it.mkdirs() }
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
@@ -292,7 +641,7 @@ private suspend fun runPumpExperiment(
 
     photos.forEachIndexed { index, file ->
         try {
-            withContext(Dispatchers.Main) { onLog("Processing ${index + 1}/$total: ${file.name}") }
+            onLog("Processing ${index + 1}/$total: ${file.name}")
 
             val (probedW, probedH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             if (probedW <= 0 || probedH <= 0) {
@@ -349,88 +698,8 @@ private suspend fun runPumpExperiment(
                 }
             }
 
-            fun qualifiesFor3SidesNearExtend(cR: android.graphics.Rect, oR: android.graphics.Rect): Boolean {
-                val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                if (insides.count { it } != 3) return false
-                // identify protruding side + compute pixel protrusion distance + overlap on that axis
-                val (protrPx, hasOverlap) = when {
-                    !insides[0] -> (cR.left - oR.left) to (oR.right > cR.left)   // left
-                    !insides[2] -> (oR.right - cR.right) to (oR.left < cR.right) // right
-                    !insides[1] -> (cR.top - oR.top) to (oR.bottom > cR.top)     // top
-                    !insides[3] -> (oR.bottom - cR.bottom) to (oR.top < cR.bottom) // bottom
-                    else -> 0 to true
-                }
-                return protrPx <= 40 && hasOverlap
-            }
-
             fun doCrossScaleRedboxFilterPixel(redRects: MutableList<android.graphics.Rect>) {
-                if (redRects.isEmpty()) return
-                // Exact containment pass (sequential kept, pure integer, no ICRS)
-                val kept = mutableListOf<android.graphics.Rect>()
-                for (r1 in redRects) {
-                    val isContained = kept.any { r2 ->
-                        r2.contains(r1.left, r1.top, r1.right, r1.bottom)
-                    }
-                    if (!isContained) kept.add(r1)
-                }
-                // Now 3sides + <=40px with smart sweep instead of O(n^2) pair
-                // Build intervals
-                data class Iv(val s: Int, val e: Int, val idx: Int)
-                // X sweep for overlaps
-                val xIvs = kept.withIndex().map { (i, r) -> Iv(r.left, r.right, i) }.sortedBy { it.s }
-                val xOver = mutableSetOf<Pair<Int, Int>>()
-                val activeX = mutableListOf<Iv>()
-                for (iv in xIvs) {
-                    activeX.removeAll { it.e < iv.s }
-                    for (a in activeX) {
-                        val lo = minOf(a.idx, iv.idx); val hi = maxOf(a.idx, iv.idx)
-                        xOver.add(lo to hi)
-                    }
-                    activeX.add(iv)
-                }
-                // Y sweep
-                val yIvs = kept.withIndex().map { (i, r) -> Iv(r.top, r.bottom, i) }.sortedBy { it.s }
-                val yOver = mutableSetOf<Pair<Int, Int>>()
-                val activeY = mutableListOf<Iv>()
-                for (iv in yIvs) {
-                    activeY.removeAll { it.e < iv.s }
-                    for (a in activeY) {
-                        val lo = minOf(a.idx, iv.idx); val hi = maxOf(a.idx, iv.idx)
-                        yOver.add(lo to hi)
-                    }
-                    activeY.add(iv)
-                }
-                val candidates = xOver intersect yOver
-                // 3sides only on candidates (small N)
-                val toProcess = kept.toMutableList()
-                val extended = mutableListOf<android.graphics.Rect>()
-                for (i in toProcess.indices) {
-                    var cur = toProcess[i]
-                    for (j in toProcess.indices) {
-                        if (i == j) continue
-                        val p = minOf(i, j) to maxOf(i, j)
-                        if (p !in candidates) continue
-                        val oth = toProcess[j]
-                        if (qualifiesFor3SidesNearExtend(cur, oth)) {
-                            val insides = listOf(oth.left >= cur.left, oth.top >= cur.top, oth.right <= cur.right, oth.bottom <= cur.bottom)
-                            val newL = if (!insides[0]) min(cur.left, oth.left) else cur.left
-                            val newT = if (!insides[1]) min(cur.top, oth.top) else cur.top
-                            val newR = if (!insides[2]) max(cur.right, oth.right) else cur.right
-                            val newB = if (!insides[3]) max(cur.bottom, oth.bottom) else cur.bottom
-                            var nl = newL; var nr = newR; var nt = newT; var nb = newB
-                            if (nl > nr) { val t = nl; nl = nr; nr = t }
-                            if (nt > nb) { val t = nt; nt = nb; nb = t }
-                            cur = android.graphics.Rect(nl, nt, nr, nb)
-                        }
-                    }
-                    if (extended.none { it == cur }) extended.add(cur)
-                }
-                // final cleanup contains
-                val cleaned = extended.filter { b ->
-                    !extended.any { o -> o != b && o.contains(b) }
-                }.filter { it.width() > 0 && it.height() > 0 }.toMutableList()
-                redRects.clear()
-                redRects.addAll(cleaned)
+                PumpCostVolUtils.doCrossScaleRedboxFilterPixel(redRects)
             }
 
             fun labelWithText(b64: String, text: String): String {
@@ -459,64 +728,7 @@ private suspend fun runPumpExperiment(
             }
 
             fun doCrossScaleRedboxFilter(pdHunksRawTotal: MutableList<PumpHunk>, imgW: Int, imgH: Int) {
-                if (pdHunksRawTotal.isNotEmpty()) {
-                    // Remove redundant nested or duplicate red boxes (entirely contained or perfectly overlapping).
-                    // Purpose: eliminate redundant detections so they do not contribute to derived
-                    // blue/orange boxes or final results. Filtered boxes are removed completely.
-                    // Use exact containment (no artificial inset/spacing); for perfect overlaps,
-                    // keep one representative (the first in order) and drop the rest.
-                    // Sequential keep: only check against already-kept boxes to ensure at least one survives duplicates.
-                    // Also applies the corrected 3 sides enclosed + <=40px (per user): exactly 3 edge insides + protrusion on 4th <=40px in pixel space *and* the boxes still overlap on the protruding axis (no gap). Uses shared qualifiesFor3SidesNearExtend helper (same logic for blue/orange in Set C).
-                    val kept = mutableListOf<PumpHunk>()
-                    for (h1 in pdHunksRawTotal) {
-                        val r1 = android.graphics.Rect(h1.rect.left.toInt(), h1.rect.top.toInt(), h1.rect.right.toInt(), h1.rect.bottom.toInt())
-                        val isContained = kept.any { h2 ->
-                            h1 !== h2 && run {
-                                val r2 = android.graphics.Rect(h2.rect.left.toInt(), h2.rect.top.toInt(), h2.rect.right.toInt(), h2.rect.bottom.toInt())
-                                // Exact containment (no inset). Perfect overlaps/duplicates: keep the first, drop redundant.
-                                r2.contains(r1.left, r1.top, r1.right, r1.bottom)
-                            }
-                        }
-                        if (!isContained) {
-                            kept.add(h1)
-                        }
-                    }
-                    // 3 sides +40px on the exact survivors (the near-nested cases exact didn't catch)
-                    val toProcess = kept.toMutableList()
-                    val extended = mutableListOf<PumpHunk>()
-                    for (i in toProcess.indices) {
-                        var cur = toProcess[i]
-                        for (j in toProcess.indices) {
-                            if (i == j) continue
-                            val oth = toProcess[j]
-                            val cR = android.graphics.Rect(cur.rect.left.toInt(), cur.rect.top.toInt(), cur.rect.right.toInt(), cur.rect.bottom.toInt())
-                            val oR = android.graphics.Rect(oth.rect.left.toInt(), oth.rect.top.toInt(), oth.rect.right.toInt(), oth.rect.bottom.toInt())
-                            val insides = listOf(oR.left >= cR.left, oR.top >= cR.top, oR.right <= cR.right, oR.bottom <= cR.bottom)
-                            if (qualifiesFor3SidesNearExtend(cR, oR)) {
-                                val newL = if (!insides[0]) min(cur.rect.left, oth.rect.left) else cur.rect.left
-                                val newT = if (!insides[1]) min(cur.rect.top, oth.rect.top) else cur.rect.top
-                                val newR = if (!insides[2]) max(cur.rect.right, oth.rect.right) else cur.rect.right
-                                val newB = if (!insides[3]) max(cur.rect.bottom, oth.rect.bottom) else cur.rect.bottom
-                                var nl = newL; var nr = newR; var nt = newT; var nb = newB
-                                if (nl > nr) { val t = nl; nl = nr; nr = t }
-                                if (nt > nb) { val t = nt; nt = nb; nb = t }
-                                cur = PumpHunk(cur.text, RectF(nl, nt, nr, nb))
-                            }
-                        }
-                        if (extended.none { it.rect == cur.rect }) extended.add(cur)
-                    }
-                    val cleaned = extended.filter { b ->
-                        val bR = android.graphics.Rect(b.rect.left.toInt(), b.rect.top.toInt(), b.rect.right.toInt(), b.rect.bottom.toInt())
-                        !extended.any { o ->
-                            if (o === b) false else {
-                                val oR = android.graphics.Rect(o.rect.left.toInt(), o.rect.top.toInt(), o.rect.right.toInt(), o.rect.bottom.toInt())
-                                oR.contains(bR)
-                            }
-                        }
-                    }.toMutableList()
-                    pdHunksRawTotal.clear()
-                    pdHunksRawTotal.addAll(cleaned)
-                }
+                PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
             }
 
 
@@ -622,6 +834,9 @@ private suspend fun runPumpExperiment(
                         .put("digits", c.digits)
                         .put("asisProbs", c.asisProbs)
                         .put("digitsProbs", c.digitsProbs)
+                    if (c.recB64.isNotEmpty()) j.put("recB64", c.recB64)
+                    if (c.recW > 0) j.put("recW", c.recW)
+                    if (c.recH > 0) j.put("recH", c.recH)
                     c.rect?.let { j.put("rect", rectToJson(it)) }
                     return j
                 }
@@ -633,7 +848,10 @@ private suspend fun runPumpExperiment(
                     asisList: List<String>,
                     digitsList: List<String>,
                     asisProbsList: List<String> = emptyList(),
-                    digitsProbsList: List<String> = emptyList()
+                    digitsProbsList: List<String> = emptyList(),
+                    recB64List: List<String> = emptyList(),
+                    recWList: List<Int> = emptyList(),
+                    recHList: List<Int> = emptyList(),
                 ): List<RedBoxOcrCandidate> {
                     val n = minOf(boxRects.size, asisList.size, digitsList.size)
                     return (0 until n).map { i ->
@@ -643,7 +861,10 @@ private suspend fun runPumpExperiment(
                             digitsList[i],
                             asisProbsList.getOrElse(i) { "" },
                             digitsProbsList.getOrElse(i) { "" },
-                            boxRects[i]
+                            boxRects[i],
+                            recB64List.getOrElse(i) { "" },
+                            recWList.getOrElse(i) { 0 },
+                            recHList.getOrElse(i) { 0 },
                         )
                     }
                 }
@@ -802,7 +1023,10 @@ private suspend fun runPumpExperiment(
                     finalCost: String,
                     finalVol: String,
                     assembly: Map<String, Any?> = emptyMap(),
-                    oranges: List<android.graphics.Rect> = emptyList()
+                    oranges: List<android.graphics.Rect> = emptyList(),
+                    ocrQuads: List<ContentExpandUtils.OrientedQuad> = emptyList(),
+                    seedQuads: List<ContentExpandUtils.OrientedQuad> = emptyList(),
+                    scaleVariants: JSONArray = JSONArray(),
                 ): String {
                     val redsArr = JSONArray()
                     reds.forEach { redsArr.put(rectToJson(it)) }
@@ -829,15 +1053,91 @@ private suspend fun runPumpExperiment(
                     }
                     val orangesArr = JSONArray()
                     oranges.forEach { orangesArr.put(rectToJson(it)) }
+                    fun quadsToJson(qs: List<ContentExpandUtils.OrientedQuad>): JSONArray {
+                        val arr = JSONArray()
+                        qs.forEach { q ->
+                            val pts = JSONArray()
+                            q.pts.take(8).forEach { pts.put(it.toDouble()) }
+                            arr.put(
+                                JSONObject()
+                                    .put("pts", pts)
+                                    .put("angleDeg", pumpQuadLongAngleDeg(q).toDouble()),
+                            )
+                        }
+                        return arr
+                    }
                     return JSONObject()
                         .put("reds", redsArr)
                         .put("ocrSourceRects", ocrArr)
+                        .put("ocrSourceQuads", quadsToJson(ocrQuads))
+                        .put("seedQuads", quadsToJson(seedQuads))
                         .put("candidates", candsArr)
                         .put("chosen", chosen)
                         .put("final", finalObj)
                         .put("assembly", assemblyObj)
                         .put("oranges", orangesArr)
+                        .put("scaleVariants", scaleVariants)
                         .toString()
+                }
+
+                // Height-only OCR variants after one detect+expand (`scaleVariants` / rec buffers).
+                // Live: S=1.0 only. On v0.98-212 167×2 non-cap successes, S>1 lost more
+                // fields than it gained. Put values back here to re-enable a sweep.
+                val pJumpOcrScales = listOf(1.0f)
+                // Walk budget per side / seedH. 0.4 so energy cannot glue the other line;
+                // G-on-cap (0/0.05/0.15) takes over if it still hits this leash.
+                val alignedExpandMaxFrac = 0.4f
+                val rotExpandMaxFrac = 0.4f
+                /** Parked. Was 0..0.50 / 0.05 on every seed. Rot now G-on-cap only. */
+                val rotVertSweep: List<Float> = emptyList()
+
+                fun ocrScaleVariantJson(
+                    s: Float,
+                    rects: List<android.graphics.Rect>,
+                    quads: List<ContentExpandUtils.OrientedQuad>,
+                    cands: List<RedBoxOcrCandidate>,
+                    cv: CostVolClassifyResult,
+                    kind: String = "s",
+                    v: Float? = null,
+                    hitCaps: List<Boolean> = emptyList(),
+                ): JSONObject {
+                    val rectArr = JSONArray()
+                    rects.forEach { rectArr.put(rectToJson(it)) }
+                    val candArr = JSONArray()
+                    cands.forEach { candArr.put(redBoxOcrCandidateToJson(it)) }
+                    val qArr = JSONArray()
+                    quads.forEach { q ->
+                        val pts = JSONArray()
+                        q.pts.take(8).forEach { pts.put(it.toDouble()) }
+                        qArr.put(
+                            JSONObject()
+                                .put("pts", pts)
+                                .put("angleDeg", pumpQuadLongAngleDeg(q).toDouble()),
+                        )
+                    }
+                    val j = JSONObject()
+                        .put("s", s.toDouble())
+                        .put("kind", kind)
+                        .put("ocrSourceRects", rectArr)
+                        .put("ocrSourceQuads", qArr)
+                        .put("candidates", candArr)
+                        .put(
+                            "chosen",
+                            JSONObject()
+                                .put("cost", redBoxOcrCandidateToJson(cv.costCand))
+                                .put("vol", redBoxOcrCandidateToJson(cv.volCand)),
+                        )
+                        .put(
+                            "final",
+                            JSONObject().put("cost", cv.cost).put("vol", cv.vol),
+                        )
+                    if (v != null) j.put("v", v.toDouble())
+                    if (hitCaps.isNotEmpty()) {
+                        val arr = JSONArray()
+                        hitCaps.forEach { arr.put(it) }
+                        j.put("hitVertCap", arr)
+                    }
+                    return j
                 }
 
                 // Phase 0 other visibility: hoist processedScales decl (the remnant inline one) early before procs so visible inside proc bodies after dupe + for the reinit in remnant discovery (per "any other visibility fixes for vars/lists (pdHunks*Total, mlBlocksRaw, scales, processedScales, experimentRec* buffers, etc.)").
@@ -845,49 +1145,9 @@ private suspend fun runPumpExperiment(
 
                 // Per-column top-4 box OCR (PUMP_COST_VOLUME_CLASSIFIER_SPEC.md): as-is (golden Y-band only) + digits on pixel rects; fix-pump-probs-decimal-cleaning-overlap-grouping-v2-20260619-plan: clean text only; probs returned separately
                 suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): PumpRectOcrLists {
-                    val asisPairs = rects.map { r ->
-                        val pW = r.width(); val pH = r.height()
-                        if (pW < 2 || pH < 2) "?" to "" else {
-                            val l = r.left.coerceIn(0, imgW - 1)
-                            val t = r.top.coerceIn(0, imgH - 1)
-                            val rr = r.right.coerceIn(l + 1, imgW)
-                            val bb = r.bottom.coerceIn(t + 1, imgH)
-                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
-                            experimentRecSet1024x48.p.clear()
-                            val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
-                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognize(experimentRecSet1024x48.c[recCropId])
-                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
-                        }
-                    }
-                    val digitsPairs = rects.map { rp ->
-                        val pW = rp.width(); val pH = rp.height()
-                        if (pW < 2 || pH < 2) "?" to "" else {
-                            val l = rp.left.coerceIn(0, imgW - 1)
-                            val t = rp.top.coerceIn(0, imgH - 1)
-                            val rr = rp.right.coerceIn(l + 1, imgW)
-                            val bb = rp.bottom.coerceIn(t + 1, imgH)
-                            val cropId = workspace.createCrop(l, t, rr - l, bb - t)
-                            val targetH = 48; val scale = 48f / pH; val rawW = (pW * scale).toInt()
-                            val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(320)
-                            experimentRecSet1024x48.p.clear()
-                            val recCropId = experimentRecSet1024x48.createCrop(4, 4, targetW, targetH)
-                            val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-                            org.opencv.imgproc.Imgproc.resize(workspace.c[cropId].mat, experimentRecSet1024x48.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
-                            val res = paddleEngine.recognizeNumericDecimal(experimentRecSet1024x48.c[recCropId])
-                            experimentRecSet1024x48.c[recCropId].release(); workspace.c[cropId].release()
-                            pumpOcrCleanAndProbs(res.debugText, res.perCharProbs)
-                        }
-                    }
-                    return PumpRectOcrLists(
-                        asis = asisPairs.map { it.first },
-                        digits = digitsPairs.map { it.first },
-                        asisProbs = asisPairs.map { it.second },
-                        digitsProbs = digitsPairs.map { it.second }
+                    // Delegate to shared util (source-border rec feed, same as Quick Fill / batch).
+                    return PumpCostVolUtils.ocrPumpRectsAsisAndDigits(
+                        workspace, paddleEngine, experimentRecSet1024x48, rects, imgW, imgH,
                     )
                 }
 
@@ -905,7 +1165,17 @@ private suspend fun runPumpExperiment(
 
                 fun makeGProc(
                     gVertFactors: List<Float>,
-                    assemblyNote: String
+                    assemblyNote: String,
+                    boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats: Boolean = false,
+                    /** Side pad as fraction of expanded blue height (each side). G-- = 0.5; dense/K trial = 1.0. */
+                    horizFactor: Float = SET_G_HORIZ_FACTOR,
+                    /** Heat thr: HEAT_THR_U8_GE1 (u≥1) or HEAT_THR_U8_GE2 (u≥2). */
+                    hmThresh: Float = HEAT_THR_U8_GE1,
+                    /** 3x3 heat-mask dilate passes before CC (L=2, M=5). Merges nearby heat. */
+                    maskDilatePasses: Int = 0,
+                    /** Null = product det. G4 uses PP-OCRv4_mobile_det. */
+                    expDetAsset: String? = null,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val workspace = ws
                     val branch = br
@@ -918,11 +1188,32 @@ private suspend fun runPumpExperiment(
                     pdHunksMaxTotal.clear()
                     pdHunksNativeTotal.clear()
                     val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p, longEdgeTarget = 256)
                     val tilt = -deskewRes.paddleCppAngle
                     OdometerOcrUtils.rotate(workspace, tilt)
                     branch.metadata["tilt"] = "%.2f".format(tilt)
                     branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                    branch.metadata["heatmap_box_mode"] = if (boxMode == NativeImageUtils.HEATMAP_BOX_AABB) "aabb" else "minAreaRect"
+                    branch.metadata["hm_thresh"] = hmThresh.toString()
+                    branch.metadata["hm_thresh_note"] =
+                        if (hmThresh <= 0f) "u8>=1" else if (kotlin.math.abs(hmThresh - HEAT_THR_U8_GE2) < 1e-6f) "u8>=2" else "custom"
+                    branch.metadata["mask_dilate_passes"] = maskDilatePasses.toString()
+                    branch.metadata["heatmap_cell_px"] = NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
+                    branch.metadata["product_path"] = NativePaddleEngine.activeProductPathId
+                    branch.metadata["product_dir"] = NativePaddleEngine.activeProductDir
+                    if (expDetAsset != null) {
+                        NativePaddleEngine.loadExperimentDetTiers(context, expDetAsset)
+                        branch.metadata["det_model"] = expDetAsset
+                    } else {
+                        branch.metadata["det_model"] = "product_det"
+                    }
+                    try {
+                    val photoHeatDir = if (dumpHeats) {
+                        File(heatDumpRoot, file.name.replace(Regex("[^A-Za-z0-9._-]"), "_")).also { it.mkdirs() }
+                    } else null
+                    if (photoHeatDir != null) {
+                        branch.metadata["heat_dump_dir"] = photoHeatDir.absolutePath
+                    }
                     var processedScales = mutableSetOf<Int>()
                     scales.forEach { scale ->
                     val srcW = workspace.p.width
@@ -935,7 +1226,14 @@ private suspend fun runPumpExperiment(
                     val targetLongEdge = max(targetW, targetH)
 
                     val (outerId, innerId) = prepareScale(workspace, scale)
-                    val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                    val heatFile = photoHeatDir?.let { File(it, "scale${scale}_heatmap.u8z") }
+                    val paddleResults = runDiscoveryPaddle(
+                        workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata,
+                        boxMode = boxMode,
+                        heatDumpU8z = heatFile,
+                        hmThresh = hmThresh,
+                        maskDilatePasses = maskDilatePasses,
+                    )
                     val detected = paddleResults[0]
                     val raw = paddleResults[1]
                     val exp = paddleResults[2]
@@ -986,7 +1284,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(redPixelList)
-                pruneRedPixelsTopN(redPixelList, context)
+                pruneRedPixelsTopN(redPixelList, context, imgH)
                 // Rebuild pdHunksRawTotal from the final <=4 pixel rects (full img ICRS only for kept)
                 pdHunksRawTotal.clear()
                 pdHunksRawTotal.addAll(redPixelList.map { r ->
@@ -997,7 +1295,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(expPixel)
-                pruneRedPixelsTopN(expPixel, context)
+                pruneRedPixelsTopN(expPixel, context, imgH)
                 pdHunksExpTotal.clear()
                 pdHunksExpTotal.addAll(expPixel.map { r ->
                     PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
@@ -1006,7 +1304,7 @@ private suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }.toMutableList()
                 doCrossScaleRedboxFilterPixel(maxPixel)
-                pruneRedPixelsTopN(maxPixel, context)
+                pruneRedPixelsTopN(maxPixel, context, imgH)
                 pdHunksMaxTotal.clear()
                 pdHunksMaxTotal.addAll(maxPixel.map { r ->
                     PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
@@ -1032,15 +1330,26 @@ private suspend fun runPumpExperiment(
                 // for the best path result using the valley versions).
                 // Set G-family calculated: single blue/orange create from post-prune kept reds + dual OCR + one store
                 val (customBlueG, customOrangeG) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, gVertFactors, 0.5f)
+                    pdHunksRawTotal, imgW, imgH, gVertFactors, horizFactor)
                 val customBluePixelG = customBlueG.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
                 val orangePixelG = customOrangeG.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
+                val tOcr0 = System.currentTimeMillis()
                 val ocrG = ocrPumpRectsAsisAndDigits(customBluePixelG)
-                val gCands = buildRedBoxCandidates(customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs)
+                val tOcr = (System.currentTimeMillis() - tOcr0).toString()
+                branch.metadata["t_ocr_ms"] = tOcr
+                branch.metadata["n_ocr_energy"] = customBluePixelG.size.toString()
+                branch.metadata["n_ocr_g"] = "0"
+                branch.metadata["t_ocr_energy_ms"] = tOcr
+                branch.metadata["t_ocr_g_ms"] = "0"
+                branch.metadata["t_expand_ms"] = "0"
+                val gCands = buildRedBoxCandidates(
+                    customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs, ocrG.recB64,
+                    recWList = ocrG.recW, recHList = ocrG.recH,
+                )
                 branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, gCands)
                 val redPixelG = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
@@ -1057,8 +1366,14 @@ private suspend fun runPumpExperiment(
                     assembly = mapOf(
                         "method" to "calculated",
                         "vertFactors" to gVertFactors,
-                        "horizFactor" to 0.5f,
+                        "heightMultiples" to gVertFactors.map { 1f + 2f * it },
+                        "horizFactor" to horizFactor,
                         "orangeSideExt" to 0.1,
+                        "heatmapBoxMode" to if (boxMode == NativeImageUtils.HEATMAP_BOX_AABB) "aabb" else "minAreaRect",
+                        "hmThresh" to hmThresh,
+                        "hmThreshNote" to (if (hmThresh <= 0f) "u8>=1" else if (kotlin.math.abs(hmThresh - HEAT_THR_U8_GE2) < 1e-6f) "u8>=2" else "custom"),
+                        "maskDilatePasses" to maskDilatePasses,
+                        "heatmapCellPx" to NativeImageUtils.PADDLE_DET_HEAT_CELL_PX,
                         "note" to assemblyNote
                     ),
                     oranges = orangePixelG
@@ -1067,8 +1382,1042 @@ private suspend fun runPumpExperiment(
                 val aPdG = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
                 val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdG, null, workspace).first
                 branch.images["PD"] = baseB64G
+                    } finally {
+                        if (expDetAsset != null) {
+                            try {
+                                NativePaddleEngine.restoreProductionDetTiers(context)
+                            } catch (t: Throwable) {
+                                Log.e(TAG, "restoreProductionDetTiers failed", t)
+                            }
+                        }
+                    }
             }
-                val procGMinusMinus = makeGProc(SET_G_MINUS_MINUS_VERT_FACTORS, "G-- shared k=4 [0.1,0.3,0.4,1.1]; Quick Fill; phone loss 4 / emu 5")
+                val procGMinusMinus = makeGProc(
+                    SET_G_MINUS_MINUS_VERT_FACTORS,
+                    "G-- shared k=4 [0.1,0.3,0.4,1.1]; Quick Fill ref; u8≥1; horiz=0.5; dumps heats",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = true,
+                    horizFactor = SET_G_HORIZ_FACTOR,
+                    hmThresh = HEAT_THR_U8_GE1,
+                )
+                val procG4 = makeGProc(
+                    SET_G4_VERT_FACTORS,
+                    "G4: v4 mobile det + G-style calculated verts 0.0/0.1/0.3 (best triple vs 0–0.3 union on v0.98-212 167×2); horiz=0.5; deskew; u8≥1",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    horizFactor = SET_G_HORIZ_FACTOR,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                )
+                // Horiz-reach A/B: same discovery as G-- (verts, thr, box mode); only horizFactor changes.
+                val procHorizByFactor: Map<Float, suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit> =
+                    SET_HORIZ_REACH_FACTORS.associateWith { h ->
+                        makeGProc(
+                            SET_G_MINUS_MINUS_VERT_FACTORS,
+                            "horiz A/B: fixed G-- verts [0.1,0.3,0.4,1.1]; thr u8≥1; horiz=$h",
+                            boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                            dumpHeats = false,
+                            horizFactor = h,
+                            hmThresh = HEAT_THR_U8_GE1,
+                        )
+                    }
+                // Parked (re-enable via docs/PUMP_EXPERIMENT_FLOWS.md): G-dense, K thr, L/M dilate, N–Q content.
+                @Suppress("unused")
+                val procGDense = makeGProc(
+                    SET_G_DENSE_VERT_FACTORS,
+                    "G-dense v fine 0…0.8 + coarse 1.0…2.5; minAreaRect; u8≥1; horiz=1.0",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    horizFactor = SET_G_DENSE_HORIZ_FACTOR,
+                    hmThresh = HEAT_THR_U8_GE1,
+                )
+                @Suppress("unused")
+                val procK = makeGProc(
+                    SET_G_DENSE_VERT_FACTORS,
+                    "K: same as G-dense but heat thr u8≥2 (minAreaRect, same verts/horiz)",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    horizFactor = SET_G_DENSE_HORIZ_FACTOR,
+                    hmThresh = HEAT_THR_U8_GE2,
+                )
+                val procL = makeGProc(
+                    SET_G_MINUS_MINUS_VERT_FACTORS,
+                    "L: heat mask dilate 2 passes then minAreaRect; no rect+1; G-- verts; horiz=0.5",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    horizFactor = SET_G_HORIZ_FACTOR,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    maskDilatePasses = 2,
+                )
+                val procM = makeGProc(
+                    SET_G_MINUS_MINUS_VERT_FACTORS,
+                    "M: heat mask dilate 4 passes then minAreaRect; no rect+1; G-- verts; horiz=0.5 (was 5; 5 merged cost+vol too often)",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    horizFactor = SET_G_HORIZ_FACTOR,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    maskDilatePasses = 4,
+                )
+
+                /** OCR oriented quads: warp each to horizontal 48px strip then recognize. */
+                suspend fun ocrPumpOrientedQuads(
+                    quads: List<ContentExpandUtils.OrientedQuad>,
+                    gray: org.opencv.core.Mat,
+                    imgW: Int,
+                    imgH: Int,
+                ): PumpRectOcrLists {
+                    // Inflate oriented quads in source so warp margin is real pixels, then
+                    // place strip at (0,0) without black 4px createCrop inset (same as odo Raw).
+                    data class OcrOne(
+                        val asis: Pair<String, String>,
+                        val digits: Pair<String, String>,
+                        val snap: String,
+                        val recW: Int,
+                        val recH: Int,
+                    )
+                    suspend fun ocrOne(q: ContentExpandUtils.OrientedQuad): OcrOne {
+                        val aabb = q.toAabb()
+                        if (aabb.width() < 2 || aabb.height() < 2) {
+                            return OcrOne("?" to "", "?" to "", "", 0, 0)
+                        }
+                        val rSc = 48f / aabb.height().coerceAtLeast(1)
+                        val pad = kotlin.math.ceil(4.0 / rSc.toDouble()).toInt().coerceAtLeast(1)
+                        val qInfl = q.inflate(pad, imgW, imgH)
+                        experimentRecSet1024x48.p.clear()
+                        val dest = org.opencv.core.Mat()
+                        val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
+                            gray, qInfl, dest, targetH = 48, maxW = 320,
+                        )
+                        if (!ok || dest.empty()) {
+                            dest.release()
+                            return OcrOne("?" to "", "?" to "", "", 0, 0)
+                        }
+                        val fed = RecBufferFeed.feedPreparedStripNoBlackPad(dest, experimentRecSet1024x48)
+                        dest.release()
+                        val snap = PumpCostVolUtils.snapRecCrop(
+                            experimentRecSet1024x48, fed.recCropId, fed.targetW, fed.targetH,
+                        )
+                        val asisRes = paddleEngine.recognize(experimentRecSet1024x48.c[fed.recCropId])
+                        val digitsRes = paddleEngine.recognizeNumericDecimal(
+                            experimentRecSet1024x48.c[fed.recCropId],
+                        )
+                        experimentRecSet1024x48.c[fed.recCropId].release()
+                        val asis = pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
+                        val digs = pumpOcrCleanAndProbs(digitsRes.debugText, digitsRes.perCharProbs)
+                        return OcrOne(asis, digs, snap, fed.targetW, fed.targetH)
+                    }
+                    val asis = ArrayList<String>(quads.size)
+                    val digits = ArrayList<String>(quads.size)
+                    val asisProbs = ArrayList<String>(quads.size)
+                    val digitsProbs = ArrayList<String>(quads.size)
+                    val recB64 = ArrayList<String>(quads.size)
+                    val recW = ArrayList<Int>(quads.size)
+                    val recH = ArrayList<Int>(quads.size)
+                    for (q in quads) {
+                        val one = ocrOne(q)
+                        asis.add(one.asis.first); asisProbs.add(one.asis.second)
+                        digits.add(one.digits.first); digitsProbs.add(one.digits.second)
+                        recB64.add(one.snap)
+                        recW.add(one.recW)
+                        recH.add(one.recH)
+                    }
+                    return PumpRectOcrLists(
+                        asis = asis,
+                        digits = digits,
+                        asisProbs = asisProbs,
+                        digitsProbs = digitsProbs,
+                        recB64 = recB64,
+                        recW = recW,
+                        recH = recH,
+                    )
+                }
+
+                /**
+                 * Rot column: independent of AABB discovery. One minAreaRect detect per
+                 * scale, keep 8-corners, oriented prune (sides move along their normals),
+                 * expandOriented, OCR each ocrScales. Does **not** call [runDiscoveryPaddle]
+                 * or convert a merge to an AABB quad.
+                 */
+                suspend fun runIndependentOrientedColumn(
+                    workspace: BufferSet,
+                    branch: PumpBranch,
+                    discoveryDetails: MutableMap<String, MutableMap<Int, List<PumpHunk>>>,
+                    imgW: Int,
+                    imgH: Int,
+                    enableJump: Boolean,
+                    jumpFrac: Float,
+                    ocrScales: List<Float>,
+                    tilt: Float,
+                    assemblyNote: String,
+                    expDetAsset: String?,
+                    orientedQuadsOut: MutableList<ContentExpandUtils.OrientedQuad>,
+                    maxFrac: Float = 1.0f,
+                    fallbackVerts: List<Float> = emptyList(),
+                    vertSweep: List<Float> = emptyList(),
+                    energyRatio: Float = 0.45f,
+                    freezeHorzDuringVert: Boolean = false,
+                    vertPadFrac: Float = 0.0f,
+                    energyTraceOut: File? = null,
+                ) {
+                    fun hunkFromAabb(r: android.graphics.Rect): PumpHunk =
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+
+                    val collected = ArrayList<ContentExpandUtils.OrientedQuad>()
+                    scales.forEach { scale ->
+                        val srcW = workspace.p.width
+                        val srcH = workspace.p.height
+                        val currentLongEdge = max(srcW, srcH)
+                        val scaleFactor =
+                            if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+                        val targetW = (srcW * scaleFactor).toInt().coerceAtLeast(2)
+                        val targetH = (srcH * scaleFactor).toInt().coerceAtLeast(2)
+                        val (outerId, innerId) = prepareScale(workspace, scale)
+                        val outer = workspace.c[outerId]
+                        val masterW = outer.width.coerceAtLeast(1)
+                        val masterH = outer.height.coerceAtLeast(1)
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        Log.i(
+                            TAG,
+                            "pump_rot_detect scale=$scale content=${targetW}x$targetH " +
+                                "slice=${masterW}x$masterH",
+                        )
+                        val detRes = paddleEngine.detect(
+                            outer,
+                            copyHeatmap = false,
+                            boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                            hmThresh = HEAT_THR_U8_GE1,
+                            maskDilatePasses = 0,
+                        )
+                        branch.metadata["t_pd_inference_$scale"] =
+                            detRes?.metadata?.get("t_inference_ms") ?: "0"
+                        branch.metadata["t_pd_native_post_$scale"] =
+                            detRes?.metadata?.get("t_native_post_ms") ?: "0"
+                        val scaleHunks = mutableListOf<PumpHunk>()
+                        detRes?.nativeBoxes?.forEach { box ->
+                            val p = box.points
+                            if (p.size < 8) return@forEach
+                            val q = FloatArray(8)
+                            for (i in 0 until 4) {
+                                q[i * 2] = p[i * 2] * fullW / masterW
+                                q[i * 2 + 1] = p[i * 2 + 1] * fullH / masterH
+                            }
+                            val oq = ContentExpandUtils.orientedFromPoints8(q)
+                            collected.add(oq)
+                            scaleHunks.add(hunkFromAabb(oq.toAabb()))
+                        }
+                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
+                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Native"]!![scale] = scaleHunks
+                        workspace.c[innerId].release()
+                        workspace.c[outerId].release()
+                    }
+                    branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+
+                    val maxN = PumpOcrSettings.maxRedBoxes(context)
+                    // Oriented merge: grow the keeper's sides along their normals so a
+                    // smaller poke-out is absorbed without converting the tilt to an AABB.
+                    val kept = ContentExpandUtils.pruneOrientedQuads(collected, maxN, imgH)
+                    val keptAabb = kept.map { it.toAabb() }
+                    orientedQuadsOut.clear()
+                    orientedQuadsOut.addAll(kept)
+
+                    val seedHunks = keptAabb.map { hunkFromAabb(it) }
+                    pdHunksRawTotal.clear()
+                    pdHunksRawTotal.addAll(seedHunks)
+                    pdHunksDetectedTotal.clear()
+                    pdHunksDetectedTotal.addAll(seedHunks)
+                    captureRedboxData(pdHunksRawTotal, workspace, branch)
+
+                    val gray = workspace.p.mat
+                    val expandOpts = ContentExpandUtils.ExpandOptions(
+                        maxFrac = maxFrac,
+                        enableJump = enableJump,
+                        jumpFrac = jumpFrac,
+                        energyRatio = energyRatio,
+                        freezeHorzDuringVert = freezeHorzDuringVert,
+                        vertPadFrac = vertPadFrac,
+                        recordVertEnergy = energyTraceOut != null,
+                    )
+                    val seedQuads = kept.toList()
+                    val tExpand0 = System.currentTimeMillis()
+                    val expDiag = seedQuads.map { seed ->
+                        ContentExpandUtils.expandOrientedDiagnose(gray, seed, expandOpts)
+                    }
+                    branch.metadata["t_expand_ms"] =
+                        (System.currentTimeMillis() - tExpand0).toString()
+                    val expandedQuads = expDiag.map { it.quad }
+                    val hitCaps = expDiag.map { it.hitVertCap }
+                    branch.metadata["n_hit_cap"] = hitCaps.count { it }.toString()
+                    branch.metadata["n_ocr_energy"] = expandedQuads.size.toString()
+                    if (energyTraceOut != null) {
+                        try {
+                            writeExpandEnergyTrace(
+                                energyTraceOut, file.name, maxFrac,
+                                expDiag.mapNotNull { it.energyTrace },
+                                column = "P4-rot",
+                            )
+                            branch.metadata["content_expand_energy_trace"] = energyTraceOut.name
+                        } catch (t: Throwable) {
+                            Log.e(TAG, "rot energy trace write failed for ${file.name}", t)
+                        }
+                    }
+                    val seedAngs = seedQuads.map { pumpQuadLongAngleDeg(it) }
+                    val expAngs = expandedQuads.map { pumpQuadLongAngleDeg(it) }
+                    if (expAngs.isNotEmpty()) {
+                        val sorted = expAngs.sorted()
+                        branch.metadata["quad_angle_med"] =
+                            "%.2f".format(sorted[sorted.size / 2])
+                    }
+                    if (seedAngs.isNotEmpty()) {
+                        val sorted = seedAngs.sorted()
+                        branch.metadata["seed_quad_angle_med"] =
+                            "%.2f".format(sorted[sorted.size / 2])
+                    }
+                    branch.metadata["content_expand_max_frac"] = maxFrac.toString()
+                    branch.metadata["content_expand_hit_vert_cap"] =
+                        hitCaps.joinToString(",") { if (it) "1" else "0" }
+                    branch.metadata["content_expand_fallback_verts"] =
+                        fallbackVerts.joinToString(",")
+                    branch.metadata["content_expand_vert_sweep"] =
+                        vertSweep.joinToString(",")
+
+                    val variants = JSONArray()
+                    // Energy-only (even cap hits) — comparison, not final.
+                    val energyRects = expandedQuads.map { it.toAabb() }
+                    val tOcrE0 = System.currentTimeMillis()
+                    val energyOcr = ocrPumpOrientedQuads(expandedQuads, gray, imgW, imgH)
+                    branch.metadata["t_ocr_energy_ms"] =
+                        (System.currentTimeMillis() - tOcrE0).toString()
+                    val energyCands = buildRedBoxCandidates(
+                        energyRects, energyOcr.asis, energyOcr.digits,
+                        energyOcr.asisProbs, energyOcr.digitsProbs, energyOcr.recB64,
+                        recWList = energyOcr.recW, recHList = energyOcr.recH,
+                    )
+                    val energyCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(energyCands)
+                    variants.put(
+                        ocrScaleVariantJson(
+                            1.0f, energyRects, expandedQuads, energyCands, energyCv,
+                            kind = "energy", hitCaps = hitCaps,
+                        ),
+                    )
+
+                    val countQuads = expDiag.map { it.countQuad }
+                    val countRects = countQuads.map { it.toAabb() }
+                    val tOcrC0 = System.currentTimeMillis()
+                    val countOcr = ocrPumpOrientedQuads(countQuads, gray, imgW, imgH)
+                    branch.metadata["t_ocr_count_ms"] =
+                        (System.currentTimeMillis() - tOcrC0).toString()
+                    branch.metadata["n_ocr_count"] = countQuads.size.toString()
+                    branch.metadata["n_count_pull"] =
+                        expDiag.count { it.countPull?.pulled == true }.toString()
+                    branch.metadata["count_pulled"] = expDiag.joinToString(",") { d ->
+                        val c = d.countPull
+                        when {
+                            c == null -> "0"
+                            c.pulledTop && c.pulledBot -> "tb"
+                            c.pulledTop -> "t"
+                            c.pulledBot -> "b"
+                            else -> "0"
+                        }
+                    }
+                    val countCands = buildRedBoxCandidates(
+                        countRects, countOcr.asis, countOcr.digits,
+                        countOcr.asisProbs, countOcr.digitsProbs, countOcr.recB64,
+                        recWList = countOcr.recW, recHList = countOcr.recH,
+                    )
+                    val countCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(countCands)
+                    variants.put(
+                        ocrScaleVariantJson(
+                            1.0f, countRects, countQuads, countCands, countCv,
+                            kind = "energy_count", hitCaps = hitCaps,
+                        ),
+                    )
+
+                    // Hybrid final: energy if it stopped short of cap, else G-style verts.
+                    // Do not re-OCR energy quads. Second recognize pass is only the G replacements.
+                    val anyCap = fallbackVerts.isNotEmpty() && hitCaps.any { it }
+                    val hybridQuads = ArrayList<ContentExpandUtils.OrientedQuad>()
+                    val hybridCands: List<RedBoxOcrCandidate>
+                    val hybridCv: CostVolClassifyResult
+                    if (!anyCap) {
+                        hybridQuads.addAll(expandedQuads)
+                        hybridCands = energyCands
+                        hybridCv = energyCv
+                        branch.metadata["t_ocr_g_ms"] = "0"
+                        branch.metadata["n_ocr_g"] = "0"
+                    } else {
+                        val extraQuads = ArrayList<ContentExpandUtils.OrientedQuad>()
+                        seedQuads.forEachIndexed { i, seed ->
+                            if (hitCaps[i]) {
+                                fallbackVerts.forEach { vv ->
+                                    extraQuads.add(
+                                        ContentExpandUtils.calculatedOriented(
+                                            seed, vv, SET_G_HORIZ_FACTOR,
+                                        ),
+                                    )
+                                }
+                            }
+                        }
+                        val extraRects = extraQuads.map { it.toAabb() }
+                        val tOcrG0 = System.currentTimeMillis()
+                        val extraOcr = ocrPumpOrientedQuads(extraQuads, gray, imgW, imgH)
+                        branch.metadata["t_ocr_g_ms"] =
+                            (System.currentTimeMillis() - tOcrG0).toString()
+                        branch.metadata["n_ocr_g"] = extraQuads.size.toString()
+                        val extraCands = buildRedBoxCandidates(
+                            extraRects, extraOcr.asis, extraOcr.digits,
+                            extraOcr.asisProbs, extraOcr.digitsProbs, extraOcr.recB64,
+                            recWList = extraOcr.recW, recHList = extraOcr.recH,
+                        )
+                        var extraI = 0
+                        val stitched = ArrayList<RedBoxOcrCandidate>()
+                        seedQuads.forEachIndexed { i, seed ->
+                            if (!hitCaps[i]) {
+                                hybridQuads.add(expandedQuads[i])
+                                if (i < energyCands.size) stitched.add(energyCands[i])
+                            } else {
+                                repeat(fallbackVerts.size) {
+                                    hybridQuads.add(extraQuads[extraI])
+                                    if (extraI < extraCands.size) stitched.add(extraCands[extraI])
+                                    extraI++
+                                }
+                            }
+                        }
+                        hybridCands = stitched
+                        hybridCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(hybridCands)
+                    }
+                    val hybridRects = hybridQuads.map { it.toAabb() }
+                    variants.put(
+                        ocrScaleVariantJson(
+                            1.0f, hybridRects, hybridQuads, hybridCands, hybridCv,
+                            kind = "energy_or_g", hitCaps = hitCaps,
+                        ),
+                    )
+                    val tOcrE = branch.metadata["t_ocr_energy_ms"]?.toLongOrNull() ?: 0L
+                    val tOcrG = branch.metadata["t_ocr_g_ms"]?.toLongOrNull() ?: 0L
+                    branch.metadata["t_ocr_ms"] = (tOcrE + tOcrG).toString()
+
+                    // Calculated-vert sweep on every seed (G-style), for combo cover.
+                    for (vv in vertSweep) {
+                        val qV = seedQuads.map {
+                            ContentExpandUtils.calculatedOriented(it, vv, SET_G_HORIZ_FACTOR)
+                        }
+                        val rV = qV.map { it.toAabb() }
+                        val oV = ocrPumpOrientedQuads(qV, gray, imgW, imgH)
+                        val cV = buildRedBoxCandidates(
+                            rV, oV.asis, oV.digits, oV.asisProbs, oV.digitsProbs, oV.recB64,
+                            recWList = oV.recW, recHList = oV.recH,
+                        )
+                        val cvV = PumpCostVolUtils.classifyCostVolFromBoxOcr(cV)
+                        variants.put(
+                            ocrScaleVariantJson(
+                                1.0f + 2f * vv, rV, qV, cV, cvV,
+                                kind = "vert", v = vv,
+                            ),
+                        )
+                    }
+
+                    val primaryRects = hybridRects
+                    val primaryQuads = hybridQuads
+                    val primaryCands = hybridCands
+                    val primaryCv = hybridCv
+                    val scalesToOcr = ocrScales.ifEmpty { listOf(1.0f) }
+                    val pdHunksMerged = mergeGeometryIntoHunks(pdHunksRawTotal)
+                    branch.pathResults["Paddle"] = getFinal(
+                        pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace,
+                        experimentRecSet320x48, paddleEngine, context, imgW, imgH, primaryCands,
+                    )
+                    branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                        reds = keptAabb,
+                        ocrSourceRects = primaryRects,
+                        candidates = primaryCands,
+                        costCand = primaryCv.costCand,
+                        volCand = primaryCv.volCand,
+                        finalCost = primaryCv.cost,
+                        finalVol = primaryCv.vol,
+                        assembly = mapOf(
+                            "method" to "oriented_independent",
+                            "contentExpandMode" to ContentExpandUtils.Mode.INTERIOR_ENERGY.name,
+                            "maxFrac" to maxFrac,
+                            "enableJump" to enableJump,
+                            "jumpFrac" to jumpFrac,
+                            "ocrScales" to scalesToOcr,
+                            "finalOcrScale" to 1.0f,
+                            "doDeskew" to false,
+                            "useOriented" to true,
+                            "orientedMerge" to "normal_sides",
+                            "detModel" to (expDetAsset ?: "product_det"),
+                            "vertFactors" to fallbackVerts,
+                            "vertSweep" to vertSweep,
+                            "finalKind" to if (fallbackVerts.isEmpty()) "energy" else "energy_or_g",
+                            "hitVertCap" to hitCaps,
+                            "energyRatio" to energyRatio,
+                            "freezeHorzDuringVert" to freezeHorzDuringVert,
+                            "vertPadFrac" to vertPadFrac,
+                            "countPull" to "gx-run-count valley; scaleVariants kind=energy_count",
+                            "note" to assemblyNote,
+                        ),
+                        oranges = emptyList(),
+                        ocrQuads = primaryQuads,
+                        seedQuads = seedQuads,
+                        scaleVariants = variants,
+                    )
+                    doBOrDRedOnlyImage()
+                    val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, Color.RED, 2) } +
+                        primaryQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
+                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, workspace,
+                    ).first
+                }
+
+                /**
+                 * Content-expand column (P family).
+                 * @param doDeskew full-image paddle deskew before det (false for *-rot columns)
+                 * @param useOriented independent rot path (one detect, keep quads, warp rec)
+                 */
+                fun makeContentExpandProc(
+                    mode: ContentExpandUtils.Mode,
+                    assemblyNote: String,
+                    expDetAsset: String? = null,
+                    enableJump: Boolean = false,
+                    jumpFrac: Float = 0.40f,
+                    doDeskew: Boolean = true,
+                    useOriented: Boolean = false,
+                    ocrScales: List<Float> = listOf(1.0f),
+                    maxFrac: Float = 1.0f,
+                    fallbackVerts: List<Float> = emptyList(),
+                    vertSweep: List<Float> = emptyList(),
+                    energyTraceOut: File? = null,
+                    energyRatio: Float = 0.45f,
+                    freezeHorzDuringVert: Boolean = false,
+                    vertEnergy: ContentExpandUtils.VertEnergyKind =
+                        ContentExpandUtils.VertEnergyKind.MAGNITUDE,
+                    vertPadFrac: Float = 0.0f,
+                ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit =
+                    { ws, br, det, w, h ->
+                        val workspace = ws
+                        val branch = br
+                        val discoveryDetails = det
+                        val imgW = w
+                        val imgH = h
+                        pdHunksDetectedTotal.clear()
+                        pdHunksRawTotal.clear()
+                        pdHunksExpTotal.clear()
+                        pdHunksMaxTotal.clear()
+                        pdHunksNativeTotal.clear()
+                        val orientedQuads = mutableListOf<ContentExpandUtils.OrientedQuad>()
+                        val tDeskewStart = System.currentTimeMillis()
+                        val tilt: Float
+                        if (doDeskew) {
+                            val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p, longEdgeTarget = 256)
+                            tilt = -deskewRes.paddleCppAngle
+                            OdometerOcrUtils.rotate(workspace, tilt)
+                            branch.metadata["tilt"] = "%.2f".format(tilt)
+                        } else {
+                            tilt = 0f
+                            branch.metadata["tilt"] = "0"
+                            branch.metadata["deskew"] = "skipped"
+                        }
+                        branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
+                        branch.metadata["heatmap_box_mode"] = "minAreaRect"
+                        branch.metadata["content_expand_mode"] = mode.name
+                        branch.metadata["content_expand_jump"] = enableJump.toString()
+                        branch.metadata["content_expand_jump_frac"] = jumpFrac.toString()
+                        branch.metadata["content_expand_oriented"] = useOriented.toString()
+                        branch.metadata["content_expand_ocr_scales"] = ocrScales.joinToString(",")
+                        branch.metadata["content_expand_max_frac"] = maxFrac.toString()
+                        branch.metadata["content_expand_energy_ratio"] = energyRatio.toString()
+                        branch.metadata["content_expand_freeze_horz"] = freezeHorzDuringVert.toString()
+                        branch.metadata["content_expand_vert_energy"] = vertEnergy.name
+                        branch.metadata["content_expand_vert_pad"] = vertPadFrac.toString()
+                        branch.metadata["product_dir"] = NativePaddleEngine.activeProductDir
+                        if (expDetAsset != null) {
+                            NativePaddleEngine.loadExperimentDetTiers(context, expDetAsset)
+                            branch.metadata["det_model"] = expDetAsset
+                            branch.metadata["product_path"] = NativePaddleEngine.activeProductPathId
+                        } else {
+                            branch.metadata["det_model"] = "product_det"
+                            branch.metadata["product_path"] = NativePaddleEngine.activeProductPathId
+                        }
+                        try {
+                            if (useOriented) {
+                                runIndependentOrientedColumn(
+                                    workspace = workspace,
+                                    branch = branch,
+                                    discoveryDetails = discoveryDetails,
+                                    imgW = imgW,
+                                    imgH = imgH,
+                                    enableJump = enableJump,
+                                    jumpFrac = jumpFrac,
+                                    ocrScales = ocrScales,
+                                    tilt = tilt,
+                                    assemblyNote = assemblyNote,
+                                    expDetAsset = expDetAsset,
+                                    orientedQuadsOut = orientedQuads,
+                                    maxFrac = maxFrac,
+                                    fallbackVerts = fallbackVerts,
+                                    vertSweep = vertSweep,
+                                    energyRatio = energyRatio,
+                                    freezeHorzDuringVert = freezeHorzDuringVert,
+                                    vertPadFrac = vertPadFrac,
+                                    energyTraceOut = energyTraceOut,
+                                )
+                            } else {
+                            scales.forEach { scale ->
+                                val srcW = workspace.p.width
+                                val srcH = workspace.p.height
+                                val currentLongEdge = max(srcW, srcH)
+                                val scaleFactor =
+                                    if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
+                                val targetW = (srcW * scaleFactor).toInt()
+                                val targetH = (srcH * scaleFactor).toInt()
+                                val (outerId, innerId) = prepareScale(workspace, scale)
+                                val paddleResults = runDiscoveryPaddle(
+                                    workspace, outerId, paddleEngine, targetW, targetH,
+                                    scale, branch.metadata,
+                                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                                    hmThresh = HEAT_THR_U8_GE1,
+                                    maskDilatePasses = 0,
+                                )
+                                pdHunksDetectedTotal.addAll(paddleResults[0])
+                                pdHunksRawTotal.addAll(paddleResults[1])
+                                pdHunksExpTotal.addAll(paddleResults[2])
+                                pdHunksMaxTotal.addAll(paddleResults[3])
+                                pdHunksNativeTotal.addAll(paddleResults[4])
+                                workspace.c[innerId].release()
+                                workspace.c[outerId].release()
+                                discoveryDetails["Paddle Raw"]!![scale] = paddleResults[1]
+                                discoveryDetails["Paddle Expanded"]!![scale] = paddleResults[2]
+                                discoveryDetails["Paddle Max Extent"]!![scale] = paddleResults[3]
+                                discoveryDetails["Paddle Native"]!![scale] = paddleResults[4]
+                            }
+                            branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+                            doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                            doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)
+                            doCrossScaleRedboxFilter(pdHunksMaxTotal, imgW, imgH)
+                            val redPixelList = pdHunksRawTotal.map { hh ->
+                                android.graphics.Rect(
+                                    hh.rect.left.toInt(), hh.rect.top.toInt(),
+                                    hh.rect.right.toInt(), hh.rect.bottom.toInt(),
+                                )
+                            }.toMutableList()
+                            doCrossScaleRedboxFilterPixel(redPixelList)
+                            pruneRedPixelsTopN(redPixelList, context, imgH)
+                            pdHunksRawTotal.clear()
+                            pdHunksRawTotal.addAll(redPixelList.map { r ->
+                                PumpHunk(
+                                    "",
+                                    RectF(
+                                        r.left.toFloat(), r.top.toFloat(),
+                                        r.right.toFloat(), r.bottom.toFloat(),
+                                    ),
+                                )
+                            })
+                            captureRedboxData(pdHunksRawTotal, workspace, branch)
+
+                            val gray = workspace.p.mat
+                            val expandOpts = ContentExpandUtils.ExpandOptions(
+                                maxFrac = maxFrac,
+                                enableJump = enableJump,
+                                jumpFrac = jumpFrac,
+                                energyRatio = energyRatio,
+                                freezeHorzDuringVert = freezeHorzDuringVert,
+                                vertEnergy = vertEnergy,
+                                vertPadFrac = vertPadFrac,
+                                recordVertEnergy = energyTraceOut != null,
+                            )
+                            val tExpand0 = System.currentTimeMillis()
+                            val expDiag = redPixelList.map { seed ->
+                                ContentExpandUtils.expandDiagnose(gray, seed, mode, expandOpts)
+                            }
+                            branch.metadata["t_expand_ms"] =
+                                (System.currentTimeMillis() - tExpand0).toString()
+                            val expandedBase = expDiag.map { it.rect }
+                            val hitCaps = expDiag.map { it.hitVertCap }
+                            branch.metadata["n_hit_cap"] = hitCaps.count { it }.toString()
+                            branch.metadata["n_ocr_energy"] = expandedBase.size.toString()
+                            if (energyTraceOut != null) {
+                                try {
+                                    writeExpandEnergyTrace(
+                                        energyTraceOut, file.name, maxFrac,
+                                        expDiag.mapNotNull { it.energyTrace },
+                                        column = "P4-jump",
+                                    )
+                                    branch.metadata["content_expand_energy_trace"] = energyTraceOut.name
+                                } catch (t: Throwable) {
+                                    Log.e(TAG, "energy trace write failed for ${file.name}", t)
+                                }
+                            }
+                            branch.metadata["content_expand_hit_vert_cap"] =
+                                hitCaps.joinToString(",") { if (it) "1" else "0" }
+                            branch.metadata["content_expand_fallback_verts"] =
+                                fallbackVerts.joinToString(",")
+                            val variants = JSONArray()
+                            val tOcrE0 = System.currentTimeMillis()
+                            val energyOcr = ocrPumpRectsAsisAndDigits(expandedBase)
+                            branch.metadata["t_ocr_energy_ms"] =
+                                (System.currentTimeMillis() - tOcrE0).toString()
+                            val energyCands = buildRedBoxCandidates(
+                                expandedBase, energyOcr.asis, energyOcr.digits,
+                                energyOcr.asisProbs, energyOcr.digitsProbs, energyOcr.recB64,
+                                recWList = energyOcr.recW, recHList = energyOcr.recH,
+                            )
+                            val energyCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(energyCands)
+                            variants.put(
+                                ocrScaleVariantJson(
+                                    1.0f, expandedBase, emptyList(), energyCands, energyCv,
+                                    kind = "energy", hitCaps = hitCaps,
+                                ),
+                            )
+                            val countRects = expDiag.map { it.rectCount }
+                            val tOcrC0 = System.currentTimeMillis()
+                            val countOcr = ocrPumpRectsAsisAndDigits(countRects)
+                            branch.metadata["t_ocr_count_ms"] =
+                                (System.currentTimeMillis() - tOcrC0).toString()
+                            branch.metadata["n_ocr_count"] = countRects.size.toString()
+                            branch.metadata["n_count_pull"] =
+                                expDiag.count { it.countPull?.pulled == true }.toString()
+                            branch.metadata["count_pulled"] = expDiag.joinToString(",") { d ->
+                                val c = d.countPull
+                                when {
+                                    c == null -> "0"
+                                    c.pulledTop && c.pulledBot -> "tb"
+                                    c.pulledTop -> "t"
+                                    c.pulledBot -> "b"
+                                    else -> "0"
+                                }
+                            }
+                            val countCands = buildRedBoxCandidates(
+                                countRects, countOcr.asis, countOcr.digits,
+                                countOcr.asisProbs, countOcr.digitsProbs, countOcr.recB64,
+                                recWList = countOcr.recW, recHList = countOcr.recH,
+                            )
+                            val countCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(countCands)
+                            variants.put(
+                                ocrScaleVariantJson(
+                                    1.0f, countRects, emptyList(), countCands, countCv,
+                                    kind = "energy_count", hitCaps = hitCaps,
+                                ),
+                            )
+                            val useG = fallbackVerts.isNotEmpty()
+                            val hybridRects = ArrayList<android.graphics.Rect>()
+                            if (useG) {
+                                redPixelList.forEachIndexed { i, seed ->
+                                    if (!hitCaps[i]) {
+                                        hybridRects.add(expandedBase[i])
+                                    } else {
+                                        fallbackVerts.forEach { vv ->
+                                            hybridRects.add(
+                                                ContentExpandUtils.calculatedAabb(
+                                                    seed, vv, SET_G_HORIZ_FACTOR, gray.cols(), gray.rows(),
+                                                ),
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                hybridRects.addAll(expandedBase)
+                            }
+                            val hybridPair = if (useG && hitCaps.any { it }) {
+                                val extraRects = ArrayList<android.graphics.Rect>()
+                                redPixelList.forEachIndexed { i, seed ->
+                                    if (hitCaps[i]) {
+                                        fallbackVerts.forEach { vv ->
+                                            extraRects.add(
+                                                ContentExpandUtils.calculatedAabb(
+                                                    seed, vv, SET_G_HORIZ_FACTOR,
+                                                    gray.cols(), gray.rows(),
+                                                ),
+                                            )
+                                        }
+                                    }
+                                }
+                                val tOcrG0 = System.currentTimeMillis()
+                                val extraOcr = ocrPumpRectsAsisAndDigits(extraRects)
+                                branch.metadata["t_ocr_g_ms"] =
+                                    (System.currentTimeMillis() - tOcrG0).toString()
+                                branch.metadata["n_ocr_g"] = extraRects.size.toString()
+                                val extraCands = buildRedBoxCandidates(
+                                    extraRects, extraOcr.asis, extraOcr.digits,
+                                    extraOcr.asisProbs, extraOcr.digitsProbs, extraOcr.recB64,
+                                    recWList = extraOcr.recW, recHList = extraOcr.recH,
+                                )
+                                var extraI = 0
+                                val stitched = ArrayList<RedBoxOcrCandidate>()
+                                redPixelList.forEachIndexed { i, _ ->
+                                    if (!hitCaps[i]) {
+                                        if (i < energyCands.size) stitched.add(energyCands[i])
+                                    } else {
+                                        repeat(fallbackVerts.size) {
+                                            if (extraI < extraCands.size) stitched.add(extraCands[extraI])
+                                            extraI++
+                                        }
+                                    }
+                                }
+                                val cv = PumpCostVolUtils.classifyCostVolFromBoxOcr(stitched)
+                                variants.put(
+                                    ocrScaleVariantJson(
+                                        1.0f, hybridRects, emptyList(), stitched, cv,
+                                        kind = "energy_or_g", hitCaps = hitCaps,
+                                    ),
+                                )
+                                stitched to cv
+                            } else if (useG) {
+                                branch.metadata["t_ocr_g_ms"] = "0"
+                                branch.metadata["n_ocr_g"] = "0"
+                                variants.put(
+                                    ocrScaleVariantJson(
+                                        1.0f, hybridRects, emptyList(), energyCands, energyCv,
+                                        kind = "energy_or_g", hitCaps = hitCaps,
+                                    ),
+                                )
+                                energyCands to energyCv
+                            } else {
+                                branch.metadata["t_ocr_g_ms"] = "0"
+                                branch.metadata["n_ocr_g"] = "0"
+                                energyCands to energyCv
+                            }
+                            val tOcrEa = branch.metadata["t_ocr_energy_ms"]?.toLongOrNull() ?: 0L
+                            val tOcrGa = branch.metadata["t_ocr_g_ms"]?.toLongOrNull() ?: 0L
+                            branch.metadata["t_ocr_ms"] = (tOcrEa + tOcrGa).toString()
+                            val primaryRects = hybridRects
+                            val primaryCands = hybridPair.first
+                            val primaryCv = hybridPair.second
+                            val finalKind = if (useG) "energy_or_g" else "energy"
+                            val scalesToOcr = ocrScales.ifEmpty { listOf(1.0f) }
+                            val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
+                            branch.pathResults["Paddle"] = getFinal(
+                                pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace,
+                                experimentRecSet320x48, paddleEngine, context, imgW, imgH, primaryCands,
+                            )
+                            branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                                reds = redPixelList,
+                                ocrSourceRects = primaryRects,
+                                candidates = primaryCands,
+                                costCand = primaryCv.costCand,
+                                volCand = primaryCv.volCand,
+                                finalCost = primaryCv.cost,
+                                finalVol = primaryCv.vol,
+                                assembly = mapOf(
+                                    "method" to "content_expand",
+                                    "contentExpandMode" to mode.name,
+                                    "maxFrac" to maxFrac,
+                                    "enableJump" to enableJump,
+                                    "jumpFrac" to jumpFrac,
+                                    "ocrScales" to scalesToOcr,
+                                    "finalOcrScale" to 1.0f,
+                                    "doDeskew" to doDeskew,
+                                    "useOriented" to false,
+                                    "detModel" to (expDetAsset ?: "product_det"),
+                                    "vertFactors" to fallbackVerts,
+                                    "finalKind" to finalKind,
+                                    "hitVertCap" to hitCaps,
+                                    "energyRatio" to energyRatio,
+                                    "freezeHorzDuringVert" to freezeHorzDuringVert,
+                                    "vertEnergy" to vertEnergy.name,
+                                    "vertPadFrac" to vertPadFrac,
+                                    "countPull" to "gx-run-count valley; scaleVariants kind=energy_count",
+                                    "note" to assemblyNote,
+                                ),
+                                oranges = emptyList(),
+                                scaleVariants = variants,
+                            )
+                            doBOrDRedOnlyImage()
+                            val blueHunks = primaryRects.map { r ->
+                                PumpHunk(
+                                    "",
+                                    RectF(
+                                        r.left.toFloat(), r.top.toFloat(),
+                                        r.right.toFloat(), r.bottom.toFloat(),
+                                    ),
+                                )
+                            }
+                            val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
+                                getAnns(blueHunks, Color.BLUE, 4)
+                            branch.images["PD"] = OcrUtils.takeSnapshot(
+                                workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                                aPd, null, workspace,
+                            ).first
+                            }
+                        } finally {
+                            if (expDetAsset != null) {
+                                try {
+                                    NativePaddleEngine.restoreProductionDetTiers(context)
+                                } catch (t: Throwable) {
+                                    Log.e(TAG, "restoreProductionDetTiers failed", t)
+                                }
+                            }
+                        }
+                    }
+
+                val procP = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P: product det + interior-energy expand (jump off, deskew)",
+                    expDetAsset = null,
+                    enableJump = false,
+                    doDeskew = true,
+                    useOriented = false,
+                )
+                val procPJump = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P-jump: product det + interior-energy + height jump/retract",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                )
+                val procP4 = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4: PP-OCRv4_mobile det + interior-energy expand (jump off, deskew)",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = false,
+                    doDeskew = true,
+                    useOriented = false,
+                )
+                val procP4Jump = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4-jump: energy maxFrac=0.4; G4 verts if hit cap",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    fallbackVerts = SET_G4_VERT_FACTORS,
+                    energyTraceOut = File(
+                        energyTraceRoot,
+                        "jump_" + safeTraceName(file.name) + ".json",
+                    ),
+                )
+                val procP4M65 = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4-m65: frozen-width mean |∇| 0.65 + 0.08·seedH pad + L/R jump; G 0/0.05/0.15 if hit cap",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
+                    vertPadFrac = 0.08f,
+                )
+                val procP4Gx = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4-gx: frozen-width mean |∂I/∂x| 0.55 + 0.08·seedH pad + L/R jump; G 0/0.05/0.15 if hit cap",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
+                    energyRatio = 0.55f,
+                    freezeHorzDuringVert = true,
+                    vertEnergy = ContentExpandUtils.VertEnergyKind.GX,
+                    vertPadFrac = 0.08f,
+                )
+                val procP4Xycut = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4-xycut: frozen-width XY-cut on |∂I/∂x| + 0.15·seedH pad + L/R jump; G 0/0.05/0.15 if hit cap",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
+                    freezeHorzDuringVert = true,
+                    vertEnergy = ContentExpandUtils.VertEnergyKind.XYCUT_GX,
+                    vertPadFrac = 0.15f,
+                )
+                val procPRot = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P-rot: one minAreaRect detect, no deskew, expandOriented, warp rec",
+                    expDetAsset = null,
+                    enableJump = false,
+                    doDeskew = false,
+                    useOriented = true,
+                )
+                val procP4Rot = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4-rot: one v4 minAreaRect detect, expandOriented, warp rec",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = false,
+                    doDeskew = false,
+                    useOriented = true,
+                )
+                val procP4RotJump = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4-rot: m65 energy (0.65 frozen + 0.08 pad) + G 0/0.05/0.15 on cap; no vert sweep",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = true,
+                    doDeskew = false,
+                    useOriented = true,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = rotExpandMaxFrac,
+                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
+                    vertSweep = rotVertSweep,
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertPadFrac = 0.08f,
+                    energyTraceOut = File(
+                        energyTraceRoot,
+                        "rot_" + safeTraceName(file.name) + ".json",
+                    ),
+                )
+                val procProdJump = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "Prod-jump: energy maxFrac=0.4; G-- verts if hit cap",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    fallbackVerts = SET_G_MINUS_MINUS_VERT_FACTORS,
+                )
+                val procProdM65 = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "Prod-m65: product det + frozen-width mean |∇| 0.65 + 0.08 pad + L/R jump; maxFrac=2.5 so a short seed can grow; G 0/0.05/0.15 if hit cap",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = 2.5f,
+                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
+                    vertPadFrac = 0.08f,
+                )
+                val procProdRot = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "Prod-rot: m65 energy (0.65 frozen + 0.08 pad) + G 0/0.05/0.15 on cap; no vert sweep",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = false,
+                    useOriented = true,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = rotExpandMaxFrac,
+                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
+                    vertSweep = rotVertSweep,
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertPadFrac = 0.08f,
+                )
                 // Hybrid helpers: current-pass discovery+filter+prune; append stage blue OCR to combined lists.
                 suspend fun hybridRunDiscoveryStage(
                     workspace: BufferSet,
@@ -1112,7 +2461,7 @@ private suspend fun runPumpExperiment(
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }.toMutableList()
                     doCrossScaleRedboxFilterPixel(redPixelList)
-                    pruneRedPixelsTopN(redPixelList, context)
+                    pruneRedPixelsTopN(redPixelList, context, imgH)
                     pdHunksRawTotal.clear()
                     pdHunksRawTotal.addAll(redPixelList.map { r ->
                         PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
@@ -1121,7 +2470,7 @@ private suspend fun runPumpExperiment(
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }.toMutableList()
                     doCrossScaleRedboxFilterPixel(expPixel)
-                    pruneRedPixelsTopN(expPixel, context)
+                    pruneRedPixelsTopN(expPixel, context, imgH)
                     pdHunksExpTotal.clear()
                     pdHunksExpTotal.addAll(expPixel.map { r ->
                         PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
@@ -1130,7 +2479,7 @@ private suspend fun runPumpExperiment(
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }.toMutableList()
                     doCrossScaleRedboxFilterPixel(maxPixel)
-                    pruneRedPixelsTopN(maxPixel, context)
+                    pruneRedPixelsTopN(maxPixel, context, imgH)
                     pdHunksMaxTotal.clear()
                     pdHunksMaxTotal.addAll(maxPixel.map { r ->
                         PumpHunk("", RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()))
@@ -1179,7 +2528,7 @@ private suspend fun runPumpExperiment(
                     pdHunksMaxTotal.clear()
                     pdHunksNativeTotal.clear()
                     val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p)
+                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p, longEdgeTarget = 256)
                     val tilt = -deskewRes.paddleCppAngle
                     OdometerOcrUtils.rotate(workspace, tilt)
                     branch.metadata["tilt"] = "%.2f".format(tilt)
@@ -1254,10 +2603,25 @@ private suspend fun runPumpExperiment(
                     val aPdI = getAnns(lastReds, Color.RED, 2) + getAnns(lastBlueHunks, Color.BLUE, 4) + getAnns(lastOrangeHunks, Color.rgb(255, 165, 0), 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdI, null, workspace).first
                 }
-                val flowProcessors = listOf(
-                    "Set G-- (4 pass, none, calculated)" to procGMinusMinus,
-                    "Set I (D+E+G hybrid, calculated)" to procI,
-                )
+                val flowProcessors = buildList {
+                    add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
+                    add("Set G4 (v4 det, calculated 0.0-2.5)" to procG4)
+                    add("Set P4-jump (v4 + energy + jump, S OCR)" to procP4Jump)
+                    add("Set P4-m65 (v4 + mean0.65 frozen + jump)" to procP4M65)
+                    add("Set P4-gx (v4 + gx0.55 frozen + jump)" to procP4Gx)
+                    add("Set P4-xycut (v4 + xycut-gx frozen + jump)" to procP4Xycut)
+                    add("Set P4-rot-jump (v4 oriented + jump, S OCR)" to procP4RotJump)
+                    add("Set Prod-jump (product + energy + jump, S OCR)" to procProdJump)
+                    add("Set Prod-m65 (product + mean0.65 frozen + jump)" to procProdM65)
+                    add("Set Prod-rot (product oriented + jump, S OCR)" to procProdRot)
+                }
+                // Parked (compiled, not scheduled): P/P-jump/P4/P-rot, H*, L/M, G-dense/K.
+                @Suppress("UNUSED_VARIABLE")
+                val parked = listOf(
+                    procGDense, procK, procP, procPJump, procP4,
+                    procPRot, procP4Rot,
+                ) +
+                    procHorizByFactor.values + listOf(procL, procM)
                 val processor = flowProcessors.firstOrNull { it.first == flowName }?.second
                     ?: error("No processor registered for flow: $flowName")
 
@@ -1274,7 +2638,11 @@ private suspend fun runPumpExperiment(
             }  // end of per-flow special handling (B/C thin calls to extracted helpers; A baseline)
 
             // Final Reporting
-            val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(masterBuffer.p)
+            // Pump experiment deskew long-edge 256 (multi-scale: low wild rate on pump mid-scales).
+            val deskewResA = OdometerOcrUtils.calculateAverageTextAngle(
+                masterBuffer.p,
+                longEdgeTarget = 256,
+            )
             val deskewHtml = deskewResA.engines.map { (k, v) -> "$k: ${v.angle}&deg; (${v.timesMs.sum()}ms)" }.joinToString("<br>")
 
             val rowHtml = pBuildHtmlRowDynamic(
@@ -1330,9 +2698,11 @@ private suspend fun runPumpExperiment(
                 }
             }.joinToString(" | ")
             val resultSummary = PumpPhotoResultSummary(file.name, summaryText, 1.0f, "")
-            withContext(Dispatchers.Main) { onProgress(resultSummary, (index + 1).toFloat() / total) }
+            onProgress(resultSummary, (index + 1).toFloat() / total)
             delay(50)
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "FATAL: Experiment failed for row ${index + 1} (${file.name}):\n" + Log.getStackTraceString(e))
             Log.w("PUMP_FRAG", "partial run - JSON may be incomplete (no final footer) at row ${index + 1}")
@@ -1349,6 +2719,8 @@ private suspend fun runPumpExperiment(
     experimentRecSet1024x48.release()
     experimentDetSet512x128.release()
     masterBuffer.release()
+    Log.i(TAG, "runPumpExperiment:end json=${jsonFile.absolutePath} total=$total")
+    jsonFile
 }
 
 private fun pSerializePhotoResultToJson(
@@ -1469,6 +2841,54 @@ private fun escapeJsonString(out: Appendable, str: String) {
 }
 
 
+/** Long-edge angle of an oriented quad, normalized to [-90, 90] degrees. */
+private fun pumpQuadLongAngleDeg(q: ContentExpandUtils.OrientedQuad): Float {
+    val p = q.pts
+    if (p.size < 8) return 0f
+    var best = 0.0
+    var ang = 0f
+    for (i in 0 until 4) {
+        val j = (i + 1) % 4
+        val dx = (p[j * 2] - p[i * 2]).toDouble()
+        val dy = (p[j * 2 + 1] - p[i * 2 + 1]).toDouble()
+        val len = kotlin.math.hypot(dx, dy)
+        if (len > best) {
+            best = len
+            ang = Math.toDegrees(kotlin.math.atan2(dy, dx)).toFloat()
+        }
+    }
+    var a = ang
+    while (a > 90f) a -= 180f
+    while (a < -90f) a += 180f
+    return a
+}
+
+/** Four LINE annotations along the quad edges (photo pixels). */
+private fun pumpQuadEdgeAnns(
+    q: ContentExpandUtils.OrientedQuad,
+    color: Int,
+    width: Int,
+): List<SnapshotAnnotation> {
+    val p = q.pts
+    if (p.size < 8) return emptyList()
+    val edges = ArrayList<SnapshotAnnotation>(4)
+    for (i in 0 until 4) {
+        val j = (i + 1) % 4
+        edges.add(
+            SnapshotAnnotation(
+                p[i * 2].toInt(),
+                p[i * 2 + 1].toInt(),
+                p[j * 2].toInt(),
+                p[j * 2 + 1].toInt(),
+                Shape.LINE,
+                color,
+                width,
+            ),
+        )
+    }
+    return edges
+}
+
 private fun serializeDiscoveryDetails(details: Map<String, Map<Int, List<PumpHunk>>>): JSONObject {
     val root = JSONObject()
     details.forEach { (engine, scales) ->
@@ -1530,6 +2950,56 @@ private const val PUMP_SMALL_TARGET_W = 180
 private const val PUMP_PER_RED_TARGET_W = 120
 private const val PER_PHOTO_FRAGMENT_BUFFER_BYTES = 4 * 1024 * 1024
 
+/** Rec buffers from costVolDecisionData_Paddle (scaleVariants and/or candidates). */
+private fun pRecBuffersHtml(br: PumpBranch): String {
+    val raw = br.metadata["costVolDecisionData_Paddle"] ?: return ""
+    val data = try {
+        org.json.JSONObject(raw)
+    } catch (_: Exception) {
+        return ""
+    }
+    val sb = StringBuilder()
+    fun emitCands(cands: org.json.JSONArray, heading: String) {
+        var any = false
+        val chunk = StringBuilder()
+        chunk.append("<div><small>$heading</small></div>")
+        chunk.append("<div style='display:flex;flex-wrap:wrap;gap:3px;'>")
+        for (j in 0 until cands.length()) {
+            val c = cands.optJSONObject(j) ?: continue
+            val b64 = c.optString("recB64")
+            if (b64.isNullOrEmpty()) continue
+            any = true
+            val lab = c.optString("label")
+            val asis = c.optString("asis")
+            val dig = c.optString("digits")
+            chunk.append(
+                "<div style='width:48%;font-size:9px;'>" +
+                    "<img src='data:image/jpeg;base64,$b64' style='width:100%;image-rendering:pixelated;'>" +
+                    "<br>$lab asis=$asis dig=$dig</div>",
+            )
+        }
+        chunk.append("</div>")
+        if (any) sb.append(chunk)
+    }
+    val variants = data.optJSONArray("scaleVariants")
+    if (variants != null && variants.length() > 0) {
+        sb.append("<div style='margin-top:6px;text-align:left;'><b>Rec buffers</b></div>")
+        for (i in 0 until variants.length()) {
+            val v = variants.optJSONObject(i) ?: continue
+            val s = v.optDouble("s", Double.NaN)
+            val cands = v.optJSONArray("candidates") ?: continue
+            emitCands(cands, "S=${"%.2f".format(s)}")
+        }
+    } else {
+        val cands = data.optJSONArray("candidates")
+        if (cands != null && cands.length() > 0) {
+            sb.append("<div style='margin-top:6px;text-align:left;'><b>Rec buffers</b></div>")
+            emitCands(cands, "candidates")
+        }
+    }
+    return sb.toString()
+}
+
 private fun pBuildHtmlHeader(time: String, total: Int, version: String, device: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
@@ -1565,7 +3035,11 @@ private fun pBuildHtmlRowDynamic(
     val img = root.images
 
     val perSetTilts = root.subBranches.toSortedMap().entries
-        .joinToString(" | ") { (name, br) -> "$name: ${br.metadata["tilt"] ?: "?"}°" }
+        .joinToString(" | ") { (name, br) ->
+            val t = br.metadata["tilt"] ?: "?"
+            val q = br.metadata["quad_angle_med"]
+            if (q != null) "$name: $t° (quad $q°)" else "$name: $t°"
+        }
     appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><span style=\"font-size:6px\"><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span></td>")
 
     val hasML = root.subBranches.filter { (_, br) -> br.images.containsKey("ML") && br.images["ML"]?.isNotEmpty() == true }.keys.toSet()  // data-driven from subBranches presence, no name if
@@ -1578,7 +3052,7 @@ private fun pBuildHtmlRowDynamic(
             // red-only + full PD pair (when branch populates the key from explicit helper call)
             val redOnly = br.images["PD_red_only"] ?: ""
             val full = br.images["PD"] ?: ""
-            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small></td>")
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small>${pRecBuffersHtml(br)}</td>")
         } else if (br.images.containsKey("rawC")) {
             val raw = br.images["rawC"] ?: ""
             val pushed = br.images["pushedC"] ?: ""
@@ -1609,7 +3083,7 @@ private fun pBuildHtmlRowDynamic(
             perRedHtml.append("</tr></table>")
             appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:100%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:100%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:100%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:100%;'><br><small>After</small></td></tr></table>$perRedHtml<img src='data:image/jpeg;base64,$pdB64'></td>")
         } else {
-            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'></td>")
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>${pRecBuffersHtml(br)}</td>")
         }
     }
 
@@ -1669,12 +3143,32 @@ private suspend fun runDiscoveryPaddle(
     contentW: Int,
     contentH: Int,
     scale: Int,
-    metadata: MutableMap<String, String>? = null
+    metadata: MutableMap<String, String>? = null,
+    boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+    heatDumpU8z: File? = null,
+    hmThresh: Float = HEAT_THR_U8_GE1,
+    maskDilatePasses: Int = 0,
 ): List<List<PumpHunk>> {
-    val res = paddleEngine.detect(buffer.c[id]) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+    Log.i(TAG, "pump_detect_call scale=$scale content=${contentW}x$contentH slice=${buffer.c[id].width}x${buffer.c[id].height}")
+    ProcessMemProbe.log("pump_before_detect_scale=$scale")
+    val res = paddleEngine.detect(
+        buffer.c[id],
+        copyHeatmap = false,
+        boxMode = boxMode,
+        heatDumpU8z = heatDumpU8z,
+        hmThresh = hmThresh,
+        maskDilatePasses = maskDilatePasses,
+    ) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+    ProcessMemProbe.log("pump_after_detect_scale=$scale n_boxes=${res.nativeBoxes.size}")
     if (metadata != null) {
         metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
         metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
+        metadata["heatmap_box_mode_${scale}"] = res.metadata["box_mode"] ?: boxMode.toString()
+        metadata["heatmap_post_path_${scale}"] = res.metadata["heatmap_post_path"] ?: "unknown"
+        metadata["hm_thresh_${scale}"] = res.metadata["hm_thresh"] ?: hmThresh.toString()
+        metadata["mask_dilate_passes_${scale}"] = res.metadata["mask_dilate_passes"] ?: maskDilatePasses.toString()
+        metadata["heatmap_cell_px_${scale}"] = NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
+        if (heatDumpU8z != null) metadata["heat_dump_${scale}"] = heatDumpU8z.name
     }
 
     val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
@@ -1711,32 +3205,13 @@ private suspend fun runDiscoveryPaddle(
         hunksDetected.add(PumpHunk("", RectF(fl, ft, fr, fb)))
     }
 
-    // Redbox improvement from Set J (alignment experiment) - first item per user directive.
-    // Move sides of detected box out by 1 pixel in low-res (this crop/detect-input space) before
-    // the explicit upscale to full (and before doing anything more: consolidate, native expand, hunks).
-    // Then remove nested red boxes (inset contains filter, matching alignment tRawB logic in runBinTrialsPaddle).
-    //
-    // Pump note (variable scale vs fixed in alignment): scaleFactor computed in caller scales.forEach
-    // (currentLongEdge vs target/scale + prepareScale 32-align outer/inner + process 1.0f on crop).
-    // Explicit upscale (full/content ratio) applied once here to produce full photo pixel rects for PumpHunk.rect.
-    // No ICRS roundtrip or erosion chain in the pd path.
-    // +1 here (in the post-process rect space) + nested removal is the ported math.
-    // Per clarification: the lowest level does the +1 adjustment; layers above (scale/prepare) apply the
-    // scale factor from there. Buffer sizes are multiples of 32x2 (for alignment), but the boxes themselves
-    // do not need to be.
-    val expandedRects = rawRects.map { r ->
-        android.graphics.Rect(
-            (r.left - 1).coerceAtLeast(0),
-            (r.top - 1).coerceAtLeast(0),
-            (r.right + 1).coerceAtMost(masterW - 1),
-            (r.bottom + 1).coerceAtMost(masterH - 1)
-        )
-    }
-    val nonNestedRects = expandedRects.filter { r1 ->
-        expandedRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
+    // Nest filter on native packed boxes. Cell halo is applied in C++ packHeatmapBoxes
+    // (kPaddleDetHeatCellPx), not a Kotlin AABB pad after the fact.
+    val nonNestedRects = rawRects.filter { r1 ->
+        rawRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
     }
 
-    // 1. Consolidate Raw Character Fragments (75% overlap rule) -- now on improved (expanded + de-nested) raw redboxes
+    // 1. Consolidate Raw Character Fragments (75% overlap rule) on de-nested native reds.
     val consolidated = OdometerOcrUtils.consolidateRects(nonNestedRects, 0.75f)
 
     val hunksRaw = mutableListOf<PumpHunk>()
@@ -1744,8 +3219,8 @@ private suspend fun runDiscoveryPaddle(
     val hunksMaxExtent = mutableListOf<PumpHunk>()
     val hunksNative = mutableListOf<PumpHunk>()
 
-    // Build raw hunks from the non-nested expanded rects (pre-consolidate) so the RED raw boxes in reports
-    // show the individual +1 expanded and de-nested detections. Explicit upscale (full/content) once for full photo pixels.
+    // Build raw hunks from the non-nested native rects (pre-consolidate) so the RED raw boxes
+    // in reports are the packed detections. Explicit upscale (full/content) once for full photo pixels.
     nonNestedRects.forEach { rect ->
         val ml = rect.left.toInt().coerceIn(0, masterW - 1)
         val mt = rect.top.toInt().coerceIn(0, masterH - 1)
