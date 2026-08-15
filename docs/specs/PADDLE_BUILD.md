@@ -47,7 +47,7 @@ Paddle-Lite traditionally assumed X86 meant Desktop (`LITE_ON_TINY_PUBLISH=OFF`)
 Fixed an architectural bug where `-mavx2` flags were lost when building the final `PADDLELITE_OBJS` library. Flags are now explicitly re-applied in the `lite/api/` scope to ensure performance on `x86_64` without triggering `SIGILL` crashes.
 
 ### OpenBLAS Optimization
-Statically linked OpenBLAS is optimized for emulators by setting `DYNAMIC_ARCH=0` and `ONLY_CBLAS=1`, drastically reducing the binary size of the X86 Android library.
+Statically linked OpenBLAS is optimized for emulators by setting `DYNAMIC_ARCH=0`, `TARGET=CORE2`, and `ONLY_CBLAS=1`, reducing X86 Android library size. **Thread pool:** use `USE_THREAD=1 NUM_THREADS=4` (match AVD vCPUs). Do **not** ship `NUM_THREADS=1` — that disables OpenBLAS threading (`goto_set_num_threads` no-op) so `setThreads`/`set_x86_math_num_threads` cannot use more than one host core. Pin: `third_party/paddle/patches/external/openblas.cmake`.
 
 ### Protobuf & STL Isolation
 Wrapped `framework.pb.h` includes in `#ifndef LITE_ON_TINY_PUBLISH` and refined `DDimLite` stream operators to support both `std::ostream` (Desktop) and Paddle's lightweight `replace_stl::ostream` (Mobile).
