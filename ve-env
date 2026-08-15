@@ -296,13 +296,17 @@ _ve_activate() {
   umask 002
   echo "umask set to $(umask) in this shell"
 
-  # Shared debug keystore (same cert for dlang + all ai-* builders)
-  if [ -d "$SCRIPT_DIR/.android-shared" ]; then
-    export ANDROID_USER_HOME="$SCRIPT_DIR/.android-shared"
-    echo "ANDROID_USER_HOME=$ANDROID_USER_HOME"
-  elif [ -d "$SCRIPT_DIR/../.android-shared" ]; then
-    export ANDROID_USER_HOME="$(cd "$SCRIPT_DIR/../.android-shared" && pwd)"
-    echo "ANDROID_USER_HOME=$ANDROID_USER_HOME"
+  # Shared debug keystore + Gradle artifact home at orch (not this worktree, not ~).
+  if [ -f "$SCRIPT_DIR/ve-resolve-orch" ]; then
+    # shellcheck source=/dev/null
+    . "$SCRIPT_DIR/ve-resolve-orch"
+    if ve_resolve_orch "$SCRIPT_DIR"; then
+      export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
+      export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+      echo "ANDROID_USER_HOME=$ANDROID_USER_HOME"
+      echo "GRADLE_USER_HOME=$GRADLE_USER_HOME"
+      echo "ORCH_ROOT=$ORCH_ROOT"
+    fi
   fi
 
   local stale

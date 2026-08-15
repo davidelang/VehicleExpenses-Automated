@@ -134,19 +134,18 @@ else
     if [ ${#GRADLE_ARGS[@]} -gt 0 ]; then
       echo "Passing gradle flags: ${GRADLE_ARGS[*]}"
     fi
-    # Use project-local shared Gradle home (not per-user ~/.gradle).
-    # Required for multi-user builds: same users serve different projects.
-    ORCH_ROOT="$(cd "$(dirname "$0")" && pwd)"
-    # For worktrees, the orchestration root is the parent
-    [ -d "$ORCH_ROOT/../.gradle-shared" ] && ORCH_ROOT="$(cd "$ORCH_ROOT/.." && pwd)"
-    if [ -d "$ORCH_ROOT/.gradle-shared" ]; then
-      export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
-      export GRADLE_OPTS="-Dorg.gradle.daemon.registry.base=/home/\$(id -un)/.gradle/daemon"
+    # Artifact cache + keystore at orch (orch_root=). Compile state stays in this worktree.
+    _BA_HERE="$(cd "$(dirname "$0")" && pwd)"
+    if [ ! -f "$_BA_HERE/ve-resolve-orch" ]; then
+      echo "ERROR: missing $_BA_HERE/ve-resolve-orch (run ./update-rules.sh from orchestration root)." >&2
+      exit 1
     fi
-    # Shared Android home: consistent debug keystore for all builders
-    if [ -d "$ORCH_ROOT/.android-shared" ]; then
-      export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
-    fi
+    # shellcheck source=/dev/null
+    . "$_BA_HERE/ve-resolve-orch"
+    ve_resolve_orch "$_BA_HERE" || exit 1
+    export GRADLE_USER_HOME="$ORCH_ROOT/.gradle-shared"
+    export ANDROID_USER_HOME="$ORCH_ROOT/.android-shared"
+    unset GRADLE_OPTS
     PLANNING_USER=$(sed -n 's/^planning_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
     PLANNING_USER=${PLANNING_USER:-ai-planner}
     if [ "$(id -un)" = "$PLANNING_USER" ]; then
@@ -156,7 +155,8 @@ else
     # Always go through build_app — direct gradlew/gradlew.bat is forbidden (breaks integrity, perms, tags).
     GRADLE_CMD=( "${GRADLE_ARGS[@]}" assembleDebug )
     # No daemon: multi-worktree RAM; agent path does not keep Gradle daemons warm.
-    (umask 007; ./gradlew --no-daemon --no-configuration-cache "${GRADLE_CMD[@]}")
+    (umask 007; ./gradlew --no-daemon --no-configuration-cache \
+      -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_CMD[@]}")
     RET_VAL=$?
 
     # Post-build permission repair for shared build directories (660/2770)
