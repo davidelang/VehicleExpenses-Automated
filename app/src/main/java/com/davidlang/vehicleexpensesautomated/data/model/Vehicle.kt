@@ -36,6 +36,17 @@ data class Vehicle(
      * See [com.davidlang.vehicleexpensesautomated.data.expense.ExpenseCategories].
      */
     val expenseCategoriesJson: String = "",
+    /**
+     * Nominal odometer face width in digits (mechanical/digital). Default 6.
+     * OCR prefers this length; see [odometerRolloverCount] for wrap encoding.
+     */
+    val odometerDigitCount: Int = 6,
+    /**
+     * How many times the face has rolled past 10^[odometerDigitCount].
+     * [com.davidlang.vehicleexpensesautomated.data.model.FuelEntry.odometer] stores **tracking**
+     * miles: `rolloverCount * 10^digitCount + displayReading` (no permanent extra face digits).
+     */
+    val odometerRolloverCount: Int = 0,
     val cloudManifest: String? = null,
     val deleted: Boolean = false,
     val deletedAt: Long? = null,

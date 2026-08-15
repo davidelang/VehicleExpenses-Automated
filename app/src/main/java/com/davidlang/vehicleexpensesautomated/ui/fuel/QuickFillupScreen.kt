@@ -606,6 +606,9 @@ fun QuickFillupScreen(
                             if (captureMode == "odo") {
                                 scope.launch(Dispatchers.Default) {
                                     try {
+                                        val lastByVehicle = vehicles.associate { v ->
+                                            v.id to fuelViewModel.getLastOdometerForVehicle(v.id)
+                                        }
                                         val result = OcrHarness.runAutoFillPipeline(
                                             context = context,
                                             masterBuffer = bufferSet,
@@ -617,7 +620,8 @@ fun QuickFillupScreen(
                                                     stageLabel = stage
                                                     displayBitmap = bmp
                                                 }
-                                            }
+                                            },
+                                            lastTrackingByVehicleId = lastByVehicle,
                                         )
                                         
                                         scope.launch(Dispatchers.Main) {
@@ -626,9 +630,24 @@ fun QuickFillupScreen(
                                                 Toast.makeText(context, result.error, Toast.LENGTH_LONG).show()
                                             } else {
                                                 result.vehicleId?.let { selectedVehicleId = it }
+                                                // Tracking miles for FuelEntry.odometer
                                                 result.odometer?.let { odometer = it }
+                                                val vid = result.vehicleId
+                                                val newRoll = result.newRolloverCount
+                                                if (vid != null && newRoll != null) {
+                                                    val v = vehicles.find { it.id == vid }
+                                                        ?: vehicleViewModel.getVehicleById(vid)
+                                                    if (v != null && newRoll > v.odometerRolloverCount) {
+                                                        scope.launch(Dispatchers.IO) {
+                                                            vehicleViewModel.updateVehicle(
+                                                                v.copy(odometerRolloverCount = newRoll),
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                                 instructionLine = when {
-                                                    result.odometer != null -> "Odometer: ${result.odometer}. Review fields, then Save."
+                                                    result.odometer != null ->
+                                                        "Odometer: ${result.odometer} (stored tracking). Review, then Save."
                                                     else -> "Dash captured. Enter odometer if needed, or switch to pump."
                                                 }
                                             }
@@ -1063,7 +1082,10 @@ fun QuickFillupScreen(
                 }
                 CaretEnabledOutlinedTextField(
                     value = odometer,
-                    onValueChange = { if (it.length <= 7 && it.all { c -> c.isDigit() }) odometer = it },
+                    onValueChange = {
+                        // Tracking odo may exceed face width after rollover (e.g. 7+ digits).
+                        if (it.length <= 10 && it.all { c -> c.isDigit() }) odometer = it
+                    },
                     label = { Text("Odo") },
                     // Custom NumericKeypad is the only soft digit UI (both orientations).
                     showCaretButtons = false,

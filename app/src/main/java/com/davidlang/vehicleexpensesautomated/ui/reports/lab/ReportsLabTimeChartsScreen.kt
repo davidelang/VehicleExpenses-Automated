@@ -18,6 +18,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -509,7 +510,7 @@ fun ReportsLabTimeChartsScreen(navController: NavHostController) {
                 readOnly = true,
                 label = { Text("Smooth") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = smoothMenu) },
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth(),
             )
             ExposedDropdownMenu(expanded = smoothMenu, onDismissRequest = { smoothMenu = false }) {
                 LabSmoothMode.entries.forEach { m ->

@@ -26,6 +26,10 @@ class FuelEntryRepository @Inject constructor(
 
     suspend fun getById(id: Long): FuelEntry? = fuelEntryDao.getById(id)
 
+    /** Latest non-zero **tracking** odometer on the fill table for this vehicle. */
+    suspend fun getLastOdometerForVehicle(vehicleId: Int): Int? =
+        fuelEntryDao.getLastOdometerForVehicle(vehicleId)
+
     suspend fun insertFuelEntry(entry: FuelEntry) = fuelEntryDao.insertFuelEntry(stampForWrite(entry))
 
     suspend fun updateFuelEntry(entry: FuelEntry) = fuelEntryDao.updateFuelEntry(stampForWrite(entry))

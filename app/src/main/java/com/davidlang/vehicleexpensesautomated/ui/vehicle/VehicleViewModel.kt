@@ -44,7 +44,9 @@ class VehicleViewModel @Inject constructor(
         initialOdometer: Int,
         landmarkTextBlocksJson: String? = null,
         imgW: Int = 0,
-        imgH: Int = 0
+        imgH: Int = 0,
+        odometerDigitCount: Int = 6,
+        odometerRolloverCount: Int = 0,
     ) {
         val newVehicle = Vehicle(
             name = name,
@@ -62,7 +64,9 @@ class VehicleViewModel @Inject constructor(
             otherTextCropTop = otherTextCropRect?.top,
             otherTextCropRight = otherTextCropRect?.right,
             otherTextCropBottom = otherTextCropRect?.bottom,
-            landmarkTextBlocksJson = landmarkTextBlocksJson
+            landmarkTextBlocksJson = landmarkTextBlocksJson,
+            odometerDigitCount = odometerDigitCount.coerceIn(3, 9),
+            odometerRolloverCount = odometerRolloverCount.coerceAtLeast(0),
         )
 
         try {

@@ -36,8 +36,17 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val metadata: Map<String, String> = emptyMap(),
         val nativeBoxes: List<DetectionBox> = emptyList(),
         val outputTensor: Any? = null,
-        val heatmapHist: IntArray? = null
-    )
+        val heatmapHist: IntArray? = null,
+        /** Host u8 heat plane (tiled max-merge). Deskew angle uses this when [outputTensor] is null. */
+        val heatU8: ByteArray? = null,
+    ) {
+        /** Deskew / Hough angle from tensor or tiled host heat. */
+        fun deskewAngleCpp(threshold: Float = 0.20f): Float {
+            outputTensor?.let { return NativeImageUtils.heatmapToAngle(it, threshold) }
+            heatU8?.let { return NativeImageUtils.heatmapToAngleU8(it, width, height, threshold) }
+            return 0f
+        }
+    }
     private val dictionary = mutableListOf<String>()
     private var initError: String? = null
     var isAvailable = false
@@ -62,14 +71,82 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val ALLOWED_DIGITS: Set<Int> = (1..10).toSet()
         val ALLOWED_DIGITS_DECIMAL: Set<Int> = (1..10).toSet() + setOf(93)
 
-        // Phase 125: Multi-Tier Predictor Array
-        val TIER_SCALES = listOf(224, 608, 1024, 2048, 2560)
+        // Det predictors: one Lite instance per square tier (weights + activation pool).
+        // Heatmap-stage A/B 2026-08-09: **full-square 2048** (useTiledLargeDet=false) so we can
+        // compare heat/CRC/t_det_ms against the prior tiled gallery (det_mode=tiled_3x3_1024).
+        // When useTiledLargeDet=true: maxEdge>1024 uses 3×3×1024 max-merge (no 2048 predictor).
+        // Multi-scale experiment uses its own MonoDetPredictor, not this map.
+        // Must stay inside det opt dynamic range (currently mono 64…4096).
+        val TIER_SCALES = listOf(224, 608, 1024, 2048)
+        /** Outer letterbox side when content long-edge exceeds max single-tier / tiled outer. */
+        const val DET_LARGE_OUTER = 2048
+        const val DET_TILE = 1024
+        /** 3 positions: 0, 512, 1024 → 9 tiles with 512 px overlap. */
+        const val DET_TILE_STRIDE = 512
+        /**
+         * When true, maxEdge > max single-tier uses tiled 1024 det.
+         * **false for heatmap full-2048 A/B build** (load real 2048 predictor in [TIER_SCALES]).
+         */
+        @Volatile
+        var useTiledLargeDet: Boolean = false
         val sharedTiers = mutableMapOf<Int, PaddlePredictor>()
         val sharedTierBuffers = mutableMapOf<Int, FloatArray>()
         val sharedTiersInt8 = mutableMapOf<Int, ByteArray>()
+        /** Host letterbox + max-merged heat for tiled large det (not Lite tensors). */
+        private var largeDetCanvasU8: ByteArray? = null
+        private var largeDetHeatU8: ByteArray? = null
 
-        /** Production path id (det/rec uint8 raw → fp16 compute + uint8 heatmap). */
+        /** Production path id for HW fp16 (uint8 feed → fp16 compute + uint8 heatmap). */
         const val PROD_PATH_ID = "uint8_fp16_u8"
+
+        /** Production path for fp32 mid-graph (uint8 feed → fp32 compute + uint8 heatmap). */
+        const val PROD_PATH_ID_FP32 = "uint8_fp32_u8"
+
+        /** @deprecated Use [PROD_PATH_ID_FP32]; kept for call sites that named the v7 product path. */
+        const val PROD_PATH_ID_ARMV7 = PROD_PATH_ID_FP32
+
+        /**
+         * Last loaded product path id (set by [loadProductionModels]).
+         * Defaults from [productArchAndDir] before first load.
+         */
+        @Volatile
+        var activeProductPathId: String = PROD_PATH_ID
+            private set
+
+        @Volatile
+        var activeProductDir: String = "prod_u8fp16"
+            private set
+
+        /** Model file arch suffix for the device primary ABI (armv8 / armv7 / x86_64). */
+        fun modelArchForPrimaryAbi(): String {
+            val primary = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+            return when {
+                primary == "armeabi-v7a" || primary.startsWith("armeabi") -> "armv7"
+                primary.contains("64") && primary.contains("arm") -> "armv8"
+                primary.contains("x86") -> "x86_64"
+                primary.contains("arm") ->
+                    if (Build.SUPPORTED_ABIS.any { it.contains("arm64") }) "armv8" else "armv7"
+                else -> "x86_64"
+            }
+        }
+
+        /**
+         * Primary ABI → default model arch suffix + assets directory.
+         * armv7 / x86_64: [PROD_PATH_ID_FP32] / prod_u8fp32_u8
+         * arm64: [PROD_PATH_ID] / prod_u8fp16
+         * ABI-split APKs ship only that pack. Precision A/B may override via [loadProductionModels].
+         */
+        fun productArchAndDir(): Pair<String, String> {
+            val arch = modelArchForPrimaryAbi()
+            val dir = when (arch) {
+                "armv7", "x86_64" -> "prod_u8fp32_u8"
+                else -> "prod_u8fp16"
+            }
+            return arch to dir
+        }
+
+        fun productPathIdForDir(prodDir: String): String =
+            if (prodDir == "prod_u8fp32_u8") PROD_PATH_ID_FP32 else PROD_PATH_ID
 
         /**
          * Last pipeline stage name for hang diagnosis (ingest / deskew / det / rec / …).
@@ -124,6 +201,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // Drop large host buffers so next load reallocates clean sizes for the path.
             sharedTierBuffers.clear()
             sharedTiersInt8.clear()
+            largeDetCanvasU8 = null
+            largeDetHeatU8 = null
             System.gc()
         }
 
@@ -256,8 +335,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tStart = System.currentTimeMillis()
             Log.i("PaddleLite", "Initializing Global Rigid Buffers")
 
-            _bufferSetA = BufferSet(4080, 3072)
-            _bufferSetB = BufferSet(4080, 3072)
+            // Square 4096: landscape + portrait (expense receipts); 32-aligned pad for det tiers.
+            _bufferSetA = BufferSet(4096, 4096)
+            _bufferSetB = BufferSet(4096, 4096)
             _deskewBufferSetLarge = BufferSet(2048, 2048)
             _deskewBufferSetLarge!!.p.clearChroma()
             _deskewBufferSetLarge!!.s.clearChroma()
@@ -274,7 +354,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // (Pad was only needed for ShareExternal + unpatched int8_to_fp32 overread.)
             _bufferRecInt8 = ByteArray(1 * 320 * 48)
 
-            _sharedNv21Buffer = ByteArray(4080 * 3072 * 3 / 2)
+            _sharedNv21Buffer = ByteArray(4096 * 4096 * 3 / 2)
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
 
             _redPaint = Paint().apply { color = Color.RED; style = Paint.Style.FILL; alpha = 120 }
@@ -326,12 +406,27 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
         }
 
-        /** Load production det/rec models (uint8 feed, fp16 compute graphs). */
-        fun loadProductionModels(context: Context) {
-            val isArm = Build.SUPPORTED_ABIS[0].contains("arm")
-            val arch = if (isArm) "armv8" else "x86_64"
-            Log.i("PaddleLite", "loadProductionModels arch=$arch path=$PROD_PATH_ID")
-            heartbeat("load_models_begin path=$PROD_PATH_ID")
+        /**
+         * Load production det/rec models.
+         * @param forceArch model suffix override (e.g. armv8); default from [modelArchForPrimaryAbi]
+         * @param forceProdDir assets pack override (prod_u8fp16 or prod_u8fp32_u8)
+         */
+        fun loadProductionModels(
+            context: Context,
+            forceArch: String? = null,
+            forceProdDir: String? = null,
+        ) {
+            val (defaultArch, defaultDir) = productArchAndDir()
+            val arch = forceArch ?: defaultArch
+            val prodDir = forceProdDir ?: defaultDir
+            val pathId = productPathIdForDir(prodDir)
+            activeProductPathId = pathId
+            activeProductDir = prodDir
+            Log.i(
+                "PaddleLite",
+                "loadProductionModels arch=$arch path=$pathId dir=$prodDir abis=${Build.SUPPORTED_ABIS.joinToString()}"
+            )
+            heartbeat("load_models_begin path=$pathId")
             releaseAllPredictors("loadProductionModels")
 
             fun copyAsset(p: String): String {
@@ -341,7 +436,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
 
             fun resolveModel(baseName: String): String {
-                val prodAsset = "paddle/prod_u8fp16/${baseName}_$arch.nb"
+                val prodAsset = "paddle/$prodDir/${baseName}_$arch.nb"
                 try {
                     context.assets.open(prodAsset).close()
                     Log.i("PaddleLite", "Using production asset $prodAsset")
@@ -356,12 +451,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val recNumPath = resolveModel("rec_numeric")
             Log.i(
                 "PaddleLite",
-                "models path=$PROD_PATH_ID detU8=true recU8=true det=$detPath rec_v3=$recV3Path rec_num=$recNumPath"
+                "models path=$pathId detU8=true recU8=true det=$detPath rec_v3=$recV3Path rec_num=$recNumPath"
             )
 
             val config = MobileConfig()
+            // Match pin-era First 10 goldens (b8449343): threads=4.
+            // MEM A/B 2026-08-09 on 5554: threads=1 vs 4 — first tier=2048 still ~+1.9GB
+            // and warm PSS ~3GB; no material RAM win (keep 4 for latency/accuracy).
             config.setThreads(4)
             config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+            Log.i("PaddleLite", "predictor config threads=4 power=HIGH path=$pathId")
 
             TIER_SCALES.forEach { scale ->
                 val t0 = System.currentTimeMillis()
@@ -374,6 +473,22 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 sharedTiersInt8[scale] = ByteArray(1 * scale * scale) // exact numel for setData
                 Log.i("PaddleLite", "Tier $scale Init: ${System.currentTimeMillis() - t0}ms")
             }
+            if (useTiledLargeDet) {
+                val n = DET_LARGE_OUTER * DET_LARGE_OUTER
+                largeDetCanvasU8 = ByteArray(n)
+                largeDetHeatU8 = ByteArray(n)
+                Log.i(
+                    "PaddleLite",
+                    "tiled large det: outer=$DET_LARGE_OUTER tile=$DET_TILE stride=$DET_TILE_STRIDE " +
+                        "(no ${DET_LARGE_OUTER} predictor)",
+                )
+            } else {
+                Log.i(
+                    "PaddleLite",
+                    "full-square large det: useTiledLargeDet=false tiers=$TIER_SCALES " +
+                        "(heatmap A/B vs tiled gallery)",
+                )
+            }
 
             config.setModelFromFile(recV3Path)
             sharedRecognizerV3 = PaddlePredictor.createPaddlePredictor(config)
@@ -383,7 +498,66 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             sharedRecognizerNumeric = PaddlePredictor.createPaddlePredictor(config)
                 ?: throw IllegalStateException("createPaddlePredictor rec_numeric null file=$recNumPath")
             sharedRecognizerNumeric!!.getInput(0).resize(longArrayOf(1, 1, 48, 320))
-            heartbeat("load_models_done path=$PROD_PATH_ID tiers=${sharedTiers.size}")
+            heartbeat("load_models_done path=$pathId tiers=${sharedTiers.size}")
+        }
+
+        /**
+         * Replace **det tiers only** with an experiment nb (e.g. exp_det_ab PP-OCRv4_mobile_det).
+         * Rec models stay production. Call [restoreProductionDetTiers] after the experiment column.
+         *
+         * @param assetBase name without arch/`.nb`, e.g. `PP-OCRv4_mobile_det`
+         */
+        fun loadExperimentDetTiers(context: Context, assetBase: String) {
+            val arch = modelArchForPrimaryAbi()
+            val asset = "paddle/exp_det_ab/${assetBase}_$arch.nb"
+            val f = File(context.filesDir, asset.replace("/", "_"))
+            context.assets.open(asset).use { inp -> FileOutputStream(f).use { out -> inp.copyTo(out) } }
+            val detPath = f.absolutePath
+            Log.i("PaddleLite", "loadExperimentDetTiers base=$assetBase arch=$arch → $detPath")
+            for ((scale, p) in sharedTiers.toList()) {
+                releasePredictor(p, "swap_det_tier_$scale")
+                sharedTiers.remove(scale)
+            }
+            val config = MobileConfig()
+            config.setThreads(4)
+            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+            TIER_SCALES.forEach { scale ->
+                config.setModelFromFile(detPath)
+                val p = PaddlePredictor.createPaddlePredictor(config)
+                    ?: throw IllegalStateException("createPaddlePredictor exp det null scale=$scale")
+                p.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
+                sharedTiers[scale] = p
+                sharedTiersInt8.getOrPut(scale) { ByteArray(1 * scale * scale) }
+            }
+            activeProductPathId = "exp_det_$assetBase"
+            // activeProductDir left as production rec pack
+        }
+
+        /** Reload production det tiers (keeps current [activeProductDir] rec pack). */
+        fun restoreProductionDetTiers(context: Context) {
+            val arch = modelArchForPrimaryAbi()
+            val prodDir = activeProductDir
+            val prodAsset = "paddle/$prodDir/det_$arch.nb"
+            val f = File(context.filesDir, prodAsset.replace("/", "_"))
+            context.assets.open(prodAsset).use { inp -> FileOutputStream(f).use { out -> inp.copyTo(out) } }
+            val detPath = f.absolutePath
+            Log.i("PaddleLite", "restoreProductionDetTiers dir=$prodDir → $detPath")
+            for ((scale, p) in sharedTiers.toList()) {
+                releasePredictor(p, "restore_det_tier_$scale")
+                sharedTiers.remove(scale)
+            }
+            val config = MobileConfig()
+            config.setThreads(4)
+            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+            TIER_SCALES.forEach { scale ->
+                config.setModelFromFile(detPath)
+                val p = PaddlePredictor.createPaddlePredictor(config)
+                    ?: throw IllegalStateException("createPaddlePredictor prod det null scale=$scale")
+                p.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
+                sharedTiers[scale] = p
+                sharedTiersInt8.getOrPut(scale) { ByteArray(1 * scale * scale) }
+            }
+            activeProductPathId = productPathIdForDir(prodDir)
         }
     }
 
@@ -402,7 +576,22 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
     private val recognizer: PaddlePredictor? get() = if (variant == "V3") sharedRecognizerV3 else sharedRecognizerNumeric
 
-    fun detect(input: Any, targetW: Int? = null, targetH: Int? = null, copyHeatmap: Boolean = true): DetectionResult? {
+    /**
+     * @param boxMode [NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT] or [NativeImageUtils.HEATMAP_BOX_AABB]
+     * @param heatDumpU8z if non-null, write raw product u8 heat (zlib) to this path after post
+     */
+    fun detect(
+        input: Any,
+        targetW: Int? = null,
+        targetH: Int? = null,
+        copyHeatmap: Boolean = true,
+        boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+        heatDumpU8z: java.io.File? = null,
+        /** Float thr on heat in [0,1]; product u8 path: thr*255 is OpenCV thresh (on if u > thr*255). */
+        hmThresh: Float = 0.0f,
+        /** 3x3 mask dilate passes before CC (experiment L/M). 0 = off. */
+        maskDilatePasses: Int = 0,
+    ): DetectionResult? {
         val tPop0 = System.nanoTime()
         val w: Int; val h: Int; val srcMat: Mat
         when (input) {
@@ -413,8 +602,23 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         // Automatic Tier Selection - respect explicit targets
         val maxEdge = max(targetW ?: w, targetH ?: h)
-        val tierScale = TIER_SCALES.filter { it >= maxEdge }.minOrNull() ?: 2560
-        heartbeat("det_begin tier=$tierScale ${w}x$h path=$PROD_PATH_ID")
+        // Smallest single-tier that fits; if content exceeds max tier and tiling is on → 3×3×1024.
+        val singleTier = TIER_SCALES.filter { it >= maxEdge }.minOrNull()
+        if (singleTier == null && useTiledLargeDet) {
+            return detectTiledLarge(
+                srcMat = srcMat,
+                contentW = w,
+                contentH = h,
+                tPop0 = tPop0,
+                copyHeatmap = copyHeatmap,
+                boxMode = boxMode,
+                heatDumpU8z = heatDumpU8z,
+                hmThresh = hmThresh,
+                maskDilatePasses = maskDilatePasses,
+            )
+        }
+        val tierScale = singleTier ?: TIER_SCALES.maxOrNull()!!
+        heartbeat("det_begin tier=$tierScale ${w}x$h path=$activeProductPathId")
         val predictor = sharedTiers[tierScale] ?: return null
         val int8Data = sharedTiersInt8[tierScale] ?: return null
         java.util.Arrays.fill(int8Data, 0.toByte())
@@ -422,67 +626,317 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
 
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
-        try {
-            val tJniIn0 = System.nanoTime()
-            val inputTensor = predictor.getInput(0)
-            requireSetData(inputTensor.setData(int8Data), "det uint8 tier=$tierScale")
-            val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
+        // Sample RAM/swap around Lite run (pump + multi-scale share this path via product det).
+        return ProcessMemProbe.withSampling(
+            tag = "paddle_det tier=$tierScale ${w}x$h path=$activeProductPathId",
+            intervalMs = 250L,
+        ) {
+            try {
+                val tJniIn0 = System.nanoTime()
+                val inputTensor = predictor.getInput(0)
+                requireSetData(inputTensor.setData(int8Data), "det uint8 tier=$tierScale")
+                val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
-            val tInfer0 = System.nanoTime()
-            heartbeat("det_run tier=$tierScale")
-            predictor.run()
-            val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
+                val tInfer0 = System.nanoTime()
+                heartbeat("det_run tier=$tierScale")
+                predictor.run()
+                val tInfer = (System.nanoTime() - tInfer0) / 1_000_000.0
 
-            val tJniOut0 = System.nanoTime()
-            val outputTensor = predictor.getOutput(0); val dims = outputTensor.shape()
+                val tJniOut0 = System.nanoTime()
+                val outputTensor = predictor.getOutput(0)
+                val dims = outputTensor.shape()
+                val heatW = dims[3].toInt()
+                val heatH = dims[2].toInt()
 
-            // Zero-Copy Native Post-Processing (Phase 2) — MUST run before floatData
-            // to avoid tensor pointer invalidation from Java-side copy
-            val tNativePost0 = System.nanoTime()
-            heartbeat("det_post tier=$tierScale")
-            // uint8 heatmap: thresh 0 (raw heatmaps; float heatmap used 0.03)
-            val hmThresh = 0.0f
-            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, hmThresh, 10f)
-            val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
+                // Zero-Copy Native Post-Processing (Phase 2) — MUST run before floatData
+                // to avoid tensor pointer invalidation from Java-side copy
+                val tNativePost0 = System.nanoTime()
+                heartbeat("det_post tier=$tierScale")
+                // Product u8: thr 0 → on if u8≥1; thr 1/255 → on if u8≥2 (Set K A/B).
+                val nativeRes = NativeImageUtils.processHeatmap(
+                    outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
+                )
+                val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
+                val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
 
-            val nativeBoxes = mutableListOf<DetectionBox>()
-            var hist: IntArray? = null
-            if (nativeRes != null) {
-                val boxFloats = nativeRes.size - 100
-                val nboxes = boxFloats / 9
-                for (i in 0 until nboxes) {
-                    val offset = i * 9
-                    val matPixels = FloatArray(8)
-                    for (p in 0 until 4) {
-                        matPixels[p * 2] = nativeRes[offset + p * 2]
-                        matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
+                val nativeBoxes = mutableListOf<DetectionBox>()
+                var hist: IntArray? = null
+                if (nativeRes != null) {
+                    val boxFloats = nativeRes.size - 100
+                    val nboxes = boxFloats / 9
+                    for (i in 0 until nboxes) {
+                        val offset = i * 9
+                        val matPixels = FloatArray(8)
+                        for (p in 0 until 4) {
+                            matPixels[p * 2] = nativeRes[offset + p * 2]
+                            matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
+                        }
+                        val conf = nativeRes[offset + 8]
+                        nativeBoxes.add(DetectionBox(matPixels, conf))
                     }
-                    val conf = nativeRes[offset + 8]
-                    nativeBoxes.add(DetectionBox(matPixels, conf))
+                    hist = IntArray(100)
+                    for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
                 }
-                hist = IntArray(100)
-                for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
+
+                // Optional raw u8 dump (before optional float copy). Prefer product u8 plane.
+                if (heatDumpU8z != null) {
+                    val u8 = NativeImageUtils.heatmapToUInt8Array(outputTensor)
+                    if (u8 != null) {
+                        HeatmapU8Dump.writeU8z(
+                            heatDumpU8z,
+                            u8,
+                            heatW,
+                            heatH,
+                            mapOf(
+                                "path" to activeProductPathId,
+                                "product_dir" to activeProductDir,
+                                "tier" to tierScale,
+                                "content_w" to w,
+                                "content_h" to h,
+                                "box_mode" to boxMode,
+                                "hm_thresh" to hmThresh,
+                                "mask_dilate_passes" to maskDilatePasses,
+                                "heatmap_post_path" to heatmapPostPath,
+                                "n_boxes" to nativeBoxes.size,
+                            ),
+                        )
+                    }
+                }
+
+                // Never Tensor.floatData on uint8 heatmaps (getFloatData SEGV).
+                // Safe path: native heatmapToFloatArray (uint8/fp16/float). Campaign uses copyHeatmap=false.
+                val tCopy0 = System.nanoTime()
+                val heatmap: FloatArray? =
+                    if (copyHeatmap) NativeImageUtils.heatmapToFloatArray(outputTensor) else null
+                val tCopy = (System.nanoTime() - tCopy0) / 1_000_000.0
+
+                val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
+
+                val meta = mapOf(
+                    "t_pop_tensor_ms" to "%.3f".format(tPop),
+                    "t_jni_in_ms" to "%.3f".format(tJniIn),
+                    "t_inference_ms" to "%.3f".format(tInfer),
+                    "t_jni_out_ms" to "%.3f".format(tJniOut),
+                    "t_native_post_ms" to "%.3f".format(tNativePost),
+                    "t_copy_tensor_ms" to "%.3f".format(tCopy),
+                    "dynamic_shape" to "%dx%d".format(w, h),
+                    "path" to activeProductPathId,
+                    "tier" to tierScale.toString(),
+                    "det_mode" to "single",
+                    "box_mode" to boxMode.toString(),
+                    "hm_thresh" to hmThresh.toString(),
+                    "mask_dilate_passes" to maskDilatePasses.toString(),
+                    "heatmap_post_path" to heatmapPostPath,
+                )
+                DetectionResult(heatmap, heatW, heatH, meta, nativeBoxes, outputTensor, hist)
+            } catch (t: Throwable) {
+                Log.e("PaddleDetect", "Detection failed", t)
+                null
             }
+        }
+    }
 
-            // Never Tensor.floatData on uint8 heatmaps (getFloatData SEGV).
-            val heatmap: FloatArray? = null
-            val tCopy = 0.0
+    /**
+     * Large det without a 2048 Lite arena: letterbox to [DET_LARGE_OUTER], run 9 overlapping
+     * [DET_TILE] predicts on the 1024 predictor, max-merge heatmaps, then normal post.
+     */
+    private fun detectTiledLarge(
+        srcMat: Mat,
+        contentW: Int,
+        contentH: Int,
+        tPop0: Long,
+        copyHeatmap: Boolean,
+        boxMode: Int,
+        heatDumpU8z: java.io.File?,
+        hmThresh: Float,
+        maskDilatePasses: Int,
+    ): DetectionResult? {
+        val outer = DET_LARGE_OUTER
+        val tile = DET_TILE
+        val stride = DET_TILE_STRIDE
+        val predictor = sharedTiers[tile] ?: return null
+        val tileFeed = sharedTiersInt8[tile] ?: return null
+        val canvas = largeDetCanvasU8 ?: ByteArray(outer * outer).also { largeDetCanvasU8 = it }
+        val combined = largeDetHeatU8 ?: ByteArray(outer * outer).also { largeDetHeatU8 = it }
 
-            val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
+        heartbeat("det_begin tiled outer=$outer tile=$tile ${contentW}x$contentH path=$activeProductPathId")
+        java.util.Arrays.fill(canvas, 0.toByte())
+        java.util.Arrays.fill(combined, 0.toByte())
+        NativeImageUtils.populateMonoUInt8(srcMat, canvas, outer, outer)
+        val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
-            val meta = mapOf(
-                "t_pop_tensor_ms" to "%.3f".format(tPop),
-                "t_jni_in_ms" to "%.3f".format(tJniIn),
-                "t_inference_ms" to "%.3f".format(tInfer),
-                "t_jni_out_ms" to "%.3f".format(tJniOut),
-                "t_native_post_ms" to "%.3f".format(tNativePost),
-                "t_copy_tensor_ms" to "%.3f".format(tCopy),
-                "dynamic_shape" to "%dx%d".format(w, h)
-            )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor, hist)
+        val origins = ArrayList<Int>(3)
+        var o = 0
+        while (o + tile <= outer) {
+            origins.add(o)
+            o += stride
+        }
+        // Ensure last tile flush-right/bottom if stride does not land on outer-tile.
+        if (origins.isEmpty() || origins.last() != outer - tile) {
+            if (outer >= tile) origins.add(outer - tile)
+        }
+        val nTiles = origins.size * origins.size
 
-        } catch (t: Throwable) {
-            Log.e("PaddleDetect", "Detection failed", t); return null
+        return ProcessMemProbe.withSampling(
+            tag = "paddle_det tiled ${nTiles}x${tile} outer=$outer ${contentW}x$contentH path=$activeProductPathId",
+            intervalMs = 250L,
+        ) {
+            try {
+                var tJniIn = 0.0
+                var tInfer = 0.0
+                var tHeatCopy = 0.0
+                var tilesOk = 0
+                heartbeat("det_run tiled n=$nTiles tile=$tile")
+                for (oy in origins) {
+                    for (ox in origins) {
+                        // Copy tile from letterbox canvas into 1024 feed (exact numel for setData).
+                        for (ty in 0 until tile) {
+                            System.arraycopy(
+                                canvas,
+                                (oy + ty) * outer + ox,
+                                tileFeed,
+                                ty * tile,
+                                tile,
+                            )
+                        }
+                        val tIn0 = System.nanoTime()
+                        val inputTensor = predictor.getInput(0)
+                        // Keep 1024 shape (predictor was resized at load).
+                        requireSetData(inputTensor.setData(tileFeed), "det uint8 tiled tile=$tile")
+                        tJniIn += (System.nanoTime() - tIn0) / 1_000_000.0
+
+                        val tInf0 = System.nanoTime()
+                        predictor.run()
+                        tInfer += (System.nanoTime() - tInf0) / 1_000_000.0
+
+                        val tH0 = System.nanoTime()
+                        val outputTensor = predictor.getOutput(0)
+                        val dims = outputTensor.shape()
+                        val heatH = dims[2].toInt()
+                        val heatW = dims[3].toInt()
+                        if (heatW != tile || heatH != tile) {
+                            Log.e(
+                                "PaddleDetect",
+                                "tiled heat size ${heatW}x$heatH != tile $tile — abort tile",
+                            )
+                            continue
+                        }
+                        val tileHeat = NativeImageUtils.heatmapToUInt8Array(outputTensor)
+                            ?: continue
+                        // Max-merge into outer heat at (ox, oy).
+                        for (ty in 0 until tile) {
+                            val dstRow = (oy + ty) * outer + ox
+                            val srcRow = ty * tile
+                            for (tx in 0 until tile) {
+                                val v = tileHeat[srcRow + tx].toInt() and 0xff
+                                val u = combined[dstRow + tx].toInt() and 0xff
+                                if (v > u) combined[dstRow + tx] = tileHeat[srcRow + tx]
+                            }
+                        }
+                        tHeatCopy += (System.nanoTime() - tH0) / 1_000_000.0
+                        tilesOk++
+                    }
+                }
+                heartbeat("det_post tiled tiles_ok=$tilesOk/$nTiles")
+
+                val tNativePost0 = System.nanoTime()
+                val nativeRes = NativeImageUtils.processHeatmapU8(
+                    combined, outer, outer, hmThresh, 10f, boxMode, maskDilatePasses,
+                )
+                val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
+                val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
+
+                val nativeBoxes = mutableListOf<DetectionBox>()
+                var hist: IntArray? = null
+                if (nativeRes != null) {
+                    val boxFloats = nativeRes.size - 100
+                    val nboxes = boxFloats / 9
+                    for (i in 0 until nboxes) {
+                        val offset = i * 9
+                        val matPixels = FloatArray(8)
+                        for (p in 0 until 4) {
+                            matPixels[p * 2] = nativeRes[offset + p * 2]
+                            matPixels[p * 2 + 1] = nativeRes[offset + p * 2 + 1]
+                        }
+                        nativeBoxes.add(DetectionBox(matPixels, nativeRes[offset + 8]))
+                    }
+                    hist = IntArray(100)
+                    for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
+                }
+
+                if (heatDumpU8z != null) {
+                    HeatmapU8Dump.writeU8z(
+                        heatDumpU8z,
+                        combined,
+                        outer,
+                        outer,
+                        mapOf(
+                            "path" to activeProductPathId,
+                            "product_dir" to activeProductDir,
+                            "tier" to outer,
+                            "det_mode" to "tiled_3x3_$tile",
+                            "tiles_ok" to tilesOk,
+                            "content_w" to contentW,
+                            "content_h" to contentH,
+                            "box_mode" to boxMode,
+                            "hm_thresh" to hmThresh,
+                            "mask_dilate_passes" to maskDilatePasses,
+                            "heatmap_post_path" to heatmapPostPath,
+                            "n_boxes" to nativeBoxes.size,
+                        ),
+                    )
+                }
+
+                val tCopy0 = System.nanoTime()
+                val heatmap: FloatArray? = if (copyHeatmap) {
+                    FloatArray(outer * outer) { i ->
+                        (combined[i].toInt() and 0xff) / 255f
+                    }
+                } else {
+                    null
+                }
+                val tCopy = (System.nanoTime() - tCopy0) / 1_000_000.0
+
+                // Snapshot heat for deskew angle (combined is reused next call).
+                val heatSnap = combined.copyOf()
+
+                val meta = mapOf(
+                    "t_pop_tensor_ms" to "%.3f".format(tPop),
+                    "t_jni_in_ms" to "%.3f".format(tJniIn),
+                    "t_inference_ms" to "%.3f".format(tInfer),
+                    "t_tile_heat_merge_ms" to "%.3f".format(tHeatCopy),
+                    "t_native_post_ms" to "%.3f".format(tNativePost),
+                    "t_copy_tensor_ms" to "%.3f".format(tCopy),
+                    "dynamic_shape" to "%dx%d".format(contentW, contentH),
+                    "path" to activeProductPathId,
+                    "tier" to outer.toString(),
+                    "det_mode" to "tiled_3x3_$tile",
+                    "tiles_ok" to tilesOk.toString(),
+                    "n_tiles" to nTiles.toString(),
+                    "box_mode" to boxMode.toString(),
+                    "hm_thresh" to hmThresh.toString(),
+                    "mask_dilate_passes" to maskDilatePasses.toString(),
+                    "heatmap_post_path" to heatmapPostPath,
+                )
+                Log.i(
+                    "PaddleLite",
+                    "det_tiled done tiles=$tilesOk/$nTiles infer_ms=${"%.1f".format(tInfer)} " +
+                        "post_ms=${"%.1f".format(tNativePost)} boxes=${nativeBoxes.size}",
+                )
+                DetectionResult(
+                    heatmap = heatmap,
+                    width = outer,
+                    height = outer,
+                    metadata = meta,
+                    nativeBoxes = nativeBoxes,
+                    outputTensor = null,
+                    heatmapHist = hist,
+                    heatU8 = heatSnap,
+                )
+            } catch (t: Throwable) {
+                Log.e("PaddleDetect", "Tiled detection failed", t)
+                null
+            }
         }
     }
 
@@ -490,7 +944,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
      * Dynamic-sized detection for arbitrary Mat crops (e.g. Pump Experiment).
      * Resizes the internal Paddle predictor to match the input Mat dimensions exactly.
      */
-    fun detectMat(srcMat: Mat, copyHeatmap: Boolean = true): DetectionResult? {
+    fun detectMat(
+        srcMat: Mat,
+        copyHeatmap: Boolean = true,
+        boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+        heatDumpU8z: java.io.File? = null,
+        hmThresh: Float = 0.0f,
+        maskDilatePasses: Int = 0,
+    ): DetectionResult? {
         if (!isAvailable) return null
         val predictor = detectorLarge ?: return null
         val t0 = System.currentTimeMillis()
@@ -514,12 +975,16 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tJniOut0 = System.nanoTime()
             val outputTensor = predictor.getOutput(0)
             val dims = outputTensor.shape()
+            val heatW = dims[3].toInt()
+            val heatH = dims[2].toInt()
 
             // Zero-Copy Native Post-Processing — MUST run before any floatData copy
-            val hmThresh = 0.0f
             val tNativePost0 = System.nanoTime()
-            val nativeRes = NativeImageUtils.processHeatmap(outputTensor, hmThresh, 10f)
+            val nativeRes = NativeImageUtils.processHeatmap(
+                outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
+            )
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
+            val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
 
             val nativeBoxes = mutableListOf<DetectionBox>()
             var hist: IntArray? = null
@@ -539,9 +1004,32 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 hist = IntArray(100)
                 for (i in 0 until 100) hist[i] = nativeRes[boxFloats + i].toInt()
             }
-            // Never floatData on uint8 heatmaps (getFloatData SEGV)
-            val heatmap: FloatArray? = null
-            val tCopy = 0.0
+            if (heatDumpU8z != null) {
+                val u8 = NativeImageUtils.heatmapToUInt8Array(outputTensor)
+                if (u8 != null) {
+                    HeatmapU8Dump.writeU8z(
+                        heatDumpU8z,
+                        u8,
+                        heatW,
+                        heatH,
+                        mapOf(
+                            "path" to activeProductPathId,
+                            "product_dir" to activeProductDir,
+                            "box_mode" to boxMode,
+                            "hm_thresh" to hmThresh,
+                            "mask_dilate_passes" to maskDilatePasses,
+                            "heatmap_post_path" to heatmapPostPath,
+                            "n_boxes" to nativeBoxes.size,
+                            "dynamic" to true,
+                        ),
+                    )
+                }
+            }
+            // Never floatData on uint8 heatmaps (getFloatData SEGV). Campaign: copyHeatmap=false.
+            val tCopy0 = System.nanoTime()
+            val heatmap: FloatArray? =
+                if (copyHeatmap) NativeImageUtils.heatmapToFloatArray(outputTensor) else null
+            val tCopy = (System.nanoTime() - tCopy0) / 1_000_000.0
 
             val tJniOut = (System.nanoTime() - tJniOut0) / 1_000_000.0
 
@@ -553,9 +1041,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 "t_native_post_ms" to "%.3f".format(tNativePost),
                 "t_copy_tensor_ms" to "%.3f".format(tCopy),
                 "dynamic_shape" to "%dx%d".format(w, h),
-                "path" to PROD_PATH_ID
+                "path" to activeProductPathId,
+                "box_mode" to boxMode.toString(),
+                "hm_thresh" to hmThresh.toString(),
+                "mask_dilate_passes" to maskDilatePasses.toString(),
+                "heatmap_post_path" to heatmapPostPath,
             )
-            return DetectionResult(heatmap, dims[3].toInt(), dims[2].toInt(), meta, nativeBoxes, outputTensor, hist)
+            return DetectionResult(heatmap, heatW, heatH, meta, nativeBoxes, outputTensor, hist)
         } catch (t: Throwable) {
             Log.e("PaddleDetect", "Dynamic detection failed", t)
             return null
@@ -572,7 +1064,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             is Mat -> { w = input.cols(); h = input.rows(); srcMat = input }
             else -> throw IllegalArgumentException("Unsupported input type for processOcr")
         }
-        heartbeat("rec_v3_begin ${w}x$h path=$PROD_PATH_ID")
+        heartbeat("rec_v3_begin ${w}x$h path=$activeProductPathId")
 
         if (w * h > 320 * 48) {
             Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated rec tensor capacity.")
@@ -636,7 +1128,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             is Mat -> { w = input.cols(); h = input.rows(); srcMat = input }
             else -> throw IllegalArgumentException("Unsupported input type for processOcr")
         }
-        heartbeat("rec_num_begin ${w}x$h path=$PROD_PATH_ID")
+        heartbeat("rec_num_begin ${w}x$h path=$activeProductPathId")
 
         if (w * h > 320 * 48) {
             Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated rec tensor capacity.")

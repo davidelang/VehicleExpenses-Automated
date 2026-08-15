@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.davidlang.vehicleexpensesautomated.data.sync
 
 import android.accounts.Account
@@ -15,8 +17,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Single suppression boundary for deprecated Google Sign-In SDK APIs.
- * Credential Manager migration will replace this adapter.
+ * Single suppression boundary for deprecated Google Sign-In SDK APIs
+ * (`@file:Suppress("DEPRECATION")`). Credential Manager migration will replace this adapter.
  */
 @Singleton
 class GoogleLegacySignIn @Inject constructor(

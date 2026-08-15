@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.davidlang.vehicleexpensesautomated.ui.settings
 
 import android.content.Context

@@ -48,14 +48,18 @@ interface VehicleDao {
           referenceDashPhotoUrl, cleanedReferenceDashPhotoUrl,
           odometerCropLeft, odometerCropTop, odometerCropRight, odometerCropBottom,
           otherTextCropLeft, otherTextCropTop, otherTextCropRight, otherTextCropBottom,
-          landmarkTextBlocksJson, cloudManifest, deleted, deletedAt,
+          landmarkTextBlocksJson, tripTypesJson, expenseCategoriesJson,
+          odometerDigitCount, odometerRolloverCount,
+          cloudManifest, deleted, deletedAt,
           syncId, originDeviceId, updatedAt
         ) VALUES (
           0, :name, NULL, NULL, NULL, NULL, NULL, :notes,
           NULL, NULL,
           NULL, NULL, NULL, NULL,
           NULL, NULL, NULL, NULL,
-          NULL, NULL, 0, NULL,
+          NULL, '', '',
+          6, 0,
+          NULL, 0, NULL,
           :syncId, :originDeviceId, :updatedAt
         )
         """,

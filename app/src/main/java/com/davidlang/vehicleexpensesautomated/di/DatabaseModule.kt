@@ -235,37 +235,10 @@ object DatabaseModule {
                     val folded = FuelLocationJson.foldLegacy(lat, lon, loc)
                     db.execSQL(
                         "UPDATE $table SET location = ? WHERE id = ?",
-                        arrayOf(folded, id),
+                        arrayOf<Any?>(folded, id),
                     )
                 }
             }
-        }
-    }
-
-    /**
-     * v20: known_stations directory. Seed is app-side (not SQL) after open.
-     * Master's v19 is expenseCategoriesJson.
-     */
-    val MIGRATION_19_20 = object : Migration(19, 20) {
-        override fun migrate(db: SupportSQLiteDatabase) {
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS known_stations (
-                    syncId TEXT NOT NULL PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    address TEXT NOT NULL,
-                    lat REAL NOT NULL,
-                    lon REAL NOT NULL,
-                    accuracyM REAL,
-                    kind TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    originDeviceId TEXT NOT NULL,
-                    updatedAt INTEGER NOT NULL,
-                    deleted INTEGER NOT NULL,
-                    deletedAt INTEGER
-                )
-                """.trimIndent(),
-            )
         }
     }
 
@@ -448,6 +421,68 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * v20: per-vehicle odometer face digit count (default 6) and rollover count.
+     * FuelEntry.odometer stores tracking miles including rollover encoding.
+     */
+    val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE vehicles ADD COLUMN odometerDigitCount INTEGER NOT NULL DEFAULT 6",
+            )
+            db.execSQL(
+                "ALTER TABLE vehicles ADD COLUMN odometerRolloverCount INTEGER NOT NULL DEFAULT 0",
+            )
+        }
+    }
+
+    /**
+     * v21: join the two independent v20 lineages.
+     * Branch v20 added odo digit/rollover; master v20 added known_stations.
+     * This step is idempotent so either v20 install can upgrade.
+     */
+    val MIGRATION_20_21 = object : Migration(20, 21) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            fun hasColumn(table: String, col: String): Boolean {
+                db.query("PRAGMA table_info($table)").use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    while (c.moveToNext()) {
+                        if (c.getString(nameIdx) == col) return true
+                    }
+                }
+                return false
+            }
+            if (!hasColumn("vehicles", "odometerDigitCount")) {
+                db.execSQL(
+                    "ALTER TABLE vehicles ADD COLUMN odometerDigitCount INTEGER NOT NULL DEFAULT 6",
+                )
+            }
+            if (!hasColumn("vehicles", "odometerRolloverCount")) {
+                db.execSQL(
+                    "ALTER TABLE vehicles ADD COLUMN odometerRolloverCount INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS known_stations (
+                    syncId TEXT NOT NULL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    address TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    accuracyM REAL,
+                    kind TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    originDeviceId TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL,
+                    deleted INTEGER NOT NULL,
+                    deletedAt INTEGER
+                )
+                """.trimIndent(),
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -472,6 +507,7 @@ object DatabaseModule {
             MIGRATION_17_18,
             MIGRATION_18_19,
             MIGRATION_19_20,
+            MIGRATION_20_21,
         )
         .fallbackToDestructiveMigration(BuildConfig.DEBUG)
         .build()

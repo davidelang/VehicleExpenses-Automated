@@ -9,8 +9,10 @@ import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.davidlang.vehicleexpensesautomated.data.repository.FuelEntryRepository
 import com.davidlang.vehicleexpensesautomated.ui.experiment.AlignmentSetJRunner
 import com.davidlang.vehicleexpensesautomated.ui.experiment.PumpSetIRunner
+import com.davidlang.vehicleexpensesautomated.data.repository.VehicleRepository
 import com.davidlang.vehicleexpensesautomated.ui.util.FuelPhotoJson
 import com.davidlang.vehicleexpensesautomated.ui.util.NativePaddleEngine
+import com.davidlang.vehicleexpensesautomated.ui.util.OdometerTracking
 import com.davidlang.vehicleexpensesautomated.ui.util.PhotoExifMetaReader
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookup
 import com.davidlang.vehicleexpensesautomated.data.location.LocationLookupKind
@@ -73,6 +75,7 @@ data class MergeApplyResult(
 class BatchFuelImportCoordinator @Inject constructor(
     @param:ApplicationContext private val appContext: Context,
     private val fuelEntryRepository: FuelEntryRepository,
+    private val vehicleRepository: VehicleRepository,
     private val mergeAckStore: MergeAckStore,
 ) {
     companion object {
@@ -128,13 +131,27 @@ class BatchFuelImportCoordinator @Inject constructor(
     }
 
     /**
-     * Dash odometer from Set J is already [pickBestOdometer]-filtered (4–7 pure digits) or null.
-     * Do **not** digit-concatenate arbitrary OCR soup.
+     * Raw OCR face digits from Set J → **tracking** odometer for the fill table.
+     * Applies vehicle digit width + rollover encoding.
      */
-    private fun parseSetJOdometer(raw: String?): Int? {
+    private suspend fun resolveTrackingOdometer(
+        raw: String?,
+        vehicleId: Int,
+        vehicles: List<Vehicle>,
+    ): Pair<Int, Int?>? {
         if (raw.isNullOrBlank()) return null
-        if (raw.length !in 4..7 || !raw.all { it.isDigit() }) return null
-        return raw.toIntOrNull()?.takeIf { it > 0 }
+        val digits = raw.filter { it.isDigit() }
+        if (digits.isEmpty()) return null
+        val vehicle = vehicles.find { it.id == vehicleId }
+            ?: vehicleRepository.getVehicleById(vehicleId)
+        val last = fuelEntryRepository.getLastOdometerForVehicle(vehicleId)
+        val resolved = OdometerTracking.resolveFromOcr(digits, vehicle, last) ?: return null
+        if (vehicle != null && resolved.newRolloverCount > vehicle.odometerRolloverCount) {
+            vehicleRepository.updateVehicle(
+                vehicle.copy(odometerRolloverCount = resolved.newRolloverCount),
+            )
+        }
+        return resolved.trackingOdometer to resolved.newRolloverCount
     }
 
     private fun parseMoneyOrVol(raw: String?): Double? {
@@ -1982,7 +1999,8 @@ class BatchFuelImportCoordinator @Inject constructor(
             return false
         }
 
-        val odo = parseSetJOdometer(result.odometer)
+        val tracking = resolveTrackingOdometer(result.odometer, result.vehicleId, vehicles)
+        val odo = tracking?.first
         val photoJson = FuelPhotoJson.single("dash", sourcePath, ts)
 
         if (odo == null) {

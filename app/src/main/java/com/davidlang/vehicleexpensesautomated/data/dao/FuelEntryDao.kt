@@ -20,6 +20,16 @@ interface FuelEntryDao {
     @Query("SELECT * FROM fuel_entries WHERE vehicleId = :vehicleId AND deleted = 0 ORDER BY timestamp DESC")
     fun getFuelEntriesForVehicle(vehicleId: Int): Flow<List<FuelEntry>>
 
+    /** Latest non-zero tracking odometer for vehicle (fill-table value), or null. */
+    @Query(
+        """
+        SELECT odometer FROM fuel_entries
+        WHERE vehicleId = :vehicleId AND deleted = 0 AND odometer > 0
+        ORDER BY timestamp DESC LIMIT 1
+        """,
+    )
+    suspend fun getLastOdometerForVehicle(vehicleId: Int): Int?
+
     @Query("SELECT * FROM fuel_entries WHERE originDeviceId = :originDeviceId AND id = :id LIMIT 1")
     suspend fun findBySyncKey(originDeviceId: String, id: Long): FuelEntry?
 
