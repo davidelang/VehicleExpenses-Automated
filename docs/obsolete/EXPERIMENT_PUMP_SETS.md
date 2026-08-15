@@ -2,31 +2,39 @@
 
 ## Overview
 
-The pump experiment harness in `ExperimentPumpScreen.kt` formerly scheduled multiple independent flow columns. Each flow received a **fresh master copy** and its own processor; flows did not read each other’s cost/vol outputs.
+The pump experiment harness in `ExperimentPumpScreen.kt` schedules independent flow columns. Each flow receives a **fresh master copy** and its own processor.
 
-**Active multi-set list immediately before simplify** (display names):
+## Current active (2026-08-11+)
+
+| Flow | Det | Expand / blue |
+|------|-----|----------------|
+| **Set G--** | product | calculated verts + horiz 0.5 (production ref) |
+| **Set P** | product | interior-energy residual (`ContentExpandUtils`, jump off) |
+| **Set P4** | **PP-OCRv4_mobile_det** | same interior-energy expand as P |
+
+## Parked columns (2026-08-11 — removed from `flows`)
+
+| Flow | Why parked |
+|------|------------|
+| **H0…H2.0** horiz A/B | Horiz sweep done; data on dual devices |
+| **L / M** heat dilate | Dilate A/B done; not needed for P/P4 focus |
+| **N / O / Q** content modes | Dual / edge / v0.25+dual — P kept as preferred residual |
+| **P-jump** | Jump+retract implemented as option (`enableJump=true`); not scheduled until A/B wanted |
+
+## Historical multi-set list (earlier simplify)
 
 | Flow display name | Processor | Stretch / blue method (summary) |
 |-------------------|-----------|----------------------------------|
 | `Set D (clip edges, calculated)` | `procD` | Clip edges; calculated blue |
 | `Set E (valley push, calculated)` | `procE` | Valley push; calculated blue |
-| `Set G (none, calculated)` | `procG` = `makeGProc(SET_G_VERT_FACTORS, …)` | No stretch; 8-size vert list |
-| `Set G- (6 pass, none, calculated)` | `procGMinus` = `makeGProc(SET_G_MINUS_VERT_FACTORS, …)` | 6-pass reduce |
-| `Set G-- (4 pass, none, calculated)` | `procGMinusMinus` | 4-pass; **Quick Fill** production path uses these verts |
-| `Set I (D+E+G hybrid, calculated)` | `procI` | Deskew once; staged G then D then E verts; one classify |
+| `Set G (none, calculated)` | `procG` | No stretch; 8-size vert list |
+| `Set G- (6 pass, none, calculated)` | `procGMinus` | 6-pass reduce |
+| `Set G-- (4 pass, none, calculated)` | `procGMinusMinus` | 4-pass; **Quick Fill** production verts |
+| `Set I (D+E+G hybrid, calculated)` | `procI` | Deskew once; staged G then D then E verts |
 
-Also still **defined but not in active `flows`** before simplify: `procA`, `procB`, `procC`, `procF`, `procH` (dead code remaining from earlier multi-set eras).
+Also defined but not active in older trees: `procA`, `procB`, `procC`, `procF`, `procH`.
 
-**Simplified experiment (retained):**
-
-| Retained | Processor | JSON / report role |
-|----------|-----------|--------------------|
-| **Set G-- (4 pass, none, calculated)** | `procGMinusMinus` via `makeGProc(SET_G_MINUS_MINUS_VERT_FACTORS, …)` | Same branch JSON fields as multi-flow G-- column |
-| **Set I (D+E+G hybrid, calculated)** | `procI` | Same hybrid branch JSON as multi-flow I column |
-
-**Primary success criterion:** G-- and Set I branch JSON (labels + fields those flows emit today) must match multi-flow runs on the same photo + same settings + same models. Speed = not running D/E/G/G- (and not compiling dead A–H procs). No algorithm rewrite inside G-- / I processor bodies.
-
-**Production Quick Fill** continues to use `OcrHarness` + `PumpCostVolUtils` with `SET_G_MINUS_MINUS_VERT_FACTORS` — **not deleted**. Shared utils stay unless later proven experiment-only with zero project-wide callers.
+**Production Quick Fill** continues to use `OcrHarness` + `PumpCostVolUtils` with `SET_G_MINUS_MINUS_VERT_FACTORS` — **not deleted**.
 
 ## Last known functional state
 

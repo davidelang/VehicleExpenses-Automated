@@ -10,13 +10,27 @@ The multi-set alignment experiment harness in `ExperimentAlignmentScreen.kt` for
 | `set_e` | Set E | `deskewResA.paddleCppAngle` | Non-char-aware Paddle iterative only | `pathways["set_e"]` |
 | `set_j` | Set J (CC Speedup) | `deskewResA.paddleOptimizedAngle` | Char-aware Paddle iterative (`useCharAware=true`) | `pathways["set_j"]` |
 
-**Simplified experiment (retained):**
+**Current matrix (det × expand); shared fixes on every column:**
 
-1. Shared `calculateAverageTextAngle` (unchanged).
-2. **Silent mlAngle vehicle-ID lock** — same rotate/discovery/Tier-1 veto as former first pipeline (Set A angle), **without** writing `pathways["set_a"]` and **without** `runMLKitIterative` / Set A paddle iterative. This preserves the multi-set lock semantics that Set J used when A ran first (`globalWinnerId` only set when still null).
-3. **Full Set J report path only** — rotate `paddleOptimizedAngle`, discovery, honor lock, `disambiguateLandmarks` + `anchorAlign` + snapshot + `runPaddleValleyIterative(..., useCharAware=true, pipelineKey="set_j")` with Raw + Bin-Trials; emit **`pathways["set_j"]` only**.
+Shared on **all** columns (face digits only — no rollover timeline in experiment):
 
-**Primary success criterion:** `pathways["set_j"]` JSON (odometer / harness / nested pathway payloads) must match multi-set runs on the same photo + vehicle DB + models. Speed comes only from not running Set A/E report columns and their ML iterative path.
+- Bin-Trials: PreferLen = `Vehicle.odometerDigitCount` (+ optional +1), mean + tail-strip
+- Final Raw/Bin pick: prefer Bin within the preferred length pool
+- Rec feed: source-border (inflate ROI by ~`4/scale` px; no black 4px insert)
+
+| Key | Display | Det | Expand |
+|-----|---------|-----|--------|
+| `set_j` | Set J (prod+charAware) | product | char-aware (`expandByCharacterAware*`) |
+| `set_l` | Set L (prod+P-expand) | product | **P** = `ContentExpand` `INTERIOR_ENERGY` + jump |
+| `set_v` | Set V (prod+valley) | product | valley (`expandByValleyDiagnostic`) |
+| `set_o` | Set O (v4+charAware) | PP-OCRv4_mobile_det | char-aware |
+| `set_n` | Set N (v4+P-expand) | PP-OCRv4_mobile_det | P |
+| `set_w` | Set W (v4+valley) | PP-OCRv4_mobile_det | valley |
+
+Dropped as redundant after shared fixes: `set_k` (old P+legacy bin sel), `set_m` (old v4+P without full shared stack).
+
+1. Shared deskew + silent mlAngle vehicle-ID lock (no pathways set_a).
+2. Six columns as above; v4 columns swap det tiers for that column only then restore product.
 
 ID lock formerly from first pipeline Set A (`mlAngle`); retained as silent pass for Set J JSON parity.
 
@@ -46,7 +60,7 @@ Also useful: branch marker `simplify_experiments-start` (same simplification eff
 | Set E full pass (`paddleCppAngle` + set_e pathway) | Not replaced — unused for production; Set J is the retained experiment column |
 | Outer JSON convenience reading only `pathways["set_a"]` | Outer fields retargeted to locked winner / `pathways["set_j"]` (**nested set_j serialize logic unchanged**) |
 
-**Production Quick Fill** continues to use `OcrHarness.runSetJPipeline` — **not** this experiment screen. Production paths are out of scope for this obsolescence.
+**Production Quick Fill** uses `OcrHarness.runSetJPipeline` with **Set V valley expand** (`OdoExpandKind.VALLEY`) — **not** this experiment screen. Batch dash remains Set J via `AlignmentSetJRunner`.
 
 ## Retired sets / columns
 
