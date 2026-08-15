@@ -23,7 +23,7 @@ ai_directive: "This is a downstream reference. It MUST be updated continuously t
 ## OCR & Image Processing
 
 ### `OcrHarness.kt`
-- `OcrHarness` (Object): Production OCR orchestration (`runDiscovery`, `runAutoFillPipeline`, `runPumpCostVolPipeline`).
+- `OcrHarness` (Object): Production OCR orchestration (`runDiscovery`, `runAutoFillPipeline` = alignment Set V valley expand, `runPumpCostVolPipeline`).
 - `OcrHarnessResult`: Structured harness output for experiments and Quick Fill debug.
 
 ### `OcrEngine.kt`
