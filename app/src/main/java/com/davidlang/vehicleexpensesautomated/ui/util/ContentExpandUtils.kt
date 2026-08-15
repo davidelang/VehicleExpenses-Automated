@@ -36,7 +36,7 @@ import kotlin.math.sin
  * | [vertEnergy] | MAGNITUDE | MAGNITUDE = |∇|; GX = |∂I/∂x| only; XYCUT_GX = peak-isolate on gx |
  * | [freezeHorzDuringVert] | false | If true, first grow is top/bottom only (seed width frozen) |
  * | [vertPadFrac] | 0 | After vertical stop, pad each tip by this × seedH (one scale, not a G list) |
- * | count pullback | post | Additive: first run-count valley below 0.45×seed median; AABB = image y / Sobel-x; rot = ±v / \|∇I·û\| |
+ * | count pullback | post | Additive: first run-count valley below 0.45×seed median; then one-direction pad (clear after pull / grow if energy-stop + tip still in digits); AABB = image y / Sobel-x; rot = ±v / \|∇I·û\| |
  * | [minFrac] | 0.02 | DUAL_SAUVOLA / mask: min ink fraction in 1px strip to keep growing |
  * | [minEdgeRatio] | 0.35 | EDGE_RING: strip edge density vs seed perimeter |
  *
@@ -85,11 +85,17 @@ object ContentExpandUtils {
     )
 
     /**
-     * Additive count-valley pullback (never grows, never retracts into the seed).
+     * Additive count-valley pullback, then a one-direction pad.
      *
-     * AABB: [axis] `image_y`; [tAfter] ≥ [tBefore], [bAfter] ≤ [bBefore] (image y).
-     * Oriented: [axis] `v`; [pulledTop] is the −v tip (normal to the long edge),
-     * [pulledBot] is +v. [y0] is then the v of [counts][0] in the seed frame.
+     * Valley never retracts into the seed. After the valley:
+     * - pulled tip: step back toward the energy box by [COUNT_CLEAR_FRAC]×seedH
+     *   (not past energy);
+     * - energy-stop tip whose run-count is still ≥ thr: grow that tip only by
+     *   [COUNT_GROW_FRAC]×seedH. Cap-stops do not grow. Grow is skipped when
+     *   the energy box is already taller than [COUNT_GROW_MAX_H_FRAC]×seedH
+     *   so the 48 px rec crop does not shrink the digits.
+     *
+     * AABB: [axis] `image_y`. Oriented: [axis] `v`; [pulledTop] is the −v tip.
      */
     data class CountPullInfo(
         val pulledTop: Boolean,
@@ -111,9 +117,27 @@ object ContentExpandUtils {
         val vPosBefore: Double = 0.0,
         val vNegAfter: Double = 0.0,
         val vPosAfter: Double = 0.0,
+        /** True if this tip grew past the energy box (energy-stop + still in digits). */
+        val grewTop: Boolean = false,
+        val grewBot: Boolean = false,
+        /** Signed step after the valley (image y or v index): negative = toward −y/−v. */
+        val padTop: Int = 0,
+        val padBot: Int = 0,
     ) {
         val pulled: Boolean get() = pulledTop || pulledBot
     }
+
+    /** After a valley pull, give this × seedH back toward the energy tip. */
+    const val COUNT_CLEAR_FRAC = 0.10f
+
+    /** Energy-stop + tip run-count still ≥ thr: grow that tip by this × seedH. */
+    const val COUNT_GROW_FRAC = 0.08f
+
+    /**
+     * Do not grow when the energy box is already this × seed height
+     * (two LCD rows + gap; further height shrinks digits in the 48 px rec).
+     */
+    const val COUNT_GROW_MAX_H_FRAC = 2.4f
 
     /**
      * After vertical grow stops, keep sampling at least this many px past the
@@ -622,7 +646,7 @@ object ContentExpandUtils {
         eng.release()
         val extraLook = if (recordVertEnergy) lookAhead else 0
         val (countQuad, countInfo) = countPullbackOriented(
-            gray, seed, finalQuad, extraLook,
+            gray, seed, finalQuad, extraLook, stopUp, stopDown,
         )
         val traceOut = if (trace != null) {
             attachCountToTraceV(trace, seedBh, countInfo, countQuad.toAabb())
@@ -1148,15 +1172,59 @@ object ContentExpandUtils {
     }
 
     /**
+     * One-direction pad after the valley. [outwardPositive] = increasing index
+     * is outward (bottom / +v). Pulled tips step toward [existIdx]; energy-stop
+     * tips with [tipCount] ≥ [cThr] grow past [existIdx] when [allowGrow].
+     */
+    private fun padCountTip(
+        pulled: Boolean,
+        stop: String,
+        tipCount: Double?,
+        cThr: Double,
+        existIdx: Int,
+        countIdx: Int,
+        seedIdx: Int,
+        outwardPositive: Boolean,
+        clearSteps: Int,
+        growSteps: Int,
+        lo: Int,
+        hi: Int,
+        allowGrow: Boolean,
+    ): Pair<Int, Boolean> {
+        var idx = countIdx
+        var grew = false
+        if (pulled) {
+            val give = if (outwardPositive) {
+                min(clearSteps, max(0, existIdx - countIdx))
+            } else {
+                min(clearSteps, max(0, countIdx - existIdx))
+            }
+            idx = if (outwardPositive) countIdx + give else countIdx - give
+        } else if (allowGrow && stop == "energy" && cThr >= 0.45 &&
+            tipCount != null && tipCount >= cThr
+        ) {
+            idx = if (outwardPositive) existIdx + growSteps else existIdx - growSteps
+            grew = true
+        }
+        idx = idx.coerceIn(lo, hi)
+        idx = if (outwardPositive) max(idx, seedIdx) else min(idx, seedIdx)
+        return idx to grew
+    }
+
+    /**
      * Walk from the seed toward the existing energy box; first local min of
-     * gx-run-count below 0.45 × seed-median pulls that tip back. Never grows,
-     * never retracts into the seed. Width is the seed's (frozen).
+     * gx-run-count below 0.45 × seed-median pulls that tip back. Then one-direction
+     * pad ([stopUp]/[stopDown] = `energy` + tip still in digits → grow;
+     * pulled → clear toward energy). Never retracts into the seed. Width is
+     * the seed's (frozen).
      */
     fun countPullbackVertical(
         gray: Mat,
         seed: Rect,
         exist: Rect,
         extraLook: Int = 0,
+        stopUp: String = "",
+        stopDown: String = "",
     ): Pair<Rect, CountPullInfo> {
         val imgW = gray.cols()
         val imgH = gray.rows()
@@ -1212,13 +1280,34 @@ object ContentExpandUtils {
         }
         top = min(top, st)
         bot = max(bot, sb)
-        val tA = y0 + top
-        val bA = y0 + bot
+        val cThr = 0.45 * cSeed
+        val clearSteps = max(1, (COUNT_CLEAR_FRAC * sh).roundToInt())
+        val growSteps = max(1, (COUNT_GROW_FRAC * sh).roundToInt())
+        val allowGrow = e.height() <= COUNT_GROW_MAX_H_FRAC * sh
+        val tipCountTop = if (te in sm.indices) sm[te] else null
+        val tipCountBot = if (be - 1 in sm.indices) sm[be - 1] else if (be in sm.indices) sm[be] else null
+        val topBeforePad = top
+        val botBeforePad = bot
+        val idxLo = min(0, te - growSteps)
+        val idxHi = max(n, be + growSteps)
+        val (topPad, grewT) = padCountTip(
+            pulledT, stopUp, tipCountTop, cThr, te, top, st,
+            outwardPositive = false, clearSteps, growSteps, idxLo, idxHi, allowGrow,
+        )
+        val (botPad, grewB) = padCountTip(
+            pulledB, stopDown, tipCountBot, cThr, be, bot, sb,
+            outwardPositive = true, clearSteps, growSteps, idxLo, idxHi, allowGrow,
+        )
+        top = min(topPad, st)
+        bot = max(botPad, sb)
+        if (bot < top + 1) bot = max(top + 1, sb)
+        val tA = (y0 + top).coerceIn(0, imgH)
+        val bA = (y0 + bot).coerceIn(tA + 1, imgH)
         val info = CountPullInfo(
             pulledTop = pulledT,
             pulledBot = pulledB,
             cSeed = cSeed,
-            countThr = 0.45 * cSeed,
+            countThr = cThr,
             gxThr = gxThr,
             tBefore = e.top,
             bBefore = e.bottom,
@@ -1226,21 +1315,27 @@ object ContentExpandUtils {
             bAfter = bA,
             y0 = y0,
             counts = sm,
+            grewTop = grewT,
+            grewBot = grewB,
+            padTop = top - topBeforePad,
+            padBot = bot - botBeforePad,
         )
         val out = Rect(e.left, tA, e.right, bA)
         return clip(out, imgW, imgH) to info
     }
 
     /**
-     * Same valley rule as [countPullbackVertical], but the walk is along ±v
-     * (normal to the long edges) and the strip is |∇I·û| along seed width.
-     * Output keeps the exist quad's u-extent; only the v-tips pull back.
+     * Same valley + one-direction pad as [countPullbackVertical], but the walk
+     * is along ±v (normal to the long edges) and the strip is |∇I·û| along
+     * seed width. Output keeps the exist quad's u-extent; only the v-tips move.
      */
     fun countPullbackOriented(
         gray: Mat,
         seed: OrientedQuad,
         exist: OrientedQuad,
         extraLook: Int = 0,
+        stopUp: String = "",
+        stopDown: String = "",
     ): Pair<OrientedQuad, CountPullInfo> {
         val imgW = gray.cols()
         val imgH = gray.rows()
@@ -1394,6 +1489,28 @@ object ContentExpandUtils {
         }
         top = min(top, st)
         bot = max(bot, sb)
+        val cThr = 0.45 * cSeed
+        val clearSteps = max(1, (COUNT_CLEAR_FRAC * sh).roundToInt())
+        val growSteps = max(1, (COUNT_GROW_FRAC * sh).roundToInt())
+        val existH = (vExistPos - vExistNeg).toDouble()
+        val allowGrow = existH <= COUNT_GROW_MAX_H_FRAC * sh
+        val tipCountTop = if (te in sm.indices) sm[te] else null
+        val tipCountBot = if (be - 1 in sm.indices) sm[be - 1] else if (be in sm.indices) sm[be] else null
+        val topBeforePad = top
+        val botBeforePad = bot
+        val idxLo = min(0, te - growSteps)
+        val idxHi = max(n, be + growSteps)
+        val (topPad, grewT) = padCountTip(
+            pulledT, stopUp, tipCountTop, cThr, te, top, st,
+            outwardPositive = false, clearSteps, growSteps, idxLo, idxHi, allowGrow,
+        )
+        val (botPad, grewB) = padCountTip(
+            pulledB, stopDown, tipCountBot, cThr, be, bot, sb,
+            outwardPositive = true, clearSteps, growSteps, idxLo, idxHi, allowGrow,
+        )
+        top = min(topPad, st)
+        bot = max(botPad, sb)
+        if (bot < top + 1) bot = max(top + 1, sb)
         val vNegOut = (v0 + top).toDouble()
         val vPosOut = (v0 + bot).toDouble()
         val newV = ((vNegOut + vPosOut) * 0.5).toFloat()
@@ -1407,7 +1524,7 @@ object ContentExpandUtils {
             pulledTop = pulledT,
             pulledBot = pulledB,
             cSeed = cSeed,
-            countThr = 0.45 * cSeed,
+            countThr = cThr,
             gxThr = gxThr,
             tBefore = existAabb.top,
             bBefore = existAabb.bottom,
@@ -1420,6 +1537,10 @@ object ContentExpandUtils {
             vPosBefore = vExistPos.toDouble(),
             vNegAfter = vNegOut,
             vPosAfter = vPosOut,
+            grewTop = grewT,
+            grewBot = grewB,
+            padTop = top - topBeforePad,
+            padBot = bot - botBeforePad,
         )
         return countQuad to info
     }
@@ -1697,7 +1818,9 @@ object ContentExpandUtils {
         }
         eng.release()
         val extraLook = if (recordVertEnergy) lookAhead else 0
-        val (countRect, countInfo) = countPullbackVertical(gray, seed, finalRect, extraLook)
+        val (countRect, countInfo) = countPullbackVertical(
+            gray, seed, finalRect, extraLook, stopUp, stopDown,
+        )
         val traceOut = if (trace != null) {
             attachCountToTrace(trace, seed, countInfo, countRect)
         } else {

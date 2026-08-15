@@ -123,6 +123,10 @@ private fun countPullJson(p: ContentExpandUtils.CountPullInfo?): Any {
         .put("vPosBefore", p.vPosBefore)
         .put("vNegAfter", p.vNegAfter)
         .put("vPosAfter", p.vPosAfter)
+        .put("grewTop", p.grewTop)
+        .put("grewBot", p.grewBot)
+        .put("padTop", p.padTop)
+        .put("padBot", p.padBot)
 }
 
 private fun rawRoiJson(roi: ContentExpandUtils.EnergyPixelRoi?): Any {
@@ -1862,7 +1866,7 @@ suspend fun runPumpExperiment(
                             "energyRatio" to energyRatio,
                             "freezeHorzDuringVert" to freezeHorzDuringVert,
                             "vertPadFrac" to vertPadFrac,
-                            "countPull" to "gx-run-count valley; scaleVariants kind=energy_count",
+                            "countPull" to "gx-run-count valley + one-dir pad; scaleVariants kind=energy_count",
                             "note" to assemblyNote,
                         ),
                         oranges = emptyList(),
@@ -2225,7 +2229,7 @@ suspend fun runPumpExperiment(
                                     "freezeHorzDuringVert" to freezeHorzDuringVert,
                                     "vertEnergy" to vertEnergy.name,
                                     "vertPadFrac" to vertPadFrac,
-                                    "countPull" to "gx-run-count valley; scaleVariants kind=energy_count",
+                                    "countPull" to "gx-run-count valley + one-dir pad; scaleVariants kind=energy_count",
                                     "note" to assemblyNote,
                                 ),
                                 oranges = emptyList(),
