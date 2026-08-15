@@ -11,21 +11,38 @@ To achieve 16KB page size compatibility, the build process must satisfy two core
 1. **Compilation:** Libraries must be compiled using Android NDK r27+ or r28+ (which default to 16KB ELF alignment) or linked explicitly with the linker flag `-Wl,-z,max-page-size=16384`.
 2. **Packaging:** Legacy packaging must be disabled (`useLegacyPackaging = false` in `build.gradle`) to store native libraries uncompressed, allowing the Android Gradle Plugin (AGP 8.5.1+) or `zipalign` tool to pack and align them correctly.
 
+### App status (product / Play 64-bit path)
+* **`app/build.gradle.kts`:** `useLegacyPackaging = false`; CMake arg `ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`.
+* **`app/src/main/cpp/CMakeLists.txt`:** `add_link_options(-Wl,-z,max-page-size=16384)` for app natives (all ABIs).
+* **Verified:** debug APK x86_64 + arm64 product SOs **Stored** + LOAD Align **0x4000**; First 10 align+pump before/after on emulator-5554 PASS (scratch `16k-5554-first10-20260805`).
+* **Still open (armv7 purity only):** OpenCV armv7 pin; paddle armv7 max-page; NDK armv7 `libc++_shared` may remain 4KB (Play’s hard gate is 64-bit).
+
 ---
 
 ## 2. Dependency Limitations & Upstream Status
 
-### OpenCV Android SDK
-* **Official Prebuilts:** Standard prebuilt binaries published to Maven Central (`org.opencv:opencv`) and standard GitHub releases (up to `5.0.0`) **do not support 16KB alignment out of the box**. They are compiled on legacy CI builders (using NDK r25 or older) to maximize compatibility with older devices.
-* **OpenCV 5.x Status:** Although source-level fixes were introduced in the 4.12.0+ branch, the official prebuilt 5.x packages still default to 4KB alignment. Simply upgrading the package version will not resolve the warning.
-* **Resolution:** OpenCV must be compiled from source using NDK r28c and target CMake flag `-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON`.
+### OpenCV Android SDK — **must pin-build** (not an upgrade)
+* **Official Prebuilts:** Maven Central / GitHub releases (through 5.x) still ship **4KB** LOAD alignment. Version bumps alone do not fix this.
+* **Resolution:** Pin-build from source (`third_party/opencv`, NDK r28c, `-Wl,-z,max-page-size=16384`). App uses fat `libopencv_java4.so` under `jniLibs` for **arm64-v8a + x86_64**; **armeabi-v7a 16KB OpenCV still TODO**.
+
+### CameraX — **upgrade** (not like OpenCV)
+* **Not** a rebuild-from-source problem. Google ships CameraX AARs with natives; Jetpack rebuilds them regularly.
+* **Resolution:** Use CameraX **≥ 1.4** (community-confirmed for `libimage_processing_util_jni`); app targets **1.6.1** stable. Do not fork CameraX.
+
+### ML Kit text-recognition — **upgrade / wait**, not pin-build
+* Bundled `com.google.mlkit:text-recognition` latest published **16.0.1** (as of ML Kit release table). Arm64 native is already **0x4000** with that version; armv7 may still be 4KB.
+* Other ML Kit modules (e.g. digital-ink 19.0.0) explicitly noted 16KB in release notes; text-recognition has not needed a newer artifact than 16.0.1 yet.
+* **Unlike OpenCV:** no VE pin rebuild of ML Kit. Bump when Google publishes a newer text-recognition; Play’s hard gate is **64-bit** 16KB.
 
 ### Go-based Rclone (`librclone.aar` / photo pin)
-* **Build System:** `third_party/rclone/` (`libpin.toml`, `scripts/build-photo-aar.sh`, Docker). Historical sandbox: `dev-ai-interaction/rclone-build/` (superseded).
-* **Resolution:** `CGO_LDFLAGS=-Wl,-z,max-page-size=16384` is set in the pin build script before `gomobile bind`.
+* **Build System:** `third_party/rclone/` (`libpin.toml`, `scripts/build-photo-aar.sh`, Docker).
+* **Resolution:** `CGO_LDFLAGS=-Wl,-z,max-page-size=16384` before `gomobile bind` — all product ABIs **0x4000**.
+
+### libc++_shared
+* **Do not** hand-copy into `jniLibs`. With `ANDROID_STL=c++_shared`, AGP packages the NDK STL per ABI (NDK r28c: arm64/x86_64 already 16KB; armv7 NDK STL is still 4KB — acceptable for Play’s 64-bit-only 16KB rule).
 
 ### ABI Compatibility
-* **x86 & x86_64:** These architectures must not be dropped. They are required for emulator support. Both OpenCV and Rclone must be built for `arm64-v8a`, `armeabi-v7a`, `x86_64`, and `x86`.
+* Product ABIs: `arm64-v8a`, `armeabi-v7a`, `x86_64`. Pin-built OpenCV currently arm64+x86_64; armv7 OpenCV 16KB still open.
 
 ---
 

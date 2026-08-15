@@ -31,8 +31,8 @@ Dynamic shapes MUST be configured via the `NNADAPTER_DYNAMIC_SHAPE_INFO` environ
 
 | Model Type | Mode | Configuration String (`NNADAPTER_DYNAMIC_SHAPE_INFO`) |
 | :--- | :--- | :--- |
-| **Detection** | ARGB | `x:1,3,128,128:1,3,1280,1280:1,3,4000,4000` |
-| **Detection** | Mono | `x:1,1,128,128:1,1,1280,1280:1,1,4000,4000` |
+| **Detection** | ARGB | `x:1,3,64,64:1,3,1280,1280:1,3,4096,4096` |
+| **Detection** | Mono | `x:1,1,64,64:1,1,1280,1280:1,1,4096,4096` |
 | **Rec V3** | ARGB | `x:1,3,48,32:1,3,48,320:1,3,48,1280` |
 | **Rec V3** | Mono | `x:1,1,48,32:1,1,48,320:1,1,48,1280` |
 
