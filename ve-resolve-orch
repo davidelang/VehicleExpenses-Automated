@@ -173,6 +173,40 @@ ve_reset_gradle_daemon_dir() {
   return 0
 }
 
+# Incremental app/build is same-uid only. If intermediates/generated/kspCaches
+# are owned by someone else, Gradle chmod on leftover dest dirs fails.
+# Wipe those trees (group write, no sticky). Do not chmod/chown them.
+ve_wipe_foreign_app_build_outputs() {
+  local me d owner need=0
+  me=$(id -un)
+  for d in app/build/intermediates app/build/generated app/build/kspCaches; do
+    if [ -e "$d" ]; then
+      owner=$(stat -c %U "$d" 2>/dev/null || true)
+      if [ -n "$owner" ] && [ "$owner" != "$me" ]; then
+        need=1
+        break
+      fi
+    fi
+  done
+  if [ "$need" -eq 0 ]; then
+    return 0
+  fi
+  echo "Wiping foreign app/build outputs (not owned by $me)..."
+  rm -rf app/build/intermediates app/build/generated app/build/kspCaches || {
+    echo "ERROR: cannot remove foreign app/build outputs (do not chmod them)." >&2
+    return 1
+  }
+  for d in app/build/intermediates app/build/generated app/build/kspCaches; do
+    if [ -e "$d" ]; then
+      echo "ERROR: still present after wipe: $d" >&2
+      ls -ld "$d" >&2 || true
+      echo "  Remove as the owner. Do not chmod." >&2
+      return 1
+    fi
+  done
+  return 0
+}
+
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   set -euo pipefail
   ve_resolve_orch "${1:-}" || exit 1
