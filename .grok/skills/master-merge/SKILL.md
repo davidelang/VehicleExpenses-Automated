@@ -29,6 +29,8 @@ Same resolution as prepare-local-pr: `project.config` `sandbox_dir` / `sandbox_p
 2. `git log master..<branch>` and `git diff master..<branch>` vs plans.
 3. Reject unauthorized / plan-violating changes.
 4. On merge:
+
+   - **Stacked wrappers:** `deploy` / `build_app` / `ve-resolve-orch` are stacked (gradle-home, ABI picker, aapt2 override, `ve_ensure_tracked_exec_other_x`). Never wholesale-restore them from one SHA.
    - `python3 $SANDBOX/audit_merge.py <branch>` if present; else note missing and continue with manual divergence check
    - **`./install-merge-drivers.sh`** when present
    - **`./merge-branch-into-master.sh <branch>`** (or host equivalent)
