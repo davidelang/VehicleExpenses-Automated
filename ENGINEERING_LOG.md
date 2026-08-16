@@ -7625,3 +7625,13 @@ x
 - Phase 2: ENV_SETUP ABI comment + facts ABI/paddle fold (keep aapt2/gradle-home)
 - Phase 3: publish-stacked-wrappers-to-orch (dry-run only) + master-merge skill sentence
 - Do not edit orch, do not --apply, do not flip Gradle umask 007, do not agent-run deploy
+
+## 2026-08-16 - Merge PR-fix_deploy into master
+
+- FF index path via merge-branch-into-master.sh (base 380531ff, tip 2401af02)
+- audit_merge.py: fast-forwardable
+- Specials: TODO identical (none to close); project-facts master base + folded ABI/aapt2/deploy/paddle bullets from branch
+- Staged: deploy, build_app, ve-resolve-orch, ENVIRONMENT_SETUP.md, publish-stacked-wrappers-to-orch, master-merge SKILL, project-facts, eng-log
+- Next: ./build_app merge commit + assembleDebug
+- After tag: human ./publish-stacked-wrappers-to-orch --apply from master/, then orch ./update-rules.sh (no --force)
+- No works tag. Human ./deploy to verify ABI APK.
