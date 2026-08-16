@@ -144,6 +144,10 @@ else
     . "$_BA_HERE/ve-resolve-orch"
     ve_resolve_orch "$_BA_HERE" || exit 1
     ve_setup_worktree_build_homes "$_BA_HERE" || exit 1
+    _AAPT2=$(ve_aapt2_from_sdk "$_BA_HERE") || exit 1
+    if [ -n "${GRADLE_USER_HOME:-}" ] && [ -d "$GRADLE_USER_HOME" ]; then
+      find "$GRADLE_USER_HOME" -type f -name aapt2 -exec chmod u+rx,g+rx {} + 2>/dev/null || true
+    fi
     ve_reset_gradle_daemon_dir || exit 1
     ve_wipe_foreign_app_build_outputs || exit 1
     unset GRADLE_OPTS
@@ -157,6 +161,7 @@ else
     GRADLE_CMD=( "${GRADLE_ARGS[@]}" assembleDebug )
     # No daemon: multi-worktree RAM; agent path does not keep Gradle daemons warm.
     (umask 007; ./gradlew --no-daemon --no-configuration-cache \
+      -Pandroid.aapt2FromMavenOverride="$_AAPT2" \
       -Pkotlin.compiler.execution.strategy=in-process \
       -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_CMD[@]}")
     RET_VAL=$?

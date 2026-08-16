@@ -692,7 +692,13 @@ run_package_install() {
   fi
   echo "  --rebuild: Gradle $task (--no-daemon) for $device_id ($fl)..."
   ve_reset_gradle_daemon_dir || return 1
+  local aapt2_bin
+  aapt2_bin=$(ve_aapt2_from_sdk "$_DEP_HERE") || return 1
+  if [ -n "${GRADLE_USER_HOME:-}" ] && [ -d "$GRADLE_USER_HOME" ]; then
+    find "$GRADLE_USER_HOME" -type f -name aapt2 -exec chmod u+rx,g+rx {} + 2>/dev/null || true
+  fi
   (umask 007; ANDROID_SERIAL="$device_id" ./gradlew --no-daemon --no-configuration-cache \
+    -Pandroid.aapt2FromMavenOverride="$aapt2_bin" \
     -Pkotlin.compiler.execution.strategy=in-process \
     -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_ARGS[@]}" "$task")
   ret=$?
