@@ -1,0 +1,138 @@
+#!/bin/bash
+# publish-stacked-wrappers-to-orch
+#
+# Human-only reverse publish of the *union* wrappers onto the orchestration
+# worktree. update-rules.sh stays orch → worktrees and must not be reversed
+# for the full FILES list (that would clobber orch-ahead brain).
+#
+# Allowlist only:
+#   deploy
+#   build_app
+#   ve-resolve-orch
+#   docs/ENVIRONMENT_SETUP.md
+# Not project-facts.md. Not the rest of FILES.
+#
+# When: AFTER master-merge of fix_deploy (hunk-merge stacked wrappers if they
+# conflict). Run from master/ or this branch at the merged tip. Then from orch:
+#   ./update-rules.sh
+# (no --force).
+#
+# Default is --dry-run (print src→orch, write nothing).
+#   ./publish-stacked-wrappers-to-orch
+#   ./publish-stacked-wrappers-to-orch --dry-run
+#   ./publish-stacked-wrappers-to-orch --apply    # human only
+#
+# Agents must not pass --apply. Agents must not edit orch.
+
+set -euo pipefail
+umask 002
+
+APPLY=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --apply) APPLY=1; shift ;;
+    --dry-run) APPLY=0; shift ;;
+    -h|--help)
+      cat <<'EOF'
+Usage: ./publish-stacked-wrappers-to-orch [--dry-run|--apply]
+
+  --dry-run   Print src → orch paths only (default). No writes.
+  --apply     Copy the four allowlist files and commit on orch (human only).
+
+Resolve orch via ve_resolve_orch (project.config orch_root=). Never walk "..".
+Refuse if any dest allowlist path is dirty in the orch worktree.
+After --apply, from orch: ./update-rules.sh   (do not pass --force)
+EOF
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1 (try --help)" >&2
+      exit 1
+      ;;
+  esac
+done
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ ! -f "$HERE/ve-resolve-orch" ]; then
+  echo "ERROR: missing $HERE/ve-resolve-orch" >&2
+  exit 1
+fi
+# shellcheck source=/dev/null
+. "$HERE/ve-resolve-orch"
+ve_resolve_orch "$HERE" || exit 1
+
+if [ -z "${ORCH_ROOT:-}" ] || [ ! -d "$ORCH_ROOT" ]; then
+  echo "ERROR: orch_root unresolved or not a directory." >&2
+  exit 1
+fi
+if [ ! -d "$ORCH_ROOT/.git" ] && ! git -C "$ORCH_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  echo "ERROR: $ORCH_ROOT is not a git worktree." >&2
+  exit 1
+fi
+
+if [ "$HERE" = "$ORCH_ROOT" ]; then
+  echo "ERROR: source worktree is orch; run this from master/ or the feature branch tip." >&2
+  exit 1
+fi
+
+ALLOWLIST=(
+  deploy
+  build_app
+  ve-resolve-orch
+  docs/ENVIRONMENT_SETUP.md
+)
+
+echo "Source: $HERE"
+echo "Orch:   $ORCH_ROOT"
+echo "Mode:   $([ "$APPLY" -eq 1 ] && echo apply || echo dry-run)"
+
+missing=0
+for p in "${ALLOWLIST[@]}"; do
+  if [ ! -e "$HERE/$p" ]; then
+    echo "ERROR: source missing $HERE/$p" >&2
+    missing=1
+  fi
+done
+if [ "$missing" -ne 0 ]; then
+  exit 1
+fi
+
+dirty=$(git -C "$ORCH_ROOT" status --porcelain -- "${ALLOWLIST[@]}" || true)
+if [ -n "$dirty" ]; then
+  echo "ERROR: orch dest allowlist paths are dirty; refuse to copy:" >&2
+  printf '%s\n' "$dirty" >&2
+  exit 1
+fi
+
+for p in "${ALLOWLIST[@]}"; do
+  echo "  $HERE/$p  ->  $ORCH_ROOT/$p"
+done
+
+if [ "$APPLY" -eq 0 ]; then
+  echo "Dry-run only. Human: --apply after master-merge, then orch ./update-rules.sh (no --force)."
+  exit 0
+fi
+
+# --apply: human path. Agents must not invoke this flag.
+for p in "${ALLOWLIST[@]}"; do
+  dest_dir=$(dirname "$ORCH_ROOT/$p")
+  mkdir -p "$dest_dir"
+  cp -f "$HERE/$p" "$ORCH_ROOT/$p"
+  case "$p" in
+    docs/*) ;;
+    *) chmod a+x "$ORCH_ROOT/$p" 2>/dev/null || true ;;
+  esac
+done
+
+git -C "$ORCH_ROOT" add -- "${ALLOWLIST[@]}"
+if git -C "$ORCH_ROOT" diff --cached --quiet; then
+  echo "No orch changes to commit (dest already matched source)."
+  exit 0
+fi
+git -C "$ORCH_ROOT" commit -m "Union stacked wrappers from app tree (ABI + aapt2 + ve_ensure)
+
+Allowlist only: deploy, build_app, ve-resolve-orch, docs/ENVIRONMENT_SETUP.md.
+Not project-facts.md. Not a reverse of update-rules FILES.
+Then run ./update-rules.sh from orch (no --force)."
+echo "Committed on orch. Next (from orch): ./update-rules.sh   # no --force"
+
