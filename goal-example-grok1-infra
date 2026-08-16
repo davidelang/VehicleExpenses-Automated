@@ -67,7 +67,7 @@ Requirements:
    evidence under sandbox (update or new file).
 3) If Grok worktree checkout parent is outside current grants, extend grants or force
    create under known grants (start worktree / git_home / ~/.grok / tmp) — document.
-4) deploy-landlock-fix.sh (or successor) remains the publish path for landlock stack;
+4) `./deploy-orchestration` is the publish path for the landlock/policy stack;
    fix false “pushed” on failed git push if still present.
 
 ### A3. Grok 1.0 free-form damage limits (primary + orchestrator; optional master dry-run)
@@ -111,9 +111,8 @@ Update orientation so next agents do not invent the wrong stack:
 2) Merge into VE orchestration (and any required integration branch) only after
    verification section PASS.
 3) Publish landlock + launcher + fix scripts to:
-   - VE worktrees as needed (prefer update-rules or deploy-landlock-fix --also-ve)
-   - remotetable, extractmail, orchestration-example — all git worktrees under each
-     host (same pattern as deploy-landlock-fix.sh)
+   - VE worktrees as needed (prefer update-rules)
+   - remotetable, extractmail, orchestration-example via `./deploy-orchestration`
 4) Commit on each dirty target for the published paths only (no scooping unrelated dirt).
 5) Push only when human-equivalent policy allows; if push fails, do not print success.
    orchestration-example may lack origin — commit local + document residual.
