@@ -619,3 +619,10 @@ Policy: permission denials → report human / script residual; no creative worka
 - agent-1 run-grok-planner died: agent-landlock 774 dlang:ai-code; ai-planner not in ai-code
 - Phase 1: chmod a+x restore on tracked 100755 + named helpers; launcher fail-loud if role cannot exec landlock
 - Phase 2: rebase-on-master skill; merge-tree non-zero hard-fail; setup_agent skip worktree-ahead stamps
+
+## 2026-08-16 - Check in leftover tracked dirt (reproducible checkout)
+
+- Investigated uncommitted tracked paths that blocked orchestration/builds
+- Keep: setup-project + run-antigravity* (portable @@/project.config); ground_truth_odo.json (? untrusted + new jpg/fuel keys)
+- Drop: one-shot finish-parity-dlang-remaining.sh and install-workflow-parity-libs.sh (superseded by deploy-orchestration)
+- Fixed setup-project unsmudged grok fallback: ${HOME} so clean filter does not emit \@@GROK_BIN_DEFAULT@@
