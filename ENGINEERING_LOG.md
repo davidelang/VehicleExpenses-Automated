@@ -7576,3 +7576,10 @@ x
 - Cause: /home/dlang/Android/Sdk/ndk/28.2.13676358/.../aarch64-linux-android/libc++_shared.so is dlang:dlang 660; ai-coder cannot read
 - Documented fix: ./fix-android-sdk-perms as dlang (PERMISSIONS_MODEL.md). Agent did not chmod/chown SDK.
 - No fix_deploy/builds tag yet. Phase 2/3 not started (per-phase build gate).
+
+## 2026-08-16 - Execution start: AAPT2 exec-bit override
+
+- Plan: dev-ai-interaction/plans/aapt2-exec-bit-from-maven-20260816-1155-plan.md
+- Branch: fix_deploy (does not replace restore-abi-aware-deploy plan; Phase 1 of that already landed)
+- Add ve_aapt2_from_sdk; pass -Pandroid.aapt2FromMavenOverride on build_app/deploy Gradle lines
+- Restore uncommitted jniLibs mode dirt; do not chmod NDK; do not flip umask 002/007
