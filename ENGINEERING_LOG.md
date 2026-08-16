@@ -7647,3 +7647,11 @@ x
 
 - Plan: expand-fail-subset-pad-cap-20260816-2317-plan.md
 - Latch + 0.65 leftovers + fetch overwrite + fail-subset table 
+
+## 2026-08-16 - CODE LANDED: expand-fail-subset-pad-cap
+
+- Fetch: both copies stream onto dest (no mkstemp/chmod).
+- hitVertCap = stepsV>=cap (Kotlin oriented + JNI + AABB walk).
+- P4-jump / Prod-jump / P4-xycut energyRatio 0.65; gx 0.55; maxFrac 0.4.
+- Rot halo present (native minAreaRect + 2*cell); no second pad.
+- Derived GT AABBs + research/expand-fail-subset-20260816.md (emu+phone fail table).
