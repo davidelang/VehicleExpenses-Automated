@@ -597,3 +597,8 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - Approved: `dev-ai-interaction/plans/shared-gradle-home-builder-owned-daemon-20260816-0551-plan.md`
 - GRADLE_USER_HOME=$WT/.gradle-home (shared caches). Wipe daemon/ before and after Gradle as the builder. No orch writes. No chmod 700 in our scripts.
+
+## 2026-08-16 - Wipe foreign app/build outputs (execute)
+
+- Approved: `dev-ai-interaction/plans/wipe-foreign-app-build-outputs-20260816-0612-plan.md`
+- build_app removes intermediates/generated/kspCaches when not owned by the runner. kotlin.compiler.execution.strategy in gradle.properties plus -P. No chmod of app/build.

@@ -20,7 +20,7 @@ Read in full early on startup/new cycle.
 - `.gradle-shared/` — **orch leftover** Maven/JDK/wrapper cache. Not agent `GRADLE_USER_HOME` (landlocked worktrees must not write orch).
 - `.android-shared/` — **orch**: canonical debug keystore to **copy**. Not a live agent `ANDROID_USER_HOME`.
 - `orch_root=` in gitignored `project.config` — absolute orchestration root. Worktrees do **not** guess via `../.gradle-shared`. Resolve: `./ve-resolve-orch`. `update-rules.sh` / `setup_agent.sh` stamp it.
-- Per worktree writes: `app/build/`, `.gradle/` (project incremental only), `.gradle-home/` (`GRADLE_USER_HOME` — shared caches; `build_app`/`deploy` wipe `daemon/` before and after Gradle), `.android-shared/` (`ANDROID_USER_HOME`, seeded from orch keystore). Agent `./build_app` uses Kotlin in-process (no `~/.local/share/kotlin` daemon).
+- Per worktree writes: `app/build/`, `.gradle/` (project incremental only), `.gradle-home/` (`GRADLE_USER_HOME` — shared caches; `build_app`/`deploy` wipe `daemon/` before and after Gradle), `.android-shared/` (`ANDROID_USER_HOME`, seeded from orch keystore). `build_app` wipes `app/build` intermediates/generated/kspCaches when those dirs are not owned by the current user (same-uid incremental stays). Kotlin in-process via `gradle.properties` + `-P`/`-D` (do not grant Landlock on `~/.local/share/kotlin`).
 - Launch master from `master/` (`./run-grok-master` there). Orch `./run-grok-master` binds `--worktree` to orch.
 - `ENGINEERING_LOG.md` — append only via `./append-to-engineering-log`
 - `TODO.md` — future backlog via `todo-append` / `todo-close`
