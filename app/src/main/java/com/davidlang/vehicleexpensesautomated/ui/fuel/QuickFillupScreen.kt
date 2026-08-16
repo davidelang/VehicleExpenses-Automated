@@ -549,7 +549,7 @@ fun QuickFillupScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
                 )
-                if (isProcessing) {
+                if (isProcessing && captureMode != "pump") {
                     Surface(
                         color = Color.Black.copy(alpha = 0.6f),
                         modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
@@ -692,9 +692,14 @@ fun QuickFillupScreen(
                                             debug = debugMode,
                                             cameraRotationDegrees = rotation,
                                             onStage = { stage, bmp ->
-                                                scope.launch(Dispatchers.Main) {
-                                                    stageLabel = stage
-                                                    displayBitmap = bmp
+                                                if (stage == "final") {
+                                                    withContext(Dispatchers.Main) {
+                                                        displayBitmap = bmp
+                                                    }
+                                                } else {
+                                                    scope.launch(Dispatchers.Main) {
+                                                        displayBitmap = bmp
+                                                    }
                                                 }
                                             }
                                         )

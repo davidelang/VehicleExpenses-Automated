@@ -92,6 +92,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedTiers = mutableMapOf<Int, PaddlePredictor>()
         val sharedTierBuffers = mutableMapOf<Int, FloatArray>()
         val sharedTiersInt8 = mutableMapOf<Int, ByteArray>()
+        /** QF G4 det only. Never swap [sharedTiers] (odo + experiment stay on product). */
+        val g4Tiers = mutableMapOf<Int, PaddlePredictor>()
+        val g4TiersInt8 = mutableMapOf<Int, ByteArray>()
+        const val G4_DET_ASSET_BASE = "PP-OCRv4_mobile_det"
         /** Host letterbox + max-merged heat for tiled large det (not Lite tensors). */
         private var largeDetCanvasU8: ByteArray? = null
         private var largeDetHeatU8: ByteArray? = null
@@ -201,9 +205,53 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // Drop large host buffers so next load reallocates clean sizes for the path.
             sharedTierBuffers.clear()
             sharedTiersInt8.clear()
+            val g4 = g4Tiers.toMap()
+            g4Tiers.clear()
+            for ((scale, pred) in g4) {
+                releasePredictor(pred, "g4_det_tier_$scale")
+            }
+            g4TiersInt8.clear()
             largeDetCanvasU8 = null
             largeDetHeatU8 = null
             System.gc()
+        }
+
+        /**
+         * Lazy-load v4 mobile det into [g4Tiers] without touching [sharedTiers] or
+         * [activeProductPathId]. Returns false if the ABI asset is missing (e.g. armv7).
+         */
+        @Synchronized
+        fun ensureG4DetTiers(context: Context): Boolean {
+            if (g4Tiers.isNotEmpty() && TIER_SCALES.all { g4Tiers.containsKey(it) }) return true
+            val arch = modelArchForPrimaryAbi()
+            val asset = "paddle/exp_det_ab/${G4_DET_ASSET_BASE}_$arch.nb"
+            try {
+                context.assets.open(asset).close()
+            } catch (_: Throwable) {
+                Log.w("PaddleLite", "ensureG4DetTiers: no asset $asset — QF will use product det")
+                return false
+            }
+            val f = File(context.filesDir, "g4_" + asset.replace("/", "_"))
+            context.assets.open(asset).use { inp -> FileOutputStream(f).use { out -> inp.copyTo(out) } }
+            val detPath = f.absolutePath
+            Log.i("PaddleLite", "ensureG4DetTiers arch=$arch → $detPath")
+            for ((scale, p) in g4Tiers.toList()) {
+                releasePredictor(p, "g4_reload_$scale")
+                g4Tiers.remove(scale)
+            }
+            g4TiersInt8.clear()
+            val config = MobileConfig()
+            config.setThreads(4)
+            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+            TIER_SCALES.forEach { scale ->
+                config.setModelFromFile(detPath)
+                val p = PaddlePredictor.createPaddlePredictor(config)
+                    ?: throw IllegalStateException("createPaddlePredictor G4 det null scale=$scale")
+                p.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
+                g4Tiers[scale] = p
+                g4TiersInt8[scale] = ByteArray(1 * scale * scale)
+            }
+            return true
         }
 
         // Phase 116: Unified Rigid Backing Fields
@@ -591,6 +639,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         hmThresh: Float = 0.0f,
         /** 3x3 mask dilate passes before CC (experiment L/M). 0 = off. */
         maskDilatePasses: Int = 0,
+        /** Null = product [sharedTiers]. QF G4 passes [g4Tiers] / [g4TiersInt8]. */
+        detTiers: Map<Int, PaddlePredictor>? = null,
+        detTiersInt8: Map<Int, ByteArray>? = null,
     ): DetectionResult? {
         val tPop0 = System.nanoTime()
         val w: Int; val h: Int; val srcMat: Mat
@@ -599,6 +650,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             is Mat -> { w = targetW ?: input.cols(); h = targetH ?: input.rows(); srcMat = input }
             else -> throw IllegalArgumentException("Unsupported input type for detect")
         }
+        val tiers = detTiers ?: sharedTiers
+        val tiersInt8 = detTiersInt8 ?: sharedTiersInt8
 
         // Automatic Tier Selection - respect explicit targets
         val maxEdge = max(targetW ?: w, targetH ?: h)
@@ -615,12 +668,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 heatDumpU8z = heatDumpU8z,
                 hmThresh = hmThresh,
                 maskDilatePasses = maskDilatePasses,
+                detTiers = tiers,
+                detTiersInt8 = tiersInt8,
             )
         }
         val tierScale = singleTier ?: TIER_SCALES.maxOrNull()!!
         heartbeat("det_begin tier=$tierScale ${w}x$h path=$activeProductPathId")
-        val predictor = sharedTiers[tierScale] ?: return null
-        val int8Data = sharedTiersInt8[tierScale] ?: return null
+        val predictor = tiers[tierScale] ?: return null
+        val int8Data = tiersInt8[tierScale] ?: return null
         java.util.Arrays.fill(int8Data, 0.toByte())
         NativeImageUtils.populateMonoUInt8(srcMat, int8Data, tierScale, tierScale)
 
@@ -750,12 +805,14 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         heatDumpU8z: java.io.File?,
         hmThresh: Float,
         maskDilatePasses: Int,
+        detTiers: Map<Int, PaddlePredictor> = sharedTiers,
+        detTiersInt8: Map<Int, ByteArray> = sharedTiersInt8,
     ): DetectionResult? {
         val outer = DET_LARGE_OUTER
         val tile = DET_TILE
         val stride = DET_TILE_STRIDE
-        val predictor = sharedTiers[tile] ?: return null
-        val tileFeed = sharedTiersInt8[tile] ?: return null
+        val predictor = detTiers[tile] ?: return null
+        val tileFeed = detTiersInt8[tile] ?: return null
         val canvas = largeDetCanvasU8 ?: ByteArray(outer * outer).also { largeDetCanvasU8 = it }
         val combined = largeDetHeatU8 ?: ByteArray(outer * outer).also { largeDetHeatU8 = it }
 

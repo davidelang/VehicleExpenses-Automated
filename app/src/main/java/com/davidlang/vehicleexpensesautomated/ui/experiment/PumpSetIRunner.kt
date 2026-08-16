@@ -42,7 +42,7 @@ object PumpSetIRunner {
 
         val paddleEngine = NativePaddleEngine(context, "Numeric")
         val recBuffer = NativePaddleEngine.recBufferSet
-        // Experiment Set I body (deskew + G/D/E hybrid + classify) — not Quick Fill G--
+        // Experiment Set I body (deskew + G/D/E hybrid + classify) — not Quick Fill G4
         val cv = PumpCostVolUtils.runSetICostVolExtraction(
             master, paddleEngine, recBuffer, master.width, master.height,
         )

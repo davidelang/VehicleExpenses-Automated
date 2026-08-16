@@ -2076,7 +2076,7 @@ class BatchFuelImportCoordinator @Inject constructor(
             enhanceCtx = enhanceCtx,
         )
 
-        // Experiment Set I path (not OcrHarness.runPumpCostVolPipelineSetI / Quick Fill G--)
+        // Experiment Set I path (not OcrHarness.runPumpCostVolPipelineSetI / Quick Fill G4)
         val result = PumpSetIRunner.runOnePhoto(appContext, file)
         val cost = parseMoneyOrVol(result.cost)
         val vol = parseMoneyOrVol(result.volume)

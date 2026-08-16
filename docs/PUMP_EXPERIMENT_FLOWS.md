@@ -10,8 +10,8 @@ Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs 
 
 | Flow display name | Det | Expand | Notes |
 |-------------------|-----|--------|-------|
-| `Set G-- (4 pass, none, calculated)` | product | calculated verts; thr **u8≥1**; horiz **0.5** | **Production reference** + heat dumps |
-| `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G-- |
+| `Set G-- (4 pass, none, calculated)` | product | calculated verts; thr **u8≥1**; horiz **0.5** | Experiment product-det reference + heat dumps |
+| `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; **Quick Fill live path** |
 | `Set P4-jump (v4 + energy + jump, S OCR)` | **PP-OCRv4_mobile_det** | AABB energy **maxFrac=0.4**; if a red **hits the cap**, OCR G4 verts (0/0.1/0.3) on that red instead | Control. `final` = energy-or-G. Jump L/R only. **No extra vert pad** |
 | `Set P4-m65 (v4 + mean0.65 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen seed width; stop when strip **\|∇\| mean** &lt; **0.65** × seed; then **+0.08×seedH** each tip; L/R jump. If a red **hits the cap**, OCR G verts **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
 | `Set P4-gx (v4 + gx0.55 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; energy = **\|∂I/∂x\|**; stop at **0.55** × seed `gx`; **+0.08×seedH** each tip; L/R jump. Cap → G **0.00 / 0.05 / 0.15** | `final` = energy-or-G |

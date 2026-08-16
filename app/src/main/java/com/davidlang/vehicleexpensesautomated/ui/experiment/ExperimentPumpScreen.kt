@@ -1394,7 +1394,7 @@ suspend fun runPumpExperiment(
             }
                 val procGMinusMinus = makeGProc(
                     SET_G_MINUS_MINUS_VERT_FACTORS,
-                    "G-- shared k=4 [0.1,0.3,0.4,1.1]; Quick Fill ref; u8≥1; horiz=0.5; dumps heats",
+                    "G-- shared k=4 [0.1,0.3,0.4,1.1]; experiment product-det ref; u8≥1; horiz=0.5; dumps heats",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = true,
                     horizFactor = SET_G_HORIZ_FACTOR,
