@@ -633,3 +633,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - One policy publisher: deploy-orchestration (fold post-checkout/fix-perms/landlock smoke; allow dest grok-launch-common)
 - Delete deploy-landlock-fix.sh, deploy-postcheckout-git-safe.sh, pack-launchers, manage-configs-to-libs, orch-root-minimal wrapper
 - Planner pack: ack + STOP; failure-log names only; logs/gate/branch are not a problem statement
+
+## 2026-08-16 - setup_agent chmod 2775 worktree; do not hide fix-perms fail
+
+- Plan: dev-ai-interaction/plans/setup-agent-worktree-other-search-20260816-1516-plan.md
+- umask 007 + worktree add → 2770; planner cannot search; landlock looks like EACCES
+- chmod 2775 the new dir as owner; stop swallowing sudo fix-perms

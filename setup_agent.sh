@@ -171,6 +171,13 @@ if [ "$WORKTREE_ERR" -ne 0 ]; then
     echo "Error: Failed to create worktree."
     exit 1
 fi
+# umask 007 + worktree add → 2770. Planner is not in ai-code and cannot
+# search that dir (looks like agent-landlock Permission denied). Owner can
+# add other-search without sudo. Do not wait for fix-perms.
+chmod 2775 "$AGENT_ID" || {
+    echo "Error: chmod 2775 $AGENT_ID failed (planner will not be able to enter)."
+    exit 1
+}
 
 # 3. Create convenience symlink for the branch
 if [ -e "${BRANCH_NAME}.wt" ]; then
@@ -397,11 +404,21 @@ fi 2>/dev/null || true
 
 cd "$ORCH_ROOT" || cd "$PARENT_ROOT" || true
 
-# Use unified fix-perms for the new tree (pass --skip-sudoers so sudoers rules
-# are only (re)installed at true initial setup-project time).
-# Silent on success (no output if it works).
-# Scoped recovery for the new worktree only (fix-perms excludes common .git from ai-code chown).
-sudo ./fix-perms --skip-sudoers "$AGENT_ABS" 2>/dev/null || true
+# Planner search on the worktree dir (again after populate). Owner chmod; no sudo.
+chmod 2775 "$AGENT_ABS" || {
+    echo "Error: chmod 2775 $AGENT_ABS failed (planner will not be able to enter)."
+    exit 1
+}
+
+# Unified fix-perms for the new tree (--skip-sudoers: sudoers only at setup-project).
+# Scoped to this worktree (excludes common .git from ai-code chown).
+# Do not hide sudo failure — 2775 above is enough to enter; wrappers/log still need this.
+echo "Running sudo ./fix-perms --skip-sudoers $AGENT_ABS"
+if ! sudo ./fix-perms --skip-sudoers "$AGENT_ABS"; then
+    echo "WARNING: sudo ./fix-perms failed for $AGENT_ABS"
+    echo "  Directory is 2775 so the planner can enter. Re-run:"
+    echo "    sudo ./fix-perms --skip-sudoers $AGENT_ABS"
+fi
 
 # Re-lock setuid binaries silently (in case not covered).
 if [ -f "$AGENT_ABS/run-as-primary" ]; then
