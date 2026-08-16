@@ -7635,3 +7635,10 @@ x
 - Next: ./build_app merge commit + assembleDebug
 - After tag: human ./publish-stacked-wrappers-to-orch --apply from master/, then orch ./update-rules.sh (no --force)
 - No works tag. Human ./deploy to verify ABI APK.
+
+## 2026-08-16 - PR-fix_deploy merge build gate SUCCESS
+
+- ./build_app assembleDebug SUCCESS; master builds @ 986389db (v0.98-65-g986389db)
+- deploy blob b1745e75 (ABI + aapt2). No works tag.
+- Human next: from master/ ./publish-stacked-wrappers-to-orch --apply ; from orch ./update-rules.sh (no --force); then ./deploy
+- Then ./remove_worktree.sh fix_deploy
