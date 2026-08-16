@@ -22,7 +22,9 @@
 
 # Intentionally no `set -e`: many best-effort chown/chmod/git steps use `|| true`.
 set -u
-umask 007
+# Source/scripts: umask 002 (PERMISSIONS_MODEL). umask 007 + chmod +x → 774
+# and planner (not in ai-code) cannot exec helpers.
+umask 002
 
 FORCE=0
 DRY_RUN=0
@@ -286,6 +288,7 @@ FILES=(
     "run-antigravity-planner"
     ".grok/skills/prepare-local-pr/SKILL.md"
     ".grok/skills/master-merge/SKILL.md"
+    ".grok/skills/rebase-on-master/SKILL.md"
     "generate_pr.sh"
     # Stable canonical guardrails block (cite by path in plans; do not paste).
     # This is the single source of truth for the short "Compliance & Execution
@@ -466,7 +469,8 @@ for WT in $WORKTREES; do
         if [ -x "$SOURCE_DIR/$FILE" ] || [[ "$FILE" == *.sh ]] || \
            [[ "$FILE" == deploy || "$FILE" == build_app || "$FILE" == gradlew ]] || \
            [[ "$FILE" == run-* ]] || \
-           [[ "$FILE" == git-merge-drivers/* ]]; then
+           [[ "$FILE" == git-merge-drivers/* ]] || \
+           [[ "$FILE" == agent-landlock || "$FILE" == todo-append || "$FILE" == todo-close || "$FILE" == ve-env ]]; then
           chmod a+x "$TARGET_FILE" 2>/dev/null || true
         fi
     done
@@ -479,6 +483,8 @@ for WT in $WORKTREES; do
     # Ensure management/orchestration scripts end up executable (right perms).
     for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
                 "$WT"/ve-resolve-orch \
+                "$WT"/agent-landlock "$WT"/todo-append "$WT"/todo-close "$WT"/ve-env \
+                "$WT"/landlock-smoke-matrix "$WT"/landlock-write-probe \
                 "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh; do
       [ -f "$_exe" ] || continue
       chown "$PRIMARY_USER:$CODE_GROUP" "$_exe" 2>/dev/null || true
@@ -539,12 +545,15 @@ for WT in $WORKTREES; do
     # Re-assert executables after commit (git may not preserve all mode bits in WT)
     for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
                 "$WT"/ve-resolve-orch \
+                "$WT"/agent-landlock "$WT"/todo-append "$WT"/todo-close "$WT"/ve-env \
+                "$WT"/landlock-smoke-matrix "$WT"/landlock-write-probe \
                 "$WT"/install-merge-drivers.sh "$WT"/merge-branch-into-master.sh; do
       [ -f "$_exe" ] || continue
       chown "$PRIMARY_USER:$CODE_GROUP" "$_exe" 2>/dev/null || true
       chmod a+x "$_exe" 2>/dev/null || true
     done
     find "$WT" -maxdepth 1 -type f -name '*.sh' -exec chmod a+x {} + 2>/dev/null || true
+    ve_ensure_tracked_exec_other_x "$WT"
     if [ -x "$WT/fix-perms" ]; then
         echo "  Ensuring perms on $WT via fix-perms..."
         "$WT/fix-perms" "$WT" 2>/dev/null || sudo "$WT/fix-perms" "$WT" 2>/dev/null || true

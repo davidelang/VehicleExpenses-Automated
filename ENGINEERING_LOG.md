@@ -612,3 +612,10 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - Approved: `dev-ai-interaction/plans/deploy-orchestration-20260816-1029-plan.md`
 - New operator script publishes shared policy to sibling orch hosts. Does not add --repos to update-rules.sh. Does not overwrite dest update-rules.sh.
+
+## 2026-08-16 - Restore other-execute; stop silent rebase/merge overwrites
+
+- Execute approved plan: dev-ai-interaction/plans/restore-other-exec-and-stop-silent-conflicts-20260816-1105-plan.md
+- agent-1 run-grok-planner died: agent-landlock 774 dlang:ai-code; ai-planner not in ai-code
+- Phase 1: chmod a+x restore on tracked 100755 + named helpers; launcher fail-loud if role cannot exec landlock
+- Phase 2: rebase-on-master skill; merge-tree non-zero hard-fail; setup_agent skip worktree-ahead stamps

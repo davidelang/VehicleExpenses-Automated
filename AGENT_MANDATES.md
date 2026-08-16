@@ -175,6 +175,7 @@ Strike = failed build / recoverable phase failure. 3 strikes = out → reset to 
 ## 7. Geography and special files
 
 - **Never** `..` in paths. Sandbox absolute path in §2. Orchestration root feeds `update-rules.sh`.
+- **Rebase onto master:** follow `.grok/skills/rebase-on-master/SKILL.md`. Keep the feature copies of `ENGINEERING_LOG.md` / `TODO.md` / `project-facts.md`; do not merge specials. Other conflicts: stop and ask the human.
 - **Worktree copy rule:** tracked copies must be committed on that branch or use `./update-rules.sh`. Uncommitted tracked dirt blocks `./build_app`. Gitignored binaries OK uncommitted.
 - **Plans:** only user-**designated** files under `dev-ai-interaction/plans/`. Completed → `historical-plans/`. Never treat harness `~/.grok/sessions/**/plan.md` as approved work plan. Never read `historical-plans/` or non-designated plans for execution influence.
 - **If you read a wrong/historical plan or continued after handoff:** (1) enter plan mode if available / treat self as planning-only, (2) revert unauthorized changes via §6, (3) report violation, (4) wait for user direction.

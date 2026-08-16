@@ -355,6 +355,8 @@ ensure_worktree_scripts_executable() {
     set-worktree-perms set-sandbox-perms
     run-grok run-grok-master run-grok-planner run-grok-coder run-grok-orchestrator
     run-antigravity run-gemini
+    agent-landlock todo-append todo-close ve-env
+    landlock-smoke-matrix landlock-write-probe
   )
   for f in "${scripts[@]}"; do
     if [ -f "$wt/$f" ]; then
@@ -370,6 +372,8 @@ ensure_worktree_scripts_executable() {
   # Named *.sh at worktree root
   find "$wt" -maxdepth 1 -type f -name '*.sh' -exec chown "$PRIMARY_USER:$CODE_GROUP" {} + 2>/dev/null || true
   find "$wt" -maxdepth 1 -type f -name '*.sh' -exec chmod 2775 {} + 2>/dev/null || true
+  # Tracked 100755 (agent-landlock is Python, not *.sh). Planner is not in ai-code.
+  ve_ensure_tracked_exec_other_x "$wt"
 }
 
 fix_worktree() {

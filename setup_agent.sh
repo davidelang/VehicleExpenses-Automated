@@ -1,8 +1,9 @@
 #!/bin/bash
 # setup_agent.sh: Automate creation of agent worktrees
 # Usage (from orchestration root):
-#   ./setup_agent.sh branch-name
-#   source ./setup_agent.sh branch-name   # same end state
+#   ./setup_agent.sh [--force] branch-name
+#   source ./setup_agent.sh [--force] branch-name   # same end state
+# --force: overwrite dest tracked seed files that differ from orch.
 #
 # On success: exec a new interactive shell in the new worktree with project
 # environment (umask 002 + full groups via ve-refresh-shell, same as ve-env).
@@ -12,10 +13,30 @@
 # Ensures the new worktree is fully permissioned (setgid dirs, log/wrapper,
 # run-as-primary, ve-refresh-shell, etc.) so agents can start immediately.
 
-BRANCH_NAME=$1
+SETUP_FORCE=0
+BRANCH_NAME=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -f|--force) SETUP_FORCE=1; shift ;;
+        -h|--help)
+            echo "Usage: ./setup_agent.sh [--force] branch-name"
+            echo "  --force  overwrite dest seed files that differ from orch"
+            return 1 2>/dev/null || exit 1
+            ;;
+        *)
+            if [ -z "$BRANCH_NAME" ]; then
+                BRANCH_NAME="$1"
+            else
+                echo "Error: unexpected argument: $1"
+                return 1 2>/dev/null || exit 1
+            fi
+            shift
+            ;;
+    esac
+done
 
 if [ -z "$BRANCH_NAME" ]; then
-    echo "Usage: source ./setup_agent.sh branch-name   # or: ./setup_agent.sh branch-name"
+    echo "Usage: source ./setup_agent.sh [--force] branch-name   # or: ./setup_agent.sh [--force] branch-name"
     # When sourced, exit would kill the shell — use return if possible
     return 1 2>/dev/null || exit 1
 fi
@@ -173,15 +194,35 @@ STAMPED_FILES=(
   setup-project set-worktree-perms set-sandbox-perms
 )
 
+# Copy orch seed only if dest missing, identical, or SETUP_FORCE=1.
+# After checkout, dest is the branch file — do not silently clobber worktree-ahead.
+copy_orch_seed_file() {
+  local src="$1" dest="$2"
+  if [ ! -f "$src" ]; then
+    return 0
+  fi
+  if [ ! -f "$dest" ]; then
+    cp "$src" "$dest"
+    return 0
+  fi
+  if cmp -s "$src" "$dest"; then
+    return 0
+  fi
+  if [ "${SETUP_FORCE:-0}" -eq 1 ]; then
+    echo "  seed: FORCE overwrite $dest"
+    cp "$src" "$dest"
+    return 0
+  fi
+  echo "  SKIP seed $dest — differs from orch (pass --force to overwrite)"
+}
+
 seed_smudge_inputs() {
   local orch_root="$1"
   if [ -f "$orch_root/project.config" ]; then
     cp "$orch_root/project.config" ./project.config
   fi
   for f in filter-apply-config filter-clean-config ve-resolve-orch; do
-    if [ -f "$orch_root/$f" ]; then
-      cp "$orch_root/$f" "./$f"
-    fi
+    copy_orch_seed_file "$orch_root/$f" "./$f"
   done
   if [ -f ./ve-resolve-orch ]; then
     # shellcheck source=/dev/null
@@ -220,7 +261,7 @@ re_smudge_stamped_files() {
     mv "$tmp" "$f"
     mode=$(git ls-tree HEAD "$f" | awk '{print $1}')
     case "$mode" in
-      100755|100775) chmod +x "$f" ;;
+      100755|100775) chmod a+x "$f" ;;
     esac
   done
 }
@@ -334,15 +375,13 @@ PARENT_ROOT=".."
 # Copy latest authoritative copies of key permission/infra files from orchestration root
 # (ensures even if the branch tip was slightly behind, the tree is current)
 for f in append-to-engineering-log run-as-primary.c ve-env ve-refresh-shell.c; do
-  if [ -f "$PARENT_ROOT/$f" ]; then
-    cp -p "$PARENT_ROOT/$f" "$AGENT_ABS/$f" 2>/dev/null || true
-  fi
+  copy_orch_seed_file "$PARENT_ROOT/$f" "$AGENT_ABS/$f"
 done
 # Launchers often live only on orchestration until update-rules; seed common ones
 for f in run-grok-coder run-grok-orchestrator run-grok-master run-grok-planner; do
   if [ -f "$PARENT_ROOT/$f" ] && [ ! -f "$AGENT_ABS/$f" ]; then
     cp -p "$PARENT_ROOT/$f" "$AGENT_ABS/$f" 2>/dev/null || true
-    chmod +x "$AGENT_ABS/$f" 2>/dev/null || true
+    chmod a+x "$AGENT_ABS/$f" 2>/dev/null || true
   fi
 done
 
@@ -400,7 +439,19 @@ ensure_common_hooks_executable
 if [ -x "$ORCH_ROOT/install-merge-drivers.sh" ]; then
   (cd "$ORCH_ROOT" && ./install-merge-drivers.sh >/dev/null) || true
 fi
-chmod +x "$AGENT_ABS/git-merge-drivers/"* "$AGENT_ABS/install-merge-drivers.sh" "$AGENT_ABS/merge-branch-into-master.sh" 2>/dev/null || true
+chmod a+x "$AGENT_ABS/git-merge-drivers/"* "$AGENT_ABS/install-merge-drivers.sh" "$AGENT_ABS/merge-branch-into-master.sh" 2>/dev/null || true
+if ! type ve_ensure_tracked_exec_other_x >/dev/null 2>&1; then
+  if [ -f "$ORCH_ROOT/ve-resolve-orch" ]; then
+    # shellcheck source=/dev/null
+    . "$ORCH_ROOT/ve-resolve-orch"
+  elif [ -f "$AGENT_ABS/ve-resolve-orch" ]; then
+    # shellcheck source=/dev/null
+    . "$AGENT_ABS/ve-resolve-orch"
+  fi
+fi
+if type ve_ensure_tracked_exec_other_x >/dev/null 2>&1; then
+  ve_ensure_tracked_exec_other_x "$AGENT_ABS"
+fi
 
 # CRITICAL: seed/smudge/copy of tracked files must not leave the agent worktree dirty,
 # or ./build_app will refuse (uncommitted tracked files gate). Commit if needed.

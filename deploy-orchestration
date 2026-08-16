@@ -317,7 +317,7 @@ for dest in "${DESTS[@]}"; do
         mkdir -p "$dest/$(dirname "$f")"
         cp -f "$VE/$f" "$dest/$f"
         if [[ -x "$VE/$f" || "$f" == *.sh || "$f" == run-grok* || "$f" == git-merge-drivers/* || "$f" == agent-landlock ]]; then
-          chmod +x "$dest/$f" 2>/dev/null || true
+          chmod a+x "$dest/$f" 2>/dev/null || true
         fi
         copied+=("$f")
       fi
