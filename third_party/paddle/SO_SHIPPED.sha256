@@ -1,5 +1,5 @@
 # libpaddle_light_api_shared.so per ABI (sha256). Commit with SO swaps.
-# Composite stamp soc74ad186 is embedded in app versionName.
-x86_64 e66c710e0ad0d6fe842ffe408c2b4140973928d794297d292ed6229c53e30351
-arm64-v8a 6848907171ed2c1fa3188ba57cc042325bb242d44155af88ade95dba351fc07e
+# Composite stamp soa8965bd7 is embedded in app versionName.
+x86_64 ebff745447ab9262100b126582274a5062cf6af97ed49df70b1bcf9034655388
+arm64-v8a 96fbc6a55468d7042d57f427b21aa2427af58ecbad20dadf4c7df921ac03f8d7
 armeabi-v7a fb26a18ef74169548e2cc10b24a01223dc346b43e1fbcba47944f1a53d7b0f01
