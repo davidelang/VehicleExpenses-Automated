@@ -9,7 +9,7 @@ Read in full early on startup/new cycle.
 - `dev-ai-interaction/plans/` — designated active plan (user names exact file)
 - `dev-ai-interaction/historical-plans/` — archived plans
 - **TODO-linked plans/research:** keep paths referenced by **open** (`- [ ]`) TODO items in `plans/`/`research/`. If the plan is obsolete, **close/eliminate the TODO** then archive. Do not leave open TODOs pointing at dead plans.
-- `dev-ai-interaction/implementation-failure-logs/` — scan on planner startup / recovery
+- `dev-ai-interaction/implementation-failure-logs/` — planner startup: **filenames only** in the ack (do not read). Read a log only if the user names it or asks for recovery.
 - `dev-ai-interaction/PRs/PR-<branch>.md` — local PR docs for Master
 - `dev-ai-interaction/.planning-agent-prompt.txt` — optional planner prompt file
 
@@ -69,7 +69,7 @@ Update only with orientation facts valid for future work. Effort/plan details �
 - 2026-08-02 workflow parity CODE LANDED: same pack launchers + local PR skills on VE and ~/git/{remotetable,extractmail}; sandbox_dir; third_party pin promote optional via promote-third-party-pins.sh.
 
 - Multi-user git (all hosts): `.git` group **ai-shared** (not ai-code), dirs **2770** setgid, `core.sharedRepository=group`. Doc: `docs/reference/MULTIUSER_GIT_VE_PARITY.md`. Repair: `./fix-multiuser-git-hosts.sh` (VE + libs + orchestration-example) or `./fix-ve-git-shared.sh` (VE only). Run as **dlang** with sudo. Partial chgrp of `.git` top only is insufficient — children re-infect via setgid. **Hooks must not** run `fix-perms --all` or chown/chmod common `.git` (see PERMISSIONS_MODEL).
-- Session Landlock: `agent-landlock` + wire in `.grok/lib/grok-launch-common.sh`; always grants `$HOME/.grok` (session/trust). Smoke: `./landlock-smoke-matrix`. Publish: `./deploy-landlock-fix.sh [--commit] [--also-ve]`.
+- Session Landlock: `agent-landlock` + wire in `.grok/lib/grok-launch-common.sh`; always grants `$HOME/.grok` (session/trust). Smoke: `./landlock-smoke-matrix`. Host/lib policy publish: `./deploy-orchestration` (not one-off `deploy-*` wrappers).
 - Grok 1.0 free-form (primary/orch): optional `GROK_SANDBOX=workspace` and/or `GROK_WORKTREE=1|name` (or args after `--`). Does **not** enable native plan mode. Local pool dir `grok-worktrees/` (gitignored). Master: Grok worktrees for merge **dry-run** only; final merge on real `master/`.
 - Stance: avoid native plan mode for multi-agent; capability_mode not general policy; personas held; memory ⊂ project-facts; `/goal` `/deep-research` workflows opt-in. Completeness Stop hook opt-in: `VE_STOP_COMPLETENESS=1` (`.grok/hooks/stop-completeness-gate.*`).
 - Grok **4.6** is the default coding model; **process is unchanged** (`AGENT_MANDATES.md` §3.5a). `grok -c` / `--resume` keeps transcript + **stored** `current_model_id` (does not upgrade 4.5→4.6; use `/model`). Planner/coder launchers pass `GROK_WORKFLOWS=0`; planner also `GROK_SUBAGENTS=0`.

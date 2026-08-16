@@ -626,3 +626,10 @@ Policy: permission denials → report human / script residual; no creative worka
 - Keep: setup-project + run-antigravity* (portable @@/project.config); ground_truth_odo.json (? untrusted + new jpg/fuel keys)
 - Drop: one-shot finish-parity-dlang-remaining.sh and install-workflow-parity-libs.sh (superseded by deploy-orchestration)
 - Fixed setup-project unsmudged grok fallback: ${HOME} so clean filter does not emit \@@GROK_BIN_DEFAULT@@
+
+## 2026-08-16 - Retire special-case deploy* publishers; planner startup STOP
+
+- Execute approved plan: dev-ai-interaction/plans/retire-special-deploys-and-planner-startup-stop-20260816-1149-plan.md
+- One policy publisher: deploy-orchestration (fold post-checkout/fix-perms/landlock smoke; allow dest grok-launch-common)
+- Delete deploy-landlock-fix.sh, deploy-postcheckout-git-safe.sh, pack-launchers, manage-configs-to-libs, orch-root-minimal wrapper
+- Planner pack: ack + STOP; failure-log names only; logs/gate/branch are not a problem statement

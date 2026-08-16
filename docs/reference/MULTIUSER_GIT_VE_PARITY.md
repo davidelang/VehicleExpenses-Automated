@@ -131,14 +131,7 @@ Also ensure agent users have `safe.directory` for lib paths (script adds these).
 
 ## Pack launchers (related deploy)
 
-Multi-agent **launchers** (thin `run-grok*` + `.grok/lib/grok-launch-common.sh` + packs) must also stay in sync from the VE orchestration SoT:
-
-```bash
-bash /home/dlang/git/VehicleExpenses-automated/deploy-pack-launchers.sh
-# optional: --commit --push   --ve-only | --libs-only
-```
-
-That deploys to every VE worktree and `~/git/{remotetable,extractmail}` (orch + master + other lib worktrees). **Separate** from git ownership/`ai-shared` above — run both when standing up a host.
+Multi-agent **launchers** (thin `run-grok*` + `.grok/lib/grok-launch-common.sh` + packs) stay in sync from the VE orchestration SoT via `./deploy-orchestration` (then dest `./update-rules.sh` for that host’s worktrees). **Separate** from git ownership/`ai-shared` above — run both when standing up a host.
 
 ## Related layout note (secondary — not a substitute for the table above)
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # deploy-orchestration — publish shared multi-agent policy to sibling orch hosts.
+# This is the only policy publisher (not deploy-landlock-fix / pack-launchers / …).
 #
 # Per-host update-rules.sh stays on that host (project FILES). This command
 # never overwrites dest update-rules.sh.
@@ -118,7 +119,6 @@ NEVER_COPY=(
   fix-android-sdk-perms
   ve-resolve-orch
   project.config
-  .grok/lib/grok-launch-common.sh
   docs/ENVIRONMENT_SETUP.md
 )
 
@@ -210,6 +210,11 @@ build_policy_list() {
     agent-landlock
     landlock.config
     landlock.config.example
+    landlock-smoke-matrix
+    landlock-write-probe
+    hooks/post-checkout
+    fix-perms
+    .grok/lib/grok-launch-common.sh
     run-grok
     run-grok-coder
     run-grok-master
