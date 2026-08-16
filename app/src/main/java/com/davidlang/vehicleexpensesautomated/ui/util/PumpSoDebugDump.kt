@@ -304,7 +304,7 @@ object PumpSoDebugDump {
             // Re-run full Set G detailed for cost/vol (same code path as product)
             // Workspace is already deskewed; runSetG deskews again — use a fresh copy.
             // To avoid double-deskew, call OCR pieces here with current workspace.
-            // Match Set G-- / Quick Fill vert factors (not full Set G k=8 list).
+            // Match Set G-- experiment verts (not Quick Fill G4, not full Set G k=8).
             val (blueH, orangeH) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
                 PumpCostVolUtils.rectsToHunks(redPixelList),
                 imgW,

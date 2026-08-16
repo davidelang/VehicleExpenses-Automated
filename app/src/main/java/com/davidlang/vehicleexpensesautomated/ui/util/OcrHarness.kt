@@ -2,6 +2,9 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.Log
@@ -202,18 +205,81 @@ object OcrHarness {
     }
 
     /**
-     * Quick Fill–only cost/volume extraction using G-- vert list (shared reduce k=4).
-     * Caller must deskew/rotate workspace first; no second deskew here.
+     * Quick Fill pump extract: experiment G4 verts + dedicated v4 det when the
+     * ABI asset exists (else product det + same verts). Deskew is the caller's job.
      */
-    private suspend fun extractQuickFillSetGCostVol(
+    private data class QfPumpExtract(
+        val result: CostVolClassifyResult,
+        val detModel: String,
+        val blueRects: List<Rect>,
+    )
+
+    /** Working ARGB for QF pump progress. Publish copies only — never hand [work] to Compose. */
+    private class QfPumpLiveOverlay(base: Bitmap) {
+        private val work: Bitmap = base.copy(Bitmap.Config.ARGB_8888, true)
+        private val canvas = Canvas(work)
+        private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = Color.CYAN
+            strokeWidth = 3f
+        }
+        private val tintPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = 0x66FF8800.toInt()
+        }
+        private val costPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = Color.GREEN
+            strokeWidth = 8f
+        }
+        private val volPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = Color.YELLOW
+            strokeWidth = 8f
+        }
+        private var lastPostMs = 0L
+
+        fun snapshot(): Bitmap = work.copy(Bitmap.Config.ARGB_8888, false)
+
+        fun outline(rects: List<Rect>) {
+            for (r in rects) canvas.drawRect(r, outlinePaint)
+        }
+
+        fun tint(r: Rect) {
+            canvas.drawRect(r, tintPaint)
+            canvas.drawRect(r, outlinePaint)
+        }
+
+        fun select(cost: Rect?, vol: Rect?) {
+            cost?.let { canvas.drawRect(it, costPaint) }
+            vol?.let { canvas.drawRect(it, volPaint) }
+        }
+
+        fun shouldPostNow(): Boolean {
+            val now = System.currentTimeMillis()
+            if (now - lastPostMs < 100L) return false
+            lastPostMs = now
+            return true
+        }
+    }
+
+    private suspend fun extractQuickFillG4CostVol(
         context: Context,
         workspace: BufferSet,
         paddleEngine: NativePaddleEngine,
         recBuffer: BufferSet,
         imgW: Int,
         imgH: Int,
-    ): CostVolClassifyResult {
+        onCropsReady: (suspend (List<Rect>) -> Unit)? = null,
+        onRectOcr: (suspend (Int, Rect) -> Unit)? = null,
+    ): QfPumpExtract {
         val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
+        val empty = QfPumpExtract(na, "none", emptyList())
+
+        val useG4Det = NativePaddleEngine.ensureG4DetTiers(context)
+        val detTiers = if (useG4Det) NativePaddleEngine.g4Tiers else null
+        val detTiersInt8 = if (useG4Det) NativePaddleEngine.g4TiersInt8 else null
+        val detModel = if (useG4Det) NativePaddleEngine.G4_DET_ASSET_BASE else "product_det"
 
         val scales = listOf(224, 608, 1024)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
@@ -228,7 +294,12 @@ object OcrHarness {
             val targetW = (srcW * scaleFactor).toInt()
             val targetH = (srcH * scaleFactor).toInt()
             val (outerId, innerId) = PumpCostVolUtils.prepareScale(workspace, scale)
-            val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale)
+            val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(
+                workspace, outerId, paddleEngine, targetW, targetH, scale,
+                hmThresh = HEAT_THR_U8_GE1,
+                detTiers = detTiers,
+                detTiersInt8 = detTiersInt8,
+            )
             pdHunksRawTotal.addAll(paddleResults[1])
             pdHunksExpTotal.addAll(paddleResults[2])
             pdHunksMaxTotal.addAll(paddleResults[3])
@@ -244,26 +315,31 @@ object OcrHarness {
         PumpCostVolUtils.pruneRectsToTopN(redPixelList, PumpOcrSettings.maxRedBoxes(context), imgH)
         pdHunksRawTotal.clear()
         pdHunksRawTotal.addAll(PumpCostVolUtils.rectsToHunks(redPixelList))
-        if (pdHunksRawTotal.isEmpty()) return na
+        if (pdHunksRawTotal.isEmpty()) return empty.copy(detModel = detModel)
 
-        // Quick Fill uses G-- (shared reduce k=4), not full G k=8
         val (customBlueGPre, _) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
-            pdHunksRawTotal, imgW, imgH, SET_G_MINUS_MINUS_VERT_FACTORS, SET_G_HORIZ_FACTOR
+            pdHunksRawTotal, imgW, imgH, SET_G4_VERT_FACTORS, SET_G_HORIZ_FACTOR
         )
         val customBluePixelG = PumpCostVolUtils.hunksToRects(customBlueGPre)
-        if (customBluePixelG.isEmpty()) return na
+        if (customBluePixelG.isEmpty()) return empty.copy(detModel = detModel)
+        onCropsReady?.invoke(customBluePixelG)
 
         val ocrG = PumpCostVolUtils.ocrPumpRectsAsisAndDigits(
-            workspace, paddleEngine, recBuffer, customBluePixelG, imgW, imgH
+            workspace, paddleEngine, recBuffer, customBluePixelG, imgW, imgH,
+            onRectDone = onRectOcr,
         )
         val gCands = PumpCostVolUtils.buildRedBoxCandidates(
             customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs
         )
-        return PumpCostVolUtils.classifyCostVolFromBoxOcr(context, gCands)
+        return QfPumpExtract(
+            PumpCostVolUtils.classifyCostVolFromBoxOcr(context, gCands),
+            detModel,
+            customBluePixelG,
+        )
     }
 
     /**
-     * Set G pump cost/volume pipeline for Quick Fill pump mode.
+     * Quick Fill pump cost/volume: experiment G4 (v4 det + verts 0.0/0.1/0.3).
      */
     suspend fun runPumpCostVolPipeline(
         context: Context,
@@ -274,7 +350,7 @@ object OcrHarness {
     ): PumpCostVolResult {
         val t0 = System.currentTimeMillis()
         try {
-            onStage?.invoke("Original", masterBuffer.p.toBitmap())
+            onStage?.invoke("", masterBuffer.p.toBitmap())
 
             val (optAngle, _) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
             val totalAngle = cameraRotationDegrees.toFloat() - optAngle
@@ -283,18 +359,31 @@ object OcrHarness {
             val targetW = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgH else imgW
             val targetH = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgW else imgH
             OdometerOcrUtils.rotate(masterBuffer, totalAngle, targetW, targetH)
-            onStage?.invoke("Deskewed", masterBuffer.p.toBitmap())
+            val deskewBmp = masterBuffer.p.toBitmap()
+            onStage?.invoke("", deskewBmp)
+            val overlay = QfPumpLiveOverlay(deskewBmp)
 
             val paddleEngine = NativePaddleEngine(context, "Numeric")
             val recBuffer = NativePaddleEngine.recBufferSet
-            val cv = extractQuickFillSetGCostVol(
+            val extracted = extractQuickFillG4CostVol(
                 context,
                 masterBuffer,
                 paddleEngine,
                 recBuffer,
                 masterBuffer.width,
                 masterBuffer.height,
+                onCropsReady = { rects ->
+                    overlay.outline(rects)
+                    onStage?.invoke("", overlay.snapshot())
+                },
+                onRectOcr = { _, r ->
+                    overlay.tint(r)
+                    if (overlay.shouldPostNow()) onStage?.invoke("", overlay.snapshot())
+                },
             )
+            val cv = extracted.result
+            overlay.select(cv.costCand.rect, cv.volCand.rect)
+            onStage?.invoke("final", overlay.snapshot())
 
             val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }
             val volume = cv.vol.takeIf { it != "N/A" && it.isNotBlank() }
@@ -307,6 +396,9 @@ object OcrHarness {
                 JsonObject().apply {
                     addProperty("cost", cv.cost)
                     addProperty("volume", cv.vol)
+                    addProperty("pipeline", "G4")
+                    addProperty("det_model", extracted.detModel)
+                    addProperty("vert_factors", SET_G4_VERT_FACTORS.joinToString(","))
                     addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
                 }.toString()
             } else null
@@ -320,7 +412,7 @@ object OcrHarness {
 
     /**
      * Batch-import pump cost/volume via **Set I** (D+E+G hybrid).
-     * Does not change Quick Fill [runPumpCostVolPipeline] (G--).
+     * Does not change Quick Fill [runPumpCostVolPipeline] (G4).
      * [masterBuffer] must already hold the full photo in primary (after ingest).
      */
     suspend fun runPumpCostVolPipelineSetI(

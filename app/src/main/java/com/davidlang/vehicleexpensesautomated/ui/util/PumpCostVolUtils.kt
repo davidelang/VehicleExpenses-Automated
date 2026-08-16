@@ -48,12 +48,12 @@ data class PathResult(val cost: String, val vol: String, val costB64: String, va
 /**
  * Set G / G- / G-- calculated blue expansion vert-factor lists.
  * From 2026-07-11 dual-device shared G reduce chart (Phone+Emulator cand valid).
- * G = k=8 0-loss keep. G- = k=6. G-- = k=4 (also Quick Fill live path). Horiz 50%.
+ * G = k=8 0-loss keep. G- = k=6. G-- = k=4 (experiment product-det column). Horiz 50%.
  */
 val SET_G_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.6f, 1.1f, 1.3f, 1.7f)
 /** Set G- = shared reduce k=6; phone loss 2 / emu loss 2 vs full cand */
 val SET_G_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.6f, 1.3f)
-/** Set G-- = shared reduce k=4; Quick Fill uses this; phone loss 4 / emu loss 5 vs full cand */
+/** Set G-- = shared reduce k=4; experiment product-det column; phone loss 4 / emu loss 5 vs full cand */
 val SET_G_MINUS_MINUS_VERT_FACTORS: List<Float> = listOf(0.1f, 0.3f, 0.4f, 1.1f)
 /**
  * Experiment-only dense vertical expansion for Set G-dense / Set K.
@@ -579,6 +579,8 @@ object PumpCostVolUtils {
         heatDumpU8z: java.io.File? = null,
         hmThresh: Float = HEAT_THR_U8_GE1,
         maskDilatePasses: Int = 0,
+        detTiers: Map<Int, com.baidu.paddle.lite.PaddlePredictor>? = null,
+        detTiersInt8: Map<Int, ByteArray>? = null,
     ): List<List<PumpHunk>> {
         // copyHeatmap=false: campaign only needs boxes; floatData/getFloatData crashes on uint8 heatmaps
         val res = paddleEngine.detect(
@@ -588,6 +590,8 @@ object PumpCostVolUtils {
             heatDumpU8z = heatDumpU8z,
             hmThresh = hmThresh,
             maskDilatePasses = maskDilatePasses,
+            detTiers = detTiers,
+            detTiersInt8 = detTiersInt8,
         ) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
         if (metadata != null) {
             metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
@@ -702,7 +706,8 @@ object PumpCostVolUtils {
         recBuffer: BufferSet,
         rects: List<Rect>,
         imgW: Int,
-        imgH: Int
+        imgH: Int,
+        onRectDone: (suspend (Int, Rect) -> Unit)? = null,
     ): PumpRectOcrLists {
         val asis = ArrayList<String>(rects.size)
         val digits = ArrayList<String>(rects.size)
@@ -717,6 +722,7 @@ object PumpCostVolUtils {
                 asis.add("?"); digits.add("?")
                 asisProbs.add(""); digitsProbs.add(""); recB64.add("")
                 recW.add(0); recH.add(0)
+                onRectDone?.invoke(asis.lastIndex, r)
                 continue
             }
             val fed = RecBufferFeed.feedSourceBorderHeightStrip(
@@ -734,6 +740,7 @@ object PumpCostVolUtils {
             recB64.add(snap)
             recW.add(fed.targetW)
             recH.add(fed.targetH)
+            onRectDone?.invoke(asis.lastIndex, r)
         }
         return PumpRectOcrLists(
             asis = asis,
@@ -927,7 +934,7 @@ object PumpCostVolUtils {
      * Set I (D+E+G hybrid, calculated) — batch import only.
      * Same stages as experiment `procI`: deskew once → G verts → clip stretch +
      * adjusted valley/peak → D verts → valley push → E verts → one combined classify.
-     * Does not change Quick Fill G-- path.
+     * Does not change Quick Fill G4 path.
      */
     // Experiment Set I vert lists (shared dual-device hybrid).
     val SET_I_G_VERT: List<Float> = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.6f, 1.1f, 1.5f)
