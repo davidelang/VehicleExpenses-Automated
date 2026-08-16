@@ -602,3 +602,8 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - Approved: `dev-ai-interaction/plans/wipe-foreign-app-build-outputs-20260816-0612-plan.md`
 - build_app removes intermediates/generated/kspCaches when not owned by the runner. kotlin.compiler.execution.strategy in gradle.properties plus -P. No chmod of app/build.
+
+## 2026-08-16 - Fix .grok/config.toml so skill disables parse
+
+- Approved: `dev-ai-interaction/plans/fix-grok-config-toml-skills-disable-20260816-0953-plan.md`
+- Move stray permission.rules inside the array. Keep [skills].disabled unchanged. No review/create-workflow disable in this turn.
