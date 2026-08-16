@@ -104,6 +104,11 @@ umask 002
 
 # Preferred project gateway (commits + tags + assembleDebug):
 ./build_app "initial smoke"   # or with no dirty files: ./build_app
+# assembleDebug now builds three ABI APKs:
+#   app/build/outputs/apk/arm64/debug/app-arm64-debug.apk
+#   app/build/outputs/apk/x86_64/debug/app-x86_64-debug.apk
+#   app/build/outputs/apk/armv7/debug/app-armv7-debug.apk
+# ./deploy picks the matching APK from ro.product.cpu.abi (Play AAB/PAD later).
 
 # Or, for a one-off local compile only (not the agent-mandated path):
 # ./gradlew --no-daemon assembleDebug
@@ -127,7 +132,10 @@ Tracked on `master` tip (via normal git history + periodic `update-rules` commit
 ### 3.4 Success criteria
 
 - `./build_app` or `./gradlew assembleDebug` completes **BUILD SUCCESSFUL**
-- APK under `app/build/outputs/apk/debug/`
+- Flavor APKs:
+  - `app/build/outputs/apk/arm64/debug/app-arm64-debug.apk`
+  - `app/build/outputs/apk/x86_64/debug/app-x86_64-debug.apk`
+  - `app/build/outputs/apk/armv7/debug/app-armv7-debug.apk`
 - Native tasks (`configureCMake*`, `buildCMake*`) succeed (NDK readable)
 
 ### 3.5 Known doc gap
