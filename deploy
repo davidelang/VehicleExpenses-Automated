@@ -3,13 +3,13 @@
 # Usage: ./deploy [alias1 alias2 ...]
 # If no arguments are provided, it deploys to all connected devices.
 #
-# Default: install the last produced debug APK (from ./build_app / assembleDebug)
-# via adb install -r. Does NOT recompile. Dirty git is OK (deploy last built while
-# an agent works on the next plan). Version printed is the APK's versionName
-# (git describe baked in at assemble time), not live HEAD.
+# Default: install the last produced *ABI-flavor* debug APK (from ./build_app
+# assembleDebug) via adb install -r. Picks app-arm64-debug.apk /
+# app-x86_64-debug.apk / app-armv7-debug.apk from ro.product.cpu.abi.
+# Does NOT recompile. Dirty git is OK. Version printed is the APK versionName.
 #
 # To force a Gradle rebuild + install (wipe multi-user caches, --no-daemon
-# installDebug) — same as historical deploy behavior:
+# installArm64Debug / installX86_64Debug / installArmv7Debug):
 #   ./deploy --rebuild
 #   REBUILD=1 ./deploy
 #
@@ -99,8 +99,7 @@ devices are targeted.
 Options:
   -h, --help              Show this help and exit
       --rebuild           Wipe multi-user build caches and run Gradle
-                          installDebug (--no-daemon). Use when no APK exists
-                          or you intentionally want a full recompile.
+                          install<Abi>Debug (--no-daemon) for each device ABI.
       --preserve-data     Backup app data, uninstall+reinstall, restore backup
                           (refuses uninstall if backup capture fails)
       --backup, --fetch-data
@@ -265,7 +264,8 @@ PUSH_TEST_DATA=${PUSH_TEST_DATA:-false}
 BACKUP_ONLY=${BACKUP_ONLY:-false}
 SELECTED_BACKUP=${SELECTED_BACKUP:-}
 REBUILD=${REBUILD:-false}
-DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
+# Legacy fat APK path is obsolete; helpers below pick per-device flavor APKs.
+DEBUG_APK=""
 # Set after resolve; used for end-of-run version print (APK bake time, not live HEAD).
 DEPLOYED_VERSION=""
 
@@ -564,8 +564,64 @@ find_aapt() {
 }
 
 # versionName at APK build time (git describe embedded by app/build.gradle.kts).
+debug_apk_for_flavor() {
+  echo "app/build/outputs/apk/$1/debug/app-$1-debug.apk"
+}
+
+device_abi_flavor() {
+  local abi
+  abi=$(adb -s "$1" shell getprop ro.product.cpu.abi 2>/dev/null | tr -d '\r')
+  case "$abi" in
+    arm64-v8a) echo arm64 ;;
+    armeabi-v7a|armeabi) echo armv7 ;;
+    x86_64|x86) echo x86_64 ;;
+    *)
+      echo "ERROR: unsupported cpu.abi '$abi' on $1" >&2
+      return 1
+      ;;
+  esac
+}
+
+debug_apk_for_device() {
+  local fl
+  fl=$(device_abi_flavor "$1") || return 1
+  debug_apk_for_flavor "$fl"
+}
+
+install_task_for_flavor() {
+  case "$1" in
+    arm64) echo installArm64Debug ;;
+    armv7) echo installArmv7Debug ;;
+    x86_64) echo installX86_64Debug ;;
+    *) return 1 ;;
+  esac
+}
+
+any_flavor_debug_apk() {
+  local fl
+  for fl in arm64 x86_64 armv7; do
+    [ -f "$(debug_apk_for_flavor "$fl")" ] && return 0
+  done
+  return 1
+}
+
+first_flavor_debug_apk() {
+  local fl p
+  for fl in arm64 x86_64 armv7; do
+    p=$(debug_apk_for_flavor "$fl")
+    if [ -f "$p" ]; then
+      echo "$p"
+      return 0
+    fi
+  done
+  return 1
+}
+
 apk_version_name() {
-  local apk=${1:-$DEBUG_APK}
+  local apk=${1:-}
+  if [ -z "$apk" ]; then
+    apk=$(first_flavor_debug_apk 2>/dev/null || true)
+  fi
   local aapt_bin ver meta
   if [ ! -f "$apk" ]; then
     return 1
@@ -594,31 +650,39 @@ live_git_describe() {
   git describe --tags --match "${branch}-start" 2>/dev/null || git describe --always 2>/dev/null || echo "unknown"
 }
 
-# adb install last produced debug APK (no Gradle).
+# adb install last produced ABI-flavor debug APK (no Gradle).
 install_debug_apk() {
   local device_id=$1
-  if [ ! -f "$DEBUG_APK" ]; then
-    echo "ERROR: No last-built APK at $DEBUG_APK" >&2
+  local apk
+  apk=$(debug_apk_for_device "$device_id") || return 1
+  if [ ! -f "$apk" ]; then
+    echo "ERROR: No last-built APK at $apk" >&2
+    echo "  Run ./build_app first (builds all ABI flavors)." >&2
     return 1
   fi
-  echo "  adb -s $device_id install -r $DEBUG_APK"
-  adb -s "$device_id" install -r "$DEBUG_APK"
+  echo "  adb -s $device_id install -r $apk ($(du -h "$apk" | awk '{print $1}'))"
+  adb -s "$device_id" install -r "$apk"
 }
 
-# --rebuild path: wipe + Gradle installDebug. Sets DEPLOYED_VERSION.
-# APK-first path uses install_debug_apk + apk_version_name directly (multi-device loop).
+# --rebuild path: wipe + Gradle install<Flavor>Debug for this device ABI.
 run_package_install() {
   local device_id=${1:-}
-  local ver ret
+  local ver ret fl task apk
 
   if [ "$REBUILD" != "true" ]; then
     echo "ERROR: internal: run_package_install is for --rebuild only" >&2
+    return 1
+  fi
+  if [ -z "$device_id" ]; then
+    echo "ERROR: run_package_install requires a device serial (ABI flavor)" >&2
     return 1
   fi
   if [ ! -x ./gradlew ]; then
     echo "Error: ./gradlew not found or not executable (required for --rebuild)."
     return 1
   fi
+  fl=$(device_abi_flavor "$device_id") || return 1
+  task=$(install_task_for_flavor "$fl") || return 1
   # Kill leftover file holders; wipe multi-user caches.
   lsof +D app/build/intermediates/incremental 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | xargs -r kill -9 2>/dev/null || true
   sleep 1
@@ -626,25 +690,19 @@ run_package_install() {
     echo "Deployment failed (build tree wipe)."
     return 1
   fi
-  echo "  --rebuild: Gradle installDebug (--no-daemon)..."
+  echo "  --rebuild: Gradle $task (--no-daemon) for $device_id ($fl)..."
   ve_reset_gradle_daemon_dir || return 1
-  if [ -n "$device_id" ]; then
-    (umask 007; ANDROID_SERIAL="$device_id" ./gradlew --no-daemon --no-configuration-cache \
-      -Pkotlin.compiler.execution.strategy=in-process \
-      -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_ARGS[@]}" installDebug)
-  else
-    # All-devices / default installDebug (AGP targets connected devices).
-    (umask 007; ./gradlew --no-daemon --no-configuration-cache \
-      -Pkotlin.compiler.execution.strategy=in-process \
-      -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_ARGS[@]}" installDebug)
-  fi
+  (umask 007; ANDROID_SERIAL="$device_id" ./gradlew --no-daemon --no-configuration-cache \
+    -Pkotlin.compiler.execution.strategy=in-process \
+    -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_ARGS[@]}" "$task")
   ret=$?
   ve_reset_gradle_daemon_dir || return 1
   repair_shared_cache
   if [ $ret -ne 0 ]; then
     return $ret
   fi
-  if ver=$(apk_version_name "$DEBUG_APK"); then
+  apk=$(debug_apk_for_flavor "$fl")
+  if ver=$(apk_version_name "$apk"); then
     DEPLOYED_VERSION="$ver"
   else
     DEPLOYED_VERSION=$(live_git_describe)
@@ -1321,8 +1379,8 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             echo "Run from inside an app worktree, e.g.: cd master && ../deploy   or cd agent-1 && ../deploy"
             echo "See README-multi-agent.md for the proper workflow."
             OVERALL_SUCCESS=false
-        elif [ "$REBUILD" != "true" ] && [ ! -f "$DEBUG_APK" ]; then
-            echo "ERROR: No last-built APK at $DEBUG_APK"
+        elif [ "$REBUILD" != "true" ] && ! any_flavor_debug_apk; then
+            echo "ERROR: No last-built ABI debug APK (app/build/outputs/apk/<abi>/debug/app-<abi>-debug.apk)"
             echo "  Run ./build_app first, or use ./deploy --rebuild to compile+install."
             echo "  (Run deploy from the app worktree that built the APK.)"
             OVERALL_SUCCESS=false
@@ -1382,23 +1440,22 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
             fi
 
             if [ "$REBUILD" = "true" ]; then
-                # Single Gradle installDebug for all connected devices (historical behavior).
-                if ! run_package_install ""; then
-                    echo "Deployment failed."
-                    OVERALL_SUCCESS=false
-                else
-                    for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+                for DEVICE_ID in "${ALL_DEVICES[@]}"; do
+                    if ! run_package_install "$DEVICE_ID"; then
+                        echo "Deployment to $DEVICE_ID failed."
+                        OVERALL_SUCCESS=false
+                    else
                         restore_test_data "$DEVICE_ID"
-                    done
-                fi
+                    fi
+                done
             else
-                # APK-first: install the same last-built APK on every device.
-                if ver=$(apk_version_name "$DEBUG_APK"); then
+                # APK-first: each device gets its ABI flavor APK.
+                if ver=$(apk_version_name); then
                     DEPLOYED_VERSION="$ver"
                 else
                     DEPLOYED_VERSION="(unknown)"
                 fi
-                echo "Installing last built APK: $DEBUG_APK"
+                echo "Installing last built ABI APKs (per device cpu.abi)"
                 echo "  version (at APK build): $DEPLOYED_VERSION"
                 live=$(live_git_describe)
                 if [ "$DEPLOYED_VERSION" != "$live" ] && [ "$DEPLOYED_VERSION" != "(unknown)" ]; then
@@ -1437,8 +1494,8 @@ else
             echo "cd into the worktree containing the app/ first."
             OVERALL_SUCCESS=false
             continue
-        elif [ "$REBUILD" != "true" ] && [ ! -f "$DEBUG_APK" ]; then
-            echo "ERROR: No last-built APK at $DEBUG_APK"
+        elif [ "$REBUILD" != "true" ] && ! any_flavor_debug_apk; then
+            echo "ERROR: No last-built ABI debug APK (app/build/outputs/apk/<abi>/debug/)"
             echo "  Run ./build_app first, or use ./deploy --rebuild to compile+install."
             OVERALL_SUCCESS=false
             continue
@@ -1499,12 +1556,12 @@ else
             fi
         else
             if [ -z "$DEPLOYED_VERSION" ]; then
-                if ver=$(apk_version_name "$DEBUG_APK"); then
+                if ver=$(apk_version_name); then
                     DEPLOYED_VERSION="$ver"
                 else
                     DEPLOYED_VERSION="(unknown)"
                 fi
-                echo "Installing last built APK: $DEBUG_APK"
+                echo "Installing last built ABI APK for this device"
                 echo "  version (at APK build): $DEPLOYED_VERSION"
                 live=$(live_git_describe)
                 if [ "$DEPLOYED_VERSION" != "$live" ] && [ "$DEPLOYED_VERSION" != "(unknown)" ]; then
@@ -1535,7 +1592,7 @@ if [ "$OVERALL_SUCCESS" = true ]; then
     # Prefer version baked into the APK (git describe at assemble time).
     if [ -n "$DEPLOYED_VERSION" ] && [ "$DEPLOYED_VERSION" != "(unknown)" ]; then
         echo "$DEPLOYED_VERSION"
-    elif ver=$(apk_version_name "$DEBUG_APK" 2>/dev/null); then
+    elif ver=$(apk_version_name 2>/dev/null); then
         echo "$ver"
     else
         live_git_describe

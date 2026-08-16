@@ -7560,3 +7560,11 @@ x
 ## 2026-08-16 - libpin-paddle-cleanup build gate
 
 - ./build_app assembleDebug SUCCESS; builds @ d318a322 (v0.98-52-gd318a322). First-10-good SO pin hashes unchanged. No works tag.
+
+## 2026-08-16 - Execution start: restore ABI-aware deploy
+
+- Plan: dev-ai-interaction/plans/restore-abi-aware-deploy-20260816-1128-plan.md
+- Branch: fix_deploy
+- Restore deploy from f07bb0a2 (blob e1d793bb), fold ENVIRONMENT_SETUP ABI comment + §3.4 paths, fold project-facts ABI/paddle/deploy orientation
+- Out of scope: build_app, flavors, agent-run deploy/adb install
+- Human-only deploy verify after CODE LANDED
