@@ -7553,3 +7553,6 @@ x
 
 ## 2026-08-13 - Merge location-fixes into master (specials corrected)
 - Product FF lineage at 7a274012 + project-facts reconcile from branch tip (Stations/v20/Wrong-station orientation). TODO unchanged. Eng-log via wrapper. Continuing ./build_app for builds tag.
+
+## 2026-08-16 - Merge libpin-paddle-cleanup into master
+- FF merge tip a0874aeb: multi-ABI First-10-good paddle SOs, QF G4, Set V odo, Room v21, experiment JobRunner, JNI expand. Master build-home infra retained. Specials: project-facts fold; TODO unchanged. ./build_app next.
