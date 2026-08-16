@@ -592,3 +592,8 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - Approved plan: `dev-ai-interaction/plans/worktree-local-gradle-android-homes-20260815-0939-plan.md`
 - Phase 1: `ve_setup_worktree_build_homes` + wrappers write only under `$WT`.
+
+## 2026-08-16 - Shared worktree Gradle home (execute)
+
+- Approved: `dev-ai-interaction/plans/shared-gradle-home-builder-owned-daemon-20260816-0551-plan.md`
+- GRADLE_USER_HOME=$WT/.gradle-home (shared caches). Wipe daemon/ before and after Gradle as the builder. No orch writes. No chmod 700 in our scripts.
