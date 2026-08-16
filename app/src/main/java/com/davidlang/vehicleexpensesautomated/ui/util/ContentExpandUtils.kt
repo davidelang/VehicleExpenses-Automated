@@ -693,7 +693,7 @@ object ContentExpandUtils {
                 bw += 2f * clear
             }
         }
-        val hitVertCap = stepsVNeg + padV >= cap || stepsVPos + padV >= cap
+        val hitVertCap = stepsVNeg >= cap || stepsVPos >= cap
         val finalQuad = orientedFromCenter(cx, cy, bw, bh, ang)
         val trace = if (recordVertEnergy) {
             VertEnergyTrace(
@@ -1782,6 +1782,8 @@ object ContentExpandUtils {
         } else {
             growOnce()
         }
+        val walkT = seed.top - t
+        val walkB = b - seed.bottom
         if (opts.vertPadFrac > 0f) {
             val extra = max(1, (opts.vertPadFrac * max(1, seed.height())).roundToInt())
             t = (t - extra).coerceAtLeast(0)
@@ -1789,17 +1791,17 @@ object ContentExpandUtils {
         }
         val padT = seed.top - t
         val padB = b - seed.bottom
-        val hitVertCap = padT >= cap || padB >= cap
+        val hitVertCap = walkT >= cap || walkB >= cap
         val stopUp = if (vertKind == VertEnergyKind.XYCUT_GX) {
             "xycut"
-        } else if (padT >= cap) {
+        } else if (walkT >= cap) {
             "cap"
         } else {
             "energy"
         }
         val stopDown = if (vertKind == VertEnergyKind.XYCUT_GX) {
             "xycut"
-        } else if (padB >= cap) {
+        } else if (walkB >= cap) {
             "cap"
         } else {
             "energy"

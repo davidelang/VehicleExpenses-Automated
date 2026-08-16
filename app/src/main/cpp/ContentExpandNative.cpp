@@ -291,7 +291,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     }
 
     const int hitVertCap =
-        (stepsVNeg + padV >= cap || stepsVPos + padV >= cap) ? 1 : 0;
+        (stepsVNeg >= cap || stepsVPos >= cap) ? 1 : 0;
     const float halfSeed = seedBh * 0.5f;
     const float stopEnergyUp = static_cast<float>(
         stripEnergy(mag, fr, cx, cy, bw, bh, 0.f, -1.f, false));

@@ -2293,6 +2293,7 @@ suspend fun runPumpExperiment(
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
                     fallbackVerts = SET_G4_VERT_FACTORS,
+                    energyRatio = 0.65f,
                 )
                 val procP4M65 = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2334,6 +2335,7 @@ suspend fun runPumpExperiment(
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
                     fallbackVerts = SET_M65_CAP_VERT_FACTORS,
+                    energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.XYCUT_GX,
                     vertPadFrac = 0.15f,
@@ -2379,6 +2381,7 @@ suspend fun runPumpExperiment(
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
                     fallbackVerts = SET_G_MINUS_MINUS_VERT_FACTORS,
+                    energyRatio = 0.65f,
                 )
                 val procProdM65 = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
