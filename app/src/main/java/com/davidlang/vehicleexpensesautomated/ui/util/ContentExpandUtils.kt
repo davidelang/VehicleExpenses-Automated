@@ -374,6 +374,86 @@ object ContentExpandUtils {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return OrientedExpand(seed, false)
         val imgW = gray.cols()
         val imgH = gray.rows()
+        if (!opts.recordVertEnergy) {
+            val nativeExp = try {
+                NativeImageUtils.expandOrientedNative(
+                    gray, seed.pts,
+                    opts.maxFrac, opts.energyRatio,
+                    opts.freezeHorzDuringVert, opts.enableJump,
+                    opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac,
+                )
+            } catch (_: Throwable) {
+                null
+            }
+            if (nativeExp != null) {
+                val finalQuad = orientedFromCenter(
+                    nativeExp.cx, nativeExp.cy, nativeExp.bw, nativeExp.bh, nativeExp.angDeg,
+                )
+                val seedRr = minAreaFromQuad(seed)
+                var seedBh = nativeExp.bh
+                if (seedRr != null) {
+                    var bw = seedRr.size.width.toFloat()
+                    var bh = seedRr.size.height.toFloat()
+                    if (bw < bh) {
+                        val tmp = bw; bw = bh; bh = tmp
+                    }
+                    seedBh = bh.coerceAtLeast(2f)
+                }
+                val cap = max(1, (opts.maxFrac * seedBh).roundToInt())
+                val stopUp = if (nativeExp.stepsVNeg >= cap) "cap" else "energy"
+                val stopDown = if (nativeExp.stepsVPos >= cap) "cap" else "energy"
+                val nativeCnt = try {
+                    NativeImageUtils.countPullbackOrientedNative(
+                        gray, seed.pts, finalQuad.pts, 0,
+                        stopUp == "energy", stopDown == "energy",
+                        COUNT_CLEAR_FRAC, COUNT_GROW_FRAC, COUNT_GROW_MAX_H_FRAC,
+                    )
+                } catch (_: Throwable) {
+                    null
+                }
+                val (countQuad, countInfo) = if (nativeCnt != null) {
+                    val newV = ((nativeCnt.vNegAfter + nativeCnt.vPosAfter) * 0.5).toFloat()
+                    val newBh = (nativeCnt.vPosAfter - nativeCnt.vNegAfter).toFloat().coerceAtLeast(2f)
+                    val rad = Math.toRadians(nativeCnt.angDeg.toDouble())
+                    val ux = cos(rad).toFloat()
+                    val uy = sin(rad).toFloat()
+                    val vx = -uy
+                    val vy = ux
+                    val newCx = nativeCnt.seedCx + nativeCnt.existCu * ux + newV * vx
+                    val newCy = nativeCnt.seedCy + nativeCnt.existCu * uy + newV * vy
+                    val cq = orientedFromCenter(newCx, newCy, nativeCnt.existBw, newBh, nativeCnt.angDeg)
+                    val existAabb = finalQuad.toAabb()
+                    val countAabb = cq.toAabb()
+                    cq to CountPullInfo(
+                        pulledTop = nativeCnt.pulledTop,
+                        pulledBot = nativeCnt.pulledBot,
+                        cSeed = nativeCnt.cSeed,
+                        countThr = nativeCnt.countThr,
+                        gxThr = nativeCnt.gxThr,
+                        tBefore = existAabb.top,
+                        bBefore = existAabb.bottom,
+                        tAfter = countAabb.top,
+                        bAfter = countAabb.bottom,
+                        y0 = nativeCnt.y0,
+                        counts = nativeCnt.counts,
+                        axis = "v",
+                        vNegBefore = nativeCnt.vNegBefore,
+                        vPosBefore = nativeCnt.vPosBefore,
+                        vNegAfter = nativeCnt.vNegAfter,
+                        vPosAfter = nativeCnt.vPosAfter,
+                        grewTop = nativeCnt.grewTop,
+                        grewBot = nativeCnt.grewBot,
+                        padTop = nativeCnt.padTop,
+                        padBot = nativeCnt.padBot,
+                    )
+                } else {
+                    countPullbackOriented(gray, seed, finalQuad, 0, stopUp, stopDown)
+                }
+                return OrientedExpand(
+                    finalQuad, nativeExp.hitVertCap, null, countQuad, countInfo,
+                )
+            }
+        }
         val rr = minAreaFromQuad(seed) ?: return OrientedExpand(seed, false)
         var cx = rr.center.x.toFloat()
         var cy = rr.center.y.toFloat()

@@ -62,7 +62,7 @@ target_link_directories(buffer_set PRIVATE ${JNI_LIBS_DIR})
 target_link_libraries(buffer_set jnigraphics log opencv_java4)
 
 # 2. native_ocr library (OpenCV dependent, uses c++_shared)
-add_library(native_ocr SHARED NativeImageUtils.cpp)
+add_library(native_ocr SHARED NativeImageUtils.cpp ContentExpandNative.cpp)
 target_link_directories(native_ocr PRIVATE ${JNI_LIBS_DIR})
 target_link_libraries(native_ocr
     jnigraphics

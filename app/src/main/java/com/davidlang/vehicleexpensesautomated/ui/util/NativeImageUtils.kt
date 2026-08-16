@@ -429,6 +429,137 @@ object NativeImageUtils {
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeExpandByCharacterAwareDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    private external fun nativeExpandOriented(
+        matPtr: Long,
+        seedPts: FloatArray,
+        maxFrac: Float,
+        energyRatio: Float,
+        freezeHorz: Boolean,
+        enableJump: Boolean,
+        jumpFrac: Float,
+        retractClearFrac: Float,
+        vertPadFrac: Float,
+    ): FloatArray?
+    private external fun nativeCountPullbackOriented(
+        matPtr: Long,
+        seedPts: FloatArray,
+        existPts: FloatArray,
+        extraLook: Int,
+        stopUpEnergy: Boolean,
+        stopDownEnergy: Boolean,
+        clearFrac: Float,
+        growFrac: Float,
+        maxHFrac: Float,
+    ): FloatArray?
+
+    data class OrientedExpandNative(
+        val cx: Float,
+        val cy: Float,
+        val bw: Float,
+        val bh: Float,
+        val angDeg: Float,
+        val stepsVNeg: Int,
+        val stepsVPos: Int,
+        val padV: Int,
+        val hitVertCap: Boolean,
+        val stopEnergyUp: Float,
+        val stopEnergyDown: Float,
+        val base: Float,
+        val thr: Float,
+    )
+
+    fun expandOrientedNative(
+        gray: Mat,
+        seedPts: FloatArray,
+        maxFrac: Float,
+        energyRatio: Float,
+        freezeHorz: Boolean,
+        enableJump: Boolean,
+        jumpFrac: Float,
+        retractClearFrac: Float,
+        vertPadFrac: Float,
+    ): OrientedExpandNative? {
+        val r = nativeExpandOriented(
+            gray.nativeObj, seedPts, maxFrac, energyRatio,
+            freezeHorz, enableJump, jumpFrac, retractClearFrac, vertPadFrac,
+        ) ?: return null
+        if (r.size < 13) return null
+        return OrientedExpandNative(
+            cx = r[0], cy = r[1], bw = r[2], bh = r[3], angDeg = r[4],
+            stepsVNeg = r[5].toInt(), stepsVPos = r[6].toInt(), padV = r[7].toInt(),
+            hitVertCap = r[8] >= 0.5f,
+            stopEnergyUp = r[9], stopEnergyDown = r[10],
+            base = r[11], thr = r[12],
+        )
+    }
+
+    data class OrientedCountNative(
+        val pulledTop: Boolean,
+        val pulledBot: Boolean,
+        val grewTop: Boolean,
+        val grewBot: Boolean,
+        val cSeed: Double,
+        val countThr: Double,
+        val gxThr: Double,
+        val vNegBefore: Double,
+        val vPosBefore: Double,
+        val vNegAfter: Double,
+        val vPosAfter: Double,
+        val padTop: Int,
+        val padBot: Int,
+        val y0: Int,
+        val counts: DoubleArray,
+        val seedCx: Float,
+        val seedCy: Float,
+        val existCu: Float,
+        val existBw: Float,
+        val angDeg: Float,
+        val seedBh: Float,
+    )
+
+    fun countPullbackOrientedNative(
+        gray: Mat,
+        seedPts: FloatArray,
+        existPts: FloatArray,
+        extraLook: Int,
+        stopUpEnergy: Boolean,
+        stopDownEnergy: Boolean,
+        clearFrac: Float,
+        growFrac: Float,
+        maxHFrac: Float,
+    ): OrientedCountNative? {
+        val r = nativeCountPullbackOriented(
+            gray.nativeObj, seedPts, existPts, extraLook,
+            stopUpEnergy, stopDownEnergy, clearFrac, growFrac, maxHFrac,
+        ) ?: return null
+        if (r.size < 24) return null
+        val n = r[14].toInt().coerceAtLeast(0)
+        if (r.size < 24 + n) return null
+        val counts = DoubleArray(n) { i -> r[24 + i].toDouble() }
+        return OrientedCountNative(
+            pulledTop = r[0] >= 0.5f,
+            pulledBot = r[1] >= 0.5f,
+            grewTop = r[2] >= 0.5f,
+            grewBot = r[3] >= 0.5f,
+            cSeed = r[4].toDouble(),
+            countThr = r[5].toDouble(),
+            gxThr = r[6].toDouble(),
+            vNegBefore = r[7].toDouble(),
+            vPosBefore = r[8].toDouble(),
+            vNegAfter = r[9].toDouble(),
+            vPosAfter = r[10].toDouble(),
+            padTop = r[11].toInt(),
+            padBot = r[12].toInt(),
+            y0 = r[13].toInt(),
+            counts = counts,
+            seedCx = r[15],
+            seedCy = r[16],
+            existCu = r[17],
+            existBw = r[18],
+            angDeg = r[19],
+            seedBh = r[20],
+        )
+    }
     private external fun nativeBinarizeRange(srcPtr: Long, dstPtr: Long, low: Int, high: Int)
     private external fun nativeProcessHeatmap(
         tensor: Any,
