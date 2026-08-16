@@ -81,9 +81,6 @@ private fun pruneRedPixelsTopN(rects: MutableList<Rect>, context: Context, imgH:
     PumpCostVolUtils.pruneRectsToTopN(rects, PumpOcrSettings.maxRedBoxes(context), imgH)
 }
 
-private fun safeTraceName(fileName: String): String =
-    fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-
 private fun rectJson(r: Rect): JSONObject =
     JSONObject().put("l", r.left).put("t", r.top).put("r", r.right).put("b", r.bottom)
 
@@ -633,7 +630,6 @@ suspend fun runPumpExperiment(
         "Set Prod-rot (product oriented + jump, S OCR)",
     )
     val heatDumpRoot = File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
-    val energyTraceRoot = File(reportDir, "expand_energy_$timestamp").also { it.mkdirs() }
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
@@ -2297,10 +2293,6 @@ suspend fun runPumpExperiment(
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
                     fallbackVerts = SET_G4_VERT_FACTORS,
-                    energyTraceOut = File(
-                        energyTraceRoot,
-                        "jump_" + safeTraceName(file.name) + ".json",
-                    ),
                 )
                 val procP4M65 = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2376,10 +2368,6 @@ suspend fun runPumpExperiment(
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
                     vertPadFrac = 0.08f,
-                    energyTraceOut = File(
-                        energyTraceRoot,
-                        "rot_" + safeTraceName(file.name) + ".json",
-                    ),
                 )
                 val procProdJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,

@@ -62,7 +62,7 @@ Metadata on expand columns: `content_expand_jump` / `content_expand_jump_frac` /
 `reportDir/pump_heats_<timestamp>/<photo>/scale{224,608,1024}_heatmap.u8z` + `.meta.json`  
 Format: magic `HMU8`, w/h LE u32, comp=1 (zlib), raw_len, payload. See `HeatmapU8Dump.kt`.
 
-**Energy traces:** On for **every photo** on **P4-jump** and **P4-rot** (not the 34-name coverage subset). Sidecar `expand_energy_<ts>/jump_<file>.json` and `rot_<file>.json`. Payload is **lossless zlib** deskewed gray u8 + Sobel mag u16le (plus 1px energy/count profiles). JPEG is not used for this ROI — Sobel-x p90 and gx-run-count valleys do not survive DCT ringing/quantization. ~16 MB × 167 × 2 ≈ 5 GB/device.
+**Energy traces:** Off. Full lossless jump+rot dumps already exist from `2026-08-15_09-38-52` / `09-39-09`. P4-jump / P4-rot no longer write `expand_energy_<ts>/`. Official path and unofficial `energy_count` OCR are unchanged.
 
 **Edge-count (same run):** After energy stop, additive run-count valley pullback, then a **one-direction** pad: pulled tip steps back toward energy by `0.10×seedH` (not past energy); energy-stop tip whose run-count is still ≥ `0.45×cSeed` grows that tip only by `0.08×seedH`. Cap-stops do not grow. Grow is skipped when the energy box is already `> 2.4×seedH` so the 48 px rec crop does not shrink the digits. A few pixels into the neighboring row is acceptable. Official `final` stays `energy` / `energy_or_g`. Extra `scaleVariants` entry `kind=energy_count` is scored unofficially only.
 
