@@ -1,6 +1,6 @@
 #!/bin/bash
 # set-worktree-perms
-# Applies permissions for worktree (@@CODE_GROUP@@ group mainly).
+# Applies permissions for worktree (ai-code group mainly).
 #
 # This is infrastructure. After edits, commit in main tree then
 # run `sudo ./update-rules.sh` (when agents idle) to propagate copies
@@ -25,16 +25,16 @@ if [ -f "$SCRIPT_DIR/project.config" ]; then
   . <(sed 's/=/ /; s/^/export /' "$SCRIPT_DIR/project.config" | grep -E '^(code_group|shared_group|docker_group|orchestrator_user|planning_user|coder_user|primary_user)')
 fi
 
-CODE_GROUP=${code_group:-@@CODE_GROUP@@}
-SHARED_GROUP=${shared_group:-@@SHARED_GROUP@@}
+CODE_GROUP=${code_group:-ai-code}
+SHARED_GROUP=${shared_group:-ai-shared}
 DOCKER_GROUP=${docker_group:-docker}
-ORCHESTRATOR_USER=${orchestrator_user:-@@ORCHESTRATOR_USER@@}
-PLANNING_USER=${planning_user:-@@PLANNING_USER@@}
-CODER_USER=${coder_user:-@@CODE_GROUP@@r}
+ORCHESTRATOR_USER=${orchestrator_user:-ai-orchestrator}
+PLANNING_USER=${planning_user:-ai-planner}
+CODER_USER=${coder_user:-ai-coder}
 PRIMARY_USER=$(sed -n 's/^primary_user=//p' "$SCRIPT_DIR/project.config" 2>/dev/null | tr -d '\r' | head -1)
 PRIMARY_USER=${PRIMARY_USER:-dlang}
 
-echo "Setting worktree perms (@@CODE_GROUP@@ focused) for group $CODE_GROUP..."
+echo "Setting worktree perms (ai-code focused) for group $CODE_GROUP..."
 
 # If run via sudo, chown files to the invoking human user + group so the developer has direct access.
 # This prevents "no read permission" issues even if group membership not yet active in shell.
@@ -137,7 +137,7 @@ for wt in "${WORKTREES[@]}"; do
     chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
   fi
   # TODO and facts: 666 for planner/coder access
-  # TODO.md and project-facts.md: not world-writable. 664 so group (@@SHARED_GROUP@@) can rw, other r.
+  # TODO.md and project-facts.md: not world-writable. 664 so group (ai-shared) can rw, other r.
   # Additions to TODO are rare (only explicit deferrals). Use todo-append helper when created.
   chmod 664 "$wt/TODO.md" 2>/dev/null || true
   chmod 664 "$wt/project-facts.md" 2>/dev/null || true
@@ -145,7 +145,7 @@ for wt in "${WORKTREES[@]}"; do
   if [ -f "$wt/append-to-engineering-log" ]; then
     chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
   fi
-  # Build outputs: re-apply 2770/660 + setgid so builders (@@CODE_GROUP@@r, dlang) can manage
+  # Build outputs: re-apply 2770/660 + setgid so builders (ai-coder, dlang) can manage
   for bdir in app/build build .gradle; do
     if [ -d "$wt/$bdir" ]; then
       find "$wt/$bdir" -type d -exec chmod 2770 {} + 2>/dev/null || true
@@ -154,15 +154,15 @@ for wt in "${WORKTREES[@]}"; do
   done
 
   # Modify r/w permissions only, without altering the execute bit.
-  # 664 for regular files: @@CODE_GROUP@@ group (coders + human + orchestrator) get rw,
-  # other users (e.g. @@PLANNING_USER@@) get r (read-only). This enforces at Unix level
+  # 664 for regular files: ai-code group (coders + human + orchestrator) get rw,
+  # other users (e.g. ai-planner) get r (read-only). This enforces at Unix level
   # that planners cannot mutate app source even if Grok plan-mode hooks fail.
   find "$wt" -type f -exec chmod u+rw,g+rw,o+r {} + 2>/dev/null || true
   find "$wt" -type d -exec chmod u+rwx,g+rwxs,o+rx {} + 2>/dev/null || true
 
   # project-facts.md and TODO.md are explicit planner-writable exceptions
-  # (stable facts + backlog). Make them world-writable (666) so @@PLANNING_USER@@
-  # (which is NOT a member of @@CODE_GROUP@@) can still edit them.
+  # (stable facts + backlog). Make them world-writable (666) so ai-planner
+  # (which is NOT a member of ai-code) can still edit them.
   chmod 666 "$wt/project-facts.md" 2>/dev/null || true
   chmod 666 "$wt/TODO.md" 2>/dev/null || true
   find "$wt" -name .agent-state -type d -exec chmod g+rwX {} + 2>/dev/null || true
@@ -174,14 +174,14 @@ for wt in "${WORKTREES[@]}"; do
   # are required to use the append-to-engineering-log wrapper for
   # formatting and to follow the "only append new dated entries" rule.
   if [ -f "$wt/ENGINEERING_LOG.md" ]; then
-    # Use shared_group for the log so ai-* users (all in @@SHARED_GROUP@@) can append.
+    # Use shared_group for the log so ai-* users (all in ai-shared) can append.
     # 660 + chattr +a : group can append, but cannot modify/overwrite existing content.
     chown root:$SHARED_GROUP "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
     chmod 660 "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
     chattr +a "$wt/ENGINEERING_LOG.md" 2>/dev/null || echo "  (chattr +a failed - run as root)"
   fi
 
-  # Wrapper: make executable by group (@@SHARED_GROUP@@/@@CODE_GROUP@@). No reliance on SUID for
+  # Wrapper: make executable by group (ai-shared/ai-code). No reliance on SUID for
   # shell scripts (kernel ignores setuid on #! scripts). Group write on log + wrapper
   # allows ai users to append via the script.
   if [ -f "$wt/append-to-engineering-log" ]; then
@@ -209,9 +209,9 @@ for wt in "${WORKTREES[@]}"; do
   fi
 
   # Make build_app and deploy setgid to the code group. When executed,
-  # they will have the @@CODE_GROUP@@ gid, helping ensure created files
+  # they will have the ai-code gid, helping ensure created files
   # (build artifacts, etc.) get correct group ownership. Combined with
-  # the umask 007 + sg @@CODE_GROUP@@ inside the scripts, this reduces ownership
+  # the umask 007 + sg ai-code inside the scripts, this reduces ownership
   # drift that requires full set-worktree-perms runs.
   for f in build_app deploy; do
     if [ -f "$wt/$f" ]; then
@@ -220,19 +220,19 @@ for wt in "${WORKTREES[@]}"; do
   done
 
   # Pure Unix enforcement for planning user (no ACLs).
-  # @@PLANNING_USER@@ is NOT in @@CODE_GROUP@@. Source dirs are 2775 dlang:@@CODE_GROUP@@ (setgid).
+  # ai-planner is NOT in ai-code. Source dirs are 2775 dlang:ai-code (setgid).
   # Planner (as 'other') gets o+r-x = read source, no write.
-  # @@CODE_GROUP@@r etc in @@CODE_GROUP@@ get g+rwxs.
-  # We still remove from @@CODE_GROUP@@ group as defense in depth.
+  # ai-coder etc in ai-code get g+rwxs.
+  # We still remove from ai-code group as defense in depth.
   if id "$PLANNING_USER" >/dev/null 2>&1; then
     gpasswd -d "$PLANNING_USER" "$CODE_GROUP" 2>/dev/null || true
-    echo "  Group removal for $PLANNING_USER (not in @@CODE_GROUP@@; relies on Unix other=r-x for source read-only)"
+    echo "  Group removal for $PLANNING_USER (not in ai-code; relies on Unix other=r-x for source read-only)"
   fi
 
-  # Ensure .git tree is writable by ai users (including planner via @@SHARED_GROUP@@) so git can add objects.
+  # Ensure .git tree is writable by ai users (including planner via ai-shared) so git can add objects.
   if [ -d "$wt/.git" ]; then
     for aiuser in "$PLANNING_USER" "$CODER_USER" "$ORCHESTRATOR_USER"; do
-      # These will be in @@SHARED_GROUP@@; .git 2770 allows
+      # These will be in ai-shared; .git 2770 allows
       find "$wt/.git" -type d -exec chmod g+rwxs {} + 2>/dev/null || true
     done
   fi
@@ -244,7 +244,7 @@ for wt in "${WORKTREES[@]}"; do
 
   # Special handling for .gradle (project build cache).
   # Use 660 for files, 2770 for directories (group writable, setgid) so that
-  # @@CODE_GROUP@@ group members can access even across different owners (dlang vs ai- users).
+  # ai-code group members can access even across different owners (dlang vs ai- users).
   # This is enforced on every perms run, and combined with umask 007 at gradle
   # invocation time, new cache entries created by Gradle will also get 660/2770.
   if [ -d "$wt/.gradle" ]; then
@@ -260,7 +260,7 @@ for wt in "${WORKTREES[@]}"; do
   # Special handling for Android/Gradle build output dirs (app/build, build/, etc.).
   # These contain generated sources (BuildConfig.java, R.java, etc.) that Gradle
   # must be able to overwrite during builds. Use 2770 on dirs + 660 on files
-  # under @@CODE_GROUP@@ so any group member (dlang or @@CODE_GROUP@@r etc.) can build.
+  # under ai-code so any group member (dlang or ai-coder etc.) can build.
   # Pruned from planner read-only lockdown above.
   for bdir in app/build build; do
     bpath="$wt/$bdir"
@@ -276,8 +276,8 @@ for wt in "${WORKTREES[@]}"; do
   # Final forced state for ENGINEERING_LOG.md and the append wrapper.
   # This must be late so it wins over the broad chown -R at start of loop
   # and any ACL mask lowering from the planner lockdown pass.
-  # - log: root:@@SHARED_GROUP@@ 660 + chattr +a + mask rw- + explicit rw- for planner + dlang
-  # - wrapper: root:@@SHARED_GROUP@@ 755 (no SUID - kernel ignores it on #! anyway), + r-x for planner, rwx for dlang (for exec + edit)
+  # - log: root:ai-shared 660 + chattr +a + mask rw- + explicit rw- for planner + dlang
+  # - wrapper: root:ai-shared 755 (no SUID - kernel ignores it on #! anyway), + r-x for planner, rwx for dlang (for exec + edit)
   if [ -f "$wt/ENGINEERING_LOG.md" ]; then
     # Must remove +a temporarily before any chmod or setfacl (append-only prevents mode/ACL changes).
     chattr -a "$wt/ENGINEERING_LOG.md" 2>/dev/null || true
@@ -303,7 +303,7 @@ for wt in "${WORKTREES[@]}"; do
     chattr -a "$wt/append-to-engineering-log" 2>/dev/null || true
 
     chmod 755 "$wt/append-to-engineering-log" 2>/dev/null || true
-    chmod g+s "$wt/append-to-engineering-log" 2>/dev/null || true  # setgid so egid @@SHARED_GROUP@@ for append even if caller not in group
+    chmod g+s "$wt/append-to-engineering-log" 2>/dev/null || true  # setgid so egid ai-shared for append even if caller not in group
     chmod -s "$wt/append-to-engineering-log" 2>/dev/null || true  # but keep g+s
 
     # Clear previous ACLs (e.g. from earlier runs that set rw- without x)
@@ -319,7 +319,7 @@ for wt in "${WORKTREES[@]}"; do
   fi
 done
 
-# Ensure orchestrator and the invoking human (if sudo) have access to the @@CODE_GROUP@@ group
+# Ensure orchestrator and the invoking human (if sudo) have access to the ai-code group
 usermod -aG $CODE_GROUP $ORCHESTRATOR_USER 2>/dev/null || true
 if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
   usermod -aG $CODE_GROUP "$SUDO_USER_VAL" 2>/dev/null || true
@@ -327,7 +327,7 @@ if [ -n "$SUDO_USER_VAL" ] && [ "$SUDO_USER_VAL" != "root" ]; then
   echo "  Added $SUDO_USER_VAL to $CODE_GROUP and $SHARED_GROUP (for log access)"
 fi
 
-# Grant docker group to @@CODE_GROUP@@r and @@ORCHESTRATOR_USER@@ so they can run docker commands
+# Grant docker group to ai-coder and ai-orchestrator so they can run docker commands
 # (needed for Paddle development: docker build + docker run --privileged -v mounts in paddle-build workflows).
 # The human (via sudo) is also added for convenience.
 usermod -aG $DOCKER_GROUP $CODER_USER 2>/dev/null || true
