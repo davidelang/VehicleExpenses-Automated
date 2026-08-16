@@ -21,6 +21,7 @@ Read in full early on startup/new cycle.
 - `.android-shared/` — **orch**: canonical debug keystore to **copy**. Not a live agent `ANDROID_USER_HOME`.
 - `orch_root=` in gitignored `project.config` — absolute orchestration root. Worktrees do **not** guess via `../.gradle-shared`. Resolve: `./ve-resolve-orch`. `update-rules.sh` / `setup_agent.sh` stamp it.
 - Per worktree writes: `app/build/`, `.gradle/` (project incremental only), `.gradle-home/` (`GRADLE_USER_HOME` — shared caches; `build_app`/`deploy` wipe `daemon/` before and after Gradle), `.android-shared/` (`ANDROID_USER_HOME`, seeded from orch keystore). `build_app` wipes `app/build` intermediates/generated/kspCaches when those dirs are not owned by the current user (same-uid incremental stays). Kotlin in-process via `gradle.properties` + `-P`/`-D` (do not grant Landlock on `~/.local/share/kotlin`).
+- AGP Maven `aapt2` zip mode is 0644 (transform cache drops +x). `build_app`/`deploy` pass `-Pandroid.aapt2FromMavenOverride` to the newest executable SDK `build-tools/*/aapt2` from this worktree `local.properties` `sdk.dir` (`ve_aapt2_from_sdk` in `ve-resolve-orch`). Do not commit an absolute SDK path in `gradle.properties`.
 - Launch master from `master/` (`./run-grok-master` there). Orch `./run-grok-master` binds `--worktree` to orch.
 - `ENGINEERING_LOG.md` — append only via `./append-to-engineering-log`
 - `TODO.md` — future backlog via `todo-append` / `todo-close`
@@ -66,7 +67,7 @@ Update only with orientation facts valid for future work. Effort/plan details �
 
 - Launchers: thin run-grok* + .grok/prompts/packs on VE and lib hosts; local PR skills prepare-local-pr / master-merge; sandbox_dir (VE dev-ai-interaction, libs sandbox).
 
-- 2026-08-02 workflow parity CODE LANDED: same pack launchers + local PR skills on VE and ~/git/{remotetable,extractmail}; sandbox_dir; third_party pin promote optional via promote-third-party-pins.sh.
+- Third-party pin promote (optional): `promote-third-party-pins.sh`.
 
 - Multi-user git (all hosts): `.git` group **ai-shared** (not ai-code), dirs **2770** setgid, `core.sharedRepository=group`. Doc: `docs/reference/MULTIUSER_GIT_VE_PARITY.md`. Repair: `./fix-multiuser-git-hosts.sh` (VE + libs + orchestration-example) or `./fix-ve-git-shared.sh` (VE only). Run as **dlang** with sudo. Partial chgrp of `.git` top only is insufficient — children re-infect via setgid. **Hooks must not** run `fix-perms --all` or chown/chmod common `.git` (see PERMISSIONS_MODEL).
 - Session Landlock: `agent-landlock` + wire in `.grok/lib/grok-launch-common.sh`; always grants `$HOME/.grok` (session/trust). Smoke: `./landlock-smoke-matrix`. Publish: `./deploy-landlock-fix.sh [--commit] [--also-ve]`.
