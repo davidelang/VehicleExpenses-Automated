@@ -243,6 +243,35 @@ ve_wipe_foreign_app_build_outputs() {
   return 0
 }
 
+# Restore other-execute on tracked 100755 helpers.
+# umask 007 + git checkout writes 770; o+r-only passes leave 774.
+# ai-planner is not in ai-code, so 774 dlang:ai-code is Permission denied.
+# Always chmod a+x (umask-proof). Never chmod +x under umask 007.
+# Taken from orchestration:ve-resolve-orch (union with ve_aapt2_from_sdk).
+# Callers on orch: update-rules.sh / setup_agent.sh — not build_app/deploy.
+ve_ensure_tracked_exec_other_x() {
+  local wt="${1:-}"
+  local p mode _hash _stage
+  [ -n "$wt" ] && [ -d "$wt" ] || return 0
+  for p in agent-landlock todo-append todo-close ve-env \
+           landlock-smoke-matrix landlock-write-probe; do
+    if [ -f "$wt/$p" ]; then
+      chmod a+x "$wt/$p" 2>/dev/null || true
+    fi
+  done
+  if ! git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+  while read -r mode _hash _stage p; do
+    [ "$mode" = "100755" ] || continue
+    [ -n "$p" ] || continue
+    if [ -f "$wt/$p" ]; then
+      chmod a+x "$wt/$p" 2>/dev/null || true
+    fi
+  done < <(git -C "$wt" ls-files -s)
+  return 0
+}
+
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   set -euo pipefail
   ve_resolve_orch "${1:-}" || exit 1

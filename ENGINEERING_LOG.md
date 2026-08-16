@@ -7616,3 +7616,12 @@ x
 - Human reported SDK/NDK perms fixed. Verified libc++_shared.so readable 664 dlang:ai-code for aarch64, armv7, x86_64.
 - Phase 3: project-facts aapt2 override bullet. Restored jniLibs mode dirt (not committing).
 - Running ./build_app for flavor APKs + fix_deploy/builds. No SDK chmod from agent.
+
+## 2026-08-16 - Execution start: union gradle-home + ABI deploy + aapt2 SoT
+
+- Plan: dev-ai-interaction/plans/union-gradle-home-abi-aapt2-soT-20260816-1209-plan.md
+- Branch: fix_deploy. Union wrappers here (not orch). Absorb leftover restore-abi Phases 2–3.
+- Phase 1: ve_ensure_tracked_exec_other_x from git show orchestration:ve-resolve-orch + keep ve_aapt2_from_sdk
+- Phase 2: ENV_SETUP ABI comment + facts ABI/paddle fold (keep aapt2/gradle-home)
+- Phase 3: publish-stacked-wrappers-to-orch (dry-run only) + master-merge skill sentence
+- Do not edit orch, do not --apply, do not flip Gradle umask 007, do not agent-run deploy
