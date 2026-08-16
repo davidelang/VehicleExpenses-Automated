@@ -13,7 +13,7 @@ build = ["./build"]
 consumer_note = "Docker NDK r28c: patches/ + patches-int8. arm64 tailor+fp16; armv7 tailor+int8 (fp32 calib, no arm82 fp16); x86 slim thin-jni+light (x86 LITE_BUILD_TAILOR drops KernelRegistrar — do not auto-tailor x86 yet). Tailor inputs: fetch-deps ro paddle-models. get-artifacts → artifact/ + app jniLibs."
 
 # --- pin-local stable names (multi-consumer / audit; independent of promote rows) ---
-# arm64: restored b8449343 pin ship. x86: r20b recipe rebuild 2026-08-05 (golden gate required). (First-10-good: L1 cost 84.50). NDK r28c rebuild had regressed heatmaps.
+# arm64+x86: restored to b8449343 pin ship (First-10-good: L1 cost 84.50). NDK r28c rebuild had regressed heatmaps.
 # armv7: keep branch tailor products (fp32 calib path).
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
@@ -38,12 +38,12 @@ sha256 = "1479343116362f6f2adb376010e31d6df5ac2c6332cc93ed1bfb04fcf2b16122"
 [[artifact]]
 from = "src/bin/x86_64/libpaddle_lite_jni.so"
 path = "artifact/jni/x86_64/libpaddle_lite_jni.so"
-sha256 = "739780a6bad6d334f7f9c3f30a3894bfaaa640dfebc2b190b01972268c86c6a4"
+sha256 = "09b58ad0368274fc4d4429cfbf78432b9b42e30b917e2293c0a00a492870982e"
 
 [[artifact]]
 from = "src/bin/x86_64/libpaddle_light_api_shared.so"
 path = "artifact/jni/x86_64/libpaddle_light_api_shared.so"
-sha256 = "b4a6d1741a95fa84ff0dc661cd265bd57b7ef63d7377ff7b8d70a3ef00e1f2ee"
+sha256 = "ebff745447ab9262100b126582274a5062cf6af97ed49df70b1bcf9034655388"
 
 [[artifact]]
 from = "src/bin/PaddlePredictor.jar"
@@ -74,12 +74,12 @@ sha256 = "1479343116362f6f2adb376010e31d6df5ac2c6332cc93ed1bfb04fcf2b16122"
 [[artifact]]
 from = "src/bin/x86_64/libpaddle_lite_jni.so"
 path = "app/src/main/jniLibs/x86_64/libpaddle_lite_jni.so"
-sha256 = "739780a6bad6d334f7f9c3f30a3894bfaaa640dfebc2b190b01972268c86c6a4"
+sha256 = "09b58ad0368274fc4d4429cfbf78432b9b42e30b917e2293c0a00a492870982e"
 
 [[artifact]]
 from = "src/bin/x86_64/libpaddle_light_api_shared.so"
 path = "app/src/main/jniLibs/x86_64/libpaddle_light_api_shared.so"
-sha256 = "b4a6d1741a95fa84ff0dc661cd265bd57b7ef63d7377ff7b8d70a3ef00e1f2ee"
+sha256 = "ebff745447ab9262100b126582274a5062cf6af97ed49df70b1bcf9034655388"
 
 [[artifact]]
 from = "src/bin/PaddlePredictor.jar"
