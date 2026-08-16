@@ -12,8 +12,8 @@
 # project.config (absolute, existing directory, not @@TOKEN@@). Never walk to
 # ../.gradle-shared. Fail loud — run ./update-rules.sh from the orchestration root.
 #
-# Live Gradle/Android writes stay under the start worktree (.gradle /
-# .android-shared). orch_root is read/seed only (copy debug.keystore).
+# Live writes stay under the start worktree. GRADLE_USER_HOME is
+# $wt/.gradle-home (shared caches). orch_root is read/seed only (keystore).
 
 ve_resolve_orch_worktree() {
   if [ -n "${1:-}" ]; then
@@ -105,8 +105,8 @@ ve_seed_worktree_project_config() {
   fi
 }
 
-# After ve_resolve_orch: worktree-local Gradle/Android homes. Writes stay under
-# $wt. orch is read/seed only. Exports GRADLE_USER_HOME and ANDROID_USER_HOME.
+# After ve_resolve_orch: worktree Gradle/Android homes. Writes stay under $wt.
+# orch is read/seed only. Does not create daemon/ (launchers run as dlang).
 ve_setup_worktree_build_homes() {
   local wt src dest
   wt="$(ve_resolve_orch_worktree "${1:-}")" || return 1
@@ -115,11 +115,11 @@ ve_setup_worktree_build_homes() {
     return 1
   fi
 
-  mkdir -p -m 2770 "$wt/.gradle" || {
-    echo "ERROR: cannot create $wt/.gradle" >&2
+  mkdir -p -m 2770 "$wt/.gradle-home" || {
+    echo "ERROR: cannot create $wt/.gradle-home" >&2
     return 1
   }
-  chmod 2770 "$wt/.gradle" 2>/dev/null || true
+  chmod 2770 "$wt/.gradle-home" 2>/dev/null || true
 
   mkdir -p -m 2770 "$wt/.android-shared" || {
     echo "ERROR: cannot create $wt/.android-shared" >&2
@@ -143,8 +143,33 @@ ve_setup_worktree_build_homes() {
     fi
   fi
 
-  export GRADLE_USER_HOME="$wt/.gradle"
+  export GRADLE_USER_HOME="$wt/.gradle-home"
   export ANDROID_USER_HOME="$wt/.android-shared"
+  return 0
+}
+
+# Remove $GRADLE_USER_HOME/daemon so the builder owns the next mkdir.
+# Gradle hardcodes chmod 700 on that tree. Do not chmod it here.
+ve_reset_gradle_daemon_dir() {
+  local home="${GRADLE_USER_HOME:-}"
+  if [ -z "$home" ]; then
+    echo "ERROR: ve_reset_gradle_daemon_dir: GRADLE_USER_HOME unset" >&2
+    return 1
+  fi
+  case "$home" in
+    */.gradle-home) ;;
+    *)
+      echo "ERROR: GRADLE_USER_HOME is not a worktree .gradle-home: $home" >&2
+      return 1
+      ;;
+  esac
+  if [ -e "$home/daemon" ]; then
+    rm -rf "$home/daemon" || {
+      echo "ERROR: cannot remove $home/daemon (do not chmod it)." >&2
+      echo "  Remove as the owner, or fix group write on $home." >&2
+      return 1
+    }
+  fi
   return 0
 }
 

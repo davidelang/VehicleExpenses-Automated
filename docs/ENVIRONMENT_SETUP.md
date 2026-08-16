@@ -167,7 +167,7 @@ App worktrees symlink: `dev-ai-interaction` → `../dev-ai-interaction`.
 5. **`./install-ve-refresh-shell.sh --all`** (or via fix-perms) for setuid group refresh helper.
 6. **`./sync-debug-keystores`** (prefer once with sudo for correct home ownership).
 7. **`./fix-android-sdk-perms`** as primary after NDK install.
-8. Seed orch **`.android-shared`** (canonical keystore). Worktree `.android-shared` / `.gradle` are created on first `ve-env` / `build_app`.
+8. Seed orch **`.android-shared`** (canonical keystore). Worktree `.android-shared` / `.gradle-home` are created on first `ve-env` / `build_app`.
 9. Install **Grok CLI** (or Gemini) binaries referenced by launchers (`GROK_BIN` / project.config).
 
 ### 4.3 Daily multi-agent flow
@@ -213,7 +213,7 @@ Equal content is always a no-op. Host installers (`grok-install.sh`, `antigravit
 | `app/build/`, `.gradle/`, `.cxx/` | build outputs |
 | `ve-refresh-shell` binary | setuid; built by `install-ve-refresh-shell.sh` |
 | `run-as-primary` binary | optional setuid helper |
-| `.android-shared/`, `.gradle-shared/` | **orch** — canonical keystore + leftover Maven cache. Not live agent homes. Discovery is `orch_root=` in `project.config` (`./ve-resolve-orch`). Worktree `.gradle/` (`GRADLE_USER_HOME`), `.android-shared/` (`ANDROID_USER_HOME`), and `app/build/` are per-tree writes. |
+| `.android-shared/`, `.gradle-shared/` | **orch** — canonical keystore + leftover Maven cache. Not live agent homes. Discovery is `orch_root=` in `project.config` (`./ve-resolve-orch`). Worktree `.gradle-home/` (`GRADLE_USER_HOME`, shared caches; `daemon/` wiped around Gradle), `.gradle/` (project incremental), `.android-shared/` (`ANDROID_USER_HOME`), and `app/build/` are per-tree writes. |
 
 ### 4.5 Orchestration root vs app worktree
 
