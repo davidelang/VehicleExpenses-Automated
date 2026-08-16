@@ -7556,3 +7556,7 @@ x
 
 ## 2026-08-16 - Merge libpin-paddle-cleanup into master
 - FF merge tip a0874aeb: multi-ABI First-10-good paddle SOs, QF G4, Set V odo, Room v21, experiment JobRunner, JNI expand. Master build-home infra retained. Specials: project-facts fold; TODO unchanged. ./build_app next.
+
+## 2026-08-16 - libpin-paddle-cleanup build gate
+
+- ./build_app assembleDebug SUCCESS; builds @ d318a322 (v0.98-52-gd318a322). First-10-good SO pin hashes unchanged. No works tag.
