@@ -7642,3 +7642,8 @@ x
 - deploy blob b1745e75 (ABI + aapt2). No works tag.
 - Human next: from master/ ./publish-stacked-wrappers-to-orch --apply ; from orch ./update-rules.sh (no --force); then ./deploy
 - Then ./remove_worktree.sh fix_deploy
+
+## 2026-08-16 - Execute start: expand-fail-subset-pad-cap
+
+- Plan: expand-fail-subset-pad-cap-20260816-2317-plan.md
+- Latch + 0.65 leftovers + fetch overwrite + fail-subset table 
