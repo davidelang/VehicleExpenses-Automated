@@ -7568,3 +7568,11 @@ x
 - Restore deploy from f07bb0a2 (blob e1d793bb), fold ENVIRONMENT_SETUP ABI comment + §3.4 paths, fold project-facts ABI/paddle/deploy orientation
 - Out of scope: build_app, flavors, agent-run deploy/adb install
 - Human-only deploy verify after CODE LANDED
+
+## 2026-08-16 - Strike 1: Phase 1 build_app failed (NDK libc++_shared.so perms)
+
+- Commit already landed: fef6307a Phase 1 restore ABI-aware deploy (blob e1d793bb)
+- ./build_app Gradle failed at :app:configureCMakeDebug[arm64-v8a]
+- Cause: /home/dlang/Android/Sdk/ndk/28.2.13676358/.../aarch64-linux-android/libc++_shared.so is dlang:dlang 660; ai-coder cannot read
+- Documented fix: ./fix-android-sdk-perms as dlang (PERMISSIONS_MODEL.md). Agent did not chmod/chown SDK.
+- No fix_deploy/builds tag yet. Phase 2/3 not started (per-phase build gate).
