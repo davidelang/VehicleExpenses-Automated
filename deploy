@@ -450,6 +450,7 @@ fi
 . "$_DEP_HERE/ve-resolve-orch"
 ve_resolve_orch "$_DEP_HERE" || exit 1
 ve_setup_worktree_build_homes "$_DEP_HERE" || exit 1
+ve_reset_gradle_daemon_dir || exit 1
 unset GRADLE_OPTS
 
 # Early recovery for build dir perms/ownership (prevents "Permission denied" on cxx logs,
@@ -483,7 +484,7 @@ prepare_build_tree_for_deploy() {
   fi
   rm -rf app/build/kspCaches app/build/intermediates app/build/generated 2>/dev/null || true
 
-  # Worktree .gradle (GRADLE_USER_HOME): fileHashes.lock etc. after ai-coder builds
+  # Project .gradle (not GRADLE_USER_HOME): fileHashes.lock etc. after ai-coder builds
   if [ -d .gradle ]; then
     chmod -R u+rX,g+rX .gradle 2>/dev/null || true
     chmod -R u+rwX,g+rwX .gradle 2>/dev/null || true
@@ -626,6 +627,7 @@ run_package_install() {
     return 1
   fi
   echo "  --rebuild: Gradle installDebug (--no-daemon)..."
+  ve_reset_gradle_daemon_dir || return 1
   if [ -n "$device_id" ]; then
     (umask 007; ANDROID_SERIAL="$device_id" ./gradlew --no-daemon --no-configuration-cache \
       -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_ARGS[@]}" installDebug)
@@ -635,6 +637,7 @@ run_package_install() {
       -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_ARGS[@]}" installDebug)
   fi
   ret=$?
+  ve_reset_gradle_daemon_dir || return 1
   repair_shared_cache
   if [ $ret -ne 0 ]; then
     return $ret

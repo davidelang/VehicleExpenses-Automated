@@ -144,6 +144,7 @@ else
     . "$_BA_HERE/ve-resolve-orch"
     ve_resolve_orch "$_BA_HERE" || exit 1
     ve_setup_worktree_build_homes "$_BA_HERE" || exit 1
+    ve_reset_gradle_daemon_dir || exit 1
     unset GRADLE_OPTS
     PLANNING_USER=$(sed -n 's/^planning_user=//p' project.config 2>/dev/null | tr -d '\r' | head -1)
     PLANNING_USER=${PLANNING_USER:-ai-planner}
@@ -157,6 +158,7 @@ else
     (umask 007; ./gradlew --no-daemon --no-configuration-cache \
       -Dkotlin.compiler.execution.strategy=in-process "${GRADLE_CMD[@]}")
     RET_VAL=$?
+    ve_reset_gradle_daemon_dir || exit 1
 
     # Post-build permission repair for this worktree only (not orch caches).
     for gdir in .gradle app/build; do
