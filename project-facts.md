@@ -27,7 +27,7 @@ Read in full early on startup/new cycle.
 - `TODO.md` — future backlog via `todo-append` / `todo-close`
 - Launchers: `run-grok-orchestrator`, `run-grok-master`, `run-grok-planner`, `run-grok-coder`, bare `run-grok` (dlang). All exec grok with `--no-alt-screen` and `--minimal` via `.grok/lib/grok-launch-common.sh`.
 - `ve-env` — `source ./ve-env` sets umask 002; if session groups stale, re-execs shell via setuid `ve-refresh-shell` (no full desktop logout). One-time: build + `sudo chmod 4755 ve-refresh-shell` (or `sudo ./fix-perms`). Never `newgrp` for multi-group. See `./ve-env how-to-fix-groups`
-- **Deploy (orch root):** default is **APK-first** (`adb install -r` last APK); `./deploy --rebuild` for wipe+Gradle path. Version from APK `versionName` when not rebuilding.
+- **Deploy:** APK-first installs the matching ABI flavor APK from `ro.product.cpu.abi` (`app/build/outputs/apk/<arm64|x86_64|armv7>/debug/app-<flavor>-debug.apk`). `--rebuild` is per-device `installArm64Debug` / `installX86_64Debug` / `installArmv7Debug`. Version from APK `versionName` when not rebuilding. Human-only (agents do not run `./deploy` / `adb install`).
 - Scripts: `update-rules.sh`, `build_app` and `deploy` (no raw gradlew; both pass `--no-daemon`; deploy wipes `kspCaches`/`intermediates`/`generated` and **fails fast** if residual foreign 2755 dirs block wipe), `get-builds-tag.sh`, `fix-perms` (rare), `setup_agent.sh` — on success **exec**s a shell in the new worktree with ve-env semantics (`VE_ENV_CWD` + setuid `ve-refresh-shell` for full groups + umask 002). `project.config` is gitignored; setup seeds it before checkout. **`ve-refresh-shell` binary is not in git** (setuid root + arch-specific); source `ve-refresh-shell.c` is tracked. Install/deploy with `./install-ve-refresh-shell.sh` [dir|`--all`] — called from `setup_agent`, `fix-perms`, and `update-rules` so each worktree gets a correct root:root 4755 binary. `run-as-primary` similarly gitignored. `remove_worktree.sh`, `generate_pr.sh`, `cleanup_pr.sh`
 - **Launcher umask:** `run-grok*` set `umask 002` **inside** `sudo -u <role>` (not only in the parent shell). Parent-only umask is ignored by sudo → agents create 2755 build dirs.
 - **Debug keystore:** one key only — orch `.android-shared/debug.keystore` (same SHA as dlang). `./sync-debug-keystores` copies it into each role’s `~/.android/` and worktree `.android-shared/`. Launchers/`ve-env`/`build_app`/`deploy` set `ANDROID_USER_HOME` to the **worktree** `.android-shared`. Foreign keys cause `UPDATE_INCOMPATIBLE` on devices.
@@ -39,6 +39,12 @@ Read in full early on startup/new cycle.
 - `docs/ENVIRONMENT_SETUP.md` — plain `master` clone build + multi-worktree host setup; in-repo prebuilts vs external rebuilds (on orch + synced to app worktrees)
 - Ground-truth fixtures on **orchestration root** (not versioned with app): `ground_truth.json`, `ground_truth_odo.json`. Sandbox `latest-report` scripts often resolve `~/git/VehicleExpenses-automated/ground_truth_odo.json`. Do not delete. Untracked cousins (`processed_ground_truth.json`) are disposable.
 - Host installers (`grok-install.sh`, `antigravity-install`) are **local only** (gitignored); `run-*` launchers sync to worktrees. `./update-rules.sh` skips worktree-ahead/dirty paths unless `--force`; supports `--dry-run`.
+
+## Application ABI / Paddle assets
+- Production models: `app/src/arm64/assets/paddle/prod_u8fp16/*_armv8.nb`, `app/src/x86_64/assets/paddle/prod_u8fp32_u8/*_x86_64.nb`, `app/src/armv7/assets/paddle/prod_u8fp32_u8/*_armv7.nb`; shared dict `app/src/main/assets/paddle/en_dict.txt`; scheduled exp dets `app/src/<abi>/assets/paddle/exp_det_ab/`
+- Runtime: `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/`, `app/libs/PaddlePredictor.jar`
+- JNI sizing: arm64-v8a tailored ~1.6MB; x86_64 slim jni + `libpaddle_light_api_shared.so`; armeabi-v7a fat multi-path lib (interim)
+- Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). arm64/x86 jni = First-10-good pin ship.
 
 ## Worktree layout
 - App worktrees (`agent-N/`, `master/`): `app/` + root scripts + symlink `dev-ai-interaction -> ../dev-ai-interaction`
