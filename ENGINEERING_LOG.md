@@ -607,3 +607,8 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - Approved: `dev-ai-interaction/plans/fix-grok-config-toml-skills-disable-20260816-0953-plan.md`
 - Move stray permission.rules inside the array. Keep [skills].disabled unchanged. No review/create-workflow disable in this turn.
+
+## 2026-08-16 - deploy-orchestration (execute)
+
+- Approved: `dev-ai-interaction/plans/deploy-orchestration-20260816-1029-plan.md`
+- New operator script publishes shared policy to sibling orch hosts. Does not add --repos to update-rules.sh. Does not overwrite dest update-rules.sh.

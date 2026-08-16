@@ -335,6 +335,7 @@ FILES=(
     "agent-landlock"
     "landlock.config"
     "landlock.config.example"
+    "deploy-orchestration"
 )
 
 # Note: AGENT_CONTEXT.md.template is intentionally NOT synced (per-agent instances are created once by setup_agent).
