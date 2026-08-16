@@ -7583,3 +7583,17 @@ x
 - Branch: fix_deploy (does not replace restore-abi-aware-deploy plan; Phase 1 of that already landed)
 - Add ve_aapt2_from_sdk; pass -Pandroid.aapt2FromMavenOverride on build_app/deploy Gradle lines
 - Restore uncommitted jniLibs mode dirt; do not chmod NDK; do not flip umask 002/007
+
+## 2026-08-16 - Strike 1 (aapt2 plan): assembleDebug stopped on x86_64 NDK libc++ perms
+
+- Commit landed: 87419b6c ve_aapt2_from_sdk + -Pandroid.aapt2FromMavenOverride on build_app/deploy
+- AAPT2 override took effect (experimental warning; processArm64DebugResources and processArmv7DebugResources ran; no Daemon startup failed)
+- Failed :app:configureCMakeDebug[x86_64]: x86_64-linux-android/libc++_shared.so still dlang:dlang 660 (aarch64/armv7 copies are dlang:ai-code 660 and readable)
+- Out of this plan contract: human ./fix-android-sdk-perms as dlang. Agent did not chmod SDK.
+- No flavor APKs / no fix_deploy/builds yet. Phase 3 project-facts not started.
+
+## 2026-08-16 - Retry ./build_app for flavor APKs (user request)
+
+- User asked for a successful build so there is an APK to deploy.
+- x86_64 libc++_shared.so still dlang:dlang 660 at retry start (aarch64/armv7 readable). Retrying assembleDebug anyway.
+- Restored uncommitted jniLibs 100755→100644 mode dirt; not committing those files.
