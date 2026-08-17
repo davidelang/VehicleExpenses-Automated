@@ -622,6 +622,8 @@ suspend fun runPumpExperiment(
         "Set G4 (v4 det, calculated 0.0-2.5)",
         "Set P4-jump (v4 + energy + jump, S OCR)",
         "Set P4-m65 (v4 + mean0.65 frozen + jump)",
+        "Set P4-m65p08 (v4 m65 + pad 0.08)",
+        "Set P4-m65p20 (v4 m65 + pad 0.20)",
         "Set P4-gx (v4 + gx0.55 frozen + jump)",
         "Set P4-xycut (v4 + xycut-gx frozen + jump)",
         "Set P4-rot-jump (v4 oriented + jump, S OCR)",
@@ -2192,6 +2194,34 @@ suspend fun runPumpExperiment(
                     vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
                     vertPadFrac = 0.08f,
                 )
+                val procP4M65p08 = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4-m65p08: frozen-width mean |∇| 0.65 + 0.08·seedH pad + L/R jump; final = energy crop",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
+                    vertPadFrac = 0.08f,
+                )
+                val procP4M65p20 = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4-m65p20: frozen-width mean |∇| 0.65 + 0.20·seedH pad + L/R jump; final = energy crop",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
+                    vertPadFrac = 0.20f,
+                )
                 val procP4Gx = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
                     "P4-gx: frozen-width mean |∂I/∂x| 0.55 + 0.08·seedH pad + L/R jump; final = energy crop",
@@ -2479,6 +2509,8 @@ suspend fun runPumpExperiment(
                     add("Set G4 (v4 det, calculated 0.0-2.5)" to procG4)
                     add("Set P4-jump (v4 + energy + jump, S OCR)" to procP4Jump)
                     add("Set P4-m65 (v4 + mean0.65 frozen + jump)" to procP4M65)
+                    add("Set P4-m65p08 (v4 m65 + pad 0.08)" to procP4M65p08)
+                    add("Set P4-m65p20 (v4 m65 + pad 0.20)" to procP4M65p20)
                     add("Set P4-gx (v4 + gx0.55 frozen + jump)" to procP4Gx)
                     add("Set P4-xycut (v4 + xycut-gx frozen + jump)" to procP4Xycut)
                     add("Set P4-rot-jump (v4 oriented + jump, S OCR)" to procP4RotJump)

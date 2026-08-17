@@ -7667,3 +7667,8 @@ x
 - n_ocr_g=0; energy_count still unofficial scaleVariant.
 - G4/G--/QF verts unchanged; maxFrac 0.4; no new list.
 - Flows doc + nobody/somebody note list 35/41 intended recoveries.
+
+## 2026-08-17 - Execute start: p4-m65-pad08-and-pad20-columns
+
+- Plan: p4-m65-pad08-and-pad20-columns-20260817-1318-plan.md
+- Add P4-m65p08 and P4-m65p20 columns after P4-m65
