@@ -6,20 +6,20 @@ This document describes the tree-based reporting architecture used in the Pump E
 
 Each column = fresh master. H/L/M/N/O/Q parked — `docs/obsolete/EXPERIMENT_PUMP_SETS.md`.
 
-Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs (with a **single** post-stop height pad from the v0.98-229 167×2 review), then rot / Prod-jump / **Prod-m65** / Prod-rot. **m65 / gx / xycut / P4-rot / Prod-rot / Prod-m65** use G-on-cap verts **0.00 / 0.05 / 0.15**. P4-jump still G4 (0/0.1/0.3); Prod-jump still G--. No 0–0.50 rot sweep. Default energy `maxFrac=0.4`; **Prod-m65 stays 2.5** so a short product-det seed can still grow (v4 vs product expand A/B).
+Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs (with a **single** post-stop height pad from the v0.98-229 167×2 review), then rot / Prod-jump / **Prod-m65** / Prod-rot. Expand columns keep the energy crop as official `final`. **Cap is a grow leash only** — it does **not** swap G verts (`0/0.05/0.15`, G4, or G--). G4 / G-- / QF calculated verts are unchanged. No 0–0.50 rot sweep. Default energy `maxFrac=0.4`; **Prod-m65 stays 2.5** so a short product-det seed can still grow (v4 vs product expand A/B).
 
 | Flow display name | Det | Expand | Notes |
 |-------------------|-----|--------|-------|
 | `Set G-- (4 pass, none, calculated)` | product | calculated verts; thr **u8≥1**; horiz **0.5** | Experiment product-det reference + heat dumps |
 | `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; **Quick Fill live path** |
-| `Set P4-jump (v4 + energy + jump, S OCR)` | **PP-OCRv4_mobile_det** | AABB energy **maxFrac=0.4**; if a red **hits the cap**, OCR G4 verts (0/0.1/0.3) on that red instead | Control. `final` = energy-or-G. Jump L/R only. **No extra vert pad** |
-| `Set P4-m65 (v4 + mean0.65 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen seed width; stop when strip **\|∇\| mean** &lt; **0.65** × seed; then **+0.08×seedH** each tip; L/R jump. If a red **hits the cap**, OCR G verts **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
-| `Set P4-gx (v4 + gx0.55 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; energy = **\|∂I/∂x\|**; stop at **0.55** × seed `gx`; **+0.08×seedH** each tip; L/R jump. Cap → G **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
-| `Set P4-xycut (v4 + xycut-gx frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; **XY-cut** on the `gx` row profile; **+0.15×seedH** each tip; L/R jump. Cap → G **0.00 / 0.05 / 0.15** | `final` = energy-or-G |
-| `Set P4-rot-jump (v4 oriented + jump, S OCR)` | **PP-OCRv4_mobile_det** | Oriented **m65** energy (ratio **0.65**, width frozen on the height walk, **+0.08×seedH** each tip) + L/R jump. If a red **hits the cap**, OCR G verts **0.00 / 0.05 / 0.15** on that red. **No per-seed vert sweep** | `final` = energy-or-G. `scaleVariants` has `energy` and `energy_or_g` |
-| `Set Prod-jump (product + energy + jump, S OCR)` | **product_det** | Same AABB hybrid; fallback **G--** verts (0.1/0.3/0.4/1.1); **maxFrac=0.4** | Product det A/B vs P4-jump |
-| `Set Prod-m65 (product + mean0.65 frozen + jump)` | **product_det** | Same frozen-width mean \|∇\| **0.65** + **0.08** pad + L/R jump as P4-m65, but **maxFrac=2.5** and product det. Cap → G **0.00 / 0.05 / 0.15** | Unleashed energy so short product reds can grow. Compare expand/OCR to P4-m65 (v4; now leashed 0.4) and to last-run P4-m65 at 2.5 |
-| `Set Prod-rot (product oriented + jump, S OCR)` | **product_det** | Same oriented m65 energy + G-on-cap **0.00 / 0.05 / 0.15**; no sweep | Product det A/B vs P4-rot |
+| `Set P4-jump (v4 + energy + jump, S OCR)` | **PP-OCRv4_mobile_det** | AABB energy **maxFrac=0.4**; cap stops the walk only | Control. `final` = energy. Jump L/R only. **No extra vert pad** |
+| `Set P4-m65 (v4 + mean0.65 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen seed width; stop when strip **\|∇\| mean** &lt; **0.65** × seed; then **+0.08×seedH** each tip; L/R jump. Cap = leash | `final` = energy |
+| `Set P4-gx (v4 + gx0.55 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; energy = **\|∂I/∂x\|**; stop at **0.55** × seed `gx`; **+0.08×seedH** each tip; L/R jump. Cap = leash | `final` = energy |
+| `Set P4-xycut (v4 + xycut-gx frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; **XY-cut** on the `gx` row profile; **+0.15×seedH** each tip; L/R jump. Cap = leash | `final` = energy |
+| `Set P4-rot-jump (v4 oriented + jump, S OCR)` | **PP-OCRv4_mobile_det** | Oriented **m65** energy (ratio **0.65**, width frozen on the height walk, **+0.08×seedH** each tip) + L/R jump. Cap = leash. **No per-seed vert sweep** | `final` = energy. `scaleVariants` has `energy` (and `energy_or_g` ≡ energy) |
+| `Set Prod-jump (product + energy + jump, S OCR)` | **product_det** | Same AABB energy; **maxFrac=0.4**; no G-- stitch | Product det A/B vs P4-jump |
+| `Set Prod-m65 (product + mean0.65 frozen + jump)` | **product_det** | Same frozen-width mean \|∇\| **0.65** + **0.08** pad + L/R jump as P4-m65, but **maxFrac=2.5** and product det. Cap = leash | Unleashed energy so short product reds can grow. Compare expand/OCR to P4-m65 (v4; now leashed 0.4) and to last-run P4-m65 at 2.5 |
+| `Set Prod-rot (product oriented + jump, S OCR)` | **product_det** | Same oriented m65 energy; cap = leash; no sweep | Product det A/B vs P4-rot |
 
 **Heat→rect cell halo:** native `packHeatmapBoxes` grows every det box (AABB and oriented) by `kPaddleDetHeatCellPx` (4) on the output heat array — one Paddle 4×4 feed cell. `heatW/feedW` cannot reveal that (product tensor is already 1:1). The old Kotlin `rectExpandPx` AABB pad is gone; G and jump/rot share the same native reds.
 
@@ -32,11 +32,11 @@ Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs 
 | Param | Default (P/P4) | Jump columns | Meaning |
 |-------|----------------|--------------|---------|
 | `mode` | `INTERIOR_ENERGY` | same | Sobel energy strip grow |
-| `maxFrac` | `1.0` | **0.4 AABB and rot** | Cap pad = fraction of **seed height** per side. Hit cap → G verts (jump: G4 0/0.1/0.3; m65/gx/xycut/rot: 0.00/0.05/0.15; Prod-jump: G--). |
+| `maxFrac` | `1.0` | **0.4 AABB and rot** | Cap pad = fraction of **seed height** per side. Hit cap **stops grow**; official `final` stays the energy crop (no G-list rescue). |
 | `enableJump` | `false` | **`true`** on jump columns | After grow: jump **L/R only** by `jumpFrac`×H. If still in text, grow **L/R only** (same cap). Else retract to energy edge, then L/R `retractClearFrac` (0.30×H). No vertical jump/clear/post-jump grow. |
 | `jumpFrac` | `0.40` | same | Horizontal jump distance / expanded height |
 | `ocrScales` | `[1.0]` | **`[1.0]`** on jump/rot (`pJumpOcrScales`) | After one expand, OCR each **height-only** S (`final` = first). Width is jump/clear only. Put 1.05 / 1.1–1.8 back on the list to re-sweep; S>1 lost more than it gained on v0.98-212. |
-| `energyRatio` | `0.45` | P4-jump `0.45`; **P4-m65 and P4-rot / Prod-rot `0.65`**; **P4-gx `0.55`** | Keep growing while strip energy ≥ this × seed interior |
+| `energyRatio` | `0.45` | P4-jump / P4-m65 / P4-xycut / P4-rot / Prod-* `0.65`; **P4-gx `0.55`** | Keep growing while strip energy ≥ this × seed interior |
 | `vertEnergy` | `MAGNITUDE` | P4-gx / P4-xycut use `GX` / `XYCUT_GX` | MAGNITUDE = \|∇\|; GX = \|∂I/∂x\|; XYCUT_GX = peak-isolate on gx profile |
 | `freezeHorzDuringVert` | `false` | **`true` on m65 / gx / xycut / P4-rot / Prod-rot** | First grow is top/bottom only (seed width frozen) |
 | `vertPadFrac` | `0` | **m65/gx/P4-rot/Prod-rot `0.08`**; **xycut `0.15`**; jump `0` | After vertical stop, pad each tip by this × seedH (one scale, not a G list). Chosen on v0.98-229 167×2 to put H/GT p50 near 1.0 without growing swallow. |
@@ -66,7 +66,7 @@ Format: magic `HMU8`, w/h LE u32, comp=1 (zlib), raw_len, payload. See `HeatmapU
 
 **Oriented expand:** P4-rot / Prod-rot grow + count walk run in JNI (`ContentExpandNative.cpp`) so Sobel samples stay in native memory. Geometry is unchanged (±v / `|∇I·û|`). Kotlin path remains as fallback if native returns null, and when energy traces are on.
 
-**Edge-count (same run):** After energy stop, additive run-count valley pullback, then a **one-direction** pad: pulled tip steps back toward energy by `0.10×seedH` (not past energy); energy-stop tip whose run-count is still ≥ `0.45×cSeed` grows that tip only by `0.08×seedH`. Cap-stops do not grow. Grow is skipped when the energy box is already `> 2.4×seedH` so the 48 px rec crop does not shrink the digits. A few pixels into the neighboring row is acceptable. Official `final` stays `energy` / `energy_or_g`. Extra `scaleVariants` entry `kind=energy_count` is scored unofficially only.
+**Edge-count (same run):** After energy stop, additive run-count valley pullback, then a **one-direction** pad: pulled tip steps back toward energy by `0.10×seedH` (not past energy); energy-stop tip whose run-count is still ≥ `0.45×cSeed` grows that tip only by `0.08×seedH`. Cap-stops do not grow. Grow is skipped when the energy box is already `> 2.4×seedH` so the 48 px rec crop does not shrink the digits. A few pixels into the neighboring row is acceptable. Official `final` is the energy crop (`energy_or_g` in JSON is the same box, not a G stitch). Extra `scaleVariants` entry `kind=energy_count` is scored unofficially only.
 
 * AABB (`countPullbackVertical`): Sobel-x on image rows at seed width; walk image y.
 * Oriented (`countPullbackOriented`): walk **±v** (normal to the long edges). Each step is a seed-width strip of **|∇I·û|** (derivative along the text axis). Do **not** AABB the quad first — that walk is a different geometry.
