@@ -6,7 +6,7 @@ This document describes the tree-based reporting architecture used in the Pump E
 
 Each column = fresh master. H/L/M/N/O/Q parked — `docs/obsolete/EXPERIMENT_PUMP_SETS.md`.
 
-Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs (with a **single** post-stop height pad from the v0.98-229 167×2 review), then rot / Prod-jump / **Prod-m65** / Prod-rot. Expand columns keep the energy crop as official `final`. **Cap is a grow leash only** — it does **not** swap G verts (`0/0.05/0.15`, G4, or G--). G4 / G-- / QF calculated verts are unchanged. No 0–0.50 rot sweep. Default energy `maxFrac=0.4`; **Prod-m65 stays 2.5** so a short product-det seed can still grow (v4 vs product expand A/B).
+Twelve columns: production G-- / G4, P4-jump control, frozen-width m65 plus **p08 / p20** pad A/B, gx / xycut, then rot / Prod-jump / **Prod-m65** / Prod-rot. Expand columns keep the energy crop as official `final`. **Cap is a grow leash only** — it does **not** swap G verts (`0/0.05/0.15`, G4, or G--). G4 / G-- / QF calculated verts are unchanged. No 0–0.50 rot sweep. Default energy `maxFrac=0.4`; **Prod-m65 stays 2.5** so a short product-det seed can still grow (v4 vs product expand A/B). **P4-m65p20** (pad 0.20) is for the 15 barely-short somebody fields (extra 0.00–0.12 on top of 0.08); not outlier 86v (needs 0.31) and not dual-row unglue (4v / 37 / 99 / 150 will look worse).
 
 | Flow display name | Det | Expand | Notes |
 |-------------------|-----|--------|-------|
@@ -14,6 +14,8 @@ Ten columns: production G-- / G4, P4-jump control, three frozen-width stop A/Bs 
 | `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; **Quick Fill live path** |
 | `Set P4-jump (v4 + energy + jump, S OCR)` | **PP-OCRv4_mobile_det** | AABB energy **maxFrac=0.4**; cap stops the walk only | Control. `final` = energy. Jump L/R only. **No extra vert pad** |
 | `Set P4-m65 (v4 + mean0.65 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen seed width; stop when strip **\|∇\| mean** &lt; **0.65** × seed; then **+0.08×seedH** each tip; L/R jump. Cap = leash | `final` = energy |
+| `Set P4-m65p08 (v4 m65 + pad 0.08)` | **PP-OCRv4_mobile_det** | Same as P4-m65 (frozen 0.65, pad **0.08**, maxFrac 0.4, jump, energy `final`) | Locked recipe, labeled A/B twin |
+| `Set P4-m65p20 (v4 m65 + pad 0.20)` | **PP-OCRv4_mobile_det** | Same grow, pad **0.20** | For the 15 little-shorts; dual-row leftovers will worsen |
 | `Set P4-gx (v4 + gx0.55 frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; energy = **\|∂I/∂x\|**; stop at **0.55** × seed `gx`; **+0.08×seedH** each tip; L/R jump. Cap = leash | `final` = energy |
 | `Set P4-xycut (v4 + xycut-gx frozen + jump)` | **PP-OCRv4_mobile_det** | Frozen width; **XY-cut** on the `gx` row profile; **+0.15×seedH** each tip; L/R jump. Cap = leash | `final` = energy |
 | `Set P4-rot-jump (v4 oriented + jump, S OCR)` | **PP-OCRv4_mobile_det** | Oriented **m65** energy (ratio **0.65**, width frozen on the height walk, **+0.08×seedH** each tip) + L/R jump. Cap = leash. **No per-seed vert sweep** | `final` = energy. `scaleVariants` has `energy` (and `energy_or_g` ≡ energy) |
