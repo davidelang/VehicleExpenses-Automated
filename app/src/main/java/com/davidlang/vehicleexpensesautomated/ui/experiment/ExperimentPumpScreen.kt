@@ -1690,7 +1690,7 @@ suspend fun runPumpExperiment(
                         vertSweep.joinToString(",")
 
                     val variants = JSONArray()
-                    // Energy-only (even cap hits) — comparison, not final.
+                    // Official final = energy crop. Cap is a grow leash, not a G-list rescue.
                     val energyRects = expandedQuads.map { it.toAabb() }
                     val tOcrE0 = System.currentTimeMillis()
                     val energyOcr = ocrPumpOrientedQuads(expandedQuads, gray, imgW, imgH)
@@ -1741,59 +1741,11 @@ suspend fun runPumpExperiment(
                         ),
                     )
 
-                    // Hybrid final: energy if it stopped short of cap, else G-style verts.
-                    // Do not re-OCR energy quads. Second recognize pass is only the G replacements.
-                    val anyCap = fallbackVerts.isNotEmpty() && hitCaps.any { it }
-                    val hybridQuads = ArrayList<ContentExpandUtils.OrientedQuad>()
-                    val hybridCands: List<RedBoxOcrCandidate>
-                    val hybridCv: CostVolClassifyResult
-                    if (!anyCap) {
-                        hybridQuads.addAll(expandedQuads)
-                        hybridCands = energyCands
-                        hybridCv = energyCv
-                        branch.metadata["t_ocr_g_ms"] = "0"
-                        branch.metadata["n_ocr_g"] = "0"
-                    } else {
-                        val extraQuads = ArrayList<ContentExpandUtils.OrientedQuad>()
-                        seedQuads.forEachIndexed { i, seed ->
-                            if (hitCaps[i]) {
-                                fallbackVerts.forEach { vv ->
-                                    extraQuads.add(
-                                        ContentExpandUtils.calculatedOriented(
-                                            seed, vv, SET_G_HORIZ_FACTOR,
-                                        ),
-                                    )
-                                }
-                            }
-                        }
-                        val extraRects = extraQuads.map { it.toAabb() }
-                        val tOcrG0 = System.currentTimeMillis()
-                        val extraOcr = ocrPumpOrientedQuads(extraQuads, gray, imgW, imgH)
-                        branch.metadata["t_ocr_g_ms"] =
-                            (System.currentTimeMillis() - tOcrG0).toString()
-                        branch.metadata["n_ocr_g"] = extraQuads.size.toString()
-                        val extraCands = buildRedBoxCandidates(
-                            extraRects, extraOcr.asis, extraOcr.digits,
-                            extraOcr.asisProbs, extraOcr.digitsProbs, extraOcr.recB64,
-                            recWList = extraOcr.recW, recHList = extraOcr.recH,
-                        )
-                        var extraI = 0
-                        val stitched = ArrayList<RedBoxOcrCandidate>()
-                        seedQuads.forEachIndexed { i, seed ->
-                            if (!hitCaps[i]) {
-                                hybridQuads.add(expandedQuads[i])
-                                if (i < energyCands.size) stitched.add(energyCands[i])
-                            } else {
-                                repeat(fallbackVerts.size) {
-                                    hybridQuads.add(extraQuads[extraI])
-                                    if (extraI < extraCands.size) stitched.add(extraCands[extraI])
-                                    extraI++
-                                }
-                            }
-                        }
-                        hybridCands = stitched
-                        hybridCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(hybridCands)
-                    }
+                    branch.metadata["t_ocr_g_ms"] = "0"
+                    branch.metadata["n_ocr_g"] = "0"
+                    val hybridQuads = ArrayList(expandedQuads)
+                    val hybridCands = energyCands
+                    val hybridCv = energyCv
                     val hybridRects = hybridQuads.map { it.toAabb() }
                     variants.put(
                         ocrScaleVariantJson(
@@ -1855,9 +1807,9 @@ suspend fun runPumpExperiment(
                             "useOriented" to true,
                             "orientedMerge" to "normal_sides",
                             "detModel" to (expDetAsset ?: "product_det"),
-                            "vertFactors" to fallbackVerts,
+                            "vertFactors" to emptyList<Float>(),
                             "vertSweep" to vertSweep,
-                            "finalKind" to if (fallbackVerts.isEmpty()) "energy" else "energy_or_g",
+                            "finalKind" to "energy",
                             "hitVertCap" to hitCaps,
                             "energyRatio" to energyRatio,
                             "freezeHorzDuringVert" to freezeHorzDuringVert,
@@ -2108,91 +2060,23 @@ suspend fun runPumpExperiment(
                                     kind = "energy_count", hitCaps = hitCaps,
                                 ),
                             )
-                            val useG = fallbackVerts.isNotEmpty()
-                            val hybridRects = ArrayList<android.graphics.Rect>()
-                            if (useG) {
-                                redPixelList.forEachIndexed { i, seed ->
-                                    if (!hitCaps[i]) {
-                                        hybridRects.add(expandedBase[i])
-                                    } else {
-                                        fallbackVerts.forEach { vv ->
-                                            hybridRects.add(
-                                                ContentExpandUtils.calculatedAabb(
-                                                    seed, vv, SET_G_HORIZ_FACTOR, gray.cols(), gray.rows(),
-                                                ),
-                                            )
-                                        }
-                                    }
-                                }
-                            } else {
-                                hybridRects.addAll(expandedBase)
-                            }
-                            val hybridPair = if (useG && hitCaps.any { it }) {
-                                val extraRects = ArrayList<android.graphics.Rect>()
-                                redPixelList.forEachIndexed { i, seed ->
-                                    if (hitCaps[i]) {
-                                        fallbackVerts.forEach { vv ->
-                                            extraRects.add(
-                                                ContentExpandUtils.calculatedAabb(
-                                                    seed, vv, SET_G_HORIZ_FACTOR,
-                                                    gray.cols(), gray.rows(),
-                                                ),
-                                            )
-                                        }
-                                    }
-                                }
-                                val tOcrG0 = System.currentTimeMillis()
-                                val extraOcr = ocrPumpRectsAsisAndDigits(extraRects)
-                                branch.metadata["t_ocr_g_ms"] =
-                                    (System.currentTimeMillis() - tOcrG0).toString()
-                                branch.metadata["n_ocr_g"] = extraRects.size.toString()
-                                val extraCands = buildRedBoxCandidates(
-                                    extraRects, extraOcr.asis, extraOcr.digits,
-                                    extraOcr.asisProbs, extraOcr.digitsProbs, extraOcr.recB64,
-                                    recWList = extraOcr.recW, recHList = extraOcr.recH,
-                                )
-                                var extraI = 0
-                                val stitched = ArrayList<RedBoxOcrCandidate>()
-                                redPixelList.forEachIndexed { i, _ ->
-                                    if (!hitCaps[i]) {
-                                        if (i < energyCands.size) stitched.add(energyCands[i])
-                                    } else {
-                                        repeat(fallbackVerts.size) {
-                                            if (extraI < extraCands.size) stitched.add(extraCands[extraI])
-                                            extraI++
-                                        }
-                                    }
-                                }
-                                val cv = PumpCostVolUtils.classifyCostVolFromBoxOcr(stitched)
-                                variants.put(
-                                    ocrScaleVariantJson(
-                                        1.0f, hybridRects, emptyList(), stitched, cv,
-                                        kind = "energy_or_g", hitCaps = hitCaps,
-                                    ),
-                                )
-                                stitched to cv
-                            } else if (useG) {
-                                branch.metadata["t_ocr_g_ms"] = "0"
-                                branch.metadata["n_ocr_g"] = "0"
-                                variants.put(
-                                    ocrScaleVariantJson(
-                                        1.0f, hybridRects, emptyList(), energyCands, energyCv,
-                                        kind = "energy_or_g", hitCaps = hitCaps,
-                                    ),
-                                )
-                                energyCands to energyCv
-                            } else {
-                                branch.metadata["t_ocr_g_ms"] = "0"
-                                branch.metadata["n_ocr_g"] = "0"
-                                energyCands to energyCv
-                            }
+                            val hybridRects = ArrayList(expandedBase)
+                            branch.metadata["t_ocr_g_ms"] = "0"
+                            branch.metadata["n_ocr_g"] = "0"
+                            variants.put(
+                                ocrScaleVariantJson(
+                                    1.0f, hybridRects, emptyList(), energyCands, energyCv,
+                                    kind = "energy_or_g", hitCaps = hitCaps,
+                                ),
+                            )
+                            val hybridPair = energyCands to energyCv
                             val tOcrEa = branch.metadata["t_ocr_energy_ms"]?.toLongOrNull() ?: 0L
                             val tOcrGa = branch.metadata["t_ocr_g_ms"]?.toLongOrNull() ?: 0L
                             branch.metadata["t_ocr_ms"] = (tOcrEa + tOcrGa).toString()
                             val primaryRects = hybridRects
                             val primaryCands = hybridPair.first
                             val primaryCv = hybridPair.second
-                            val finalKind = if (useG) "energy_or_g" else "energy"
+                            val finalKind = "energy"
                             val scalesToOcr = ocrScales.ifEmpty { listOf(1.0f) }
                             val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
                             branch.pathResults["Paddle"] = getFinal(
@@ -2218,7 +2102,7 @@ suspend fun runPumpExperiment(
                                     "doDeskew" to doDeskew,
                                     "useOriented" to false,
                                     "detModel" to (expDetAsset ?: "product_det"),
-                                    "vertFactors" to fallbackVerts,
+                                    "vertFactors" to emptyList<Float>(),
                                     "finalKind" to finalKind,
                                     "hitVertCap" to hitCaps,
                                     "energyRatio" to energyRatio,
@@ -2285,26 +2169,24 @@ suspend fun runPumpExperiment(
                 )
                 val procP4Jump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-jump: energy maxFrac=0.4; G4 verts if hit cap",
+                    "P4-jump: energy maxFrac=0.4; final = energy crop (cap is leash only)",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = true,
                     useOriented = false,
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
-                    fallbackVerts = SET_G4_VERT_FACTORS,
                     energyRatio = 0.65f,
                 )
                 val procP4M65 = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-m65: frozen-width mean |∇| 0.65 + 0.08·seedH pad + L/R jump; G 0/0.05/0.15 if hit cap",
+                    "P4-m65: frozen-width mean |∇| 0.65 + 0.08·seedH pad + L/R jump; final = energy crop",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = true,
                     useOriented = false,
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
-                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
@@ -2312,14 +2194,13 @@ suspend fun runPumpExperiment(
                 )
                 val procP4Gx = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-gx: frozen-width mean |∂I/∂x| 0.55 + 0.08·seedH pad + L/R jump; G 0/0.05/0.15 if hit cap",
+                    "P4-gx: frozen-width mean |∂I/∂x| 0.55 + 0.08·seedH pad + L/R jump; final = energy crop",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = true,
                     useOriented = false,
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
-                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
                     energyRatio = 0.55f,
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.GX,
@@ -2327,14 +2208,13 @@ suspend fun runPumpExperiment(
                 )
                 val procP4Xycut = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-xycut: frozen-width XY-cut on |∂I/∂x| + 0.15·seedH pad + L/R jump; G 0/0.05/0.15 if hit cap",
+                    "P4-xycut: frozen-width XY-cut on |∂I/∂x| + 0.15·seedH pad + L/R jump; final = energy crop",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = true,
                     useOriented = false,
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
-                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.XYCUT_GX,
@@ -2358,14 +2238,13 @@ suspend fun runPumpExperiment(
                 )
                 val procP4RotJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-rot: m65 energy (0.65 frozen + 0.08 pad) + G 0/0.05/0.15 on cap; no vert sweep",
+                    "P4-rot: m65 energy (0.65 frozen + 0.08 pad); final = energy crop; no vert sweep",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = false,
                     useOriented = true,
                     ocrScales = pJumpOcrScales,
                     maxFrac = rotExpandMaxFrac,
-                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
                     vertSweep = rotVertSweep,
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
@@ -2373,26 +2252,24 @@ suspend fun runPumpExperiment(
                 )
                 val procProdJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "Prod-jump: energy maxFrac=0.4; G-- verts if hit cap",
+                    "Prod-jump: energy maxFrac=0.4; final = energy crop (cap is leash only)",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = true,
                     useOriented = false,
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
-                    fallbackVerts = SET_G_MINUS_MINUS_VERT_FACTORS,
                     energyRatio = 0.65f,
                 )
                 val procProdM65 = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "Prod-m65: product det + frozen-width mean |∇| 0.65 + 0.08 pad + L/R jump; maxFrac=2.5 so a short seed can grow; G 0/0.05/0.15 if hit cap",
+                    "Prod-m65: product det + frozen-width mean |∇| 0.65 + 0.08 pad + L/R jump; maxFrac=2.5 so a short seed can grow; final = energy crop",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = true,
                     useOriented = false,
                     ocrScales = pJumpOcrScales,
                     maxFrac = 2.5f,
-                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
@@ -2400,14 +2277,13 @@ suspend fun runPumpExperiment(
                 )
                 val procProdRot = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "Prod-rot: m65 energy (0.65 frozen + 0.08 pad) + G 0/0.05/0.15 on cap; no vert sweep",
+                    "Prod-rot: m65 energy (0.65 frozen + 0.08 pad); final = energy crop; no vert sweep",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,
                     useOriented = true,
                     ocrScales = pJumpOcrScales,
                     maxFrac = rotExpandMaxFrac,
-                    fallbackVerts = SET_M65_CAP_VERT_FACTORS,
                     vertSweep = rotVertSweep,
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,

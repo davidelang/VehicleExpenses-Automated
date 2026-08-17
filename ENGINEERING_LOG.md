@@ -7655,3 +7655,8 @@ x
 - P4-jump / Prod-jump / P4-xycut energyRatio 0.65; gx 0.55; maxFrac 0.4.
 - Rot halo present (native minAreaRect + 2*cell); no second pad.
 - Derived GT AABBs + research/expand-fail-subset-20260816.md (emu+phone fail table).
+
+## 2026-08-17 - Execute start: keep-expand-crop-no-g-list
+
+- Plan: keep-expand-crop-no-g-list-20260817-0022-plan.md
+- Remove G-on-cap stitch on expand columns; final = energy crop
