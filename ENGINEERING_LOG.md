@@ -7660,3 +7660,10 @@ x
 
 - Plan: keep-expand-crop-no-g-list-20260817-0022-plan.md
 - Remove G-on-cap stitch on expand columns; final = energy crop
+
+## 2026-08-17 - CODE LANDED: keep-expand-crop-no-g-list
+
+- Expand final = energy crop; G-on-cap stitch deleted (oriented + AABB).
+- n_ocr_g=0; energy_count still unofficial scaleVariant.
+- G4/G--/QF verts unchanged; maxFrac 0.4; no new list.
+- Flows doc + nobody/somebody note list 35/41 intended recoveries.
