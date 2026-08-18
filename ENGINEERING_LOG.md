@@ -7727,3 +7727,12 @@ x
 - App rec still hops crop W (processOcr resize 1,1,h,w). No recreate / pad-to-320.
 - Remaining human: tablet pump photo 1 hop; First 10 emu vs pin golden after deploy.
 
+
+## 2026-08-18 - CODE LANDED: rec-x86-directconv-reinit-on-resize
+
+- Plan `dev-ai-interaction/plans/rec-x86-directconv-reinit-on-resize-20260818-2152-plan.md`
+- x86 DirectConv re-JITs on ih/iw/oh/ow hop; weight pack once
+- QEMU rec-hop 160→128 PASS on shipped x86 light SO `fbc87854`
+- App rec still slice-resize; no recreate; arm64/armv7 SOs unchanged
+- Human remaining: tablet photo 1 hop; First 10 emu vs pin golden
+
