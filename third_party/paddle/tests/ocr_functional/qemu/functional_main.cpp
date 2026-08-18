@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <fstream>
 #include <numeric>
 #include <sstream>
@@ -40,7 +41,7 @@ using namespace paddle::lite_api;
 
 namespace {
 
-enum class Stage { Pipeline, DetHeat, DetBoxes, Rec };
+enum class Stage { Pipeline, DetHeat, DetBoxes, Rec, RecHop };
 enum class ResizeMode { Letterbox, TopLeft };
 
 struct Args {
@@ -66,7 +67,7 @@ struct Args {
 void usage(const char* a0) {
   std::fprintf(stderr,
                "Usage: %s --abi ABI --det PATH --rec PATH --dict PATH --image PATH\n"
-               "  [--stage pipeline|det-heat|det-boxes|rec]\n"
+               "  [--stage pipeline|det-heat|det-boxes|rec|rec-hop]\n"
                "  [--resize letterbox|topleft] [--threads N] [--det-side N]\n"
                "  [--box-thresh F] [--min-area N]\n"
                "  [--expect-text S] [--expect-angle DEG] [--angle-tol DEG]\n"
@@ -105,6 +106,7 @@ bool parse_args(int argc, char** argv, Args* o) {
       else if (s == "det-heat") o->stage = Stage::DetHeat;
       else if (s == "det-boxes") o->stage = Stage::DetBoxes;
       else if (s == "rec") o->stage = Stage::Rec;
+      else if (s == "rec-hop") o->stage = Stage::RecHop;
       else {
         std::fprintf(stderr, "unknown stage %s\n", s.c_str());
         return false;
@@ -126,12 +128,21 @@ bool parse_args(int argc, char** argv, Args* o) {
       return false;
     }
   }
-  if (o->abi.empty() || o->image_path.empty()) {
+  if (o->abi.empty()) {
+    usage(argv[0]);
+    return false;
+  }
+  if (o->image_path.empty() && o->stage != Stage::RecHop) {
     usage(argv[0]);
     return false;
   }
   // Stage-specific required models
-  if (o->stage == Stage::Rec) {
+  if (o->stage == Stage::RecHop) {
+    if (o->rec_path.empty()) {
+      std::fprintf(stderr, "rec-hop stage needs --rec\n");
+      return false;
+    }
+  } else if (o->stage == Stage::Rec) {
     if (o->rec_path.empty() || o->dict_path.empty()) {
       std::fprintf(stderr, "rec stage needs --rec and --dict\n");
       return false;
@@ -835,6 +846,48 @@ int stage_det_boxes(const Args& args, const Image& img, PaddlePredictor* det) {
   return 0;
 }
 
+// Same rec predictor: 48×160 then 48×128 (x86 DirectConv JIT hop).
+// Pre-patch x86 light SO: first Run OK, second SIGSEGV. Patched: both complete.
+int stage_rec_hop(const Args& args, PaddlePredictor* rec) {
+  const int rh = 48;
+  const int widths[2] = {160, 128};
+  for (int wi = 0; wi < 2; ++wi) {
+    const int rw = widths[wi];
+    std::vector<uint8_t> tensor(static_cast<size_t>(rh) * rw, 128);
+    std::fprintf(stderr, "rec-hop: feed 1,1,%d,%d\n", rh, rw);
+    std::fflush(stderr);
+    if (!feed_u8(rec, tensor, 1, 1, rh, rw, args.abi)) {
+      std::printf("RESULT stage=rec-hop FAIL feed w=%d\n", rw);
+      return 1;
+    }
+    try {
+      rec->Run();
+    } catch (const std::exception& e) {
+      std::fprintf(stderr, "FAIL rec-hop Run w=%d: %s\n", rw, e.what());
+      std::printf("RESULT stage=rec-hop FAIL run w=%d\n", rw);
+      return 1;
+    } catch (...) {
+      std::fprintf(stderr, "FAIL rec-hop Run w=%d (unknown)\n", rw);
+      std::printf("RESULT stage=rec-hop FAIL run w=%d\n", rw);
+      return 1;
+    }
+    auto out = rec->GetOutput(0);
+    if (!out) {
+      std::fprintf(stderr, "FAIL rec-hop GetOutput w=%d\n", rw);
+      std::printf("RESULT stage=rec-hop FAIL output w=%d\n", rw);
+      return 1;
+    }
+    auto shape = out->shape();
+    std::printf("HOP w=%d ok out_rank=%zu", rw, shape.size());
+    for (auto d : shape) std::printf(" %lld", static_cast<long long>(d));
+    std::printf("\n");
+    std::fflush(stdout);
+  }
+  std::printf("RESULT stage=rec-hop PASS 160 then 128\n");
+  std::fprintf(stderr, "PASS rec-hop\n");
+  return 0;
+}
+
 int stage_rec(const Args& args, const Image& img, PaddlePredictor* rec,
               const std::vector<std::string>& dict) {
   auto r = run_rec(rec, img, dict, args.abi);
@@ -958,7 +1011,9 @@ int main(int argc, char** argv) {
                args.det_side, args.threads);
 
   Image img;
-  if (!load_pgm(args.image_path, &img)) return 1;
+  if (args.stage != Stage::RecHop) {
+    if (!load_pgm(args.image_path, &img)) return 1;
+  }
 
   std::vector<std::string> dict;
   if (args.stage == Stage::Rec || args.stage == Stage::Pipeline) {
@@ -970,11 +1025,12 @@ int main(int argc, char** argv) {
   }
 
   std::shared_ptr<PaddlePredictor> det, rec;
-  if (args.stage != Stage::Rec) {
+  if (args.stage != Stage::Rec && args.stage != Stage::RecHop) {
     det = make_pred(args.det_path, args.threads);
     if (!det) return 1;
   }
-  if (args.stage == Stage::Rec || args.stage == Stage::Pipeline) {
+  if (args.stage == Stage::Rec || args.stage == Stage::Pipeline ||
+      args.stage == Stage::RecHop) {
     rec = make_pred(args.rec_path, args.threads);
     if (!rec) return 1;
   }
@@ -986,6 +1042,8 @@ int main(int argc, char** argv) {
       return stage_det_boxes(args, img, det.get());
     case Stage::Rec:
       return stage_rec(args, img, rec.get(), dict);
+    case Stage::RecHop:
+      return stage_rec_hop(args, rec.get());
     case Stage::Pipeline:
     default:
       return stage_pipeline(args, img, det.get(), rec.get(), dict);

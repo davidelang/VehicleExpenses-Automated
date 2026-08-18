@@ -7704,3 +7704,10 @@ x
 - Weight pack stays in PrepareForRun; JIT via ReInitWhenNeeded only when ih/iw/oh/ow change
 - Audit: x86 generate_code sites remain this conv only (math conv_direct_fp32 + kernel overlay). DepthwiseConv left alone.
 
+
+## 2026-08-18 - Phase 2: rec-hop unit (160 then 128)
+
+- `functional_main.cpp` --stage rec-hop: same rec predictor, Resize 1,1,48,160 Run then 1,1,48,128 Run
+- `qemu/run-rec-hop.sh` uses product x86 rec_v3 (`app/src/x86_64/assets/paddle/prod_u8fp32_u8/`)
+- Pre-patch x86 SO may SIGSEGV (document); patched SO must complete both Runs
+
