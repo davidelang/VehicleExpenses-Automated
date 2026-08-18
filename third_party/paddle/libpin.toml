@@ -14,6 +14,7 @@ consumer_note = "Docker NDK r28c: patches/ + patches-int8. arm64 tailor+fp16; ar
 
 # --- pin-local stable names (multi-consumer / audit; independent of promote rows) ---
 # arm64+x86: restored to b8449343 pin ship (First-10-good: L1 cost 84.50). NDK r28c rebuild had regressed heatmaps.
+# x86_64 light only: DirectConv ReInitWhenNeeded re-JIT on rec W hop (2026-08-18). jni + other ABIs unchanged.
 # armv7: keep branch tailor products (fp32 calib path).
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
@@ -43,7 +44,7 @@ sha256 = "09b58ad0368274fc4d4429cfbf78432b9b42e30b917e2293c0a00a492870982e"
 [[artifact]]
 from = "src/bin/x86_64/libpaddle_light_api_shared.so"
 path = "artifact/jni/x86_64/libpaddle_light_api_shared.so"
-sha256 = "ebff745447ab9262100b126582274a5062cf6af97ed49df70b1bcf9034655388"
+sha256 = "fbc87854c13d9d939d2e2763d53cdcade6481b9f3f03f7e44821d76424b79c0a"
 
 [[artifact]]
 from = "src/bin/PaddlePredictor.jar"
@@ -79,7 +80,7 @@ sha256 = "09b58ad0368274fc4d4429cfbf78432b9b42e30b917e2293c0a00a492870982e"
 [[artifact]]
 from = "src/bin/x86_64/libpaddle_light_api_shared.so"
 path = "app/src/main/jniLibs/x86_64/libpaddle_light_api_shared.so"
-sha256 = "ebff745447ab9262100b126582274a5062cf6af97ed49df70b1bcf9034655388"
+sha256 = "fbc87854c13d9d939d2e2763d53cdcade6481b9f3f03f7e44821d76424b79c0a"
 
 [[artifact]]
 from = "src/bin/PaddlePredictor.jar"

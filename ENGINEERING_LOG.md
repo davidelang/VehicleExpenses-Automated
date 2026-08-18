@@ -7711,3 +7711,19 @@ x
 - `qemu/run-rec-hop.sh` uses product x86 rec_v3 (`app/src/x86_64/assets/paddle/prod_u8fp32_u8/`)
 - Pre-patch x86 SO may SIGSEGV (document); patched SO must complete both Runs
 
+
+## 2026-08-18 - Phase 3 start: historical x86_64 light SO rebuild
+
+- Pin src fetched `c6a9b9ada` (`--no-bwrap`; bwrap uid-map denied)
+- `PADDLE_ABIS=x86_64` `PADDLE_DOCKER_IMAGE=ve-paddle-ndk28c` `PADDLE_NDK_VERSION=r28c` historical (no fast-math)
+- Ship only `libpaddle_light_api_shared.so` x86_64; arm64/armv7 SOs must stay byte-identical
+
+
+## 2026-08-18 - Phase 3/4: ship x86_64 light SO; QEMU hop PASS
+
+- Historical x86 slim rebuild (ve-paddle-ndk28c, no fast-math). Host llvm-strip --strip-unneeded → ~10MB
+- Shipped only `app/src/main/jniLibs/x86_64/libpaddle_light_api_shared.so` + artifact twin. Hash `fbc87854…`. x86 jni + arm64/armv7 SOs byte-identical to pre-turn.
+- QEMU rec-hop on patched SO: 48×160 then 48×128 both Run (out 1×20×97 then 1×16×97). Pre-patch was SIGSEGV ACCERR on second Run.
+- App rec still hops crop W (processOcr resize 1,1,h,w). No recreate / pad-to-320.
+- Remaining human: tablet pump photo 1 hop; First 10 emu vs pin golden after deploy.
+
