@@ -7689,3 +7689,18 @@ x
 - One 4096x48 rec canvas; processOcr* resize+populate the needW slice.
 - Deleted experiment 320/1024 rec sets. Height-strip 32-align(48xW/H), clip at 4096.
 - Alignment recognizes the letterbox crop, not unused width. QF/jump unchanged.
+
+## 2026-08-18 - Execute start: rec-x86-directconv-reinit-on-resize
+
+- Plan: `dev-ai-interaction/plans/rec-x86-directconv-reinit-on-resize-20260818-2152-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: x86 DirectConv `ReInitWhenNeeded` re-JIT on rec W hop; hop unit; ship x86_64 SO only
+- Locks: no recreate, no pad-to-320/4096, no N predictors, no G-list, no arm64/armv7 SO replace, historical pin flags
+
+
+## 2026-08-18 - Phase 1: x86 DirectConv ReInitWhenNeeded overlay
+
+- Added `third_party/paddle/patches/code/lite/kernels/x86/conv_direct.h`
+- Weight pack stays in PrepareForRun; JIT via ReInitWhenNeeded only when ih/iw/oh/ow change
+- Audit: x86 generate_code sites remain this conv only (math conv_direct_fp32 + kernel overlay). DepthwiseConv left alone.
+
