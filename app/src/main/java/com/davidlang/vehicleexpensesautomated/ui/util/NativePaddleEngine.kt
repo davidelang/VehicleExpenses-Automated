@@ -307,6 +307,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedBytes: ByteArray get() = _sharedBytes!!
         val sharedMatrix = android.graphics.Matrix()
 
+        /** One rec canvas everywhere. Engine infers a createCrop slice, not the unused width. */
+        const val REC_CANVAS_W = 4096
+        const val REC_CANVAS_H = 48
+
         /** Default reference dash size when probe fails (matches shared buffer / typical 12MP refs). Not 4000. */
         const val DEFAULT_REF_DASH_W = 4080
         const val DEFAULT_REF_DASH_H = 3072
@@ -393,16 +397,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _deskewBufferSetLarge!!.s.clearChroma()
 
             _detBufferSet = BufferSet(512, 128)
-            _recBufferSet = BufferSet(320, 48)
+            _recBufferSet = BufferSet(REC_CANVAS_W, REC_CANVAS_H)
 
             _bufferLarge = FloatArray(1 * 2048 * 2048) // Native is now exclusively 1-channel (Mono)
             _sharedBmp2048 = Bitmap.createBitmap(2048, 2048, Bitmap.Config.ALPHA_8); _sharedCanvas2048 = Canvas(_sharedBmp2048!!)
 
             _bufferSmall = FloatArray(1 * 512 * 128)
-            _bufferRec = FloatArray(1 * 320 * 48)
-            // Exact numel for Tensor.setData(byte[]): JNI requires length == product(shape).
-            // (Pad was only needed for ShareExternal + unpatched int8_to_fp32 overread.)
-            _bufferRecInt8 = ByteArray(1 * 320 * 48)
+            _bufferRec = FloatArray(1 * REC_CANVAS_W * REC_CANVAS_H)
+            // Capacity for a full canvas; processOcr* feeds a w×h prefix after tensor resize.
+            _bufferRecInt8 = ByteArray(1 * REC_CANVAS_W * REC_CANVAS_H)
 
             _sharedNv21Buffer = ByteArray(4096 * 4096 * 3 / 2)
             _sharedBmpOdoScratch = Bitmap.createBitmap(512, 128, Bitmap.Config.ARGB_8888); _sharedCanvasOdoScratch = Canvas(_sharedBmpOdoScratch!!)
@@ -1113,6 +1116,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
     }
 
+    /** Populate a w×h rec tensor (not the unused 4096 canvas). JNI setData length must match shape. */
+    private fun recTensorBytes(srcMat: Mat, w: Int, h: Int): ByteArray {
+        val n = w * h
+        NativeImageUtils.populateMonoUInt8(srcMat, bufferRecInt8, w, h)
+        return if (n == bufferRecInt8.size) bufferRecInt8 else bufferRecInt8.copyOf(n)
+    }
+
     private suspend fun processOcr(input: Any, predictor: PaddlePredictor?, dictionary: List<String>): RecStageResult = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         if (predictor == null) return@withContext RecStageResult("(Engine Error)", 0, 0f, null)
@@ -1125,19 +1135,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         heartbeat("rec_v3_begin ${w}x$h path=$activeProductPathId")
 
-        if (w * h > 320 * 48) {
-            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated rec tensor capacity.")
+        if (w > REC_CANVAS_W || h > REC_CANVAS_H || w < 1 || h < 1) {
+            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed rec canvas ${REC_CANVAS_W}x${REC_CANVAS_H}.")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
 
         val tPop0 = System.nanoTime()
-        java.util.Arrays.fill(bufferRecInt8, 0.toByte())
-        NativeImageUtils.populateMonoUInt8(srcMat, bufferRecInt8, 320, 48)
+        val recFeed = recTensorBytes(srcMat, w, h)
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
-            requireSetData(predictor.getInput(0).setData(bufferRecInt8), "rec_v3 uint8")
+            val inputTensor = predictor.getInput(0)
+            inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
+            requireSetData(inputTensor.setData(recFeed), "rec_v3 uint8 ${w}x$h")
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()
@@ -1189,19 +1200,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
         heartbeat("rec_num_begin ${w}x$h path=$activeProductPathId")
 
-        if (w * h > 320 * 48) {
-            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed pre-allocated rec tensor capacity.")
+        if (w > REC_CANVAS_W || h > REC_CANVAS_H || w < 1 || h < 1) {
+            Log.e("PaddleDetect", "Bridge dimensions (${w}x${h}) exceed rec canvas ${REC_CANVAS_W}x${REC_CANVAS_H}.")
             return@withContext RecStageResult("(Size Error)", 0, 0f, null)
         }
 
         val tPop0 = System.nanoTime()
-        java.util.Arrays.fill(bufferRecInt8, 0.toByte())
-        NativeImageUtils.populateMonoUInt8(srcMat, bufferRecInt8, 320, 48)
+        val recFeed = recTensorBytes(srcMat, w, h)
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
         try {
             val tJniIn0 = System.nanoTime()
-            requireSetData(predictor.getInput(0).setData(bufferRecInt8), "rec_numeric uint8")
+            val inputTensor = predictor.getInput(0)
+            inputTensor.resize(longArrayOf(1, 1, h.toLong(), w.toLong()))
+            requireSetData(inputTensor.setData(recFeed), "rec_numeric uint8 ${w}x$h")
             val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
             val tInfer0 = System.nanoTime()

@@ -7678,3 +7678,8 @@ x
 - Added Set P4-m65p08 (pad 0.08) and Set P4-m65p20 (pad 0.20) after P4-m65.
 - 12 scheduled flows; clones are v4 frozen 0.65 / maxFrac 0.4 / jump / energy final.
 - Old P4-m65 / G4 unchanged. Human 167 compares p08 vs p20 on the 15 shorts.
+
+## 2026-08-18 - Execute start: rec-aspect-wider-buffer
+
+- Plan: rec-aspect-wider-buffer-20260818-1959-plan.md
+- One 4096x48 rec canvas; slice to needW; keep aspect
