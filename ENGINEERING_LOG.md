@@ -7642,3 +7642,10 @@ x
 - deploy blob b1745e75 (ABI + aapt2). No works tag.
 - Human next: from master/ ./publish-stacked-wrappers-to-orch --apply ; from orch ./update-rules.sh (no --force); then ./deploy
 - Then ./remove_worktree.sh fix_deploy
+
+## 2026-08-18 - Strip unused server det nbs from master history
+
+- Confirmed unused: MultiScaleDetRunner.DET_MODELS is product_det + PP-OCRv4_mobile_det only; loadExperimentDetTiers reads APK assets only. docs/obsolete/EXPERIMENT_DET_MODELS.md already recorded server dets as never scheduled (~1/10 speed).
+- git filter-repo --refs refs/heads/master --invert-paths removed PP-OCRv{4,5}_server_det_{armv8,x86_64}.nb. push/master still ancestor (ordinary push, no --force).
+- Pre-filter tip: backup-master-pre-server-nb-purge (8226489e). Do not push that tag or old builds/deployed at that SHA (still contain 108MB blobs).
+- Other local branches that still contain f3f05e8b (fix_deploy, detect-ocr-work-2, improve-station-detection, libpin-paddle-cleanup) were not rewritten.

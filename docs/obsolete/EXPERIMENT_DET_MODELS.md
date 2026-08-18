@@ -25,6 +25,12 @@
 
 ## Recovery
 
-- Assets may still ship under `assets/paddle/exp_det_ab/` for ad-hoc probes.
-- Multi-scale list: `MultiScaleDetRunner.DET_MODELS` (product + v4 mobile only as of this doc).
-- Pump Set P4 loads `PP-OCRv4_mobile_det` via `NativePaddleEngine.loadExperimentDetTiers` for that column only.
+- **Scheduled APK assets only:** `app/src/<abi>/assets/paddle/exp_det_ab/{product_det,PP-OCRv4_mobile_det}_*.nb`.
+- Multi-scale list: `MultiScaleDetRunner.DET_MODELS` (product + v4 mobile only).
+- Pump Set P4 loads `PP-OCRv4_mobile_det` via `NativePaddleEngine.loadExperimentDetTiers` from those assets.
+- **Server dets are not in git.** They were never APK assets. The ~109MB / ~84MB
+  `PP-OCRv{4,5}_server_det_*.nb` blobs were stripped from `master` history
+  (GitHub 100MB hook) and are gitignored under
+  `third_party/paddle/exp_det_ab_unscheduled/`. Rebuild locally with
+  `app/src/main/assets/paddle/scripts/convert_v5_pir_to_nb.sh` if needed; do
+  not commit. Pre-strip tip: tag `backup-master-pre-server-nb-purge`.
