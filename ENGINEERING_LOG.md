@@ -7683,3 +7683,9 @@ x
 
 - Plan: rec-aspect-wider-buffer-20260818-1959-plan.md
 - One 4096x48 rec canvas; slice to needW; keep aspect
+
+## 2026-08-18 - CODE LANDED: rec-aspect-wider-buffer
+
+- One 4096x48 rec canvas; processOcr* resize+populate the needW slice.
+- Deleted experiment 320/1024 rec sets. Height-strip 32-align(48xW/H), clip at 4096.
+- Alignment recognizes the letterbox crop, not unused width. QF/jump unchanged.
