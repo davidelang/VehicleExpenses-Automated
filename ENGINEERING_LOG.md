@@ -7656,3 +7656,9 @@ x
 - .gitattributes filter=lfs; gitignore no longer excludes them.
 - Need git-lfs on PATH (sudo apt install git-lfs) + git lfs pull.
 - Next: lfs migrate import on branches/tags that still have raw blobs.
+
+## 2026-08-18 - LFS migrate on branches still holding raw server nbs
+
+- git lfs migrate import on fix_deploy, libpin-paddle-cleanup, detect-ocr-work-2, improve-station-detection + related tags including backup-master-pre-server-nb-purge -> c9807192
+- Server nb git objects now 134-byte LFS pointers. works tag untouched (9b2b836e).
+- Reset agent-2/agent-3 worktrees to rewritten tips. agent-1 fix_deploy dirty; not reset.

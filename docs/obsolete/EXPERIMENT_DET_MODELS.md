@@ -29,4 +29,5 @@
 - Multi-scale list: `MultiScaleDetRunner.DET_MODELS` (product + v4 mobile only).
 - Pump Set P4 loads `PP-OCRv4_mobile_det` via `NativePaddleEngine.loadExperimentDetTiers` from those assets.
 - **Server dets (host-only, never APK):** `third_party/paddle/exp_det_ab_unscheduled/PP-OCRv{4,5}_server_det_*.nb` (~84–109 MiB). GitHub rejects them as regular blobs (100 MiB hook). They are stored with **Git LFS** (`.gitattributes`). Need `git-lfs` on PATH (`sudo apt install git-lfs` or equivalent) then `git lfs pull`. Paddle still needs the raw `.nb` after checkout (LFS smudge writes it). Rebuild without LFS: `app/src/main/assets/paddle/scripts/convert_v5_pir_to_nb.sh`.
-- Pre-LFS raw-blob tip (do **not** push this tag): `backup-master-pre-server-nb-purge`. After `git lfs migrate import`, that tag is moved to the pointer rewrite — see the tag peel in `git rev-parse backup-master-pre-server-nb-purge`.
+- LFS-rewritten tip of the old raw-blob backup: tag `backup-master-pre-server-nb-purge` peels to `c9807192` (`chore: eng-log PR-fix_deploy merge build gate SUCCESS`). Do not push the pre-migrate SHA `8226489e` (still has 108 MiB regular blobs).
+- Other `docs/obsolete/*` recovery tags (`obsolete-experiment-pump-multi-sets`, `obsolete-experiment-alignment-sets-a-e`, `c51809dc`, …) never contained these server nbs; their SHAs are unchanged.
