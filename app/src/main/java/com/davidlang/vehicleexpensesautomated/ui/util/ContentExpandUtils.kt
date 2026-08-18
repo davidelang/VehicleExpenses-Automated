@@ -810,7 +810,7 @@ object ContentExpandUtils {
         quad: OrientedQuad,
         dest: Mat,
         targetH: Int = 48,
-        maxW: Int = 320,
+        maxW: Int = NativePaddleEngine.REC_CANVAS_W,
     ): Boolean {
         if (gray.empty() || targetH < 8) return false
         val order = orderQuadForWarp(quad) ?: return false

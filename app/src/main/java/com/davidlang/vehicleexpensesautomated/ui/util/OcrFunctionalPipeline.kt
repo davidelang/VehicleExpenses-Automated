@@ -277,7 +277,7 @@ object OcrFunctionalPipeline {
                 master.p.mat,
                 crop.left, crop.top, crop.right, crop.bottom,
                 recBuffer,
-                targetH = 48, maxW = 320,
+                targetH = 48,
             )
             val ocr = engine.recognize(recBuffer.c[fed.recCropId])
             recBuffer.c[fed.recCropId].release()

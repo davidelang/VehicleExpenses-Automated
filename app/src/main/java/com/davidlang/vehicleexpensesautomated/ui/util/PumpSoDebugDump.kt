@@ -116,7 +116,7 @@ object PumpSoDebugDump {
         onLog("Ingest $name ${imgW}x$imgH")
 
         val workspace = BufferSet(imgW, imgH)
-        val recBuffer = BufferSet(320, 48)
+        val recBuffer = BufferSet(NativePaddleEngine.REC_CANVAS_W, NativePaddleEngine.REC_CANVAS_H)
         val meta = ImageIngestionProvider.ingestFromFile(context, photo.absolutePath, workspace.p)
         writeText(
             File(outDir, "01_ingest.json"),

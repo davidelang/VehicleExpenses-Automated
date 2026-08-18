@@ -376,15 +376,10 @@ private fun feedOdoRoiToRecBuffer(
     srcBottom: Int,
     recBuffer: BufferSet,
     @Suppress("UNUSED_PARAMETER") useSourceBorder: Boolean,
-): Pair<Float, Int> {
-    val fed = RecBufferFeed.feedSourceBorderLetterbox(
+): RecBufferFeed.Result {
+    return RecBufferFeed.feedSourceBorderLetterbox(
         srcMat, srcLeft, srcTop, srcRight, srcBottom, recBuffer,
     )
-    // Crop released by caller after OCR (alignment keeps buffer until recognizeNumeric).
-    // feedSourceBorderLetterbox leaves rec crop allocated; alignment code does not release
-    // via Result — it recognizes on full recBuffer.p. Release crop after stamp for parity.
-    recBuffer.c[fed.recCropId].release()
-    return fed.contentScale to fed.sourcePadPx
 }
 
 /**
@@ -498,7 +493,8 @@ suspend fun runAlignmentExperiment(
     val maxSizeBytes = 5 * 1024 * 1024 // 5MB parts
     var currentSize = 0
     val footer = "</table></body></html>"
-    val experimentRecSet320x48 = BufferSet(320, 48)
+    NativePaddleEngine.initializeGlobalBuffers(context)
+    val experimentRecSet320x48 = NativePaddleEngine.recBufferSet
     val experimentDetSet512x128 = BufferSet(512, 128)
 
     // Report columns: 2 det (product / v4) × 3 expand (char-aware / P / valley).
@@ -886,7 +882,6 @@ suspend fun runAlignmentExperiment(
     jsonFile.appendText("\n  ]\n}")
 
     logHeapState(context, "runExperiment:end")
-    experimentRecSet320x48.release()
     experimentDetSet512x128.release()
     vehicleBufferSets.values.forEach { it.release() }
     vehicleBufferSets.clear()
@@ -1626,24 +1621,25 @@ internal suspend fun runBinTrialsPaddle(
             val sR = tBox.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
             val sB = tBox.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
             if (sR > sL && sB > sT) {
-                val (rScMeta, padMeta) = feedOdoRoiToRecBuffer(
+                val fed = feedOdoRoiToRecBuffer(
                     odoBuffer.p.mat,
                     sL, sT, sR, sB,
                     experimentRecSet320x48,
                     useSourceBorder = usesSourceBorderRec(pipelineKey),
                 )
-                trialsMeta["trial_${vIdx}_rec_scale_$bIdx"] = "%.4f".format(rScMeta)
-                trialsMeta["trial_${vIdx}_rec_src_pad_px_$bIdx"] = padMeta.toString()
+                trialsMeta["trial_${vIdx}_rec_scale_$bIdx"] = "%.4f".format(fed.contentScale)
+                trialsMeta["trial_${vIdx}_rec_src_pad_px_$bIdx"] = fed.sourcePadPx.toString()
                 trialsMeta["trial_${vIdx}_rec_feed"] =
                     if (usesSourceBorderRec(pipelineKey)) "source_border" else "black_pad_4px"
-                // Exact rec buffer fed to recognizeNumeric (for debug of lead-digit / hallucination).
+                // Exact rec slice fed to recognizeNumeric (not the unused 4096 canvas).
                 val (recB64, _) = OcrUtils.takeSnapshot(
-                    experimentRecSet320x48.p, null,
-                    experimentRecSet320x48.p.width, experimentRecSet320x48.p.height,
+                    experimentRecSet320x48.c[fed.recCropId], null,
+                    fed.targetW, fed.targetH,
                     emptyList(), null, experimentRecSet320x48,
                 )
                 if (recB64.isNotEmpty()) trialsMeta["trial_${vIdx}_ocr_rec_thumb_$bIdx"] = recB64
-                val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
+                val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[fed.recCropId])
+                experimentRecSet320x48.c[fed.recCropId].release()
                 if (ocrR.debugText.isNotBlank()) {
                     tOdoB.append(ocrR.debugText).append(" ")
                     ocrR.metadata["ocr_probs"]?.let { tProbsB.append(it).append(" ") }
@@ -2427,28 +2423,29 @@ internal suspend fun runPaddleValleyIterative(
             val sT = box.top.coerceIn(0, odoBuffer.p.mat.rows() - 1)
             val sR = box.right.coerceIn(sL + 1, odoBuffer.p.mat.cols())
             val sB = box.bottom.coerceIn(sT + 1, odoBuffer.p.mat.rows())
-            val (rScMeta, padMeta) = feedOdoRoiToRecBuffer(
+            val fed = feedOdoRoiToRecBuffer(
                 odoBuffer.p.mat,
                 sL, sT, sR, sB,
                 experimentRecSet320x48,
                 useSourceBorder = usesSourceBorderRec(pipelineKey),
             )
-            jMeta.addProperty("rec_scale_$bIdx", "%.4f".format(rScMeta))
-            jMeta.addProperty("rec_src_pad_px_$bIdx", padMeta)
+            jMeta.addProperty("rec_scale_$bIdx", "%.4f".format(fed.contentScale))
+            jMeta.addProperty("rec_src_pad_px_$bIdx", fed.sourcePadPx)
             jMeta.addProperty(
                 "rec_feed",
                 if (usesSourceBorderRec(pipelineKey)) "source_border" else "black_pad_4px",
             )
 
-            // Exact rec buffer fed to recognizeNumeric.
+            // Exact rec slice fed to recognizeNumeric (not the unused 4096 canvas).
             val (recB64, _) = OcrUtils.takeSnapshot(
-                experimentRecSet320x48.p, null,
-                experimentRecSet320x48.p.width, experimentRecSet320x48.p.height,
+                experimentRecSet320x48.c[fed.recCropId], null,
+                fed.targetW, fed.targetH,
                 emptyList(), null, experimentRecSet320x48,
             )
             if (recB64.isNotEmpty()) jMeta.addProperty("ocr_rec_thumb_$bIdx", recB64)
 
-            val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.p)
+            val ocrR = paddleEngine.recognizeNumeric(experimentRecSet320x48.c[fed.recCropId])
+            experimentRecSet320x48.c[fed.recCropId].release()
             if (ocrR.debugText.isNotBlank()) { odoB.append(ocrR.debugText).append(" "); fBoxes.add(box) }
             ocrR.metadata.forEach { (k, v) -> jMeta.addProperty("${k}_${bIdx}", v) }
             }
@@ -2501,7 +2498,7 @@ internal suspend fun runPaddleValleyIterative(
             htmlOutput.append("$histImg$hT${trialsHtmlStr}<br>$currentOdoStr</div>")
         } else {
             val thumbImg = if (lastThumb.isNotEmpty()) "<img src='data:image/jpeg;base64,$lastThumb'>" else ""
-            // Exact 320×48 rec buffers sent to recognizeNumeric (Raw: ocr_rec_thumb_*; Bin: trial_*_ocr_rec_thumb_*).
+            // Rec slices sent to recognizeNumeric (Raw: ocr_rec_thumb_*; Bin: trial_*_ocr_rec_thumb_*).
             val recBufHtml = buildString {
                 val recKeys = stageMeta.keys.filter {
                     it.startsWith("ocr_rec_thumb_") || it.contains("ocr_rec_thumb_")

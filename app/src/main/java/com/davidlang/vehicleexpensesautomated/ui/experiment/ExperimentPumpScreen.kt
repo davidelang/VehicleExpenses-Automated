@@ -612,8 +612,7 @@ suspend fun runPumpExperiment(
     val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; JSON streamed to main file, frags deleted per row)
     var currentSize = 0
     val footer = "</table></body></html>"
-    val experimentRecSet320x48 = BufferSet(320, 48)
-    val experimentRecSet1024x48 = BufferSet(1024, 48)  // per plan for D/E (and mirrors) OCR: larger for garbage tolerance + 4px buffer
+    val experimentRecSet = NativePaddleEngine.recBufferSet
     val experimentDetSet512x128 = BufferSet(512, 128)
     val masterBuffer = BufferSet(1, 1)
 
@@ -1149,7 +1148,7 @@ suspend fun runPumpExperiment(
                 suspend fun ocrPumpRectsAsisAndDigits(rects: List<android.graphics.Rect>): PumpRectOcrLists {
                     // Delegate to shared util (source-border rec feed, same as Quick Fill / batch).
                     return PumpCostVolUtils.ocrPumpRectsAsisAndDigits(
-                        workspace, paddleEngine, experimentRecSet1024x48, rects, imgW, imgH,
+                        workspace, paddleEngine, experimentRecSet, rects, imgW, imgH,
                     )
                 }
 
@@ -1352,7 +1351,7 @@ suspend fun runPumpExperiment(
                     customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs, ocrG.recB64,
                     recWList = ocrG.recW, recHList = ocrG.recH,
                 )
-                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, gCands)
+                branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace, experimentRecSet, paddleEngine, context, imgW, imgH, gCands)
                 val redPixelG = pdHunksRawTotal.map { h ->
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
@@ -1485,25 +1484,25 @@ suspend fun runPumpExperiment(
                         val rSc = 48f / aabb.height().coerceAtLeast(1)
                         val pad = kotlin.math.ceil(4.0 / rSc.toDouble()).toInt().coerceAtLeast(1)
                         val qInfl = q.inflate(pad, imgW, imgH)
-                        experimentRecSet1024x48.p.clear()
+                        experimentRecSet.p.clear()
                         val dest = org.opencv.core.Mat()
                         val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                            gray, qInfl, dest, targetH = 48, maxW = 320,
+                            gray, qInfl, dest, targetH = 48,
                         )
                         if (!ok || dest.empty()) {
                             dest.release()
                             return OcrOne("?" to "", "?" to "", "", 0, 0)
                         }
-                        val fed = RecBufferFeed.feedPreparedStripNoBlackPad(dest, experimentRecSet1024x48)
+                        val fed = RecBufferFeed.feedPreparedStripNoBlackPad(dest, experimentRecSet)
                         dest.release()
                         val snap = PumpCostVolUtils.snapRecCrop(
-                            experimentRecSet1024x48, fed.recCropId, fed.targetW, fed.targetH,
+                            experimentRecSet, fed.recCropId, fed.targetW, fed.targetH,
                         )
-                        val asisRes = paddleEngine.recognize(experimentRecSet1024x48.c[fed.recCropId])
+                        val asisRes = paddleEngine.recognize(experimentRecSet.c[fed.recCropId])
                         val digitsRes = paddleEngine.recognizeNumericDecimal(
-                            experimentRecSet1024x48.c[fed.recCropId],
+                            experimentRecSet.c[fed.recCropId],
                         )
-                        experimentRecSet1024x48.c[fed.recCropId].release()
+                        experimentRecSet.c[fed.recCropId].release()
                         val asis = pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
                         val digs = pumpOcrCleanAndProbs(digitsRes.debugText, digitsRes.perCharProbs)
                         return OcrOne(asis, digs, snap, fed.targetW, fed.targetH)
@@ -1787,7 +1786,7 @@ suspend fun runPumpExperiment(
                     val pdHunksMerged = mergeGeometryIntoHunks(pdHunksRawTotal)
                     branch.pathResults["Paddle"] = getFinal(
                         pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace,
-                        experimentRecSet320x48, paddleEngine, context, imgW, imgH, primaryCands,
+                        experimentRecSet, paddleEngine, context, imgW, imgH, primaryCands,
                     )
                     branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                         reds = keptAabb,
@@ -2083,7 +2082,7 @@ suspend fun runPumpExperiment(
                             val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
                             branch.pathResults["Paddle"] = getFinal(
                                 pdHunksMerged, "Paddle", tilt, pdHunksRawTotal, workspace,
-                                experimentRecSet320x48, paddleEngine, context, imgW, imgH, primaryCands,
+                                experimentRecSet, paddleEngine, context, imgW, imgH, primaryCands,
                             )
                             branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                                 reds = redPixelList,
@@ -2471,7 +2470,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["t_hybrid_e_ms"] = (System.currentTimeMillis() - tEStart).toString()
                     val allCands = buildRedBoxCandidates(combinedBluePixel, combinedAsis, combinedDigits, combinedAsisProbs, combinedDigitsProbs)
                     val pdHunksMerged = mergeGeometryIntoHunks(pdHunksExpTotal)
-                    branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, lastReds, workspace, experimentRecSet320x48, paddleEngine, context, imgW, imgH, allCands)
+                    branch.pathResults["Paddle"] = getFinal(pdHunksMerged, "Paddle", tilt, lastReds, workspace, experimentRecSet, paddleEngine, context, imgW, imgH, allCands)
                     val redPixelI = lastReds.map { h ->
                         android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                     }
@@ -2618,8 +2617,6 @@ suspend fun runPumpExperiment(
     logHeapState(context, "after-json-close")
     Log.i("PUMP_JSON", "wrote JSON footer and closed main JSON file")
 
-    experimentRecSet320x48.release()
-    experimentRecSet1024x48.release()
     experimentDetSet512x128.release()
     masterBuffer.release()
     Log.i(TAG, "runPumpExperiment:end json=${jsonFile.absolutePath} total=$total")
@@ -3239,7 +3236,9 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
 
         val cropId = buffer.createCrop(l.toInt(), t.toInt(), (r - l).toInt(), (b - t).toInt())
 
-        val targetH = 48; val scale = 48f / pH; val targetW = Math.min(320, (pW * scale).toInt())
+        val targetH = 48
+        val rawW = (pW * (48f / pH)).toInt()
+        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(recBuffer.p.width).coerceAtLeast(32)
         if (targetW <= 0 || targetH <= 0) return@map hunk  // guard for bad aspect / tiny derived box after prune to 4 largest (prevents OpenCV resize assertion inv_scale_x > 0 and NPE in downstream OCR for C/E on first/some photos)
 
         recBuffer.p.clear()

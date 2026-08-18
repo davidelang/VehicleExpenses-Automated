@@ -20,7 +20,8 @@ import kotlin.math.min
 object RecBufferFeed {
     const val DEFAULT_BORDER_PX = 4
     const val DEFAULT_REC_H = 48
-    const val DEFAULT_MAX_W_320 = 320
+    /** One rec canvas width; clip only here (not a squeeze). */
+    const val DEFAULT_MAX_W = NativePaddleEngine.REC_CANVAS_W
 
     data class Result(
         val contentScale: Float,
@@ -89,7 +90,7 @@ object RecBufferFeed {
         srcBottom: Int,
         recBuffer: BufferSet,
         targetH: Int = DEFAULT_REC_H,
-        maxW: Int = DEFAULT_MAX_W_320,
+        maxW: Int = DEFAULT_MAX_W,
         borderPx: Int = DEFAULT_BORDER_PX,
     ): Result {
         val matW = srcMat.cols()
@@ -133,7 +134,7 @@ object RecBufferFeed {
         imgH: Int,
         recBuffer: BufferSet,
         targetH: Int = DEFAULT_REC_H,
-        maxW: Int = DEFAULT_MAX_W_320,
+        maxW: Int = DEFAULT_MAX_W,
         borderPx: Int = DEFAULT_BORDER_PX,
     ): Result {
         val l = rect.left.coerceIn(0, imgW - 1)
