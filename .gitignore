@@ -120,9 +120,7 @@ alignment_results_*.json
 !app/src/main/assets/experiment/
 !app/src/main/assets/experiment/**
 # Experiment multi-det A/B packs (under paddle/ already un-ignored via paddle/**)
-# Unscheduled *server* dets (~84–109MB) are host-only leftovers, never APK, never
-# scheduled. Do not re-commit. See docs/obsolete/EXPERIMENT_DET_MODELS.md
-third_party/paddle/exp_det_ab_unscheduled/PP-OCR*_server_det_*.nb
+# Unscheduled *server* dets are Git LFS (see .gitattributes), not gitignored.
 
 .gemini/
 gha-creds-*.json

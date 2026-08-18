@@ -39,3 +39,7 @@ filter-clean-config !filter
 ENGINEERING_LOG.md merge=ve-englog
 TODO.md merge=ve-special-ours
 project-facts.md merge=ve-special-ours
+
+# Host-only unscheduled server dets (~84–109MB). Never APK assets.
+# GitHub LFS (not regular blobs). See docs/obsolete/EXPERIMENT_DET_MODELS.md
+third_party/paddle/exp_det_ab_unscheduled/PP-OCR*_server_det_*.nb filter=lfs diff=lfs merge=lfs -text

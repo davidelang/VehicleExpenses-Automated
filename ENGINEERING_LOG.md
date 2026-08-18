@@ -7649,3 +7649,10 @@ x
 - git filter-repo --refs refs/heads/master --invert-paths removed PP-OCRv{4,5}_server_det_{armv8,x86_64}.nb. push/master still ancestor (ordinary push, no --force).
 - Pre-filter tip: backup-master-pre-server-nb-purge (8226489e). Do not push that tag or old builds/deployed at that SHA (still contain 108MB blobs).
 - Other local branches that still contain f3f05e8b (fix_deploy, detect-ocr-work-2, improve-station-detection, libpin-paddle-cleanup) were not rewritten.
+
+## 2026-08-18 - Git LFS for unscheduled server det nbs
+
+- Server nbs re-added as Git LFS (GitHub hosts objects; 100MiB regular-blob hook).
+- .gitattributes filter=lfs; gitignore no longer excludes them.
+- Need git-lfs on PATH (sudo apt install git-lfs) + git lfs pull.
+- Next: lfs migrate import on branches/tags that still have raw blobs.

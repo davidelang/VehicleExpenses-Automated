@@ -108,4 +108,9 @@ if [ -f "$GIT_ROOT/project.config" ]; then
   done
 fi
 
+# Git LFS: populate smudged files after checkout (no-op if git-lfs absent).
+if command -v git-lfs >/dev/null 2>&1; then
+  git lfs post-checkout "$PREV_HEAD" "$NEW_HEAD" "$CHECKOUT_TYPE" || true
+fi
+
 exit 0

@@ -54,6 +54,7 @@ Until you intentionally upgrade those, **ignore external clones**.
 | **CMake 3.22.1** | Requested in `app/build.gradle.kts` `externalNativeBuild.cmake.version` (SDK CMake package is fine) |
 | **Network** once | Gradle downloads Maven deps |
 | **Optional: `adb`** | Only for device install (`./deploy` — **humans only**) |
+| **Optional: Git LFS** | `sudo apt install git-lfs` then `git lfs install`. Needed to fetch unscheduled Paddle **server** dets (`git lfs pull`). Without it, those paths are pointer files. See `docs/obsolete/EXPERIMENT_DET_MODELS.md`. |
 
 ### 2.1 Point Gradle at the SDK
 
