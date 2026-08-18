@@ -639,3 +639,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan: dev-ai-interaction/plans/setup-agent-worktree-other-search-20260816-1516-plan.md
 - umask 007 + worktree add → 2770; planner cannot search; landlock looks like EACCES
 - chmod 2775 the new dir as owner; stop swallowing sudo fix-perms
+
+## 2026-08-18 - Local review skill; disable bundled GitHub review
+
+- Execute approved plan: dev-ai-interaction/plans/local-review-skill-disable-github-review-20260818-1453-plan.md
+- Project .grok/skills/review (sandbox reviews only; no gh)
+- [skills].disabled += review; AGENTS + update-rules FILES

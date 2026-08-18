@@ -289,6 +289,7 @@ FILES=(
     ".grok/skills/prepare-local-pr/SKILL.md"
     ".grok/skills/master-merge/SKILL.md"
     ".grok/skills/rebase-on-master/SKILL.md"
+    ".grok/skills/review/SKILL.md"
     "generate_pr.sh"
     # Stable canonical guardrails block (cite by path in plans; do not paste).
     # This is the single source of truth for the short "Compliance & Execution
