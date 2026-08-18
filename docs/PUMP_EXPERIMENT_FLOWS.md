@@ -29,6 +29,8 @@ Twelve columns: production G-- / G4, P4-jump control, frozen-width m65 plus **p0
 
 **HTML rec buffers:** each column’s PD cell shows the 48×W crop actually fed to recognize (`scaleVariants[].candidates[].recB64` + `recW`/`recH`, or G `candidates[].recB64`).
 
+**Rec canvas:** one **4096×48** buffer everywhere. Engine infers a `createCrop(0,0,needW,48)` slice (`needW = 32-align(48×srcW/srcH)`, clip only at 4096). Aspect kept; unused canvas width is never fed to CRNN.
+
 ### Set P expand tunables (`ContentExpandUtils`)
 
 | Param | Default (P/P4) | Jump columns | Meaning |
