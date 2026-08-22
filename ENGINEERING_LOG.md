@@ -7810,3 +7810,9 @@ x
 - `ContentExpandUtils.jumpRetractHorizontal`: L/R jump only; P4-jump still energy-grows then calls the extracted jump with existing thr/cap
 - `SET_G4_VJUMP_VERT_FACTORS` 0.0…2.5/0.1 (26); `createG4VjumpBlueHunksFromReds` vert pad then jump, never SET_G_HORIZ_FACTOR
 
+
+## 2026-08-21 - Phase 2: schedule G4-vjump column
+
+- Flow `Set G4-vjump (v4 + verts 0–2.5/0.1 + L/R jump)` immediately after G4 (13 columns)
+- Assembly records verts + jump knobs, horiz=jump, no orange. G4 still horiz 0.5. QF live unchanged.
+

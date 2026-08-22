@@ -619,6 +619,7 @@ suspend fun runPumpExperiment(
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
         "Set G4 (v4 det, calculated 0.0-2.5)",
+        "Set G4-vjump (v4 + verts 0–2.5/0.1 + L/R jump)",
         "Set P4-jump (v4 + energy + jump, S OCR)",
         "Set P4-m65 (v4 + mean0.65 frozen + jump)",
         "Set P4-m65p08 (v4 m65 + pad 0.08)",
@@ -1177,6 +1178,8 @@ suspend fun runPumpExperiment(
                     maskDilatePasses: Int = 0,
                     /** Null = product det. G4 uses PP-OCRv4_mobile_det. */
                     expDetAsset: String? = null,
+                    /** If true, width is P4-jump L/R jump-retract (no [horizFactor] / orange). */
+                    horizJump: Boolean = false,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val workspace = ws
                     val branch = br
@@ -1330,8 +1333,14 @@ suspend fun runPumpExperiment(
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
                 // Set G-family calculated: single blue/orange create from post-prune kept reds + dual OCR + one store
-                val (customBlueG, customOrangeG) = createBlueAndOrangeHunksFromReds(
-                    pdHunksRawTotal, imgW, imgH, gVertFactors, horizFactor)
+                val (customBlueG, customOrangeG) = if (horizJump) {
+                    createG4VjumpBlueHunksFromReds(
+                        pdHunksRawTotal, workspace.p.mat, imgW, imgH, gVertFactors,
+                    ) to emptyList()
+                } else {
+                    createBlueAndOrangeHunksFromReds(
+                        pdHunksRawTotal, imgW, imgH, gVertFactors, horizFactor)
+                }
                 val customBluePixelG = customBlueG.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
                 }
@@ -1364,7 +1373,22 @@ suspend fun runPumpExperiment(
                     volCand = cvG.volCand,
                     finalCost = cvG.cost,
                     finalVol = cvG.vol,
-                    assembly = mapOf(
+                    assembly = if (horizJump) mapOf(
+                        "method" to "calculated",
+                        "vertFactors" to gVertFactors,
+                        "heightMultiples" to gVertFactors.map { 1f + 2f * it },
+                        "horiz" to "jump",
+                        "jumpFrac" to 0.40f,
+                        "retractClearFrac" to 0.30f,
+                        "energyRatio" to 0.65f,
+                        "maxFrac" to 0.4f,
+                        "heatmapBoxMode" to if (boxMode == NativeImageUtils.HEATMAP_BOX_AABB) "aabb" else "minAreaRect",
+                        "hmThresh" to hmThresh,
+                        "hmThreshNote" to (if (hmThresh <= 0f) "u8>=1" else if (kotlin.math.abs(hmThresh - HEAT_THR_U8_GE2) < 1e-6f) "u8>=2" else "custom"),
+                        "maskDilatePasses" to maskDilatePasses,
+                        "heatmapCellPx" to NativeImageUtils.PADDLE_DET_HEAT_CELL_PX,
+                        "note" to assemblyNote
+                    ) else mapOf(
                         "method" to "calculated",
                         "vertFactors" to gVertFactors,
                         "heightMultiples" to gVertFactors.map { 1f + 2f * it },
@@ -1380,7 +1404,11 @@ suspend fun runPumpExperiment(
                     oranges = orangePixelG
                 )
                 doBOrDRedOnlyImage()
-                val aPdG = getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
+                val aPdG = if (horizJump) {
+                    getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4)
+                } else {
+                    getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
+                }
                 val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdG, null, workspace).first
                 branch.images["PD"] = baseB64G
                     } finally {
@@ -1409,6 +1437,15 @@ suspend fun runPumpExperiment(
                     horizFactor = SET_G_HORIZ_FACTOR,
                     hmThresh = HEAT_THR_U8_GE1,
                     expDetAsset = "PP-OCRv4_mobile_det",
+                )
+                val procG4Vjump = makeGProc(
+                    SET_G4_VJUMP_VERT_FACTORS,
+                    "G4-vjump: v4 det + verts 0.0…2.5 step 0.1 then L/R jump-retract (no 0.5×H); deskew; u8≥1",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    horizJump = true,
                 )
                 // Horiz-reach A/B: same discovery as G-- (verts, thr, box mode); only horizFactor changes.
                 val procHorizByFactor: Map<Float, suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit> =
@@ -2506,6 +2543,7 @@ suspend fun runPumpExperiment(
                 val flowProcessors = buildList {
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
                     add("Set G4 (v4 det, calculated 0.0-2.5)" to procG4)
+                    add("Set G4-vjump (v4 + verts 0–2.5/0.1 + L/R jump)" to procG4Vjump)
                     add("Set P4-jump (v4 + energy + jump, S OCR)" to procP4Jump)
                     add("Set P4-m65 (v4 + mean0.65 frozen + jump)" to procP4M65)
                     add("Set P4-m65p08 (v4 m65 + pad 0.08)" to procP4M65p08)
