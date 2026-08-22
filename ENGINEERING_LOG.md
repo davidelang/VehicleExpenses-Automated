@@ -7816,3 +7816,8 @@ x
 - Flow `Set G4-vjump (v4 + verts 0–2.5/0.1 + L/R jump)` immediately after G4 (13 columns)
 - Assembly records verts + jump knobs, horiz=jump, no orange. G4 still horiz 0.5. QF live unchanged.
 
+
+## 2026-08-21 - Phase 2 strike 1: Kotlin if-Pair destructure
+
+- Fixed: explicit List<PumpHunk> vars instead of if/to Pair unpack
+

@@ -1333,13 +1333,18 @@ suspend fun runPumpExperiment(
                 // for name resolution inside the C processor lambda body (the array entry for Set C calls it
                 // for the best path result using the valley versions).
                 // Set G-family calculated: single blue/orange create from post-prune kept reds + dual OCR + one store
-                val (customBlueG, customOrangeG) = if (horizJump) {
-                    createG4VjumpBlueHunksFromReds(
+                val customBlueG: List<PumpHunk>
+                val customOrangeG: List<PumpHunk>
+                if (horizJump) {
+                    customBlueG = createG4VjumpBlueHunksFromReds(
                         pdHunksRawTotal, workspace.p.mat, imgW, imgH, gVertFactors,
-                    ) to emptyList()
+                    )
+                    customOrangeG = emptyList()
                 } else {
-                    createBlueAndOrangeHunksFromReds(
+                    val pair = createBlueAndOrangeHunksFromReds(
                         pdHunksRawTotal, imgW, imgH, gVertFactors, horizFactor)
+                    customBlueG = pair.first
+                    customOrangeG = pair.second
                 }
                 val customBluePixelG = customBlueG.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
