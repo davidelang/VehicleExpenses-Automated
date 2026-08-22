@@ -7796,3 +7796,17 @@ x
 - Pump debug.json: raw_rects, ocr_rects (asis/digits/probs), chosen cost/vol; also on extract fail
 - Pump sidecars: deskewed.jpg + overlay.jpg. Odo 0021 veto+JPEGs kept. Trip debug=false. No G4 algorithm change.
 
+
+## 2026-08-21 - Execute start: pump-g4-vert-jump-sweep
+
+- Plan: `dev-ai-interaction/plans/pump-g4-vert-jump-sweep-20260822-0149-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: new scheduled pump column G4-vjump (verts 0–2.5/0.1 + L/R jump-retract, no horiz 0.5)
+- Locks: QF live G4 / existing G4 / G-- / P4-jump energy-grow-first unchanged; no G-list; no QF live change
+
+
+## 2026-08-21 - Phase 1: jumpRetractHorizontal + G4-vjump vert helper
+
+- `ContentExpandUtils.jumpRetractHorizontal`: L/R jump only; P4-jump still energy-grows then calls the extracted jump with existing thr/cap
+- `SET_G4_VJUMP_VERT_FACTORS` 0.0…2.5/0.1 (26); `createG4VjumpBlueHunksFromReds` vert pad then jump, never SET_G_HORIZ_FACTOR
+

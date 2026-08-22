@@ -936,6 +936,100 @@ object ContentExpandUtils {
     fun calculatedAabb(seed: Rect, v: Float, horiz: Float, imgW: Int, imgH: Int): Rect =
         ratioExpand(seed, v, horiz, imgW, imgH)
 
+    /**
+     * L/R jump-retract only (no height walk). Same Sobel interior-energy thr, jump,
+     * grow-if-in-text, retract, and retractClear pad as [growOnEnergy]'s jump block.
+     * [seed] is the box to jump from (e.g. a G-vert-padded AABB). Cap = [ExpandOptions.maxFrac]×seedH.
+     */
+    fun jumpRetractHorizontal(gray: Mat, seed: Rect, opts: ExpandOptions): Rect {
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val s = clip(seed, imgW, imgH)
+        val gx = Mat()
+        val gy = Mat()
+        val eng = Mat()
+        Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
+        Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
+        Core.magnitude(gx, gy, eng)
+        gx.release()
+        gy.release()
+        try {
+            fun meanE(sl: Rect): Double {
+                val c = clip(sl, imgW, imgH)
+                if (c.width() <= 0 || c.height() <= 0) return 0.0
+                val roi = eng.submat(c.top, c.bottom, c.left, c.right)
+                val m = Core.mean(roi).`val`[0]
+                roi.release()
+                return m
+            }
+            val il = s.left + 2
+            val it = s.top + 2
+            val ir = s.right - 2
+            val ib = s.bottom - 2
+            val base = if (ir > il && ib > it) meanE(Rect(il, it, ir, ib)) else meanE(s)
+            val thr = opts.energyRatio * max(base, 1e-3)
+            val cap = max(1, (opts.maxFrac * max(1, s.height())).roundToInt())
+            return jumpRetractHorizontalOnEnergy(
+                eng, s, imgW, imgH, thr, cap, opts.jumpFrac, opts.retractClearFrac,
+            )
+        } finally {
+            eng.release()
+        }
+    }
+
+    /** Jump L/R on an existing energy map (P4-jump reuses growOnEnergy's Sobel + thr + cap). */
+    private fun jumpRetractHorizontalOnEnergy(
+        eng: Mat,
+        box: Rect,
+        imgW: Int,
+        imgH: Int,
+        thr: Double,
+        capPx: Int,
+        jumpFrac: Float,
+        retractClearFrac: Float,
+    ): Rect {
+        var l = box.left
+        var t = box.top
+        var r = box.right
+        var b = box.bottom
+        fun meanE(sl: Rect): Double {
+            val c = clip(sl, imgW, imgH)
+            if (c.width() <= 0 || c.height() <= 0) return 0.0
+            val roi = eng.submat(c.top, c.bottom, c.left, c.right)
+            val m = Core.mean(roi).`val`[0]
+            roi.release()
+            return m
+        }
+        fun growHorizontalOnce() {
+            repeat(capPx) {
+                var grew = false
+                if (l > 0 && meanE(Rect(l - 1, t, l, b)) >= thr) { l--; grew = true }
+                if (r < imgW && meanE(Rect(r, t, r + 1, b)) >= thr) { r++; grew = true }
+                if (!grew) return
+            }
+        }
+        val floorL = l
+        val floorR = r
+        val hgt = max(1, b - t)
+        val jx = max(1, (jumpFrac * hgt).roundToInt())
+        l = (l - jx).coerceAtLeast(0)
+        r = (r + jx).coerceAtMost(imgW)
+        val inText =
+            (l < floorL && meanE(Rect(l, t, min(l + 1, r), b)) >= thr) ||
+                (r > floorR && meanE(Rect(max(r - 1, l), t, r, b)) >= thr)
+        if (inText) {
+            growHorizontalOnce()
+        } else {
+            while (l < floorL && meanE(Rect(l, t, min(l + 1, r), b)) < thr) l++
+            while (r > floorR && meanE(Rect(max(r - 1, l), t, r, b)) < thr) r--
+            val clear = max(1, (retractClearFrac * max(1, b - t)).roundToInt())
+            l = (l - clear).coerceAtLeast(0)
+            r = (r + clear).coerceAtMost(imgW)
+        }
+        return clip(Rect(l, t, r, b), imgW, imgH)
+    }
+
     fun expandDiagnose(
         gray: Mat,
         seed: Rect,
@@ -1767,14 +1861,6 @@ object ContentExpandUtils {
                 if (!grew) return
             }
         }
-        fun growHorizontalOnce() {
-            repeat(cap) {
-                var grew = false
-                if (l > 0 && meanE(Rect(l - 1, t, l, b)) >= thr) { l--; grew = true }
-                if (r < imgW && meanE(Rect(r, t, r + 1, b)) >= thr) { r++; grew = true }
-                if (!grew) return
-            }
-        }
         if (vertKind == VertEnergyKind.XYCUT_GX) {
             val cut = xycutOnProfile(eng, l, t, r, b, imgW, imgH, cap)
             t = cut[0]
@@ -1849,25 +1935,13 @@ object ContentExpandUtils {
             }
         }
         if (enableJump) {
-            val floorL = l; val floorR = r
-            val hgt = max(1, b - t)
-            val jx = max(1, (jumpFrac * hgt).roundToInt())
-            l = (l - jx).coerceAtLeast(0)
-            r = (r + jx).coerceAtMost(imgW)
-            val inText =
-                (l < floorL && meanE(Rect(l, t, min(l + 1, r), b)) >= thr) ||
-                    (r > floorR && meanE(Rect(max(r - 1, l), t, r, b)) >= thr)
-            if (inText) {
-                growHorizontalOnce()
-            } else {
-                // Retract L/R until boundary strip is on ink.
-                while (l < floorL && meanE(Rect(l, t, min(l + 1, r), b)) < thr) l++
-                while (r > floorR && meanE(Rect(max(r - 1, l), t, r, b)) < thr) r--
-                // Pad left/right only so the box is clear of ink edge (not on first ink pixel).
-                val clear = max(1, (retractClearFrac * max(1, b - t)).roundToInt())
-                l = (l - clear).coerceAtLeast(0)
-                r = (r + clear).coerceAtMost(imgW)
-            }
+            val jumped = jumpRetractHorizontalOnEnergy(
+                eng, Rect(l, t, r, b), imgW, imgH, thr, cap, jumpFrac, retractClearFrac,
+            )
+            l = jumped.left
+            t = jumped.top
+            r = jumped.right
+            b = jumped.bottom
         }
         val finalRect = clip(Rect(l, t, r, b), imgW, imgH)
         val trace = if (recordVertEnergy) {

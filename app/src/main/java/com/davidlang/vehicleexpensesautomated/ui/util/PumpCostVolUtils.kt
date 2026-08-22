@@ -6,6 +6,7 @@ import android.graphics.RectF
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
 import kotlin.math.max
 import kotlin.math.min
@@ -74,6 +75,11 @@ val SET_G_DENSE_VERT_FACTORS: List<Float> = listOf(
  * nothing on top. Half-glyph leftovers still need v>0.3 and are not targeted.
  */
 val SET_G4_VERT_FACTORS: List<Float> = listOf(0.0f, 0.1f, 0.3f)
+/**
+ * G4-vjump experiment column: calculated height pads 0.0 … 2.5 step 0.1 (26 values),
+ * then P4-jump L/R jump-retract. Not [SET_G_DENSE_VERT_FACTORS] (that grid is not uniform 0.1).
+ */
+val SET_G4_VJUMP_VERT_FACTORS: List<Float> = (0..25).map { it / 10f }
 /**
  * Energy G-on-cap verts (m65 / gx / xycut / P4-rot / Prod-rot). v0.98-230
  * sweep first-unique clustered at 0.00 / 0.05 / 0.15. Used only when energy
@@ -325,6 +331,47 @@ object PumpCostVolUtils {
             }
         }
         return blues to oranges
+    }
+
+    /**
+     * Per kept red AABB: each [vertFactors] v → vertical-only calculated pad (`horiz=0`),
+     * then INTERIOR_ENERGY L/R jump-retract. Never applies [SET_G_HORIZ_FACTOR].
+     */
+    fun createG4VjumpBlueHunksFromReds(
+        reds: List<PumpHunk>,
+        gray: Mat,
+        imgW: Int,
+        imgH: Int,
+        vertFactors: List<Float> = SET_G4_VJUMP_VERT_FACTORS,
+        jumpOpts: ContentExpandUtils.ExpandOptions = ContentExpandUtils.ExpandOptions(
+            maxFrac = 0.4f,
+            enableJump = true,
+            jumpFrac = 0.40f,
+            retractClearFrac = 0.30f,
+            energyRatio = 0.65f,
+        ),
+    ): List<PumpHunk> {
+        val blues = mutableListOf<PumpHunk>()
+        reds.forEach { h ->
+            val r = Rect(
+                h.rect.left.toInt(), h.rect.top.toInt(),
+                h.rect.right.toInt(), h.rect.bottom.toInt(),
+            )
+            vertFactors.forEach { v ->
+                val padded = ContentExpandUtils.calculatedAabb(r, v, horiz = 0f, imgW, imgH)
+                val jumped = ContentExpandUtils.jumpRetractHorizontal(gray, padded, jumpOpts)
+                blues.add(
+                    PumpHunk(
+                        "",
+                        RectF(
+                            jumped.left.toFloat(), jumped.top.toFloat(),
+                            jumped.right.toFloat(), jumped.bottom.toFloat(),
+                        ),
+                    ),
+                )
+            }
+        }
+        return blues
     }
 
     fun rectToJson(r: Rect): JSONObject =
