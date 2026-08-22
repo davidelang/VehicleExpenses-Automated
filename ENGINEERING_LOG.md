@@ -7846,3 +7846,8 @@ x
 
 - `onImageCaptured` nullable; null skips ImageAnalysis. Preview + ImageCapture always bound. Bind fail still logged.
 
+
+## 2026-08-21 - Phase 2: expense does not request analysis
+
+- Expense CameraPreview omits onImageCaptured (Preview + RECEIPT_MAX capture only). QF/trip still pass analysis.
+

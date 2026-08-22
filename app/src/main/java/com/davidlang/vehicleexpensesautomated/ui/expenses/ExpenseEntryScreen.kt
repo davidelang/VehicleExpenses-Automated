@@ -635,7 +635,6 @@ private fun ExpenseEntryScreenBody(
                 CameraPreview(
                     modifier = Modifier.fillMaxSize(),
                     imageCapture = imageCapture,
-                    onImageCaptured = { proxy -> proxy.close() },
                     onZoomControlChanged = { zoomControl = it }
                 )
                 zoomControl?.let { zoom ->
