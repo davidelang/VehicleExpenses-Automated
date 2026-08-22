@@ -7769,3 +7769,17 @@ x
 - `performTier1Veto` unchanged; no new Room tables
 - Human: debug QF odo ID-fail session should show per-vehicle veto dump + JPEGs
 
+
+## 2026-08-21 - Execute start: qf-debug-session-decisions
+
+- Plan: `dev-ai-interaction/plans/qf-debug-session-decisions-20260822-0121-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: pump QF debug.json extract decisions + deskew/overlay JPEGs; odo 0021 kept
+- Locks: no performTier1Veto I/O; no G4 pad/classify change; no experiment/trip/batch veto logging
+
+
+## 2026-08-21 - Phase 1: pump QF debug.json extract decisions
+
+- `runPumpCostVolPipeline(debug)` writes raw_rects, ocr_rects (asis/digits/probs), chosen cost/vol, existing pipeline fields; also on extract fail
+- G4 pad/classify unchanged; no performTier1Veto I/O
+

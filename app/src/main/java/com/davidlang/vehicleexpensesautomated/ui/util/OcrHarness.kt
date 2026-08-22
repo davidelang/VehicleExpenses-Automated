@@ -271,7 +271,67 @@ object OcrHarness {
         val result: CostVolClassifyResult,
         val detModel: String,
         val blueRects: List<Rect>,
+        val rawRects: List<Rect> = emptyList(),
+        val ocrCandidates: List<RedBoxOcrCandidate> = emptyList(),
     )
+
+    private fun rectDebugJson(r: Rect?): JsonObject {
+        val o = JsonObject()
+        if (r != null) {
+            o.addProperty("l", r.left)
+            o.addProperty("t", r.top)
+            o.addProperty("r", r.right)
+            o.addProperty("b", r.bottom)
+        }
+        return o
+    }
+
+    private fun candDebugJson(c: RedBoxOcrCandidate): JsonObject {
+        val o = rectDebugJson(c.rect)
+        o.addProperty("label", c.label)
+        o.addProperty("asis", c.asis)
+        o.addProperty("digits", c.digits)
+        o.addProperty("asis_probs", c.asisProbs)
+        o.addProperty("digits_probs", c.digitsProbs)
+        return o
+    }
+
+    private fun pumpExtractDebugJson(
+        extracted: QfPumpExtract,
+        t0: Long,
+        error: String?,
+    ): JsonObject {
+        val cv = extracted.result
+        return JsonObject().apply {
+            addProperty("pipeline", "G4")
+            addProperty("det_model", extracted.detModel)
+            addProperty("vert_factors", SET_G4_VERT_FACTORS.joinToString(","))
+            addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
+            addProperty("cost", cv.cost)
+            addProperty("volume", cv.vol)
+            val raw = JsonArray()
+            extracted.rawRects.forEach { raw.add(rectDebugJson(it)) }
+            add("raw_rects", raw)
+            val ocr = JsonArray()
+            if (extracted.ocrCandidates.isNotEmpty()) {
+                extracted.ocrCandidates.forEach { ocr.add(candDebugJson(it)) }
+            } else {
+                extracted.blueRects.forEach { ocr.add(rectDebugJson(it)) }
+            }
+            add("ocr_rects", ocr)
+            val chosen = JsonObject()
+            chosen.add("cost", JsonObject().apply {
+                addProperty("string", cv.cost)
+                add("candidate", candDebugJson(cv.costCand))
+            })
+            chosen.add("vol", JsonObject().apply {
+                addProperty("string", cv.vol)
+                add("candidate", candDebugJson(cv.volCand))
+            })
+            add("chosen", chosen)
+            if (error != null) addProperty("error", error)
+        }
+    }
 
     /** Working ARGB for QF pump progress. Publish copies only — never hand [work] to Compose. */
     private class QfPumpLiveOverlay(base: Bitmap) {
@@ -374,13 +434,16 @@ object OcrHarness {
         PumpCostVolUtils.pruneRectsToTopN(redPixelList, PumpOcrSettings.maxRedBoxes(context), imgH)
         pdHunksRawTotal.clear()
         pdHunksRawTotal.addAll(PumpCostVolUtils.rectsToHunks(redPixelList))
-        if (pdHunksRawTotal.isEmpty()) return empty.copy(detModel = detModel)
+        val rawRects = redPixelList.toList()
+        if (pdHunksRawTotal.isEmpty()) return empty.copy(detModel = detModel, rawRects = rawRects)
 
         val (customBlueGPre, _) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
             pdHunksRawTotal, imgW, imgH, SET_G4_VERT_FACTORS, SET_G_HORIZ_FACTOR
         )
         val customBluePixelG = PumpCostVolUtils.hunksToRects(customBlueGPre)
-        if (customBluePixelG.isEmpty()) return empty.copy(detModel = detModel)
+        if (customBluePixelG.isEmpty()) {
+            return empty.copy(detModel = detModel, rawRects = rawRects, blueRects = customBluePixelG)
+        }
         onCropsReady?.invoke(customBluePixelG)
 
         val ocrG = PumpCostVolUtils.ocrPumpRectsAsisAndDigits(
@@ -394,6 +457,8 @@ object OcrHarness {
             PumpCostVolUtils.classifyCostVolFromBoxOcr(context, gCands),
             detModel,
             customBluePixelG,
+            rawRects = rawRects,
+            ocrCandidates = gCands,
         )
     }
 
@@ -446,26 +511,26 @@ object OcrHarness {
 
             val cost = cv.cost.takeIf { it != "N/A" && it.isNotBlank() }
             val volume = cv.vol.takeIf { it != "N/A" && it.isNotBlank() }
-
-            if (cost == null && volume == null) {
-                return PumpCostVolResult(error = "Could not read pump display")
-            }
-
+            val errorMsg = if (cost == null && volume == null) "Could not read pump display" else null
+            val debugJson = if (debug) pumpExtractDebugJson(extracted, t0, errorMsg).toString() else null
+            return PumpCostVolResult(
+                cost = cost,
+                volume = volume,
+                error = errorMsg,
+                debugJson = debugJson,
+            )
+        } catch (e: Exception) {
+            Log.e("OcrHarness", "Pump cost/vol pipeline failed", e)
+            val err = "Pump OCR failed: ${e.message ?: "Unknown error"}"
             val debugJson = if (debug) {
                 JsonObject().apply {
-                    addProperty("cost", cv.cost)
-                    addProperty("volume", cv.vol)
                     addProperty("pipeline", "G4")
-                    addProperty("det_model", extracted.detModel)
-                    addProperty("vert_factors", SET_G4_VERT_FACTORS.joinToString(","))
+                    addProperty("error", err)
+                    addProperty("exception", e.message)
                     addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
                 }.toString()
             } else null
-
-            return PumpCostVolResult(cost = cost, volume = volume, debugJson = debugJson)
-        } catch (e: Exception) {
-            Log.e("OcrHarness", "Pump cost/vol pipeline failed", e)
-            return PumpCostVolResult(error = "Pump OCR failed: ${e.message ?: "Unknown error"}")
+            return PumpCostVolResult(error = err, debugJson = debugJson)
         }
     }
 
