@@ -7789,3 +7789,10 @@ x
 - Pump session writes deskewed.jpg + overlay.jpg via existing extraJpegBitmaps
 - pruneToMax still deletes whole dirs; odo 0021 sidecars unchanged
 
+
+## 2026-08-21 - CODE LANDED: qf-debug-session-decisions
+
+- Plan `dev-ai-interaction/plans/qf-debug-session-decisions-20260822-0121-plan.md`
+- Pump debug.json: raw_rects, ocr_rects (asis/digits/probs), chosen cost/vol; also on extract fail
+- Pump sidecars: deskewed.jpg + overlay.jpg. Odo 0021 veto+JPEGs kept. Trip debug=false. No G4 algorithm change.
+
