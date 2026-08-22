@@ -484,7 +484,7 @@ object OcrHarness {
             val targetH = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgW else imgH
             OdometerOcrUtils.rotate(masterBuffer, totalAngle, targetW, targetH)
             val deskewBmp = masterBuffer.p.toBitmap()
-            onStage?.invoke("", deskewBmp)
+            onStage?.invoke("Deskewed", deskewBmp)
             val overlay = QfPumpLiveOverlay(deskewBmp)
 
             val paddleEngine = NativePaddleEngine(context, "Numeric")

@@ -697,12 +697,18 @@ fun QuickFillupScreen(
                             } else {
                                 scope.launch(Dispatchers.Default) {
                                     try {
+                                        var deskewedBmp: Bitmap? = null
+                                        var overlayBmp: Bitmap? = null
                                         val result = OcrHarness.runPumpCostVolPipeline(
                                             context = context,
                                             masterBuffer = bufferSet,
                                             debug = debugMode,
                                             cameraRotationDegrees = rotation,
                                             onStage = { stage, bmp ->
+                                                when (stage) {
+                                                    "Deskewed" -> deskewedBmp = bmp
+                                                    "final" -> overlayBmp = bmp
+                                                }
                                                 if (stage == "final") {
                                                     withContext(Dispatchers.Main) {
                                                         displayBitmap = bmp
@@ -734,6 +740,10 @@ fun QuickFillupScreen(
                                             if (debugMode && result.debugJson != null) {
                                                 val vId = selectedVehicleId
                                                 val vName = vehicles.find { it.id == vId }?.name
+                                                val sidecars = buildMap<String, Bitmap> {
+                                                    deskewedBmp?.let { put("deskewed.jpg", it) }
+                                                    overlayBmp?.let { put("overlay.jpg", it) }
+                                                }
                                                 scope.launch(Dispatchers.IO) {
                                                     QuickFillDebugStore.saveSession(
                                                         context = context,
@@ -744,6 +754,7 @@ fun QuickFillupScreen(
                                                         cost = result.cost,
                                                         volume = result.volume,
                                                         error = result.error,
+                                                        extraJpegBitmaps = sidecars,
                                                     )
                                                 }
                                             }

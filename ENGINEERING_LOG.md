@@ -7783,3 +7783,9 @@ x
 - `runPumpCostVolPipeline(debug)` writes raw_rects, ocr_rects (asis/digits/probs), chosen cost/vol, existing pipeline fields; also on extract fail
 - G4 pad/classify unchanged; no performTier1Veto I/O
 
+
+## 2026-08-21 - Phase 2: pump QF debug JPEG sidecars
+
+- Pump session writes deskewed.jpg + overlay.jpg via existing extraJpegBitmaps
+- pruneToMax still deletes whole dirs; odo 0021 sidecars unchanged
+
