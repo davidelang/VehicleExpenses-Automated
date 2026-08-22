@@ -7821,3 +7821,8 @@ x
 
 - Fixed: explicit List<PumpHunk> vars instead of if/to Pair unpack
 
+
+## 2026-08-21 - Phase 2 strike 2: helper is on PumpCostVolUtils object
+
+- Qualify `PumpCostVolUtils.createG4VjumpBlueHunksFromReds` (not a file-level function)
+

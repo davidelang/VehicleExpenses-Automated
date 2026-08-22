@@ -1336,7 +1336,7 @@ suspend fun runPumpExperiment(
                 val customBlueG: List<PumpHunk>
                 val customOrangeG: List<PumpHunk>
                 if (horizJump) {
-                    customBlueG = createG4VjumpBlueHunksFromReds(
+                    customBlueG = PumpCostVolUtils.createG4VjumpBlueHunksFromReds(
                         pdHunksRawTotal, workspace.p.mat, imgW, imgH, gVertFactors,
                     )
                     customOrangeG = emptyList()
