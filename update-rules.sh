@@ -557,7 +557,12 @@ for WT in $WORKTREES; do
     ve_ensure_tracked_exec_other_x "$WT"
     if [ -x "$WT/fix-perms" ]; then
         echo "  Ensuring perms on $WT via fix-perms..."
-        "$WT/fix-perms" "$WT" 2>/dev/null || sudo "$WT/fix-perms" "$WT" 2>/dev/null || true
+        if ! "$WT/fix-perms" "$WT"; then
+            sudo "$WT/fix-perms" "$WT" || {
+                echo "ERROR: fix-perms failed for $WT" >&2
+                exit 1
+            }
+        fi
     fi
     # Merge drivers live in shared .git config (one install covers all worktrees)
     if [ -x "$WT/install-merge-drivers.sh" ]; then

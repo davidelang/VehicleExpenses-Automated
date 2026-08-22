@@ -46,16 +46,38 @@ export VE_SETUP_AGENT=1
 # shellcheck disable=SC2064
 trap 'unset VE_SETUP_AGENT' EXIT
 
-# Load primary config for ownership (orchestration root always has project.config)
-if [ -f project.config ]; then
-  . <(sed 's/=/ /; s/^/export /' project.config | grep -E '^(primary_user|code_group|shared_group|planning_user|coder_user|orchestrator_user)')
+# Load KEY=VALUE from project.config. Keep equals — do not split on '='.
+_setup_die() { echo "ERROR: $*" >&2; exit 1; }
+if [ ! -f project.config ]; then
+  _setup_die "missing project.config (required user/group keys; no dlang/ai-* defaults)"
 fi
-PRIMARY_USER=${primary_user:-dlang}
-CODE_GROUP=${code_group:-ai-code}
-SHARED_GROUP=${shared_group:-ai-shared}
-PLANNING_USER=${planning_user:-ai-planner}
-CODER_USER=${coder_user:-ai-coder}
-ORCHESTRATOR_USER=${orchestrator_user:-ai-orchestrator}
+while IFS= read -r line || [[ -n "$line" ]]; do
+  line="${line%%#*}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  line="${line%"${line##*[![:space:]]}"}"
+  [[ -z "$line" ]] && continue
+  [[ "$line" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]] || continue
+  # shellcheck disable=SC2163
+  export "$line"
+done <project.config
+_setup_req() {
+  local n="$1" v="$2"
+  if [ -z "$v" ] || [[ "$v" == @@* ]]; then
+    _setup_die "project.config missing or unsmudged $n"
+  fi
+}
+PRIMARY_USER=${primary_user:-}
+CODE_GROUP=${code_group:-}
+SHARED_GROUP=${shared_group:-}
+PLANNING_USER=${planning_user:-}
+CODER_USER=${coder_user:-}
+ORCHESTRATOR_USER=${orchestrator_user:-}
+_setup_req primary_user "$PRIMARY_USER"
+_setup_req planning_user "$PLANNING_USER"
+_setup_req coder_user "$CODER_USER"
+_setup_req orchestrator_user "$ORCHESTRATOR_USER"
+_setup_req code_group "$CODE_GROUP"
+_setup_req shared_group "$SHARED_GROUP"
 
 # Enforce correct creation umask for setgid inheritance
 umask 007

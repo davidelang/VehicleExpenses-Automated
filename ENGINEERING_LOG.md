@@ -645,3 +645,18 @@ Policy: permission denials → report human / script residual; no creative worka
 - Execute approved plan: dev-ai-interaction/plans/local-review-skill-disable-github-review-20260818-1453-plan.md
 - Project .grok/skills/review (sandbox reviews only; no gh)
 - [skills].disabled += review; AGENTS + update-rules FILES
+
+## 2026-08-22 - fix-perms config loader fail-loud: start
+
+- Plan: dev-ai-interaction/plans/fix-perms-config-loader-fail-loud-20260822-0202-plan.md
+- Bug: sed 's/=/ /' turns KEY=VALUE into export KEY VALUE (no assignment); ${sandbox_path:-dev-ai-interaction} hides it on VE
+- Scope: fix-perms + setup_agent.sh parse; update-rules.sh must not swallow fix-perms
+
+## 2026-08-22 - complete fix-perms config loader fail-loud
+
+- Plan: dev-ai-interaction/plans/fix-perms-config-loader-fail-loud-20260822-0202-plan.md
+- Repro: sed smash `sandbox_path=sandbox` → `export sandbox_path sandbox` (no assignment). New KEY=VALUE loop prints real sandbox_path/sandbox_dir on VE and torque configs
+- fix-perms: keep `=`; require user/group + sandbox_dir or sandbox_path; missing sandbox dir is error
+- setup_agent.sh: same loop; no :-dlang defaults
+- update-rules.sh: dest fix-perms failure is fatal (no 2>/dev/null || true)
+- Human: deploy-orchestration to orch-example/libs; sudo ./fix-perms --verbose on torque
