@@ -7736,3 +7736,17 @@ x
 - App rec still slice-resize; no recreate; arm64/armv7 SOs unchanged
 - Human remaining: tablet photo 1 hop; First 10 emu vs pin golden
 
+
+## 2026-08-21 - Execute start: qf-debug-tier1-veto
+
+- Plan: `dev-ai-interaction/plans/qf-debug-tier1-veto-20260822-0021-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: serialize Tier-1 veto into QF debug.json (fail and success); optional original/deskewed JPEG sidecars
+- Locks: performTier1Veto unchanged; no new Room tables; no G verts; pump/rec hop unchanged
+
+
+## 2026-08-21 - Phase 1: QF debug.json serializes Tier-1 veto
+
+- `OcrHarness.runAutoFillPipeline` writes `tier1_veto` on ID fail, winner, and forced-skip (before early return)
+- `performTier1Veto` not modified
+

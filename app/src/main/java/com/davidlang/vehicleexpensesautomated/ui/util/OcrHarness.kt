@@ -10,6 +10,7 @@ import android.graphics.RectF
 import android.util.Log
 import com.davidlang.vehicleexpensesautomated.data.model.Vehicle
 import com.google.gson.JsonArray
+import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -48,6 +49,51 @@ enum class OdoExpandKind {
  * Orchestrates OCR pipelines for automated data entry.
  */
 object OcrHarness {
+
+    /** Debug dump of the veto call that already ran. Does not re-run or re-decide. */
+    private fun tier1VetoDebugJson(
+        engine: String,
+        forcedVehicleId: Int?,
+        winnerId: Int?,
+        allVehicles: List<Vehicle>,
+        vetoResults: Map<Int, VetoResult>?,
+    ): JsonObject {
+        val obj = JsonObject()
+        obj.addProperty("engine", engine)
+        if (forcedVehicleId != null) obj.addProperty("forced_vehicle_id", forcedVehicleId)
+        else obj.add("forced_vehicle_id", JsonNull.INSTANCE)
+        if (winnerId != null) obj.addProperty("winner_id", winnerId)
+        else obj.add("winner_id", JsonNull.INSTANCE)
+        obj.addProperty("vehicle_count", allVehicles.size)
+        if (forcedVehicleId != null) {
+            obj.addProperty("note", "veto skipped")
+            obj.add("query_words", JsonArray())
+            obj.add("vehicles", JsonArray())
+            return obj
+        }
+        val results = vetoResults ?: emptyMap()
+        val queryWords = JsonArray()
+        (results.values.firstOrNull()?.queryWords ?: emptyList()).forEach { queryWords.add(it) }
+        obj.add("query_words", queryWords)
+        val vehiclesArr = JsonArray()
+        for (v in allVehicles) {
+            val vr = results[v.id]
+            val vo = JsonObject()
+            vo.addProperty("id", v.id)
+            vo.addProperty("name", v.name)
+            vo.addProperty("is_vetoed", vr?.isVetoed ?: false)
+            vo.addProperty("reason_word", vr?.reasonWord ?: "")
+            val man = JsonArray()
+            (vr?.myManifest ?: emptyList()).forEach { man.add(it) }
+            vo.add("my_manifest", man)
+            val pool = JsonArray()
+            (vr?.vetoPool ?: emptyList()).forEach { pool.add(it) }
+            vo.add("veto_pool", pool)
+            vehiclesArr.add(vo)
+        }
+        obj.add("vehicles", vehiclesArr)
+        return obj
+    }
 
     /**
      * Unified entry point for Quick Fill (and Start trip dash OCR).
@@ -123,13 +169,26 @@ object OcrHarness {
             }
 
             // 3. Identification (Tier 1 Veto) — or forced vehicle for batch pending assign
+            val engineName = "ML Kit"
+            var vetoResults: Map<Int, VetoResult>? = null
             val winningVehicle = if (forcedVehicleId != null) {
                 allVehicles.find { it.id == forcedVehicleId && !it.deleted }
             } else {
-                val vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, allVehicles, "ML Kit")
+                vetoResults = ImageAlignmentUtils.performTier1Veto(queryLandmarks, allVehicles, engineName)
                 val winnerId = vetoResults.entries.find { !it.value.isVetoed }?.key
                 allVehicles.find { it.id == winnerId }
             }
+
+            jsonDebug?.add(
+                "tier1_veto",
+                tier1VetoDebugJson(
+                    engine = engineName,
+                    forcedVehicleId = forcedVehicleId,
+                    winnerId = winningVehicle?.id,
+                    allVehicles = allVehicles,
+                    vetoResults = vetoResults,
+                ),
+            )
 
             if (winningVehicle == null) {
                 val errorMsg = if (forcedVehicleId != null) {
