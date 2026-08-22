@@ -7870,3 +7870,9 @@ x
 - Plan: `dev-ai-interaction/plans/g4-vjump-4pass-verts-20260822-0933-plan.md`
 - SET_G4_VJUMP_VERT_FACTORS = 0.0, 0.1, 0.2, 0.5 (4-pass greedy tablet 00-10-30 exact-pool)
 - Column title short: `Set G4-vjump`. Jump knobs / G4 0/0.1/0.3+0.5×H / QF unchanged.
+
+## 2026-08-22 - CODE LANDED: g4-vjump-4pass-verts
+
+- Plan `dev-ai-interaction/plans/g4-vjump-4pass-verts-20260822-0933-plan.md`
+- SET_G4_VJUMP_VERT_FACTORS = 0.0, 0.1, 0.2, 0.5. Column title `Set G4-vjump`. Jump/G4/QF unchanged.
+- Human: run scheduled pump; compare G4-vjump vs G4 on Good OCR pool.
