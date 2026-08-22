@@ -609,6 +609,8 @@ fun QuickFillupScreen(
                                         val lastByVehicle = vehicles.associate { v ->
                                             v.id to fuelViewModel.getLastOdometerForVehicle(v.id)
                                         }
+                                        var originalBmp: Bitmap? = null
+                                        var deskewedBmp: Bitmap? = null
                                         val result = OcrHarness.runAutoFillPipeline(
                                             context = context,
                                             masterBuffer = bufferSet,
@@ -616,6 +618,10 @@ fun QuickFillupScreen(
                                             debug = debugMode,
                                             cameraRotationDegrees = rotation,
                                             onStage = { stage, bmp ->
+                                                when (stage) {
+                                                    "Original" -> originalBmp = bmp
+                                                    "Deskewed" -> deskewedBmp = bmp
+                                                }
                                                 scope.launch(Dispatchers.Main) {
                                                     stageLabel = stage
                                                     displayBitmap = bmp
@@ -655,6 +661,10 @@ fun QuickFillupScreen(
                                             if (debugMode && result.debugJson != null) {
                                                 val vId = result.vehicleId ?: selectedVehicleId
                                                 val vName = vehicles.find { it.id == vId }?.name
+                                                val sidecars = buildMap<String, Bitmap> {
+                                                    originalBmp?.let { put("original.jpg", it) }
+                                                    deskewedBmp?.let { put("deskewed.jpg", it) }
+                                                }
                                                 scope.launch(Dispatchers.IO) {
                                                     QuickFillDebugStore.saveSession(
                                                         context = context,
@@ -664,6 +674,7 @@ fun QuickFillupScreen(
                                                         vehicleName = vName,
                                                         odometer = result.odometer,
                                                         error = result.error,
+                                                        extraJpegBitmaps = sidecars,
                                                     )
                                                 }
                                             }

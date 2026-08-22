@@ -7755,3 +7755,9 @@ x
 
 - Uncommitted TODO.md line (QF vehicle-ID popup) was not this plan; restored so `./build_app` can compile Phase 1
 
+
+## 2026-08-21 - Phase 2: QF debug odo JPEG sidecars
+
+- `saveSession` optional `extraJpegBitmaps` writes files in the session dir; prune still deletes whole dirs
+- Odo debug captures Original/Deskewed stages as original.jpg / deskewed.jpg. Pump save API unchanged (empty extras).
+

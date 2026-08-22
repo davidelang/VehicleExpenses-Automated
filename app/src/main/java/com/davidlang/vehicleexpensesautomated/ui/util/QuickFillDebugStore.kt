@@ -2,6 +2,7 @@ package com.davidlang.vehicleexpensesautomated.ui.util
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.core.content.FileProvider
 import org.json.JSONObject
@@ -90,6 +91,7 @@ object QuickFillDebugStore {
         cost: String? = null,
         volume: String? = null,
         error: String? = null,
+        extraJpegBitmaps: Map<String, Bitmap> = emptyMap(),
     ): File {
         ensureDirs(context)
         val timestampMs = System.currentTimeMillis()
@@ -109,6 +111,11 @@ object QuickFillDebugStore {
         }
         File(sessionDir, "meta.json").writeText(meta.toString(2))
         File(sessionDir, "debug.json").writeText(debugJson)
+        extraJpegBitmaps.forEach { (name, bmp) ->
+            File(sessionDir, name).outputStream().use { out ->
+                bmp.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            }
+        }
 
         pruneToMax(context)
         return sessionDir
