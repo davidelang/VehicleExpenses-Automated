@@ -7750,3 +7750,8 @@ x
 - `OcrHarness.runAutoFillPipeline` writes `tier1_veto` on ID fail, winner, and forced-skip (before early return)
 - `performTier1Veto` not modified
 
+
+## 2026-08-21 - Phase 1 build: restored unrelated TODO.md dirt
+
+- Uncommitted TODO.md line (QF vehicle-ID popup) was not this plan; restored so `./build_app` can compile Phase 1
+
