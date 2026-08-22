@@ -7851,3 +7851,10 @@ x
 
 - Expense CameraPreview omits onImageCaptured (Preview + RECEIPT_MAX capture only). QF/trip still pass analysis.
 
+
+## 2026-08-21 - CODE LANDED: expense-camera-preview-bind
+
+- Plan `dev-ai-interaction/plans/expense-camera-preview-bind-20260822-0154-plan.md`
+- Expense binds Preview+ImageCapture only (no unused analysis). QF/trip still three streams. RECEIPT_MAX stills kept.
+- Human: Add expense live viewfinder on phone after deploy.
+
