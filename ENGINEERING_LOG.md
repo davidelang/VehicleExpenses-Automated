@@ -7833,3 +7833,16 @@ x
 - New scheduled column G4-vjump: verts 0–2.5/0.1 (26) then L/R jump-retract; assembly horiz=jump
 - G4 / QF still 0.5×H; P4-jump still energy-grows then jump. No G-list.
 
+
+## 2026-08-21 - Execute start: expense-camera-preview-bind
+
+- Plan: `dev-ai-interaction/plans/expense-camera-preview-bind-20260822-0154-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: expense CameraPreview binds Preview+ImageCapture only (no unused ImageAnalysis); QF/trip keep three streams
+- Locks: keep live viewfinder; keep RECEIPT_MAX stills; do not change QF OCR_MEDIUM analysis
+
+
+## 2026-08-21 - Phase 1: CameraPreview optional ImageAnalysis
+
+- `onImageCaptured` nullable; null skips ImageAnalysis. Preview + ImageCapture always bound. Bind fail still logged.
+

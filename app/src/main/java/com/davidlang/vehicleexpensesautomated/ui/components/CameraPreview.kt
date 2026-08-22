@@ -47,7 +47,8 @@ fun CameraPreview(
     modifier: Modifier = Modifier,
     imageCapture: ImageCapture,
     captureProfile: CameraCaptureProfile = CameraCaptureProfile.OCR_MEDIUM,
-    onImageCaptured: (ImageProxy) -> Unit = {},
+    /** YUV analysis consumer (Quick Fill / trip OCR). Null = Preview + ImageCapture only. */
+    onImageCaptured: ((ImageProxy) -> Unit)? = null,
     onZoomControlChanged: (CameraZoomControl?) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -148,31 +149,44 @@ fun CameraPreview(
 
                 val resSelector = CameraResolutionPicker.resolutionSelector(captureProfile)
 
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setResolutionSelector(resSelector)
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                    .build()
-
-                imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                    onImageCaptured(imageProxy)
-                }
-
-                imageAnalysisState = imageAnalysis
-
                 val cameraSelector = CameraSelector.Builder()
                     .requireLensFacing(CameraSelector.LENS_FACING_BACK)
                     .build()
 
+                val analysis = if (onImageCaptured != null) {
+                    ImageAnalysis.Builder()
+                        .setResolutionSelector(resSelector)
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                        .build()
+                        .also { ia ->
+                            ia.setAnalyzer(cameraExecutor) { imageProxy ->
+                                onImageCaptured(imageProxy)
+                            }
+                        }
+                } else {
+                    null
+                }
+                imageAnalysisState = analysis
+
                 try {
                     cameraProvider.unbindAll()
-                    val camera = cameraProvider.bindToLifecycle(
-                        lifecycleOwner,
-                        cameraSelector,
-                        preview,
-                        imageAnalysis,
-                        imageCapture
-                    )
+                    val camera = if (analysis != null) {
+                        cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            cameraSelector,
+                            preview,
+                            analysis,
+                            imageCapture,
+                        )
+                    } else {
+                        cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            cameraSelector,
+                            preview,
+                            imageCapture,
+                        )
+                    }
                     boundCamera = camera
                 } catch (e: Exception) {
                     Log.e("CameraPreview", "Use case binding failed", e)
