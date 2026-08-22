@@ -7858,3 +7858,15 @@ x
 - Expense binds Preview+ImageCapture only (no unused analysis). QF/trip still three streams. RECEIPT_MAX stills kept.
 - Human: Add expense live viewfinder on phone after deploy.
 
+
+## 2026-08-22 - Execute start: g4-vjump-4pass-verts
+
+- Plan: `dev-ai-interaction/plans/g4-vjump-4pass-verts-20260822-0933-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: SET_G4_VJUMP_VERT_FACTORS = 0.0, 0.1, 0.2, 0.5 (4-pass greedy tablet 00-10-30 exact-pool); short column title `Set G4-vjump`; jump/G4/QF unchanged
+
+## 2026-08-22 - Phase 1: G4-vjump 4-pass verts
+
+- Plan: `dev-ai-interaction/plans/g4-vjump-4pass-verts-20260822-0933-plan.md`
+- SET_G4_VJUMP_VERT_FACTORS = 0.0, 0.1, 0.2, 0.5 (4-pass greedy tablet 00-10-30 exact-pool)
+- Column title short: `Set G4-vjump`. Jump knobs / G4 0/0.1/0.3+0.5×H / QF unchanged.

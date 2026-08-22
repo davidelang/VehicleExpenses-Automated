@@ -76,10 +76,10 @@ val SET_G_DENSE_VERT_FACTORS: List<Float> = listOf(
  */
 val SET_G4_VERT_FACTORS: List<Float> = listOf(0.0f, 0.1f, 0.3f)
 /**
- * G4-vjump experiment column: calculated height pads 0.0 … 2.5 step 0.1 (26 values),
- * then P4-jump L/R jump-retract. Not [SET_G_DENSE_VERT_FACTORS] (that grid is not uniform 0.1).
+ * G4-vjump experiment column: 4-pass greedy from tablet 00-10-30 exact-pool
+ * (covers 267 of 271 vs 26-v 0…2.5/0.1). Then P4-jump L/R jump-retract.
  */
-val SET_G4_VJUMP_VERT_FACTORS: List<Float> = (0..25).map { it / 10f }
+val SET_G4_VJUMP_VERT_FACTORS: List<Float> = listOf(0.0f, 0.1f, 0.2f, 0.5f)
 /**
  * Energy G-on-cap verts (m65 / gx / xycut / P4-rot / Prod-rot). v0.98-230
  * sweep first-unique clustered at 0.00 / 0.05 / 0.15. Used only when energy

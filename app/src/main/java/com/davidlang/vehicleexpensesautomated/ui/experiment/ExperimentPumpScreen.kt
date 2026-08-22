@@ -619,7 +619,7 @@ suspend fun runPumpExperiment(
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
         "Set G4 (v4 det, calculated 0.0-2.5)",
-        "Set G4-vjump (v4 + verts 0–2.5/0.1 + L/R jump)",
+        "Set G4-vjump",
         "Set P4-jump (v4 + energy + jump, S OCR)",
         "Set P4-m65 (v4 + mean0.65 frozen + jump)",
         "Set P4-m65p08 (v4 m65 + pad 0.08)",
@@ -1445,7 +1445,7 @@ suspend fun runPumpExperiment(
                 )
                 val procG4Vjump = makeGProc(
                     SET_G4_VJUMP_VERT_FACTORS,
-                    "G4-vjump: v4 det + verts 0.0…2.5 step 0.1 then L/R jump-retract (no 0.5×H); deskew; u8≥1",
+                    "G4-vjump: v4 det + 4 verts 0.0/0.1/0.2/0.5 then L/R jump-retract (no 0.5×H); deskew; u8≥1",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -2548,7 +2548,7 @@ suspend fun runPumpExperiment(
                 val flowProcessors = buildList {
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
                     add("Set G4 (v4 det, calculated 0.0-2.5)" to procG4)
-                    add("Set G4-vjump (v4 + verts 0–2.5/0.1 + L/R jump)" to procG4Vjump)
+                    add("Set G4-vjump" to procG4Vjump)
                     add("Set P4-jump (v4 + energy + jump, S OCR)" to procP4Jump)
                     add("Set P4-m65 (v4 + mean0.65 frozen + jump)" to procP4M65)
                     add("Set P4-m65p08 (v4 m65 + pad 0.08)" to procP4M65p08)
