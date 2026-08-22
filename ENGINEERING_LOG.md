@@ -7826,3 +7826,10 @@ x
 
 - Qualify `PumpCostVolUtils.createG4VjumpBlueHunksFromReds` (not a file-level function)
 
+
+## 2026-08-21 - CODE LANDED: pump-g4-vert-jump-sweep
+
+- Plan `dev-ai-interaction/plans/pump-g4-vert-jump-sweep-20260822-0149-plan.md`
+- New scheduled column G4-vjump: verts 0–2.5/0.1 (26) then L/R jump-retract; assembly horiz=jump
+- G4 / QF still 0.5×H; P4-jump still energy-grows then jump. No G-list.
+
