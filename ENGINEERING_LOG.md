@@ -7761,3 +7761,11 @@ x
 - `saveSession` optional `extraJpegBitmaps` writes files in the session dir; prune still deletes whole dirs
 - Odo debug captures Original/Deskewed stages as original.jpg / deskewed.jpg. Pump save API unchanged (empty extras).
 
+
+## 2026-08-21 - CODE LANDED: qf-debug-tier1-veto
+
+- Plan `dev-ai-interaction/plans/qf-debug-tier1-veto-20260822-0021-plan.md`
+- debug.json now has `tier1_veto` on ID fail, winner, and forced-skip; odo debug writes original.jpg + deskewed.jpg
+- `performTier1Veto` unchanged; no new Room tables
+- Human: debug QF odo ID-fail session should show per-vehicle veto dump + JPEGs
+
