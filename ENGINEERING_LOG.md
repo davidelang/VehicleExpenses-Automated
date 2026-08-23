@@ -7962,3 +7962,8 @@ x
 ## 2026-08-23 - Phase 2: 7seg-stroke flows vert 0.40×H + jump-retract
 
 - Row: vert cap = P4 maxFrac 0.4×red H; horiz = G4-vjump jump-retract. No 8s / 2s. Still 14 columns. G4 / G4-vjump / m65 / QF rows unchanged.
+
+## 2026-08-23 - CODE LANDED: pump-7seg-stroke-use-vjump-horiz
+
+- Plan `dev-ai-interaction/plans/pump-7seg-stroke-use-vjump-horiz-20260823-1746-plan.md`
+- Set 7seg-stroke: vert cap 0.40×seedH + k=1s inside cap; then G4-vjump jumpRetractHorizontal. No new column. G4 / G4-vjump / m65 / QF unchanged.
