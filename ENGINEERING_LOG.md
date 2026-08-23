@@ -7943,3 +7943,8 @@ x
 ## 2026-08-23 - Phase 2: fetch skip heat/energy; device rm after reports
 
 - Default fetch: HTML/JSON only; no remote tree stat/pull of pump_heats_* / expand_energy_*. Then rm those dirs on device (every timestamp). Host archive untouched. `--pull-heats` / `--pull-energy` recapture.
+
+## 2026-08-23 - CODE LANDED: pump-fetch-skip-heat-energy
+
+- Plan `dev-ai-interaction/plans/pump-fetch-skip-heat-energy-20260823-0549-plan.md`
+- G-- dumpHeats off; fetch default skip heat/energy then device rm. Host archive untouched. `--pull-heats` / `--pull-energy` recapture.
