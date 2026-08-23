@@ -1052,7 +1052,7 @@ object ContentExpandUtils {
                     peakCapped(vh, SEG7_MIN_STROKE, maxH)
             }
 
-            val (v0, _) = peakVsw(bin)
+            val (v0, h0) = peakVsw(bin)
             var dropped = 0
             val glareW = SEG7_GLARE_WIDTH_MULT * max(v0, SEG7_MIN_STROKE)
             if (glareW > 0 && !bin.empty()) {

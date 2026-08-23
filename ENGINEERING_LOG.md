@@ -7887,3 +7887,7 @@ x
 
 - Plan: `dev-ai-interaction/plans/pump-7seg-stroke-expand-20260822-2340-plan.md`
 - Seed-ROI Otsu (default dark; flip if dark ink_frac ≥ 0.45). Drop CCs wider than 3s. Odo H-path vSW = s; fallback 0.08×seedH if peak is 4 or ink_frac ≥ 0.45.
+
+## 2026-08-22 - Phase 1 strike 1: keep h0 from first-pass peak
+
+- `peakVsw` first pass still supplies `(v0, h0)` when no glare CCs are dropped.
