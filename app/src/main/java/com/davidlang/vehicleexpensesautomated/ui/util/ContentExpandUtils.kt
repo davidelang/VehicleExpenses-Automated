@@ -999,7 +999,7 @@ object ContentExpandUtils {
         val strokeShare: Float = 0f,
         /** Longest non-full-width horiz run / seedW. */
         val maxRunOverW: Float = 0f,
-        /** |hSW−vSW|/vSW ≤ 0.25 and seedH ≥ 6s. Supporting accept only; not a reject on thin waists. */
+        /** JSON-only. True iff vSW>4, hSW>4, seedH ≥ 6×vSW, |Δ|/max(vSW,hSW) ≤ 0.25. Never a reject. */
         val vhAgree: Boolean = false,
     )
 
@@ -1113,9 +1113,10 @@ object ContentExpandUtils {
                 strokeShare < 0.30f ||
                 maxRunOverW >= 0.50f
             val sPx = if (needFallback) fallback else vSW
-            val vhAgree = seedH >= 6 * max(sPx, 1) &&
-                hSW > 0 &&
-                abs(hSW - vSW).toFloat() <= 0.25f * max(vSW, 1)
+            val vhAgree = vSW > SEG7_MIN_STROKE &&
+                hSW > SEG7_MIN_STROKE &&
+                seedH >= 6 * vSW &&
+                abs(vSW - hSW).toFloat() <= 0.25f * max(vSW, hSW)
             return StrokeWidthInSeed(
                 sPx = sPx,
                 vSW = vSW,

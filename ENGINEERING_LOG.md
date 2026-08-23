@@ -7910,3 +7910,13 @@ x
 - Plan `dev-ai-interaction/plans/pump-7seg-stroke-expand-20260822-2340-plan.md`
 - 14th column `Set 7seg-stroke`: per-red seed-ROI `s`, vert k=1s, horz j=2s. G4 / G4-vjump / m65 / QF unchanged.
 - Human: deploy + scheduled pump; compare Good OCR vs G4-vjump / m65 / P4-jump.
+
+## 2026-08-23 - Execute start: pump-7seg-glare-clues
+
+- Plan: `dev-ai-interaction/plans/pump-7seg-glare-clues-20260823-0440-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: fix `vhAgree` (JSON-only; vSW/hSW > 4; seedH ≥ 6×vSW; |Δ|/max ≤ 0.25). Document 0.30 share / 0.50 maxRun fallbacks. Do not reopen 2340 expand or add a column.
+
+## 2026-08-23 - Phase 1: vhAgree JSON-only formula
+
+- `vhAgree = vSW>4 && hSW>4 && seedH ≥ 6×vSW && |Δ|/max(vSW,hSW) ≤ 0.25`. Floor-4 is not agreement. `usedFallback` still independent of `vhAgree`.
