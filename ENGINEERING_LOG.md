@@ -7904,3 +7904,9 @@ x
 
 - Fallback also if stroke-count share < 0.30 or max horiz run ≥ 0.50×seedW.
 - JSON: strokeShare, maxRunOverW, vhAgree (supporting when seedH ≥ 6s).
+
+## 2026-08-22 - CODE LANDED: pump-7seg-stroke-expand
+
+- Plan `dev-ai-interaction/plans/pump-7seg-stroke-expand-20260822-2340-plan.md`
+- 14th column `Set 7seg-stroke`: per-red seed-ROI `s`, vert k=1s, horz j=2s. G4 / G4-vjump / m65 / QF unchanged.
+- Human: deploy + scheduled pump; compare Good OCR vs G4-vjump / m65 / P4-jump.
