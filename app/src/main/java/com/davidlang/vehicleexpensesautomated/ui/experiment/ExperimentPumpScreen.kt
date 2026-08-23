@@ -1342,17 +1342,27 @@ suspend fun runPumpExperiment(
                 val customOrangeG: List<PumpHunk>
                 val seg7Strokes: List<ContentExpandUtils.StrokeWidthInSeed>
                 if (seg7Stroke) {
+                    val jumpOpts = ContentExpandUtils.ExpandOptions(
+                        maxFrac = 0.4f,
+                        enableJump = true,
+                        jumpFrac = 0.40f,
+                        retractClearFrac = 0.30f,
+                        energyRatio = 0.65f,
+                    )
                     val expands = pdHunksRawTotal.map { h ->
                         val r = android.graphics.Rect(
                             h.rect.left.toInt(), h.rect.top.toInt(),
                             h.rect.right.toInt(), h.rect.bottom.toInt(),
                         )
-                        ContentExpandUtils.expand7segFromSeed(
+                        val vert = ContentExpandUtils.expand7segFromSeed(
                             workspace.p.mat, r,
                             k = ContentExpandUtils.SEG7_K,
-                            j = ContentExpandUtils.SEG7_J,
-                            doHorizontal = true,
+                            doHorizontal = false,
                         )
+                        val jumped = ContentExpandUtils.jumpRetractHorizontal(
+                            workspace.p.mat, vert.rect, jumpOpts,
+                        )
+                        ContentExpandUtils.Seg7Expand(jumped, vert.stroke, vert.k, vert.j)
                     }
                     customBlueG = expands.map { e ->
                         PumpHunk(
@@ -1367,7 +1377,9 @@ suspend fun runPumpExperiment(
                     seg7Strokes = expands.map { it.stroke }
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
                     branch.metadata["seg7_k"] = ContentExpandUtils.SEG7_K.toString()
-                    branch.metadata["seg7_j"] = ContentExpandUtils.SEG7_J.toString()
+                    branch.metadata["seg7_vert_cap_frac"] = ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
+                    branch.metadata["seg7_jump_frac"] = "0.40"
+                    branch.metadata["seg7_retract_clear_frac"] = "0.30"
                 } else if (horizJump) {
                     customBlueG = PumpCostVolUtils.createG4VjumpBlueHunksFromReds(
                         pdHunksRawTotal, workspace.p.mat, imgW, imgH, gVertFactors,
@@ -1416,7 +1428,7 @@ suspend fun runPumpExperiment(
                     assembly = if (seg7Stroke) mapOf(
                         "method" to "7seg_stroke",
                         "k" to ContentExpandUtils.SEG7_K,
-                        "j" to ContentExpandUtils.SEG7_J,
+                        "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
                         "sPx" to seg7Strokes.map { it.sPx },
                         "vSW" to seg7Strokes.map { it.vSW },
                         "hSW" to seg7Strokes.map { it.hSW },
@@ -1428,7 +1440,11 @@ suspend fun runPumpExperiment(
                         "usedFallback" to seg7Strokes.map { it.usedFallback },
                         "droppedGlare" to seg7Strokes.map { it.droppedGlare },
                         "vertFactors" to emptyList<Float>(),
-                        "horiz" to "s_jump",
+                        "horiz" to "jump",
+                        "jumpFrac" to 0.40f,
+                        "retractClearFrac" to 0.30f,
+                        "energyRatio" to 0.65f,
+                        "maxFrac" to 0.4f,
                         "heatmapBoxMode" to if (boxMode == NativeImageUtils.HEATMAP_BOX_AABB) "aabb" else "minAreaRect",
                         "hmThresh" to hmThresh,
                         "hmThreshNote" to (if (hmThresh <= 0f) "u8>=1" else if (kotlin.math.abs(hmThresh - HEAT_THR_U8_GE2) < 1e-6f) "u8>=2" else "custom"),
@@ -1511,7 +1527,7 @@ suspend fun runPumpExperiment(
                 )
                 val proc7segStroke = makeGProc(
                     emptyList(),
-                    "7seg-stroke: v4 det + seed-ROI s + vert k=1s + horz j=2s (no G-list, no energy maxFrac)",
+                    "7seg-stroke: v4 det + seed-ROI s; vert cap 0.40×seedH + k=1s inside cap; then G4-vjump L/R jump-retract (no G-list)",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,

@@ -1007,11 +1007,12 @@ object ContentExpandUtils {
     const val SEG7_GLARE_WIDTH_MULT = 3
     const val SEG7_MIN_STROKE = 4
     const val SEG7_FALLBACK_H_FRAC = 0.08f
-    /** After vertical-bar-cap stop, pad each tip by this × `s`. */
+    /** After vertical-bar-cap stop, pad each tip by this × `s` (clamped to [SEG7_VERT_CAP_FRAC]×seedH). */
     const val SEG7_K = 1f
-    /** Horizontal jump as this × `s` (wired in phase 3). */
+    /** Horizontal jump as this × `s` (not used by Set 7seg-stroke; width is jump-retract). */
     const val SEG7_J = 2f
-    const val SEG7_VERT_CAP_S = 8
+    /** P4 maxFrac: vertical ink walk + 1s pad budget per side of the **initial red**. */
+    const val SEG7_VERT_CAP_FRAC = 0.40f
     const val SEG7_HORZ_CAP_S = 20
     const val SEG7_BAR_RUN_FRAC = 0.5f
 
@@ -1151,15 +1152,17 @@ object ContentExpandUtils {
 
     /**
      * Freeze seed width on the vertical walk. From seed T/B grow while a 1px
-     * strip (seed columns only) has an ink run ≥ 0.5`s`. Stop after a gap ≥ `s`.
-     * Pad each tip by [k]×`s`. Then L/R jump [j]×`s` (not `jumpFrac`×H).
+     * strip (seed columns only) has an ink run ≥ 0.5`s`. Stop after a gap ≥ `s`
+     * or [SEG7_VERT_CAP_FRAC]×seedH per side. Pad each tip by [k]×`s` only if
+     * that budget remains. Horizontal jump-retract is the caller's job
+     * ([jumpRetractHorizontal]); this does not call [jumpRetractHorizontalInS].
      */
     fun expand7segFromSeed(
         gray: Mat,
         seed: Rect,
         k: Float = SEG7_K,
         j: Float = SEG7_J,
-        doHorizontal: Boolean = true,
+        @Suppress("UNUSED_PARAMETER") doHorizontal: Boolean = false,
     ): Seg7Expand {
         val stroke = strokeWidthInSeed(gray, seed)
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
@@ -1170,11 +1173,11 @@ object ContentExpandUtils {
         val s0 = clip(stroke.seed, imgW, imgH)
         val sPx = max(1, stroke.sPx)
         val kPad = max(1, (k * sPx).roundToInt())
-        val jx = max(1, (j * sPx).roundToInt())
-        val vLook = SEG7_VERT_CAP_S * sPx + kPad + 2
-        val hLook = SEG7_HORZ_CAP_S * sPx + jx + sPx + 2
-        val nl = (s0.left - hLook).coerceAtLeast(0)
-        val nr = (s0.right + hLook).coerceAtMost(imgW)
+        val seedH = max(1, s0.height())
+        val capPx = max(1, (SEG7_VERT_CAP_FRAC * seedH).roundToInt())
+        val vLook = capPx + 2
+        val nl = s0.left
+        val nr = s0.right
         val nt = (s0.top - vLook).coerceAtLeast(0)
         val nb = (s0.bottom + vLook).coerceAtMost(imgH)
         if (nr <= nl || nb <= nt) return Seg7Expand(s0, stroke, k, j)
@@ -1195,7 +1198,6 @@ object ContentExpandUtils {
             val localT = s0.top - nt
             val localB = s0.bottom - nt
             val minRun = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
-            val cap = SEG7_VERT_CAP_S * sPx
 
             fun hasBarRow(y: Int): Boolean {
                 if (y < 0 || y >= bin.rows()) return false
@@ -1205,7 +1207,7 @@ object ContentExpandUtils {
             var t = localT
             var gap = 0
             var y = localT - 1
-            while (y >= 0 && localT - y <= cap) {
+            while (y >= 0 && localT - y <= capPx) {
                 if (hasBarRow(y)) {
                     t = y
                     gap = 0
@@ -1218,7 +1220,7 @@ object ContentExpandUtils {
             var b = localB
             gap = 0
             y = localB
-            while (y < bin.rows() && y - localB < cap) {
+            while (y < bin.rows() && y - localB < capPx) {
                 if (hasBarRow(y)) {
                     b = y + 1
                     gap = 0
@@ -1228,13 +1230,12 @@ object ContentExpandUtils {
                 }
                 y++
             }
-            t = (t - kPad).coerceAtLeast(0)
-            b = (b + kPad).coerceAtMost(bin.rows())
+            val padUp = min(kPad, max(0, capPx - (localT - t)))
+            val padDown = min(kPad, max(0, capPx - (b - localB)))
+            t = (t - padUp).coerceAtLeast(0)
+            b = (b + padDown).coerceAtMost(bin.rows())
             if (b <= t) b = (t + 1).coerceAtMost(bin.rows())
-            var out = clip(Rect(s0.left, nt + t, s0.right, nt + b), imgW, imgH)
-            if (doHorizontal) {
-                out = jumpRetractHorizontalInS(bin, out, nl, nt, imgW, imgH, sPx, j)
-            }
+            val out = clip(Rect(s0.left, nt + t, s0.right, nt + b), imgW, imgH)
             return Seg7Expand(out, stroke, k, j)
         } finally {
             roi.release()

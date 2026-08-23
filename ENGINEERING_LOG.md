@@ -7948,3 +7948,13 @@ x
 
 - Plan `dev-ai-interaction/plans/pump-fetch-skip-heat-energy-20260823-0549-plan.md`
 - G-- dumpHeats off; fetch default skip heat/energy then device rm. Host archive untouched. `--pull-heats` / `--pull-energy` recapture.
+
+## 2026-08-23 - Execute start: pump-7seg-stroke-use-vjump-horiz
+
+- Plan: `dev-ai-interaction/plans/pump-7seg-stroke-use-vjump-horiz-20260823-1746-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: Set 7seg-stroke in place: vert cap 0.40×seedH (not 8s); k=1s pad inside that budget; then G4-vjump jumpRetractHorizontal (0.40/0.30). No InS. No new column. G4/G4-vjump/m65/QF unchanged.
+
+## 2026-08-23 - Phase 1: 7seg vert 0.40×seedH + jumpRetractHorizontal
+
+- Vert ink walk capped at 0.40×initial red H per side; k=1s pad clamped to that. Then G4-vjump jumpRetractHorizontal (0.40/0.30/0.65). No jumpRetractHorizontalInS. Still one Set 7seg-stroke column.
