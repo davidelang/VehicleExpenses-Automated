@@ -7958,3 +7958,7 @@ x
 ## 2026-08-23 - Phase 1: 7seg vert 0.40×seedH + jumpRetractHorizontal
 
 - Vert ink walk capped at 0.40×initial red H per side; k=1s pad clamped to that. Then G4-vjump jumpRetractHorizontal (0.40/0.30/0.65). No jumpRetractHorizontalInS. Still one Set 7seg-stroke column.
+
+## 2026-08-23 - Phase 2: 7seg-stroke flows vert 0.40×H + jump-retract
+
+- Row: vert cap = P4 maxFrac 0.4×red H; horiz = G4-vjump jump-retract. No 8s / 2s. Still 14 columns. G4 / G4-vjump / m65 / QF rows unchanged.
