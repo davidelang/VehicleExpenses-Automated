@@ -1121,16 +1121,16 @@ object ContentExpandUtils {
     )
 
     /**
-     * Freeze seed width. From seed T/B grow while a 1px strip has an ink run
-     * ≥ 0.5`s` (a bar). Stop after a gap ≥ `s`. Then pad each tip by [k]×`s`.
-     * No energy `maxFrac`. [doHorizontal] is phase 3.
+     * Freeze seed width on the vertical walk. From seed T/B grow while a 1px
+     * strip (seed columns only) has an ink run ≥ 0.5`s`. Stop after a gap ≥ `s`.
+     * Pad each tip by [k]×`s`. Then L/R jump [j]×`s` (not `jumpFrac`×H).
      */
     fun expand7segFromSeed(
         gray: Mat,
         seed: Rect,
         k: Float = SEG7_K,
         j: Float = SEG7_J,
-        doHorizontal: Boolean = false,
+        doHorizontal: Boolean = true,
     ): Seg7Expand {
         val stroke = strokeWidthInSeed(gray, seed)
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
@@ -1141,11 +1141,13 @@ object ContentExpandUtils {
         val s0 = clip(stroke.seed, imgW, imgH)
         val sPx = max(1, stroke.sPx)
         val kPad = max(1, (k * sPx).roundToInt())
-        val look = SEG7_VERT_CAP_S * sPx + kPad + 2
-        val nl = s0.left
-        val nr = s0.right
-        val nt = (s0.top - look).coerceAtLeast(0)
-        val nb = (s0.bottom + look).coerceAtMost(imgH)
+        val jx = max(1, (j * sPx).roundToInt())
+        val vLook = SEG7_VERT_CAP_S * sPx + kPad + 2
+        val hLook = SEG7_HORZ_CAP_S * sPx + jx + sPx + 2
+        val nl = (s0.left - hLook).coerceAtLeast(0)
+        val nr = (s0.right + hLook).coerceAtMost(imgW)
+        val nt = (s0.top - vLook).coerceAtLeast(0)
+        val nb = (s0.bottom + vLook).coerceAtMost(imgH)
         if (nr <= nl || nb <= nt) return Seg7Expand(s0, stroke, k, j)
 
         val roi = gray.submat(nt, nb, nl, nr)
@@ -1159,6 +1161,8 @@ object ContentExpandUtils {
             Imgproc.threshold(roi, bin, stroke.otsuThr.toDouble(), 255.0, type)
             dropWideComponents(bin, SEG7_GLARE_WIDTH_MULT * sPx)
 
+            val seedL = s0.left - nl
+            val seedR = s0.right - nl
             val localT = s0.top - nt
             val localB = s0.bottom - nt
             val minRun = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
@@ -1166,7 +1170,7 @@ object ContentExpandUtils {
 
             fun hasBarRow(y: Int): Boolean {
                 if (y < 0 || y >= bin.rows()) return false
-                return maxInkRunOnRow(bin, y) >= minRun
+                return maxInkRunOnRow(bin, y, seedL, seedR) >= minRun
             }
 
             var t = localT
@@ -1198,7 +1202,7 @@ object ContentExpandUtils {
             t = (t - kPad).coerceAtLeast(0)
             b = (b + kPad).coerceAtMost(bin.rows())
             if (b <= t) b = (t + 1).coerceAtMost(bin.rows())
-            var out = clip(Rect(nl, nt + t, nr, nt + b), imgW, imgH)
+            var out = clip(Rect(s0.left, nt + t, s0.right, nt + b), imgW, imgH)
             if (doHorizontal) {
                 out = jumpRetractHorizontalInS(bin, out, nl, nt, imgW, imgH, sPx, j)
             }
@@ -1209,17 +1213,66 @@ object ContentExpandUtils {
         }
     }
 
-    /** Phase 3 hook: L/R jump in `s`. No-op until wired; width stays frozen. */
+    /** Jump L/R by `j×s`. If the 1px boundary still has a ~s run, grow in steps of `s` (cap 20s). Else retract to last bar and pad `s`. */
     private fun jumpRetractHorizontalInS(
-        @Suppress("UNUSED_PARAMETER") bin: Mat,
+        bin: Mat,
         box: Rect,
-        @Suppress("UNUSED_PARAMETER") originX: Int,
-        @Suppress("UNUSED_PARAMETER") originY: Int,
+        originX: Int,
+        originY: Int,
         imgW: Int,
         imgH: Int,
-        @Suppress("UNUSED_PARAMETER") sPx: Int,
-        @Suppress("UNUSED_PARAMETER") j: Float,
-    ): Rect = clip(box, imgW, imgH)
+        sPx: Int,
+        j: Float,
+    ): Rect {
+        val bw = bin.cols()
+        val bh = bin.rows()
+        if (bw <= 1 || bh <= 1) return clip(box, imgW, imgH)
+        val minRun = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
+        var l = (box.left - originX).coerceIn(0, bw - 1)
+        var r = (box.right - originX).coerceIn(l + 1, bw)
+        val t = (box.top - originY).coerceIn(0, bh - 1)
+        val b = (box.bottom - originY).coerceIn(t + 1, bh)
+        fun hasBarCol(x: Int): Boolean {
+            if (x < 0 || x >= bw) return false
+            return maxInkRunOnCol(bin, x, t, b) >= minRun
+        }
+        val floorL = l
+        val floorR = r
+        val jx = max(1, (j * sPx).roundToInt())
+        l = (l - jx).coerceAtLeast(0)
+        r = (r + jx).coerceAtMost(bw)
+        val leftIn = l < floorL && hasBarCol(l)
+        val rightIn = r > floorR && hasBarCol(r - 1)
+        if (leftIn || rightIn) {
+            var n = 0
+            var grew = true
+            while (grew && n < SEG7_HORZ_CAP_S) {
+                grew = false
+                n++
+                if (leftIn && l > 0 && hasBarCol(l)) {
+                    val nl = (l - sPx).coerceAtLeast(0)
+                    if (nl < l) {
+                        l = nl
+                        grew = true
+                    }
+                }
+                if (rightIn && r < bw && hasBarCol(r - 1)) {
+                    val nr = (r + sPx).coerceAtMost(bw)
+                    if (nr > r) {
+                        r = nr
+                        grew = true
+                    }
+                }
+            }
+        } else {
+            while (l < floorL && !hasBarCol(l)) l++
+            while (r > floorR && !hasBarCol(r - 1)) r--
+            val pad = max(1, sPx)
+            l = (l - pad).coerceAtLeast(0)
+            r = (r + pad).coerceAtMost(bw)
+        }
+        return clip(Rect(originX + l, originY + t, originX + r, originY + b), imgW, imgH)
+    }
 
     private fun dropWideComponents(bin: Mat, glareW: Int) {
         if (bin.empty() || glareW <= 0) return
@@ -1259,14 +1312,39 @@ object ContentExpandUtils {
         }
     }
 
-    private fun maxInkRunOnRow(ink: Mat, y: Int): Int {
+    private fun maxInkRunOnRow(ink: Mat, y: Int, x0: Int = 0, x1: Int = -1): Int {
         val w = ink.cols()
         if (w <= 0 || y < 0 || y >= ink.rows()) return 0
+        val xa = x0.coerceIn(0, w)
+        val xb = (if (x1 < 0) w else x1).coerceIn(xa, w)
+        if (xb <= xa) return 0
         val row = ByteArray(w)
         ink.get(y, 0, row)
         var run = 0
         var best = 0
-        for (x in 0 until w) {
+        for (x in xa until xb) {
+            if (row[x].toInt() and 0xff != 0) {
+                run++
+                if (run > best) best = run
+            } else {
+                run = 0
+            }
+        }
+        return best
+    }
+
+    private fun maxInkRunOnCol(ink: Mat, x: Int, y0: Int, y1: Int): Int {
+        val h = ink.rows()
+        val w = ink.cols()
+        if (w <= 0 || h <= 0 || x < 0 || x >= w) return 0
+        val ya = y0.coerceIn(0, h)
+        val yb = y1.coerceIn(ya, h)
+        if (yb <= ya) return 0
+        var run = 0
+        var best = 0
+        val row = ByteArray(w)
+        for (y in ya until yb) {
+            ink.get(y, 0, row)
             if (row[x].toInt() and 0xff != 0) {
                 run++
                 if (run > best) best = run

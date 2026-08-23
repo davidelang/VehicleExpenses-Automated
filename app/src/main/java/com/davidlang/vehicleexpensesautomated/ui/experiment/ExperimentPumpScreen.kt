@@ -620,6 +620,7 @@ suspend fun runPumpExperiment(
         "Set G-- (4 pass, none, calculated)",
         "Set G4 (v4 det, calculated 0.0-2.5)",
         "Set G4-vjump",
+        "Set 7seg-stroke",
         "Set P4-jump (v4 + energy + jump, S OCR)",
         "Set P4-m65 (v4 + mean0.65 frozen + jump)",
         "Set P4-m65p08 (v4 m65 + pad 0.08)",
@@ -1180,6 +1181,8 @@ suspend fun runPumpExperiment(
                     expDetAsset: String? = null,
                     /** If true, width is P4-jump L/R jump-retract (no [horizFactor] / orange). */
                     horizJump: Boolean = false,
+                    /** If true, 7-seg stroke expand (seed-ROI `s`, k=1 vert, j=2 horz). No G-list. */
+                    seg7Stroke: Boolean = false,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val workspace = ws
                     val branch = br
@@ -1335,16 +1338,46 @@ suspend fun runPumpExperiment(
                 // Set G-family calculated: single blue/orange create from post-prune kept reds + dual OCR + one store
                 val customBlueG: List<PumpHunk>
                 val customOrangeG: List<PumpHunk>
-                if (horizJump) {
+                val seg7Strokes: List<ContentExpandUtils.StrokeWidthInSeed>
+                if (seg7Stroke) {
+                    val expands = pdHunksRawTotal.map { h ->
+                        val r = android.graphics.Rect(
+                            h.rect.left.toInt(), h.rect.top.toInt(),
+                            h.rect.right.toInt(), h.rect.bottom.toInt(),
+                        )
+                        ContentExpandUtils.expand7segFromSeed(
+                            workspace.p.mat, r,
+                            k = ContentExpandUtils.SEG7_K,
+                            j = ContentExpandUtils.SEG7_J,
+                            doHorizontal = true,
+                        )
+                    }
+                    customBlueG = expands.map { e ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                e.rect.left.toFloat(), e.rect.top.toFloat(),
+                                e.rect.right.toFloat(), e.rect.bottom.toFloat(),
+                            ),
+                        )
+                    }
+                    customOrangeG = emptyList()
+                    seg7Strokes = expands.map { it.stroke }
+                    branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
+                    branch.metadata["seg7_k"] = ContentExpandUtils.SEG7_K.toString()
+                    branch.metadata["seg7_j"] = ContentExpandUtils.SEG7_J.toString()
+                } else if (horizJump) {
                     customBlueG = PumpCostVolUtils.createG4VjumpBlueHunksFromReds(
                         pdHunksRawTotal, workspace.p.mat, imgW, imgH, gVertFactors,
                     )
                     customOrangeG = emptyList()
+                    seg7Strokes = emptyList()
                 } else {
                     val pair = createBlueAndOrangeHunksFromReds(
                         pdHunksRawTotal, imgW, imgH, gVertFactors, horizFactor)
                     customBlueG = pair.first
                     customOrangeG = pair.second
+                    seg7Strokes = emptyList()
                 }
                 val customBluePixelG = customBlueG.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
@@ -1378,7 +1411,26 @@ suspend fun runPumpExperiment(
                     volCand = cvG.volCand,
                     finalCost = cvG.cost,
                     finalVol = cvG.vol,
-                    assembly = if (horizJump) mapOf(
+                    assembly = if (seg7Stroke) mapOf(
+                        "method" to "7seg_stroke",
+                        "k" to ContentExpandUtils.SEG7_K,
+                        "j" to ContentExpandUtils.SEG7_J,
+                        "sPx" to seg7Strokes.map { it.sPx },
+                        "vSW" to seg7Strokes.map { it.vSW },
+                        "hSW" to seg7Strokes.map { it.hSW },
+                        "inkFrac" to seg7Strokes.map { it.inkFrac },
+                        "darkInk" to seg7Strokes.map { it.darkInk },
+                        "usedFallback" to seg7Strokes.map { it.usedFallback },
+                        "droppedGlare" to seg7Strokes.map { it.droppedGlare },
+                        "vertFactors" to emptyList<Float>(),
+                        "horiz" to "s_jump",
+                        "heatmapBoxMode" to if (boxMode == NativeImageUtils.HEATMAP_BOX_AABB) "aabb" else "minAreaRect",
+                        "hmThresh" to hmThresh,
+                        "hmThreshNote" to (if (hmThresh <= 0f) "u8>=1" else if (kotlin.math.abs(hmThresh - HEAT_THR_U8_GE2) < 1e-6f) "u8>=2" else "custom"),
+                        "maskDilatePasses" to maskDilatePasses,
+                        "heatmapCellPx" to NativeImageUtils.PADDLE_DET_HEAT_CELL_PX,
+                        "note" to assemblyNote
+                    ) else if (horizJump) mapOf(
                         "method" to "calculated",
                         "vertFactors" to gVertFactors,
                         "heightMultiples" to gVertFactors.map { 1f + 2f * it },
@@ -1409,7 +1461,7 @@ suspend fun runPumpExperiment(
                     oranges = orangePixelG
                 )
                 doBOrDRedOnlyImage()
-                val aPdG = if (horizJump) {
+                val aPdG = if (horizJump || seg7Stroke) {
                     getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4)
                 } else {
                     getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
@@ -1451,6 +1503,15 @@ suspend fun runPumpExperiment(
                     hmThresh = HEAT_THR_U8_GE1,
                     expDetAsset = "PP-OCRv4_mobile_det",
                     horizJump = true,
+                )
+                val proc7segStroke = makeGProc(
+                    emptyList(),
+                    "7seg-stroke: v4 det + seed-ROI s + vert k=1s + horz j=2s (no G-list, no energy maxFrac)",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    seg7Stroke = true,
                 )
                 // Horiz-reach A/B: same discovery as G-- (verts, thr, box mode); only horizFactor changes.
                 val procHorizByFactor: Map<Float, suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit> =
@@ -2549,6 +2610,7 @@ suspend fun runPumpExperiment(
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
                     add("Set G4 (v4 det, calculated 0.0-2.5)" to procG4)
                     add("Set G4-vjump" to procG4Vjump)
+                    add("Set 7seg-stroke" to proc7segStroke)
                     add("Set P4-jump (v4 + energy + jump, S OCR)" to procP4Jump)
                     add("Set P4-m65 (v4 + mean0.65 frozen + jump)" to procP4M65)
                     add("Set P4-m65p08 (v4 m65 + pad 0.08)" to procP4M65p08)

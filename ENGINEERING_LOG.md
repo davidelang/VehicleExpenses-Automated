@@ -7895,3 +7895,7 @@ x
 ## 2026-08-22 - Phase 2: 7-seg vertical walk in s + k=1 pad
 
 - `expand7segFromSeed`: freeze width; grow T/B while strip has ink run ≥ 0.5s; stop after gap ≥ s; pad k=1×s. No energy maxFrac. Horizontal still off.
+
+## 2026-08-22 - Phase 3: 7-seg horz jump in s + Set 7seg-stroke column
+
+- Jump j=2s, grow/retract in s (cap 20s). 14th scheduled column `Set 7seg-stroke`. Per-red s/k/j in assembly JSON. G4 / G4-vjump / m65 / QF unchanged.
