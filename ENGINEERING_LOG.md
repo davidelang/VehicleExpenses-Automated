@@ -7993,3 +7993,8 @@ x
 
 - `ContentExpandUtils`: 7seg `hasBarRow` T-1 / exclusive B; AABB strip energy vs seed thr; oriented Kotlin ±v. Skip grow/pad that side if empty. xycut never-shrink. Native rot off (`if (false && …)`). Horiz jump unchanged. G-- / G4 / G4-vjump not touched.
 
+
+## 2026-08-23 - Phase 2: ink-probe skip flows note
+
+- `docs/PUMP_EXPERIMENT_FLOWS.md`: ink/energy columns skip vert grow when red T/B 1px strip is empty; 7seg-stroke skip grow/1s that side. Still 14 columns. G-- / G4 / G4-vjump unchanged.
+
