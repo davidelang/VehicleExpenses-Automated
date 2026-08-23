@@ -10,7 +10,7 @@ Fourteen columns: production G-- / G4, **G4-vjump** (verts 0.0/0.1/0.2/0.5 + L/R
 
 | Flow display name | Det | Expand | Notes |
 |-------------------|-----|--------|-------|
-| `Set G-- (4 pass, none, calculated)` | product | calculated verts; thr **u8≥1**; horiz **0.5** | Experiment product-det reference + heat dumps |
+| `Set G-- (4 pass, none, calculated)` | product | calculated verts; thr **u8≥1**; horiz **0.5** | Experiment product-det reference. Heat dumps off |
 | `Set G4 (v4 det, calculated 0.0-2.5)` | **PP-OCRv4_mobile_det** | G-style calculated verts **0.0 / 0.1 / 0.3**; horiz **0.5**; deskew | v4 det A/B vs G--; **Quick Fill live path** |
 | `Set G4-vjump` | **PP-OCRv4_mobile_det** | Calculated height pads **0.0 / 0.1 / 0.2 / 0.5** (4-pass greedy from tablet 00-10-30 exact-pool); width = P4-jump L/R jump-retract (`jumpFrac=0.40`, `retractClearFrac=0.30`, `energyRatio=0.65`, `maxFrac=0.4`). **No** 0.5×H, **no** energy vertical walk | Experiment only. Not QF live. PD = reds + jumped blues (no orange) |
 | `Set 7seg-stroke` | **PP-OCRv4_mobile_det** | Same v4 reds as G4. Seed-ROI Otsu stroke `s` (vSW H-path; drop CCs ≫ 3s). Fallback `0.08×seedH` also if stroke-count share < **0.30** (narrow-band 0.7–1.3×vSW) or max non-span horiz run ≥ **0.50×seedW**. Vert: freeze width, walk to bar-cap gap ≥ `s`, pad **k=1s**. Horz: jump **j=2s**, grow/retract in `s` (cap 20s). **No** G-list, **no** energy `maxFrac` / `jumpFrac×H` | Experiment only. Not QF live. PD = reds + stroke blues. Per-red `s`,`k`,`j` in assembly |
@@ -64,9 +64,7 @@ Metadata on expand columns: `content_expand_jump` / `content_expand_jump_frac` /
 * G-- / H* / L–Q discovery: `HEAT_THR_U8_GE1` → on if **u8 ≥ 1**
 * (parked K): `HEAT_THR_U8_GE2` → on if **u8 ≥ 2**  
 
-**Heat dumps** (once per photo, from G-- column):  
-`reportDir/pump_heats_<timestamp>/<photo>/scale{224,608,1024}_heatmap.u8z` + `.meta.json`  
-Format: magic `HMU8`, w/h LE u32, comp=1 (zlib), raw_len, payload. See `HeatmapU8Dump.kt`.
+**Heat dumps:** Off (`dumpHeats = false` on every column, including G--). Host copies already exist under `latest-report/pump_heats_2026-08-15_*`. Format if recaptured: magic `HMU8`, w/h LE u32, comp=1 (zlib), raw_len, payload. See `HeatmapU8Dump.kt`.
 
 **Energy traces:** Off. Full lossless jump+rot dumps already exist from `2026-08-15_09-38-52` / `09-39-09`. P4-jump / P4-rot no longer write `expand_energy_<ts>/`. Official path and unofficial `energy_count` OCR are unchanged.
 

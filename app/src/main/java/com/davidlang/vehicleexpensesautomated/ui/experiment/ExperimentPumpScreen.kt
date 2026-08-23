@@ -632,7 +632,9 @@ suspend fun runPumpExperiment(
         "Set Prod-m65 (product + mean0.65 frozen + jump)",
         "Set Prod-rot (product oriented + jump, S OCR)",
     )
-    val heatDumpRoot = File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
+    val heatDumpRoot by lazy {
+        File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
+    }
 
     fun pStartNewFile(): File {
         val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
@@ -1483,9 +1485,9 @@ suspend fun runPumpExperiment(
             }
                 val procGMinusMinus = makeGProc(
                     SET_G_MINUS_MINUS_VERT_FACTORS,
-                    "G-- shared k=4 [0.1,0.3,0.4,1.1]; experiment product-det ref; u8≥1; horiz=0.5; dumps heats",
+                    "G-- shared k=4 [0.1,0.3,0.4,1.1]; experiment product-det ref; u8≥1; horiz=0.5",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = true,
+                    dumpHeats = false,
                     horizFactor = SET_G_HORIZ_FACTOR,
                     hmThresh = HEAT_THR_U8_GE1,
                 )

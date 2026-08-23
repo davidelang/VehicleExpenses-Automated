@@ -7929,3 +7929,13 @@ x
 
 - Plan `dev-ai-interaction/plans/pump-7seg-glare-clues-20260823-0440-plan.md`
 - `vhAgree` JSON-only (vSW/hSW>4, seedH≥6×vSW). Stroke-share 0.30 and maxRun/W 0.50 fallbacks documented. No new column.
+
+## 2026-08-23 - Execute start: pump-fetch-skip-heat-energy
+
+- Plan: `dev-ai-interaction/plans/pump-fetch-skip-heat-energy-20260823-0549-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: G-- dumpHeats=false; no empty pump_heats dir; fetch default skip heat/energy (no stat/pull) then device rm; --pull-heats / --pull-energy opt-in. Host archive untouched. OCR/G4/7seg unchanged.
+
+## 2026-08-23 - Phase 1: G-- dumpHeats off; no empty pump_heats dir
+
+- procGMinusMinus dumpHeats=false. heatDumpRoot mkdir only if dumping. G-- note without dumps heats. Flows: heat dumps off; host copies already exist.
