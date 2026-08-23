@@ -374,7 +374,8 @@ object ContentExpandUtils {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return OrientedExpand(seed, false)
         val imgW = gray.cols()
         val imgH = gray.rows()
-        if (!opts.recordVertEnergy) {
+        // Native expand cannot skip one T/B tip; Kotlin walk applies the border probe.
+        if (false && !opts.recordVertEnergy) {
             val nativeExp = try {
                 NativeImageUtils.expandOrientedNative(
                     gray, seed.pts,
@@ -539,6 +540,8 @@ object ContentExpandUtils {
         var stepsVNeg = 0
         var stepsVPos = 0
         val freezeHorz = opts.freezeHorzDuringVert
+        val allowVNeg = stripEnergy(0f, -1f, alongU = false) >= thr
+        val allowVPos = stripEnergy(0f, +1f, alongU = false) >= thr
 
         fun growOnce() {
             repeat(cap) {
@@ -559,14 +562,14 @@ object ContentExpandUtils {
                     }
                 }
                 // ±v (above/below)
-                if (stripEnergy(0f, -1f, alongU = false) >= thr) {
+                if (allowVNeg && stripEnergy(0f, -1f, alongU = false) >= thr) {
                     cx -= 0.5f * vx
                     cy -= 0.5f * vy
                     bh += 1f
                     stepsVNeg++
                     grew = true
                 }
-                if (stripEnergy(0f, +1f, alongU = false) >= thr) {
+                if (allowVPos && stripEnergy(0f, +1f, alongU = false) >= thr) {
                     cx += 0.5f * vx
                     cy += 0.5f * vy
                     bh += 1f
@@ -600,7 +603,16 @@ object ContentExpandUtils {
         var padV = 0
         if (opts.vertPadFrac > 0f) {
             padV = max(1, (opts.vertPadFrac * seedBh).roundToInt())
-            bh += 2f * padV
+            if (allowVNeg) {
+                cx -= 0.5f * vx * padV
+                cy -= 0.5f * vy * padV
+                bh += padV
+            }
+            if (allowVPos) {
+                cx += 0.5f * vx * padV
+                cy += 0.5f * vy * padV
+                bh += padV
+            }
         }
 
         val recordVertEnergy = opts.recordVertEnergy
@@ -1204,34 +1216,42 @@ object ContentExpandUtils {
                 return maxInkRunOnRow(bin, y, seedL, seedR) >= minRun
             }
 
+            // 1px just outside the red: no bar → do not grow or 1s-pad that side.
+            val allowUp = hasBarRow(localT - 1)
+            val allowDown = hasBarRow(localB)
+
             var t = localT
             var gap = 0
             var y = localT - 1
-            while (y >= 0 && localT - y <= capPx) {
-                if (hasBarRow(y)) {
-                    t = y
-                    gap = 0
-                } else {
-                    gap++
-                    if (gap >= sPx) break
+            if (allowUp) {
+                while (y >= 0 && localT - y <= capPx) {
+                    if (hasBarRow(y)) {
+                        t = y
+                        gap = 0
+                    } else {
+                        gap++
+                        if (gap >= sPx) break
+                    }
+                    y--
                 }
-                y--
             }
             var b = localB
             gap = 0
             y = localB
-            while (y < bin.rows() && y - localB < capPx) {
-                if (hasBarRow(y)) {
-                    b = y + 1
-                    gap = 0
-                } else {
-                    gap++
-                    if (gap >= sPx) break
+            if (allowDown) {
+                while (y < bin.rows() && y - localB < capPx) {
+                    if (hasBarRow(y)) {
+                        b = y + 1
+                        gap = 0
+                    } else {
+                        gap++
+                        if (gap >= sPx) break
+                    }
+                    y++
                 }
-                y++
             }
-            val padUp = min(kPad, max(0, capPx - (localT - t)))
-            val padDown = min(kPad, max(0, capPx - (b - localB)))
+            val padUp = if (allowUp) min(kPad, max(0, capPx - (localT - t))) else 0
+            val padDown = if (allowDown) min(kPad, max(0, capPx - (b - localB))) else 0
             t = (t - padUp).coerceAtLeast(0)
             b = (b + padDown).coerceAtMost(bin.rows())
             if (b <= t) b = (t + 1).coerceAtMost(bin.rows())
@@ -2308,6 +2328,8 @@ object ContentExpandUtils {
         val il = l + 2; val it = t + 2; val ir = r - 2; val ib = b - 2
         val base = if (ir > il && ib > it) meanE(Rect(il, it, ir, ib)) else meanE(seed)
         val thr = energyRatio * max(base, 1e-3)
+        val allowUp = t > 0 && meanE(Rect(l, t - 1, r, t)) >= thr
+        val allowDown = b < imgH && meanE(Rect(l, b, r, b + 1)) >= thr
         val upSamples = ArrayList<VertEnergySample>()
         val downSamples = ArrayList<VertEnergySample>()
         fun keepSample(dy: Int) = dy <= 80 || dy % 2 == 0
@@ -2319,7 +2341,7 @@ object ContentExpandUtils {
         fun growOnce() {
             repeat(cap) {
                 var grew = false
-                if (t > 0) {
+                if (allowUp && t > 0) {
                     val e = meanE(Rect(l, t - 1, r, t))
                     if (e >= thr) {
                         t--
@@ -2327,7 +2349,7 @@ object ContentExpandUtils {
                         grew = true
                     }
                 }
-                if (b < imgH) {
+                if (allowDown && b < imgH) {
                     val e = meanE(Rect(l, b, r, b + 1))
                     if (e >= thr) {
                         b++
@@ -2344,8 +2366,8 @@ object ContentExpandUtils {
         }
         if (vertKind == VertEnergyKind.XYCUT_GX) {
             val cut = xycutOnProfile(eng, l, t, r, b, imgW, imgH, cap)
-            t = cut[0]
-            b = cut[1]
+            t = if (allowUp) min(cut[0], seed.top) else seed.top
+            b = if (allowDown) max(cut[1], seed.bottom) else seed.bottom
         } else {
             growOnce()
         }
@@ -2353,8 +2375,8 @@ object ContentExpandUtils {
         val walkB = b - seed.bottom
         if (opts.vertPadFrac > 0f) {
             val extra = max(1, (opts.vertPadFrac * max(1, seed.height())).roundToInt())
-            t = (t - extra).coerceAtLeast(0)
-            b = (b + extra).coerceAtMost(imgH)
+            if (allowUp) t = (t - extra).coerceAtLeast(0)
+            if (allowDown) b = (b + extra).coerceAtMost(imgH)
         }
         val padT = seed.top - t
         val padB = b - seed.bottom

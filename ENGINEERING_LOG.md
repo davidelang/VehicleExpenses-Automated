@@ -7982,3 +7982,14 @@ x
 
 - Plan `dev-ai-interaction/plans/pump-7seg-html-stroke-width-20260823-2201-plan.md`
 - HTML Set 7seg-stroke Paddle cell shows `s=<px list>` from s_per_red. JSON / expand / other columns unchanged.
+
+## 2026-08-23 - Execute start: pump-ink-probe-skip-vert
+
+- Plan: `dev-ai-interaction/plans/pump-ink-probe-skip-vert-20260823-2314-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: Ink/energy columns skip vertical grow (and 7seg 1s pad) on a side if the 1px strip just outside red T/B has no ink. Never retract the red. Horiz jump-retract unchanged. Not G-- / G4 / G4-vjump.
+
+## 2026-08-23 - Phase 1: ink-probe skip vert grow
+
+- `ContentExpandUtils`: 7seg `hasBarRow` T-1 / exclusive B; AABB strip energy vs seed thr; oriented Kotlin ±v. Skip grow/pad that side if empty. xycut never-shrink. Native rot off (`if (false && …)`). Horiz jump unchanged. G-- / G4 / G4-vjump not touched.
+
