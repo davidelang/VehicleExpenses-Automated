@@ -7967,3 +7967,13 @@ x
 
 - Plan `dev-ai-interaction/plans/pump-7seg-stroke-use-vjump-horiz-20260823-1746-plan.md`
 - Set 7seg-stroke: vert cap 0.40×seedH + k=1s inside cap; then G4-vjump jumpRetractHorizontal. No new column. G4 / G4-vjump / m65 / QF unchanged.
+
+## 2026-08-23 - Execute start: pump-7seg-html-stroke-width
+
+- Plan: `dev-ai-interaction/plans/pump-7seg-html-stroke-width-20260823-2201-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: HTML Set 7seg-stroke PD cell shows per-red s from s_per_red (e.g. s=31,19,14). JSON unchanged. Expand / other columns / QF unchanged.
+
+## 2026-08-23 - Phase 1: HTML 7seg PD cell shows s_per_red
+
+- Under Set 7seg-stroke Paddle PD snapshot: `s=31,19,14` from existing metadata. Whitelist / other columns / JSON / expand unchanged.
