@@ -7924,3 +7924,8 @@ x
 ## 2026-08-23 - Phase 2: 7seg-stroke flows fallbacks one-liner
 
 - `Set 7seg-stroke` notes stroke-count share < 0.30 and maxRun ≥ 0.50×W fallbacks. G4 / G4-vjump / m65 / QF rows unchanged.
+
+## 2026-08-23 - CODE LANDED: pump-7seg-glare-clues
+
+- Plan `dev-ai-interaction/plans/pump-7seg-glare-clues-20260823-0440-plan.md`
+- `vhAgree` JSON-only (vSW/hSW>4, seedH≥6×vSW). Stroke-share 0.30 and maxRun/W 0.50 fallbacks documented. No new column.
