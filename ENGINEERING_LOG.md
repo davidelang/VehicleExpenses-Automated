@@ -7998,3 +7998,10 @@ x
 
 - `docs/PUMP_EXPERIMENT_FLOWS.md`: ink/energy columns skip vert grow when red T/B 1px strip is empty; 7seg-stroke skip grow/1s that side. Still 14 columns. G-- / G4 / G4-vjump unchanged.
 
+
+## 2026-08-23 - CODE LANDED: pump-ink-probe-skip-vert
+
+- Plan `dev-ai-interaction/plans/pump-ink-probe-skip-vert-20260823-2314-plan.md`
+- Ink/energy columns skip vert grow (and 7seg 1s pad) when the 1px strip just outside red T/B has no ink. Never retract the red. Horiz jump-retract unchanged. Still 14 columns. G-- / G4 / G4-vjump unchanged.
+- Human: deploy + scheduled pump; compare ln 4 7seg/P4-* vs G4 / G4-vjump.
+
