@@ -7939,3 +7939,7 @@ x
 ## 2026-08-23 - Phase 1: G-- dumpHeats off; no empty pump_heats dir
 
 - procGMinusMinus dumpHeats=false. heatDumpRoot mkdir only if dumping. G-- note without dumps heats. Flows: heat dumps off; host copies already exist.
+
+## 2026-08-23 - Phase 2: fetch skip heat/energy; device rm after reports
+
+- Default fetch: HTML/JSON only; no remote tree stat/pull of pump_heats_* / expand_energy_*. Then rm those dirs on device (every timestamp). Host archive untouched. `--pull-heats` / `--pull-energy` recapture.
