@@ -978,6 +978,192 @@ object ContentExpandUtils {
         }
     }
 
+    /**
+     * Seed-local 7-seg stroke width. Otsu on the red ROI only (default dark ink);
+     * flip to bright if dark is not the minority ([SEG7_INK_FLIP_FRAC]).
+     * Drop CCs wider than 3× first-pass `s` (glare sheets) then odo H-path:
+     * horiz runs, discard exact-span, peak k≥4 capped max(35, 0.5×seedH) = vSW = `s`.
+     * Fallback [SEG7_FALLBACK_H_FRAC]×seedH if peak is the floor 4 or ink_frac ≳ 0.45.
+     */
+    data class StrokeWidthInSeed(
+        val sPx: Int,
+        val vSW: Int,
+        val hSW: Int,
+        val inkFrac: Float,
+        val darkInk: Boolean,
+        val usedFallback: Boolean,
+        val droppedGlare: Int,
+        val otsuThr: Int,
+        val seed: Rect,
+    )
+
+    const val SEG7_INK_FLIP_FRAC = 0.45f
+    const val SEG7_GLARE_WIDTH_MULT = 3
+    const val SEG7_MIN_STROKE = 4
+    const val SEG7_FALLBACK_H_FRAC = 0.08f
+
+    fun strokeWidthInSeed(gray: Mat, seed: Rect): StrokeWidthInSeed {
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val s = if (gray.empty() || gray.type() != CvType.CV_8UC1) {
+            seed
+        } else {
+            clip(seed, imgW, imgH)
+        }
+        val seedH = max(1, s.height())
+        val seedW = max(1, s.width())
+        val fallback = max(2, (SEG7_FALLBACK_H_FRAC * seedH).roundToInt())
+        fun fail(thr: Int = 0, dark: Boolean = true, ink: Float = 0f, dropped: Int = 0) =
+            StrokeWidthInSeed(
+                sPx = fallback, vSW = SEG7_MIN_STROKE, hSW = SEG7_MIN_STROKE,
+                inkFrac = ink, darkInk = dark, usedFallback = true,
+                droppedGlare = dropped, otsuThr = thr, seed = s,
+            )
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) return fail()
+        if (seedH < 4 || seedW < 4) return fail()
+
+        val roi = gray.submat(s.top, s.bottom, s.left, s.right)
+        val bin = Mat()
+        val labels = Mat()
+        val stats = Mat()
+        val centroids = Mat()
+        try {
+            val thr = Imgproc.threshold(
+                roi, bin, 0.0, 255.0,
+                Imgproc.THRESH_BINARY_INV or Imgproc.THRESH_OTSU,
+            ).toInt()
+            val nPix = seedW * seedH
+            var nz = Core.countNonZero(bin)
+            var inkFrac = if (nPix > 0) nz.toFloat() / nPix else 0f
+            var darkInk = true
+            if (inkFrac >= SEG7_INK_FLIP_FRAC) {
+                Core.bitwise_not(bin, bin)
+                nz = Core.countNonZero(bin)
+                inkFrac = if (nPix > 0) nz.toFloat() / nPix else 0f
+                darkInk = false
+            }
+
+            fun peakVsw(mask: Mat): Pair<Int, Int> {
+                val hh = horizRunHist(mask)
+                val vh = vertRunHist(mask)
+                val maxV = max(35, (seedH * 0.50f).toInt())
+                val maxH = max(20, (seedH * 0.40f).toInt())
+                return peakCapped(hh, SEG7_MIN_STROKE, maxV) to
+                    peakCapped(vh, SEG7_MIN_STROKE, maxH)
+            }
+
+            val (v0, _) = peakVsw(bin)
+            var dropped = 0
+            val glareW = SEG7_GLARE_WIDTH_MULT * max(v0, SEG7_MIN_STROKE)
+            if (glareW > 0 && !bin.empty()) {
+                val nLab = Imgproc.connectedComponentsWithStats(bin, labels, stats, centroids, 8)
+                if (nLab > 1) {
+                    val drop = BooleanArray(nLab)
+                    for (i in 1 until nLab) {
+                        val w = stats.get(i, Imgproc.CC_STAT_WIDTH)[0].toInt()
+                        if (w > glareW) {
+                            drop[i] = true
+                            dropped++
+                        }
+                    }
+                    if (dropped > 0) {
+                        val labRow = IntArray(seedW)
+                        val pixRow = ByteArray(seedW)
+                        for (y in 0 until seedH) {
+                            labels.get(y, 0, labRow)
+                            bin.get(y, 0, pixRow)
+                            for (x in 0 until seedW) {
+                                val id = labRow[x]
+                                if (id in drop.indices && drop[id]) pixRow[x] = 0
+                            }
+                            bin.put(y, 0, pixRow)
+                        }
+                    }
+                }
+            }
+            val (vSW, hSW) = if (dropped > 0) peakVsw(bin) else (v0 to h0)
+            val needFallback = vSW <= SEG7_MIN_STROKE || inkFrac >= SEG7_INK_FLIP_FRAC
+            val sPx = if (needFallback) fallback else vSW
+            return StrokeWidthInSeed(
+                sPx = sPx,
+                vSW = vSW,
+                hSW = hSW,
+                inkFrac = inkFrac,
+                darkInk = darkInk,
+                usedFallback = needFallback,
+                droppedGlare = dropped,
+                otsuThr = thr,
+                seed = s,
+            )
+        } catch (t: Throwable) {
+            return fail()
+        } finally {
+            roi.release()
+            bin.release()
+            labels.release()
+            stats.release()
+            centroids.release()
+        }
+    }
+
+    private fun horizRunHist(ink: Mat): IntArray {
+        val h = ink.rows()
+        val w = ink.cols()
+        val hist = IntArray(w + 1)
+        if (h <= 0 || w <= 0) return hist
+        val row = ByteArray(w)
+        for (y in 0 until h) {
+            ink.get(y, 0, row)
+            var run = 0
+            for (x in 0 until w) {
+                if (row[x].toInt() and 0xff != 0) {
+                    run++
+                } else if (run > 0) {
+                    if (run != w) hist[run]++
+                    run = 0
+                }
+            }
+            if (run > 0 && run != w) hist[run]++
+        }
+        return hist
+    }
+
+    private fun vertRunHist(ink: Mat): IntArray {
+        val h = ink.rows()
+        val w = ink.cols()
+        val hist = IntArray(h + 1)
+        if (h <= 0 || w <= 0) return hist
+        val rows = Array(h) { ByteArray(w) }
+        for (y in 0 until h) ink.get(y, 0, rows[y])
+        for (x in 0 until w) {
+            var run = 0
+            for (y in 0 until h) {
+                val on = rows[y][x].toInt() and 0xff != 0
+                if (on) {
+                    run++
+                } else if (run > 0) {
+                    if (run != h) hist[run]++
+                    run = 0
+                }
+            }
+            if (run > 0 && run != h) hist[run]++
+        }
+        return hist
+    }
+
+    private fun peakCapped(hist: IntArray, minK: Int, maxK: Int): Int {
+        var bestK = minK
+        var bestV = -1
+        val hi = min(maxK, hist.size - 1)
+        for (k in minK..hi) {
+            if (hist[k] > bestV) {
+                bestV = hist[k]
+                bestK = k
+            }
+        }
+        return if (bestV > 0) bestK else minK
+    }
+
     /** Jump L/R on an existing energy map (P4-jump reuses growOnEnergy's Sobel + thr + cap). */
     private fun jumpRetractHorizontalOnEnergy(
         eng: Mat,

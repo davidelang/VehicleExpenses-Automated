@@ -7876,3 +7876,14 @@ x
 - Plan `dev-ai-interaction/plans/g4-vjump-4pass-verts-20260822-0933-plan.md`
 - SET_G4_VJUMP_VERT_FACTORS = 0.0, 0.1, 0.2, 0.5. Column title `Set G4-vjump`. Jump/G4/QF unchanged.
 - Human: run scheduled pump; compare G4-vjump vs G4 on Good OCR pool.
+
+## 2026-08-22 - Execute start: pump-7seg-stroke-expand
+
+- Plan: `dev-ai-interaction/plans/pump-7seg-stroke-expand-20260822-2340-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: per-red 7-seg stroke `s` (seed-ROI Otsu, vSW H-path); vert walk + k=1 pad; horz jump j=2s; new scheduled column `Set 7seg-stroke`. G4 / G4-vjump / m65 / QF unchanged.
+
+## 2026-08-22 - Phase 1: strokeWidthInSeed
+
+- Plan: `dev-ai-interaction/plans/pump-7seg-stroke-expand-20260822-2340-plan.md`
+- Seed-ROI Otsu (default dark; flip if dark ink_frac ≥ 0.45). Drop CCs wider than 3s. Odo H-path vSW = s; fallback 0.08×seedH if peak is 4 or ink_frac ≥ 0.45.
