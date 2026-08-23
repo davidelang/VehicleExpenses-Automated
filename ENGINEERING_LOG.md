@@ -7899,3 +7899,8 @@ x
 ## 2026-08-22 - Phase 3: 7-seg horz jump in s + Set 7seg-stroke column
 
 - Jump j=2s, grow/retract in s (cap 20s). 14th scheduled column `Set 7seg-stroke`. Per-red s/k/j in assembly JSON. G4 / G4-vjump / m65 / QF unchanged.
+
+## 2026-08-22 - Completeness: 7-seg s fallback share + maxRun/W
+
+- Fallback also if stroke-count share < 0.30 or max horiz run ≥ 0.50×seedW.
+- JSON: strokeShare, maxRunOverW, vhAgree (supporting when seedH ≥ 6s).

@@ -995,6 +995,12 @@ object ContentExpandUtils {
         val droppedGlare: Int,
         val otsuThr: Int,
         val seed: Rect,
+        /** Fraction of non-full-width horiz runs whose length is in 0.7–1.3×vSW. */
+        val strokeShare: Float = 0f,
+        /** Longest non-full-width horiz run / seedW. */
+        val maxRunOverW: Float = 0f,
+        /** |hSW−vSW|/vSW ≤ 0.25 and seedH ≥ 6s. Supporting accept only; not a reject on thin waists. */
+        val vhAgree: Boolean = false,
     )
 
     const val SEG7_INK_FLIP_FRAC = 0.45f
@@ -1025,6 +1031,7 @@ object ContentExpandUtils {
                 sPx = fallback, vSW = SEG7_MIN_STROKE, hSW = SEG7_MIN_STROKE,
                 inkFrac = ink, darkInk = dark, usedFallback = true,
                 droppedGlare = dropped, otsuThr = thr, seed = s,
+                strokeShare = 0f, maxRunOverW = 0f, vhAgree = false,
             )
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return fail()
         if (seedH < 4 || seedW < 4) return fail()
@@ -1050,16 +1057,16 @@ object ContentExpandUtils {
                 darkInk = false
             }
 
-            fun peakVsw(mask: Mat): Pair<Int, Int> {
+            fun measure(mask: Mat): Pair<Int, Int> {
                 val hh = horizRunHist(mask)
                 val vh = vertRunHist(mask)
                 val maxV = max(35, (seedH * 0.50f).toInt())
                 val maxH = max(20, (seedH * 0.40f).toInt())
-                return peakCapped(hh, SEG7_MIN_STROKE, maxV) to
+                return peakCapped(hh.hist, SEG7_MIN_STROKE, maxV) to
                     peakCapped(vh, SEG7_MIN_STROKE, maxH)
             }
 
-            val (v0, h0) = peakVsw(bin)
+            val (v0, h0) = measure(bin)
             var dropped = 0
             val glareW = SEG7_GLARE_WIDTH_MULT * max(v0, SEG7_MIN_STROKE)
             if (glareW > 0 && !bin.empty()) {
@@ -1088,9 +1095,27 @@ object ContentExpandUtils {
                     }
                 }
             }
-            val (vSW, hSW) = if (dropped > 0) peakVsw(bin) else (v0 to h0)
-            val needFallback = vSW <= SEG7_MIN_STROKE || inkFrac >= SEG7_INK_FLIP_FRAC
+            val hh = horizRunHist(bin)
+            val vh = vertRunHist(bin)
+            val maxV = max(35, (seedH * 0.50f).toInt())
+            val maxH = max(20, (seedH * 0.40f).toInt())
+            val vSW = if (dropped > 0) peakCapped(hh.hist, SEG7_MIN_STROKE, maxV) else v0
+            val hSW = if (dropped > 0) peakCapped(vh, SEG7_MIN_STROKE, maxH) else h0
+            val lo = max(1, (0.7f * vSW).roundToInt())
+            val hi = max(lo, (1.3f * vSW).roundToInt())
+            var band = 0
+            val hiClamp = min(hi, hh.hist.size - 1)
+            for (k in lo..hiClamp) band += hh.hist[k]
+            val strokeShare = if (hh.nNonSpan > 0) band.toFloat() / hh.nNonSpan else 0f
+            val maxRunOverW = hh.maxRun.toFloat() / seedW
+            val needFallback = vSW <= SEG7_MIN_STROKE ||
+                inkFrac >= SEG7_INK_FLIP_FRAC ||
+                strokeShare < 0.30f ||
+                maxRunOverW >= 0.50f
             val sPx = if (needFallback) fallback else vSW
+            val vhAgree = seedH >= 6 * max(sPx, 1) &&
+                hSW > 0 &&
+                abs(hSW - vSW).toFloat() <= 0.25f * max(vSW, 1)
             return StrokeWidthInSeed(
                 sPx = sPx,
                 vSW = vSW,
@@ -1101,6 +1126,9 @@ object ContentExpandUtils {
                 droppedGlare = dropped,
                 otsuThr = thr,
                 seed = s,
+                strokeShare = strokeShare,
+                maxRunOverW = maxRunOverW,
+                vhAgree = vhAgree,
             )
         } catch (t: Throwable) {
             return fail()
@@ -1355,26 +1383,42 @@ object ContentExpandUtils {
         return best
     }
 
-    private fun horizRunHist(ink: Mat): IntArray {
+    private data class HorizRunHist(
+        val hist: IntArray,
+        val nNonSpan: Int,
+        val maxRun: Int,
+    )
+
+    private fun horizRunHist(ink: Mat): HorizRunHist {
         val h = ink.rows()
         val w = ink.cols()
         val hist = IntArray(w + 1)
-        if (h <= 0 || w <= 0) return hist
+        if (h <= 0 || w <= 0) return HorizRunHist(hist, 0, 0)
         val row = ByteArray(w)
+        var nNonSpan = 0
+        var maxRun = 0
         for (y in 0 until h) {
             ink.get(y, 0, row)
             var run = 0
+            fun close() {
+                if (run <= 0) return
+                if (run != w) {
+                    hist[run]++
+                    nNonSpan++
+                    if (run > maxRun) maxRun = run
+                }
+            }
             for (x in 0 until w) {
                 if (row[x].toInt() and 0xff != 0) {
                     run++
                 } else if (run > 0) {
-                    if (run != w) hist[run]++
+                    close()
                     run = 0
                 }
             }
-            if (run > 0 && run != w) hist[run]++
+            if (run > 0) close()
         }
-        return hist
+        return HorizRunHist(hist, nNonSpan, maxRun)
     }
 
     private fun vertRunHist(ink: Mat): IntArray {
