@@ -7920,3 +7920,7 @@ x
 ## 2026-08-23 - Phase 1: vhAgree JSON-only formula
 
 - `vhAgree = vSW>4 && hSW>4 && seedH ≥ 6×vSW && |Δ|/max(vSW,hSW) ≤ 0.25`. Floor-4 is not agreement. `usedFallback` still independent of `vhAgree`.
+
+## 2026-08-23 - Phase 2: 7seg-stroke flows fallbacks one-liner
+
+- `Set 7seg-stroke` notes stroke-count share < 0.30 and maxRun ≥ 0.50×W fallbacks. G4 / G4-vjump / m65 / QF rows unchanged.
