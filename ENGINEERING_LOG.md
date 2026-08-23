@@ -7977,3 +7977,8 @@ x
 ## 2026-08-23 - Phase 1: HTML 7seg PD cell shows s_per_red
 
 - Under Set 7seg-stroke Paddle PD snapshot: `s=31,19,14` from existing metadata. Whitelist / other columns / JSON / expand unchanged.
+
+## 2026-08-23 - CODE LANDED: pump-7seg-html-stroke-width
+
+- Plan `dev-ai-interaction/plans/pump-7seg-html-stroke-width-20260823-2201-plan.md`
+- HTML Set 7seg-stroke Paddle cell shows `s=<px list>` from s_per_red. JSON / expand / other columns unchanged.
