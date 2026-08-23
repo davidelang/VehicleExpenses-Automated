@@ -1001,6 +1001,13 @@ object ContentExpandUtils {
     const val SEG7_GLARE_WIDTH_MULT = 3
     const val SEG7_MIN_STROKE = 4
     const val SEG7_FALLBACK_H_FRAC = 0.08f
+    /** After vertical-bar-cap stop, pad each tip by this × `s`. */
+    const val SEG7_K = 1f
+    /** Horizontal jump as this × `s` (wired in phase 3). */
+    const val SEG7_J = 2f
+    const val SEG7_VERT_CAP_S = 8
+    const val SEG7_HORZ_CAP_S = 20
+    const val SEG7_BAR_RUN_FRAC = 0.5f
 
     fun strokeWidthInSeed(gray: Mat, seed: Rect): StrokeWidthInSeed {
         val imgW = gray.cols()
@@ -1104,6 +1111,170 @@ object ContentExpandUtils {
             stats.release()
             centroids.release()
         }
+    }
+
+    data class Seg7Expand(
+        val rect: Rect,
+        val stroke: StrokeWidthInSeed,
+        val k: Float = SEG7_K,
+        val j: Float = SEG7_J,
+    )
+
+    /**
+     * Freeze seed width. From seed T/B grow while a 1px strip has an ink run
+     * ≥ 0.5`s` (a bar). Stop after a gap ≥ `s`. Then pad each tip by [k]×`s`.
+     * No energy `maxFrac`. [doHorizontal] is phase 3.
+     */
+    fun expand7segFromSeed(
+        gray: Mat,
+        seed: Rect,
+        k: Float = SEG7_K,
+        j: Float = SEG7_J,
+        doHorizontal: Boolean = false,
+    ): Seg7Expand {
+        val stroke = strokeWidthInSeed(gray, seed)
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) {
+            return Seg7Expand(seed, stroke, k, j)
+        }
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val s0 = clip(stroke.seed, imgW, imgH)
+        val sPx = max(1, stroke.sPx)
+        val kPad = max(1, (k * sPx).roundToInt())
+        val look = SEG7_VERT_CAP_S * sPx + kPad + 2
+        val nl = s0.left
+        val nr = s0.right
+        val nt = (s0.top - look).coerceAtLeast(0)
+        val nb = (s0.bottom + look).coerceAtMost(imgH)
+        if (nr <= nl || nb <= nt) return Seg7Expand(s0, stroke, k, j)
+
+        val roi = gray.submat(nt, nb, nl, nr)
+        val bin = Mat()
+        try {
+            val type = if (stroke.darkInk) {
+                Imgproc.THRESH_BINARY_INV
+            } else {
+                Imgproc.THRESH_BINARY
+            }
+            Imgproc.threshold(roi, bin, stroke.otsuThr.toDouble(), 255.0, type)
+            dropWideComponents(bin, SEG7_GLARE_WIDTH_MULT * sPx)
+
+            val localT = s0.top - nt
+            val localB = s0.bottom - nt
+            val minRun = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
+            val cap = SEG7_VERT_CAP_S * sPx
+
+            fun hasBarRow(y: Int): Boolean {
+                if (y < 0 || y >= bin.rows()) return false
+                return maxInkRunOnRow(bin, y) >= minRun
+            }
+
+            var t = localT
+            var gap = 0
+            var y = localT - 1
+            while (y >= 0 && localT - y <= cap) {
+                if (hasBarRow(y)) {
+                    t = y
+                    gap = 0
+                } else {
+                    gap++
+                    if (gap >= sPx) break
+                }
+                y--
+            }
+            var b = localB
+            gap = 0
+            y = localB
+            while (y < bin.rows() && y - localB < cap) {
+                if (hasBarRow(y)) {
+                    b = y + 1
+                    gap = 0
+                } else {
+                    gap++
+                    if (gap >= sPx) break
+                }
+                y++
+            }
+            t = (t - kPad).coerceAtLeast(0)
+            b = (b + kPad).coerceAtMost(bin.rows())
+            if (b <= t) b = (t + 1).coerceAtMost(bin.rows())
+            var out = clip(Rect(nl, nt + t, nr, nt + b), imgW, imgH)
+            if (doHorizontal) {
+                out = jumpRetractHorizontalInS(bin, out, nl, nt, imgW, imgH, sPx, j)
+            }
+            return Seg7Expand(out, stroke, k, j)
+        } finally {
+            roi.release()
+            bin.release()
+        }
+    }
+
+    /** Phase 3 hook: L/R jump in `s`. No-op until wired; width stays frozen. */
+    private fun jumpRetractHorizontalInS(
+        @Suppress("UNUSED_PARAMETER") bin: Mat,
+        box: Rect,
+        @Suppress("UNUSED_PARAMETER") originX: Int,
+        @Suppress("UNUSED_PARAMETER") originY: Int,
+        imgW: Int,
+        imgH: Int,
+        @Suppress("UNUSED_PARAMETER") sPx: Int,
+        @Suppress("UNUSED_PARAMETER") j: Float,
+    ): Rect = clip(box, imgW, imgH)
+
+    private fun dropWideComponents(bin: Mat, glareW: Int) {
+        if (bin.empty() || glareW <= 0) return
+        val labels = Mat()
+        val stats = Mat()
+        val centroids = Mat()
+        try {
+            val nLab = Imgproc.connectedComponentsWithStats(bin, labels, stats, centroids, 8)
+            if (nLab <= 1) return
+            val drop = BooleanArray(nLab)
+            var any = false
+            for (i in 1 until nLab) {
+                val w = stats.get(i, Imgproc.CC_STAT_WIDTH)[0].toInt()
+                if (w > glareW) {
+                    drop[i] = true
+                    any = true
+                }
+            }
+            if (!any) return
+            val h = bin.rows()
+            val w = bin.cols()
+            val labRow = IntArray(w)
+            val pixRow = ByteArray(w)
+            for (y in 0 until h) {
+                labels.get(y, 0, labRow)
+                bin.get(y, 0, pixRow)
+                for (x in 0 until w) {
+                    val id = labRow[x]
+                    if (id in drop.indices && drop[id]) pixRow[x] = 0
+                }
+                bin.put(y, 0, pixRow)
+            }
+        } finally {
+            labels.release()
+            stats.release()
+            centroids.release()
+        }
+    }
+
+    private fun maxInkRunOnRow(ink: Mat, y: Int): Int {
+        val w = ink.cols()
+        if (w <= 0 || y < 0 || y >= ink.rows()) return 0
+        val row = ByteArray(w)
+        ink.get(y, 0, row)
+        var run = 0
+        var best = 0
+        for (x in 0 until w) {
+            if (row[x].toInt() and 0xff != 0) {
+                run++
+                if (run > best) best = run
+            } else {
+                run = 0
+            }
+        }
+        return best
     }
 
     private fun horizRunHist(ink: Mat): IntArray {

@@ -7891,3 +7891,7 @@ x
 ## 2026-08-22 - Phase 1 strike 1: keep h0 from first-pass peak
 
 - `peakVsw` first pass still supplies `(v0, h0)` when no glare CCs are dropped.
+
+## 2026-08-22 - Phase 2: 7-seg vertical walk in s + k=1 pad
+
+- `expand7segFromSeed`: freeze width; grow T/B while strip has ink run ≥ 0.5s; stop after gap ≥ s; pad k=1×s. No energy maxFrac. Horizontal still off.
