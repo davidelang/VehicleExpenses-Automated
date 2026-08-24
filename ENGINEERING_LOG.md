@@ -8277,3 +8277,9 @@ x
 
 - 18 scheduled flows: gray ten plus chi2/ink/jump/rot-ink/xycut `-color`. New procs pass `chromaExpand=true` only. G-- / G4-vjump unchanged. Docs 18-col table; ingest UV live; rec Y.
 
+
+## 2026-08-24 - CODE LANDED: keep-chroma-and-color-expand-cols
+
+- Plan: `dev-ai-interaction/plans/keep-chroma-and-color-expand-cols-20260824-1403-plan.md`
+- Ingest jpeg/dng/decoder keep UV. Eight `-color` expand columns (chromaMag / fused |∇Y|+|∇C|; L/R jump Y mag; ink median<8 Y fallback). 18 flows. Rec tensors Y. G-- / G4-vjump / QF verts unchanged.
+
