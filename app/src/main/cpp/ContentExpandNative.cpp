@@ -3,6 +3,7 @@
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 #include <android/log.h>
 
@@ -544,5 +545,607 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCount
     jfloatArray arr = env->NewFloatArray(nOut);
     if (!arr) return nullptr;
     env->SetFloatArrayRegion(arr, 0, nOut, out.data());
+    return arr;
+}
+
+namespace {
+
+static bool fillChromaMag(const cv::Mat& y, const cv::Mat& uv, cv::Mat* dst) {
+    if (y.empty() || y.type() != CV_8UC1) return false;
+    const int h = y.rows, w = y.cols;
+    dst->create(h, w, CV_8UC1);
+    if (uv.empty() || uv.type() != CV_8UC2 || uv.rows <= 0 || uv.cols <= 0) {
+        dst->setTo(0);
+        return true;
+    }
+    const int uvH = uv.rows, uvW = uv.cols;
+    const bool half = uvW * 2 <= w + 1;
+    for (int ly = 0; ly < h; ++ly) {
+        int uy = half ? ly / 2 : (ly & ~1);
+        if (uy < 0) uy = 0;
+        if (uy >= uvH) uy = uvH - 1;
+        const cv::Vec2b* uvp = uv.ptr<cv::Vec2b>(uy);
+        uint8_t* op = dst->ptr<uint8_t>(ly);
+        for (int lx = 0; lx < w; ++lx) {
+            int ux = half ? lx / 2 : (lx & ~1);
+            if (ux < 0) ux = 0;
+            if (ux >= uvW) ux = uvW - 1;
+            const int du = static_cast<int>(uvp[ux][0]) - 128;
+            const int dv = static_cast<int>(uvp[ux][1]) - 128;
+            int m = static_cast<int>(std::lround(std::hypot(static_cast<double>(du),
+                                                            static_cast<double>(dv))));
+            if (m > 255) m = 255;
+            op[lx] = static_cast<uint8_t>(m);
+        }
+    }
+    return true;
+}
+
+static double meanRectF(const cv::Mat& e, int l, int t, int r, int b, int W, int H) {
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > W) r = W;
+    if (b > H) b = H;
+    if (r <= l || b <= t) return 0.0;
+    double s = 0.0;
+    int n = 0;
+    for (int y = t; y < b; ++y) {
+        const float* p = e.ptr<float>(y);
+        for (int x = l; x < r; ++x) {
+            s += p[x];
+            ++n;
+        }
+    }
+    return n > 0 ? s / n : 0.0;
+}
+
+static void jumpRetractH(
+    const cv::Mat& eng, int* l, int t, int* r, int b,
+    int imgW, int imgH, double thr, int capPx, float jumpFrac, float retractClearFrac
+) {
+    const int floorL = *l, floorR = *r;
+    const int hgt = std::max(1, b - t);
+    const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * hgt)));
+    *l = std::max(0, *l - jx);
+    *r = std::min(imgW, *r + jx);
+    const bool inText =
+        (*l < floorL && meanRectF(eng, *l, t, std::min(*l + 1, *r), b, imgW, imgH) >= thr) ||
+        (*r > floorR && meanRectF(eng, std::max(*r - 1, *l), t, *r, b, imgW, imgH) >= thr);
+    if (inText) {
+        for (int k = 0; k < capPx; ++k) {
+            bool grew = false;
+            if (*l > 0 && meanRectF(eng, *l - 1, t, *l, b, imgW, imgH) >= thr) {
+                --(*l);
+                grew = true;
+            }
+            if (*r < imgW && meanRectF(eng, *r, t, *r + 1, b, imgW, imgH) >= thr) {
+                ++(*r);
+                grew = true;
+            }
+            if (!grew) break;
+        }
+    } else {
+        while (*l < floorL &&
+               meanRectF(eng, *l, t, std::min(*l + 1, *r), b, imgW, imgH) < thr) ++(*l);
+        while (*r > floorR &&
+               meanRectF(eng, std::max(*r - 1, *l), t, *r, b, imgW, imgH) < thr) --(*r);
+        const int clear = std::max(1, static_cast<int>(std::lround(
+            retractClearFrac * std::max(1, b - t))));
+        *l = std::max(0, *l - clear);
+        *r = std::min(imgW, *r + clear);
+    }
+}
+
+static void extrema1d(
+    const std::vector<double>& a, double prominence, int minDist, bool maxima,
+    std::vector<int>* out
+) {
+    const double sign = maxima ? 1.0 : -1.0;
+    std::vector<int> cand;
+    if (a.size() < 3) {
+        out->clear();
+        return;
+    }
+    for (int i = 1; i + 1 < static_cast<int>(a.size()); ++i) {
+        const double v = sign * a[i];
+        if (v < sign * a[i - 1] || v < sign * a[i + 1]) continue;
+        double leftMin = v;
+        int j = i - 1;
+        while (j >= 0 && sign * a[j] <= v + 1e-12) {
+            leftMin = std::min(leftMin, sign * a[j]);
+            --j;
+        }
+        double rightMin = v;
+        j = i + 1;
+        while (j < static_cast<int>(a.size()) && sign * a[j] <= v + 1e-12) {
+            rightMin = std::min(rightMin, sign * a[j]);
+            ++j;
+        }
+        const double prom = v - std::max(leftMin, rightMin);
+        if (prom + 1e-12 >= prominence) cand.push_back(i);
+    }
+    std::vector<int> order = cand;
+    std::sort(order.begin(), order.end(), [&](int i, int j) {
+        return sign * a[i] > sign * a[j];
+    });
+    std::vector<int> kept;
+    for (int i : order) {
+        bool ok = true;
+        for (int k : kept) {
+            if (std::abs(k - i) < minDist) { ok = false; break; }
+        }
+        if (ok) kept.push_back(i);
+    }
+    std::sort(kept.begin(), kept.end());
+    *out = std::move(kept);
+}
+
+static void xycutOnProfile(
+    const cv::Mat& eng, int l, int seedT, int r, int seedB,
+    int imgW, int imgH, int look, int* top, int* bot
+) {
+    const int y0 = std::max(0, seedT - look);
+    const int y1 = std::min(imgH, seedB + look);
+    if (y1 - y0 < 4 || r <= l) {
+        *top = seedT;
+        *bot = seedB;
+        return;
+    }
+    const int n = y1 - y0;
+    std::vector<double> raw(n, 0.0);
+    for (int i = 0; i < n; ++i) {
+        raw[i] = meanRectF(eng, l, y0 + i, r, y0 + i + 1, imgW, imgH);
+    }
+    const int sh = std::max(1, seedB - seedT);
+    std::vector<double> sm;
+    smooth1d(raw, std::max(1.0, 0.04 * sh), &sm);
+    int st = seedT - y0;
+    int sb = seedB - y0;
+    if (st < 0) st = 0;
+    if (st > n - 1) st = n - 1;
+    if (sb < st + 1) sb = st + 1;
+    if (sb > n) sb = n;
+    double seedMin = sm[st], seedMax = sm[st];
+    for (int i = st; i < sb; ++i) {
+        if (sm[i] < seedMin) seedMin = sm[i];
+        if (sm[i] > seedMax) seedMax = sm[i];
+    }
+    const double prom = std::max(1e-8, 0.12 * (seedMax - seedMin + 1e-6));
+    const int minDist = std::max(3, sh / 6);
+    std::vector<int> peaks, valleys;
+    extrema1d(sm, prom, minDist, true, &peaks);
+    extrema1d(sm, prom, std::max(2, sh / 10), false, &valleys);
+    const double mid = 0.5 * (st + sb);
+    int own = st;
+    if (!peaks.empty()) {
+        own = peaks[0];
+        double best = std::abs(peaks[0] - mid);
+        for (int p : peaks) {
+            const double d = std::abs(p - mid);
+            if (d < best) { best = d; own = p; }
+        }
+    } else {
+        double bestV = sm[st];
+        for (int i = st; i < sb; ++i) {
+            if (sm[i] > bestV) { bestV = sm[i]; own = i; }
+        }
+    }
+    int tp = y0, bt = y1;
+    for (int vi = static_cast<int>(valleys.size()) - 1; vi >= 0; --vi) {
+        if (valleys[vi] < own) { tp = y0 + valleys[vi]; break; }
+    }
+    for (int v : valleys) {
+        if (v > own) { bt = y0 + v; break; }
+    }
+    tp = std::min(tp, seedT);
+    bt = std::max(bt, seedB);
+    *top = std::max(0, tp);
+    *bot = std::min(imgH, bt);
+}
+
+static double medianVec(std::vector<double> v) {
+    if (v.empty()) return 1.0;
+    std::sort(v.begin(), v.end());
+    const int n = static_cast<int>(v.size());
+    if (n % 2 == 1) return v[n / 2];
+    return 0.5 * (v[n / 2 - 1] + v[n / 2]);
+}
+
+static void chi2Walk(
+    const cv::Mat& g8, int sl, int st, int sr, int sb,
+    int imgW, int imgH, int capPx, float chi2K,
+    int* top, int* bot
+) {
+    *top = st;
+    *bot = sb;
+    if (sr <= sl || sb <= st || g8.empty() || g8.type() != CV_8UC1) return;
+    const int w = sr - sl;
+    const int bins = 16;
+    auto fillOh = [&](int y, float* oh) {
+        for (int i = 0; i < bins; ++i) oh[i] = 0.f;
+        if (y < 0 || y >= imgH) return;
+        const uint8_t* p = g8.ptr<uint8_t>(y);
+        for (int x = sl; x < sr; ++x) {
+            int b = p[x] / 16;
+            if (b > 15) b = 15;
+            oh[b] += 1.f;
+        }
+        const float inv = 1.f / std::max(1, w);
+        for (int i = 0; i < bins; ++i) oh[i] *= inv;
+    };
+    float seedHist[16] = {};
+    float oh[16];
+    for (int y = st; y < sb; ++y) {
+        fillOh(y, oh);
+        for (int i = 0; i < bins; ++i) seedHist[i] += oh[i];
+    }
+    const float nSeed = static_cast<float>(std::max(1, sb - st));
+    float histSum = 0.f;
+    for (int i = 0; i < bins; ++i) {
+        seedHist[i] /= nSeed;
+        histSum += seedHist[i];
+    }
+    if (histSum > 1e-6f) {
+        const float inv = 1.f / histSum;
+        for (int i = 0; i < bins; ++i) seedHist[i] *= inv;
+    }
+    auto chi2At = [&](int y) {
+        fillOh(y, oh);
+        double s = 0.0;
+        for (int i = 0; i < bins; ++i) {
+            const double d = static_cast<double>(oh[i] - seedHist[i]);
+            s += d * d / (seedHist[i] + 1e-3);
+        }
+        return s;
+    };
+    std::vector<double> seedScores;
+    seedScores.reserve(sb - st);
+    for (int y = st; y < sb; ++y) seedScores.push_back(chi2At(y));
+    const double seedChi2 = std::max(medianVec(seedScores), 1e-6);
+    const double thr = chi2K * seedChi2;
+    auto walk = [&](int start, int step) {
+        int y = start, streak = 0, steps = 0;
+        while (true) {
+            const int ny = y + step;
+            if (ny < 0 || ny >= imgH) return y;
+            if (steps >= capPx) return y;
+            if (chi2At(ny) > thr) {
+                ++streak;
+                if (streak >= 2) return y;
+            } else {
+                streak = 0;
+                y = ny;
+                ++steps;
+            }
+        }
+    };
+    const int tp = walk(st, -1);
+    const int last = walk(sb - 1, +1);
+    *top = std::min(tp, st);
+    *bot = std::max(last + 1, sb);
+}
+
+static int runCountRow(const float* row, int n, float thr, int minRun = 3) {
+    int cnt = 0, run = 0;
+    for (int i = 0; i < n; ++i) {
+        if (row[i] >= thr) ++run;
+        else {
+            if (run >= minRun) ++cnt;
+            run = 0;
+        }
+    }
+    if (run >= minRun) ++cnt;
+    return cnt;
+}
+
+static void countPullY(
+    const cv::Mat& gxAbs, int sl, int st, int sr, int sb,
+    int el, int et, int er, int eb,
+    int imgW, int imgH, bool stopUpEnergy, bool stopDownEnergy,
+    int* ct, int* cb, int* pulledT, int* pulledB
+) {
+    *ct = et;
+    *cb = eb;
+    *pulledT = 0;
+    *pulledB = 0;
+    if (sr <= sl || sb <= st) return;
+    const int sw = sr - sl;
+    std::vector<float> buf;
+    buf.reserve(std::max(1, (sb - st) * sw));
+    for (int y = st; y < sb; ++y) {
+        const float* p = gxAbs.ptr<float>(y);
+        for (int x = sl; x < sr; ++x) buf.push_back(p[x]);
+    }
+    double p90 = 8.0;
+    if (buf.size() >= 2) {
+        std::vector<float> s = buf;
+        std::sort(s.begin(), s.end());
+        const int idx = static_cast<int>((s.size() - 1) * 0.90);
+        p90 = s[std::max(0, std::min(idx, static_cast<int>(s.size()) - 1))];
+    }
+    const double gxThr = std::max(8.0, 0.55 * p90);
+    const int y0 = std::max(0, std::min(st, et));
+    const int y1 = std::min(imgH, std::max(sb, eb));
+    const int n = std::max(1, y1 - y0);
+    std::vector<double> raw(n, 0.0);
+    std::vector<float> row(sw);
+    for (int i = 0; i < n; ++i) {
+        const int y = y0 + i;
+        const float* p = gxAbs.ptr<float>(y);
+        for (int x = 0; x < sw; ++x) row[x] = p[sl + x];
+        raw[i] = runCountRow(row.data(), sw, static_cast<float>(gxThr));
+    }
+    const int sh = std::max(1, sb - st);
+    std::vector<double> sm;
+    smooth1d(raw, std::max(1.0, 0.04 * sh), &sm);
+    int sti = st - y0;
+    int sbi = sb - y0;
+    if (sti < 0) sti = 0;
+    if (sti > n - 2) sti = std::max(0, n - 2);
+    if (sbi < sti + 1) sbi = sti + 1;
+    if (sbi > n) sbi = n;
+    std::vector<double> seedVals(sm.begin() + sti, sm.begin() + sbi);
+    std::sort(seedVals.begin(), seedVals.end());
+    const double cSeed = seedVals[seedVals.size() / 2];
+    int te = et - y0;
+    int be = eb - y0;
+    if (te < 0) te = 0;
+    if (te > sti) te = sti;
+    if (be < sbi) be = sbi;
+    if (be > n) be = n;
+    int top = te, bot = be;
+    int pT = 0, pB = 0;
+    if (cSeed >= 1.0) {
+        const double cThr = 0.45 * cSeed;
+        for (int i = sti - 1; i >= te; --i) {
+            const double left = (i == 0) ? sm[i] : sm[i - 1];
+            const double right = (i == n - 1) ? sm[i] : sm[i + 1];
+            if (sm[i] < cThr && sm[i] <= left && sm[i] <= right) {
+                top = i;
+                pT = 1;
+                break;
+            }
+        }
+        for (int i = sbi; i < be; ++i) {
+            const double left = (i == 0) ? sm[i] : sm[i - 1];
+            const double right = (i == n - 1) ? sm[i] : sm[i + 1];
+            if (sm[i] < cThr && sm[i] <= left && sm[i] <= right) {
+                bot = i;
+                pB = 1;
+                break;
+            }
+        }
+    }
+    top = std::min(top, sti);
+    bot = std::max(bot, sbi);
+    const double cThr = 0.45 * cSeed;
+    const int clearSteps = std::max(1, static_cast<int>(std::lround(0.10 * sh)));
+    const int growSteps = std::max(1, static_cast<int>(std::lround(0.08 * sh)));
+    const bool allowGrow = (eb - et) <= 2.4f * sh;
+    const double tipTop = (te >= 0 && te < n) ? sm[te] : 0.0;
+    double tipBot = 0.0;
+    if (be - 1 >= 0 && be - 1 < n) tipBot = sm[be - 1];
+    else if (be >= 0 && be < n) tipBot = sm[be];
+    const int idxLo = std::min(0, te - growSteps);
+    const int idxHi = std::max(n, be + growSteps);
+    int topPad = top, botPad = bot;
+    bool grewT = false, grewB = false;
+    padCountTip(pT != 0, stopUpEnergy, tipTop, cThr, te, top, sti, false,
+                clearSteps, growSteps, idxLo, idxHi, allowGrow, &topPad, &grewT);
+    padCountTip(pB != 0, stopDownEnergy, tipBot, cThr, be, bot, sbi, true,
+                clearSteps, growSteps, idxLo, idxHi, allowGrow, &botPad, &grewB);
+    top = std::min(topPad, sti);
+    bot = std::max(botPad, sbi);
+    if (bot < top + 1) bot = std::max(top + 1, sbi);
+    *ct = std::max(0, std::min(imgH, y0 + top));
+    *cb = std::max(*ct + 1, std::min(imgH, y0 + bot));
+    *pulledT = pT;
+    *pulledB = pB;
+    (void)el;
+    (void)er;
+}
+
+}  // namespace
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeChromaMag(
+    JNIEnv* /*env*/, jobject /*thiz*/,
+    jlong yPtr, jlong uvPtr, jlong dstPtr
+) {
+    auto* y = reinterpret_cast<cv::Mat*>(yPtr);
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    auto* dst = reinterpret_cast<cv::Mat*>(dstPtr);
+    if (!y || !dst) return JNI_FALSE;
+    if (!uv) {
+        cv::Mat empty;
+        return fillChromaMag(*y, empty, dst) ? JNI_TRUE : JNI_FALSE;
+    }
+    return fillChromaMag(*y, *uv, dst) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbGrowMany(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr,
+    jintArray seedsArr,
+    jboolean chroma,
+    jint vertKind,
+    jfloat maxFrac, jfloat energyRatio,
+    jboolean freezeHorz, jboolean enableJump,
+    jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac, jfloat chi2K
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
+    if (!seedsArr) return nullptr;
+    const int imgW = gray->cols, imgH = gray->rows;
+    const jint n4 = env->GetArrayLength(seedsArr);
+    if (n4 <= 0 || n4 % 4 != 0) {
+        jintArray empty = env->NewIntArray(0);
+        return empty;
+    }
+    const int n = n4 / 4;
+    std::vector<jint> seeds(n4);
+    env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
+
+    cv::Mat gxY, gyY, magY, gxAbs;
+    cv::Sobel(*gray, gxY, CV_32F, 1, 0, 3);
+    cv::Sobel(*gray, gyY, CV_32F, 0, 1, 3);
+    cv::magnitude(gxY, gyY, magY);
+    cv::absdiff(gxY, cv::Scalar(0.0), gxAbs);
+
+    cv::Mat cMag, cF, gxC, gyC, magC, vertEng;
+    const bool useChroma = chroma == JNI_TRUE;
+    if (useChroma) {
+        auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+        cv::Mat uvRef = uv ? *uv : cv::Mat();
+        fillChromaMag(*gray, uvRef, &cMag);
+        cMag.convertTo(cF, CV_32F);
+        cv::Sobel(cF, gxC, CV_32F, 1, 0, 3);
+        cv::Sobel(cF, gyC, CV_32F, 0, 1, 3);
+        cv::magnitude(gxC, gyC, magC);
+        cF.release();
+        gxC.release();
+        gyC.release();
+    }
+
+    // vertKind: 0 MAG, 1 GX, 2 XYCUT, 3 CHI2
+    if (vertKind == 1 || vertKind == 2) {
+        if (useChroma) {
+            cv::Mat absGxY, absGxC;
+            cv::absdiff(gxY, cv::Scalar(0.0), absGxY);
+            cv::Mat gxC2, gyC2;
+            cv::Mat cF2;
+            cMag.convertTo(cF2, CV_32F);
+            cv::Sobel(cF2, gxC2, CV_32F, 1, 0, 3);
+            cv::absdiff(gxC2, cv::Scalar(0.0), absGxC);
+            cv::magnitude(absGxY, absGxC, vertEng);
+            cF2.release();
+            gxC2.release();
+            gyC2.release();
+            absGxY.release();
+            absGxC.release();
+        } else {
+            gxAbs.copyTo(vertEng);
+        }
+    } else {
+        if (useChroma) {
+            cv::magnitude(magY, magC, vertEng);
+        } else {
+            magY.copyTo(vertEng);
+        }
+    }
+    gxY.release();
+    gyY.release();
+    magC.release();
+
+    const cv::Mat* chi2Src = useChroma ? &cMag : gray;
+    std::vector<jint> out(n * 11, 0);
+    for (int i = 0; i < n; ++i) {
+        int l = seeds[i * 4 + 0];
+        int t = seeds[i * 4 + 1];
+        int r = seeds[i * 4 + 2];
+        int b = seeds[i * 4 + 3];
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l) r = std::min(imgW, l + 1);
+        if (b <= t) b = std::min(imgH, t + 1);
+        const int seedL = l, seedT = t, seedR = r, seedB = b;
+        const int seedH = std::max(1, b - t);
+        const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * seedH)));
+        const int il = l + 2, it = t + 2, ir = r - 2, ib = b - 2;
+        const double base = (ir > il && ib > it)
+            ? meanRectF(vertEng, il, it, ir, ib, imgW, imgH)
+            : meanRectF(vertEng, l, t, r, b, imgW, imgH);
+        const double thr = energyRatio * std::max(base, 1e-3);
+        const double jumpBase = (ir > il && ib > it)
+            ? meanRectF(magY, il, it, ir, ib, imgW, imgH)
+            : meanRectF(magY, l, t, r, b, imgW, imgH);
+        const double jumpThr = energyRatio * std::max(jumpBase, 1e-3);
+        bool allowUp = t > 0 && meanRectF(vertEng, l, t - 1, r, t, imgW, imgH) >= thr;
+        bool allowDown = b < imgH && meanRectF(vertEng, l, b, r, b + 1, imgW, imgH) >= thr;
+        int walkT = 0, walkB = 0;
+        if (vertKind == 2) {
+            int cutT = t, cutB = b;
+            xycutOnProfile(vertEng, l, t, r, b, imgW, imgH, cap, &cutT, &cutB);
+            t = allowUp ? std::min(cutT, seedT) : seedT;
+            b = allowDown ? std::max(cutB, seedB) : seedB;
+        } else if (vertKind == 3) {
+            int cutT = t, cutB = b;
+            chi2Walk(*chi2Src, l, t, r, b, imgW, imgH, cap, chi2K, &cutT, &cutB);
+            allowUp = t > 0 && cutT < seedT;
+            allowDown = b < imgH && cutB > seedB;
+            t = allowUp ? std::min(cutT, seedT) : seedT;
+            b = allowDown ? std::max(cutB, seedB) : seedB;
+        } else {
+            for (int k = 0; k < cap; ++k) {
+                bool grew = false;
+                if (allowUp && t > 0 &&
+                    meanRectF(vertEng, l, t - 1, r, t, imgW, imgH) >= thr) {
+                    --t;
+                    grew = true;
+                }
+                if (allowDown && b < imgH &&
+                    meanRectF(vertEng, l, b, r, b + 1, imgW, imgH) >= thr) {
+                    ++b;
+                    grew = true;
+                }
+                if (!freezeHorz) {
+                    if (l > 0 && meanRectF(vertEng, l - 1, t, l, b, imgW, imgH) >= thr) {
+                        --l;
+                        grew = true;
+                    }
+                    if (r < imgW && meanRectF(vertEng, r, t, r + 1, b, imgW, imgH) >= thr) {
+                        ++r;
+                        grew = true;
+                    }
+                }
+                if (!grew) break;
+            }
+        }
+        walkT = seedT - t;
+        walkB = b - seedB;
+        if (vertPadFrac > 0.f) {
+            const int extra = std::max(1, static_cast<int>(std::lround(vertPadFrac * seedH)));
+            if (allowUp) t = std::max(0, t - extra);
+            if (allowDown) b = std::min(imgH, b + extra);
+        }
+        const int hit = (walkT >= cap || walkB >= cap) ? 1 : 0;
+        const bool stopUpE = (vertKind != 2 && vertKind != 3 && walkT < cap);
+        const bool stopDownE = (vertKind != 2 && vertKind != 3 && walkB < cap);
+        if (enableJump) {
+            jumpRetractH(magY, &l, t, &r, b, imgW, imgH, jumpThr, cap,
+                         jumpFrac, retractClearFrac);
+        }
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l) r = std::min(imgW, l + 1);
+        if (b <= t) b = std::min(imgH, t + 1);
+        int ct = t, cb = b, pT = 0, pB = 0;
+        countPullY(gxAbs, seedL, seedT, seedR, seedB, l, t, r, b,
+                   imgW, imgH, stopUpE, stopDownE, &ct, &cb, &pT, &pB);
+        const int o = i * 11;
+        out[o + 0] = l;
+        out[o + 1] = t;
+        out[o + 2] = r;
+        out[o + 3] = b;
+        out[o + 4] = l;
+        out[o + 5] = ct;
+        out[o + 6] = r;
+        out[o + 7] = cb;
+        out[o + 8] = hit;
+        out[o + 9] = pT;
+        out[o + 10] = pB;
+    }
+    magY.release();
+    gxAbs.release();
+    vertEng.release();
+    cMag.release();
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return nullptr;
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
     return arr;
 }

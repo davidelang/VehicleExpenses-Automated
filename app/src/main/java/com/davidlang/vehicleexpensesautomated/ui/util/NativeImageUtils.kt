@@ -429,6 +429,51 @@ object NativeImageUtils {
     private external fun nativeExpandByCharacterAware(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeExpandByCharacterAwareDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
+    private external fun nativeChromaMag(yPtr: Long, uvPtr: Long, dstPtr: Long): Boolean
+    private external fun nativeAabbGrowMany(
+        grayPtr: Long,
+        uvPtr: Long,
+        seeds: IntArray,
+        chroma: Boolean,
+        vertKind: Int,
+        maxFrac: Float,
+        energyRatio: Float,
+        freezeHorz: Boolean,
+        enableJump: Boolean,
+        jumpFrac: Float,
+        retractClearFrac: Float,
+        vertPadFrac: Float,
+        chi2K: Float,
+    ): IntArray?
+
+    fun chromaMagNative(y: Mat, uv: Mat, dst: Mat): Boolean {
+        if (y.empty() || dst.empty()) return false
+        return nativeChromaMag(y.nativeObj, uv.nativeObj, dst.nativeObj)
+    }
+
+    fun aabbGrowManyNative(
+        gray: Mat,
+        uv: Mat?,
+        seeds: IntArray,
+        chroma: Boolean,
+        vertKind: Int,
+        maxFrac: Float,
+        energyRatio: Float,
+        freezeHorz: Boolean,
+        enableJump: Boolean,
+        jumpFrac: Float,
+        retractClearFrac: Float,
+        vertPadFrac: Float,
+        chi2K: Float,
+    ): IntArray? {
+        if (gray.empty()) return null
+        return nativeAabbGrowMany(
+            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chroma, vertKind,
+            maxFrac, energyRatio, freezeHorz, enableJump,
+            jumpFrac, retractClearFrac, vertPadFrac, chi2K,
+        )
+    }
+
     private external fun nativeExpandOriented(
         matPtr: Long,
         seedPts: FloatArray,

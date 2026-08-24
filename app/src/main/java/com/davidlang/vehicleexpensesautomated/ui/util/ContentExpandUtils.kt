@@ -1288,34 +1288,8 @@ object ContentExpandUtils {
         val h = if (y.empty()) 0 else y.rows()
         val w = if (y.empty()) 0 else y.cols()
         val out = Mat.zeros(h.coerceAtLeast(1), w.coerceAtLeast(1), CvType.CV_8UC1)
-        if (y.empty() || uv.empty() || w <= 0 || h <= 0) return out
-        if (y.type() != CvType.CV_8UC1 || uv.type() != CvType.CV_8UC2) return out
-        val uvH = uv.rows()
-        val uvW = uv.cols()
-        if (uvH <= 0 || uvW <= 0) return out
-        val half = uvW * 2 <= w + 1
-        val uvRow = ByteArray(uvW * 2)
-        val outRow = ByteArray(w)
-        for (ly in 0 until h) {
-            val uy = if (half) {
-                (ly / 2).coerceIn(0, uvH - 1)
-            } else {
-                (ly and 0x7ffffffe).coerceIn(0, uvH - 1)
-            }
-            uv.get(uy, 0, uvRow)
-            for (lx in 0 until w) {
-                val ux = if (half) {
-                    (lx / 2).coerceIn(0, uvW - 1)
-                } else {
-                    (lx and 0x7ffffffe).coerceIn(0, uvW - 1)
-                }
-                val u = (uvRow[ux * 2].toInt() and 0xFF) - 128
-                val v = (uvRow[ux * 2 + 1].toInt() and 0xFF) - 128
-                val mag = hypot(u.toDouble(), v.toDouble())
-                outRow[lx] = min(255, mag.roundToInt()).toByte()
-            }
-            out.put(ly, 0, outRow)
-        }
+        if (y.empty() || w <= 0 || h <= 0) return out
+        NativeImageUtils.chromaMagNative(y, uv, out)
         return out
     }
 
@@ -1670,6 +1644,10 @@ object ContentExpandUtils {
         val imgW = gray.cols()
         val imgH = gray.rows()
         val s = clip(seed, imgW, imgH)
+        if (mode == Mode.INTERIOR_ENERGY && !opts.recordVertEnergy) {
+            val many = expandDiagnoseMany(gray, null, listOf(s), mode, opts)
+            if (many != null && many.size == 1) return many[0]
+        }
         return when (mode) {
             Mode.INTERIOR_ENERGY -> growOnEnergy(gray, s, opts)
             else -> AabbExpand(expand(gray, seed, mode, opts), false)
@@ -1686,9 +1664,72 @@ object ContentExpandUtils {
     ): AabbExpand {
         if (y.empty() || y.type() != CvType.CV_8UC1) return AabbExpand(seed, false)
         val s = clip(seed, y.cols(), y.rows())
+        if (mode == Mode.INTERIOR_ENERGY && !opts.recordVertEnergy) {
+            val many = expandDiagnoseMany(y, uv, listOf(s), mode, opts)
+            if (many != null && many.size == 1) return many[0]
+        }
         return when (mode) {
             Mode.INTERIOR_ENERGY -> growOnEnergyChroma(y, uv, s, opts)
             else -> expandDiagnose(y, seed, mode, opts)
+        }
+    }
+
+    /**
+     * Many-seed AABB energy (one Sobel/chromaMag per photo). Null → caller Kotlin fallback.
+     * Live path when [ExpandOptions.recordVertEnergy] is false.
+     */
+    fun expandDiagnoseMany(
+        gray: Mat,
+        uv: Mat?,
+        seeds: List<Rect>,
+        mode: Mode,
+        opts: ExpandOptions,
+    ): List<AabbExpand>? {
+        if (mode != Mode.INTERIOR_ENERGY || opts.recordVertEnergy) return null
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) {
+            return seeds.map { AabbExpand(it, false) }
+        }
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        if (seeds.isEmpty()) return emptyList()
+        val packed = IntArray(seeds.size * 4)
+        seeds.forEachIndexed { i, s ->
+            val c = clip(s, imgW, imgH)
+            packed[i * 4] = c.left
+            packed[i * 4 + 1] = c.top
+            packed[i * 4 + 2] = c.right
+            packed[i * 4 + 3] = c.bottom
+        }
+        val vk = when (opts.vertEnergy) {
+            VertEnergyKind.MAGNITUDE -> 0
+            VertEnergyKind.GX -> 1
+            VertEnergyKind.XYCUT_GX -> 2
+            VertEnergyKind.CHI2 -> 3
+        }
+        val r = NativeImageUtils.aabbGrowManyNative(
+            gray, uv, packed, uv != null, vk,
+            opts.maxFrac, opts.energyRatio, opts.freezeHorzDuringVert, opts.enableJump,
+            opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac, opts.chi2K,
+        ) ?: return null
+        if (r.size < seeds.size * 11) return null
+        return seeds.indices.map { i ->
+            val o = i * 11
+            val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
+            val cr = clip(Rect(r[o + 4], r[o + 5], r[o + 6], r[o + 7]), imgW, imgH)
+            AabbExpand(
+                rect,
+                r[o + 8] != 0,
+                null,
+                cr,
+                CountPullInfo(
+                    pulledTop = r[o + 9] != 0,
+                    pulledBot = r[o + 10] != 0,
+                    tBefore = rect.top,
+                    bBefore = rect.bottom,
+                    tAfter = cr.top,
+                    bAfter = cr.bottom,
+                ),
+            )
         }
     }
 

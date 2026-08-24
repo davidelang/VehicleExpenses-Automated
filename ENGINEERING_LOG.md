@@ -8283,3 +8283,15 @@ x
 - Plan: `dev-ai-interaction/plans/keep-chroma-and-color-expand-cols-20260824-1403-plan.md`
 - Ingest jpeg/dng/decoder keep UV. Eight `-color` expand columns (chromaMag / fused |∇Y|+|∇C|; L/R jump Y mag; ink median<8 Y fallback). 18 flows. Rec tensors Y. G-- / G4-vjump / QF verts unchanged.
 
+
+## 2026-08-24 - Execute start: native-aabb-ink-chroma-expand
+
+- Plan: `dev-ai-interaction/plans/native-aabb-ink-chroma-expand-20260824-1608-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: JNI many-seed AABB energy + 7seg + Y jump for gray AND color. One Sobel/chromaMag per photo. G4 jump JNI. G-- calculated stays Kotlin. Rec Y / 18 names / knobs unchanged.
+
+
+## 2026-08-24 - Phase 1: native chromaMag + many-seed AABB energy
+
+- `nativeChromaMag` / `nativeAabbGrowMany` in ContentExpandNative.cpp. Gray Y maps; chroma fused. Jump Y mag. Count pullback Y gx. Kotlin `chromaMagU8` JNI-only (no Mat.get/put). `expandDiagnoseMany` for AABB experiment loop. Traces stay Kotlin fallback.
+

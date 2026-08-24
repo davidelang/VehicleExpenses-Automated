@@ -2407,7 +2407,13 @@ suspend fun runPumpExperiment(
                             )
                             val tExpand0 = System.currentTimeMillis()
                             val uv = workspace.p.uvMat
-                            val expDiag = redPixelList.map { seed ->
+                            val expDiag = ContentExpandUtils.expandDiagnoseMany(
+                                gray,
+                                if (chromaExpand) uv else null,
+                                redPixelList,
+                                mode,
+                                expandOpts,
+                            ) ?: redPixelList.map { seed ->
                                 if (chromaExpand) {
                                     ContentExpandUtils.expandDiagnoseChroma(
                                         gray, uv, seed, mode, expandOpts,
