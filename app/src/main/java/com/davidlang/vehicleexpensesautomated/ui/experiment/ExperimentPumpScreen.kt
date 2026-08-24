@@ -618,19 +618,18 @@ suspend fun runPumpExperiment(
 
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
-        "Set G4 (v4 det, calculated 0.0-2.5)",
         "Set G4-vjump",
         "Set 7seg-stroke",
+        "Set Prod-ink",
         "Set P4-jump (v4 + energy + jump, S OCR)",
-        "Set P4-m65 (v4 + mean0.65 frozen + jump)",
         "Set P4-m65p08 (v4 m65 + pad 0.08)",
-        "Set P4-m65p20 (v4 m65 + pad 0.20)",
         "Set P4-gx (v4 + gx0.55 frozen + jump)",
         "Set P4-xycut (v4 + xycut-gx frozen + jump)",
         "Set P4-rot-jump (v4 oriented + jump, S OCR)",
+        "Set P4-rot-ink",
         "Set Prod-jump (product + energy + jump, S OCR)",
-        "Set Prod-m65 (product + mean0.65 frozen + jump)",
         "Set Prod-rot (product oriented + jump, S OCR)",
+        "Set Prod-rot-ink",
     )
     val heatDumpRoot by lazy {
         File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
@@ -1534,6 +1533,15 @@ suspend fun runPumpExperiment(
                     expDetAsset = "PP-OCRv4_mobile_det",
                     seg7Stroke = true,
                 )
+                val procProdInk = makeGProc(
+                    emptyList(),
+                    "Prod-ink: product det + seed-ROI s; vert cap 0.40×seedH + k=1s inside cap; then G4-vjump L/R jump-retract (no G-list)",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    expDetAsset = null,
+                    seg7Stroke = true,
+                )
                 // Horiz-reach A/B: same discovery as G-- (verts, thr, box mode); only horizFactor changes.
                 val procHorizByFactor: Map<Float, suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit> =
                     SET_HORIZ_REACH_FACTORS.associateWith { h ->
@@ -2403,6 +2411,20 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert = true,
                     vertPadFrac = 0.08f,
                 )
+                val procP4RotInk = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "P4-rot-ink: v4 oriented det + AABB 7seg ink walk + jump (no G-list)",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = true,
+                    doDeskew = false,
+                    useOriented = true,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = rotExpandMaxFrac,
+                    vertSweep = rotVertSweep,
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertPadFrac = 0.08f,
+                )
                 val procProdJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
                     "Prod-jump: energy maxFrac=0.4; final = energy crop (cap is leash only)",
@@ -2431,6 +2453,20 @@ suspend fun runPumpExperiment(
                 val procProdRot = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
                     "Prod-rot: m65 energy (0.65 frozen + 0.08 pad); final = energy crop; no vert sweep",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = false,
+                    useOriented = true,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = rotExpandMaxFrac,
+                    vertSweep = rotVertSweep,
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertPadFrac = 0.08f,
+                )
+                val procProdRotInk = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "Prod-rot-ink: product oriented det + AABB 7seg ink walk + jump (no G-list)",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,
@@ -2629,25 +2665,26 @@ suspend fun runPumpExperiment(
                 }
                 val flowProcessors = buildList {
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
-                    add("Set G4 (v4 det, calculated 0.0-2.5)" to procG4)
                     add("Set G4-vjump" to procG4Vjump)
                     add("Set 7seg-stroke" to proc7segStroke)
+                    add("Set Prod-ink" to procProdInk)
                     add("Set P4-jump (v4 + energy + jump, S OCR)" to procP4Jump)
-                    add("Set P4-m65 (v4 + mean0.65 frozen + jump)" to procP4M65)
                     add("Set P4-m65p08 (v4 m65 + pad 0.08)" to procP4M65p08)
-                    add("Set P4-m65p20 (v4 m65 + pad 0.20)" to procP4M65p20)
                     add("Set P4-gx (v4 + gx0.55 frozen + jump)" to procP4Gx)
                     add("Set P4-xycut (v4 + xycut-gx frozen + jump)" to procP4Xycut)
                     add("Set P4-rot-jump (v4 oriented + jump, S OCR)" to procP4RotJump)
+                    add("Set P4-rot-ink" to procP4RotInk)
                     add("Set Prod-jump (product + energy + jump, S OCR)" to procProdJump)
-                    add("Set Prod-m65 (product + mean0.65 frozen + jump)" to procProdM65)
                     add("Set Prod-rot (product oriented + jump, S OCR)" to procProdRot)
+                    add("Set Prod-rot-ink" to procProdRotInk)
                 }
-                // Parked (compiled, not scheduled): P/P-jump/P4/P-rot, H*, L/M, G-dense/K.
+                // Parked (compiled, not scheduled): P/P-jump/P4/P-rot, H*, L/M, G-dense/K,
+                // experiment G4 / P4-m65 / p20 / Prod-m65 (dropped from this run's 13).
                 @Suppress("UNUSED_VARIABLE")
                 val parked = listOf(
                     procGDense, procK, procP, procPJump, procP4,
                     procPRot, procP4Rot,
+                    procG4, procP4M65, procP4M65p20, procProdM65,
                 ) +
                     procHorizByFactor.values + listOf(procL, procM)
                 val processor = flowProcessors.firstOrNull { it.first == flowName }?.second

@@ -8022,3 +8022,21 @@ x
 
 - `docs/PUMP_EXPERIMENT_FLOWS.md`: rec-buffer caption 9px `$lab`; asis/digits 12px. `S=` / PD `<small>` unchanged.
 
+
+## 2026-08-24 - CODE LANDED: pump-html-rec-asis-font
+
+- Plan `dev-ai-interaction/plans/pump-html-rec-asis-font-20260823-2336-plan.md`
+- Rec-buffer caption: 9px `$lab`; asis/digits 12px. JSON / expand / QF / odo HTML unchanged.
+
+
+## 2026-08-24 - Execute start: pump-ink-rot-prod-and-two-scales
+
+- Plan: `dev-ai-interaction/plans/pump-ink-rot-prod-and-two-scales-20260824-0035-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: 13 columns (drop G4 / P4-m65 / p20 / Prod-m65; add Prod-ink, P4-rot-ink, Prod-rot-ink); split P4 224+1024 vs prod/QF 224+608. Cap stays 0.40. Rec-font HTML already LAND. QF verts unchanged.
+
+
+## 2026-08-24 - Phase 1: schedule 13 pump columns
+
+- `flows` + `flowProcessors`: 13 columns. Dropped G4 / P4-m65 / p20 / Prod-m65 (procs parked). Added Prod-ink (`makeGProc` product + `seg7Stroke`), P4-rot-ink, Prod-rot-ink. G4-vjump / 7seg-stroke / p08 kept. Cap 0.40.
+
