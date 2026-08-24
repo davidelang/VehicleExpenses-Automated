@@ -8152,3 +8152,8 @@ x
 
 - `expand7segFromSeed`: `SEG7_GAP_FRAC=0.5` start peek + empty skip; `SEG7_VERT_CAP_FRAC=2.5` safety; always k=1s pad clamped to remaining cap; `vLook=capPx+kPad+2`. `gap >= sPx` gone. Horz jump unchanged.
 
+
+## 2026-08-24 - Phase 2: ink gap 0.5s notes + flows
+
+- Ink assembly + metadata: `gapFrac` / `seg7_gap_frac` = 0.5; `vertCapFrac` from `SEG7_VERT_CAP_FRAC` (2.5). Flows P4-ink / rot-ink: 0.5s gap+peek, 2.5× safety, always k=1s. Energy `maxFrac=0.4` / jump / xycut unchanged.
+

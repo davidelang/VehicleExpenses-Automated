@@ -1375,6 +1375,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
                     branch.metadata["seg7_k"] = ContentExpandUtils.SEG7_K.toString()
                     branch.metadata["seg7_vert_cap_frac"] = ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
+                    branch.metadata["seg7_gap_frac"] = ContentExpandUtils.SEG7_GAP_FRAC.toString()
                     branch.metadata["seg7_jump_frac"] = "0.40"
                     branch.metadata["seg7_retract_clear_frac"] = "0.30"
                 } else if (horizJump) {
@@ -1426,6 +1427,7 @@ suspend fun runPumpExperiment(
                         "method" to "7seg_stroke",
                         "k" to ContentExpandUtils.SEG7_K,
                         "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
+                        "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
                         "sPx" to seg7Strokes.map { it.sPx },
                         "vSW" to seg7Strokes.map { it.vSW },
                         "hSW" to seg7Strokes.map { it.hSW },
@@ -1526,7 +1528,7 @@ suspend fun runPumpExperiment(
                 )
                 val procP4Ink = makeGProc(
                     emptyList(),
-                    "P4-ink: v4 det + seed-ROI s; vert cap 0.40×seedH + k=1s inside cap; then G4-vjump L/R jump-retract (no G-list)",
+                    "P4-ink: v4 det + seed-ROI s; gap/peek 0.5s; cap 2.5×seedH safety; always k=1s; then G4-vjump L/R jump-retract (no G-list)",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -1536,7 +1538,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdInk = makeGProc(
                     emptyList(),
-                    "Prod-ink: product det + seed-ROI s; vert cap 0.40×seedH + k=1s inside cap; then G4-vjump L/R jump-retract (no G-list)",
+                    "Prod-ink: product det + seed-ROI s; gap/peek 0.5s; cap 2.5×seedH safety; always k=1s; then G4-vjump L/R jump-retract (no G-list)",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -1808,6 +1810,8 @@ suspend fun runPumpExperiment(
                         branch.metadata["seg7_k"] = ContentExpandUtils.SEG7_K.toString()
                         branch.metadata["seg7_vert_cap_frac"] =
                             ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
+                        branch.metadata["seg7_gap_frac"] =
+                            ContentExpandUtils.SEG7_GAP_FRAC.toString()
                         branch.metadata["seg7_jump_frac"] = "0.40"
                         branch.metadata["seg7_retract_clear_frac"] = "0.30"
                     } else {
@@ -1982,6 +1986,7 @@ suspend fun runPumpExperiment(
                             "maxFrac" to 0.4f,
                             "k" to ContentExpandUtils.SEG7_K,
                             "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
+                            "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
                             "sPx" to inkStrokes.map { it.sPx },
                             "enableJump" to true,
                             "jumpFrac" to 0.40f,
@@ -2450,7 +2455,7 @@ suspend fun runPumpExperiment(
                 )
                 val procP4RotInk = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-rot-ink: v4 oriented det + AABB 7seg ink walk + jump (no G-list)",
+                    "P4-rot-ink: v4 oriented det + AABB ink walk (gap/peek 0.5s, cap 2.5× safety, always k=1s) + jump (no G-list)",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = false,
@@ -2491,7 +2496,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdRotInk = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "Prod-rot-ink: product oriented det + AABB 7seg ink walk + jump (no G-list)",
+                    "Prod-rot-ink: product oriented det + AABB ink walk (gap/peek 0.5s, cap 2.5× safety, always k=1s) + jump (no G-list)",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,
