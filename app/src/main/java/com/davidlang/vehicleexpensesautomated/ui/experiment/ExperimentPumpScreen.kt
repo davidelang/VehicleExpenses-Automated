@@ -1471,9 +1471,9 @@ suspend fun runPumpExperiment(
                         )
                     }
                     branch.metadata["n_ocr_energy"] = nOcr.toString()
-                    branch.metadata["t_ocr_ms"] =
-                        (System.currentTimeMillis() - tOcr0).toString()
-                    branch.metadata["t_ocr_energy_ms"] = branch.metadata["t_ocr_ms"]
+                    val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
+                    branch.metadata["t_ocr_ms"] = tOcrAll
+                    branch.metadata["t_ocr_energy_ms"] = tOcrAll
                 }
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelG,
