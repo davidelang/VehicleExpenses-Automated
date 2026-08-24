@@ -8242,3 +8242,8 @@ x
 
 - `VertEnergyKind.CHI2`, `ExpandOptions.chi2K=3.5`. AABB `chi2WalkVertical`: 16-bin row-gray vs seed, consec=2, cap, never shrink. Jump still MAGNITUDE + energyRatio. GX/XYCUT Sobel paths unchanged. JNI not given CHI2.
 
+
+## 2026-08-24 - Phase 2: schedule Set chi2-p4
+
+- `flows` + `flowProcessors`: 10 names including `Set chi2-p4` (ASCII before ink-p4). procChi2P4: v4 224+1024, CHI2 k=3.5 consec=2, pad 0.08, jump energyRatio 0.65. Metadata `content_expand_chi2_k`. Docs ten columns + table row. Ink/QF/fail-subset untouched.
+

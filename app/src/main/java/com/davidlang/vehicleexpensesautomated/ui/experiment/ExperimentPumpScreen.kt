@@ -665,6 +665,7 @@ suspend fun runPumpExperiment(
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
         "Set G4-vjump",
+        "Set chi2-p4",
         "Set ink-p4",
         "Set ink-prod",
         "Set jump-p4",
@@ -2230,6 +2231,7 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert: Boolean = false,
                     vertEnergy: ContentExpandUtils.VertEnergyKind =
                         ContentExpandUtils.VertEnergyKind.MAGNITUDE,
+                    chi2K: Float = 3.5f,
                     vertPadFrac: Float = 0.0f,
                     seg7Stroke: Boolean = false,
                     detScales: List<Int> = prodDetScales,
@@ -2270,6 +2272,9 @@ suspend fun runPumpExperiment(
                         branch.metadata["content_expand_freeze_horz"] = freezeHorzDuringVert.toString()
                         branch.metadata["content_expand_vert_energy"] = vertEnergy.name
                         branch.metadata["content_expand_vert_pad"] = vertPadFrac.toString()
+                        if (vertEnergy == ContentExpandUtils.VertEnergyKind.CHI2) {
+                            branch.metadata["content_expand_chi2_k"] = chi2K.toString()
+                        }
                         branch.metadata["product_dir"] = NativePaddleEngine.activeProductDir
                         if (expDetAsset != null) {
                             NativePaddleEngine.loadExperimentDetTiers(context, expDetAsset)
@@ -2365,6 +2370,7 @@ suspend fun runPumpExperiment(
                                 energyRatio = energyRatio,
                                 freezeHorzDuringVert = freezeHorzDuringVert,
                                 vertEnergy = vertEnergy,
+                                chi2K = chi2K,
                                 vertPadFrac = vertPadFrac,
                                 recordVertEnergy = energyTraceOut != null,
                             )
@@ -2492,7 +2498,11 @@ suspend fun runPumpExperiment(
                                     "vertPadFrac" to vertPadFrac,
                                     "countPull" to "gx-run-count valley + one-dir pad; scaleVariants kind=energy_count",
                                     "note" to assemblyNote,
-                                ),
+                                ) + if (vertEnergy == ContentExpandUtils.VertEnergyKind.CHI2) {
+                                    mapOf("chi2K" to chi2K)
+                                } else {
+                                    emptyMap()
+                                },
                                 oranges = emptyList(),
                                 scaleVariants = variants,
                             )
@@ -2604,6 +2614,21 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.XYCUT_GX,
                     vertPadFrac = 0.15f,
+                    detScales = p4DetScales,
+                )
+                val procChi2P4 = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "chi2-p4: frozen-width row-gray χ² k=3.5 consec=2 + 0.08·seedH pad + L/R jump; final = energy crop",
+                    expDetAsset = "PP-OCRv4_mobile_det",
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertEnergy = ContentExpandUtils.VertEnergyKind.CHI2,
+                    vertPadFrac = 0.08f,
                     detScales = p4DetScales,
                 )
                 val procPRot = makeContentExpandProc(
@@ -2867,6 +2892,7 @@ suspend fun runPumpExperiment(
                 val flowProcessors = buildList {
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
                     add("Set G4-vjump" to procG4Vjump)
+                    add("Set chi2-p4" to procChi2P4)
                     add("Set ink-p4" to procP4Ink)
                     add("Set ink-prod" to procProdInk)
                     add("Set jump-p4" to procP4Jump)
