@@ -8114,3 +8114,10 @@ x
 
 - `docs/PUMP_EXPERIMENT_FLOWS.md`: energy rot is JNI `nativeExpandOriented`; empty seed T/B skip/pad in C++. Kotlin walk only for traces or native-null. Experiment columns / QF / AABB skip unchanged.
 
+
+## 2026-08-24 - CODE LANDED: native-orient-expand-onesided-skip
+
+- Plan `dev-ai-interaction/plans/native-orient-expand-onesided-skip-20260824-0228-plan.md`
+- C++ seed allowVNeg/Pos; gate ±v grow + one-sided vertPad. Kotlin `if (!recordVertEnergy)` JNI. Jump L/R unchanged. AABB/7seg/QF/13 columns untouched.
+- Human: deploy; scheduled pump rot `t_expand_ms` p50 should be ~2 s not ~28 s; empty T/B still skip that tip.
+
