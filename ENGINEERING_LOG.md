@@ -8266,3 +8266,9 @@ x
 - `ImageIngestionProvider`: jpeg/dng/decoder no longer `clearChroma()` after YUV ingest.
 - `OcrFunctionalPipeline`: drop post-ingest `clearChroma`. Scratch `clear()` and deskew-buffer chroma wipe unchanged. Paddle still `input.mat` (Y).
 
+
+## 2026-08-24 - Phase 2: chroma expand helpers
+
+- `chromaMagU8`, `expand7segFromSeedChroma` (chroma walk; seed median chromaMag < 8 → Y `expand7segFromSeed`).
+- `expandDiagnoseChroma` / `growOnEnergyChroma`: fused hypot(|∇Y|,|∇C|) vert walk; XYCUT on fused gx; CHI2 on chromaMag; L/R jump Y magnitude. Gray expand functions unedited.
+

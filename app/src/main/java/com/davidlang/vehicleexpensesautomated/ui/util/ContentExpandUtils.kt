@@ -1280,6 +1280,93 @@ object ContentExpandUtils {
     }
 
     /**
+     * Per-luma chroma magnitude, 8UC1, same size as [y]. NV21 [uv] is 8UC2
+     * (128=neutral), typically 4:2:0 half-res. Each Y pixel samples the covering
+     * even 4:2:0 site: `min(255, hypot(U-128, V-128))`. Caller releases the Mat.
+     */
+    fun chromaMagU8(y: Mat, uv: Mat): Mat {
+        val h = if (y.empty()) 0 else y.rows()
+        val w = if (y.empty()) 0 else y.cols()
+        val out = Mat.zeros(h.coerceAtLeast(1), w.coerceAtLeast(1), CvType.CV_8UC1)
+        if (y.empty() || uv.empty() || w <= 0 || h <= 0) return out
+        if (y.type() != CvType.CV_8UC1 || uv.type() != CvType.CV_8UC2) return out
+        val uvH = uv.rows()
+        val uvW = uv.cols()
+        if (uvH <= 0 || uvW <= 0) return out
+        val half = uvW * 2 <= w + 1
+        val uvRow = ByteArray(uvW * 2)
+        val outRow = ByteArray(w)
+        for (ly in 0 until h) {
+            val uy = if (half) {
+                (ly / 2).coerceIn(0, uvH - 1)
+            } else {
+                (ly and 0x7ffffffe).coerceIn(0, uvH - 1)
+            }
+            uv.get(uy, 0, uvRow)
+            for (lx in 0 until w) {
+                val ux = if (half) {
+                    (lx / 2).coerceIn(0, uvW - 1)
+                } else {
+                    (lx and 0x7ffffffe).coerceIn(0, uvW - 1)
+                }
+                val u = (uvRow[ux * 2].toInt() and 0xFF) - 128
+                val v = (uvRow[ux * 2 + 1].toInt() and 0xFF) - 128
+                val mag = hypot(u.toDouble(), v.toDouble())
+                outRow[lx] = min(255, mag.roundToInt()).toByte()
+            }
+            out.put(ly, 0, outRow)
+        }
+        return out
+    }
+
+    /**
+     * Ink walk on chromaMag (high chroma = ink). Same gap/peek/cap as
+     * [expand7segFromSeed]. If seed median chromaMag &lt; 8, Y fallback
+     * ([expand7segFromSeed] on luma) for white LCD.
+     */
+    fun expand7segFromSeedChroma(
+        y: Mat,
+        uv: Mat,
+        seed: Rect,
+        k: Float = SEG7_K,
+        j: Float = SEG7_J,
+    ): Seg7Expand {
+        val c = chromaMagU8(y, uv)
+        try {
+            if (y.empty() || y.type() != CvType.CV_8UC1) {
+                return expand7segFromSeed(y, seed, k, j)
+            }
+            val s0 = clip(seed, y.cols(), y.rows())
+            if (medianU8Roi(c, s0) < 8.0) {
+                return expand7segFromSeed(y, seed, k, j)
+            }
+            return expand7segFromSeed(c, seed, k, j)
+        } finally {
+            c.release()
+        }
+    }
+
+    private fun medianU8Roi(m: Mat, seed: Rect): Double {
+        val c = clip(seed, m.cols(), m.rows())
+        if (c.width() <= 0 || c.height() <= 0 || m.empty()) return 0.0
+        val roi = m.submat(c.top, c.bottom, c.left, c.right)
+        try {
+            val n = roi.rows() * roi.cols()
+            if (n <= 0) return 0.0
+            val buf = ByteArray(n)
+            roi.get(0, 0, buf)
+            val vals = IntArray(min(n, buf.size)) { i -> buf[i].toInt() and 0xFF }
+            vals.sort()
+            val k = vals.size
+            if (k == 0) return 0.0
+            return if (k % 2 == 1) vals[k / 2].toDouble()
+            else 0.5 * (vals[k / 2 - 1] + vals[k / 2])
+        } finally {
+            roi.release()
+        }
+    }
+
+    /**
      * Pad [box] by `k`×`s` on each tip, clamped to remaining
      * [SEG7_VERT_CAP_FRAC]×original-[seed] height per side (walk already used
      * some of that budget). Frozen sides (no walk) still get the pad.
@@ -1586,6 +1673,22 @@ object ContentExpandUtils {
         return when (mode) {
             Mode.INTERIOR_ENERGY -> growOnEnergy(gray, s, opts)
             else -> AabbExpand(expand(gray, seed, mode, opts), false)
+        }
+    }
+
+    /** AABB energy expand using fused |∇Y|+|∇C| for the vertical walk; L/R jump on Y magnitude. */
+    fun expandDiagnoseChroma(
+        y: Mat,
+        uv: Mat,
+        seed: Rect,
+        mode: Mode,
+        opts: ExpandOptions,
+    ): AabbExpand {
+        if (y.empty() || y.type() != CvType.CV_8UC1) return AabbExpand(seed, false)
+        val s = clip(seed, y.cols(), y.rows())
+        return when (mode) {
+            Mode.INTERIOR_ENERGY -> growOnEnergyChroma(y, uv, s, opts)
+            else -> expandDiagnose(y, seed, mode, opts)
         }
     }
 
@@ -2634,6 +2737,145 @@ object ContentExpandUtils {
             null
         }
         return AabbExpand(finalRect, hitVertCap, traceOut, countRect, countInfo)
+    }
+
+    /**
+     * Sibling of [growOnEnergy]: vertical walk on fused `hypot(|∇Y|, |∇C|)`
+     * (GX/XYCUT: hypot of |∂Y/∂x| and |∂C/∂x|; CHI2 on chromaMag). L/R jump
+     * on Y magnitude. Does not edit [growOnEnergy].
+     */
+    private fun growOnEnergyChroma(
+        y: Mat,
+        uv: Mat,
+        seed: Rect,
+        opts: ExpandOptions,
+    ): AabbExpand {
+        val maxFrac = opts.maxFrac
+        val energyRatio = opts.energyRatio
+        val enableJump = opts.enableJump
+        val jumpFrac = opts.jumpFrac
+        val retractClearFrac = opts.retractClearFrac
+        val freezeHorz = opts.freezeHorzDuringVert
+        val vertKind = opts.vertEnergy
+        val imgW = y.cols(); val imgH = y.rows()
+        var l = seed.left; var t = seed.top; var r = seed.right; var b = seed.bottom
+        val cap = max(1, (maxFrac * max(1, seed.height())).roundToInt())
+        val c = chromaMagU8(y, uv)
+        val cF = Mat()
+        c.convertTo(cF, CvType.CV_32F)
+        val gxY = Mat(); val gyY = Mat(); val magY = Mat()
+        val gxC = Mat(); val gyC = Mat(); val magC = Mat()
+        val vertEng = Mat()
+        val absGxY = Mat(); val absGxC = Mat()
+        Imgproc.Sobel(y, gxY, CvType.CV_32F, 1, 0, 3)
+        Imgproc.Sobel(y, gyY, CvType.CV_32F, 0, 1, 3)
+        Core.magnitude(gxY, gyY, magY)
+        Imgproc.Sobel(cF, gxC, CvType.CV_32F, 1, 0, 3)
+        Imgproc.Sobel(cF, gyC, CvType.CV_32F, 0, 1, 3)
+        Core.magnitude(gxC, gyC, magC)
+        when (vertKind) {
+            VertEnergyKind.MAGNITUDE, VertEnergyKind.CHI2 ->
+                Core.magnitude(magY, magC, vertEng)
+            VertEnergyKind.GX, VertEnergyKind.XYCUT_GX -> {
+                Core.absdiff(gxY, Scalar(0.0), absGxY)
+                Core.absdiff(gxC, Scalar(0.0), absGxC)
+                Core.magnitude(absGxY, absGxC, vertEng)
+            }
+        }
+        gxY.release(); gyY.release(); gxC.release(); gyC.release()
+        magC.release(); cF.release(); absGxY.release(); absGxC.release()
+        fun meanE(eng: Mat, sl: Rect): Double {
+            val cl = clip(sl, imgW, imgH)
+            if (cl.width() <= 0 || cl.height() <= 0) return 0.0
+            val roi = eng.submat(cl.top, cl.bottom, cl.left, cl.right)
+            val m = Core.mean(roi).`val`[0]
+            roi.release()
+            return m
+        }
+        val il = l + 2; val it = t + 2; val ir = r - 2; val ib = b - 2
+        val base = if (ir > il && ib > it) meanE(vertEng, Rect(il, it, ir, ib)) else meanE(vertEng, seed)
+        val thr = energyRatio * max(base, 1e-3)
+        val jumpBase = if (ir > il && ib > it) meanE(magY, Rect(il, it, ir, ib)) else meanE(magY, seed)
+        val jumpThr = energyRatio * max(jumpBase, 1e-3)
+        var allowUp = t > 0 && meanE(vertEng, Rect(l, t - 1, r, t)) >= thr
+        var allowDown = b < imgH && meanE(vertEng, Rect(l, b, r, b + 1)) >= thr
+        fun growOnce() {
+            repeat(cap) {
+                var grew = false
+                if (allowUp && t > 0) {
+                    if (meanE(vertEng, Rect(l, t - 1, r, t)) >= thr) {
+                        t--
+                        grew = true
+                    }
+                }
+                if (allowDown && b < imgH) {
+                    if (meanE(vertEng, Rect(l, b, r, b + 1)) >= thr) {
+                        b++
+                        grew = true
+                    }
+                }
+                if (!freezeHorz) {
+                    if (l > 0 && meanE(vertEng, Rect(l - 1, t, l, b)) >= thr) { l--; grew = true }
+                    if (r < imgW && meanE(vertEng, Rect(r, t, r + 1, b)) >= thr) { r++; grew = true }
+                }
+                if (!grew) return
+            }
+        }
+        if (vertKind == VertEnergyKind.XYCUT_GX) {
+            val cut = xycutOnProfile(vertEng, l, t, r, b, imgW, imgH, cap)
+            t = if (allowUp) min(cut[0], seed.top) else seed.top
+            b = if (allowDown) max(cut[1], seed.bottom) else seed.bottom
+        } else if (vertKind == VertEnergyKind.CHI2) {
+            val cut = chi2WalkVertical(
+                c, seed, imgW, imgH, cap, opts.chi2K,
+                allowUp = true, allowDown = true,
+            )
+            allowUp = t > 0 && cut[0] < seed.top
+            allowDown = b < imgH && cut[1] > seed.bottom
+            t = if (allowUp) min(cut[0], seed.top) else seed.top
+            b = if (allowDown) max(cut[1], seed.bottom) else seed.bottom
+        } else {
+            growOnce()
+        }
+        val walkT = seed.top - t
+        val walkB = b - seed.bottom
+        if (opts.vertPadFrac > 0f) {
+            val extra = max(1, (opts.vertPadFrac * max(1, seed.height())).roundToInt())
+            if (allowUp) t = (t - extra).coerceAtLeast(0)
+            if (allowDown) b = (b + extra).coerceAtMost(imgH)
+        }
+        val hitVertCap = walkT >= cap || walkB >= cap
+        val stopUp = when {
+            vertKind == VertEnergyKind.XYCUT_GX -> "xycut"
+            vertKind == VertEnergyKind.CHI2 && walkT >= cap -> "cap"
+            vertKind == VertEnergyKind.CHI2 -> "chi2"
+            walkT >= cap -> "cap"
+            else -> "energy"
+        }
+        val stopDown = when {
+            vertKind == VertEnergyKind.XYCUT_GX -> "xycut"
+            vertKind == VertEnergyKind.CHI2 && walkB >= cap -> "cap"
+            vertKind == VertEnergyKind.CHI2 -> "chi2"
+            walkB >= cap -> "cap"
+            else -> "energy"
+        }
+        if (enableJump) {
+            val jumped = jumpRetractHorizontalOnEnergy(
+                magY, Rect(l, t, r, b), imgW, imgH, jumpThr, cap, jumpFrac, retractClearFrac,
+            )
+            l = jumped.left
+            t = jumped.top
+            r = jumped.right
+            b = jumped.bottom
+        }
+        val finalRect = clip(Rect(l, t, r, b), imgW, imgH)
+        vertEng.release()
+        magY.release()
+        c.release()
+        val (countRect, countInfo) = countPullbackVertical(
+            y, seed, finalRect, 0, stopUp, stopDown,
+        )
+        return AabbExpand(finalRect, hitVertCap, null, countRect, countInfo)
     }
 
     /**
