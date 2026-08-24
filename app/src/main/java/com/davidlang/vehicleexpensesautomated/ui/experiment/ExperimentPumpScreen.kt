@@ -763,7 +763,8 @@ suspend fun runPumpExperiment(
                 // (stackVertically, runPaddleDiscovery) that close over them (and before the inline discovery).
                 // This resolves forward-ref compile issues for 'scales', the pd*Totals, mlBlocksRaw etc that the
                 // helpers reference. (The processedScales for the inline remains at its site for now.)
-                val scales = listOf(224, 608, 1024)
+                val p4DetScales = listOf(224, 1024)
+                val prodDetScales = listOf(224, 608)
                 val mlBlocksRaw = mutableListOf<PumpHunk>()
                 val pdHunksRawTotal = mutableListOf<PumpHunk>()
                 val pdHunksExpTotal = mutableListOf<PumpHunk>()
@@ -1184,6 +1185,7 @@ suspend fun runPumpExperiment(
                     horizJump: Boolean = false,
                     /** If true, 7-seg stroke expand (seed-ROI `s`, k=1 vert, j=2 horz). No G-list. */
                     seg7Stroke: Boolean = false,
+                    detScales: List<Int> = prodDetScales,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val workspace = ws
                     val branch = br
@@ -1223,7 +1225,7 @@ suspend fun runPumpExperiment(
                         branch.metadata["heat_dump_dir"] = photoHeatDir.absolutePath
                     }
                     var processedScales = mutableSetOf<Int>()
-                    scales.forEach { scale ->
+                    detScales.forEach { scale ->
                     val srcW = workspace.p.width
                     val srcH = workspace.p.height
                     val currentLongEdge = max(srcW, srcH)
@@ -1514,6 +1516,7 @@ suspend fun runPumpExperiment(
                     horizFactor = SET_G_HORIZ_FACTOR,
                     hmThresh = HEAT_THR_U8_GE1,
                     expDetAsset = "PP-OCRv4_mobile_det",
+                    detScales = p4DetScales,
                 )
                 val procG4Vjump = makeGProc(
                     SET_G4_VJUMP_VERT_FACTORS,
@@ -1523,6 +1526,7 @@ suspend fun runPumpExperiment(
                     hmThresh = HEAT_THR_U8_GE1,
                     expDetAsset = "PP-OCRv4_mobile_det",
                     horizJump = true,
+                    detScales = p4DetScales,
                 )
                 val proc7segStroke = makeGProc(
                     emptyList(),
@@ -1532,6 +1536,7 @@ suspend fun runPumpExperiment(
                     hmThresh = HEAT_THR_U8_GE1,
                     expDetAsset = "PP-OCRv4_mobile_det",
                     seg7Stroke = true,
+                    detScales = p4DetScales,
                 )
                 val procProdInk = makeGProc(
                     emptyList(),
@@ -1692,6 +1697,7 @@ suspend fun runPumpExperiment(
                     vertPadFrac: Float = 0.0f,
                     energyTraceOut: File? = null,
                     seg7Stroke: Boolean = false,
+                    detScales: List<Int> = prodDetScales,
                 ) {
                     fun hunkFromAabb(r: android.graphics.Rect): PumpHunk =
                         PumpHunk(
@@ -1703,7 +1709,7 @@ suspend fun runPumpExperiment(
                         )
 
                     val collected = ArrayList<ContentExpandUtils.OrientedQuad>()
-                    scales.forEach { scale ->
+                    detScales.forEach { scale ->
                         val srcW = workspace.p.width
                         val srcH = workspace.p.height
                         val currentLongEdge = max(srcW, srcH)
@@ -2055,6 +2061,7 @@ suspend fun runPumpExperiment(
                         ContentExpandUtils.VertEnergyKind.MAGNITUDE,
                     vertPadFrac: Float = 0.0f,
                     seg7Stroke: Boolean = false,
+                    detScales: List<Int> = prodDetScales,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit =
                     { ws, br, det, w, h ->
                         val workspace = ws
@@ -2124,9 +2131,10 @@ suspend fun runPumpExperiment(
                                     vertPadFrac = vertPadFrac,
                                     energyTraceOut = energyTraceOut,
                                     seg7Stroke = seg7Stroke,
+                                    detScales = detScales,
                                 )
                             } else {
-                            scales.forEach { scale ->
+                            detScales.forEach { scale ->
                                 val srcW = workspace.p.width
                                 val srcH = workspace.p.height
                                 val currentLongEdge = max(srcW, srcH)
@@ -2368,6 +2376,7 @@ suspend fun runPumpExperiment(
                     enableJump = false,
                     doDeskew = true,
                     useOriented = false,
+                    detScales = p4DetScales,
                 )
                 val procP4Jump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2379,6 +2388,7 @@ suspend fun runPumpExperiment(
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
                     energyRatio = 0.65f,
+                    detScales = p4DetScales,
                 )
                 val procP4M65 = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2393,6 +2403,7 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
                     vertPadFrac = 0.08f,
+                    detScales = p4DetScales,
                 )
                 val procP4M65p08 = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2407,6 +2418,7 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
                     vertPadFrac = 0.08f,
+                    detScales = p4DetScales,
                 )
                 val procP4M65p20 = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2421,6 +2433,7 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
                     vertPadFrac = 0.20f,
+                    detScales = p4DetScales,
                 )
                 val procP4Gx = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2435,6 +2448,7 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.GX,
                     vertPadFrac = 0.08f,
+                    detScales = p4DetScales,
                 )
                 val procP4Xycut = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2449,6 +2463,7 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert = true,
                     vertEnergy = ContentExpandUtils.VertEnergyKind.XYCUT_GX,
                     vertPadFrac = 0.15f,
+                    detScales = p4DetScales,
                 )
                 val procPRot = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2465,6 +2480,7 @@ suspend fun runPumpExperiment(
                     enableJump = false,
                     doDeskew = false,
                     useOriented = true,
+                    detScales = p4DetScales,
                 )
                 val procP4RotJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2479,6 +2495,7 @@ suspend fun runPumpExperiment(
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
                     vertPadFrac = 0.08f,
+                    detScales = p4DetScales,
                 )
                 val procP4RotInk = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2494,6 +2511,7 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert = true,
                     vertPadFrac = 0.0f,
                     seg7Stroke = true,
+                    detScales = p4DetScales,
                 )
                 val procProdJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2562,7 +2580,7 @@ suspend fun runPumpExperiment(
                     pdHunksExpTotal.clear()
                     pdHunksMaxTotal.clear()
                     pdHunksNativeTotal.clear()
-                    scales.forEach { scale ->
+                    prodDetScales.forEach { scale ->
                         val srcW = workspace.p.width
                         val srcH = workspace.p.height
                         val currentLongEdge = max(srcW, srcH)

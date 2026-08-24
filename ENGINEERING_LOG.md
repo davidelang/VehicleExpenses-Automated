@@ -8045,3 +8045,8 @@ x
 
 - `runIndependentOrientedColumn` / `makeContentExpandProc`: `seg7Stroke`. Rot-ink: AABB `expand7segFromSeed` + `jumpRetractHorizontal` + `orientedFromAabb`; `finalKind=ink`; `s_per_red`. Skip m65 `expandOriented`. P4-rot-jump / Prod-rot unchanged. No new ±v 7seg walker. Cap 0.40.
 
+
+## 2026-08-24 - Phase 3: split P4 vs prod discovery scales
+
+- Experiment: v4 columns `224, 1024`; product columns `224, 608`. `PumpCostVolUtils` Set G, `OcrHarness` QF, `PumpSoDebugDump`: `224, 608`. `TIER_SCALES` / heatmap dump / `PreprocessStageDump` unchanged. No P4 2048. Cap 0.40. QF verts unchanged.
+

@@ -852,7 +852,7 @@ object PumpCostVolUtils {
         NativePaddleEngine.heartbeat("deskew_done ms=$tDeskew angle=$tilt")
 
         val tRed0 = System.currentTimeMillis()
-        val scales = listOf(224, 608, 1024)
+        val scales = listOf(224, 608)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
         val pdHunksExpTotal = mutableListOf<PumpHunk>()
         val pdHunksMaxTotal = mutableListOf<PumpHunk>()

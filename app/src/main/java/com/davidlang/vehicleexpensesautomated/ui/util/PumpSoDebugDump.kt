@@ -167,7 +167,7 @@ object PumpSoDebugDump {
         saveMonoPgm(workspace.p.mat, File(outDir, "02_deskewed_mono.pgm"))
 
         // --- multi-scale det (Set G red boxes) ---
-        val scales = listOf(224, 608, 1024)
+        val scales = listOf(224, 608)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
         val scaleSummaries = JSONArray()
 

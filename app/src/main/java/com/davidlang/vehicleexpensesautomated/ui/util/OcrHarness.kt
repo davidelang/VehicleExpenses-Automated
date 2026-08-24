@@ -400,7 +400,7 @@ object OcrHarness {
         val detTiersInt8 = if (useG4Det) NativePaddleEngine.g4TiersInt8 else null
         val detModel = if (useG4Det) NativePaddleEngine.G4_DET_ASSET_BASE else "product_det"
 
-        val scales = listOf(224, 608, 1024)
+        val scales = listOf(224, 608)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
         val pdHunksExpTotal = mutableListOf<PumpHunk>()
         val pdHunksMaxTotal = mutableListOf<PumpHunk>()
