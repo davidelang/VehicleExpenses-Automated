@@ -1020,7 +1020,7 @@ object ContentExpandUtils {
     const val SEG7_FALLBACK_H_FRAC = 0.08f
     /** Official ink pad (k=1). Walk itself does not pad; [padVertByStrokes] applies k=1/2/3. */
     const val SEG7_K = 1f
-    /** Horizontal jump as this × `s` (not used by Set P4-ink; width is jump-retract). */
+    /** Horizontal jump as this × `s` (not used by Set ink-p4; width is jump-retract). */
     const val SEG7_J = 2f
     /** Empty-row skip and start-peek, as a fraction of `s`. */
     const val SEG7_GAP_FRAC = 0.5f

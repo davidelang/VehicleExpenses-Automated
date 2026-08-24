@@ -8187,3 +8187,15 @@ x
 - Plan: `dev-ai-interaction/plans/p4-ink-k123-multi-ocr-20260823-2258-plan.md`
 - Ink: walk once (k=0 in expand7segFromSeed); padVertByStrokes k=1/2/3; OCR three scaleVariants kind=ink; official/PD/final = k=1. AABB P4-ink/Prod-ink + rot-ink/Prod-rot-ink. Nine columns. Energy ocrScales [1.0] / maxFrac 0.4 / QF / gap 0.5s / cap 2.5 untouched.
 
+
+## 2026-08-24 - Execute start: pump-flow-names-family-then-det
+
+- Plan: `dev-ai-interaction/plans/pump-flow-names-family-then-det-20260823-2346-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: Rename 7 scheduled flow keys so HTML ASCII sort is expand family then p4/prod. G-- / G4-vjump names unchanged. No recipe/OCR/QF change.
+
+
+## 2026-08-24 - Phase 1: flow names family then det
+
+- `flows` + `flowProcessors` add(): Set ink-p4, ink-prod, jump-p4, jump-prod, rot-ink-p4, rot-ink-prod, xycut-p4. G-- / G4-vjump unchanged. Same 9 processors. Assembly-note prefixes match. Docs table + lead in ASCII lock order. No expand/OCR/QF change.
+

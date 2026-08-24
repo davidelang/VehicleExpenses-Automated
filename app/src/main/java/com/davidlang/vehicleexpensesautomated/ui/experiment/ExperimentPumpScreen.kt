@@ -619,13 +619,13 @@ suspend fun runPumpExperiment(
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
         "Set G4-vjump",
-        "Set P4-ink",
-        "Set Prod-ink",
-        "Set P4-jump (v4 + energy + jump, S OCR)",
-        "Set P4-xycut (v4 + xycut-gx frozen + jump)",
-        "Set P4-rot-ink",
-        "Set Prod-jump (product + energy + jump, S OCR)",
-        "Set Prod-rot-ink",
+        "Set ink-p4",
+        "Set ink-prod",
+        "Set jump-p4",
+        "Set jump-prod",
+        "Set rot-ink-p4",
+        "Set rot-ink-prod",
+        "Set xycut-p4",
     )
     val heatDumpRoot by lazy {
         File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
@@ -1590,7 +1590,7 @@ suspend fun runPumpExperiment(
                 )
                 val procP4Ink = makeGProc(
                     emptyList(),
-                    "P4-ink: v4 det + seed-ROI s; walk once; OCR k=1/2/3; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
+                    "ink-p4: v4 det + seed-ROI s; walk once; OCR k=1/2/3; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -1600,7 +1600,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdInk = makeGProc(
                     emptyList(),
-                    "Prod-ink: product det + seed-ROI s; walk once; OCR k=1/2/3; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
+                    "ink-prod: product det + seed-ROI s; walk once; OCR k=1/2/3; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -2505,7 +2505,7 @@ suspend fun runPumpExperiment(
                 )
                 val procP4Jump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-jump: energy maxFrac=0.4; final = energy crop (cap is leash only)",
+                    "jump-p4: energy maxFrac=0.4; final = energy crop (cap is leash only)",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = true,
@@ -2547,7 +2547,7 @@ suspend fun runPumpExperiment(
                 )
                 val procP4Xycut = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-xycut: frozen-width XY-cut on |∂I/∂x| + 0.15·seedH pad + L/R jump; final = energy crop",
+                    "xycut-p4: frozen-width XY-cut on |∂I/∂x| + 0.15·seedH pad + L/R jump; final = energy crop",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = true,
@@ -2579,7 +2579,7 @@ suspend fun runPumpExperiment(
                 )
                 val procP4RotInk = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-rot-ink: v4 oriented det + AABB ink walk once; OCR k=1/2/3; official k=1; jump (no G-list)",
+                    "rot-ink-p4: v4 oriented det + AABB ink walk once; OCR k=1/2/3; official k=1; jump (no G-list)",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = false,
@@ -2595,7 +2595,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "Prod-jump: energy maxFrac=0.4; final = energy crop (cap is leash only)",
+                    "jump-prod: energy maxFrac=0.4; final = energy crop (cap is leash only)",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = true,
@@ -2620,7 +2620,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdRotInk = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "Prod-rot-ink: product oriented det + AABB ink walk once; OCR k=1/2/3; official k=1; jump (no G-list)",
+                    "rot-ink-prod: product oriented det + AABB ink walk once; OCR k=1/2/3; official k=1; jump (no G-list)",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,
@@ -2821,13 +2821,13 @@ suspend fun runPumpExperiment(
                 val flowProcessors = buildList {
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
                     add("Set G4-vjump" to procG4Vjump)
-                    add("Set P4-ink" to procP4Ink)
-                    add("Set Prod-ink" to procProdInk)
-                    add("Set P4-jump (v4 + energy + jump, S OCR)" to procP4Jump)
-                    add("Set P4-xycut (v4 + xycut-gx frozen + jump)" to procP4Xycut)
-                    add("Set P4-rot-ink" to procP4RotInk)
-                    add("Set Prod-jump (product + energy + jump, S OCR)" to procProdJump)
-                    add("Set Prod-rot-ink" to procProdRotInk)
+                    add("Set ink-p4" to procP4Ink)
+                    add("Set ink-prod" to procProdInk)
+                    add("Set jump-p4" to procP4Jump)
+                    add("Set jump-prod" to procProdJump)
+                    add("Set rot-ink-p4" to procP4RotInk)
+                    add("Set rot-ink-prod" to procProdRotInk)
+                    add("Set xycut-p4" to procP4Xycut)
                 }
                 // Parked (compiled, not scheduled): P/P-jump/P4/P-rot, H*, L/M, G-dense/K,
                 // experiment G4 / P4-m65 / p20 / Prod-m65 (0035 leftovers).
