@@ -8104,3 +8104,8 @@ x
 
 - `ContentExpandNative.cpp` `nativeExpandOriented`: seed `allowVNeg`/`allowVPos`; gate ±v grow; `vertPadFrac` pads only allowed tips (center shift). Jump L/R unchanged. JNI signature unchanged. Kotlin still `if (false &&` this phase.
 
+
+## 2026-08-24 - Phase 2: re-enable JNI oriented expand
+
+- `expandOrientedDiagnose`: `if (!opts.recordVertEnergy)` native (dropped `false &&`). Kotlin only for traces or native-null. AABB/7seg/QF unchanged.
+

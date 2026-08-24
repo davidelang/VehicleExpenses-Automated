@@ -374,8 +374,7 @@ object ContentExpandUtils {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return OrientedExpand(seed, false)
         val imgW = gray.cols()
         val imgH = gray.rows()
-        // Native expand cannot skip one T/B tip; Kotlin walk applies the border probe.
-        if (false && !opts.recordVertEnergy) {
+        if (!opts.recordVertEnergy) {
             val nativeExp = try {
                 NativeImageUtils.expandOrientedNative(
                     gray, seed.pts,
