@@ -8176,3 +8176,8 @@ x
 
 - `expand7segFromSeed`: no k-pad in walk. `padVertByStrokes` clamps k×s to remaining 2.5×seedH. AABB P4-ink/Prod-ink and rot-ink: walk once, pad+jump k=1/2/3, `scaleVariants` kind=ink s=1/2/3, official/PD/final = k=1. Energy columns / 9 flows / QF untouched.
 
+
+## 2026-08-24 - Phase 2: flows doc ink k=1/2/3
+
+- `docs/PUMP_EXPERIMENT_FLOWS.md`: ink walk once (k=0 in walk), OCR k=1/2/3 kind=ink, official/PD/final = k=1. Nine columns unchanged. Energy maxFrac 0.4 / ocrScales [1.0] / QF untouched.
+
