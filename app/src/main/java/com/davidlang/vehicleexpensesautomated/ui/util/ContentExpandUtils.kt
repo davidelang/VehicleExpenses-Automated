@@ -1020,7 +1020,7 @@ object ContentExpandUtils {
     const val SEG7_FALLBACK_H_FRAC = 0.08f
     /** After vertical-bar-cap stop, pad each tip by this × `s` (clamped to [SEG7_VERT_CAP_FRAC]×seedH). */
     const val SEG7_K = 1f
-    /** Horizontal jump as this × `s` (not used by Set 7seg-stroke; width is jump-retract). */
+    /** Horizontal jump as this × `s` (not used by Set P4-ink; width is jump-retract). */
     const val SEG7_J = 2f
     /** P4 maxFrac: vertical ink walk + 1s pad budget per side of the **initial red**. */
     const val SEG7_VERT_CAP_FRAC = 0.40f

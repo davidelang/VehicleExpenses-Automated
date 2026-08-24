@@ -8121,3 +8121,15 @@ x
 - C++ seed allowVNeg/Pos; gate ±v grow + one-sided vertPad. Kotlin `if (!recordVertEnergy)` JNI. Jump L/R unchanged. AABB/7seg/QF/13 columns untouched.
 - Human: deploy; scheduled pump rot `t_expand_ms` p50 should be ~2 s not ~28 s; empty T/B still skip that tip.
 
+
+## 2026-08-24 - Execute start: drop-gx-m65p08-rot-rename-p4-ink
+
+- Plan: `dev-ai-interaction/plans/drop-gx-m65p08-rot-rename-p4-ink-20260823-2218-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: 9 experiment columns. Drop P4-gx / P4-m65p08 / P4-rot-jump / Prod-rot. Rename 7seg-stroke → Set P4-ink. Keep rot-ink. QF / scales / expand7segFromSeed / 0035-parked procs untouched.
+
+
+## 2026-08-24 - Phase 1: 9-column schedule, P4-ink rename
+
+- `ExperimentPumpScreen`: `flows` + `flowProcessors` = 9. Dropped gx / m65p08 / P4-rot-jump / Prod-rot procs. `Set P4-ink` = old 7seg-stroke (`seg7Stroke=true`, v4). Docs table matches. QF / 0035-parked procs / expand7segFromSeed untouched.
+
