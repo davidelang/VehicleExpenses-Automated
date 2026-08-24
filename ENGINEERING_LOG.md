@@ -8109,3 +8109,8 @@ x
 
 - `expandOrientedDiagnose`: `if (!opts.recordVertEnergy)` native (dropped `false &&`). Kotlin only for traces or native-null. AABB/7seg/QF unchanged.
 
+
+## 2026-08-24 - Phase 3: native rot skip flows note
+
+- `docs/PUMP_EXPERIMENT_FLOWS.md`: energy rot is JNI `nativeExpandOriented`; empty seed T/B skip/pad in C++. Kotlin walk only for traces or native-null. Experiment columns / QF / AABB skip unchanged.
+
