@@ -8181,3 +8181,9 @@ x
 
 - `docs/PUMP_EXPERIMENT_FLOWS.md`: ink walk once (k=0 in walk), OCR k=1/2/3 kind=ink, official/PD/final = k=1. Nine columns unchanged. Energy maxFrac 0.4 / ocrScales [1.0] / QF untouched.
 
+
+## 2026-08-24 - CODE LANDED: p4-ink-k123-multi-ocr
+
+- Plan: `dev-ai-interaction/plans/p4-ink-k123-multi-ocr-20260823-2258-plan.md`
+- Ink: walk once (k=0 in expand7segFromSeed); padVertByStrokes k=1/2/3; OCR three scaleVariants kind=ink; official/PD/final = k=1. AABB P4-ink/Prod-ink + rot-ink/Prod-rot-ink. Nine columns. Energy ocrScales [1.0] / maxFrac 0.4 / QF / gap 0.5s / cap 2.5 untouched.
+
