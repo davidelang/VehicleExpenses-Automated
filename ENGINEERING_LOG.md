@@ -8199,3 +8199,9 @@ x
 
 - `flows` + `flowProcessors` add(): Set ink-p4, ink-prod, jump-p4, jump-prod, rot-ink-p4, rot-ink-prod, xycut-p4. G-- / G4-vjump unchanged. Same 9 processors. Assembly-note prefixes match. Docs table + lead in ASCII lock order. No expand/OCR/QF change.
 
+
+## 2026-08-24 - CODE LANDED: pump-flow-names-family-then-det
+
+- Plan: `dev-ai-interaction/plans/pump-flow-names-family-then-det-20260823-2346-plan.md`
+- Scheduled keys: Set ink-p4, ink-prod, jump-p4, jump-prod, rot-ink-p4, rot-ink-prod, xycut-p4. G-- / G4-vjump unchanged. Same 9 processors. HTML ASCII order family then det. QF still G4-vjump. No recipe change.
+
