@@ -1338,6 +1338,9 @@ suspend fun runPumpExperiment(
                 val customBlueG: List<PumpHunk>
                 val customOrangeG: List<PumpHunk>
                 val seg7Strokes: List<ContentExpandUtils.StrokeWidthInSeed>
+                val inkWalkSeeds: List<android.graphics.Rect>
+                val inkWalkBoxes: List<android.graphics.Rect>
+                val inkJumpOpts: ContentExpandUtils.ExpandOptions?
                 if (seg7Stroke) {
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
                         maxFrac = 0.4f,
@@ -1346,34 +1349,44 @@ suspend fun runPumpExperiment(
                         retractClearFrac = 0.30f,
                         energyRatio = 0.65f,
                     )
-                    val expands = pdHunksRawTotal.map { h ->
+                    val walks = pdHunksRawTotal.map { h ->
                         val r = android.graphics.Rect(
                             h.rect.left.toInt(), h.rect.top.toInt(),
                             h.rect.right.toInt(), h.rect.bottom.toInt(),
                         )
                         val vert = ContentExpandUtils.expand7segFromSeed(
                             workspace.p.mat, r,
-                            k = ContentExpandUtils.SEG7_K,
+                            k = 0f,
                             doHorizontal = false,
                         )
-                        val jumped = ContentExpandUtils.jumpRetractHorizontal(
-                            workspace.p.mat, vert.rect, jumpOpts,
-                        )
-                        ContentExpandUtils.Seg7Expand(jumped, vert.stroke, vert.k, vert.j)
+                        Triple(r, vert.rect, vert.stroke)
                     }
-                    customBlueG = expands.map { e ->
+                    fun inkBoxesFor(kk: Float): List<android.graphics.Rect> = walks.map { (seed, walked, stroke) ->
+                        val padded = ContentExpandUtils.padVertByStrokes(
+                            walked, seed, kk, stroke.sPx, imgW, imgH,
+                        )
+                        ContentExpandUtils.jumpRetractHorizontal(
+                            workspace.p.mat, padded, jumpOpts,
+                        )
+                    }
+                    val official = inkBoxesFor(1f)
+                    customBlueG = official.map { e ->
                         PumpHunk(
                             "",
                             RectF(
-                                e.rect.left.toFloat(), e.rect.top.toFloat(),
-                                e.rect.right.toFloat(), e.rect.bottom.toFloat(),
+                                e.left.toFloat(), e.top.toFloat(),
+                                e.right.toFloat(), e.bottom.toFloat(),
                             ),
                         )
                     }
                     customOrangeG = emptyList()
-                    seg7Strokes = expands.map { it.stroke }
+                    seg7Strokes = walks.map { it.third }
+                    inkWalkSeeds = walks.map { it.first }
+                    inkWalkBoxes = walks.map { it.second }
+                    inkJumpOpts = jumpOpts
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
-                    branch.metadata["seg7_k"] = ContentExpandUtils.SEG7_K.toString()
+                    branch.metadata["seg7_k"] = "1,2,3"
+                    branch.metadata["seg7_k_official"] = "1"
                     branch.metadata["seg7_vert_cap_frac"] = ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
                     branch.metadata["seg7_gap_frac"] = ContentExpandUtils.SEG7_GAP_FRAC.toString()
                     branch.metadata["seg7_jump_frac"] = "0.40"
@@ -1384,12 +1397,18 @@ suspend fun runPumpExperiment(
                     )
                     customOrangeG = emptyList()
                     seg7Strokes = emptyList()
+                    inkWalkSeeds = emptyList()
+                    inkWalkBoxes = emptyList()
+                    inkJumpOpts = null
                 } else {
                     val pair = createBlueAndOrangeHunksFromReds(
                         pdHunksRawTotal, imgW, imgH, gVertFactors, horizFactor)
                     customBlueG = pair.first
                     customOrangeG = pair.second
                     seg7Strokes = emptyList()
+                    inkWalkSeeds = emptyList()
+                    inkWalkBoxes = emptyList()
+                    inkJumpOpts = null
                 }
                 val customBluePixelG = customBlueG.map { bh ->
                     android.graphics.Rect(bh.rect.left.toInt(), bh.rect.top.toInt(), bh.rect.right.toInt(), bh.rect.bottom.toInt())
@@ -1415,6 +1434,47 @@ suspend fun runPumpExperiment(
                     android.graphics.Rect(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt())
                 }
                 val cvG = PumpCostVolUtils.classifyCostVolFromBoxOcr(gCands)
+                val inkVariants = JSONArray()
+                if (seg7Stroke && inkJumpOpts != null && inkWalkSeeds.isNotEmpty()) {
+                    val opts = inkJumpOpts
+                    fun inkRectsFor(kk: Float): List<android.graphics.Rect> =
+                        inkWalkSeeds.indices.map { i ->
+                            val padded = ContentExpandUtils.padVertByStrokes(
+                                inkWalkBoxes[i], inkWalkSeeds[i], kk,
+                                seg7Strokes[i].sPx, imgW, imgH,
+                            )
+                            ContentExpandUtils.jumpRetractHorizontal(
+                                workspace.p.mat, padded, opts,
+                            )
+                        }
+                    val quads1 = customBluePixelG.map { ContentExpandUtils.orientedFromAabb(it) }
+                    inkVariants.put(
+                        ocrScaleVariantJson(
+                            1f, customBluePixelG, quads1, gCands, cvG, kind = "ink",
+                        ),
+                    )
+                    var nOcr = customBluePixelG.size
+                    for (kk in listOf(2f, 3f)) {
+                        val rects = inkRectsFor(kk)
+                        val ocrK = ocrPumpRectsAsisAndDigits(rects)
+                        nOcr += rects.size
+                        val candsK = buildRedBoxCandidates(
+                            rects, ocrK.asis, ocrK.digits, ocrK.asisProbs, ocrK.digitsProbs,
+                            ocrK.recB64, recWList = ocrK.recW, recHList = ocrK.recH,
+                        )
+                        val cvK = PumpCostVolUtils.classifyCostVolFromBoxOcr(candsK)
+                        val quadsK = rects.map { ContentExpandUtils.orientedFromAabb(it) }
+                        inkVariants.put(
+                            ocrScaleVariantJson(
+                                kk, rects, quadsK, candsK, cvK, kind = "ink",
+                            ),
+                        )
+                    }
+                    branch.metadata["n_ocr_energy"] = nOcr.toString()
+                    branch.metadata["t_ocr_ms"] =
+                        (System.currentTimeMillis() - tOcr0).toString()
+                    branch.metadata["t_ocr_energy_ms"] = branch.metadata["t_ocr_ms"]
+                }
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelG,
                     ocrSourceRects = customBluePixelG,
@@ -1425,7 +1485,8 @@ suspend fun runPumpExperiment(
                     finalVol = cvG.vol,
                     assembly = if (seg7Stroke) mapOf(
                         "method" to "7seg_stroke",
-                        "k" to ContentExpandUtils.SEG7_K,
+                        "k" to listOf(1, 2, 3),
+                        "kOfficial" to 1,
                         "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
                         "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
                         "sPx" to seg7Strokes.map { it.sPx },
@@ -1478,7 +1539,8 @@ suspend fun runPumpExperiment(
                         "heatmapCellPx" to NativeImageUtils.PADDLE_DET_HEAT_CELL_PX,
                         "note" to assemblyNote
                     ),
-                    oranges = orangePixelG
+                    oranges = orangePixelG,
+                    scaleVariants = inkVariants,
                 )
                 doBOrDRedOnlyImage()
                 val aPdG = if (horizJump || seg7Stroke) {
@@ -1528,7 +1590,7 @@ suspend fun runPumpExperiment(
                 )
                 val procP4Ink = makeGProc(
                     emptyList(),
-                    "P4-ink: v4 det + seed-ROI s; gap/peek 0.5s; cap 2.5×seedH safety; always k=1s; then G4-vjump L/R jump-retract (no G-list)",
+                    "P4-ink: v4 det + seed-ROI s; walk once; OCR k=1/2/3; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -1538,7 +1600,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdInk = makeGProc(
                     emptyList(),
-                    "Prod-ink: product det + seed-ROI s; gap/peek 0.5s; cap 2.5×seedH safety; always k=1s; then G4-vjump L/R jump-retract (no G-list)",
+                    "Prod-ink: product det + seed-ROI s; walk once; OCR k=1/2/3; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -1781,6 +1843,9 @@ suspend fun runPumpExperiment(
                     val expandedQuads: List<ContentExpandUtils.OrientedQuad>
                     val hitCaps: List<Boolean>
                     val inkStrokes: List<ContentExpandUtils.StrokeWidthInSeed>
+                    val inkWalkSeeds: List<android.graphics.Rect>
+                    val inkWalkBoxes: List<android.graphics.Rect>
+                    val inkJumpOptsRot: ContentExpandUtils.ExpandOptions?
                     if (seg7Stroke) {
                         val jumpOpts = ContentExpandUtils.ExpandOptions(
                             maxFrac = 0.4f,
@@ -1789,25 +1854,36 @@ suspend fun runPumpExperiment(
                             retractClearFrac = 0.30f,
                             energyRatio = 0.65f,
                         )
-                        val expands = seedQuads.map { seed ->
+                        val walks = seedQuads.map { seed ->
                             val aabb = seed.toAabb()
                             val vert = ContentExpandUtils.expand7segFromSeed(
                                 gray, aabb,
-                                k = ContentExpandUtils.SEG7_K,
+                                k = 0f,
                                 doHorizontal = false,
                             )
-                            val jumped = ContentExpandUtils.jumpRetractHorizontal(
-                                gray, vert.rect, jumpOpts,
-                            )
-                            Pair(ContentExpandUtils.orientedFromAabb(jumped), vert.stroke)
+                            Triple(aabb, vert.rect, vert.stroke)
                         }
-                        expandedQuads = expands.map { it.first }
+                        fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> =
+                            walks.map { (seed, walked, stroke) ->
+                                val padded = ContentExpandUtils.padVertByStrokes(
+                                    walked, seed, kk, stroke.sPx, imgW, imgH,
+                                )
+                                val jumped = ContentExpandUtils.jumpRetractHorizontal(
+                                    gray, padded, jumpOpts,
+                                )
+                                ContentExpandUtils.orientedFromAabb(jumped)
+                            }
+                        expandedQuads = inkQuadsFor(1f)
                         hitCaps = expandedQuads.map { false }
-                        inkStrokes = expands.map { it.second }
+                        inkStrokes = walks.map { it.third }
                         expDiag = emptyList()
+                        inkWalkSeeds = walks.map { it.first }
+                        inkWalkBoxes = walks.map { it.second }
+                        inkJumpOptsRot = jumpOpts
                         branch.metadata["s_per_red"] =
                             inkStrokes.joinToString(",") { it.sPx.toString() }
-                        branch.metadata["seg7_k"] = ContentExpandUtils.SEG7_K.toString()
+                        branch.metadata["seg7_k"] = "1,2,3"
+                        branch.metadata["seg7_k_official"] = "1"
                         branch.metadata["seg7_vert_cap_frac"] =
                             ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
                         branch.metadata["seg7_gap_frac"] =
@@ -1830,6 +1906,9 @@ suspend fun runPumpExperiment(
                         expandedQuads = expDiag.map { it.quad }
                         hitCaps = expDiag.map { it.hitVertCap }
                         inkStrokes = emptyList()
+                        inkWalkSeeds = emptyList()
+                        inkWalkBoxes = emptyList()
+                        inkJumpOptsRot = null
                         if (energyTraceOut != null) {
                             try {
                                 writeExpandEnergyTrace(
@@ -1868,26 +1947,70 @@ suspend fun runPumpExperiment(
                         vertSweep.joinToString(",")
 
                     val variants = JSONArray()
-                    val officialKind = if (seg7Stroke) "ink" else "energy"
-                    val energyRects = expandedQuads.map { it.toAabb() }
+                    val energyRects: List<android.graphics.Rect>
+                    val energyCands: List<RedBoxOcrCandidate>
+                    val energyCv: CostVolClassifyResult
                     val tOcrE0 = System.currentTimeMillis()
-                    val energyOcr = ocrPumpOrientedQuads(expandedQuads, gray, imgW, imgH)
-                    branch.metadata["t_ocr_energy_ms"] =
-                        (System.currentTimeMillis() - tOcrE0).toString()
-                    val energyCands = buildRedBoxCandidates(
-                        energyRects, energyOcr.asis, energyOcr.digits,
-                        energyOcr.asisProbs, energyOcr.digitsProbs, energyOcr.recB64,
-                        recWList = energyOcr.recW, recHList = energyOcr.recH,
-                    )
-                    val energyCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(energyCands)
-                    variants.put(
-                        ocrScaleVariantJson(
-                            1.0f, energyRects, expandedQuads, energyCands, energyCv,
-                            kind = officialKind, hitCaps = hitCaps,
-                        ),
-                    )
-
-                    if (!seg7Stroke) {
+                    if (seg7Stroke && inkJumpOptsRot != null) {
+                        val opts = inkJumpOptsRot
+                        fun inkQuadsForK(kk: Float): List<ContentExpandUtils.OrientedQuad> =
+                            inkWalkSeeds.indices.map { i ->
+                                val padded = ContentExpandUtils.padVertByStrokes(
+                                    inkWalkBoxes[i], inkWalkSeeds[i], kk,
+                                    inkStrokes[i].sPx, imgW, imgH,
+                                )
+                                ContentExpandUtils.orientedFromAabb(
+                                    ContentExpandUtils.jumpRetractHorizontal(
+                                        gray, padded, opts,
+                                    ),
+                                )
+                            }
+                        var nOcr = 0
+                        var officialCands: List<RedBoxOcrCandidate> = emptyList()
+                        var officialCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(emptyList())
+                        for (kk in listOf(1f, 2f, 3f)) {
+                            val quads = if (kk == 1f) expandedQuads else inkQuadsForK(kk)
+                            val rects = quads.map { it.toAabb() }
+                            val ocrK = ocrPumpOrientedQuads(quads, gray, imgW, imgH)
+                            nOcr += quads.size
+                            val candsK = buildRedBoxCandidates(
+                                rects, ocrK.asis, ocrK.digits,
+                                ocrK.asisProbs, ocrK.digitsProbs, ocrK.recB64,
+                                recWList = ocrK.recW, recHList = ocrK.recH,
+                            )
+                            val cvK = PumpCostVolUtils.classifyCostVolFromBoxOcr(candsK)
+                            variants.put(
+                                ocrScaleVariantJson(
+                                    kk, rects, quads, candsK, cvK, kind = "ink",
+                                ),
+                            )
+                            if (kk == 1f) {
+                                officialCands = candsK
+                                officialCv = cvK
+                            }
+                        }
+                        energyRects = expandedQuads.map { it.toAabb() }
+                        energyCands = officialCands
+                        energyCv = officialCv
+                        branch.metadata["n_ocr_energy"] = nOcr.toString()
+                        branch.metadata["t_ocr_count_ms"] = "0"
+                        branch.metadata["n_ocr_count"] = "0"
+                        branch.metadata["n_count_pull"] = "0"
+                    } else {
+                        energyRects = expandedQuads.map { it.toAabb() }
+                        val energyOcr = ocrPumpOrientedQuads(expandedQuads, gray, imgW, imgH)
+                        energyCands = buildRedBoxCandidates(
+                            energyRects, energyOcr.asis, energyOcr.digits,
+                            energyOcr.asisProbs, energyOcr.digitsProbs, energyOcr.recB64,
+                            recWList = energyOcr.recW, recHList = energyOcr.recH,
+                        )
+                        energyCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(energyCands)
+                        variants.put(
+                            ocrScaleVariantJson(
+                                1.0f, energyRects, expandedQuads, energyCands, energyCv,
+                                kind = "energy", hitCaps = hitCaps,
+                            ),
+                        )
                         val countQuads = expDiag.map { it.countQuad }
                         val countRects = countQuads.map { it.toAabb() }
                         val tOcrC0 = System.currentTimeMillis()
@@ -1919,11 +2042,9 @@ suspend fun runPumpExperiment(
                                 kind = "energy_count", hitCaps = hitCaps,
                             ),
                         )
-                    } else {
-                        branch.metadata["t_ocr_count_ms"] = "0"
-                        branch.metadata["n_ocr_count"] = "0"
-                        branch.metadata["n_count_pull"] = "0"
                     }
+                    branch.metadata["t_ocr_energy_ms"] =
+                        (System.currentTimeMillis() - tOcrE0).toString()
 
                     branch.metadata["t_ocr_g_ms"] = "0"
                     branch.metadata["n_ocr_g"] = "0"
@@ -1931,12 +2052,14 @@ suspend fun runPumpExperiment(
                     val hybridCands = energyCands
                     val hybridCv = energyCv
                     val hybridRects = hybridQuads.map { it.toAabb() }
-                    variants.put(
-                        ocrScaleVariantJson(
-                            1.0f, hybridRects, hybridQuads, hybridCands, hybridCv,
-                            kind = "energy_or_g", hitCaps = hitCaps,
-                        ),
-                    )
+                    if (!seg7Stroke) {
+                        variants.put(
+                            ocrScaleVariantJson(
+                                1.0f, hybridRects, hybridQuads, hybridCands, hybridCv,
+                                kind = "energy_or_g", hitCaps = hitCaps,
+                            ),
+                        )
+                    }
                     val tOcrE = branch.metadata["t_ocr_energy_ms"]?.toLongOrNull() ?: 0L
                     val tOcrG = branch.metadata["t_ocr_g_ms"]?.toLongOrNull() ?: 0L
                     branch.metadata["t_ocr_ms"] = (tOcrE + tOcrG).toString()
@@ -1984,7 +2107,8 @@ suspend fun runPumpExperiment(
                             "contentExpandMode" to "7seg_stroke",
                             "finalKind" to "ink",
                             "maxFrac" to 0.4f,
-                            "k" to ContentExpandUtils.SEG7_K,
+                            "k" to listOf(1, 2, 3),
+                            "kOfficial" to 1,
                             "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
                             "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
                             "sPx" to inkStrokes.map { it.sPx },
@@ -2455,7 +2579,7 @@ suspend fun runPumpExperiment(
                 )
                 val procP4RotInk = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-rot-ink: v4 oriented det + AABB ink walk (gap/peek 0.5s, cap 2.5× safety, always k=1s) + jump (no G-list)",
+                    "P4-rot-ink: v4 oriented det + AABB ink walk once; OCR k=1/2/3; official k=1; jump (no G-list)",
                     expDetAsset = "PP-OCRv4_mobile_det",
                     enableJump = true,
                     doDeskew = false,
@@ -2496,7 +2620,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdRotInk = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "Prod-rot-ink: product oriented det + AABB ink walk (gap/peek 0.5s, cap 2.5× safety, always k=1s) + jump (no G-list)",
+                    "Prod-rot-ink: product oriented det + AABB ink walk once; OCR k=1/2/3; official k=1; jump (no G-list)",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,

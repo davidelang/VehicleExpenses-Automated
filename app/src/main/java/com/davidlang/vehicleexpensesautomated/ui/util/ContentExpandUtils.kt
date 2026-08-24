@@ -1018,13 +1018,13 @@ object ContentExpandUtils {
     const val SEG7_GLARE_WIDTH_MULT = 3
     const val SEG7_MIN_STROKE = 4
     const val SEG7_FALLBACK_H_FRAC = 0.08f
-    /** After vertical-bar-cap stop, pad each tip by this × `s` (clamped to remaining [SEG7_VERT_CAP_FRAC]×seedH). */
+    /** Official ink pad (k=1). Walk itself does not pad; [padVertByStrokes] applies k=1/2/3. */
     const val SEG7_K = 1f
     /** Horizontal jump as this × `s` (not used by Set P4-ink; width is jump-retract). */
     const val SEG7_J = 2f
     /** Empty-row skip and start-peek, as a fraction of `s`. */
     const val SEG7_GAP_FRAC = 0.5f
-    /** Safety cap only: vertical ink walk + 1s pad budget per side of the **initial red**. */
+    /** Safety cap only: walk + k-pad share this × original-red H per side. */
     const val SEG7_VERT_CAP_FRAC = 2.5f
     const val SEG7_HORZ_CAP_S = 20
     const val SEG7_BAR_RUN_FRAC = 0.5f
@@ -1168,7 +1168,7 @@ object ContentExpandUtils {
      * strip (seed columns only) has an ink run ≥ 0.5`s`. Peek up to
      * [SEG7_GAP_FRAC]`s` outside the red; freeze that side if the peek is empty.
      * Stop after a gap ≥ [SEG7_GAP_FRAC]`s` or [SEG7_VERT_CAP_FRAC]×seedH per
-     * side (safety). Always pad each tip by [k]×`s` clamped to remaining cap.
+     * side (safety). Does **not** pad; caller uses [padVertByStrokes] for k=1/2/3.
      * Horizontal jump-retract is the caller's job ([jumpRetractHorizontal]);
      * this does not call [jumpRetractHorizontalInS].
      */
@@ -1187,11 +1187,10 @@ object ContentExpandUtils {
         val imgH = gray.rows()
         val s0 = clip(stroke.seed, imgW, imgH)
         val sPx = max(1, stroke.sPx)
-        val kPad = max(1, (k * sPx).roundToInt())
         val seedH = max(1, s0.height())
         val capPx = max(1, (SEG7_VERT_CAP_FRAC * seedH).roundToInt())
         val gapStop = max(1, (SEG7_GAP_FRAC * sPx).roundToInt())
-        val vLook = capPx + kPad + 2
+        val vLook = capPx + 2
         val nl = s0.left
         val nr = s0.right
         val nt = (s0.top - vLook).coerceAtLeast(0)
@@ -1264,10 +1263,6 @@ object ContentExpandUtils {
                     y++
                 }
             }
-            val padUp = min(kPad, max(0, capPx - (localT - t)))
-            val padDown = min(kPad, max(0, capPx - (b - localB)))
-            t = (t - padUp).coerceAtLeast(0)
-            b = (b + padDown).coerceAtMost(bin.rows())
             if (b <= t) b = (t + 1).coerceAtMost(bin.rows())
             val out = clip(Rect(s0.left, nt + t, s0.right, nt + b), imgW, imgH)
             return Seg7Expand(out, stroke, k, j)
@@ -1275,6 +1270,32 @@ object ContentExpandUtils {
             roi.release()
             bin.release()
         }
+    }
+
+    /**
+     * Pad [box] by `k`×`s` on each tip, clamped to remaining
+     * [SEG7_VERT_CAP_FRAC]×original-[seed] height per side (walk already used
+     * some of that budget). Frozen sides (no walk) still get the pad.
+     */
+    fun padVertByStrokes(
+        box: Rect,
+        seed: Rect,
+        k: Float,
+        sPx: Int,
+        imgW: Int,
+        imgH: Int,
+    ): Rect {
+        val seedH = max(1, seed.height())
+        val capPx = max(1, (SEG7_VERT_CAP_FRAC * seedH).roundToInt())
+        val kPad = max(1, (k * max(1, sPx)).roundToInt())
+        val walkUp = max(0, seed.top - box.top)
+        val walkDown = max(0, box.bottom - seed.bottom)
+        val padUp = min(kPad, max(0, capPx - walkUp))
+        val padDown = min(kPad, max(0, capPx - walkDown))
+        return clip(
+            Rect(box.left, box.top - padUp, box.right, box.bottom + padDown),
+            imgW, imgH,
+        )
     }
 
     /** Jump L/R by `j×s`. If the 1px boundary still has a ~s run, grow in steps of `s` (cap 20s). Else retract to last bar and pad `s`. */

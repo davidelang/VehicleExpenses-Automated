@@ -8164,3 +8164,15 @@ x
 - `expand7segFromSeed`: gap/peek 0.5s, cap 2.5×seedH safety, always k=1s. All ink columns. Horz jump 0.40/0.30 unchanged. Energy maxFrac 0.4 / QF / 9 columns untouched. 108c glare-as-bar still safety-cap (not claimed fixed).
 - Human: deploy + scheduled pump; 10c/11c grow past 0.40×seedH if cost/vol gap exists; 14v-up peeks 0.5s.
 
+
+## 2026-08-24 - Execute start: p4-ink-k123-multi-ocr
+
+- Plan: `dev-ai-interaction/plans/p4-ink-k123-multi-ocr-20260823-2258-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: Ink columns: walk once (k=0 in walk), pad k=1/2/3, OCR all three, official k=1. No new columns. QF / energy / gap 0.5s / cap 2.5 / 9-name list untouched.
+
+
+## 2026-08-24 - Phase 1: ink walk once, OCR k=1/2/3
+
+- `expand7segFromSeed`: no k-pad in walk. `padVertByStrokes` clamps k×s to remaining 2.5×seedH. AABB P4-ink/Prod-ink and rot-ink: walk once, pad+jump k=1/2/3, `scaleVariants` kind=ink s=1/2/3, official/PD/final = k=1. Energy columns / 9 flows / QF untouched.
+
