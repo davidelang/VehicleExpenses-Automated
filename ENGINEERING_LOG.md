@@ -8157,3 +8157,10 @@ x
 
 - Ink assembly + metadata: `gapFrac` / `seg7_gap_frac` = 0.5; `vertCapFrac` from `SEG7_VERT_CAP_FRAC` (2.5). Flows P4-ink / rot-ink: 0.5s gap+peek, 2.5× safety, always k=1s. Energy `maxFrac=0.4` / jump / xycut unchanged.
 
+
+## 2026-08-24 - CODE LANDED: p4-ink-vert-gap-half-s
+
+- Plan `dev-ai-interaction/plans/p4-ink-vert-gap-half-s-20260823-2221-plan.md`
+- `expand7segFromSeed`: gap/peek 0.5s, cap 2.5×seedH safety, always k=1s. All ink columns. Horz jump 0.40/0.30 unchanged. Energy maxFrac 0.4 / QF / 9 columns untouched. 108c glare-as-bar still safety-cap (not claimed fixed).
+- Human: deploy + scheduled pump; 10c/11c grow past 0.40×seedH if cost/vol gap exists; 14v-up peeks 0.5s.
+
