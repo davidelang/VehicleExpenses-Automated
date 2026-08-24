@@ -8205,3 +8205,15 @@ x
 - Plan: `dev-ai-interaction/plans/pump-flow-names-family-then-det-20260823-2346-plan.md`
 - Scheduled keys: Set ink-p4, ink-prod, jump-p4, jump-prod, rot-ink-p4, rot-ink-prod, xycut-p4. G-- / G4-vjump unchanged. Same 9 processors. HTML ASCII order family then det. QF still G4-vjump. No recipe change.
 
+
+## 2026-08-24 - Execute start: prod-ink-fail-subset-button
+
+- Plan: `dev-ai-interaction/plans/prod-ink-fail-subset-button-20260824-0145-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: Horiz-affected-style subset of 76 prod-ink fail photos (ink-prod or rot-ink-prod not exact, relax=fail). Full 9 columns. No expand/OCR/QF/flow-name change.
+
+
+## 2026-08-24 - Phase 1: PROD_INK_FAIL_FILENAMES
+
+- `PumpCostVolUtils.kt`: `PROD_INK_FAIL_FILENAMES` 76 names after Horiz-affected list. Source JSON `prod_ink_fail_photos_2318.json` `union_not_exact`. Includes .dng/.jpg twins and fuel_1787094571952.jpg.
+
