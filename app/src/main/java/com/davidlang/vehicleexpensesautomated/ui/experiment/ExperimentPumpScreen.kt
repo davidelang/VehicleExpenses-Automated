@@ -259,6 +259,8 @@ fun ExperimentPumpScreen(
     autoL1Debug: Boolean = false,
     /** Deep link: vehicleexpenses://experiment/pump?auto=horiz — horiz-affected subset. */
     autoHorizAffected: Boolean = false,
+    /** Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail — prod-ink fail subset. */
+    autoProdInkFail: Boolean = false,
     /** Deep link: vehicleexpenses://experiment/pump?auto=selected — coverage selected sample (pump only). */
     autoSelectedSample: Boolean = false,
 ) {
@@ -369,6 +371,30 @@ fun ExperimentPumpScreen(
         }
     }
 
+    /** Photos where ink-prod or rot-ink-prod is not exact (relax=fail) on 23-18 phone+tablet. */
+    val runProdInkFail: () -> Unit = {
+        val allFiles = experimentDir.listFiles { f ->
+            f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+        } ?: emptyArray()
+        val want = PROD_INK_FAIL_FILENAMES.toSet()
+        val names = allFiles.map { it.name }.filter { it in want }.sorted()
+        val missing = want.size - names.size
+        Log.d(
+            TAG,
+            "Prod-ink fail listFiles: dir=${experimentDir.absolutePath} " +
+                "matched=${names.size}/${want.size} missing=$missing",
+        )
+        if (names.isEmpty()) {
+            status = "Prod-ink fail: 0 photos present (need ${want.size} in pump_photos)"
+        } else {
+            startPumpJob(
+                names,
+                "Prod-ink fail (${names.size})…" +
+                    if (missing > 0) " ($missing not on device)" else "",
+            )
+        }
+    }
+
     val runL1SoDebug: () -> Unit = {
         val ok = ExperimentJobRunner.start(context.applicationContext, kind = "pump") { _, log, statusLine ->
             statusLine("L1 SO debug dump…")
@@ -408,8 +434,8 @@ fun ExperimentPumpScreen(
         }
     }
 
-    // Deep link: vehicleexpenses://experiment/pump?auto=first10 | auto=l1debug | auto=horiz | auto=selected
-    LaunchedEffect(autoFirst10, autoL1Debug, autoHorizAffected, autoSelectedSample) {
+    // Deep link: vehicleexpenses://experiment/pump?auto=first10 | auto=l1debug | auto=horiz | auto=selected | auto=prodinkfail
+    LaunchedEffect(autoFirst10, autoL1Debug, autoHorizAffected, autoProdInkFail, autoSelectedSample) {
         if (autoStarted || ExperimentJobRunner.isRunning()) return@LaunchedEffect
         when {
             autoL1Debug -> {
@@ -421,6 +447,11 @@ fun ExperimentPumpScreen(
                 autoStarted = true
                 Log.i(TAG, "autoHorizAffected starting horiz-affected subset")
                 runHorizAffected()
+            }
+            autoProdInkFail -> {
+                autoStarted = true
+                Log.i(TAG, "autoProdInkFail starting prod-ink fail subset")
+                runProdInkFail()
             }
             autoSelectedSample -> {
                 autoStarted = true
@@ -510,6 +541,21 @@ fun ExperimentPumpScreen(
             "Horiz-affected = photos where exact min_v changed between horiz 0.5 and 1.0 " +
                 "(phone 08-08). Columns: G-- / G4 / P4-jump / m65 / gx / xycut / rot / Prod. " +
                 "Deep link: vehicleexpenses://experiment/pump?auto=horiz",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+        Button(
+            onClick = runProdInkFail,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Prod-ink fail (${PROD_INK_FAIL_FILENAMES.size})")
+        }
+        Text(
+            "Prod-ink fail = photos where ink-prod or rot-ink-prod is not exact (relax=fail) " +
+                "on 23-18 phone+tablet; columns still the full nine (P4 stays). " +
+                "Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),

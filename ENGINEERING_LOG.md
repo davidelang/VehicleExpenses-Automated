@@ -8217,3 +8217,10 @@ x
 
 - `PumpCostVolUtils.kt`: `PROD_INK_FAIL_FILENAMES` 76 names after Horiz-affected list. Source JSON `prod_ink_fail_photos_2318.json` `union_not_exact`. Includes .dng/.jpg twins and fuel_1787094571952.jpg.
 
+
+## 2026-08-24 - Phase 2: Prod-ink fail button + deep link
+
+- `ExperimentPumpScreen`: autoProdInkFail, runProdInkFail, button after Horiz-affected, caption 23-18 relax=fail, full nine columns. Deep link auto=prodinkfail.
+- `MainActivity`: auto=prodinkfail or auto=inkfail.
+- `docs/PUMP_EXPERIMENT_FLOWS.md`: one UI-subset sentence. Flows / expand / QF untouched.
+
