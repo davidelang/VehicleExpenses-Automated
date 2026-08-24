@@ -8055,3 +8055,11 @@ x
 
 - `docs/PUMP_EXPERIMENT_FLOWS.md`: 13 columns; P4 discovery 224+1024; prod/QF 224+608; experiment G4 / P4-m65 / p20 / Prod-m65 gone; Prod-ink / P4-rot-ink / Prod-rot-ink listed. Rec-buffer 12px asis/digits kept. QF verts unchanged. Cap 0.40.
 
+
+## 2026-08-24 - CODE LANDED: pump-html-rec-asis-font + pump-ink-rot-prod-and-two-scales
+
+- Plans `dev-ai-interaction/plans/pump-html-rec-asis-font-20260823-2336-plan.md` and `dev-ai-interaction/plans/pump-ink-rot-prod-and-two-scales-20260824-0035-plan.md`
+- Rec-buffer caption: 9px `$lab`; asis/digits 12px.
+- 13 columns: drop experiment G4 / P4-m65 / p20 / Prod-m65; add Prod-ink, P4-rot-ink, Prod-rot-ink. P4 discovery 224+1024; prod/QF 224+608. Vert cap / energy maxFrac 0.40. QF verts unchanged. No P4 2048.
+- Human: deploy + scheduled pump; check HTML font, 13 columns, scales keys, rot-ink PD.
+
