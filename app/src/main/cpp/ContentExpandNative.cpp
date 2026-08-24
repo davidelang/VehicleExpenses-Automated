@@ -1149,3 +1149,331 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
     env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
     return arr;
 }
+
+namespace {
+
+static int peakCapped(const std::vector<int>& hist, int minK, int maxK) {
+    int bestK = minK, bestV = 0;
+    const int hi = std::min(maxK, static_cast<int>(hist.size()) - 1);
+    for (int k = minK; k <= hi; ++k) {
+        if (hist[k] > bestV) {
+            bestV = hist[k];
+            bestK = k;
+        }
+    }
+    return bestV > 0 ? bestK : minK;
+}
+
+static int maxInkRunRow(const cv::Mat& bin, int y, int x0, int x1) {
+    if (y < 0 || y >= bin.rows) return 0;
+    const uint8_t* p = bin.ptr<uint8_t>(y);
+    int best = 0, run = 0;
+    const int r = std::min(x1, bin.cols);
+    for (int x = std::max(0, x0); x < r; ++x) {
+        if (p[x] != 0) {
+            ++run;
+            if (run > best) best = run;
+        } else {
+            run = 0;
+        }
+    }
+    return best;
+}
+
+struct HorizSW {
+    int peak = 4;
+    int maxRun = 0;
+    int nNonSpan = 0;
+    std::vector<int> hist;
+};
+
+static HorizSW horizPeakSW(const cv::Mat& bin, int seedH, int seedW) {
+    HorizSW out;
+    out.hist.assign(std::max(seedW + 1, 36), 0);
+    for (int y = 0; y < bin.rows; ++y) {
+        const uint8_t* p = bin.ptr<uint8_t>(y);
+        int run = 0;
+        for (int x = 0; x <= bin.cols; ++x) {
+            const bool on = x < bin.cols && p[x] != 0;
+            if (on) ++run;
+            else if (run > 0) {
+                if (run != seedW) {
+                    if (run < static_cast<int>(out.hist.size())) out.hist[run]++;
+                    ++out.nNonSpan;
+                    if (run > out.maxRun) out.maxRun = run;
+                }
+                run = 0;
+            }
+        }
+    }
+    const int maxV = std::max(35, static_cast<int>(seedH * 0.50f));
+    out.peak = peakCapped(out.hist, 4, maxV);
+    return out;
+}
+
+static int vertPeakSW(const cv::Mat& bin, int seedH) {
+    const int h = bin.rows;
+    std::vector<int> hist(std::max(h + 1, 21), 0);
+    for (int x = 0; x < bin.cols; ++x) {
+        int run = 0;
+        for (int y = 0; y <= h; ++y) {
+            const bool on = y < h && bin.ptr<uint8_t>(y)[x] != 0;
+            if (on) ++run;
+            else if (run > 0) {
+                if (run != h && run < static_cast<int>(hist.size())) hist[run]++;
+                run = 0;
+            }
+        }
+    }
+    const int maxH = std::max(20, static_cast<int>(seedH * 0.40f));
+    return peakCapped(hist, 4, maxH);
+}
+
+static void dropWide(cv::Mat* bin, int glareW) {
+    if (glareW <= 0 || bin->empty()) return;
+    cv::Mat labels, stats, centroids;
+    const int nLab = cv::connectedComponentsWithStats(*bin, labels, stats, centroids, 8);
+    if (nLab <= 1) return;
+    std::vector<char> drop(nLab, 0);
+    int dropped = 0;
+    for (int i = 1; i < nLab; ++i) {
+        const int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        if (w > glareW) {
+            drop[i] = 1;
+            ++dropped;
+        }
+    }
+    if (!dropped) return;
+    for (int y = 0; y < bin->rows; ++y) {
+        const int* lp = labels.ptr<int>(y);
+        uint8_t* bp = bin->ptr<uint8_t>(y);
+        for (int x = 0; x < bin->cols; ++x) {
+            const int id = lp[x];
+            if (id >= 0 && id < nLab && drop[id]) bp[x] = 0;
+        }
+    }
+}
+
+static void seg7One(
+    const cv::Mat& src, int sl, int st, int sr, int sb,
+    int imgW, int imgH,
+    int* ol, int* ot, int* oright, int* ob, int* sPxOut, int* vSWOut, int* hSWOut, int* usedFb
+) {
+    *ol = sl; *ot = st; *oright = sr; *ob = sb;
+    const int seedH = std::max(1, sb - st);
+    const int seedW = std::max(1, sr - sl);
+    const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedH)));
+    *sPxOut = fallback;
+    *vSWOut = 4;
+    *hSWOut = 4;
+    *usedFb = 1;
+    if (sr <= sl || sb <= st || src.empty() || src.type() != CV_8UC1) return;
+    if (seedH < 4 || seedW < 4) return;
+    cv::Mat roi = src(cv::Range(st, sb), cv::Range(sl, sr));
+    cv::Mat bin;
+    const double thr = cv::threshold(roi, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    const int nPix = seedW * seedH;
+    int nz = cv::countNonZero(bin);
+    float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
+    bool darkInk = true;
+    if (inkFrac >= 0.45f) {
+        cv::bitwise_not(bin, bin);
+        nz = cv::countNonZero(bin);
+        inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
+        darkInk = false;
+    }
+    HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
+    const int v0 = hh0.peak;
+    const int glareW = 3 * std::max(v0, 4);
+    dropWide(&bin, glareW);
+    HorizSW hh = horizPeakSW(bin, seedH, seedW);
+    const int vSW = hh.peak;
+    const int hSW = vertPeakSW(bin, seedH);
+    const int lo = std::max(1, static_cast<int>(std::lround(0.7f * vSW)));
+    const int hi = std::max(lo, static_cast<int>(std::lround(1.3f * vSW)));
+    int band = 0;
+    const int hiClamp = std::min(hi, static_cast<int>(hh.hist.size()) - 1);
+    for (int k = lo; k <= hiClamp; ++k) band += hh.hist[k];
+    const float strokeShare = hh.nNonSpan > 0
+        ? band / static_cast<float>(hh.nNonSpan) : 0.f;
+    const float maxRunOverW = hh.maxRun / static_cast<float>(seedW);
+    const bool needFb = vSW <= 4 || inkFrac >= 0.45f ||
+        strokeShare < 0.30f || maxRunOverW >= 0.50f;
+    const int sPx = needFb ? fallback : vSW;
+    *sPxOut = sPx;
+    *vSWOut = vSW;
+    *hSWOut = hSW;
+    *usedFb = needFb ? 1 : 0;
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+    const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
+    const int vLook = capPx + 2;
+    const int nt = std::max(0, st - vLook);
+    const int nb = std::min(imgH, sb + vLook);
+    if (sr <= sl || nb <= nt) return;
+    cv::Mat look = src(cv::Range(nt, nb), cv::Range(sl, sr));
+    cv::Mat lookBin;
+    const int ttype = darkInk ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
+    cv::threshold(look, lookBin, thr, 255, ttype);
+    dropWide(&lookBin, glareW);
+    const int minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
+    auto hasBar = [&](int y) {
+        return maxInkRunRow(lookBin, y, 0, lookBin.cols) >= minRun;
+    };
+    auto peek = [&](int startY, int dir) {
+        int y = startY, i = 0;
+        while (i < gapStop) {
+            if (hasBar(y)) return true;
+            y += dir;
+            ++i;
+        }
+        return false;
+    };
+    const int localT = st - nt;
+    const int localB = sb - nt;
+    const bool allowUp = peek(localT - 1, -1);
+    const bool allowDown = peek(localB, +1);
+    int t = localT, b = localB;
+    if (allowUp) {
+        int gap = 0, y = localT - 1;
+        while (y >= 0 && localT - y <= capPx) {
+            if (hasBar(y)) { t = y; gap = 0; }
+            else {
+                ++gap;
+                if (gap >= gapStop) break;
+            }
+            --y;
+        }
+    }
+    if (allowDown) {
+        int gap = 0, y = localB;
+        while (y < lookBin.rows && y - localB < capPx) {
+            if (hasBar(y)) { b = y + 1; gap = 0; }
+            else {
+                ++gap;
+                if (gap >= gapStop) break;
+            }
+            ++y;
+        }
+    }
+    if (b <= t) b = std::min(t + 1, lookBin.rows);
+    *ol = sl;
+    *ot = nt + t;
+    *oright = sr;
+    *ob = nt + b;
+    if (*ot < 0) *ot = 0;
+    if (*ob > imgH) *ob = imgH;
+    if (*ob <= *ot) *ob = std::min(imgH, *ot + 1);
+}
+
+static double medianU8Rect(const cv::Mat& m, int l, int t, int r, int b) {
+    if (r <= l || b <= t || m.empty()) return 0.0;
+    std::vector<int> vals;
+    vals.reserve((r - l) * (b - t));
+    for (int y = t; y < b; ++y) {
+        const uint8_t* p = m.ptr<uint8_t>(y);
+        for (int x = l; x < r; ++x) vals.push_back(p[x]);
+    }
+    if (vals.empty()) return 0.0;
+    std::sort(vals.begin(), vals.end());
+    const int n = static_cast<int>(vals.size());
+    if (n % 2 == 1) return vals[n / 2];
+    return 0.5 * (vals[n / 2 - 1] + vals[n / 2]);
+}
+
+}  // namespace
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7Many(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jintArray seedsArr, jboolean chroma
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
+    const int imgW = gray->cols, imgH = gray->rows;
+    const jint n4 = env->GetArrayLength(seedsArr);
+    if (n4 <= 0 || n4 % 4 != 0) return env->NewIntArray(0);
+    const int n = n4 / 4;
+    std::vector<jint> seeds(n4);
+    env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
+    cv::Mat cMag;
+    const bool useChroma = chroma == JNI_TRUE;
+    if (useChroma) {
+        auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+        fillChromaMag(*gray, uv ? *uv : cv::Mat(), &cMag);
+    }
+    std::vector<jint> out(n * 8, 0);
+    for (int i = 0; i < n; ++i) {
+        int l = seeds[i * 4], t = seeds[i * 4 + 1], r = seeds[i * 4 + 2], b = seeds[i * 4 + 3];
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        const cv::Mat* src = gray;
+        if (useChroma && !cMag.empty() && medianU8Rect(cMag, l, t, r, b) >= 8.0) {
+            src = &cMag;
+        }
+        int ol, ot, orr, ob, sPx, vSW, hSW, fb;
+        seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb);
+        const int o = i * 8;
+        out[o] = ol; out[o + 1] = ot; out[o + 2] = orr; out[o + 3] = ob;
+        out[o + 4] = sPx; out[o + 5] = vSW; out[o + 6] = hSW; out[o + 7] = fb;
+    }
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return nullptr;
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpMany(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jintArray boxesArr,
+    jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1 || !boxesArr) return nullptr;
+    const int imgW = gray->cols, imgH = gray->rows;
+    const jint n4 = env->GetArrayLength(boxesArr);
+    if (n4 <= 0 || n4 % 4 != 0) return env->NewIntArray(0);
+    const int n = n4 / 4;
+    std::vector<jint> boxes(n4);
+    env->GetIntArrayRegion(boxesArr, 0, n4, boxes.data());
+    cv::Mat gx, gy, mag;
+    cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
+    cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
+    cv::magnitude(gx, gy, mag);
+    gx.release();
+    gy.release();
+    std::vector<jint> out(n * 4, 0);
+    for (int i = 0; i < n; ++i) {
+        int l = boxes[i * 4], t = boxes[i * 4 + 1], r = boxes[i * 4 + 2], b = boxes[i * 4 + 3];
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l) r = std::min(imgW, l + 1);
+        if (b <= t) b = std::min(imgH, t + 1);
+        const int il = l + 2, it = t + 2, ir = r - 2, ib = b - 2;
+        const double base = (ir > il && ib > it)
+            ? meanRectF(mag, il, it, ir, ib, imgW, imgH)
+            : meanRectF(mag, l, t, r, b, imgW, imgH);
+        const double thr = energyRatio * std::max(base, 1e-3);
+        const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * std::max(1, b - t))));
+        jumpRetractH(mag, &l, t, &r, b, imgW, imgH, thr, cap, jumpFrac, retractClearFrac);
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l) r = std::min(imgW, l + 1);
+        if (b <= t) b = std::min(imgH, t + 1);
+        out[i * 4] = l;
+        out[i * 4 + 1] = t;
+        out[i * 4 + 2] = r;
+        out[i * 4 + 3] = b;
+    }
+    mag.release();
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return nullptr;
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+}

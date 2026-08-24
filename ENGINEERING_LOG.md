@@ -8295,3 +8295,7 @@ x
 
 - `nativeChromaMag` / `nativeAabbGrowMany` in ContentExpandNative.cpp. Gray Y maps; chroma fused. Jump Y mag. Count pullback Y gx. Kotlin `chromaMagU8` JNI-only (no Mat.get/put). `expandDiagnoseMany` for AABB experiment loop. Traces stay Kotlin fallback.
 
+
+## 2026-08-24 - Phase 2: native 7seg + Y jump
+
+C++ nativeSeg7Many / nativeJumpMany. One Sobel or chromaMag per photo. Ink makeGProc, rot-ink runIndependentOrientedColumn, and G4-vjump createG4VjumpBlueHunksFromReds use many-seed JNI. padVertByStrokes and k=1/2/3 OCR stay Kotlin. makeGProc writes real t_expand_ms.

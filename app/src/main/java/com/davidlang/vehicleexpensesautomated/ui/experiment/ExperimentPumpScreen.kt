@@ -1406,31 +1406,46 @@ suspend fun runPumpExperiment(
                         retractClearFrac = 0.30f,
                         energyRatio = 0.65f,
                     )
-                    val walks = pdHunksRawTotal.map { h ->
-                        val r = android.graphics.Rect(
+                    val tExp0 = System.currentTimeMillis()
+                    val seeds = pdHunksRawTotal.map { h ->
+                        android.graphics.Rect(
                             h.rect.left.toInt(), h.rect.top.toInt(),
                             h.rect.right.toInt(), h.rect.bottom.toInt(),
                         )
-                        val vert = if (chromaExpand) {
+                    }
+                    val segs = ContentExpandUtils.expand7segFromSeedMany(
+                        workspace.p.mat,
+                        if (chromaExpand) workspace.p.uvMat else null,
+                        seeds,
+                        chroma = chromaExpand,
+                        k = 0f,
+                    ) ?: seeds.map { r ->
+                        if (chromaExpand) {
                             ContentExpandUtils.expand7segFromSeedChroma(
                                 workspace.p.mat, workspace.p.uvMat, r, k = 0f,
                             )
                         } else {
                             ContentExpandUtils.expand7segFromSeed(
-                                workspace.p.mat, r,
-                                k = 0f,
-                                doHorizontal = false,
+                                workspace.p.mat, r, k = 0f, doHorizontal = false,
                             )
                         }
-                        Triple(r, vert.rect, vert.stroke)
                     }
-                    fun inkBoxesFor(kk: Float): List<android.graphics.Rect> = walks.map { (seed, walked, stroke) ->
-                        val padded = ContentExpandUtils.padVertByStrokes(
-                            walked, seed, kk, stroke.sPx, imgW, imgH,
-                        )
-                        ContentExpandUtils.jumpRetractHorizontal(
+                    val walks = seeds.indices.map { i ->
+                        Triple(seeds[i], segs[i].rect, segs[i].stroke)
+                    }
+                    fun inkBoxesFor(kk: Float): List<android.graphics.Rect> {
+                        val padded = walks.map { (seed, walked, stroke) ->
+                            ContentExpandUtils.padVertByStrokes(
+                                walked, seed, kk, stroke.sPx, imgW, imgH,
+                            )
+                        }
+                        return ContentExpandUtils.jumpRetractHorizontalMany(
                             workspace.p.mat, padded, jumpOpts,
-                        )
+                        ) ?: padded.map {
+                            ContentExpandUtils.jumpRetractHorizontal(
+                                workspace.p.mat, it, jumpOpts,
+                            )
+                        }
                     }
                     val official = inkBoxesFor(1f)
                     customBlueG = official.map { e ->
@@ -1457,6 +1472,8 @@ suspend fun runPumpExperiment(
                     if (chromaExpand) {
                         branch.metadata["content_expand_chroma"] = "true"
                     }
+                    branch.metadata["t_expand_ms"] =
+                        (System.currentTimeMillis() - tExp0).toString()
                 } else if (horizJump) {
                     customBlueG = PumpCostVolUtils.createG4VjumpBlueHunksFromReds(
                         pdHunksRawTotal, workspace.p.mat, imgW, imgH, gVertFactors,
@@ -1490,7 +1507,9 @@ suspend fun runPumpExperiment(
                 branch.metadata["n_ocr_g"] = "0"
                 branch.metadata["t_ocr_energy_ms"] = tOcr
                 branch.metadata["t_ocr_g_ms"] = "0"
-                branch.metadata["t_expand_ms"] = "0"
+                if (!branch.metadata.containsKey("t_expand_ms")) {
+                    branch.metadata["t_expand_ms"] = "0"
+                }
                 val gCands = buildRedBoxCandidates(
                     customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs, ocrG.digitsProbs, ocrG.recB64,
                     recWList = ocrG.recW, recHList = ocrG.recH,
@@ -1503,16 +1522,21 @@ suspend fun runPumpExperiment(
                 val inkVariants = JSONArray()
                 if (seg7Stroke && inkJumpOpts != null && inkWalkSeeds.isNotEmpty()) {
                     val opts = inkJumpOpts
-                    fun inkRectsFor(kk: Float): List<android.graphics.Rect> =
-                        inkWalkSeeds.indices.map { i ->
-                            val padded = ContentExpandUtils.padVertByStrokes(
+                    fun inkRectsFor(kk: Float): List<android.graphics.Rect> {
+                        val padded = inkWalkSeeds.indices.map { i ->
+                            ContentExpandUtils.padVertByStrokes(
                                 inkWalkBoxes[i], inkWalkSeeds[i], kk,
                                 seg7Strokes[i].sPx, imgW, imgH,
                             )
+                        }
+                        return ContentExpandUtils.jumpRetractHorizontalMany(
+                            workspace.p.mat, padded, opts,
+                        ) ?: padded.map {
                             ContentExpandUtils.jumpRetractHorizontal(
-                                workspace.p.mat, padded, opts,
+                                workspace.p.mat, it, opts,
                             )
                         }
+                    }
                     val quads1 = customBluePixelG.map { ContentExpandUtils.orientedFromAabb(it) }
                     inkVariants.put(
                         ocrScaleVariantJson(
@@ -1921,31 +1945,40 @@ suspend fun runPumpExperiment(
                             retractClearFrac = 0.30f,
                             energyRatio = 0.65f,
                         )
-                        val walks = seedQuads.map { seed ->
-                            val aabb = seed.toAabb()
-                            val vert = if (chromaExpand) {
+                        val seeds = seedQuads.map { it.toAabb() }
+                        val segs = ContentExpandUtils.expand7segFromSeedMany(
+                            gray,
+                            if (chromaExpand) workspace.p.uvMat else null,
+                            seeds,
+                            chroma = chromaExpand,
+                            k = 0f,
+                        ) ?: seeds.map { r ->
+                            if (chromaExpand) {
                                 ContentExpandUtils.expand7segFromSeedChroma(
-                                    gray, workspace.p.uvMat, aabb, k = 0f,
+                                    gray, workspace.p.uvMat, r, k = 0f,
                                 )
                             } else {
                                 ContentExpandUtils.expand7segFromSeed(
-                                    gray, aabb,
-                                    k = 0f,
-                                    doHorizontal = false,
+                                    gray, r, k = 0f, doHorizontal = false,
                                 )
                             }
-                            Triple(aabb, vert.rect, vert.stroke)
                         }
-                        fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> =
-                            walks.map { (seed, walked, stroke) ->
-                                val padded = ContentExpandUtils.padVertByStrokes(
+                        val walks = seeds.indices.map { i ->
+                            Triple(seeds[i], segs[i].rect, segs[i].stroke)
+                        }
+                        fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> {
+                            val padded = walks.map { (seed, walked, stroke) ->
+                                ContentExpandUtils.padVertByStrokes(
                                     walked, seed, kk, stroke.sPx, imgW, imgH,
                                 )
-                                val jumped = ContentExpandUtils.jumpRetractHorizontal(
-                                    gray, padded, jumpOpts,
-                                )
-                                ContentExpandUtils.orientedFromAabb(jumped)
                             }
+                            val jumped = ContentExpandUtils.jumpRetractHorizontalMany(
+                                gray, padded, jumpOpts,
+                            ) ?: padded.map {
+                                ContentExpandUtils.jumpRetractHorizontal(gray, it, jumpOpts)
+                            }
+                            return jumped.map { ContentExpandUtils.orientedFromAabb(it) }
+                        }
                         expandedQuads = inkQuadsFor(1f)
                         hitCaps = expandedQuads.map { false }
                         inkStrokes = walks.map { it.third }
@@ -2026,18 +2059,20 @@ suspend fun runPumpExperiment(
                     val tOcrE0 = System.currentTimeMillis()
                     if (seg7Stroke && inkJumpOptsRot != null) {
                         val opts = inkJumpOptsRot
-                        fun inkQuadsForK(kk: Float): List<ContentExpandUtils.OrientedQuad> =
-                            inkWalkSeeds.indices.map { i ->
-                                val padded = ContentExpandUtils.padVertByStrokes(
+                        fun inkQuadsForK(kk: Float): List<ContentExpandUtils.OrientedQuad> {
+                            val padded = inkWalkSeeds.indices.map { i ->
+                                ContentExpandUtils.padVertByStrokes(
                                     inkWalkBoxes[i], inkWalkSeeds[i], kk,
                                     inkStrokes[i].sPx, imgW, imgH,
                                 )
-                                ContentExpandUtils.orientedFromAabb(
-                                    ContentExpandUtils.jumpRetractHorizontal(
-                                        gray, padded, opts,
-                                    ),
-                                )
                             }
+                            val jumped = ContentExpandUtils.jumpRetractHorizontalMany(
+                                gray, padded, opts,
+                            ) ?: padded.map {
+                                ContentExpandUtils.jumpRetractHorizontal(gray, it, opts)
+                            }
+                            return jumped.map { ContentExpandUtils.orientedFromAabb(it) }
+                        }
                         var nOcr = 0
                         var officialCands: List<RedBoxOcrCandidate> = emptyList()
                         var officialCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(emptyList())

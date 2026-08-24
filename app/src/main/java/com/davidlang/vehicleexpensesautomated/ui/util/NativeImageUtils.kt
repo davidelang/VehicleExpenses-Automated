@@ -451,6 +451,29 @@ object NativeImageUtils {
         return nativeChromaMag(y.nativeObj, uv.nativeObj, dst.nativeObj)
     }
 
+    private external fun nativeSeg7Many(
+        grayPtr: Long, uvPtr: Long, seeds: IntArray, chroma: Boolean,
+    ): IntArray?
+    private external fun nativeJumpMany(
+        grayPtr: Long, boxes: IntArray,
+        maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
+    ): IntArray?
+
+    fun seg7ManyNative(gray: Mat, uv: Mat?, seeds: IntArray, chroma: Boolean): IntArray? {
+        if (gray.empty()) return null
+        return nativeSeg7Many(gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chroma)
+    }
+
+    fun jumpManyNative(
+        gray: Mat, boxes: IntArray,
+        maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
+    ): IntArray? {
+        if (gray.empty()) return null
+        return nativeJumpMany(
+            gray.nativeObj, boxes, maxFrac, energyRatio, jumpFrac, retractClearFrac,
+        )
+    }
+
     fun aabbGrowManyNative(
         gray: Mat,
         uv: Mat?,

@@ -438,27 +438,27 @@ object PumpCostVolUtils {
             energyRatio = 0.65f,
         ),
     ): List<PumpHunk> {
-        val blues = mutableListOf<PumpHunk>()
+        val pads = ArrayList<Rect>(reds.size * vertFactors.size)
         reds.forEach { h ->
             val r = Rect(
                 h.rect.left.toInt(), h.rect.top.toInt(),
                 h.rect.right.toInt(), h.rect.bottom.toInt(),
             )
             vertFactors.forEach { v ->
-                val padded = ContentExpandUtils.calculatedAabb(r, v, horiz = 0f, imgW, imgH)
-                val jumped = ContentExpandUtils.jumpRetractHorizontal(gray, padded, jumpOpts)
-                blues.add(
-                    PumpHunk(
-                        "",
-                        RectF(
-                            jumped.left.toFloat(), jumped.top.toFloat(),
-                            jumped.right.toFloat(), jumped.bottom.toFloat(),
-                        ),
-                    ),
-                )
+                pads.add(ContentExpandUtils.calculatedAabb(r, v, horiz = 0f, imgW, imgH))
             }
         }
-        return blues
+        val jumped = ContentExpandUtils.jumpRetractHorizontalMany(gray, pads, jumpOpts)
+            ?: pads.map { ContentExpandUtils.jumpRetractHorizontal(gray, it, jumpOpts) }
+        return jumped.map { j ->
+            PumpHunk(
+                "",
+                RectF(
+                    j.left.toFloat(), j.top.toFloat(),
+                    j.right.toFloat(), j.bottom.toFloat(),
+                ),
+            )
+        }
     }
 
     fun rectToJson(r: Rect): JSONObject =

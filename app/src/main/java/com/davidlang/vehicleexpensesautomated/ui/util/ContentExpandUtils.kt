@@ -959,7 +959,35 @@ object ContentExpandUtils {
      * grow-if-in-text, retract, and retractClear pad as [growOnEnergy]'s jump block.
      * [seed] is the box to jump from (e.g. a G-vert-padded AABB). Cap = [ExpandOptions.maxFrac]×seedH.
      */
+    fun jumpRetractHorizontalMany(
+        gray: Mat,
+        boxes: List<Rect>,
+        opts: ExpandOptions,
+    ): List<Rect>? {
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) return boxes
+        if (boxes.isEmpty()) return emptyList()
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val packed = IntArray(boxes.size * 4)
+        boxes.forEachIndexed { i, s0 ->
+            val s = clip(s0, imgW, imgH)
+            packed[i * 4] = s.left
+            packed[i * 4 + 1] = s.top
+            packed[i * 4 + 2] = s.right
+            packed[i * 4 + 3] = s.bottom
+        }
+        val r = NativeImageUtils.jumpManyNative(
+            gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
+        ) ?: return null
+        if (r.size < boxes.size * 4) return null
+        return boxes.indices.map { i ->
+            clip(Rect(r[i * 4], r[i * 4 + 1], r[i * 4 + 2], r[i * 4 + 3]), imgW, imgH)
+        }
+    }
+
     fun jumpRetractHorizontal(gray: Mat, seed: Rect, opts: ExpandOptions): Rect {
+        val many = jumpRetractHorizontalMany(gray, listOf(seed), opts)
+        if (many != null && many.size == 1) return many[0]
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
         val imgW = gray.cols()
         val imgH = gray.rows()
@@ -1179,6 +1207,50 @@ object ContentExpandUtils {
      * Horizontal jump-retract is the caller's job ([jumpRetractHorizontal]);
      * this does not call [jumpRetractHorizontalInS].
      */
+    fun expand7segFromSeedMany(
+        gray: Mat,
+        uv: Mat?,
+        seeds: List<Rect>,
+        chroma: Boolean,
+        k: Float = SEG7_K,
+        j: Float = SEG7_J,
+    ): List<Seg7Expand>? {
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) {
+            return seeds.map { Seg7Expand(it, strokeWidthInSeed(gray, it), k, j) }
+        }
+        if (seeds.isEmpty()) return emptyList()
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val packed = IntArray(seeds.size * 4)
+        seeds.forEachIndexed { i, s0 ->
+            val s = clip(s0, imgW, imgH)
+            packed[i * 4] = s.left
+            packed[i * 4 + 1] = s.top
+            packed[i * 4 + 2] = s.right
+            packed[i * 4 + 3] = s.bottom
+        }
+        val r = NativeImageUtils.seg7ManyNative(gray, uv, packed, chroma) ?: return null
+        if (r.size < seeds.size * 8) return null
+        return seeds.indices.map { i ->
+            val o = i * 8
+            val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
+            val sPx = max(1, r[o + 4])
+            val vSW = r[o + 5]
+            val hSW = r[o + 6]
+            val fb = r[o + 7] != 0
+            val seed = clip(seeds[i], imgW, imgH)
+            Seg7Expand(
+                rect,
+                StrokeWidthInSeed(
+                    sPx = sPx, vSW = vSW, hSW = hSW,
+                    inkFrac = 0f, darkInk = true, usedFallback = fb,
+                    droppedGlare = 0, otsuThr = 0, seed = seed,
+                ),
+                k, j,
+            )
+        }
+    }
+
     fun expand7segFromSeed(
         gray: Mat,
         seed: Rect,
@@ -1186,6 +1258,8 @@ object ContentExpandUtils {
         j: Float = SEG7_J,
         @Suppress("UNUSED_PARAMETER") doHorizontal: Boolean = false,
     ): Seg7Expand {
+        val many = expand7segFromSeedMany(gray, null, listOf(seed), chroma = false, k, j)
+        if (many != null && many.size == 1) return many[0]
         val stroke = strokeWidthInSeed(gray, seed)
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
             return Seg7Expand(seed, stroke, k, j)
@@ -1305,6 +1379,8 @@ object ContentExpandUtils {
         k: Float = SEG7_K,
         j: Float = SEG7_J,
     ): Seg7Expand {
+        val many = expand7segFromSeedMany(y, uv, listOf(seed), chroma = true, k, j)
+        if (many != null && many.size == 1) return many[0]
         val c = chromaMagU8(y, uv)
         try {
             if (y.empty() || y.type() != CvType.CV_8UC1) {
