@@ -8247,3 +8247,9 @@ x
 
 - `flows` + `flowProcessors`: 10 names including `Set chi2-p4` (ASCII before ink-p4). procChi2P4: v4 224+1024, CHI2 k=3.5 consec=2, pad 0.08, jump energyRatio 0.65. Metadata `content_expand_chi2_k`. Docs ten columns + table row. Ink/QF/fail-subset untouched.
 
+
+## 2026-08-24 - CODE LANDED: chi2-p4-expand-column
+
+- Plan: `dev-ai-interaction/plans/chi2-p4-expand-column-20260824-1220-plan.md`
+- AABB `Set chi2-p4`: v4 224+1024, frozen-width 16-bin row-gray χ² k=3.5 consec=2, pad 0.08, L/R jump MAGNITUDE energyRatio 0.65. 10 scheduled flows. JNI CHI2 not passed. Ink k=1/2/3 / QF G4-vjump / fail-subset untouched.
+
