@@ -8092,3 +8092,15 @@ x
 - QF `extractQuickFillG4CostVol`: v4 det, scales 224+1024, blues `createG4VjumpBlueHunksFromReds`. Debug `pipeline=G4-vjump`. Experiment 13 columns / prod 224+608 / ink untouched. Cap 0.40 helper default.
 - Human: deploy; Quick Fill a pump; optional debug JSON pipeline/vert_factors.
 
+
+## 2026-08-24 - Execute start: native-orient-expand-onesided-skip
+
+- Plan: `dev-ai-interaction/plans/native-orient-expand-onesided-skip-20260824-0228-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: C++ `nativeExpandOriented` one-sided T/B skip + pad (match Kotlin 2314); re-enable JNI (`if (!opts.recordVertEnergy)`). No new JNI args. AABB/7seg/QF/columns untouched.
+
+
+## 2026-08-24 - Phase 1: native oriented one-sided skip + pad
+
+- `ContentExpandNative.cpp` `nativeExpandOriented`: seed `allowVNeg`/`allowVPos`; gate ±v grow; `vertPadFrac` pads only allowed tips (center shift). Jump L/R unchanged. JNI signature unchanged. Kotlin still `if (false &&` this phase.
+

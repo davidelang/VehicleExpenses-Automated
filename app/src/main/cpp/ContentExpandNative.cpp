@@ -205,6 +205,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         return stripEnergy(mag, fr, cx, cy, bw, bh, du, dv, alongU);
     };
 
+    // 1px just outside seed ±v: below thr → do not grow or pad that tip.
+    const bool allowVNeg = strip(0.f, -1.f, false) >= thr;
+    const bool allowVPos = strip(0.f, +1.f, false) >= thr;
+
     for (int step = 0; step < cap; ++step) {
         bool grew = false;
         if (!freezeHorz) {
@@ -221,14 +225,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
                 grew = true;
             }
         }
-        if (strip(0.f, -1.f, false) >= thr) {
+        if (allowVNeg && strip(0.f, -1.f, false) >= thr) {
             cx -= 0.5f * fr.vx;
             cy -= 0.5f * fr.vy;
             bh += 1.f;
             ++stepsVNeg;
             grew = true;
         }
-        if (strip(0.f, +1.f, false) >= thr) {
+        if (allowVPos && strip(0.f, +1.f, false) >= thr) {
             cx += 0.5f * fr.vx;
             cy += 0.5f * fr.vy;
             bh += 1.f;
@@ -241,7 +245,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int padV = 0;
     if (vertPadFrac > 0.f) {
         padV = std::max(1, static_cast<int>(std::lround(vertPadFrac * seedBh)));
-        bh += 2.f * padV;
+        if (allowVNeg) {
+            cx -= 0.5f * fr.vx * padV;
+            cy -= 0.5f * fr.vy * padV;
+            bh += static_cast<float>(padV);
+        }
+        if (allowVPos) {
+            cx += 0.5f * fr.vx * padV;
+            cy += 0.5f * fr.vy * padV;
+            bh += static_cast<float>(padV);
+        }
     }
 
     if (enableJump) {
