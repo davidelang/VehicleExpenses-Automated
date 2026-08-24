@@ -303,9 +303,9 @@ object OcrHarness {
     ): JsonObject {
         val cv = extracted.result
         return JsonObject().apply {
-            addProperty("pipeline", "G4")
+            addProperty("pipeline", "G4-vjump")
             addProperty("det_model", extracted.detModel)
-            addProperty("vert_factors", SET_G4_VERT_FACTORS.joinToString(","))
+            addProperty("vert_factors", SET_G4_VJUMP_VERT_FACTORS.joinToString(","))
             addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
             addProperty("cost", cv.cost)
             addProperty("volume", cv.vol)
@@ -463,7 +463,8 @@ object OcrHarness {
     }
 
     /**
-     * Quick Fill pump cost/volume: experiment G4 (v4 det + verts 0.0/0.1/0.3).
+     * Quick Fill pump cost/volume: experiment G4-vjump (v4 det, 224+1024,
+     * verts 0.0/0.1/0.2/0.5, then L/R jump-retract; no 0.5×H).
      */
     suspend fun runPumpCostVolPipeline(
         context: Context,
@@ -524,7 +525,7 @@ object OcrHarness {
             val err = "Pump OCR failed: ${e.message ?: "Unknown error"}"
             val debugJson = if (debug) {
                 JsonObject().apply {
-                    addProperty("pipeline", "G4")
+                    addProperty("pipeline", "G4-vjump")
                     addProperty("error", err)
                     addProperty("exception", e.message)
                     addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
@@ -536,7 +537,7 @@ object OcrHarness {
 
     /**
      * Batch-import pump cost/volume via **Set I** (D+E+G hybrid).
-     * Does not change Quick Fill [runPumpCostVolPipeline] (G4).
+     * Does not change Quick Fill [runPumpCostVolPipeline] (G4-vjump).
      * [masterBuffer] must already hold the full photo in primary (after ingest).
      */
     suspend fun runPumpCostVolPipelineSetI(

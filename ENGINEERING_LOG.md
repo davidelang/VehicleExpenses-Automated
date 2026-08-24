@@ -8075,3 +8075,8 @@ x
 
 - `extractQuickFillG4CostVol`: scales `224, 1024`; blues = `createG4VjumpBlueHunksFromReds` (deskewed `p.mat`). No G4 0.1/0.3 + 0.5H oranges. v4 det + classify unchanged. Experiment flows / `runSetGCostVolExtraction` untouched.
 
+
+## 2026-08-24 - Phase 2: QF debug JSON + kdoc G4-vjump
+
+- `pumpExtractDebugJson`: `pipeline=G4-vjump`, `vert_factors=SET_G4_VJUMP_VERT_FACTORS`. `runPumpCostVolPipeline` kdoc + catch JSON match. Extract/classify unchanged this phase.
+
