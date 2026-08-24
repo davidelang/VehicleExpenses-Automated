@@ -3001,7 +3001,7 @@ private fun pRecBuffersHtml(br: PumpBranch): String {
             chunk.append(
                 "<div style='width:48%;font-size:9px;'>" +
                     "<img src='data:image/jpeg;base64,$b64' style='width:100%;image-rendering:pixelated;'>" +
-                    "<br>$lab asis=$asis dig=$dig</div>",
+                    "<br>$lab <span style='font-size:12px;'>asis=$asis dig=$dig</span></div>",
             )
         }
         chunk.append("</div>")

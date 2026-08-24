@@ -8005,3 +8005,15 @@ x
 - Ink/energy columns skip vert grow (and 7seg 1s pad) when the 1px strip just outside red T/B has no ink. Never retract the red. Horiz jump-retract unchanged. Still 14 columns. G-- / G4 / G4-vjump unchanged.
 - Human: deploy + scheduled pump; compare ln 4 7seg/P4-* vs G4 / G4-vjump.
 
+
+## 2026-08-24 - Execute start: pump-html-rec-asis-font
+
+- Plan: `dev-ai-interaction/plans/pump-html-rec-asis-font-20260823-2336-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: Pump HTML rec-buffer caption: wrap asis/digits in 12px span; keep 9px wrapper + label. JSON / expand / QF / odo HTML untouched.
+
+
+## 2026-08-24 - Phase 1: rec-buffer asis/digits 12px
+
+- `pRecBuffersHtml`: `$lab` stays 9px; wrap `asis=`/`dig=` in 12px span. `S=` heading still `<small>`. JSON / crops / expand unchanged.
+
