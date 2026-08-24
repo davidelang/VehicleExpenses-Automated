@@ -8080,3 +8080,8 @@ x
 
 - `pumpExtractDebugJson`: `pipeline=G4-vjump`, `vert_factors=SET_G4_VJUMP_VERT_FACTORS`. `runPumpCostVolPipeline` kdoc + catch JSON match. Extract/classify unchanged this phase.
 
+
+## 2026-08-24 - Phase 3: QF G4-vjump flows note
+
+- `docs/PUMP_EXPERIMENT_FLOWS.md`: live QF = experiment G4-vjump (v4 224+1024, verts 0/0.1/0.2/0.5, jump-retract). Prod/G-- stay 224+608. G4-vjump table note: Live QF uses this recipe. Experiment 13 columns / ink columns unchanged.
+
