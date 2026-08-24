@@ -8050,3 +8050,8 @@ x
 
 - Experiment: v4 columns `224, 1024`; product columns `224, 608`. `PumpCostVolUtils` Set G, `OcrHarness` QF, `PumpSoDebugDump`: `224, 608`. `TIER_SCALES` / heatmap dump / `PreprocessStageDump` unchanged. No P4 2048. Cap 0.40. QF verts unchanged.
 
+
+## 2026-08-24 - Phase 4: 13-column flows doc
+
+- `docs/PUMP_EXPERIMENT_FLOWS.md`: 13 columns; P4 discovery 224+1024; prod/QF 224+608; experiment G4 / P4-m65 / p20 / Prod-m65 gone; Prod-ink / P4-rot-ink / Prod-rot-ink listed. Rec-buffer 12px asis/digits kept. QF verts unchanged. Cap 0.40.
+
