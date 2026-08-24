@@ -1724,6 +1724,9 @@ object ContentExpandUtils {
                 CountPullInfo(
                     pulledTop = r[o + 9] != 0,
                     pulledBot = r[o + 10] != 0,
+                    cSeed = 0.0,
+                    countThr = 0.0,
+                    gxThr = 0.0,
                     tBefore = rect.top,
                     bBefore = rect.bottom,
                     tAfter = cr.top,
