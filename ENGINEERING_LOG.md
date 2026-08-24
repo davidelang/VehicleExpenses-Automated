@@ -8017,3 +8017,8 @@ x
 
 - `pRecBuffersHtml`: `$lab` stays 9px; wrap `asis=`/`dig=` in 12px span. `S=` heading still `<small>`. JSON / crops / expand unchanged.
 
+
+## 2026-08-24 - Phase 2: rec-buffer 12px flows note
+
+- `docs/PUMP_EXPERIMENT_FLOWS.md`: rec-buffer caption 9px `$lab`; asis/digits 12px. `S=` / PD `<small>` unchanged.
+

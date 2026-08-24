@@ -29,7 +29,7 @@ Fourteen columns: production G-- / G4, **G4-vjump** (verts 0.0/0.1/0.2/0.5 + L/R
 
 **P-rot / P4-rot-jump / Prod-rot path:** one `minAreaRect` detect per scale; keep 8-corners. Nested/poke merge is **oriented** (`pruneOrientedQuads`): the keeper keeps its tilt; a smaller box that pokes out moves only the keeper sides that need to cover it, each along its own normal. Same gates as G (contain, 40px poke, similar-overlap, top-N) but never an AABB union. `expandOriented` (+ L/R jump); warp OCR at each `ocrScales` entry. Does **not** call `runDiscoveryPaddle`.
 
-**HTML rec buffers:** each column’s PD cell shows the 48×W crop actually fed to recognize (`scaleVariants[].candidates[].recB64` + `recW`/`recH`, or G `candidates[].recB64`).
+**HTML rec buffers:** each column’s PD cell shows the 48×W crop actually fed to recognize (`scaleVariants[].candidates[].recB64` + `recW`/`recH`, or G `candidates[].recB64`). Caption: 9px `$lab`; **asis** / **digits** at **12px**. `S=` heading and PD `<small>` unchanged.
 
 **Rec canvas:** one **4096×48** buffer everywhere. Engine infers a `createCrop(0,0,needW,48)` slice (`needW = 32-align(48×srcW/srcH)`, clip only at 4096). Aspect kept; unused canvas width is never fed to CRNN.
 
