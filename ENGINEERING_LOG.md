@@ -8299,3 +8299,7 @@ x
 ## 2026-08-24 - Phase 2: native 7seg + Y jump
 
 C++ nativeSeg7Many / nativeJumpMany. One Sobel or chromaMag per photo. Ink makeGProc, rot-ink runIndependentOrientedColumn, and G4-vjump createG4VjumpBlueHunksFromReds use many-seed JNI. padVertByStrokes and k=1/2/3 OCR stay Kotlin. makeGProc writes real t_expand_ms.
+
+## 2026-08-24 - Phase 3: JNI content-expand flows note
+
+docs/PUMP_EXPERIMENT_FLOWS.md: gray and color AABB energy + 7seg + Y jump are JNI; maps once per photo; rot-ink AABB 7seg JNI; parked rot-energy still nativeExpandOriented; G-- calculated; rec Y. 18 names untouched.

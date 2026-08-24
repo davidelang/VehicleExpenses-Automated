@@ -72,6 +72,8 @@ Metadata on expand columns: `content_expand_jump` / `content_expand_jump_frac` /
 
 **Energy traces:** Off. Full lossless jump+rot dumps already exist from `2026-08-15_09-38-52` / `09-39-09`. P4-jump / P4-rot no longer write `expand_energy_<ts>/`. Official path and unofficial `energy_count` OCR are unchanged.
 
+**JNI content expand (AABB):** Gray and color AABB energy (jump / chi2 / xycut), ink and rot-ink 7seg, and Y jump-retract are JNI (`nativeAabbGrowMany` / `nativeSeg7Many` / `nativeJumpMany` in `ContentExpandNative.cpp`). One Sobel set (and chromaMag on color) per photo for all seeds. Scheduled **rot-ink** is AABB 7seg JNI, not oriented energy. Parked rot-energy still uses `nativeExpandOriented`. G-- verts stay calculated. Rec still Y. Kotlin bodies are fallback if JNI returns null, and when energy traces are on.
+
 **Oriented expand:** P4-rot / Prod-rot grow + count walk run in JNI (`ContentExpandNative.cpp`) so Sobel samples stay in native memory. Geometry is unchanged (±v / `|∇I·û|`). Kotlin path remains as fallback if native returns null, and when energy traces are on.
 
 **Edge-count (same run):** After energy stop, additive run-count valley pullback, then a **one-direction** pad: pulled tip steps back toward energy by `0.10×seedH` (not past energy); energy-stop tip whose run-count is still ≥ `0.45×cSeed` grows that tip only by `0.08×seedH`. Cap-stops do not grow. Grow is skipped when the energy box is already `> 2.4×seedH` so the 48 px rec crop does not shrink the digits. A few pixels into the neighboring row is acceptable. Official `final` is the energy crop (`energy_or_g` in JSON is the same box, not a G stitch). Extra `scaleVariants` entry `kind=energy_count` is scored unofficially only.
