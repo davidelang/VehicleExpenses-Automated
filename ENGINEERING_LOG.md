@@ -8272,3 +8272,8 @@ x
 - `chromaMagU8`, `expand7segFromSeedChroma` (chroma walk; seed median chromaMag < 8 → Y `expand7segFromSeed`).
 - `expandDiagnoseChroma` / `growOnEnergyChroma`: fused hypot(|∇Y|,|∇C|) vert walk; XYCUT on fused gx; CHI2 on chromaMag; L/R jump Y magnitude. Gray expand functions unedited.
 
+
+## 2026-08-24 - Phase 3: eight color columns + docs
+
+- 18 scheduled flows: gray ten plus chi2/ink/jump/rot-ink/xycut `-color`. New procs pass `chromaExpand=true` only. G-- / G4-vjump unchanged. Docs 18-col table; ingest UV live; rec Y.
+
