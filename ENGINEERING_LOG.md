@@ -8085,3 +8085,10 @@ x
 
 - `docs/PUMP_EXPERIMENT_FLOWS.md`: live QF = experiment G4-vjump (v4 224+1024, verts 0/0.1/0.2/0.5, jump-retract). Prod/G-- stay 224+608. G4-vjump table note: Live QF uses this recipe. Experiment 13 columns / ink columns unchanged.
 
+
+## 2026-08-24 - CODE LANDED: qf-g4-vjump
+
+- Plan `dev-ai-interaction/plans/qf-g4-vjump-20260824-0204-plan.md`
+- QF `extractQuickFillG4CostVol`: v4 det, scales 224+1024, blues `createG4VjumpBlueHunksFromReds`. Debug `pipeline=G4-vjump`. Experiment 13 columns / prod 224+608 / ink untouched. Cap 0.40 helper default.
+- Human: deploy; Quick Fill a pump; optional debug JSON pipeline/vert_factors.
+
