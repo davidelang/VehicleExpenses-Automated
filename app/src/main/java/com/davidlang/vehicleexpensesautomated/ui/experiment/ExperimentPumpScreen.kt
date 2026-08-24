@@ -1691,6 +1691,7 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert: Boolean = false,
                     vertPadFrac: Float = 0.0f,
                     energyTraceOut: File? = null,
+                    seg7Stroke: Boolean = false,
                 ) {
                     fun hunkFromAabb(r: android.graphics.Rect): PumpHunk =
                         PumpHunk(
@@ -1770,38 +1771,76 @@ suspend fun runPumpExperiment(
                     captureRedboxData(pdHunksRawTotal, workspace, branch)
 
                     val gray = workspace.p.mat
-                    val expandOpts = ContentExpandUtils.ExpandOptions(
-                        maxFrac = maxFrac,
-                        enableJump = enableJump,
-                        jumpFrac = jumpFrac,
-                        energyRatio = energyRatio,
-                        freezeHorzDuringVert = freezeHorzDuringVert,
-                        vertPadFrac = vertPadFrac,
-                        recordVertEnergy = energyTraceOut != null,
-                    )
                     val seedQuads = kept.toList()
                     val tExpand0 = System.currentTimeMillis()
-                    val expDiag = seedQuads.map { seed ->
-                        ContentExpandUtils.expandOrientedDiagnose(gray, seed, expandOpts)
+                    val expDiag: List<ContentExpandUtils.OrientedExpand>
+                    val expandedQuads: List<ContentExpandUtils.OrientedQuad>
+                    val hitCaps: List<Boolean>
+                    val inkStrokes: List<ContentExpandUtils.StrokeWidthInSeed>
+                    if (seg7Stroke) {
+                        val jumpOpts = ContentExpandUtils.ExpandOptions(
+                            maxFrac = 0.4f,
+                            enableJump = true,
+                            jumpFrac = 0.40f,
+                            retractClearFrac = 0.30f,
+                            energyRatio = 0.65f,
+                        )
+                        val expands = seedQuads.map { seed ->
+                            val aabb = seed.toAabb()
+                            val vert = ContentExpandUtils.expand7segFromSeed(
+                                gray, aabb,
+                                k = ContentExpandUtils.SEG7_K,
+                                doHorizontal = false,
+                            )
+                            val jumped = ContentExpandUtils.jumpRetractHorizontal(
+                                gray, vert.rect, jumpOpts,
+                            )
+                            Pair(ContentExpandUtils.orientedFromAabb(jumped), vert.stroke)
+                        }
+                        expandedQuads = expands.map { it.first }
+                        hitCaps = expandedQuads.map { false }
+                        inkStrokes = expands.map { it.second }
+                        expDiag = emptyList()
+                        branch.metadata["s_per_red"] =
+                            inkStrokes.joinToString(",") { it.sPx.toString() }
+                        branch.metadata["seg7_k"] = ContentExpandUtils.SEG7_K.toString()
+                        branch.metadata["seg7_vert_cap_frac"] =
+                            ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
+                        branch.metadata["seg7_jump_frac"] = "0.40"
+                        branch.metadata["seg7_retract_clear_frac"] = "0.30"
+                    } else {
+                        val expandOpts = ContentExpandUtils.ExpandOptions(
+                            maxFrac = maxFrac,
+                            enableJump = enableJump,
+                            jumpFrac = jumpFrac,
+                            energyRatio = energyRatio,
+                            freezeHorzDuringVert = freezeHorzDuringVert,
+                            vertPadFrac = vertPadFrac,
+                            recordVertEnergy = energyTraceOut != null,
+                        )
+                        expDiag = seedQuads.map { seed ->
+                            ContentExpandUtils.expandOrientedDiagnose(gray, seed, expandOpts)
+                        }
+                        expandedQuads = expDiag.map { it.quad }
+                        hitCaps = expDiag.map { it.hitVertCap }
+                        inkStrokes = emptyList()
+                        if (energyTraceOut != null) {
+                            try {
+                                writeExpandEnergyTrace(
+                                    energyTraceOut, file.name, maxFrac,
+                                    expDiag.mapNotNull { it.energyTrace },
+                                    column = "P4-rot",
+                                )
+                                branch.metadata["content_expand_energy_trace"] = energyTraceOut.name
+                            } catch (t: Throwable) {
+                                Log.e(TAG, "rot energy trace write failed for ${file.name}", t)
+                            }
+                        }
                     }
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExpand0).toString()
-                    val expandedQuads = expDiag.map { it.quad }
-                    val hitCaps = expDiag.map { it.hitVertCap }
                     branch.metadata["n_hit_cap"] = hitCaps.count { it }.toString()
                     branch.metadata["n_ocr_energy"] = expandedQuads.size.toString()
-                    if (energyTraceOut != null) {
-                        try {
-                            writeExpandEnergyTrace(
-                                energyTraceOut, file.name, maxFrac,
-                                expDiag.mapNotNull { it.energyTrace },
-                                column = "P4-rot",
-                            )
-                            branch.metadata["content_expand_energy_trace"] = energyTraceOut.name
-                        } catch (t: Throwable) {
-                            Log.e(TAG, "rot energy trace write failed for ${file.name}", t)
-                        }
-                    }
                     val seedAngs = seedQuads.map { pumpQuadLongAngleDeg(it) }
                     val expAngs = expandedQuads.map { pumpQuadLongAngleDeg(it) }
                     if (expAngs.isNotEmpty()) {
@@ -1823,7 +1862,7 @@ suspend fun runPumpExperiment(
                         vertSweep.joinToString(",")
 
                     val variants = JSONArray()
-                    // Official final = energy crop. Cap is a grow leash, not a G-list rescue.
+                    val officialKind = if (seg7Stroke) "ink" else "energy"
                     val energyRects = expandedQuads.map { it.toAabb() }
                     val tOcrE0 = System.currentTimeMillis()
                     val energyOcr = ocrPumpOrientedQuads(expandedQuads, gray, imgW, imgH)
@@ -1838,41 +1877,47 @@ suspend fun runPumpExperiment(
                     variants.put(
                         ocrScaleVariantJson(
                             1.0f, energyRects, expandedQuads, energyCands, energyCv,
-                            kind = "energy", hitCaps = hitCaps,
+                            kind = officialKind, hitCaps = hitCaps,
                         ),
                     )
 
-                    val countQuads = expDiag.map { it.countQuad }
-                    val countRects = countQuads.map { it.toAabb() }
-                    val tOcrC0 = System.currentTimeMillis()
-                    val countOcr = ocrPumpOrientedQuads(countQuads, gray, imgW, imgH)
-                    branch.metadata["t_ocr_count_ms"] =
-                        (System.currentTimeMillis() - tOcrC0).toString()
-                    branch.metadata["n_ocr_count"] = countQuads.size.toString()
-                    branch.metadata["n_count_pull"] =
-                        expDiag.count { it.countPull?.pulled == true }.toString()
-                    branch.metadata["count_pulled"] = expDiag.joinToString(",") { d ->
-                        val c = d.countPull
-                        when {
-                            c == null -> "0"
-                            c.pulledTop && c.pulledBot -> "tb"
-                            c.pulledTop -> "t"
-                            c.pulledBot -> "b"
-                            else -> "0"
+                    if (!seg7Stroke) {
+                        val countQuads = expDiag.map { it.countQuad }
+                        val countRects = countQuads.map { it.toAabb() }
+                        val tOcrC0 = System.currentTimeMillis()
+                        val countOcr = ocrPumpOrientedQuads(countQuads, gray, imgW, imgH)
+                        branch.metadata["t_ocr_count_ms"] =
+                            (System.currentTimeMillis() - tOcrC0).toString()
+                        branch.metadata["n_ocr_count"] = countQuads.size.toString()
+                        branch.metadata["n_count_pull"] =
+                            expDiag.count { it.countPull?.pulled == true }.toString()
+                        branch.metadata["count_pulled"] = expDiag.joinToString(",") { d ->
+                            val c = d.countPull
+                            when {
+                                c == null -> "0"
+                                c.pulledTop && c.pulledBot -> "tb"
+                                c.pulledTop -> "t"
+                                c.pulledBot -> "b"
+                                else -> "0"
+                            }
                         }
+                        val countCands = buildRedBoxCandidates(
+                            countRects, countOcr.asis, countOcr.digits,
+                            countOcr.asisProbs, countOcr.digitsProbs, countOcr.recB64,
+                            recWList = countOcr.recW, recHList = countOcr.recH,
+                        )
+                        val countCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(countCands)
+                        variants.put(
+                            ocrScaleVariantJson(
+                                1.0f, countRects, countQuads, countCands, countCv,
+                                kind = "energy_count", hitCaps = hitCaps,
+                            ),
+                        )
+                    } else {
+                        branch.metadata["t_ocr_count_ms"] = "0"
+                        branch.metadata["n_ocr_count"] = "0"
+                        branch.metadata["n_count_pull"] = "0"
                     }
-                    val countCands = buildRedBoxCandidates(
-                        countRects, countOcr.asis, countOcr.digits,
-                        countOcr.asisProbs, countOcr.digitsProbs, countOcr.recB64,
-                        recWList = countOcr.recW, recHList = countOcr.recH,
-                    )
-                    val countCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(countCands)
-                    variants.put(
-                        ocrScaleVariantJson(
-                            1.0f, countRects, countQuads, countCands, countCv,
-                            kind = "energy_count", hitCaps = hitCaps,
-                        ),
-                    )
 
                     branch.metadata["t_ocr_g_ms"] = "0"
                     branch.metadata["n_ocr_g"] = "0"
@@ -1928,7 +1973,29 @@ suspend fun runPumpExperiment(
                         volCand = primaryCv.volCand,
                         finalCost = primaryCv.cost,
                         finalVol = primaryCv.vol,
-                        assembly = mapOf(
+                        assembly = if (seg7Stroke) mapOf(
+                            "method" to "oriented_independent",
+                            "contentExpandMode" to "7seg_stroke",
+                            "finalKind" to "ink",
+                            "maxFrac" to 0.4f,
+                            "k" to ContentExpandUtils.SEG7_K,
+                            "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
+                            "sPx" to inkStrokes.map { it.sPx },
+                            "enableJump" to true,
+                            "jumpFrac" to 0.40f,
+                            "retractClearFrac" to 0.30f,
+                            "energyRatio" to 0.65f,
+                            "ocrScales" to scalesToOcr,
+                            "finalOcrScale" to 1.0f,
+                            "doDeskew" to false,
+                            "useOriented" to true,
+                            "orientedMerge" to "normal_sides",
+                            "detModel" to (expDetAsset ?: "product_det"),
+                            "vertFactors" to emptyList<Float>(),
+                            "vertSweep" to emptyList<Float>(),
+                            "hitVertCap" to hitCaps,
+                            "note" to assemblyNote,
+                        ) else mapOf(
                             "method" to "oriented_independent",
                             "contentExpandMode" to ContentExpandUtils.Mode.INTERIOR_ENERGY.name,
                             "maxFrac" to maxFrac,
@@ -1987,6 +2054,7 @@ suspend fun runPumpExperiment(
                     vertEnergy: ContentExpandUtils.VertEnergyKind =
                         ContentExpandUtils.VertEnergyKind.MAGNITUDE,
                     vertPadFrac: Float = 0.0f,
+                    seg7Stroke: Boolean = false,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit =
                     { ws, br, det, w, h ->
                         val workspace = ws
@@ -2055,6 +2123,7 @@ suspend fun runPumpExperiment(
                                     freezeHorzDuringVert = freezeHorzDuringVert,
                                     vertPadFrac = vertPadFrac,
                                     energyTraceOut = energyTraceOut,
+                                    seg7Stroke = seg7Stroke,
                                 )
                             } else {
                             scales.forEach { scale ->
@@ -2420,10 +2489,11 @@ suspend fun runPumpExperiment(
                     useOriented = true,
                     ocrScales = pJumpOcrScales,
                     maxFrac = rotExpandMaxFrac,
-                    vertSweep = rotVertSweep,
+                    vertSweep = emptyList(),
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
-                    vertPadFrac = 0.08f,
+                    vertPadFrac = 0.0f,
+                    seg7Stroke = true,
                 )
                 val procProdJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2473,10 +2543,11 @@ suspend fun runPumpExperiment(
                     useOriented = true,
                     ocrScales = pJumpOcrScales,
                     maxFrac = rotExpandMaxFrac,
-                    vertSweep = rotVertSweep,
+                    vertSweep = emptyList(),
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
-                    vertPadFrac = 0.08f,
+                    vertPadFrac = 0.0f,
+                    seg7Stroke = true,
                 )
                 // Hybrid helpers: current-pass discovery+filter+prune; append stage blue OCR to combined lists.
                 suspend fun hybridRunDiscoveryStage(

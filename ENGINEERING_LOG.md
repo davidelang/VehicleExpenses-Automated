@@ -8040,3 +8040,8 @@ x
 
 - `flows` + `flowProcessors`: 13 columns. Dropped G4 / P4-m65 / p20 / Prod-m65 (procs parked). Added Prod-ink (`makeGProc` product + `seg7Stroke`), P4-rot-ink, Prod-rot-ink. G4-vjump / 7seg-stroke / p08 kept. Cap 0.40.
 
+
+## 2026-08-24 - Phase 2: rot-ink AABB 7seg walk
+
+- `runIndependentOrientedColumn` / `makeContentExpandProc`: `seg7Stroke`. Rot-ink: AABB `expand7segFromSeed` + `jumpRetractHorizontal` + `orientedFromAabb`; `finalKind=ink`; `s_per_red`. Skip m65 `expandOriented`. P4-rot-jump / Prod-rot unchanged. No new ±v 7seg walker. Cap 0.40.
+
