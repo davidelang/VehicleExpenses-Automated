@@ -8224,3 +8224,9 @@ x
 - `MainActivity`: auto=prodinkfail or auto=inkfail.
 - `docs/PUMP_EXPERIMENT_FLOWS.md`: one UI-subset sentence. Flows / expand / QF untouched.
 
+
+## 2026-08-24 - CODE LANDED: prod-ink-fail-subset-button
+
+- Plan: `dev-ai-interaction/plans/prod-ink-fail-subset-button-20260824-0145-plan.md`
+- `PROD_INK_FAIL_FILENAMES` 76 (union_not_exact, twins + fuel). Button after Horiz-affected. auto=prodinkfail / inkfail. Nine flows unchanged. Expand / OCR / QF untouched.
+
