@@ -8140,3 +8140,15 @@ x
 - 9 columns: G--, G4-vjump, P4-ink, Prod-ink, P4-jump, P4-xycut, P4-rot-ink, Prod-jump, Prod-rot-ink. QF / scales / expand7segFromSeed / 0035-parked procs untouched.
 - Human: deploy + scheduled pump; HTML header 9 names; P4-ink `s=` from s_per_red.
 
+
+## 2026-08-24 - Execute start: p4-ink-vert-gap-half-s
+
+- Plan: `dev-ai-interaction/plans/p4-ink-vert-gap-half-s-20260823-2221-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: expand7segFromSeed: empty skip 0.5s; start peek 0.5s; cap 2.5×seedH safety; always k=1s pad. Horz jump-retract unchanged. QF / energy maxFrac / 2218 columns untouched.
+
+
+## 2026-08-24 - Phase 1: 7seg walk 0.5s gap/peek, cap 2.5
+
+- `expand7segFromSeed`: `SEG7_GAP_FRAC=0.5` start peek + empty skip; `SEG7_VERT_CAP_FRAC=2.5` safety; always k=1s pad clamped to remaining cap; `vLook=capPx+kPad+2`. `gap >= sPx` gone. Horz jump unchanged.
+
