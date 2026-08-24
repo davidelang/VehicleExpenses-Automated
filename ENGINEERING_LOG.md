@@ -8133,3 +8133,10 @@ x
 
 - `ExperimentPumpScreen`: `flows` + `flowProcessors` = 9. Dropped gx / m65p08 / P4-rot-jump / Prod-rot procs. `Set P4-ink` = old 7seg-stroke (`seg7Stroke=true`, v4). Docs table matches. QF / 0035-parked procs / expand7segFromSeed untouched.
 
+
+## 2026-08-24 - CODE LANDED: drop-gx-m65p08-rot-rename-p4-ink
+
+- Plan `dev-ai-interaction/plans/drop-gx-m65p08-rot-rename-p4-ink-20260823-2218-plan.md`
+- 9 columns: G--, G4-vjump, P4-ink, Prod-ink, P4-jump, P4-xycut, P4-rot-ink, Prod-jump, Prod-rot-ink. QF / scales / expand7segFromSeed / 0035-parked procs untouched.
+- Human: deploy + scheduled pump; HTML header 9 names; P4-ink `s=` from s_per_red.
+
