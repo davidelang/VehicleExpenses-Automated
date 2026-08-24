@@ -33,7 +33,7 @@ import kotlin.math.sin
  * | [jumpFrac] | 0.40 | Horizontal jump distance = this × **expanded** height (alignment-style) |
  * | [retractClearFrac] | 0.30 | After retract hits ink, pad **left/right only** by this × H |
  * | [energyRatio] | 0.45 | INTERIOR_ENERGY: strip must keep ≥ this × seed-interior mean energy |
- * | [vertEnergy] | MAGNITUDE | MAGNITUDE = |∇|; GX = |∂I/∂x| only; XYCUT_GX = peak-isolate on gx |
+ * | [vertEnergy] | MAGNITUDE | MAGNITUDE = |∇|; GX = |∂I/∂x|; XYCUT_GX = peak-isolate on gx; CHI2 = 16-bin row hist vs seed |
  * | [freezeHorzDuringVert] | false | If true, first grow is top/bottom only (seed width frozen) |
  * | [vertPadFrac] | 0 | After vertical stop, pad each tip by this × seedH (one scale, not a G list) |
  * | count pullback | post | Additive: first run-count valley below 0.45×seed median; then one-direction pad (clear after pull / grow if energy-stop + tip still in digits); AABB = image y / Sobel-x; rot = ±v / \|∇I·û\| |
@@ -74,6 +74,8 @@ object ContentExpandUtils {
         GX,
         /** Document XY-cut: isolate the gx-profile peak that owns the seed. */
         XYCUT_GX,
+        /** 16-bin row-gray hist χ² vs seed (AABB only). Jump still uses MAGNITUDE. */
+        CHI2,
     }
 
     data class VertEnergySample(
@@ -225,6 +227,11 @@ object ContentExpandUtils {
         /** INTERIOR_ENERGY only. */
         val energyRatio: Float = 0.45f,
         val vertEnergy: VertEnergyKind = VertEnergyKind.MAGNITUDE,
+        /**
+         * CHI2 vertical stop: stop when row χ² > this × seed-median χ².
+         * Unused on MAGNITUDE / GX / XYCUT. Jump still uses [energyRatio].
+         */
+        val chi2K: Float = 3.5f,
         /** First grow is top/bottom only (do not widen while walking vertically). */
         val freezeHorzDuringVert: Boolean = false,
         /**
@@ -1839,6 +1846,101 @@ object ContentExpandUtils {
         return intArrayOf(top.coerceAtLeast(0), bot.coerceAtMost(imgH))
     }
 
+    /**
+     * Frozen-width 16-bin row-gray χ² vs seed hist. Returns inclusive top and
+     * exclusive bottom. Never retracts into the seed. Consec-2 stop (host walk_1d).
+     */
+    private fun chi2WalkVertical(
+        gray: Mat,
+        seed: Rect,
+        imgW: Int,
+        imgH: Int,
+        capPx: Int,
+        chi2K: Float,
+        allowUp: Boolean,
+        allowDown: Boolean,
+    ): IntArray {
+        val l = seed.left.coerceIn(0, imgW)
+        val r = seed.right.coerceIn(l, imgW)
+        val st = seed.top.coerceIn(0, imgH)
+        val sb = seed.bottom.coerceIn(st, imgH)
+        if (r <= l || sb <= st || gray.empty() || gray.type() != CvType.CV_8UC1) {
+            return intArrayOf(seed.top, seed.bottom)
+        }
+        val w = r - l
+        val bins = 16
+        val rowBytes = ByteArray(w)
+        val oh = FloatArray(bins)
+        fun fillOh(y: Int) {
+            for (i in 0 until bins) oh[i] = 0f
+            if (y < 0 || y >= imgH) return
+            gray.get(y, l, rowBytes)
+            val n = min(w, rowBytes.size)
+            for (x in 0 until n) {
+                val g = rowBytes[x].toInt() and 0xFF
+                oh[min(15, g / 16)] += 1f
+            }
+            val inv = 1f / max(1, n)
+            for (i in 0 until bins) oh[i] *= inv
+        }
+        val seedHist = FloatArray(bins)
+        for (y in st until sb) {
+            fillOh(y)
+            for (i in 0 until bins) seedHist[i] += oh[i]
+        }
+        val nSeed = max(1, sb - st).toFloat()
+        var histSum = 0f
+        for (i in 0 until bins) {
+            seedHist[i] /= nSeed
+            histSum += seedHist[i]
+        }
+        if (histSum > 1e-6f) {
+            val inv = 1f / histSum
+            for (i in 0 until bins) seedHist[i] *= inv
+        }
+        fun chi2At(y: Int): Double {
+            fillOh(y)
+            var s = 0.0
+            for (i in 0 until bins) {
+                val d = (oh[i] - seedHist[i]).toDouble()
+                s += d * d / (seedHist[i] + 1e-3)
+            }
+            return s
+        }
+        val seedScores = DoubleArray(sb - st) { chi2At(st + it) }
+        val seedChi2 = max(medianDouble(seedScores), 1e-6)
+        val thr = chi2K * seedChi2
+        val consec = 2
+        fun walk(start: Int, step: Int): Int {
+            var y = start
+            var streak = 0
+            var steps = 0
+            while (true) {
+                val ny = y + step
+                if (ny < 0 || ny >= imgH) return y
+                if (steps >= capPx) return y
+                if (chi2At(ny) > thr) {
+                    streak++
+                    if (streak >= consec) return y
+                } else {
+                    streak = 0
+                    y = ny
+                    steps++
+                }
+            }
+        }
+        val top = if (allowUp) walk(st, -1) else st
+        val last = if (allowDown) walk(sb - 1, +1) else sb - 1
+        return intArrayOf(min(top, st), max(last + 1, sb))
+    }
+
+    private fun medianDouble(vals: DoubleArray): Double {
+        if (vals.isEmpty()) return 1.0
+        val s = vals.sorted()
+        val n = s.size
+        return if (n % 2 == 1) s[n / 2] else 0.5 * (s[n / 2 - 1] + s[n / 2])
+    }
+
     private fun runCount(vals: FloatArray, thr: Float, minRun: Int = 3): Int {
         var n = 0
         var run = 0
@@ -2347,7 +2449,8 @@ object ContentExpandUtils {
         Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
         Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
         when (vertKind) {
-            VertEnergyKind.MAGNITUDE -> Core.magnitude(gx, gy, eng)
+            VertEnergyKind.MAGNITUDE, VertEnergyKind.CHI2 ->
+                Core.magnitude(gx, gy, eng)
             VertEnergyKind.GX, VertEnergyKind.XYCUT_GX ->
                 Core.absdiff(gx, Scalar(0.0), eng)
         }
@@ -2363,8 +2466,8 @@ object ContentExpandUtils {
         val il = l + 2; val it = t + 2; val ir = r - 2; val ib = b - 2
         val base = if (ir > il && ib > it) meanE(Rect(il, it, ir, ib)) else meanE(seed)
         val thr = energyRatio * max(base, 1e-3)
-        val allowUp = t > 0 && meanE(Rect(l, t - 1, r, t)) >= thr
-        val allowDown = b < imgH && meanE(Rect(l, b, r, b + 1)) >= thr
+        var allowUp = t > 0 && meanE(Rect(l, t - 1, r, t)) >= thr
+        var allowDown = b < imgH && meanE(Rect(l, b, r, b + 1)) >= thr
         val upSamples = ArrayList<VertEnergySample>()
         val downSamples = ArrayList<VertEnergySample>()
         fun keepSample(dy: Int) = dy <= 80 || dy % 2 == 0
@@ -2403,6 +2506,16 @@ object ContentExpandUtils {
             val cut = xycutOnProfile(eng, l, t, r, b, imgW, imgH, cap)
             t = if (allowUp) min(cut[0], seed.top) else seed.top
             b = if (allowDown) max(cut[1], seed.bottom) else seed.bottom
+        } else if (vertKind == VertEnergyKind.CHI2) {
+            val cut = chi2WalkVertical(
+                gray, seed, imgW, imgH, cap, opts.chi2K,
+                allowUp = true, allowDown = true,
+            )
+            // First outside row already stop-true → walk does not move; skip vert pad.
+            allowUp = t > 0 && cut[0] < seed.top
+            allowDown = b < imgH && cut[1] > seed.bottom
+            t = if (allowUp) min(cut[0], seed.top) else seed.top
+            b = if (allowDown) max(cut[1], seed.bottom) else seed.bottom
         } else {
             growOnce()
         }
@@ -2416,19 +2529,19 @@ object ContentExpandUtils {
         val padT = seed.top - t
         val padB = b - seed.bottom
         val hitVertCap = walkT >= cap || walkB >= cap
-        val stopUp = if (vertKind == VertEnergyKind.XYCUT_GX) {
-            "xycut"
-        } else if (walkT >= cap) {
-            "cap"
-        } else {
-            "energy"
+        val stopUp = when {
+            vertKind == VertEnergyKind.XYCUT_GX -> "xycut"
+            vertKind == VertEnergyKind.CHI2 && walkT >= cap -> "cap"
+            vertKind == VertEnergyKind.CHI2 -> "chi2"
+            walkT >= cap -> "cap"
+            else -> "energy"
         }
-        val stopDown = if (vertKind == VertEnergyKind.XYCUT_GX) {
-            "xycut"
-        } else if (walkB >= cap) {
-            "cap"
-        } else {
-            "energy"
+        val stopDown = when {
+            vertKind == VertEnergyKind.XYCUT_GX -> "xycut"
+            vertKind == VertEnergyKind.CHI2 && walkB >= cap -> "cap"
+            vertKind == VertEnergyKind.CHI2 -> "chi2"
+            walkB >= cap -> "cap"
+            else -> "energy"
         }
         val stopEnergyUp = if (t > 0) meanE(Rect(l, t - 1, r, t)) else 0.0
         val stopEnergyDown = if (b < imgH) meanE(Rect(l, b, r, b + 1)) else 0.0

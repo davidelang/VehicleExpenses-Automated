@@ -8230,3 +8230,15 @@ x
 - Plan: `dev-ai-interaction/plans/prod-ink-fail-subset-button-20260824-0145-plan.md`
 - `PROD_INK_FAIL_FILENAMES` 76 (union_not_exact, twins + fuel). Button after Horiz-affected. auto=prodinkfail / inkfail. Nine flows unchanged. Expand / OCR / QF untouched.
 
+
+## 2026-08-24 - Execute start: chi2-p4-expand-column
+
+- Plan: `dev-ai-interaction/plans/chi2-p4-expand-column-20260824-1220-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: Add AABB `Set chi2-p4` (v4 224+1024, frozen-width row-gray χ² k=3.5 consec=2, 0.08 pad, L/R jump 0.65). 9→10 columns. No ink/QF/fail-subset change. JNI CHI2 not passed.
+
+
+## 2026-08-24 - Phase 1: CHI2 vertical walk
+
+- `VertEnergyKind.CHI2`, `ExpandOptions.chi2K=3.5`. AABB `chi2WalkVertical`: 16-bin row-gray vs seed, consec=2, cap, never shrink. Jump still MAGNITUDE + energyRatio. GX/XYCUT Sobel paths unchanged. JNI not given CHI2.
+
