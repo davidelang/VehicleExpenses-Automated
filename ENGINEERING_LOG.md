@@ -8063,3 +8063,15 @@ x
 - 13 columns: drop experiment G4 / P4-m65 / p20 / Prod-m65; add Prod-ink, P4-rot-ink, Prod-rot-ink. P4 discovery 224+1024; prod/QF 224+608. Vert cap / energy maxFrac 0.40. QF verts unchanged. No P4 2048.
 - Human: deploy + scheduled pump; check HTML font, 13 columns, scales keys, rot-ink PD.
 
+
+## 2026-08-24 - Execute start: qf-g4-vjump
+
+- Plan: `dev-ai-interaction/plans/qf-g4-vjump-20260824-0204-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: QF live pump (`extractQuickFillG4CostVol`) = experiment G4-vjump: v4 det, 224+1024, verts 0/0.1/0.2/0.5 + jump-retract. Not experiment flows. Not product 224+608 on QF. Leave `runSetGCostVolExtraction`.
+
+
+## 2026-08-24 - Phase 1: QF extract = G4-vjump
+
+- `extractQuickFillG4CostVol`: scales `224, 1024`; blues = `createG4VjumpBlueHunksFromReds` (deskewed `p.mat`). No G4 0.1/0.3 + 0.5H oranges. v4 det + classify unchanged. Experiment flows / `runSetGCostVolExtraction` untouched.
+

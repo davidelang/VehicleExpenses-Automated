@@ -400,7 +400,7 @@ object OcrHarness {
         val detTiersInt8 = if (useG4Det) NativePaddleEngine.g4TiersInt8 else null
         val detModel = if (useG4Det) NativePaddleEngine.G4_DET_ASSET_BASE else "product_det"
 
-        val scales = listOf(224, 608)
+        val scales = listOf(224, 1024)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
         val pdHunksExpTotal = mutableListOf<PumpHunk>()
         val pdHunksMaxTotal = mutableListOf<PumpHunk>()
@@ -437,8 +437,8 @@ object OcrHarness {
         val rawRects = redPixelList.toList()
         if (pdHunksRawTotal.isEmpty()) return empty.copy(detModel = detModel, rawRects = rawRects)
 
-        val (customBlueGPre, _) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
-            pdHunksRawTotal, imgW, imgH, SET_G4_VERT_FACTORS, SET_G_HORIZ_FACTOR
+        val customBlueGPre = PumpCostVolUtils.createG4VjumpBlueHunksFromReds(
+            pdHunksRawTotal, workspace.p.mat, imgW, imgH,
         )
         val customBluePixelG = PumpCostVolUtils.hunksToRects(customBlueGPre)
         if (customBluePixelG.isEmpty()) {
