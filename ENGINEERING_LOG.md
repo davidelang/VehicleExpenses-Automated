@@ -8253,3 +8253,16 @@ x
 - Plan: `dev-ai-interaction/plans/chi2-p4-expand-column-20260824-1220-plan.md`
 - AABB `Set chi2-p4`: v4 224+1024, frozen-width 16-bin row-gray χ² k=3.5 consec=2, pad 0.08, L/R jump MAGNITUDE energyRatio 0.65. 10 scheduled flows. JNI CHI2 not passed. Ink k=1/2/3 / QF G4-vjump / fail-subset untouched.
 
+
+## 2026-08-24 - Execute start: keep-chroma-and-color-expand-cols
+
+- Plan: `dev-ai-interaction/plans/keep-chroma-and-color-expand-cols-20260824-1403-plan.md`
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Scope: Keep UV after ingest. Eight new *-color expand columns (fused |∇Y|+|∇C| / chroma 7seg). Gray 10 + G-- / G4-vjump unchanged. Rec still Y. No useChroma on gray procs.
+
+
+## 2026-08-24 - Phase 1: ingest keeps chroma
+
+- `ImageIngestionProvider`: jpeg/dng/decoder no longer `clearChroma()` after YUV ingest.
+- `OcrFunctionalPipeline`: drop post-ingest `clearChroma`. Scratch `clear()` and deskew-buffer chroma wipe unchanged. Paddle still `input.mat` (Y).
+

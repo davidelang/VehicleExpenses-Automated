@@ -205,7 +205,6 @@ object OcrFunctionalPipeline {
                 argb.release()
                 gray.release()
             }
-            master.p.clearChroma()
 
             // 2) Angle from Paddle heatmap (production optimized deskew)
             val tAngle0 = System.currentTimeMillis()

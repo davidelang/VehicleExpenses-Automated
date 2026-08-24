@@ -104,11 +104,8 @@ object ImageIngestionProvider {
             throw IllegalStateException("Invalid DNG probe dimensions ${probedW}x$probedH for $path")
         }
 
-        // Step 1: Native Ingestion (Direct LibRaw -> YUV)
+        // Step 1: Native Ingestion (Direct LibRaw -> YUV). Keep UV for color expand / PD.
         NativeImageUtils.ingestDngToYuv(path, target)
-
-        // Step 2: Stabilize state for monochrome-expecting logic
-        target.clearChroma()
 
         return IngestionMetadata(
             probedW, probedH,
@@ -140,11 +137,8 @@ object ImageIngestionProvider {
         val w = res[0].toInt()
         val h = res[1].toInt()
 
-        // Step 1: Native Ingestion (Direct imread -> YUV)
+        // Step 1: Native Ingestion (Direct imread -> YUV). Keep UV for color expand / PD.
         NativeImageUtils.ingestJpegToYuv(path, target)
-
-        // Step 2: Stabilize state
-        target.clearChroma()
 
         return IngestionMetadata(
             w, h,
@@ -174,7 +168,6 @@ object ImageIngestionProvider {
             }
 
             NativeImageUtils.ingestArgbToYuv(decodedBitmap, target)
-            target.clearChroma()
 
             val meta = IngestionMetadata(probedW, probedH, decodedBitmap.width, decodedBitmap.height, format, System.currentTimeMillis() - startTime, decodedBitmap.width < probedW || decodedBitmap.height < probedH)
             decodedBitmap.recycle()
@@ -182,7 +175,6 @@ object ImageIngestionProvider {
         } else {
             val bmp = OdometerOcrUtils.decodeBitmapSafely(context, path) ?: throw Exception("Fallback decode failed")
             NativeImageUtils.ingestArgbToYuv(bmp, target)
-            target.clearChroma()
             val meta = IngestionMetadata(bmp.width, bmp.height, bmp.width, bmp.height, "legacy", System.currentTimeMillis() - startTime, false)
             bmp.recycle()
             return meta
