@@ -8303,3 +8303,7 @@ C++ nativeSeg7Many / nativeJumpMany. One Sobel or chromaMag per photo. Ink makeG
 ## 2026-08-24 - Phase 3: JNI content-expand flows note
 
 docs/PUMP_EXPERIMENT_FLOWS.md: gray and color AABB energy + 7seg + Y jump are JNI; maps once per photo; rot-ink AABB 7seg JNI; parked rot-energy still nativeExpandOriented; G-- calculated; rec Y. 18 names untouched.
+
+## 2026-08-24 - CODE LANDED: native-aabb-ink-chroma-expand
+
+Plan native-aabb-ink-chroma-expand-20260824-1608 CODE LANDED. JNI many-seed AABB energy + 7seg + Y jump for gray and color. G4-vjump jump JNI. G-- calculated. Rec Y / 18 names unchanged. Ready to test tablet 12MP t_expand_ms.
