@@ -8331,3 +8331,7 @@ Plan prod-ink-fail-subset-60-salvable-20260824-1657 CODE LANDED. Prod-ink fail s
 ## 2026-08-24 - Phase 1: padVertByStrokes k<=0 is zero
 
 padVertByStrokes: k <= 0 → kPad = 0 (k=0 test). k>0 keeps max(1, (k×s).roundToInt()). Comments: k=0 test / k=1 official.
+
+## 2026-08-24 - Phase 2: ink OCR k=1 then k=0
+
+AABB extra loop listOf(0f). Rot loop listOf(1f, 0f). seg7_k metadata 1,0. assembly k listOf(1, 0). Eight ink assemblyNotes: OCR k=0/1; official k=1. No live k=2/3.
