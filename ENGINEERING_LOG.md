@@ -8321,3 +8321,13 @@ PROD_INK_FAIL_FILENAMES is JSON union_salvable (60, same order). Dropped 16 nobo
 ## 2026-08-24 - CODE LANDED: prod-ink-fail-subset-60-salvable
 
 Plan prod-ink-fail-subset-60-salvable-20260824-1657 CODE LANDED. Prod-ink fail subset is 60 union_salvable. 16 nobody-exact dropped. Caption/flows: 18 columns, no “full nine”. Horiz-affected still 76. Deep link auto=prodinkfail unchanged.
+
+## 2026-08-24 - Execute: ink-ocr-k0-drop-k23
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/ink-ocr-k0-drop-k23-20260824-1748-plan.md`
+- Scope: Drop ink OCR k=2/3; add k=0 (zero vert pad then same jump). Official k=1. All 8 ink columns. padVertByStrokes(k<=0)=0. Walk/QF/energy/18 names unchanged.
+
+## 2026-08-24 - Phase 1: padVertByStrokes k<=0 is zero
+
+padVertByStrokes: k <= 0 → kPad = 0 (k=0 test). k>0 keeps max(1, (k×s).roundToInt()). Comments: k=0 test / k=1 official.

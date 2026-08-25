@@ -1053,7 +1053,7 @@ object ContentExpandUtils {
     const val SEG7_GLARE_WIDTH_MULT = 3
     const val SEG7_MIN_STROKE = 4
     const val SEG7_FALLBACK_H_FRAC = 0.08f
-    /** Official ink pad (k=1). Walk itself does not pad; [padVertByStrokes] applies k=1/2/3. */
+    /** Official ink pad (k=1). Walk itself does not pad; [padVertByStrokes] applies k=0 test / k=1 official. */
     const val SEG7_K = 1f
     /** Horizontal jump as this × `s` (not used by Set ink-p4; width is jump-retract). */
     const val SEG7_J = 2f
@@ -1203,7 +1203,7 @@ object ContentExpandUtils {
      * strip (seed columns only) has an ink run ≥ 0.5`s`. Peek up to
      * [SEG7_GAP_FRAC]`s` outside the red; freeze that side if the peek is empty.
      * Stop after a gap ≥ [SEG7_GAP_FRAC]`s` or [SEG7_VERT_CAP_FRAC]×seedH per
-     * side (safety). Does **not** pad; caller uses [padVertByStrokes] for k=1/2/3.
+     * side (safety). Does **not** pad; caller uses [padVertByStrokes] for k=0 test / k=1 official.
      * Horizontal jump-retract is the caller's job ([jumpRetractHorizontal]);
      * this does not call [jumpRetractHorizontalInS].
      */
@@ -1420,6 +1420,8 @@ object ContentExpandUtils {
      * Pad [box] by `k`×`s` on each tip, clamped to remaining
      * [SEG7_VERT_CAP_FRAC]×original-[seed] height per side (walk already used
      * some of that budget). Frozen sides (no walk) still get the pad.
+     * k=0 test: [k] ≤ 0 → 0 pad (walk-stop T/B). k=1 official: k>0 keeps
+     * `max(1, (k×s).roundToInt())`.
      */
     fun padVertByStrokes(
         box: Rect,
@@ -1431,7 +1433,7 @@ object ContentExpandUtils {
     ): Rect {
         val seedH = max(1, seed.height())
         val capPx = max(1, (SEG7_VERT_CAP_FRAC * seedH).roundToInt())
-        val kPad = max(1, (k * max(1, sPx)).roundToInt())
+        val kPad = if (k <= 0f) 0 else max(1, (k * max(1, sPx)).roundToInt())
         val walkUp = max(0, seed.top - box.top)
         val walkDown = max(0, box.bottom - seed.bottom)
         val padUp = min(kPad, max(0, capPx - walkUp))
