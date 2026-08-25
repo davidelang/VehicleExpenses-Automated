@@ -8353,3 +8353,7 @@ Plan ink-ocr-k0-drop-k23-20260824-1748 CODE LANDED. Eight ink columns OCR k=1 th
 ## 2026-08-24 - Phase 1: PumpDetDiscoverDump four recipes
 
 New PumpDetDiscoverDump.kt: ingest once; deskew copy vs raw; p4/prod × deskew/rot. JSON native/denest/union/pruned. No expand, no OCR, no pump_results.
+
+## 2026-08-24 - Phase 2: Det dump button + auto=detdump
+
+Pump screen button under Prod-ink fail. ExperimentJobRunner kind=pump. Deep link auto=detdump (alias detboxes). runPumpExperiment / 18 flows unedited.

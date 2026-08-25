@@ -261,6 +261,8 @@ fun ExperimentPumpScreen(
     autoHorizAffected: Boolean = false,
     /** Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail — prod-ink fail subset. */
     autoProdInkFail: Boolean = false,
+    /** Deep link: vehicleexpenses://experiment/pump?auto=detdump — four discover recipes, no expand/OCR. */
+    autoDetDump: Boolean = false,
     /** Deep link: vehicleexpenses://experiment/pump?auto=selected — coverage selected sample (pump only). */
     autoSelectedSample: Boolean = false,
 ) {
@@ -395,6 +397,34 @@ fun ExperimentPumpScreen(
         }
     }
 
+    val runDetDump: () -> Unit = {
+        val allFiles = experimentDir.listFiles { f ->
+            f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+        } ?: emptyArray()
+        val n = allFiles.size
+        if (n == 0) {
+            status = "Det dump: 0 photos in pump_photos"
+        } else {
+            totalPhotos = n
+            val ok = ExperimentJobRunner.start(context.applicationContext, kind = "pump") { progressCb, log, statusLine ->
+                statusLine("Det dump (P4/prod × deskew/rot)…")
+                val res = PumpDetDiscoverDump.run(
+                    context = context.applicationContext,
+                    photoDir = experimentDir,
+                    reportDir = reportDir,
+                    onLog = log,
+                    onProgress = { done, total, name -> progressCb(done, total, name) },
+                )
+                res.outDir.absolutePath
+            }
+            if (!ok) {
+                status = "Another experiment is already running (${ExperimentJobRunner.state.value.kind})"
+            } else {
+                status = "Det dump (P4/prod × deskew/rot)…"
+            }
+        }
+    }
+
     val runL1SoDebug: () -> Unit = {
         val ok = ExperimentJobRunner.start(context.applicationContext, kind = "pump") { _, log, statusLine ->
             statusLine("L1 SO debug dump…")
@@ -434,14 +464,19 @@ fun ExperimentPumpScreen(
         }
     }
 
-    // Deep link: vehicleexpenses://experiment/pump?auto=first10 | auto=l1debug | auto=horiz | auto=selected | auto=prodinkfail
-    LaunchedEffect(autoFirst10, autoL1Debug, autoHorizAffected, autoProdInkFail, autoSelectedSample) {
+    // Deep link: vehicleexpenses://experiment/pump?auto=first10 | auto=l1debug | auto=horiz | auto=selected | auto=prodinkfail | auto=detdump
+    LaunchedEffect(autoFirst10, autoL1Debug, autoHorizAffected, autoProdInkFail, autoSelectedSample, autoDetDump) {
         if (autoStarted || ExperimentJobRunner.isRunning()) return@LaunchedEffect
         when {
             autoL1Debug -> {
                 autoStarted = true
                 Log.i(TAG, "autoL1Debug starting PumpSoDebugDump")
                 runL1SoDebug()
+            }
+            autoDetDump -> {
+                autoStarted = true
+                Log.i(TAG, "autoDetDump starting PumpDetDiscoverDump")
+                runDetDump()
             }
             autoHorizAffected -> {
                 autoStarted = true
@@ -556,6 +591,21 @@ fun ExperimentPumpScreen(
             "Prod-ink fail = photos where ink-prod or rot-ink-prod is not exact (relax=fail) " +
                 "on 23-18, excluding fields no column reads; columns still the full scheduled set (18). " +
                 "Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+        Button(
+            onClick = runDetDump,
+            enabled = !isRunning && experimentDir.exists(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Det dump (P4/prod × deskew/rot)")
+        }
+        Text(
+            "Four discover-only runs (p4/prod × deskew/rot); no expand/OCR; all pump_photos. " +
+                "Writes pump_reports/pump_det_boxes_<ts>/. " +
+                "Deep link: vehicleexpenses://experiment/pump?auto=detdump",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
