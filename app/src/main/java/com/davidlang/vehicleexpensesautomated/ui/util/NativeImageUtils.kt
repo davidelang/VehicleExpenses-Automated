@@ -452,7 +452,7 @@ object NativeImageUtils {
     }
 
     private external fun nativeSeg7Many(
-        grayPtr: Long, uvPtr: Long, seeds: IntArray, chroma: Boolean,
+        grayPtr: Long, uvPtr: Long, seeds: IntArray, chromaMode: Int,
     ): IntArray?
     private external fun nativeJumpMany(
         grayPtr: Long, boxes: IntArray,
@@ -460,8 +460,13 @@ object NativeImageUtils {
     ): IntArray?
 
     fun seg7ManyNative(gray: Mat, uv: Mat?, seeds: IntArray, chroma: Boolean): IntArray? {
+        return seg7ManyNative(gray, uv, seeds, if (chroma) 1 else 0)
+    }
+
+    /** chromaMode: 0 gray, 1 chromaMag, 2 chromaTint2. */
+    fun seg7ManyNative(gray: Mat, uv: Mat?, seeds: IntArray, chromaMode: Int): IntArray? {
         if (gray.empty()) return null
-        return nativeSeg7Many(gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chroma)
+        return nativeSeg7Many(gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chromaMode)
     }
 
     fun jumpManyNative(

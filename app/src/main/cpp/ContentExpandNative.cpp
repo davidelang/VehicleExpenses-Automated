@@ -1257,7 +1257,8 @@ static void dropWide(cv::Mat* bin, int glareW) {
 static void seg7One(
     const cv::Mat& src, int sl, int st, int sr, int sb,
     int imgW, int imgH,
-    int* ol, int* ot, int* oright, int* ob, int* sPxOut, int* vSWOut, int* hSWOut, int* usedFb
+    int* ol, int* ot, int* oright, int* ob, int* sPxOut, int* vSWOut, int* hSWOut, int* usedFb,
+    bool srcIsBin = false
 ) {
     *ol = sl; *ot = st; *oright = sr; *ob = sb;
     const int seedH = std::max(1, sb - st);
@@ -1271,16 +1272,23 @@ static void seg7One(
     if (seedH < 4 || seedW < 4) return;
     cv::Mat roi = src(cv::Range(st, sb), cv::Range(sl, sr));
     cv::Mat bin;
-    const double thr = cv::threshold(roi, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    double thr = 0.0;
+    bool darkInk = true;
+    bool invertedBin = false;
+    if (srcIsBin) {
+        roi.copyTo(bin);
+    } else {
+        thr = cv::threshold(roi, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    }
     const int nPix = seedW * seedH;
     int nz = cv::countNonZero(bin);
     float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
-    bool darkInk = true;
     if (inkFrac >= 0.45f) {
         cv::bitwise_not(bin, bin);
         nz = cv::countNonZero(bin);
         inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
         darkInk = false;
+        invertedBin = srcIsBin;
     }
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
     const int v0 = hh0.peak;
@@ -1312,8 +1320,13 @@ static void seg7One(
     if (sr <= sl || nb <= nt) return;
     cv::Mat look = src(cv::Range(nt, nb), cv::Range(sl, sr));
     cv::Mat lookBin;
-    const int ttype = darkInk ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
-    cv::threshold(look, lookBin, thr, 255, ttype);
+    if (srcIsBin) {
+        look.copyTo(lookBin);
+        if (invertedBin) cv::bitwise_not(lookBin, lookBin);
+    } else {
+        const int ttype = darkInk ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
+        cv::threshold(look, lookBin, thr, 255, ttype);
+    }
     dropWide(&lookBin, glareW);
     const int minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
     auto hasBar = [&](int y) {
@@ -1365,6 +1378,170 @@ static void seg7One(
     if (*ob <= *ot) *ob = std::min(imgH, *ot + 1);
 }
 
+static constexpr float kTintDotThr = 0.5f;
+static constexpr float kTintChromaEps = 8.0f;
+
+static void uvAt(const cv::Mat& uv, int imgW, int x, int y, int* u, int* v) {
+    if (uv.empty() || uv.type() != CV_8UC2 || uv.rows <= 0 || uv.cols <= 0) {
+        *u = 128;
+        *v = 128;
+        return;
+    }
+    const int uvH = uv.rows, uvW = uv.cols;
+    const bool half = uvW * 2 <= imgW + 1;
+    int uy = half ? y / 2 : (y & ~1);
+    int ux = half ? x / 2 : (x & ~1);
+    if (uy < 0) uy = 0;
+    if (uy >= uvH) uy = uvH - 1;
+    if (ux < 0) ux = 0;
+    if (ux >= uvW) ux = uvW - 1;
+    const cv::Vec2b p = uv.ptr<cv::Vec2b>(uy)[ux];
+    *u = p[0];
+    *v = p[1];
+}
+
+/** Seed-ROI Y Otsu ink bin + dropWide; returns s_px (fallback 0.08×seedH). */
+static int seedInkBinY(
+    const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut
+) {
+    const int seedH = std::max(1, sb - st);
+    const int seedW = std::max(1, sr - sl);
+    const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedH)));
+    if (sr <= sl || sb <= st || y.empty()) return fallback;
+    cv::Mat roi = y(cv::Range(st, sb), cv::Range(sl, sr));
+    cv::Mat bin;
+    cv::threshold(roi, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    const int nPix = seedW * seedH;
+    int nz = cv::countNonZero(bin);
+    float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
+    if (inkFrac >= 0.45f) {
+        cv::bitwise_not(bin, bin);
+        nz = cv::countNonZero(bin);
+        inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
+    }
+    HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
+    const int glareW = 3 * std::max(hh0.peak, 4);
+    dropWide(&bin, glareW);
+    HorizSW hh = horizPeakSW(bin, seedH, seedW);
+    const int sPx = (hh.peak <= 4 || inkFrac >= 0.45f) ? fallback : hh.peak;
+    *binOut = bin;
+    return std::max(1, sPx);
+}
+
+/**
+ * Per-seed shadow-invariant tint mask: 255 = ink, 0 = blackout.
+ * Samples stroke chromaticity inside seed ink runs; background at ±s_px
+ * outside those edges; classifies look-strip pixels by u_p·u_ink (or Y
+ * polarity when chroma is near zero).
+ */
+static bool fillChromaTintMask(
+    const cv::Mat& y, const cv::Mat& uv,
+    int sl, int st, int sr, int sb,
+    cv::Mat* dst
+) {
+    if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
+    const int h = y.rows, w = y.cols;
+    dst->create(h, w, CV_8UC1);
+    dst->setTo(0);
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > w) sr = w;
+    if (sb > h) sb = h;
+    if (sr <= sl || sb <= st) return false;
+    cv::Mat seedBin;
+    const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin);
+    if (seedBin.empty()) return false;
+
+    double su = 0.0, sv = 0.0, yInkSum = 0.0, chromaInkSum = 0.0;
+    int nInk = 0;
+    for (int yy = 0; yy < seedBin.rows; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        const uint8_t* yp = y.ptr<uint8_t>(st + yy);
+        for (int xx = 0; xx < seedBin.cols; ++xx) {
+            if (!bp[xx]) continue;
+            int u, v;
+            uvAt(uv, w, sl + xx, st + yy, &u, &v);
+            const double du = static_cast<double>(u) - 128.0;
+            const double dv = static_cast<double>(v) - 128.0;
+            const double n = std::hypot(du, dv);
+            if (n >= 1.0) {
+                su += du / n;
+                sv += dv / n;
+            }
+            chromaInkSum += n;
+            yInkSum += yp[sl + xx];
+            ++nInk;
+        }
+    }
+    if (nInk <= 0) return false;
+    double uInkX = su / nInk;
+    double uInkY = sv / nInk;
+    const double nrm = std::hypot(uInkX, uInkY);
+    if (nrm > 1e-6) {
+        uInkX /= nrm;
+        uInkY /= nrm;
+    }
+    const double yInk = yInkSum / nInk;
+    const double meanChromaInk = chromaInkSum / nInk;
+    const bool inkHasChroma = meanChromaInk >= kTintChromaEps && nrm > 1e-6;
+
+    const int d = std::max(1, sPx);
+    double yBgSum = 0.0;
+    int nBg = 0;
+    auto tryBg = [&](int gx, int gy) {
+        if (gx < 0 || gy < 0 || gx >= w || gy >= h) return;
+        const int lx = gx - sl, ly = gy - st;
+        if (lx >= 0 && ly >= 0 && lx < seedBin.cols && ly < seedBin.rows &&
+            seedBin.ptr<uint8_t>(ly)[lx]) {
+            return;
+        }
+        yBgSum += y.ptr<uint8_t>(gy)[gx];
+        ++nBg;
+    };
+    for (int yy = 0; yy < seedBin.rows; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedBin.cols; ++xx) {
+            if (!bp[xx]) continue;
+            const int gx = sl + xx, gy = st + yy;
+            tryBg(gx - d, gy);
+            tryBg(gx + d, gy);
+            tryBg(gx, gy - d);
+            tryBg(gx, gy + d);
+        }
+    }
+    const double yBg = nBg > 0 ? yBgSum / nBg : (yInk < 128.0 ? 200.0 : 40.0);
+
+    const int seedH = std::max(1, sb - st);
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+    const int vLook = capPx + 2;
+    const int nt = std::max(0, st - vLook);
+    const int nb = std::min(h, sb + vLook);
+    for (int gy = nt; gy < nb; ++gy) {
+        const uint8_t* yp = y.ptr<uint8_t>(gy);
+        uint8_t* op = dst->ptr<uint8_t>(gy);
+        for (int gx = sl; gx < sr; ++gx) {
+            const double Y = yp[gx];
+            int u, v;
+            uvAt(uv, w, gx, gy, &u, &v);
+            const double du = static_cast<double>(u) - 128.0;
+            const double dv = static_cast<double>(v) - 128.0;
+            const double c = std::hypot(du, dv);
+            const double dInk = yInk - yBg;
+            const double dPix = Y - yBg;
+            const bool polOk = dInk * dPix >= 0.0;
+            bool isInk;
+            if (!inkHasChroma || c < kTintChromaEps) {
+                isInk = polOk && std::abs(Y - yInk) <= std::abs(Y - yBg);
+            } else {
+                const double dot = (du / c) * uInkX + (dv / c) * uInkY;
+                isInk = dot >= kTintDotThr && polOk;
+            }
+            op[gx] = isInk ? 255 : 0;
+        }
+    }
+    return true;
+}
+
 static double medianU8Rect(const cv::Mat& m, int l, int t, int r, int b) {
     if (r <= l || b <= t || m.empty()) return 0.0;
     std::vector<int> vals;
@@ -1385,7 +1562,7 @@ static double medianU8Rect(const cv::Mat& m, int l, int t, int r, int b) {
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7Many(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jlong uvPtr, jintArray seedsArr, jboolean chroma
+    jlong grayPtr, jlong uvPtr, jintArray seedsArr, jint chromaMode
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -1395,10 +1572,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     const int n = n4 / 4;
     std::vector<jint> seeds(n4);
     env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
+    // chromaMode: 0 gray, 1 chromaMag, 2 chromaTint2
     cv::Mat cMag;
-    const bool useChroma = chroma == JNI_TRUE;
-    if (useChroma) {
-        auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    const bool useChromaMag = chromaMode == 1;
+    const bool useTint2 = chromaMode == 2;
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    if (useChromaMag) {
         fillChromaMag(*gray, uv ? *uv : cv::Mat(), &cMag);
     }
     std::vector<jint> out(n * 8, 0);
@@ -1408,12 +1587,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
         if (t < 0) t = 0;
         if (r > imgW) r = imgW;
         if (b > imgH) b = imgH;
-        const cv::Mat* src = gray;
-        if (useChroma && !cMag.empty() && medianU8Rect(cMag, l, t, r, b) >= 8.0) {
-            src = &cMag;
-        }
         int ol, ot, orr, ob, sPx, vSW, hSW, fb;
-        seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb);
+        if (useTint2) {
+            cv::Mat tint;
+            const bool ok = uv && fillChromaTintMask(
+                *gray, *uv, l, t, r, b, &tint);
+            if (ok) {
+                seg7One(tint, l, t, r, b, imgW, imgH,
+                    &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true);
+            } else {
+                seg7One(*gray, l, t, r, b, imgW, imgH,
+                    &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb);
+            }
+        } else {
+            const cv::Mat* src = gray;
+            if (useChromaMag && !cMag.empty() && medianU8Rect(cMag, l, t, r, b) >= 8.0) {
+                src = &cMag;
+            }
+            seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb);
+        }
         const int o = i * 8;
         out[o] = ol; out[o + 1] = ot; out[o + 2] = orr; out[o + 3] = ob;
         out[o + 4] = sPx; out[o + 5] = vSW; out[o + 6] = hSW; out[o + 7] = fb;

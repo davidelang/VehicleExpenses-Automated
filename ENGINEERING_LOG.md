@@ -8387,3 +8387,13 @@ flows/flowProcessors = 7 product/G-- names. Deleted v4 processors (scheduled and
 ## 2026-08-25 - Phase 4: QF G-- + GT ? + facts
 
 Live QF = G--: product_det, 224+608, SET_G_MINUS_MINUS_VERT_FACTORS, SET_G_HORIZ_FACTOR, createBlueAndOrangeHunksFromReds, classify blues, debug pipeline=G--. Renamed extractQuickFillGMinusMinusCostVol. Deleted SET_G4_* and createG4VjumpBlueHunksFromReds. GT 13.017? / 19.86?; dng 90.03? and jpg 90.03 kept. project-facts exp_det_ab = product_det only.
+
+## 2026-08-25 - Execute: ink-prod-color2-chroma-sampling
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/ink-prod-color2-chroma-sampling-20260825-1430-plan.md`
+- Scope: Add scheduled column Set ink-prod-color2 (8 flows). Native fillChromaTintMask + chromaMode=2 into seg7One. Do not change G--/QF/jump/ink-prod gray or color1. Do not deploy.
+
+## 2026-08-25 - Phase 1: fillChromaTintMask + chromaMode=2
+
+Native fillChromaTintMask samples stroke chromaticity and ±s_px background, writes 255/0 tintMask. nativeSeg7Many chromaMode 0/1/2; mode 2 feeds tintMask as pre-bin to seg7One + dropWide. JNI jint. Gray/chromaMag path unchanged.
