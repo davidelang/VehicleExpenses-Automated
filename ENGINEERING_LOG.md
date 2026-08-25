@@ -8343,3 +8343,13 @@ docs/PUMP_EXPERIMENT_FLOWS.md: lead + eight ink cells + rot paragraph OCR k=0 an
 ## 2026-08-24 - CODE LANDED: ink-ocr-k0-drop-k23
 
 Plan ink-ocr-k0-drop-k23-20260824-1748 CODE LANDED. Eight ink columns OCR k=1 then k=0. Official/PD/final = k=1. padVertByStrokes(k<=0)=0. k=2/3 gone. Walk/QF/energy/18 names unchanged.
+
+## 2026-08-24 - Execute: pump-det-discover-dump-button
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/pump-det-discover-dump-button-20260824-1941-plan.md`
+- Scope: One-shot Pump button: four discover recipes (p4/prod × deskew/rot), native+denest+union+pruned JSON. No expand/OCR. Not on 18-col path. Fetch pump_det_boxes_<ts>.
+
+## 2026-08-24 - Phase 1: PumpDetDiscoverDump four recipes
+
+New PumpDetDiscoverDump.kt: ingest once; deskew copy vs raw; p4/prod × deskew/rot. JSON native/denest/union/pruned. No expand, no OCR, no pump_results.
