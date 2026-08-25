@@ -8335,3 +8335,7 @@ padVertByStrokes: k <= 0 → kPad = 0 (k=0 test). k>0 keeps max(1, (k×s).roundT
 ## 2026-08-24 - Phase 2: ink OCR k=1 then k=0
 
 AABB extra loop listOf(0f). Rot loop listOf(1f, 0f). seg7_k metadata 1,0. assembly k listOf(1, 0). Eight ink assemblyNotes: OCR k=0/1; official k=1. No live k=2/3.
+
+## 2026-08-24 - Phase 3: flows doc ink OCR k=0/1
+
+docs/PUMP_EXPERIMENT_FLOWS.md: lead + eight ink cells + rot paragraph OCR k=0 and k=1; official k=1; k=2/3 gone. 18-column set unchanged.
