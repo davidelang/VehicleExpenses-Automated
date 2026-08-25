@@ -10,7 +10,9 @@
 - Not uncommon for **all scales** on a photo to return empty heat / no boxes for v5 mobile.
 - Heatmap overlays often blank → not useful for expand-P or box comparison.
 
-**Conclusion:** v5 mobile is too poor at detecting anything for this experiment’s purpose. Prefer **product_det** and **PP-OCRv4_mobile_det**.
+**Conclusion:** v5 mobile is too poor at detecting anything for this experiment’s purpose.
+
+**v4 mobile also dropped** (2026-08-24/25): start-seed parity with product; unique p4 wins were horrid rows 67/78. See `docs/obsolete/DROP_P4_P5_DET.md` + tag `obsolete-p4-p5-det`. Scheduled det is **product_det** only. Do not still prefer v4.
 
 ## PP-OCRv4 / v5 **server** det — too slow for real-time / multi-scale
 
@@ -25,6 +27,6 @@
 
 ## Recovery
 
-- Assets may still ship under `assets/paddle/exp_det_ab/` for ad-hoc probes.
-- Multi-scale list: `MultiScaleDetRunner.DET_MODELS` (product + v4 mobile only as of this doc).
-- Pump Set P4 loads `PP-OCRv4_mobile_det` via `NativePaddleEngine.loadExperimentDetTiers` for that column only.
+- Scheduled APK `exp_det_ab` is **`product_det` only**. v4 mobile nbs live under `third_party/paddle/exp_det_ab_unscheduled/` after `obsolete-p4-p5-det`.
+- Restore v4-in-APK + QF G4-vjump + p4 columns from tag `obsolete-p4-p5-det` (see `DROP_P4_P5_DET.md`).
+- Multi-scale list: `MultiScaleDetRunner.DET_MODELS` (product only after that drop).

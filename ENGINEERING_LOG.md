@@ -8365,3 +8365,13 @@ fetch_latest_reports.py pulls newest pump_det_boxes_<ts>/ even without pump_resu
 ## 2026-08-24 - CODE LANDED: pump-det-discover-dump-button
 
 Plan pump-det-discover-dump-button-20260824-1941 CODE LANDED. One-shot Det dump button: four discover recipes, native+denest+union+pruned JSON. No expand/OCR. Not on 18-col path. Fetch newest pump_det_boxes_<ts>/.
+
+## 2026-08-25 - Execute: drop-p4-p5-qf-g-minus-minus
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/drop-p4-p5-qf-g-minus-minus-20260824-2310-plan.md`
+- Scope: Tag obsolete-p4-p5-det; move v4 nbs out of APK; 7 product/G-- pump columns; QF=G--; GT ? on 67/78. Do not delete unscheduled v5/server. Do not deploy.
+
+## 2026-08-25 - Phase 1: tag obsolete-p4-p5-det + why docs
+
+Annotated tag `obsolete-p4-p5-det` peels `4e9b0f5c` (v4 still in APK + QF G4-vjump + 18-col p4). docs/obsolete/DROP_P4_P5_DET.md dumps + 67/78 + recovery. EXPERIMENT_DET_MODELS / ALIGNMENT_SETS point at this drop.
