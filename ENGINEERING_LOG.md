@@ -8379,3 +8379,7 @@ Annotated tag `obsolete-p4-p5-det` peels `4e9b0f5c` (v4 still in APK + QF G4-vju
 ## 2026-08-25 - Phase 2: v4 nbs out of APK + strip G4 loaders
 
 git mv PP-OCRv4_mobile_det_*.nb to third_party/paddle/exp_det_ab_unscheduled/. APK exp_det_ab is product_det only. Removed ensureG4DetTiers/g4Tiers. Multi-scale DET_MODELS product only. Alignment pipelines J/L/V. QF det uses product sharedTiers (G-- verts still Phase 4).
+
+## 2026-08-25 - Phase 3: 7 pump columns + prod-only dump
+
+flows/flowProcessors = 7 product/G-- names. Deleted v4 processors (scheduled and parked). Det dump recipes prod-deskew + prod-rot only. Button Det dump (prod × deskew/rot). PUMP_EXPERIMENT_FLOWS.md 7-col; QF=G--; scheduled set (7).

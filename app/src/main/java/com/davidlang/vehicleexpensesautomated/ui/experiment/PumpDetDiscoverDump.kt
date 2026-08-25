@@ -25,15 +25,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * One-shot discover dump: P4/prod × deskew/rot. No expand, no OCR, no pump_results.
+ * One-shot discover dump: prod × deskew/rot. No expand, no OCR, no pump_results.
  *
  * Writes `pump_reports/pump_det_boxes_<ts>/<safe_filename>.json` plus `manifest.json`.
  */
 object PumpDetDiscoverDump {
     private const val TAG = "PumpDetDiscoverDump"
     private const val NATIVE_CAP = 200
-    private const val P4_DET = "PP-OCRv4_mobile_det"
-    private val P4_SCALES = listOf(224, 1024)
     private val PROD_SCALES = listOf(224, 608)
 
     data class Result(
@@ -103,14 +101,6 @@ object PumpDetDiscoverDump {
                     val tilt = -deskewRes.paddleCppAngle
                     OdometerOcrUtils.rotate(deskewWs, tilt)
 
-                    NativePaddleEngine.loadExperimentDetTiers(context, P4_DET)
-                    val p4Deskew = discoverRecipe(
-                        engine, deskewWs, P4_SCALES, rotPath = false, maxN,
-                    )
-                    val p4Rot = discoverRecipe(
-                        engine, master, P4_SCALES, rotPath = true, maxN,
-                    )
-                    NativePaddleEngine.restoreProductionDetTiers(context)
                     val prodDeskew = discoverRecipe(
                         engine, deskewWs, PROD_SCALES, rotPath = false, maxN,
                     )
@@ -125,8 +115,6 @@ object PumpDetDiscoverDump {
                         .put(
                             "recipes",
                             JSONObject()
-                                .put("p4-deskew", recipeJson(P4_DET, P4_SCALES, tilt, p4Deskew))
-                                .put("p4-rot", recipeJson(P4_DET, P4_SCALES, 0f, p4Rot))
                                 .put("prod-deskew", recipeJson("product_det", PROD_SCALES, tilt, prodDeskew))
                                 .put("prod-rot", recipeJson("product_det", PROD_SCALES, 0f, prodRot)),
                         )
@@ -150,7 +138,7 @@ object PumpDetDiscoverDump {
             .put("n_listed", photos.size)
             .put(
                 "recipes",
-                JSONArray(listOf("p4-deskew", "p4-rot", "prod-deskew", "prod-rot")),
+                JSONArray(listOf("prod-deskew", "prod-rot")),
             )
         manifest.put("version", BuildConfig.VERSION_NAME)
         manifest.put("product_path", NativePaddleEngine.activeProductPathId)

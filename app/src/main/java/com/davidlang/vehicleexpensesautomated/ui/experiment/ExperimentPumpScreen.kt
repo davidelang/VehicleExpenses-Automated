@@ -261,7 +261,7 @@ fun ExperimentPumpScreen(
     autoHorizAffected: Boolean = false,
     /** Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail — prod-ink fail subset. */
     autoProdInkFail: Boolean = false,
-    /** Deep link: vehicleexpenses://experiment/pump?auto=detdump — four discover recipes, no expand/OCR. */
+    /** Deep link: vehicleexpenses://experiment/pump?auto=detdump — prod deskew/rot discover, no expand/OCR. */
     autoDetDump: Boolean = false,
     /** Deep link: vehicleexpenses://experiment/pump?auto=selected — coverage selected sample (pump only). */
     autoSelectedSample: Boolean = false,
@@ -407,7 +407,7 @@ fun ExperimentPumpScreen(
         } else {
             totalPhotos = n
             val ok = ExperimentJobRunner.start(context.applicationContext, kind = "pump") { progressCb, log, statusLine ->
-                statusLine("Det dump (P4/prod × deskew/rot)…")
+                statusLine("Det dump (prod × deskew/rot)…")
                 val res = PumpDetDiscoverDump.run(
                     context = context.applicationContext,
                     photoDir = experimentDir,
@@ -420,7 +420,7 @@ fun ExperimentPumpScreen(
             if (!ok) {
                 status = "Another experiment is already running (${ExperimentJobRunner.state.value.kind})"
             } else {
-                status = "Det dump (P4/prod × deskew/rot)…"
+                status = "Det dump (prod × deskew/rot)…"
             }
         }
     }
@@ -574,7 +574,7 @@ fun ExperimentPumpScreen(
         }
         Text(
             "Horiz-affected = photos where exact min_v changed between horiz 0.5 and 1.0 " +
-                "(phone 08-08). Columns: G-- / G4 / P4-jump / m65 / gx / xycut / rot / Prod. " +
+                "(phone 08-08). Columns: G-- / ink-prod / jump-prod / rot-ink-prod (+ color). " +
                 "Deep link: vehicleexpenses://experiment/pump?auto=horiz",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
@@ -589,7 +589,7 @@ fun ExperimentPumpScreen(
         }
         Text(
             "Prod-ink fail = photos where ink-prod or rot-ink-prod is not exact (relax=fail) " +
-                "on 23-18, excluding fields no column reads; columns still the full scheduled set (18). " +
+                "on 23-18, excluding fields no column reads; columns still the full scheduled set (7). " +
                 "Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
@@ -600,10 +600,10 @@ fun ExperimentPumpScreen(
             enabled = !isRunning && experimentDir.exists(),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Det dump (P4/prod × deskew/rot)")
+            Text("Det dump (prod × deskew/rot)")
         }
         Text(
-            "Four discover-only runs (p4/prod × deskew/rot); no expand/OCR; all pump_photos. " +
+            "Two discover-only runs (prod × deskew/rot); no expand/OCR; all pump_photos. " +
                 "Writes pump_reports/pump_det_boxes_<ts>/. " +
                 "Deep link: vehicleexpenses://experiment/pump?auto=detdump",
             style = MaterialTheme.typography.labelSmall,
@@ -714,23 +714,12 @@ suspend fun runPumpExperiment(
 
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
-        "Set G4-vjump",
-        "Set chi2-p4",
-        "Set chi2-p4-color",
-        "Set ink-p4",
-        "Set ink-p4-color",
         "Set ink-prod",
         "Set ink-prod-color",
-        "Set jump-p4",
-        "Set jump-p4-color",
         "Set jump-prod",
         "Set jump-prod-color",
-        "Set rot-ink-p4",
-        "Set rot-ink-p4-color",
         "Set rot-ink-prod",
         "Set rot-ink-prod-color",
-        "Set xycut-p4",
-        "Set xycut-p4-color",
     )
     val heatDumpRoot by lazy {
         File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
@@ -864,7 +853,6 @@ suspend fun runPumpExperiment(
                 // (stackVertically, runPaddleDiscovery) that close over them (and before the inline discovery).
                 // This resolves forward-ref compile issues for 'scales', the pd*Totals, mlBlocksRaw etc that the
                 // helpers reference. (The processedScales for the inline remains at its site for now.)
-                val p4DetScales = listOf(224, 1024)
                 val prodDetScales = listOf(224, 608)
                 val mlBlocksRaw = mutableListOf<PumpHunk>()
                 val pdHunksRawTotal = mutableListOf<PumpHunk>()
@@ -1280,7 +1268,7 @@ suspend fun runPumpExperiment(
                     hmThresh: Float = HEAT_THR_U8_GE1,
                     /** 3x3 heat-mask dilate passes before CC (L=2, M=5). Merges nearby heat. */
                     maskDilatePasses: Int = 0,
-                    /** Null = product det. G4 uses PP-OCRv4_mobile_det. */
+                    /** Null = product det. */
                     expDetAsset: String? = null,
                     /** If true, width is P4-jump L/R jump-retract (no [horizFactor] / orange). */
                     horizJump: Boolean = false,
@@ -1707,36 +1695,6 @@ suspend fun runPumpExperiment(
                     dumpHeats = false,
                     horizFactor = SET_G_HORIZ_FACTOR,
                     hmThresh = HEAT_THR_U8_GE1,
-                )
-                val procG4 = makeGProc(
-                    SET_G4_VERT_FACTORS,
-                    "G4: v4 mobile det + G-style calculated verts 0.0/0.1/0.3 (best triple vs 0–0.3 union on v0.98-212 167×2); horiz=0.5; deskew; u8≥1",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    horizFactor = SET_G_HORIZ_FACTOR,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    detScales = p4DetScales,
-                )
-                val procG4Vjump = makeGProc(
-                    SET_G4_VJUMP_VERT_FACTORS,
-                    "G4-vjump: v4 det + 4 verts 0.0/0.1/0.2/0.5 then L/R jump-retract (no 0.5×H); deskew; u8≥1",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    horizJump = true,
-                    detScales = p4DetScales,
-                )
-                val procP4Ink = makeGProc(
-                    emptyList(),
-                    "ink-p4: v4 det + seed-ROI s; walk once; OCR k=0/1; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    seg7Stroke = true,
-                    detScales = p4DetScales,
                 )
                 val procProdInk = makeGProc(
                     emptyList(),
@@ -2679,87 +2637,6 @@ suspend fun runPumpExperiment(
                     doDeskew = true,
                     useOriented = false,
                 )
-                val procP4 = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4: PP-OCRv4_mobile det + interior-energy expand (jump off, deskew)",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = false,
-                    doDeskew = true,
-                    useOriented = false,
-                    detScales = p4DetScales,
-                )
-                val procP4Jump = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "jump-p4: energy maxFrac=0.4; final = energy crop (cap is leash only)",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = true,
-                    useOriented = false,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = alignedExpandMaxFrac,
-                    energyRatio = 0.65f,
-                    detScales = p4DetScales,
-                )
-                val procP4M65 = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-m65: frozen-width mean |∇| 0.65 + 0.08·seedH pad + L/R jump; final = energy crop",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = true,
-                    useOriented = false,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = alignedExpandMaxFrac,
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
-                    vertPadFrac = 0.08f,
-                    detScales = p4DetScales,
-                )
-                val procP4M65p20 = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-m65p20: frozen-width mean |∇| 0.65 + 0.20·seedH pad + L/R jump; final = energy crop",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = true,
-                    useOriented = false,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = alignedExpandMaxFrac,
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertEnergy = ContentExpandUtils.VertEnergyKind.MAGNITUDE,
-                    vertPadFrac = 0.20f,
-                    detScales = p4DetScales,
-                )
-                val procP4Xycut = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "xycut-p4: frozen-width XY-cut on |∂I/∂x| + 0.15·seedH pad + L/R jump; final = energy crop",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = true,
-                    useOriented = false,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = alignedExpandMaxFrac,
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertEnergy = ContentExpandUtils.VertEnergyKind.XYCUT_GX,
-                    vertPadFrac = 0.15f,
-                    detScales = p4DetScales,
-                )
-                val procChi2P4 = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "chi2-p4: frozen-width row-gray χ² k=3.5 consec=2 + 0.08·seedH pad + L/R jump; final = energy crop",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = true,
-                    useOriented = false,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = alignedExpandMaxFrac,
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertEnergy = ContentExpandUtils.VertEnergyKind.CHI2,
-                    vertPadFrac = 0.08f,
-                    detScales = p4DetScales,
-                )
                 val procPRot = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
                     "P-rot: one minAreaRect detect, no deskew, expandOriented, warp rec",
@@ -2767,31 +2644,6 @@ suspend fun runPumpExperiment(
                     enableJump = false,
                     doDeskew = false,
                     useOriented = true,
-                )
-                val procP4Rot = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "P4-rot: one v4 minAreaRect detect, expandOriented, warp rec",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = false,
-                    doDeskew = false,
-                    useOriented = true,
-                    detScales = p4DetScales,
-                )
-                val procP4RotInk = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "rot-ink-p4: v4 oriented det + AABB ink walk once; OCR k=0/1; official k=1; jump (no G-list)",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = false,
-                    useOriented = true,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = rotExpandMaxFrac,
-                    vertSweep = emptyList(),
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertPadFrac = 0.0f,
-                    seg7Stroke = true,
-                    detScales = p4DetScales,
                 )
                 val procProdJump = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -2833,33 +2685,6 @@ suspend fun runPumpExperiment(
                     vertPadFrac = 0.0f,
                     seg7Stroke = true,
                 )
-                val procChi2P4Color = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "chi2-p4-color: fused |∇Y|+|∇C| χ² k=3.5 consec=2 + 0.08 pad + L/R jump on Y mag; final = expand crop",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = true,
-                    useOriented = false,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = alignedExpandMaxFrac,
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertEnergy = ContentExpandUtils.VertEnergyKind.CHI2,
-                    vertPadFrac = 0.08f,
-                    detScales = p4DetScales,
-                    chromaExpand = true,
-                )
-                val procInkP4Color = makeGProc(
-                    emptyList(),
-                    "ink-p4-color: chromaMag 7seg walk (median<8 Y fallback); OCR k=0/1; official k=1; jump on Y",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    seg7Stroke = true,
-                    detScales = p4DetScales,
-                    chromaExpand = true,
-                )
                 val procInkProdColor = makeGProc(
                     emptyList(),
                     "ink-prod-color: product det + chromaMag 7seg (median<8 Y fallback); OCR k=0/1; official k=1",
@@ -2868,19 +2693,6 @@ suspend fun runPumpExperiment(
                     hmThresh = HEAT_THR_U8_GE1,
                     expDetAsset = null,
                     seg7Stroke = true,
-                    chromaExpand = true,
-                )
-                val procJumpP4Color = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "jump-p4-color: fused |∇Y|+|∇C| maxFrac=0.4; L/R jump on Y mag 0.65; final = expand crop",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = true,
-                    useOriented = false,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = alignedExpandMaxFrac,
-                    energyRatio = 0.65f,
-                    detScales = p4DetScales,
                     chromaExpand = true,
                 )
                 val procJumpProdColor = makeContentExpandProc(
@@ -2893,23 +2705,6 @@ suspend fun runPumpExperiment(
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
                     energyRatio = 0.65f,
-                    chromaExpand = true,
-                )
-                val procRotInkP4Color = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "rot-ink-p4-color: v4 oriented det + chroma AABB ink walk; OCR k=0/1; official k=1; jump on Y",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = false,
-                    useOriented = true,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = rotExpandMaxFrac,
-                    vertSweep = emptyList(),
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertPadFrac = 0.0f,
-                    seg7Stroke = true,
-                    detScales = p4DetScales,
                     chromaExpand = true,
                 )
                 val procRotInkProdColor = makeContentExpandProc(
@@ -2926,22 +2721,6 @@ suspend fun runPumpExperiment(
                     freezeHorzDuringVert = true,
                     vertPadFrac = 0.0f,
                     seg7Stroke = true,
-                    chromaExpand = true,
-                )
-                val procXycutP4Color = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "xycut-p4-color: fused |∂Y/∂x|+|∂C/∂x| XY-cut + 0.15 pad; L/R jump on Y mag; final = expand crop",
-                    expDetAsset = "PP-OCRv4_mobile_det",
-                    enableJump = true,
-                    doDeskew = true,
-                    useOriented = false,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = alignedExpandMaxFrac,
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertEnergy = ContentExpandUtils.VertEnergyKind.XYCUT_GX,
-                    vertPadFrac = 0.15f,
-                    detScales = p4DetScales,
                     chromaExpand = true,
                 )
                 // Hybrid helpers: current-pass discovery+filter+prune; append stage blue OCR to combined lists.
@@ -3131,31 +2910,18 @@ suspend fun runPumpExperiment(
                 }
                 val flowProcessors = buildList {
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
-                    add("Set G4-vjump" to procG4Vjump)
-                    add("Set chi2-p4" to procChi2P4)
-                    add("Set chi2-p4-color" to procChi2P4Color)
-                    add("Set ink-p4" to procP4Ink)
-                    add("Set ink-p4-color" to procInkP4Color)
                     add("Set ink-prod" to procProdInk)
                     add("Set ink-prod-color" to procInkProdColor)
-                    add("Set jump-p4" to procP4Jump)
-                    add("Set jump-p4-color" to procJumpP4Color)
                     add("Set jump-prod" to procProdJump)
                     add("Set jump-prod-color" to procJumpProdColor)
-                    add("Set rot-ink-p4" to procP4RotInk)
-                    add("Set rot-ink-p4-color" to procRotInkP4Color)
                     add("Set rot-ink-prod" to procProdRotInk)
                     add("Set rot-ink-prod-color" to procRotInkProdColor)
-                    add("Set xycut-p4" to procP4Xycut)
-                    add("Set xycut-p4-color" to procXycutP4Color)
                 }
-                // Parked (compiled, not scheduled): P/P-jump/P4/P-rot, H*, L/M, G-dense/K,
-                // experiment G4 / P4-m65 / p20 / Prod-m65 (0035 leftovers).
+                // Parked (compiled, not scheduled): P/P-jump/P-rot, H*, L/M, G-dense/K, Prod-m65.
                 @Suppress("UNUSED_VARIABLE")
                 val parked = listOf(
-                    procGDense, procK, procP, procPJump, procP4,
-                    procPRot, procP4Rot,
-                    procG4, procP4M65, procP4M65p20, procProdM65,
+                    procGDense, procK, procP, procPJump,
+                    procPRot, procProdM65,
                 ) +
                     procHorizByFactor.values + listOf(procL, procM)
                 val processor = flowProcessors.firstOrNull { it.first == flowName }?.second
