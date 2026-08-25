@@ -8317,3 +8317,7 @@ Plan native-aabb-ink-chroma-expand-20260824-1608 CODE LANDED. JNI many-seed AABB
 ## 2026-08-24 - Phase 1: Prod-ink fail 76→60 salvable
 
 PROD_INK_FAIL_FILENAMES is JSON union_salvable (60, same order). Dropped 16 nobody-exact. Caption: excluding fields no column reads; full scheduled set (18). Flows: Prod-ink fail (60). Horiz-affected still 76. Deep link unchanged.
+
+## 2026-08-24 - CODE LANDED: prod-ink-fail-subset-60-salvable
+
+Plan prod-ink-fail-subset-60-salvable-20260824-1657 CODE LANDED. Prod-ink fail subset is 60 union_salvable. 16 nobody-exact dropped. Caption/flows: 18 columns, no “full nine”. Horiz-affected still 76. Deep link auto=prodinkfail unchanged.
