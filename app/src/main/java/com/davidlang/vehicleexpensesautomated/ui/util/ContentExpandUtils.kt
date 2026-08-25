@@ -1214,7 +1214,9 @@ object ContentExpandUtils {
         chroma: Boolean,
         k: Float = SEG7_K,
         j: Float = SEG7_J,
+        chromaMode: Int = -1,
     ): List<Seg7Expand>? {
+        val mode = if (chromaMode >= 0) chromaMode else if (chroma) 1 else 0
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
             return seeds.map { Seg7Expand(it, strokeWidthInSeed(gray, it), k, j) }
         }
@@ -1229,7 +1231,7 @@ object ContentExpandUtils {
             packed[i * 4 + 2] = s.right
             packed[i * 4 + 3] = s.bottom
         }
-        val r = NativeImageUtils.seg7ManyNative(gray, uv, packed, chroma) ?: return null
+        val r = NativeImageUtils.seg7ManyNative(gray, uv, packed, mode) ?: return null
         if (r.size < seeds.size * 8) return null
         return seeds.indices.map { i ->
             val o = i * 8
@@ -1378,9 +1380,15 @@ object ContentExpandUtils {
         seed: Rect,
         k: Float = SEG7_K,
         j: Float = SEG7_J,
+        chromaMode: Int = 1,
     ): Seg7Expand {
-        val many = expand7segFromSeedMany(y, uv, listOf(seed), chroma = true, k, j)
+        val many = expand7segFromSeedMany(
+            y, uv, listOf(seed), chroma = chromaMode != 0, k, j, chromaMode = chromaMode,
+        )
         if (many != null && many.size == 1) return many[0]
+        if (chromaMode == 2) {
+            return expand7segFromSeed(y, seed, k, j)
+        }
         val c = chromaMagU8(y, uv)
         try {
             if (y.empty() || y.type() != CvType.CV_8UC1) {

@@ -589,7 +589,7 @@ fun ExperimentPumpScreen(
         }
         Text(
             "Prod-ink fail = photos where ink-prod or rot-ink-prod is not exact (relax=fail) " +
-                "on 23-18, excluding fields no column reads; columns still the full scheduled set (7). " +
+                "on 23-18, excluding fields no column reads; columns still the full scheduled set (8). " +
                 "Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
@@ -716,6 +716,7 @@ suspend fun runPumpExperiment(
         "Set G-- (4 pass, none, calculated)",
         "Set ink-prod",
         "Set ink-prod-color",
+        "Set ink-prod-color2",
         "Set jump-prod",
         "Set jump-prod-color",
         "Set rot-ink-prod",
@@ -1277,6 +1278,8 @@ suspend fun runPumpExperiment(
                     detScales: List<Int> = prodDetScales,
                     /** Color expand only. Gray call sites omit this (default false). */
                     chromaExpand: Boolean = false,
+                    /** 0 gray, 1 chromaMag, 2 chromaTint2. Nonzero wins over [chromaExpand]. */
+                    chromaMode: Int = 0,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val workspace = ws
                     val branch = br
@@ -1437,6 +1440,7 @@ suspend fun runPumpExperiment(
                 val inkWalkBoxes: List<android.graphics.Rect>
                 val inkJumpOpts: ContentExpandUtils.ExpandOptions?
                 if (seg7Stroke) {
+                    val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
@@ -1453,17 +1457,20 @@ suspend fun runPumpExperiment(
                     }
                     val segs = ContentExpandUtils.expand7segFromSeedMany(
                         workspace.p.mat,
-                        if (chromaExpand) workspace.p.uvMat else null,
+                        if (expandMode != 0) workspace.p.uvMat else null,
                         seeds,
-                        chroma = chromaExpand,
+                        chroma = expandMode == 1,
                         k = 0f,
+                        chromaMode = expandMode,
                     ) ?: seeds.map { r ->
-                        if (chromaExpand) {
-                            ContentExpandUtils.expand7segFromSeedChroma(
+                        when (expandMode) {
+                            2 -> ContentExpandUtils.expand7segFromSeed(
+                                workspace.p.mat, r, k = 0f, doHorizontal = false,
+                            )
+                            1 -> ContentExpandUtils.expand7segFromSeedChroma(
                                 workspace.p.mat, workspace.p.uvMat, r, k = 0f,
                             )
-                        } else {
-                            ContentExpandUtils.expand7segFromSeed(
+                            else -> ContentExpandUtils.expand7segFromSeed(
                                 workspace.p.mat, r, k = 0f, doHorizontal = false,
                             )
                         }
@@ -1507,7 +1514,9 @@ suspend fun runPumpExperiment(
                     branch.metadata["seg7_gap_frac"] = ContentExpandUtils.SEG7_GAP_FRAC.toString()
                     branch.metadata["seg7_jump_frac"] = "0.40"
                     branch.metadata["seg7_retract_clear_frac"] = "0.30"
-                    if (chromaExpand) {
+                    if (expandMode == 2) {
+                        branch.metadata["content_expand_chroma"] = "color2"
+                    } else if (expandMode == 1 || chromaExpand) {
                         branch.metadata["content_expand_chroma"] = "true"
                     }
                     branch.metadata["t_expand_ms"] =
@@ -2723,6 +2732,16 @@ suspend fun runPumpExperiment(
                     seg7Stroke = true,
                     chromaExpand = true,
                 )
+                val procInkProdColor2 = makeGProc(
+                    emptyList(),
+                    "ink-prod-color2: product det + chroma tintMask 7seg (u_p·u_ink / Y polarity); OCR k=0/1; official k=1",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    expDetAsset = null,
+                    seg7Stroke = true,
+                    chromaMode = 2,
+                )
                 val procJumpProdColor = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
                     "jump-prod-color: product fused |∇Y|+|∇C| maxFrac=0.4; L/R jump on Y mag; final = expand crop",
@@ -2940,6 +2959,7 @@ suspend fun runPumpExperiment(
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
                     add("Set ink-prod" to procProdInk)
                     add("Set ink-prod-color" to procInkProdColor)
+                    add("Set ink-prod-color2" to procInkProdColor2)
                     add("Set jump-prod" to procProdJump)
                     add("Set jump-prod-color" to procJumpProdColor)
                     add("Set rot-ink-prod" to procProdRotInk)

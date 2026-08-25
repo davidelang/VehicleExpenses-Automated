@@ -8397,3 +8397,7 @@ Live QF = G--: product_det, 224+608, SET_G_MINUS_MINUS_VERT_FACTORS, SET_G_HORIZ
 ## 2026-08-25 - Phase 1: fillChromaTintMask + chromaMode=2
 
 Native fillChromaTintMask samples stroke chromaticity and ±s_px background, writes 255/0 tintMask. nativeSeg7Many chromaMode 0/1/2; mode 2 feeds tintMask as pre-bin to seg7One + dropWide. JNI jint. Gray/chromaMag path unchanged.
+
+## 2026-08-25 - Phase 2: Kotlin chromaMode + Set ink-prod-color2
+
+expand7segFromSeedMany/Chroma pass chromaMode 0/1/2. Scheduled 8th column Set ink-prod-color2 (makeGProc chromaMode=2). Metadata content_expand_chroma=color2. JNI-fail falls back to Y 7seg.
