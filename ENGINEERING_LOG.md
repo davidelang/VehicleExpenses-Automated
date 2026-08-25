@@ -8339,3 +8339,7 @@ AABB extra loop listOf(0f). Rot loop listOf(1f, 0f). seg7_k metadata 1,0. assemb
 ## 2026-08-24 - Phase 3: flows doc ink OCR k=0/1
 
 docs/PUMP_EXPERIMENT_FLOWS.md: lead + eight ink cells + rot paragraph OCR k=0 and k=1; official k=1; k=2/3 gone. 18-column set unchanged.
+
+## 2026-08-24 - CODE LANDED: ink-ocr-k0-drop-k23
+
+Plan ink-ocr-k0-drop-k23-20260824-1748 CODE LANDED. Eight ink columns OCR k=1 then k=0. Official/PD/final = k=1. padVertByStrokes(k<=0)=0. k=2/3 gone. Walk/QF/energy/18 names unchanged.
