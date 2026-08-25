@@ -54,7 +54,7 @@ Eighteen columns (10 gray + 8 `*-color`). **P4 / v4** discovery **224+1024** (no
 
 Metadata on expand columns: `content_expand_jump` / `content_expand_jump_frac` / `content_expand_ocr_scales` (assembly `ocrScales` / `finalOcrScale`). JSON `scaleVariants[]` has per-S rects/cands/final.
 
-**UI subset button:** **Horiz-affected (76)** still filters photos; columns are the full active set above. Deep link: `vehicleexpenses://experiment/pump?auto=horiz`. **Prod-ink fail (76)** filters to photos where ink-prod or rot-ink-prod is not exact (relax=fail) on 23-18 phone+tablet; columns still the full scheduled set (now 18). Deep link: `vehicleexpenses://experiment/pump?auto=prodinkfail`.
+**UI subset button:** **Horiz-affected (76)** still filters photos; columns are the full active set above. Deep link: `vehicleexpenses://experiment/pump?auto=horiz`. **Prod-ink fail (60)** filters to photos where ink-prod or rot-ink-prod is not exact (relax=fail) on 23-18 phone+tablet **and** some other scheduled column exacts that field (`union_salvable`); columns still the full scheduled set (18). Deep link: `vehicleexpenses://experiment/pump?auto=prodinkfail`.
 
 **Parked** (source, not scheduled): P / P-jump / P4 / P-rot / P4-rot, H* horiz, L/M dilate, N/O/Q content modes, G-dense, K, Set I.
 

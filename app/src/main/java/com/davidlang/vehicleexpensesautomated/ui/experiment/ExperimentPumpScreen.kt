@@ -554,7 +554,7 @@ fun ExperimentPumpScreen(
         }
         Text(
             "Prod-ink fail = photos where ink-prod or rot-ink-prod is not exact (relax=fail) " +
-                "on 23-18 phone+tablet; columns still the full nine (P4 stays). " +
+                "on 23-18, excluding fields no column reads; columns still the full scheduled set (18). " +
                 "Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,

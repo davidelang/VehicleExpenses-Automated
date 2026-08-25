@@ -8307,3 +8307,13 @@ docs/PUMP_EXPERIMENT_FLOWS.md: gray and color AABB energy + 7seg + Y jump are JN
 ## 2026-08-24 - CODE LANDED: native-aabb-ink-chroma-expand
 
 Plan native-aabb-ink-chroma-expand-20260824-1608 CODE LANDED. JNI many-seed AABB energy + 7seg + Y jump for gray and color. G4-vjump jump JNI. G-- calculated. Rec Y / 18 names unchanged. Ready to test tablet 12MP t_expand_ms.
+
+## 2026-08-24 - Execute: prod-ink-fail-subset-60-salvable
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/prod-ink-fail-subset-60-salvable-20260824-1657-plan.md`
+- Scope: Replace PROD_INK_FAIL_FILENAMES 76→60 union_salvable; drop 16 nobody-exact; caption + flows 60 / 18 columns (drop “full nine”). No expand / QF / Horiz-affected / JNI edits.
+
+## 2026-08-24 - Phase 1: Prod-ink fail 76→60 salvable
+
+PROD_INK_FAIL_FILENAMES is JSON union_salvable (60, same order). Dropped 16 nobody-exact. Caption: excluding fields no column reads; full scheduled set (18). Flows: Prod-ink fail (60). Horiz-affected still 76. Deep link unchanged.
