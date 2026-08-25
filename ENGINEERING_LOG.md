@@ -8361,3 +8361,7 @@ Pump screen button under Prod-ink fail. ExperimentJobRunner kind=pump. Deep link
 ## 2026-08-24 - Phase 3: fetch pump_det_boxes + flows note
 
 fetch_latest_reports.py pulls newest pump_det_boxes_<ts>/ even without pump_results. Flows: one-shot Det dump button, not every 18-col run.
+
+## 2026-08-24 - CODE LANDED: pump-det-discover-dump-button
+
+Plan pump-det-discover-dump-button-20260824-1941 CODE LANDED. One-shot Det dump button: four discover recipes, native+denest+union+pruned JSON. No expand/OCR. Not on 18-col path. Fetch newest pump_det_boxes_<ts>/.
