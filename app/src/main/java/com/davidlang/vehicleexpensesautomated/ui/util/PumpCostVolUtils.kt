@@ -6,7 +6,6 @@ import android.graphics.RectF
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
 import kotlin.math.max
 import kotlin.math.min
@@ -70,20 +69,9 @@ val SET_G_DENSE_VERT_FACTORS: List<Float> = listOf(
     1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f,
 )
 /**
- * Set G4 live verts. After v0.98-212 167×2 combo cover of the 0–0.3 union:
- * 0+0.1+0.3 misses 1 phone / 2 tablet vs that union; 0.2 and 0.25 add almost
- * nothing on top. Half-glyph leftovers still need v>0.3 and are not targeted.
- */
-val SET_G4_VERT_FACTORS: List<Float> = listOf(0.0f, 0.1f, 0.3f)
-/**
- * G4-vjump experiment column: 4-pass greedy from tablet 00-10-30 exact-pool
- * (covers 267 of 271 vs 26-v 0…2.5/0.1). Then P4-jump L/R jump-retract.
- */
-val SET_G4_VJUMP_VERT_FACTORS: List<Float> = listOf(0.0f, 0.1f, 0.2f, 0.5f)
-/**
  * Energy G-on-cap verts (m65 / gx / xycut / P4-rot / Prod-rot). v0.98-230
  * sweep first-unique clustered at 0.00 / 0.05 / 0.15. Used only when energy
- * hits maxFrac — not a per-seed sweep. P4-jump still uses G4 0/0.1/0.3.
+ * hits maxFrac — not a per-seed sweep.
  */
 val SET_M65_CAP_VERT_FACTORS: List<Float> = listOf(0.0f, 0.05f, 0.15f)
 /** Production / G-- horizontal pad as fraction of *expanded blue height* (each side). */
@@ -403,47 +391,6 @@ object PumpCostVolUtils {
             }
         }
         return blues to oranges
-    }
-
-    /**
-     * Per kept red AABB: each [vertFactors] v → vertical-only calculated pad (`horiz=0`),
-     * then INTERIOR_ENERGY L/R jump-retract. Never applies [SET_G_HORIZ_FACTOR].
-     */
-    fun createG4VjumpBlueHunksFromReds(
-        reds: List<PumpHunk>,
-        gray: Mat,
-        imgW: Int,
-        imgH: Int,
-        vertFactors: List<Float> = SET_G4_VJUMP_VERT_FACTORS,
-        jumpOpts: ContentExpandUtils.ExpandOptions = ContentExpandUtils.ExpandOptions(
-            maxFrac = 0.4f,
-            enableJump = true,
-            jumpFrac = 0.40f,
-            retractClearFrac = 0.30f,
-            energyRatio = 0.65f,
-        ),
-    ): List<PumpHunk> {
-        val pads = ArrayList<Rect>(reds.size * vertFactors.size)
-        reds.forEach { h ->
-            val r = Rect(
-                h.rect.left.toInt(), h.rect.top.toInt(),
-                h.rect.right.toInt(), h.rect.bottom.toInt(),
-            )
-            vertFactors.forEach { v ->
-                pads.add(ContentExpandUtils.calculatedAabb(r, v, horiz = 0f, imgW, imgH))
-            }
-        }
-        val jumped = ContentExpandUtils.jumpRetractHorizontalMany(gray, pads, jumpOpts)
-            ?: pads.map { ContentExpandUtils.jumpRetractHorizontal(gray, it, jumpOpts) }
-        return jumped.map { j ->
-            PumpHunk(
-                "",
-                RectF(
-                    j.left.toFloat(), j.top.toFloat(),
-                    j.right.toFloat(), j.bottom.toFloat(),
-                ),
-            )
-        }
     }
 
     fun rectToJson(r: Rect): JSONObject =

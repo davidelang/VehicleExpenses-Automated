@@ -1513,9 +1513,37 @@ suspend fun runPumpExperiment(
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                 } else if (horizJump) {
-                    customBlueG = PumpCostVolUtils.createG4VjumpBlueHunksFromReds(
-                        pdHunksRawTotal, workspace.p.mat, imgW, imgH, gVertFactors,
+                    val jumpOpts = ContentExpandUtils.ExpandOptions(
+                        maxFrac = 0.4f,
+                        enableJump = true,
+                        jumpFrac = 0.40f,
+                        retractClearFrac = 0.30f,
+                        energyRatio = 0.65f,
                     )
+                    val pads = ArrayList<android.graphics.Rect>(pdHunksRawTotal.size * gVertFactors.size)
+                    pdHunksRawTotal.forEach { h ->
+                        val r = android.graphics.Rect(
+                            h.rect.left.toInt(), h.rect.top.toInt(),
+                            h.rect.right.toInt(), h.rect.bottom.toInt(),
+                        )
+                        gVertFactors.forEach { v ->
+                            pads.add(ContentExpandUtils.calculatedAabb(r, v, horiz = 0f, imgW, imgH))
+                        }
+                    }
+                    val jumped = ContentExpandUtils.jumpRetractHorizontalMany(
+                        workspace.p.mat, pads, jumpOpts,
+                    ) ?: pads.map {
+                        ContentExpandUtils.jumpRetractHorizontal(workspace.p.mat, it, jumpOpts)
+                    }
+                    customBlueG = jumped.map { j ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                j.left.toFloat(), j.top.toFloat(),
+                                j.right.toFloat(), j.bottom.toFloat(),
+                            ),
+                        )
+                    }
                     customOrangeG = emptyList()
                     seg7Strokes = emptyList()
                     inkWalkSeeds = emptyList()

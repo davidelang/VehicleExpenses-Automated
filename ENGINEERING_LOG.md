@@ -8383,3 +8383,7 @@ git mv PP-OCRv4_mobile_det_*.nb to third_party/paddle/exp_det_ab_unscheduled/. A
 ## 2026-08-25 - Phase 3: 7 pump columns + prod-only dump
 
 flows/flowProcessors = 7 product/G-- names. Deleted v4 processors (scheduled and parked). Det dump recipes prod-deskew + prod-rot only. Button Det dump (prod × deskew/rot). PUMP_EXPERIMENT_FLOWS.md 7-col; QF=G--; scheduled set (7).
+
+## 2026-08-25 - Phase 4: QF G-- + GT ? + facts
+
+Live QF = G--: product_det, 224+608, SET_G_MINUS_MINUS_VERT_FACTORS, SET_G_HORIZ_FACTOR, createBlueAndOrangeHunksFromReds, classify blues, debug pipeline=G--. Renamed extractQuickFillGMinusMinusCostVol. Deleted SET_G4_* and createG4VjumpBlueHunksFromReds. GT 13.017? / 19.86?; dng 90.03? and jpg 90.03 kept. project-facts exp_det_ab = product_det only.

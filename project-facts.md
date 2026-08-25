@@ -41,7 +41,7 @@ Read in full early on startup/new cycle.
 - Host installers (`grok-install.sh`, `antigravity-install`) are **local only** (gitignored); `run-*` launchers sync to worktrees. `./update-rules.sh` skips worktree-ahead/dirty paths unless `--force`; supports `--dry-run`.
 
 ## Application ABI / Paddle assets
-- Production models: `app/src/arm64/assets/paddle/prod_u8fp16/*_armv8.nb`, `app/src/x86_64/assets/paddle/prod_u8fp32_u8/*_x86_64.nb`, `app/src/armv7/assets/paddle/prod_u8fp32_u8/*_armv7.nb`; shared dict `app/src/main/assets/paddle/en_dict.txt`; scheduled exp dets `app/src/<abi>/assets/paddle/exp_det_ab/`
+- Production models: `app/src/arm64/assets/paddle/prod_u8fp16/*_armv8.nb`, `app/src/x86_64/assets/paddle/prod_u8fp32_u8/*_x86_64.nb`, `app/src/armv7/assets/paddle/prod_u8fp32_u8/*_armv7.nb`; shared dict `app/src/main/assets/paddle/en_dict.txt`; scheduled exp dets `app/src/<abi>/assets/paddle/exp_det_ab/` (`product_det` only); v4/v5 mobile+server nbs live under `third_party/paddle/exp_det_ab_unscheduled/` (not in APK)
 - Runtime: `app/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/`, `app/libs/PaddlePredictor.jar`
 - JNI sizing: arm64-v8a tailored ~1.6MB; x86_64 slim jni + `libpaddle_light_api_shared.so`; armeabi-v7a fat multi-path lib (interim)
 - Product ABIs: arm64-v8a + armeabi-v7a + x86_64 flavor APKs (`useLegacyPackaging = false`). arm64/x86 jni = First-10-good pin ship.

@@ -107,7 +107,7 @@ HTML layout: photo id column + scale column + **one cell per det model** (host-s
 
 Removed clusters include: sets A–H / D / E / G / G- columns, binPeak stack, ML discovery. **procI** remains in source but is not scheduled.
 
-**Not modified:** Quick Fill / `OcrHarness` / `SET_G_MINUS_MINUS_VERT_FACTORS` production constants.
+**Live QF** copies experiment G-- (`OcrHarness.extractQuickFillGMinusMinusCostVol` + `SET_G_MINUS_MINUS_VERT_FACTORS` + `SET_G_HORIZ_FACTOR`).
 
 ## 1. The Tree Architecture (`PumpBranch`)
 

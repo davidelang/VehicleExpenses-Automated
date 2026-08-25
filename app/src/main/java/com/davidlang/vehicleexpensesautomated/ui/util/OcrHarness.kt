@@ -303,9 +303,9 @@ object OcrHarness {
     ): JsonObject {
         val cv = extracted.result
         return JsonObject().apply {
-            addProperty("pipeline", "G4-vjump")
+            addProperty("pipeline", "G--")
             addProperty("det_model", extracted.detModel)
-            addProperty("vert_factors", SET_G4_VJUMP_VERT_FACTORS.joinToString(","))
+            addProperty("vert_factors", SET_G_MINUS_MINUS_VERT_FACTORS.joinToString(","))
             addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
             addProperty("cost", cv.cost)
             addProperty("volume", cv.vol)
@@ -382,7 +382,7 @@ object OcrHarness {
         }
     }
 
-    private suspend fun extractQuickFillG4CostVol(
+    private suspend fun extractQuickFillGMinusMinusCostVol(
         context: Context,
         workspace: BufferSet,
         paddleEngine: NativePaddleEngine,
@@ -397,7 +397,7 @@ object OcrHarness {
 
         val detModel = "product_det"
 
-        val scales = listOf(224, 1024)
+        val scales = listOf(224, 608)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
         val pdHunksExpTotal = mutableListOf<PumpHunk>()
         val pdHunksMaxTotal = mutableListOf<PumpHunk>()
@@ -432,8 +432,9 @@ object OcrHarness {
         val rawRects = redPixelList.toList()
         if (pdHunksRawTotal.isEmpty()) return empty.copy(detModel = detModel, rawRects = rawRects)
 
-        val customBlueGPre = PumpCostVolUtils.createG4VjumpBlueHunksFromReds(
-            pdHunksRawTotal, workspace.p.mat, imgW, imgH,
+        val (customBlueGPre, _) = PumpCostVolUtils.createBlueAndOrangeHunksFromReds(
+            pdHunksRawTotal, imgW, imgH,
+            SET_G_MINUS_MINUS_VERT_FACTORS, SET_G_HORIZ_FACTOR,
         )
         val customBluePixelG = PumpCostVolUtils.hunksToRects(customBlueGPre)
         if (customBluePixelG.isEmpty()) {
@@ -458,8 +459,8 @@ object OcrHarness {
     }
 
     /**
-     * Quick Fill pump cost/volume: experiment G4-vjump (v4 det, 224+1024,
-     * verts 0.0/0.1/0.2/0.5, then L/R jump-retract; no 0.5×H).
+     * Quick Fill pump cost/volume: experiment G-- (product det, 224+608,
+     * verts 0.1/0.3/0.4/1.1, horiz 0.5). Classify blues. Overlay outlines blues.
      */
     suspend fun runPumpCostVolPipeline(
         context: Context,
@@ -485,7 +486,7 @@ object OcrHarness {
 
             val paddleEngine = NativePaddleEngine(context, "Numeric")
             val recBuffer = NativePaddleEngine.recBufferSet
-            val extracted = extractQuickFillG4CostVol(
+            val extracted = extractQuickFillGMinusMinusCostVol(
                 context,
                 masterBuffer,
                 paddleEngine,
@@ -520,7 +521,8 @@ object OcrHarness {
             val err = "Pump OCR failed: ${e.message ?: "Unknown error"}"
             val debugJson = if (debug) {
                 JsonObject().apply {
-                    addProperty("pipeline", "G4-vjump")
+                    addProperty("pipeline", "G--")
+                    addProperty("det_model", "product_det")
                     addProperty("error", err)
                     addProperty("exception", e.message)
                     addProperty("pipeline_time_ms", System.currentTimeMillis() - t0)
@@ -532,7 +534,7 @@ object OcrHarness {
 
     /**
      * Batch-import pump cost/volume via **Set I** (D+E+G hybrid).
-     * Does not change Quick Fill [runPumpCostVolPipeline] (G4-vjump).
+     * Does not change Quick Fill [runPumpCostVolPipeline] (G--).
      * [masterBuffer] must already hold the full photo in primary (after ingest).
      */
     suspend fun runPumpCostVolPipelineSetI(
