@@ -8357,3 +8357,7 @@ New PumpDetDiscoverDump.kt: ingest once; deskew copy vs raw; p4/prod × deskew/r
 ## 2026-08-24 - Phase 2: Det dump button + auto=detdump
 
 Pump screen button under Prod-ink fail. ExperimentJobRunner kind=pump. Deep link auto=detdump (alias detboxes). runPumpExperiment / 18 flows unedited.
+
+## 2026-08-24 - Phase 3: fetch pump_det_boxes + flows note
+
+fetch_latest_reports.py pulls newest pump_det_boxes_<ts>/ even without pump_results. Flows: one-shot Det dump button, not every 18-col run.
