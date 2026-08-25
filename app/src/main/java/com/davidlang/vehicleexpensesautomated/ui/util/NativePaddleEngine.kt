@@ -92,10 +92,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val sharedTiers = mutableMapOf<Int, PaddlePredictor>()
         val sharedTierBuffers = mutableMapOf<Int, FloatArray>()
         val sharedTiersInt8 = mutableMapOf<Int, ByteArray>()
-        /** QF G4 det only. Never swap [sharedTiers] (odo + experiment stay on product). */
-        val g4Tiers = mutableMapOf<Int, PaddlePredictor>()
-        val g4TiersInt8 = mutableMapOf<Int, ByteArray>()
-        const val G4_DET_ASSET_BASE = "PP-OCRv4_mobile_det"
         /** Host letterbox + max-merged heat for tiled large det (not Lite tensors). */
         private var largeDetCanvasU8: ByteArray? = null
         private var largeDetHeatU8: ByteArray? = null
@@ -205,55 +201,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // Drop large host buffers so next load reallocates clean sizes for the path.
             sharedTierBuffers.clear()
             sharedTiersInt8.clear()
-            val g4 = g4Tiers.toMap()
-            g4Tiers.clear()
-            for ((scale, pred) in g4) {
-                releasePredictor(pred, "g4_det_tier_$scale")
-            }
-            g4TiersInt8.clear()
             largeDetCanvasU8 = null
             largeDetHeatU8 = null
             System.gc()
-        }
-
-        /**
-         * Lazy-load v4 mobile det into [g4Tiers] without touching [sharedTiers] or
-         * [activeProductPathId]. Returns false if the ABI asset is missing (e.g. armv7).
-         */
-        @Synchronized
-        fun ensureG4DetTiers(context: Context): Boolean {
-            if (g4Tiers.isNotEmpty() && TIER_SCALES.all { g4Tiers.containsKey(it) }) return true
-            val arch = modelArchForPrimaryAbi()
-            val asset = "paddle/exp_det_ab/${G4_DET_ASSET_BASE}_$arch.nb"
-            try {
-                context.assets.open(asset).close()
-            } catch (_: Throwable) {
-                Log.w("PaddleLite", "ensureG4DetTiers: no asset $asset — QF will use product det")
-                return false
-            }
-            val f = File(context.filesDir, "g4_" + asset.replace("/", "_"))
-            context.assets.open(asset).use { inp -> FileOutputStream(f).use { out -> inp.copyTo(out) } }
-            val detPath = f.absolutePath
-            Log.i("PaddleLite", "ensureG4DetTiers arch=$arch → $detPath")
-            for ((scale, p) in g4Tiers.toList()) {
-                releasePredictor(p, "g4_reload_$scale")
-                g4Tiers.remove(scale)
-            }
-            g4TiersInt8.clear()
-            val config = MobileConfig()
-            // Match pin-era First 10 goldens (b8449343): threads=4. threads=1 did not restore
-            // L1 cost 84.50 and reduced heatmap mass further in A/B on emu-5554.
-            config.setThreads(4)
-            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
-            TIER_SCALES.forEach { scale ->
-                config.setModelFromFile(detPath)
-                val p = PaddlePredictor.createPaddlePredictor(config)
-                    ?: throw IllegalStateException("createPaddlePredictor G4 det null scale=$scale")
-                p.getInput(0).resize(longArrayOf(1, 1, scale.toLong(), scale.toLong()))
-                g4Tiers[scale] = p
-                g4TiersInt8[scale] = ByteArray(1 * scale * scale)
-            }
-            return true
         }
 
         // Phase 116: Unified Rigid Backing Fields
@@ -555,10 +505,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         }
 
         /**
-         * Replace **det tiers only** with an experiment nb (e.g. exp_det_ab PP-OCRv4_mobile_det).
-         * Rec models stay production. Call [restoreProductionDetTiers] after the experiment column.
+         * Replace **det tiers only** with an experiment nb under `exp_det_ab/` (scheduled:
+         * `product_det` only). Rec models stay production. Call [restoreProductionDetTiers]
+         * after the experiment column.
          *
-         * @param assetBase name without arch/`.nb`, e.g. `PP-OCRv4_mobile_det`
+         * @param assetBase name without arch/`.nb`, e.g. `product_det`
          */
         fun loadExperimentDetTiers(context: Context, assetBase: String) {
             val arch = modelArchForPrimaryAbi()
@@ -644,7 +595,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         hmThresh: Float = 0.0f,
         /** 3x3 mask dilate passes before CC (experiment L/M). 0 = off. */
         maskDilatePasses: Int = 0,
-        /** Null = product [sharedTiers]. QF G4 passes [g4Tiers] / [g4TiersInt8]. */
+        /** Null = product [sharedTiers]. */
         detTiers: Map<Int, PaddlePredictor>? = null,
         detTiersInt8: Map<Int, ByteArray>? = null,
     ): DetectionResult? {

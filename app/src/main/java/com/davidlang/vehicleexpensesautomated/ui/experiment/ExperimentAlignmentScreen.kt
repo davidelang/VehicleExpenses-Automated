@@ -335,31 +335,25 @@ data class PipelineConfig(
  * | set_j  | product | char-aware                      |
  * | set_l  | product | P = INTERIOR_ENERGY + jump      |
  * | set_v  | product | valley                          |
- * | set_o  | v4 mob  | char-aware                      |
- * | set_n  | v4 mob  | P = INTERIOR_ENERGY + jump      |
- * | set_w  | v4 mob  | valley                          |
  *
+ * O/N/W (v4) dropped with tag `obsolete-p4-p5-det`.
  * Dropped as duplicates once shared fixes applied: set_k (old P+legacy sel), set_m (old v4+P without src-border).
  */
 private fun usesCharAwareExpand(pipelineKey: String): Boolean =
-    pipelineKey == "set_j" || pipelineKey == "set_o"
+    pipelineKey == "set_j"
 
 /** Pump Set-P style: ContentExpand INTERIOR_ENERGY + height jump. */
 private fun usesPExpand(pipelineKey: String): Boolean =
-    pipelineKey == "set_l" || pipelineKey == "set_n"
+    pipelineKey == "set_l"
 
 private fun usesValleyExpand(pipelineKey: String): Boolean =
-    pipelineKey == "set_v" || pipelineKey == "set_w"
+    pipelineKey == "set_v"
 
 /** @deprecated use [usesPExpand] */
 private fun isPExpandKey(pipelineKey: String): Boolean = usesPExpand(pipelineKey)
 
 /** All columns: PreferLen from vehicle digit count + mean (+tail strip). */
 private fun usesLenMeanBinSelection(pipelineKey: String): Boolean = true
-
-/** v4 mobile det columns. */
-private fun usesV4MobileDet(pipelineKey: String): Boolean =
-    pipelineKey == "set_o" || pipelineKey == "set_n" || pipelineKey == "set_w"
 
 /** All columns: source-border rec (no black 4px insert). */
 private fun usesSourceBorderRec(pipelineKey: String): Boolean = true
@@ -497,7 +491,7 @@ suspend fun runAlignmentExperiment(
     val experimentRecSet320x48 = NativePaddleEngine.recBufferSet
     val experimentDetSet512x128 = BufferSet(512, 128)
 
-    // Report columns: 2 det (product / v4) × 3 expand (char-aware / P / valley).
+    // Report columns: product det × 3 expand (char-aware / P / valley). J / L / V only.
     // Shared on every column: PreferLen(vehicle digit count), prefer-Bin final pick, source-border rec.
     // Face digits only (no rollover timeline in experiment).
     // Silent mlAngle vehicle-ID lock before loop. See docs/obsolete/EXPERIMENT_ALIGNMENT_SETS.md.
@@ -505,9 +499,6 @@ suspend fun runAlignmentExperiment(
         PipelineConfig("set_j", "Set J (prod+charAware)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
         PipelineConfig("set_l", "Set L (prod+P-expand)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
         PipelineConfig("set_v", "Set V (prod+valley)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
-        PipelineConfig("set_o", "Set O (v4+charAware)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
-        PipelineConfig("set_n", "Set N (v4+P-expand)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
-        PipelineConfig("set_w", "Set W (v4+valley)", { it.paddleTimeMs }) { it.paddleOptimizedAngle },
     )
     val harnessEngineNames = pipelines.map { "${it.displayName} Paddle" }
     val pipelineNames = pipelines.map { it.displayName }
@@ -737,48 +728,26 @@ suspend fun runAlignmentExperiment(
 
                             val iterativeStages = listOf("Raw", "Bin-Trials")
 
-                            // O/N/W: swap to PP-OCRv4_mobile_det for this column only (restore after).
-                            val swappedDet = usesV4MobileDet(pipeline.key)
-                            if (swappedDet) {
-                                try {
-                                    NativePaddleEngine.loadExperimentDetTiers(context, "PP-OCRv4_mobile_det")
-                                    onLog("${pipeline.displayName}: loaded PP-OCRv4_mobile_det tiers")
-                                } catch (t: Throwable) {
-                                    Log.e(TAG, "${pipeline.key} det swap failed", t)
-                                    onLog("${pipeline.displayName}: det swap FAILED ${t.message}")
-                                }
-                            }
-                            try {
-                                // Expand: J/O char-aware | L/N P(INTERIOR_ENERGY+jump) | V/W valley.
-                                // All columns: PreferLen(digitCount), prefer-Bin final, source-border rec.
-                                runPaddleValleyIterative(
-                                    "${pipeline.displayName} Paddle",
-                                    NativePaddleEngine.bufferSetB,
-                                    imgW,
-                                    imgH,
-                                    globalWinnerRef,
-                                    vehicleBufferSets,
-                                    experimentDetSet512x128,
-                                    experimentRecSet320x48,
-                                    paddleEngine,
-                                    hMap,
-                                    refinementTraces,
-                                    isNumeric = true,
-                                    iterativeStages,
-                                    extraImages,
-                                    useCharAware = usesCharAwareExpand(pipeline.key),
-                                    pipelineKey = pipeline.key,
-                                )
-                            } finally {
-                                if (swappedDet) {
-                                    try {
-                                        NativePaddleEngine.restoreProductionDetTiers(context)
-                                    } catch (t: Throwable) {
-                                        Log.e(TAG, "${pipeline.key} det restore failed", t)
-                                        onLog("${pipeline.displayName}: det restore FAILED ${t.message}")
-                                    }
-                                }
-                            }
+                            // Expand: J char-aware | L P(INTERIOR_ENERGY+jump) | V valley.
+                            // All columns: PreferLen(digitCount), prefer-Bin final, source-border rec.
+                            runPaddleValleyIterative(
+                                "${pipeline.displayName} Paddle",
+                                NativePaddleEngine.bufferSetB,
+                                imgW,
+                                imgH,
+                                globalWinnerRef,
+                                vehicleBufferSets,
+                                experimentDetSet512x128,
+                                experimentRecSet320x48,
+                                paddleEngine,
+                                hMap,
+                                refinementTraces,
+                                isNumeric = true,
+                                iterativeStages,
+                                extraImages,
+                                useCharAware = usesCharAwareExpand(pipeline.key),
+                                pipelineKey = pipeline.key,
+                            )
                         }
                     }
 
@@ -923,9 +892,6 @@ private fun serializePhotoResultToJson(
             photoResult.pathways["set_j"]?.winnerName
                 ?: photoResult.pathways["set_l"]?.winnerName
                 ?: photoResult.pathways["set_v"]?.winnerName
-                ?: photoResult.pathways["set_o"]?.winnerName
-                ?: photoResult.pathways["set_n"]?.winnerName
-                ?: photoResult.pathways["set_w"]?.winnerName
                 ?: "No match",
         )
 
@@ -2406,7 +2372,6 @@ internal suspend fun runPaddleValleyIterative(
             usesCharAwareExpand(pipelineKey) -> jMeta.addProperty("content_expand_mode", "char_aware")
             usesValleyExpand(pipelineKey) -> jMeta.addProperty("content_expand_mode", "valley")
         }
-        if (usesV4MobileDet(pipelineKey)) jMeta.addProperty("det_model", "PP-OCRv4_mobile_det")
         jMeta.addProperty(
             "bin_selection",
             "PreferLen${OdometerTracking.digitCount(winnerRef.vehicle)}->Mean(+tailStrip)",

@@ -395,10 +395,7 @@ object OcrHarness {
         val na = CostVolClassifyResult("N/A", "N/A", RedBoxOcrCandidate("", "", ""), RedBoxOcrCandidate("", "", ""))
         val empty = QfPumpExtract(na, "none", emptyList())
 
-        val useG4Det = NativePaddleEngine.ensureG4DetTiers(context)
-        val detTiers = if (useG4Det) NativePaddleEngine.g4Tiers else null
-        val detTiersInt8 = if (useG4Det) NativePaddleEngine.g4TiersInt8 else null
-        val detModel = if (useG4Det) NativePaddleEngine.G4_DET_ASSET_BASE else "product_det"
+        val detModel = "product_det"
 
         val scales = listOf(224, 1024)
         val pdHunksRawTotal = mutableListOf<PumpHunk>()
@@ -416,8 +413,6 @@ object OcrHarness {
             val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(
                 workspace, outerId, paddleEngine, targetW, targetH, scale,
                 hmThresh = HEAT_THR_U8_GE1,
-                detTiers = detTiers,
-                detTiersInt8 = detTiersInt8,
             )
             pdHunksRawTotal.addAll(paddleResults[1])
             pdHunksExpTotal.addAll(paddleResults[2])

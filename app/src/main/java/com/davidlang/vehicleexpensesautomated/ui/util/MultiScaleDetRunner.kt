@@ -143,19 +143,16 @@ object MultiScaleDetRunner {
     )
 
     /**
-     * HTML / availableModels — product + v4 **mobile** only.
-     * - **v5 mobile** removed: too many zero-box cells (poor det); see docs/obsolete.
-     * - **v4/v5 server** never scheduled: ~1/10 speed, tens of seconds/cell — not real-time.
+     * HTML / availableModels — **product_det** only.
+     * v4/v5 mobile+server unscheduled: `docs/obsolete/DROP_P4_P5_DET.md`.
      */
     val DET_MODELS: List<String> = listOf(
-        "PP-OCRv4_mobile_det",
         "product_det",
     )
 
     /** Compute order: lightest graph first (fit-probe before heavy LMK). */
     private val MODEL_COMPUTE_RANK: Map<String, Int> = mapOf(
         "product_det" to 0,
-        "PP-OCRv4_mobile_det" to 1,
     )
 
     /**
@@ -1979,12 +1976,9 @@ object MultiScaleDetRunner {
                 .put("passes", passesJa)
                 .put("max_side", MAX_SIDE)
                 .put("max_lite_side_product", maxLiteSideForModel("product_det"))
-                .put("max_lite_side_v4_mobile", maxLiteSideForModel("PP-OCRv4_mobile_det"))
                 .put(
                     "max_lite_note",
-                    "product maxLite=${maxLiteSideForModel("product_det")}; " +
-                        "v4 mobile maxLite=${maxLiteSideForModel("PP-OCRv4_mobile_det")}; " +
-                        "v5 mobile not scheduled",
+                    "product maxLite=${maxLiteSideForModel("product_det")}; v4/v5 not scheduled",
                 )
                 .put("det_tile_min_overlap_frac", DET_TILE_OVERLAP_NUM.toDouble() / DET_TILE_OVERLAP_DEN)
                 .put("pump_tile_overlap_frac", PUMP_TILE_OVERLAP_NUM.toDouble() / PUMP_TILE_OVERLAP_DEN)
@@ -2011,7 +2005,7 @@ object MultiScaleDetRunner {
                 .put("n_cells", nCells)
                 .put(
                     "compute_order",
-                    "pass outer small→large; models product→v4; domain policy skips; " +
+                    "pass outer small→large; models product only; domain policy skips; " +
                         "tile overlap default 30% pump 50%; blue vs orange expand in JSON",
                 )
                 .put("file_order", "row_major_photo_matrixRow_model")
@@ -2082,8 +2076,7 @@ object MultiScaleDetRunner {
             w.appendLine(
                 "<p class='meta'>Matrix: <b>one row per outer</b> ($nRows). " +
                     "Feed = single if outer≤maxLite else H-span (pump/dash) or H/V by orientation (expense). " +
-                    "maxLite product ${maxLiteSideForModel("product_det")} / " +
-                    "v4 ${maxLiteSideForModel("PP-OCRv4_mobile_det")}. " +
+                    "maxLite product ${maxLiteSideForModel("product_det")}. " +
                     "pump: no 4096, H-tile 50% ov. dash: ≥512 H-tile. expense: ≥1024. " +
                     "<b>Boxes:</b> red=seed, blue=P, <span style='color:#fa0'>orange=P+jump</span>. " +
                     "Blank = domain skip.</p>",

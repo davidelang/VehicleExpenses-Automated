@@ -8375,3 +8375,7 @@ Plan pump-det-discover-dump-button-20260824-1941 CODE LANDED. One-shot Det dump 
 ## 2026-08-25 - Phase 1: tag obsolete-p4-p5-det + why docs
 
 Annotated tag `obsolete-p4-p5-det` peels `4e9b0f5c` (v4 still in APK + QF G4-vjump + 18-col p4). docs/obsolete/DROP_P4_P5_DET.md dumps + 67/78 + recovery. EXPERIMENT_DET_MODELS / ALIGNMENT_SETS point at this drop.
+
+## 2026-08-25 - Phase 2: v4 nbs out of APK + strip G4 loaders
+
+git mv PP-OCRv4_mobile_det_*.nb to third_party/paddle/exp_det_ab_unscheduled/. APK exp_det_ab is product_det only. Removed ensureG4DetTiers/g4Tiers. Multi-scale DET_MODELS product only. Alignment pipelines J/L/V. QF det uses product sharedTiers (G-- verts still Phase 4).
