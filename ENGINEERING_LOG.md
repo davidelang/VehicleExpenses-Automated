@@ -8521,3 +8521,7 @@ FLOWS.md: OOB not ink; rot-color median chroma&lt;8 → Y; AABB skip extra-k no 
 ## 2026-08-26 - Phase 1: replace FlowRow with BoxWithConstraints Rows
 
 Pump experiment buttons: BoxWithConstraints + chunked Rows; cellW capped to maxWidth; perRow from (maxWidth+8)/(cellW+8). No FlowRow. ZIP always enabled; others !isRunning && experimentDir.exists(). ExperimentalLayoutApi dropped from this composable. Compose BOM 2024.10.00 unchanged.
+
+## 2026-08-26 - CODE LANDED: pump-button-grid-no-flowrow-crash
+
+FLOWS.md: Pump UI is a compact wrapping equal-cell grid (not FlowRow). Plan CODE LANDED. Device open not run (no deploy). Compose BOM 2024.10.00 unchanged.
