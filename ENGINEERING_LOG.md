@@ -8624,3 +8624,7 @@ jumpRetractH / jumpOrientedOne: independent L/R (u0/u1) loops, max_jumps=4, 1px 
 ## 2026-08-26 - Phase 2: Kotlin jump mask dispatch + drop color3
 
 jumpRetractHorizontalMany / jumpRetractOrientedUMany pass uv+chromaMode. Kotlin fallbacks: independent 1px max_jumps=4. growOnEnergyChroma jumps fused map. Removed scheduled Set ink-prod-color3. FLOWS: 9 cols; iterative mask-aware jump.
+
+## 2026-08-26 - CODE LANDED: iterative-jump-retract-color3
+
+Independent L/R (u±) iterative 1px jump-retract, max_jumps=4. Jump masks: Y / chromaMag / tint / fused. Scheduled Set ink-prod-color3 removed (9 columns). Plan Status not writable (640 ai-planner:ai-sandbox; no chmod). Do not deploy.
