@@ -8489,3 +8489,7 @@ seg7One/seedInkBinY/fillChromaTintMask take glareMult (default 3 = old). chromaM
 ## 2026-08-26 - Phase 2: Kotlin chromaMode=3 + Set ink-prod-color3
 
 Scheduled Set ink-prod-color3 after color2 (10 flows). makeGProc chromaMode=3; metadata content_expand_chroma=color3. JNI-fail falls back to Y 7seg like color2. color2/walk2/G-- unchanged.
+
+## 2026-08-26 - CODE LANDED: ink-prod-color3-chroma-sampling
+
+FLOWS.md 10-col table + Set ink-prod-color3 (tintMask, 11x glare vs color2 3x). Plan Status not writable (640 ai-planner:ai-sandbox; no chmod). Device harness photos not run (no deploy).
