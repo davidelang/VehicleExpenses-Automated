@@ -8642,3 +8642,7 @@ Rot detect map: fullW/targetW and fullH/targetH (content), not outer 32-pad. war
 ## 2026-08-26 - Phase 2: FLOWS rot content map + OOB black
 
 FLOWS: rot maps det boxes by content targetW/H not 32-pad outer; rec OOB BORDER_CONSTANT black; cell halo still native 4×4. Does not require detect-on-inner.
+
+## 2026-08-26 - CODE LANDED: rot-det-inner-scale-warp-black
+
+Rot maps det boxes by content targetW/H (not 32-pad outer). Rec warp BORDER_CONSTANT black. kPaddleDetHeatCellPx=4 unchanged. Plan CODE LANDED. Do not deploy.
