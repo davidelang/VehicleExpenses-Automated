@@ -8601,3 +8601,7 @@ orderQuadForWarp: BL = two largest-y then smaller x; BR = cycle neighbor to the 
 ## 2026-08-26 - Phase 1: orderQuadForWarp BL is X-first
 
 BL = two smallest-x corners, then largest y. BR = cycle neighbor with larger x. No two-max-y. No u0-as-left. padUv and 48px HTML unchanged.
+
+## 2026-08-26 - Phase 2: FLOWS rot rec pivot BL X-first
+
+FLOWS: rot rec pivots BL (two smallest-x then largest y) and flattens the rightward side. No two-max-y. 0516 HTML 48px unchanged.
