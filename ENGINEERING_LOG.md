@@ -8549,3 +8549,7 @@ FLOWS.md: rot-ink 7seg/jump JNI; Kotlin fallback if native null. Plan CODE LANDE
 ## 2026-08-26 - Phase 1: rot no AABB on expand/chroma/ocr-empty/PD
 
 JNI StrokeWidthInSeed.seed is empty Rect (not toAabb). Kotlin fallback chroma medianInteriorU8 on u/v grid. ocrOne degenerate from shortAxisBh/longAxisBw. Rot PD and PD_red_only use pumpQuadEdgeAnns. dropWide still 3x on u/v seed. JSON ocrSourceRects may still emit derived AABB.
+
+## 2026-08-26 - CODE LANDED: rot-orient-jni-geom-glare
+
+FLOWS.md: rot never AABBs except rec warp; dropWide 3x max(v0,4) on u/v seed (not color3 11x). Plan CODE LANDED. Do not deploy.
