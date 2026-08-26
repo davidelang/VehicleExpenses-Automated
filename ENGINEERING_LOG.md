@@ -8511,3 +8511,13 @@ AABB letter skip copies k=1 asis/digits/rect with recB64 empty. ocrOne pad uses 
 ## 2026-08-26 - CODE LANDED: rot-orient-walk-intent-gaps
 
 FLOWS.md: OOB not ink; rot-color median chroma&lt;8 → Y; AABB skip extra-k no extra rec thumbs; rec inflate pad from bh. Plan CODE LANDED. Do not deploy.
+
+## 2026-08-26 - Execute: pump-button-grid-no-flowrow-crash
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/pump-button-grid-no-flowrow-crash-20260826-0345-plan.md`
+- Scope: Replace FlowRow with BoxWithConstraints + chunked Rows (Compose 1.7). Keep equal-cell wrap; no BOM bump; no job/subset/QF/expand change. Do not deploy.
+
+## 2026-08-26 - Phase 1: replace FlowRow with BoxWithConstraints Rows
+
+Pump experiment buttons: BoxWithConstraints + chunked Rows; cellW capped to maxWidth; perRow from (maxWidth+8)/(cellW+8). No FlowRow. ZIP always enabled; others !isRunning && experimentDir.exists(). ExperimentalLayoutApi dropped from this composable. Compose BOM 2024.10.00 unchanged.

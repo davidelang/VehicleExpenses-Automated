@@ -252,7 +252,7 @@ data class PumpPhotoResultSummary(
 
 // PumpHunk, PumpRectOcrLists, RedBoxOcrCandidate, PathResult, CostVolClassifyResult: see PumpCostVolUtils.kt
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExperimentPumpScreen(
     navController: NavHostController,
@@ -557,136 +557,61 @@ fun ExperimentPumpScreen(
         val textMeasurer = rememberTextMeasurer()
         val buttonStyle = MaterialTheme.typography.labelLarge
         val density = LocalDensity.current
-        val cellW = with(density) {
+        val measuredW = with(density) {
             gridLabels.maxOf { textMeasurer.measure(it, style = buttonStyle).size.width }.toDp() + 24.dp
         }
-        val cellMod = Modifier
-            .width(cellW)
-            .heightIn(min = ButtonDefaults.MinHeight)
         val cellPad = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
         val jobsEnabled = !isRunning && experimentDir.exists()
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Button(
-                onClick = { zipLauncher.launch(arrayOf("application/zip")) },
-                modifier = cellMod,
-                contentPadding = cellPad,
-            ) {
-                Text(
-                    zipLabel,
-                    style = buttonStyle,
-                    softWrap = true,
-                    maxLines = 2,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            Button(
-                onClick = {
-                    val allFiles = experimentDir.listFiles { f ->
-                        f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
-                    } ?: emptyArray()
-                    Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
-                    startPumpJob(null, "Run Test (${allFiles.size})…")
-                },
-                enabled = jobsEnabled,
-                modifier = cellMod,
-                contentPadding = cellPad,
-            ) {
-                Text(
-                    runTestLabel,
-                    style = buttonStyle,
-                    softWrap = true,
-                    maxLines = 2,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            Button(
-                onClick = runFirst10,
-                enabled = jobsEnabled,
-                modifier = cellMod,
-                contentPadding = cellPad,
-            ) {
-                Text(
-                    first10Label,
-                    style = buttonStyle,
-                    softWrap = true,
-                    maxLines = 2,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            Button(
-                onClick = runSelectedSample,
-                enabled = jobsEnabled,
-                modifier = cellMod,
-                contentPadding = cellPad,
-            ) {
-                Text(
-                    selectedLabel,
-                    style = buttonStyle,
-                    fontWeight = FontWeight.Bold,
-                    softWrap = true,
-                    maxLines = 2,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            Button(
-                onClick = runHorizAffected,
-                enabled = jobsEnabled,
-                modifier = cellMod,
-                contentPadding = cellPad,
-            ) {
-                Text(
-                    horizLabel,
-                    style = buttonStyle,
-                    softWrap = true,
-                    maxLines = 2,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            Button(
-                onClick = runProdInkFail,
-                enabled = jobsEnabled,
-                modifier = cellMod,
-                contentPadding = cellPad,
-            ) {
-                Text(
-                    prodInkLabel,
-                    style = buttonStyle,
-                    softWrap = true,
-                    maxLines = 2,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            Button(
-                onClick = runDetDump,
-                enabled = jobsEnabled,
-                modifier = cellMod,
-                contentPadding = cellPad,
-            ) {
-                Text(
-                    detDumpLabel,
-                    style = buttonStyle,
-                    softWrap = true,
-                    maxLines = 2,
-                    textAlign = TextAlign.Center,
-                )
-            }
-            Button(
-                onClick = runL1SoDebug,
-                enabled = jobsEnabled,
-                modifier = cellMod,
-                contentPadding = cellPad,
-            ) {
-                Text(
-                    l1Label,
-                    style = buttonStyle,
-                    softWrap = true,
-                    maxLines = 2,
-                    textAlign = TextAlign.Center,
-                )
+        data class GridBtn(
+            val label: String,
+            val enabled: Boolean,
+            val bold: Boolean = false,
+            val onClick: () -> Unit,
+        )
+        val gridBtns = listOf(
+            GridBtn(zipLabel, true) { zipLauncher.launch(arrayOf("application/zip")) },
+            GridBtn(runTestLabel, jobsEnabled) {
+                val allFiles = experimentDir.listFiles { f ->
+                    f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+                } ?: emptyArray()
+                Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
+                startPumpJob(null, "Run Test (${allFiles.size})…")
+            },
+            GridBtn(first10Label, jobsEnabled, onClick = runFirst10),
+            GridBtn(selectedLabel, jobsEnabled, bold = true, onClick = runSelectedSample),
+            GridBtn(horizLabel, jobsEnabled, onClick = runHorizAffected),
+            GridBtn(prodInkLabel, jobsEnabled, onClick = runProdInkFail),
+            GridBtn(detDumpLabel, jobsEnabled, onClick = runDetDump),
+            GridBtn(l1Label, jobsEnabled, onClick = runL1SoDebug),
+        )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val cellW = minOf(measuredW, maxWidth)
+            val perRow = max(1, ((maxWidth + 8.dp) / (cellW + 8.dp)).toInt())
+            val cellMod = Modifier
+                .width(cellW)
+                .heightIn(min = ButtonDefaults.MinHeight)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                gridBtns.chunked(perRow).forEach { rowBtns ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        rowBtns.forEach { b ->
+                            Button(
+                                onClick = b.onClick,
+                                enabled = b.enabled,
+                                modifier = cellMod,
+                                contentPadding = cellPad,
+                            ) {
+                                Text(
+                                    b.label,
+                                    style = buttonStyle,
+                                    fontWeight = if (b.bold) FontWeight.Bold else FontWeight.Normal,
+                                    softWrap = true,
+                                    maxLines = 2,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
