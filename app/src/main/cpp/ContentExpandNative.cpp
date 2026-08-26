@@ -1258,7 +1258,9 @@ static void seg7One(
     const cv::Mat& src, int sl, int st, int sr, int sb,
     int imgW, int imgH,
     int* ol, int* ot, int* oright, int* ob, int* sPxOut, int* vSWOut, int* hSWOut, int* usedFb,
-    bool srcIsBin = false
+    bool srcIsBin = false,
+    float gapFrac = 0.5f,
+    float minSeedHsToFreeze = 0.f
 ) {
     *ol = sl; *ot = st; *oright = sr; *ob = sb;
     const int seedH = std::max(1, sb - st);
@@ -1313,7 +1315,8 @@ static void seg7One(
     *hSWOut = hSW;
     *usedFb = needFb ? 1 : 0;
     const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
-    const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
+    const float gf = gapFrac > 0.f ? gapFrac : 0.5f;
+    const int gapStop = std::max(1, static_cast<int>(std::lround(gf * sPx)));
     const int vLook = capPx + 2;
     const int nt = std::max(0, st - vLook);
     const int nb = std::min(imgH, sb + vLook);
@@ -1343,8 +1346,14 @@ static void seg7One(
     };
     const int localT = st - nt;
     const int localB = sb - nt;
-    const bool allowUp = peek(localT - 1, -1);
-    const bool allowDown = peek(localB, +1);
+    const bool peekUp = peek(localT - 1, -1);
+    const bool peekDown = peek(localB, +1);
+    const bool freezeAlways = minSeedHsToFreeze <= 0.f;
+    const float minH = minSeedHsToFreeze * static_cast<float>(sPx);
+    const bool allowUp = peekUp ||
+        (!freezeAlways && seedH < minH);
+    const bool allowDown = peekDown ||
+        (!freezeAlways && seedH < minH);
     int t = localT, b = localB;
     if (allowUp) {
         int gap = 0, y = localT - 1;
@@ -1562,7 +1571,8 @@ static double medianU8Rect(const cv::Mat& m, int l, int t, int r, int b) {
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7Many(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jlong uvPtr, jintArray seedsArr, jint chromaMode
+    jlong grayPtr, jlong uvPtr, jintArray seedsArr, jint chromaMode,
+    jfloat gapFrac, jfloat minSeedHsToFreeze
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -1594,17 +1604,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
                 *gray, *uv, l, t, r, b, &tint);
             if (ok) {
                 seg7One(tint, l, t, r, b, imgW, imgH,
-                    &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true);
+                    &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
+                    gapFrac, minSeedHsToFreeze);
             } else {
                 seg7One(*gray, l, t, r, b, imgW, imgH,
-                    &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb);
+                    &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
+                    gapFrac, minSeedHsToFreeze);
             }
         } else {
             const cv::Mat* src = gray;
             if (useChromaMag && !cMag.empty() && medianU8Rect(cMag, l, t, r, b) >= 8.0) {
                 src = &cMag;
             }
-            seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb);
+            seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
+                false, gapFrac, minSeedHsToFreeze);
         }
         const int o = i * 8;
         out[o] = ol; out[o + 1] = ot; out[o + 2] = orr; out[o + 3] = ob;

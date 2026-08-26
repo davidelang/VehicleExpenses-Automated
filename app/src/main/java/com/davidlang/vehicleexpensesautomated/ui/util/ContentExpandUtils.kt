@@ -1215,6 +1215,8 @@ object ContentExpandUtils {
         k: Float = SEG7_K,
         j: Float = SEG7_J,
         chromaMode: Int = -1,
+        gapFrac: Float = SEG7_GAP_FRAC,
+        minSeedHsToFreeze: Float = 0f,
     ): List<Seg7Expand>? {
         val mode = if (chromaMode >= 0) chromaMode else if (chroma) 1 else 0
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
@@ -1231,7 +1233,9 @@ object ContentExpandUtils {
             packed[i * 4 + 2] = s.right
             packed[i * 4 + 3] = s.bottom
         }
-        val r = NativeImageUtils.seg7ManyNative(gray, uv, packed, mode) ?: return null
+        val r = NativeImageUtils.seg7ManyNative(
+            gray, uv, packed, mode, gapFrac, minSeedHsToFreeze,
+        ) ?: return null
         if (r.size < seeds.size * 8) return null
         return seeds.indices.map { i ->
             val o = i * 8
@@ -1259,8 +1263,13 @@ object ContentExpandUtils {
         k: Float = SEG7_K,
         j: Float = SEG7_J,
         @Suppress("UNUSED_PARAMETER") doHorizontal: Boolean = false,
+        gapFrac: Float = SEG7_GAP_FRAC,
+        minSeedHsToFreeze: Float = 0f,
     ): Seg7Expand {
-        val many = expand7segFromSeedMany(gray, null, listOf(seed), chroma = false, k, j)
+        val many = expand7segFromSeedMany(
+            gray, null, listOf(seed), chroma = false, k, j,
+            gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
+        )
         if (many != null && many.size == 1) return many[0]
         val stroke = strokeWidthInSeed(gray, seed)
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
@@ -1272,7 +1281,8 @@ object ContentExpandUtils {
         val sPx = max(1, stroke.sPx)
         val seedH = max(1, s0.height())
         val capPx = max(1, (SEG7_VERT_CAP_FRAC * seedH).roundToInt())
-        val gapStop = max(1, (SEG7_GAP_FRAC * sPx).roundToInt())
+        val gf = if (gapFrac > 0f) gapFrac else SEG7_GAP_FRAC
+        val gapStop = max(1, (gf * sPx).roundToInt())
         val vLook = capPx + 2
         val nl = s0.left
         val nr = s0.right
@@ -1313,8 +1323,12 @@ object ContentExpandUtils {
                 return false
             }
 
-            val allowUp = peekHasBar(localT - 1, -1)
-            val allowDown = peekHasBar(localB, +1)
+            val peekUp = peekHasBar(localT - 1, -1)
+            val peekDown = peekHasBar(localB, +1)
+            val freezeAlways = minSeedHsToFreeze <= 0f
+            val minH = minSeedHsToFreeze * sPx
+            val allowUp = peekUp || (!freezeAlways && seedH < minH)
+            val allowDown = peekDown || (!freezeAlways && seedH < minH)
 
             var t = localT
             var gap = 0
@@ -1384,6 +1398,7 @@ object ContentExpandUtils {
     ): Seg7Expand {
         val many = expand7segFromSeedMany(
             y, uv, listOf(seed), chroma = chromaMode != 0, k, j, chromaMode = chromaMode,
+            gapFrac = SEG7_GAP_FRAC, minSeedHsToFreeze = 0f,
         )
         if (many != null && many.size == 1) return many[0]
         if (chromaMode == 2) {

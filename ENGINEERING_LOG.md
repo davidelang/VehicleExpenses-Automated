@@ -8457,3 +8457,13 @@ Eight experiment buttons in FlowRow; equal cellW from longest label. Dropped fiv
 ## 2026-08-26 - CODE LANDED: pump-experiment-compact-button-grid
 
 Flows doc: Pump screen subset actions are a compact equal-cell grid; captions live in this doc.
+
+## 2026-08-26 - Execute: ink-walk-interbar-gap-stop
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/ink-walk-interbar-gap-stop-20260826-0001-plan.md`
+- Scope: Walk knobs gapFrac/minSeedHsToFreeze (default old 0.5/always-freeze). New column Set ink-prod-walk2 (2.0s, freeze if seedH>=4s). Do not change QF/G--/rot-ink/color2/ink-prod defaults. Do not deploy.
+
+## 2026-08-26 - Phase 1: ink walk knobs gapFrac / minSeedHsToFreeze
+
+seg7One and Kotlin fallback take gapFrac (default 0.5) and minSeedHsToFreeze (0 = always freeze on empty peek). JNI extra floats. Existing ink-prod callers omit knobs so walk is unchanged.

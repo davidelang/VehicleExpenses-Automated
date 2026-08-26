@@ -1346,6 +1346,8 @@ suspend fun runPumpExperiment(
                     chromaExpand: Boolean = false,
                     /** 0 gray, 1 chromaMag, 2 chromaTint2. Nonzero wins over [chromaExpand]. */
                     chromaMode: Int = 0,
+                    gapFrac: Float = ContentExpandUtils.SEG7_GAP_FRAC,
+                    minSeedHsToFreeze: Float = 0f,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val workspace = ws
                     val branch = br
@@ -1528,16 +1530,20 @@ suspend fun runPumpExperiment(
                         chroma = expandMode == 1,
                         k = 0f,
                         chromaMode = expandMode,
+                        gapFrac = gapFrac,
+                        minSeedHsToFreeze = minSeedHsToFreeze,
                     ) ?: seeds.map { r ->
                         when (expandMode) {
                             2 -> ContentExpandUtils.expand7segFromSeed(
                                 workspace.p.mat, r, k = 0f, doHorizontal = false,
+                                gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
                             )
                             1 -> ContentExpandUtils.expand7segFromSeedChroma(
                                 workspace.p.mat, workspace.p.uvMat, r, k = 0f,
                             )
                             else -> ContentExpandUtils.expand7segFromSeed(
                                 workspace.p.mat, r, k = 0f, doHorizontal = false,
+                                gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
                             )
                         }
                     }
@@ -1577,7 +1583,8 @@ suspend fun runPumpExperiment(
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "1"
                     branch.metadata["seg7_vert_cap_frac"] = ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
-                    branch.metadata["seg7_gap_frac"] = ContentExpandUtils.SEG7_GAP_FRAC.toString()
+                    branch.metadata["seg7_gap_frac"] = gapFrac.toString()
+                    branch.metadata["seg7_freeze_min_hs"] = minSeedHsToFreeze.toString()
                     branch.metadata["seg7_jump_frac"] = "0.40"
                     branch.metadata["seg7_retract_clear_frac"] = "0.30"
                     if (expandMode == 2) {
