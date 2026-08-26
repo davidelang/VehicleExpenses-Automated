@@ -8620,3 +8620,7 @@ orderQuadForWarp: BL = two smallest-x then largest y; BR = cycle neighbor with l
 ## 2026-08-26 - Phase 1: native iterative 1px jump-retract + mask JNI
 
 jumpRetractH / jumpOrientedOne: independent L/R (u0/u1) loops, max_jumps=4, 1px step-back; no OR-coupled inText, no retractClear snap. nativeJumpMany / nativeJumpOrientedMany take uvPtr + chromaMode (0 Y Sobel, 1 chromaMag, 2/3 tint). AABB chroma grow jumps fused vertEng. fillChromaTintMask xPad for jump look-ahead.
+
+## 2026-08-26 - Phase 2: Kotlin jump mask dispatch + drop color3
+
+jumpRetractHorizontalMany / jumpRetractOrientedUMany pass uv+chromaMode. Kotlin fallbacks: independent 1px max_jumps=4. growOnEnergyChroma jumps fused map. Removed scheduled Set ink-prod-color3. FLOWS: 9 cols; iterative mask-aware jump.

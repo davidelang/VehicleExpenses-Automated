@@ -707,7 +707,6 @@ suspend fun runPumpExperiment(
         "Set ink-prod",
         "Set ink-prod-color",
         "Set ink-prod-color2",
-        "Set ink-prod-color3",
         "Set ink-prod-walk2",
         "Set jump-prod",
         "Set jump-prod-color",
@@ -1434,8 +1433,8 @@ suspend fun runPumpExperiment(
                 val inkWalkSeeds: List<android.graphics.Rect>
                 val inkWalkBoxes: List<android.graphics.Rect>
                 val inkJumpOpts: ContentExpandUtils.ExpandOptions?
+                val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
                 if (seg7Stroke) {
-                    val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
@@ -1485,9 +1484,13 @@ suspend fun runPumpExperiment(
                         }
                         return ContentExpandUtils.jumpRetractHorizontalMany(
                             workspace.p.mat, padded, jumpOpts,
+                            uv = if (expandMode != 0) workspace.p.uvMat else null,
+                            chromaMode = expandMode,
                         ) ?: padded.map {
                             ContentExpandUtils.jumpRetractHorizontal(
                                 workspace.p.mat, it, jumpOpts,
+                                uv = if (expandMode != 0) workspace.p.uvMat else null,
+                                chromaMode = expandMode,
                             )
                         }
                     }
@@ -1608,9 +1611,13 @@ suspend fun runPumpExperiment(
                         }
                         return ContentExpandUtils.jumpRetractHorizontalMany(
                             workspace.p.mat, padded, opts,
+                            uv = if (expandMode != 0) workspace.p.uvMat else null,
+                            chromaMode = expandMode,
                         ) ?: padded.map {
                             ContentExpandUtils.jumpRetractHorizontal(
                                 workspace.p.mat, it, opts,
+                                uv = if (expandMode != 0) workspace.p.uvMat else null,
+                                chromaMode = expandMode,
                             )
                         }
                     }
@@ -2027,6 +2034,7 @@ suspend fun runPumpExperiment(
                     val inkWalkSeeds: List<ContentExpandUtils.OrientedQuad>
                     val inkWalkBoxes: List<ContentExpandUtils.OrientedQuad>
                     val inkJumpOptsRot: ContentExpandUtils.ExpandOptions?
+                    val expandMode = if (chromaExpand) 1 else 0
                     if (seg7Stroke) {
                         val jumpOpts = ContentExpandUtils.ExpandOptions(
                             maxFrac = 0.4f,
@@ -2035,7 +2043,6 @@ suspend fun runPumpExperiment(
                             retractClearFrac = 0.30f,
                             energyRatio = 0.65f,
                         )
-                        val expandMode = if (chromaExpand) 1 else 0
                         val segs = ContentExpandUtils.expand7segFromOrientedSeedMany(
                             gray,
                             if (expandMode != 0) workspace.p.uvMat else null,
@@ -2050,6 +2057,8 @@ suspend fun runPumpExperiment(
                             }
                             return ContentExpandUtils.jumpRetractOrientedUMany(
                                 gray, padded, jumpOpts,
+                                uv = if (expandMode != 0) workspace.p.uvMat else null,
+                                chromaMode = expandMode,
                             )
                         }
                         expandedQuads = inkQuadsFor(1f)
@@ -2142,6 +2151,8 @@ suspend fun runPumpExperiment(
                             }
                             return ContentExpandUtils.jumpRetractOrientedUMany(
                                 gray, padded, opts,
+                                uv = if (expandMode != 0) workspace.p.uvMat else null,
+                                chromaMode = expandMode,
                             )
                         }
                         var nOcr = 0
@@ -2772,16 +2783,6 @@ suspend fun runPumpExperiment(
                     seg7Stroke = true,
                     chromaMode = 2,
                 )
-                val procInkProdColor3 = makeGProc(
-                    emptyList(),
-                    "ink-prod-color3: product det + chroma tintMask 7seg 11x glare; OCR k=0..4; official k=1",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = null,
-                    seg7Stroke = true,
-                    chromaMode = 3,
-                )
                 val procInkProdWalk2 = makeGProc(
                     emptyList(),
                     "ink-prod-walk2: product det + 7seg walk gap/peek 2.0s; freeze empty peek only if seedH>=4s; OCR k=0..4; official k=1",
@@ -2795,7 +2796,7 @@ suspend fun runPumpExperiment(
                 )
                 val procJumpProdColor = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "jump-prod-color: product fused |∇Y|+|∇C| maxFrac=0.4; L/R jump on Y mag; final = expand crop",
+                    "jump-prod-color: product fused |∇Y|+|∇C| maxFrac=0.4; L/R jump on fused hypot; final = expand crop",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = true,
@@ -3011,7 +3012,6 @@ suspend fun runPumpExperiment(
                     add("Set ink-prod" to procProdInk)
                     add("Set ink-prod-color" to procInkProdColor)
                     add("Set ink-prod-color2" to procInkProdColor2)
-                    add("Set ink-prod-color3" to procInkProdColor3)
                     add("Set ink-prod-walk2" to procInkProdWalk2)
                     add("Set jump-prod" to procProdJump)
                     add("Set jump-prod-color" to procJumpProdColor)

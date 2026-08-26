@@ -987,6 +987,8 @@ object ContentExpandUtils {
         gray: Mat,
         boxes: List<Rect>,
         opts: ExpandOptions,
+        uv: Mat? = null,
+        chromaMode: Int = 0,
     ): List<Rect>? {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return boxes
         if (boxes.isEmpty()) return emptyList()
@@ -1002,6 +1004,7 @@ object ContentExpandUtils {
         }
         val r = NativeImageUtils.jumpManyNative(
             gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
+            uv, chromaMode,
         ) ?: return null
         if (r.size < boxes.size * 4) return null
         return boxes.indices.map { i ->
@@ -1009,8 +1012,11 @@ object ContentExpandUtils {
         }
     }
 
-    fun jumpRetractHorizontal(gray: Mat, seed: Rect, opts: ExpandOptions): Rect {
-        val many = jumpRetractHorizontalMany(gray, listOf(seed), opts)
+    fun jumpRetractHorizontal(
+        gray: Mat, seed: Rect, opts: ExpandOptions,
+        uv: Mat? = null, chromaMode: Int = 0,
+    ): Rect {
+        val many = jumpRetractHorizontalMany(gray, listOf(seed), opts, uv, chromaMode)
         if (many != null && many.size == 1) return many[0]
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
         val imgW = gray.cols()
@@ -1573,6 +1579,8 @@ object ContentExpandUtils {
         gray: Mat,
         seeds: List<OrientedQuad>,
         opts: ExpandOptions,
+        uv: Mat? = null,
+        chromaMode: Int = 0,
     ): List<OrientedQuad> {
         if (seeds.isEmpty()) return emptyList()
         val packed = FloatArray(seeds.size * 8)
@@ -1583,6 +1591,7 @@ object ContentExpandUtils {
         }
         val native = NativeImageUtils.jumpOrientedManyNative(
             gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
+            uv, chromaMode,
         )
         if (native != null && native.size >= seeds.size * 8) {
             return seeds.indices.map { i ->
@@ -1590,19 +1599,23 @@ object ContentExpandUtils {
                 OrientedQuad(FloatArray(8) { k -> native[o + k] })
             }
         }
-        return seeds.map { jumpRetractOrientedUKotlin(gray, it, opts) }
+        return seeds.map { jumpRetractOrientedUKotlin(gray, it, opts, uv, chromaMode) }
     }
 
     fun jumpRetractOrientedU(
         gray: Mat,
         seed: OrientedQuad,
         opts: ExpandOptions,
-    ): OrientedQuad = jumpRetractOrientedUMany(gray, listOf(seed), opts).firstOrNull() ?: seed
+        uv: Mat? = null,
+        chromaMode: Int = 0,
+    ): OrientedQuad = jumpRetractOrientedUMany(gray, listOf(seed), opts, uv, chromaMode).firstOrNull() ?: seed
 
     private fun jumpRetractOrientedUKotlin(
         gray: Mat,
         seed: OrientedQuad,
         opts: ExpandOptions,
+        uv: Mat? = null,
+        chromaMode: Int = 0,
     ): OrientedQuad {
         val box = OrientedBox.fromQuad(seed) ?: return seed
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
@@ -1611,11 +1624,17 @@ object ContentExpandUtils {
         val gx = Mat()
         val gy = Mat()
         val eng = Mat()
-        Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
-        Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
-        Core.magnitude(gx, gy, eng)
+        val cU8 = if (chromaMode == 1 && uv != null && !uv.empty()) chromaMagU8(gray, uv) else null
+        if (cU8 != null && medianInteriorU8(cU8, seed) >= 8.0) {
+            cU8.convertTo(eng, CvType.CV_32F)
+        } else {
+            Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
+            Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
+            Core.magnitude(gx, gy, eng)
+        }
         gx.release()
         gy.release()
+        cU8?.release()
         try {
             fun meanUFace(u: Float): Double {
                 val n = max(4, (box.v1 - box.v0).roundToInt())
@@ -1649,36 +1668,46 @@ object ContentExpandUtils {
             }
             val thr = opts.energyRatio * max(base, 1e-3)
             val vSpan = box.vSpan().coerceAtLeast(1f)
-            val cap = max(1, (opts.maxFrac * vSpan).roundToInt())
-            val floorU0 = box.u0
-            val floorU1 = box.u1
             val jx = max(1, (opts.jumpFrac * vSpan).roundToInt()).toFloat()
-            var u0 = box.u0 - jx
-            var u1 = box.u1 + jx
-            val inText =
-                (u0 < floorU0 && meanUFace(u0) >= thr) ||
-                    (u1 > floorU1 && meanUFace(u1) >= thr)
-            if (inText) {
-                var k = 0
-                while (k < cap) {
-                    var grew = false
-                    if (meanUFace(u0 - 1f) >= thr) {
-                        u0 -= 1f
-                        grew = true
-                    }
-                    if (meanUFace(u1 + 1f) >= thr) {
-                        u1 += 1f
-                        grew = true
-                    }
-                    if (!grew) break
-                    k++
+            var u0 = box.u0
+            var u1 = box.u1
+            var jumps0 = 0
+            while (jumps0 < 4) {
+                val next0 = u0 - jx
+                if (meanUFace(next0) >= thr) {
+                    u0 = next0
+                    jumps0++
+                    continue
                 }
-            } else {
-                while (u0 < floorU0 && meanUFace(u0) < thr) u0 += 1f
-                while (u1 > floorU1 && meanUFace(u1) < thr) u1 -= 1f
-                val clear = max(1, (opts.retractClearFrac * vSpan).roundToInt()).toFloat()
-                u0 -= clear
-                u1 += clear
+                var cur = next0 + 1f
+                while (cur < u0) {
+                    if (meanUFace(cur) >= thr) {
+                        u0 = cur
+                        break
+                    }
+                    cur += 1f
+                }
+                break
+            }
+            var jumps1 = 0
+            while (jumps1 < 4) {
+                val next1 = u1 + jx
+                if (meanUFace(next1) >= thr) {
+                    u1 = next1
+                    jumps1++
+                    continue
+                }
+                var new1 = u1
+                var cur = next1 - 1f
+                while (cur > u1) {
+                    if (meanUFace(cur) >= thr) {
+                        new1 = cur
+                        break
+                    }
+                    cur -= 1f
+                }
+                u1 = new1
+                break
             }
             if (u1 < u0 + 2f) u1 = u0 + 2f
             return OrientedBox(
@@ -2091,31 +2120,51 @@ object ContentExpandUtils {
             roi.release()
             return m
         }
-        fun growHorizontalOnce() {
-            repeat(capPx) {
-                var grew = false
-                if (l > 0 && meanE(Rect(l - 1, t, l, b)) >= thr) { l--; grew = true }
-                if (r < imgW && meanE(Rect(r, t, r + 1, b)) >= thr) { r++; grew = true }
-                if (!grew) return
-            }
-        }
-        val floorL = l
-        val floorR = r
         val hgt = max(1, b - t)
         val jx = max(1, (jumpFrac * hgt).roundToInt())
-        l = (l - jx).coerceAtLeast(0)
-        r = (r + jx).coerceAtMost(imgW)
-        val inText =
-            (l < floorL && meanE(Rect(l, t, min(l + 1, r), b)) >= thr) ||
-                (r > floorR && meanE(Rect(max(r - 1, l), t, r, b)) >= thr)
-        if (inText) {
-            growHorizontalOnce()
-        } else {
-            while (l < floorL && meanE(Rect(l, t, min(l + 1, r), b)) < thr) l++
-            while (r > floorR && meanE(Rect(max(r - 1, l), t, r, b)) < thr) r--
-            val clear = max(1, (retractClearFrac * max(1, b - t)).roundToInt())
-            l = (l - clear).coerceAtLeast(0)
-            r = (r + clear).coerceAtMost(imgW)
+        fun colHas(x: Int): Boolean {
+            if (x < 0 || x >= imgW) return false
+            return meanE(Rect(x, t, x + 1, b)) >= thr
+        }
+        var jumpsL = 0
+        while (l > 0 && jumpsL < 4) {
+            val nextL = (l - jx).coerceAtLeast(0)
+            if (nextL >= l) break
+            if (colHas(nextL)) {
+                l = nextL
+                jumpsL++
+                continue
+            }
+            var cur = nextL + 1
+            while (cur < l) {
+                if (colHas(cur)) {
+                    l = cur
+                    break
+                }
+                cur++
+            }
+            break
+        }
+        var jumpsR = 0
+        while (r < imgW && jumpsR < 4) {
+            val nextR = (r + jx).coerceAtMost(imgW)
+            if (nextR <= r) break
+            if (colHas(nextR - 1)) {
+                r = nextR
+                jumpsR++
+                continue
+            }
+            var newR = r
+            var cur = nextR - 2
+            while (cur >= r) {
+                if (colHas(cur)) {
+                    newR = cur + 1
+                    break
+                }
+                cur--
+            }
+            r = newR
+            break
         }
         return clip(Rect(l, t, r, b), imgW, imgH)
     }
@@ -2140,7 +2189,7 @@ object ContentExpandUtils {
         }
     }
 
-    /** AABB energy expand using fused |∇Y|+|∇C| for the vertical walk; L/R jump on Y magnitude. */
+    /** AABB energy expand using fused |∇Y|+|∇C| for the vertical walk and L/R jump. */
     fun expandDiagnoseChroma(
         y: Mat,
         uv: Mat,
@@ -3272,7 +3321,7 @@ object ContentExpandUtils {
     /**
      * Sibling of [growOnEnergy]: vertical walk on fused `hypot(|∇Y|, |∇C|)`
      * (GX/XYCUT: hypot of |∂Y/∂x| and |∂C/∂x|; CHI2 on chromaMag). L/R jump
-     * on Y magnitude. Does not edit [growOnEnergy].
+     * on the same fused map. Does not edit [growOnEnergy].
      */
     private fun growOnEnergyChroma(
         y: Mat,
@@ -3325,8 +3374,6 @@ object ContentExpandUtils {
         val il = l + 2; val it = t + 2; val ir = r - 2; val ib = b - 2
         val base = if (ir > il && ib > it) meanE(vertEng, Rect(il, it, ir, ib)) else meanE(vertEng, seed)
         val thr = energyRatio * max(base, 1e-3)
-        val jumpBase = if (ir > il && ib > it) meanE(magY, Rect(il, it, ir, ib)) else meanE(magY, seed)
-        val jumpThr = energyRatio * max(jumpBase, 1e-3)
         var allowUp = t > 0 && meanE(vertEng, Rect(l, t - 1, r, t)) >= thr
         var allowDown = b < imgH && meanE(vertEng, Rect(l, b, r, b + 1)) >= thr
         fun growOnce() {
@@ -3391,7 +3438,7 @@ object ContentExpandUtils {
         }
         if (enableJump) {
             val jumped = jumpRetractHorizontalOnEnergy(
-                magY, Rect(l, t, r, b), imgW, imgH, jumpThr, cap, jumpFrac, retractClearFrac,
+                vertEng, Rect(l, t, r, b), imgW, imgH, thr, cap, jumpFrac, retractClearFrac,
             )
             l = jumped.left
             t = jumped.top
