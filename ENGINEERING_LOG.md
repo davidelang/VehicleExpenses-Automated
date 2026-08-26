@@ -8503,3 +8503,7 @@ FLOWS.md 10-col table + Set ink-prod-color3 (tintMask, 11x glare vs color2 3x). 
 ## 2026-08-26 - Phase 1: rot OOB not ink + chroma median Y fallback
 
 hasBarAtV ignores off-image samples (fully OOB strip is not a bar). meanUFace already skips OOB; empty face is not energy. expand7segFromOrientedSeedMany: chromaMode 1 + seed median chromaMag < 8 walks Y. AABB walk knobs unchanged.
+
+## 2026-08-26 - Phase 2: skip extra-k rec thumbs + rec pad from bh
+
+AABB letter skip copies k=1 asis/digits/rect with recB64 empty. ocrOne pad uses OrientedQuad.shortAxisBh not AABB height. makeGProc ink assembly gapFrac/minSeedHsToFreeze from walk knobs (walk2 assembly 2.0). Rot still OCRs extra k.

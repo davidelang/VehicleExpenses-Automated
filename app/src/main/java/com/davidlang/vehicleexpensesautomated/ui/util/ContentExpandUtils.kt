@@ -358,6 +358,11 @@ object ContentExpandUtils {
             )
         }
 
+        /** Short-axis text height (`vSpan` / warp `hSrc`), not AABB height. */
+        fun shortAxisBh(): Float =
+            OrientedBox.fromQuad(this)?.vSpan()?.coerceAtLeast(1f)
+                ?: toAabb().height().coerceAtLeast(1).toFloat()
+
         fun area(): Float {
             // shoelace
             var a = 0f

@@ -1726,7 +1726,13 @@ suspend fun runPumpExperiment(
                                 val src = gCands.getOrElse(i) {
                                     RedBoxOcrCandidate("Red${i + 1}", "", "")
                                 }
-                                src.copy(label = "Red${i + 1}", rect = rects[i])
+                                src.copy(
+                                    label = "Red${i + 1}",
+                                    rect = rects[i],
+                                    recB64 = "",
+                                    recW = 0,
+                                    recH = 0,
+                                )
                             } else {
                                 RedBoxOcrCandidate(
                                     "Red${i + 1}",
@@ -1767,7 +1773,8 @@ suspend fun runPumpExperiment(
                         "k" to listOf(0, 1, 2, 3, 4),
                         "kOfficial" to 1,
                         "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
-                        "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
+                        "gapFrac" to gapFrac,
+                        "minSeedHsToFreeze" to minSeedHsToFreeze,
                         "sPx" to seg7Strokes.map { it.sPx },
                         "vSW" to seg7Strokes.map { it.vSW },
                         "hSW" to seg7Strokes.map { it.hSW },
@@ -1927,7 +1934,7 @@ suspend fun runPumpExperiment(
                         if (aabb.width() < 2 || aabb.height() < 2) {
                             return OcrOne("?" to "", "?" to "", "", 0, 0)
                         }
-                        val rSc = 48f / aabb.height().coerceAtLeast(1)
+                        val rSc = 48f / q.shortAxisBh()
                         val pad = kotlin.math.ceil(4.0 / rSc.toDouble()).toInt().coerceAtLeast(1)
                         val qInfl = q.inflate(pad, imgW, imgH)
                         experimentRecSet.p.clear()
