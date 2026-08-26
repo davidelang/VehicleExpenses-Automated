@@ -1620,14 +1620,51 @@ suspend fun runPumpExperiment(
                         ),
                     )
                     var nOcr = customBluePixelG.size
+                    val skipExtraK = BooleanArray(gCands.size) { i ->
+                        val asis = gCands[i].asis
+                        asis.any { it.isLetter() } && asis.none { it.isDigit() }
+                    }
+                    branch.metadata["seg7_skip_extra_k_letter"] =
+                        skipExtraK.count { it }.toString()
                     for (kk in listOf(0f, 2f, 3f, 4f)) {
                         val rects = inkRectsFor(kk)
-                        val ocrK = ocrPumpRectsAsisAndDigits(rects)
-                        nOcr += rects.size
-                        val candsK = buildRedBoxCandidates(
-                            rects, ocrK.asis, ocrK.digits, ocrK.asisProbs, ocrK.digitsProbs,
-                            ocrK.recB64, recWList = ocrK.recW, recHList = ocrK.recH,
-                        )
+                        val ocrIdx = ArrayList<Int>()
+                        val ocrRects = ArrayList<android.graphics.Rect>()
+                        rects.indices.forEach { i ->
+                            if (i >= skipExtraK.size || !skipExtraK[i]) {
+                                ocrIdx.add(i)
+                                ocrRects.add(rects[i])
+                            }
+                        }
+                        val ocrK = if (ocrRects.isEmpty()) {
+                            PumpRectOcrLists(emptyList(), emptyList())
+                        } else {
+                            ocrPumpRectsAsisAndDigits(ocrRects)
+                        }
+                        nOcr += ocrRects.size
+                        val ocrAt = HashMap<Int, Int>(ocrIdx.size)
+                        ocrIdx.forEachIndexed { j, i -> ocrAt[i] = j }
+                        val candsK = rects.indices.map { i ->
+                            val j = ocrAt[i]
+                            if (j == null) {
+                                val src = gCands.getOrElse(i) {
+                                    RedBoxOcrCandidate("Red${i + 1}", "", "")
+                                }
+                                src.copy(label = "Red${i + 1}", rect = rects[i])
+                            } else {
+                                RedBoxOcrCandidate(
+                                    "Red${i + 1}",
+                                    ocrK.asis.getOrElse(j) { "" },
+                                    ocrK.digits.getOrElse(j) { "" },
+                                    ocrK.asisProbs.getOrElse(j) { "" },
+                                    ocrK.digitsProbs.getOrElse(j) { "" },
+                                    rects[i],
+                                    ocrK.recB64.getOrElse(j) { "" },
+                                    ocrK.recW.getOrElse(j) { 0 },
+                                    ocrK.recH.getOrElse(j) { 0 },
+                                )
+                            }
+                        }
                         val cvK = PumpCostVolUtils.classifyCostVolFromBoxOcr(candsK)
                         val quadsK = rects.map { ContentExpandUtils.orientedFromAabb(it) }
                         inkVariants.put(

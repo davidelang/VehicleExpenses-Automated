@@ -11,7 +11,7 @@ Eight columns (product / G-- plus ink-prod-color2). **Prod / G--** discovery **2
 | Flow display name | Det | Expand | Notes |
 |-------------------|-----|--------|-------|
 | `Set G-- (4 pass, none, calculated)` | product **224+608** | calculated verts **0.1/0.3/0.4/1.1**; thr **u8≥1**; horiz **0.5** | Experiment product-det reference **and live QF**. Heat dumps off |
-| `Set ink-prod` | product **224+608** | Seed-ROI Otsu stroke `s`. Walk **once** (k=0 in walk) to gap ≥ **0.5`s`**; peek **0.5`s`**; cap **2.5×red H**. Then `padVertByStrokes` **k=1** official / **k=0,2,3,4** unofficial; Horz jump after each pad. OCR **k=0..4** | Experiment only. PD / `final` = k=1. Pool `scaleVariants` `kind=ink` `s`=0..4. `s_per_red` |
+| `Set ink-prod` | product **224+608** | Seed-ROI Otsu stroke `s`. Walk **once** (k=0 in walk) to gap ≥ **0.5`s`**; peek **0.5`s`**; cap **2.5×red H**. Then `padVertByStrokes` **k=1** official / **k=0,2,3,4** unofficial; Horz jump after each pad. OCR **k=0..4**; skip extra-k rec when k=1 **asis** has `[A-Za-z]` and no `[0-9]` (reuse k=1 text) | Experiment only. PD / `final` = k=1. Pool `scaleVariants` `kind=ink` `s`=0..4. `s_per_red` |
 | `Set ink-prod-color` | product **224+608** | Same knobs; walk on **chromaMag**; median chromaMag &lt; **8** → Y. Jump on Y | Color sibling. Rec still Y |
 | `Set ink-prod-color2` | product **224+608** | Seed `s` on Y; $\vec{u}_{\text{ink}}$ from stroke pixels; bg at $\pm 1s$; **tintMask** 255=ink / 0=blackout (`u_p·u_ink` ≥ 0.5 + Y polarity; chroma &lt; 8 → Y contrast). Native `seg7One` on the mask. Jump on Y | Experiment. Metadata `content_expand_chroma=color2`. Rec still Y |
 | `Set jump-prod` | **product_det** **224+608** | AABB energy **maxFrac=0.4**; L/R jump MAGNITUDE 0.65 | `final` = energy |

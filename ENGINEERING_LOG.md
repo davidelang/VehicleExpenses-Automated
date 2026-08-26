@@ -8433,3 +8433,7 @@ pump_deep_analysis.py prints ink-k table k=0..4 + combined after main Good OCR. 
 ## 2026-08-26 - Phase 1: stable full-corpus row ids
 
 HTML # / JSON line_number / photo frag idx = 1-based index in sorted full pump_photos, not subset index+1. Subset still processes only subset files.
+
+## 2026-08-26 - Phase 2: skip extra-k OCR on AABB letter boxes
+
+AABB ink extra k=0,2,3,4 skips rec when k=1 asis has letters and no digit; reuses k=1 text. Rot-ink still OCRs all k. LCD digit boxes still extra-k.
