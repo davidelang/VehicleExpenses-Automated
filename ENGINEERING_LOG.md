@@ -8415,3 +8415,7 @@ Docs: 8-col table + tintMask algorithm. Forensic: flows 8 names including Set in
 ## 2026-08-25 - Phase 1: ink OCR k=0..4
 
 AABB extra loop 0,2,3,4 after official k=1. Rot loop 1,0,2,3,4. Metadata/assembly k=0,1,2,3,4 official 1. Walk k=0 and 2.5x cap unchanged. PD/classify stay k=1.
+
+## 2026-08-25 - Phase 2: Prod-ink fail 60→68 k=0 union
+
+PROD_INK_FAIL_FILENAMES is JSON union_k0 (68, start-113 14-45-50 / 14-46-20). Caption k=0 union, no 23-18/60. Horiz-affected unchanged.

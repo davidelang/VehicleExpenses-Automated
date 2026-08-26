@@ -178,74 +178,82 @@ val HORIZ_REACH_AFFECTED_FILENAMES: List<String> = listOf(
 
 /**
  * Photos where ink-prod or rot-ink-prod is not exact (relax=fail) on a trusted
- * cost/vol field **and** some other scheduled column exact on that field. Union
- * of Pixel 6 Pro + Pixel Tablet start-79 runs `pump_results_2026-08-23_23-18-40`
- * and `23-18-50`. Used by Experiment Pump "Prod-ink fail" subset button
- * (60 images). Source:
- * `dev-ai-interaction/research/pump-red-runlength/prod_ink_fail_photos_2318.json`
- * key `union_salvable`.
+ * cost/vol field at **k=0** (`scaleVariants` kind=ink s=0). Union of Pixel 6 Pro
+ * + Pixel Tablet start-113 runs `pump_results_2026-08-25_14-45-50` and
+ * `14-46-20`. Excludes 15 photos no scheduled column pool-exacts. Used by
+ * Experiment Pump "Prod-ink fail" subset button (68 images). Source:
+ * `dev-ai-interaction/research/pump-red-runlength/prod_ink_fail_photos_k0_1445.json`
+ * key `union_k0`.
  */
 val PROD_INK_FAIL_FILENAMES: List<String> = listOf(
     "PXL_20220701_020625793.dng",
     "PXL_20221020_220049868.dng",
-    "PXL_20221029_003255537.dng",
     "PXL_20221121_021250335.dng",
+    "PXL_20221121_195449335.jpg",
     "PXL_20221126_210421897.dng",
     "PXL_20221126_210421897.jpg",
-    "PXL_20221221_210212750.dng",
+    "PXL_20221128_172956178.jpg",
     "PXL_20221222_211812872.jpg",
-    "PXL_20221227_164720280.jpg",
-    "PXL_20221228_165217774.dng",
     "PXL_20221230_182006230.dng",
     "PXL_20230101_055935720.dng",
+    "PXL_20230128_022551423.dng",
+    "PXL_20230206_014546051.dng",
+    "PXL_20230318_232827961.jpg",
     "PXL_20230411_173710801.dng",
-    "PXL_20230411_215053637.jpg",
-    "PXL_20230414_023123861.dng",
-    "PXL_20230621_073220076.dng",
+    "PXL_20230520_194221428.dng",
+    "PXL_20230520_194628805.dng",
+    "PXL_20230612_180633478.jpg",
     "PXL_20230625_225655795.dng",
     "PXL_20230705_105304742.dng",
-    "PXL_20230806_235553394.jpg",
     "PXL_20230827_000357771.jpg",
     "PXL_20230902_175948030.jpg",
     "PXL_20230924_205918100.jpg",
     "PXL_20231120_002742785.dng",
     "PXL_20231120_002920554.jpg",
     "PXL_20231127_200208050.jpg",
+    "PXL_20231211_004047524.jpg",
     "PXL_20231221_210417588.jpg",
-    "PXL_20231221_213627643.jpg",
     "PXL_20231223_075001042.jpg",
     "PXL_20240521_025057693.jpg",
     "PXL_20240708_222637707.jpg",
     "PXL_20240718_000403216.jpg",
     "PXL_20240722_200504113.jpg",
-    "PXL_20240807_024257557.jpg",
     "PXL_20240808_211542775.jpg",
+    "PXL_20241130_183108905.jpg",
     "PXL_20241213_220345190.jpg",
-    "PXL_20250224_001547856.jpg",
+    "PXL_20241222_024130766.jpg",
+    "PXL_20250101_020218807.jpg",
     "PXL_20250408_223113314.jpg",
+    "PXL_20250426_042852976.jpg",
     "PXL_20250426_084222634.jpg",
     "PXL_20250501_084603153.jpg",
     "PXL_20250501_160616426.jpg",
-    "PXL_20250528_213707194.jpg",
     "PXL_20250626_205528017.jpg",
     "PXL_20250703_032207597.jpg",
     "PXL_20250706_213056077.jpg",
-    "PXL_20250808_234426044.jpg",
+    "PXL_20250726_211343400.jpg",
     "PXL_20250814_231431109.jpg",
     "PXL_20250830_221843009.jpg",
     "PXL_20250906_001113787.jpg",
+    "PXL_20250911_214550967.jpg",
     "PXL_20250926_022815882.jpg",
     "PXL_20250930_065746276.jpg",
+    "PXL_20251004_023935813.jpg",
+    "PXL_20251107_064636287.jpg",
     "PXL_20251120_015319617.jpg",
-    "PXL_20251220_040853040.jpg",
     "PXL_20260114_020053675.jpg",
+    "PXL_20260131_023636224.jpg",
+    "PXL_20260202_204443784.jpg",
     "PXL_20260214_204206758.jpg",
     "PXL_20260220_043453305.jpg",
+    "PXL_20260302_000113349.jpg",
     "PXL_20260311_180433036.jpg",
-    "PXL_20260411_201506380.jpg",
+    "PXL_20260425_044615955.jpg",
+    "PXL_20260531_181110716.jpg",
     "PXL_20260617_033252085.jpg",
-    "PXL_20260706_214711042.jpg",
-    "PXL_20260707_041630487.jpg",
+    "PXL_20260626_225456569.jpg",
+    "PXL_20260702_220704854.jpg",
+    "PXL_20260706_190516439.jpg",
 )
 
 /**

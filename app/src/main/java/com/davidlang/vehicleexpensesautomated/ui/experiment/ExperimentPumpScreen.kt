@@ -373,7 +373,7 @@ fun ExperimentPumpScreen(
         }
     }
 
-    /** Photos where ink-prod or rot-ink-prod is not exact (relax=fail) on 23-18 phone+tablet. */
+    /** Photos where ink-prod or rot-ink-prod is not exact (relax=fail) at k=0 (start-113). */
     val runProdInkFail: () -> Unit = {
         val allFiles = experimentDir.listFiles { f ->
             f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
@@ -588,8 +588,8 @@ fun ExperimentPumpScreen(
             Text("Prod-ink fail (${PROD_INK_FAIL_FILENAMES.size})")
         }
         Text(
-            "Prod-ink fail = photos where ink-prod or rot-ink-prod is not exact (relax=fail) " +
-                "on 23-18, excluding fields no column reads; columns still the full scheduled set (8). " +
+            "Prod-ink fail = k=0 union (ink-prod or rot-ink-prod not exact) on start-113 " +
+                "14-45-50 / 14-46-20, excluding fields no column reads; columns still the full scheduled set (8). " +
                 "Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.secondary,
