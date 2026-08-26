@@ -8507,3 +8507,7 @@ hasBarAtV ignores off-image samples (fully OOB strip is not a bar). meanUFace al
 ## 2026-08-26 - Phase 2: skip extra-k rec thumbs + rec pad from bh
 
 AABB letter skip copies k=1 asis/digits/rect with recB64 empty. ocrOne pad uses OrientedQuad.shortAxisBh not AABB height. makeGProc ink assembly gapFrac/minSeedHsToFreeze from walk knobs (walk2 assembly 2.0). Rot still OCRs extra k.
+
+## 2026-08-26 - CODE LANDED: rot-orient-walk-intent-gaps
+
+FLOWS.md: OOB not ink; rot-color median chroma&lt;8 → Y; AABB skip extra-k no extra rec thumbs; rec inflate pad from bh. Plan CODE LANDED. Do not deploy.
