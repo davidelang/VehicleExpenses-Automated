@@ -280,6 +280,20 @@ object ContentExpandUtils {
         fun copyPts(): FloatArray = pts.copyOf(8)
 
         /**
+         * Rec margin: expand u0/u1/v0/v1 by [padPx] source pixels. No per-corner
+         * image clamp (warp uses BORDER_REPLICATE).
+         */
+        fun padUv(padPx: Int): OrientedQuad {
+            if (padPx <= 0) return this
+            val box = OrientedBox.fromQuad(this) ?: return this
+            val p = padPx.toFloat()
+            return OrientedBox(
+                box.cx, box.cy, box.ux, box.uy, box.vx, box.vy,
+                box.u0 - p, box.u1 + p, box.v0 - p, box.v1 + p,
+            ).toQuad()
+        }
+
+        /**
          * Expand each corner away from the centroid by [padPx] source pixels (for source-border rec).
          * Clamps to [0, imgW)×[0, imgH).
          */
@@ -828,8 +842,8 @@ object ContentExpandUtils {
     }
 
     /**
-     * Warp [quad] to a horizontal strip of height [targetH] (recognition buffer),
-     * using lowest corner as pivot: flattest (longest) side becomes horizontal.
+     * Warp [quad] to a horizontal strip of height [targetH] (recognition buffer).
+     * Long edge (u) → strip width; short (v) → [targetH]. INTER_CUBIC, BORDER_REPLICATE.
      * Returns filled rec mat size targetW×targetH (caller owns dest content via [dest]).
      */
     fun warpQuadToHorizontalStrip(
@@ -875,21 +889,35 @@ object ContentExpandUtils {
     }
 
     /**
-     * Order corners TL,TR,BR,BL for an upright rec strip: the two smallest-y
-     * points become the top edge (left-to-right). The old lowest-corner pivot
-     * mapped the LCD bottom onto the strip top and inverted digits.
+     * Order corners TL,TR,BR,BL from the long-edge box: u = strip width, v = height.
+     * Top is the v=const side whose midpoint has smaller image y; left-to-right in u.
      */
     fun orderQuadForWarp(quad: OrientedQuad): FloatArray? {
-        val p = Array(4) { i -> Point(quad.pts[i * 2].toDouble(), quad.pts[i * 2 + 1].toDouble()) }
-        val byY = p.sortedBy { it.y }
-        if (byY.size < 4) return null
-        val top = byY.take(2).sortedBy { it.x }
-        val bot = byY.drop(2).sortedBy { it.x }
+        val box = OrientedBox.fromQuad(quad) ?: return null
+        fun midY(v: Float): Float {
+            val y0 = box.cy + box.u0 * box.uy + v * box.vy
+            val y1 = box.cy + box.u1 * box.uy + v * box.vy
+            return (y0 + y1) * 0.5f
+        }
+        val vTop: Float
+        val vBot: Float
+        if (midY(box.v0) <= midY(box.v1)) {
+            vTop = box.v0
+            vBot = box.v1
+        } else {
+            vTop = box.v1
+            vBot = box.v0
+        }
+        fun xy(u: Float, v: Float) = floatArrayOf(
+            box.cx + u * box.ux + v * box.vx,
+            box.cy + u * box.uy + v * box.vy,
+        )
+        val tl = xy(box.u0, vTop)
+        val tr = xy(box.u1, vTop)
+        val br = xy(box.u1, vBot)
+        val bl = xy(box.u0, vBot)
         return floatArrayOf(
-            top[0].x.toFloat(), top[0].y.toFloat(),
-            top[1].x.toFloat(), top[1].y.toFloat(),
-            bot[1].x.toFloat(), bot[1].y.toFloat(),
-            bot[0].x.toFloat(), bot[0].y.toFloat(),
+            tl[0], tl[1], tr[0], tr[1], br[0], br[1], bl[0], bl[1],
         )
     }
 

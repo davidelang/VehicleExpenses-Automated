@@ -1845,7 +1845,7 @@ suspend fun runPumpExperiment(
                     imgW: Int,
                     imgH: Int,
                 ): PumpRectOcrLists {
-                    // Inflate oriented quads in source so warp margin is real pixels, then
+                    // Pad oriented quads along u/v in source so warp margin is real pixels, then
                     // place strip at (0,0) without black 4px createCrop inset (same as odo Raw).
                     data class OcrOne(
                         val asis: Pair<String, String>,
@@ -1860,11 +1860,11 @@ suspend fun runPumpExperiment(
                         }
                         val rSc = 48f / q.shortAxisBh()
                         val pad = kotlin.math.ceil(4.0 / rSc.toDouble()).toInt().coerceAtLeast(1)
-                        val qInfl = q.inflate(pad, imgW, imgH)
+                        val qPad = q.padUv(pad)
                         experimentRecSet.p.clear()
                         val dest = org.opencv.core.Mat()
                         val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                            gray, qInfl, dest, targetH = 48,
+                            gray, qPad, dest, targetH = 48,
                         )
                         if (!ok || dest.empty()) {
                             dest.release()

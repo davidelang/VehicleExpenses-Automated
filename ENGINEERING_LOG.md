@@ -8567,3 +8567,13 @@ Native default glareMult 3→11 (seg7One/seedInkBinY/fillChromaTintMask). Rot se
 ## 2026-08-26 - CODE LANDED: rot-orient-jni-geom-glare (11x glare amendment)
 
 FLOWS.md: dropWide 11x max(v0,4) on AABB ink and rot u/v seed; rot still no AABB except rec warp. Plan CODE LANDED. Do not deploy.
+
+## 2026-08-26 - Execute: rot-rec-warp-html-thumbs
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rot-rec-warp-html-thumbs-20260826-0516-plan.md`
+- Scope: orderQuadForWarp from long-edge box; rec pad along u/v (no corner-clamp inflate); HTML rec thumbs height 48px 1:1 width. Do not change QF/expand/0408 glare. Do not deploy.
+
+## 2026-08-26 - Phase 1: rec warp long-edge order + u/v pad
+
+orderQuadForWarp uses OrientedBox (u=long, v=short; top = smaller-y v-side). ocrPumpOrientedQuads pads u0/u1/v0/v1 via padUv; no inflate/corner clamp. dest still 48xW INTER_CUBIC BORDER_REPLICATE.
