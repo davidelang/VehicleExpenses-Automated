@@ -8471,3 +8471,7 @@ seg7One and Kotlin fallback take gapFrac (default 0.5) and minSeedHsToFreeze (0 
 ## 2026-08-26 - Phase 2: Set ink-prod-walk2 ninth flow
 
 Scheduled 9th column Set ink-prod-walk2 after ink-prod-color2. Product 224+608; gapFrac=2.0 peek/gap; minSeedHsToFreeze=4 (fragment seeds still walk). OCR k=0..4 official k=1. ink-prod still default 0.5 / always-freeze. Metadata seg7_gap_frac / seg7_freeze_min_hs. QF/G--/rot-ink/color2 unchanged. Do not deploy.
+
+## 2026-08-26 - Phase 3: FLOWS.md nine columns + walk2 vs 0.5s
+
+docs/PUMP_EXPERIMENT_FLOWS.md: 9-col table + Set ink-prod-walk2 row; peek/gap 2.0s vs ink-prod 0.5s; freeze empty peek only if seedH>=4s. Subset captions 8→9. Plan CODE LANDED. Do not deploy.
