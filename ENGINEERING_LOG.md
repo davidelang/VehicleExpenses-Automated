@@ -8577,3 +8577,7 @@ FLOWS.md: dropWide 11x max(v0,4) on AABB ink and rot u/v seed; rot still no AABB
 ## 2026-08-26 - Phase 1: rec warp long-edge order + u/v pad
 
 orderQuadForWarp uses OrientedBox (u=long, v=short; top = smaller-y v-side). ocrPumpOrientedQuads pads u0/u1/v0/v1 via padUv; no inflate/corner clamp. dest still 48xW INTER_CUBIC BORDER_REPLICATE.
+
+## 2026-08-26 - CODE LANDED: rot-rec-warp-html-thumbs
+
+pRecBuffersHtml: height 48px, width recW or auto, flex wrap, no 48%/100% shrink. FLOWS rec thumbs 1:1 48px high. Plan CODE LANDED. Do not deploy.

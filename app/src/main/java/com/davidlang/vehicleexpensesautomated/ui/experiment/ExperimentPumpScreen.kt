@@ -3373,9 +3373,12 @@ private fun pRecBuffersHtml(br: PumpBranch): String {
             val lab = c.optString("label")
             val asis = c.optString("asis")
             val dig = c.optString("digits")
+            val recW = c.optInt("recW", 0)
+            val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
             chunk.append(
-                "<div style='width:48%;font-size:9px;'>" +
-                    "<img src='data:image/jpeg;base64,$b64' style='width:100%;image-rendering:pixelated;'>" +
+                "<div style='flex:0 0 auto;font-size:9px;'>" +
+                    "<img src='data:image/jpeg;base64,$b64' " +
+                    "style='height:48px;$wCss max-width:none;image-rendering:pixelated;'>" +
                     "<br>$lab <span style='font-size:12px;'>asis=$asis dig=$dig</span></div>",
             )
         }
