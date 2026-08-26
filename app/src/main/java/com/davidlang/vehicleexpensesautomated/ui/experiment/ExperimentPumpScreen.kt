@@ -782,6 +782,7 @@ suspend fun runPumpExperiment(
         "Set ink-prod",
         "Set ink-prod-color",
         "Set ink-prod-color2",
+        "Set ink-prod-walk2",
         "Set jump-prod",
         "Set jump-prod-color",
         "Set rot-ink-prod",
@@ -2829,6 +2830,17 @@ suspend fun runPumpExperiment(
                     seg7Stroke = true,
                     chromaMode = 2,
                 )
+                val procInkProdWalk2 = makeGProc(
+                    emptyList(),
+                    "ink-prod-walk2: product det + 7seg walk gap/peek 2.0s; freeze empty peek only if seedH>=4s; OCR k=0..4; official k=1",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    expDetAsset = null,
+                    seg7Stroke = true,
+                    gapFrac = 2.0f,
+                    minSeedHsToFreeze = 4f,
+                )
                 val procJumpProdColor = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
                     "jump-prod-color: product fused |∇Y|+|∇C| maxFrac=0.4; L/R jump on Y mag; final = expand crop",
@@ -3047,6 +3059,7 @@ suspend fun runPumpExperiment(
                     add("Set ink-prod" to procProdInk)
                     add("Set ink-prod-color" to procInkProdColor)
                     add("Set ink-prod-color2" to procInkProdColor2)
+                    add("Set ink-prod-walk2" to procInkProdWalk2)
                     add("Set jump-prod" to procProdJump)
                     add("Set jump-prod-color" to procJumpProdColor)
                     add("Set rot-ink-prod" to procProdRotInk)
