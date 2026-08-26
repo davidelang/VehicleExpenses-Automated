@@ -1036,7 +1036,7 @@ object ContentExpandUtils {
     /**
      * Seed-local 7-seg stroke width. Otsu on the red ROI only (default dark ink);
      * flip to bright if dark is not the minority ([SEG7_INK_FLIP_FRAC]).
-     * Drop CCs wider than 3× first-pass `s` (glare sheets) then odo H-path:
+     * Drop CCs wider than 11× first-pass `s` (glare sheets) then odo H-path:
      * horiz runs, discard exact-span, peak k≥4 capped max(35, 0.5×seedH) = vSW = `s`.
      * Fallback [SEG7_FALLBACK_H_FRAC]×seedH if peak is the floor 4 or ink_frac ≳ 0.45.
      */
@@ -1059,7 +1059,7 @@ object ContentExpandUtils {
     )
 
     const val SEG7_INK_FLIP_FRAC = 0.45f
-    const val SEG7_GLARE_WIDTH_MULT = 3
+    const val SEG7_GLARE_WIDTH_MULT = 11
     const val SEG7_MIN_STROKE = 4
     const val SEG7_FALLBACK_H_FRAC = 0.08f
     /** Official ink pad (k=1). Walk itself does not pad; [padVertByStrokes] applies k=0 test / k=1 official. */

@@ -8553,3 +8553,13 @@ JNI StrokeWidthInSeed.seed is empty Rect (not toAabb). Kotlin fallback chroma me
 ## 2026-08-26 - CODE LANDED: rot-orient-jni-geom-glare
 
 FLOWS.md: rot never AABBs except rec warp; dropWide 3x max(v0,4) on u/v seed (not color3 11x). Plan CODE LANDED. Do not deploy.
+
+## 2026-08-26 - Execute: rot-orient-jni-geom-glare (amendment: dropWide 11x)
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rot-orient-jni-geom-glare-20260826-0408-plan.md` (amended dropWide 11x)
+- Scope: Raise remaining 3x glare to 11x (AABB default, Kotlin SEG7_GLARE_WIDTH_MULT, rot u/v seed). color3 stays 11. No AABB-ize rot. Do not re-do 0405 JNI. Do not deploy.
+
+## 2026-08-26 - Phase 1: dropWide glare 11x (AABB default + rot u/v seed)
+
+Native default glareMult 3→11 (seg7One/seedInkBinY/fillChromaTintMask). Rot seg7OrientedOne 11*max(peak,4). Kotlin SEG7_GLARE_WIDTH_MULT=11. color3 already 11. Rot still dropWide on u/v seed only. QF/G--/walk2 gap knobs unchanged.

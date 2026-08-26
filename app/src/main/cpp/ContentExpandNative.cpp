@@ -1261,7 +1261,7 @@ static void seg7One(
     bool srcIsBin = false,
     float gapFrac = 0.5f,
     float minSeedHsToFreeze = 0.f,
-    int glareMult = 3
+    int glareMult = 11
 ) {
     *ol = sl; *ot = st; *oright = sr; *ob = sb;
     const int seedH = std::max(1, sb - st);
@@ -1295,7 +1295,7 @@ static void seg7One(
     }
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
     const int v0 = hh0.peak;
-    const int gm = glareMult > 0 ? glareMult : 3;
+    const int gm = glareMult > 0 ? glareMult : 11;
     const int glareW = gm * std::max(v0, 4);
     dropWide(&bin, glareW);
     HorizSW hh = horizPeakSW(bin, seedH, seedW);
@@ -1414,7 +1414,7 @@ static void uvAt(const cv::Mat& uv, int imgW, int x, int y, int* u, int* v) {
 /** Seed-ROI Y Otsu ink bin + dropWide; returns s_px (fallback 0.08×seedH). */
 static int seedInkBinY(
     const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut,
-    int glareMult = 3
+    int glareMult = 11
 ) {
     const int seedH = std::max(1, sb - st);
     const int seedW = std::max(1, sr - sl);
@@ -1432,7 +1432,7 @@ static int seedInkBinY(
         inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
     }
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
-    const int gm = glareMult > 0 ? glareMult : 3;
+    const int gm = glareMult > 0 ? glareMult : 11;
     const int glareW = gm * std::max(hh0.peak, 4);
     dropWide(&bin, glareW);
     HorizSW hh = horizPeakSW(bin, seedH, seedW);
@@ -1451,7 +1451,7 @@ static bool fillChromaTintMask(
     const cv::Mat& y, const cv::Mat& uv,
     int sl, int st, int sr, int sb,
     cv::Mat* dst,
-    int glareMult = 3
+    int glareMult = 11
 ) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
@@ -1591,7 +1591,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     cv::Mat cMag;
     const bool useChromaMag = chromaMode == 1;
     const bool useTint = chromaMode == 2 || chromaMode == 3;
-    const int glareMult = chromaMode == 3 ? 11 : 3;
+    const int glareMult = 11;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     if (useChromaMag) {
         fillChromaMag(*gray, uv ? *uv : cv::Mat(), &cMag);
@@ -1835,7 +1835,7 @@ static void seg7OrientedOne(
         dark = false;
     }
     HorizSW hh0 = horizPeakSW(bin, hv, wu);
-    const int glareW = 3 * std::max(hh0.peak, 4);
+    const int glareW = 11 * std::max(hh0.peak, 4);
     dropWide(&bin, glareW);
     HorizSW hh = horizPeakSW(bin, hv, wu);
     const int sPx = (hh.peak <= 4 || inkFrac >= 0.45f) ? fallback : hh.peak;
