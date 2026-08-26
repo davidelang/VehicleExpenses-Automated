@@ -8405,3 +8405,13 @@ expand7segFromSeedMany/Chroma pass chromaMode 0/1/2. Scheduled 8th column Set in
 ## 2026-08-25 - CODE LANDED: ink-prod-color2-chroma-sampling
 
 Docs: 8-col table + tintMask algorithm. Forensic: flows 8 names including Set ink-prod-color2; metadata color2; fillChromaTintMask + chromaMode=2. QF/G-- unchanged. Device harness photos not run (no deploy).
+
+## 2026-08-25 - Execute: prod-ink-fail-k0-union-deep-k-report
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/prod-ink-fail-k0-union-deep-k-report-20260825-2024-plan.md`
+- Scope: Ink OCR k=0..4 unofficial extras; official k=1. Prod-ink fail button 68 k=0 union. Deep analysis k table. Do not change QF/G--/walk k=0/2.5x cap. Do not deploy.
+
+## 2026-08-25 - Phase 1: ink OCR k=0..4
+
+AABB extra loop 0,2,3,4 after official k=1. Rot loop 1,0,2,3,4. Metadata/assembly k=0,1,2,3,4 official 1. Walk k=0 and 2.5x cap unchanged. PD/classify stay k=1.

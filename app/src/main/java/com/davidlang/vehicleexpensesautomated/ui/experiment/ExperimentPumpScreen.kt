@@ -1508,7 +1508,7 @@ suspend fun runPumpExperiment(
                     inkWalkBoxes = walks.map { it.second }
                     inkJumpOpts = jumpOpts
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
-                    branch.metadata["seg7_k"] = "1,0"
+                    branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "1"
                     branch.metadata["seg7_vert_cap_frac"] = ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
                     branch.metadata["seg7_gap_frac"] = ContentExpandUtils.SEG7_GAP_FRAC.toString()
@@ -1619,7 +1619,7 @@ suspend fun runPumpExperiment(
                         ),
                     )
                     var nOcr = customBluePixelG.size
-                    for (kk in listOf(0f)) {
+                    for (kk in listOf(0f, 2f, 3f, 4f)) {
                         val rects = inkRectsFor(kk)
                         val ocrK = ocrPumpRectsAsisAndDigits(rects)
                         nOcr += rects.size
@@ -1650,7 +1650,7 @@ suspend fun runPumpExperiment(
                     finalVol = cvG.vol,
                     assembly = if (seg7Stroke) mapOf(
                         "method" to "7seg_stroke",
-                        "k" to listOf(1, 0),
+                        "k" to listOf(0, 1, 2, 3, 4),
                         "kOfficial" to 1,
                         "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
                         "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
@@ -1735,7 +1735,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdInk = makeGProc(
                     emptyList(),
-                    "ink-prod: product det + seed-ROI s; walk once; OCR k=0/1; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
+                    "ink-prod: product det + seed-ROI s; walk once; OCR k=0..4; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -2033,7 +2033,7 @@ suspend fun runPumpExperiment(
                         inkJumpOptsRot = jumpOpts
                         branch.metadata["s_per_red"] =
                             inkStrokes.joinToString(",") { it.sPx.toString() }
-                        branch.metadata["seg7_k"] = "1,0"
+                        branch.metadata["seg7_k"] = "0,1,2,3,4"
                         branch.metadata["seg7_k_official"] = "1"
                         branch.metadata["seg7_vert_cap_frac"] =
                             ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
@@ -2121,7 +2121,7 @@ suspend fun runPumpExperiment(
                         var nOcr = 0
                         var officialCands: List<RedBoxOcrCandidate> = emptyList()
                         var officialCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(emptyList())
-                        for (kk in listOf(1f, 0f)) {
+                        for (kk in listOf(1f, 0f, 2f, 3f, 4f)) {
                             val quads = if (kk == 1f) expandedQuads else inkQuadsForK(kk)
                             val rects = quads.map { it.toAabb() }
                             val ocrK = ocrPumpOrientedQuads(quads, gray, imgW, imgH)
@@ -2260,7 +2260,7 @@ suspend fun runPumpExperiment(
                             "contentExpandMode" to "7seg_stroke",
                             "finalKind" to "ink",
                             "maxFrac" to 0.4f,
-                            "k" to listOf(1, 0),
+                            "k" to listOf(0, 1, 2, 3, 4),
                             "kOfficial" to 1,
                             "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
                             "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
@@ -2709,7 +2709,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdRotInk = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "rot-ink-prod: product oriented det + AABB ink walk once; OCR k=0/1; official k=1; jump (no G-list)",
+                    "rot-ink-prod: product oriented det + AABB ink walk once; OCR k=0..4; official k=1; jump (no G-list)",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,
@@ -2724,7 +2724,7 @@ suspend fun runPumpExperiment(
                 )
                 val procInkProdColor = makeGProc(
                     emptyList(),
-                    "ink-prod-color: product det + chromaMag 7seg (median<8 Y fallback); OCR k=0/1; official k=1",
+                    "ink-prod-color: product det + chromaMag 7seg (median<8 Y fallback); OCR k=0..4; official k=1",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -2734,7 +2734,7 @@ suspend fun runPumpExperiment(
                 )
                 val procInkProdColor2 = makeGProc(
                     emptyList(),
-                    "ink-prod-color2: product det + chroma tintMask 7seg (u_p·u_ink / Y polarity); OCR k=0/1; official k=1",
+                    "ink-prod-color2: product det + chroma tintMask 7seg (u_p·u_ink / Y polarity); OCR k=0..4; official k=1",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -2756,7 +2756,7 @@ suspend fun runPumpExperiment(
                 )
                 val procRotInkProdColor = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "rot-ink-prod-color: product oriented det + chroma AABB ink walk; OCR k=0/1; official k=1",
+                    "rot-ink-prod-color: product oriented det + chroma AABB ink walk; OCR k=0..4; official k=1",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,
