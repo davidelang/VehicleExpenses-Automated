@@ -8581,3 +8581,13 @@ orderQuadForWarp uses OrientedBox (u=long, v=short; top = smaller-y v-side). ocr
 ## 2026-08-26 - CODE LANDED: rot-rec-warp-html-thumbs
 
 pRecBuffersHtml: height 48px, width recW or auto, flex wrap, no 48%/100% shrink. FLOWS rec thumbs 1:1 48px high. Plan CODE LANDED. Do not deploy.
+
+## 2026-08-26 - Execute: rot-rec-warp-bottom-left-pivot
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rot-rec-warp-bottom-left-pivot-20260826-0542-plan.md`
+- Scope: orderQuadForWarp pivots BL (largest y, then smaller x); BR = neighbor to the right. Dest TL,TR,BR,BL. Keep 0516 HTML 48px and padUv. Do not change QF/expand/0408. Do not deploy.
+
+## 2026-08-26 - Phase 1: orderQuadForWarp BL pivot, flatten rightward side
+
+orderQuadForWarp: BL = two largest-y then smaller x; BR = cycle neighbor to the right (larger x, else smaller |atan2| to +x); TL = other neighbor; TR remaining. Dest still TL,TR,BR,BL. No u0-as-left. padUv and 48px HTML unchanged.
