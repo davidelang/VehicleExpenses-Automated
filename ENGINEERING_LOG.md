@@ -8638,3 +8638,7 @@ Independent L/R (u±) iterative 1px jump-retract, max_jumps=4. Jump masks: Y / c
 ## 2026-08-26 - Phase 1: rot content-size map + black warp
 
 Rot detect map: fullW/targetW and fullH/targetH (content), not outer 32-pad. warpQuadToHorizontalStrip INTER_CUBIC BORDER_CONSTANT black. padUv still unclamped. 0542 BL pivot and kPaddleDetHeatCellPx=4 unchanged.
+
+## 2026-08-26 - Phase 2: FLOWS rot content map + OOB black
+
+FLOWS: rot maps det boxes by content targetW/H not 32-pad outer; rec OOB BORDER_CONSTANT black; cell halo still native 4×4. Does not require detect-on-inner.
