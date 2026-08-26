@@ -8535,3 +8535,7 @@ FLOWS.md: Pump UI is a compact wrapping equal-cell grid (not FlowRow). Plan CODE
 ## 2026-08-26 - Phase 1: native oriented 7seg + jump JNI wrappers
 
 nativeSeg7OrientedMany / nativeJumpOrientedMany. Kotlin expand7segFromOrientedSeedMany and jumpRetractOrientedUMany call JNI then fallback. Rot inkQuadsFor/inkQuadsForK one jump batch per k. One Sobel per photo for jump. OOB not ink. chromaMode 1 seed-interior median < 8 → Y. AABB/QF/walk2 unchanged.
+
+## 2026-08-26 - CODE LANDED: rot-orient-7seg-jni
+
+FLOWS.md: rot-ink 7seg/jump JNI; Kotlin fallback if native null. Plan CODE LANDED. Device photos not run (no deploy).
