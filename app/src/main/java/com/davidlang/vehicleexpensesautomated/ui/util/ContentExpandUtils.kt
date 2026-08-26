@@ -1401,7 +1401,7 @@ object ContentExpandUtils {
             gapFrac = SEG7_GAP_FRAC, minSeedHsToFreeze = 0f,
         )
         if (many != null && many.size == 1) return many[0]
-        if (chromaMode == 2) {
+        if (chromaMode == 2 || chromaMode == 3) {
             return expand7segFromSeed(y, seed, k, j)
         }
         val c = chromaMagU8(y, uv)

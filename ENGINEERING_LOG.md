@@ -8485,3 +8485,7 @@ docs/PUMP_EXPERIMENT_FLOWS.md: 9-col table + Set ink-prod-walk2 row; peek/gap 2.
 ## 2026-08-26 - Phase 1: color3 native tintMask chromaMode=3 11x glare
 
 seg7One/seedInkBinY/fillChromaTintMask take glareMult (default 3 = old). chromaMode=3 uses same tintMask as color2 with glareW=11*max(v0,4). chromaMode=2 stays 3x. Gray/chromaMag omit the arg.
+
+## 2026-08-26 - Phase 2: Kotlin chromaMode=3 + Set ink-prod-color3
+
+Scheduled Set ink-prod-color3 after color2 (10 flows). makeGProc chromaMode=3; metadata content_expand_chroma=color3. JNI-fail falls back to Y 7seg like color2. color2/walk2/G-- unchanged.
