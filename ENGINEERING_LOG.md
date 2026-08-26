@@ -8475,3 +8475,13 @@ Scheduled 9th column Set ink-prod-walk2 after ink-prod-color2. Product 224+608; 
 ## 2026-08-26 - Phase 3: FLOWS.md nine columns + walk2 vs 0.5s
 
 docs/PUMP_EXPERIMENT_FLOWS.md: 9-col table + Set ink-prod-walk2 row; peek/gap 2.0s vs ink-prod 0.5s; freeze empty peek only if seedH>=4s. Subset captions 8→9. Plan CODE LANDED. Do not deploy.
+
+## 2026-08-26 - Execute: ink-prod-color3-chroma-sampling
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/ink-prod-color3-chroma-sampling-20260825-1430-plan.md`
+- Scope: New scheduled column Set ink-prod-color3 (chromaMode=3 tintMask, glareW=11*max(v0,4)). Keep color2 3x glare and walk2/G--/QF/jump/rot-ink. Do not deploy.
+
+## 2026-08-26 - Phase 1: color3 native tintMask chromaMode=3 11x glare
+
+seg7One/seedInkBinY/fillChromaTintMask take glareMult (default 3 = old). chromaMode=3 uses same tintMask as color2 with glareW=11*max(v0,4). chromaMode=2 stays 3x. Gray/chromaMag omit the arg.

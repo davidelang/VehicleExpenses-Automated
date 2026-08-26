@@ -1260,7 +1260,8 @@ static void seg7One(
     int* ol, int* ot, int* oright, int* ob, int* sPxOut, int* vSWOut, int* hSWOut, int* usedFb,
     bool srcIsBin = false,
     float gapFrac = 0.5f,
-    float minSeedHsToFreeze = 0.f
+    float minSeedHsToFreeze = 0.f,
+    int glareMult = 3
 ) {
     *ol = sl; *ot = st; *oright = sr; *ob = sb;
     const int seedH = std::max(1, sb - st);
@@ -1294,7 +1295,8 @@ static void seg7One(
     }
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
     const int v0 = hh0.peak;
-    const int glareW = 3 * std::max(v0, 4);
+    const int gm = glareMult > 0 ? glareMult : 3;
+    const int glareW = gm * std::max(v0, 4);
     dropWide(&bin, glareW);
     HorizSW hh = horizPeakSW(bin, seedH, seedW);
     const int vSW = hh.peak;
@@ -1411,7 +1413,8 @@ static void uvAt(const cv::Mat& uv, int imgW, int x, int y, int* u, int* v) {
 
 /** Seed-ROI Y Otsu ink bin + dropWide; returns s_px (fallback 0.08×seedH). */
 static int seedInkBinY(
-    const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut
+    const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut,
+    int glareMult = 3
 ) {
     const int seedH = std::max(1, sb - st);
     const int seedW = std::max(1, sr - sl);
@@ -1429,7 +1432,8 @@ static int seedInkBinY(
         inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
     }
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
-    const int glareW = 3 * std::max(hh0.peak, 4);
+    const int gm = glareMult > 0 ? glareMult : 3;
+    const int glareW = gm * std::max(hh0.peak, 4);
     dropWide(&bin, glareW);
     HorizSW hh = horizPeakSW(bin, seedH, seedW);
     const int sPx = (hh.peak <= 4 || inkFrac >= 0.45f) ? fallback : hh.peak;
@@ -1446,7 +1450,8 @@ static int seedInkBinY(
 static bool fillChromaTintMask(
     const cv::Mat& y, const cv::Mat& uv,
     int sl, int st, int sr, int sb,
-    cv::Mat* dst
+    cv::Mat* dst,
+    int glareMult = 3
 ) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
@@ -1458,7 +1463,7 @@ static bool fillChromaTintMask(
     if (sb > h) sb = h;
     if (sr <= sl || sb <= st) return false;
     cv::Mat seedBin;
-    const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin);
+    const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin, glareMult);
     if (seedBin.empty()) return false;
 
     double su = 0.0, sv = 0.0, yInkSum = 0.0, chromaInkSum = 0.0;
@@ -1582,10 +1587,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     const int n = n4 / 4;
     std::vector<jint> seeds(n4);
     env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
-    // chromaMode: 0 gray, 1 chromaMag, 2 chromaTint2
+    // chromaMode: 0 gray, 1 chromaMag, 2 chromaTint2, 3 chromaTint3 (same mask, 11× glare)
     cv::Mat cMag;
     const bool useChromaMag = chromaMode == 1;
-    const bool useTint2 = chromaMode == 2;
+    const bool useTint = chromaMode == 2 || chromaMode == 3;
+    const int glareMult = chromaMode == 3 ? 11 : 3;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     if (useChromaMag) {
         fillChromaMag(*gray, uv ? *uv : cv::Mat(), &cMag);
@@ -1598,14 +1604,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
         if (r > imgW) r = imgW;
         if (b > imgH) b = imgH;
         int ol, ot, orr, ob, sPx, vSW, hSW, fb;
-        if (useTint2) {
+        if (useTint) {
             cv::Mat tint;
             const bool ok = uv && fillChromaTintMask(
-                *gray, *uv, l, t, r, b, &tint);
+                *gray, *uv, l, t, r, b, &tint, glareMult);
             if (ok) {
                 seg7One(tint, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
-                    gapFrac, minSeedHsToFreeze);
+                    gapFrac, minSeedHsToFreeze, glareMult);
             } else {
                 seg7One(*gray, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
