@@ -30,7 +30,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -250,7 +252,7 @@ data class PumpPhotoResultSummary(
 
 // PumpHunk, PumpRectOcrLists, RedBoxOcrCandidate, PathResult, CostVolClassifyResult: see PumpCostVolUtils.kt
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ExperimentPumpScreen(
     navController: NavHostController,
@@ -540,90 +542,153 @@ fun ExperimentPumpScreen(
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = { zipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.fillMaxWidth()) { Text("Extract Downloaded ZIP") }
-        Button(onClick = {
-            val allFiles = experimentDir.listFiles { f -> f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng") } ?: emptyArray()
-            Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
-            startPumpJob(null, "Run Test (${allFiles.size})…")
-        }, enabled = !isRunning && experimentDir.exists(), modifier = Modifier.fillMaxWidth()) { Text("Run Test") }
-        Button(
-            onClick = runFirst10,
-            enabled = !isRunning && experimentDir.exists(),
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("First 10") }
-        Button(
-            onClick = runSelectedSample,
-            enabled = !isRunning && experimentDir.exists(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Selected sample (${SelectedSamplePhotos.PUMP.size} pump)", fontWeight = FontWeight.Bold)
-        }
-        Text(
-            "Selected sample = coverage subset (small→large text, GT-matched; 34 pump). " +
-                "Pump photos only — no dash. Deep link: vehicleexpenses://experiment/pump?auto=selected",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        val zipLabel = "Extract Downloaded ZIP"
+        val runTestLabel = "Run Test"
+        val first10Label = "First 10"
+        val selectedLabel = "Selected sample (${SelectedSamplePhotos.PUMP.size} pump)"
+        val horizLabel = "Horiz-affected (${HORIZ_REACH_AFFECTED_FILENAMES.size})"
+        val prodInkLabel = "Prod-ink fail (${PROD_INK_FAIL_FILENAMES.size})"
+        val detDumpLabel = "Det dump (prod × deskew/rot)"
+        val l1Label = "L1 SO debug dump (buffers + heatmaps)"
+        val gridLabels = listOf(
+            zipLabel, runTestLabel, first10Label, selectedLabel,
+            horizLabel, prodInkLabel, detDumpLabel, l1Label,
         )
-        Button(
-            onClick = runHorizAffected,
-            enabled = !isRunning && experimentDir.exists(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Horiz-affected (${HORIZ_REACH_AFFECTED_FILENAMES.size})")
+        val textMeasurer = rememberTextMeasurer()
+        val buttonStyle = MaterialTheme.typography.labelLarge
+        val density = LocalDensity.current
+        val cellW = with(density) {
+            gridLabels.maxOf { textMeasurer.measure(it, style = buttonStyle).size.width }.toDp() + 24.dp
         }
-        Text(
-            "Horiz-affected = photos where exact min_v changed between horiz 0.5 and 1.0 " +
-                "(phone 08-08). Columns: G-- / ink-prod / jump-prod / rot-ink-prod (+ color). " +
-                "Deep link: vehicleexpenses://experiment/pump?auto=horiz",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        )
-        Button(
-            onClick = runProdInkFail,
-            enabled = !isRunning && experimentDir.exists(),
+        val cellMod = Modifier
+            .width(cellW)
+            .heightIn(min = ButtonDefaults.MinHeight)
+        val cellPad = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+        val jobsEnabled = !isRunning && experimentDir.exists()
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Prod-ink fail (${PROD_INK_FAIL_FILENAMES.size})")
+            Button(
+                onClick = { zipLauncher.launch(arrayOf("application/zip")) },
+                modifier = cellMod,
+                contentPadding = cellPad,
+            ) {
+                Text(
+                    zipLabel,
+                    style = buttonStyle,
+                    softWrap = true,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Button(
+                onClick = {
+                    val allFiles = experimentDir.listFiles { f ->
+                        f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+                    } ?: emptyArray()
+                    Log.d(TAG, "Run Test listFiles: dir=${experimentDir.absolutePath} count=${allFiles.size}")
+                    startPumpJob(null, "Run Test (${allFiles.size})…")
+                },
+                enabled = jobsEnabled,
+                modifier = cellMod,
+                contentPadding = cellPad,
+            ) {
+                Text(
+                    runTestLabel,
+                    style = buttonStyle,
+                    softWrap = true,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Button(
+                onClick = runFirst10,
+                enabled = jobsEnabled,
+                modifier = cellMod,
+                contentPadding = cellPad,
+            ) {
+                Text(
+                    first10Label,
+                    style = buttonStyle,
+                    softWrap = true,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Button(
+                onClick = runSelectedSample,
+                enabled = jobsEnabled,
+                modifier = cellMod,
+                contentPadding = cellPad,
+            ) {
+                Text(
+                    selectedLabel,
+                    style = buttonStyle,
+                    fontWeight = FontWeight.Bold,
+                    softWrap = true,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Button(
+                onClick = runHorizAffected,
+                enabled = jobsEnabled,
+                modifier = cellMod,
+                contentPadding = cellPad,
+            ) {
+                Text(
+                    horizLabel,
+                    style = buttonStyle,
+                    softWrap = true,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Button(
+                onClick = runProdInkFail,
+                enabled = jobsEnabled,
+                modifier = cellMod,
+                contentPadding = cellPad,
+            ) {
+                Text(
+                    prodInkLabel,
+                    style = buttonStyle,
+                    softWrap = true,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Button(
+                onClick = runDetDump,
+                enabled = jobsEnabled,
+                modifier = cellMod,
+                contentPadding = cellPad,
+            ) {
+                Text(
+                    detDumpLabel,
+                    style = buttonStyle,
+                    softWrap = true,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Button(
+                onClick = runL1SoDebug,
+                enabled = jobsEnabled,
+                modifier = cellMod,
+                contentPadding = cellPad,
+            ) {
+                Text(
+                    l1Label,
+                    style = buttonStyle,
+                    softWrap = true,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
-        Text(
-            "Prod-ink fail = k=0 union (ink-prod or rot-ink-prod not exact) on start-113 " +
-                "14-45-50 / 14-46-20, excluding fields no column reads; columns still the full scheduled set (8). " +
-                "Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        )
-        Button(
-            onClick = runDetDump,
-            enabled = !isRunning && experimentDir.exists(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Det dump (prod × deskew/rot)")
-        }
-        Text(
-            "Two discover-only runs (prod × deskew/rot); no expand/OCR; all pump_photos. " +
-                "Writes pump_reports/pump_det_boxes_<ts>/. " +
-                "Deep link: vehicleexpenses://experiment/pump?auto=detdump",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        )
-        Button(
-            onClick = runL1SoDebug,
-            enabled = !isRunning && experimentDir.exists(),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("L1 SO debug dump (buffers + heatmaps)")
-        }
-        Text(
-            "L1 dump writes under files/pump_so_debug/ — pull after pin SO and after new SO. " +
-                "Target: ${PumpSoDebugDump.DEFAULT_L1_NAME}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        )
         Spacer(modifier = Modifier.height(16.dp))
         LazyColumn(modifier = Modifier.weight(1f)) {
             itemsIndexed(resultsList) { index, res ->

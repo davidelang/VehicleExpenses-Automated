@@ -8441,3 +8441,15 @@ AABB ink extra k=0,2,3,4 skips rec when k=1 asis has letters and no digit; reuse
 ## 2026-08-26 - Phase 3: rot expand along red normals, warp after blue
 
 Rot-ink 7seg walks ±v in source (no toAabb before walk). k-pad along v, jump along ±u. PD blues are parallelograms. Rec warps finished blue INTER_CUBIC. AABB ink walk unchanged.
+
+## 2026-08-26 - Implement Set ink-prod-color3 chroma tint sampling column
+
+## 2026-08-26 - Execute: pump-experiment-compact-button-grid
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/pump-experiment-compact-button-grid-20260825-2338-plan.md`
+- Scope: FlowRow equal-cell button grid; drop five captions. No job/subset/dump/QF change. Do not deploy.
+
+## 2026-08-26 - Phase 1: Pump experiment compact button grid
+
+Eight experiment buttons in FlowRow; equal cellW from longest label. Dropped five caption Texts. ZIP/Run Test/First 10/Selected/Horiz/Prod-ink/Det dump/L1 still wired. Progress and results list unchanged.
