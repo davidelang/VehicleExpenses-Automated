@@ -859,7 +859,7 @@ object ContentExpandUtils {
         val m = Imgproc.getPerspectiveTransform(src, dst)
         Imgproc.warpPerspective(
             gray, dest, m, Size(targetW.toDouble(), targetH.toDouble()),
-            Imgproc.INTER_LINEAR, Core.BORDER_REPLICATE, Scalar(0.0),
+            Imgproc.INTER_CUBIC, Core.BORDER_REPLICATE, Scalar(0.0),
         )
         m.release(); src.release(); dst.release()
         return !dest.empty() && dest.cols() >= 8 && dest.rows() >= 8
@@ -1450,6 +1450,281 @@ object ContentExpandUtils {
             Rect(box.left, box.top - padUp, box.right, box.bottom + padDown),
             imgW, imgH,
         )
+    }
+
+    data class Seg7OrientedExpand(
+        val quad: OrientedQuad,
+        val stroke: StrokeWidthInSeed,
+    )
+
+    /**
+     * 7seg walk along the red **normals** (`±v`) in source pixels. Frozen `u` span.
+     * Does not pad or jump; caller uses [padOrientedByStrokes] then [jumpRetractOrientedU].
+     */
+    fun expand7segFromOrientedSeedMany(
+        gray: Mat,
+        uv: Mat?,
+        seeds: List<OrientedQuad>,
+        chromaMode: Int = 0,
+    ): List<Seg7OrientedExpand> {
+        if (seeds.isEmpty()) return emptyList()
+        val src = if (chromaMode != 0 && uv != null && !uv.empty()) {
+            chromaMagU8(gray, uv)
+        } else {
+            gray
+        }
+        val own = src !== gray
+        try {
+            return seeds.map { expand7segFromOrientedSeedOn(src, it) }
+        } finally {
+            if (own) src.release()
+        }
+    }
+
+    /** k-pad along `±v`, remaining [SEG7_VERT_CAP_FRAC]×seed `bh` per side. Frozen sides still pad. */
+    fun padOrientedByStrokes(
+        walked: OrientedQuad,
+        seed: OrientedQuad,
+        k: Float,
+        sPx: Int,
+    ): OrientedQuad {
+        val sb = OrientedBox.fromQuad(seed) ?: return walked
+        val wb = OrientedBox.fromQuad(walked) ?: return walked
+        val seedBh = sb.vSpan().coerceAtLeast(1f)
+        val capPx = max(1, (SEG7_VERT_CAP_FRAC * seedBh).roundToInt())
+        val kPad = if (k <= 0f) 0 else max(1, (k * max(1, sPx)).roundToInt())
+        val walkNeg = max(0f, sb.v0 - wb.v0)
+        val walkPos = max(0f, wb.v1 - sb.v1)
+        val padNeg = min(kPad.toFloat(), max(0f, capPx - walkNeg))
+        val padPos = min(kPad.toFloat(), max(0f, capPx - walkPos))
+        return OrientedBox(
+            wb.cx, wb.cy, wb.ux, wb.uy, wb.vx, wb.vy,
+            wb.u0, wb.u1, wb.v0 - padNeg, wb.v1 + padPos,
+        ).toQuad()
+    }
+
+    /**
+     * Jump-retract along `±u` (long axis) in source. Same energy jump / grow-if-text /
+     * retract / retractClear as AABB [jumpRetractHorizontal]. Does not AABB the box.
+     */
+    fun jumpRetractOrientedU(
+        gray: Mat,
+        seed: OrientedQuad,
+        opts: ExpandOptions,
+    ): OrientedQuad {
+        val box = OrientedBox.fromQuad(seed) ?: return seed
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val gx = Mat()
+        val gy = Mat()
+        val eng = Mat()
+        Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
+        Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
+        Core.magnitude(gx, gy, eng)
+        gx.release()
+        gy.release()
+        try {
+            fun meanUFace(u: Float): Double {
+                val n = max(4, (box.v1 - box.v0).roundToInt())
+                var s = 0.0
+                var c = 0
+                for (i in 0 until n) {
+                    val v = box.v0 + (i + 0.5f) / n * (box.v1 - box.v0)
+                    val px = box.cx + u * box.ux + v * box.vx
+                    val py = box.cy + u * box.uy + v * box.vy
+                    if (px < 0f || py < 0f || px >= imgW || py >= imgH) continue
+                    s += sampleF32(eng, px, py, imgW, imgH)
+                    c++
+                }
+                return if (c > 0) s / c else 0.0
+            }
+            val du = 2f
+            val uA = box.u0 + du
+            val uB = box.u1 - du
+            val base = if (uB > uA) {
+                var s = 0.0
+                var c = 0
+                val nu = max(4, (uB - uA).roundToInt())
+                for (i in 0 until nu) {
+                    s += meanUFace(uA + (i + 0.5f) / nu * (uB - uA))
+                    c++
+                }
+                if (c > 0) s / c else meanUFace((box.u0 + box.u1) * 0.5f)
+            } else {
+                meanUFace((box.u0 + box.u1) * 0.5f)
+            }
+            val thr = opts.energyRatio * max(base, 1e-3)
+            val vSpan = box.vSpan().coerceAtLeast(1f)
+            val cap = max(1, (opts.maxFrac * vSpan).roundToInt())
+            val floorU0 = box.u0
+            val floorU1 = box.u1
+            val jx = max(1, (opts.jumpFrac * vSpan).roundToInt()).toFloat()
+            var u0 = box.u0 - jx
+            var u1 = box.u1 + jx
+            val inText =
+                (u0 < floorU0 && meanUFace(u0) >= thr) ||
+                    (u1 > floorU1 && meanUFace(u1) >= thr)
+            if (inText) {
+                var k = 0
+                while (k < cap) {
+                    var grew = false
+                    if (meanUFace(u0 - 1f) >= thr) {
+                        u0 -= 1f
+                        grew = true
+                    }
+                    if (meanUFace(u1 + 1f) >= thr) {
+                        u1 += 1f
+                        grew = true
+                    }
+                    if (!grew) break
+                    k++
+                }
+            } else {
+                while (u0 < floorU0 && meanUFace(u0) < thr) u0 += 1f
+                while (u1 > floorU1 && meanUFace(u1) < thr) u1 -= 1f
+                val clear = max(1, (opts.retractClearFrac * vSpan).roundToInt()).toFloat()
+                u0 -= clear
+                u1 += clear
+            }
+            if (u1 < u0 + 2f) u1 = u0 + 2f
+            return OrientedBox(
+                box.cx, box.cy, box.ux, box.uy, box.vx, box.vy,
+                u0, u1, box.v0, box.v1,
+            ).toQuad()
+        } finally {
+            eng.release()
+        }
+    }
+
+    private fun sampleU8(m: Mat, x: Float, y: Float, imgW: Int, imgH: Int): Int {
+        if (x < 0f || y < 0f || x >= imgW || y >= imgH || m.empty()) return 0
+        val ix = x.toInt().coerceIn(0, imgW - 1)
+        val iy = y.toInt().coerceIn(0, imgH - 1)
+        val row = m.get(iy, ix) ?: return 0
+        return row[0].toInt() and 0xFF
+    }
+
+    private fun sampleF32(m: Mat, x: Float, y: Float, imgW: Int, imgH: Int): Double {
+        if (x < 0f || y < 0f || x >= imgW || y >= imgH || m.empty()) return 0.0
+        val ix = x.toInt().coerceIn(0, imgW - 1)
+        val iy = y.toInt().coerceIn(0, imgH - 1)
+        val row = m.get(iy, ix) ?: return 0.0
+        return row[0]
+    }
+
+    private fun expand7segFromOrientedSeedOn(
+        src: Mat,
+        seedQ: OrientedQuad,
+    ): Seg7OrientedExpand {
+        val imgW = src.cols()
+        val imgH = src.rows()
+        val aabb = seedQ.toAabb()
+        val box = OrientedBox.fromQuad(seedQ)
+        val seedBh = box?.vSpan()?.coerceAtLeast(1f) ?: max(1, aabb.height()).toFloat()
+        val fallback = max(2, (SEG7_FALLBACK_H_FRAC * seedBh).roundToInt())
+        fun failStroke() = StrokeWidthInSeed(
+            sPx = fallback, vSW = SEG7_MIN_STROKE, hSW = SEG7_MIN_STROKE,
+            inkFrac = 0f, darkInk = true, usedFallback = true,
+            droppedGlare = 0, otsuThr = 0, seed = aabb,
+        )
+        if (box == null || src.empty() || src.type() != CvType.CV_8UC1) {
+            return Seg7OrientedExpand(seedQ, failStroke())
+        }
+        val wu = max(4, box.uSpan().roundToInt())
+        val hv = max(4, box.vSpan().roundToInt())
+        val seedMat = Mat.zeros(hv, wu, CvType.CV_8UC1)
+        val row = ByteArray(wu)
+        try {
+            for (y in 0 until hv) {
+                val v = box.v0 + (y + 0.5f) / hv * box.vSpan()
+                for (x in 0 until wu) {
+                    val u = box.u0 + (x + 0.5f) / wu * box.uSpan()
+                    val px = box.cx + u * box.ux + v * box.vx
+                    val py = box.cy + u * box.uy + v * box.vy
+                    row[x] = sampleU8(src, px, py, imgW, imgH).toByte()
+                }
+                seedMat.put(y, 0, row)
+            }
+            val stroke0 = strokeWidthInSeed(seedMat, Rect(0, 0, wu, hv))
+            val stroke = stroke0.copy(seed = aabb)
+            val sPx = max(1, stroke.sPx)
+            val cap = SEG7_VERT_CAP_FRAC * seedBh
+            val gapStop = max(1, (SEG7_GAP_FRAC * sPx).roundToInt())
+            val minRun = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
+            val thr = stroke.otsuThr
+            val dark = stroke.darkInk
+            fun hasBarAtV(v: Float): Boolean {
+                var run = 0
+                var mx = 0
+                for (i in 0 until wu) {
+                    val u = box.u0 + (i + 0.5f) / wu * box.uSpan()
+                    val px = box.cx + u * box.ux + v * box.vx
+                    val py = box.cy + u * box.uy + v * box.vy
+                    val g = sampleU8(src, px, py, imgW, imgH)
+                    val ink = if (dark) g <= thr else g >= thr
+                    if (ink) {
+                        run++
+                        if (run > mx) mx = run
+                    } else {
+                        run = 0
+                    }
+                }
+                return mx >= minRun
+            }
+            fun peek(startV: Float, dir: Float): Boolean {
+                var v = startV
+                var i = 0
+                while (i < gapStop) {
+                    if (hasBarAtV(v)) return true
+                    v += dir
+                    i++
+                }
+                return false
+            }
+            val allowNeg = peek(box.v0 - 1f, -1f)
+            val allowPos = peek(box.v1 + 1f, +1f)
+            var v0 = box.v0
+            var v1 = box.v1
+            if (allowNeg) {
+                var gap = 0
+                var v = box.v0 - 1f
+                while (box.v0 - v <= cap) {
+                    if (hasBarAtV(v)) {
+                        v0 = v
+                        gap = 0
+                    } else {
+                        gap++
+                        if (gap >= gapStop) break
+                    }
+                    v -= 1f
+                }
+            }
+            if (allowPos) {
+                var gap = 0
+                var v = box.v1 + 1f
+                while (v - box.v1 <= cap) {
+                    if (hasBarAtV(v)) {
+                        v1 = v
+                        gap = 0
+                    } else {
+                        gap++
+                        if (gap >= gapStop) break
+                    }
+                    v += 1f
+                }
+            }
+            if (v1 < v0 + 2f) v1 = v0 + 2f
+            val outQ = OrientedBox(
+                box.cx, box.cy, box.ux, box.uy, box.vx, box.vy,
+                box.u0, box.u1, v0, v1,
+            ).toQuad()
+            return Seg7OrientedExpand(outQ, stroke)
+        } catch (_: Throwable) {
+            return Seg7OrientedExpand(seedQ, failStroke())
+        } finally {
+            seedMat.release()
+        }
     }
 
     /** Jump L/R by `j×s`. If the 1px boundary still has a ~s run, grow in steps of `s` (cap 20s). Else retract to last bar and pad `s`. */

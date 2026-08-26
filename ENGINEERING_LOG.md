@@ -8437,3 +8437,7 @@ HTML # / JSON line_number / photo frag idx = 1-based index in sorted full pump_p
 ## 2026-08-26 - Phase 2: skip extra-k OCR on AABB letter boxes
 
 AABB ink extra k=0,2,3,4 skips rec when k=1 asis has letters and no digit; reuses k=1 text. Rot-ink still OCRs all k. LCD digit boxes still extra-k.
+
+## 2026-08-26 - Phase 3: rot expand along red normals, warp after blue
+
+Rot-ink 7seg walks ±v in source (no toAabb before walk). k-pad along v, jump along ±u. PD blues are parallelograms. Rec warps finished blue INTER_CUBIC. AABB ink walk unchanged.
