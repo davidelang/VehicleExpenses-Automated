@@ -8628,3 +8628,13 @@ jumpRetractHorizontalMany / jumpRetractOrientedUMany pass uv+chromaMode. Kotlin 
 ## 2026-08-26 - CODE LANDED: iterative-jump-retract-color3
 
 Independent L/R (u±) iterative 1px jump-retract, max_jumps=4. Jump masks: Y / chromaMag / tint / fused. Scheduled Set ink-prod-color3 removed (9 columns). Plan Status not writable (640 ai-planner:ai-sandbox; no chmod). Do not deploy.
+
+## 2026-08-26 - Execute: rot-det-inner-scale-warp-black
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rot-det-inner-scale-warp-black-20260826-1424-plan.md`
+- Scope: Rot box map uses targetW/targetH (content), not outer 32-pad. warpQuadToHorizontalStrip BORDER_CONSTANT black. Keep 0542 BL pivot, 0516 thumbs, kPaddleDetHeatCellPx=4. Do not deploy.
+
+## 2026-08-26 - Phase 1: rot content-size map + black warp
+
+Rot detect map: fullW/targetW and fullH/targetH (content), not outer 32-pad. warpQuadToHorizontalStrip INTER_CUBIC BORDER_CONSTANT black. padUv still unclamped. 0542 BL pivot and kPaddleDetHeatCellPx=4 unchanged.

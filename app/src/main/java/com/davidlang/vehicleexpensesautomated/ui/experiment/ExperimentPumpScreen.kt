@@ -1993,8 +1993,8 @@ suspend fun runPumpExperiment(
                             if (p.size < 8) return@forEach
                             val q = FloatArray(8)
                             for (i in 0 until 4) {
-                                q[i * 2] = p[i * 2] * fullW / masterW
-                                q[i * 2 + 1] = p[i * 2 + 1] * fullH / masterH
+                                q[i * 2] = p[i * 2] * fullW / targetW
+                                q[i * 2 + 1] = p[i * 2 + 1] * fullH / targetH
                             }
                             val oq = ContentExpandUtils.orientedFromPoints8(q)
                             collected.add(oq)

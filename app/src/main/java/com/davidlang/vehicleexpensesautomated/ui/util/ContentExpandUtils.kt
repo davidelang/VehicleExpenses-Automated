@@ -281,7 +281,7 @@ object ContentExpandUtils {
 
         /**
          * Rec margin: expand u0/u1/v0/v1 by [padPx] source pixels. No per-corner
-         * image clamp (warp uses BORDER_REPLICATE).
+         * image clamp (warp uses BORDER_CONSTANT black).
          */
         fun padUv(padPx: Int): OrientedQuad {
             if (padPx <= 0) return this
@@ -843,7 +843,7 @@ object ContentExpandUtils {
 
     /**
      * Warp [quad] to a horizontal strip of height [targetH] (recognition buffer).
-     * Pivot BL, flatten the rightward side (BL→BR → +x). INTER_CUBIC, BORDER_REPLICATE.
+     * Pivot BL, flatten the rightward side (BL→BR → +x). INTER_CUBIC, BORDER_CONSTANT black.
      * Returns filled rec mat size targetW×targetH (caller owns dest content via [dest]).
      */
     fun warpQuadToHorizontalStrip(
@@ -882,7 +882,7 @@ object ContentExpandUtils {
         val m = Imgproc.getPerspectiveTransform(src, dst)
         Imgproc.warpPerspective(
             gray, dest, m, Size(targetW.toDouble(), targetH.toDouble()),
-            Imgproc.INTER_CUBIC, Core.BORDER_REPLICATE, Scalar(0.0),
+            Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0),
         )
         m.release(); src.release(); dst.release()
         return !dest.empty() && dest.cols() >= 8 && dest.rows() >= 8
