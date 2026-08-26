@@ -1855,8 +1855,7 @@ suspend fun runPumpExperiment(
                         val recH: Int,
                     )
                     suspend fun ocrOne(q: ContentExpandUtils.OrientedQuad): OcrOne {
-                        val aabb = q.toAabb()
-                        if (aabb.width() < 2 || aabb.height() < 2) {
+                        if (q.shortAxisBh() < 2f || q.longAxisBw() < 2f) {
                             return OcrOne("?" to "", "?" to "", "", 0, 0)
                         }
                         val rSc = 48f / q.shortAxisBh()
@@ -2333,8 +2332,12 @@ suspend fun runPumpExperiment(
                         seedQuads = seedQuads,
                         scaleVariants = variants,
                     )
-                    doBOrDRedOnlyImage()
-                    val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, Color.RED, 2) } +
+                    val redOnlyAnns = seedQuads.flatMap { pumpQuadEdgeAnns(it, Color.RED, 2) }
+                    branch.images["PD_red_only"] = OcrUtils.takeSnapshot(
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        redOnlyAnns, null, workspace,
+                    ).first
+                    val aPd = redOnlyAnns +
                         primaryQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,

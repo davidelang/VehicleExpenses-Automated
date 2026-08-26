@@ -363,6 +363,10 @@ object ContentExpandUtils {
             OrientedBox.fromQuad(this)?.vSpan()?.coerceAtLeast(1f)
                 ?: toAabb().height().coerceAtLeast(1).toFloat()
 
+        /** Long-axis span (`uSpan`), not AABB width. */
+        fun longAxisBw(): Float =
+            OrientedBox.fromQuad(this)?.uSpan()?.coerceAtLeast(1f) ?: 0f
+
         fun area(): Float {
             // shoelace
             var a = 0f
@@ -1500,13 +1504,12 @@ object ContentExpandUtils {
                 val o = i * 9
                 val pts = FloatArray(8) { k -> native[o + k] }
                 val sPx = max(1, native[o + 8].roundToInt())
-                val aabb = seeds[i].toAabb()
                 Seg7OrientedExpand(
                     OrientedQuad(pts),
                     StrokeWidthInSeed(
                         sPx = sPx, vSW = SEG7_MIN_STROKE, hSW = SEG7_MIN_STROKE,
                         inkFrac = 0f, darkInk = true, usedFallback = false,
-                        droppedGlare = 0, otsuThr = 0, seed = aabb,
+                        droppedGlare = 0, otsuThr = 0, seed = Rect(),
                     ),
                 )
             }
@@ -1515,7 +1518,7 @@ object ContentExpandUtils {
             val c = chromaMagU8(gray, uv)
             try {
                 return seeds.map { q ->
-                    val med = medianU8Roi(c, q.toAabb())
+                    val med = medianInteriorU8(c, q)
                     expand7segFromOrientedSeedOn(if (med < 8.0) gray else c, q)
                 }
             } finally {
@@ -1680,6 +1683,32 @@ object ContentExpandUtils {
         return row[0].toInt() and 0xFF
     }
 
+    /** Seed-interior median on the u/v grid (same as JNI medianInteriorU8). Not AABB. */
+    private fun medianInteriorU8(m: Mat, q: OrientedQuad): Double {
+        val box = OrientedBox.fromQuad(q) ?: return 0.0
+        if (m.empty() || m.type() != CvType.CV_8UC1) return 0.0
+        val imgW = m.cols()
+        val imgH = m.rows()
+        val wu = max(4, box.uSpan().roundToInt())
+        val hv = max(4, box.vSpan().roundToInt())
+        val vals = ArrayList<Int>(wu * hv)
+        for (y in 0 until hv) {
+            val v = box.v0 + (y + 0.5f) / hv * box.vSpan()
+            for (x in 0 until wu) {
+                val u = box.u0 + (x + 0.5f) / wu * box.uSpan()
+                val px = box.cx + u * box.ux + v * box.vx
+                val py = box.cy + u * box.uy + v * box.vy
+                if (px < 0f || py < 0f || px >= imgW || py >= imgH) continue
+                vals.add(sampleU8(m, px, py, imgW, imgH))
+            }
+        }
+        if (vals.isEmpty()) return 0.0
+        vals.sort()
+        val n = vals.size
+        return if (n % 2 == 1) vals[n / 2].toDouble()
+        else 0.5 * (vals[n / 2 - 1] + vals[n / 2])
+    }
+
     private fun sampleF32(m: Mat, x: Float, y: Float, imgW: Int, imgH: Int): Double {
         if (x < 0f || y < 0f || x >= imgW || y >= imgH || m.empty()) return 0.0
         val ix = x.toInt().coerceIn(0, imgW - 1)
@@ -1694,14 +1723,13 @@ object ContentExpandUtils {
     ): Seg7OrientedExpand {
         val imgW = src.cols()
         val imgH = src.rows()
-        val aabb = seedQ.toAabb()
         val box = OrientedBox.fromQuad(seedQ)
-        val seedBh = box?.vSpan()?.coerceAtLeast(1f) ?: max(1, aabb.height()).toFloat()
+        val seedBh = box?.vSpan()?.coerceAtLeast(1f) ?: seedQ.shortAxisBh()
         val fallback = max(2, (SEG7_FALLBACK_H_FRAC * seedBh).roundToInt())
         fun failStroke() = StrokeWidthInSeed(
             sPx = fallback, vSW = SEG7_MIN_STROKE, hSW = SEG7_MIN_STROKE,
             inkFrac = 0f, darkInk = true, usedFallback = true,
-            droppedGlare = 0, otsuThr = 0, seed = aabb,
+            droppedGlare = 0, otsuThr = 0, seed = Rect(),
         )
         if (box == null || src.empty() || src.type() != CvType.CV_8UC1) {
             return Seg7OrientedExpand(seedQ, failStroke())
@@ -1722,7 +1750,7 @@ object ContentExpandUtils {
                 seedMat.put(y, 0, row)
             }
             val stroke0 = strokeWidthInSeed(seedMat, Rect(0, 0, wu, hv))
-            val stroke = stroke0.copy(seed = aabb)
+            val stroke = stroke0.copy(seed = Rect())
             val sPx = max(1, stroke.sPx)
             val cap = SEG7_VERT_CAP_FRAC * seedBh
             val gapStop = max(1, (SEG7_GAP_FRAC * sPx).roundToInt())

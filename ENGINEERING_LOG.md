@@ -8539,3 +8539,13 @@ nativeSeg7OrientedMany / nativeJumpOrientedMany. Kotlin expand7segFromOrientedSe
 ## 2026-08-26 - CODE LANDED: rot-orient-7seg-jni
 
 FLOWS.md: rot-ink 7seg/jump JNI; Kotlin fallback if native null. Plan CODE LANDED. Device photos not run (no deploy).
+
+## 2026-08-26 - Execute: rot-orient-jni-geom-glare
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rot-orient-jni-geom-glare-20260826-0408-plan.md`
+- Scope: Rot expand/chroma/ocr-empty/PD stay quads; AABB only rec warp + JSON debug. dropWide stays 3x on u/v seed. Do not re-do 0405 JNI, color3 11x, QF/G--/walk2. Do not deploy.
+
+## 2026-08-26 - Phase 1: rot no AABB on expand/chroma/ocr-empty/PD
+
+JNI StrokeWidthInSeed.seed is empty Rect (not toAabb). Kotlin fallback chroma medianInteriorU8 on u/v grid. ocrOne degenerate from shortAxisBh/longAxisBw. Rot PD and PD_red_only use pumpQuadEdgeAnns. dropWide still 3x on u/v seed. JSON ocrSourceRects may still emit derived AABB.
