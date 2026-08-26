@@ -8453,3 +8453,7 @@ Rot-ink 7seg walks ±v in source (no toAabb before walk). k-pad along v, jump al
 ## 2026-08-26 - Phase 1: Pump experiment compact button grid
 
 Eight experiment buttons in FlowRow; equal cellW from longest label. Dropped five caption Texts. ZIP/Run Test/First 10/Selected/Horiz/Prod-ink/Det dump/L1 still wired. Progress and results list unchanged.
+
+## 2026-08-26 - CODE LANDED: pump-experiment-compact-button-grid
+
+Flows doc: Pump screen subset actions are a compact equal-cell grid; captions live in this doc.
