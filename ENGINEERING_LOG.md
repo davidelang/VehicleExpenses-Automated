@@ -8419,3 +8419,7 @@ AABB extra loop 0,2,3,4 after official k=1. Rot loop 1,0,2,3,4. Metadata/assembl
 ## 2026-08-25 - Phase 2: Prod-ink fail 60→68 k=0 union
 
 PROD_INK_FAIL_FILENAMES is JSON union_k0 (68, start-113 14-45-50 / 14-46-20). Caption k=0 union, no 23-18/60. Horiz-affected unchanged.
+
+## 2026-08-25 - CODE LANDED: prod-ink-fail-k0-union-deep-k-report
+
+pump_deep_analysis.py prints ink-k table k=0..4 + combined after main Good OCR. energy_count / Cost/Vol/Both / load_results unchanged. G-- omitted (no kind=ink). Device 8-col run not executed (no deploy).
