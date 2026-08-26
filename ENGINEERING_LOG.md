@@ -8605,3 +8605,7 @@ BL = two smallest-x corners, then largest y. BR = cycle neighbor with larger x. 
 ## 2026-08-26 - Phase 2: FLOWS rot rec pivot BL X-first
 
 FLOWS: rot rec pivots BL (two smallest-x then largest y) and flattens the rightward side. No two-max-y. 0516 HTML 48px unchanged.
+
+## 2026-08-26 - CODE LANDED: rot-rec-warp-bottom-left-pivot
+
+orderQuadForWarp: BL = two smallest-x then largest y; BR = cycle neighbor with larger x; dest TL,TR,BR,BL. FLOWS: pivot BL, flatten rightward side. 0516 HTML 48px unchanged. Plan CODE LANDED. Do not deploy.
