@@ -1483,17 +1483,18 @@ object ContentExpandUtils {
         chromaMode: Int = 0,
     ): List<Seg7OrientedExpand> {
         if (seeds.isEmpty()) return emptyList()
-        val src = if (chromaMode != 0 && uv != null && !uv.empty()) {
-            chromaMagU8(gray, uv)
-        } else {
-            gray
+        if (chromaMode == 1 && uv != null && !uv.empty()) {
+            val c = chromaMagU8(gray, uv)
+            try {
+                return seeds.map { q ->
+                    val med = medianU8Roi(c, q.toAabb())
+                    expand7segFromOrientedSeedOn(if (med < 8.0) gray else c, q)
+                }
+            } finally {
+                c.release()
+            }
         }
-        val own = src !== gray
-        try {
-            return seeds.map { expand7segFromOrientedSeedOn(src, it) }
-        } finally {
-            if (own) src.release()
-        }
+        return seeds.map { expand7segFromOrientedSeedOn(gray, it) }
     }
 
     /** k-pad along `±v`, remaining [SEG7_VERT_CAP_FRAC]×seed `bh` per side. Frozen sides still pad. */
@@ -1552,6 +1553,7 @@ object ContentExpandUtils {
                     s += sampleF32(eng, px, py, imgW, imgH)
                     c++
                 }
+                // Fully off-image face is not energy (do not treat empty as in-text).
                 return if (c > 0) s / c else 0.0
             }
             val du = 2f
@@ -1672,10 +1674,16 @@ object ContentExpandUtils {
             fun hasBarAtV(v: Float): Boolean {
                 var run = 0
                 var mx = 0
+                var nOn = 0
                 for (i in 0 until wu) {
                     val u = box.u0 + (i + 0.5f) / wu * box.uSpan()
                     val px = box.cx + u * box.ux + v * box.vx
                     val py = box.cy + u * box.uy + v * box.vy
+                    if (px < 0f || py < 0f || px >= imgW || py >= imgH) {
+                        run = 0
+                        continue
+                    }
+                    nOn++
                     val g = sampleU8(src, px, py, imgW, imgH)
                     val ink = if (dark) g <= thr else g >= thr
                     if (ink) {
@@ -1685,6 +1693,7 @@ object ContentExpandUtils {
                         run = 0
                     }
                 }
+                if (nOn == 0) return false
                 return mx >= minRun
             }
             fun peek(startV: Float, dir: Float): Boolean {

@@ -8493,3 +8493,13 @@ Scheduled Set ink-prod-color3 after color2 (10 flows). makeGProc chromaMode=3; m
 ## 2026-08-26 - CODE LANDED: ink-prod-color3-chroma-sampling
 
 FLOWS.md 10-col table + Set ink-prod-color3 (tintMask, 11x glare vs color2 3x). Plan Status not writable (640 ai-planner:ai-sandbox; no chmod). Device harness photos not run (no deploy).
+
+## 2026-08-26 - Execute: rot-orient-walk-intent-gaps
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rot-orient-walk-intent-gaps-20260826-0241-plan.md`
+- Scope: OOB samples not ink; rot-color seed chroma&lt;8 → Y; AABB skip extra-k empty rec thumbs; rec pad from bh; walk2 assembly gapFrac from knobs. Do not change QF/G--/AABB walk knobs/walk2 2.0/4/button grid. Do not deploy.
+
+## 2026-08-26 - Phase 1: rot OOB not ink + chroma median Y fallback
+
+hasBarAtV ignores off-image samples (fully OOB strip is not a bar). meanUFace already skips OOB; empty face is not energy. expand7segFromOrientedSeedMany: chromaMode 1 + seed median chromaMag < 8 walks Y. AABB walk knobs unchanged.
