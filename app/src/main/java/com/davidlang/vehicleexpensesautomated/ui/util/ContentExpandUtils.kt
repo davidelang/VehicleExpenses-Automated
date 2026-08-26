@@ -889,29 +889,20 @@ object ContentExpandUtils {
     }
 
     /**
-     * Order corners TL,TR,BR,BL. BL = largest-y pair, then smaller x.
-     * BR = cycle neighbor to the right of BL (larger x, else smaller |atan2| to +x).
-     * Other neighbor is TL; remaining is TR. Dest maps TL→(0,0) so BL→BR flattens to +x.
+     * Order corners TL,TR,BR,BL. BL = two smallest-x, then largest y (left short side).
+     * BR = cycle neighbor with larger x (long baseline to the right). Other neighbor is TL.
+     * Dest maps TL→(0,0) so BL→BR flattens to +x. Not Y-first (that picks the right end on a droop).
      */
     fun orderQuadForWarp(quad: OrientedQuad): FloatArray? {
         val p = quad.pts
         if (p.size < 8) return null
         data class C(val i: Int, val x: Float, val y: Float)
         val c = Array(4) { i -> C(i, p[i * 2], p[i * 2 + 1]) }
-        val twoBot = c.sortedByDescending { it.y }.take(2)
-        val bl = if (twoBot[0].x <= twoBot[1].x) twoBot[0] else twoBot[1]
+        val twoLeft = c.sortedBy { it.x }.take(2)
+        val bl = if (twoLeft[0].y >= twoLeft[1].y) twoLeft[0] else twoLeft[1]
         val n0 = c[(bl.i + 3) % 4]
         val n1 = c[(bl.i + 1) % 4]
-        fun absAtan2PlusX(n: C): Double {
-            val dx = (n.x - bl.x).toDouble()
-            val dy = (n.y - bl.y).toDouble()
-            return abs(atan2(dy, dx))
-        }
-        val br = when {
-            n0.x > n1.x && n0.x > bl.x -> n0
-            n1.x > n0.x && n1.x > bl.x -> n1
-            else -> if (absAtan2PlusX(n0) <= absAtan2PlusX(n1)) n0 else n1
-        }
+        val br = if (n0.x >= n1.x) n0 else n1
         val tl = if (br.i == n0.i) n1 else n0
         val tr = c.first { it.i != bl.i && it.i != br.i && it.i != tl.i }
         return floatArrayOf(tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y)

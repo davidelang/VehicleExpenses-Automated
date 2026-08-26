@@ -8591,3 +8591,13 @@ pRecBuffersHtml: height 48px, width recW or auto, flex wrap, no 48%/100% shrink.
 ## 2026-08-26 - Phase 1: orderQuadForWarp BL pivot, flatten rightward side
 
 orderQuadForWarp: BL = two largest-y then smaller x; BR = cycle neighbor to the right (larger x, else smaller |atan2| to +x); TL = other neighbor; TR remaining. Dest still TL,TR,BR,BL. No u0-as-left. padUv and 48px HTML unchanged.
+
+## 2026-08-26 - Execute: rot-rec-warp-bottom-left-pivot (amendment: BL X-first)
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rot-rec-warp-bottom-left-pivot-20260826-0542-plan.md` (BL: two min-x then max-y)
+- Scope: Correct orderQuadForWarp; do not pick BL as min-x of two max-y. Keep 0516 HTML. Do not deploy.
+
+## 2026-08-26 - Phase 1: orderQuadForWarp BL is X-first
+
+BL = two smallest-x corners, then largest y. BR = cycle neighbor with larger x. No two-max-y. No u0-as-left. padUv and 48px HTML unchanged.
