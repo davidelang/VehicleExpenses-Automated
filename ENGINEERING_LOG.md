@@ -8563,3 +8563,7 @@ FLOWS.md: rot never AABBs except rec warp; dropWide 3x max(v0,4) on u/v seed (no
 ## 2026-08-26 - Phase 1: dropWide glare 11x (AABB default + rot u/v seed)
 
 Native default glareMult 3→11 (seg7One/seedInkBinY/fillChromaTintMask). Rot seg7OrientedOne 11*max(peak,4). Kotlin SEG7_GLARE_WIDTH_MULT=11. color3 already 11. Rot still dropWide on u/v seed only. QF/G--/walk2 gap knobs unchanged.
+
+## 2026-08-26 - CODE LANDED: rot-orient-jni-geom-glare (11x glare amendment)
+
+FLOWS.md: dropWide 11x max(v0,4) on AABB ink and rot u/v seed; rot still no AABB except rec warp. Plan CODE LANDED. Do not deploy.
