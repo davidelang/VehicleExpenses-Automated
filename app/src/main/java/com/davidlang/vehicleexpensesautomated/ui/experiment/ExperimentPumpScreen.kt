@@ -735,8 +735,9 @@ suspend fun runPumpExperiment(
     var currentFile = pStartNewFile()
 
     photos.forEachIndexed { index, file ->
+        val fullRow = allPhotos.indexOfFirst { it.name == file.name } + 1
         try {
-            onLog("Processing ${index + 1}/$total: ${file.name}")
+            onLog("Processing ${index + 1}/$total: ${file.name} (line $fullRow)")
 
             val (probedW, probedH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             if (probedW <= 0 || probedH <= 0) {
@@ -2996,7 +2997,7 @@ suspend fun runPumpExperiment(
             val deskewHtml = deskewResA.engines.map { (k, v) -> "$k: ${v.angle}&deg; (${v.timesMs.sum()}ms)" }.joinToString("<br>")
 
             val rowHtml = pBuildHtmlRowDynamic(
-                rowIndex = index + 1,
+                rowIndex = fullRow,
                 fileName = file.name,
                 imgW = imgW,
                 imgH = imgH,
@@ -3008,10 +3009,10 @@ suspend fun runPumpExperiment(
                 diagnostic = meta.diagnostic
             )
 
-            Log.d("PUMP_HTML", "row=${index + 1} rowHtml.len=${rowHtml.length} currentSize=$currentSize (part=$partCount)")
+            Log.d("PUMP_HTML", "row=$fullRow rowHtml.len=${rowHtml.length} currentSize=$currentSize (part=$partCount)")
             if (currentSize + rowHtml.length > maxSizeBytes) {
                 currentFile.appendText(footer)
-                Log.i("PUMP_HTML", "starting new HTML part $partCount at row ${index + 1}")
+                Log.i("PUMP_HTML", "starting new HTML part $partCount at row $fullRow")
                 currentFile = pStartNewFile()
                 currentSize = 0
             }
@@ -3019,24 +3020,24 @@ suspend fun runPumpExperiment(
             currentSize += rowHtml.length
 
             val photoJson = pSerializePhotoResultToJson(
-                index + 1, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root, originalHistogram
+                fullRow, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root, originalHistogram
             )
 
             logHeapState(context, "before-photo-json-serialize")
-            Log.i("PUMP_FRAG", "row=${index + 1} photoJson keys=${photoJson.length()}, writing frag...")
-            val fragFile = getPhotoFragmentFile(reportDir, timestamp, index + 1)
+            Log.i("PUMP_FRAG", "row=$fullRow photoJson keys=${photoJson.length()}, writing frag...")
+            val fragFile = getPhotoFragmentFile(reportDir, timestamp, fullRow)
             fragFile.bufferedWriter().use { writer ->
                 appendJsonObject(writer, photoJson, 2, 0)
             }
             val fragSize = fragFile.length()
-            Log.i("PUMP_FRAG", "row=${index + 1} frag size=$fragSize bytes")
+            Log.i("PUMP_FRAG", "row=$fullRow frag size=$fragSize bytes")
 
             if (!firstPhoto) jsonWriter.write(",\n") else firstPhoto = false
             appendJsonObject(jsonWriter, photoJson, 2, 0)
             jsonWriter.flush()
 
             fragFile.delete()
-            Log.i("PUMP_FRAG", "streamed row ${index + 1} to main JSON, deleted frag (size was $fragSize)")
+            Log.i("PUMP_FRAG", "streamed row $fullRow to main JSON, deleted frag (size was $fragSize)")
             logHeapState(context, "after-photo-json-stream")
 
             val summaryText = flows.map { f ->
@@ -3054,8 +3055,8 @@ suspend fun runPumpExperiment(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(TAG, "FATAL: Experiment failed for row ${index + 1} (${file.name}):\n" + Log.getStackTraceString(e))
-            Log.w("PUMP_FRAG", "partial run - JSON may be incomplete (no final footer) at row ${index + 1}")
+            Log.e(TAG, "FATAL: Experiment failed for row $fullRow (${file.name}):\n" + Log.getStackTraceString(e))
+            Log.w("PUMP_FRAG", "partial run - JSON may be incomplete (no final footer) at row $fullRow")
         }
     }
     currentFile.appendText(footer)

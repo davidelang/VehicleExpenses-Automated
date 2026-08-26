@@ -8423,3 +8423,13 @@ PROD_INK_FAIL_FILENAMES is JSON union_k0 (68, start-113 14-45-50 / 14-46-20). Ca
 ## 2026-08-25 - CODE LANDED: prod-ink-fail-k0-union-deep-k-report
 
 pump_deep_analysis.py prints ink-k table k=0..4 + combined after main Good OCR. energy_count / Cost/Vol/Both / load_results unchanged. G-- omitted (no kind=ink). Device 8-col run not executed (no deploy).
+
+## 2026-08-26 - Execute: pump-stable-rows-skip-letter-k-rot-tilt
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/pump-stable-rows-skip-letter-k-rot-tilt-20260826-0055-plan.md`
+- Scope: Full-corpus row ids; skip AABB extra-k OCR on letter-only asis; rot 7seg along red normals then warp finished blue. Do not change QF/G--/AABB walk knobs/68 list. Do not deploy.
+
+## 2026-08-26 - Phase 1: stable full-corpus row ids
+
+HTML # / JSON line_number / photo frag idx = 1-based index in sorted full pump_photos, not subset index+1. Subset still processes only subset files.

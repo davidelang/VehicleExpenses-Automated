@@ -46,6 +46,8 @@ Metadata on expand columns: `content_expand_jump` / `content_expand_jump_frac` /
 
 **UI subset button:** **Horiz-affected (76)** still filters photos; columns are the full active set above (8). Deep link: `vehicleexpenses://experiment/pump?auto=horiz`. **Prod-ink fail (68)** is the **k=0** union (ink-prod or rot-ink-prod not exact) on start-113 phone `14-45-50` + tablet `14-46-20`, excluding 15 fields no scheduled column pool-exacts (`union_k0`); columns still the full scheduled set (8). Deep link: `vehicleexpenses://experiment/pump?auto=prodinkfail`. **Det dump (prod × deskew/rot)** is a one-shot discover button (not every experiment run): two recipes `prod-deskew` / `prod-rot`, no expand/OCR, all `pump_photos`, sidecar `pump_reports/pump_det_boxes_<ts>/`. Deep link: `vehicleexpenses://experiment/pump?auto=detdump`. Fetch pulls the newest `pump_det_boxes_<ts>/` even without a matching `pump_results`.
 
+**Report `#` / JSON `line_number`:** 1-based index in sorted full `pump_photos` (`allPhotos`), not the subset `index+1`. Subset runs still process only subset files.
+
 **Parked** (source, not scheduled): P / P-jump / P-rot / Prod-m65, H* horiz, L/M dilate, G-dense, K. v4/p4 processors deleted (`obsolete-p4-p5-det`).
 
 **v0.98-71 crash fix:** L/M `getStructuringElement` aborted (`normalizeAnchor`); dilate now uses `Mat::ones(3,3)` + try/catch (v0.98-72+). **No successful L–Q data before that fix.**
