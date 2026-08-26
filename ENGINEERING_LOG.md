@@ -8525,3 +8525,13 @@ Pump experiment buttons: BoxWithConstraints + chunked Rows; cellW capped to maxW
 ## 2026-08-26 - CODE LANDED: pump-button-grid-no-flowrow-crash
 
 FLOWS.md: Pump UI is a compact wrapping equal-cell grid (not FlowRow). Plan CODE LANDED. Device open not run (no deploy). Compose BOM 2024.10.00 unchanged.
+
+## 2026-08-26 - Execute: rot-orient-7seg-jni
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rot-orient-7seg-jni-20260826-0405-plan.md`
+- Scope: nativeSeg7OrientedMany + nativeJumpOrientedMany; Kotlin wrappers with fallback; rot inkQuadsFor one jump batch per k. Do not change QF/G--/AABB/walk2/k/rec warp. Do not deploy.
+
+## 2026-08-26 - Phase 1: native oriented 7seg + jump JNI wrappers
+
+nativeSeg7OrientedMany / nativeJumpOrientedMany. Kotlin expand7segFromOrientedSeedMany and jumpRetractOrientedUMany call JNI then fallback. Rot inkQuadsFor/inkQuadsForK one jump batch per k. One Sobel per photo for jump. OOB not ink. chromaMode 1 seed-interior median < 8 → Y. AABB/QF/walk2 unchanged.

@@ -1488,6 +1488,29 @@ object ContentExpandUtils {
         chromaMode: Int = 0,
     ): List<Seg7OrientedExpand> {
         if (seeds.isEmpty()) return emptyList()
+        val packed = FloatArray(seeds.size * 8)
+        seeds.forEachIndexed { i, q ->
+            val p = q.pts
+            val o = i * 8
+            for (k in 0 until 8) packed[o + k] = p[k]
+        }
+        val native = NativeImageUtils.seg7OrientedManyNative(gray, uv, packed, chromaMode)
+        if (native != null && native.size >= seeds.size * 9) {
+            return seeds.indices.map { i ->
+                val o = i * 9
+                val pts = FloatArray(8) { k -> native[o + k] }
+                val sPx = max(1, native[o + 8].roundToInt())
+                val aabb = seeds[i].toAabb()
+                Seg7OrientedExpand(
+                    OrientedQuad(pts),
+                    StrokeWidthInSeed(
+                        sPx = sPx, vSW = SEG7_MIN_STROKE, hSW = SEG7_MIN_STROKE,
+                        inkFrac = 0f, darkInk = true, usedFallback = false,
+                        droppedGlare = 0, otsuThr = 0, seed = aabb,
+                    ),
+                )
+            }
+        }
         if (chromaMode == 1 && uv != null && !uv.empty()) {
             val c = chromaMagU8(gray, uv)
             try {
@@ -1528,7 +1551,37 @@ object ContentExpandUtils {
      * Jump-retract along `±u` (long axis) in source. Same energy jump / grow-if-text /
      * retract / retractClear as AABB [jumpRetractHorizontal]. Does not AABB the box.
      */
+    fun jumpRetractOrientedUMany(
+        gray: Mat,
+        seeds: List<OrientedQuad>,
+        opts: ExpandOptions,
+    ): List<OrientedQuad> {
+        if (seeds.isEmpty()) return emptyList()
+        val packed = FloatArray(seeds.size * 8)
+        seeds.forEachIndexed { i, q ->
+            val p = q.pts
+            val o = i * 8
+            for (k in 0 until 8) packed[o + k] = p[k]
+        }
+        val native = NativeImageUtils.jumpOrientedManyNative(
+            gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
+        )
+        if (native != null && native.size >= seeds.size * 8) {
+            return seeds.indices.map { i ->
+                val o = i * 8
+                OrientedQuad(FloatArray(8) { k -> native[o + k] })
+            }
+        }
+        return seeds.map { jumpRetractOrientedUKotlin(gray, it, opts) }
+    }
+
     fun jumpRetractOrientedU(
+        gray: Mat,
+        seed: OrientedQuad,
+        opts: ExpandOptions,
+    ): OrientedQuad = jumpRetractOrientedUMany(gray, listOf(seed), opts).firstOrNull() ?: seed
+
+    private fun jumpRetractOrientedUKotlin(
         gray: Mat,
         seed: OrientedQuad,
         opts: ExpandOptions,

@@ -486,6 +486,35 @@ object NativeImageUtils {
         )
     }
 
+    private external fun nativeSeg7OrientedMany(
+        grayPtr: Long, uvPtr: Long, seeds: FloatArray, chromaMode: Int,
+    ): FloatArray?
+    private external fun nativeJumpOrientedMany(
+        grayPtr: Long, quads: FloatArray,
+        maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
+    ): FloatArray?
+
+    /** Packed n×8 seed quads → n×9 (walked 8-float quad + sPx). chromaMode 0 Y, 1 chromaMag with seed-interior median &lt; 8 → Y. */
+    fun seg7OrientedManyNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray, chromaMode: Int,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return null
+        return nativeSeg7OrientedMany(
+            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chromaMode,
+        )
+    }
+
+    /** Packed n×8 quads. One Sobel mag for the photo; jump-retract along ±u. */
+    fun jumpOrientedManyNative(
+        gray: Mat, quads: FloatArray,
+        maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
+    ): FloatArray? {
+        if (gray.empty() || quads.isEmpty()) return null
+        return nativeJumpOrientedMany(
+            gray.nativeObj, quads, maxFrac, energyRatio, jumpFrac, retractClearFrac,
+        )
+    }
+
     fun aabbGrowManyNative(
         gray: Mat,
         uv: Mat?,

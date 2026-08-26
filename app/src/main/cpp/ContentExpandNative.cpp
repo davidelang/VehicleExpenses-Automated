@@ -1688,3 +1688,389 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
     env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
     return arr;
 }
+
+namespace {
+
+struct OriBox {
+    float cx, cy, ux, uy, vx, vy, u0, u1, v0, v1;
+};
+
+static bool oriFromQuad(const float* p, OriBox* b) {
+    double best = 0.0;
+    float ux = 1.f, uy = 0.f;
+    for (int i = 0; i < 4; ++i) {
+        const int j = (i + 1) & 3;
+        const double dx = static_cast<double>(p[j * 2] - p[i * 2]);
+        const double dy = static_cast<double>(p[j * 2 + 1] - p[i * 2 + 1]);
+        const double len = std::hypot(dx, dy);
+        if (len > best) {
+            best = len;
+            if (len > 1e-3) {
+                ux = static_cast<float>(dx / len);
+                uy = static_cast<float>(dy / len);
+            }
+        }
+    }
+    if (best < 2.0) return false;
+    const float vx = -uy, vy = ux;
+    float cx = 0.f, cy = 0.f;
+    for (int i = 0; i < 4; ++i) {
+        cx += p[i * 2];
+        cy += p[i * 2 + 1];
+    }
+    cx *= 0.25f;
+    cy *= 0.25f;
+    float u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
+    for (int i = 0; i < 4; ++i) {
+        const float dx = p[i * 2] - cx;
+        const float dy = p[i * 2 + 1] - cy;
+        const float u = dx * ux + dy * uy;
+        const float v = dx * vx + dy * vy;
+        if (u < u0) u0 = u;
+        if (u > u1) u1 = u;
+        if (v < v0) v0 = v;
+        if (v > v1) v1 = v;
+    }
+    if (u1 - u0 < 2.f || v1 - v0 < 2.f) return false;
+    b->cx = cx; b->cy = cy; b->ux = ux; b->uy = uy;
+    b->vx = vx; b->vy = vy;
+    b->u0 = u0; b->u1 = u1; b->v0 = v0; b->v1 = v1;
+    return true;
+}
+
+static void oriToQuad(const OriBox& b, float* out) {
+    auto c = [&](float u, float v, int i) {
+        out[i] = b.cx + u * b.ux + v * b.vx;
+        out[i + 1] = b.cy + u * b.uy + v * b.vy;
+    };
+    c(b.u0, b.v0, 0);
+    c(b.u1, b.v0, 2);
+    c(b.u1, b.v1, 4);
+    c(b.u0, b.v1, 6);
+}
+
+static inline bool inImgF(float px, float py, int w, int h) {
+    return px >= 0.f && py >= 0.f && px < static_cast<float>(w) &&
+        py < static_cast<float>(h);
+}
+
+static int sampleU8Trunc(const cv::Mat& m, float px, float py, int w, int h) {
+    if (!inImgF(px, py, w, h) || m.empty() || m.type() != CV_8UC1) return -1;
+    int x = static_cast<int>(px);
+    int y = static_cast<int>(py);
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x >= w) x = w - 1;
+    if (y >= h) y = h - 1;
+    return m.ptr<uint8_t>(y)[x];
+}
+
+static float sampleF32Trunc(const cv::Mat& m, float px, float py, int w, int h) {
+    if (!inImgF(px, py, w, h) || m.empty() || m.type() != CV_32F) return -1.f;
+    int x = static_cast<int>(px);
+    int y = static_cast<int>(py);
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x >= w) x = w - 1;
+    if (y >= h) y = h - 1;
+    return m.ptr<float>(y)[x];
+}
+
+static double medianInteriorU8(const cv::Mat& m, const OriBox& b, int w, int h) {
+    const int wu = std::max(4, static_cast<int>(std::lround(b.u1 - b.u0)));
+    const int hv = std::max(4, static_cast<int>(std::lround(b.v1 - b.v0)));
+    std::vector<int> vals;
+    vals.reserve(static_cast<size_t>(wu * hv));
+    for (int y = 0; y < hv; ++y) {
+        const float v = b.v0 + (y + 0.5f) / hv * (b.v1 - b.v0);
+        for (int x = 0; x < wu; ++x) {
+            const float u = b.u0 + (x + 0.5f) / wu * (b.u1 - b.u0);
+            const float px = b.cx + u * b.ux + v * b.vx;
+            const float py = b.cy + u * b.uy + v * b.vy;
+            const int g = sampleU8Trunc(m, px, py, w, h);
+            if (g >= 0) vals.push_back(g);
+        }
+    }
+    if (vals.empty()) return 0.0;
+    std::sort(vals.begin(), vals.end());
+    const int n = static_cast<int>(vals.size());
+    if (n % 2 == 1) return vals[n / 2];
+    return 0.5 * (vals[n / 2 - 1] + vals[n / 2]);
+}
+
+static void seg7OrientedOne(
+    const cv::Mat& src, OriBox seed, int imgW, int imgH,
+    float* outPts8, float* sPxOut
+) {
+    oriToQuad(seed, outPts8);
+    const float seedBh = std::max(1.f, seed.v1 - seed.v0);
+    const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedBh)));
+    *sPxOut = static_cast<float>(fallback);
+    if (src.empty() || src.type() != CV_8UC1) return;
+    const int wu = std::max(4, static_cast<int>(std::lround(seed.u1 - seed.u0)));
+    const int hv = std::max(4, static_cast<int>(std::lround(seed.v1 - seed.v0)));
+    cv::Mat seedMat(hv, wu, CV_8UC1);
+    for (int y = 0; y < hv; ++y) {
+        const float v = seed.v0 + (y + 0.5f) / hv * (seed.v1 - seed.v0);
+        uint8_t* row = seedMat.ptr<uint8_t>(y);
+        for (int x = 0; x < wu; ++x) {
+            const float u = seed.u0 + (x + 0.5f) / wu * (seed.u1 - seed.u0);
+            const float px = seed.cx + u * seed.ux + v * seed.vx;
+            const float py = seed.cy + u * seed.uy + v * seed.vy;
+            const int g = sampleU8Trunc(src, px, py, imgW, imgH);
+            row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
+        }
+    }
+    cv::Mat bin;
+    const double thr = cv::threshold(
+        seedMat, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    const int nPix = wu * hv;
+    int nz = cv::countNonZero(bin);
+    float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
+    bool dark = true;
+    if (inkFrac >= 0.45f) {
+        cv::bitwise_not(bin, bin);
+        nz = cv::countNonZero(bin);
+        inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
+        dark = false;
+    }
+    HorizSW hh0 = horizPeakSW(bin, hv, wu);
+    const int glareW = 3 * std::max(hh0.peak, 4);
+    dropWide(&bin, glareW);
+    HorizSW hh = horizPeakSW(bin, hv, wu);
+    const int sPx = (hh.peak <= 4 || inkFrac >= 0.45f) ? fallback : hh.peak;
+    *sPxOut = static_cast<float>(std::max(1, sPx));
+    const float cap = 2.5f * seedBh;
+    const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
+    const int minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
+    auto hasBar = [&](float v) {
+        int run = 0, mx = 0, nOn = 0;
+        for (int i = 0; i < wu; ++i) {
+            const float u = seed.u0 + (i + 0.5f) / wu * (seed.u1 - seed.u0);
+            const float px = seed.cx + u * seed.ux + v * seed.vx;
+            const float py = seed.cy + u * seed.uy + v * seed.vy;
+            if (!inImgF(px, py, imgW, imgH)) {
+                run = 0;
+                continue;
+            }
+            ++nOn;
+            const int g = sampleU8Trunc(src, px, py, imgW, imgH);
+            const bool ink = dark ? (g <= thr) : (g >= thr);
+            if (ink) {
+                ++run;
+                if (run > mx) mx = run;
+            } else {
+                run = 0;
+            }
+        }
+        if (nOn == 0) return false;
+        return mx >= minRun;
+    };
+    auto peek = [&](float startV, float dir) {
+        float v = startV;
+        for (int i = 0; i < gapStop; ++i) {
+            if (hasBar(v)) return true;
+            v += dir;
+        }
+        return false;
+    };
+    const bool allowNeg = peek(seed.v0 - 1.f, -1.f);
+    const bool allowPos = peek(seed.v1 + 1.f, +1.f);
+    float v0 = seed.v0, v1 = seed.v1;
+    if (allowNeg) {
+        int gap = 0;
+        float v = seed.v0 - 1.f;
+        while (seed.v0 - v <= cap) {
+            if (hasBar(v)) {
+                v0 = v;
+                gap = 0;
+            } else {
+                ++gap;
+                if (gap >= gapStop) break;
+            }
+            v -= 1.f;
+        }
+    }
+    if (allowPos) {
+        int gap = 0;
+        float v = seed.v1 + 1.f;
+        while (v - seed.v1 <= cap) {
+            if (hasBar(v)) {
+                v1 = v;
+                gap = 0;
+            } else {
+                ++gap;
+                if (gap >= gapStop) break;
+            }
+            v += 1.f;
+        }
+    }
+    if (v1 < v0 + 2.f) v1 = v0 + 2.f;
+    seed.v0 = v0;
+    seed.v1 = v1;
+    oriToQuad(seed, outPts8);
+}
+
+static double meanUFace(
+    const cv::Mat& mag, const OriBox& box, float u, int imgW, int imgH
+) {
+    const int n = std::max(4, static_cast<int>(std::lround(box.v1 - box.v0)));
+    double s = 0.0;
+    int c = 0;
+    for (int i = 0; i < n; ++i) {
+        const float v = box.v0 + (i + 0.5f) / n * (box.v1 - box.v0);
+        const float px = box.cx + u * box.ux + v * box.vx;
+        const float py = box.cy + u * box.uy + v * box.vy;
+        const float g = sampleF32Trunc(mag, px, py, imgW, imgH);
+        if (g < 0.f) continue;
+        s += g;
+        ++c;
+    }
+    return c > 0 ? s / c : 0.0;
+}
+
+static void jumpOrientedOne(
+    const cv::Mat& mag, OriBox* box, int imgW, int imgH,
+    float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac
+) {
+    const float du = 2.f;
+    const float uA = box->u0 + du;
+    const float uB = box->u1 - du;
+    double base;
+    if (uB > uA) {
+        double s = 0.0;
+        int c = 0;
+        const int nu = std::max(4, static_cast<int>(std::lround(uB - uA)));
+        for (int i = 0; i < nu; ++i) {
+            s += meanUFace(mag, *box, uA + (i + 0.5f) / nu * (uB - uA), imgW, imgH);
+            ++c;
+        }
+        base = c > 0 ? s / c : meanUFace(mag, *box, (box->u0 + box->u1) * 0.5f, imgW, imgH);
+    } else {
+        base = meanUFace(mag, *box, (box->u0 + box->u1) * 0.5f, imgW, imgH);
+    }
+    const double thr = energyRatio * std::max(base, 1e-3);
+    const float vSpan = std::max(1.f, box->v1 - box->v0);
+    const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * vSpan)));
+    const float floorU0 = box->u0;
+    const float floorU1 = box->u1;
+    const float jx = static_cast<float>(
+        std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan))));
+    float u0 = box->u0 - jx;
+    float u1 = box->u1 + jx;
+    const bool inText =
+        (u0 < floorU0 && meanUFace(mag, *box, u0, imgW, imgH) >= thr) ||
+        (u1 > floorU1 && meanUFace(mag, *box, u1, imgW, imgH) >= thr);
+    if (inText) {
+        int k = 0;
+        while (k < cap) {
+            bool grew = false;
+            if (meanUFace(mag, *box, u0 - 1.f, imgW, imgH) >= thr) {
+                u0 -= 1.f;
+                grew = true;
+            }
+            if (meanUFace(mag, *box, u1 + 1.f, imgW, imgH) >= thr) {
+                u1 += 1.f;
+                grew = true;
+            }
+            if (!grew) break;
+            ++k;
+        }
+    } else {
+        while (u0 < floorU0 && meanUFace(mag, *box, u0, imgW, imgH) < thr) u0 += 1.f;
+        while (u1 > floorU1 && meanUFace(mag, *box, u1, imgW, imgH) < thr) u1 -= 1.f;
+        const float clear = static_cast<float>(
+            std::max(1, static_cast<int>(std::lround(retractClearFrac * vSpan))));
+        u0 -= clear;
+        u1 += clear;
+    }
+    if (u1 < u0 + 2.f) u1 = u0 + 2.f;
+    box->u0 = u0;
+    box->u1 = u1;
+}
+
+}  // namespace
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7OrientedMany(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jfloatArray seedsArr, jint chromaMode
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
+    const int imgW = gray->cols, imgH = gray->rows;
+    const jint n8 = env->GetArrayLength(seedsArr);
+    if (n8 <= 0 || n8 % 8 != 0) return env->NewFloatArray(0);
+    const int n = n8 / 8;
+    std::vector<jfloat> seeds(n8);
+    env->GetFloatArrayRegion(seedsArr, 0, n8, seeds.data());
+    cv::Mat cMag;
+    const bool useChroma = chromaMode == 1;
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    if (useChroma) {
+        fillChromaMag(*gray, uv ? *uv : cv::Mat(), &cMag);
+    }
+    std::vector<jfloat> out(n * 9, 0.f);
+    for (int i = 0; i < n; ++i) {
+        OriBox box{};
+        const float* in = seeds.data() + i * 8;
+        float* op = out.data() + i * 9;
+        if (!oriFromQuad(in, &box)) {
+            for (int k = 0; k < 8; ++k) op[k] = in[k];
+            op[8] = 2.f;
+            continue;
+        }
+        const cv::Mat* src = gray;
+        if (useChroma && !cMag.empty() &&
+            medianInteriorU8(cMag, box, imgW, imgH) >= 8.0) {
+            src = &cMag;
+        }
+        float sPx = 2.f;
+        seg7OrientedOne(*src, box, imgW, imgH, op, &sPx);
+        op[8] = sPx;
+    }
+    jfloatArray arr = env->NewFloatArray(static_cast<jint>(out.size()));
+    if (!arr) return nullptr;
+    env->SetFloatArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpOrientedMany(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jfloatArray quadsArr,
+    jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1 || !quadsArr) return nullptr;
+    const int imgW = gray->cols, imgH = gray->rows;
+    const jint n8 = env->GetArrayLength(quadsArr);
+    if (n8 <= 0 || n8 % 8 != 0) return env->NewFloatArray(0);
+    const int n = n8 / 8;
+    std::vector<jfloat> quads(n8);
+    env->GetFloatArrayRegion(quadsArr, 0, n8, quads.data());
+    cv::Mat gx, gy, mag;
+    cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
+    cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
+    cv::magnitude(gx, gy, mag);
+    gx.release();
+    gy.release();
+    std::vector<jfloat> out(n8, 0.f);
+    for (int i = 0; i < n; ++i) {
+        OriBox box{};
+        const float* in = quads.data() + i * 8;
+        float* op = out.data() + i * 8;
+        if (!oriFromQuad(in, &box)) {
+            for (int k = 0; k < 8; ++k) op[k] = in[k];
+            continue;
+        }
+        jumpOrientedOne(mag, &box, imgW, imgH,
+            maxFrac, energyRatio, jumpFrac, retractClearFrac);
+        oriToQuad(box, op);
+    }
+    mag.release();
+    jfloatArray arr = env->NewFloatArray(static_cast<jint>(out.size()));
+    if (!arr) return nullptr;
+    env->SetFloatArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+}

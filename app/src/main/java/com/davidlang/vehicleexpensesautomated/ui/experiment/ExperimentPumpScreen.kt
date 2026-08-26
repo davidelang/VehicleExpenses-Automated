@@ -2044,12 +2044,14 @@ suspend fun runPumpExperiment(
                             chromaMode = expandMode,
                         )
                         fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> {
-                            return segs.indices.map { i ->
-                                val padded = ContentExpandUtils.padOrientedByStrokes(
+                            val padded = segs.indices.map { i ->
+                                ContentExpandUtils.padOrientedByStrokes(
                                     segs[i].quad, seedQuads[i], kk, segs[i].stroke.sPx,
                                 )
-                                ContentExpandUtils.jumpRetractOrientedU(gray, padded, jumpOpts)
                             }
+                            return ContentExpandUtils.jumpRetractOrientedUMany(
+                                gray, padded, jumpOpts,
+                            )
                         }
                         expandedQuads = inkQuadsFor(1f)
                         hitCaps = expandedQuads.map { false }
@@ -2133,13 +2135,15 @@ suspend fun runPumpExperiment(
                     if (seg7Stroke && inkJumpOptsRot != null) {
                         val opts = inkJumpOptsRot
                         fun inkQuadsForK(kk: Float): List<ContentExpandUtils.OrientedQuad> {
-                            return inkWalkSeeds.indices.map { i ->
-                                val padded = ContentExpandUtils.padOrientedByStrokes(
+                            val padded = inkWalkSeeds.indices.map { i ->
+                                ContentExpandUtils.padOrientedByStrokes(
                                     inkWalkBoxes[i], inkWalkSeeds[i], kk,
                                     inkStrokes[i].sPx,
                                 )
-                                ContentExpandUtils.jumpRetractOrientedU(gray, padded, opts)
                             }
+                            return ContentExpandUtils.jumpRetractOrientedUMany(
+                                gray, padded, opts,
+                            )
                         }
                         var nOcr = 0
                         var officialCands: List<RedBoxOcrCandidate> = emptyList()
