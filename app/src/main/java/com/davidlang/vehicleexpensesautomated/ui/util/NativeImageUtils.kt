@@ -456,7 +456,7 @@ object NativeImageUtils {
         gapFrac: Float, minSeedHsToFreeze: Float,
     ): IntArray?
     private external fun nativeJumpMany(
-        grayPtr: Long, boxes: IntArray,
+        grayPtr: Long, uvPtr: Long, boxes: IntArray, chromaMode: Int,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
     ): IntArray?
 
@@ -476,13 +476,16 @@ object NativeImageUtils {
         )
     }
 
+    /** chromaMode: 0 Y Sobel, 1 chromaMag, 2/3 tintMask. Independent L/R 1px jump, max_jumps=4. */
     fun jumpManyNative(
         gray: Mat, boxes: IntArray,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
+        uv: Mat? = null, chromaMode: Int = 0,
     ): IntArray? {
         if (gray.empty()) return null
         return nativeJumpMany(
-            gray.nativeObj, boxes, maxFrac, energyRatio, jumpFrac, retractClearFrac,
+            gray.nativeObj, uv?.nativeObj ?: 0L, boxes, chromaMode,
+            maxFrac, energyRatio, jumpFrac, retractClearFrac,
         )
     }
 
@@ -490,7 +493,7 @@ object NativeImageUtils {
         grayPtr: Long, uvPtr: Long, seeds: FloatArray, chromaMode: Int,
     ): FloatArray?
     private external fun nativeJumpOrientedMany(
-        grayPtr: Long, quads: FloatArray,
+        grayPtr: Long, uvPtr: Long, quads: FloatArray, chromaMode: Int,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
     ): FloatArray?
 
@@ -504,14 +507,16 @@ object NativeImageUtils {
         )
     }
 
-    /** Packed n×8 quads. One Sobel mag for the photo; jump-retract along ±u. */
+    /** Packed n×8 quads. Jump-retract along ±u. chromaMode 0 Y Sobel, 1 chromaMag, 2/3 tint. */
     fun jumpOrientedManyNative(
         gray: Mat, quads: FloatArray,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
+        uv: Mat? = null, chromaMode: Int = 0,
     ): FloatArray? {
         if (gray.empty() || quads.isEmpty()) return null
         return nativeJumpOrientedMany(
-            gray.nativeObj, quads, maxFrac, energyRatio, jumpFrac, retractClearFrac,
+            gray.nativeObj, uv?.nativeObj ?: 0L, quads, chromaMode,
+            maxFrac, energyRatio, jumpFrac, retractClearFrac,
         )
     }
 

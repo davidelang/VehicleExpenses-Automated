@@ -8609,3 +8609,14 @@ FLOWS: rot rec pivots BL (two smallest-x then largest y) and flattens the rightw
 ## 2026-08-26 - CODE LANDED: rot-rec-warp-bottom-left-pivot
 
 orderQuadForWarp: BL = two smallest-x then largest y; BR = cycle neighbor with larger x; dest TL,TR,BR,BL. FLOWS: pivot BL, flatten rightward side. 0516 HTML 48px unchanged. Plan CODE LANDED. Do not deploy.
+
+## 2026-08-26 - Execute: iterative-jump-retract-color3
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/iterative-jump-retract-color3-20260826-1435-plan.md`
+- Scope: Iterative independent-side 1px jump-retract (max_jumps=4) on AABB and oriented jump; mask-aware (Y / chromaMag / tint / fused). Remove scheduled Set ink-prod-color3. Do not change QF/G-- verts. Do not deploy.
+- Next: rot-det-inner-scale-warp-black-20260826-1424-plan.md after this CODE LANDED.
+
+## 2026-08-26 - Phase 1: native iterative 1px jump-retract + mask JNI
+
+jumpRetractH / jumpOrientedOne: independent L/R (u0/u1) loops, max_jumps=4, 1px step-back; no OR-coupled inText, no retractClear snap. nativeJumpMany / nativeJumpOrientedMany take uvPtr + chromaMode (0 Y Sobel, 1 chromaMag, 2/3 tint). AABB chroma grow jumps fused vertEng. fillChromaTintMask xPad for jump look-ahead.
