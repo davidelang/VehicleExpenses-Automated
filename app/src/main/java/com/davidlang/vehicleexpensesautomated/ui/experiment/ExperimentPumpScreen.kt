@@ -733,22 +733,16 @@ suspend fun runPumpExperiment(
 
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
-        "Set ink-energy-base",
         "Set ink-energy-tight",
         "Set ink-energy-retract",
-        "Set ink-gray-base",
         "Set ink-gray-tight",
         "Set ink-gray-retract",
-        "Set ink-color-base",
         "Set ink-color-tight",
         "Set ink-color-retract",
-        "Set rot-energy-base",
         "Set rot-energy-tight",
         "Set rot-energy-retract",
-        "Set rot-gray-base",
         "Set rot-gray-tight",
         "Set rot-gray-retract",
-        "Set rot-color-base",
         "Set rot-color-tight",
         "Set rot-color-retract",
     )
@@ -1163,6 +1157,7 @@ suspend fun runPumpExperiment(
                     ocrQuads: List<ContentExpandUtils.OrientedQuad> = emptyList(),
                     seedQuads: List<ContentExpandUtils.OrientedQuad> = emptyList(),
                     scaleVariants: JSONArray = JSONArray(),
+                    inkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList(),
                 ): String {
                     val redsArr = JSONArray()
                     reds.forEach { redsArr.put(rectToJson(it)) }
@@ -1202,6 +1197,32 @@ suspend fun runPumpExperiment(
                         }
                         return arr
                     }
+                    val sweepArr = JSONArray()
+                    inkSweeps.forEach { s ->
+                        if (s == null) {
+                            sweepArr.put(JSONObject())
+                        } else {
+                            val vArr = JSONArray(); s.vScores.forEach { vArr.put(it) }
+                            val hArr = JSONArray(); s.hScores.forEach { hArr.put(it) }
+                            sweepArr.put(
+                                JSONObject()
+                                    .put("thr", s.thr.toDouble())
+                                    .put("sPx", s.sPx.toDouble())
+                                    .put("minRun", s.minRun)
+                                    .put("energyRatio", s.energyRatio.toDouble())
+                                    .put("v0", s.v0)
+                                    .put("v1", s.v1)
+                                    .put("h0", s.h0)
+                                    .put("h1", s.h1)
+                                    .put("vScores", vArr)
+                                    .put("hScores", hArr)
+                                    .put("walkT", s.walkT)
+                                    .put("walkB", s.walkB)
+                                    .put("jumpL", s.jumpL)
+                                    .put("jumpR", s.jumpR),
+                            )
+                        }
+                    }
                     return JSONObject()
                         .put("reds", redsArr)
                         .put("ocrSourceRects", ocrArr)
@@ -1213,6 +1234,7 @@ suspend fun runPumpExperiment(
                         .put("assembly", assemblyObj)
                         .put("oranges", orangesArr)
                         .put("scaleVariants", scaleVariants)
+                        .put("inkSweep", sweepArr)
                         .toString()
                 }
 
@@ -1484,6 +1506,7 @@ suspend fun runPumpExperiment(
                 val inkWalkSeeds: List<android.graphics.Rect>
                 val inkWalkBoxes: List<android.graphics.Rect>
                 val inkJumpOpts: ContentExpandUtils.ExpandOptions?
+                var makeGInkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList()
                 val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
                 if (seg7Stroke) {
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
@@ -1566,6 +1589,9 @@ suspend fun runPumpExperiment(
                         }
                     }
                     val official = inkBoxesFor(1f)
+                    makeGInkSweeps = segs.indices.map { i ->
+                        segs[i].sweep?.withOfficial(official[i])
+                    }
                     customBlueG = official.map { e ->
                         PumpHunk(
                             "",
@@ -1866,6 +1892,7 @@ suspend fun runPumpExperiment(
                     ),
                     oranges = orangePixelG,
                     scaleVariants = inkVariants,
+                    inkSweeps = makeGInkSweeps,
                 )
                 doBOrDRedOnlyImage()
                 val aPdG = if (horizJump || seg7Stroke) {
@@ -2909,6 +2936,10 @@ suspend fun runPumpExperiment(
                                 },
                                 oranges = emptyList(),
                                 scaleVariants = variants,
+                                inkSweeps = expDiag.indices.map { i ->
+                                    val r = primaryRects.getOrNull(i) ?: return@map expDiag[i].sweep
+                                    expDiag[i].sweep?.withOfficial(r)
+                                },
                             )
                             doBOrDRedOnlyImage()
                             val blueHunks = primaryRects.map { r ->
@@ -3360,32 +3391,28 @@ suspend fun runPumpExperiment(
                 val procRotColorRetract = rotColor(2, "rot-color-retract")
                 val flowProcessors = buildList {
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
-                    add("Set ink-energy-base" to procInkEnergyBase)
                     add("Set ink-energy-tight" to procInkEnergyTight)
                     add("Set ink-energy-retract" to procInkEnergyRetract)
-                    add("Set ink-gray-base" to procInkGrayBase)
                     add("Set ink-gray-tight" to procInkGrayTight)
                     add("Set ink-gray-retract" to procInkGrayRetract)
-                    add("Set ink-color-base" to procInkColorBase)
                     add("Set ink-color-tight" to procInkColorTight)
                     add("Set ink-color-retract" to procInkColorRetract)
-                    add("Set rot-energy-base" to procRotEnergyBase)
                     add("Set rot-energy-tight" to procRotEnergyTight)
                     add("Set rot-energy-retract" to procRotEnergyRetract)
-                    add("Set rot-gray-base" to procRotGrayBase)
                     add("Set rot-gray-tight" to procRotGrayTight)
                     add("Set rot-gray-retract" to procRotGrayRetract)
-                    add("Set rot-color-base" to procRotColorBase)
                     add("Set rot-color-tight" to procRotColorTight)
                     add("Set rot-color-retract" to procRotColorRetract)
                 }
-                // Parked (compiled, not scheduled): prior ink-prod/color/walk2/jump, P*, L/M, G-dense/K.
+                // Parked (compiled, not scheduled): prior ink-prod/color/walk2/jump, P*, L/M, G-dense/K, *-base.
                 @Suppress("UNUSED_VARIABLE")
                 val parked = listOf(
                     procGDense, procK, procP, procPJump,
                     procPRot, procProdM65, procProdInk, procInkProdColor,
                     procInkProdColor2, procInkProdWalk2, procProdJump,
                     procJumpProdColor, procProdRotInk, procRotInkProdColor,
+                    procInkEnergyBase, procInkGrayBase, procInkColorBase,
+                    procRotEnergyBase, procRotGrayBase, procRotColorBase,
                 ) +
                     procHorizByFactor.values + listOf(procL, procM)
                 val processor = flowProcessors.firstOrNull { it.first == flowName }?.second

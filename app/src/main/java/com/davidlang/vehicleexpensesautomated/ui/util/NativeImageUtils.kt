@@ -447,6 +447,7 @@ object NativeImageUtils {
         boundStrategy: Int,
         tightInsetPx: Int,
         teleArr: FloatArray?,
+        sweepArr: IntArray?,
     ): IntArray?
 
     fun chromaMagNative(y: Mat, uv: Mat, dst: Mat): Boolean {
@@ -461,7 +462,7 @@ object NativeImageUtils {
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray, chromaMode: Int,
         gapFrac: Float, minSeedHsToFreeze: Float,
         boundStrategy: Int, tightInsetPx: Int,
-        teleArr: FloatArray?,
+        teleArr: FloatArray?, sweepArr: IntArray?,
     ): IntArray?
     private external fun nativeJumpMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, boxes: IntArray, chromaMode: Int,
@@ -481,13 +482,14 @@ object NativeImageUtils {
         gapFrac: Float = 0.5f, minSeedHsToFreeze: Float = 0f, scratch: Mat? = null,
         boundStrategy: Int = 0, tightInsetPx: Int = 16,
         tele: FloatArray? = null,
+        sweep: IntArray? = null,
     ): IntArray? {
         if (gray.empty()) return null
         val n = seeds.size / 4
         val teleArr = tele ?: if (n > 0) FloatArray(n * SEG7_TELE_N) else null
         return nativeSeg7Many(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
-            gapFrac, minSeedHsToFreeze, boundStrategy, tightInsetPx, teleArr,
+            gapFrac, minSeedHsToFreeze, boundStrategy, tightInsetPx, teleArr, sweep,
         )
     }
 
@@ -569,6 +571,7 @@ object NativeImageUtils {
         boundStrategy: Int = 0,
         tightInsetPx: Int = 16,
         tele: FloatArray? = null,
+        sweep: IntArray? = null,
     ): IntArray? {
         if (gray.empty()) return null
         val n = seeds.size / 4
@@ -577,7 +580,7 @@ object NativeImageUtils {
             gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chroma, vertKind,
             maxFrac, energyRatio, freezeHorz, enableJump,
             jumpFrac, retractClearFrac, vertPadFrac, chi2K,
-            boundStrategy, tightInsetPx, teleArr,
+            boundStrategy, tightInsetPx, teleArr, sweep,
         )
     }
 

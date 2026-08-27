@@ -8825,3 +8825,13 @@ fillGrayJumpLook / seedInkBinY clip LTRB to mat before cv::Range. nativeJumpMany
 ## 2026-08-27 - CODE LANDED: jump-gray-look-oob-crash
 
 Gray jump lookBin clips seed LTRB to mat before cv::Range; empty ROI keeps Sobel mean. nativeJumpMany/Oriented catch cv::Exception → nullptr (Kotlin fallback). seedRects clipped in Kotlin. lookBin/104/horiz_pad/G--/QF unchanged. Do not deploy.
+
+## 2026-08-27 - Execute: ink-score-pixel-sweep
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/ink-score-pixel-sweep-20260827-1432-plan.md`
+- Scope: drop six *-base columns (13 scheduled); AABB then rot ink score vs offset; dump-details SVG. No expand/jump/k-pad/horiz_pad/G--/QF change. Do not deploy.
+
+## 2026-08-27 - Phase 1: drop *-base + AABB inkSweep JSON
+
+Unscheduled six *-base columns (13 remain). Gray/color seg7 and energy AABB pack V/H ink scores (clipped). costVolDecisionData_Paddle.inkSweep. No HTML yet. Do not deploy.

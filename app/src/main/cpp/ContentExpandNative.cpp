@@ -1212,6 +1212,94 @@ static void countPullY(
 
 }  // namespace
 
+struct InkSweepPack {
+    float thr = 0.f;
+    float sPx = 0.f;
+    float energyRatio = 0.f;
+    int minRun = 0;
+    int vOrigin = 0;
+    int hOrigin = 0;
+    int v0 = 0;
+    int v1 = 0;
+    int h0 = 0;
+    int h1 = 0;
+    std::vector<int> vScores;
+    std::vector<int> hScores;
+};
+
+static void writeSweepArr(JNIEnv* env, jintArray arr, const std::vector<InkSweepPack>& packs) {
+    if (!env || !arr) return;
+    const jint cap = env->GetArrayLength(arr);
+    if (cap < 1) return;
+    std::vector<jint> buf;
+    buf.push_back(static_cast<jint>(packs.size()));
+    for (const auto& p : packs) {
+        const int nV = static_cast<int>(p.vScores.size());
+        const int nH = static_cast<int>(p.hScores.size());
+        buf.push_back(static_cast<jint>(std::lround(p.thr * 1000.f)));
+        buf.push_back(static_cast<jint>(std::lround(p.sPx)));
+        buf.push_back(p.minRun);
+        buf.push_back(static_cast<jint>(std::lround(p.energyRatio * 1000.f)));
+        buf.push_back(p.vOrigin);
+        buf.push_back(p.hOrigin);
+        buf.push_back(p.v0);
+        buf.push_back(p.v1);
+        buf.push_back(nV);
+        buf.push_back(p.h0);
+        buf.push_back(p.h1);
+        buf.push_back(nH);
+        buf.insert(buf.end(), p.vScores.begin(), p.vScores.end());
+        buf.insert(buf.end(), p.hScores.begin(), p.hScores.end());
+    }
+    const jint n = std::min(cap, static_cast<jint>(buf.size()));
+    env->SetIntArrayRegion(arr, 0, n, buf.data());
+}
+
+static void fillAabbEnergySweep(
+    const cv::Mat& vertEng, const cv::Mat& magY,
+    int sl, int st, int sr, int sb,
+    int walkedH, int imgW, int imgH,
+    float energyRatio, double thr, float jumpFrac,
+    InkSweepPack* out
+) {
+    if (!out) return;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > imgW) sr = imgW;
+    if (sb > imgH) sb = imgH;
+    if (sr <= sl || sb <= st) return;
+    const int seedH = std::max(1, sb - st);
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+    const int hgt = std::max(1, walkedH);
+    const int xPad = std::max(1, static_cast<int>(std::lround(jumpFrac * hgt * (kJumpMax + 1))));
+    const int y0 = std::max(0, st - capPx);
+    const int y1 = std::min(imgH, sb + capPx);
+    const int x0 = std::max(0, sl - xPad);
+    const int x1 = std::min(imgW, sr + xPad);
+    if (y1 <= y0 || x1 <= x0) return;
+    out->thr = static_cast<float>(thr);
+    out->energyRatio = energyRatio;
+    out->sPx = static_cast<float>(std::max(1, seedH / 12));
+    out->minRun = 0;
+    out->vOrigin = y0;
+    out->hOrigin = x0;
+    out->v0 = st - y0;
+    out->v1 = sb - y0;
+    out->h0 = sl - x0;
+    out->h1 = sr - x0;
+    out->vScores.reserve(static_cast<size_t>(y1 - y0));
+    for (int y = y0; y < y1; ++y) {
+        out->vScores.push_back(static_cast<int>(
+            std::lround(meanRectF(vertEng, sl, y, sr, y + 1, imgW, imgH))));
+    }
+    const cv::Mat& hEng = magY.empty() ? vertEng : magY;
+    out->hScores.reserve(static_cast<size_t>(x1 - x0));
+    for (int x = x0; x < x1; ++x) {
+        out->hScores.push_back(static_cast<int>(
+            std::lround(meanRectF(hEng, x, st, x + 1, sb, imgW, imgH))));
+    }
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeChromaMag(
     JNIEnv* /*env*/, jobject /*thiz*/,
@@ -1239,7 +1327,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
     jboolean freezeHorz, jboolean enableJump,
     jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac, jfloat chi2K,
     jint boundStrategy, jint tightInsetPx,
-    jfloatArray teleArr
+    jfloatArray teleArr, jintArray sweepArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
@@ -1307,6 +1395,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
 
     const cv::Mat* chi2Src = useChroma ? &cMag : gray;
     std::vector<jint> out(n * 11, 0);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i) {
         int l = seeds[i * 4 + 0];
         int t = seeds[i * 4 + 1];
@@ -1474,7 +1564,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
             fillRunHists(eBin, tele.histH, tele.histV);
         }
         storeTeleArr(env, teleArr, i, tele);
+        fillAabbEnergySweep(
+            vertEng, magY, seedL, seedT, seedR, seedB,
+            std::max(1, b - t), imgW, imgH, energyRatio, thr, jumpFrac,
+            &sweeps[static_cast<size_t>(i)]);
     }
+    writeSweepArr(env, sweepArr, sweeps);
     magY.release();
     gxAbs.release();
     vertEng.release();
@@ -1528,6 +1623,73 @@ static int maxInkRunCol(const cv::Mat& bin, int x, int y0, int y1) {
         }
     }
     return best;
+}
+
+static void dropWide(cv::Mat* bin, int glareW);
+
+static void fillAabbLookSweep(
+    const cv::Mat& src, bool srcIsBin, double otsu, bool darkInk, int glareW,
+    const cv::Mat& lookBin, int nt,
+    int sl, int st, int sr, int sb,
+    int walkedT, int walkedB,
+    int imgW, int imgH, int minRun, float sPx,
+    InkSweepPack* out
+) {
+    if (!out || src.empty()) return;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > imgW) sr = imgW;
+    if (sb > imgH) sb = imgH;
+    if (sr <= sl || sb <= st) return;
+    const int seedH = std::max(1, sb - st);
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+    const int walkedH = std::max(1, walkedB - walkedT);
+    const int xPad = std::max(1, static_cast<int>(std::lround(0.40f * walkedH * (kJumpMax + 1))));
+    const int y0 = std::max(0, st - capPx);
+    const int y1 = std::min(imgH, sb + capPx);
+    const int x0 = std::max(0, sl - xPad);
+    const int x1 = std::min(imgW, sr + xPad);
+    if (y1 <= y0) return;
+    out->thr = static_cast<float>(minRun);
+    out->sPx = sPx;
+    out->energyRatio = 0.f;
+    out->minRun = minRun;
+    out->vOrigin = y0;
+    out->hOrigin = x0;
+    out->v0 = st - y0;
+    out->v1 = sb - y0;
+    out->h0 = sl - x0;
+    out->h1 = sr - x0;
+    out->vScores.reserve(static_cast<size_t>(y1 - y0));
+    for (int y = y0; y < y1; ++y) {
+        const int ly = y - nt;
+        int sc = 0;
+        if (!lookBin.empty() && ly >= 0 && ly < lookBin.rows) {
+            sc = maxInkRunRow(lookBin, ly, 0, lookBin.cols);
+        }
+        out->vScores.push_back(sc);
+    }
+    if (x1 <= x0) return;
+    cv::Mat wide;
+    if (st >= 0 && sb <= imgH && sb > st && x1 > x0) {
+        cv::Mat strip = src(cv::Range(st, sb), cv::Range(x0, x1));
+        if (srcIsBin) {
+            strip.copyTo(wide);
+        } else {
+            const int ttype = darkInk ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
+            cv::threshold(strip, wide, otsu, 255, ttype);
+        }
+        if (!wide.empty() && glareW > 0) dropWide(&wide, glareW);
+    }
+    out->hScores.reserve(static_cast<size_t>(x1 - x0));
+    for (int x = x0; x < x1; ++x) {
+        int sc = 0;
+        if (!wide.empty()) {
+            const int lx = x - x0;
+            sc = maxInkRunCol(wide, lx, 0, wide.rows);
+        }
+        out->hScores.push_back(sc);
+    }
 }
 
 struct HorizSW {
@@ -1615,7 +1777,8 @@ static void seg7One(
     int boundStrategy = 0,
     int tightInsetPx = 16,
     Seg7Tele* tele = nullptr,
-    bool keepColorStats = false
+    bool keepColorStats = false,
+    InkSweepPack* sweepOut = nullptr
 ) {
     if (boundStrategy == 1) {
         const int ins = std::max(1, tightInsetPx);
@@ -1794,6 +1957,12 @@ static void seg7One(
         tele->fLeft = static_cast<float>(kFlagUnchanged);
         tele->fRight = static_cast<float>(kFlagUnchanged);
         fillRunHists(lookBin, tele->histH, tele->histV);
+    }
+    if (sweepOut && !lookBin.empty()) {
+        fillAabbLookSweep(
+            src, srcIsBin, thr, darkInk, glareW, lookBin, nt,
+            sl, st, sr, sb, *ot, *ob, imgW, imgH, minRun,
+            static_cast<float>(sPx), sweepOut);
     }
 }
 
@@ -2098,7 +2267,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr, jint chromaMode,
     jfloat gapFrac, jfloat minSeedHsToFreeze,
     jint boundStrategy, jint tightInsetPx,
-    jfloatArray teleArr
+    jfloatArray teleArr, jintArray sweepArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -2127,6 +2296,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
         }
     }
     std::vector<jint> out(n * 8, 0);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i) {
         int l = seeds[i * 4], t = seeds[i * 4 + 1], r = seeds[i * 4 + 2], b = seeds[i * 4 + 3];
         if (l < 0) l = 0;
@@ -2145,12 +2316,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
                 seg7One(*tintDst, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
                     gapFrac, minSeedHsToFreeze, glareMult,
-                    boundStrategy, tightInsetPx, &tele, true);
+                    boundStrategy, tightInsetPx, &tele, true,
+                    &sweeps[static_cast<size_t>(i)]);
             } else {
                 seg7One(*gray, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
                     gapFrac, minSeedHsToFreeze, 11,
-                    boundStrategy, tightInsetPx, &tele, false);
+                    boundStrategy, tightInsetPx, &tele, false,
+                    &sweeps[static_cast<size_t>(i)]);
             }
         } else {
             const cv::Mat* src = gray;
@@ -2160,13 +2333,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
             }
             seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
                 false, gapFrac, minSeedHsToFreeze, 11,
-                boundStrategy, tightInsetPx, &tele, false);
+                boundStrategy, tightInsetPx, &tele, false,
+                &sweeps[static_cast<size_t>(i)]);
         }
         const int o = i * 8;
         out[o] = ol; out[o + 1] = ot; out[o + 2] = orr; out[o + 3] = ob;
         out[o + 4] = sPx; out[o + 5] = vSW; out[o + 6] = hSW; out[o + 7] = fb;
         storeTeleArr(env, teleArr, i, tele);
     }
+    writeSweepArr(env, sweepArr, sweeps);
     jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
     if (!arr) return nullptr;
     env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());

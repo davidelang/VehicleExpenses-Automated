@@ -205,6 +205,7 @@ object ContentExpandUtils {
         val rectCount: Rect = rect,
         val countPull: CountPullInfo? = null,
         val tele: Seg7Telemetry? = null,
+        val sweep: InkSweep? = null,
     )
     data class OrientedExpand(
         val quad: OrientedQuad,
@@ -1252,6 +1253,74 @@ object ContentExpandUtils {
         }
     }
 
+    data class InkSweep(
+        val thr: Float,
+        val sPx: Float,
+        val minRun: Int,
+        val energyRatio: Float,
+        val vOrigin: Int,
+        val hOrigin: Int,
+        val v0: Int,
+        val v1: Int,
+        val h0: Int,
+        val h1: Int,
+        val vScores: IntArray,
+        val hScores: IntArray,
+        val walkT: Int = -1,
+        val walkB: Int = -1,
+        val jumpL: Int = -1,
+        val jumpR: Int = -1,
+    ) {
+        fun withOfficial(r: Rect): InkSweep {
+            val vs = vScores.size
+            val hs = hScores.size
+            return copy(
+                walkT = (r.top - vOrigin).coerceIn(0, vs),
+                walkB = (r.bottom - vOrigin).coerceIn(0, vs),
+                jumpL = (r.left - hOrigin).coerceIn(0, hs),
+                jumpR = (r.right - hOrigin).coerceIn(0, hs),
+            )
+        }
+    }
+
+    fun inkSweepBuf(n: Int, imgW: Int, imgH: Int): IntArray {
+        val per = 12 + imgW.coerceAtLeast(1) + imgH.coerceAtLeast(1)
+        return IntArray((1 + n.coerceAtLeast(0) * per).coerceAtLeast(1))
+    }
+
+    fun parseInkSweeps(a: IntArray?, n: Int): List<InkSweep?> {
+        val out = MutableList<InkSweep?>(n) { null }
+        if (a == null || a.isEmpty() || n <= 0) return out
+        var p = 0
+        val nBox = a[p++]
+        for (i in 0 until nBox) {
+            if (p + 12 > a.size) break
+            val thr = a[p++] / 1000f
+            val sPx = a[p++].toFloat()
+            val minRun = a[p++]
+            val energyRatio = a[p++] / 1000f
+            val vOrigin = a[p++]
+            val hOrigin = a[p++]
+            val v0 = a[p++]
+            val v1 = a[p++]
+            val nV = a[p++]
+            val h0 = a[p++]
+            val h1 = a[p++]
+            val nH = a[p++]
+            if (nV < 0 || nH < 0 || p + nV + nH > a.size) break
+            val vScores = IntArray(nV) { a[p++] }
+            val hScores = IntArray(nH) { a[p++] }
+            if (i < n) {
+                out[i] = InkSweep(
+                    thr, sPx, minRun, energyRatio,
+                    vOrigin, hOrigin, v0, v1, h0, h1,
+                    vScores, hScores,
+                )
+            }
+        }
+        return out
+    }
+
     data class Seg7Telemetry(
         val method: String,
         val yInk: Float,
@@ -1324,6 +1393,7 @@ object ContentExpandUtils {
         val k: Float = SEG7_K,
         val j: Float = SEG7_J,
         val tele: Seg7Telemetry? = null,
+        val sweep: InkSweep? = null,
     )
 
     /**
@@ -1365,11 +1435,13 @@ object ContentExpandUtils {
             packed[i * 4 + 3] = s.bottom
         }
         val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
+        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val r = NativeImageUtils.seg7ManyNative(
             gray, uv, packed, mode, gapFrac, minSeedHsToFreeze, scratch,
-            boundStrategy, tightInsetPx, tele,
+            boundStrategy, tightInsetPx, tele, sweepBuf,
         ) ?: return null
         if (r.size < seeds.size * 8) return null
+        val sweeps = parseInkSweeps(sweepBuf, seeds.size)
         return seeds.indices.map { i ->
             val o = i * 8
             val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
@@ -1387,6 +1459,7 @@ object ContentExpandUtils {
                 ),
                 k, j,
                 parseSeg7Tele(tele, i),
+                sweeps.getOrNull(i),
             )
         }
     }
@@ -2402,13 +2475,15 @@ object ContentExpandUtils {
             VertEnergyKind.CHI2 -> 3
         }
         val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
+        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val r = NativeImageUtils.aabbGrowManyNative(
             gray, uv, packed, uv != null, vk,
             opts.maxFrac, opts.energyRatio, opts.freezeHorzDuringVert, opts.enableJump,
             opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac, opts.chi2K,
-            opts.boundStrategy, opts.tightInsetPx, tele,
+            opts.boundStrategy, opts.tightInsetPx, tele, sweepBuf,
         ) ?: return null
         if (r.size < seeds.size * 11) return null
+        val sweeps = parseInkSweeps(sweepBuf, seeds.size)
         return seeds.indices.map { i ->
             val o = i * 11
             val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
@@ -2430,6 +2505,7 @@ object ContentExpandUtils {
                     bAfter = cr.bottom,
                 ),
                 parseSeg7Tele(tele, i),
+                sweeps.getOrNull(i),
             )
         }
     }
