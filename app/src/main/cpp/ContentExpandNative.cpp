@@ -1912,33 +1912,46 @@ static void seg7OrientedOne(
     const int glareW = 11 * std::max(hh0.peak, 4);
     dropWide(&bin, glareW);
     HorizSW hh = horizPeakSW(bin, hv, wu);
-    const int sPx = (hh.peak <= 4 || inkFrac >= 0.45f) ? fallback : hh.peak;
+    const int vSW = hh.peak;
+    const int lo = std::max(1, static_cast<int>(std::lround(0.7f * vSW)));
+    const int hi = std::max(lo, static_cast<int>(std::lround(1.3f * vSW)));
+    int band = 0;
+    const int hiClamp = std::min(hi, static_cast<int>(hh.hist.size()) - 1);
+    for (int k = lo; k <= hiClamp; ++k) band += hh.hist[k];
+    const float strokeShare = hh.nNonSpan > 0
+        ? band / static_cast<float>(hh.nNonSpan) : 0.f;
+    const float maxRunOverW = hh.maxRun / static_cast<float>(wu);
+    const bool needFb = vSW <= 4 || inkFrac >= 0.45f ||
+        strokeShare < 0.30f || maxRunOverW >= 0.50f;
+    const int sPx = needFb ? fallback : vSW;
     *sPxOut = static_cast<float>(std::max(1, sPx));
     const float cap = 2.5f * seedBh;
     const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
     const int minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
-    auto hasBar = [&](float v) {
-        int run = 0, mx = 0, nOn = 0;
-        for (int i = 0; i < wu; ++i) {
-            const float u = seed.u0 + (i + 0.5f) / wu * (seed.u1 - seed.u0);
+    const int vLook = std::max(1, static_cast<int>(std::lround(cap)) + 2);
+    const float lookV0 = seed.v0 - static_cast<float>(vLook);
+    const float lookV1 = seed.v1 + static_cast<float>(vLook);
+    const int lookH = std::max(1, static_cast<int>(std::lround(lookV1 - lookV0)));
+    cv::Mat look(lookH, wu, CV_8UC1);
+    for (int y = 0; y < lookH; ++y) {
+        const float v = lookV0 + (y + 0.5f);
+        uint8_t* row = look.ptr<uint8_t>(y);
+        for (int x = 0; x < wu; ++x) {
+            const float u = seed.u0 + (x + 0.5f) / wu * (seed.u1 - seed.u0);
             const float px = seed.cx + u * seed.ux + v * seed.vx;
             const float py = seed.cy + u * seed.uy + v * seed.vy;
-            if (!inImgF(px, py, imgW, imgH)) {
-                run = 0;
-                continue;
-            }
-            ++nOn;
             const int g = sampleU8Trunc(src, px, py, imgW, imgH);
-            const bool ink = dark ? (g <= thr) : (g >= thr);
-            if (ink) {
-                ++run;
-                if (run > mx) mx = run;
-            } else {
-                run = 0;
-            }
+            row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
         }
-        if (nOn == 0) return false;
-        return mx >= minRun;
+    }
+    cv::Mat lookBin;
+    const int ttype = dark ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
+    cv::threshold(look, lookBin, thr, 255, ttype);
+    dropWide(&lookBin, glareW);
+    auto hasBar = [&](float v) {
+        const int y = static_cast<int>(std::lround(v - lookV0));
+        if (y < 0 || y >= lookBin.rows) return false;
+        return maxInkRunRow(lookBin, y, 0, lookBin.cols) >= minRun;
     };
     auto peek = [&](float startV, float dir) {
         float v = startV;

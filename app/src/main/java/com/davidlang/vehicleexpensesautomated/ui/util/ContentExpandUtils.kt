@@ -1784,6 +1784,8 @@ object ContentExpandUtils {
         val wu = max(4, box.uSpan().roundToInt())
         val hv = max(4, box.vSpan().roundToInt())
         val seedMat = Mat.zeros(hv, wu, CvType.CV_8UC1)
+        val look = Mat()
+        val lookBin = Mat()
         val row = ByteArray(wu)
         try {
             for (y in 0 until hv) {
@@ -1804,30 +1806,29 @@ object ContentExpandUtils {
             val minRun = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
             val thr = stroke.otsuThr
             val dark = stroke.darkInk
-            fun hasBarAtV(v: Float): Boolean {
-                var run = 0
-                var mx = 0
-                var nOn = 0
-                for (i in 0 until wu) {
-                    val u = box.u0 + (i + 0.5f) / wu * box.uSpan()
+            val glareW = SEG7_GLARE_WIDTH_MULT * max(stroke.vSW, SEG7_MIN_STROKE)
+            val vLook = max(1, cap.roundToInt() + 2)
+            val lookV0 = box.v0 - vLook
+            val lookV1 = box.v1 + vLook
+            val lookH = max(1, (lookV1 - lookV0).roundToInt())
+            look.create(lookH, wu, CvType.CV_8UC1)
+            for (y in 0 until lookH) {
+                val v = lookV0 + (y + 0.5f)
+                for (x in 0 until wu) {
+                    val u = box.u0 + (x + 0.5f) / wu * box.uSpan()
                     val px = box.cx + u * box.ux + v * box.vx
                     val py = box.cy + u * box.uy + v * box.vy
-                    if (px < 0f || py < 0f || px >= imgW || py >= imgH) {
-                        run = 0
-                        continue
-                    }
-                    nOn++
-                    val g = sampleU8(src, px, py, imgW, imgH)
-                    val ink = if (dark) g <= thr else g >= thr
-                    if (ink) {
-                        run++
-                        if (run > mx) mx = run
-                    } else {
-                        run = 0
-                    }
+                    row[x] = sampleU8(src, px, py, imgW, imgH).toByte()
                 }
-                if (nOn == 0) return false
-                return mx >= minRun
+                look.put(y, 0, row)
+            }
+            val ttype = if (dark) Imgproc.THRESH_BINARY_INV else Imgproc.THRESH_BINARY
+            Imgproc.threshold(look, lookBin, thr.toDouble(), 255.0, ttype)
+            dropWideComponents(lookBin, glareW)
+            fun hasBarAtV(v: Float): Boolean {
+                val y = (v - lookV0).roundToInt()
+                if (y < 0 || y >= lookBin.rows()) return false
+                return maxInkRunOnRow(lookBin, y) >= minRun
             }
             fun peek(startV: Float, dir: Float): Boolean {
                 var v = startV
@@ -1881,6 +1882,8 @@ object ContentExpandUtils {
             return Seg7OrientedExpand(seedQ, failStroke())
         } finally {
             seedMat.release()
+            look.release()
+            lookBin.release()
         }
     }
 

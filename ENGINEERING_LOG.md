@@ -8665,3 +8665,13 @@ jumpRetractHorizontalMany / jumpRetractOrientedUMany take scratch. ExperimentPum
 ## 2026-08-26 - CODE LANDED: optimize-buffer-allocation-jump-retract
 
 Jump JNI reuses workspace.s.mat; chromaMag once into scratch; tint zeros local ROI. Plan Status not writable (640). Do not deploy.
+
+## 2026-08-26 - Execute: rot-look-dropwide-skip-extra-k
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rot-look-dropwide-skip-extra-k-20260826-1729-plan.md`
+- Scope: Oriented look-band dropWide (not toAabb); AABB needFb on rot sPx; skip extra-k letter-only like AABB. Look mat is local u/v, not workspace.s. Keep 1424 map, 0542 BL, 11x, k=0. Do not deploy.
+
+## 2026-08-26 - Phase 1: rot look-band dropWide + needFb
+
+seg7OrientedOne: resample look mat along ±v, seed Otsu, dropWide 11×max(v0,4); hasBar reads lookBin. needFb adds strokeShare/maxRunOverW. Kotlin fallback same. No toAabb. Look mat is local, not workspace.s.
