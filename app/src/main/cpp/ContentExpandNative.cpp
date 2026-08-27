@@ -1503,38 +1503,56 @@ static bool fillChromaTintMask(
     const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin, glareMult);
     if (seedBin.empty()) return false;
 
-    double su = 0.0, sv = 0.0, yInkSum = 0.0, chromaInkSum = 0.0;
+    float su = 0.f, sv = 0.f, yInkSum = 0.f, chromaInkSum = 0.f;
     int nInk = 0;
+    const bool uvOk = !uv.empty() && uv.type() == CV_8UC2 && uv.rows > 0 && uv.cols > 0;
+    const int uvH = uvOk ? uv.rows : 0, uvW = uvOk ? uv.cols : 0;
+    const bool uvHalf = uvOk && uvW * 2 <= w + 1;
     for (int yy = 0; yy < seedBin.rows; ++yy) {
         const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
         const uint8_t* yp = y.ptr<uint8_t>(st + yy);
+        const cv::Vec2b* uvp = nullptr;
+        if (uvOk) {
+            int uy = uvHalf ? (st + yy) / 2 : ((st + yy) & ~1);
+            if (uy < 0) uy = 0;
+            if (uy >= uvH) uy = uvH - 1;
+            uvp = uv.ptr<cv::Vec2b>(uy);
+        }
         for (int xx = 0; xx < seedBin.cols; ++xx) {
             if (!bp[xx]) continue;
-            int u, v;
-            uvAt(uv, w, sl + xx, st + yy, &u, &v);
-            const double du = static_cast<double>(u) - 128.0;
-            const double dv = static_cast<double>(v) - 128.0;
-            const double n = std::hypot(du, dv);
-            if (n >= 1.0) {
-                su += du / n;
-                sv += dv / n;
+            int u = 128, v = 128;
+            if (uvp) {
+                int ux = uvHalf ? (sl + xx) / 2 : ((sl + xx) & ~1);
+                if (ux < 0) ux = 0;
+                if (ux >= uvW) ux = uvW - 1;
+                u = uvp[ux][0];
+                v = uvp[ux][1];
             }
-            chromaInkSum += n;
+            const float du = static_cast<float>(u) - 128.f;
+            const float dv = static_cast<float>(v) - 128.f;
+            const float n2 = du * du + dv * dv;
+            if (n2 >= 1.f) {
+                const float inv = 1.f / std::sqrt(n2);
+                su += du * inv;
+                sv += dv * inv;
+                chromaInkSum += std::sqrt(n2);
+            }
             yInkSum += yp[sl + xx];
             ++nInk;
         }
     }
     if (nInk <= 0) return false;
-    double uInkX = su / nInk;
-    double uInkY = sv / nInk;
-    const double nrm = std::hypot(uInkX, uInkY);
-    if (nrm > 1e-6) {
-        uInkX /= nrm;
-        uInkY /= nrm;
+    float uInkX = su / static_cast<float>(nInk);
+    float uInkY = sv / static_cast<float>(nInk);
+    const float nrm2 = uInkX * uInkX + uInkY * uInkY;
+    if (nrm2 > 1e-12f) {
+        const float inv = 1.f / std::sqrt(nrm2);
+        uInkX *= inv;
+        uInkY *= inv;
     }
-    const double yInk = yInkSum / nInk;
-    const double meanChromaInk = chromaInkSum / nInk;
-    const bool inkHasChroma = meanChromaInk >= kTintChromaEps && nrm > 1e-6;
+    const float yInk = yInkSum / static_cast<float>(nInk);
+    const float meanChromaInk = chromaInkSum / static_cast<float>(nInk);
+    const bool inkHasChroma = meanChromaInk >= kTintChromaEps && nrm2 > 1e-12f;
 
     const int d = std::max(1, sPx);
     double yBgSum = 0.0;
@@ -1560,7 +1578,11 @@ static bool fillChromaTintMask(
             tryBg(gx, gy + d);
         }
     }
-    const double yBg = nBg > 0 ? yBgSum / nBg : (yInk < 128.0 ? 200.0 : 40.0);
+    const float yBg = nBg > 0 ? static_cast<float>(yBgSum / nBg)
+        : (yInk < 128.f ? 200.f : 40.f);
+    const float dInk = yInk - yBg;
+    const float eps2 = kTintChromaEps * kTintChromaEps;
+    const float dotThr2 = kTintDotThr * kTintDotThr;
 
     const int seedH = std::max(1, sb - st);
     const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
@@ -1575,22 +1597,34 @@ static bool fillChromaTintMask(
     for (int gy = nt; gy < nb; ++gy) {
         const uint8_t* yp = y.ptr<uint8_t>(gy);
         uint8_t* op = dst->ptr<uint8_t>(gy);
+        const cv::Vec2b* uvp = nullptr;
+        if (uvOk) {
+            int uy = uvHalf ? gy / 2 : (gy & ~1);
+            if (uy < 0) uy = 0;
+            if (uy >= uvH) uy = uvH - 1;
+            uvp = uv.ptr<cv::Vec2b>(uy);
+        }
         for (int gx = xl; gx < xr; ++gx) {
-            const double Y = yp[gx];
-            int u, v;
-            uvAt(uv, w, gx, gy, &u, &v);
-            const double du = static_cast<double>(u) - 128.0;
-            const double dv = static_cast<double>(v) - 128.0;
-            const double c = std::hypot(du, dv);
-            const double dInk = yInk - yBg;
-            const double dPix = Y - yBg;
-            const bool polOk = dInk * dPix >= 0.0;
+            const float Y = static_cast<float>(yp[gx]);
+            int u = 128, v = 128;
+            if (uvp) {
+                int ux = uvHalf ? gx / 2 : (gx & ~1);
+                if (ux < 0) ux = 0;
+                if (ux >= uvW) ux = uvW - 1;
+                u = uvp[ux][0];
+                v = uvp[ux][1];
+            }
+            const float du = static_cast<float>(u) - 128.f;
+            const float dv = static_cast<float>(v) - 128.f;
+            const float c2 = du * du + dv * dv;
+            const float dPix = Y - yBg;
+            const bool polOk = dInk * dPix >= 0.f;
             bool isInk;
-            if (!inkHasChroma || c < kTintChromaEps) {
-                isInk = polOk && std::abs(Y - yInk) <= std::abs(Y - yBg);
+            if (!inkHasChroma || c2 < eps2) {
+                isInk = polOk && std::fabs(Y - yInk) <= std::fabs(Y - yBg);
             } else {
-                const double dot = (du / c) * uInkX + (dv / c) * uInkY;
-                isInk = dot >= kTintDotThr && polOk;
+                const float left = du * uInkX + dv * uInkY;
+                isInk = polOk && left > 0.f && left * left >= dotThr2 * c2;
             }
             op[gx] = isInk ? 255 : 0;
         }
@@ -1618,7 +1652,7 @@ static double medianU8Rect(const cv::Mat& m, int l, int t, int r, int b) {
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7Many(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jlong uvPtr, jintArray seedsArr, jint chromaMode,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr, jint chromaMode,
     jfloat gapFrac, jfloat minSeedHsToFreeze
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
@@ -1630,13 +1664,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     std::vector<jint> seeds(n4);
     env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
     // chromaMode: 0 gray, 1 chromaMag, 2 chromaTint2, 3 chromaTint3 (same mask, 11× glare)
-    cv::Mat cMag;
+    cv::Mat localMag;
+    cv::Mat* cMag = nullptr;
     const bool useChromaMag = chromaMode == 1;
     const bool useTint = chromaMode == 2 || chromaMode == 3;
     const int glareMult = 11;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     if (useChromaMag) {
-        fillChromaMag(*gray, uv ? *uv : cv::Mat(), &cMag);
+        if (scratchFits(scratch, imgW, imgH)) {
+            fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
+            cMag = scratch;
+        } else {
+            fillChromaMag(*gray, uv ? *uv : cv::Mat(), &localMag);
+            cMag = &localMag;
+        }
     }
     std::vector<jint> out(n * 8, 0);
     for (int i = 0; i < n; ++i) {
@@ -1647,11 +1689,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
         if (b > imgH) b = imgH;
         int ol, ot, orr, ob, sPx, vSW, hSW, fb;
         if (useTint) {
-            cv::Mat tint;
+            cv::Mat localTint;
+            cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             const bool ok = uv && fillChromaTintMask(
-                *gray, *uv, l, t, r, b, &tint, glareMult);
-            if (ok) {
-                seg7One(tint, l, t, r, b, imgW, imgH,
+                *gray, *uv, l, t, r, b, tintDst, glareMult);
+            if (ok && tintDst && !tintDst->empty()) {
+                seg7One(*tintDst, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
                     gapFrac, minSeedHsToFreeze, glareMult);
             } else {
@@ -1661,8 +1704,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
             }
         } else {
             const cv::Mat* src = gray;
-            if (useChromaMag && !cMag.empty() && medianU8Rect(cMag, l, t, r, b) >= 8.0) {
-                src = &cMag;
+            if (useChromaMag && cMag && !cMag->empty() &&
+                medianU8Rect(*cMag, l, t, r, b) >= 8.0) {
+                src = cMag;
             }
             seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
                 false, gapFrac, minSeedHsToFreeze);
@@ -2088,7 +2132,7 @@ static void jumpOrientedOne(
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7OrientedMany(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jlong uvPtr, jfloatArray seedsArr, jint chromaMode
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -2098,11 +2142,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
     const int n = n8 / 8;
     std::vector<jfloat> seeds(n8);
     env->GetFloatArrayRegion(seedsArr, 0, n8, seeds.data());
-    cv::Mat cMag;
+    cv::Mat localMag;
+    cv::Mat* cMag = nullptr;
     const bool useChroma = chromaMode == 1;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     if (useChroma) {
-        fillChromaMag(*gray, uv ? *uv : cv::Mat(), &cMag);
+        if (scratchFits(scratch, imgW, imgH)) {
+            fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
+            cMag = scratch;
+        } else {
+            fillChromaMag(*gray, uv ? *uv : cv::Mat(), &localMag);
+            cMag = &localMag;
+        }
     }
     std::vector<jfloat> out(n * 9, 0.f);
     for (int i = 0; i < n; ++i) {
@@ -2115,9 +2167,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
             continue;
         }
         const cv::Mat* src = gray;
-        if (useChroma && !cMag.empty() &&
-            medianInteriorU8(cMag, box, imgW, imgH) >= 8.0) {
-            src = &cMag;
+        if (useChroma && cMag && !cMag->empty() &&
+            medianInteriorU8(*cMag, box, imgW, imgH) >= 8.0) {
+            src = cMag;
         }
         float sPx = 2.f;
         seg7OrientedOne(*src, box, imgW, imgH, op, &sPx);

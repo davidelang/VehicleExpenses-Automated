@@ -8683,3 +8683,13 @@ Rot extra-k skip: k=1 asis letters and no digits → reuse k=1 asis/digits, recB
 ## 2026-08-26 - CODE LANDED: rot-look-dropwide-skip-extra-k
 
 Rot look-band dropWide 11× on u/v look mat (not toAabb). needFb strokeShare/maxRunOverW. Extra-k skip same as AABB. k=0 kept. Plan CODE LANDED. Do not deploy.
+
+## 2026-08-26 - Execute: optimize-color2-vertical-scratch-math
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/optimize-color2-vertical-scratch-math-20260826-1848-plan.md`
+- Scope: nativeSeg7Many/OrientedMany take scratchPtr; fillChromaTintMask float/squared math; jump once then pad kk. Do not change QF/walk knobs. Do not deploy.
+
+## 2026-08-26 - Phase 1: nativeSeg7 scratchPtr + tint squared math
+
+nativeSeg7Many / nativeSeg7OrientedMany take scratchPtr; tint/chromaMag reuse BufferSet.s. fillChromaTintMask: float UV row pointers; classify uses c2 / squared dot (no per-pixel hypot).

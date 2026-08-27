@@ -452,7 +452,7 @@ object NativeImageUtils {
     }
 
     private external fun nativeSeg7Many(
-        grayPtr: Long, uvPtr: Long, seeds: IntArray, chromaMode: Int,
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray, chromaMode: Int,
         gapFrac: Float, minSeedHsToFreeze: Float,
     ): IntArray?
     private external fun nativeJumpMany(
@@ -467,11 +467,11 @@ object NativeImageUtils {
     /** chromaMode: 0 gray, 1 chromaMag, 2 chromaTint2, 3 chromaTint3 (11x glare). gapFrac default 0.5; minSeedHsToFreeze 0 = always freeze on empty peek. */
     fun seg7ManyNative(
         gray: Mat, uv: Mat?, seeds: IntArray, chromaMode: Int,
-        gapFrac: Float = 0.5f, minSeedHsToFreeze: Float = 0f,
+        gapFrac: Float = 0.5f, minSeedHsToFreeze: Float = 0f, scratch: Mat? = null,
     ): IntArray? {
         if (gray.empty()) return null
         return nativeSeg7Many(
-            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chromaMode,
+            gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
             gapFrac, minSeedHsToFreeze,
         )
     }
@@ -490,7 +490,7 @@ object NativeImageUtils {
     }
 
     private external fun nativeSeg7OrientedMany(
-        grayPtr: Long, uvPtr: Long, seeds: FloatArray, chromaMode: Int,
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray, chromaMode: Int,
     ): FloatArray?
     private external fun nativeJumpOrientedMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, quads: FloatArray, chromaMode: Int,
@@ -500,10 +500,11 @@ object NativeImageUtils {
     /** Packed n×8 seed quads → n×9 (walked 8-float quad + sPx). chromaMode 0 Y, 1 chromaMag with seed-interior median &lt; 8 → Y. */
     fun seg7OrientedManyNative(
         gray: Mat, uv: Mat?, seeds: FloatArray, chromaMode: Int,
+        scratch: Mat? = null,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return null
         return nativeSeg7OrientedMany(
-            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chromaMode,
+            gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
         )
     }
 
