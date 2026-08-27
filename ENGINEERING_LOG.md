@@ -8657,3 +8657,7 @@ Rot maps det boxes by content targetW/H (not 32-pad outer). Rec warp BORDER_CONS
 ## 2026-08-26 - Phase 1: jump JNI scratchPtr + ROI tint
 
 nativeJumpMany / nativeJumpOrientedMany take scratchPtr. chromaMag fills scratch once (no create if large enough). fillChromaTintMask zeros only local ROI when reusing scratch. meanRectF/sampleF32Trunc accept U8 scratch. Fallback alloc if scratch missing.
+
+## 2026-08-26 - Phase 2: pass workspace.s.mat into jump-retract
+
+jumpRetractHorizontalMany / jumpRetractOrientedUMany take scratch. ExperimentPumpScreen jump sites pass workspace.s.mat.

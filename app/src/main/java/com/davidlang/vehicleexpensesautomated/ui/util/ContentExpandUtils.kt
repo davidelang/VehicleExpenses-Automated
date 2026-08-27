@@ -989,6 +989,7 @@ object ContentExpandUtils {
         opts: ExpandOptions,
         uv: Mat? = null,
         chromaMode: Int = 0,
+        scratch: Mat? = null,
     ): List<Rect>? {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return boxes
         if (boxes.isEmpty()) return emptyList()
@@ -1004,7 +1005,7 @@ object ContentExpandUtils {
         }
         val r = NativeImageUtils.jumpManyNative(
             gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
-            uv, chromaMode,
+            uv, chromaMode, scratch,
         ) ?: return null
         if (r.size < boxes.size * 4) return null
         return boxes.indices.map { i ->
@@ -1014,9 +1015,9 @@ object ContentExpandUtils {
 
     fun jumpRetractHorizontal(
         gray: Mat, seed: Rect, opts: ExpandOptions,
-        uv: Mat? = null, chromaMode: Int = 0,
+        uv: Mat? = null, chromaMode: Int = 0, scratch: Mat? = null,
     ): Rect {
-        val many = jumpRetractHorizontalMany(gray, listOf(seed), opts, uv, chromaMode)
+        val many = jumpRetractHorizontalMany(gray, listOf(seed), opts, uv, chromaMode, scratch)
         if (many != null && many.size == 1) return many[0]
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
         val imgW = gray.cols()
@@ -1581,6 +1582,7 @@ object ContentExpandUtils {
         opts: ExpandOptions,
         uv: Mat? = null,
         chromaMode: Int = 0,
+        scratch: Mat? = null,
     ): List<OrientedQuad> {
         if (seeds.isEmpty()) return emptyList()
         val packed = FloatArray(seeds.size * 8)
@@ -1591,7 +1593,7 @@ object ContentExpandUtils {
         }
         val native = NativeImageUtils.jumpOrientedManyNative(
             gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
-            uv, chromaMode,
+            uv, chromaMode, scratch,
         )
         if (native != null && native.size >= seeds.size * 8) {
             return seeds.indices.map { i ->
@@ -1608,7 +1610,8 @@ object ContentExpandUtils {
         opts: ExpandOptions,
         uv: Mat? = null,
         chromaMode: Int = 0,
-    ): OrientedQuad = jumpRetractOrientedUMany(gray, listOf(seed), opts, uv, chromaMode).firstOrNull() ?: seed
+        scratch: Mat? = null,
+    ): OrientedQuad = jumpRetractOrientedUMany(gray, listOf(seed), opts, uv, chromaMode, scratch).firstOrNull() ?: seed
 
     private fun jumpRetractOrientedUKotlin(
         gray: Mat,

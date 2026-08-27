@@ -1486,11 +1486,13 @@ suspend fun runPumpExperiment(
                             workspace.p.mat, padded, jumpOpts,
                             uv = if (expandMode != 0) workspace.p.uvMat else null,
                             chromaMode = expandMode,
+                            scratch = workspace.s.mat,
                         ) ?: padded.map {
                             ContentExpandUtils.jumpRetractHorizontal(
                                 workspace.p.mat, it, jumpOpts,
                                 uv = if (expandMode != 0) workspace.p.uvMat else null,
                                 chromaMode = expandMode,
+                                scratch = workspace.s.mat,
                             )
                         }
                     }
@@ -1546,8 +1548,11 @@ suspend fun runPumpExperiment(
                     }
                     val jumped = ContentExpandUtils.jumpRetractHorizontalMany(
                         workspace.p.mat, pads, jumpOpts,
+                        scratch = workspace.s.mat,
                     ) ?: pads.map {
-                        ContentExpandUtils.jumpRetractHorizontal(workspace.p.mat, it, jumpOpts)
+                        ContentExpandUtils.jumpRetractHorizontal(
+                            workspace.p.mat, it, jumpOpts, scratch = workspace.s.mat,
+                        )
                     }
                     customBlueG = jumped.map { j ->
                         PumpHunk(
@@ -1613,11 +1618,13 @@ suspend fun runPumpExperiment(
                             workspace.p.mat, padded, opts,
                             uv = if (expandMode != 0) workspace.p.uvMat else null,
                             chromaMode = expandMode,
+                            scratch = workspace.s.mat,
                         ) ?: padded.map {
                             ContentExpandUtils.jumpRetractHorizontal(
                                 workspace.p.mat, it, opts,
                                 uv = if (expandMode != 0) workspace.p.uvMat else null,
                                 chromaMode = expandMode,
+                                scratch = workspace.s.mat,
                             )
                         }
                     }
@@ -2059,6 +2066,7 @@ suspend fun runPumpExperiment(
                                 gray, padded, jumpOpts,
                                 uv = if (expandMode != 0) workspace.p.uvMat else null,
                                 chromaMode = expandMode,
+                                scratch = workspace.s.mat,
                             )
                         }
                         expandedQuads = inkQuadsFor(1f)
@@ -2153,6 +2161,7 @@ suspend fun runPumpExperiment(
                                 gray, padded, opts,
                                 uv = if (expandMode != 0) workspace.p.uvMat else null,
                                 chromaMode = expandMode,
+                                scratch = workspace.s.mat,
                             )
                         }
                         var nOcr = 0
