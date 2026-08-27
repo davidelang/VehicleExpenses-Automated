@@ -8729,3 +8729,7 @@ color_adaptive chromaMode 4; tight/edge-retract; 18 cols + G--. Scratch/hypot/ju
 ## 2026-08-26 - Phase 1: 10pct retract clamp + 32-bin telemetry
 
 seg7 AABB/oriented and energy retract clamp maxRetractPx=max(1,round(0.10*seedH)). JNI tele float[81] per box: ink/bg, deltas, flags, histH/V 32 log bins. Do not deploy.
+
+## 2026-08-26 - Phase 2: 2318 telemetry JSON/HTML
+
+seg7_tele metadata + assembly inkTelemetry. HTML dump-details per-box yInk/yBg/C/s/flags + nonzero 32-bin H/V. 18-col already scheduled. Do not deploy.

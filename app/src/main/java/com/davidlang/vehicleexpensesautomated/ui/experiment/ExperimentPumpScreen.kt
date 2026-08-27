@@ -1529,6 +1529,7 @@ suspend fun runPumpExperiment(
                     inkWalkBoxes = jumpedOnce
                     inkJumpOpts = jumpOpts
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
+                    storeSeg7Tele(branch, segs.map { it.tele })
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "1"
                     branch.metadata["seg7_vert_cap_frac"] = ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
@@ -1746,7 +1747,8 @@ suspend fun runPumpExperiment(
                         "hmThreshNote" to (if (hmThresh <= 0f) "u8>=1" else if (kotlin.math.abs(hmThresh - HEAT_THR_U8_GE2) < 1e-6f) "u8>=2" else "custom"),
                         "maskDilatePasses" to maskDilatePasses,
                         "heatmapCellPx" to NativeImageUtils.PADDLE_DET_HEAT_CELL_PX,
-                        "note" to assemblyNote
+                        "note" to assemblyNote,
+                        "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
                     ) else if (horizJump) mapOf(
                         "method" to "calculated",
                         "vertFactors" to gVertFactors,
@@ -2095,6 +2097,7 @@ suspend fun runPumpExperiment(
                         inkJumpOptsRot = jumpOpts
                         branch.metadata["s_per_red"] =
                             inkStrokes.joinToString(",") { it.sPx.toString() }
+                        storeSeg7Tele(branch, segs.map { it.tele })
                         branch.metadata["seg7_k"] = "0,1,2,3,4"
                         branch.metadata["seg7_k_official"] = "1"
                         branch.metadata["seg7_vert_cap_frac"] =
@@ -2401,6 +2404,7 @@ suspend fun runPumpExperiment(
                             "vertSweep" to emptyList<Float>(),
                             "hitVertCap" to hitCaps,
                             "note" to assemblyNote,
+                            "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
                         ) else mapOf(
                             "method" to "oriented_independent",
                             "contentExpandMode" to ContentExpandUtils.Mode.INTERIOR_ENERGY.name,
@@ -2649,6 +2653,7 @@ suspend fun runPumpExperiment(
                             val hitCaps = expDiag.map { it.hitVertCap }
                             branch.metadata["n_hit_cap"] = hitCaps.count { it }.toString()
                             branch.metadata["n_ocr_energy"] = expandedBase.size.toString()
+                            storeSeg7Tele(branch, expDiag.map { it.tele })
                             if (energyTraceOut != null) {
                                 try {
                                     writeExpandEnergyTrace(
@@ -2763,6 +2768,7 @@ suspend fun runPumpExperiment(
                                     "vertPadFrac" to vertPadFrac,
                                     "countPull" to "gx-run-count valley + one-dir pad; scaleVariants kind=energy_count",
                                     "note" to assemblyNote,
+                                    "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
                                 ) + if (vertEnergy == ContentExpandUtils.VertEnergyKind.CHI2) {
                                     mapOf("chi2K" to chi2K)
                                 } else {
@@ -3618,6 +3624,87 @@ private fun pRecBuffersHtml(br: PumpBranch): String {
     return sb.toString()
 }
 
+private fun seg7TeleJson(t: ContentExpandUtils.Seg7Telemetry): JSONObject {
+    val hh = JSONArray(); t.histH.forEach { hh.put(it) }
+    val hv = JSONArray(); t.histV.forEach { hv.put(it) }
+    return JSONObject()
+        .put("method", t.method)
+        .put("y_ink", t.yInk.toDouble())
+        .put("y_bg", t.yBg.toDouble())
+        .put("d_ink", t.dInk.toDouble())
+        .put("mean_chroma", t.meanChroma.toDouble())
+        .put("u_ink_x", t.uInkX.toDouble())
+        .put("u_ink_y", t.uInkY.toDouble())
+        .put("otsu_thresh", t.otsuThr.toDouble())
+        .put("s_px", t.sPx.toDouble())
+        .put("delta_top", t.deltaTop.toDouble())
+        .put("delta_bot", t.deltaBot.toDouble())
+        .put("delta_left", t.deltaLeft.toDouble())
+        .put("delta_right", t.deltaRight.toDouble())
+        .put("flag_top", t.flagTop)
+        .put("flag_bot", t.flagBot)
+        .put("flag_left", t.flagLeft)
+        .put("flag_right", t.flagRight)
+        .put("hist_h", hh)
+        .put("hist_v", hv)
+}
+
+private fun storeSeg7Tele(branch: PumpBranch, teles: List<ContentExpandUtils.Seg7Telemetry?>) {
+    val arr = JSONArray()
+    teles.forEach { t -> if (t != null) arr.put(seg7TeleJson(t)) }
+    if (arr.length() > 0) branch.metadata["seg7_tele"] = arr.toString()
+}
+
+private fun histBinLabel(b: Int): String {
+    if (b <= 0) return "1-2"
+    var hi = 2
+    repeat(b) { hi *= 2 }
+    val lo = hi / 2 + 1
+    return if (b >= 31) "$lo+" else "$lo-$hi"
+}
+
+private fun pSeg7TeleHtml(br: PumpBranch): String {
+    val raw = br.metadata["seg7_tele"] ?: return ""
+    val arr = try { JSONArray(raw) } catch (_: Exception) { return "" }
+    if (arr.length() == 0) return ""
+    val sb = StringBuilder()
+    sb.append("<div class='dump-details' style='font-size:9px;text-align:left;margin-top:4px;'>")
+    for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        sb.append("<div><b>box${i + 1}</b> ${o.optString("method")} ")
+        sb.append("yInk=${"%.1f".format(o.optDouble("y_ink"))} ")
+        sb.append("yBg=${"%.1f".format(o.optDouble("y_bg"))} ")
+        sb.append("dInk=${"%.1f".format(o.optDouble("d_ink"))} ")
+        sb.append("C=${"%.1f".format(o.optDouble("mean_chroma"))} ")
+        sb.append("s=${"%.0f".format(o.optDouble("s_px"))} ")
+        sb.append("otsu=${"%.0f".format(o.optDouble("otsu_thresh"))}<br>")
+        sb.append("Δt=${"%.0f".format(o.optDouble("delta_top"))} ")
+        sb.append("Δb=${"%.0f".format(o.optDouble("delta_bot"))} ")
+        sb.append("${o.optString("flag_top")}/${o.optString("flag_bot")}<br>")
+        val hh = o.optJSONArray("hist_h")
+        if (hh != null) {
+            sb.append("H ")
+            for (b in 0 until hh.length()) {
+                val c = hh.optInt(b)
+                if (c > 0) sb.append("${histBinLabel(b)}:$c ")
+            }
+            sb.append("<br>")
+        }
+        val hv = o.optJSONArray("hist_v")
+        if (hv != null) {
+            sb.append("V ")
+            for (b in 0 until hv.length()) {
+                val c = hv.optInt(b)
+                if (c > 0) sb.append("${histBinLabel(b)}:$c ")
+            }
+            sb.append("<br>")
+        }
+        sb.append("</div>")
+    }
+    sb.append("</div>")
+    return sb.toString()
+}
+
 private fun pBuildHtmlHeader(time: String, total: Int, version: String, device: String, flows: List<String>): String = buildString {
     appendLine("<html><head><title>Pump Experiment - $time</title>")
     appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
@@ -3672,11 +3759,12 @@ private fun pBuildHtmlRowDynamic(
         } else {
             ""
         }
+        val teleHtml = pSeg7TeleHtml(br)
         if (br.images.containsKey("PD_red_only")) {
             // red-only + full PD pair (when branch populates the key from explicit helper call)
             val redOnly = br.images["PD_red_only"] ?: ""
             val full = br.images["PD"] ?: ""
-            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small>$sHtml${pRecBuffersHtml(br)}</td>")
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small>$sHtml$teleHtml${pRecBuffersHtml(br)}</td>")
         } else if (br.images.containsKey("rawC")) {
             val raw = br.images["rawC"] ?: ""
             val pushed = br.images["pushedC"] ?: ""
@@ -3707,7 +3795,7 @@ private fun pBuildHtmlRowDynamic(
             perRedHtml.append("</tr></table>")
             appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:100%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:100%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:100%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:100%;'><br><small>After</small></td></tr></table>$perRedHtml<img src='data:image/jpeg;base64,$pdB64'></td>")
         } else {
-            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$sHtml${pRecBuffersHtml(br)}</td>")
+            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$sHtml$teleHtml${pRecBuffersHtml(br)}</td>")
         }
     }
 
