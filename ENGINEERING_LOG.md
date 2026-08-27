@@ -8844,3 +8844,7 @@ Unscheduled six *-base columns (13 remain). Gray/color seg7 and energy AABB pack
 ## 2026-08-27 - Strike: withOfficialUv round/coerceIn types (1432 Phase 2)
 
 kotlin.math.round(Float) is Float; coerceIn(0, vs) wants Int. Fixed to roundToInt. Native cmake succeeded.
+
+## 2026-08-27 - CODE LANDED: ink-score-pixel-sweep-20260827-1432
+
+Phase 1: drop six *-base; AABB inkSweep JSON. Phase 2: rot ±v/±u same payload; dump-details SVG (thr, seed, walk/jump ticks). G-- has no inkSweep. 13 columns. Expand/jump/k-pad/horiz_pad, 0.5s/0.65/10% retract, G--/QF unchanged. Do not deploy.
