@@ -8733,3 +8733,7 @@ seg7 AABB/oriented and energy retract clamp maxRetractPx=max(1,round(0.10*seedH)
 ## 2026-08-26 - Phase 2: 2318 telemetry JSON/HTML
 
 seg7_tele metadata + assembly inkTelemetry. HTML dump-details per-box yInk/yBg/C/s/flags + nonzero 32-bin H/V. 18-col already scheduled. Do not deploy.
+
+## 2026-08-26 - CODE LANDED: retract-clamp-telemetry-runlength-hist
+
+10% seedH retract clamp; 32-bin H/V runlength + ink/bg telemetry in JNI/JSON/HTML. 18-col + G-- kept. Plan Status not writable (640). Do not deploy.
