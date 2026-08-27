@@ -8759,3 +8759,13 @@ Sparse multi-scale report uses shared toolbar; data-col photo/scale/models; dump
 ## 2026-08-26 - CODE LANDED: experiment-html-filter-single-file
 
 One HTML file per pump/alignment run (no _partN). Shared sticky filters, 500px cols, prev/next, localStorage. Pump Rec crops only. JSON/QF/expand unchanged. Do not deploy.
+
+## 2026-08-27 - Execute: rec-padding-col-dilution-binned-hist
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/rec-padding-col-dilution-binned-hist-20260827-0041-plan.md`
+- Scope: colHas inner \u00b10.5 seedH; 4px rec-scale pad on OCR crops; keep 2318 telemetry/18-col. Do not deploy.
+
+## 2026-08-27 - Phase 1: colHas inner-core dilution fix
+
+jumpRetractH / jumpOrientedOne colHas samples \u00b10.5 seedH core, not full padded t..b. JNI seedH/seedBh. 32-bin telemetry already present. Do not deploy.

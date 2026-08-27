@@ -466,6 +466,7 @@ object NativeImageUtils {
     private external fun nativeJumpMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, boxes: IntArray, chromaMode: Int,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
+        seedHArr: IntArray?,
     ): IntArray?
 
     fun seg7ManyNative(gray: Mat, uv: Mat?, seeds: IntArray, chroma: Boolean): IntArray? {
@@ -493,11 +494,12 @@ object NativeImageUtils {
         gray: Mat, boxes: IntArray,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
         uv: Mat? = null, chromaMode: Int = 0, scratch: Mat? = null,
+        seedHs: IntArray? = null,
     ): IntArray? {
         if (gray.empty()) return null
         return nativeJumpMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, boxes, chromaMode,
-            maxFrac, energyRatio, jumpFrac, retractClearFrac,
+            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedHs,
         )
     }
 
@@ -509,6 +511,7 @@ object NativeImageUtils {
     private external fun nativeJumpOrientedMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, quads: FloatArray, chromaMode: Int,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
+        seedBhArr: FloatArray?,
     ): FloatArray?
 
     /** Packed n×8 seed quads → n×9 (walked 8-float quad + sPx). chromaMode 0 Y, 1 chromaMag, 2/3 tint, 4 color_adaptive. */
@@ -532,11 +535,12 @@ object NativeImageUtils {
         gray: Mat, quads: FloatArray,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
         uv: Mat? = null, chromaMode: Int = 0, scratch: Mat? = null,
+        seedBhs: FloatArray? = null,
     ): FloatArray? {
         if (gray.empty() || quads.isEmpty()) return null
         return nativeJumpOrientedMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, quads, chromaMode,
-            maxFrac, energyRatio, jumpFrac, retractClearFrac,
+            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedBhs,
         )
     }
 

@@ -832,15 +832,25 @@ static constexpr int kJumpMax = 4;
 
 static void jumpRetractH(
     const cv::Mat& eng, int* l, int t, int* r, int b,
-    int imgW, int imgH, double thr, int capPx, float jumpFrac, float retractClearFrac
+    int imgW, int imgH, double thr, int capPx, float jumpFrac, float retractClearFrac,
+    int seedH = 0
 ) {
     (void)capPx;
     (void)retractClearFrac;
     const int hgt = std::max(1, b - t);
     const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * hgt)));
+    const int coreH = seedH > 0 ? seedH : hgt;
+    int coreT = (t + b) / 2 - coreH / 2;
+    int coreB = coreT + coreH;
+    if (coreT < t) coreT = t;
+    if (coreB > b) coreB = b;
+    if (coreB <= coreT + 1) {
+        coreT = t;
+        coreB = b;
+    }
     auto colHas = [&](int x) -> bool {
         if (x < 0 || x >= imgW) return false;
-        return meanRectF(eng, x, t, x + 1, b, imgW, imgH) >= thr;
+        return meanRectF(eng, x, coreT, x + 1, coreB, imgW, imgH) >= thr;
     };
     int jumpsL = 0;
     while (*l > 0 && jumpsL < kJumpMax) {
@@ -1395,7 +1405,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
             const cv::Mat& jumpEng = useChroma ? vertEng : magY;
             const double jThr = useChroma ? thr : jumpThr;
             jumpRetractH(jumpEng, &l, t, &r, b, imgW, imgH, jThr, cap,
-                         jumpFrac, retractClearFrac);
+                         jumpFrac, retractClearFrac, seedH);
         }
         if (l < 0) l = 0;
         if (t < 0) t = 0;
@@ -2094,7 +2104,8 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpMany(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray boxesArr, jint chromaMode,
-    jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac
+    jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac,
+    jintArray seedHArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !boxesArr) return nullptr;
@@ -2157,7 +2168,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
             : meanRectF(*eng, l, t, r, b, imgW, imgH);
         const double thr = energyRatio * std::max(base, 1e-3);
         const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * hgt)));
-        jumpRetractH(*eng, &l, t, &r, b, imgW, imgH, thr, cap, jumpFrac, retractClearFrac);
+        int seedH = hgt;
+        if (seedHArr && env->GetArrayLength(seedHArr) >= (i + 1)) {
+            jint sh = 0;
+            env->GetIntArrayRegion(seedHArr, i, 1, &sh);
+            if (sh > 0) seedH = sh;
+        }
+        jumpRetractH(*eng, &l, t, &r, b, imgW, imgH, thr, cap, jumpFrac, retractClearFrac,
+            seedH);
         if (l < 0) l = 0;
         if (t < 0) t = 0;
         if (r > imgW) r = imgW;
@@ -2498,13 +2516,16 @@ static void seg7OrientedOne(
 }
 
 static double meanUFace(
-    const cv::Mat& mag, const OriBox& box, float u, int imgW, int imgH
+    const cv::Mat& mag, const OriBox& box, float u, int imgW, int imgH,
+    float v0, float v1
 ) {
-    const int n = std::max(4, static_cast<int>(std::lround(box.v1 - box.v0)));
+    const float vLo = v0;
+    const float vHi = v1 > v0 + 1.f ? v1 : v0 + 1.f;
+    const int n = std::max(4, static_cast<int>(std::lround(vHi - vLo)));
     double s = 0.0;
     int c = 0;
     for (int i = 0; i < n; ++i) {
-        const float v = box.v0 + (i + 0.5f) / n * (box.v1 - box.v0);
+        const float v = vLo + (i + 0.5f) / n * (vHi - vLo);
         const float px = box.cx + u * box.ux + v * box.vx;
         const float py = box.cy + u * box.uy + v * box.vy;
         const float g = sampleF32Trunc(mag, px, py, imgW, imgH);
@@ -2515,12 +2536,31 @@ static double meanUFace(
     return c > 0 ? s / c : 0.0;
 }
 
+static double meanUFace(
+    const cv::Mat& mag, const OriBox& box, float u, int imgW, int imgH
+) {
+    return meanUFace(mag, box, u, imgW, imgH, box.v0, box.v1);
+}
+
 static void jumpOrientedOne(
     const cv::Mat& mag, OriBox* box, int imgW, int imgH,
-    float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac
+    float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
+    float seedBh = 0.f
 ) {
     (void)maxFrac;
     (void)retractClearFrac;
+    const float vSpan = std::max(1.f, box->v1 - box->v0);
+    const float coreH = seedBh > 0.f ? seedBh : vSpan;
+    const float vMid = 0.5f * (box->v0 + box->v1);
+    float cv0 = std::max(box->v0, vMid - 0.5f * coreH);
+    float cv1 = std::min(box->v1, vMid + 0.5f * coreH);
+    if (cv1 < cv0 + 1.f) {
+        cv0 = box->v0;
+        cv1 = box->v1;
+    }
+    auto face = [&](float u) {
+        return meanUFace(mag, *box, u, imgW, imgH, cv0, cv1);
+    };
     const float du = 2.f;
     const float uA = box->u0 + du;
     const float uB = box->u1 - du;
@@ -2530,15 +2570,14 @@ static void jumpOrientedOne(
         int c = 0;
         const int nu = std::max(4, static_cast<int>(std::lround(uB - uA)));
         for (int i = 0; i < nu; ++i) {
-            s += meanUFace(mag, *box, uA + (i + 0.5f) / nu * (uB - uA), imgW, imgH);
+            s += face(uA + (i + 0.5f) / nu * (uB - uA));
             ++c;
         }
-        base = c > 0 ? s / c : meanUFace(mag, *box, (box->u0 + box->u1) * 0.5f, imgW, imgH);
+        base = c > 0 ? s / c : face((box->u0 + box->u1) * 0.5f);
     } else {
-        base = meanUFace(mag, *box, (box->u0 + box->u1) * 0.5f, imgW, imgH);
+        base = face((box->u0 + box->u1) * 0.5f);
     }
     const double thr = energyRatio * std::max(base, 1e-3);
-    const float vSpan = std::max(1.f, box->v1 - box->v0);
     const float jx = static_cast<float>(
         std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan))));
     float u0 = box->u0;
@@ -2546,13 +2585,13 @@ static void jumpOrientedOne(
     int jumps0 = 0;
     while (jumps0 < kJumpMax) {
         const float next0 = u0 - jx;
-        if (meanUFace(mag, *box, next0, imgW, imgH) >= thr) {
+        if (face(next0) >= thr) {
             u0 = next0;
             ++jumps0;
             continue;
         }
         for (float cur = next0 + 1.f; cur < u0; cur += 1.f) {
-            if (meanUFace(mag, *box, cur, imgW, imgH) >= thr) {
+            if (face(cur) >= thr) {
                 u0 = cur;
                 break;
             }
@@ -2562,14 +2601,14 @@ static void jumpOrientedOne(
     int jumps1 = 0;
     while (jumps1 < kJumpMax) {
         const float next1 = u1 + jx;
-        if (meanUFace(mag, *box, next1, imgW, imgH) >= thr) {
+        if (face(next1) >= thr) {
             u1 = next1;
             ++jumps1;
             continue;
         }
         float new1 = u1;
         for (float cur = next1 - 1.f; cur > u1; cur -= 1.f) {
-            if (meanUFace(mag, *box, cur, imgW, imgH) >= thr) {
+            if (face(cur) >= thr) {
                 new1 = cur;
                 break;
             }
@@ -2672,7 +2711,8 @@ extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpOrientedMany(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray quadsArr, jint chromaMode,
-    jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac
+    jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac,
+    jfloatArray seedBhArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !quadsArr) return nullptr;
@@ -2740,8 +2780,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
                    medianInteriorU8(*cMag, box, imgW, imgH) >= 8.0) {
             eng = cMag;
         }
+        float seedBh = 0.f;
+        if (seedBhArr && env->GetArrayLength(seedBhArr) >= (i + 1)) {
+            jfloat sh = 0.f;
+            env->GetFloatArrayRegion(seedBhArr, i, 1, &sh);
+            seedBh = sh;
+        }
         jumpOrientedOne(*eng, &box, imgW, imgH,
-            maxFrac, energyRatio, jumpFrac, retractClearFrac);
+            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedBh);
         oriToQuad(box, op);
     }
     magY.release();

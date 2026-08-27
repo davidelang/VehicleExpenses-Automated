@@ -995,6 +995,7 @@ object ContentExpandUtils {
         uv: Mat? = null,
         chromaMode: Int = 0,
         scratch: Mat? = null,
+        seedHs: IntArray? = null,
     ): List<Rect>? {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return boxes
         if (boxes.isEmpty()) return emptyList()
@@ -1010,7 +1011,7 @@ object ContentExpandUtils {
         }
         val r = NativeImageUtils.jumpManyNative(
             gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
-            uv, chromaMode, scratch,
+            uv, chromaMode, scratch, seedHs,
         ) ?: return null
         if (r.size < boxes.size * 4) return null
         return boxes.indices.map { i ->
@@ -1670,6 +1671,7 @@ object ContentExpandUtils {
         uv: Mat? = null,
         chromaMode: Int = 0,
         scratch: Mat? = null,
+        seedBhs: FloatArray? = null,
     ): List<OrientedQuad> {
         if (seeds.isEmpty()) return emptyList()
         val packed = FloatArray(seeds.size * 8)
@@ -1680,7 +1682,7 @@ object ContentExpandUtils {
         }
         val native = NativeImageUtils.jumpOrientedManyNative(
             gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
-            uv, chromaMode, scratch,
+            uv, chromaMode, scratch, seedBhs,
         )
         if (native != null && native.size >= seeds.size * 8) {
             return seeds.indices.map { i ->
@@ -2200,6 +2202,7 @@ object ContentExpandUtils {
         capPx: Int,
         jumpFrac: Float,
         retractClearFrac: Float,
+        seedH: Int = 0,
     ): Rect {
         var l = box.left
         var t = box.top
@@ -2215,9 +2218,18 @@ object ContentExpandUtils {
         }
         val hgt = max(1, b - t)
         val jx = max(1, (jumpFrac * hgt).roundToInt())
+        val coreH = if (seedH > 0) seedH else hgt
+        var coreT = (t + b) / 2 - coreH / 2
+        var coreB = coreT + coreH
+        if (coreT < t) coreT = t
+        if (coreB > b) coreB = b
+        if (coreB <= coreT + 1) {
+            coreT = t
+            coreB = b
+        }
         fun colHas(x: Int): Boolean {
             if (x < 0 || x >= imgW) return false
-            return meanE(Rect(x, t, x + 1, b)) >= thr
+            return meanE(Rect(x, coreT, x + 1, coreB)) >= thr
         }
         var jumpsL = 0
         while (l > 0 && jumpsL < 4) {
@@ -3384,6 +3396,7 @@ object ContentExpandUtils {
         if (enableJump) {
             val jumped = jumpRetractHorizontalOnEnergy(
                 eng, Rect(l, t, r, b), imgW, imgH, thr, cap, jumpFrac, retractClearFrac,
+                seed.height(),
             )
             l = jumped.left
             t = jumped.top
@@ -3575,6 +3588,7 @@ object ContentExpandUtils {
         if (enableJump) {
             val jumped = jumpRetractHorizontalOnEnergy(
                 vertEng, Rect(l, t, r, b), imgW, imgH, thr, cap, jumpFrac, retractClearFrac,
+                seed.height(),
             )
             l = jumped.left
             t = jumped.top
