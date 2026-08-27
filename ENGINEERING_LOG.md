@@ -8807,3 +8807,7 @@ colHas: gray/color maxInkRunCol >= 0.5s on original seed T/B (v). Tint from red 
 ## 2026-08-27 - Phase 3 (0408): extra blue horiz_pad 0.5H
 
 After official box: L/R 0.5xH (rot \u00b1u 0.5x bh). OCR always; scaleVariants kind=horiz_pad; PD extra blue. final/k=1/energy unchanged. G-- orange/verts unchanged. Do not deploy.
+
+## 2026-08-27 - CODE LANDED: HTML controls + mixed-fail jump ink
+
+0157: head script + CSS hide-col-N; pump Paddle data-col=1 no phantom ML; finally footers (pump/align/multiscale). 0408: Mixed fail (104) auto=mixedfail; gray/color jump lookBin on seed Y; energy still mean; horiz_pad extra blue. G--/QF unchanged. Do not deploy.
