@@ -1826,10 +1826,19 @@ static int seedInkBinY(
     double* otsuOut = nullptr,
     bool* invertedOut = nullptr
 ) {
+    if (y.empty()) {
+        const int fallback = 2;
+        return fallback;
+    }
+    const int w = y.cols, h = y.rows;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > w) sr = w;
+    if (sb > h) sb = h;
     const int seedH = std::max(1, sb - st);
     const int seedW = std::max(1, sr - sl);
     const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedH)));
-    if (sr <= sl || sb <= st || y.empty()) return fallback;
+    if (sr <= sl || sb <= st) return fallback;
     cv::Mat roi = y(cv::Range(st, sb), cv::Range(sl, sr));
     cv::Mat bin;
     const double otsu = cv::threshold(roi, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
@@ -1861,6 +1870,11 @@ static bool fillGrayJumpLook(
 ) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
+    if (sl < 0) sl = 0;
+    if (st < 0) st = 0;
+    if (sr > w) sr = w;
+    if (sb > h) sb = h;
+    if (sr <= sl || sb <= st) return false;
     const bool reuse = scratchFits(dst, w, h);
     if (!reuse) {
         dst->create(h, w, CV_8UC1);
@@ -1874,7 +1888,7 @@ static bool fillGrayJumpLook(
     const int glareW = 11 * std::max(sPx, 4);
     const int xl = std::max(0, sl - std::max(0, xPad));
     const int xr = std::min(w, sr + std::max(0, xPad));
-    if (sr <= sl || sb <= st || xr <= xl) return false;
+    if (xr <= xl) return false;
     cv::Mat strip = y(cv::Range(st, sb), cv::Range(xl, xr));
     cv::Mat stripBin;
     const int ttype = inverted ? cv::THRESH_BINARY : cv::THRESH_BINARY_INV;
@@ -2166,6 +2180,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
     jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac,
     jintArray seedHArr, jintArray seedRectArr, jintArray sPxArr
 ) {
+    try {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !boxesArr) return nullptr;
     const int imgW = gray->cols, imgH = gray->rows;
@@ -2214,6 +2229,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
             env->GetIntArrayRegion(seedRectArr, i * 4, 4, sr4);
             ssl = sr4[0]; sst = sr4[1]; ssr = sr4[2]; ssb = sr4[3];
         }
+        if (ssl < 0) ssl = 0;
+        if (sst < 0) sst = 0;
+        if (ssr > imgW) ssr = imgW;
+        if (ssb > imgH) ssb = imgH;
         if (sPxArr && env->GetArrayLength(sPxArr) >= (i + 1)) {
             jint sp = 0;
             env->GetIntArrayRegion(sPxArr, i, 1, &sp);
@@ -2278,6 +2297,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
     if (!arr) return nullptr;
     env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
     return arr;
+    } catch (const cv::Exception&) {
+        return nullptr;
+    }
 }
 
 namespace {
@@ -2828,6 +2850,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
     jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac,
     jfloatArray seedBhArr, jfloatArray seedQuadArr, jfloatArray sPxArr
 ) {
+    try {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !quadsArr) return nullptr;
     const int imgW = gray->cols, imgH = gray->rows;
@@ -2947,4 +2970,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
     if (!arr) return nullptr;
     env->SetFloatArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
     return arr;
+    } catch (const cv::Exception&) {
+        return nullptr;
+    }
 }

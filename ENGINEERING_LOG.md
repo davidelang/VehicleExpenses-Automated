@@ -8811,3 +8811,13 @@ After official box: L/R 0.5xH (rot \u00b1u 0.5x bh). OCR always; scaleVariants k
 ## 2026-08-27 - CODE LANDED: HTML controls + mixed-fail jump ink
 
 0157: head script + CSS hide-col-N; pump Paddle data-col=1 no phantom ML; finally footers (pump/align/multiscale). 0408: Mixed fail (104) auto=mixedfail; gray/color jump lookBin on seed Y; energy still mean; horiz_pad extra blue. G--/QF unchanged. Do not deploy.
+
+## 2026-08-27 - Execute: jump-gray-look-oob-crash
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/jump-gray-look-oob-crash-20260827-1222-plan.md`
+- Scope: clip gray jump lookBin seed ROI; JNI catch cv::Exception. No 104/horiz_pad/G--/QF change. Do not deploy.
+
+## 2026-08-27 - Phase 1: clip gray jump lookBin ROI
+
+fillGrayJumpLook / seedInkBinY clip LTRB to mat before cv::Range. nativeJumpMany clips seed rect. Both jump JNI catch cv::Exception → nullptr. Kotlin seedRects clipped. Do not deploy.

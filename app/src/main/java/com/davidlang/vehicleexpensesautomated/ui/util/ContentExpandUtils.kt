@@ -1011,9 +1011,28 @@ object ContentExpandUtils {
             packed[i * 4 + 2] = s.right
             packed[i * 4 + 3] = s.bottom
         }
+        val packedSeeds = if (seedRects != null && seedRects.size >= boxes.size * 4) {
+            val out = IntArray(boxes.size * 4)
+            for (i in boxes.indices) {
+                val s = clip(
+                    Rect(
+                        seedRects[i * 4], seedRects[i * 4 + 1],
+                        seedRects[i * 4 + 2], seedRects[i * 4 + 3],
+                    ),
+                    imgW, imgH,
+                )
+                out[i * 4] = s.left
+                out[i * 4 + 1] = s.top
+                out[i * 4 + 2] = s.right
+                out[i * 4 + 3] = s.bottom
+            }
+            out
+        } else {
+            seedRects
+        }
         val r = NativeImageUtils.jumpManyNative(
             gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
-            uv, chromaMode, scratch, seedHs, seedRects, sPxs,
+            uv, chromaMode, scratch, seedHs, packedSeeds, sPxs,
         ) ?: return null
         if (r.size < boxes.size * 4) return null
         return boxes.indices.map { i ->
