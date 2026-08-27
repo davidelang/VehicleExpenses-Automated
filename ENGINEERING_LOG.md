@@ -8821,3 +8821,7 @@ After official box: L/R 0.5xH (rot \u00b1u 0.5x bh). OCR always; scaleVariants k
 ## 2026-08-27 - Phase 1: clip gray jump lookBin ROI
 
 fillGrayJumpLook / seedInkBinY clip LTRB to mat before cv::Range. nativeJumpMany clips seed rect. Both jump JNI catch cv::Exception → nullptr. Kotlin seedRects clipped. Do not deploy.
+
+## 2026-08-27 - CODE LANDED: jump-gray-look-oob-crash
+
+Gray jump lookBin clips seed LTRB to mat before cv::Range; empty ROI keeps Sobel mean. nativeJumpMany/Oriented catch cv::Exception → nullptr (Kotlin fallback). seedRects clipped in Kotlin. lookBin/104/horiz_pad/G--/QF unchanged. Do not deploy.
