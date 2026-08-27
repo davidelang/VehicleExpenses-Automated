@@ -446,6 +446,7 @@ object NativeImageUtils {
         chi2K: Float,
         boundStrategy: Int,
         tightInsetPx: Int,
+        teleArr: FloatArray?,
     ): IntArray?
 
     fun chromaMagNative(y: Mat, uv: Mat, dst: Mat): Boolean {
@@ -453,10 +454,14 @@ object NativeImageUtils {
         return nativeChromaMag(y.nativeObj, uv.nativeObj, dst.nativeObj)
     }
 
+    const val SEG7_HIST_BINS: Int = 32
+    const val SEG7_TELE_N: Int = 17 + SEG7_HIST_BINS * 2
+
     private external fun nativeSeg7Many(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray, chromaMode: Int,
         gapFrac: Float, minSeedHsToFreeze: Float,
         boundStrategy: Int, tightInsetPx: Int,
+        teleArr: FloatArray?,
     ): IntArray?
     private external fun nativeJumpMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, boxes: IntArray, chromaMode: Int,
@@ -472,11 +477,14 @@ object NativeImageUtils {
         gray: Mat, uv: Mat?, seeds: IntArray, chromaMode: Int,
         gapFrac: Float = 0.5f, minSeedHsToFreeze: Float = 0f, scratch: Mat? = null,
         boundStrategy: Int = 0, tightInsetPx: Int = 16,
+        tele: FloatArray? = null,
     ): IntArray? {
         if (gray.empty()) return null
+        val n = seeds.size / 4
+        val teleArr = tele ?: if (n > 0) FloatArray(n * SEG7_TELE_N) else null
         return nativeSeg7Many(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
-            gapFrac, minSeedHsToFreeze, boundStrategy, tightInsetPx,
+            gapFrac, minSeedHsToFreeze, boundStrategy, tightInsetPx, teleArr,
         )
     }
 
@@ -496,6 +504,7 @@ object NativeImageUtils {
     private external fun nativeSeg7OrientedMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray, chromaMode: Int,
         boundStrategy: Int, tightInsetPx: Int,
+        teleArr: FloatArray?,
     ): FloatArray?
     private external fun nativeJumpOrientedMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, quads: FloatArray, chromaMode: Int,
@@ -507,11 +516,14 @@ object NativeImageUtils {
         gray: Mat, uv: Mat?, seeds: FloatArray, chromaMode: Int,
         scratch: Mat? = null,
         boundStrategy: Int = 0, tightInsetPx: Int = 16,
+        tele: FloatArray? = null,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return null
+        val n = seeds.size / 8
+        val teleArr = tele ?: if (n > 0) FloatArray(n * SEG7_TELE_N) else null
         return nativeSeg7OrientedMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
-            boundStrategy, tightInsetPx,
+            boundStrategy, tightInsetPx, teleArr,
         )
     }
 
@@ -544,13 +556,16 @@ object NativeImageUtils {
         chi2K: Float,
         boundStrategy: Int = 0,
         tightInsetPx: Int = 16,
+        tele: FloatArray? = null,
     ): IntArray? {
         if (gray.empty()) return null
+        val n = seeds.size / 4
+        val teleArr = tele ?: if (n > 0) FloatArray(n * SEG7_TELE_N) else null
         return nativeAabbGrowMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chroma, vertKind,
             maxFrac, energyRatio, freezeHorz, enableJump,
             jumpFrac, retractClearFrac, vertPadFrac, chi2K,
-            boundStrategy, tightInsetPx,
+            boundStrategy, tightInsetPx, teleArr,
         )
     }
 

@@ -8719,3 +8719,13 @@ Scheduled G-- + 18 (energy/gray/color_adaptive × base/tight/retract × AABB/rot
 ## 2026-08-26 - CODE LANDED: optimize-color2-vertical-scratch-math (revised 21:05)
 
 color_adaptive chromaMode 4; tight/edge-retract; 18 cols + G--. Scratch/hypot/jump-once kept. walk2/color/color2 parked. Plan Status not writable (640). Do not deploy.
+
+## 2026-08-26 - Execute: retract-clamp-telemetry-runlength-hist
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/retract-clamp-telemetry-runlength-hist-20260826-2318-plan.md`
+- Scope: 10% seedH retract clamp in 7seg; ink/bg + 32-bin runlength telemetry in JNI/JSON/HTML. Keep 18-col + G--. Do not deploy.
+
+## 2026-08-26 - Phase 1: 10pct retract clamp + 32-bin telemetry
+
+seg7 AABB/oriented and energy retract clamp maxRetractPx=max(1,round(0.10*seedH)). JNI tele float[81] per box: ink/bg, deltas, flags, histH/V 32 log bins. Do not deploy.

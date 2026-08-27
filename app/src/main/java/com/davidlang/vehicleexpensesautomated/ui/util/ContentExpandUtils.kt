@@ -204,6 +204,7 @@ object ContentExpandUtils {
         val energyTrace: VertEnergyTrace? = null,
         val rectCount: Rect = rect,
         val countPull: CountPullInfo? = null,
+        val tele: Seg7Telemetry? = null,
     )
     data class OrientedExpand(
         val quad: OrientedQuad,
@@ -1226,11 +1227,78 @@ object ContentExpandUtils {
         }
     }
 
+    data class Seg7Telemetry(
+        val method: String,
+        val yInk: Float,
+        val yBg: Float,
+        val dInk: Float,
+        val meanChroma: Float,
+        val uInkX: Float,
+        val uInkY: Float,
+        val otsuThr: Float,
+        val sPx: Float,
+        val deltaTop: Float,
+        val deltaBot: Float,
+        val deltaLeft: Float,
+        val deltaRight: Float,
+        val flagTop: String,
+        val flagBot: String,
+        val flagLeft: String,
+        val flagRight: String,
+        val histH: IntArray,
+        val histV: IntArray,
+    )
+
+    fun boundFlagName(v: Float): String = when (kotlin.math.round(v).toInt()) {
+        1 -> "NORMAL_EXPAND"
+        2 -> "NORMAL_RETRACT"
+        3 -> "BLOCKED_10PCT_LIMIT"
+        4 -> "BLOCKED_GAP"
+        else -> "UNCHANGED"
+    }
+
+    fun teleMethodName(v: Float): String = when (kotlin.math.round(v).toInt()) {
+        1 -> "energy"
+        4 -> "color_adaptive"
+        else -> "gray"
+    }
+
+    fun parseSeg7Tele(a: FloatArray, i: Int): Seg7Telemetry? {
+        val n = NativeImageUtils.SEG7_TELE_N
+        val bins = NativeImageUtils.SEG7_HIST_BINS
+        val o = i * n
+        if (o + n > a.size) return null
+        val histH = IntArray(bins) { b -> a[o + 17 + b].toInt() }
+        val histV = IntArray(bins) { b -> a[o + 17 + bins + b].toInt() }
+        return Seg7Telemetry(
+            method = teleMethodName(a[o]),
+            yInk = a[o + 1],
+            yBg = a[o + 2],
+            dInk = a[o + 3],
+            meanChroma = a[o + 4],
+            uInkX = a[o + 5],
+            uInkY = a[o + 6],
+            otsuThr = a[o + 7],
+            sPx = a[o + 8],
+            deltaTop = a[o + 9],
+            deltaBot = a[o + 10],
+            deltaLeft = a[o + 11],
+            deltaRight = a[o + 12],
+            flagTop = boundFlagName(a[o + 13]),
+            flagBot = boundFlagName(a[o + 14]),
+            flagLeft = boundFlagName(a[o + 15]),
+            flagRight = boundFlagName(a[o + 16]),
+            histH = histH,
+            histV = histV,
+        )
+    }
+
     data class Seg7Expand(
         val rect: Rect,
         val stroke: StrokeWidthInSeed,
         val k: Float = SEG7_K,
         val j: Float = SEG7_J,
+        val tele: Seg7Telemetry? = null,
     )
 
     /**
@@ -1271,9 +1339,10 @@ object ContentExpandUtils {
             packed[i * 4 + 2] = s.right
             packed[i * 4 + 3] = s.bottom
         }
+        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
         val r = NativeImageUtils.seg7ManyNative(
             gray, uv, packed, mode, gapFrac, minSeedHsToFreeze, scratch,
-            boundStrategy, tightInsetPx,
+            boundStrategy, tightInsetPx, tele,
         ) ?: return null
         if (r.size < seeds.size * 8) return null
         return seeds.indices.map { i ->
@@ -1292,6 +1361,7 @@ object ContentExpandUtils {
                     droppedGlare = 0, otsuThr = 0, seed = seed,
                 ),
                 k, j,
+                parseSeg7Tele(tele, i),
             )
         }
     }
@@ -1509,6 +1579,7 @@ object ContentExpandUtils {
     data class Seg7OrientedExpand(
         val quad: OrientedQuad,
         val stroke: StrokeWidthInSeed,
+        val tele: Seg7Telemetry? = null,
     )
 
     /**
@@ -1531,9 +1602,10 @@ object ContentExpandUtils {
             val o = i * 8
             for (k in 0 until 8) packed[o + k] = p[k]
         }
+        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
         val native = NativeImageUtils.seg7OrientedManyNative(
             gray, uv, packed, chromaMode, scratch,
-            boundStrategy, tightInsetPx,
+            boundStrategy, tightInsetPx, tele,
         )
         if (native != null && native.size >= seeds.size * 9) {
             return seeds.indices.map { i ->
@@ -1547,6 +1619,7 @@ object ContentExpandUtils {
                         inkFrac = 0f, darkInk = true, usedFallback = false,
                         droppedGlare = 0, otsuThr = 0, seed = Rect(),
                     ),
+                    parseSeg7Tele(tele, i),
                 )
             }
         }
@@ -2261,11 +2334,12 @@ object ContentExpandUtils {
             VertEnergyKind.XYCUT_GX -> 2
             VertEnergyKind.CHI2 -> 3
         }
+        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
         val r = NativeImageUtils.aabbGrowManyNative(
             gray, uv, packed, uv != null, vk,
             opts.maxFrac, opts.energyRatio, opts.freezeHorzDuringVert, opts.enableJump,
             opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac, opts.chi2K,
-            opts.boundStrategy, opts.tightInsetPx,
+            opts.boundStrategy, opts.tightInsetPx, tele,
         ) ?: return null
         if (r.size < seeds.size * 11) return null
         return seeds.indices.map { i ->
@@ -2288,6 +2362,7 @@ object ContentExpandUtils {
                     tAfter = cr.top,
                     bAfter = cr.bottom,
                 ),
+                parseSeg7Tele(tele, i),
             )
         }
     }

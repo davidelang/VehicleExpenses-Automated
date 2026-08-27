@@ -9,6 +9,168 @@
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ContentExpandNative", __VA_ARGS__)
 
+static constexpr int kRunHistBins = 32;
+static constexpr int kSeg7TeleN = 17 + kRunHistBins * 2;
+
+enum : int {
+    kFlagUnchanged = 0,
+    kFlagNormalExpand = 1,
+    kFlagNormalRetract = 2,
+    kFlagBlocked10pct = 3,
+    kFlagBlockedGap = 4
+};
+
+struct Seg7Tele {
+    float method = 0.f;
+    float yInk = 0.f;
+    float yBg = 0.f;
+    float dInk = 0.f;
+    float meanChroma = 0.f;
+    float uInkX = 0.f;
+    float uInkY = 0.f;
+    float otsuThr = 0.f;
+    float sPx = 0.f;
+    float dTop = 0.f;
+    float dBot = 0.f;
+    float dLeft = 0.f;
+    float dRight = 0.f;
+    float fTop = 0.f;
+    float fBot = 0.f;
+    float fLeft = 0.f;
+    float fRight = 0.f;
+    int histH[kRunHistBins]{};
+    int histV[kRunHistBins]{};
+};
+
+static int runLengthBin(int run) {
+    if (run < 1) run = 1;
+    int hi = 2;
+    for (int b = 0; b < kRunHistBins - 1; ++b) {
+        if (run <= hi) return b;
+        const int next = hi * 2;
+        if (next <= hi) return kRunHistBins - 1;
+        hi = next;
+    }
+    return kRunHistBins - 1;
+}
+
+static void addRunHist(int run, int* hist) {
+    if (run <= 0 || !hist) return;
+    hist[runLengthBin(run)] += 1;
+}
+
+static void fillRunHists(const cv::Mat& bin, int* histH, int* histV) {
+    for (int i = 0; i < kRunHistBins; ++i) {
+        histH[i] = 0;
+        histV[i] = 0;
+    }
+    if (bin.empty() || bin.type() != CV_8UC1) return;
+    const int h = bin.rows, w = bin.cols;
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* p = bin.ptr<uint8_t>(y);
+        int run = 0;
+        for (int x = 0; x <= w; ++x) {
+            const bool on = x < w && p[x] != 0;
+            if (on) ++run;
+            else if (run > 0) {
+                addRunHist(run, histH);
+                run = 0;
+            }
+        }
+    }
+    for (int x = 0; x < w; ++x) {
+        int run = 0;
+        for (int y = 0; y <= h; ++y) {
+            const bool on = y < h && bin.ptr<uint8_t>(y)[x] != 0;
+            if (on) ++run;
+            else if (run > 0) {
+                addRunHist(run, histV);
+                run = 0;
+            }
+        }
+    }
+}
+
+static void packSeg7Tele(const Seg7Tele& t, float* dst) {
+    dst[0] = t.method;
+    dst[1] = t.yInk;
+    dst[2] = t.yBg;
+    dst[3] = t.dInk;
+    dst[4] = t.meanChroma;
+    dst[5] = t.uInkX;
+    dst[6] = t.uInkY;
+    dst[7] = t.otsuThr;
+    dst[8] = t.sPx;
+    dst[9] = t.dTop;
+    dst[10] = t.dBot;
+    dst[11] = t.dLeft;
+    dst[12] = t.dRight;
+    dst[13] = t.fTop;
+    dst[14] = t.fBot;
+    dst[15] = t.fLeft;
+    dst[16] = t.fRight;
+    for (int i = 0; i < kRunHistBins; ++i) {
+        dst[17 + i] = static_cast<float>(t.histH[i]);
+        dst[17 + kRunHistBins + i] = static_cast<float>(t.histV[i]);
+    }
+}
+
+static void storeTeleArr(JNIEnv* env, jfloatArray teleArr, int i, const Seg7Tele& t) {
+    if (!teleArr) return;
+    const jint n = env->GetArrayLength(teleArr);
+    const int off = i * kSeg7TeleN;
+    if (off < 0 || off + kSeg7TeleN > n) return;
+    float buf[kSeg7TeleN];
+    packSeg7Tele(t, buf);
+    env->SetFloatArrayRegion(teleArr, off, kSeg7TeleN, buf);
+}
+
+static void fillYInkBg(
+    const cv::Mat& y, const cv::Mat& seedBin, int sl, int st, int sPx,
+    float* yInkOut, float* yBgOut
+) {
+    const int h = y.rows, w = y.cols;
+    float yInkSum = 0.f;
+    int nInk = 0;
+    for (int yy = 0; yy < seedBin.rows; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        const uint8_t* yp = y.ptr<uint8_t>(st + yy);
+        for (int xx = 0; xx < seedBin.cols; ++xx) {
+            if (!bp[xx]) continue;
+            yInkSum += yp[sl + xx];
+            ++nInk;
+        }
+    }
+    const float yInk = nInk > 0 ? yInkSum / static_cast<float>(nInk) : 0.f;
+    const int d = std::max(1, sPx);
+    double yBgSum = 0.0;
+    int nBg = 0;
+    auto tryBg = [&](int gx, int gy) {
+        if (gx < 0 || gy < 0 || gx >= w || gy >= h) return;
+        const int lx = gx - sl, ly = gy - st;
+        if (lx >= 0 && ly >= 0 && lx < seedBin.cols && ly < seedBin.rows &&
+            seedBin.ptr<uint8_t>(ly)[lx]) {
+            return;
+        }
+        yBgSum += y.ptr<uint8_t>(gy)[gx];
+        ++nBg;
+    };
+    for (int yy = 0; yy < seedBin.rows; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedBin.cols; ++xx) {
+            if (!bp[xx]) continue;
+            const int gx = sl + xx, gy = st + yy;
+            tryBg(gx - d, gy);
+            tryBg(gx + d, gy);
+            tryBg(gx, gy - d);
+            tryBg(gx, gy + d);
+        }
+    }
+    *yInkOut = yInk;
+    *yBgOut = nBg > 0 ? static_cast<float>(yBgSum / nBg)
+        : (yInk < 128.f ? 200.f : 40.f);
+}
+
 namespace {
 
 struct Frame {
@@ -230,10 +392,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             }
             allowVNeg = stepsVNeg > 0;
         } else {
-            while (bh > 2.f && onEdgeV(-1.f) < thr) {
+            const int maxRetractPx = std::max(1, static_cast<int>(std::lround(0.10f * seedBh)));
+            int nRetr = 0;
+            while (bh > 2.f && nRetr < maxRetractPx && onEdgeV(-1.f) < thr) {
                 cx += 0.5f * fr.vx;
                 cy += 0.5f * fr.vy;
                 bh -= 1.f;
+                ++nRetr;
             }
             allowVNeg = false;
         }
@@ -246,10 +411,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             }
             allowVPos = stepsVPos > 0;
         } else {
-            while (bh > 2.f && onEdgeV(+1.f) < thr) {
+            const int maxRetractPx = std::max(1, static_cast<int>(std::lround(0.10f * seedBh)));
+            int nRetr = 0;
+            while (bh > 2.f && nRetr < maxRetractPx && onEdgeV(+1.f) < thr) {
                 cx -= 0.5f * fr.vx;
                 cy -= 0.5f * fr.vy;
                 bh -= 1.f;
+                ++nRetr;
             }
             allowVPos = false;
         }
@@ -1049,7 +1217,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
     jfloat maxFrac, jfloat energyRatio,
     jboolean freezeHorz, jboolean enableJump,
     jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac, jfloat chi2K,
-    jint boundStrategy, jint tightInsetPx
+    jint boundStrategy, jint tightInsetPx,
+    jfloatArray teleArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
@@ -1148,19 +1317,29 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
         bool allowUp = t > 0 && meanRectF(vertEng, l, t - 1, r, t, imgW, imgH) >= thr;
         bool allowDown = b < imgH && meanRectF(vertEng, l, b, r, b + 1, imgW, imgH) >= thr;
         int walkT = 0, walkB = 0;
+        int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
+        const int maxRetractPx = std::max(1, static_cast<int>(std::lround(0.10f * seedH)));
         if (boundStrategy == 2) {
             auto edgeInk = [&](int sl, int st, int sr, int sb) {
                 return meanRectF(vertEng, sl, st, sr, sb, imgW, imgH) >= thr;
             };
             if (edgeInk(l, t, r, t + 1)) {
                 while (t > 0 && seedT - (t - 1) <= cap && edgeInk(l, t - 1, r, t)) --t;
+                fTop = t < seedT ? kFlagNormalExpand : kFlagUnchanged;
             } else {
-                while (t < b - 1 && !edgeInk(l, t, r, t + 1)) ++t;
+                while (t < b - 1 && (t - seedT) < maxRetractPx && !edgeInk(l, t, r, t + 1)) ++t;
+                if (t > seedT && edgeInk(l, t, r, t + 1)) fTop = kFlagNormalRetract;
+                else if (t - seedT >= maxRetractPx) fTop = kFlagBlocked10pct;
+                else fTop = kFlagNormalRetract;
             }
             if (edgeInk(l, b - 1, r, b)) {
                 while (b < imgH && b - seedB < cap && edgeInk(l, b, r, b + 1)) ++b;
+                fBot = b > seedB ? kFlagNormalExpand : kFlagUnchanged;
             } else {
-                while (b > t + 1 && !edgeInk(l, b - 1, r, b)) --b;
+                while (b > t + 1 && (seedB - b) < maxRetractPx && !edgeInk(l, b - 1, r, b)) --b;
+                if (b < seedB && edgeInk(l, b - 1, r, b)) fBot = kFlagNormalRetract;
+                else if (seedB - b >= maxRetractPx) fBot = kFlagBlocked10pct;
+                else fBot = kFlagNormalRetract;
             }
             allowUp = t < seedT;
             allowDown = b > seedB;
@@ -1239,6 +1418,41 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
         out[o + 8] = hit;
         out[o + 9] = pT;
         out[o + 10] = pB;
+        if (boundStrategy != 2) {
+            fTop = walkT > 0 ? kFlagNormalExpand : kFlagBlockedGap;
+            fBot = walkB > 0 ? kFlagNormalExpand : kFlagBlockedGap;
+        }
+        Seg7Tele tele{};
+        tele.method = 1.f;
+        tele.yInk = static_cast<float>(
+            meanRectF(*gray, seedL, seedT, seedR, seedB, imgW, imgH));
+        const double yBgT = meanRectF(*gray, seedL, std::max(0, seedT - 1), seedR, seedT, imgW, imgH);
+        const double yBgB = meanRectF(*gray, seedL, seedB, seedR, std::min(imgH, seedB + 1), imgW, imgH);
+        tele.yBg = static_cast<float>(0.5 * (yBgT + yBgB));
+        tele.dInk = tele.yInk - tele.yBg;
+        tele.sPx = static_cast<float>(std::max(1, seedH / 12));
+        tele.dTop = static_cast<float>(t - seedT);
+        tele.dBot = static_cast<float>(b - seedB);
+        tele.dLeft = static_cast<float>(l - seedL);
+        tele.dRight = static_cast<float>(r - seedR);
+        tele.fTop = static_cast<float>(fTop);
+        tele.fBot = static_cast<float>(fBot);
+        tele.fLeft = static_cast<float>(kFlagUnchanged);
+        tele.fRight = static_cast<float>(kFlagUnchanged);
+        const int ht = std::max(0, t - 2), hb = std::min(imgH, b + 2);
+        const int hl = std::max(0, l), hr = std::min(imgW, r);
+        if (hb > ht && hr > hl && !vertEng.empty() && vertEng.type() == CV_32F) {
+            cv::Mat eBin(hb - ht, hr - hl, CV_8UC1);
+            for (int yy = ht; yy < hb; ++yy) {
+                uint8_t* op = eBin.ptr<uint8_t>(yy - ht);
+                const float* ep = vertEng.ptr<float>(yy);
+                for (int xx = hl; xx < hr; ++xx) {
+                    op[xx - hl] = ep[xx] >= static_cast<float>(thr) ? 255 : 0;
+                }
+            }
+            fillRunHists(eBin, tele.histH, tele.histV);
+        }
+        storeTeleArr(env, teleArr, i, tele);
     }
     magY.release();
     gxAbs.release();
@@ -1363,7 +1577,9 @@ static void seg7One(
     float minSeedHsToFreeze = 0.f,
     int glareMult = 11,
     int boundStrategy = 0,
-    int tightInsetPx = 16
+    int tightInsetPx = 16,
+    Seg7Tele* tele = nullptr,
+    bool keepColorStats = false
 ) {
     if (boundStrategy == 1) {
         const int ins = std::max(1, tightInsetPx);
@@ -1456,16 +1672,26 @@ static void seg7One(
     const int localT = st - nt;
     const int localB = sb - nt;
     int t = localT, b = localB;
+    const int maxRetractPx = std::max(1, static_cast<int>(std::lround(0.10f * seedH)));
+    int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
     if (boundStrategy == 2) {
         if (hasBar(localT)) {
             while (t > 0 && localT - (t - 1) <= capPx && hasBar(t - 1)) --t;
+            fTop = t < localT ? kFlagNormalExpand : kFlagUnchanged;
         } else {
-            while (t < b - 1 && !hasBar(t)) ++t;
+            while (t < b - 1 && (t - localT) < maxRetractPx && !hasBar(t)) ++t;
+            if (t > localT && hasBar(t)) fTop = kFlagNormalRetract;
+            else if (t - localT >= maxRetractPx) fTop = kFlagBlocked10pct;
+            else fTop = kFlagNormalRetract;
         }
         if (localB > 0 && hasBar(localB - 1)) {
             while (b < lookBin.rows && b - localB < capPx && hasBar(b)) ++b;
+            fBot = b > localB ? kFlagNormalExpand : kFlagUnchanged;
         } else {
-            while (b > t + 1 && !hasBar(b - 1)) --b;
+            while (b > t + 1 && (localB - b) < maxRetractPx && !hasBar(b - 1)) --b;
+            if (b < localB && localB > 0 && hasBar(b - 1)) fBot = kFlagNormalRetract;
+            else if (localB - b >= maxRetractPx) fBot = kFlagBlocked10pct;
+            else fBot = kFlagNormalRetract;
         }
     } else {
         const bool peekUp = peek(localT - 1, -1);
@@ -1476,6 +1702,8 @@ static void seg7One(
             (!freezeAlways && seedH < minH);
         const bool allowDown = peekDown ||
             (!freezeAlways && seedH < minH);
+        if (!allowUp) fTop = kFlagBlockedGap;
+        if (!allowDown) fBot = kFlagBlockedGap;
         if (allowUp) {
             int gap = 0, y = localT - 1;
             while (y >= 0 && localT - y <= capPx) {
@@ -1486,6 +1714,8 @@ static void seg7One(
                 }
                 --y;
             }
+            if (t < localT) fTop = kFlagNormalExpand;
+            else if (gap >= gapStop) fTop = kFlagBlockedGap;
         }
         if (allowDown) {
             int gap = 0, y = localB;
@@ -1497,6 +1727,8 @@ static void seg7One(
                 }
                 ++y;
             }
+            if (b > localB) fBot = kFlagNormalExpand;
+            else if (gap >= gapStop) fBot = kFlagBlockedGap;
         }
     }
     if (b <= t) b = std::min(t + 1, lookBin.rows);
@@ -1507,6 +1739,26 @@ static void seg7One(
     if (*ot < 0) *ot = 0;
     if (*ob > imgH) *ob = imgH;
     if (*ob <= *ot) *ob = std::min(imgH, *ot + 1);
+    if (tele) {
+        if (!keepColorStats) {
+            float yi = 0.f, yb = 0.f;
+            fillYInkBg(src, bin, sl, st, sPx, &yi, &yb);
+            tele->yInk = yi;
+            tele->yBg = yb;
+            tele->dInk = yi - yb;
+            tele->otsuThr = static_cast<float>(thr);
+        }
+        tele->sPx = static_cast<float>(sPx);
+        tele->dTop = static_cast<float>(*ot - st);
+        tele->dBot = static_cast<float>(*ob - sb);
+        tele->dLeft = 0.f;
+        tele->dRight = 0.f;
+        tele->fTop = static_cast<float>(fTop);
+        tele->fBot = static_cast<float>(fBot);
+        tele->fLeft = static_cast<float>(kFlagUnchanged);
+        tele->fRight = static_cast<float>(kFlagUnchanged);
+        fillRunHists(lookBin, tele->histH, tele->histV);
+    }
 }
 
 static constexpr float kTintDotThr = 0.5f;
@@ -1534,7 +1786,8 @@ static void uvAt(const cv::Mat& uv, int imgW, int x, int y, int* u, int* v) {
 /** Seed-ROI Y Otsu ink bin + dropWide; returns s_px (fallback 0.08×seedH). */
 static int seedInkBinY(
     const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut,
-    int glareMult = 11
+    int glareMult = 11,
+    double* otsuOut = nullptr
 ) {
     const int seedH = std::max(1, sb - st);
     const int seedW = std::max(1, sr - sl);
@@ -1542,7 +1795,8 @@ static int seedInkBinY(
     if (sr <= sl || sb <= st || y.empty()) return fallback;
     cv::Mat roi = y(cv::Range(st, sb), cv::Range(sl, sr));
     cv::Mat bin;
-    cv::threshold(roi, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    const double otsu = cv::threshold(roi, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    if (otsuOut) *otsuOut = otsu;
     const int nPix = seedW * seedH;
     int nz = cv::countNonZero(bin);
     float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
@@ -1574,7 +1828,8 @@ static bool fillChromaTintMask(
     cv::Mat* dst,
     int glareMult = 11,
     int xPad = 0,
-    bool adaptive = false
+    bool adaptive = false,
+    Seg7Tele* tele = nullptr
 ) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
@@ -1589,7 +1844,8 @@ static bool fillChromaTintMask(
     if (sb > h) sb = h;
     if (sr <= sl || sb <= st) return false;
     cv::Mat seedBin;
-    const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin, glareMult);
+    double otsuY = 0.0;
+    const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin, glareMult, &otsuY);
     if (seedBin.empty()) return false;
 
     float su = 0.f, sv = 0.f, yInkSum = 0.f, chromaInkSum = 0.f;
@@ -1723,6 +1979,16 @@ static bool fillChromaTintMask(
             op[gx] = isInk ? 255 : 0;
         }
     }
+    if (tele) {
+        tele->yInk = yInk;
+        tele->yBg = yBg;
+        tele->dInk = dInk;
+        tele->meanChroma = meanChromaInk;
+        tele->uInkX = uInkX;
+        tele->uInkY = uInkY;
+        tele->sPx = static_cast<float>(sPx);
+        tele->otsuThr = static_cast<float>(otsuY);
+    }
     return true;
 }
 
@@ -1748,7 +2014,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr, jint chromaMode,
     jfloat gapFrac, jfloat minSeedHsToFreeze,
-    jint boundStrategy, jint tightInsetPx
+    jint boundStrategy, jint tightInsetPx,
+    jfloatArray teleArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -1784,21 +2051,23 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
         if (r > imgW) r = imgW;
         if (b > imgH) b = imgH;
         int ol, ot, orr, ob, sPx, vSW, hSW, fb;
+        Seg7Tele tele{};
+        tele.method = adaptive ? 4.f : (useChromaMag ? 1.f : 0.f);
         if (useTint) {
             cv::Mat localTint;
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             const bool ok = uv && fillChromaTintMask(
-                *gray, *uv, l, t, r, b, tintDst, glareMult, 0, adaptive);
+                *gray, *uv, l, t, r, b, tintDst, glareMult, 0, adaptive, &tele);
             if (ok && tintDst && !tintDst->empty()) {
                 seg7One(*tintDst, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
                     gapFrac, minSeedHsToFreeze, glareMult,
-                    boundStrategy, tightInsetPx);
+                    boundStrategy, tightInsetPx, &tele, true);
             } else {
                 seg7One(*gray, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
                     gapFrac, minSeedHsToFreeze, 11,
-                    boundStrategy, tightInsetPx);
+                    boundStrategy, tightInsetPx, &tele, false);
             }
         } else {
             const cv::Mat* src = gray;
@@ -1808,11 +2077,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
             }
             seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
                 false, gapFrac, minSeedHsToFreeze, 11,
-                boundStrategy, tightInsetPx);
+                boundStrategy, tightInsetPx, &tele, false);
         }
         const int o = i * 8;
         out[o] = ol; out[o + 1] = ot; out[o + 2] = orr; out[o + 3] = ob;
         out[o + 4] = sPx; out[o + 5] = vSW; out[o + 6] = hSW; out[o + 7] = fb;
+        storeTeleArr(env, teleArr, i, tele);
     }
     jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
     if (!arr) return nullptr;
@@ -2021,7 +2291,9 @@ static void seg7OrientedOne(
     const cv::Mat& src, OriBox seed, int imgW, int imgH,
     float* outPts8, float* sPxOut,
     int boundStrategy = 0, int tightInsetPx = 16,
-    bool srcIsBin = false
+    bool srcIsBin = false,
+    Seg7Tele* tele = nullptr,
+    bool keepColorStats = false
 ) {
     if (boundStrategy == 1) {
         const float ins = static_cast<float>(std::max(1, tightInsetPx));
@@ -2131,20 +2403,33 @@ static void seg7OrientedOne(
         return false;
     };
     float v0 = seed.v0, v1 = seed.v1;
+    const float maxRetractPx = static_cast<float>(
+        std::max(1, static_cast<int>(std::lround(0.10f * seedBh))));
+    int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
     if (boundStrategy == 2) {
         if (hasBar(v0)) {
             while (seed.v0 - (v0 - 1.f) <= cap && hasBar(v0 - 1.f)) v0 -= 1.f;
+            fTop = v0 < seed.v0 ? kFlagNormalExpand : kFlagUnchanged;
         } else {
-            while (v0 < v1 - 1.f && !hasBar(v0)) v0 += 1.f;
+            while (v0 < v1 - 1.f && (v0 - seed.v0) < maxRetractPx && !hasBar(v0)) v0 += 1.f;
+            if (v0 > seed.v0 && hasBar(v0)) fTop = kFlagNormalRetract;
+            else if (v0 - seed.v0 >= maxRetractPx) fTop = kFlagBlocked10pct;
+            else fTop = kFlagNormalRetract;
         }
         if (hasBar(v1 - 1.f) || hasBar(v1)) {
             while (v1 - seed.v1 < cap && hasBar(v1)) v1 += 1.f;
+            fBot = v1 > seed.v1 ? kFlagNormalExpand : kFlagUnchanged;
         } else {
-            while (v1 > v0 + 1.f && !hasBar(v1 - 1.f)) v1 -= 1.f;
+            while (v1 > v0 + 1.f && (seed.v1 - v1) < maxRetractPx && !hasBar(v1 - 1.f)) v1 -= 1.f;
+            if (v1 < seed.v1 && hasBar(v1 - 1.f)) fBot = kFlagNormalRetract;
+            else if (seed.v1 - v1 >= maxRetractPx) fBot = kFlagBlocked10pct;
+            else fBot = kFlagNormalRetract;
         }
     } else {
         const bool allowNeg = peek(seed.v0 - 1.f, -1.f);
         const bool allowPos = peek(seed.v1 + 1.f, +1.f);
+        if (!allowNeg) fTop = kFlagBlockedGap;
+        if (!allowPos) fBot = kFlagBlockedGap;
         if (allowNeg) {
             int gap = 0;
             float v = seed.v0 - 1.f;
@@ -2172,9 +2457,41 @@ static void seg7OrientedOne(
                 }
                 v += 1.f;
             }
+            if (v1 > seed.v1) fBot = kFlagNormalExpand;
+            else fBot = kFlagBlockedGap;
         }
+        if (allowNeg && v0 < seed.v0) fTop = kFlagNormalExpand;
+        else if (allowNeg) fTop = kFlagBlockedGap;
     }
     if (v1 < v0 + 2.f) v1 = v0 + 2.f;
+    if (tele) {
+        if (!keepColorStats) {
+            float yi = 0.f, yb = 0.f;
+            int ni = 0, nbg = 0;
+            for (int y = 0; y < lookBin.rows; ++y) {
+                const uint8_t* bp = lookBin.ptr<uint8_t>(y);
+                const uint8_t* lp = look.ptr<uint8_t>(y);
+                for (int x = 0; x < lookBin.cols; ++x) {
+                    if (bp[x]) { yi += lp[x]; ++ni; }
+                    else { yb += lp[x]; ++nbg; }
+                }
+            }
+            tele->yInk = ni > 0 ? yi / static_cast<float>(ni) : 0.f;
+            tele->yBg = nbg > 0 ? yb / static_cast<float>(nbg) : 0.f;
+            tele->dInk = tele->yInk - tele->yBg;
+        }
+        tele->otsuThr = static_cast<float>(thr);
+        tele->sPx = *sPxOut;
+        tele->dTop = v0 - seed.v0;
+        tele->dBot = v1 - seed.v1;
+        tele->dLeft = 0.f;
+        tele->dRight = 0.f;
+        tele->fTop = static_cast<float>(fTop);
+        tele->fBot = static_cast<float>(fBot);
+        tele->fLeft = static_cast<float>(kFlagUnchanged);
+        tele->fRight = static_cast<float>(kFlagUnchanged);
+        fillRunHists(lookBin, tele->histH, tele->histV);
+    }
     seed.v0 = v0;
     seed.v1 = v1;
     oriToQuad(seed, outPts8);
@@ -2271,7 +2588,8 @@ extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7OrientedMany(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode,
-    jint boundStrategy, jint tightInsetPx
+    jint boundStrategy, jint tightInsetPx,
+    jfloatArray teleArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -2307,8 +2625,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
             op[8] = 2.f;
             continue;
         }
+        Seg7Tele tele{};
+        tele.method = adaptive ? 4.f : (useChroma ? 1.f : 0.f);
         const cv::Mat* src = gray;
         bool srcIsBin = false;
+        bool keepColor = false;
         cv::Mat localTint;
         if (useTint && uv) {
             float pts[8];
@@ -2326,9 +2647,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
             const int sb = std::min(imgH, static_cast<int>(std::ceil(maxy)));
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11, 0,
-                    adaptive) && tintDst && !tintDst->empty()) {
+                    adaptive, &tele) && tintDst && !tintDst->empty()) {
                 src = tintDst;
                 srcIsBin = true;
+                keepColor = true;
             }
         } else if (useChroma && cMag && !cMag->empty() &&
             medianInteriorU8(*cMag, box, imgW, imgH) >= 8.0) {
@@ -2336,8 +2658,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
         }
         float sPx = 2.f;
         seg7OrientedOne(*src, box, imgW, imgH, op, &sPx,
-            boundStrategy, tightInsetPx, srcIsBin);
+            boundStrategy, tightInsetPx, srcIsBin, &tele, keepColor);
         op[8] = sPx;
+        storeTeleArr(env, teleArr, i, tele);
     }
     jfloatArray arr = env->NewFloatArray(static_cast<jint>(out.size()));
     if (!arr) return nullptr;
