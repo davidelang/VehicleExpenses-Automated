@@ -213,6 +213,7 @@ object ContentExpandUtils {
         val energyTrace: VertEnergyTrace? = null,
         val countQuad: OrientedQuad = quad,
         val countPull: CountPullInfo? = null,
+        val sweep: InkSweep? = null,
     )
 
     data class ExpandOptions(
@@ -410,13 +411,14 @@ object ContentExpandUtils {
         val imgW = gray.cols()
         val imgH = gray.rows()
         if (!opts.recordVertEnergy) {
+            val sweepBuf = inkSweepBuf(1, imgW, imgH)
             val nativeExp = try {
                 NativeImageUtils.expandOrientedNative(
                     gray, seed.pts,
                     opts.maxFrac, opts.energyRatio,
                     opts.freezeHorzDuringVert, opts.enableJump,
                     opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac,
-                    opts.boundStrategy, opts.tightInsetPx,
+                    opts.boundStrategy, opts.tightInsetPx, sweepBuf,
                 )
             } catch (_: Throwable) {
                 null
@@ -487,6 +489,7 @@ object ContentExpandUtils {
                 }
                 return OrientedExpand(
                     finalQuad, nativeExp.hitVertCap, null, countQuad, countInfo,
+                    parseInkSweeps(sweepBuf, 1).getOrNull(0),
                 )
             }
         }
@@ -1281,10 +1284,29 @@ object ContentExpandUtils {
                 jumpR = (r.right - hOrigin).coerceIn(0, hs),
             )
         }
+
+        fun withOfficialUv(ov0: Float, ov1: Float, ou0: Float, ou1: Float): InkSweep {
+            val vs = vScores.size
+            val hs = hScores.size
+            return copy(
+                walkT = (kotlin.math.round(ov0) - vOrigin).coerceIn(0, vs),
+                walkB = (kotlin.math.round(ov1) - vOrigin).coerceIn(0, vs),
+                jumpL = (kotlin.math.round(ou0) - hOrigin).coerceIn(0, hs),
+                jumpR = (kotlin.math.round(ou1) - hOrigin).coerceIn(0, hs),
+            )
+        }
+
+        fun withOfficialQuad(seed: OrientedQuad, official: OrientedQuad): InkSweep {
+            val sb = OrientedBox.fromQuad(seed) ?: return this
+            val ob = OrientedBox.fromQuad(official) ?: return this
+            val uv = sb.localAabb(ob)
+            return withOfficialUv(uv[2], uv[3], uv[0], uv[1])
+        }
     }
 
     fun inkSweepBuf(n: Int, imgW: Int, imgH: Int): IntArray {
-        val per = 12 + imgW.coerceAtLeast(1) + imgH.coerceAtLeast(1)
+        val span = (imgW.coerceAtLeast(1) + imgH.coerceAtLeast(1)) * 8
+        val per = 12 + span
         return IntArray((1 + n.coerceAtLeast(0) * per).coerceAtLeast(1))
     }
 
@@ -1678,6 +1700,7 @@ object ContentExpandUtils {
         val quad: OrientedQuad,
         val stroke: StrokeWidthInSeed,
         val tele: Seg7Telemetry? = null,
+        val sweep: InkSweep? = null,
     )
 
     /**
@@ -1701,11 +1724,15 @@ object ContentExpandUtils {
             for (k in 0 until 8) packed[o + k] = p[k]
         }
         val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val native = NativeImageUtils.seg7OrientedManyNative(
             gray, uv, packed, chromaMode, scratch,
-            boundStrategy, tightInsetPx, tele,
+            boundStrategy, tightInsetPx, tele, sweepBuf,
         )
         if (native != null && native.size >= seeds.size * 9) {
+            val sweeps = parseInkSweeps(sweepBuf, seeds.size)
             return seeds.indices.map { i ->
                 val o = i * 9
                 val pts = FloatArray(8) { k -> native[o + k] }
@@ -1718,6 +1745,7 @@ object ContentExpandUtils {
                         droppedGlare = 0, otsuThr = 0, seed = Rect(),
                     ),
                     parseSeg7Tele(tele, i),
+                    sweeps.getOrNull(i),
                 )
             }
         }

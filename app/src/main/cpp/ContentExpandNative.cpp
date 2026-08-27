@@ -313,6 +313,56 @@ static void padCountTip(
 
 }  // namespace
 
+struct InkSweepPack {
+    float thr = 0.f;
+    float sPx = 0.f;
+    float energyRatio = 0.f;
+    int minRun = 0;
+    int vOrigin = 0;
+    int hOrigin = 0;
+    int v0 = 0;
+    int v1 = 0;
+    int h0 = 0;
+    int h1 = 0;
+    std::vector<int> vScores;
+    std::vector<int> hScores;
+};
+
+static void writeSweepArr(JNIEnv* env, jintArray arr, const std::vector<InkSweepPack>& packs) {
+    if (!env || !arr) return;
+    const jint cap = env->GetArrayLength(arr);
+    if (cap < 1) return;
+    std::vector<jint> buf;
+    buf.push_back(static_cast<jint>(packs.size()));
+    for (const auto& p : packs) {
+        const int nV = static_cast<int>(p.vScores.size());
+        const int nH = static_cast<int>(p.hScores.size());
+        buf.push_back(static_cast<jint>(std::lround(p.thr * 1000.f)));
+        buf.push_back(static_cast<jint>(std::lround(p.sPx)));
+        buf.push_back(p.minRun);
+        buf.push_back(static_cast<jint>(std::lround(p.energyRatio * 1000.f)));
+        buf.push_back(p.vOrigin);
+        buf.push_back(p.hOrigin);
+        buf.push_back(p.v0);
+        buf.push_back(p.v1);
+        buf.push_back(nV);
+        buf.push_back(p.h0);
+        buf.push_back(p.h1);
+        buf.push_back(nH);
+        buf.insert(buf.end(), p.vScores.begin(), p.vScores.end());
+        buf.insert(buf.end(), p.hScores.begin(), p.hScores.end());
+    }
+    const jint n = std::min(cap, static_cast<jint>(buf.size()));
+    env->SetIntArrayRegion(arr, 0, n, buf.data());
+}
+
+static void fillOrientedEnergySweep(
+    const cv::Mat& mag, const Frame& fr,
+    float seedCx, float seedCy, float seedBw, float seedBh,
+    int walkedH, float energyRatio, double thr, float jumpFrac,
+    InkSweepPack* out
+);
+
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpandOriented(
     JNIEnv* env, jobject /*thiz*/,
@@ -321,7 +371,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jfloat maxFrac, jfloat energyRatio,
     jboolean freezeHorz, jboolean enableJump,
     jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac,
-    jint boundStrategy, jint tightInsetPx
+    jint boundStrategy, jint tightInsetPx,
+    jintArray sweepArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
@@ -347,6 +398,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (bw > 2.f * ins + 2.f) bw -= 2.f * ins;
         if (bh > 2.f * ins + 2.f) bh -= 2.f * ins;
     }
+    const float seedCx = cx, seedCy = cy, seedBw = bw, seedBh0 = bh;
 
     double baseSum = 0.0;
     int baseN = 0;
@@ -550,6 +602,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         static_cast<jfloat>(padV), static_cast<jfloat>(hitVertCap),
         stopUpE, stopDownE, static_cast<jfloat>(base), static_cast<jfloat>(thr),
     };
+    try {
+        InkSweepPack pack;
+        fillOrientedEnergySweep(
+            mag, fr, seedCx, seedCy, seedBw, seedBh0,
+            std::max(1, static_cast<int>(std::lround(bh))),
+            energyRatio, thr, jumpFrac, &pack);
+        std::vector<InkSweepPack> packs;
+        packs.push_back(std::move(pack));
+        writeSweepArr(env, sweepArr, packs);
+    } catch (const cv::Exception&) {
+    }
     jfloatArray arr = env->NewFloatArray(13);
     if (!arr) return nullptr;
     env->SetFloatArrayRegion(arr, 0, 13, out);
@@ -1212,47 +1275,66 @@ static void countPullY(
 
 }  // namespace
 
-struct InkSweepPack {
-    float thr = 0.f;
-    float sPx = 0.f;
-    float energyRatio = 0.f;
-    int minRun = 0;
-    int vOrigin = 0;
-    int hOrigin = 0;
-    int v0 = 0;
-    int v1 = 0;
-    int h0 = 0;
-    int h1 = 0;
-    std::vector<int> vScores;
-    std::vector<int> hScores;
-};
-
-static void writeSweepArr(JNIEnv* env, jintArray arr, const std::vector<InkSweepPack>& packs) {
-    if (!env || !arr) return;
-    const jint cap = env->GetArrayLength(arr);
-    if (cap < 1) return;
-    std::vector<jint> buf;
-    buf.push_back(static_cast<jint>(packs.size()));
-    for (const auto& p : packs) {
-        const int nV = static_cast<int>(p.vScores.size());
-        const int nH = static_cast<int>(p.hScores.size());
-        buf.push_back(static_cast<jint>(std::lround(p.thr * 1000.f)));
-        buf.push_back(static_cast<jint>(std::lround(p.sPx)));
-        buf.push_back(p.minRun);
-        buf.push_back(static_cast<jint>(std::lround(p.energyRatio * 1000.f)));
-        buf.push_back(p.vOrigin);
-        buf.push_back(p.hOrigin);
-        buf.push_back(p.v0);
-        buf.push_back(p.v1);
-        buf.push_back(nV);
-        buf.push_back(p.h0);
-        buf.push_back(p.h1);
-        buf.push_back(nH);
-        buf.insert(buf.end(), p.vScores.begin(), p.vScores.end());
-        buf.insert(buf.end(), p.hScores.begin(), p.hScores.end());
+static void fillOrientedEnergySweep(
+    const cv::Mat& mag, const Frame& fr,
+    float seedCx, float seedCy, float seedBw, float seedBh,
+    int walkedH, float energyRatio, double thr, float jumpFrac,
+    InkSweepPack* out
+) {
+    if (!out || mag.empty()) return;
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * std::max(1.f, seedBh))));
+    const int xPad = std::max(1, static_cast<int>(std::lround(
+        jumpFrac * static_cast<float>(std::max(1, walkedH)) * (kJumpMax + 1))));
+    const int v0s = static_cast<int>(std::lround(-0.5f * seedBh));
+    const int v1s = static_cast<int>(std::lround(0.5f * seedBh));
+    const int u0s = static_cast<int>(std::lround(-0.5f * seedBw));
+    const int u1s = static_cast<int>(std::lround(0.5f * seedBw));
+    const int vStart = v0s - capPx;
+    const int vEnd = v1s + capPx;
+    const int uStart = u0s - xPad;
+    const int uEnd = u1s + xPad;
+    if (vEnd <= vStart) return;
+    out->thr = static_cast<float>(thr);
+    out->energyRatio = energyRatio;
+    out->sPx = static_cast<float>(std::max(1, static_cast<int>(seedBh) / 12));
+    out->minRun = 0;
+    out->vOrigin = vStart;
+    out->hOrigin = uStart;
+    out->v0 = v0s - vStart;
+    out->v1 = v1s - vStart;
+    out->h0 = u0s - uStart;
+    out->h1 = u1s - uStart;
+    const int nu = std::max(4, static_cast<int>(std::lround(seedBw)));
+    const int nv = std::max(4, static_cast<int>(std::lround(seedBh)));
+    out->vScores.reserve(static_cast<size_t>(vEnd - vStart));
+    for (int v = vStart; v < vEnd; ++v) {
+        double s = 0.0;
+        int c = 0;
+        for (int i = 0; i < nu; ++i) {
+            const float uu = ((i + 0.5f) / nu - 0.5f) * seedBw;
+            const float px = seedCx + uu * fr.ux + static_cast<float>(v) * fr.vx;
+            const float py = seedCy + uu * fr.uy + static_cast<float>(v) * fr.vy;
+            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
+            s += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
+            ++c;
+        }
+        out->vScores.push_back(static_cast<int>(std::lround(c > 0 ? s / c : 0.0)));
     }
-    const jint n = std::min(cap, static_cast<jint>(buf.size()));
-    env->SetIntArrayRegion(arr, 0, n, buf.data());
+    if (uEnd <= uStart) return;
+    out->hScores.reserve(static_cast<size_t>(uEnd - uStart));
+    for (int u = uStart; u < uEnd; ++u) {
+        double s = 0.0;
+        int c = 0;
+        for (int i = 0; i < nv; ++i) {
+            const float vv = ((i + 0.5f) / nv - 0.5f) * seedBh;
+            const float px = seedCx + static_cast<float>(u) * fr.ux + vv * fr.vx;
+            const float py = seedCy + static_cast<float>(u) * fr.uy + vv * fr.vy;
+            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
+            s += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
+            ++c;
+        }
+        out->hScores.push_back(static_cast<int>(std::lround(c > 0 ? s / c : 0.0)));
+    }
 }
 
 static void fillAabbEnergySweep(
@@ -2588,13 +2670,82 @@ static double medianInteriorU8(const cv::Mat& m, const OriBox& b, int w, int h) 
     return 0.5 * (vals[n / 2 - 1] + vals[n / 2]);
 }
 
+static void fillOrientedLookSweep(
+    const cv::Mat& src, bool srcIsBin, double otsu, bool dark, bool invertedBin,
+    int glareW, const cv::Mat& lookBin, float lookV0,
+    const OriBox& seed, float walkedV0, float walkedV1,
+    int imgW, int imgH, int minRun, float sPx,
+    InkSweepPack* out
+) {
+    if (!out) return;
+    const float seedBh = std::max(1.f, seed.v1 - seed.v0);
+    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedBh)));
+    const int walkedH = std::max(1, static_cast<int>(std::lround(walkedV1 - walkedV0)));
+    const int xPad = std::max(1, static_cast<int>(std::lround(0.40f * walkedH * (kJumpMax + 1))));
+    const int vStart = static_cast<int>(std::lround(seed.v0)) - capPx;
+    const int vEnd = static_cast<int>(std::lround(seed.v1)) + capPx;
+    const int uStart = static_cast<int>(std::lround(seed.u0)) - xPad;
+    const int uEnd = static_cast<int>(std::lround(seed.u1)) + xPad;
+    if (vEnd <= vStart) return;
+    out->thr = static_cast<float>(minRun);
+    out->sPx = sPx;
+    out->energyRatio = 0.f;
+    out->minRun = minRun;
+    out->vOrigin = vStart;
+    out->hOrigin = uStart;
+    out->v0 = static_cast<int>(std::lround(seed.v0)) - vStart;
+    out->v1 = static_cast<int>(std::lround(seed.v1)) - vStart;
+    out->h0 = static_cast<int>(std::lround(seed.u0)) - uStart;
+    out->h1 = static_cast<int>(std::lround(seed.u1)) - uStart;
+    out->vScores.reserve(static_cast<size_t>(vEnd - vStart));
+    for (int v = vStart; v < vEnd; ++v) {
+        const int y = static_cast<int>(std::lround(static_cast<float>(v) - lookV0));
+        int sc = 0;
+        if (!lookBin.empty() && y >= 0 && y < lookBin.rows) {
+            sc = maxInkRunRow(lookBin, y, 0, lookBin.cols);
+        }
+        out->vScores.push_back(sc);
+    }
+    if (uEnd <= uStart) return;
+    const int wu = std::max(1, uEnd - uStart);
+    const int hv = std::max(1, static_cast<int>(std::lround(seed.v1 - seed.v0)));
+    cv::Mat wide(hv, wu, CV_8UC1);
+    for (int y = 0; y < hv; ++y) {
+        const float v = seed.v0 + (y + 0.5f) / hv * (seed.v1 - seed.v0);
+        uint8_t* row = wide.ptr<uint8_t>(y);
+        for (int x = 0; x < wu; ++x) {
+            const float u = static_cast<float>(uStart) + x + 0.5f;
+            const float px = seed.cx + u * seed.ux + v * seed.vx;
+            const float py = seed.cy + u * seed.uy + v * seed.vy;
+            const int g = sampleU8Trunc(src, px, py, imgW, imgH);
+            row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
+        }
+    }
+    cv::Mat wideBin;
+    if (srcIsBin) {
+        wide.copyTo(wideBin);
+        if (invertedBin) cv::bitwise_not(wideBin, wideBin);
+    } else {
+        const int ttype = dark ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
+        cv::threshold(wide, wideBin, otsu, 255, ttype);
+    }
+    if (!wideBin.empty() && glareW > 0) dropWide(&wideBin, glareW);
+    out->hScores.reserve(static_cast<size_t>(wu));
+    for (int x = 0; x < wu; ++x) {
+        int sc = 0;
+        if (!wideBin.empty()) sc = maxInkRunCol(wideBin, x, 0, wideBin.rows);
+        out->hScores.push_back(sc);
+    }
+}
+
 static void seg7OrientedOne(
     const cv::Mat& src, OriBox seed, int imgW, int imgH,
     float* outPts8, float* sPxOut,
     int boundStrategy = 0, int tightInsetPx = 16,
     bool srcIsBin = false,
     Seg7Tele* tele = nullptr,
-    bool keepColorStats = false
+    bool keepColorStats = false,
+    InkSweepPack* sweepOut = nullptr
 ) {
     if (boundStrategy == 1) {
         const float ins = static_cast<float>(std::max(1, tightInsetPx));
@@ -2793,6 +2944,15 @@ static void seg7OrientedOne(
         tele->fRight = static_cast<float>(kFlagUnchanged);
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
+    if (sweepOut) {
+        try {
+            OriBox seedSweep = seed;
+            fillOrientedLookSweep(
+                src, srcIsBin, thr, dark, invertedBin, glareW, lookBin, lookV0,
+                seedSweep, v0, v1, imgW, imgH, minRun, *sPxOut, sweepOut);
+        } catch (const cv::Exception&) {
+        }
+    }
     seed.v0 = v0;
     seed.v1 = v1;
     oriToQuad(seed, outPts8);
@@ -2939,7 +3099,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode,
     jint boundStrategy, jint tightInsetPx,
-    jfloatArray teleArr
+    jfloatArray teleArr, jintArray sweepArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -2966,6 +3126,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
         }
     }
     std::vector<jfloat> out(n * 9, 0.f);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i) {
         OriBox box{};
         const float* in = seeds.data() + i * 8;
@@ -3008,10 +3170,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
         }
         float sPx = 2.f;
         seg7OrientedOne(*src, box, imgW, imgH, op, &sPx,
-            boundStrategy, tightInsetPx, srcIsBin, &tele, keepColor);
+            boundStrategy, tightInsetPx, srcIsBin, &tele, keepColor,
+            &sweeps[static_cast<size_t>(i)]);
         op[8] = sPx;
         storeTeleArr(env, teleArr, i, tele);
     }
+    writeSweepArr(env, sweepArr, sweeps);
     jfloatArray arr = env->NewFloatArray(static_cast<jint>(out.size()));
     if (!arr) return nullptr;
     env->SetFloatArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());

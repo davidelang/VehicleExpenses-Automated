@@ -8835,3 +8835,8 @@ Gray jump lookBin clips seed LTRB to mat before cv::Range; empty ROI keeps Sobel
 ## 2026-08-27 - Phase 1: drop *-base + AABB inkSweep JSON
 
 Unscheduled six *-base columns (13 remain). Gray/color seg7 and energy AABB pack V/H ink scores (clipped). costVolDecisionData_Paddle.inkSweep. No HTML yet. Do not deploy.
+
+## 2026-08-27 - Phase 2 start: rot inkSweep + dump-details SVG (1432)
+
+- Oriented ±v/±u same payload as AABB; dump-details SVG (score, thr, seed/walk/jump ticks).
+- Measurement-only. Expand/jump/k-pad/horiz_pad, 0.5s/0.65/10% retract, G--/QF unchanged. Do not deploy.

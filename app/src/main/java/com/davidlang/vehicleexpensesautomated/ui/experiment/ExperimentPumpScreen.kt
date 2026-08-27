@@ -2172,6 +2172,7 @@ suspend fun runPumpExperiment(
                     val inkWalkSeeds: List<ContentExpandUtils.OrientedQuad>
                     val inkWalkBoxes: List<ContentExpandUtils.OrientedQuad>
                     val inkJumpOptsRot: ContentExpandUtils.ExpandOptions?
+                    var rotInkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList()
                     val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
                     if (seg7Stroke) {
                         val jumpOpts = ContentExpandUtils.ExpandOptions(
@@ -2221,6 +2222,10 @@ suspend fun runPumpExperiment(
                         inkWalkSeeds = seedQuads
                         inkWalkBoxes = jumpedQuads
                         inkJumpOptsRot = jumpOpts
+                        rotInkSweeps = segs.indices.map { i ->
+                            val off = expandedQuads.getOrNull(i) ?: return@map segs[i].sweep
+                            segs[i].sweep?.withOfficialQuad(seedQuads[i], off)
+                        }
                         branch.metadata["s_per_red"] =
                             inkStrokes.joinToString(",") { it.sPx.toString() }
                         storeSeg7Tele(branch, segs.map { it.tele })
@@ -2264,6 +2269,10 @@ suspend fun runPumpExperiment(
                         inkWalkSeeds = emptyList()
                         inkWalkBoxes = emptyList()
                         inkJumpOptsRot = null
+                        rotInkSweeps = expDiag.indices.map { i ->
+                            val off = expandedQuads.getOrNull(i) ?: return@map expDiag[i].sweep
+                            expDiag[i].sweep?.withOfficialQuad(seedQuads[i], off)
+                        }
                         if (energyTraceOut != null) {
                             try {
                                 writeExpandEnergyTrace(
@@ -2574,6 +2583,7 @@ suspend fun runPumpExperiment(
                         ocrQuads = primaryQuads,
                         seedQuads = seedQuads,
                         scaleVariants = variants,
+                        inkSweeps = rotInkSweeps,
                     )
                     val redOnlyAnns = seedQuads.flatMap { pumpQuadEdgeAnns(it, Color.RED, 2) }
                     branch.images["PD_red_only"] = OcrUtils.takeSnapshot(
@@ -3839,10 +3849,95 @@ private fun histBinLabel(b: Int): String {
     return if (b >= 31) "$lo+" else "$lo-$hi"
 }
 
+private fun pSparkSvg(
+    scores: JSONArray?,
+    thr: Double,
+    seed0: Int,
+    seed1: Int,
+    stop0: Int,
+    stop1: Int,
+    w: Int = 240,
+    h: Int = 40,
+): String {
+    val arr = scores ?: return ""
+    val n = arr.length()
+    if (n < 2) return ""
+    var lo = 0.0
+    var hi = thr
+    for (i in 0 until n) {
+        val v = arr.optDouble(i)
+        if (v < lo) lo = v
+        if (v > hi) hi = v
+    }
+    if (hi <= lo) hi = lo + 1.0
+    fun x(i: Int): Double = 1.0 + i.toDouble() / (n - 1).toDouble() * (w - 2)
+    fun y(v: Double): Double = (h - 2) - (v - lo) / (hi - lo) * (h - 4)
+    val pts = StringBuilder()
+    for (i in 0 until n) {
+        if (i > 0) pts.append(' ')
+        pts.append("%.1f,%.1f".format(x(i), y(arr.optDouble(i))))
+    }
+    fun tick(idx: Int, color: String): String {
+        if (idx < 0) return ""
+        val xi = "%.1f".format(x(idx.coerceIn(0, n - 1)))
+        return "<line x1='$xi' y1='0' x2='$xi' y2='$h' stroke='$color' stroke-width='1'/>"
+    }
+    val yt = "%.1f".format(y(thr))
+    return "<svg width='$w' height='$h' viewBox='0 0 $w $h' " +
+        "style='display:block;background:#fafafa;border:1px solid #ccc;margin:2px 0;'>" +
+        "<line x1='0' y1='$yt' x2='$w' y2='$yt' stroke='#c44' stroke-width='1' stroke-dasharray='3,2'/>" +
+        "<polyline fill='none' stroke='#258' stroke-width='1' points='$pts'/>" +
+        tick(seed0, "#888") + tick(seed1, "#888") +
+        tick(stop0, "#2a2") + tick(stop1, "#2a2") +
+        "</svg>"
+}
+
+private fun pInkSweepHtml(br: PumpBranch): String {
+    val raw = br.metadata["costVolDecisionData_Paddle"] ?: return ""
+    val sweeps = try {
+        JSONObject(raw).optJSONArray("inkSweep")
+    } catch (_: Exception) {
+        return ""
+    } ?: return ""
+    if (sweeps.length() == 0) return ""
+    val sb = StringBuilder()
+    for (i in 0 until sweeps.length()) {
+        val o = sweeps.optJSONObject(i) ?: continue
+        val vScores = o.optJSONArray("vScores")
+        val hScores = o.optJSONArray("hScores")
+        if ((vScores?.length() ?: 0) < 2 && (hScores?.length() ?: 0) < 2) continue
+        val thr = o.optDouble("thr")
+        sb.append("<div style='margin:4px 0;'>")
+        sb.append("<div style='font-size:8px;color:#555;'>box${i + 1} ink V (thr=${"%.1f".format(thr)})</div>")
+        sb.append(
+            pSparkSvg(
+                vScores, thr,
+                o.optInt("v0", -1), o.optInt("v1", -1),
+                o.optInt("walkT", -1), o.optInt("walkB", -1),
+            ),
+        )
+        sb.append("<div style='font-size:8px;color:#555;'>box${i + 1} ink H</div>")
+        sb.append(
+            pSparkSvg(
+                hScores, thr,
+                o.optInt("h0", -1), o.optInt("h1", -1),
+                o.optInt("jumpL", -1), o.optInt("jumpR", -1),
+            ),
+        )
+        sb.append("</div>")
+    }
+    return sb.toString()
+}
+
 private fun pSeg7TeleHtml(br: PumpBranch): String {
-    val raw = br.metadata["seg7_tele"] ?: return ""
-    val arr = try { JSONArray(raw) } catch (_: Exception) { return "" }
-    if (arr.length() == 0) return ""
+    val raw = br.metadata["seg7_tele"]
+    val arr = if (raw.isNullOrBlank()) JSONArray() else try {
+        JSONArray(raw)
+    } catch (_: Exception) {
+        JSONArray()
+    }
+    val sweepHtml = pInkSweepHtml(br)
+    if (arr.length() == 0 && sweepHtml.isEmpty()) return ""
     fun f1(o: JSONObject, k: String) = "%.1f".format(o.optDouble(k))
     fun f0(o: JSONObject, k: String) = "%.0f".format(o.optDouble(k))
     val cell = "padding:1px 3px;border:1px solid #ddd;"
@@ -3889,6 +3984,7 @@ private fun pSeg7TeleHtml(br: PumpBranch): String {
             }
         }
     }
+    sb.append(sweepHtml)
     sb.append("</div>")
     return sb.toString()
 }

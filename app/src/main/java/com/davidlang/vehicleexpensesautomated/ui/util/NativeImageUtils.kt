@@ -512,7 +512,7 @@ object NativeImageUtils {
     private external fun nativeSeg7OrientedMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray, chromaMode: Int,
         boundStrategy: Int, tightInsetPx: Int,
-        teleArr: FloatArray?,
+        teleArr: FloatArray?, sweepArr: IntArray?,
     ): FloatArray?
     private external fun nativeJumpOrientedMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, quads: FloatArray, chromaMode: Int,
@@ -528,13 +528,14 @@ object NativeImageUtils {
         scratch: Mat? = null,
         boundStrategy: Int = 0, tightInsetPx: Int = 16,
         tele: FloatArray? = null,
+        sweep: IntArray? = null,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return null
         val n = seeds.size / 8
         val teleArr = tele ?: if (n > 0) FloatArray(n * SEG7_TELE_N) else null
         return nativeSeg7OrientedMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
-            boundStrategy, tightInsetPx, teleArr,
+            boundStrategy, tightInsetPx, teleArr, sweep,
         )
     }
 
@@ -596,6 +597,7 @@ object NativeImageUtils {
         vertPadFrac: Float,
         boundStrategy: Int,
         tightInsetPx: Int,
+        sweepArr: IntArray?,
     ): FloatArray?
     private external fun nativeCountPullbackOriented(
         matPtr: Long,
@@ -637,11 +639,12 @@ object NativeImageUtils {
         vertPadFrac: Float,
         boundStrategy: Int = 0,
         tightInsetPx: Int = 16,
+        sweep: IntArray? = null,
     ): OrientedExpandNative? {
         val r = nativeExpandOriented(
             gray.nativeObj, seedPts, maxFrac, energyRatio,
             freezeHorz, enableJump, jumpFrac, retractClearFrac, vertPadFrac,
-            boundStrategy, tightInsetPx,
+            boundStrategy, tightInsetPx, sweep,
         ) ?: return null
         if (r.size < 13) return null
         return OrientedExpandNative(
