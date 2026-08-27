@@ -550,12 +550,18 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCount
 
 namespace {
 
+static bool scratchFits(const cv::Mat* s, int w, int h) {
+    return s && !s->empty() && s->type() == CV_8UC1 && s->rows >= h && s->cols >= w;
+}
+
 static bool fillChromaMag(const cv::Mat& y, const cv::Mat& uv, cv::Mat* dst) {
-    if (y.empty() || y.type() != CV_8UC1) return false;
+    if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
-    dst->create(h, w, CV_8UC1);
+    const bool reuse = scratchFits(dst, w, h);
+    if (!reuse) dst->create(h, w, CV_8UC1);
     if (uv.empty() || uv.type() != CV_8UC2 || uv.rows <= 0 || uv.cols <= 0) {
-        dst->setTo(0);
+        if (reuse) (*dst)(cv::Rect(0, 0, w, h)).setTo(0);
+        else dst->setTo(0);
         return true;
     }
     const int uvH = uv.rows, uvW = uv.cols;
@@ -586,14 +592,24 @@ static double meanRectF(const cv::Mat& e, int l, int t, int r, int b, int W, int
     if (t < 0) t = 0;
     if (r > W) r = W;
     if (b > H) b = H;
-    if (r <= l || b <= t) return 0.0;
+    if (r <= l || b <= t || e.empty()) return 0.0;
     double s = 0.0;
     int n = 0;
-    for (int y = t; y < b; ++y) {
-        const float* p = e.ptr<float>(y);
-        for (int x = l; x < r; ++x) {
-            s += p[x];
-            ++n;
+    if (e.type() == CV_8UC1) {
+        for (int y = t; y < b; ++y) {
+            const uint8_t* p = e.ptr<uint8_t>(y);
+            for (int x = l; x < r; ++x) {
+                s += p[x];
+                ++n;
+            }
+        }
+    } else if (e.type() == CV_32F) {
+        for (int y = t; y < b; ++y) {
+            const float* p = e.ptr<float>(y);
+            for (int x = l; x < r; ++x) {
+                s += p[x];
+                ++n;
+            }
         }
     }
     return n > 0 ? s / n : 0.0;
@@ -1473,8 +1489,11 @@ static bool fillChromaTintMask(
 ) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
-    dst->create(h, w, CV_8UC1);
-    dst->setTo(0);
+    const bool reuse = scratchFits(dst, w, h);
+    if (!reuse) {
+        dst->create(h, w, CV_8UC1);
+        dst->setTo(0);
+    }
     if (sl < 0) sl = 0;
     if (st < 0) st = 0;
     if (sr > w) sr = w;
@@ -1550,6 +1569,9 @@ static bool fillChromaTintMask(
     const int nb = std::min(h, sb + vLook);
     const int xl = std::max(0, sl - std::max(0, xPad));
     const int xr = std::min(w, sr + std::max(0, xPad));
+    if (reuse && xr > xl && nb > nt) {
+        (*dst)(cv::Rect(xl, nt, xr - xl, nb - nt)).setTo(0);
+    }
     for (int gy = nt; gy < nb; ++gy) {
         const uint8_t* yp = y.ptr<uint8_t>(gy);
         uint8_t* op = dst->ptr<uint8_t>(gy);
@@ -1658,7 +1680,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpMany(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jlong uvPtr, jintArray boxesArr, jint chromaMode,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray boxesArr, jint chromaMode,
     jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
@@ -1670,18 +1692,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
     std::vector<jint> boxes(n4);
     env->GetIntArrayRegion(boxesArr, 0, n4, boxes.data());
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     cv::Mat gx, gy, magY;
     cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
     cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
     cv::magnitude(gx, gy, magY);
     gx.release();
     gy.release();
-    cv::Mat cMag, cMagF;
+    cv::Mat localMag;
+    cv::Mat* cMag = nullptr;
     const bool useChromaMag = chromaMode == 1;
     const bool useTint = chromaMode == 2 || chromaMode == 3;
     if (useChromaMag) {
-        fillChromaMag(*gray, uv ? *uv : cv::Mat(), &cMag);
-        if (!cMag.empty()) cMag.convertTo(cMagF, CV_32F);
+        if (scratchFits(scratch, imgW, imgH)) {
+            fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
+            cMag = scratch;
+        } else {
+            fillChromaMag(*gray, uv ? *uv : cv::Mat(), &localMag);
+            cMag = &localMag;
+        }
     }
     std::vector<jint> out(n * 4, 0);
     for (int i = 0; i < n; ++i) {
@@ -1695,18 +1724,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
         const int hgt = std::max(1, b - t);
         const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * hgt)));
         const cv::Mat* eng = &magY;
-        cv::Mat tintF;
+        cv::Mat localTint;
         if (useTint && uv) {
-            cv::Mat tint;
             const int xPad = jx * (kJumpMax + 1);
-            if (fillChromaTintMask(*gray, *uv, l, t, r, b, &tint, 11, xPad) &&
-                !tint.empty()) {
-                tint.convertTo(tintF, CV_32F);
-                eng = &tintF;
+            cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
+            if (fillChromaTintMask(*gray, *uv, l, t, r, b, tintDst, 11, xPad) &&
+                tintDst && !tintDst->empty()) {
+                eng = tintDst;
             }
-        } else if (useChromaMag && !cMagF.empty() &&
-                   medianU8Rect(cMag, l, t, r, b) >= 8.0) {
-            eng = &cMagF;
+        } else if (useChromaMag && cMag && !cMag->empty() &&
+                   medianU8Rect(*cMag, l, t, r, b) >= 8.0) {
+            eng = cMag;
         }
         const int il = l + 2, it = t + 2, ir = r - 2, ib = b - 2;
         const double base = (ir > il && ib > it)
@@ -1810,13 +1838,15 @@ static int sampleU8Trunc(const cv::Mat& m, float px, float py, int w, int h) {
 }
 
 static float sampleF32Trunc(const cv::Mat& m, float px, float py, int w, int h) {
-    if (!inImgF(px, py, w, h) || m.empty() || m.type() != CV_32F) return -1.f;
+    if (!inImgF(px, py, w, h) || m.empty()) return -1.f;
     int x = static_cast<int>(px);
     int y = static_cast<int>(py);
     if (x < 0) x = 0;
     if (y < 0) y = 0;
     if (x >= w) x = w - 1;
     if (y >= h) y = h - 1;
+    if (m.type() == CV_8UC1) return static_cast<float>(m.ptr<uint8_t>(y)[x]);
+    if (m.type() != CV_32F) return -1.f;
     return m.ptr<float>(y)[x];
 }
 
@@ -2089,7 +2119,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpOrientedMany(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jlong uvPtr, jfloatArray quadsArr, jint chromaMode,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray quadsArr, jint chromaMode,
     jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
@@ -2101,18 +2131,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
     std::vector<jfloat> quads(n8);
     env->GetFloatArrayRegion(quadsArr, 0, n8, quads.data());
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     cv::Mat gx, gy, magY;
     cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
     cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
     cv::magnitude(gx, gy, magY);
     gx.release();
     gy.release();
-    cv::Mat cMag, cMagF;
+    cv::Mat localMag;
+    cv::Mat* cMag = nullptr;
     const bool useChromaMag = chromaMode == 1;
     const bool useTint = chromaMode == 2 || chromaMode == 3;
     if (useChromaMag) {
-        fillChromaMag(*gray, uv ? *uv : cv::Mat(), &cMag);
-        if (!cMag.empty()) cMag.convertTo(cMagF, CV_32F);
+        if (scratchFits(scratch, imgW, imgH)) {
+            fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
+            cMag = scratch;
+        } else {
+            fillChromaMag(*gray, uv ? *uv : cv::Mat(), &localMag);
+            cMag = &localMag;
+        }
     }
     std::vector<jfloat> out(n8, 0.f);
     for (int i = 0; i < n; ++i) {
@@ -2124,7 +2161,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
             continue;
         }
         const cv::Mat* eng = &magY;
-        cv::Mat tintF;
+        cv::Mat localTint;
         if (useTint && uv) {
             float pts[8];
             oriToQuad(box, pts);
@@ -2141,15 +2178,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
             const int sb = std::min(imgH, static_cast<int>(std::ceil(maxy)));
             const float vSpan = std::max(1.f, box.v1 - box.v0);
             const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan)));
-            cv::Mat tint;
-            if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, &tint, 11,
-                    jx * (kJumpMax + 1)) && !tint.empty()) {
-                tint.convertTo(tintF, CV_32F);
-                eng = &tintF;
+            cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
+            if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11,
+                    jx * (kJumpMax + 1)) && tintDst && !tintDst->empty()) {
+                eng = tintDst;
             }
-        } else if (useChromaMag && !cMagF.empty() &&
-                   medianInteriorU8(cMag, box, imgW, imgH) >= 8.0) {
-            eng = &cMagF;
+        } else if (useChromaMag && cMag && !cMag->empty() &&
+                   medianInteriorU8(*cMag, box, imgW, imgH) >= 8.0) {
+            eng = cMag;
         }
         jumpOrientedOne(*eng, &box, imgW, imgH,
             maxFrac, energyRatio, jumpFrac, retractClearFrac);

@@ -8646,3 +8646,14 @@ FLOWS: rot maps det boxes by content targetW/H not 32-pad outer; rec OOB BORDER_
 ## 2026-08-26 - CODE LANDED: rot-det-inner-scale-warp-black
 
 Rot maps det boxes by content targetW/H (not 32-pad outer). Rec warp BORDER_CONSTANT black. kPaddleDetHeatCellPx=4 unchanged. Plan CODE LANDED. Do not deploy.
+
+## 2026-08-26 - Execute: optimize-buffer-allocation-jump-retract
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/optimize-buffer-allocation-jump-retract-20260826-1740-plan.md`
+- Scope: Pass workspace.s.mat into jump JNI; fillChromaMag once into scratch; tint zeros local ROI only. Do not change QF/walk knobs. Do not deploy.
+- Next: rot-look-dropwide-skip-extra-k-20260826-1729 (look mat is local oriented, not BufferSet.s — no scratch clash).
+
+## 2026-08-26 - Phase 1: jump JNI scratchPtr + ROI tint
+
+nativeJumpMany / nativeJumpOrientedMany take scratchPtr. chromaMag fills scratch once (no create if large enough). fillChromaTintMask zeros only local ROI when reusing scratch. meanRectF/sampleF32Trunc accept U8 scratch. Fallback alloc if scratch missing.
