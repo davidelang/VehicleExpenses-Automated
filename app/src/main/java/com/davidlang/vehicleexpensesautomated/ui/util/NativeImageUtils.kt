@@ -467,6 +467,8 @@ object NativeImageUtils {
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, boxes: IntArray, chromaMode: Int,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
         seedHArr: IntArray?,
+        seedRectArr: IntArray?,
+        sPxArr: IntArray?,
     ): IntArray?
 
     fun seg7ManyNative(gray: Mat, uv: Mat?, seeds: IntArray, chroma: Boolean): IntArray? {
@@ -495,11 +497,13 @@ object NativeImageUtils {
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
         uv: Mat? = null, chromaMode: Int = 0, scratch: Mat? = null,
         seedHs: IntArray? = null,
+        seedRects: IntArray? = null,
+        sPxs: IntArray? = null,
     ): IntArray? {
         if (gray.empty()) return null
         return nativeJumpMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, boxes, chromaMode,
-            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedHs,
+            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedHs, seedRects, sPxs,
         )
     }
 
@@ -512,6 +516,8 @@ object NativeImageUtils {
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, quads: FloatArray, chromaMode: Int,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
         seedBhArr: FloatArray?,
+        seedQuadArr: FloatArray?,
+        sPxArr: FloatArray?,
     ): FloatArray?
 
     /** Packed n×8 seed quads → n×9 (walked 8-float quad + sPx). chromaMode 0 Y, 1 chromaMag, 2/3 tint, 4 color_adaptive. */
@@ -536,11 +542,13 @@ object NativeImageUtils {
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
         uv: Mat? = null, chromaMode: Int = 0, scratch: Mat? = null,
         seedBhs: FloatArray? = null,
+        seedQuads: FloatArray? = null,
+        sPxs: FloatArray? = null,
     ): FloatArray? {
         if (gray.empty() || quads.isEmpty()) return null
         return nativeJumpOrientedMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, quads, chromaMode,
-            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedBhs,
+            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedBhs, seedQuads, sPxs,
         )
     }
 

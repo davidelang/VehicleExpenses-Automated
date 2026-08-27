@@ -1532,12 +1532,22 @@ suspend fun runPumpExperiment(
                     }
                     val walked = walks.map { it.second }
                     val seedHs = IntArray(seeds.size) { seeds[it].height() }
+                    val seedRects = IntArray(seeds.size * 4)
+                    seeds.forEachIndexed { i, s ->
+                        seedRects[i * 4] = s.left
+                        seedRects[i * 4 + 1] = s.top
+                        seedRects[i * 4 + 2] = s.right
+                        seedRects[i * 4 + 3] = s.bottom
+                    }
+                    val sPxs = IntArray(segs.size) { segs[it].stroke.sPx }
                     val jumpedOnce = ContentExpandUtils.jumpRetractHorizontalMany(
                         workspace.p.mat, walked, jumpOpts,
                         uv = if (expandMode != 0) workspace.p.uvMat else null,
                         chromaMode = expandMode,
                         scratch = workspace.s.mat,
                         seedHs = seedHs,
+                        seedRects = seedRects,
+                        sPxs = sPxs,
                     ) ?: walked.mapIndexed { i, it ->
                         ContentExpandUtils.jumpRetractHorizontal(
                             workspace.p.mat, it, jumpOpts,
@@ -2124,12 +2134,21 @@ suspend fun runPumpExperiment(
                             tightInsetPx = tightInsetPx,
                         )
                         val seedBhs = FloatArray(seedQuads.size) { seedQuads[it].shortAxisBh() }
+                        val seedQuadsOrig = FloatArray(seedQuads.size * 8)
+                        seedQuads.forEachIndexed { i, q ->
+                            val p = q.pts
+                            val o = i * 8
+                            for (k in 0 until 8) seedQuadsOrig[o + k] = p[k]
+                        }
+                        val sPxs = FloatArray(segs.size) { segs[it].stroke.sPx.toFloat() }
                         val jumpedQuads = ContentExpandUtils.jumpRetractOrientedUMany(
                             gray, segs.map { it.quad }, jumpOpts,
                             uv = if (expandMode != 0) workspace.p.uvMat else null,
                             chromaMode = expandMode,
                             scratch = workspace.s.mat,
                             seedBhs = seedBhs,
+                            seedQuadsOrig = seedQuadsOrig,
+                            sPxs = sPxs,
                         )
                         fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> {
                             return segs.indices.map { i ->

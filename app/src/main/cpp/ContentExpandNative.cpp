@@ -830,10 +830,13 @@ static double meanRectF(const cv::Mat& e, int l, int t, int r, int b, int W, int
 
 static constexpr int kJumpMax = 4;
 
+static int maxInkRunCol(const cv::Mat& bin, int x, int y0, int y1);
+
 static void jumpRetractH(
     const cv::Mat& eng, int* l, int t, int* r, int b,
     int imgW, int imgH, double thr, int capPx, float jumpFrac, float retractClearFrac,
-    int seedH = 0
+    int seedH = 0,
+    const cv::Mat* lookBin = nullptr, int seedT = 0, int seedB = 0, int minRun = 0
 ) {
     (void)capPx;
     (void)retractClearFrac;
@@ -848,8 +851,16 @@ static void jumpRetractH(
         coreT = t;
         coreB = b;
     }
+    int inkT = seedT;
+    int inkB = seedB;
+    if (inkB <= inkT + 1) {
+        inkT = t;
+        inkB = b;
+    }
+    const bool useInk = lookBin && !lookBin->empty() && lookBin->type() == CV_8UC1 && minRun > 0;
     auto colHas = [&](int x) -> bool {
         if (x < 0 || x >= imgW) return false;
+        if (useInk) return maxInkRunCol(*lookBin, x, inkT, inkB) >= minRun;
         return meanRectF(eng, x, coreT, x + 1, coreB, imgW, imgH) >= thr;
     };
     int jumpsL = 0;
@@ -1504,6 +1515,21 @@ static int maxInkRunRow(const cv::Mat& bin, int y, int x0, int x1) {
     return best;
 }
 
+static int maxInkRunCol(const cv::Mat& bin, int x, int y0, int y1) {
+    if (x < 0 || x >= bin.cols) return 0;
+    int best = 0, run = 0;
+    const int yEnd = std::min(y1, bin.rows);
+    for (int y = std::max(0, y0); y < yEnd; ++y) {
+        if (bin.ptr<uint8_t>(y)[x] != 0) {
+            ++run;
+            if (run > best) best = run;
+        } else {
+            run = 0;
+        }
+    }
+    return best;
+}
+
 struct HorizSW {
     int peak = 4;
     int maxRun = 0;
@@ -1797,7 +1823,8 @@ static void uvAt(const cv::Mat& uv, int imgW, int x, int y, int* u, int* v) {
 static int seedInkBinY(
     const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut,
     int glareMult = 11,
-    double* otsuOut = nullptr
+    double* otsuOut = nullptr,
+    bool* invertedOut = nullptr
 ) {
     const int seedH = std::max(1, sb - st);
     const int seedW = std::max(1, sr - sl);
@@ -1810,11 +1837,14 @@ static int seedInkBinY(
     const int nPix = seedW * seedH;
     int nz = cv::countNonZero(bin);
     float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
+    bool inverted = false;
     if (inkFrac >= 0.45f) {
         cv::bitwise_not(bin, bin);
         nz = cv::countNonZero(bin);
         inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
+        inverted = true;
     }
+    if (invertedOut) *invertedOut = inverted;
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
     const int gm = glareMult > 0 ? glareMult : 11;
     const int glareW = gm * std::max(hh0.peak, 4);
@@ -1823,6 +1853,38 @@ static int seedInkBinY(
     const int sPx = (hh.peak <= 4 || inkFrac >= 0.45f) ? fallback : hh.peak;
     *binOut = bin;
     return std::max(1, sPx);
+}
+
+/** Gray Otsu look-strip on seed T/B, x padded for jump. Full-image U8 dst. */
+static bool fillGrayJumpLook(
+    const cv::Mat& y, int sl, int st, int sr, int sb, int xPad, cv::Mat* dst
+) {
+    if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
+    const int h = y.rows, w = y.cols;
+    const bool reuse = scratchFits(dst, w, h);
+    if (!reuse) {
+        dst->create(h, w, CV_8UC1);
+        dst->setTo(0);
+    }
+    cv::Mat seedBin;
+    double otsu = 0.0;
+    bool inverted = false;
+    const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin, 11, &otsu, &inverted);
+    if (seedBin.empty()) return false;
+    const int glareW = 11 * std::max(sPx, 4);
+    const int xl = std::max(0, sl - std::max(0, xPad));
+    const int xr = std::min(w, sr + std::max(0, xPad));
+    if (sr <= sl || sb <= st || xr <= xl) return false;
+    if (reuse) {
+        (*dst)(cv::Rect(xl, st, xr - xl, sb - st)).setTo(0);
+    }
+    cv::Mat strip = y(cv::Range(st, sb), cv::Range(xl, xr));
+    cv::Mat stripBin;
+    const int ttype = inverted ? cv::THRESH_BINARY : cv::THRESH_BINARY_INV;
+    cv::threshold(strip, stripBin, otsu, 255, ttype);
+    dropWide(&stripBin, glareW);
+    stripBin.copyTo((*dst)(cv::Rect(xl, st, xr - xl, sb - st)));
+    return true;
 }
 
 /**
@@ -2105,7 +2167,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray boxesArr, jint chromaMode,
     jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac,
-    jintArray seedHArr
+    jintArray seedHArr, jintArray seedRectArr, jintArray sPxArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !boxesArr) return nullptr;
@@ -2148,10 +2210,37 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
         if (b <= t) b = std::min(imgH, t + 1);
         const int hgt = std::max(1, b - t);
         const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * hgt)));
+        int ssl = l, sst = t, ssr = r, ssb = b;
+        int sPx = 0;
+        if (seedRectArr && env->GetArrayLength(seedRectArr) >= (i + 1) * 4) {
+            jint sr4[4] = {};
+            env->GetIntArrayRegion(seedRectArr, i * 4, 4, sr4);
+            ssl = sr4[0]; sst = sr4[1]; ssr = sr4[2]; ssb = sr4[3];
+        }
+        if (sPxArr && env->GetArrayLength(sPxArr) >= (i + 1)) {
+            jint sp = 0;
+            env->GetIntArrayRegion(sPxArr, i, 1, &sp);
+            sPx = sp;
+        }
+        const bool inkTest = sPx > 0 && ssb > sst + 1;
+        const int xPad = jx * (kJumpMax + 1);
         const cv::Mat* eng = &magY;
         cv::Mat localTint;
-        if (useTint && uv) {
-            const int xPad = jx * (kJumpMax + 1);
+        const cv::Mat* lookPtr = nullptr;
+        int minRun = 0;
+        if (inkTest) {
+            minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
+            cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
+            if (useTint && uv) {
+                if (fillChromaTintMask(*gray, *uv, ssl, sst, ssr, ssb, tintDst, 11, xPad,
+                        adaptive) && tintDst && !tintDst->empty()) {
+                    lookPtr = tintDst;
+                }
+            } else if (fillGrayJumpLook(*gray, ssl, sst, ssr, ssb, xPad, tintDst) &&
+                       tintDst && !tintDst->empty()) {
+                lookPtr = tintDst;
+            }
+        } else if (useTint && uv) {
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             if (fillChromaTintMask(*gray, *uv, l, t, r, b, tintDst, 11, xPad,
                     adaptive) &&
@@ -2175,7 +2264,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
             if (sh > 0) seedH = sh;
         }
         jumpRetractH(*eng, &l, t, &r, b, imgW, imgH, thr, cap, jumpFrac, retractClearFrac,
-            seedH);
+            seedH, lookPtr, sst, ssb, minRun);
         if (l < 0) l = 0;
         if (t < 0) t = 0;
         if (r > imgW) r = imgW;
@@ -2545,7 +2634,8 @@ static double meanUFace(
 static void jumpOrientedOne(
     const cv::Mat& mag, OriBox* box, int imgW, int imgH,
     float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
-    float seedBh = 0.f
+    float seedBh = 0.f,
+    const cv::Mat* lookBin = nullptr, float seedV0 = 0.f, float seedV1 = 0.f, int minRun = 0
 ) {
     (void)maxFrac;
     (void)retractClearFrac;
@@ -2558,6 +2648,30 @@ static void jumpOrientedOne(
         cv0 = box->v0;
         cv1 = box->v1;
     }
+    float sv0 = seedV0;
+    float sv1 = seedV1;
+    if (sv1 < sv0 + 1.f) {
+        sv0 = box->v0;
+        sv1 = box->v1;
+    }
+    const bool useInk = lookBin && !lookBin->empty() && lookBin->type() == CV_8UC1 && minRun > 0;
+    auto faceHas = [&](float u) -> bool {
+        const int n = std::max(4, static_cast<int>(std::lround(sv1 - sv0)));
+        int best = 0, run = 0;
+        for (int i = 0; i < n; ++i) {
+            const float v = sv0 + (i + 0.5f) / n * (sv1 - sv0);
+            const float px = box->cx + u * box->ux + v * box->vx;
+            const float py = box->cy + u * box->uy + v * box->vy;
+            const int g = sampleU8Trunc(*lookBin, px, py, imgW, imgH);
+            if (g > 0) {
+                ++run;
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
+        }
+        return best >= minRun;
+    };
     auto face = [&](float u) {
         return meanUFace(mag, *box, u, imgW, imgH, cv0, cv1);
     };
@@ -2578,6 +2692,9 @@ static void jumpOrientedOne(
         base = face((box->u0 + box->u1) * 0.5f);
     }
     const double thr = energyRatio * std::max(base, 1e-3);
+    auto hit = [&](float u) -> bool {
+        return useInk ? faceHas(u) : face(u) >= thr;
+    };
     const float jx = static_cast<float>(
         std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan))));
     float u0 = box->u0;
@@ -2585,13 +2702,13 @@ static void jumpOrientedOne(
     int jumps0 = 0;
     while (jumps0 < kJumpMax) {
         const float next0 = u0 - jx;
-        if (face(next0) >= thr) {
+        if (hit(next0)) {
             u0 = next0;
             ++jumps0;
             continue;
         }
         for (float cur = next0 + 1.f; cur < u0; cur += 1.f) {
-            if (face(cur) >= thr) {
+            if (hit(cur)) {
                 u0 = cur;
                 break;
             }
@@ -2601,14 +2718,14 @@ static void jumpOrientedOne(
     int jumps1 = 0;
     while (jumps1 < kJumpMax) {
         const float next1 = u1 + jx;
-        if (face(next1) >= thr) {
+        if (hit(next1)) {
             u1 = next1;
             ++jumps1;
             continue;
         }
         float new1 = u1;
         for (float cur = next1 - 1.f; cur > u1; cur -= 1.f) {
-            if (face(cur) >= thr) {
+            if (hit(cur)) {
                 new1 = cur;
                 break;
             }
@@ -2712,7 +2829,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray quadsArr, jint chromaMode,
     jfloat maxFrac, jfloat energyRatio, jfloat jumpFrac, jfloat retractClearFrac,
-    jfloatArray seedBhArr
+    jfloatArray seedBhArr, jfloatArray seedQuadArr, jfloatArray sPxArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !quadsArr) return nullptr;
@@ -2755,9 +2872,28 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
         }
         const cv::Mat* eng = &magY;
         cv::Mat localTint;
-        if (useTint && uv) {
+        const cv::Mat* lookPtr = nullptr;
+        float seedV0 = 0.f, seedV1 = 0.f;
+        int minRun = 0;
+        float sPx = 0.f;
+        if (sPxArr && env->GetArrayLength(sPxArr) >= (i + 1)) {
+            jfloat sp = 0.f;
+            env->GetFloatArrayRegion(sPxArr, i, 1, &sp);
+            sPx = sp;
+        }
+        OriBox seedBox{};
+        bool haveSeed = false;
+        if (seedQuadArr && env->GetArrayLength(seedQuadArr) >= (i + 1) * 8) {
+            jfloat sq[8] = {};
+            env->GetFloatArrayRegion(seedQuadArr, i * 8, 8, sq);
+            haveSeed = oriFromQuad(sq, &seedBox);
+        }
+        const float vSpan = std::max(1.f, box.v1 - box.v0);
+        const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan)));
+        const bool inkTest = sPx > 0.f && haveSeed;
+        auto aabbOf = [&](const OriBox& ob, int* sl, int* st, int* sr, int* sb) {
             float pts[8];
-            oriToQuad(box, pts);
+            oriToQuad(ob, pts);
             float minx = pts[0], maxx = pts[0], miny = pts[1], maxy = pts[1];
             for (int k = 1; k < 4; ++k) {
                 minx = std::min(minx, pts[k * 2]);
@@ -2765,12 +2901,30 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
                 miny = std::min(miny, pts[k * 2 + 1]);
                 maxy = std::max(maxy, pts[k * 2 + 1]);
             }
-            const int sl = std::max(0, static_cast<int>(std::floor(minx)));
-            const int st = std::max(0, static_cast<int>(std::floor(miny)));
-            const int sr = std::min(imgW, static_cast<int>(std::ceil(maxx)));
-            const int sb = std::min(imgH, static_cast<int>(std::ceil(maxy)));
-            const float vSpan = std::max(1.f, box.v1 - box.v0);
-            const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan)));
+            *sl = std::max(0, static_cast<int>(std::floor(minx)));
+            *st = std::max(0, static_cast<int>(std::floor(miny)));
+            *sr = std::min(imgW, static_cast<int>(std::ceil(maxx)));
+            *sb = std::min(imgH, static_cast<int>(std::ceil(maxy)));
+        };
+        if (inkTest) {
+            minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
+            seedV0 = seedBox.v0;
+            seedV1 = seedBox.v1;
+            int sl, st, sr, sb;
+            aabbOf(seedBox, &sl, &st, &sr, &sb);
+            cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
+            if (useTint && uv) {
+                if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11,
+                        jx * (kJumpMax + 1), adaptive) && tintDst && !tintDst->empty()) {
+                    lookPtr = tintDst;
+                }
+            } else if (fillGrayJumpLook(*gray, sl, st, sr, sb, jx * (kJumpMax + 1), tintDst) &&
+                       tintDst && !tintDst->empty()) {
+                lookPtr = tintDst;
+            }
+        } else if (useTint && uv) {
+            int sl, st, sr, sb;
+            aabbOf(box, &sl, &st, &sr, &sb);
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11,
                     jx * (kJumpMax + 1), adaptive) && tintDst && !tintDst->empty()) {
@@ -2787,7 +2941,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
             seedBh = sh;
         }
         jumpOrientedOne(*eng, &box, imgW, imgH,
-            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedBh);
+            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedBh,
+            lookPtr, seedV0, seedV1, minRun);
         oriToQuad(box, op);
     }
     magY.release();

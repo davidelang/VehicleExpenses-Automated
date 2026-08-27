@@ -8799,3 +8799,7 @@ Alignment closeAlignHtml in finally. Multi-scale HTML footer in finally (no seco
 ## 2026-08-27 - Phase 1 (0408): Mixed fail (104) subset button
 
 MIXED_FAIL_READABLE_FILENAMES = JSON mixed_fail_readable (104, phone file order). Grid after Prod-ink fail. auto=mixedfail. FLOWS subset sentence. Expand/jump unchanged. Do not deploy.
+
+## 2026-08-27 - Phase 2 (0408): gray/color jump lookBin on seed Y
+
+colHas: gray/color maxInkRunCol >= 0.5s on original seed T/B (v). Tint from red seed. Energy still meanRectF vs energyRatio. JNI seedRect/sPx. Do not deploy.

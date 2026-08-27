@@ -996,6 +996,8 @@ object ContentExpandUtils {
         chromaMode: Int = 0,
         scratch: Mat? = null,
         seedHs: IntArray? = null,
+        seedRects: IntArray? = null,
+        sPxs: IntArray? = null,
     ): List<Rect>? {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return boxes
         if (boxes.isEmpty()) return emptyList()
@@ -1011,7 +1013,7 @@ object ContentExpandUtils {
         }
         val r = NativeImageUtils.jumpManyNative(
             gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
-            uv, chromaMode, scratch, seedHs,
+            uv, chromaMode, scratch, seedHs, seedRects, sPxs,
         ) ?: return null
         if (r.size < boxes.size * 4) return null
         return boxes.indices.map { i ->
@@ -1675,6 +1677,8 @@ object ContentExpandUtils {
         chromaMode: Int = 0,
         scratch: Mat? = null,
         seedBhs: FloatArray? = null,
+        seedQuadsOrig: FloatArray? = null,
+        sPxs: FloatArray? = null,
     ): List<OrientedQuad> {
         if (seeds.isEmpty()) return emptyList()
         val packed = FloatArray(seeds.size * 8)
@@ -1685,7 +1689,7 @@ object ContentExpandUtils {
         }
         val native = NativeImageUtils.jumpOrientedManyNative(
             gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
-            uv, chromaMode, scratch, seedBhs,
+            uv, chromaMode, scratch, seedBhs, seedQuadsOrig, sPxs,
         )
         if (native != null && native.size >= seeds.size * 8) {
             return seeds.indices.map { i ->
