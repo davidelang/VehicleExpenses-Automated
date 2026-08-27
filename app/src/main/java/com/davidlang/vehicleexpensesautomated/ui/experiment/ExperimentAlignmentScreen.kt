@@ -1886,7 +1886,7 @@ private fun buildHtmlHeader(
     colLabels: List<String>,
     metaHtml: String,
 ): String = buildString {
-    append(ExperimentReportHtml.documentHead("Deep Trace - $time"))
+    append(ExperimentReportHtml.documentHead("Deep Trace - $time", ExperimentReportHtml.Kind.ALIGNMENT))
     appendLine("<h1>OCR Refinement Experiment</h1><p>$metaHtml</p>")
     append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.ALIGNMENT, colLabels, metaHtml, bottom = false))
     append(ExperimentReportHtml.tableOpen(colLabels))

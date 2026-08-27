@@ -14,7 +14,11 @@ object ExperimentReportHtml {
         Kind.MULTISCALE -> "multiscale"
     }
 
-    fun css(): String = """
+    fun css(): String {
+        val hideCols = (1..40).joinToString("\n") { n ->
+            """body.hide-col-$n #report [data-col="$n"] { display: none !important; }"""
+        }
+        return """
 <style>
 body { font-family: sans-serif; margin: 0; }
 .ve-bar { position: sticky; top: 0; z-index: 30; background: #f7f7f7;
@@ -41,10 +45,12 @@ body { font-family: sans-serif; margin: 0; }
 body.hide-orig-details .orig-details { display: none; }
 body.hide-dump-details .dump-details { display: none; }
 body.hide-rec-crops .rec-crops { display: none; }
+$hideCols
 .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }
 .stat { font-size: 10px; color: #666; }
 </style>
 """.trimIndent()
+    }
 
     fun toolbar(kind: Kind, columnLabels: List<String>, metaHtml: String, bottom: Boolean): String {
         val rec = if (kind == Kind.PUMP) {
@@ -88,12 +94,14 @@ body.hide-rec-crops .rec-crops { display: none; }
 (function() {
   const KEY = "$key";
   const HAS_REC = $recJs;
-  const report = document.getElementById('report');
-  const bars = document.querySelectorAll('.ve-bar');
+  function reportEl() { return document.getElementById('report'); }
+  function topBar() {
+    return document.querySelector('.ve-bar:not(.bottom)') || document.querySelector('.ve-bar');
+  }
   function syncSticky() {
-    const topBar = document.querySelector('.ve-bar:not(.bottom)');
-    if (!topBar) return;
-    const h = topBar.getBoundingClientRect().height;
+    const tb = topBar();
+    if (!tb) return;
+    const h = tb.getBoundingClientRect().height;
     document.querySelectorAll('#report thead th').forEach(function(th) { th.style.top = h + 'px'; });
   }
   function photoStarts() {
@@ -125,6 +133,7 @@ body.hide-rec-crops .rec-crops { display: none; }
     rows[i].scrollIntoView({ block: 'start' });
   }
   function applyWidth() {
+    const report = reportEl();
     const unlim = document.querySelector('.ve-col-unlim');
     const colMax = document.querySelector('.ve-col-max');
     if (!unlim || !colMax || !report) return;
@@ -142,12 +151,13 @@ body.hide-rec-crops .rec-crops { display: none; }
     syncSticky();
   }
   function apply() {
-    document.querySelectorAll('.ve-bar input[data-col]').forEach(function(cb) {
+    var src = topBar();
+    if (!src) return;
+    src.querySelectorAll('input[data-col]').forEach(function(cb) {
       var id = cb.getAttribute('data-col');
       var on = cb.checked;
-      document.querySelectorAll('#report [data-col="' + id + '"]').forEach(function(el) {
-        el.style.display = on ? '' : 'none';
-      });
+      document.body.classList.toggle('hide-col-' + id, !on);
+      document.querySelectorAll('.ve-bar input[data-col="' + id + '"]').forEach(function(o) { o.checked = on; });
     });
     var orig = document.querySelector('.ve-orig-details');
     var dump = document.querySelector('.ve-dump-details');
@@ -163,9 +173,12 @@ body.hide-rec-crops .rec-crops { display: none; }
   function save() {
     try {
       var st = { cols: {}, orig: true, dump: true, rec: true, unlim: false, max: 500 };
-      document.querySelectorAll('.ve-bar:not(.bottom) input[data-col]').forEach(function(cb) {
-        st.cols[cb.getAttribute('data-col')] = cb.checked;
-      });
+      var src = topBar();
+      if (src) {
+        src.querySelectorAll('input[data-col]').forEach(function(cb) {
+          st.cols[cb.getAttribute('data-col')] = cb.checked;
+        });
+      }
       var orig = document.querySelector('.ve-orig-details');
       var dump = document.querySelector('.ve-dump-details');
       var rec = document.querySelector('.ve-rec-crops');
@@ -197,38 +210,44 @@ body.hide-rec-crops .rec-crops { display: none; }
       document.querySelectorAll('.ve-col-max').forEach(function(el) { if (st.max) el.value = st.max; });
     } catch (e) {}
   }
-  function bindBar(bar) {
-    bar.addEventListener('change', apply);
-    bar.querySelectorAll('.ve-col-max').forEach(function(el) {
-      el.addEventListener('input', applyWidth);
-      el.addEventListener('change', applyWidth);
-    });
-    bar.querySelectorAll('.ve-all').forEach(function(b) {
-      b.onclick = function() {
-        document.querySelectorAll('.ve-bar input[data-col]').forEach(function(cb) { cb.checked = true; });
-        apply();
-      };
-    });
-    bar.querySelectorAll('.ve-none').forEach(function(b) {
-      b.onclick = function() {
-        document.querySelectorAll('.ve-bar input[data-col]').forEach(function(cb) { cb.checked = false; });
-        apply();
-      };
-    });
-    bar.querySelectorAll('.ve-prev').forEach(function(b) { b.onclick = function() { goPhoto(-1); }; });
-    bar.querySelectorAll('.ve-next').forEach(function(b) { b.onclick = function() { goPhoto(1); }; });
+  function inBar(el) { return el && el.closest && el.closest('.ve-bar'); }
+  document.addEventListener('change', function(e) {
+    if (inBar(e.target)) apply();
+  });
+  document.addEventListener('input', function(e) {
+    var t = e.target;
+    if (t && t.classList && t.classList.contains('ve-col-max')) applyWidth();
+  });
+  document.addEventListener('click', function(e) {
+    var t = e.target;
+    if (!inBar(t)) return;
+    if (t.closest('.ve-all')) {
+      document.querySelectorAll('.ve-bar input[data-col]').forEach(function(cb) { cb.checked = true; });
+      apply();
+    } else if (t.closest('.ve-none')) {
+      document.querySelectorAll('.ve-bar input[data-col]').forEach(function(cb) { cb.checked = false; });
+      apply();
+    } else if (t.closest('.ve-prev')) {
+      goPhoto(-1);
+    } else if (t.closest('.ve-next')) {
+      goPhoto(1);
+    }
+  });
+  function boot() { load(); apply(); }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
   }
-  bars.forEach(bindBar);
-  load();
-  apply();
+  setTimeout(boot, 0);
   window.addEventListener('resize', syncSticky);
 })();
 </script>
 """.trimIndent()
     }
 
-    fun documentHead(title: String): String =
-        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/><title>$title</title>\n${css()}</head><body>\n"
+    fun documentHead(title: String, kind: Kind): String =
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/><title>$title</title>\n${css()}\n${script(kind)}</head><body>\n"
 
     fun tableOpen(headerCells: List<String>): String {
         val sb = StringBuilder()
@@ -242,6 +261,5 @@ body.hide-rec-crops .rec-crops { display: none; }
 
     fun footer(kind: Kind, columnLabels: List<String>, metaHtml: String): String =
         "</tbody></table>\n" +
-            toolbar(kind, columnLabels, metaHtml, bottom = true) + "\n" +
-            script(kind) + "\n</body></html>\n"
+            toolbar(kind, columnLabels, metaHtml, bottom = true) + "\n</body></html>\n"
 }

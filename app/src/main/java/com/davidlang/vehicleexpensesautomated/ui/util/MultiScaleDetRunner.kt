@@ -2058,7 +2058,7 @@ object MultiScaleDetRunner {
                 "<b>photos</b> ${photos.size} · pump=${counts["pump"] ?: 0} " +
                 "dash=${counts["dash"] ?: 0} expense=${counts["expense"] ?: 0}"
         f.bufferedWriter().use { w ->
-            w.append(ExperimentReportHtml.documentHead("Multi-scale det $ts"))
+            w.append(ExperimentReportHtml.documentHead("Multi-scale det $ts", ExperimentReportHtml.Kind.MULTISCALE))
             w.appendLine("<h1>Multi-scale det × multi-model + expand P</h1>")
             w.appendLine("<p class='meta'>$metaHtml</p>")
             w.appendLine(

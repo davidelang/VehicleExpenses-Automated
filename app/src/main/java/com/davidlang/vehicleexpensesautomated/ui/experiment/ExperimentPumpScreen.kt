@@ -3741,7 +3741,7 @@ private fun pBuildHtmlHeader(
     colLabels: List<String>,
     metaHtml: String,
 ): String = buildString {
-    append(ExperimentReportHtml.documentHead("Pump Experiment - $time"))
+    append(ExperimentReportHtml.documentHead("Pump Experiment - $time", ExperimentReportHtml.Kind.PUMP))
     appendLine("<h1>Pump Extraction Experiment</h1>")
     appendLine("<p>$metaHtml</p>")
     append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.PUMP, colLabels, metaHtml, bottom = false))

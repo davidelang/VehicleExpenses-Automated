@@ -8777,3 +8777,13 @@ ExperimentPumpScreen: pass original seedH/seedBh into jump-once; performHunkReco
 ## 2026-08-27 - CODE LANDED: rec-padding-col-dilution-binned-hist
 
 colHas samples inner \u00b10.5 seedH (JNI seedH/seedBh from original red). Rec crops 4px source-border (RecBufferFeed). 32-bin H/V + ink params in JSON and HTML tables. 18-col + G-- kept. Plan Status not writable (640). Do not deploy.
+
+## 2026-08-27 - Execute: HTML controls + mixed-fail jump ink
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plans: `dev-ai-interaction/plans/experiment-html-controls-dead-20260827-0157-plan.md` then `dev-ai-interaction/plans/mixed-fail-button-jump-ink-match-20260827-0408-plan.md`
+- Order: 0157 HTML chrome first (no expand/JSON), then 0408 subset button + gray/color jump lookBin + 0.5H pad. No blocking overlap. Do not deploy.
+
+## 2026-08-27 - Phase 1 (0157): HTML head script + CSS hide-col
+
+documentHead emits CSS hide-col-1..40 and script. apply() toggles body.hide-col-N (no inline display). Footer is table close + bottom bar only. Do not deploy.
