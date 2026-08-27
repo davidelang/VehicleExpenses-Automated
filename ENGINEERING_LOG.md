@@ -8661,3 +8661,7 @@ nativeJumpMany / nativeJumpOrientedMany take scratchPtr. chromaMag fills scratch
 ## 2026-08-26 - Phase 2: pass workspace.s.mat into jump-retract
 
 jumpRetractHorizontalMany / jumpRetractOrientedUMany take scratch. ExperimentPumpScreen jump sites pass workspace.s.mat.
+
+## 2026-08-26 - CODE LANDED: optimize-buffer-allocation-jump-retract
+
+Jump JNI reuses workspace.s.mat; chromaMag once into scratch; tint zeros local ROI. Plan Status not writable (640). Do not deploy.
