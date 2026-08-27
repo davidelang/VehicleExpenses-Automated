@@ -4,7 +4,7 @@ This document describes the tree-based reporting architecture used in the Pump E
 
 ## Active flows (current)
 
-Each column = fresh master. H/L/M/N/O/Q parked — `docs/obsolete/EXPERIMENT_PUMP_SETS.md`.
+Each column = fresh master. H/L/M/N/O/Q parked — `docs/obsolete/EXPERIMENT_PUMP_SETS.md`. Device HTML is one `pump_report_<ts>.html` per run (no `_partN`) with in-page column / orig / dump / rec-crop filters and prev/next photo.
 
 **19 columns:** `Set G--` (live QF) plus **18** (`3` masks × `3` bound strategies × `2` orientations). **Prod / G--** discovery **224+608**. v4/p4 dropped (`docs/obsolete/DROP_P4_P5_DET.md`). **Live QF** = G--: product det, **224+608**, verts **0.1/0.3/0.4/1.1**, horiz **0.5**. Scheduled `walk2`, legacy `color`, and `color2` are **parked**. Masks: **energy** = INTERIOR_ENERGY expand (jump-prod-like, `maxFrac=0.4`); **gray** = 7seg Y Otsu; **color** = 7seg `color_adaptive` (`chromaMode=4`: meanChromaInk≥12 → color2 dot≥0.50; else blend with C≥6; local c²&lt;eps² → Y contrast). Bound: **base** seed as-is; **tight** inset 16px (1 heat cell); **edge-retract** 1px expand if edge has ink else retract to first ink. Jump once then pad k. Ingest **keeps UV**; rec still **Y**. Glare `dropWide` **11×** `max(v0,4)`. L/R jump **iterative 1px** (`max_jumps=4`). Gray/color official `final` / PD blue = **k=1**. Energy `ocrScales` `[1.0]`.
 

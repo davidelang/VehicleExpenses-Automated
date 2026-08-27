@@ -8751,3 +8751,7 @@ ExperimentReportHtml.kt sticky filters, 500px col, prev/next. Pump writes pump_r
 ## 2026-08-26 - Phase 2: alignment single-file HTML chrome
 
 alignment_report_<ts>.html (no 5MB parts). Same toolbar minus Rec crops. Warp/timing in dump-details. Do not deploy.
+
+## 2026-08-26 - Phase 3: multi-scale HTML chrome + FLOWS
+
+Sparse multi-scale report uses shared toolbar; data-col photo/scale/models; dump-details on cell stats; prev/next by photo. FLOWS notes single pump HTML. Do not deploy.

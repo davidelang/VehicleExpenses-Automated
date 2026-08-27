@@ -10,6 +10,7 @@ import com.baidu.paddle.lite.MobileConfig
 import com.baidu.paddle.lite.PaddlePredictor
 import com.baidu.paddle.lite.PowerMode
 import com.davidlang.vehicleexpensesautomated.BuildConfig
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentReportHtml
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -1501,7 +1502,7 @@ object MultiScaleDetRunner {
                                     }
                                     val delta = if (angDiff > 0.01f) " <b>Δ</b>" else ""
                                     append(
-                                        "<div class='stat'>boxes=${redsFull.size} mass=$mass " +
+                                        "<div class='dump-details'><div class='stat'>boxes=${redsFull.size} mass=$mass " +
                                             "t=${tDet}ms ${feedStrat.name.lowercase()} " +
                                             "feed=${det?.liteH}x${det?.liteW}" +
                                             (if (det?.inputNocopy == true) " nocopy" else "") +
@@ -1511,7 +1512,7 @@ object MultiScaleDetRunner {
                                             "ang≥2=${"%.2f".format(Locale.US, angleGt1)}°" +
                                             delta +
                                             " · blue=P orange=P+jump" +
-                                            "</div>",
+                                            "</div></div>",
                                     )
                                 }
                                 val jsonBody = successJson(
@@ -2049,58 +2050,45 @@ object MultiScaleDetRunner {
         idByKey: Map<Triple<Int, Int, Int>, Int>,
     ) {
         val nRows = matrix.size
+        val shorts = models.map { it.removePrefix("PP-OCR").removeSuffix("_det") }
+        val colLabels = mutableListOf("# / photo", "outer / strategy") + shorts
+        val metaHtml =
+            "<b>Run</b> $ts · <b>Device</b> ${Build.MODEL} · " +
+                "<b>Version</b> ${BuildConfig.VERSION_NAME} · <b>arch</b> $arch · " +
+                "<b>photos</b> ${photos.size} · pump=${counts["pump"] ?: 0} " +
+                "dash=${counts["dash"] ?: 0} expense=${counts["expense"] ?: 0}"
         f.bufferedWriter().use { w ->
-            w.appendLine("<!DOCTYPE html><html><head><meta charset='utf-8'/>")
-            w.appendLine("<title>Multi-scale det $ts</title>")
-            w.appendLine(
-                "<style>" +
-                    "body{font-family:sans-serif;font-size:13px;background:#111;color:#eee}" +
-                    "table{border-collapse:collapse;width:100%}" +
-                    "th,td{border:1px solid #444;padding:3px;vertical-align:top;text-align:center}" +
-                    "th{background:#222}" +
-                    "img{max-width:100%;height:auto}" +
-                    ".meta{color:#9cf;font-size:12px}" +
-                    ".domain-pump{color:#8f8}.domain-dash{color:#fc8}.domain-expense{color:#f8f}" +
-                    ".stat{font-size:10px;color:#bbb}.pending{color:#666}" +
-                    ".scale{color:#90caf9;font-weight:600;font-size:11px}" +
-                    "</style></head><body>",
-            )
+            w.append(ExperimentReportHtml.documentHead("Multi-scale det $ts"))
             w.appendLine("<h1>Multi-scale det × multi-model + expand P</h1>")
+            w.appendLine("<p class='meta'>$metaHtml</p>")
             w.appendLine(
-                "<p class='meta'><b>Run</b> $ts · <b>Device</b> ${Build.MODEL} · " +
-                    "<b>Version</b> ${BuildConfig.VERSION_NAME} · <b>arch</b> $arch · " +
-                    "<b>threads</b> 4 · <b>photos</b> ${photos.size} · " +
-                    "pump=${counts["pump"] ?: 0} dash=${counts["dash"] ?: 0} " +
-                    "expense=${counts["expense"] ?: 0} · <b>rows</b> $nRows</p>",
-            )
-            w.appendLine(
-                "<p class='meta'>Matrix: <b>one row per outer</b> ($nRows). " +
+                "<p class='meta dump-details'>Matrix: <b>one row per outer</b> ($nRows). " +
                     "Feed = single if outer≤maxLite else H-span (pump/dash) or H/V by orientation (expense). " +
                     "maxLite product ${maxLiteSideForModel("product_det")}. " +
-                    "pump: no 4096, H-tile 50% ov. dash: ≥512 H-tile. expense: ≥1024. " +
-                    "<b>Boxes:</b> red=seed, blue=P, <span style='color:#fa0'>orange=P+jump</span>. " +
-                    "Blank = domain skip.</p>",
+                    "<b>Boxes:</b> red=seed, blue=P, orange=P+jump. Blank = domain skip.</p>",
             )
-            w.append("<table><tr><th style='width:140px'># / photo</th><th class='scale'>outer / strategy</th>")
-            for (m in models) {
-                val short = m.removePrefix("PP-OCR").removeSuffix("_det")
-                w.append("<th>$short<br><span class='stat'>maxLite=${maxLiteSideForModel(m)}</span></th>")
-            }
-            w.appendLine("</tr>")
+            w.append(
+                ExperimentReportHtml.toolbar(
+                    ExperimentReportHtml.Kind.MULTISCALE, colLabels, metaHtml, bottom = false,
+                ),
+            )
+            w.append(ExperimentReportHtml.tableOpen(colLabels))
 
             for (pi in photos.indices) {
                 val ref = photos[pi]
+                val photoNum = pi + 1
                 for (ri in matrix.indices) {
                     val row = matrix[ri]
-                    w.append("<tr>")
+                    w.append("<tr data-photo='$photoNum'>")
                     if (ri == 0) {
                         w.append(
-                            "<td rowspan='$nRows'><b>#${pi + 1}</b><br>" +
-                                "<span class='domain-${ref.domain}'>${ref.domain}</span><br>" +
-                                "<small>${esc(ref.displayName)}</small></td>",
+                            "<td rowspan='$nRows' data-col='0'><b>#$photoNum</b><br>" +
+                                "<small>${esc(ref.displayName)}</small>" +
+                                "<div class='orig-details'><br>" +
+                                "<span class='domain-${ref.domain}'>${ref.domain}</span></div></td>",
                         )
                     }
-                    w.append("<th class='scale'>${esc(row.label)}</th>")
+                    w.append("<th class='scale' data-col='1'>${esc(row.label)}</th>")
                     for (mi in models.indices) {
                         val id = idByKey[Triple(mi, pi, ri)]
                             ?: error("missing id for mi=$mi pi=$pi row=$ri")
@@ -2109,7 +2097,7 @@ object MultiScaleDetRunner {
                             mName, ref.domain, row.strategy, row.outer,
                             ref.nativeW, ref.nativeH,
                         )
-                        w.append("<td id='c${idTag(id)}'>")
+                        w.append("<td id='c${idTag(id)}' data-col='${mi + 2}'>")
                         w.append(htmlBegin(id))
                         if (skip != null) {
                             w.append("")
@@ -2122,7 +2110,11 @@ object MultiScaleDetRunner {
                     w.appendLine("</tr>")
                 }
             }
-            w.appendLine("</table></body></html>")
+            w.append(
+                ExperimentReportHtml.footer(
+                    ExperimentReportHtml.Kind.MULTISCALE, colLabels, metaHtml,
+                ),
+            )
         }
     }
 
