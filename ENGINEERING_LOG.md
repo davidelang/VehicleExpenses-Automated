@@ -8737,3 +8737,13 @@ seg7_tele metadata + assembly inkTelemetry. HTML dump-details per-box yInk/yBg/C
 ## 2026-08-26 - CODE LANDED: retract-clamp-telemetry-runlength-hist
 
 10% seedH retract clamp; 32-bin H/V runlength + ink/bg telemetry in JNI/JSON/HTML. 18-col + G-- kept. Plan Status not writable (640). Do not deploy.
+
+## 2026-08-26 - Execute: experiment-html-filter-single-file
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/experiment-html-filter-single-file-20260826-2326-plan.md`
+- Scope: One HTML file per run; sticky column/orig/dump/rec filters; prev/next photo. No JSON/QF/expand change. Do not deploy.
+
+## 2026-08-26 - Phase 1: shared HTML chrome + pump single file
+
+ExperimentReportHtml.kt sticky filters, 500px col, prev/next. Pump writes pump_report_<ts>.html (no _partN). orig/dump/rec wraps + data-col. Do not deploy.

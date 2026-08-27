@@ -694,10 +694,6 @@ suspend fun runPumpExperiment(
     logHeapState(context, "after-json-header-write")
     Log.i("PUMP_JSON", "wrote header early, total_photos=$total")
 
-    var partCount = 1
-    val maxSizeBytes = 50 * 1024 * 1024 // 50MB HTML parts (JPEG previews only; JSON streamed to main file, frags deleted per row)
-    var currentSize = 0
-    val footer = "</table></body></html>"
     val experimentRecSet = NativePaddleEngine.recBufferSet
     val experimentDetSet512x128 = BufferSet(512, 128)
     val masterBuffer = BufferSet(1, 1)
@@ -727,13 +723,16 @@ suspend fun runPumpExperiment(
         File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
     }
 
-    fun pStartNewFile(): File {
-        val f = File(reportDir, "pump_report_${timestamp}_part${partCount++}.html")
-        f.writeText(pBuildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, deviceModel, flows))
-        return f
-    }
-
-    var currentFile = pStartNewFile()
+    val pumpColLabels = pumpColumnLabels(flows)
+    val pumpMetaHtml =
+        "<b>Run:</b> $timestamp | <b>Device:</b> $deviceModel | <b>Version:</b> ${BuildConfig.VERSION_NAME} | <b>Total:</b> $total"
+    val currentFile = File(reportDir, "pump_report_${timestamp}.html")
+    currentFile.writeText(
+        pBuildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, deviceModel, pumpColLabels, pumpMetaHtml),
+    )
+    val footer = ExperimentReportHtml.footer(
+        ExperimentReportHtml.Kind.PUMP, pumpColLabels, pumpMetaHtml,
+    )
 
     photos.forEachIndexed { index, file ->
         val fullRow = allPhotos.indexOfFirst { it.name == file.name } + 1
@@ -3281,15 +3280,8 @@ suspend fun runPumpExperiment(
                 diagnostic = meta.diagnostic
             )
 
-            Log.d("PUMP_HTML", "row=$fullRow rowHtml.len=${rowHtml.length} currentSize=$currentSize (part=$partCount)")
-            if (currentSize + rowHtml.length > maxSizeBytes) {
-                currentFile.appendText(footer)
-                Log.i("PUMP_HTML", "starting new HTML part $partCount at row $fullRow")
-                currentFile = pStartNewFile()
-                currentSize = 0
-            }
+            Log.d("PUMP_HTML", "row=$fullRow rowHtml.len=${rowHtml.length}")
             currentFile.appendText(rowHtml)
-            currentSize += rowHtml.length
 
             val photoJson = pSerializePhotoResultToJson(
                 fullRow, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root, originalHistogram
@@ -3621,7 +3613,20 @@ private fun pRecBuffersHtml(br: PumpBranch): String {
             emitCands(cands, "candidates")
         }
     }
-    return sb.toString()
+    if (sb.isEmpty()) return ""
+    return "<div class='rec-crops'>$sb</div>"
+}
+
+private fun pumpColumnLabels(flows: List<String>): List<String> {
+    val sorted = flows.toSortedSet()
+    val labels = mutableListOf("# &amp; Original")
+    val hasML = if (sorted.isNotEmpty()) setOf(sorted.first()) else emptySet()
+    sorted.forEach { flow ->
+        if (flow in hasML) labels.add("$flow ML")
+        labels.add("$flow Paddle")
+    }
+    labels.add("Final Comparison")
+    return labels
 }
 
 private fun seg7TeleJson(t: ContentExpandUtils.Seg7Telemetry): JSONObject {
@@ -3705,17 +3710,20 @@ private fun pSeg7TeleHtml(br: PumpBranch): String {
     return sb.toString()
 }
 
-private fun pBuildHtmlHeader(time: String, total: Int, version: String, device: String, flows: List<String>): String = buildString {
-    appendLine("<html><head><title>Pump Experiment - $time</title>")
-    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .res-table { width: 100%; border: none; font-size: 20px; } .res-table th { background: #f0f0f0; }</style></head><body>")
-    appendLine("<h1>Pump Extraction Experiment</h1><p><b>Run:</b> $time | <b>Device:</b> $device | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
-    val sorted = flows.toSortedSet()
-    val hasML = if (sorted.isNotEmpty()) setOf(sorted.first()) else emptySet()  // data-driven from subBranches presence (ML only on first/A); no name if; matches row hasML intent
-    sorted.forEach { flow ->
-        if (flow in hasML) appendLine("<th style='width:350px;'>$flow ML</th>")
-        appendLine("<th style='width:350px;'>$flow Paddle</th>")
-    }
-    appendLine("<th style='width:600px;'>Final Comparison</th></tr>")
+private fun pBuildHtmlHeader(
+    time: String,
+    total: Int,
+    version: String,
+    device: String,
+    colLabels: List<String>,
+    metaHtml: String,
+): String = buildString {
+    append(ExperimentReportHtml.documentHead("Pump Experiment - $time"))
+    appendLine("<h1>Pump Extraction Experiment</h1>")
+    appendLine("<p>$metaHtml</p>")
+    append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.PUMP, colLabels, metaHtml, bottom = false))
+    append(ExperimentReportHtml.tableOpen(colLabels))
+    appendLine("<!-- total=$total device=$device version=$version -->")
 }
 
 private fun pBuildHtmlRowDynamic(
@@ -3745,12 +3753,14 @@ private fun pBuildHtmlRowDynamic(
             val q = br.metadata["quad_angle_med"]
             if (q != null) "$name: $t° (quad $q°)" else "$name: $t°"
         }
-    appendLine("<tr><td><b>#$rowIndex</b><br><small>$fileName</small><br><small>$rowHtml</small>$diagHtml<br><span style=\"font-size:6px\"><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span></td>")
+    appendLine("<tr id=\"ve-row-$rowIndex\" data-photo=\"$rowIndex\"><td data-col=\"0\"><b>#$rowIndex</b><br><small>$fileName</small><div class=\"orig-details\"><br><small>$rowHtml</small>$diagHtml<br><span style=\"font-size:6px\"><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span></div></td>")
 
+    var colIdx = 1
     val hasML = root.subBranches.filter { (_, br) -> br.images.containsKey("ML") && br.images["ML"]?.isNotEmpty() == true }.keys.toSet()  // data-driven from subBranches presence, no name if
     root.subBranches.toSortedMap().forEach { (name, br) ->
         if (name in hasML) {
-            appendLine("<td><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
+            appendLine("<td data-col=\"$colIdx\"><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
+            colIdx++
         }
         val pdB64 = br.images["PD"] ?: ""
         val sPerRed = br.metadata["s_per_red"]
@@ -3764,7 +3774,8 @@ private fun pBuildHtmlRowDynamic(
             // red-only + full PD pair (when branch populates the key from explicit helper call)
             val redOnly = br.images["PD_red_only"] ?: ""
             val full = br.images["PD"] ?: ""
-            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><br><small>Red boxes only (after filter)</small><br><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><br><small>All annotations (red+blue+orange) as before</small>$sHtml$teleHtml${pRecBuffersHtml(br)}</td>")
+            appendLine("<td data-col=\"$colIdx\"><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><div class='dump-details'><small>Red boxes only (after filter)</small><br><small>All annotations (red+blue+orange) as before</small>$sHtml$teleHtml</div>${pRecBuffersHtml(br)}</td>")
+            colIdx++
         } else if (br.images.containsKey("rawC")) {
             val raw = br.images["rawC"] ?: ""
             val pushed = br.images["pushedC"] ?: ""
@@ -3793,13 +3804,15 @@ private fun pBuildHtmlRowDynamic(
                 }
             }
             perRedHtml.append("</tr></table>")
-            appendLine("<td><b>$name Paddle:</b><br><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:100%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:100%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:100%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:100%;'><br><small>After</small></td></tr></table>$perRedHtml<img src='data:image/jpeg;base64,$pdB64'></td>")
+            appendLine("<td data-col=\"$colIdx\"><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'><div class='dump-details'><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:100%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:100%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:100%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:100%;'><br><small>After</small></td></tr></table>$perRedHtml$sHtml$teleHtml</div>${pRecBuffersHtml(br)}</td>")
+            colIdx++
         } else {
-            appendLine("<td><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'>$sHtml$teleHtml${pRecBuffersHtml(br)}</td>")
+            appendLine("<td data-col=\"$colIdx\"><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'><div class='dump-details'>$sHtml$teleHtml</div>${pRecBuffersHtml(br)}</td>")
+            colIdx++
         }
     }
 
-    appendLine("<td><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
+    appendLine("<td data-col=\"$colIdx\"><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
     root.subBranches.toSortedMap().forEach { (name, br) ->
         br.pathResults.forEach { (eng, res) ->
             appendLine("<tr><td>$name:$eng</td>")
