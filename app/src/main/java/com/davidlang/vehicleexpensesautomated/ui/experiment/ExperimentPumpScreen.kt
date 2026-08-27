@@ -733,7 +733,14 @@ suspend fun runPumpExperiment(
     val footer = ExperimentReportHtml.footer(
         ExperimentReportHtml.Kind.PUMP, pumpColLabels, pumpMetaHtml,
     )
+    var htmlClosed = false
+    fun closePumpHtml() {
+        if (htmlClosed) return
+        currentFile.appendText(footer)
+        htmlClosed = true
+    }
 
+    try {
     photos.forEachIndexed { index, file ->
         val fullRow = allPhotos.indexOfFirst { it.name == file.name } + 1
         try {
@@ -3334,7 +3341,9 @@ suspend fun runPumpExperiment(
             Log.w("PUMP_FRAG", "partial run - JSON may be incomplete (no final footer) at row $fullRow")
         }
     }
-    currentFile.appendText(footer)
+    } finally {
+        closePumpHtml()
+    }
 
     jsonWriter.write(jsonFooter)
     jsonWriter.close()
@@ -3631,9 +3640,7 @@ private fun pRecBuffersHtml(br: PumpBranch): String {
 private fun pumpColumnLabels(flows: List<String>): List<String> {
     val sorted = flows.toSortedSet()
     val labels = mutableListOf("# &amp; Original")
-    val hasML = if (sorted.isNotEmpty()) setOf(sorted.first()) else emptySet()
     sorted.forEach { flow ->
-        if (flow in hasML) labels.add("$flow ML")
         labels.add("$flow Paddle")
     }
     labels.add("Final Comparison")
@@ -3779,12 +3786,7 @@ private fun pBuildHtmlRowDynamic(
     appendLine("<tr id=\"ve-row-$rowIndex\" data-photo=\"$rowIndex\"><td data-col=\"0\"><b>#$rowIndex</b><br><small>$fileName</small><div class=\"orig-details\"><br><small>$rowHtml</small>$diagHtml<br><span style=\"font-size:6px\"><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span></div></td>")
 
     var colIdx = 1
-    val hasML = root.subBranches.filter { (_, br) -> br.images.containsKey("ML") && br.images["ML"]?.isNotEmpty() == true }.keys.toSet()  // data-driven from subBranches presence, no name if
     root.subBranches.toSortedMap().forEach { (name, br) ->
-        if (name in hasML) {
-            appendLine("<td data-col=\"$colIdx\"><b>$name ML:</b><br><img src='data:image/jpeg;base64,${br.images["ML"]}'></td>")
-            colIdx++
-        }
         val pdB64 = br.images["PD"] ?: ""
         val sPerRed = br.metadata["s_per_red"]
         val sHtml = if (!sPerRed.isNullOrBlank() && sPerRed.length <= 100) {

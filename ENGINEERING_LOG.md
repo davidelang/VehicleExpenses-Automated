@@ -8787,3 +8787,7 @@ colHas samples inner \u00b10.5 seedH (JNI seedH/seedBh from original red). Rec c
 ## 2026-08-27 - Phase 1 (0157): HTML head script + CSS hide-col
 
 documentHead emits CSS hide-col-1..40 and script. apply() toggles body.hide-col-N (no inline display). Footer is table close + bottom bar only. Do not deploy.
+
+## 2026-08-27 - Phase 2 (0157): pump labels + finally footer
+
+pumpColumnLabels: no phantom ML. Paddle tds start data-col=1 matching header. closePumpHtml in finally so cancel/crash still closes HTML. Do not deploy.
