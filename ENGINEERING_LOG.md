@@ -8715,3 +8715,7 @@ chromaMode 4 hybrid in fillChromaTintMask. tight/edge-retract in seg7 AABB/orien
 ## 2026-08-26 - Phase 2: 18-col registry + boundStrategy JNI
 
 Scheduled G-- + 18 (energy/gray/color_adaptive × base/tight/retract × AABB/rot). Parked walk2/color/color2/jump-prod/rot-ink. Jump-once unchanged. FLOWS 19-col table. Do not deploy.
+
+## 2026-08-26 - CODE LANDED: optimize-color2-vertical-scratch-math (revised 21:05)
+
+color_adaptive chromaMode 4; tight/edge-retract; 18 cols + G--. Scratch/hypot/jump-once kept. walk2/color/color2 parked. Plan Status not writable (640). Do not deploy.
