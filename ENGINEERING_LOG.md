@@ -8840,3 +8840,7 @@ Unscheduled six *-base columns (13 remain). Gray/color seg7 and energy AABB pack
 
 - Oriented ±v/±u same payload as AABB; dump-details SVG (score, thr, seed/walk/jump ticks).
 - Measurement-only. Expand/jump/k-pad/horiz_pad, 0.5s/0.65/10% retract, G--/QF unchanged. Do not deploy.
+
+## 2026-08-27 - Strike: withOfficialUv round/coerceIn types (1432 Phase 2)
+
+kotlin.math.round(Float) is Float; coerceIn(0, vs) wants Int. Fixed to roundToInt. Native cmake succeeded.

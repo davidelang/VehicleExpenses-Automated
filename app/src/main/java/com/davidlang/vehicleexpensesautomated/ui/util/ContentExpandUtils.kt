@@ -1289,10 +1289,10 @@ object ContentExpandUtils {
             val vs = vScores.size
             val hs = hScores.size
             return copy(
-                walkT = (kotlin.math.round(ov0) - vOrigin).coerceIn(0, vs),
-                walkB = (kotlin.math.round(ov1) - vOrigin).coerceIn(0, vs),
-                jumpL = (kotlin.math.round(ou0) - hOrigin).coerceIn(0, hs),
-                jumpR = (kotlin.math.round(ou1) - hOrigin).coerceIn(0, hs),
+                walkT = (ov0.roundToInt() - vOrigin).coerceIn(0, vs),
+                walkB = (ov1.roundToInt() - vOrigin).coerceIn(0, vs),
+                jumpL = (ou0.roundToInt() - hOrigin).coerceIn(0, hs),
+                jumpR = (ou1.roundToInt() - hOrigin).coerceIn(0, hs),
             )
         }
 
