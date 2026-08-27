@@ -1458,6 +1458,7 @@ suspend fun runPumpExperiment(
                         chromaMode = expandMode,
                         gapFrac = gapFrac,
                         minSeedHsToFreeze = minSeedHsToFreeze,
+                        scratch = workspace.s.mat,
                     ) ?: seeds.map { r ->
                         when (expandMode) {
                             2, 3 -> ContentExpandUtils.expand7segFromSeed(
@@ -1476,23 +1477,25 @@ suspend fun runPumpExperiment(
                     val walks = seeds.indices.map { i ->
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
                     }
-                    fun inkBoxesFor(kk: Float): List<android.graphics.Rect> {
-                        val padded = walks.map { (seed, walked, stroke) ->
-                            ContentExpandUtils.padVertByStrokes(
-                                walked, seed, kk, stroke.sPx, imgW, imgH,
-                            )
-                        }
-                        return ContentExpandUtils.jumpRetractHorizontalMany(
-                            workspace.p.mat, padded, jumpOpts,
+                    val walked = walks.map { it.second }
+                    val jumpedOnce = ContentExpandUtils.jumpRetractHorizontalMany(
+                        workspace.p.mat, walked, jumpOpts,
+                        uv = if (expandMode != 0) workspace.p.uvMat else null,
+                        chromaMode = expandMode,
+                        scratch = workspace.s.mat,
+                    ) ?: walked.map {
+                        ContentExpandUtils.jumpRetractHorizontal(
+                            workspace.p.mat, it, jumpOpts,
                             uv = if (expandMode != 0) workspace.p.uvMat else null,
                             chromaMode = expandMode,
                             scratch = workspace.s.mat,
-                        ) ?: padded.map {
-                            ContentExpandUtils.jumpRetractHorizontal(
-                                workspace.p.mat, it, jumpOpts,
-                                uv = if (expandMode != 0) workspace.p.uvMat else null,
-                                chromaMode = expandMode,
-                                scratch = workspace.s.mat,
+                        )
+                    }
+                    fun inkBoxesFor(kk: Float): List<android.graphics.Rect> {
+                        return walks.indices.map { i ->
+                            ContentExpandUtils.padVertByStrokes(
+                                jumpedOnce[i], walks[i].first, kk,
+                                walks[i].third.sPx, imgW, imgH,
                             )
                         }
                     }
@@ -1509,7 +1512,7 @@ suspend fun runPumpExperiment(
                     customOrangeG = emptyList()
                     seg7Strokes = walks.map { it.third }
                     inkWalkSeeds = walks.map { it.first }
-                    inkWalkBoxes = walks.map { it.second }
+                    inkWalkBoxes = jumpedOnce
                     inkJumpOpts = jumpOpts
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
@@ -1608,23 +1611,10 @@ suspend fun runPumpExperiment(
                 if (seg7Stroke && inkJumpOpts != null && inkWalkSeeds.isNotEmpty()) {
                     val opts = inkJumpOpts
                     fun inkRectsFor(kk: Float): List<android.graphics.Rect> {
-                        val padded = inkWalkSeeds.indices.map { i ->
+                        return inkWalkSeeds.indices.map { i ->
                             ContentExpandUtils.padVertByStrokes(
                                 inkWalkBoxes[i], inkWalkSeeds[i], kk,
                                 seg7Strokes[i].sPx, imgW, imgH,
-                            )
-                        }
-                        return ContentExpandUtils.jumpRetractHorizontalMany(
-                            workspace.p.mat, padded, opts,
-                            uv = if (expandMode != 0) workspace.p.uvMat else null,
-                            chromaMode = expandMode,
-                            scratch = workspace.s.mat,
-                        ) ?: padded.map {
-                            ContentExpandUtils.jumpRetractHorizontal(
-                                workspace.p.mat, it, opts,
-                                uv = if (expandMode != 0) workspace.p.uvMat else null,
-                                chromaMode = expandMode,
-                                scratch = workspace.s.mat,
                             )
                         }
                     }
@@ -2055,26 +2045,27 @@ suspend fun runPumpExperiment(
                             if (expandMode != 0) workspace.p.uvMat else null,
                             seedQuads,
                             chromaMode = expandMode,
+                            scratch = workspace.s.mat,
+                        )
+                        val jumpedQuads = ContentExpandUtils.jumpRetractOrientedUMany(
+                            gray, segs.map { it.quad }, jumpOpts,
+                            uv = if (expandMode != 0) workspace.p.uvMat else null,
+                            chromaMode = expandMode,
+                            scratch = workspace.s.mat,
                         )
                         fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> {
-                            val padded = segs.indices.map { i ->
+                            return segs.indices.map { i ->
                                 ContentExpandUtils.padOrientedByStrokes(
-                                    segs[i].quad, seedQuads[i], kk, segs[i].stroke.sPx,
+                                    jumpedQuads[i], seedQuads[i], kk, segs[i].stroke.sPx,
                                 )
                             }
-                            return ContentExpandUtils.jumpRetractOrientedUMany(
-                                gray, padded, jumpOpts,
-                                uv = if (expandMode != 0) workspace.p.uvMat else null,
-                                chromaMode = expandMode,
-                                scratch = workspace.s.mat,
-                            )
                         }
                         expandedQuads = inkQuadsFor(1f)
                         hitCaps = expandedQuads.map { false }
                         inkStrokes = segs.map { it.stroke }
                         expDiag = emptyList()
                         inkWalkSeeds = seedQuads
-                        inkWalkBoxes = segs.map { it.quad }
+                        inkWalkBoxes = jumpedQuads
                         inkJumpOptsRot = jumpOpts
                         branch.metadata["s_per_red"] =
                             inkStrokes.joinToString(",") { it.sPx.toString() }
@@ -2151,18 +2142,12 @@ suspend fun runPumpExperiment(
                     if (seg7Stroke && inkJumpOptsRot != null) {
                         val opts = inkJumpOptsRot
                         fun inkQuadsForK(kk: Float): List<ContentExpandUtils.OrientedQuad> {
-                            val padded = inkWalkSeeds.indices.map { i ->
+                            return inkWalkSeeds.indices.map { i ->
                                 ContentExpandUtils.padOrientedByStrokes(
                                     inkWalkBoxes[i], inkWalkSeeds[i], kk,
                                     inkStrokes[i].sPx,
                                 )
                             }
-                            return ContentExpandUtils.jumpRetractOrientedUMany(
-                                gray, padded, opts,
-                                uv = if (expandMode != 0) workspace.p.uvMat else null,
-                                chromaMode = expandMode,
-                                scratch = workspace.s.mat,
-                            )
                         }
                         var nOcr = 0
                         var officialCands: List<RedBoxOcrCandidate> = emptyList()

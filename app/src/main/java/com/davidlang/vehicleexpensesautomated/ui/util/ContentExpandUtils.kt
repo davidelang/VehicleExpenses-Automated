@@ -1248,6 +1248,7 @@ object ContentExpandUtils {
         chromaMode: Int = -1,
         gapFrac: Float = SEG7_GAP_FRAC,
         minSeedHsToFreeze: Float = 0f,
+        scratch: Mat? = null,
     ): List<Seg7Expand>? {
         val mode = if (chromaMode >= 0) chromaMode else if (chroma) 1 else 0
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
@@ -1265,7 +1266,7 @@ object ContentExpandUtils {
             packed[i * 4 + 3] = s.bottom
         }
         val r = NativeImageUtils.seg7ManyNative(
-            gray, uv, packed, mode, gapFrac, minSeedHsToFreeze,
+            gray, uv, packed, mode, gapFrac, minSeedHsToFreeze, scratch,
         ) ?: return null
         if (r.size < seeds.size * 8) return null
         return seeds.indices.map { i ->
@@ -1512,6 +1513,7 @@ object ContentExpandUtils {
         uv: Mat?,
         seeds: List<OrientedQuad>,
         chromaMode: Int = 0,
+        scratch: Mat? = null,
     ): List<Seg7OrientedExpand> {
         if (seeds.isEmpty()) return emptyList()
         val packed = FloatArray(seeds.size * 8)
@@ -1520,7 +1522,9 @@ object ContentExpandUtils {
             val o = i * 8
             for (k in 0 until 8) packed[o + k] = p[k]
         }
-        val native = NativeImageUtils.seg7OrientedManyNative(gray, uv, packed, chromaMode)
+        val native = NativeImageUtils.seg7OrientedManyNative(
+            gray, uv, packed, chromaMode, scratch,
+        )
         if (native != null && native.size >= seeds.size * 9) {
             return seeds.indices.map { i ->
                 val o = i * 9

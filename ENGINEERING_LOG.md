@@ -8693,3 +8693,7 @@ Rot look-band dropWide 11× on u/v look mat (not toAabb). needFb strokeShare/max
 ## 2026-08-26 - Phase 1: nativeSeg7 scratchPtr + tint squared math
 
 nativeSeg7Many / nativeSeg7OrientedMany take scratchPtr; tint/chromaMag reuse BufferSet.s. fillChromaTintMask: float UV row pointers; classify uses c2 / squared dot (no per-pixel hypot).
+
+## 2026-08-26 - Phase 2: scratch into 7seg + jump once then pad k
+
+expand7segFromSeedMany/Oriented pass workspace.s.mat. AABB and rot: one horizontal jump on walked boxes, then padVert/padOriented for each k (no extra-k re-jump).
