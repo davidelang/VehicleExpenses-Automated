@@ -8755,3 +8755,7 @@ alignment_report_<ts>.html (no 5MB parts). Same toolbar minus Rec crops. Warp/ti
 ## 2026-08-26 - Phase 3: multi-scale HTML chrome + FLOWS
 
 Sparse multi-scale report uses shared toolbar; data-col photo/scale/models; dump-details on cell stats; prev/next by photo. FLOWS notes single pump HTML. Do not deploy.
+
+## 2026-08-26 - CODE LANDED: experiment-html-filter-single-file
+
+One HTML file per pump/alignment run (no _partN). Shared sticky filters, 500px cols, prev/next, localStorage. Pump Rec crops only. JSON/QF/expand unchanged. Do not deploy.
