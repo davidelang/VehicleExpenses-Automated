@@ -8697,3 +8697,7 @@ nativeSeg7Many / nativeSeg7OrientedMany take scratchPtr; tint/chromaMag reuse Bu
 ## 2026-08-26 - Phase 2: scratch into 7seg + jump once then pad k
 
 expand7segFromSeedMany/Oriented pass workspace.s.mat. AABB and rot: one horizontal jump on walked boxes, then padVert/padOriented for each k (no extra-k re-jump).
+
+## 2026-08-26 - CODE LANDED: optimize-color2-vertical-scratch-math
+
+nativeSeg7 uses workspace.s; tint classify is float/squared (no per-pixel hypot). Jump once then pad k. Plan Status not writable (640). Do not deploy.
