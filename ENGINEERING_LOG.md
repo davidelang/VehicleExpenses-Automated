@@ -8679,3 +8679,7 @@ seg7OrientedOne: resample look mat along ±v, seed Otsu, dropWide 11×max(v0,4);
 ## 2026-08-26 - Phase 2: rot skip extra-k + FLOWS
 
 Rot extra-k skip: k=1 asis letters and no digits → reuse k=1 asis/digits, recB64 empty. k=0 still a variant. FLOWS: rot look-band 11× dropWide; skip extra-k same as AABB.
+
+## 2026-08-26 - CODE LANDED: rot-look-dropwide-skip-extra-k
+
+Rot look-band dropWide 11× on u/v look mat (not toAabb). needFb strokeShare/maxRunOverW. Extra-k skip same as AABB. k=0 kept. Plan CODE LANDED. Do not deploy.
