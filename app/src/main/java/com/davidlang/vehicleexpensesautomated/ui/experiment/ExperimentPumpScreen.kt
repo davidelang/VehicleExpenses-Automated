@@ -2167,26 +2167,79 @@ suspend fun runPumpExperiment(
                         var nOcr = 0
                         var officialCands: List<RedBoxOcrCandidate> = emptyList()
                         var officialCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(emptyList())
+                        var skipExtraK = BooleanArray(0)
                         for (kk in listOf(1f, 0f, 2f, 3f, 4f)) {
                             val quads = if (kk == 1f) expandedQuads else inkQuadsForK(kk)
                             val rects = quads.map { it.toAabb() }
-                            val ocrK = ocrPumpOrientedQuads(quads, gray, imgW, imgH)
-                            nOcr += quads.size
-                            val candsK = buildRedBoxCandidates(
-                                rects, ocrK.asis, ocrK.digits,
-                                ocrK.asisProbs, ocrK.digitsProbs, ocrK.recB64,
-                                recWList = ocrK.recW, recHList = ocrK.recH,
-                            )
-                            val cvK = PumpCostVolUtils.classifyCostVolFromBoxOcr(candsK)
+                            val candsK: List<RedBoxOcrCandidate>
+                            if (kk == 1f) {
+                                val ocrK = ocrPumpOrientedQuads(quads, gray, imgW, imgH)
+                                nOcr += quads.size
+                                candsK = buildRedBoxCandidates(
+                                    rects, ocrK.asis, ocrK.digits,
+                                    ocrK.asisProbs, ocrK.digitsProbs, ocrK.recB64,
+                                    recWList = ocrK.recW, recHList = ocrK.recH,
+                                )
+                                officialCands = candsK
+                                officialCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(candsK)
+                                skipExtraK = BooleanArray(candsK.size) { i ->
+                                    val asis = candsK[i].asis
+                                    asis.any { it.isLetter() } && asis.none { it.isDigit() }
+                                }
+                                branch.metadata["seg7_skip_extra_k_letter"] =
+                                    skipExtraK.count { it }.toString()
+                            } else {
+                                val ocrIdx = ArrayList<Int>()
+                                val ocrQuads = ArrayList<ContentExpandUtils.OrientedQuad>()
+                                quads.indices.forEach { i ->
+                                    if (i >= skipExtraK.size || !skipExtraK[i]) {
+                                        ocrIdx.add(i)
+                                        ocrQuads.add(quads[i])
+                                    }
+                                }
+                                val ocrK = if (ocrQuads.isEmpty()) {
+                                    PumpRectOcrLists(emptyList(), emptyList())
+                                } else {
+                                    ocrPumpOrientedQuads(ocrQuads, gray, imgW, imgH)
+                                }
+                                nOcr += ocrQuads.size
+                                val ocrAt = HashMap<Int, Int>(ocrIdx.size)
+                                ocrIdx.forEachIndexed { j, i -> ocrAt[i] = j }
+                                candsK = quads.indices.map { i ->
+                                    val j = ocrAt[i]
+                                    if (j == null) {
+                                        val src = officialCands.getOrElse(i) {
+                                            RedBoxOcrCandidate("Red${i + 1}", "", "")
+                                        }
+                                        src.copy(
+                                            label = "Red${i + 1}",
+                                            rect = rects[i],
+                                            recB64 = "",
+                                            recW = 0,
+                                            recH = 0,
+                                        )
+                                    } else {
+                                        RedBoxOcrCandidate(
+                                            "Red${i + 1}",
+                                            ocrK.asis.getOrElse(j) { "" },
+                                            ocrK.digits.getOrElse(j) { "" },
+                                            ocrK.asisProbs.getOrElse(j) { "" },
+                                            ocrK.digitsProbs.getOrElse(j) { "" },
+                                            rects[i],
+                                            ocrK.recB64.getOrElse(j) { "" },
+                                            ocrK.recW.getOrElse(j) { 0 },
+                                            ocrK.recH.getOrElse(j) { 0 },
+                                        )
+                                    }
+                                }
+                            }
+                            val cvK = if (kk == 1f) officialCv else
+                                PumpCostVolUtils.classifyCostVolFromBoxOcr(candsK)
                             variants.put(
                                 ocrScaleVariantJson(
                                     kk, rects, quads, candsK, cvK, kind = "ink",
                                 ),
                             )
-                            if (kk == 1f) {
-                                officialCands = candsK
-                                officialCv = cvK
-                            }
                         }
                         energyRects = expandedQuads.map { it.toAabb() }
                         energyCands = officialCands

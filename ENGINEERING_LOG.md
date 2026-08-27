@@ -8675,3 +8675,7 @@ Jump JNI reuses workspace.s.mat; chromaMag once into scratch; tint zeros local R
 ## 2026-08-26 - Phase 1: rot look-band dropWide + needFb
 
 seg7OrientedOne: resample look mat along ±v, seed Otsu, dropWide 11×max(v0,4); hasBar reads lookBin. needFb adds strokeShare/maxRunOverW. Kotlin fallback same. No toAabb. Look mat is local, not workspace.s.
+
+## 2026-08-26 - Phase 2: rot skip extra-k + FLOWS
+
+Rot extra-k skip: k=1 asis letters and no digits → reuse k=1 asis/digits, recB64 empty. k=0 still a variant. FLOWS: rot look-band 11× dropWide; skip extra-k same as AABB.
