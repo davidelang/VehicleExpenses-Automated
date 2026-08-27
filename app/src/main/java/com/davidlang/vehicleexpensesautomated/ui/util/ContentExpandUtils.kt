@@ -250,6 +250,9 @@ object ContentExpandUtils {
         val jumpVertPadPx: Int = 0,
         /** When true, [AabbExpand.energyTrace] records per-px vertical strip energy. */
         val recordVertEnergy: Boolean = false,
+        /** 0 baseline, 1 tight (inset [tightInsetPx]), 2 edge-retract 1px. */
+        val boundStrategy: Int = 0,
+        val tightInsetPx: Int = 16,
     )
 
     fun expand(
@@ -411,6 +414,7 @@ object ContentExpandUtils {
                     opts.maxFrac, opts.energyRatio,
                     opts.freezeHorzDuringVert, opts.enableJump,
                     opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac,
+                    opts.boundStrategy, opts.tightInsetPx,
                 )
             } catch (_: Throwable) {
                 null
@@ -1249,6 +1253,8 @@ object ContentExpandUtils {
         gapFrac: Float = SEG7_GAP_FRAC,
         minSeedHsToFreeze: Float = 0f,
         scratch: Mat? = null,
+        boundStrategy: Int = 0,
+        tightInsetPx: Int = 16,
     ): List<Seg7Expand>? {
         val mode = if (chromaMode >= 0) chromaMode else if (chroma) 1 else 0
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
@@ -1267,6 +1273,7 @@ object ContentExpandUtils {
         }
         val r = NativeImageUtils.seg7ManyNative(
             gray, uv, packed, mode, gapFrac, minSeedHsToFreeze, scratch,
+            boundStrategy, tightInsetPx,
         ) ?: return null
         if (r.size < seeds.size * 8) return null
         return seeds.indices.map { i ->
@@ -1514,6 +1521,8 @@ object ContentExpandUtils {
         seeds: List<OrientedQuad>,
         chromaMode: Int = 0,
         scratch: Mat? = null,
+        boundStrategy: Int = 0,
+        tightInsetPx: Int = 16,
     ): List<Seg7OrientedExpand> {
         if (seeds.isEmpty()) return emptyList()
         val packed = FloatArray(seeds.size * 8)
@@ -1524,6 +1533,7 @@ object ContentExpandUtils {
         }
         val native = NativeImageUtils.seg7OrientedManyNative(
             gray, uv, packed, chromaMode, scratch,
+            boundStrategy, tightInsetPx,
         )
         if (native != null && native.size >= seeds.size * 9) {
             return seeds.indices.map { i ->
@@ -2255,6 +2265,7 @@ object ContentExpandUtils {
             gray, uv, packed, uv != null, vk,
             opts.maxFrac, opts.energyRatio, opts.freezeHorzDuringVert, opts.enableJump,
             opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac, opts.chi2K,
+            opts.boundStrategy, opts.tightInsetPx,
         ) ?: return null
         if (r.size < seeds.size * 11) return null
         return seeds.indices.map { i ->
@@ -3136,6 +3147,11 @@ object ContentExpandUtils {
         val vertKind = opts.vertEnergy
         val imgW = gray.cols(); val imgH = gray.rows()
         var l = seed.left; var t = seed.top; var r = seed.right; var b = seed.bottom
+        if (opts.boundStrategy == 1) {
+            val ins = max(1, opts.tightInsetPx)
+            if (r - l > 2 * ins + 2) { l += ins; r -= ins }
+            if (b - t > 2 * ins + 2) { t += ins; b -= ins }
+        }
         val cap = max(1, (maxFrac * max(1, seed.height())).roundToInt())
         val gx = Mat(); val gy = Mat(); val eng = Mat()
         Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
@@ -3208,6 +3224,19 @@ object ContentExpandUtils {
             allowDown = b < imgH && cut[1] > seed.bottom
             t = if (allowUp) min(cut[0], seed.top) else seed.top
             b = if (allowDown) max(cut[1], seed.bottom) else seed.bottom
+        } else if (opts.boundStrategy == 2) {
+            val seedT = t
+            val seedB = b
+            if (meanE(Rect(l, t, r, t + 1)) >= thr) {
+                while (t > 0 && seedT - (t - 1) <= cap && meanE(Rect(l, t - 1, r, t)) >= thr) t--
+            } else {
+                while (t < b - 1 && meanE(Rect(l, t, r, t + 1)) < thr) t++
+            }
+            if (meanE(Rect(l, b - 1, r, b)) >= thr) {
+                while (b < imgH && b - seedB < cap && meanE(Rect(l, b, r, b + 1)) >= thr) b++
+            } else {
+                while (b > t + 1 && meanE(Rect(l, b - 1, r, b)) < thr) b--
+            }
         } else {
             growOnce()
         }
@@ -3348,6 +3377,11 @@ object ContentExpandUtils {
         val vertKind = opts.vertEnergy
         val imgW = y.cols(); val imgH = y.rows()
         var l = seed.left; var t = seed.top; var r = seed.right; var b = seed.bottom
+        if (opts.boundStrategy == 1) {
+            val ins = max(1, opts.tightInsetPx)
+            if (r - l > 2 * ins + 2) { l += ins; r -= ins }
+            if (b - t > 2 * ins + 2) { t += ins; b -= ins }
+        }
         val cap = max(1, (maxFrac * max(1, seed.height())).roundToInt())
         val c = chromaMagU8(y, uv)
         val cF = Mat()
@@ -3421,6 +3455,23 @@ object ContentExpandUtils {
             allowDown = b < imgH && cut[1] > seed.bottom
             t = if (allowUp) min(cut[0], seed.top) else seed.top
             b = if (allowDown) max(cut[1], seed.bottom) else seed.bottom
+        } else if (opts.boundStrategy == 2) {
+            val seedT = t
+            val seedB = b
+            if (meanE(vertEng, Rect(l, t, r, t + 1)) >= thr) {
+                while (t > 0 && seedT - (t - 1) <= cap &&
+                    meanE(vertEng, Rect(l, t - 1, r, t)) >= thr
+                ) t--
+            } else {
+                while (t < b - 1 && meanE(vertEng, Rect(l, t, r, t + 1)) < thr) t++
+            }
+            if (meanE(vertEng, Rect(l, b - 1, r, b)) >= thr) {
+                while (b < imgH && b - seedB < cap &&
+                    meanE(vertEng, Rect(l, b, r, b + 1)) >= thr
+                ) b++
+            } else {
+                while (b > t + 1 && meanE(vertEng, Rect(l, b - 1, r, b)) < thr) b--
+            }
         } else {
             growOnce()
         }

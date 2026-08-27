@@ -8701,3 +8701,13 @@ expand7segFromSeedMany/Oriented pass workspace.s.mat. AABB and rot: one horizont
 ## 2026-08-26 - CODE LANDED: optimize-color2-vertical-scratch-math
 
 nativeSeg7 uses workspace.s; tint classify is float/squared (no per-pixel hypot). Jump once then pad k. Plan Status not writable (640). Do not deploy.
+
+## 2026-08-26 - Execute: optimize-color2-vertical-scratch-math (revised 21:05)
+
+- Role: Coder (agent-3), branch `detect-ocr-work-2`
+- Plan: `dev-ai-interaction/plans/optimize-color2-vertical-scratch-math-20260826-1848-plan.md` (revised: color_adaptive + 18-col matrix)
+- Scope: Keep scratch/hypot/jump-once. Add color_adaptive, tight/edge-retract, 18 columns + G--. Remove walk2/legacy color/color2 from schedule. Do not deploy.
+
+## 2026-08-26 - Phase 1: color_adaptive + tight/edge-retract
+
+chromaMode 4 hybrid in fillChromaTintMask. tight/edge-retract in seg7 AABB/oriented, aabb grow, oriented energy. JNI boundStrategy/tightInsetPx. Jump tint mode 4. Do not deploy.

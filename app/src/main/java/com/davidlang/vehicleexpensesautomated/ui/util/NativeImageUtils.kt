@@ -444,6 +444,8 @@ object NativeImageUtils {
         retractClearFrac: Float,
         vertPadFrac: Float,
         chi2K: Float,
+        boundStrategy: Int,
+        tightInsetPx: Int,
     ): IntArray?
 
     fun chromaMagNative(y: Mat, uv: Mat, dst: Mat): Boolean {
@@ -454,6 +456,7 @@ object NativeImageUtils {
     private external fun nativeSeg7Many(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray, chromaMode: Int,
         gapFrac: Float, minSeedHsToFreeze: Float,
+        boundStrategy: Int, tightInsetPx: Int,
     ): IntArray?
     private external fun nativeJumpMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, boxes: IntArray, chromaMode: Int,
@@ -464,15 +467,16 @@ object NativeImageUtils {
         return seg7ManyNative(gray, uv, seeds, if (chroma) 1 else 0)
     }
 
-    /** chromaMode: 0 gray, 1 chromaMag, 2 chromaTint2, 3 chromaTint3 (11x glare). gapFrac default 0.5; minSeedHsToFreeze 0 = always freeze on empty peek. */
+    /** chromaMode: 0 gray, 1 chromaMag, 2/3 tint, 4 color_adaptive. boundStrategy: 0 baseline, 1 tight, 2 edge-retract. */
     fun seg7ManyNative(
         gray: Mat, uv: Mat?, seeds: IntArray, chromaMode: Int,
         gapFrac: Float = 0.5f, minSeedHsToFreeze: Float = 0f, scratch: Mat? = null,
+        boundStrategy: Int = 0, tightInsetPx: Int = 16,
     ): IntArray? {
         if (gray.empty()) return null
         return nativeSeg7Many(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
-            gapFrac, minSeedHsToFreeze,
+            gapFrac, minSeedHsToFreeze, boundStrategy, tightInsetPx,
         )
     }
 
@@ -491,20 +495,23 @@ object NativeImageUtils {
 
     private external fun nativeSeg7OrientedMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray, chromaMode: Int,
+        boundStrategy: Int, tightInsetPx: Int,
     ): FloatArray?
     private external fun nativeJumpOrientedMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, quads: FloatArray, chromaMode: Int,
         maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
     ): FloatArray?
 
-    /** Packed n×8 seed quads → n×9 (walked 8-float quad + sPx). chromaMode 0 Y, 1 chromaMag with seed-interior median &lt; 8 → Y. */
+    /** Packed n×8 seed quads → n×9 (walked 8-float quad + sPx). chromaMode 0 Y, 1 chromaMag, 2/3 tint, 4 color_adaptive. */
     fun seg7OrientedManyNative(
         gray: Mat, uv: Mat?, seeds: FloatArray, chromaMode: Int,
         scratch: Mat? = null,
+        boundStrategy: Int = 0, tightInsetPx: Int = 16,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return null
         return nativeSeg7OrientedMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
+            boundStrategy, tightInsetPx,
         )
     }
 
@@ -535,12 +542,15 @@ object NativeImageUtils {
         retractClearFrac: Float,
         vertPadFrac: Float,
         chi2K: Float,
+        boundStrategy: Int = 0,
+        tightInsetPx: Int = 16,
     ): IntArray? {
         if (gray.empty()) return null
         return nativeAabbGrowMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chroma, vertKind,
             maxFrac, energyRatio, freezeHorz, enableJump,
             jumpFrac, retractClearFrac, vertPadFrac, chi2K,
+            boundStrategy, tightInsetPx,
         )
     }
 
@@ -554,6 +564,8 @@ object NativeImageUtils {
         jumpFrac: Float,
         retractClearFrac: Float,
         vertPadFrac: Float,
+        boundStrategy: Int,
+        tightInsetPx: Int,
     ): FloatArray?
     private external fun nativeCountPullbackOriented(
         matPtr: Long,
@@ -593,10 +605,13 @@ object NativeImageUtils {
         jumpFrac: Float,
         retractClearFrac: Float,
         vertPadFrac: Float,
+        boundStrategy: Int = 0,
+        tightInsetPx: Int = 16,
     ): OrientedExpandNative? {
         val r = nativeExpandOriented(
             gray.nativeObj, seedPts, maxFrac, energyRatio,
             freezeHorz, enableJump, jumpFrac, retractClearFrac, vertPadFrac,
+            boundStrategy, tightInsetPx,
         ) ?: return null
         if (r.size < 13) return null
         return OrientedExpandNative(

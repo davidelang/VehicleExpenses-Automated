@@ -158,7 +158,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jfloatArray seedPts,
     jfloat maxFrac, jfloat energyRatio,
     jboolean freezeHorz, jboolean enableJump,
-    jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac
+    jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac,
+    jint boundStrategy, jint tightInsetPx
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
@@ -179,6 +180,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     gy.release();
 
     float cx = fr.cx, cy = fr.cy, bw = fr.bw, bh = fr.bh;
+    if (boundStrategy == 1) {
+        const float ins = static_cast<float>(std::max(1, tightInsetPx));
+        if (bw > 2.f * ins + 2.f) bw -= 2.f * ins;
+        if (bh > 2.f * ins + 2.f) bh -= 2.f * ins;
+    }
 
     double baseSum = 0.0;
     int baseN = 0;
@@ -207,40 +213,79 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     };
 
     // 1px just outside seed ±v: below thr → do not grow or pad that tip.
-    const bool allowVNeg = strip(0.f, -1.f, false) >= thr;
-    const bool allowVPos = strip(0.f, +1.f, false) >= thr;
+    bool allowVNeg = strip(0.f, -1.f, false) >= thr;
+    bool allowVPos = strip(0.f, +1.f, false) >= thr;
+    auto onEdgeV = [&](float dvSign) {
+        return stripEnergy(mag, fr, cx, cy, bw, std::max(2.f, bh - 1.f),
+            0.f, dvSign, false);
+    };
 
-    for (int step = 0; step < cap; ++step) {
-        bool grew = false;
-        if (!freezeHorz) {
-            if (strip(-1.f, 0.f, true) >= thr) {
-                cx -= 0.5f * fr.ux;
-                cy -= 0.5f * fr.uy;
-                bw += 1.f;
+    if (boundStrategy == 2) {
+        if (onEdgeV(-1.f) >= thr) {
+            while (stepsVNeg < cap && strip(0.f, -1.f, false) >= thr) {
+                cx -= 0.5f * fr.vx;
+                cy -= 0.5f * fr.vy;
+                bh += 1.f;
+                ++stepsVNeg;
+            }
+            allowVNeg = stepsVNeg > 0;
+        } else {
+            while (bh > 2.f && onEdgeV(-1.f) < thr) {
+                cx += 0.5f * fr.vx;
+                cy += 0.5f * fr.vy;
+                bh -= 1.f;
+            }
+            allowVNeg = false;
+        }
+        if (onEdgeV(+1.f) >= thr) {
+            while (stepsVPos < cap && strip(0.f, +1.f, false) >= thr) {
+                cx += 0.5f * fr.vx;
+                cy += 0.5f * fr.vy;
+                bh += 1.f;
+                ++stepsVPos;
+            }
+            allowVPos = stepsVPos > 0;
+        } else {
+            while (bh > 2.f && onEdgeV(+1.f) < thr) {
+                cx -= 0.5f * fr.vx;
+                cy -= 0.5f * fr.vy;
+                bh -= 1.f;
+            }
+            allowVPos = false;
+        }
+    } else {
+        for (int step = 0; step < cap; ++step) {
+            bool grew = false;
+            if (!freezeHorz) {
+                if (strip(-1.f, 0.f, true) >= thr) {
+                    cx -= 0.5f * fr.ux;
+                    cy -= 0.5f * fr.uy;
+                    bw += 1.f;
+                    grew = true;
+                }
+                if (strip(+1.f, 0.f, true) >= thr) {
+                    cx += 0.5f * fr.ux;
+                    cy += 0.5f * fr.uy;
+                    bw += 1.f;
+                    grew = true;
+                }
+            }
+            if (allowVNeg && strip(0.f, -1.f, false) >= thr) {
+                cx -= 0.5f * fr.vx;
+                cy -= 0.5f * fr.vy;
+                bh += 1.f;
+                ++stepsVNeg;
                 grew = true;
             }
-            if (strip(+1.f, 0.f, true) >= thr) {
-                cx += 0.5f * fr.ux;
-                cy += 0.5f * fr.uy;
-                bw += 1.f;
+            if (allowVPos && strip(0.f, +1.f, false) >= thr) {
+                cx += 0.5f * fr.vx;
+                cy += 0.5f * fr.vy;
+                bh += 1.f;
+                ++stepsVPos;
                 grew = true;
             }
+            if (!grew) break;
         }
-        if (allowVNeg && strip(0.f, -1.f, false) >= thr) {
-            cx -= 0.5f * fr.vx;
-            cy -= 0.5f * fr.vy;
-            bh += 1.f;
-            ++stepsVNeg;
-            grew = true;
-        }
-        if (allowVPos && strip(0.f, +1.f, false) >= thr) {
-            cx += 0.5f * fr.vx;
-            cy += 0.5f * fr.vy;
-            bh += 1.f;
-            ++stepsVPos;
-            grew = true;
-        }
-        if (!grew) break;
     }
 
     int padV = 0;
@@ -1003,7 +1048,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
     jint vertKind,
     jfloat maxFrac, jfloat energyRatio,
     jboolean freezeHorz, jboolean enableJump,
-    jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac, jfloat chi2K
+    jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac, jfloat chi2K,
+    jint boundStrategy, jint tightInsetPx
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
@@ -1082,6 +1128,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
         if (b > imgH) b = imgH;
         if (r <= l) r = std::min(imgW, l + 1);
         if (b <= t) b = std::min(imgH, t + 1);
+        if (boundStrategy == 1) {
+            const int ins = std::max(1, tightInsetPx);
+            if (r - l > 2 * ins + 2) { l += ins; r -= ins; }
+            if (b - t > 2 * ins + 2) { t += ins; b -= ins; }
+        }
         const int seedL = l, seedT = t, seedR = r, seedB = b;
         const int seedH = std::max(1, b - t);
         const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * seedH)));
@@ -1097,7 +1148,23 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
         bool allowUp = t > 0 && meanRectF(vertEng, l, t - 1, r, t, imgW, imgH) >= thr;
         bool allowDown = b < imgH && meanRectF(vertEng, l, b, r, b + 1, imgW, imgH) >= thr;
         int walkT = 0, walkB = 0;
-        if (vertKind == 2) {
+        if (boundStrategy == 2) {
+            auto edgeInk = [&](int sl, int st, int sr, int sb) {
+                return meanRectF(vertEng, sl, st, sr, sb, imgW, imgH) >= thr;
+            };
+            if (edgeInk(l, t, r, t + 1)) {
+                while (t > 0 && seedT - (t - 1) <= cap && edgeInk(l, t - 1, r, t)) --t;
+            } else {
+                while (t < b - 1 && !edgeInk(l, t, r, t + 1)) ++t;
+            }
+            if (edgeInk(l, b - 1, r, b)) {
+                while (b < imgH && b - seedB < cap && edgeInk(l, b, r, b + 1)) ++b;
+            } else {
+                while (b > t + 1 && !edgeInk(l, b - 1, r, b)) --b;
+            }
+            allowUp = t < seedT;
+            allowDown = b > seedB;
+        } else if (vertKind == 2) {
             int cutT = t, cutB = b;
             xycutOnProfile(vertEng, l, t, r, b, imgW, imgH, cap, &cutT, &cutB);
             t = allowUp ? std::min(cutT, seedT) : seedT;
@@ -1294,8 +1361,15 @@ static void seg7One(
     bool srcIsBin = false,
     float gapFrac = 0.5f,
     float minSeedHsToFreeze = 0.f,
-    int glareMult = 11
+    int glareMult = 11,
+    int boundStrategy = 0,
+    int tightInsetPx = 16
 ) {
+    if (boundStrategy == 1) {
+        const int ins = std::max(1, tightInsetPx);
+        if (sr - sl > 2 * ins + 2) { sl += ins; sr -= ins; }
+        if (sb - st > 2 * ins + 2) { st += ins; sb -= ins; }
+    }
     *ol = sl; *ot = st; *oright = sr; *ob = sb;
     const int seedH = std::max(1, sb - st);
     const int seedW = std::max(1, sr - sl);
@@ -1381,35 +1455,48 @@ static void seg7One(
     };
     const int localT = st - nt;
     const int localB = sb - nt;
-    const bool peekUp = peek(localT - 1, -1);
-    const bool peekDown = peek(localB, +1);
-    const bool freezeAlways = minSeedHsToFreeze <= 0.f;
-    const float minH = minSeedHsToFreeze * static_cast<float>(sPx);
-    const bool allowUp = peekUp ||
-        (!freezeAlways && seedH < minH);
-    const bool allowDown = peekDown ||
-        (!freezeAlways && seedH < minH);
     int t = localT, b = localB;
-    if (allowUp) {
-        int gap = 0, y = localT - 1;
-        while (y >= 0 && localT - y <= capPx) {
-            if (hasBar(y)) { t = y; gap = 0; }
-            else {
-                ++gap;
-                if (gap >= gapStop) break;
-            }
-            --y;
+    if (boundStrategy == 2) {
+        if (hasBar(localT)) {
+            while (t > 0 && localT - (t - 1) <= capPx && hasBar(t - 1)) --t;
+        } else {
+            while (t < b - 1 && !hasBar(t)) ++t;
         }
-    }
-    if (allowDown) {
-        int gap = 0, y = localB;
-        while (y < lookBin.rows && y - localB < capPx) {
-            if (hasBar(y)) { b = y + 1; gap = 0; }
-            else {
-                ++gap;
-                if (gap >= gapStop) break;
+        if (localB > 0 && hasBar(localB - 1)) {
+            while (b < lookBin.rows && b - localB < capPx && hasBar(b)) ++b;
+        } else {
+            while (b > t + 1 && !hasBar(b - 1)) --b;
+        }
+    } else {
+        const bool peekUp = peek(localT - 1, -1);
+        const bool peekDown = peek(localB, +1);
+        const bool freezeAlways = minSeedHsToFreeze <= 0.f;
+        const float minH = minSeedHsToFreeze * static_cast<float>(sPx);
+        const bool allowUp = peekUp ||
+            (!freezeAlways && seedH < minH);
+        const bool allowDown = peekDown ||
+            (!freezeAlways && seedH < minH);
+        if (allowUp) {
+            int gap = 0, y = localT - 1;
+            while (y >= 0 && localT - y <= capPx) {
+                if (hasBar(y)) { t = y; gap = 0; }
+                else {
+                    ++gap;
+                    if (gap >= gapStop) break;
+                }
+                --y;
             }
-            ++y;
+        }
+        if (allowDown) {
+            int gap = 0, y = localB;
+            while (y < lookBin.rows && y - localB < capPx) {
+                if (hasBar(y)) { b = y + 1; gap = 0; }
+                else {
+                    ++gap;
+                    if (gap >= gapStop) break;
+                }
+                ++y;
+            }
         }
     }
     if (b <= t) b = std::min(t + 1, lookBin.rows);
@@ -1478,14 +1565,16 @@ static int seedInkBinY(
  * Per-seed shadow-invariant tint mask: 255 = ink, 0 = blackout.
  * Samples stroke chromaticity inside seed ink runs; background at ±s_px
  * outside those edges; classifies look-strip pixels by u_p·u_ink (or Y
- * polarity when chroma is near zero).
+ * polarity when chroma is near zero). adaptive: meanChromaInk≥12 uses
+ * color2 dot≥0.50; else blend with C≥6 (c²≥36). Local c²<eps² → Y contrast.
  */
 static bool fillChromaTintMask(
     const cv::Mat& y, const cv::Mat& uv,
     int sl, int st, int sr, int sb,
     cv::Mat* dst,
     int glareMult = 11,
-    int xPad = 0
+    int xPad = 0,
+    bool adaptive = false
 ) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
@@ -1624,7 +1713,12 @@ static bool fillChromaTintMask(
                 isInk = polOk && std::fabs(Y - yInk) <= std::fabs(Y - yBg);
             } else {
                 const float left = du * uInkX + dv * uInkY;
-                isInk = polOk && left > 0.f && left * left >= dotThr2 * c2;
+                const bool dotOk = left > 0.f && left * left >= dotThr2 * c2;
+                if (!adaptive || meanChromaInk >= 12.f) {
+                    isInk = polOk && dotOk;
+                } else {
+                    isInk = polOk && (dotOk || c2 >= 36.f);
+                }
             }
             op[gx] = isInk ? 255 : 0;
         }
@@ -1653,7 +1747,8 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7Many(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr, jint chromaMode,
-    jfloat gapFrac, jfloat minSeedHsToFreeze
+    jfloat gapFrac, jfloat minSeedHsToFreeze,
+    jint boundStrategy, jint tightInsetPx
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -1663,11 +1758,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     const int n = n4 / 4;
     std::vector<jint> seeds(n4);
     env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
-    // chromaMode: 0 gray, 1 chromaMag, 2 chromaTint2, 3 chromaTint3 (same mask, 11× glare)
+    // chromaMode: 0 gray, 1 chromaMag, 2/3 tint, 4 color_adaptive hybrid
     cv::Mat localMag;
     cv::Mat* cMag = nullptr;
     const bool useChromaMag = chromaMode == 1;
-    const bool useTint = chromaMode == 2 || chromaMode == 3;
+    const bool useTint = chromaMode == 2 || chromaMode == 3 || chromaMode == 4;
+    const bool adaptive = chromaMode == 4;
     const int glareMult = 11;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
@@ -1692,15 +1788,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
             cv::Mat localTint;
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             const bool ok = uv && fillChromaTintMask(
-                *gray, *uv, l, t, r, b, tintDst, glareMult);
+                *gray, *uv, l, t, r, b, tintDst, glareMult, 0, adaptive);
             if (ok && tintDst && !tintDst->empty()) {
                 seg7One(*tintDst, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
-                    gapFrac, minSeedHsToFreeze, glareMult);
+                    gapFrac, minSeedHsToFreeze, glareMult,
+                    boundStrategy, tightInsetPx);
             } else {
                 seg7One(*gray, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
-                    gapFrac, minSeedHsToFreeze);
+                    gapFrac, minSeedHsToFreeze, 11,
+                    boundStrategy, tightInsetPx);
             }
         } else {
             const cv::Mat* src = gray;
@@ -1709,7 +1807,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
                 src = cMag;
             }
             seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
-                false, gapFrac, minSeedHsToFreeze);
+                false, gapFrac, minSeedHsToFreeze, 11,
+                boundStrategy, tightInsetPx);
         }
         const int o = i * 8;
         out[o] = ol; out[o + 1] = ot; out[o + 2] = orr; out[o + 3] = ob;
@@ -1746,7 +1845,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
     cv::Mat localMag;
     cv::Mat* cMag = nullptr;
     const bool useChromaMag = chromaMode == 1;
-    const bool useTint = chromaMode == 2 || chromaMode == 3;
+    const bool useTint = chromaMode == 2 || chromaMode == 3 || chromaMode == 4;
+    const bool adaptive = chromaMode == 4;
     if (useChromaMag) {
         if (scratchFits(scratch, imgW, imgH)) {
             fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
@@ -1772,7 +1872,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
         if (useTint && uv) {
             const int xPad = jx * (kJumpMax + 1);
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
-            if (fillChromaTintMask(*gray, *uv, l, t, r, b, tintDst, 11, xPad) &&
+            if (fillChromaTintMask(*gray, *uv, l, t, r, b, tintDst, 11, xPad,
+                    adaptive) &&
                 tintDst && !tintDst->empty()) {
                 eng = tintDst;
             }
@@ -1918,8 +2019,19 @@ static double medianInteriorU8(const cv::Mat& m, const OriBox& b, int w, int h) 
 
 static void seg7OrientedOne(
     const cv::Mat& src, OriBox seed, int imgW, int imgH,
-    float* outPts8, float* sPxOut
+    float* outPts8, float* sPxOut,
+    int boundStrategy = 0, int tightInsetPx = 16,
+    bool srcIsBin = false
 ) {
+    if (boundStrategy == 1) {
+        const float ins = static_cast<float>(std::max(1, tightInsetPx));
+        if (seed.u1 - seed.u0 > 2.f * ins + 2.f) {
+            seed.u0 += ins; seed.u1 -= ins;
+        }
+        if (seed.v1 - seed.v0 > 2.f * ins + 2.f) {
+            seed.v0 += ins; seed.v1 -= ins;
+        }
+    }
     oriToQuad(seed, outPts8);
     const float seedBh = std::max(1.f, seed.v1 - seed.v0);
     const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedBh)));
@@ -1940,8 +2052,15 @@ static void seg7OrientedOne(
         }
     }
     cv::Mat bin;
-    const double thr = cv::threshold(
-        seedMat, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    double thr = 0.0;
+    bool invertedBin = false;
+    if (srcIsBin) {
+        seedMat.copyTo(bin);
+        thr = 127.0;
+    } else {
+        thr = cv::threshold(
+            seedMat, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    }
     const int nPix = wu * hv;
     int nz = cv::countNonZero(bin);
     float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
@@ -1951,6 +2070,7 @@ static void seg7OrientedOne(
         nz = cv::countNonZero(bin);
         inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
         dark = false;
+        invertedBin = srcIsBin;
     }
     HorizSW hh0 = horizPeakSW(bin, hv, wu);
     const int glareW = 11 * std::max(hh0.peak, 4);
@@ -1989,8 +2109,13 @@ static void seg7OrientedOne(
         }
     }
     cv::Mat lookBin;
-    const int ttype = dark ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
-    cv::threshold(look, lookBin, thr, 255, ttype);
+    if (srcIsBin) {
+        look.copyTo(lookBin);
+        if (invertedBin) cv::bitwise_not(lookBin, lookBin);
+    } else {
+        const int ttype = dark ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
+        cv::threshold(look, lookBin, thr, 255, ttype);
+    }
     dropWide(&lookBin, glareW);
     auto hasBar = [&](float v) {
         const int y = static_cast<int>(std::lround(v - lookV0));
@@ -2005,35 +2130,48 @@ static void seg7OrientedOne(
         }
         return false;
     };
-    const bool allowNeg = peek(seed.v0 - 1.f, -1.f);
-    const bool allowPos = peek(seed.v1 + 1.f, +1.f);
     float v0 = seed.v0, v1 = seed.v1;
-    if (allowNeg) {
-        int gap = 0;
-        float v = seed.v0 - 1.f;
-        while (seed.v0 - v <= cap) {
-            if (hasBar(v)) {
-                v0 = v;
-                gap = 0;
-            } else {
-                ++gap;
-                if (gap >= gapStop) break;
-            }
-            v -= 1.f;
+    if (boundStrategy == 2) {
+        if (hasBar(v0)) {
+            while (seed.v0 - (v0 - 1.f) <= cap && hasBar(v0 - 1.f)) v0 -= 1.f;
+        } else {
+            while (v0 < v1 - 1.f && !hasBar(v0)) v0 += 1.f;
         }
-    }
-    if (allowPos) {
-        int gap = 0;
-        float v = seed.v1 + 1.f;
-        while (v - seed.v1 <= cap) {
-            if (hasBar(v)) {
-                v1 = v;
-                gap = 0;
-            } else {
-                ++gap;
-                if (gap >= gapStop) break;
+        if (hasBar(v1 - 1.f) || hasBar(v1)) {
+            while (v1 - seed.v1 < cap && hasBar(v1)) v1 += 1.f;
+        } else {
+            while (v1 > v0 + 1.f && !hasBar(v1 - 1.f)) v1 -= 1.f;
+        }
+    } else {
+        const bool allowNeg = peek(seed.v0 - 1.f, -1.f);
+        const bool allowPos = peek(seed.v1 + 1.f, +1.f);
+        if (allowNeg) {
+            int gap = 0;
+            float v = seed.v0 - 1.f;
+            while (seed.v0 - v <= cap) {
+                if (hasBar(v)) {
+                    v0 = v;
+                    gap = 0;
+                } else {
+                    ++gap;
+                    if (gap >= gapStop) break;
+                }
+                v -= 1.f;
             }
-            v += 1.f;
+        }
+        if (allowPos) {
+            int gap = 0;
+            float v = seed.v1 + 1.f;
+            while (v - seed.v1 <= cap) {
+                if (hasBar(v)) {
+                    v1 = v;
+                    gap = 0;
+                } else {
+                    ++gap;
+                    if (gap >= gapStop) break;
+                }
+                v += 1.f;
+            }
         }
     }
     if (v1 < v0 + 2.f) v1 = v0 + 2.f;
@@ -2132,7 +2270,8 @@ static void jumpOrientedOne(
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7OrientedMany(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode,
+    jint boundStrategy, jint tightInsetPx
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -2145,6 +2284,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
     cv::Mat localMag;
     cv::Mat* cMag = nullptr;
     const bool useChroma = chromaMode == 1;
+    const bool useTint = chromaMode == 2 || chromaMode == 3 || chromaMode == 4;
+    const bool adaptive = chromaMode == 4;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     if (useChroma) {
@@ -2167,12 +2308,35 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
             continue;
         }
         const cv::Mat* src = gray;
-        if (useChroma && cMag && !cMag->empty() &&
+        bool srcIsBin = false;
+        cv::Mat localTint;
+        if (useTint && uv) {
+            float pts[8];
+            oriToQuad(box, pts);
+            float minx = pts[0], maxx = pts[0], miny = pts[1], maxy = pts[1];
+            for (int k = 1; k < 4; ++k) {
+                minx = std::min(minx, pts[k * 2]);
+                maxx = std::max(maxx, pts[k * 2]);
+                miny = std::min(miny, pts[k * 2 + 1]);
+                maxy = std::max(maxy, pts[k * 2 + 1]);
+            }
+            const int sl = std::max(0, static_cast<int>(std::floor(minx)));
+            const int st = std::max(0, static_cast<int>(std::floor(miny)));
+            const int sr = std::min(imgW, static_cast<int>(std::ceil(maxx)));
+            const int sb = std::min(imgH, static_cast<int>(std::ceil(maxy)));
+            cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
+            if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11, 0,
+                    adaptive) && tintDst && !tintDst->empty()) {
+                src = tintDst;
+                srcIsBin = true;
+            }
+        } else if (useChroma && cMag && !cMag->empty() &&
             medianInteriorU8(*cMag, box, imgW, imgH) >= 8.0) {
             src = cMag;
         }
         float sPx = 2.f;
-        seg7OrientedOne(*src, box, imgW, imgH, op, &sPx);
+        seg7OrientedOne(*src, box, imgW, imgH, op, &sPx,
+            boundStrategy, tightInsetPx, srcIsBin);
         op[8] = sPx;
     }
     jfloatArray arr = env->NewFloatArray(static_cast<jint>(out.size()));
@@ -2206,7 +2370,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
     cv::Mat localMag;
     cv::Mat* cMag = nullptr;
     const bool useChromaMag = chromaMode == 1;
-    const bool useTint = chromaMode == 2 || chromaMode == 3;
+    const bool useTint = chromaMode == 2 || chromaMode == 3 || chromaMode == 4;
+    const bool adaptive = chromaMode == 4;
     if (useChromaMag) {
         if (scratchFits(scratch, imgW, imgH)) {
             fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
@@ -2245,7 +2410,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
             const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan)));
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11,
-                    jx * (kJumpMax + 1)) && tintDst && !tintDst->empty()) {
+                    jx * (kJumpMax + 1), adaptive) && tintDst && !tintDst->empty()) {
                 eng = tintDst;
             }
         } else if (useChromaMag && cMag && !cMag->empty() &&
