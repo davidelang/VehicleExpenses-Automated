@@ -513,7 +513,14 @@ suspend fun runAlignmentExperiment(
         ExperimentReportHtml.Kind.ALIGNMENT, alignColLabels, alignMetaHtml,
     )
     var firstJsonResult = true
+    var alignHtmlClosed = false
+    fun closeAlignHtml() {
+        if (alignHtmlClosed) return
+        currentFile.appendText(footerHtml)
+        alignHtmlClosed = true
+    }
 
+    try {
     photos.forEachIndexed { index, file ->
         val originalLineNumber = subsetMap?.get(file.name) ?: (index + 1)
         // Phase 116 Emergency Fix: Initialize photoResult early with "No Match" state
@@ -848,7 +855,9 @@ suspend fun runAlignmentExperiment(
             Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
         }
     }
-    currentFile.appendText(footerHtml)
+    } finally {
+        closeAlignHtml()
+    }
     jsonFile.appendText("\n  ]\n}")
 
     logHeapState(context, "runExperiment:end")

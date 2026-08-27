@@ -2074,6 +2074,7 @@ object MultiScaleDetRunner {
             )
             w.append(ExperimentReportHtml.tableOpen(colLabels))
 
+            try {
             for (pi in photos.indices) {
                 val ref = photos[pi]
                 val photoNum = pi + 1
@@ -2110,11 +2111,13 @@ object MultiScaleDetRunner {
                     w.appendLine("</tr>")
                 }
             }
+            } finally {
             w.append(
                 ExperimentReportHtml.footer(
                     ExperimentReportHtml.Kind.MULTISCALE, colLabels, metaHtml,
                 ),
             )
+            }
         }
     }
 

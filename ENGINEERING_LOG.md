@@ -8791,3 +8791,7 @@ documentHead emits CSS hide-col-1..40 and script. apply() toggles body.hide-col-
 ## 2026-08-27 - Phase 2 (0157): pump labels + finally footer
 
 pumpColumnLabels: no phantom ML. Paddle tds start data-col=1 matching header. closePumpHtml in finally so cancel/crash still closes HTML. Do not deploy.
+
+## 2026-08-27 - Phase 3 (0157): alignment + multi-scale finally footer
+
+Alignment closeAlignHtml in finally. Multi-scale HTML footer in finally (no second script). Do not deploy.
