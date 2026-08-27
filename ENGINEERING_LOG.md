@@ -8773,3 +8773,7 @@ jumpRetractH / jumpOrientedOne colHas samples \u00b10.5 seedH core, not full pad
 ## 2026-08-27 - Phase 2: rec 4px pad + seedH jump + hist tables
 
 ExperimentPumpScreen: pass original seedH/seedBh into jump-once; performHunkRecognition uses RecBufferFeed 4px source-border; pSeg7TeleHtml candidate tables (ink params + 32-bin H/V). Kotlin jump fallback threads seedH. Do not deploy.
+
+## 2026-08-27 - CODE LANDED: rec-padding-col-dilution-binned-hist
+
+colHas samples inner \u00b10.5 seedH (JNI seedH/seedBh from original red). Rec crops 4px source-border (RecBufferFeed). 32-bin H/V + ink params in JSON and HTML tables. 18-col + G-- kept. Plan Status not writable (640). Do not deploy.
