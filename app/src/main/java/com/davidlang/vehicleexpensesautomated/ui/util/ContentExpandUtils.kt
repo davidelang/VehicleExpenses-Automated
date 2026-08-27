@@ -1022,8 +1022,10 @@ object ContentExpandUtils {
     fun jumpRetractHorizontal(
         gray: Mat, seed: Rect, opts: ExpandOptions,
         uv: Mat? = null, chromaMode: Int = 0, scratch: Mat? = null,
+        seedH: Int = 0,
     ): Rect {
-        val many = jumpRetractHorizontalMany(gray, listOf(seed), opts, uv, chromaMode, scratch)
+        val seedHs = if (seedH > 0) intArrayOf(seedH) else null
+        val many = jumpRetractHorizontalMany(gray, listOf(seed), opts, uv, chromaMode, scratch, seedHs)
         if (many != null && many.size == 1) return many[0]
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
         val imgW = gray.cols()
@@ -1055,6 +1057,7 @@ object ContentExpandUtils {
             val cap = max(1, (opts.maxFrac * max(1, s.height())).roundToInt())
             return jumpRetractHorizontalOnEnergy(
                 eng, s, imgW, imgH, thr, cap, opts.jumpFrac, opts.retractClearFrac,
+                seedH,
             )
         } finally {
             eng.release()
@@ -1690,7 +1693,10 @@ object ContentExpandUtils {
                 OrientedQuad(FloatArray(8) { k -> native[o + k] })
             }
         }
-        return seeds.map { jumpRetractOrientedUKotlin(gray, it, opts, uv, chromaMode) }
+        return seeds.mapIndexed { i, q ->
+            val bh = if (seedBhs != null && seedBhs.size > i) seedBhs[i] else 0f
+            jumpRetractOrientedUKotlin(gray, q, opts, uv, chromaMode, bh)
+        }
     }
 
     fun jumpRetractOrientedU(
@@ -1700,7 +1706,11 @@ object ContentExpandUtils {
         uv: Mat? = null,
         chromaMode: Int = 0,
         scratch: Mat? = null,
-    ): OrientedQuad = jumpRetractOrientedUMany(gray, listOf(seed), opts, uv, chromaMode, scratch).firstOrNull() ?: seed
+        seedBh: Float = 0f,
+    ): OrientedQuad = jumpRetractOrientedUMany(
+        gray, listOf(seed), opts, uv, chromaMode, scratch,
+        seedBhs = if (seedBh > 0f) floatArrayOf(seedBh) else null,
+    ).firstOrNull() ?: seed
 
     private fun jumpRetractOrientedUKotlin(
         gray: Mat,
@@ -1708,6 +1718,7 @@ object ContentExpandUtils {
         opts: ExpandOptions,
         uv: Mat? = null,
         chromaMode: Int = 0,
+        seedBh: Float = 0f,
     ): OrientedQuad {
         val box = OrientedBox.fromQuad(seed) ?: return seed
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
@@ -1728,12 +1739,23 @@ object ContentExpandUtils {
         gy.release()
         cU8?.release()
         try {
+            val vSpan0 = (box.v1 - box.v0).coerceAtLeast(1f)
+            val coreH = if (seedBh > 0f) seedBh else vSpan0
+            val vMid = (box.v0 + box.v1) * 0.5f
+            var cv0 = vMid - 0.5f * coreH
+            var cv1 = vMid + 0.5f * coreH
+            if (cv0 < box.v0) cv0 = box.v0
+            if (cv1 > box.v1) cv1 = box.v1
+            if (cv1 <= cv0 + 1f) {
+                cv0 = box.v0
+                cv1 = box.v1
+            }
             fun meanUFace(u: Float): Double {
-                val n = max(4, (box.v1 - box.v0).roundToInt())
+                val n = max(4, (cv1 - cv0).roundToInt())
                 var s = 0.0
                 var c = 0
                 for (i in 0 until n) {
-                    val v = box.v0 + (i + 0.5f) / n * (box.v1 - box.v0)
+                    val v = cv0 + (i + 0.5f) / n * (cv1 - cv0)
                     val px = box.cx + u * box.ux + v * box.vx
                     val py = box.cy + u * box.uy + v * box.vy
                     if (px < 0f || py < 0f || px >= imgW || py >= imgH) continue

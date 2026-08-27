@@ -8769,3 +8769,7 @@ One HTML file per pump/alignment run (no _partN). Shared sticky filters, 500px c
 ## 2026-08-27 - Phase 1: colHas inner-core dilution fix
 
 jumpRetractH / jumpOrientedOne colHas samples \u00b10.5 seedH core, not full padded t..b. JNI seedH/seedBh. 32-bin telemetry already present. Do not deploy.
+
+## 2026-08-27 - Phase 2: rec 4px pad + seedH jump + hist tables
+
+ExperimentPumpScreen: pass original seedH/seedBh into jump-once; performHunkRecognition uses RecBufferFeed 4px source-border; pSeg7TeleHtml candidate tables (ink params + 32-bin H/V). Kotlin jump fallback threads seedH. Do not deploy.

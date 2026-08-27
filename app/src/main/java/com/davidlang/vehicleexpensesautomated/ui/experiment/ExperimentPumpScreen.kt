@@ -1491,17 +1491,20 @@ suspend fun runPumpExperiment(
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
                     }
                     val walked = walks.map { it.second }
+                    val seedHs = IntArray(seeds.size) { seeds[it].height() }
                     val jumpedOnce = ContentExpandUtils.jumpRetractHorizontalMany(
                         workspace.p.mat, walked, jumpOpts,
                         uv = if (expandMode != 0) workspace.p.uvMat else null,
                         chromaMode = expandMode,
                         scratch = workspace.s.mat,
-                    ) ?: walked.map {
+                        seedHs = seedHs,
+                    ) ?: walked.mapIndexed { i, it ->
                         ContentExpandUtils.jumpRetractHorizontal(
                             workspace.p.mat, it, jumpOpts,
                             uv = if (expandMode != 0) workspace.p.uvMat else null,
                             chromaMode = expandMode,
                             scratch = workspace.s.mat,
+                            seedH = seedHs[i],
                         )
                     }
                     fun inkBoxesFor(kk: Float): List<android.graphics.Rect> {
@@ -1561,21 +1564,27 @@ suspend fun runPumpExperiment(
                         energyRatio = 0.65f,
                     )
                     val pads = ArrayList<android.graphics.Rect>(pdHunksRawTotal.size * gVertFactors.size)
+                    val seedHs = IntArray(pdHunksRawTotal.size * gVertFactors.size)
+                    var seedHsI = 0
                     pdHunksRawTotal.forEach { h ->
                         val r = android.graphics.Rect(
                             h.rect.left.toInt(), h.rect.top.toInt(),
                             h.rect.right.toInt(), h.rect.bottom.toInt(),
                         )
+                        val sh = r.height().coerceAtLeast(1)
                         gVertFactors.forEach { v ->
                             pads.add(ContentExpandUtils.calculatedAabb(r, v, horiz = 0f, imgW, imgH))
+                            seedHs[seedHsI++] = sh
                         }
                     }
                     val jumped = ContentExpandUtils.jumpRetractHorizontalMany(
                         workspace.p.mat, pads, jumpOpts,
                         scratch = workspace.s.mat,
-                    ) ?: pads.map {
+                        seedHs = seedHs,
+                    ) ?: pads.mapIndexed { i, it ->
                         ContentExpandUtils.jumpRetractHorizontal(
                             workspace.p.mat, it, jumpOpts, scratch = workspace.s.mat,
+                            seedH = seedHs[i],
                         )
                     }
                     customBlueG = jumped.map { j ->
@@ -2074,11 +2083,13 @@ suspend fun runPumpExperiment(
                             boundStrategy = boundStrategy,
                             tightInsetPx = tightInsetPx,
                         )
+                        val seedBhs = FloatArray(seedQuads.size) { seedQuads[it].shortAxisBh() }
                         val jumpedQuads = ContentExpandUtils.jumpRetractOrientedUMany(
                             gray, segs.map { it.quad }, jumpOpts,
                             uv = if (expandMode != 0) workspace.p.uvMat else null,
                             chromaMode = expandMode,
                             scratch = workspace.s.mat,
+                            seedBhs = seedBhs,
                         )
                         fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> {
                             return segs.indices.map { i ->
@@ -3672,39 +3683,51 @@ private fun pSeg7TeleHtml(br: PumpBranch): String {
     val raw = br.metadata["seg7_tele"] ?: return ""
     val arr = try { JSONArray(raw) } catch (_: Exception) { return "" }
     if (arr.length() == 0) return ""
+    fun f1(o: JSONObject, k: String) = "%.1f".format(o.optDouble(k))
+    fun f0(o: JSONObject, k: String) = "%.0f".format(o.optDouble(k))
+    val cell = "padding:1px 3px;border:1px solid #ddd;"
+    val th = "text-align:left;$cell"
     val sb = StringBuilder()
     sb.append("<div class='dump-details' style='font-size:9px;text-align:left;margin-top:4px;'>")
     for (i in 0 until arr.length()) {
         val o = arr.optJSONObject(i) ?: continue
-        sb.append("<div><b>box${i + 1}</b> ${o.optString("method")} ")
-        sb.append("yInk=${"%.1f".format(o.optDouble("y_ink"))} ")
-        sb.append("yBg=${"%.1f".format(o.optDouble("y_bg"))} ")
-        sb.append("dInk=${"%.1f".format(o.optDouble("d_ink"))} ")
-        sb.append("C=${"%.1f".format(o.optDouble("mean_chroma"))} ")
-        sb.append("s=${"%.0f".format(o.optDouble("s_px"))} ")
-        sb.append("otsu=${"%.0f".format(o.optDouble("otsu_thresh"))}<br>")
-        sb.append("Δt=${"%.0f".format(o.optDouble("delta_top"))} ")
-        sb.append("Δb=${"%.0f".format(o.optDouble("delta_bot"))} ")
-        sb.append("${o.optString("flag_top")}/${o.optString("flag_bot")}<br>")
+        sb.append("<table style='border-collapse:collapse;font-size:9px;margin:4px 0;width:100%;text-align:left;'>")
+        sb.append("<tr><th colspan='4' style='background:#eee;$th'>box${i + 1} ${o.optString("method")}</th></tr>")
+        fun row2(k1: String, v1: String, k2: String, v2: String) {
+            sb.append("<tr><th style='$th'>$k1</th><td style='$cell'>$v1</td>")
+            sb.append("<th style='$th'>$k2</th><td style='$cell'>$v2</td></tr>")
+        }
+        row2("y_ink", f1(o, "y_ink"), "y_bg", f1(o, "y_bg"))
+        row2("d_ink", f1(o, "d_ink"), "mean_chroma", f1(o, "mean_chroma"))
+        row2("u_ink_x", f1(o, "u_ink_x"), "u_ink_y", f1(o, "u_ink_y"))
+        row2("s_px", f0(o, "s_px"), "otsu", f0(o, "otsu_thresh"))
+        row2("Δt", f0(o, "delta_top"), "Δb", f0(o, "delta_bot"))
+        row2("Δl", f0(o, "delta_left"), "Δr", f0(o, "delta_right"))
+        row2(
+            "flag T/B",
+            "${o.optString("flag_top")}/${o.optString("flag_bot")}",
+            "flag L/R",
+            "${o.optString("flag_left")}/${o.optString("flag_right")}",
+        )
+        sb.append("</table>")
         val hh = o.optJSONArray("hist_h")
-        if (hh != null) {
-            sb.append("H ")
-            for (b in 0 until hh.length()) {
-                val c = hh.optInt(b)
-                if (c > 0) sb.append("${histBinLabel(b)}:$c ")
-            }
-            sb.append("<br>")
-        }
         val hv = o.optJSONArray("hist_v")
-        if (hv != null) {
-            sb.append("V ")
-            for (b in 0 until hv.length()) {
-                val c = hv.optInt(b)
-                if (c > 0) sb.append("${histBinLabel(b)}:$c ")
+        val n = max(hh?.length() ?: 0, hv?.length() ?: 0)
+        if (n > 0) {
+            val show = (0 until n).filter { b ->
+                (hh?.optInt(b) ?: 0) > 0 || (hv?.optInt(b) ?: 0) > 0
             }
-            sb.append("<br>")
+            if (show.isNotEmpty()) {
+                sb.append("<table style='border-collapse:collapse;font-size:8px;margin:2px 0 6px;text-align:center;'>")
+                sb.append("<tr><th style='$th'>bin</th>")
+                for (b in show) sb.append("<th style='$cell'>${histBinLabel(b)}</th>")
+                sb.append("</tr><tr><th style='$th'>H</th>")
+                for (b in show) sb.append("<td style='$cell'>${hh?.optInt(b) ?: 0}</td>")
+                sb.append("</tr><tr><th style='$th'>V</th>")
+                for (b in show) sb.append("<td style='$cell'>${hv?.optInt(b) ?: 0}</td>")
+                sb.append("</tr></table>")
+            }
         }
-        sb.append("</div>")
     }
     sb.append("</div>")
     return sb.toString()
@@ -4059,17 +4082,23 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
 
         if (pW < 2 || pH < 2) return@map hunk
 
-        val cropId = buffer.createCrop(l.toInt(), t.toInt(), (r - l).toInt(), (b - t).toInt())
+        val sl = l.toInt().coerceIn(0, (masterW - 1).coerceAtLeast(0))
+        val st = t.toInt().coerceIn(0, (masterH - 1).coerceAtLeast(0))
+        val sr = r.toInt().coerceIn(sl + 1, masterW)
+        val sb = b.toInt().coerceIn(st + 1, masterH)
+        if ((sr - sl) < 2 || (sb - st) < 2) return@map hunk
 
-        val targetH = 48
-        val rawW = (pW * (48f / pH)).toInt()
-        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(recBuffer.p.width).coerceAtLeast(32)
-        if (targetW <= 0 || targetH <= 0) return@map hunk  // guard for bad aspect / tiny derived box after prune to 4 largest (prevents OpenCV resize assertion inv_scale_x > 0 and NPE in downstream OCR for C/E on first/some photos)
-
-        recBuffer.p.clear()
-        val recCropId = recBuffer.createCrop(0, 0, targetW, targetH)
-        val interp = if (pW > targetW) org.opencv.imgproc.Imgproc.INTER_AREA else org.opencv.imgproc.Imgproc.INTER_LINEAR
-        org.opencv.imgproc.Imgproc.resize(buffer.c[cropId].mat, recBuffer.c[recCropId].mat, org.opencv.core.Size(targetW.toDouble(), targetH.toDouble()), 0.0, 0.0, interp)
+        val fed = RecBufferFeed.feedSourceBorderHeightStrip(
+            buffer.p.mat,
+            sl, st, sr, sb,
+            recBuffer,
+            targetH = 48,
+            borderPx = RecBufferFeed.DEFAULT_BORDER_PX,
+        )
+        if (fed.targetW <= 0 || fed.targetH <= 0) {
+            recBuffer.c[fed.recCropId].release()
+            return@map hunk
+        }
 
         val res = if (engine == "ML Kit") {
                 val img = com.google.mlkit.vision.common.InputImage.fromByteBuffer(
@@ -4084,10 +4113,10 @@ private suspend fun performHunkRecognition(hunks: List<PumpHunk>, buffer: Buffer
             val cleaned = OdometerOcrUtils.clean7SegmentDigits(ocrRes.debugText, Math.abs(angle) > 135f)
             ocrRes.copy(debugText = cleaned)
         } else {
-            paddleEngine.recognize(recBuffer.c[recCropId])
+            paddleEngine.recognize(recBuffer.c[fed.recCropId])
         }
 
-        recBuffer.c[recCropId].release(); buffer.c[cropId].release()
+        recBuffer.c[fed.recCropId].release()
         PumpHunk(res.debugText + if (res.perCharProbs.isNotEmpty()) " [probs:${res.perCharProbs}]" else "", hunk.rect)
     }
 }

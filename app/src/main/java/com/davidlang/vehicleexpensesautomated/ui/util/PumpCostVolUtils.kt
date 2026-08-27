@@ -802,6 +802,7 @@ object PumpCostVolUtils {
             val fed = RecBufferFeed.feedSourceBorderHeightStrip(
                 workspace, r, imgW, imgH, recBuffer,
                 targetH = 48,
+                borderPx = RecBufferFeed.DEFAULT_BORDER_PX,
             )
             val snap = snapRecCrop(recBuffer, fed.recCropId, fed.targetW, fed.targetH)
             val asisRes = paddleEngine.recognize(recBuffer.c[fed.recCropId])
