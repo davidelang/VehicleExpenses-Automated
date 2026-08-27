@@ -41,6 +41,8 @@ body { font-family: sans-serif; margin: 0; }
 body.hide-orig-details .orig-details { display: none; }
 body.hide-dump-details .dump-details { display: none; }
 body.hide-rec-crops .rec-crops { display: none; }
+.ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }
+.stat { font-size: 10px; color: #666; }
 </style>
 """.trimIndent()
 

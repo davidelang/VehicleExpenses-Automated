@@ -483,10 +483,6 @@ suspend fun runAlignmentExperiment(
     // Pre-allocated JSON serialization buffer (16MB starting capacity)
     var jsonCharBuffer = StringBuilder(16 * 1024 * 1024)
 
-    var partCount = 1
-    val maxSizeBytes = 5 * 1024 * 1024 // 5MB parts
-    var currentSize = 0
-    val footer = "</table></body></html>"
     NativePaddleEngine.initializeGlobalBuffers(context)
     val experimentRecSet320x48 = NativePaddleEngine.recBufferSet
     val experimentDetSet512x128 = BufferSet(512, 128)
@@ -503,13 +499,19 @@ suspend fun runAlignmentExperiment(
     val harnessEngineNames = pipelines.map { "${it.displayName} Paddle" }
     val pipelineNames = pipelines.map { it.displayName }
 
-    fun startNewFile(): File {
-        val f = File(reportDir, "alignment_report_${timestamp}_part${partCount++}.html")
-        f.writeText(buildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, emptyList(), harnessEngineNames, pipelineNames))
-        return f
-    }
-
-    var currentFile = startNewFile()
+    val alignColLabels = alignmentColumnLabels(pipelineNames, harnessEngineNames, emptyList())
+    val alignMetaHtml =
+        "<b>Run:</b> $timestamp | <b>Version:</b> ${BuildConfig.VERSION_NAME} | <b>Total:</b> $total"
+    val currentFile = File(reportDir, "alignment_report_${timestamp}.html")
+    currentFile.writeText(
+        buildHtmlHeader(
+            timestamp, total, BuildConfig.VERSION_NAME, emptyList(),
+            harnessEngineNames, pipelineNames, alignColLabels, alignMetaHtml,
+        ),
+    )
+    val footerHtml = ExperimentReportHtml.footer(
+        ExperimentReportHtml.Kind.ALIGNMENT, alignColLabels, alignMetaHtml,
+    )
     var firstJsonResult = true
 
     photos.forEachIndexed { index, file ->
@@ -805,8 +807,7 @@ suspend fun runAlignmentExperiment(
                     tilt, deskewResA, pipelines, meta.diagnostic
                 )
 
-                if (currentSize + rowHtml.length > maxSizeBytes) { currentFile.appendText(footer); currentFile = startNewFile(); currentSize = 0 }
-                currentFile.appendText(rowHtml); currentSize += rowHtml.length
+                currentFile.appendText(rowHtml)
 
                 val photoJson = serializePhotoResultToJson(
                     originalLineNumber, imgW, imgH, imgW, imgH, meta.isDegraded,
@@ -847,7 +848,7 @@ suspend fun runAlignmentExperiment(
             Log.e(TAG, "FATAL: Experiment failed for row $index (${file.name}):\n" + Log.getStackTraceString(e))
         }
     }
-    currentFile.appendText(footer)
+    currentFile.appendText(footerHtml)
     jsonFile.appendText("\n  ]\n}")
 
     logHeapState(context, "runExperiment:end")
@@ -1862,14 +1863,34 @@ private fun findValleyMidpoints(bins: FloatArray): List<Int> {
     return midpoints.distinct()
 }
 
-private fun buildHtmlHeader(time: String, total: Int, version: String, strategies: List<String>, harnessEngines: List<String>, pipelineNames: List<String>): String = buildString {
-    appendLine("<html><head><title>Deep Trace - $time</title>")
-    appendLine("<style>table { border-collapse: collapse; width: 100%; font-family: sans-serif; font-size: 24px; table-layout: fixed; } th, td { border: 1px solid #ccc; padding: 4px; text-align: center; vertical-align: top; word-wrap: break-word; overflow: hidden; } img { max-width: 100%; height: auto; border: 1px solid #eee; margin-bottom: 2px; } .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }</style></head><body>")
-    append("<h1>OCR Refinement Experiment</h1><p><b>Run:</b> $time | <b>Version:</b> $version | <b>Total:</b> $total</p><table><tr><th style='width:375px;'># & Original</th>")
-    pipelineNames.forEach { append("<th style='width:650px;'>Native Aligned $it</th>") }
-    harnessEngines.forEach { append("<th style='width:300px;'>$it</th>") }
-    strategies.forEach { append("<th style='width:300px;'>$it</th>") }
-    appendLine("<th style='width:300px;'>Refinement Consensus</th></tr>")
+private fun alignmentColumnLabels(
+    pipelineNames: List<String>,
+    harnessEngines: List<String>,
+    strategies: List<String>,
+): List<String> {
+    val labels = mutableListOf("# &amp; Original")
+    pipelineNames.forEach { labels.add("Native Aligned $it") }
+    harnessEngines.forEach { labels.add(it) }
+    strategies.forEach { labels.add(it) }
+    labels.add("Refinement Consensus")
+    return labels
+}
+
+private fun buildHtmlHeader(
+    time: String,
+    total: Int,
+    version: String,
+    strategies: List<String>,
+    harnessEngines: List<String>,
+    pipelineNames: List<String>,
+    colLabels: List<String>,
+    metaHtml: String,
+): String = buildString {
+    append(ExperimentReportHtml.documentHead("Deep Trace - $time"))
+    appendLine("<h1>OCR Refinement Experiment</h1><p>$metaHtml</p>")
+    append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.ALIGNMENT, colLabels, metaHtml, bottom = false))
+    append(ExperimentReportHtml.tableOpen(colLabels))
+    appendLine("<!-- total=$total version=$version pipelines=${pipelineNames.size} harness=${harnessEngines.size} strategies=${strategies.size} -->")
 }
 
 private fun buildHtmlRowDynamic(
@@ -1898,8 +1919,9 @@ private fun buildHtmlRowDynamic(
     val angMl = deskewRes.mlAngle
     val angV3 = deskewRes.engines["Paddle V3"]?.angle ?: 0f
     val angCpp = deskewRes.paddleCppAngle
-    appendLine("<tr><td><b>#$rowIndex</b>")
+    appendLine("<tr id=\"ve-row-$rowIndex\" data-photo=\"$rowIndex\"><td data-col=\"0\"><b>#$rowIndex</b>")
     appendLine("<br><small>$fileName</small>")
+    appendLine("<div class=\"orig-details\">")
     appendLine("<br><small>$resHtml</small>$diagHtml")
     appendLine("<br><b>Deskew:</b> ${tDeskew}ms<br><b>Discover:</b> ${tDiscovery}ms")
     appendLine("<br>ML: ${"%.1f".format(angMl)}&deg; | V3: ${"%.1f".format(angV3)}&deg; | CPP: ${"%.1f".format(angCpp)}&deg;")
@@ -1909,13 +1931,14 @@ private fun buildHtmlRowDynamic(
     if (extraImages.containsKey("hist1")) {
         appendLine("<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist1"]}'><br><small>Before Hist (Yellow=Stretch, Magenta=80%)</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${extraImages["hist2"]}'><br><small>After Hist (Cyan=Original 80%)</small></td></tr></table>")
     }
-    appendLine("</td>")
+    appendLine("</div></td>")
 
     val winnerRef = cachedRefs.find { it.vehicle.name == winnerName }; val vRes = winnerRef?.let { vehicleResults[it.vehicle.id] }
 
     // Aligned Columns (Dynamic per Pipeline)
+    var colIdx = 1
     pipelines.forEach { pipeline ->
-        appendLine("<td>")
+        appendLine("<td data-col=\"$colIdx\">")
         val pathRes = photoResult.pathways[pipeline.key]
         val alignedB64 = pathRes?.deskewedBase64 ?: ""
         if (alignedB64.isNotEmpty()) {
@@ -1924,35 +1947,36 @@ private fun buildHtmlRowDynamic(
                 val s = trace.metadata["raw_scale"]?.toDoubleOrNull() ?: 0.0
                 val tx = trace.metadata["raw_tx"]?.toDoubleOrNull() ?: 0.0
                 val ty = trace.metadata["raw_ty"]?.toDoubleOrNull() ?: 0.0
-                appendLine("<small>Native Warp (Cubic)<br>Scale: %.3f<br>TX: %.1f, TY: %.1f<br>Time: ${trace.timeMs}ms</small>".format(s, tx, ty))
+                appendLine("<div class='dump-details'><small>Native Warp (Cubic)<br>Scale: %.3f<br>TX: %.1f, TY: %.1f<br>Time: ${trace.timeMs}ms</small></div>".format(s, tx, ty))
             }
         } else {
             appendLine("<i>Not Aligned</i>")
         }
         appendLine("</td>")
+        colIdx++
     }
 
     val allReadings = mutableListOf<String>()
     harnessEngines.forEach { engine ->
-        appendLine("<td>")
-        // Check harness results across all paths
+        appendLine("<td data-col=\"$colIdx\">")
         val hRes = vRes?.pathResults?.values?.firstNotNullOfOrNull { it.harnessResults[engine] }
         if (hRes != null) {
-            appendLine("<b>Time:</b> ${hRes.totalTimeMs}ms<br>")
+            appendLine("<div class='dump-details'><b>Time:</b> ${hRes.totalTimeMs}ms<br></div>")
             appendLine(hRes.htmlCell)
         } else {
             appendLine("<i>No harness data</i>")
         }
         appendLine("</td>")
+        colIdx++
     }
 
     strategies.forEach { strat ->
-        appendLine("<td>")
+        appendLine("<td data-col=\"$colIdx\">")
         if (vRes != null) {
             // Check refinement traces across all paths (Take first one for now)
             val trace = vRes.pathResults.values.firstNotNullOfOrNull { it.refinementTraces[strat] }
             if (trace != null) {
-                appendLine("<b>Time:</b> ${trace.timeMs}ms<br>")
+                appendLine("<div class='dump-details'><b>Time:</b> ${trace.timeMs}ms<br></div>")
                 trace.steps.forEach { step ->
                     if (step.text?.isNotBlank() == true) allReadings.add(step.text)
 
@@ -1995,9 +2019,10 @@ private fun buildHtmlRowDynamic(
             } else appendLine("<i>No refinement data</i>")
         } else appendLine("<i>No refinement data</i>")
         appendLine("</td>")
+        colIdx++
     }
 
-    appendLine("<td><b>Winner:</b> $winnerName<br><br><b>Consensus:</b><br>")
+    appendLine("<td data-col=\"$colIdx\"><b>Winner:</b> $winnerName<br><br><b>Consensus:</b><br>")
     val freq = allReadings.groupBy { it }.mapValues { it.value.size }.toList().sortedByDescending { it.second }
     freq.forEach { (text, count) -> appendLine("<b>$text</b> ($count/48)<br>") }
     appendLine("</td></tr>")
