@@ -704,14 +704,24 @@ suspend fun runPumpExperiment(
 
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
-        "Set ink-prod",
-        "Set ink-prod-color",
-        "Set ink-prod-color2",
-        "Set ink-prod-walk2",
-        "Set jump-prod",
-        "Set jump-prod-color",
-        "Set rot-ink-prod",
-        "Set rot-ink-prod-color",
+        "Set ink-energy-base",
+        "Set ink-energy-tight",
+        "Set ink-energy-retract",
+        "Set ink-gray-base",
+        "Set ink-gray-tight",
+        "Set ink-gray-retract",
+        "Set ink-color-base",
+        "Set ink-color-tight",
+        "Set ink-color-retract",
+        "Set rot-energy-base",
+        "Set rot-energy-tight",
+        "Set rot-energy-retract",
+        "Set rot-gray-base",
+        "Set rot-gray-tight",
+        "Set rot-gray-retract",
+        "Set rot-color-base",
+        "Set rot-color-tight",
+        "Set rot-color-retract",
     )
     val heatDumpRoot by lazy {
         File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
@@ -1270,10 +1280,12 @@ suspend fun runPumpExperiment(
                     detScales: List<Int> = prodDetScales,
                     /** Color expand only. Gray call sites omit this (default false). */
                     chromaExpand: Boolean = false,
-                    /** 0 gray, 1 chromaMag, 2 chromaTint2, 3 chromaTint3. Nonzero wins over [chromaExpand]. */
+                    /** 0 gray, 1 chromaMag, 2 chromaTint2, 3 chromaTint3, 4 color_adaptive. Nonzero wins over [chromaExpand]. */
                     chromaMode: Int = 0,
                     gapFrac: Float = ContentExpandUtils.SEG7_GAP_FRAC,
                     minSeedHsToFreeze: Float = 0f,
+                    boundStrategy: Int = 0,
+                    tightInsetPx: Int = 16,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val workspace = ws
                     val branch = br
@@ -1459,6 +1471,8 @@ suspend fun runPumpExperiment(
                         gapFrac = gapFrac,
                         minSeedHsToFreeze = minSeedHsToFreeze,
                         scratch = workspace.s.mat,
+                        boundStrategy = boundStrategy,
+                        tightInsetPx = tightInsetPx,
                     ) ?: seeds.map { r ->
                         when (expandMode) {
                             2, 3 -> ContentExpandUtils.expand7segFromSeed(
@@ -1522,12 +1536,19 @@ suspend fun runPumpExperiment(
                     branch.metadata["seg7_freeze_min_hs"] = minSeedHsToFreeze.toString()
                     branch.metadata["seg7_jump_frac"] = "0.40"
                     branch.metadata["seg7_retract_clear_frac"] = "0.30"
-                    if (expandMode == 3) {
+                    if (expandMode == 4) {
+                        branch.metadata["content_expand_chroma"] = "color_adaptive"
+                    } else if (expandMode == 3) {
                         branch.metadata["content_expand_chroma"] = "color3"
                     } else if (expandMode == 2) {
                         branch.metadata["content_expand_chroma"] = "color2"
                     } else if (expandMode == 1 || chromaExpand) {
                         branch.metadata["content_expand_chroma"] = "true"
+                    }
+                    if (boundStrategy != 0) {
+                        branch.metadata["content_expand_bound"] =
+                            if (boundStrategy == 2) "edge-retract" else "tight"
+                        branch.metadata["content_expand_tight_inset_px"] = tightInsetPx.toString()
                     }
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
@@ -1943,6 +1964,9 @@ suspend fun runPumpExperiment(
                     seg7Stroke: Boolean = false,
                     detScales: List<Int> = prodDetScales,
                     chromaExpand: Boolean = false,
+                    chromaMode: Int = 0,
+                    boundStrategy: Int = 0,
+                    tightInsetPx: Int = 16,
                 ) {
                     fun hunkFromAabb(r: android.graphics.Rect): PumpHunk =
                         PumpHunk(
@@ -2031,7 +2055,7 @@ suspend fun runPumpExperiment(
                     val inkWalkSeeds: List<ContentExpandUtils.OrientedQuad>
                     val inkWalkBoxes: List<ContentExpandUtils.OrientedQuad>
                     val inkJumpOptsRot: ContentExpandUtils.ExpandOptions?
-                    val expandMode = if (chromaExpand) 1 else 0
+                    val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
                     if (seg7Stroke) {
                         val jumpOpts = ContentExpandUtils.ExpandOptions(
                             maxFrac = 0.4f,
@@ -2046,6 +2070,8 @@ suspend fun runPumpExperiment(
                             seedQuads,
                             chromaMode = expandMode,
                             scratch = workspace.s.mat,
+                            boundStrategy = boundStrategy,
+                            tightInsetPx = tightInsetPx,
                         )
                         val jumpedQuads = ContentExpandUtils.jumpRetractOrientedUMany(
                             gray, segs.map { it.quad }, jumpOpts,
@@ -2078,6 +2104,16 @@ suspend fun runPumpExperiment(
                         branch.metadata["seg7_jump_frac"] = "0.40"
                         branch.metadata["seg7_retract_clear_frac"] = "0.30"
                         branch.metadata["content_expand_oriented_7seg"] = "true"
+                        if (expandMode == 4) {
+                            branch.metadata["content_expand_chroma"] = "color_adaptive"
+                        } else if (expandMode == 1 || chromaExpand) {
+                            branch.metadata["content_expand_chroma"] = "true"
+                        }
+                        if (boundStrategy != 0) {
+                            branch.metadata["content_expand_bound"] =
+                                if (boundStrategy == 2) "edge-retract" else "tight"
+                            branch.metadata["content_expand_tight_inset_px"] = tightInsetPx.toString()
+                        }
                     } else {
                         val expandOpts = ContentExpandUtils.ExpandOptions(
                             maxFrac = maxFrac,
@@ -2087,6 +2123,8 @@ suspend fun runPumpExperiment(
                             freezeHorzDuringVert = freezeHorzDuringVert,
                             vertPadFrac = vertPadFrac,
                             recordVertEnergy = energyTraceOut != null,
+                            boundStrategy = boundStrategy,
+                            tightInsetPx = tightInsetPx,
                         )
                         expDiag = seedQuads.map { seed ->
                             ContentExpandUtils.expandOrientedDiagnose(gray, seed, expandOpts)
@@ -2430,6 +2468,9 @@ suspend fun runPumpExperiment(
                     seg7Stroke: Boolean = false,
                     detScales: List<Int> = prodDetScales,
                     chromaExpand: Boolean = false,
+                    chromaMode: Int = 0,
+                    boundStrategy: Int = 0,
+                    tightInsetPx: Int = 16,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit =
                     { ws, br, det, w, h ->
                         val workspace = ws
@@ -2467,8 +2508,15 @@ suspend fun runPumpExperiment(
                         branch.metadata["content_expand_freeze_horz"] = freezeHorzDuringVert.toString()
                         branch.metadata["content_expand_vert_energy"] = vertEnergy.name
                         branch.metadata["content_expand_vert_pad"] = vertPadFrac.toString()
-                        if (chromaExpand) {
+                        if (chromaMode == 4) {
+                            branch.metadata["content_expand_chroma"] = "color_adaptive"
+                        } else if (chromaExpand) {
                             branch.metadata["content_expand_chroma"] = "true"
+                        }
+                        if (boundStrategy != 0) {
+                            branch.metadata["content_expand_bound"] =
+                                if (boundStrategy == 2) "edge-retract" else "tight"
+                            branch.metadata["content_expand_tight_inset_px"] = tightInsetPx.toString()
                         }
                         if (vertEnergy == ContentExpandUtils.VertEnergyKind.CHI2) {
                             branch.metadata["content_expand_chi2_k"] = chi2K.toString()
@@ -2507,6 +2555,9 @@ suspend fun runPumpExperiment(
                                     seg7Stroke = seg7Stroke,
                                     detScales = detScales,
                                     chromaExpand = chromaExpand,
+                                    chromaMode = chromaMode,
+                                    boundStrategy = boundStrategy,
+                                    tightInsetPx = tightInsetPx,
                                 )
                             } else {
                             detScales.forEach { scale ->
@@ -2572,6 +2623,8 @@ suspend fun runPumpExperiment(
                                 chi2K = chi2K,
                                 vertPadFrac = vertPadFrac,
                                 recordVertEnergy = energyTraceOut != null,
+                                boundStrategy = boundStrategy,
+                                tightInsetPx = tightInsetPx,
                             )
                             val tExpand0 = System.currentTimeMillis()
                             val uv = workspace.p.uvMat
@@ -3054,22 +3107,136 @@ suspend fun runPumpExperiment(
                     val aPdI = getAnns(lastReds, Color.RED, 2) + getAnns(lastBlueHunks, Color.BLUE, 4) + getAnns(lastOrangeHunks, Color.rgb(255, 165, 0), 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdI, null, workspace).first
                 }
+                fun inkEnergy(bound: Int, name: String) = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "$name: product det + interior-energy AABB; bound=$bound; jump; maxFrac=0.4",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    energyRatio = 0.65f,
+                    boundStrategy = bound,
+                )
+                fun inkGray(bound: Int, name: String) = makeGProc(
+                    emptyList(),
+                    "$name: product det + greyscale Otsu 7seg; bound=$bound; OCR k=0..4; official k=1",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    expDetAsset = null,
+                    seg7Stroke = true,
+                    chromaMode = 0,
+                    boundStrategy = bound,
+                )
+                fun inkColor(bound: Int, name: String) = makeGProc(
+                    emptyList(),
+                    "$name: product det + color_adaptive 7seg; bound=$bound; OCR k=0..4; official k=1",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats = false,
+                    hmThresh = HEAT_THR_U8_GE1,
+                    expDetAsset = null,
+                    seg7Stroke = true,
+                    chromaMode = 4,
+                    boundStrategy = bound,
+                )
+                fun rotEnergy(bound: Int, name: String) = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "$name: product oriented det + interior-energy; bound=$bound; jump ±u",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = false,
+                    useOriented = true,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = rotExpandMaxFrac,
+                    vertSweep = emptyList(),
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertPadFrac = 0.0f,
+                    seg7Stroke = false,
+                    boundStrategy = bound,
+                )
+                fun rotGray(bound: Int, name: String) = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "$name: product oriented det + greyscale Otsu 7seg; bound=$bound",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = false,
+                    useOriented = true,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = rotExpandMaxFrac,
+                    vertSweep = emptyList(),
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertPadFrac = 0.0f,
+                    seg7Stroke = true,
+                    chromaMode = 0,
+                    boundStrategy = bound,
+                )
+                fun rotColor(bound: Int, name: String) = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "$name: product oriented det + color_adaptive 7seg; bound=$bound",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = false,
+                    useOriented = true,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = rotExpandMaxFrac,
+                    vertSweep = emptyList(),
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertPadFrac = 0.0f,
+                    seg7Stroke = true,
+                    chromaMode = 4,
+                    boundStrategy = bound,
+                )
+                val procInkEnergyBase = inkEnergy(0, "ink-energy-base")
+                val procInkEnergyTight = inkEnergy(1, "ink-energy-tight")
+                val procInkEnergyRetract = inkEnergy(2, "ink-energy-retract")
+                val procInkGrayBase = inkGray(0, "ink-gray-base")
+                val procInkGrayTight = inkGray(1, "ink-gray-tight")
+                val procInkGrayRetract = inkGray(2, "ink-gray-retract")
+                val procInkColorBase = inkColor(0, "ink-color-base")
+                val procInkColorTight = inkColor(1, "ink-color-tight")
+                val procInkColorRetract = inkColor(2, "ink-color-retract")
+                val procRotEnergyBase = rotEnergy(0, "rot-energy-base")
+                val procRotEnergyTight = rotEnergy(1, "rot-energy-tight")
+                val procRotEnergyRetract = rotEnergy(2, "rot-energy-retract")
+                val procRotGrayBase = rotGray(0, "rot-gray-base")
+                val procRotGrayTight = rotGray(1, "rot-gray-tight")
+                val procRotGrayRetract = rotGray(2, "rot-gray-retract")
+                val procRotColorBase = rotColor(0, "rot-color-base")
+                val procRotColorTight = rotColor(1, "rot-color-tight")
+                val procRotColorRetract = rotColor(2, "rot-color-retract")
                 val flowProcessors = buildList {
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
-                    add("Set ink-prod" to procProdInk)
-                    add("Set ink-prod-color" to procInkProdColor)
-                    add("Set ink-prod-color2" to procInkProdColor2)
-                    add("Set ink-prod-walk2" to procInkProdWalk2)
-                    add("Set jump-prod" to procProdJump)
-                    add("Set jump-prod-color" to procJumpProdColor)
-                    add("Set rot-ink-prod" to procProdRotInk)
-                    add("Set rot-ink-prod-color" to procRotInkProdColor)
+                    add("Set ink-energy-base" to procInkEnergyBase)
+                    add("Set ink-energy-tight" to procInkEnergyTight)
+                    add("Set ink-energy-retract" to procInkEnergyRetract)
+                    add("Set ink-gray-base" to procInkGrayBase)
+                    add("Set ink-gray-tight" to procInkGrayTight)
+                    add("Set ink-gray-retract" to procInkGrayRetract)
+                    add("Set ink-color-base" to procInkColorBase)
+                    add("Set ink-color-tight" to procInkColorTight)
+                    add("Set ink-color-retract" to procInkColorRetract)
+                    add("Set rot-energy-base" to procRotEnergyBase)
+                    add("Set rot-energy-tight" to procRotEnergyTight)
+                    add("Set rot-energy-retract" to procRotEnergyRetract)
+                    add("Set rot-gray-base" to procRotGrayBase)
+                    add("Set rot-gray-tight" to procRotGrayTight)
+                    add("Set rot-gray-retract" to procRotGrayRetract)
+                    add("Set rot-color-base" to procRotColorBase)
+                    add("Set rot-color-tight" to procRotColorTight)
+                    add("Set rot-color-retract" to procRotColorRetract)
                 }
-                // Parked (compiled, not scheduled): P/P-jump/P-rot, H*, L/M, G-dense/K, Prod-m65.
+                // Parked (compiled, not scheduled): prior ink-prod/color/walk2/jump, P*, L/M, G-dense/K.
                 @Suppress("UNUSED_VARIABLE")
                 val parked = listOf(
                     procGDense, procK, procP, procPJump,
-                    procPRot, procProdM65,
+                    procPRot, procProdM65, procProdInk, procInkProdColor,
+                    procInkProdColor2, procInkProdWalk2, procProdJump,
+                    procJumpProdColor, procProdRotInk, procRotInkProdColor,
                 ) +
                     procHorizByFactor.values + listOf(procL, procM)
                 val processor = flowProcessors.firstOrNull { it.first == flowName }?.second

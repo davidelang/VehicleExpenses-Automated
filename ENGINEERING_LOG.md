@@ -8711,3 +8711,7 @@ nativeSeg7 uses workspace.s; tint classify is float/squared (no per-pixel hypot)
 ## 2026-08-26 - Phase 1: color_adaptive + tight/edge-retract
 
 chromaMode 4 hybrid in fillChromaTintMask. tight/edge-retract in seg7 AABB/oriented, aabb grow, oriented energy. JNI boundStrategy/tightInsetPx. Jump tint mode 4. Do not deploy.
+
+## 2026-08-26 - Phase 2: 18-col registry + boundStrategy JNI
+
+Scheduled G-- + 18 (energy/gray/color_adaptive × base/tight/retract × AABB/rot). Parked walk2/color/color2/jump-prod/rot-ink. Jump-once unchanged. FLOWS 19-col table. Do not deploy.
