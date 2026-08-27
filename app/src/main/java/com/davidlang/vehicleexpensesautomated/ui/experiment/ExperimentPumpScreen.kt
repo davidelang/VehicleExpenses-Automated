@@ -263,6 +263,8 @@ fun ExperimentPumpScreen(
     autoHorizAffected: Boolean = false,
     /** Deep link: vehicleexpenses://experiment/pump?auto=prodinkfail — prod-ink fail subset. */
     autoProdInkFail: Boolean = false,
+    /** Deep link: vehicleexpenses://experiment/pump?auto=mixedfail — mixed-fail readable subset. */
+    autoMixedFail: Boolean = false,
     /** Deep link: vehicleexpenses://experiment/pump?auto=detdump — prod deskew/rot discover, no expand/OCR. */
     autoDetDump: Boolean = false,
     /** Deep link: vehicleexpenses://experiment/pump?auto=selected — coverage selected sample (pump only). */
@@ -399,6 +401,30 @@ fun ExperimentPumpScreen(
         }
     }
 
+    /** Trusted GT and not all-19 official exact on both devices (104 mixed-fail readable). */
+    val runMixedFailReadable: () -> Unit = {
+        val allFiles = experimentDir.listFiles { f ->
+            f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
+        } ?: emptyArray()
+        val want = MIXED_FAIL_READABLE_FILENAMES.toSet()
+        val names = allFiles.map { it.name }.filter { it in want }.sorted()
+        val missing = want.size - names.size
+        Log.d(
+            TAG,
+            "Mixed-fail readable listFiles: dir=${experimentDir.absolutePath} " +
+                "matched=${names.size}/${want.size} missing=$missing",
+        )
+        if (names.isEmpty()) {
+            status = "Mixed fail: 0 photos present (need ${want.size} in pump_photos)"
+        } else {
+            startPumpJob(
+                names,
+                "Mixed fail (${names.size})…" +
+                    if (missing > 0) " ($missing not on device)" else "",
+            )
+        }
+    }
+
     val runDetDump: () -> Unit = {
         val allFiles = experimentDir.listFiles { f ->
             f.extension.lowercase() in listOf("jpg", "jpeg", "png", "dng")
@@ -466,8 +492,8 @@ fun ExperimentPumpScreen(
         }
     }
 
-    // Deep link: vehicleexpenses://experiment/pump?auto=first10 | auto=l1debug | auto=horiz | auto=selected | auto=prodinkfail | auto=detdump
-    LaunchedEffect(autoFirst10, autoL1Debug, autoHorizAffected, autoProdInkFail, autoSelectedSample, autoDetDump) {
+    // Deep link: vehicleexpenses://experiment/pump?auto=first10 | auto=l1debug | auto=horiz | auto=selected | auto=prodinkfail | auto=mixedfail | auto=detdump
+    LaunchedEffect(autoFirst10, autoL1Debug, autoHorizAffected, autoProdInkFail, autoMixedFail, autoSelectedSample, autoDetDump) {
         if (autoStarted || ExperimentJobRunner.isRunning()) return@LaunchedEffect
         when {
             autoL1Debug -> {
@@ -489,6 +515,11 @@ fun ExperimentPumpScreen(
                 autoStarted = true
                 Log.i(TAG, "autoProdInkFail starting prod-ink fail subset")
                 runProdInkFail()
+            }
+            autoMixedFail -> {
+                autoStarted = true
+                Log.i(TAG, "autoMixedFail starting mixed-fail readable subset")
+                runMixedFailReadable()
             }
             autoSelectedSample -> {
                 autoStarted = true
@@ -548,11 +579,12 @@ fun ExperimentPumpScreen(
         val selectedLabel = "Selected sample (${SelectedSamplePhotos.PUMP.size} pump)"
         val horizLabel = "Horiz-affected (${HORIZ_REACH_AFFECTED_FILENAMES.size})"
         val prodInkLabel = "Prod-ink fail (${PROD_INK_FAIL_FILENAMES.size})"
+        val mixedFailLabel = "Mixed fail (${MIXED_FAIL_READABLE_FILENAMES.size})"
         val detDumpLabel = "Det dump (prod × deskew/rot)"
         val l1Label = "L1 SO debug dump (buffers + heatmaps)"
         val gridLabels = listOf(
             zipLabel, runTestLabel, first10Label, selectedLabel,
-            horizLabel, prodInkLabel, detDumpLabel, l1Label,
+            horizLabel, prodInkLabel, mixedFailLabel, detDumpLabel, l1Label,
         )
         val textMeasurer = rememberTextMeasurer()
         val buttonStyle = MaterialTheme.typography.labelLarge
@@ -581,6 +613,7 @@ fun ExperimentPumpScreen(
             GridBtn(selectedLabel, jobsEnabled, bold = true, onClick = runSelectedSample),
             GridBtn(horizLabel, jobsEnabled, onClick = runHorizAffected),
             GridBtn(prodInkLabel, jobsEnabled, onClick = runProdInkFail),
+            GridBtn(mixedFailLabel, jobsEnabled, onClick = runMixedFailReadable),
             GridBtn(detDumpLabel, jobsEnabled, onClick = runDetDump),
             GridBtn(l1Label, jobsEnabled, onClick = runL1SoDebug),
         )

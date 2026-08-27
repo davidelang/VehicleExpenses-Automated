@@ -8795,3 +8795,7 @@ pumpColumnLabels: no phantom ML. Paddle tds start data-col=1 matching header. cl
 ## 2026-08-27 - Phase 3 (0157): alignment + multi-scale finally footer
 
 Alignment closeAlignHtml in finally. Multi-scale HTML footer in finally (no second script). Do not deploy.
+
+## 2026-08-27 - Phase 1 (0408): Mixed fail (104) subset button
+
+MIXED_FAIL_READABLE_FILENAMES = JSON mixed_fail_readable (104, phone file order). Grid after Prod-ink fail. auto=mixedfail. FLOWS subset sentence. Expand/jump unchanged. Do not deploy.
