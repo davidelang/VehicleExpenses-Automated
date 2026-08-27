@@ -1769,6 +1769,35 @@ suspend fun runPumpExperiment(
                     branch.metadata["t_ocr_ms"] = tOcrAll
                     branch.metadata["t_ocr_energy_ms"] = tOcrAll
                 }
+                val horizPadRects = customBluePixelG.map {
+                    ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                }
+                val horizPadHunks = if (seg7Stroke && horizPadRects.isNotEmpty()) {
+                    val ocrPad = ocrPumpRectsAsisAndDigits(horizPadRects)
+                    val padCands = buildRedBoxCandidates(
+                        horizPadRects, ocrPad.asis, ocrPad.digits,
+                        ocrPad.asisProbs, ocrPad.digitsProbs, ocrPad.recB64,
+                        recWList = ocrPad.recW, recHList = ocrPad.recH,
+                    )
+                    val padCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(padCands)
+                    val padQuads = horizPadRects.map { ContentExpandUtils.orientedFromAabb(it) }
+                    inkVariants.put(
+                        ocrScaleVariantJson(
+                            0.5f, horizPadRects, padQuads, padCands, padCv, kind = "horiz_pad",
+                        ),
+                    )
+                    horizPadRects.map { r ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+                    }
+                } else {
+                    emptyList()
+                }
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelG,
                     ocrSourceRects = customBluePixelG,
@@ -1840,7 +1869,8 @@ suspend fun runPumpExperiment(
                 )
                 doBOrDRedOnlyImage()
                 val aPdG = if (horizJump || seg7Stroke) {
-                    getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4)
+                    getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) +
+                        getAnns(horizPadHunks, Color.BLUE, 4)
                 } else {
                     getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
                 }
@@ -2407,6 +2437,23 @@ suspend fun runPumpExperiment(
                             ),
                         )
                     }
+                    val horizPadQuads = expandedQuads.map {
+                        ContentExpandUtils.padOrientedU(it, 0.5f)
+                    }
+                    val horizPadRects = horizPadQuads.map { it.toAabb() }
+                    val horizPadOcr = ocrPumpOrientedQuads(horizPadQuads, gray, imgW, imgH)
+                    val horizPadCands = buildRedBoxCandidates(
+                        horizPadRects, horizPadOcr.asis, horizPadOcr.digits,
+                        horizPadOcr.asisProbs, horizPadOcr.digitsProbs, horizPadOcr.recB64,
+                        recWList = horizPadOcr.recW, recHList = horizPadOcr.recH,
+                    )
+                    val horizPadCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(horizPadCands)
+                    variants.put(
+                        ocrScaleVariantJson(
+                            0.5f, horizPadRects, horizPadQuads, horizPadCands, horizPadCv,
+                            kind = "horiz_pad",
+                        ),
+                    )
                     val tOcrE = branch.metadata["t_ocr_energy_ms"]?.toLongOrNull() ?: 0L
                     val tOcrG = branch.metadata["t_ocr_g_ms"]?.toLongOrNull() ?: 0L
                     branch.metadata["t_ocr_ms"] = (tOcrE + tOcrG).toString()
@@ -2507,7 +2554,8 @@ suspend fun runPumpExperiment(
                         redOnlyAnns, null, workspace,
                     ).first
                     val aPd = redOnlyAnns +
-                        primaryQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
+                        primaryQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) } +
+                        horizPadQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -2795,6 +2843,22 @@ suspend fun runPumpExperiment(
                                     kind = "energy_or_g", hitCaps = hitCaps,
                                 ),
                             )
+                            val aabbHorizPad = expandedBase.map {
+                                ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                            }
+                            val aabbPadOcr = ocrPumpRectsAsisAndDigits(aabbHorizPad)
+                            val aabbPadCands = buildRedBoxCandidates(
+                                aabbHorizPad, aabbPadOcr.asis, aabbPadOcr.digits,
+                                aabbPadOcr.asisProbs, aabbPadOcr.digitsProbs, aabbPadOcr.recB64,
+                                recWList = aabbPadOcr.recW, recHList = aabbPadOcr.recH,
+                            )
+                            val aabbPadCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(aabbPadCands)
+                            variants.put(
+                                ocrScaleVariantJson(
+                                    0.5f, aabbHorizPad, emptyList(), aabbPadCands, aabbPadCv,
+                                    kind = "horiz_pad",
+                                ),
+                            )
                             val hybridPair = energyCands to energyCv
                             val tOcrEa = branch.metadata["t_ocr_energy_ms"]?.toLongOrNull() ?: 0L
                             val tOcrGa = branch.metadata["t_ocr_g_ms"]?.toLongOrNull() ?: 0L
@@ -2856,8 +2920,18 @@ suspend fun runPumpExperiment(
                                     ),
                                 )
                             }
+                            val padBlueHunks = aabbHorizPad.map { r ->
+                                PumpHunk(
+                                    "",
+                                    RectF(
+                                        r.left.toFloat(), r.top.toFloat(),
+                                        r.right.toFloat(), r.bottom.toFloat(),
+                                    ),
+                                )
+                            }
                             val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
-                                getAnns(blueHunks, Color.BLUE, 4)
+                                getAnns(blueHunks, Color.BLUE, 4) +
+                                getAnns(padBlueHunks, Color.BLUE, 4)
                             branch.images["PD"] = OcrUtils.takeSnapshot(
                                 workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                                 aPd, null, workspace,

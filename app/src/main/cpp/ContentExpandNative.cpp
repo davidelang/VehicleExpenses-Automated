@@ -1864,8 +1864,8 @@ static bool fillGrayJumpLook(
     const bool reuse = scratchFits(dst, w, h);
     if (!reuse) {
         dst->create(h, w, CV_8UC1);
-        dst->setTo(0);
     }
+    dst->setTo(0);
     cv::Mat seedBin;
     double otsu = 0.0;
     bool inverted = false;
@@ -1875,9 +1875,6 @@ static bool fillGrayJumpLook(
     const int xl = std::max(0, sl - std::max(0, xPad));
     const int xr = std::min(w, sr + std::max(0, xPad));
     if (sr <= sl || sb <= st || xr <= xl) return false;
-    if (reuse) {
-        (*dst)(cv::Rect(xl, st, xr - xl, sb - st)).setTo(0);
-    }
     cv::Mat strip = y(cv::Range(st, sb), cv::Range(xl, xr));
     cv::Mat stripBin;
     const int ttype = inverted ? cv::THRESH_BINARY : cv::THRESH_BINARY_INV;

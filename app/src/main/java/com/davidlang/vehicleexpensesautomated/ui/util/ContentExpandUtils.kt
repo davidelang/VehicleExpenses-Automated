@@ -1665,6 +1665,16 @@ object ContentExpandUtils {
         ).toQuad()
     }
 
+    /** Extra unofficial L/R pad along `±u` by [horizFrac] × short-axis `bh`. T/B (`v`) unchanged. */
+    fun padOrientedU(q: OrientedQuad, horizFrac: Float): OrientedQuad {
+        val box = OrientedBox.fromQuad(q) ?: return q
+        val pad = horizFrac * box.vSpan().coerceAtLeast(1f)
+        return OrientedBox(
+            box.cx, box.cy, box.ux, box.uy, box.vx, box.vy,
+            box.u0 - pad, box.u1 + pad, box.v0, box.v1,
+        ).toQuad()
+    }
+
     /**
      * Jump-retract along `±u` (long axis) in source. Same energy jump / grow-if-text /
      * retract / retractClear as AABB [jumpRetractHorizontal]. Does not AABB the box.

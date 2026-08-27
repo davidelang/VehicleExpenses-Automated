@@ -8803,3 +8803,7 @@ MIXED_FAIL_READABLE_FILENAMES = JSON mixed_fail_readable (104, phone file order)
 ## 2026-08-27 - Phase 2 (0408): gray/color jump lookBin on seed Y
 
 colHas: gray/color maxInkRunCol >= 0.5s on original seed T/B (v). Tint from red seed. Energy still meanRectF vs energyRatio. JNI seedRect/sPx. Do not deploy.
+
+## 2026-08-27 - Phase 3 (0408): extra blue horiz_pad 0.5H
+
+After official box: L/R 0.5xH (rot \u00b1u 0.5x bh). OCR always; scaleVariants kind=horiz_pad; PD extra blue. final/k=1/energy unchanged. G-- orange/verts unchanged. Do not deploy.
