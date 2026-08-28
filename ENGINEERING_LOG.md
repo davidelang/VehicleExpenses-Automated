@@ -8929,3 +8929,8 @@ Do not deploy. --with_arm8_sve2 still OFF until Phase 2.
 ## 2026-08-27 - Phase 3: promote arm64 per-TU SVE2 JNI into jniLibs + libpin (2047)
 
 Copied src/bin arm64 libpaddle_lite_jni.so (2264946f) and light (9b16fe8b) into artifact/jni and app/src/main/jniLibs arm64-v8a. BuildId 5d19beb2 (r28c). libpin.toml + SO_SHIPPED.sha256 + SOURCE.md + PADDLE_PIN_BUILDS.md (per-TU SVE2 + HWCAP2; no global +sve2). x86_64 and armeabi-v7a SOs unchanged. Human: Pixel 6 First 10 no SIGILL; Pixel 11 launch + OCR. Do not deploy.
+
+## 2026-08-27 - CODE LANDED: paddle-arm64-sve2-per-tu-runtime-20260827-2047
+
+One arm64 JNI: r28c product FP, per-TU SVE2 (sve/*.cc +sve2; default march fp16, no global +sve2). Runtime has_sve2() HWCAP2. SHA 2264946f light 9b16fe8b BuildId 5d19beb2. QEMU OCR PASS ABCD12345 mass=1581. x86/armv7 unchanged.
+Human remaining: Pixel 6 First 10 no SIGILL vs 1924; Pixel 11 launch + pump First 10. Do not deploy from agent.
