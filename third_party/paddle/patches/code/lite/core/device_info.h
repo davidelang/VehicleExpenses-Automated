@@ -104,16 +104,23 @@ class DeviceInfo {
 
   int llc_size() const {
     auto size = absolute_l3cache_size_;
+    int idx = 0;
+    if (!active_ids_.empty()) idx = active_ids_[0];
+    const int n3 = static_cast<int>(L3_cache_.size());
+    const int n2 = static_cast<int>(L2_cache_.size());
     switch (l3_cache_method_) {
       // kDeviceL3Cache = 0, use the system L3 Cache size, best performance.
       case L3CacheSetMethod::kDeviceL3Cache:
-        size = L3_cache_[active_ids_[0]] > 0 ? L3_cache_[active_ids_[0]]
-                                             : L2_cache_[active_ids_[0]];
+        if (idx >= 0 && idx < n3 && L3_cache_[idx] > 0) {
+          size = L3_cache_[idx];
+        } else if (idx >= 0 && idx < n2) {
+          size = L2_cache_[idx];
+        }
         break;
       // kDeviceL2Cache = 1, use the system L2 Cache size, trade off performance
       // with less memory consumption.
       case L3CacheSetMethod::kDeviceL2Cache:
-        size = L2_cache_[active_ids_[0]];
+        if (idx >= 0 && idx < n2) size = L2_cache_[idx];
         break;
       // kAbsolute = 2, use the external setting.
       case L3CacheSetMethod::kAbsolute:
@@ -179,6 +186,7 @@ class DeviceInfo {
   void SetArchInfo(int argc, ...);
   bool SetCPUInfoByName();
   void SetCPUInfoByProb();
+  void EnsureCoreTopology();
   void RequestPowerFullMode(int thread_num);
   void RequestPowerHighMode(int thread_num);
   void RequestPowerLowMode(int thread_num);

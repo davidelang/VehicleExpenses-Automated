@@ -8880,3 +8880,15 @@ Copied artifact/jni/arm64-v8a libpaddle_lite_jni.so (6f6abe7e) and light (e63343
 
 One arm64 JNI: r28c product FP, DeviceInfo HWCAP ASIMDHP/ASIMDDP, SVE2 off. SHA 6f6abe7e. x86/armv7 unchanged.
 Human remaining: First 10 on Pixel 6 (not Ofast mass collapse); install arm64 APK on Pixel 11 — process stays up past loadLibrary. Do not deploy from agent.
+
+## 2026-08-27 - Execute start: paddle-p11-set-power-mode-high-20260827-2129
+
+Coder on detect-ocr-work-2. Harden SetRunMode (no %0 / empty cluster); app LITE_POWER_NO_BIND; arm64 r28c rebuild. SVE2 off, no --with_log=ON. Do not deploy. Human P11 launch + P6 First 10 after promote.
+
+## 2026-08-27 - Phase 1 start: SetRunMode harden + arm64 r28c rebuild (2129)
+
+Guard % big_core_size, fill empty cluster as 0..n-1, HIGH bind fail → NO_BIND, no archs_ OOB. Then arm64 r28c product-FP rebuild. SVE2 off. Do not deploy.
+
+## 2026-08-27 - Phase 1: SetRunMode harden rebuilt (2129)
+
+% big_core_size only when big_core_size>0. Empty topology filled 0..n-1. HIGH bind fail → NO_BIND. arm64 r28c ident, smoke PASS. jni sha 76bad39e (unstaged in src/bin until Phase 2 promote). Do not deploy.
