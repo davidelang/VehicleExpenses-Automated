@@ -8875,3 +8875,8 @@ QEMU OCR arm64: no arm64 adb device; emu abilist poisoned arm64 rootfs with x86 
 ## 2026-08-27 - Phase 3: promote arm64 r28c JNI into jniLibs + libpin (1924)
 
 Copied artifact/jni/arm64-v8a libpaddle_lite_jni.so (6f6abe7e) and light (e63343a1) into app/src/main/jniLibs/arm64-v8a. libpin.toml + SO_SHIPPED.sha256 + SOURCE.md + PADDLE_PIN_BUILDS.md (one arm64 SO, HWCAP, SVE2 off). x86_64 and armeabi-v7a SOs unchanged. Human: First 10 Pixel 6; install arm64 APK on Pixel 11 (do not deploy from agent).
+
+## 2026-08-27 - CODE LANDED: paddle-arm64-r28c-runtime-isa-20260827-1924
+
+One arm64 JNI: r28c product FP, DeviceInfo HWCAP ASIMDHP/ASIMDDP, SVE2 off. SHA 6f6abe7e. x86/armv7 unchanged.
+Human remaining: First 10 on Pixel 6 (not Ofast mass collapse); install arm64 APK on Pixel 11 — process stays up past loadLibrary. Do not deploy from agent.
