@@ -1707,6 +1707,30 @@ static int maxInkRunCol(const cv::Mat& bin, int x, int y0, int y1) {
     return best;
 }
 
+/** Per-seed gray/color minRun: never raise 0.5×sPx; if seed has ink, min(halfS, 0.4×max in-seed row run). */
+static int usedMinRun(int sPx, int maxInSeedRun) {
+    const int halfS = std::max(1, static_cast<int>(std::lround(0.5f * static_cast<float>(sPx))));
+    if (maxInSeedRun > 0) {
+        const int dyn = std::max(1, static_cast<int>(std::lround(0.4f * static_cast<float>(maxInSeedRun))));
+        return std::min(halfS, dyn);
+    }
+    return halfS;
+}
+
+static int maxInSeedRunRows(const cv::Mat& bin, int y0, int y1, int x0, int x1) {
+    int best = 0;
+    if (bin.empty() || bin.type() != CV_8UC1) return 0;
+    const int ya = std::max(0, y0);
+    const int yb = std::min(bin.rows, y1);
+    const int xa = x0;
+    const int xb = x1 < 0 ? bin.cols : x1;
+    for (int y = ya; y < yb; ++y) {
+        const int r = maxInkRunRow(bin, y, xa, xb);
+        if (r > best) best = r;
+    }
+    return best;
+}
+
 static void dropWide(cv::Mat* bin, int glareW);
 
 static void fillAabbLookSweep(
@@ -1937,7 +1961,9 @@ static void seg7One(
         cv::threshold(look, lookBin, thr, 255, ttype);
     }
     dropWide(&lookBin, glareW);
-    const int minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
+    const int localT = st - nt;
+    const int localB = sb - nt;
+    const int minRun = usedMinRun(sPx, maxInSeedRunRows(lookBin, localT, localB, 0, lookBin.cols));
     auto hasBar = [&](int y) {
         return maxInkRunRow(lookBin, y, 0, lookBin.cols) >= minRun;
     };
@@ -1950,8 +1976,6 @@ static void seg7One(
         }
         return false;
     };
-    const int localT = st - nt;
-    const int localB = sb - nt;
     int t = localT, b = localB;
     const int maxRetractPx = std::max(1, static_cast<int>(std::lround(0.10f * seedH)));
     int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
@@ -2502,7 +2526,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
         const cv::Mat* lookPtr = nullptr;
         int minRun = 0;
         if (inkTest) {
-            minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             if (useTint && uv) {
                 if (fillChromaTintMask(*gray, *uv, ssl, sst, ssr, ssb, tintDst, 11, xPad,
@@ -2513,6 +2536,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
                        tintDst && !tintDst->empty()) {
                 lookPtr = tintDst;
             }
+            const int maxIn = lookPtr
+                ? maxInSeedRunRows(*lookPtr, sst, ssb, ssl, ssr) : 0;
+            minRun = usedMinRun(sPx, maxIn);
         } else if (useTint && uv) {
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             if (fillChromaTintMask(*gray, *uv, l, t, r, b, tintDst, 11, xPad,
@@ -2815,7 +2841,6 @@ static void seg7OrientedOne(
     *sPxOut = static_cast<float>(std::max(1, sPx));
     const float cap = 2.5f * seedBh;
     const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
-    const int minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
     const int vLook = std::max(1, static_cast<int>(std::lround(cap)) + 2);
     const float lookV0 = seed.v0 - static_cast<float>(vLook);
     const float lookV1 = seed.v1 + static_cast<float>(vLook);
@@ -2841,6 +2866,9 @@ static void seg7OrientedOne(
         cv::threshold(look, lookBin, thr, 255, ttype);
     }
     dropWide(&lookBin, glareW);
+    const int ySeed0 = static_cast<int>(std::lround(seed.v0 - lookV0));
+    const int ySeed1 = static_cast<int>(std::lround(seed.v1 - lookV0));
+    const int minRun = usedMinRun(sPx, maxInSeedRunRows(lookBin, ySeed0, ySeed1, 0, lookBin.cols));
     auto hasBar = [&](float v) {
         const int y = static_cast<int>(std::lround(v - lookV0));
         if (y < 0 || y >= lookBin.rows) return false;
@@ -3266,7 +3294,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
             *sb = std::min(imgH, static_cast<int>(std::ceil(maxy)));
         };
         if (inkTest) {
-            minRun = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
             seedV0 = seedBox.v0;
             seedV1 = seedBox.v1;
             int sl, st, sr, sb;
@@ -3281,6 +3308,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
                        tintDst && !tintDst->empty()) {
                 lookPtr = tintDst;
             }
+            const int maxIn = lookPtr
+                ? maxInSeedRunRows(*lookPtr, st, sb, sl, sr) : 0;
+            minRun = usedMinRun(std::max(1, static_cast<int>(std::lround(sPx))), maxIn);
         } else if (useTint && uv) {
             int sl, st, sr, sb;
             aabbOf(box, &sl, &st, &sr, &sb);

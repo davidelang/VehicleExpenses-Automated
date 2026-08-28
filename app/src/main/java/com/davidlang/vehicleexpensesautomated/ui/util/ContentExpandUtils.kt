@@ -1534,7 +1534,7 @@ object ContentExpandUtils {
             val seedR = s0.right - nl
             val localT = s0.top - nt
             val localB = s0.bottom - nt
-            val minRun = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
+            val minRun = usedMinRun(sPx, maxInSeedRunOnRows(bin, localT, localB, seedL, seedR))
 
             fun hasBarRow(y: Int): Boolean {
                 if (y < 0 || y >= bin.rows()) return false
@@ -2048,7 +2048,6 @@ object ContentExpandUtils {
             val sPx = max(1, stroke.sPx)
             val cap = SEG7_VERT_CAP_FRAC * seedBh
             val gapStop = max(1, (SEG7_GAP_FRAC * sPx).roundToInt())
-            val minRun = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
             val thr = stroke.otsuThr
             val dark = stroke.darkInk
             val glareW = SEG7_GLARE_WIDTH_MULT * max(stroke.vSW, SEG7_MIN_STROKE)
@@ -2070,6 +2069,9 @@ object ContentExpandUtils {
             val ttype = if (dark) Imgproc.THRESH_BINARY_INV else Imgproc.THRESH_BINARY
             Imgproc.threshold(look, lookBin, thr.toDouble(), 255.0, ttype)
             dropWideComponents(lookBin, glareW)
+            val ySeed0 = (box.v0 - lookV0).roundToInt()
+            val ySeed1 = (box.v1 - lookV0).roundToInt()
+            val minRun = usedMinRun(sPx, maxInSeedRunOnRows(lookBin, ySeed0, ySeed1))
             fun hasBarAtV(v: Float): Boolean {
                 val y = (v - lookV0).roundToInt()
                 if (y < 0 || y >= lookBin.rows()) return false
@@ -2146,11 +2148,11 @@ object ContentExpandUtils {
         val bw = bin.cols()
         val bh = bin.rows()
         if (bw <= 1 || bh <= 1) return clip(box, imgW, imgH)
-        val minRun = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
         var l = (box.left - originX).coerceIn(0, bw - 1)
         var r = (box.right - originX).coerceIn(l + 1, bw)
         val t = (box.top - originY).coerceIn(0, bh - 1)
         val b = (box.bottom - originY).coerceIn(t + 1, bh)
+        val minRun = usedMinRun(sPx, maxInSeedRunOnRows(bin, t, b, l, r))
         fun hasBarCol(x: Int): Boolean {
             if (x < 0 || x >= bw) return false
             return maxInkRunOnCol(bin, x, t, b) >= minRun
@@ -2229,6 +2231,26 @@ object ContentExpandUtils {
             stats.release()
             centroids.release()
         }
+    }
+
+    /** Per-seed gray/color minRun: never raise 0.5×sPx; if seed has ink, min(halfS, 0.4×max in-seed row run). */
+    private fun usedMinRun(sPx: Int, maxInSeedRun: Int): Int {
+        val halfS = max(1, (SEG7_BAR_RUN_FRAC * sPx).roundToInt())
+        if (maxInSeedRun > 0) {
+            return min(halfS, max(1, (0.4f * maxInSeedRun).roundToInt()))
+        }
+        return halfS
+    }
+
+    private fun maxInSeedRunOnRows(bin: Mat, y0: Int, y1: Int, x0: Int = 0, x1: Int = -1): Int {
+        var best = 0
+        val ya = y0.coerceAtLeast(0)
+        val yb = y1.coerceAtMost(bin.rows())
+        for (y in ya until yb) {
+            val r = maxInkRunOnRow(bin, y, x0, x1)
+            if (r > best) best = r
+        }
+        return best
     }
 
     private fun maxInkRunOnRow(ink: Mat, y: Int, x0: Int = 0, x1: Int = -1): Int {

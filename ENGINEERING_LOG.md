@@ -8934,3 +8934,11 @@ Copied src/bin arm64 libpaddle_lite_jni.so (2264946f) and light (9b16fe8b) into 
 
 One arm64 JNI: r28c product FP, per-TU SVE2 (sve/*.cc +sve2; default march fp16, no global +sve2). Runtime has_sve2() HWCAP2. SHA 2264946f light 9b16fe8b BuildId 5d19beb2. QEMU OCR PASS ABCD12345 mass=1581. x86/armv7 unchanged.
 Human remaining: Pixel 6 First 10 no SIGILL vs 1924; Pixel 11 launch + pump First 10. Do not deploy from agent.
+
+## 2026-08-28 - Execute start: per-seed-minrun-vert-retract-50-20260828-0336
+
+Coder on detect-ocr-work-2. Per-seed gray/color minRun (never raise 0.5s); jump JNI uses the same usedMinRun; vertical retract cap 10%→50% seedH; flag BLOCKED_RETRACT_LIMIT. H jump geometry unchanged (0.4×blue H, max 4, 1px back). Energy 0.65, horiz_pad, G--/QF, expand caps unchanged. Do not deploy.
+
+## 2026-08-28 - Phase 1: per-seed usedMinRun on gray/color walk + jump (0336)
+
+Helper usedMinRun: min(round(0.5s), round(0.4×max in-seed row run)) when maxIn>0, else 0.5s (never raise). 7seg AABB+oriented walk and jump JNI (nativeJumpMany / nativeJumpOrientedMany) use it; Kotlin 7seg fallbacks match. Energy 0.65 / H jump geometry unchanged. Do not deploy.
