@@ -20,7 +20,7 @@ This document is the **how-to** for configuring, building, and validating the Pa
 
 ABIs of interest: **arm64-v8a** (devices), **x86_64** (emulators), **armeabi-v7a** (legacy / head units — keep building when capacity allows).
 
-**One arm64 JNI for all aarch64 phones** (Pixel 6 G1 through Pixel 11 G6, other aarch64). Runtime `getauxval(AT_HWCAP)` selects FP16 (`ASIMDHP`) and dotprod (`ASIMDDP`) so unknown CPU parts (e.g. Tensor G6 A725) do not disable those features; the CPU-part allow-list is only a fallback if HWCAP is 0. **`--with_arm8_sve2` stays OFF** (global `+sve2` would SIGILL on Pixel 6). Do not ship a G6-only / per-Tensor-gen extra SO.
+**One arm64 JNI for all aarch64 phones** (Pixel 6 G1 through Pixel 11 G6, other aarch64). Runtime `getauxval(AT_HWCAP)` selects FP16 (`ASIMDHP`) and dotprod (`ASIMDDP`) so unknown CPU parts (e.g. Tensor G6 A725) do not disable those features; the CPU-part allow-list is only a fallback if HWCAP is 0. **SVE2 kernels are in the same SO** (`--with_arm8_sve2=ON`) with **per-TU** `-march=…+sve2` on `sve/*.cc` only; default TUs stay `-march=armv8.2-a+fp16`. Runtime `has_sve2()` / `getauxval(AT_HWCAP2)` selects SVE vs NEON. Do **not** set global `CMAKE_*_FLAGS += +sve2` (SIGILL on Pixel 6). Do not ship a G6-only / per-Tensor-gen extra SO.
 
 ### 1.2 Models (Naive Buffer `.nb`)
 

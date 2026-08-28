@@ -8925,3 +8925,7 @@ Do not deploy. --with_arm8_sve2 still OFF until Phase 2.
 - extra_flags_for armv8: --with_arm82_fp16=ON --with_arm8_sve2=ON. CMake: global march armv8.2-a+fp16+nolse (no +sve2); math_arm_sve and PADDLELITE_OBJS sve/*.cc +sve2. r28c clang 19, product FP -O2 -fno-fast-math.
 - jni sha256 2264946f… (was 76bad39e). Strip-unneeded ~1.8MB. Ident r28c. SO smoke PASS. llvm-objdump: SVE ptrue/whilelt/fmla z plus NEON; strings softmax_sve/pooling_sve.
 - QEMU OCR arm64 PASS (has_sve2 false): ocr=ABCD12345 edit=0 heat_mass=1581 (not all-zero). x86/armv7 not rebuilt. Do not deploy.
+
+## 2026-08-27 - Phase 3: promote arm64 per-TU SVE2 JNI into jniLibs + libpin (2047)
+
+Copied src/bin arm64 libpaddle_lite_jni.so (2264946f) and light (9b16fe8b) into artifact/jni and app/src/main/jniLibs arm64-v8a. BuildId 5d19beb2 (r28c). libpin.toml + SO_SHIPPED.sha256 + SOURCE.md + PADDLE_PIN_BUILDS.md (per-TU SVE2 + HWCAP2; no global +sve2). x86_64 and armeabi-v7a SOs unchanged. Human: Pixel 6 First 10 no SIGILL; Pixel 11 launch + OCR. Do not deploy.

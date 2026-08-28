@@ -16,7 +16,7 @@
 
 | ABI | Profile | jni | light | Notes |
 |-----|---------|-----|-------|--------|
-| arm64-v8a | tailor + fp16 | ~1.8 MB | ~1.8 MB | **r28c product-FP** + SetRunMode harden (2026-08-27): HWCAP fp16/dot, empty cluster → all cores / NO_BIND, HIGH bind fail → NO_BIND. App `LITE_POWER_NO_BIND`. **SVE2 off**. |
+| arm64-v8a | tailor + fp16 | ~1.8 MB | ~1.8 MB | **r28c product-FP** + SetRunMode harden + **per-TU SVE2** (2026-08-27): HWCAP fp16/dot; HWCAP2 `has_sve2()`; `sve/*.cc` `+sve2`, default march fp16 (no global `+sve2`). App `LITE_POWER_NO_BIND`. |
 | armeabi-v7a | **tailor** + int8 (fp32 calib) | **~0.75–3 MB** | same | Branch product path `prod_u8fp32_u8` (no HW fp16). |
 | x86_64 | slim thin-jni | ~31 KB | ~9.5 MB | Light SO rebuilt 2026-08-18: x86 `DirectConv::ReInitWhenNeeded` re-JITs when rec W hops. **x86/armv7 SOs unchanged** this r28c arm64 promote. Models still `prod_u8fp16/*_x86_64.nb` (mid-graph often fp32 demote; not identical to armv8). |
 
