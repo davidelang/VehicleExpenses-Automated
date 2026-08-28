@@ -8856,3 +8856,18 @@ Coder on detect-ocr-work-2. One arm64 JNI: r28c product FP, DeviceInfo has_fp16/
 ## 2026-08-27 - Phase 1: DeviceInfo has_fp16/has_dot from HWCAP (1924)
 
 Pin overlay patches/code/lite/core/device_info.{h,cc}: aarch64 Android uses getauxval(AT_HWCAP) ASIMDHP/ASIMDDP; CPU-part allow-list (incl. A55) if HWCAP is 0. Unknown part still kARMArch_UNKOWN. Host src/ is fetch-deps 444; Docker apply overlays patches. No second JNI. Do not deploy.
+
+## 2026-08-27 - Phase 2 start: arm64 r28c product-FP rebuild (1924)
+
+PADDLE_NDK_VERSION=r28c PADDLE_ABIS=arm64-v8a PADDLE_ALLOW_FAST_MATH=0. SVE2 off. Smoke + OCR QEMU via ./third_party/paddle/test. Do not deploy. Do not rebuild x86/armv7.
+
+## 2026-08-27 - Strike: r28c clang 19 typeid vs -fno-rtti in paddle_lite_jni
+
+JNI overlay catch used typeid(e).name(); NDK r28c clang 19 errors with product -fno-rtti. Replaced with "std::exception". Retry arm64 product-FP rebuild.
+
+## 2026-08-27 - Phase 2: arm64 r28c product-FP JNI rebuilt (1924)
+
+NDK r28c clang 19, -O2 -fno-fast-math, --with_arm82_fp16=ON, SVE2 off, tailor. Ident .note.android.ident r28c (not r20b).
+libpaddle_lite_jni.so sha256 6f6abe7e… (was 0334a8c8). Strip-unneeded ~1.8MB. SO smoke PASS (uint8_to_fp16, fp32_to_uint8).
+JNI overlay: typeid → "std::exception" for -fno-rtti. Copied to artifact/jni/arm64-v8a only; x86/armv7 SOs unchanged.
+QEMU OCR arm64: no arm64 adb device; emu abilist poisoned arm64 rootfs with x86 linker (removed). Human First 10 remains heatmap gate. Do not deploy.

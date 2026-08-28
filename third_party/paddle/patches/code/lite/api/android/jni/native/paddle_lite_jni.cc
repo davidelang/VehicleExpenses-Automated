@@ -16,7 +16,6 @@ limitations under the License. */
 #include <exception>
 #include <memory>
 #include <string>
-#include <typeinfo>
 #include <utility>
 #include <vector>
 
@@ -64,7 +63,7 @@ inline auto jni_try(JNIEnv *env, const char *where, Fn &&fn)
   try {
     return fn();
   } catch (const std::exception &e) {
-    throw_java_runtime(env, where, e.what(), typeid(e).name());
+    throw_java_runtime(env, where, e.what(), "std::exception");
   } catch (...) {
     throw_java_runtime(env, where, "unknown non-std exception", nullptr);
   }
