@@ -8946,3 +8946,7 @@ Helper usedMinRun: min(round(0.5s), round(0.4×max in-seed row run)) when maxIn>
 ## 2026-08-28 - Phase 2: vertical retract 50% + BLOCKED_RETRACT_LIMIT (0336)
 
 kVertRetractCapFrac=0.50 on energy AABB, 7seg AABB, 7seg oriented, energy oriented retract clamps. boundFlagName(3)=BLOCKED_RETRACT_LIMIT. Assembly maxRetractFrac=0.50. Expand caps 2.5× / maxFrac=0.4 unchanged. Do not deploy.
+
+## 2026-08-28 - Phase 3: dump-details minRun vs 0.5s + FLOWS (0336)
+
+Dump-details ink V: thr=used minRun (0.5s=halfS) when sPx>0. FLOWS: per-seed minRun; vert retract 50%; H jump 0.4×blue H / 4 / 1px back. horiz_pad unofficial kept. No new column. Do not deploy.

@@ -3912,8 +3912,16 @@ private fun pInkSweepHtml(br: PumpBranch): String {
         val hScores = o.optJSONArray("hScores")
         if ((vScores?.length() ?: 0) < 2 && (hScores?.length() ?: 0) < 2) continue
         val thr = o.optDouble("thr")
+        val minRun = o.optInt("minRun")
+        val sPx = o.optDouble("sPx")
+        val vLabel = if (sPx > 0.0) {
+            val halfS = max(1, kotlin.math.round(0.5 * sPx).toInt())
+            "box${i + 1} ink V (thr=$minRun (0.5s=$halfS))"
+        } else {
+            "box${i + 1} ink V (thr=${"%.1f".format(thr)})"
+        }
         sb.append("<div style='margin:4px 0;'>")
-        sb.append("<div style='font-size:8px;color:#555;'>box${i + 1} ink V (thr=${"%.1f".format(thr)})</div>")
+        sb.append("<div style='font-size:8px;color:#555;'>$vLabel</div>")
         sb.append(
             pSparkSvg(
                 vScores, thr,
