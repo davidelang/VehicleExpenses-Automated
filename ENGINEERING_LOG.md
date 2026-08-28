@@ -8950,3 +8950,7 @@ kVertRetractCapFrac=0.50 on energy AABB, 7seg AABB, 7seg oriented, energy orient
 ## 2026-08-28 - Phase 3: dump-details minRun vs 0.5s + FLOWS (0336)
 
 Dump-details ink V: thr=used minRun (0.5s=halfS) when sPx>0. FLOWS: per-seed minRun; vert retract 50%; H jump 0.4×blue H / 4 / 1px back. horiz_pad unofficial kept. No new column. Do not deploy.
+
+## 2026-08-28 - CODE LANDED: per-seed-minrun-vert-retract-50-20260828-0336
+
+Gray/color minRun per seed: min(0.5s, 0.4×max in-seed row run) when maxIn>0; jump JNI uses the same cut. Vert retract cap 50% seedH; flag BLOCKED_RETRACT_LIMIT. H jump unchanged (0.4×blue H, max 4, 1px back). Energy 0.65, horiz_pad, G--/QF, expand caps unchanged. Do not deploy.
