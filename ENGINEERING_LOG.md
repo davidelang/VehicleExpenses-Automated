@@ -8848,3 +8848,11 @@ kotlin.math.round(Float) is Float; coerceIn(0, vs) wants Int. Fixed to roundToIn
 ## 2026-08-27 - CODE LANDED: ink-score-pixel-sweep-20260827-1432
 
 Phase 1: drop six *-base; AABB inkSweep JSON. Phase 2: rot ±v/±u same payload; dump-details SVG (thr, seed, walk/jump ticks). G-- has no inkSweep. 13 columns. Expand/jump/k-pad/horiz_pad, 0.5s/0.65/10% retract, G--/QF unchanged. Do not deploy.
+
+## 2026-08-27 - Execute start: paddle-arm64-r28c-runtime-isa-20260827-1924
+
+Coder on detect-ocr-work-2. One arm64 JNI: r28c product FP, DeviceInfo has_fp16/has_dot from HWCAP, SVE2 off. No fast-math. Do not deploy. Human First 10 (P6) and P11 launch remain after promote.
+
+## 2026-08-27 - Phase 1: DeviceInfo has_fp16/has_dot from HWCAP (1924)
+
+Pin overlay patches/code/lite/core/device_info.{h,cc}: aarch64 Android uses getauxval(AT_HWCAP) ASIMDHP/ASIMDDP; CPU-part allow-list (incl. A55) if HWCAP is 0. Unknown part still kARMArch_UNKOWN. Host src/ is fetch-deps 444; Docker apply overlays patches. No second JNI. Do not deploy.
