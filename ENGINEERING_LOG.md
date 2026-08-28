@@ -8896,3 +8896,8 @@ Guard % big_core_size, fill empty cluster as 0..n-1, HIGH bind fail → NO_BIND,
 ## 2026-08-27 - Phase 2: NO_BIND + promote arm64 JNI (2129)
 
 NativePaddleEngine three HIGH sites → LITE_POWER_NO_BIND (threads=4). Promoted jni 76bad39e / light 8235f55d. BuildId 823c3164 (r28c). x86/armv7 unchanged. Do not deploy.
+
+## 2026-08-27 - CODE LANDED: paddle-p11-set-power-mode-high-20260827-2129
+
+SetRunMode: no %0, empty cluster filled, HIGH bind fail → NO_BIND. App loadProductionModels LITE_POWER_NO_BIND threads=4. arm64 r28c BuildId 823c3164 sha 76bad39e. x86/armv7 unchanged.
+Human: Pixel 11 past onCreate/Tier 224 Init; Pixel 6 First 10 not Ofast collapse. Do not deploy.
