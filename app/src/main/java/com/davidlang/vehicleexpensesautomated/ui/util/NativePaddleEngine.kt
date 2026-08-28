@@ -462,8 +462,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             // MEM A/B 2026-08-09 on 5554: threads=1 vs 4 — first tier=2048 still ~+1.9GB
             // and warm PSS ~3GB; no material RAM win (keep 4 for latency/accuracy).
             config.setThreads(4)
-            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
-            Log.i("PaddleLite", "predictor config threads=4 power=HIGH path=$pathId")
+            config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
+            Log.i("PaddleLite", "predictor config threads=4 power=NO_BIND path=$pathId")
 
             TIER_SCALES.forEach { scale ->
                 val t0 = System.currentTimeMillis()
@@ -524,7 +524,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             val config = MobileConfig()
             config.setThreads(4)
-            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+            config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
             TIER_SCALES.forEach { scale ->
                 config.setModelFromFile(detPath)
                 val p = PaddlePredictor.createPaddlePredictor(config)
@@ -552,7 +552,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             }
             val config = MobileConfig()
             config.setThreads(4)
-            config.setPowerMode(PowerMode.LITE_POWER_HIGH)
+            config.setPowerMode(PowerMode.LITE_POWER_NO_BIND)
             TIER_SCALES.forEach { scale ->
                 config.setModelFromFile(detPath)
                 val p = PaddlePredictor.createPaddlePredictor(config)

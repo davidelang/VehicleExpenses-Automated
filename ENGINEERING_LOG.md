@@ -8892,3 +8892,7 @@ Guard % big_core_size, fill empty cluster as 0..n-1, HIGH bind fail → NO_BIND,
 ## 2026-08-27 - Phase 1: SetRunMode harden rebuilt (2129)
 
 % big_core_size only when big_core_size>0. Empty topology filled 0..n-1. HIGH bind fail → NO_BIND. arm64 r28c ident, smoke PASS. jni sha 76bad39e (unstaged in src/bin until Phase 2 promote). Do not deploy.
+
+## 2026-08-27 - Phase 2: NO_BIND + promote arm64 JNI (2129)
+
+NativePaddleEngine three HIGH sites → LITE_POWER_NO_BIND (threads=4). Promoted jni 76bad39e / light 8235f55d. BuildId 823c3164 (r28c). x86/armv7 unchanged. Do not deploy.
