@@ -8942,3 +8942,7 @@ Coder on detect-ocr-work-2. Per-seed gray/color minRun (never raise 0.5s); jump 
 ## 2026-08-28 - Phase 1: per-seed usedMinRun on gray/color walk + jump (0336)
 
 Helper usedMinRun: min(round(0.5s), round(0.4×max in-seed row run)) when maxIn>0, else 0.5s (never raise). 7seg AABB+oriented walk and jump JNI (nativeJumpMany / nativeJumpOrientedMany) use it; Kotlin 7seg fallbacks match. Energy 0.65 / H jump geometry unchanged. Do not deploy.
+
+## 2026-08-28 - Phase 2: vertical retract 50% + BLOCKED_RETRACT_LIMIT (0336)
+
+kVertRetractCapFrac=0.50 on energy AABB, 7seg AABB, 7seg oriented, energy oriented retract clamps. boundFlagName(3)=BLOCKED_RETRACT_LIMIT. Assembly maxRetractFrac=0.50. Expand caps 2.5× / maxFrac=0.4 unchanged. Do not deploy.

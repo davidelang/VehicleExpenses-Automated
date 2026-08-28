@@ -20,6 +20,8 @@ enum : int {
     kFlagBlockedGap = 4
 };
 
+static constexpr float kVertRetractCapFrac = 0.50f;
+
 struct Seg7Tele {
     float method = 0.f;
     float yInk = 0.f;
@@ -444,7 +446,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             }
             allowVNeg = stepsVNeg > 0;
         } else {
-            const int maxRetractPx = std::max(1, static_cast<int>(std::lround(0.10f * seedBh)));
+            const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedBh)));
             int nRetr = 0;
             while (bh > 2.f && nRetr < maxRetractPx && onEdgeV(-1.f) < thr) {
                 cx += 0.5f * fr.vx;
@@ -463,7 +465,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
             }
             allowVPos = stepsVPos > 0;
         } else {
-            const int maxRetractPx = std::max(1, static_cast<int>(std::lround(0.10f * seedBh)));
+            const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedBh)));
             int nRetr = 0;
             while (bh > 2.f && nRetr < maxRetractPx && onEdgeV(+1.f) < thr) {
                 cx -= 0.5f * fr.vx;
@@ -1511,7 +1513,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
         bool allowDown = b < imgH && meanRectF(vertEng, l, b, r, b + 1, imgW, imgH) >= thr;
         int walkT = 0, walkB = 0;
         int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
-        const int maxRetractPx = std::max(1, static_cast<int>(std::lround(0.10f * seedH)));
+        const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedH)));
         if (boundStrategy == 2) {
             auto edgeInk = [&](int sl, int st, int sr, int sb) {
                 return meanRectF(vertEng, sl, st, sr, sb, imgW, imgH) >= thr;
@@ -1977,7 +1979,7 @@ static void seg7One(
         return false;
     };
     int t = localT, b = localB;
-    const int maxRetractPx = std::max(1, static_cast<int>(std::lround(0.10f * seedH)));
+    const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedH)));
     int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
     if (boundStrategy == 2) {
         if (hasBar(localT)) {
@@ -2884,7 +2886,7 @@ static void seg7OrientedOne(
     };
     float v0 = seed.v0, v1 = seed.v1;
     const float maxRetractPx = static_cast<float>(
-        std::max(1, static_cast<int>(std::lround(0.10f * seedBh))));
+        std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedBh))));
     int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
     if (boundStrategy == 2) {
         if (hasBar(v0)) {

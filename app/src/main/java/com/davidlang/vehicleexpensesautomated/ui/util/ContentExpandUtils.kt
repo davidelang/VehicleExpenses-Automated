@@ -1368,7 +1368,7 @@ object ContentExpandUtils {
     fun boundFlagName(v: Float): String = when (kotlin.math.round(v).toInt()) {
         1 -> "NORMAL_EXPAND"
         2 -> "NORMAL_RETRACT"
-        3 -> "BLOCKED_10PCT_LIMIT"
+        3 -> "BLOCKED_RETRACT_LIMIT"
         4 -> "BLOCKED_GAP"
         else -> "UNCHANGED"
     }
