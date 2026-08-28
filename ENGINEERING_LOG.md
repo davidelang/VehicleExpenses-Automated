@@ -8871,3 +8871,7 @@ NDK r28c clang 19, -O2 -fno-fast-math, --with_arm82_fp16=ON, SVE2 off, tailor. I
 libpaddle_lite_jni.so sha256 6f6abe7e… (was 0334a8c8). Strip-unneeded ~1.8MB. SO smoke PASS (uint8_to_fp16, fp32_to_uint8).
 JNI overlay: typeid → "std::exception" for -fno-rtti. Copied to artifact/jni/arm64-v8a only; x86/armv7 SOs unchanged.
 QEMU OCR arm64: no arm64 adb device; emu abilist poisoned arm64 rootfs with x86 linker (removed). Human First 10 remains heatmap gate. Do not deploy.
+
+## 2026-08-27 - Phase 3: promote arm64 r28c JNI into jniLibs + libpin (1924)
+
+Copied artifact/jni/arm64-v8a libpaddle_lite_jni.so (6f6abe7e) and light (e63343a1) into app/src/main/jniLibs/arm64-v8a. libpin.toml + SO_SHIPPED.sha256 + SOURCE.md + PADDLE_PIN_BUILDS.md (one arm64 SO, HWCAP, SVE2 off). x86_64 and armeabi-v7a SOs unchanged. Human: First 10 Pixel 6; install arm64 APK on Pixel 11 (do not deploy from agent).

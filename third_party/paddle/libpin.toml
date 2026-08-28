@@ -13,18 +13,18 @@ build = ["./build"]
 consumer_note = "Docker NDK r28c: patches/ + patches-int8. arm64 tailor+fp16; armv7 tailor+int8 (fp32 calib, no arm82 fp16); x86 slim thin-jni+light (x86 LITE_BUILD_TAILOR drops KernelRegistrar — do not auto-tailor x86 yet). Tailor inputs: fetch-deps ro paddle-models. get-artifacts → artifact/ + app jniLibs."
 
 # --- pin-local stable names (multi-consumer / audit; independent of promote rows) ---
-# arm64+x86: restored to b8449343 pin ship (First-10-good: L1 cost 84.50). NDK r28c rebuild had regressed heatmaps.
-# x86_64 light only: DirectConv ReInitWhenNeeded re-JIT on rec W hop (2026-08-18). jni + other ABIs unchanged.
+# arm64: r28c product-FP + DeviceInfo HWCAP (ASIMDHP/ASIMDDP) 2026-08-27. SVE2 off. One arm64 JNI.
+# x86_64 light only: DirectConv ReInitWhenNeeded re-JIT on rec W hop (2026-08-18). jni + armv7 unchanged this turn.
 # armv7: keep branch tailor products (fp32 calib path).
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
 path = "artifact/jni/arm64-v8a/libpaddle_lite_jni.so"
-sha256 = "0334a8c864b491052f47870900537408db3508d9e909438998c7d79afb0c762a"
+sha256 = "6f6abe7e8bb7ec76f6304ce231243dd3f8060e8f2d27e530245cbbcef35147ee"
 
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_light_api_shared.so"
 path = "artifact/jni/arm64-v8a/libpaddle_light_api_shared.so"
-sha256 = "96fbc6a55468d7042d57f427b21aa2427af58ecbad20dadf4c7df921ac03f8d7"
+sha256 = "e63343a1a98d00888438f9da1d96710b107d6f9711cb8c58f12d743b9805385e"
 
 [[artifact]]
 from = "src/bin/armeabi-v7a/libpaddle_lite_jni.so"
@@ -55,12 +55,12 @@ sha256 = "8b71ac436ad1607c78088123f45a4f46c7416be205c0f4e544d68fadb19dfe6d"
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_lite_jni.so"
 path = "app/src/main/jniLibs/arm64-v8a/libpaddle_lite_jni.so"
-sha256 = "0334a8c864b491052f47870900537408db3508d9e909438998c7d79afb0c762a"
+sha256 = "6f6abe7e8bb7ec76f6304ce231243dd3f8060e8f2d27e530245cbbcef35147ee"
 
 [[artifact]]
 from = "src/bin/arm64-v8a/libpaddle_light_api_shared.so"
 path = "app/src/main/jniLibs/arm64-v8a/libpaddle_light_api_shared.so"
-sha256 = "96fbc6a55468d7042d57f427b21aa2427af58ecbad20dadf4c7df921ac03f8d7"
+sha256 = "e63343a1a98d00888438f9da1d96710b107d6f9711cb8c58f12d743b9805385e"
 
 [[artifact]]
 from = "src/bin/armeabi-v7a/libpaddle_lite_jni.so"

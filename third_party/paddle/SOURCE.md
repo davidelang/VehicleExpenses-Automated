@@ -16,9 +16,9 @@
 
 | ABI | Profile | jni | light | Notes |
 |-----|---------|-----|-------|--------|
-| arm64-v8a | tailor + fp16 | ~1.6 MB | ~1.6 MB | **Frozen to `b8449343` pin ship** (2026-08-04 First 10 good). Later NDK r28c rebuild regressed emu heatmaps/cost-vol vs that baseline — do not re-promote without First 10 golden gate. |
+| arm64-v8a | tailor + fp16 | ~1.8 MB | ~1.8 MB | **r28c product-FP** (2026-08-27): NDK r28c ident, `-O2` no fast-math, DeviceInfo `has_fp16`/`has_dot` from HWCAP (ASIMDHP/ASIMDDP). **SVE2 off** (one arm64 JNI for P6 and P11). r20b First-10 freeze lifted; human First 10 on Pixel 6 still required after promote. |
 | armeabi-v7a | **tailor** + int8 (fp32 calib) | **~0.75–3 MB** | same | Branch product path `prod_u8fp32_u8` (no HW fp16). |
-| x86_64 | slim thin-jni | ~31 KB | ~9.5 MB | Light SO rebuilt 2026-08-18: x86 `DirectConv::ReInitWhenNeeded` re-JITs when rec H/W hops. jni + arm64/armv7 SOs still `b8449343` / First-10-good. Models still `prod_u8fp16/*_x86_64.nb` (mid-graph often fp32 demote; not identical to armv8). |
+| x86_64 | slim thin-jni | ~31 KB | ~9.5 MB | Light SO rebuilt 2026-08-18: x86 `DirectConv::ReInitWhenNeeded` re-JITs when rec W hops. **x86/armv7 SOs unchanged** this r28c arm64 promote. Models still `prod_u8fp16/*_x86_64.nb` (mid-graph often fp32 demote; not identical to armv8). |
 
 **Regression note (2026-08-05):** Rebuilding arm64/x86 under NDK **r28c / clang 19** (vs pin **r20b / clang 8**) changed SO bytes and **broke** emulator First 10 pump L1 vs pin/libpin/Jul27 goldens (heatmap mass ~36k→~9–17k; cost 84.50→N/A/51). Calib stamps still present — **codegen / -ffast-math -Ofast** difference. Restored pin-era arm64+x86 artifacts; human dual-device First 10 on `v0.98-21-gbe84776b` **PASS**.
 
