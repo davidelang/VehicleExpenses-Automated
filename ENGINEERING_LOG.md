@@ -8913,3 +8913,15 @@ math/CMakeLists overlay: sve/*.cc → math_arm_sve with COMPILE_OPTIONS -march=a
 api_CMakeLists: re-apply those flags on sve/*.cc for PADDLELITE_OBJS (tiny_publish directory-scope).
 softmax_compute overlay: include softmax_sve.h (decls) not funcs_sve.h (arm_sve.h) so the kernel TU stays default march.
 Do not deploy. --with_arm8_sve2 still OFF until Phase 2.
+
+## 2026-08-27 - Phase 2 start: arm64 r28c SVE2 per-TU rebuild (2047)
+
+- extra_flags_for armv8: --with_arm82_fp16=ON --with_arm8_sve2=ON (arm64 only).
+- PADDLE_NDK_VERSION=r28c PADDLE_ABIS=arm64-v8a PADDLE_ALLOW_FAST_MATH=0. Product FP. No global +sve2.
+- Smoke + QEMU (has_sve2 false → NEON). SO must contain softmax_sve/gemm_sve. Do not deploy. Do not rebuild x86/armv7.
+
+## 2026-08-27 - Phase 2: arm64 r28c SVE2 per-TU JNI rebuilt (2047)
+
+- extra_flags_for armv8: --with_arm82_fp16=ON --with_arm8_sve2=ON. CMake: global march armv8.2-a+fp16+nolse (no +sve2); math_arm_sve and PADDLELITE_OBJS sve/*.cc +sve2. r28c clang 19, product FP -O2 -fno-fast-math.
+- jni sha256 2264946f… (was 76bad39e). Strip-unneeded ~1.8MB. Ident r28c. SO smoke PASS. llvm-objdump: SVE ptrue/whilelt/fmla z plus NEON; strings softmax_sve/pooling_sve.
+- QEMU OCR arm64 PASS (has_sve2 false): ocr=ABCD12345 edit=0 heat_mass=1581 (not all-zero). x86/armv7 not rebuilt. Do not deploy.
