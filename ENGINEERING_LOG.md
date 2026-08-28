@@ -8901,3 +8901,15 @@ NativePaddleEngine three HIGH sites → LITE_POWER_NO_BIND (threads=4). Promoted
 
 SetRunMode: no %0, empty cluster filled, HIGH bind fail → NO_BIND. App loadProductionModels LITE_POWER_NO_BIND threads=4. arm64 r28c BuildId 823c3164 sha 76bad39e. x86/armv7 unchanged.
 Human: Pixel 11 past onCreate/Tier 224 Init; Pixel 6 First 10 not Ofast collapse. Do not deploy.
+
+## 2026-08-27 - Execute start: paddle-arm64-sve2-per-tu-runtime-20260827-2047
+
+Coder on detect-ocr-work-2. One arm64 JNI: SVE2 kernels per-TU +sve2, default march fp16 no global sve2. Runtime has_sve2(). Product FP, r28c. Do not deploy. Human P6 no SIGILL + P11 launch after promote.
+
+## 2026-08-27 - Phase 1: cmake split SVE2 per-TU no global +sve2 (2047)
+
+postproject.cmake: LITE_WITH_ARM8_SVE2 keeps NDK>=23/armv8 checks; does not rewrite CMAKE_C/CXX_FLAGS with +sve2 (default march stays armv8.2-a+fp16+nolse).
+math/CMakeLists overlay: sve/*.cc → math_arm_sve with COMPILE_OPTIONS -march=armv8.2-a+sve2+fp16+dotprod+i8mm+nolse; math_arm DEPS math_arm_sve.
+api_CMakeLists: re-apply those flags on sve/*.cc for PADDLELITE_OBJS (tiny_publish directory-scope).
+softmax_compute overlay: include softmax_sve.h (decls) not funcs_sve.h (arm_sve.h) so the kernel TU stays default march.
+Do not deploy. --with_arm8_sve2 still OFF until Phase 2.

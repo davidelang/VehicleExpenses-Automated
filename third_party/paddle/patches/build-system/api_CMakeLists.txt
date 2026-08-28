@@ -157,6 +157,14 @@ if(LITE_WITH_X86)
     file(GLOB X86_FIX_AVX_SRC "${PADDLE_SOURCE_DIR}/lite/backends/x86/math/avx/*.cc")
     set_source_files_properties(${X86_FIX_MATH_SRC} ${X86_FIX_AVX_SRC} PROPERTIES COMPILE_FLAGS "-mavx -mavx2 -mfma -mf16c")
 endif()
+if(LITE_WITH_ARM8_SVE2)
+    # Same directory-scope fix as AVX2: tiny_publish recompiles __lite_cc_files as
+    # PADDLELITE_OBJS here, so per-target flags on math_arm_sve would be lost.
+    # Keep +sve2 on sve/*.cc only — never on PADDLELITE_OBJS as a whole.
+    file(GLOB ARM_SVE_FIX_SRC "${PADDLE_SOURCE_DIR}/lite/backends/arm/math/sve/*.cc")
+    set_source_files_properties(${ARM_SVE_FIX_SRC} PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+sve2+fp16+dotprod+i8mm+nolse")
+    message(STATUS "PADDLELITE_OBJS sve/*.cc COMPILE_FLAGS: -march=armv8.2-a+sve2+fp16+dotprod+i8mm+nolse")
+endif()
 
 add_library(PADDLELITE_OBJS OBJECT ${__lite_cc_files})
 
