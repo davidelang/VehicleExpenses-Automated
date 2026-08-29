@@ -8998,3 +8998,11 @@ docs/PUMP_EXPERIMENT_FLOWS.md: color_adaptive opening sentence and JNI 7seg bull
 ## 2026-08-29 - CODE LANDED: ink-pepper-chroma12-panel-veto-20260829-0422
 
 Pepper fill before dropWide; chroma<12 walks Y; ≥12 panel-hue veto in fillChromaTintMask (JNI). FLOWS.md matches. Pixel loops C++ only. Do not deploy.
+
+## 2026-08-29 - Execute start: ink-official-k0-20260829-0516
+
+Wire gray/color official pad k=1 → k=0 (AABB + rot). k=1 stays unofficial variant. Energy/G--/jump/pepper/chroma unchanged. Do not deploy.
+
+## 2026-08-29 - Phase 1: wire official ink pad k=0 (0516)
+
+SEG7_K=0f. AABB official inkBoxesFor(0f); extra k=1..4. Rot inkQuadsFor(0f); OCR loop 0..4 with official kk==0. Metadata/assembly kOfficial=0. Assembly notes official k=0. k=1 stays unofficial variant. padVertByStrokes arithmetic unchanged. Do not deploy.

@@ -1588,7 +1588,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    val official = inkBoxesFor(1f)
+                    val official = inkBoxesFor(0f)
                     makeGInkSweeps = segs.indices.map { i ->
                         segs[i].sweep?.withOfficial(official[i])
                     }
@@ -1609,7 +1609,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
                     storeSeg7Tele(branch, segs.map { it.tele })
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
-                    branch.metadata["seg7_k_official"] = "1"
+                    branch.metadata["seg7_k_official"] = "0"
                     branch.metadata["seg7_vert_cap_frac"] = ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
                     branch.metadata["seg7_gap_frac"] = gapFrac.toString()
                     branch.metadata["seg7_freeze_min_hs"] = minSeedHsToFreeze.toString()
@@ -1727,7 +1727,7 @@ suspend fun runPumpExperiment(
                     val quads1 = customBluePixelG.map { ContentExpandUtils.orientedFromAabb(it) }
                     inkVariants.put(
                         ocrScaleVariantJson(
-                            1f, customBluePixelG, quads1, gCands, cvG, kind = "ink",
+                            0f, customBluePixelG, quads1, gCands, cvG, kind = "ink",
                         ),
                     )
                     var nOcr = customBluePixelG.size
@@ -1737,7 +1737,7 @@ suspend fun runPumpExperiment(
                     }
                     branch.metadata["seg7_skip_extra_k_letter"] =
                         skipExtraK.count { it }.toString()
-                    for (kk in listOf(0f, 2f, 3f, 4f)) {
+                    for (kk in listOf(1f, 2f, 3f, 4f)) {
                         val rects = inkRectsFor(kk)
                         val ocrIdx = ArrayList<Int>()
                         val ocrRects = ArrayList<android.graphics.Rect>()
@@ -1835,7 +1835,7 @@ suspend fun runPumpExperiment(
                     assembly = if (seg7Stroke) mapOf(
                         "method" to "7seg_stroke",
                         "k" to listOf(0, 1, 2, 3, 4),
-                        "kOfficial" to 1,
+                        "kOfficial" to 0,
                         "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
                         "gapFrac" to gapFrac,
                         "minSeedHsToFreeze" to minSeedHsToFreeze,
@@ -1925,7 +1925,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdInk = makeGProc(
                     emptyList(),
-                    "ink-prod: product det + seed-ROI s; walk once; OCR k=0..4; official k=1; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
+                    "ink-prod: product det + seed-ROI s; walk once; OCR k=0..4; official k=0; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -2217,7 +2217,7 @@ suspend fun runPumpExperiment(
                                 )
                             }
                         }
-                        expandedQuads = inkQuadsFor(1f)
+                        expandedQuads = inkQuadsFor(0f)
                         hitCaps = expandedQuads.map { false }
                         inkStrokes = segs.map { it.stroke }
                         expDiag = emptyList()
@@ -2232,7 +2232,7 @@ suspend fun runPumpExperiment(
                             inkStrokes.joinToString(",") { it.sPx.toString() }
                         storeSeg7Tele(branch, segs.map { it.tele })
                         branch.metadata["seg7_k"] = "0,1,2,3,4"
-                        branch.metadata["seg7_k_official"] = "1"
+                        branch.metadata["seg7_k_official"] = "0"
                         branch.metadata["seg7_vert_cap_frac"] =
                             ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
                         branch.metadata["seg7_gap_frac"] =
@@ -2331,11 +2331,11 @@ suspend fun runPumpExperiment(
                         var officialCands: List<RedBoxOcrCandidate> = emptyList()
                         var officialCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(emptyList())
                         var skipExtraK = BooleanArray(0)
-                        for (kk in listOf(1f, 0f, 2f, 3f, 4f)) {
-                            val quads = if (kk == 1f) expandedQuads else inkQuadsForK(kk)
+                        for (kk in listOf(0f, 1f, 2f, 3f, 4f)) {
+                            val quads = if (kk == 0f) expandedQuads else inkQuadsForK(kk)
                             val rects = quads.map { it.toAabb() }
                             val candsK: List<RedBoxOcrCandidate>
-                            if (kk == 1f) {
+                            if (kk == 0f) {
                                 val ocrK = ocrPumpOrientedQuads(quads, gray, imgW, imgH)
                                 nOcr += quads.size
                                 candsK = buildRedBoxCandidates(
@@ -2396,7 +2396,7 @@ suspend fun runPumpExperiment(
                                     }
                                 }
                             }
-                            val cvK = if (kk == 1f) officialCv else
+                            val cvK = if (kk == 0f) officialCv else
                                 PumpCostVolUtils.classifyCostVolFromBoxOcr(candsK)
                             variants.put(
                                 ocrScaleVariantJson(
@@ -2540,7 +2540,7 @@ suspend fun runPumpExperiment(
                             "finalKind" to "ink",
                             "maxFrac" to 0.4f,
                             "k" to listOf(0, 1, 2, 3, 4),
-                            "kOfficial" to 1,
+                            "kOfficial" to 0,
                             "vertCapFrac" to ContentExpandUtils.SEG7_VERT_CAP_FRAC,
                             "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
                             "sPx" to inkStrokes.map { it.sPx },
@@ -3045,7 +3045,7 @@ suspend fun runPumpExperiment(
                 )
                 val procProdRotInk = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "rot-ink-prod: product oriented det + AABB ink walk once; OCR k=0..4; official k=1; jump (no G-list)",
+                    "rot-ink-prod: product oriented det + AABB ink walk once; OCR k=0..4; official k=0; jump (no G-list)",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,
@@ -3060,7 +3060,7 @@ suspend fun runPumpExperiment(
                 )
                 val procInkProdColor = makeGProc(
                     emptyList(),
-                    "ink-prod-color: product det + chromaMag 7seg (median<8 Y fallback); OCR k=0..4; official k=1",
+                    "ink-prod-color: product det + chromaMag 7seg (median<8 Y fallback); OCR k=0..4; official k=0",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -3070,7 +3070,7 @@ suspend fun runPumpExperiment(
                 )
                 val procInkProdColor2 = makeGProc(
                     emptyList(),
-                    "ink-prod-color2: product det + chroma tintMask 7seg (u_p·u_ink / Y polarity); OCR k=0..4; official k=1",
+                    "ink-prod-color2: product det + chroma tintMask 7seg (u_p·u_ink / Y polarity); OCR k=0..4; official k=0",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -3080,7 +3080,7 @@ suspend fun runPumpExperiment(
                 )
                 val procInkProdWalk2 = makeGProc(
                     emptyList(),
-                    "ink-prod-walk2: product det + 7seg walk gap/peek 2.0s; freeze empty peek only if seedH>=4s; OCR k=0..4; official k=1",
+                    "ink-prod-walk2: product det + 7seg walk gap/peek 2.0s; freeze empty peek only if seedH>=4s; OCR k=0..4; official k=0",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -3103,7 +3103,7 @@ suspend fun runPumpExperiment(
                 )
                 val procRotInkProdColor = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "rot-ink-prod-color: product oriented det + chroma AABB ink walk; OCR k=0..4; official k=1",
+                    "rot-ink-prod-color: product oriented det + chroma AABB ink walk; OCR k=0..4; official k=0",
                     expDetAsset = null,
                     enableJump = true,
                     doDeskew = false,
@@ -3316,7 +3316,7 @@ suspend fun runPumpExperiment(
                 )
                 fun inkGray(bound: Int, name: String) = makeGProc(
                     emptyList(),
-                    "$name: product det + greyscale Otsu 7seg; bound=$bound; OCR k=0..4; official k=1",
+                    "$name: product det + greyscale Otsu 7seg; bound=$bound; OCR k=0..4; official k=0",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
@@ -3327,7 +3327,7 @@ suspend fun runPumpExperiment(
                 )
                 fun inkColor(bound: Int, name: String) = makeGProc(
                     emptyList(),
-                    "$name: product det + color_adaptive 7seg; bound=$bound; OCR k=0..4; official k=1",
+                    "$name: product det + color_adaptive 7seg; bound=$bound; OCR k=0..4; official k=0",
                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                     dumpHeats = false,
                     hmThresh = HEAT_THR_U8_GE1,
