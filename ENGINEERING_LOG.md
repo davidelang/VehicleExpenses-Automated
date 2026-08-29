@@ -9014,3 +9014,11 @@ docs/PUMP_EXPERIMENT_FLOWS.md: official/PD/final = k=0; extras k=1..4. Table gra
 ## 2026-08-29 - CODE LANDED: ink-official-k0-20260829-0516
 
 Gray/color official pad k=0 (jumped walk, 0 vertical pad). k=1..4 unofficial. PD/final/classify/inkSweep/letter skip/horiz_pad use k=0. FLOWS.md matches. Energy/G--/jump/pepper/chroma unchanged. Do not deploy.
+
+## 2026-08-29 - Execute start: 1040 shared-hue skip then 1453 seed poison
+
+Implement color-shared-hue-skip-y-20260829-1040 (JNI skipTint when meanChroma<12 or uInk·uBg≥0.50) first, then seed-poison-stroke-agree-run-20260829-1453 (per-region stroke peak; no-peak=no-ink; runs cross regions). Pixel-heavy walk stays C++. Do not deploy.
+
+## 2026-08-29 - Phase 1: skipTint shared-hue (1040)
+
+fillChromaTintMask computes inkBgDot. skipTintWalk(adaptive && (meanChroma<12 || inkBgDot≥kTintDotThr)) used by nativeSeg7Many, nativeSeg7OrientedMany, nativeJumpMany, nativeJumpOrientedMany. Jump skip uses Y look. Panel veto formula unchanged. No tele dump shift. JNI only. Do not deploy.

@@ -30,6 +30,7 @@ struct Seg7Tele {
     float meanChroma = 0.f;
     float uInkX = 0.f;
     float uInkY = 0.f;
+    float inkBgDot = 0.f;
     float otsuThr = 0.f;
     float sPx = 0.f;
     float dTop = 0.f;
@@ -2116,6 +2117,10 @@ static void seg7One(
 static constexpr float kTintDotThr = 0.5f;
 static constexpr float kTintChromaEps = 8.0f;
 
+static bool skipTintWalk(bool adaptive, const Seg7Tele& tele) {
+    return adaptive && (tele.meanChroma < 12.f || tele.inkBgDot >= kTintDotThr);
+}
+
 static void uvAt(const cv::Mat& uv, int imgW, int x, int y, int* u, int* v) {
     if (uv.empty() || uv.type() != CV_8UC2 || uv.rows <= 0 || uv.cols <= 0) {
         *u = 128;
@@ -2221,8 +2226,8 @@ static bool fillGrayJumpLook(
  * Samples stroke chromaticity inside seed ink runs; background at ±s_px
  * outside those edges; classifies look-strip pixels by u_p·u_ink (or Y
  * polarity when chroma is near zero). Chromatic pixels: color2 dot≥0.50.
- * Local c²<eps² → Y contrast. Caller skips tint walk when meanChromaInk<12.
- * chromaMode 4 + meanChromaInk≥12 + chromatic uBg: panel-hue veto
+ * Local c²<eps² → Y contrast. Caller skips tint walk when meanChromaInk<12
+ * or (chromaMode 4 and uInk·uBg ≥ kTintDotThr). Else panel-hue veto
  * (cos(u_pix, uBg) ≥ kTintDotThr is not ink); else Y-near or ink-hue.
  */
 static bool fillChromaTintMask(
@@ -2356,8 +2361,10 @@ static bool fillChromaTintMask(
         }
         meanChromaBg = chromaBgSum / static_cast<float>(nBg);
     }
-    const bool panelVeto = adaptive && meanChromaInk >= 12.f &&
-        meanChromaBg >= kTintChromaEps && nrmBg2 > 1e-12f;
+    const bool bgHasChroma = meanChromaBg >= kTintChromaEps && nrmBg2 > 1e-12f;
+    const float inkBgDot = (inkHasChroma && bgHasChroma)
+        ? (uInkX * uBgX + uInkY * uBgY) : 0.f;
+    const bool panelVeto = adaptive && meanChromaInk >= 12.f && bgHasChroma;
     const float dInk = yInk - yBg;
     const float eps2 = kTintChromaEps * kTintChromaEps;
     const float dotThr2 = kTintDotThr * kTintDotThr;
@@ -2422,6 +2429,7 @@ static bool fillChromaTintMask(
         tele->meanChroma = meanChromaInk;
         tele->uInkX = uInkX;
         tele->uInkY = uInkY;
+        tele->inkBgDot = inkBgDot;
         tele->sPx = static_cast<float>(sPx);
         tele->otsuThr = static_cast<float>(otsuY);
     }
@@ -2497,14 +2505,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
             const bool ok = uv && fillChromaTintMask(
                 *gray, *uv, l, t, r, b, tintDst, glareMult, 0, adaptive, &tele);
             if (ok && tintDst && !tintDst->empty() &&
-                !(adaptive && tele.meanChroma < 12.f)) {
+                !skipTintWalk(adaptive, tele)) {
                 seg7One(*tintDst, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
                     gapFrac, minSeedHsToFreeze, glareMult,
                     boundStrategy, tightInsetPx, &tele, true,
                     &sweeps[static_cast<size_t>(i)]);
             } else {
-                if (adaptive && ok && tele.meanChroma < 12.f) tele.method = 0.f;
+                if (ok && skipTintWalk(adaptive, tele)) tele.method = 0.f;
                 seg7One(*gray, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
                     gapFrac, minSeedHsToFreeze, 11,
@@ -2608,8 +2616,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
         if (inkTest) {
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             if (useTint && uv) {
-                if (fillChromaTintMask(*gray, *uv, ssl, sst, ssr, ssb, tintDst, 11, xPad,
-                        adaptive) && tintDst && !tintDst->empty()) {
+                Seg7Tele ttele{};
+                const bool tintOk = fillChromaTintMask(
+                    *gray, *uv, ssl, sst, ssr, ssb, tintDst, 11, xPad,
+                    adaptive, &ttele) && tintDst && !tintDst->empty();
+                if (tintOk && !skipTintWalk(adaptive, ttele)) {
+                    lookPtr = tintDst;
+                } else if (tintOk && skipTintWalk(adaptive, ttele) &&
+                    fillGrayJumpLook(*gray, ssl, sst, ssr, ssb, xPad, tintDst) &&
+                    tintDst && !tintDst->empty()) {
                     lookPtr = tintDst;
                 }
             } else if (fillGrayJumpLook(*gray, ssl, sst, ssr, ssb, xPad, tintDst) &&
@@ -2621,9 +2636,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
             minRun = usedMinRun(sPx, maxIn);
         } else if (useTint && uv) {
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
+            Seg7Tele ttele{};
             if (fillChromaTintMask(*gray, *uv, l, t, r, b, tintDst, 11, xPad,
-                    adaptive) &&
-                tintDst && !tintDst->empty()) {
+                    adaptive, &ttele) &&
+                tintDst && !tintDst->empty() &&
+                !skipTintWalk(adaptive, ttele)) {
                 eng = tintDst;
             }
         } else if (useChromaMag && cMag && !cMag->empty() &&
@@ -3271,7 +3288,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
             if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11, 0,
                     adaptive, &tele) && tintDst && !tintDst->empty()) {
                 keepColor = true;
-                if (adaptive && tele.meanChroma < 12.f) {
+                if (skipTintWalk(adaptive, tele)) {
                     tele.method = 0.f;
                     src = gray;
                     srcIsBin = false;
@@ -3388,8 +3405,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
             aabbOf(seedBox, &sl, &st, &sr, &sb);
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             if (useTint && uv) {
-                if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11,
-                        jx * (kJumpMax + 1), adaptive) && tintDst && !tintDst->empty()) {
+                Seg7Tele ttele{};
+                const bool tintOk = fillChromaTintMask(
+                    *gray, *uv, sl, st, sr, sb, tintDst, 11,
+                    jx * (kJumpMax + 1), adaptive, &ttele) &&
+                    tintDst && !tintDst->empty();
+                if (tintOk && !skipTintWalk(adaptive, ttele)) {
+                    lookPtr = tintDst;
+                } else if (tintOk && skipTintWalk(adaptive, ttele) &&
+                    fillGrayJumpLook(*gray, sl, st, sr, sb, jx * (kJumpMax + 1), tintDst) &&
+                    tintDst && !tintDst->empty()) {
                     lookPtr = tintDst;
                 }
             } else if (fillGrayJumpLook(*gray, sl, st, sr, sb, jx * (kJumpMax + 1), tintDst) &&
@@ -3403,8 +3428,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
             int sl, st, sr, sb;
             aabbOf(box, &sl, &st, &sr, &sb);
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
+            Seg7Tele ttele{};
             if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11,
-                    jx * (kJumpMax + 1), adaptive) && tintDst && !tintDst->empty()) {
+                    jx * (kJumpMax + 1), adaptive, &ttele) &&
+                tintDst && !tintDst->empty() &&
+                !skipTintWalk(adaptive, ttele)) {
                 eng = tintDst;
             }
         } else if (useChromaMag && cMag && !cMag->empty() &&
