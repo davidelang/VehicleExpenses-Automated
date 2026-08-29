@@ -986,7 +986,7 @@ suspend fun runPumpExperiment(
                     val n = minOf(boxRects.size, asisList.size, digitsList.size)
                     return (0 until n).map { i ->
                         RedBoxOcrCandidate(
-                            "Red${i+1}",
+                            "box${i + 1}",
                             asisList[i],
                             digitsList[i],
                             asisProbsList.getOrElse(i) { "" },
@@ -1759,10 +1759,10 @@ suspend fun runPumpExperiment(
                             val j = ocrAt[i]
                             if (j == null) {
                                 val src = gCands.getOrElse(i) {
-                                    RedBoxOcrCandidate("Red${i + 1}", "", "")
+                                    RedBoxOcrCandidate("box${i + 1}", "", "")
                                 }
                                 src.copy(
-                                    label = "Red${i + 1}",
+                                    label = "box${i + 1}",
                                     rect = rects[i],
                                     recB64 = "",
                                     recW = 0,
@@ -1770,7 +1770,7 @@ suspend fun runPumpExperiment(
                                 )
                             } else {
                                 RedBoxOcrCandidate(
-                                    "Red${i + 1}",
+                                    "box${i + 1}",
                                     ocrK.asis.getOrElse(j) { "" },
                                     ocrK.digits.getOrElse(j) { "" },
                                     ocrK.asisProbs.getOrElse(j) { "" },
@@ -2372,10 +2372,10 @@ suspend fun runPumpExperiment(
                                     val j = ocrAt[i]
                                     if (j == null) {
                                         val src = officialCands.getOrElse(i) {
-                                            RedBoxOcrCandidate("Red${i + 1}", "", "")
+                                            RedBoxOcrCandidate("box${i + 1}", "", "")
                                         }
                                         src.copy(
-                                            label = "Red${i + 1}",
+                                            label = "box${i + 1}",
                                             rect = rects[i],
                                             recB64 = "",
                                             recW = 0,
@@ -2383,7 +2383,7 @@ suspend fun runPumpExperiment(
                                         )
                                     } else {
                                         RedBoxOcrCandidate(
-                                            "Red${i + 1}",
+                                            "box${i + 1}",
                                             ocrK.asis.getOrElse(j) { "" },
                                             ocrK.digits.getOrElse(j) { "" },
                                             ocrK.asisProbs.getOrElse(j) { "" },
@@ -4085,7 +4085,7 @@ private fun pBuildHtmlRowDynamic(
                 val hh = s.getInt("h")
                 val ww = s.getInt("w")
                 val aa = s.getInt("area")
-                perRedHtml.append("<td style='border:none; padding:2px; vertical-align:top; width:33%; text-align:center;'><small>Red${ii}: h=${hh} w=${ww} area=${aa}</small></td>")
+                perRedHtml.append("<td style='border:none; padding:2px; vertical-align:top; width:33%; text-align:center;'><small>box${ii + 1}: h=${hh} w=${ww} area=${aa}</small></td>")
                 if ((j + 1) % numCols == 0 && j < sortedData.size - 1) {
                     perRedHtml.append("</tr><tr>")
                 }

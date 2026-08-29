@@ -8962,3 +8962,7 @@ Coder on detect-ocr-work-2. Drop dead bottom HTML toolbar; rec/cand labels boxN;
 ## 2026-08-29 - Phase 1: remove dead bottom HTML toolbar (0125)
 
 footer() closes table/html only. toolbar has no bottom variant; CSS .ve-bar.bottom gone. Pump/alignment/multiscale share one top bar. Do not deploy.
+
+## 2026-08-29 - Phase 2: rec/cand labels boxN (0125)
+
+AABB and rot pump cands + empty fallbacks + local zip helper + per-red hist captions use box${i+1}. pRecBuffersHtml still prints JSON label. Matches dump-details boxN ink V. Do not deploy.
