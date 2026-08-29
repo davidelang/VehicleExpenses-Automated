@@ -9006,3 +9006,7 @@ Wire gray/color official pad k=1 → k=0 (AABB + rot). k=1 stays unofficial vari
 ## 2026-08-29 - Phase 1: wire official ink pad k=0 (0516)
 
 SEG7_K=0f. AABB official inkBoxesFor(0f); extra k=1..4. Rot inkQuadsFor(0f); OCR loop 0..4 with official kk==0. Metadata/assembly kOfficial=0. Assembly notes official k=0. k=1 stays unofficial variant. padVertByStrokes arithmetic unchanged. Do not deploy.
+
+## 2026-08-29 - Phase 2: FLOWS.md official k=0 (0516)
+
+docs/PUMP_EXPERIMENT_FLOWS.md: official/PD/final = k=0; extras k=1..4. Table gray/rot finalKind=ink k=0. Extra-k skip uses official (k=0) asis. horiz_pad still unofficial on the finished official box. Do not deploy.
