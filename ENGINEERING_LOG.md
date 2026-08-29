@@ -9046,3 +9046,7 @@ Declare hhR after rBin; oriented tele otsuThr 0. Do not deploy.
 ## 2026-08-29 - Phase 3: FLOWS.md seed poison (1453)
 
 docs/PUMP_EXPERIMENT_FLOWS.md: one paragraph — per-region stroke peak, no-peak=no-ink, runs cross regions. No det/k/pad/cap change. Do not deploy.
+
+## 2026-08-29 - CODE LANDED: seed-poison-stroke-agree-run-20260829-1453
+
+Poison map + v0_clean / v0_poison; no-peak=0; unified look raster; hasBar [minRun,glareW]; dropWideRuns. Pixel walk C++ only. 1040 skipTint also landed. Do not deploy.
