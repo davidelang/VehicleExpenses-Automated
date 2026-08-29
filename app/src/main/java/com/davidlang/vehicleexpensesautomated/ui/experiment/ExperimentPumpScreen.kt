@@ -3862,7 +3862,7 @@ private fun pSparkSvg(
     stop0: Int,
     stop1: Int,
     w: Int = 240,
-    h: Int = 40,
+    h: Int = 52,
 ): String {
     val arr = scores ?: return ""
     val n = arr.length()
@@ -3875,25 +3875,46 @@ private fun pSparkSvg(
         if (v > hi) hi = v
     }
     if (hi <= lo) hi = lo + 1.0
+    val plotH = h - 12
     fun x(i: Int): Double = 1.0 + i.toDouble() / (n - 1).toDouble() * (w - 2)
-    fun y(v: Double): Double = (h - 2) - (v - lo) / (hi - lo) * (h - 4)
+    fun y(v: Double): Double = (plotH - 2) - (v - lo) / (hi - lo) * (plotH - 4)
     val pts = StringBuilder()
     for (i in 0 until n) {
         if (i > 0) pts.append(' ')
         pts.append("%.1f,%.1f".format(x(i), y(arr.optDouble(i))))
     }
-    fun tick(idx: Int, color: String): String {
+    fun overlay(idx: Int, color: String): String {
         if (idx < 0) return ""
         val xi = "%.1f".format(x(idx.coerceIn(0, n - 1)))
-        return "<line x1='$xi' y1='0' x2='$xi' y2='$h' stroke='$color' stroke-width='1'/>"
+        return "<line x1='$xi' y1='0' x2='$xi' y2='$plotH' stroke='$color' stroke-width='1'/>"
+    }
+    val xIdx = linkedSetOf<Int>()
+    xIdx.add(0)
+    if (seed0 >= 0) xIdx.add(seed0.coerceIn(0, n - 1))
+    if (seed1 >= 0) xIdx.add(seed1.coerceIn(0, n - 1))
+    xIdx.add(n - 1)
+    val xTicks = StringBuilder()
+    for (idx in xIdx) {
+        val xf = x(idx)
+        val xi = "%.1f".format(xf)
+        val anchor = when {
+            xf < 12.0 -> "start"
+            xf > w - 12.0 -> "end"
+            else -> "middle"
+        }
+        xTicks.append(
+            "<line x1='$xi' y1='$plotH' x2='$xi' y2='${plotH + 3}' stroke='#666' stroke-width='1'/>" +
+                "<text x='$xi' y='$h' font-size='8' fill='#555' text-anchor='$anchor'>$idx</text>",
+        )
     }
     val yt = "%.1f".format(y(thr))
     return "<svg width='$w' height='$h' viewBox='0 0 $w $h' " +
         "style='display:block;background:#fafafa;border:1px solid #ccc;margin:2px 0;'>" +
         "<line x1='0' y1='$yt' x2='$w' y2='$yt' stroke='#c44' stroke-width='1' stroke-dasharray='3,2'/>" +
         "<polyline fill='none' stroke='#258' stroke-width='1' points='$pts'/>" +
-        tick(seed0, "#888") + tick(seed1, "#888") +
-        tick(stop0, "#2a2") + tick(stop1, "#2a2") +
+        overlay(seed0, "#888") + overlay(seed1, "#888") +
+        overlay(stop0, "#2a2") + overlay(stop1, "#2a2") +
+        xTicks.toString() +
         "</svg>"
 }
 
@@ -3936,6 +3957,9 @@ private fun pInkSweepHtml(br: PumpBranch): String {
                 o.optInt("h0", -1), o.optInt("h1", -1),
                 o.optInt("jumpL", -1), o.optInt("jumpR", -1),
             ),
+        )
+        sb.append(
+            "<div style='font-size:8px;color:#555;'>gray=seed  green=walk  dashed red=thr  x=scan index (seed ± 2.5H)</div>",
         )
         sb.append("</div>")
     }

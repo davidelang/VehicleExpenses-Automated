@@ -8966,3 +8966,7 @@ footer() closes table/html only. toolbar has no bottom variant; CSS .ve-bar.bott
 ## 2026-08-29 - Phase 2: rec/cand labels boxN (0125)
 
 AABB and rot pump cands + empty fallbacks + local zip helper + per-red hist captions use box${i+1}. pRecBuffersHtml still prints JSON label. Matches dump-details boxN ink V. Do not deploy.
+
+## 2026-08-29 - Phase 3: sparkline x ticks + legend (0125)
+
+pSparkSvg: numeric x ticks at 0, seed edges, n-1 (deduped). pInkSweepHtml legend: gray=seed green=walk dashed red=thr x=scan index (seed ± 2.5H). Plot data/thr/walk indices unchanged. Do not deploy.
