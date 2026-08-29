@@ -8994,3 +8994,7 @@ fillChromaTintMask: sample uBg from existing ±sPx tryBg pixels. chromaMode 4 + 
 ## 2026-08-29 - Phase 4: FLOWS.md color_adaptive + 7seg pepper (0422)
 
 docs/PUMP_EXPERIMENT_FLOWS.md: color_adaptive opening sentence and JNI 7seg bullet now say pepper-before-dropWide, chroma<12 walks Y, ≥12 panel-hue veto (not must-match stroke hue). Table names unchanged. No new columns. Do not deploy.
+
+## 2026-08-29 - CODE LANDED: ink-pepper-chroma12-panel-veto-20260829-0422
+
+Pepper fill before dropWide; chroma<12 walks Y; ≥12 panel-hue veto in fillChromaTintMask (JNI). FLOWS.md matches. Pixel loops C++ only. Do not deploy.
