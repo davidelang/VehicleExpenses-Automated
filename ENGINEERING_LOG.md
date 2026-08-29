@@ -9034,3 +9034,7 @@ skipTintWalk (meanChroma<12 or uInk·uBg≥0.50) on all four JNI 7seg/jump entry
 ## 2026-08-29 - Phase 1: poison map + clean/poison stroke peaks (1453)
 
 C++ seedInkBinY: coarse Y Otsu+pepper, poison (fat min(h,v)>3×max(v0,4), h-run>11×max(v0,4), weak h-run>0.25W), clean re-Otsu+v0_clean, per-CC v0_poison. Chroma sample bin = clean ink plus agreeing poison (no-peak stays 0). Walk lookBin still global. Do not deploy.
+
+## 2026-08-29 - Phase 2: unified look raster + hasBar run band (1453)
+
+fillPoisonLookRaster: one look, clean vs per-poison rule, no-peak=0, runs cross region edges. hasBar = run in [minRun, glareW]. dropWideRuns (too-wide runs, not whole CCs). AABB+oriented 7seg + gray jump look. sPx from v0_clean. Do not deploy.

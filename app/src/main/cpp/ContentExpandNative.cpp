@@ -1736,6 +1736,10 @@ static int maxInSeedRunRows(const cv::Mat& bin, int y0, int y1, int x0, int x1) 
 
 static void dropWide(cv::Mat* bin, int glareW);
 static void fillSaltPepper(cv::Mat* bin);
+static bool rowHasStrokeBar(const cv::Mat& bin, int y, int minRun, int glareW);
+static int fillPoisonLookRaster(
+    const cv::Mat& seedY, const cv::Mat& lookY, int ySeed0, int xSeed0,
+    bool srcIsBin, int glareMult, int fallback, cv::Mat* lookBin);
 
 static void fillAabbLookSweep(
     const cv::Mat& src, bool srcIsBin, double otsu, bool darkInk, int glareW,
@@ -1941,73 +1945,32 @@ static void seg7One(
     *usedFb = 1;
     if (sr <= sl || sb <= st || src.empty() || src.type() != CV_8UC1) return;
     if (seedH < 4 || seedW < 4) return;
-    cv::Mat roi = src(cv::Range(st, sb), cv::Range(sl, sr));
-    cv::Mat bin;
-    double thr = 0.0;
-    bool darkInk = true;
-    bool invertedBin = false;
-    if (srcIsBin) {
-        roi.copyTo(bin);
-    } else {
-        thr = cv::threshold(roi, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-    }
-    const int nPix = seedW * seedH;
-    int nz = cv::countNonZero(bin);
-    float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
-    if (inkFrac >= 0.45f) {
-        cv::bitwise_not(bin, bin);
-        nz = cv::countNonZero(bin);
-        inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
-        darkInk = false;
-        invertedBin = srcIsBin;
-    }
-    fillSaltPepper(&bin);
-    HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
-    const int v0 = hh0.peak;
     const int gm = glareMult > 0 ? glareMult : 11;
-    const int glareW = gm * std::max(v0, 4);
-    dropWide(&bin, glareW);
-    HorizSW hh = horizPeakSW(bin, seedH, seedW);
-    const int vSW = hh.peak;
-    const int hSW = vertPeakSW(bin, seedH);
-    const int lo = std::max(1, static_cast<int>(std::lround(0.7f * vSW)));
-    const int hi = std::max(lo, static_cast<int>(std::lround(1.3f * vSW)));
-    int band = 0;
-    const int hiClamp = std::min(hi, static_cast<int>(hh.hist.size()) - 1);
-    for (int k = lo; k <= hiClamp; ++k) band += hh.hist[k];
-    const float strokeShare = hh.nNonSpan > 0
-        ? band / static_cast<float>(hh.nNonSpan) : 0.f;
-    const float maxRunOverW = hh.maxRun / static_cast<float>(seedW);
-    const bool needFb = vSW <= 4 || inkFrac >= 0.45f ||
-        strokeShare < 0.30f || maxRunOverW >= 0.50f;
-    const int sPx = needFb ? fallback : vSW;
-    *sPxOut = sPx;
-    *vSWOut = vSW;
-    *hSWOut = hSW;
-    *usedFb = needFb ? 1 : 0;
     const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
-    const float gf = gapFrac > 0.f ? gapFrac : 0.5f;
-    const int gapStop = std::max(1, static_cast<int>(std::lround(gf * sPx)));
     const int vLook = capPx + 2;
     const int nt = std::max(0, st - vLook);
     const int nb = std::min(imgH, sb + vLook);
     if (sr <= sl || nb <= nt) return;
     cv::Mat look = src(cv::Range(nt, nb), cv::Range(sl, sr));
+    cv::Mat seedY;
+    src(cv::Range(st, sb), cv::Range(sl, sr)).copyTo(seedY);
     cv::Mat lookBin;
-    if (srcIsBin) {
-        look.copyTo(lookBin);
-        if (invertedBin) cv::bitwise_not(lookBin, lookBin);
-    } else {
-        const int ttype = darkInk ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
-        cv::threshold(look, lookBin, thr, 255, ttype);
-    }
-    fillSaltPepper(&lookBin);
-    dropWide(&lookBin, glareW);
     const int localT = st - nt;
     const int localB = sb - nt;
+    const int sPx = fillPoisonLookRaster(
+        seedY, look, localT, 0, srcIsBin, gm, fallback, &lookBin);
+    const int glareW = gm * std::max(sPx, 4);
+    const int vSW = sPx;
+    const int hSW = vertPeakSW(lookBin, seedH);
+    *sPxOut = sPx;
+    *vSWOut = vSW;
+    *hSWOut = hSW;
+    *usedFb = (sPx == fallback) ? 1 : 0;
+    const float gf = gapFrac > 0.f ? gapFrac : 0.5f;
+    const int gapStop = std::max(1, static_cast<int>(std::lround(gf * sPx)));
     const int minRun = usedMinRun(sPx, maxInSeedRunRows(lookBin, localT, localB, 0, lookBin.cols));
     auto hasBar = [&](int y) {
-        return maxInkRunRow(lookBin, y, 0, lookBin.cols) >= minRun;
+        return rowHasStrokeBar(lookBin, y, minRun, glareW);
     };
     auto peek = [&](int startY, int dir) {
         int y = startY, i = 0;
@@ -2089,11 +2052,16 @@ static void seg7One(
     if (tele) {
         if (!keepColorStats) {
             float yi = 0.f, yb = 0.f;
-            fillYInkBg(src, bin, sl, st, sPx, &yi, &yb);
+            const int y0s = std::max(0, localT);
+            const int y1s = std::min(lookBin.rows, localB);
+            if (y1s > y0s) {
+                cv::Mat seedInk = lookBin(cv::Range(y0s, y1s), cv::Range(0, lookBin.cols));
+                fillYInkBg(src, seedInk, sl, st, sPx, &yi, &yb);
+            }
             tele->yInk = yi;
             tele->yBg = yb;
             tele->dInk = yi - yb;
-            tele->otsuThr = static_cast<float>(thr);
+            tele->otsuThr = 0.f;
         }
         tele->sPx = static_cast<float>(sPx);
         tele->dTop = static_cast<float>(*ot - st);
@@ -2108,7 +2076,7 @@ static void seg7One(
     }
     if (sweepOut && !lookBin.empty()) {
         fillAabbLookSweep(
-            src, srcIsBin, thr, darkInk, glareW, lookBin, nt,
+            src, true, 0.0, true, 0, lookBin, nt,
             sl, st, sr, sb, *ot, *ob, imgW, imgH, minRun,
             static_cast<float>(sPx), sweepOut);
     }
@@ -2365,6 +2333,217 @@ static int seedInkBinY(
     return std::max(1, sPx);
 }
 
+struct PoisonReg {
+    int x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+    double thr = 0.0;
+    bool dark = true;
+    bool noPeak = true;
+};
+
+static void dropWideRuns(cv::Mat* bin, int glareW) {
+    if (!bin || bin->empty() || glareW <= 0) return;
+    const int h = bin->rows, w = bin->cols;
+    for (int y = 0; y < h; ++y) {
+        uint8_t* p = bin->ptr<uint8_t>(y);
+        int x = 0;
+        while (x < w) {
+            if (!p[x]) { ++x; continue; }
+            const int x0 = x;
+            while (x < w && p[x]) ++x;
+            if (x - x0 > glareW) {
+                for (int k = x0; k < x; ++k) p[k] = 0;
+            }
+        }
+    }
+}
+
+static bool rowHasStrokeBar(const cv::Mat& bin, int y, int minRun, int glareW) {
+    if (y < 0 || y >= bin.rows) return false;
+    const uint8_t* p = bin.ptr<uint8_t>(y);
+    int run = 0;
+    for (int x = 0; x <= bin.cols; ++x) {
+        const bool on = x < bin.cols && p[x] != 0;
+        if (on) ++run;
+        else if (run > 0) {
+            if (run >= minRun && run <= glareW) return true;
+            run = 0;
+        }
+    }
+    return false;
+}
+
+/** One look raster: clean vs per-poison rule; runs ignore region edges. Returns sPx. */
+static int fillPoisonLookRaster(
+    const cv::Mat& seedY, const cv::Mat& lookY, int ySeed0, int xSeed0,
+    bool srcIsBin, int glareMult, int fallback, cv::Mat* lookBin
+) {
+    const int seedH = seedY.rows, seedW = seedY.cols;
+    lookBin->create(lookY.rows, lookY.cols, CV_8UC1);
+    lookBin->setTo(0);
+    if (seedH < 1 || seedW < 1 || lookY.empty()) return std::max(1, fallback);
+    cv::Mat bin;
+    double otsu = 0.0;
+    bool inverted = false;
+    float inkFrac = 0.f;
+    if (srcIsBin) {
+        seedY.copyTo(bin);
+        inkFrac = (seedH * seedW) > 0
+            ? cv::countNonZero(bin) / static_cast<float>(seedH * seedW) : 0.f;
+        if (inkFrac >= 0.45f) {
+            cv::bitwise_not(bin, bin);
+            inkFrac = cv::countNonZero(bin) / static_cast<float>(std::max(1, seedH * seedW));
+            inverted = true;
+        }
+    } else {
+        otsu = cv::threshold(seedY, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+        inkFrac = (seedH * seedW) > 0
+            ? cv::countNonZero(bin) / static_cast<float>(seedH * seedW) : 0.f;
+        if (inkFrac >= 0.45f) {
+            cv::bitwise_not(bin, bin);
+            inkFrac = cv::countNonZero(bin) / static_cast<float>(std::max(1, seedH * seedW));
+            inverted = true;
+        }
+    }
+    fillSaltPepper(&bin);
+    HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
+    const int v0 = hh0.peak;
+    const bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
+    cv::Mat poison;
+    fillPoisonMask(bin, v0, needFb0, seedW, glareMult, &poison);
+    cv::Mat keepClean(seedH, seedW, CV_8UC1);
+    for (int yy = 0; yy < seedH; ++yy) {
+        const uint8_t* pp = poison.ptr<uint8_t>(yy);
+        uint8_t* kp = keepClean.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedW; ++xx) kp[xx] = pp[xx] ? 0 : 255;
+    }
+    double cleanThr = otsu;
+    bool cleanDark = !inverted;
+    float cleanInkFrac = 0.f;
+    cv::Mat sample;
+    bool haveClean = false;
+    if (srcIsBin) {
+        bin.copyTo(sample);
+        for (int yy = 0; yy < seedH; ++yy) {
+            const uint8_t* pp = poison.ptr<uint8_t>(yy);
+            uint8_t* sp = sample.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < seedW; ++xx) if (pp[xx]) sp[xx] = 0;
+        }
+        haveClean = cv::countNonZero(sample) > 0;
+        cleanDark = !inverted;
+        cleanThr = 127.0;
+    } else {
+        haveClean = otsuKeep(seedY, keepClean, &cleanThr, &cleanDark, &cleanInkFrac);
+        if (haveClean) {
+            applyThrKeep(seedY, keepClean, cleanThr, cleanDark, &sample);
+            fillSaltPepper(&sample);
+        } else {
+            sample = cv::Mat::zeros(seedH, seedW, CV_8UC1);
+        }
+    }
+    HorizSW hhC = horizPeakSW(sample, seedH, seedW);
+    const int v0Clean = hhC.peak;
+    const bool needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, srcIsBin
+        ? (cv::countNonZero(sample) / static_cast<float>(std::max(1, seedH * seedW)))
+        : cleanInkFrac);
+    const int sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+    cv::Mat labels, stats, centroids;
+    const int nLab = cv::connectedComponentsWithStats(poison, labels, stats, centroids, 8);
+    std::vector<PoisonReg> regs(static_cast<size_t>(std::max(0, nLab)));
+    for (int i = 1; i < nLab; ++i) {
+        PoisonReg r;
+        r.x0 = stats.at<int>(i, cv::CC_STAT_LEFT);
+        r.y0 = stats.at<int>(i, cv::CC_STAT_TOP);
+        r.x1 = r.x0 + stats.at<int>(i, cv::CC_STAT_WIDTH);
+        r.y1 = r.y0 + stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        cv::Mat keepR = cv::Mat::zeros(seedH, seedW, CV_8UC1);
+        int nR = 0;
+        for (int yy = 0; yy < seedH; ++yy) {
+            const int* lp = labels.ptr<int>(yy);
+            uint8_t* kp = keepR.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < seedW; ++xx) {
+                if (lp[xx] == i) { kp[xx] = 255; ++nR; }
+            }
+        }
+        if (nR < 2) { r.noPeak = true; regs[static_cast<size_t>(i)] = r; continue; }
+        if (srcIsBin) {
+            cv::Mat rBin = cv::Mat::zeros(seedH, seedW, CV_8UC1);
+            for (int yy = 0; yy < seedH; ++yy) {
+                const uint8_t* bp = bin.ptr<uint8_t>(yy);
+                const uint8_t* kp = keepR.ptr<uint8_t>(yy);
+                uint8_t* rp = rBin.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < seedW; ++xx) if (kp[xx] && bp[xx]) rp[xx] = 255;
+            }
+            fillSaltPepper(&rBin);
+            hhR = horizPeakSW(rBin, seedH, seedW);
+            const int v0P = hhR.peak;
+            const float rFrac = nR > 0
+                ? cv::countNonZero(rBin) / static_cast<float>(nR) : 0.f;
+            r.noPeak = v0P <= 4 || strokeNeedFb(hhR, v0P, seedW, rFrac);
+            r.thr = 127.0;
+            r.dark = !inverted;
+        } else {
+            double rThr = 0.0;
+            bool rDark = true;
+            float rFrac = 0.f;
+            if (!otsuKeep(seedY, keepR, &rThr, &rDark, &rFrac)) {
+                r.noPeak = true;
+                regs[static_cast<size_t>(i)] = r;
+                continue;
+            }
+            cv::Mat rBin;
+            applyThrKeep(seedY, keepR, rThr, rDark, &rBin);
+            fillSaltPepper(&rBin);
+            HorizSW hhR = horizPeakSW(rBin, seedH, seedW);
+            const int v0P = hhR.peak;
+            r.noPeak = v0P <= 4 || strokeNeedFb(hhR, v0P, seedW, rFrac);
+            r.thr = rThr;
+            r.dark = rDark;
+        }
+        regs[static_cast<size_t>(i)] = r;
+    }
+    const int lh = lookY.rows, lw = lookY.cols;
+    for (int y = 0; y < lh; ++y) {
+        const uint8_t* yp = lookY.ptr<uint8_t>(y);
+        uint8_t* op = lookBin->ptr<uint8_t>(y);
+        const int sy = y - ySeed0;
+        for (int x = 0; x < lw; ++x) {
+            const int sx = x - xSeed0;
+            int lab = 0;
+            if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
+                lab = labels.ptr<int>(sy)[sx];
+            } else if (sx >= 0 && sx < seedW) {
+                for (int i = 1; i < nLab; ++i) {
+                    const PoisonReg& r = regs[static_cast<size_t>(i)];
+                    if (sx >= r.x0 && sx < r.x1) { lab = i; break; }
+                }
+            }
+            if (lab > 0 && lab < nLab && regs[static_cast<size_t>(lab)].noPeak) {
+                op[x] = 0;
+                continue;
+            }
+            if (srcIsBin) {
+                uint8_t v = yp[x];
+                if (inverted) v = static_cast<uint8_t>(255 - v);
+                op[x] = v;
+                continue;
+            }
+            double thr = cleanThr;
+            bool dark = cleanDark;
+            if (lab > 0 && lab < nLab) {
+                thr = regs[static_cast<size_t>(lab)].thr;
+                dark = regs[static_cast<size_t>(lab)].dark;
+            }
+            const bool ink = dark ? (static_cast<double>(yp[x]) <= thr)
+                                  : (static_cast<double>(yp[x]) > thr);
+            op[x] = ink ? 255 : 0;
+        }
+    }
+    fillSaltPepper(lookBin);
+    const int glareW = (glareMult > 0 ? glareMult : 11) * std::max(sPx, 4);
+    dropWideRuns(lookBin, glareW);
+    return std::max(1, sPx);
+}
+
 /** Gray Otsu look-strip on seed T/B, x padded for jump. Full-image U8 dst. */
 static bool fillGrayJumpLook(
     const cv::Mat& y, int sl, int st, int sr, int sb, int xPad, cv::Mat* dst
@@ -2381,21 +2560,15 @@ static bool fillGrayJumpLook(
         dst->create(h, w, CV_8UC1);
     }
     dst->setTo(0);
-    cv::Mat seedBin;
-    double otsu = 0.0;
-    bool inverted = false;
-    const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin, 11, &otsu, &inverted);
-    if (seedBin.empty()) return false;
-    const int glareW = 11 * std::max(sPx, 4);
     const int xl = std::max(0, sl - std::max(0, xPad));
     const int xr = std::min(w, sr + std::max(0, xPad));
     if (xr <= xl) return false;
-    cv::Mat strip = y(cv::Range(st, sb), cv::Range(xl, xr));
-    cv::Mat stripBin;
-    const int ttype = inverted ? cv::THRESH_BINARY : cv::THRESH_BINARY_INV;
-    cv::threshold(strip, stripBin, otsu, 255, ttype);
-    fillSaltPepper(&stripBin);
-    dropWide(&stripBin, glareW);
+    cv::Mat seedY, lookY, stripBin;
+    y(cv::Range(st, sb), cv::Range(sl, sr)).copyTo(seedY);
+    y(cv::Range(st, sb), cv::Range(xl, xr)).copyTo(lookY);
+    const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * (sb - st))));
+    fillPoisonLookRaster(seedY, lookY, 0, sl - xl, false, 11, fallback, &stripBin);
+    if (stripBin.empty()) return false;
     stripBin.copyTo((*dst)(cv::Rect(xl, st, xr - xl, sb - st)));
     return true;
 }
@@ -3077,47 +3250,7 @@ static void seg7OrientedOne(
             row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
         }
     }
-    cv::Mat bin;
-    double thr = 0.0;
-    bool invertedBin = false;
-    if (srcIsBin) {
-        seedMat.copyTo(bin);
-        thr = 127.0;
-    } else {
-        thr = cv::threshold(
-            seedMat, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-    }
-    const int nPix = wu * hv;
-    int nz = cv::countNonZero(bin);
-    float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
-    bool dark = true;
-    if (inkFrac >= 0.45f) {
-        cv::bitwise_not(bin, bin);
-        nz = cv::countNonZero(bin);
-        inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
-        dark = false;
-        invertedBin = srcIsBin;
-    }
-    fillSaltPepper(&bin);
-    HorizSW hh0 = horizPeakSW(bin, hv, wu);
-    const int glareW = 11 * std::max(hh0.peak, 4);
-    dropWide(&bin, glareW);
-    HorizSW hh = horizPeakSW(bin, hv, wu);
-    const int vSW = hh.peak;
-    const int lo = std::max(1, static_cast<int>(std::lround(0.7f * vSW)));
-    const int hi = std::max(lo, static_cast<int>(std::lround(1.3f * vSW)));
-    int band = 0;
-    const int hiClamp = std::min(hi, static_cast<int>(hh.hist.size()) - 1);
-    for (int k = lo; k <= hiClamp; ++k) band += hh.hist[k];
-    const float strokeShare = hh.nNonSpan > 0
-        ? band / static_cast<float>(hh.nNonSpan) : 0.f;
-    const float maxRunOverW = hh.maxRun / static_cast<float>(wu);
-    const bool needFb = vSW <= 4 || inkFrac >= 0.45f ||
-        strokeShare < 0.30f || maxRunOverW >= 0.50f;
-    const int sPx = needFb ? fallback : vSW;
-    *sPxOut = static_cast<float>(std::max(1, sPx));
     const float cap = 2.5f * seedBh;
-    const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
     const int vLook = std::max(1, static_cast<int>(std::lround(cap)) + 2);
     const float lookV0 = seed.v0 - static_cast<float>(vLook);
     const float lookV1 = seed.v1 + static_cast<float>(vLook);
@@ -3134,23 +3267,21 @@ static void seg7OrientedOne(
             row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
         }
     }
+    cv::Mat seedY;
+    seedMat.copyTo(seedY);
     cv::Mat lookBin;
-    if (srcIsBin) {
-        look.copyTo(lookBin);
-        if (invertedBin) cv::bitwise_not(lookBin, lookBin);
-    } else {
-        const int ttype = dark ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
-        cv::threshold(look, lookBin, thr, 255, ttype);
-    }
-    fillSaltPepper(&lookBin);
-    dropWide(&lookBin, glareW);
     const int ySeed0 = static_cast<int>(std::lround(seed.v0 - lookV0));
     const int ySeed1 = static_cast<int>(std::lround(seed.v1 - lookV0));
+    const int sPx = fillPoisonLookRaster(
+        seedY, look, ySeed0, 0, srcIsBin, 11, fallback, &lookBin);
+    const int glareW = 11 * std::max(sPx, 4);
+    *sPxOut = static_cast<float>(std::max(1, sPx));
+    const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
     const int minRun = usedMinRun(sPx, maxInSeedRunRows(lookBin, ySeed0, ySeed1, 0, lookBin.cols));
     auto hasBar = [&](float v) {
         const int y = static_cast<int>(std::lround(v - lookV0));
         if (y < 0 || y >= lookBin.rows) return false;
-        return maxInkRunRow(lookBin, y, 0, lookBin.cols) >= minRun;
+        return rowHasStrokeBar(lookBin, y, minRun, glareW);
     };
     auto peek = [&](float startV, float dir) {
         float v = startV;
@@ -3254,7 +3385,7 @@ static void seg7OrientedOne(
         try {
             OriBox seedSweep = seed;
             fillOrientedLookSweep(
-                src, srcIsBin, thr, dark, invertedBin, glareW, lookBin, lookV0,
+                src, true, 0.0, true, false, 0, lookBin, lookV0,
                 seedSweep, v0, v1, imgW, imgH, minRun, *sPxOut, sweepOut);
         } catch (const cv::Exception&) {
         }
