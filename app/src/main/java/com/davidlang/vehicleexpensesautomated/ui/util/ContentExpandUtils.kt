@@ -1754,7 +1754,7 @@ object ContentExpandUtils {
             try {
                 return seeds.map { q ->
                     val med = medianInteriorU8(c, q)
-                    expand7segFromOrientedSeedOn(if (med < 8.0) gray else c, q)
+                    expand7segFromOrientedSeedOn(if (med < 12.0) gray else c, q)
                 }
             } finally {
                 c.release()

@@ -2220,8 +2220,8 @@ static bool fillGrayJumpLook(
  * Per-seed shadow-invariant tint mask: 255 = ink, 0 = blackout.
  * Samples stroke chromaticity inside seed ink runs; background at ±s_px
  * outside those edges; classifies look-strip pixels by u_p·u_ink (or Y
- * polarity when chroma is near zero). adaptive: meanChromaInk≥12 uses
- * color2 dot≥0.50; else blend with C≥6 (c²≥36). Local c²<eps² → Y contrast.
+ * polarity when chroma is near zero). Chromatic pixels: color2 dot≥0.50.
+ * Local c²<eps² → Y contrast. Caller skips tint walk when meanChromaInk<12.
  */
 static bool fillChromaTintMask(
     const cv::Mat& y, const cv::Mat& uv,
@@ -2232,6 +2232,7 @@ static bool fillChromaTintMask(
     bool adaptive = false,
     Seg7Tele* tele = nullptr
 ) {
+    (void)adaptive;
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
     const bool reuse = scratchFits(dst, w, h);
@@ -2371,11 +2372,7 @@ static bool fillChromaTintMask(
             } else {
                 const float left = du * uInkX + dv * uInkY;
                 const bool dotOk = left > 0.f && left * left >= dotThr2 * c2;
-                if (!adaptive || meanChromaInk >= 12.f) {
-                    isInk = polOk && dotOk;
-                } else {
-                    isInk = polOk && (dotOk || c2 >= 36.f);
-                }
+                isInk = polOk && dotOk;
             }
             op[gx] = isInk ? 255 : 0;
         }
@@ -2461,17 +2458,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             const bool ok = uv && fillChromaTintMask(
                 *gray, *uv, l, t, r, b, tintDst, glareMult, 0, adaptive, &tele);
-            if (ok && tintDst && !tintDst->empty()) {
+            if (ok && tintDst && !tintDst->empty() &&
+                !(adaptive && tele.meanChroma < 12.f)) {
                 seg7One(*tintDst, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
                     gapFrac, minSeedHsToFreeze, glareMult,
                     boundStrategy, tightInsetPx, &tele, true,
                     &sweeps[static_cast<size_t>(i)]);
             } else {
+                if (adaptive && ok && tele.meanChroma < 12.f) tele.method = 0.f;
                 seg7One(*gray, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
                     gapFrac, minSeedHsToFreeze, 11,
-                    boundStrategy, tightInsetPx, &tele, false,
+                    boundStrategy, tightInsetPx, &tele, ok && adaptive,
                     &sweeps[static_cast<size_t>(i)]);
             }
         } else {
@@ -3233,9 +3232,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
             cv::Mat* tintDst = scratchFits(scratch, imgW, imgH) ? scratch : &localTint;
             if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11, 0,
                     adaptive, &tele) && tintDst && !tintDst->empty()) {
-                src = tintDst;
-                srcIsBin = true;
                 keepColor = true;
+                if (adaptive && tele.meanChroma < 12.f) {
+                    tele.method = 0.f;
+                    src = gray;
+                    srcIsBin = false;
+                } else {
+                    src = tintDst;
+                    srcIsBin = true;
+                }
             }
         } else if (useChroma && cMag && !cMag->empty() &&
             medianInteriorU8(*cMag, box, imgW, imgH) >= 8.0) {

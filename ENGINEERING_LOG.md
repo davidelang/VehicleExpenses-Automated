@@ -8982,3 +8982,7 @@ Coder on detect-ocr-work-2. Pepper fill before dropWide; chromaMode 4 meanChroma
 ## 2026-08-29 - Phase 1: pepper fill before dropWide (0422)
 
 C++ fillSaltPepper: one H then V pass, gap≤4 and 2×gap≤lead, no iterate. Called on seg7 AABB/oriented seed+look, seedInkBinY, fillGrayJumpLook strip — immediately before dropWide so glareW uses filled v0. Pixel fill is JNI only. Do not deploy.
+
+## 2026-08-29 - Phase 2: chroma < 12 walks Y (0422)
+
+nativeSeg7Many / nativeSeg7OrientedMany chromaMode 4: still probe tint for meanChroma; if <12 walk gray Y (method=0, keep probe stats). Blend c²≥36 removed. Kotlin oriented chromaMag fallback med<12 (scalar). Pixel walk stays JNI. Do not deploy.
