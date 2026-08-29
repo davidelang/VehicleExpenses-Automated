@@ -8974,3 +8974,11 @@ pSparkSvg: numeric x ticks at 0, seed edges, n-1 (deduped). pInkSweepHtml legend
 ## 2026-08-29 - CODE LANDED: experiment-html-no-bottom-bar-boxn-ticks-20260829-0125
 
 One top HTML toolbar (dead bottom bar gone). Rec/cand labels boxN matching inkSweep. Sparklines: x ticks at 0/seed/n-1 + gray/green/dashed-red legend. Expand/OCR/JSON unchanged. Do not deploy.
+
+## 2026-08-29 - Execute start: ink-pepper-chroma12-panel-veto-20260829-0422
+
+Coder on detect-ocr-work-2. Pepper fill before dropWide; chromaMode 4 meanChroma<12 → Y walk; ≥12 panel-hue veto. Energy/QF/jump/pad/50% retract unchanged. Do not deploy.
+
+## 2026-08-29 - Phase 1: pepper fill before dropWide (0422)
+
+C++ fillSaltPepper: one H then V pass, gap≤4 and 2×gap≤lead, no iterate. Called on seg7 AABB/oriented seed+look, seedInkBinY, fillGrayJumpLook strip — immediately before dropWide so glareW uses filled v0. Pixel fill is JNI only. Do not deploy.

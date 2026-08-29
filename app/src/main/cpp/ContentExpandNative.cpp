@@ -1734,6 +1734,7 @@ static int maxInSeedRunRows(const cv::Mat& bin, int y0, int y1, int x0, int x1) 
 }
 
 static void dropWide(cv::Mat* bin, int glareW);
+static void fillSaltPepper(cv::Mat* bin);
 
 static void fillAabbLookSweep(
     const cv::Mat& src, bool srcIsBin, double otsu, bool darkInk, int glareW,
@@ -1849,6 +1850,42 @@ static int vertPeakSW(const cv::Mat& bin, int seedH) {
     return peakCapped(hist, 4, maxH);
 }
 
+/** One H pass then one V pass. Fill interior 0-runs with gap∈(0,4] and 2×gap≤leading ink. No iterate. */
+static void fillSaltPepperLine(uint8_t* p, int n, int stride) {
+    int i = 0;
+    while (i < n) {
+        if (p[i * stride] == 0) {
+            ++i;
+            continue;
+        }
+        const int leadStart = i;
+        while (i < n && p[i * stride] != 0) ++i;
+        const int lead = i - leadStart;
+        if (i >= n) break;
+        const int gapStart = i;
+        while (i < n && p[i * stride] == 0) ++i;
+        const int gap = i - gapStart;
+        if (i >= n) break;
+        if (gap > 0 && gap <= 4 && 2 * gap <= lead) {
+            for (int k = gapStart; k < gapStart + gap; ++k) p[k * stride] = 255;
+        }
+    }
+}
+
+static void fillSaltPepper(cv::Mat* bin) {
+    if (!bin || bin->empty() || bin->type() != CV_8UC1) return;
+    const int h = bin->rows, w = bin->cols;
+    if (h < 1 || w < 1) return;
+    for (int y = 0; y < h; ++y) {
+        fillSaltPepperLine(bin->ptr<uint8_t>(y), w, 1);
+    }
+    const int step = static_cast<int>(bin->step[0]);
+    uint8_t* base = bin->ptr<uint8_t>(0);
+    for (int x = 0; x < w; ++x) {
+        fillSaltPepperLine(base + x, h, step);
+    }
+}
+
 static void dropWide(cv::Mat* bin, int glareW) {
     if (glareW <= 0 || bin->empty()) return;
     cv::Mat labels, stats, centroids;
@@ -1923,6 +1960,7 @@ static void seg7One(
         darkInk = false;
         invertedBin = srcIsBin;
     }
+    fillSaltPepper(&bin);
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
     const int v0 = hh0.peak;
     const int gm = glareMult > 0 ? glareMult : 11;
@@ -1962,6 +2000,7 @@ static void seg7One(
         const int ttype = darkInk ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
         cv::threshold(look, lookBin, thr, 255, ttype);
     }
+    fillSaltPepper(&lookBin);
     dropWide(&lookBin, glareW);
     const int localT = st - nt;
     const int localB = sb - nt;
@@ -2131,6 +2170,7 @@ static int seedInkBinY(
         inverted = true;
     }
     if (invertedOut) *invertedOut = inverted;
+    fillSaltPepper(&bin);
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
     const int gm = glareMult > 0 ? glareMult : 11;
     const int glareW = gm * std::max(hh0.peak, 4);
@@ -2170,6 +2210,7 @@ static bool fillGrayJumpLook(
     cv::Mat stripBin;
     const int ttype = inverted ? cv::THRESH_BINARY : cv::THRESH_BINARY_INV;
     cv::threshold(strip, stripBin, otsu, 255, ttype);
+    fillSaltPepper(&stripBin);
     dropWide(&stripBin, glareW);
     stripBin.copyTo((*dst)(cv::Rect(xl, st, xr - xl, sb - st)));
     return true;
@@ -2824,6 +2865,7 @@ static void seg7OrientedOne(
         dark = false;
         invertedBin = srcIsBin;
     }
+    fillSaltPepper(&bin);
     HorizSW hh0 = horizPeakSW(bin, hv, wu);
     const int glareW = 11 * std::max(hh0.peak, 4);
     dropWide(&bin, glareW);
@@ -2867,6 +2909,7 @@ static void seg7OrientedOne(
         const int ttype = dark ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
         cv::threshold(look, lookBin, thr, 255, ttype);
     }
+    fillSaltPepper(&lookBin);
     dropWide(&lookBin, glareW);
     const int ySeed0 = static_cast<int>(std::lround(seed.v0 - lookV0));
     const int ySeed1 = static_cast<int>(std::lround(seed.v1 - lookV0));
