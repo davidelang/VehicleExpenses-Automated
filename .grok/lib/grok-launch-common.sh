@@ -300,6 +300,10 @@ launch_grok_with_prompt() {
     grok_role_env+=(GROK_WORKFLOWS="${GROK_WORKFLOWS}")
     echo "GROK_WORKFLOWS=${GROK_WORKFLOWS}"
   fi
+  # User-scope [ui] permission_mode (always-approve on this host) must not
+  # override VE-wins “launchers stay ask”. CLI wins. GROK_PERMISSION_MODE overrides.
+  local grok_permission_mode="${GROK_PERMISSION_MODE:-default}"
+  echo "GROK_PERMISSION_MODE=${grok_permission_mode}"
 
   local freeform_args=()
   case "${ROLE_KEY:-}" in
@@ -363,6 +367,7 @@ launch_grok_with_prompt() {
       ${TODO_GATE_FLAGS[@]+"${TODO_GATE_FLAGS[@]}"} \
       --no-alt-screen \
       --minimal \
+      --permission-mode "${grok_permission_mode}" \
       ${freeform_args[@]+"${freeform_args[@]}"} \
       ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 }

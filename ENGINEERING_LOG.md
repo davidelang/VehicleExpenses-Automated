@@ -660,3 +660,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - setup_agent.sh: same loop; no :-dlang defaults
 - update-rules.sh: dest fix-perms failure is fatal (no 2>/dev/null || true)
 - Human: deploy-orchestration to orch-example/libs; sudo ./fix-perms --verbose on torque
+
+## 2026-08-29 - Pin run-grok* to --permission-mode default
+
+- Plan: `dev-ai-interaction/plans/launcher-pin-permission-mode-ask-20260829-0437-plan.md`
+- Phase 1: `.grok/lib/grok-launch-common.sh` always passes `--permission-mode "${GROK_PERMISSION_MODE:-default}"` so role user `~/.grok/config.toml` `always-approve` does not leak. `GROK_PERMISSION_MODE` still overrides.
+- Out of scope: user configs, `[skills].disabled`, `update-rules` sweep.
