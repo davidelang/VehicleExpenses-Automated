@@ -2222,6 +2222,8 @@ static bool fillGrayJumpLook(
  * outside those edges; classifies look-strip pixels by u_p·u_ink (or Y
  * polarity when chroma is near zero). Chromatic pixels: color2 dot≥0.50.
  * Local c²<eps² → Y contrast. Caller skips tint walk when meanChromaInk<12.
+ * chromaMode 4 + meanChromaInk≥12 + chromatic uBg: panel-hue veto
+ * (cos(u_pix, uBg) ≥ kTintDotThr is not ink); else Y-near or ink-hue.
  */
 static bool fillChromaTintMask(
     const cv::Mat& y, const cv::Mat& uv,
@@ -2232,7 +2234,6 @@ static bool fillChromaTintMask(
     bool adaptive = false,
     Seg7Tele* tele = nullptr
 ) {
-    (void)adaptive;
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
     const bool reuse = scratchFits(dst, w, h);
@@ -2303,6 +2304,7 @@ static bool fillChromaTintMask(
 
     const int d = std::max(1, sPx);
     double yBgSum = 0.0;
+    float suBg = 0.f, svBg = 0.f, chromaBgSum = 0.f;
     int nBg = 0;
     auto tryBg = [&](int gx, int gy) {
         if (gx < 0 || gy < 0 || gx >= w || gy >= h) return;
@@ -2312,6 +2314,19 @@ static bool fillChromaTintMask(
             return;
         }
         yBgSum += y.ptr<uint8_t>(gy)[gx];
+        if (uvOk) {
+            int u = 128, v = 128;
+            uvAt(uv, w, gx, gy, &u, &v);
+            const float du = static_cast<float>(u) - 128.f;
+            const float dv = static_cast<float>(v) - 128.f;
+            const float n2 = du * du + dv * dv;
+            if (n2 >= 1.f) {
+                const float inv = 1.f / std::sqrt(n2);
+                suBg += du * inv;
+                svBg += dv * inv;
+                chromaBgSum += std::sqrt(n2);
+            }
+        }
         ++nBg;
     };
     for (int yy = 0; yy < seedBin.rows; ++yy) {
@@ -2327,6 +2342,22 @@ static bool fillChromaTintMask(
     }
     const float yBg = nBg > 0 ? static_cast<float>(yBgSum / nBg)
         : (yInk < 128.f ? 200.f : 40.f);
+    float uBgX = 0.f, uBgY = 0.f;
+    float meanChromaBg = 0.f;
+    float nrmBg2 = 0.f;
+    if (nBg > 0) {
+        uBgX = suBg / static_cast<float>(nBg);
+        uBgY = svBg / static_cast<float>(nBg);
+        nrmBg2 = uBgX * uBgX + uBgY * uBgY;
+        if (nrmBg2 > 1e-12f) {
+            const float inv = 1.f / std::sqrt(nrmBg2);
+            uBgX *= inv;
+            uBgY *= inv;
+        }
+        meanChromaBg = chromaBgSum / static_cast<float>(nBg);
+    }
+    const bool panelVeto = adaptive && meanChromaInk >= 12.f &&
+        meanChromaBg >= kTintChromaEps && nrmBg2 > 1e-12f;
     const float dInk = yInk - yBg;
     const float eps2 = kTintChromaEps * kTintChromaEps;
     const float dotThr2 = kTintDotThr * kTintDotThr;
@@ -2366,13 +2397,20 @@ static bool fillChromaTintMask(
             const float c2 = du * du + dv * dv;
             const float dPix = Y - yBg;
             const bool polOk = dInk * dPix >= 0.f;
+            const bool nearY = std::fabs(Y - yInk) <= std::fabs(Y - yBg);
+            const float leftInk = du * uInkX + dv * uInkY;
+            const bool inkHue = c2 >= eps2 && leftInk > 0.f &&
+                leftInk * leftInk >= dotThr2 * c2;
             bool isInk;
-            if (!inkHasChroma || c2 < eps2) {
-                isInk = polOk && std::fabs(Y - yInk) <= std::fabs(Y - yBg);
+            if (panelVeto) {
+                const float leftBg = du * uBgX + dv * uBgY;
+                const bool bgHue = c2 >= eps2 && leftBg > 0.f &&
+                    leftBg * leftBg >= dotThr2 * c2;
+                isInk = polOk && !bgHue && (nearY || inkHue);
+            } else if (!inkHasChroma || c2 < eps2) {
+                isInk = polOk && nearY;
             } else {
-                const float left = du * uInkX + dv * uInkY;
-                const bool dotOk = left > 0.f && left * left >= dotThr2 * c2;
-                isInk = polOk && dotOk;
+                isInk = polOk && inkHue;
             }
             op[gx] = isInk ? 255 : 0;
         }

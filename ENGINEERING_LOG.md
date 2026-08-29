@@ -8986,3 +8986,7 @@ C++ fillSaltPepper: one H then V pass, gap≤4 and 2×gap≤lead, no iterate. Ca
 ## 2026-08-29 - Phase 2: chroma < 12 walks Y (0422)
 
 nativeSeg7Many / nativeSeg7OrientedMany chromaMode 4: still probe tint for meanChroma; if <12 walk gray Y (method=0, keep probe stats). Blend c²≥36 removed. Kotlin oriented chromaMag fallback med<12 (scalar). Pixel walk stays JNI. Do not deploy.
+
+## 2026-08-29 - Phase 3: panel veto on trusted chroma (0422)
+
+fillChromaTintMask: sample uBg from existing ±sPx tryBg pixels. chromaMode 4 + meanChromaInk≥12 + uBg mean C≥8 and nrm²>1e-12: isInk = polOk && !bgHue && (near_y || inkHue); bgHue/inkHue are c²≥eps² and cos≥kTintDotThr (0.50). Weak uBg keeps polOk && (low-C ? near_y : dotOk). Jump inherits via same mask. kTintDotThr and dropWide 11× unchanged. JNI only. Do not deploy.
