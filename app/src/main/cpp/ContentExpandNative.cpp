@@ -2474,7 +2474,7 @@ static int fillPoisonLookRaster(
                 for (int xx = 0; xx < seedW; ++xx) if (kp[xx] && bp[xx]) rp[xx] = 255;
             }
             fillSaltPepper(&rBin);
-            hhR = horizPeakSW(rBin, seedH, seedW);
+            HorizSW hhR = horizPeakSW(rBin, seedH, seedW);
             const int v0P = hhR.peak;
             const float rFrac = nR > 0
                 ? cv::countNonZero(rBin) / static_cast<float>(nR) : 0.f;
@@ -3369,7 +3369,7 @@ static void seg7OrientedOne(
             tele->yBg = nbg > 0 ? yb / static_cast<float>(nbg) : 0.f;
             tele->dInk = tele->yInk - tele->yBg;
         }
-        tele->otsuThr = static_cast<float>(thr);
+        tele->otsuThr = 0.f;
         tele->sPx = *sPxOut;
         tele->dTop = v0 - seed.v0;
         tele->dBot = v1 - seed.v1;

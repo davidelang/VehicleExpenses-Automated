@@ -9038,3 +9038,7 @@ C++ seedInkBinY: coarse Y Otsu+pepper, poison (fat min(h,v)>3×max(v0,4), h-run>
 ## 2026-08-29 - Phase 2: unified look raster + hasBar run band (1453)
 
 fillPoisonLookRaster: one look, clean vs per-poison rule, no-peak=0, runs cross region edges. hasBar = run in [minRun, glareW]. dropWideRuns (too-wide runs, not whole CCs). AABB+oriented 7seg + gray jump look. sPx from v0_clean. Do not deploy.
+
+## 2026-08-29 - Phase 2 compile fix (1453)
+
+Declare hhR after rBin; oriented tele otsuThr 0. Do not deploy.
