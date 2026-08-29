@@ -9022,3 +9022,7 @@ Implement color-shared-hue-skip-y-20260829-1040 (JNI skipTint when meanChroma<12
 ## 2026-08-29 - Phase 1: skipTint shared-hue (1040)
 
 fillChromaTintMask computes inkBgDot. skipTintWalk(adaptive && (meanChroma<12 || inkBgDot≥kTintDotThr)) used by nativeSeg7Many, nativeSeg7OrientedMany, nativeJumpMany, nativeJumpOrientedMany. Jump skip uses Y look. Panel veto formula unchanged. No tele dump shift. JNI only. Do not deploy.
+
+## 2026-08-29 - Phase 2: FLOWS.md shared-hue skip (1040)
+
+color_adaptive: meanChroma<12 or uInk·uBg≥0.50 → Y walk; else panel veto. Jump same skip. No other flow rewrite. Do not deploy.
