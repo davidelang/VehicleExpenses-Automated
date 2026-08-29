@@ -2140,7 +2140,129 @@ static void uvAt(const cv::Mat& uv, int imgW, int x, int y, int* u, int* v) {
     *v = p[1];
 }
 
-/** Seed-ROI Y Otsu ink bin + dropWide; returns s_px (fallback 0.08×seedH). */
+static bool strokeNeedFb(const HorizSW& hh, int vSW, int seedW, float inkFrac) {
+    const int lo = std::max(1, static_cast<int>(std::lround(0.7f * static_cast<float>(vSW))));
+    const int hi = std::max(lo, static_cast<int>(std::lround(1.3f * static_cast<float>(vSW))));
+    int band = 0;
+    const int hiClamp = std::min(hi, static_cast<int>(hh.hist.size()) - 1);
+    for (int k = lo; k <= hiClamp; ++k) band += hh.hist[k];
+    const float strokeShare = hh.nNonSpan > 0
+        ? band / static_cast<float>(hh.nNonSpan) : 0.f;
+    const float maxRunOverW = hh.maxRun / static_cast<float>(std::max(1, seedW));
+    return vSW <= 4 || inkFrac >= 0.45f || strokeShare < 0.30f || maxRunOverW >= 0.50f;
+}
+
+static bool strokesAgree(int a, int b) {
+    if (a <= 4 || b <= 4) return false;
+    const float fa = static_cast<float>(a), fb = static_cast<float>(b);
+    return fa >= 0.7f * fb && fa <= 1.3f * fb && fb >= 0.7f * fa && fb <= 1.3f * fa;
+}
+
+static void fillRunLenHV(const cv::Mat& bin, cv::Mat* hRun, cv::Mat* vRun) {
+    const int h = bin.rows, w = bin.cols;
+    hRun->create(h, w, CV_32S);
+    vRun->create(h, w, CV_32S);
+    hRun->setTo(0);
+    vRun->setTo(0);
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* p = bin.ptr<uint8_t>(y);
+        int* hr = hRun->ptr<int>(y);
+        int x = 0;
+        while (x < w) {
+            if (!p[x]) { ++x; continue; }
+            const int x0 = x;
+            while (x < w && p[x]) ++x;
+            const int len = x - x0;
+            for (int k = x0; k < x; ++k) hr[k] = len;
+        }
+    }
+    for (int x = 0; x < w; ++x) {
+        int y = 0;
+        while (y < h) {
+            if (!bin.ptr<uint8_t>(y)[x]) { ++y; continue; }
+            const int y0 = y;
+            while (y < h && bin.ptr<uint8_t>(y)[x]) ++y;
+            const int len = y - y0;
+            for (int k = y0; k < y; ++k) vRun->ptr<int>(k)[x] = len;
+        }
+    }
+}
+
+static void fillPoisonMask(
+    const cv::Mat& bin, int v0, bool needFb, int seedW, int glareMult, cv::Mat* poison
+) {
+    const int h = bin.rows, w = bin.cols;
+    poison->create(h, w, CV_8UC1);
+    poison->setTo(0);
+    cv::Mat hRun, vRun;
+    fillRunLenHV(bin, &hRun, &vRun);
+    const int vRef = std::max(v0, 4);
+    const int fat = 3 * vRef;
+    const int longH = (glareMult > 0 ? glareMult : 11) * vRef;
+    const int thinW = std::max(1, static_cast<int>(std::lround(0.25f * static_cast<float>(seedW))));
+    const bool weak = v0 <= 4 || needFb;
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* bp = bin.ptr<uint8_t>(y);
+        const int* hr = hRun.ptr<int>(y);
+        const int* vr = vRun.ptr<int>(y);
+        uint8_t* op = poison->ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
+            if (!bp[x]) continue;
+            const int mn = std::min(hr[x], vr[x]);
+            if (mn > fat || hr[x] > longH || (weak && hr[x] > thinW)) op[x] = 255;
+        }
+    }
+}
+
+static bool otsuKeep(
+    const cv::Mat& y, const cv::Mat& keep, double* thr, bool* dark, float* inkFrac
+) {
+    std::vector<uint8_t> vals;
+    vals.reserve(static_cast<size_t>(y.rows * y.cols));
+    for (int yy = 0; yy < y.rows; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* kp = keep.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < y.cols; ++xx) {
+            if (kp[xx]) vals.push_back(yp[xx]);
+        }
+    }
+    if (vals.size() < 2) return false;
+    cv::Mat col(1, static_cast<int>(vals.size()), CV_8UC1);
+    uint8_t* cp = col.ptr<uint8_t>(0);
+    for (size_t i = 0; i < vals.size(); ++i) cp[i] = vals[i];
+    cv::Mat b;
+    *thr = cv::threshold(col, b, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
+    int nz = cv::countNonZero(b);
+    *inkFrac = nz / static_cast<float>(vals.size());
+    *dark = true;
+    if (*inkFrac >= 0.45f) {
+        *dark = false;
+        cv::bitwise_not(b, b);
+        nz = cv::countNonZero(b);
+        *inkFrac = nz / static_cast<float>(vals.size());
+    }
+    return true;
+}
+
+static void applyThrKeep(
+    const cv::Mat& y, const cv::Mat& keep, double thr, bool dark, cv::Mat* out
+) {
+    out->create(y.rows, y.cols, CV_8UC1);
+    out->setTo(0);
+    for (int yy = 0; yy < y.rows; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* kp = keep.ptr<uint8_t>(yy);
+        uint8_t* op = out->ptr<uint8_t>(yy);
+        for (int xx = 0; xx < y.cols; ++xx) {
+            if (!kp[xx]) continue;
+            const bool ink = dark ? (static_cast<double>(yp[xx]) <= thr)
+                                  : (static_cast<double>(yp[xx]) > thr);
+            if (ink) op[xx] = 255;
+        }
+    }
+}
+
+/** Seed-ROI Y Otsu + poison map; chroma samples clean + agreeing poison ink. */
 static int seedInkBinY(
     const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut,
     int glareMult = 11,
@@ -2177,12 +2299,69 @@ static int seedInkBinY(
     if (invertedOut) *invertedOut = inverted;
     fillSaltPepper(&bin);
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
-    const int gm = glareMult > 0 ? glareMult : 11;
-    const int glareW = gm * std::max(hh0.peak, 4);
-    dropWide(&bin, glareW);
-    HorizSW hh = horizPeakSW(bin, seedH, seedW);
-    const int sPx = (hh.peak <= 4 || inkFrac >= 0.45f) ? fallback : hh.peak;
-    *binOut = bin;
+    const int v0 = hh0.peak;
+    const bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
+    cv::Mat poison;
+    fillPoisonMask(bin, v0, needFb0, seedW, glareMult, &poison);
+    cv::Mat keepClean(seedH, seedW, CV_8UC1);
+    for (int yy = 0; yy < seedH; ++yy) {
+        const uint8_t* pp = poison.ptr<uint8_t>(yy);
+        uint8_t* kp = keepClean.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedW; ++xx) kp[xx] = pp[xx] ? 0 : 255;
+    }
+    double cleanThr = otsu;
+    bool cleanDark = !inverted;
+    float cleanInkFrac = 0.f;
+    cv::Mat sample;
+    const bool haveClean = otsuKeep(roi, keepClean, &cleanThr, &cleanDark, &cleanInkFrac);
+    if (haveClean) {
+        applyThrKeep(roi, keepClean, cleanThr, cleanDark, &sample);
+        fillSaltPepper(&sample);
+        if (otsuOut) *otsuOut = cleanThr;
+        if (invertedOut) *invertedOut = !cleanDark;
+    } else {
+        sample = cv::Mat::zeros(seedH, seedW, CV_8UC1);
+    }
+    HorizSW hhC = horizPeakSW(sample, seedH, seedW);
+    const int v0Clean = hhC.peak;
+    const bool needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
+    const int sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+    cv::Mat labels, stats, centroids;
+    const int nLab = cv::connectedComponentsWithStats(poison, labels, stats, centroids, 8);
+    for (int i = 1; i < nLab; ++i) {
+        cv::Mat keepR = cv::Mat::zeros(seedH, seedW, CV_8UC1);
+        int nR = 0;
+        for (int yy = 0; yy < seedH; ++yy) {
+            const int* lp = labels.ptr<int>(yy);
+            uint8_t* kp = keepR.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < seedW; ++xx) {
+                if (lp[xx] == i) { kp[xx] = 255; ++nR; }
+            }
+        }
+        if (nR < 2) continue;
+        double rThr = 0.0;
+        bool rDark = true;
+        float rFrac = 0.f;
+        if (!otsuKeep(roi, keepR, &rThr, &rDark, &rFrac)) continue;
+        cv::Mat rBin;
+        applyThrKeep(roi, keepR, rThr, rDark, &rBin);
+        fillSaltPepper(&rBin);
+        HorizSW hhR = horizPeakSW(rBin, seedH, seedW);
+        const int v0P = hhR.peak;
+        const bool needFbP = strokeNeedFb(hhR, v0P, seedW, rFrac);
+        const bool noPeak = v0P <= 4 || needFbP;
+        const bool agree = !noPeak && strokesAgree(v0P, v0Clean);
+        if (agree) {
+            for (int yy = 0; yy < seedH; ++yy) {
+                const uint8_t* rp = rBin.ptr<uint8_t>(yy);
+                uint8_t* sp = sample.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < seedW; ++xx) {
+                    if (rp[xx]) sp[xx] = 255;
+                }
+            }
+        }
+    }
+    *binOut = sample;
     return std::max(1, sPx);
 }
 

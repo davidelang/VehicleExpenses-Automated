@@ -9026,3 +9026,11 @@ fillChromaTintMask computes inkBgDot. skipTintWalk(adaptive && (meanChroma<12 ||
 ## 2026-08-29 - Phase 2: FLOWS.md shared-hue skip (1040)
 
 color_adaptive: meanChroma<12 or uInk·uBg≥0.50 → Y walk; else panel veto. Jump same skip. No other flow rewrite. Do not deploy.
+
+## 2026-08-29 - CODE LANDED: color-shared-hue-skip-y-20260829-1040
+
+skipTintWalk (meanChroma<12 or uInk·uBg≥0.50) on all four JNI 7seg/jump entry points. Panel veto formula unchanged. FLOWS.md one sentence. Next: 1453 seed poison. Do not deploy.
+
+## 2026-08-29 - Phase 1: poison map + clean/poison stroke peaks (1453)
+
+C++ seedInkBinY: coarse Y Otsu+pepper, poison (fat min(h,v)>3×max(v0,4), h-run>11×max(v0,4), weak h-run>0.25W), clean re-Otsu+v0_clean, per-CC v0_poison. Chroma sample bin = clean ink plus agreeing poison (no-peak stays 0). Walk lookBin still global. Do not deploy.
