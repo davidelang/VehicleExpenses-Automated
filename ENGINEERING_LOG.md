@@ -9042,3 +9042,7 @@ fillPoisonLookRaster: one look, clean vs per-poison rule, no-peak=0, runs cross 
 ## 2026-08-29 - Phase 2 compile fix (1453)
 
 Declare hhR after rBin; oriented tele otsuThr 0. Do not deploy.
+
+## 2026-08-29 - Phase 3: FLOWS.md seed poison (1453)
+
+docs/PUMP_EXPERIMENT_FLOWS.md: one paragraph — per-region stroke peak, no-peak=no-ink, runs cross regions. No det/k/pad/cap change. Do not deploy.
