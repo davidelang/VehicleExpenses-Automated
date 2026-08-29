@@ -1897,7 +1897,7 @@ private fun buildHtmlHeader(
 ): String = buildString {
     append(ExperimentReportHtml.documentHead("Deep Trace - $time", ExperimentReportHtml.Kind.ALIGNMENT))
     appendLine("<h1>OCR Refinement Experiment</h1><p>$metaHtml</p>")
-    append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.ALIGNMENT, colLabels, metaHtml, bottom = false))
+    append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.ALIGNMENT, colLabels, metaHtml))
     append(ExperimentReportHtml.tableOpen(colLabels))
     appendLine("<!-- total=$total version=$version pipelines=${pipelineNames.size} harness=${harnessEngines.size} strategies=${strategies.size} -->")
 }

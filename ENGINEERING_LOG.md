@@ -8954,3 +8954,11 @@ Dump-details ink V: thr=used minRun (0.5s=halfS) when sPx>0. FLOWS: per-seed min
 ## 2026-08-28 - CODE LANDED: per-seed-minrun-vert-retract-50-20260828-0336
 
 Gray/color minRun per seed: min(0.5s, 0.4×max in-seed row run) when maxIn>0; jump JNI uses the same cut. Vert retract cap 50% seedH; flag BLOCKED_RETRACT_LIMIT. H jump unchanged (0.4×blue H, max 4, 1px back). Energy 0.65, horiz_pad, G--/QF, expand caps unchanged. Do not deploy.
+
+## 2026-08-29 - Execute start: experiment-html-no-bottom-bar-boxn-ticks-20260829-0125
+
+Coder on detect-ocr-work-2. Drop dead bottom HTML toolbar; rec/cand labels boxN; sparkline x ticks + legend. No expand/OCR/JSON geometry change. Do not deploy.
+
+## 2026-08-29 - Phase 1: remove dead bottom HTML toolbar (0125)
+
+footer() closes table/html only. toolbar has no bottom variant; CSS .ve-bar.bottom gone. Pump/alignment/multiscale share one top bar. Do not deploy.

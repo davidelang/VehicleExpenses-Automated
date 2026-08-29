@@ -4013,7 +4013,7 @@ private fun pBuildHtmlHeader(
     append(ExperimentReportHtml.documentHead("Pump Experiment - $time", ExperimentReportHtml.Kind.PUMP))
     appendLine("<h1>Pump Extraction Experiment</h1>")
     appendLine("<p>$metaHtml</p>")
-    append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.PUMP, colLabels, metaHtml, bottom = false))
+    append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.PUMP, colLabels, metaHtml))
     append(ExperimentReportHtml.tableOpen(colLabels))
     appendLine("<!-- total=$total device=$device version=$version -->")
 }

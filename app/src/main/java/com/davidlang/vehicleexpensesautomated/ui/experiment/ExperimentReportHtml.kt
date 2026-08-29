@@ -23,7 +23,6 @@ object ExperimentReportHtml {
 body { font-family: sans-serif; margin: 0; }
 .ve-bar { position: sticky; top: 0; z-index: 30; background: #f7f7f7;
   border-bottom: 1px solid #bbb; padding: 8px 12px; font-size: 14px; }
-.ve-bar.bottom { position: sticky; bottom: 0; top: auto; border-top: 1px solid #bbb; border-bottom: none; }
 .ve-bar .ctl { display: inline-block; margin: 3px 10px 3px 0; white-space: nowrap; }
 .ve-bar .row { margin: 4px 0; }
 #col-checks { display: flex; flex-wrap: wrap; align-items: center; }
@@ -52,7 +51,7 @@ $hideCols
 """.trimIndent()
     }
 
-    fun toolbar(kind: Kind, columnLabels: List<String>, metaHtml: String, bottom: Boolean): String {
+    fun toolbar(kind: Kind, columnLabels: List<String>, metaHtml: String): String {
         val rec = if (kind == Kind.PUMP) {
             """<label class="ctl"><input type="checkbox" class="ve-rec-crops" checked> Rec crops</label>"""
         } else ""
@@ -64,9 +63,8 @@ $hideCols
                 """<label class="ctl"><input type="checkbox" checked data-col="$i">$esc</label>""",
             )
         }
-        val cls = if (bottom) "ve-bar bottom" else "ve-bar"
         return """
-<div class="$cls">
+<div class="ve-bar">
   <div class="row">$metaHtml</div>
   <div class="row">
     <button type="button" class="ve-prev">Prev photo</button>
@@ -81,7 +79,7 @@ $hideCols
       <input type="number" class="ve-col-max" value="500" min="80" step="10" style="width:4.5em;"> px</label>
     <label class="ctl"><input type="checkbox" class="ve-col-unlim"> unlimited</label>
   </div>
-  <div class="row" id="${if (bottom) "col-checks-bottom" else "col-checks"}">$checks</div>
+  <div class="row" id="col-checks">$checks</div>
 </div>
 """.trimIndent()
     }
@@ -96,7 +94,7 @@ $hideCols
   const HAS_REC = $recJs;
   function reportEl() { return document.getElementById('report'); }
   function topBar() {
-    return document.querySelector('.ve-bar:not(.bottom)') || document.querySelector('.ve-bar');
+    return document.querySelector('.ve-bar');
   }
   function syncSticky() {
     const tb = topBar();
@@ -259,7 +257,7 @@ $hideCols
         return sb.toString()
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun footer(kind: Kind, columnLabels: List<String>, metaHtml: String): String =
-        "</tbody></table>\n" +
-            toolbar(kind, columnLabels, metaHtml, bottom = true) + "\n</body></html>\n"
+        "</tbody></table>\n</body></html>\n"
 }

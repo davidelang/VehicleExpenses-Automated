@@ -2069,7 +2069,7 @@ object MultiScaleDetRunner {
             )
             w.append(
                 ExperimentReportHtml.toolbar(
-                    ExperimentReportHtml.Kind.MULTISCALE, colLabels, metaHtml, bottom = false,
+                    ExperimentReportHtml.Kind.MULTISCALE, colLabels, metaHtml,
                 ),
             )
             w.append(ExperimentReportHtml.tableOpen(colLabels))
