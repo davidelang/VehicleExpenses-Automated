@@ -8970,3 +8970,7 @@ AABB and rot pump cands + empty fallbacks + local zip helper + per-red hist capt
 ## 2026-08-29 - Phase 3: sparkline x ticks + legend (0125)
 
 pSparkSvg: numeric x ticks at 0, seed edges, n-1 (deduped). pInkSweepHtml legend: gray=seed green=walk dashed red=thr x=scan index (seed ± 2.5H). Plot data/thr/walk indices unchanged. Do not deploy.
+
+## 2026-08-29 - CODE LANDED: experiment-html-no-bottom-bar-boxn-ticks-20260829-0125
+
+One top HTML toolbar (dead bottom bar gone). Rec/cand labels boxN matching inkSweep. Sparklines: x ticks at 0/seed/n-1 + gray/green/dashed-red legend. Expand/OCR/JSON unchanged. Do not deploy.
