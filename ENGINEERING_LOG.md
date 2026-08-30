@@ -9134,3 +9134,7 @@ Toolbar Rows field; tokens split on /[^\d\-]+/; 1-10 ranges; empty/all/* shows a
 ## 2026-08-30 - Phase 4: Mixed fail (76) (1247)
 
 MIXED_FAIL_READABLE_FILENAMES = mixed_fail_readable from mixed_fail_readable_084544.json (76, phone file order). Button Mixed fail (76); auto=mixedfail. Do not deploy.
+
+## 2026-08-30 - Phase 5: FLOWS one-shot gap + Mixed fail (76) (1247)
+
+Consecutive hasBar then one gap jump <= 0.5s; at most one per side. Mixed fail (76) on 08-45-44, 13 columns, exact-only sometimes-not-always. Do not deploy.
