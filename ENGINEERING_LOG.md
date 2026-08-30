@@ -9106,3 +9106,7 @@ Off-seed look no longer uses poison blob bbox/thr. Local Otsu stays on poison pi
 ## 2026-08-30 - Phase 1: extra-seed look uses clean only (0827)
 
 fillPoisonLookRaster: deleted off-seed PoisonReg bbox/thr extrusion (no y0==0 / y1>=seedH look lookup). Look rows outside the seed use cleanThr/srcIsBin only. Overlay pois only on seed poison mask. Inside-seed keepR OR unchanged. Do not deploy.
+
+## 2026-08-30 - Phase 2: FLOWS.md poison pixels only (0827)
+
+FLOWS (4)–(5): local Otsu on poison pixels (keepR); look-strip outside the seed uses clean/tint only; hasBar crossing remains inside the combined seed plane. No blob x-range extrusion off-seed. Do not deploy.
