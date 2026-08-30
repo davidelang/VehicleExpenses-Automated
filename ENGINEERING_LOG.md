@@ -9154,3 +9154,7 @@ Horiz pad OCR on every ink k=0..4 (s=k); official still k=0; PD extra blue = k=0
 ## 2026-08-30 - Phase 1: AABB horiz_pad at each ink k (1430)
 
 7seg AABB: k=0 pad s=0; extra k pad that k rect s=k with skipExtraK. PD extra blue = k=0 pad. Drop leftover s=0.5 on AABB 7seg. Energy AABB one pad unchanged. Do not deploy.
+
+## 2026-08-30 - Phase 1 fix: suspend emitHorizPad (1430)
+
+Local emitHorizPad must be suspend to call ocrPumpRectsAsisAndDigits. AABB pad-per-k otherwise unchanged. Do not deploy.

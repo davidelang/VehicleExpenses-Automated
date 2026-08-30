@@ -1756,7 +1756,7 @@ suspend fun runPumpExperiment(
                     }
                     branch.metadata["seg7_skip_extra_k_letter"] =
                         skipExtraK.count { it }.toString()
-                    fun emitHorizPad(
+                    suspend fun emitHorizPad(
                         s: Float,
                         kRects: List<android.graphics.Rect>,
                         skip: BooleanArray?,
