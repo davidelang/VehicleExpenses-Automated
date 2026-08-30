@@ -9186,3 +9186,7 @@ Per-seed overlay PNG (seed+walk, 48px seed, cyan T/B, yellow land). HTML one img
 ## 2026-08-30 - Phase 3: FLOWS look-ink one composite (1517)
 
 Replace two-dump look-ink paragraph with one-image legend (bright ink vs dim poison/drop-wide; grey vs blue straddle). Do not deploy.
+
+## 2026-08-30 - CODE LANDED: look-ink-one-composite-20260830-1517
+
+One look-ink PNG per seed from local overlay after dropWide (white/green walk ink; dim red/blue/grey poison and dropped). Cyan T/B, yellow gap-land. No B.s snapshot, no poisonB64 sibling. Walk/combine/hasBar unchanged. Do not deploy.
