@@ -9078,3 +9078,7 @@ Sequential: 0518 freeze seed uv (flatter = u, vy>=0) first so 0519 oriented look
 ## 2026-08-30 - Phase 1: freeze seed uv; flatter pick (0518)
 
 oriFromQuad/fromQuad: u = edge closest to horizontal (tie → longer); v flipped so vy≥0. Jump/pad/withOfficialQuad keep seed ux,uy,vx,vy and only change extents. horiz_pad 0.5 uses seed frame. Do not deploy.
+
+## 2026-08-30 - Phase 2: FLOWS.md rot uv freeze (0518)
+
+FLOWS: seed uv frozen; u = flatter edge; bottom = lower flatter side (vy≥0). Sides move, orientation does not. Do not deploy.
