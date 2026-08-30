@@ -9198,3 +9198,7 @@ Skip seeds with either axis < 4 px (energy AABB + oriented 7seg). Encode dump tr
 ## 2026-08-30 - Phase 1: skip seed axis < 4 (1549)
 
 Energy AABB, oriented 7seg, oriented energy: if either axis < 4 after inset, leave seed, no walk/dump. Oriented no longer upsamples tiny span to 4. Do not deploy.
+
+## 2026-08-30 - Phase 2: dump encode cannot abort (1549)
+
+packLookInkPng / packSeedBinJpeg wrap resize+imencode in cv::Exception/std::exception catch; 64-bit dim check skip if >65000. Do not deploy.

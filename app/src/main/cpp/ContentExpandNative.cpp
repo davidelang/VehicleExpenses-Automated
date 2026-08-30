@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <exception>
 #include <vector>
 #include <android/log.h>
 
@@ -411,27 +412,34 @@ static void writeSweepArr(JNIEnv* env, jintArray arr, const std::vector<InkSweep
 
 static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
     if (!out || bin.empty() || bin.type() != CV_8UC1) return;
-    const int w = bin.cols;
-    const int h = bin.rows;
-    if (w < 1 || h < 1) return;
-    cv::Mat small;
-    const int longSide = std::max(w, h);
-    if (longSide > 400) {
-        const double sc = 400.0 / static_cast<double>(longSide);
-        int nw = std::max(2, static_cast<int>(std::lround(w * sc)));
-        int nh = std::max(2, static_cast<int>(std::lround(h * sc)));
-        nw = (nw + 1) / 2 * 2;
-        nh = (nh + 1) / 2 * 2;
-        cv::resize(bin, small, cv::Size(nw, nh), 0, 0, cv::INTER_NEAREST);
-    } else {
-        small = bin;
-    }
-    cv::Mat bgr;
-    cv::cvtColor(small, bgr, cv::COLOR_GRAY2BGR);
-    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 70};
-    std::vector<uint8_t> jpg;
-    if (cv::imencode(".jpg", bgr, jpg, params) && !jpg.empty() && jpg.size() <= 16000) {
-        out->threshJpeg = std::move(jpg);
+    try {
+        const int w = bin.cols;
+        const int h = bin.rows;
+        if (w < 1 || h < 1) return;
+        cv::Mat small;
+        const int longSide = std::max(w, h);
+        if (longSide > 400) {
+            const double sc = 400.0 / static_cast<double>(longSide);
+            const int64_t nw64 = std::llround(static_cast<double>(w) * sc);
+            const int64_t nh64 = std::llround(static_cast<double>(h) * sc);
+            if (nw64 < 1 || nh64 < 1 || nw64 > 65000 || nh64 > 65000) return;
+            int nw = static_cast<int>(nw64);
+            int nh = static_cast<int>(nh64);
+            nw = std::max(2, (nw + 1) / 2 * 2);
+            nh = std::max(2, (nh + 1) / 2 * 2);
+            cv::resize(bin, small, cv::Size(nw, nh), 0, 0, cv::INTER_NEAREST);
+        } else {
+            small = bin;
+        }
+        cv::Mat bgr;
+        cv::cvtColor(small, bgr, cv::COLOR_GRAY2BGR);
+        std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 70};
+        std::vector<uint8_t> jpg;
+        if (cv::imencode(".jpg", bgr, jpg, params) && !jpg.empty() && jpg.size() <= 16000) {
+            out->threshJpeg = std::move(jpg);
+        }
+    } catch (const cv::Exception&) {
+    } catch (const std::exception&) {
     }
 }
 
@@ -441,43 +449,50 @@ static void packLookInkPng(
     InkSweepPack* out
 ) {
     if (!out || overlay.empty() || overlay.type() != CV_8UC3) return;
-    cropT = std::max(0, cropT);
-    cropB = std::min(overlay.rows, cropB);
-    if (cropB <= cropT || overlay.cols < 1) return;
-    cv::Mat crop = overlay(cv::Range(cropT, cropB), cv::Range(0, overlay.cols));
-    const int sh = std::max(1, seedH);
-    const double sc = 48.0 / static_cast<double>(sh);
-    int nw = std::max(2, static_cast<int>(std::lround(crop.cols * sc)));
-    int nh = std::max(2, static_cast<int>(std::lround(crop.rows * sc)));
-    nw = (nw + 1) / 2 * 2;
-    nh = (nh + 1) / 2 * 2;
-    nw = std::min(nw, 4000);
-    nh = std::min(nh, 3072);
-    cv::Mat scaled;
-    cv::resize(crop, scaled, cv::Size(nw, nh), 0, 0, cv::INTER_NEAREST);
-    auto yAt = [&](int ly) {
-        int y = static_cast<int>(std::lround((ly - cropT) * sc));
-        if (y < 0) y = 0;
-        if (y >= nh) y = nh - 1;
-        return y;
-    };
-    const cv::Scalar cyan(255, 255, 0);
-    const cv::Scalar yellow(0, 255, 255);
-    const int yT = yAt(seedT);
-    const int yB = yAt(std::max(seedT, seedB - 1));
-    cv::line(scaled, cv::Point(0, yT), cv::Point(nw, yT), cyan, 2);
-    cv::line(scaled, cv::Point(0, yB), cv::Point(nw, yB), cyan, 2);
-    if (landTop >= cropT && landTop < cropB) {
-        const int y = yAt(landTop);
-        cv::line(scaled, cv::Point(0, y), cv::Point(nw, y), yellow, 2);
-    }
-    if (landBot >= cropT && landBot < cropB) {
-        const int y = yAt(landBot);
-        cv::line(scaled, cv::Point(0, y), cv::Point(nw, y), yellow, 2);
-    }
-    std::vector<uint8_t> png;
-    if (cv::imencode(".png", scaled, png) && !png.empty() && png.size() <= 48000) {
-        out->lookInkPng = std::move(png);
+    try {
+        cropT = std::max(0, cropT);
+        cropB = std::min(overlay.rows, cropB);
+        if (cropB <= cropT || overlay.cols < 1) return;
+        cv::Mat crop = overlay(cv::Range(cropT, cropB), cv::Range(0, overlay.cols));
+        const int sh = std::max(1, seedH);
+        const double sc = 48.0 / static_cast<double>(sh);
+        const int64_t nw64 = std::llround(static_cast<double>(crop.cols) * sc);
+        const int64_t nh64 = std::llround(static_cast<double>(crop.rows) * sc);
+        if (nw64 < 1 || nh64 < 1 || nw64 > 65000 || nh64 > 65000) return;
+        int nw = static_cast<int>(nw64);
+        int nh = static_cast<int>(nh64);
+        nw = std::max(2, (nw + 1) / 2 * 2);
+        nh = std::max(2, (nh + 1) / 2 * 2);
+        nw = std::min(nw, 4000);
+        nh = std::min(nh, 3072);
+        cv::Mat scaled;
+        cv::resize(crop, scaled, cv::Size(nw, nh), 0, 0, cv::INTER_NEAREST);
+        auto yAt = [&](int ly) {
+            int y = static_cast<int>(std::lround((ly - cropT) * sc));
+            if (y < 0) y = 0;
+            if (y >= nh) y = nh - 1;
+            return y;
+        };
+        const cv::Scalar cyan(255, 255, 0);
+        const cv::Scalar yellow(0, 255, 255);
+        const int yT = yAt(seedT);
+        const int yB = yAt(std::max(seedT, seedB - 1));
+        cv::line(scaled, cv::Point(0, yT), cv::Point(nw, yT), cyan, 2);
+        cv::line(scaled, cv::Point(0, yB), cv::Point(nw, yB), cyan, 2);
+        if (landTop >= cropT && landTop < cropB) {
+            const int y = yAt(landTop);
+            cv::line(scaled, cv::Point(0, y), cv::Point(nw, y), yellow, 2);
+        }
+        if (landBot >= cropT && landBot < cropB) {
+            const int y = yAt(landBot);
+            cv::line(scaled, cv::Point(0, y), cv::Point(nw, y), yellow, 2);
+        }
+        std::vector<uint8_t> png;
+        if (cv::imencode(".png", scaled, png) && !png.empty() && png.size() <= 48000) {
+            out->lookInkPng = std::move(png);
+        }
+    } catch (const cv::Exception&) {
+    } catch (const std::exception&) {
     }
 }
 
