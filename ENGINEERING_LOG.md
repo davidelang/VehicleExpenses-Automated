@@ -9146,3 +9146,11 @@ inkSweep threshB64 JPEG of seed lookBin (AABB crop; oriented seed rows; energy m
 ## 2026-08-30 - CODE LANDED: 1247 one-shot gap + 0154 HTML Rows/thresh reds
 
 One-shot gap jump <= 0.5s (at most one per side); yellow land line; HTML Rows filter; Mixed fail (76); threshB64 seed lookBin in dump-details. Official k=0 / G-- / 11x poison unchanged. Do not deploy.
+
+## 2026-08-30 - Execute start: horiz-pad-all-k-20260830-1430
+
+Horiz pad OCR on every ink k=0..4 (s=k); official still k=0; PD extra blue = k=0 pad only. Energy columns unchanged. Do not deploy.
+
+## 2026-08-30 - Phase 1: AABB horiz_pad at each ink k (1430)
+
+7seg AABB: k=0 pad s=0; extra k pad that k rect s=k with skipExtraK. PD extra blue = k=0 pad. Drop leftover s=0.5 on AABB 7seg. Energy AABB one pad unchanged. Do not deploy.

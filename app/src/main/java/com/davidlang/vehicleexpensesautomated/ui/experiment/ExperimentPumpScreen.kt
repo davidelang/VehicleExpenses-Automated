@@ -1732,6 +1732,7 @@ suspend fun runPumpExperiment(
                 }
                 val cvG = PumpCostVolUtils.classifyCostVolFromBoxOcr(gCands)
                 val inkVariants = JSONArray()
+                var horizPadHunks: List<PumpHunk> = emptyList()
                 if (seg7Stroke && inkJumpOpts != null && inkWalkSeeds.isNotEmpty()) {
                     val opts = inkJumpOpts
                     fun inkRectsFor(kk: Float): List<android.graphics.Rect> {
@@ -1755,6 +1756,70 @@ suspend fun runPumpExperiment(
                     }
                     branch.metadata["seg7_skip_extra_k_letter"] =
                         skipExtraK.count { it }.toString()
+                    fun emitHorizPad(
+                        s: Float,
+                        kRects: List<android.graphics.Rect>,
+                        skip: BooleanArray?,
+                    ): List<android.graphics.Rect> {
+                        val padRects = kRects.map {
+                            ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                        }
+                        val ocrIdx = ArrayList<Int>()
+                        val ocrRects = ArrayList<android.graphics.Rect>()
+                        padRects.indices.forEach { i ->
+                            if (skip == null || i >= skip.size || !skip[i]) {
+                                ocrIdx.add(i)
+                                ocrRects.add(padRects[i])
+                            }
+                        }
+                        val ocrP = if (ocrRects.isEmpty()) {
+                            PumpRectOcrLists(emptyList(), emptyList())
+                        } else {
+                            ocrPumpRectsAsisAndDigits(ocrRects)
+                        }
+                        nOcr += ocrRects.size
+                        val ocrAt = HashMap<Int, Int>(ocrIdx.size)
+                        ocrIdx.forEachIndexed { j, i -> ocrAt[i] = j }
+                        val candsP = padRects.indices.map { i ->
+                            val j = ocrAt[i]
+                            if (j == null) {
+                                RedBoxOcrCandidate(
+                                    "box${i + 1}", "", "",
+                                    rect = padRects[i],
+                                )
+                            } else {
+                                RedBoxOcrCandidate(
+                                    "box${i + 1}",
+                                    ocrP.asis.getOrElse(j) { "" },
+                                    ocrP.digits.getOrElse(j) { "" },
+                                    ocrP.asisProbs.getOrElse(j) { "" },
+                                    ocrP.digitsProbs.getOrElse(j) { "" },
+                                    padRects[i],
+                                    ocrP.recB64.getOrElse(j) { "" },
+                                    ocrP.recW.getOrElse(j) { 0 },
+                                    ocrP.recH.getOrElse(j) { 0 },
+                                )
+                            }
+                        }
+                        val cvP = PumpCostVolUtils.classifyCostVolFromBoxOcr(candsP)
+                        val quadsP = padRects.map { ContentExpandUtils.orientedFromAabb(it) }
+                        inkVariants.put(
+                            ocrScaleVariantJson(
+                                s, padRects, quadsP, candsP, cvP, kind = "horiz_pad",
+                            ),
+                        )
+                        return padRects
+                    }
+                    val pad0 = emitHorizPad(0f, customBluePixelG, null)
+                    horizPadHunks = pad0.map { r ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+                    }
                     for (kk in listOf(1f, 2f, 3f, 4f)) {
                         val rects = inkRectsFor(kk)
                         val ocrIdx = ArrayList<Int>()
@@ -1807,40 +1872,12 @@ suspend fun runPumpExperiment(
                                 kk, rects, quadsK, candsK, cvK, kind = "ink",
                             ),
                         )
+                        emitHorizPad(kk, rects, skipExtraK)
                     }
                     branch.metadata["n_ocr_energy"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
                     branch.metadata["t_ocr_ms"] = tOcrAll
                     branch.metadata["t_ocr_energy_ms"] = tOcrAll
-                }
-                val horizPadRects = customBluePixelG.map {
-                    ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
-                }
-                val horizPadHunks = if (seg7Stroke && horizPadRects.isNotEmpty()) {
-                    val ocrPad = ocrPumpRectsAsisAndDigits(horizPadRects)
-                    val padCands = buildRedBoxCandidates(
-                        horizPadRects, ocrPad.asis, ocrPad.digits,
-                        ocrPad.asisProbs, ocrPad.digitsProbs, ocrPad.recB64,
-                        recWList = ocrPad.recW, recHList = ocrPad.recH,
-                    )
-                    val padCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(padCands)
-                    val padQuads = horizPadRects.map { ContentExpandUtils.orientedFromAabb(it) }
-                    inkVariants.put(
-                        ocrScaleVariantJson(
-                            0.5f, horizPadRects, padQuads, padCands, padCv, kind = "horiz_pad",
-                        ),
-                    )
-                    horizPadRects.map { r ->
-                        PumpHunk(
-                            "",
-                            RectF(
-                                r.left.toFloat(), r.top.toFloat(),
-                                r.right.toFloat(), r.bottom.toFloat(),
-                            ),
-                        )
-                    }
-                } else {
-                    emptyList()
                 }
                 branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
                     reds = redPixelG,
