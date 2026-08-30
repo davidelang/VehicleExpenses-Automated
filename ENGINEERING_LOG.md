@@ -9162,3 +9162,7 @@ Local emitHorizPad must be suspend to call ocrPumpRectsAsisAndDigits. AABB pad-p
 ## 2026-08-30 - Phase 2: rot horiz_pad at each ink k (1430)
 
 Rot-gray/color: horiz_pad s=0..4 next to each ink k; skipExtraK applies; PD extra blue = k=0 pad. Energy rot still one pad s=0.5. Do not deploy.
+
+## 2026-08-30 - Phase 3: FLOWS horiz_pad per k (1430)
+
+Unofficial horiz_pad at each ink k=0..4; official still k=0; PD extra blue = k=0 pad; energy one pad. Do not deploy.
