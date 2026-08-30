@@ -9066,3 +9066,7 @@ JNI copies combined 255 look onto caller Mat (B.s). Pump resizes B, passes combi
 ## 2026-08-29 - Phase 3: FLOWS.md five-step poison combine (2316)
 
 FLOWS: five-step OR combine (brightness T/B bands union 1453 fat CCs; per-section Otsu; one 255 plane). 1453 cited as fat-CC detector only. Look-ink dump on B.s next to rec (boxN, 48px). Do not deploy.
+
+## 2026-08-29 - CODE LANDED: poison-combine-ink-buffer-20260829-2316
+
+Five-step OR combine (brightness T/B bands union 1453 fat CCs; per-section Otsu; one 255 plane; walk on that). Look-ink JPEG on B.s next to rec (boxN). A.p untouched. Official k=0 / energy / G-- / jump / 50% retract / pepper / skipTint unchanged. Do not deploy.
