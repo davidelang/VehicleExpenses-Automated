@@ -456,7 +456,7 @@ object NativeImageUtils {
     }
 
     const val SEG7_HIST_BINS: Int = 32
-    const val SEG7_TELE_N: Int = 17 + SEG7_HIST_BINS * 2
+    const val SEG7_TELE_N: Int = 21 + SEG7_HIST_BINS * 2
 
     private external fun nativeSeg7Many(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray, chromaMode: Int,

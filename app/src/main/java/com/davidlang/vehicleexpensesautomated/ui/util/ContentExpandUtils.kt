@@ -1397,6 +1397,10 @@ object ContentExpandUtils {
         val flagBot: String,
         val flagLeft: String,
         val flagRight: String,
+        val gapJumpTop: Boolean = false,
+        val gapJumpBot: Boolean = false,
+        val landTop: Float = 0f,
+        val landBot: Float = 0f,
         val histH: IntArray,
         val histV: IntArray,
     )
@@ -1420,8 +1424,8 @@ object ContentExpandUtils {
         val bins = NativeImageUtils.SEG7_HIST_BINS
         val o = i * n
         if (o + n > a.size) return null
-        val histH = IntArray(bins) { b -> a[o + 17 + b].toInt() }
-        val histV = IntArray(bins) { b -> a[o + 17 + bins + b].toInt() }
+        val histH = IntArray(bins) { b -> a[o + 21 + b].toInt() }
+        val histV = IntArray(bins) { b -> a[o + 21 + bins + b].toInt() }
         return Seg7Telemetry(
             method = teleMethodName(a[o]),
             yInk = a[o + 1],
@@ -1440,6 +1444,10 @@ object ContentExpandUtils {
             flagBot = boundFlagName(a[o + 14]),
             flagLeft = boundFlagName(a[o + 15]),
             flagRight = boundFlagName(a[o + 16]),
+            gapJumpTop = a[o + 17] >= 0.5f,
+            gapJumpBot = a[o + 18] >= 0.5f,
+            landTop = a[o + 19],
+            landBot = a[o + 20],
             histH = histH,
             histV = histV,
         )
@@ -1600,52 +1608,38 @@ object ContentExpandUtils {
                 return maxInkRunOnRow(bin, y, seedL, seedR) >= minRun
             }
 
-            fun peekHasBar(startY: Int, dir: Int): Boolean {
-                var y = startY
-                var i = 0
-                while (i < gapStop) {
-                    if (hasBarRow(y)) return true
-                    y += dir
-                    i++
-                }
-                return false
-            }
-
-            val peekUp = peekHasBar(localT - 1, -1)
-            val peekDown = peekHasBar(localB, +1)
-            val freezeAlways = minSeedHsToFreeze <= 0f
-            val minH = minSeedHsToFreeze * sPx
-            val allowUp = peekUp || (!freezeAlways && seedH < minH)
-            val allowDown = peekDown || (!freezeAlways && seedH < minH)
-
             var t = localT
-            var gap = 0
-            var y = localT - 1
-            if (allowUp) {
-                while (y >= 0 && localT - y <= capPx) {
+            var usedGapT = false
+            while (t > 0 && localT - (t - 1) <= capPx && hasBarRow(t - 1)) t--
+            if (!usedGapT && t > 0 && localT - (t - 1) <= capPx && !hasBarRow(t - 1)) {
+                var y = t - 1
+                var n = 0
+                while (n < gapStop && y >= 0 && localT - y <= capPx) {
                     if (hasBarRow(y)) {
                         t = y
-                        gap = 0
-                    } else {
-                        gap++
-                        if (gap >= gapStop) break
+                        usedGapT = true
+                        while (t > 0 && localT - (t - 1) <= capPx && hasBarRow(t - 1)) t--
+                        break
                     }
                     y--
+                    n++
                 }
             }
             var b = localB
-            gap = 0
-            y = localB
-            if (allowDown) {
-                while (y < bin.rows() && y - localB < capPx) {
+            var usedGapB = false
+            while (b < bin.rows() && b - localB < capPx && hasBarRow(b)) b++
+            if (!usedGapB && b < bin.rows() && b - localB < capPx && !hasBarRow(b)) {
+                var y = b
+                var n = 0
+                while (n < gapStop && y < bin.rows() && y - localB < capPx) {
                     if (hasBarRow(y)) {
                         b = y + 1
-                        gap = 0
-                    } else {
-                        gap++
-                        if (gap >= gapStop) break
+                        usedGapB = true
+                        while (b < bin.rows() && b - localB < capPx && hasBarRow(b)) b++
+                        break
                     }
                     y++
+                    n++
                 }
             }
             if (b <= t) b = (t + 1).coerceAtMost(bin.rows())
@@ -2150,46 +2144,38 @@ object ContentExpandUtils {
                 if (y < 0 || y >= lookBin.rows()) return false
                 return maxInkRunOnRow(lookBin, y) >= minRun
             }
-            fun peek(startV: Float, dir: Float): Boolean {
-                var v = startV
-                var i = 0
-                while (i < gapStop) {
-                    if (hasBarAtV(v)) return true
-                    v += dir
-                    i++
-                }
-                return false
-            }
-            val allowNeg = peek(box.v0 - 1f, -1f)
-            val allowPos = peek(box.v1 + 1f, +1f)
             var v0 = box.v0
             var v1 = box.v1
-            if (allowNeg) {
-                var gap = 0
-                var v = box.v0 - 1f
-                while (box.v0 - v <= cap) {
+            var usedGapT = false
+            while (box.v0 - (v0 - 1f) <= cap && hasBarAtV(v0 - 1f)) v0 -= 1f
+            if (!usedGapT && box.v0 - (v0 - 1f) <= cap && !hasBarAtV(v0 - 1f)) {
+                var v = v0 - 1f
+                var n = 0
+                while (n < gapStop && box.v0 - v <= cap) {
                     if (hasBarAtV(v)) {
                         v0 = v
-                        gap = 0
-                    } else {
-                        gap++
-                        if (gap >= gapStop) break
+                        usedGapT = true
+                        while (box.v0 - (v0 - 1f) <= cap && hasBarAtV(v0 - 1f)) v0 -= 1f
+                        break
                     }
                     v -= 1f
+                    n++
                 }
             }
-            if (allowPos) {
-                var gap = 0
-                var v = box.v1 + 1f
-                while (v - box.v1 <= cap) {
+            var usedGapB = false
+            while (v1 - box.v1 < cap && hasBarAtV(v1)) v1 += 1f
+            if (!usedGapB && v1 - box.v1 < cap && !hasBarAtV(v1)) {
+                var v = v1
+                var n = 0
+                while (n < gapStop && v - box.v1 <= cap) {
                     if (hasBarAtV(v)) {
-                        v1 = v
-                        gap = 0
-                    } else {
-                        gap++
-                        if (gap >= gapStop) break
+                        v1 = v + 1f
+                        usedGapB = true
+                        while (v1 - box.v1 < cap && hasBarAtV(v1)) v1 += 1f
+                        break
                     }
                     v += 1f
+                    n++
                 }
             }
             if (v1 < v0 + 2f) v1 = v0 + 2f

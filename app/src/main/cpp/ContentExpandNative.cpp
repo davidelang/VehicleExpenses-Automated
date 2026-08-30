@@ -10,7 +10,7 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ContentExpandNative", __VA_ARGS__)
 
 static constexpr int kRunHistBins = 32;
-static constexpr int kSeg7TeleN = 17 + kRunHistBins * 2;
+static constexpr int kSeg7TeleN = 21 + kRunHistBins * 2;
 
 enum : int {
     kFlagUnchanged = 0,
@@ -41,6 +41,10 @@ struct Seg7Tele {
     float fBot = 0.f;
     float fLeft = 0.f;
     float fRight = 0.f;
+    float gapJumpTop = 0.f;
+    float gapJumpBot = 0.f;
+    float landTop = 0.f;
+    float landBot = 0.f;
     int histH[kRunHistBins]{};
     int histV[kRunHistBins]{};
 };
@@ -112,9 +116,13 @@ static void packSeg7Tele(const Seg7Tele& t, float* dst) {
     dst[14] = t.fBot;
     dst[15] = t.fLeft;
     dst[16] = t.fRight;
+    dst[17] = t.gapJumpTop;
+    dst[18] = t.gapJumpBot;
+    dst[19] = t.landTop;
+    dst[20] = t.landBot;
     for (int i = 0; i < kRunHistBins; ++i) {
-        dst[17 + i] = static_cast<float>(t.histH[i]);
-        dst[17 + kRunHistBins + i] = static_cast<float>(t.histV[i]);
+        dst[21 + i] = static_cast<float>(t.histH[i]);
+        dst[21 + kRunHistBins + i] = static_cast<float>(t.histV[i]);
     }
 }
 
@@ -2041,22 +2049,60 @@ static void seg7One(
     auto hasBar = [&](int y) {
         return rowHasStrokeBar(lookBin, y, minRun, glareW);
     };
-    auto peek = [&](int startY, int dir) {
-        int y = startY, i = 0;
-        while (i < gapStop) {
-            if (hasBar(y)) return true;
-            y += dir;
-            ++i;
-        }
-        return false;
-    };
     int t = localT, b = localB;
     const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedH)));
     int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
+    int gapJumpTop = 0, gapJumpBot = 0;
+    int landTop = -1, landBot = -1;
+    auto expandTopOneShot = [&]() {
+        bool usedGap = false;
+        while (t > 0 && localT - (t - 1) <= capPx && hasBar(t - 1)) --t;
+        if (t < localT) fTop = kFlagNormalExpand;
+        if (!usedGap && t > 0 && localT - (t - 1) <= capPx && !hasBar(t - 1)) {
+            int y = t - 1;
+            int n = 0;
+            while (n < gapStop && y >= 0 && localT - y <= capPx) {
+                if (hasBar(y)) {
+                    t = y;
+                    usedGap = true;
+                    gapJumpTop = 1;
+                    landTop = y;
+                    fTop = kFlagNormalExpand;
+                    while (t > 0 && localT - (t - 1) <= capPx && hasBar(t - 1)) --t;
+                    break;
+                }
+                --y;
+                ++n;
+            }
+        }
+        if (fTop == kFlagUnchanged) fTop = kFlagBlockedGap;
+    };
+    auto expandBotOneShot = [&]() {
+        bool usedGap = false;
+        while (b < lookBin.rows && b - localB < capPx && hasBar(b)) ++b;
+        if (b > localB) fBot = kFlagNormalExpand;
+        if (!usedGap && b < lookBin.rows && b - localB < capPx && !hasBar(b)) {
+            int y = b;
+            int n = 0;
+            while (n < gapStop && y < lookBin.rows && y - localB < capPx) {
+                if (hasBar(y)) {
+                    b = y + 1;
+                    usedGap = true;
+                    gapJumpBot = 1;
+                    landBot = y;
+                    fBot = kFlagNormalExpand;
+                    while (b < lookBin.rows && b - localB < capPx && hasBar(b)) ++b;
+                    break;
+                }
+                ++y;
+                ++n;
+            }
+        }
+        if (fBot == kFlagUnchanged) fBot = kFlagBlockedGap;
+    };
     if (boundStrategy == 2) {
         if (hasBar(localT)) {
-            while (t > 0 && localT - (t - 1) <= capPx && hasBar(t - 1)) --t;
-            fTop = t < localT ? kFlagNormalExpand : kFlagUnchanged;
+            expandTopOneShot();
         } else {
             while (t < b - 1 && (t - localT) < maxRetractPx && !hasBar(t)) ++t;
             if (t > localT && hasBar(t)) fTop = kFlagNormalRetract;
@@ -2064,8 +2110,7 @@ static void seg7One(
             else fTop = kFlagNormalRetract;
         }
         if (localB > 0 && hasBar(localB - 1)) {
-            while (b < lookBin.rows && b - localB < capPx && hasBar(b)) ++b;
-            fBot = b > localB ? kFlagNormalExpand : kFlagUnchanged;
+            expandBotOneShot();
         } else {
             while (b > t + 1 && (localB - b) < maxRetractPx && !hasBar(b - 1)) --b;
             if (b < localB && localB > 0 && hasBar(b - 1)) fBot = kFlagNormalRetract;
@@ -2073,42 +2118,8 @@ static void seg7One(
             else fBot = kFlagNormalRetract;
         }
     } else {
-        const bool peekUp = peek(localT - 1, -1);
-        const bool peekDown = peek(localB, +1);
-        const bool freezeAlways = minSeedHsToFreeze <= 0.f;
-        const float minH = minSeedHsToFreeze * static_cast<float>(sPx);
-        const bool allowUp = peekUp ||
-            (!freezeAlways && seedH < minH);
-        const bool allowDown = peekDown ||
-            (!freezeAlways && seedH < minH);
-        if (!allowUp) fTop = kFlagBlockedGap;
-        if (!allowDown) fBot = kFlagBlockedGap;
-        if (allowUp) {
-            int gap = 0, y = localT - 1;
-            while (y >= 0 && localT - y <= capPx) {
-                if (hasBar(y)) { t = y; gap = 0; }
-                else {
-                    ++gap;
-                    if (gap >= gapStop) break;
-                }
-                --y;
-            }
-            if (t < localT) fTop = kFlagNormalExpand;
-            else if (gap >= gapStop) fTop = kFlagBlockedGap;
-        }
-        if (allowDown) {
-            int gap = 0, y = localB;
-            while (y < lookBin.rows && y - localB < capPx) {
-                if (hasBar(y)) { b = y + 1; gap = 0; }
-                else {
-                    ++gap;
-                    if (gap >= gapStop) break;
-                }
-                ++y;
-            }
-            if (b > localB) fBot = kFlagNormalExpand;
-            else if (gap >= gapStop) fBot = kFlagBlockedGap;
-        }
+        expandTopOneShot();
+        expandBotOneShot();
     }
     if (b <= t) b = std::min(t + 1, lookBin.rows);
     *ol = sl;
@@ -2141,6 +2152,10 @@ static void seg7One(
         tele->fBot = static_cast<float>(fBot);
         tele->fLeft = static_cast<float>(kFlagUnchanged);
         tele->fRight = static_cast<float>(kFlagUnchanged);
+        tele->gapJumpTop = gapJumpTop ? 1.f : 0.f;
+        tele->gapJumpBot = gapJumpBot ? 1.f : 0.f;
+        tele->landTop = landTop >= 0 ? static_cast<float>(nt + landTop) : 0.f;
+        tele->landBot = landBot >= 0 ? static_cast<float>(nt + landBot) : 0.f;
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
     if (sweepOut && !lookBin.empty()) {
@@ -3464,22 +3479,61 @@ static void seg7OrientedOne(
         if (y < 0 || y >= lookBin.rows) return false;
         return rowHasStrokeBar(lookBin, y, minRun, glareW);
     };
-    auto peek = [&](float startV, float dir) {
-        float v = startV;
-        for (int i = 0; i < gapStop; ++i) {
-            if (hasBar(v)) return true;
-            v += dir;
-        }
-        return false;
-    };
     float v0 = seed.v0, v1 = seed.v1;
     const float maxRetractPx = static_cast<float>(
         std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedBh))));
     int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
+    int gapJumpTop = 0, gapJumpBot = 0;
+    float landTop = 0.f, landBot = 0.f;
+    auto expandNegOneShot = [&]() {
+        bool usedGap = false;
+        while (seed.v0 - (v0 - 1.f) <= cap && hasBar(v0 - 1.f)) v0 -= 1.f;
+        if (v0 < seed.v0) fTop = kFlagNormalExpand;
+        if (!usedGap && seed.v0 - (v0 - 1.f) <= cap && !hasBar(v0 - 1.f)) {
+            float v = v0 - 1.f;
+            int n = 0;
+            while (n < gapStop && seed.v0 - v <= cap) {
+                if (hasBar(v)) {
+                    v0 = v;
+                    usedGap = true;
+                    gapJumpTop = 1;
+                    landTop = v;
+                    fTop = kFlagNormalExpand;
+                    while (seed.v0 - (v0 - 1.f) <= cap && hasBar(v0 - 1.f)) v0 -= 1.f;
+                    break;
+                }
+                v -= 1.f;
+                ++n;
+            }
+        }
+        if (fTop == kFlagUnchanged) fTop = kFlagBlockedGap;
+    };
+    auto expandPosOneShot = [&]() {
+        bool usedGap = false;
+        while (v1 - seed.v1 < cap && hasBar(v1)) v1 += 1.f;
+        if (v1 > seed.v1) fBot = kFlagNormalExpand;
+        if (!usedGap && v1 - seed.v1 < cap && !hasBar(v1)) {
+            float v = v1;
+            int n = 0;
+            while (n < gapStop && v - seed.v1 <= cap) {
+                if (hasBar(v)) {
+                    v1 = v + 1.f;
+                    usedGap = true;
+                    gapJumpBot = 1;
+                    landBot = v;
+                    fBot = kFlagNormalExpand;
+                    while (v1 - seed.v1 < cap && hasBar(v1)) v1 += 1.f;
+                    break;
+                }
+                v += 1.f;
+                ++n;
+            }
+        }
+        if (fBot == kFlagUnchanged) fBot = kFlagBlockedGap;
+    };
     if (boundStrategy == 2) {
         if (hasBar(v0)) {
-            while (seed.v0 - (v0 - 1.f) <= cap && hasBar(v0 - 1.f)) v0 -= 1.f;
-            fTop = v0 < seed.v0 ? kFlagNormalExpand : kFlagUnchanged;
+            expandNegOneShot();
         } else {
             while (v0 < v1 - 1.f && (v0 - seed.v0) < maxRetractPx && !hasBar(v0)) v0 += 1.f;
             if (v0 > seed.v0 && hasBar(v0)) fTop = kFlagNormalRetract;
@@ -3487,8 +3541,7 @@ static void seg7OrientedOne(
             else fTop = kFlagNormalRetract;
         }
         if (hasBar(v1 - 1.f) || hasBar(v1)) {
-            while (v1 - seed.v1 < cap && hasBar(v1)) v1 += 1.f;
-            fBot = v1 > seed.v1 ? kFlagNormalExpand : kFlagUnchanged;
+            expandPosOneShot();
         } else {
             while (v1 > v0 + 1.f && (seed.v1 - v1) < maxRetractPx && !hasBar(v1 - 1.f)) v1 -= 1.f;
             if (v1 < seed.v1 && hasBar(v1 - 1.f)) fBot = kFlagNormalRetract;
@@ -3496,42 +3549,8 @@ static void seg7OrientedOne(
             else fBot = kFlagNormalRetract;
         }
     } else {
-        const bool allowNeg = peek(seed.v0 - 1.f, -1.f);
-        const bool allowPos = peek(seed.v1 + 1.f, +1.f);
-        if (!allowNeg) fTop = kFlagBlockedGap;
-        if (!allowPos) fBot = kFlagBlockedGap;
-        if (allowNeg) {
-            int gap = 0;
-            float v = seed.v0 - 1.f;
-            while (seed.v0 - v <= cap) {
-                if (hasBar(v)) {
-                    v0 = v;
-                    gap = 0;
-                } else {
-                    ++gap;
-                    if (gap >= gapStop) break;
-                }
-                v -= 1.f;
-            }
-        }
-        if (allowPos) {
-            int gap = 0;
-            float v = seed.v1 + 1.f;
-            while (v - seed.v1 <= cap) {
-                if (hasBar(v)) {
-                    v1 = v;
-                    gap = 0;
-                } else {
-                    ++gap;
-                    if (gap >= gapStop) break;
-                }
-                v += 1.f;
-            }
-            if (v1 > seed.v1) fBot = kFlagNormalExpand;
-            else fBot = kFlagBlockedGap;
-        }
-        if (allowNeg && v0 < seed.v0) fTop = kFlagNormalExpand;
-        else if (allowNeg) fTop = kFlagBlockedGap;
+        expandNegOneShot();
+        expandPosOneShot();
     }
     if (v1 < v0 + 2.f) v1 = v0 + 2.f;
     if (tele) {
@@ -3560,6 +3579,10 @@ static void seg7OrientedOne(
         tele->fBot = static_cast<float>(fBot);
         tele->fLeft = static_cast<float>(kFlagUnchanged);
         tele->fRight = static_cast<float>(kFlagUnchanged);
+        tele->gapJumpTop = gapJumpTop ? 1.f : 0.f;
+        tele->gapJumpBot = gapJumpBot ? 1.f : 0.f;
+        tele->landTop = gapJumpTop ? landTop : 0.f;
+        tele->landBot = gapJumpBot ? landBot : 0.f;
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
     if (sweepOut) {

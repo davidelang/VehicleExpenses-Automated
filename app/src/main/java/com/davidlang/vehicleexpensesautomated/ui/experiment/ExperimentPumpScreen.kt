@@ -4018,6 +4018,10 @@ private fun seg7TeleJson(t: ContentExpandUtils.Seg7Telemetry): JSONObject {
         .put("flag_bot", t.flagBot)
         .put("flag_left", t.flagLeft)
         .put("flag_right", t.flagRight)
+        .put("gap_jump_top", if (t.gapJumpTop) 1 else 0)
+        .put("gap_jump_bot", if (t.gapJumpBot) 1 else 0)
+        .put("gap_land_top", t.landTop.toDouble())
+        .put("gap_land_bot", t.landBot.toDouble())
         .put("hist_h", hh)
         .put("hist_v", hv)
 }

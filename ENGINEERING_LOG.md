@@ -9114,3 +9114,11 @@ FLOWS (4)–(5): local Otsu on poison pixels (keepR); look-strip outside the see
 ## 2026-08-30 - CODE LANDED: poison-ink-inside-object-only-20260830-0827
 
 Off-seed look uses clean/tint only (no PoisonReg bbox/thr extrusion). Local Otsu stays on poison pixels inside the seed; overlay yellow/red only on seed poison mask. 11×/3× detect and tight/retract loops unchanged. Do not deploy.
+
+## 2026-08-30 - Execute start: gap-jump-both-html-row-filter-20260830-1247 then experiment-html-row-filter-thresh-reds-20260829-0154
+
+1247: one-shot 0.5s gap jump (≤1 per side) on tight+retract; yellow land line; HTML Rows; mixed fail 76. 0154: same Rows plus thresh lookBin in dump-details (1247 out-of-scope). Do not leapfrog. Do not deploy.
+
+## 2026-08-30 - Phase 1: one-shot gap jump walk + tele (1247)
+
+AABB+rot 7seg: consecutive hasBar then at most one 0.5s empty bridge per side (usedGap). Retract empty edge still inward-only. Telemetry gap_jump_top/bot + land. No leapfrog gap=0 reset. Do not deploy.
