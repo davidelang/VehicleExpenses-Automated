@@ -9130,3 +9130,7 @@ Look-ink JPEG: red seed T/B; yellow full-width at landed hasBar when gap_jump us
 ## 2026-08-30 - Phase 3: HTML Rows filter (1247 / 0154)
 
 Toolbar Rows field; tokens split on /[^\d\-]+/; 1-10 ranges; empty/all/* shows all. CSS hide-photo-1..200. Prev/next skip hidden. Persist. Pump/alignment/multiscale. Do not deploy.
+
+## 2026-08-30 - Phase 4: Mixed fail (76) (1247)
+
+MIXED_FAIL_READABLE_FILENAMES = mixed_fail_readable from mixed_fail_readable_084544.json (76, phone file order). Button Mixed fail (76); auto=mixedfail. Do not deploy.
