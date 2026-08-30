@@ -1524,6 +1524,8 @@ suspend fun runPumpExperiment(
                             h.rect.right.toInt(), h.rect.bottom.toInt(),
                         )
                     }
+                    val poisonRgb = org.opencv.core.Mat()
+                    val poisonBuf = ContentExpandUtils.poisonStatsBuf(seeds.size)
                     val segs = ContentExpandUtils.expand7segFromSeedMany(
                         workspace.p.mat,
                         if (expandMode != 0) workspace.p.uvMat else null,
@@ -1537,6 +1539,8 @@ suspend fun runPumpExperiment(
                         boundStrategy = boundStrategy,
                         tightInsetPx = tightInsetPx,
                         combine = NativePaddleEngine.bufferSetB.s.mat,
+                        poisonRgb = poisonRgb,
+                        poisonStats = poisonBuf,
                     ) ?: seeds.map { r ->
                         when (expandMode) {
                             2, 3 -> ContentExpandUtils.expand7segFromSeed(
@@ -1552,7 +1556,11 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    snapshotLookInk(seeds, segs.map { it.rect }, imgW, imgH, branch)
+                    snapshotLookInk(
+                        seeds, segs.map { it.rect }, imgW, imgH, branch,
+                        poisonRgb, segs.map { it.poison },
+                    )
+                    if (!poisonRgb.empty()) poisonRgb.release()
                     val walks = seeds.indices.map { i ->
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
                     }
@@ -2187,6 +2195,8 @@ suspend fun runPumpExperiment(
                             retractClearFrac = 0.30f,
                             energyRatio = 0.65f,
                         )
+                        val poisonRgb = org.opencv.core.Mat()
+                        val poisonBuf = ContentExpandUtils.poisonStatsBuf(seedQuads.size)
                         val segs = ContentExpandUtils.expand7segFromOrientedSeedMany(
                             gray,
                             if (expandMode != 0) workspace.p.uvMat else null,
@@ -2196,12 +2206,16 @@ suspend fun runPumpExperiment(
                             boundStrategy = boundStrategy,
                             tightInsetPx = tightInsetPx,
                             combine = NativePaddleEngine.bufferSetB.s.mat,
+                            poisonRgb = poisonRgb,
+                            poisonStats = poisonBuf,
                         )
                         snapshotLookInk(
                             seedQuads.map { it.toAabb() },
                             segs.map { it.quad.toAabb() },
                             imgW, imgH, branch,
+                            poisonRgb, segs.map { it.poison },
                         )
+                        if (!poisonRgb.empty()) poisonRgb.release()
                         val seedBhs = FloatArray(seedQuads.size) { seedQuads[it].shortAxisBh() }
                         val seedQuadsOrig = FloatArray(seedQuads.size * 8)
                         seedQuads.forEachIndexed { i, q ->
@@ -3763,6 +3777,8 @@ private suspend fun snapshotLookInk(
     imgW: Int,
     imgH: Int,
     branch: PumpBranch,
+    poisonRgb: org.opencv.core.Mat? = null,
+    poisons: List<ContentExpandUtils.PoisonDump?> = emptyList(),
 ) {
     val dump = NativePaddleEngine.bufferSetB.s
     if (dump.mat.empty() || dump.mat.rows() < imgH || dump.mat.cols() < imgW) return
@@ -3794,15 +3810,73 @@ private suspend fun snapshotLookInk(
             dump, crop, jpegW, jpegH, anns, null, NativePaddleEngine.bufferSetA,
         )
         if (b64.isEmpty()) return@forEachIndexed
-        arr.put(
-            org.json.JSONObject()
-                .put("label", "box${i + 1}")
-                .put("lookInkB64", b64)
-                .put("recW", jpegW)
-                .put("recH", jpegH),
-        )
+        val j = org.json.JSONObject()
+            .put("label", "box${i + 1}")
+            .put("lookInkB64", b64)
+            .put("recW", jpegW)
+            .put("recH", jpegH)
+        val pd = poisons.getOrNull(i)
+        if (pd != null) {
+            j.put("bandTop", pd.bandTop)
+            j.put("bandBot", pd.bandBot)
+            j.put("bandH", pd.bandH)
+            val ccArr = org.json.JSONArray()
+            pd.ccs.forEach { cc ->
+                ccArr.put(
+                    org.json.JSONObject()
+                        .put("x", cc.x).put("y", cc.y).put("w", cc.w).put("h", cc.h)
+                        .put("noPeak", cc.noPeak).put("thr", cc.thr).put("nInk", cc.nInk),
+                )
+            }
+            j.put("ccs", ccArr)
+        }
+        if (poisonRgb != null && !poisonRgb.empty() && poisonRgb.channels() == 3 &&
+            poisonRgb.rows() >= imgH && poisonRgb.cols() >= imgW
+        ) {
+            val poiB64 = encodePoisonCropJpeg(poisonRgb, crop, s, jpegW, jpegH, scale)
+            if (poiB64.isNotEmpty()) j.put("poisonB64", poiB64)
+        }
+        arr.put(j)
     }
     if (arr.length() > 0) branch.metadata["look_ink"] = arr.toString()
+}
+
+private fun encodePoisonCropJpeg(
+    poisonRgb: org.opencv.core.Mat,
+    crop: android.graphics.Rect,
+    seed: android.graphics.Rect,
+    jpegW: Int,
+    jpegH: Int,
+    scale: Float,
+): String {
+    val sl = crop.left.coerceIn(0, poisonRgb.cols() - 1)
+    val st = crop.top.coerceIn(0, poisonRgb.rows() - 1)
+    val sw = crop.width().coerceAtMost(poisonRgb.cols() - sl).coerceAtLeast(1)
+    val sh = crop.height().coerceAtMost(poisonRgb.rows() - st).coerceAtLeast(1)
+    val sub = poisonRgb.submat(st, st + sh, sl, sl + sw)
+    val scaled = org.opencv.core.Mat()
+    try {
+        Imgproc.resize(
+            sub, scaled, org.opencv.core.Size(jpegW.toDouble(), jpegH.toDouble()),
+            0.0, 0.0, Imgproc.INTER_NEAREST,
+        )
+        val yT = kotlin.math.round((seed.top - crop.top) * scale).toInt().coerceIn(0, jpegH - 1)
+        val yB = kotlin.math.round((seed.bottom - crop.top) * scale).toInt().coerceIn(0, jpegH - 1)
+        val red = org.opencv.core.Scalar(0.0, 0.0, 255.0)
+        Imgproc.line(scaled, org.opencv.core.Point(0.0, yT.toDouble()),
+            org.opencv.core.Point(jpegW.toDouble(), yT.toDouble()), red, 2)
+        Imgproc.line(scaled, org.opencv.core.Point(0.0, yB.toDouble()),
+            org.opencv.core.Point(jpegW.toDouble(), yB.toDouble()), red, 2)
+        val buf = org.opencv.core.MatOfByte()
+        return if (org.opencv.imgcodecs.Imgcodecs.imencode(".jpg", scaled, buf)) {
+            android.util.Base64.encodeToString(buf.toArray(), android.util.Base64.NO_WRAP)
+        } else {
+            ""
+        }
+    } finally {
+        sub.release()
+        scaled.release()
+    }
 }
 
 private fun pLookInkHtml(br: PumpBranch): String {
@@ -3827,11 +3901,32 @@ private fun pLookInkHtml(br: PumpBranch): String {
         val recH = c.optInt("recH", 0)
         val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
         val hCss = if (recH > 0) "height:${recH}px;" else "height:auto;"
+        val poi = c.optString("poisonB64")
+        val bandTop = c.optBoolean("bandTop", false)
+        val bandBot = c.optBoolean("bandBot", false)
+        val ccs = c.optJSONArray("ccs")
+        val ccBits = StringBuilder()
+        if (ccs != null) {
+            for (k in 0 until ccs.length()) {
+                val cc = ccs.optJSONObject(k) ?: continue
+                if (ccBits.isNotEmpty()) ccBits.append("; ")
+                ccBits.append("cc${k + 1} noPeak=${cc.optBoolean("noPeak")} nInk=${cc.optInt("nInk")}")
+            }
+        }
+        val meta = "bandTop=$bandTop bandBot=$bandBot" +
+            if (ccBits.isNotEmpty()) " $ccBits" else ""
+        val poiImg = if (!poi.isNullOrEmpty()) {
+            "<img src='data:image/jpeg;base64,$poi' " +
+                "style='$hCss$wCss max-width:none;image-rendering:pixelated;'>"
+        } else {
+            ""
+        }
         sb.append(
             "<div style='flex:0 0 auto;font-size:9px;'>" +
                 "<img src='data:image/jpeg;base64,$b64' " +
                 "style='$hCss$wCss max-width:none;image-rendering:pixelated;'>" +
-                "<br>$lab</div>",
+                poiImg +
+                "<br>$lab $meta</div>",
         )
     }
     sb.append("</div></div>")

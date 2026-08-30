@@ -1313,6 +1313,39 @@ object ContentExpandUtils {
         return IntArray((1 + n.coerceAtLeast(0) * per).coerceAtLeast(1))
     }
 
+    fun poisonStatsBuf(n: Int): IntArray = IntArray(1 + n.coerceAtLeast(0) * 256)
+
+    fun parsePoisonStats(a: IntArray?, n: Int): List<PoisonDump?> {
+        val out = MutableList<PoisonDump?>(n) { null }
+        if (a == null || a.isEmpty() || n <= 0) return out
+        var p = 0
+        val nBox = a[p++]
+        for (i in 0 until nBox) {
+            if (p + 4 > a.size) break
+            val bandTop = a[p++] != 0
+            val bandBot = a[p++] != 0
+            val bandH = a[p++]
+            val nCc = a[p++]
+            val ccs = ArrayList<PoisonCc>(nCc.coerceAtLeast(0))
+            var ok = true
+            for (j in 0 until nCc) {
+                if (p + 7 > a.size) {
+                    ok = false
+                    break
+                }
+                ccs.add(
+                    PoisonCc(
+                        a[p++], a[p++], a[p++], a[p++],
+                        a[p++] != 0, a[p++], a[p++],
+                    ),
+                )
+            }
+            if (!ok) break
+            if (i < n) out[i] = PoisonDump(bandTop, bandBot, bandH, ccs)
+        }
+        return out
+    }
+
     fun parseInkSweeps(a: IntArray?, n: Int): List<InkSweep?> {
         val out = MutableList<InkSweep?>(n) { null }
         if (a == null || a.isEmpty() || n <= 0) return out
@@ -1412,6 +1445,23 @@ object ContentExpandUtils {
         )
     }
 
+    data class PoisonCc(
+        val x: Int,
+        val y: Int,
+        val w: Int,
+        val h: Int,
+        val noPeak: Boolean,
+        val thr: Int,
+        val nInk: Int,
+    )
+
+    data class PoisonDump(
+        val bandTop: Boolean,
+        val bandBot: Boolean,
+        val bandH: Int,
+        val ccs: List<PoisonCc>,
+    )
+
     data class Seg7Expand(
         val rect: Rect,
         val stroke: StrokeWidthInSeed,
@@ -1419,6 +1469,7 @@ object ContentExpandUtils {
         val j: Float = SEG7_J,
         val tele: Seg7Telemetry? = null,
         val sweep: InkSweep? = null,
+        val poison: PoisonDump? = null,
     )
 
     /**
@@ -1444,6 +1495,8 @@ object ContentExpandUtils {
         boundStrategy: Int = 0,
         tightInsetPx: Int = 16,
         combine: Mat? = null,
+        poisonRgb: Mat? = null,
+        poisonStats: IntArray? = null,
     ): List<Seg7Expand>? {
         val mode = if (chromaMode >= 0) chromaMode else if (chroma) 1 else 0
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
@@ -1464,10 +1517,11 @@ object ContentExpandUtils {
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val r = NativeImageUtils.seg7ManyNative(
             gray, uv, packed, mode, gapFrac, minSeedHsToFreeze, scratch,
-            boundStrategy, tightInsetPx, tele, sweepBuf, combine,
+            boundStrategy, tightInsetPx, tele, sweepBuf, combine, poisonRgb, poisonStats,
         ) ?: return null
         if (r.size < seeds.size * 8) return null
         val sweeps = parseInkSweeps(sweepBuf, seeds.size)
+        val poisons = parsePoisonStats(poisonStats, seeds.size)
         return seeds.indices.map { i ->
             val o = i * 8
             val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
@@ -1486,6 +1540,7 @@ object ContentExpandUtils {
                 k, j,
                 parseSeg7Tele(tele, i),
                 sweeps.getOrNull(i),
+                poisons.getOrNull(i),
             )
         }
     }
@@ -1705,6 +1760,7 @@ object ContentExpandUtils {
         val stroke: StrokeWidthInSeed,
         val tele: Seg7Telemetry? = null,
         val sweep: InkSweep? = null,
+        val poison: PoisonDump? = null,
     )
 
     /**
@@ -1720,6 +1776,8 @@ object ContentExpandUtils {
         boundStrategy: Int = 0,
         tightInsetPx: Int = 16,
         combine: Mat? = null,
+        poisonRgb: Mat? = null,
+        poisonStats: IntArray? = null,
     ): List<Seg7OrientedExpand> {
         if (seeds.isEmpty()) return emptyList()
         val packed = FloatArray(seeds.size * 8)
@@ -1734,10 +1792,11 @@ object ContentExpandUtils {
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val native = NativeImageUtils.seg7OrientedManyNative(
             gray, uv, packed, chromaMode, scratch,
-            boundStrategy, tightInsetPx, tele, sweepBuf, combine,
+            boundStrategy, tightInsetPx, tele, sweepBuf, combine, poisonRgb, poisonStats,
         )
         if (native != null && native.size >= seeds.size * 9) {
             val sweeps = parseInkSweeps(sweepBuf, seeds.size)
+            val poisons = parsePoisonStats(poisonStats, seeds.size)
             return seeds.indices.map { i ->
                 val o = i * 9
                 val pts = FloatArray(8) { k -> native[o + k] }
@@ -1751,6 +1810,7 @@ object ContentExpandUtils {
                     ),
                     parseSeg7Tele(tele, i),
                     sweeps.getOrNull(i),
+                    poisons.getOrNull(i),
                 )
             }
         }

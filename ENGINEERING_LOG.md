@@ -9090,3 +9090,7 @@ Seed uv frozen (u=flatter edge, vy≥0). Jump/pad/horiz_pad do not re-pick from 
 ## 2026-08-30 - Phase 1: look-ink seed 48px + walked extras + red lines (0519)
 
 Look-ink crop is seed L/R and min/max T/B of seed vs 7seg walk (not blanket 2.5×). JPEG scale so seed band is 48px; extras keep that px/row. Red LINE at seed T/B. HTML height = JPEG. Rec buffers stay 48. Do not deploy.
+
+## 2026-08-30 - Phase 2: poison overlay + per-section JSON (0519)
+
+Native RGB overlay on poison dump (black / green clean ink / red poison no-ink / yellow ink-in-poison). Per-seed JSON bandTop/bandBot + CC x,y,w,h,noPeak,thr,nInk. HTML Look ink + Poison side by side, same crop/red lines. A.p untouched. Do not deploy.
