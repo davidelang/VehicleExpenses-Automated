@@ -9166,3 +9166,7 @@ Rot-gray/color: horiz_pad s=0..4 next to each ink k; skipExtraK applies; PD extr
 ## 2026-08-30 - Phase 3: FLOWS horiz_pad per k (1430)
 
 Unofficial horiz_pad at each ink k=0..4; official still k=0; PD extra blue = k=0 pad; energy one pad. Do not deploy.
+
+## 2026-08-30 - CODE LANDED: horiz-pad-all-k-20260830-1430
+
+Unofficial horiz_pad OCR at each ink k=0..4 (s=k, ±0.5× that k box H). Official/classify/PD blue still k=0 pad overlay. skipExtraK skips extra k and its pad. Energy columns still one pad. Do not deploy.
