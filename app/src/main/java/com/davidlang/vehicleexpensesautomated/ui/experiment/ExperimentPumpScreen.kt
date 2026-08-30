@@ -2388,6 +2388,7 @@ suspend fun runPumpExperiment(
                         vertSweep.joinToString(",")
 
                     val variants = JSONArray()
+                    var pdPadQuads: List<ContentExpandUtils.OrientedQuad> = emptyList()
                     val energyRects: List<android.graphics.Rect>
                     val energyCands: List<RedBoxOcrCandidate>
                     val energyCv: CostVolClassifyResult
@@ -2406,6 +2407,60 @@ suspend fun runPumpExperiment(
                         var officialCands: List<RedBoxOcrCandidate> = emptyList()
                         var officialCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(emptyList())
                         var skipExtraK = BooleanArray(0)
+                        suspend fun emitRotHorizPad(
+                            s: Float,
+                            kQuads: List<ContentExpandUtils.OrientedQuad>,
+                            skip: BooleanArray?,
+                        ): List<ContentExpandUtils.OrientedQuad> {
+                            val padQuads = kQuads.map { q ->
+                                ContentExpandUtils.padOrientedU(q, 0.5f)
+                            }
+                            val padRects = padQuads.map { it.toAabb() }
+                            val ocrIdx = ArrayList<Int>()
+                            val ocrQuads = ArrayList<ContentExpandUtils.OrientedQuad>()
+                            padQuads.indices.forEach { i ->
+                                if (skip == null || i >= skip.size || !skip[i]) {
+                                    ocrIdx.add(i)
+                                    ocrQuads.add(padQuads[i])
+                                }
+                            }
+                            val ocrP = if (ocrQuads.isEmpty()) {
+                                PumpRectOcrLists(emptyList(), emptyList())
+                            } else {
+                                ocrPumpOrientedQuads(ocrQuads, gray, imgW, imgH)
+                            }
+                            nOcr += ocrQuads.size
+                            val ocrAt = HashMap<Int, Int>(ocrIdx.size)
+                            ocrIdx.forEachIndexed { j, i -> ocrAt[i] = j }
+                            val candsP = padQuads.indices.map { i ->
+                                val j = ocrAt[i]
+                                if (j == null) {
+                                    RedBoxOcrCandidate(
+                                        "box${i + 1}", "", "",
+                                        rect = padRects[i],
+                                    )
+                                } else {
+                                    RedBoxOcrCandidate(
+                                        "box${i + 1}",
+                                        ocrP.asis.getOrElse(j) { "" },
+                                        ocrP.digits.getOrElse(j) { "" },
+                                        ocrP.asisProbs.getOrElse(j) { "" },
+                                        ocrP.digitsProbs.getOrElse(j) { "" },
+                                        padRects[i],
+                                        ocrP.recB64.getOrElse(j) { "" },
+                                        ocrP.recW.getOrElse(j) { 0 },
+                                        ocrP.recH.getOrElse(j) { 0 },
+                                    )
+                                }
+                            }
+                            val cvP = PumpCostVolUtils.classifyCostVolFromBoxOcr(candsP)
+                            variants.put(
+                                ocrScaleVariantJson(
+                                    s, padRects, padQuads, candsP, cvP, kind = "horiz_pad",
+                                ),
+                            )
+                            return padQuads
+                        }
                         for (kk in listOf(0f, 1f, 2f, 3f, 4f)) {
                             val quads = if (kk == 0f) expandedQuads else inkQuadsForK(kk)
                             val rects = quads.map { it.toAabb() }
@@ -2478,6 +2533,10 @@ suspend fun runPumpExperiment(
                                     kk, rects, quads, candsK, cvK, kind = "ink",
                                 ),
                             )
+                            val pads = emitRotHorizPad(
+                                kk, quads, if (kk == 0f) null else skipExtraK,
+                            )
+                            if (kk == 0f) pdPadQuads = pads
                         }
                         energyRects = expandedQuads.map { it.toAabb() }
                         energyCands = officialCands
@@ -2549,24 +2608,24 @@ suspend fun runPumpExperiment(
                                 kind = "energy_or_g", hitCaps = hitCaps,
                             ),
                         )
+                        pdPadQuads = expandedQuads.mapIndexed { i, q ->
+                            ContentExpandUtils.padOrientedU(q, 0.5f, seedQuads.getOrNull(i))
+                        }
+                        val horizPadRects = pdPadQuads.map { it.toAabb() }
+                        val horizPadOcr = ocrPumpOrientedQuads(pdPadQuads, gray, imgW, imgH)
+                        val horizPadCands = buildRedBoxCandidates(
+                            horizPadRects, horizPadOcr.asis, horizPadOcr.digits,
+                            horizPadOcr.asisProbs, horizPadOcr.digitsProbs, horizPadOcr.recB64,
+                            recWList = horizPadOcr.recW, recHList = horizPadOcr.recH,
+                        )
+                        val horizPadCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(horizPadCands)
+                        variants.put(
+                            ocrScaleVariantJson(
+                                0.5f, horizPadRects, pdPadQuads, horizPadCands, horizPadCv,
+                                kind = "horiz_pad",
+                            ),
+                        )
                     }
-                    val horizPadQuads = expandedQuads.mapIndexed { i, q ->
-                        ContentExpandUtils.padOrientedU(q, 0.5f, seedQuads.getOrNull(i))
-                    }
-                    val horizPadRects = horizPadQuads.map { it.toAabb() }
-                    val horizPadOcr = ocrPumpOrientedQuads(horizPadQuads, gray, imgW, imgH)
-                    val horizPadCands = buildRedBoxCandidates(
-                        horizPadRects, horizPadOcr.asis, horizPadOcr.digits,
-                        horizPadOcr.asisProbs, horizPadOcr.digitsProbs, horizPadOcr.recB64,
-                        recWList = horizPadOcr.recW, recHList = horizPadOcr.recH,
-                    )
-                    val horizPadCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(horizPadCands)
-                    variants.put(
-                        ocrScaleVariantJson(
-                            0.5f, horizPadRects, horizPadQuads, horizPadCands, horizPadCv,
-                            kind = "horiz_pad",
-                        ),
-                    )
                     val tOcrE = branch.metadata["t_ocr_energy_ms"]?.toLongOrNull() ?: 0L
                     val tOcrG = branch.metadata["t_ocr_g_ms"]?.toLongOrNull() ?: 0L
                     branch.metadata["t_ocr_ms"] = (tOcrE + tOcrG).toString()
@@ -2671,7 +2730,7 @@ suspend fun runPumpExperiment(
                     ).first
                     val aPd = redOnlyAnns +
                         primaryQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) } +
-                        horizPadQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
+                        pdPadQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
