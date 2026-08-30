@@ -1205,23 +1205,29 @@ suspend fun runPumpExperiment(
                         } else {
                             val vArr = JSONArray(); s.vScores.forEach { vArr.put(it) }
                             val hArr = JSONArray(); s.hScores.forEach { hArr.put(it) }
-                            sweepArr.put(
-                                JSONObject()
-                                    .put("thr", s.thr.toDouble())
-                                    .put("sPx", s.sPx.toDouble())
-                                    .put("minRun", s.minRun)
-                                    .put("energyRatio", s.energyRatio.toDouble())
-                                    .put("v0", s.v0)
-                                    .put("v1", s.v1)
-                                    .put("h0", s.h0)
-                                    .put("h1", s.h1)
-                                    .put("vScores", vArr)
-                                    .put("hScores", hArr)
-                                    .put("walkT", s.walkT)
-                                    .put("walkB", s.walkB)
-                                    .put("jumpL", s.jumpL)
-                                    .put("jumpR", s.jumpR),
-                            )
+                            val jo = JSONObject()
+                                .put("thr", s.thr.toDouble())
+                                .put("sPx", s.sPx.toDouble())
+                                .put("minRun", s.minRun)
+                                .put("energyRatio", s.energyRatio.toDouble())
+                                .put("v0", s.v0)
+                                .put("v1", s.v1)
+                                .put("h0", s.h0)
+                                .put("h1", s.h1)
+                                .put("vScores", vArr)
+                                .put("hScores", hArr)
+                                .put("walkT", s.walkT)
+                                .put("walkB", s.walkB)
+                                .put("jumpL", s.jumpL)
+                                .put("jumpR", s.jumpR)
+                            val jpeg = s.threshJpeg
+                            if (jpeg != null && jpeg.isNotEmpty()) {
+                                jo.put(
+                                    "threshB64",
+                                    Base64.encodeToString(jpeg, Base64.NO_WRAP),
+                                )
+                            }
+                            sweepArr.put(jo)
                         }
                     }
                     return JSONObject()
@@ -4183,6 +4189,15 @@ private fun pInkSweepHtml(br: PumpBranch): String {
                 o.optInt("jumpL", -1), o.optInt("jumpR", -1),
             ),
         )
+        val threshB64 = o.optString("threshB64")
+        if (!threshB64.isNullOrEmpty()) {
+            sb.append("<div style='font-size:8px;color:#555;'>box${i + 1} thresh</div>")
+            sb.append(
+                "<img src='data:image/jpeg;base64,$threshB64' " +
+                    "style='max-width:400px;height:auto;image-rendering:pixelated;" +
+                    "border:1px solid #eee;display:block;margin:2px 0;'>",
+            )
+        }
         sb.append(
             "<div style='font-size:8px;color:#555;'>gray=seed  green=walk  dashed red=thr  x=scan index (seed ± 2.5H)</div>",
         )

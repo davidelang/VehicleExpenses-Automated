@@ -9138,3 +9138,7 @@ MIXED_FAIL_READABLE_FILENAMES = mixed_fail_readable from mixed_fail_readable_084
 ## 2026-08-30 - Phase 5: FLOWS one-shot gap + Mixed fail (76) (1247)
 
 Consecutive hasBar then one gap jump <= 0.5s; at most one per side. Mixed fail (76) on 08-45-44, 13 columns, exact-only sometimes-not-always. Do not deploy.
+
+## 2026-08-30 - Phase 2: thresh lookBin in dump-details (0154)
+
+inkSweep threshB64 JPEG of seed lookBin (AABB crop; oriented seed rows; energy mag>=thr). Longest side <=400, quality 70. boxN thresh under sparkline. Hide with dump-details. Do not deploy.

@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -337,6 +338,7 @@ struct InkSweepPack {
     int h1 = 0;
     std::vector<int> vScores;
     std::vector<int> hScores;
+    std::vector<uint8_t> threshJpeg;
 };
 
 struct PoisonCcPack {
@@ -395,9 +397,68 @@ static void writeSweepArr(JNIEnv* env, jintArray arr, const std::vector<InkSweep
         buf.push_back(nH);
         buf.insert(buf.end(), p.vScores.begin(), p.vScores.end());
         buf.insert(buf.end(), p.hScores.begin(), p.hScores.end());
+        const int nJ = static_cast<int>(p.threshJpeg.size());
+        buf.push_back(nJ);
+        for (uint8_t b : p.threshJpeg) buf.push_back(b);
     }
     const jint n = std::min(cap, static_cast<jint>(buf.size()));
     env->SetIntArrayRegion(arr, 0, n, buf.data());
+}
+
+static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
+    if (!out || bin.empty() || bin.type() != CV_8UC1) return;
+    const int w = bin.cols;
+    const int h = bin.rows;
+    if (w < 1 || h < 1) return;
+    cv::Mat small;
+    const int longSide = std::max(w, h);
+    if (longSide > 400) {
+        const double sc = 400.0 / static_cast<double>(longSide);
+        int nw = std::max(2, static_cast<int>(std::lround(w * sc)));
+        int nh = std::max(2, static_cast<int>(std::lround(h * sc)));
+        nw = (nw + 1) / 2 * 2;
+        nh = (nh + 1) / 2 * 2;
+        cv::resize(bin, small, cv::Size(nw, nh), 0, 0, cv::INTER_NEAREST);
+    } else {
+        small = bin;
+    }
+    cv::Mat bgr;
+    cv::cvtColor(small, bgr, cv::COLOR_GRAY2BGR);
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 70};
+    std::vector<uint8_t> jpg;
+    if (cv::imencode(".jpg", bgr, jpg, params) && !jpg.empty() && jpg.size() <= 16000) {
+        out->threshJpeg = std::move(jpg);
+    }
+}
+
+static void packSeedLookRows(const cv::Mat& lookBin, int y0, int y1, InkSweepPack* out) {
+    if (!out || lookBin.empty() || lookBin.type() != CV_8UC1) return;
+    y0 = std::max(0, y0);
+    y1 = std::min(lookBin.rows, y1);
+    if (y1 <= y0 || lookBin.cols < 1) return;
+    packSeedBinJpeg(lookBin(cv::Range(y0, y1), cv::Range(0, lookBin.cols)), out);
+}
+
+static void packSeedEnergyRect(
+    const cv::Mat& mag, int l, int t, int r, int b, float thr, InkSweepPack* out
+) {
+    if (!out || mag.empty() || mag.type() != CV_32F) return;
+    const int imgH = mag.rows;
+    const int imgW = mag.cols;
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > imgW) r = imgW;
+    if (b > imgH) b = imgH;
+    if (r <= l || b <= t) return;
+    cv::Mat bin(b - t, r - l, CV_8UC1);
+    for (int y = t; y < b; ++y) {
+        const float* ep = mag.ptr<float>(y);
+        uint8_t* op = bin.ptr<uint8_t>(y - t);
+        for (int x = l; x < r; ++x) {
+            op[x - l] = ep[x] >= thr ? 255 : 0;
+        }
+    }
+    packSeedBinJpeg(bin, out);
 }
 
 static void fillOrientedEnergySweep(
@@ -1379,6 +1440,25 @@ static void fillOrientedEnergySweep(
         }
         out->hScores.push_back(static_cast<int>(std::lround(c > 0 ? s / c : 0.0)));
     }
+    const int wu = std::max(1, static_cast<int>(std::lround(seedBw)));
+    const int hv = std::max(1, static_cast<int>(std::lround(seedBh)));
+    cv::Mat seedBin(hv, wu, CV_8UC1);
+    const float thrF = static_cast<float>(thr);
+    for (int y = 0; y < hv; ++y) {
+        uint8_t* row = seedBin.ptr<uint8_t>(y);
+        const float vv = ((y + 0.5f) / hv - 0.5f) * seedBh;
+        for (int x = 0; x < wu; ++x) {
+            const float uu = ((x + 0.5f) / wu - 0.5f) * seedBw;
+            const float px = seedCx + uu * fr.ux + vv * fr.vx;
+            const float py = seedCy + uu * fr.uy + vv * fr.vy;
+            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) {
+                row[x] = 0;
+                continue;
+            }
+            row[x] = sampleEnergy(mag, px, py, fr.imgW, fr.imgH) >= thrF ? 255 : 0;
+        }
+    }
+    packSeedBinJpeg(seedBin, out);
 }
 
 static void fillAabbEnergySweep(
@@ -1424,6 +1504,7 @@ static void fillAabbEnergySweep(
         out->hScores.push_back(static_cast<int>(
             std::lround(meanRectF(hEng, x, st, x + 1, sb, imgW, imgH))));
     }
+    packSeedEnergyRect(vertEng, sl, st, sr, sb, static_cast<float>(thr), out);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -1825,6 +1906,7 @@ static void fillAabbLookSweep(
         }
         out->vScores.push_back(sc);
     }
+    packSeedLookRows(lookBin, st - nt, sb - nt, out);
     if (x1 <= x0) return;
     cv::Mat wide;
     if (st >= 0 && sb <= imgH && sb > st && x1 > x0) {
@@ -3329,6 +3411,11 @@ static void fillOrientedLookSweep(
         }
         out->vScores.push_back(sc);
     }
+    packSeedLookRows(
+        lookBin,
+        static_cast<int>(std::lround(seed.v0 - lookV0)),
+        static_cast<int>(std::lround(seed.v1 - lookV0)),
+        out);
     if (uEnd <= uStart) return;
     const int wu = std::max(1, uEnd - uStart);
     const int hv = std::max(1, static_cast<int>(std::lround(seed.v1 - seed.v0)));
