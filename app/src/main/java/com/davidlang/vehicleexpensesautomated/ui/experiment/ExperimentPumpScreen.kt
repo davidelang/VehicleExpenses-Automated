@@ -2480,8 +2480,8 @@ suspend fun runPumpExperiment(
                             ),
                         )
                     }
-                    val horizPadQuads = expandedQuads.map {
-                        ContentExpandUtils.padOrientedU(it, 0.5f)
+                    val horizPadQuads = expandedQuads.mapIndexed { i, q ->
+                        ContentExpandUtils.padOrientedU(q, 0.5f, seedQuads.getOrNull(i))
                     }
                     val horizPadRects = horizPadQuads.map { it.toAabb() }
                     val horizPadOcr = ocrPumpOrientedQuads(horizPadQuads, gray, imgW, imgH)
@@ -3647,26 +3647,9 @@ private fun escapeJsonString(out: Appendable, str: String) {
 }
 
 
-/** Long-edge angle of an oriented quad, normalized to [-90, 90] degrees. */
+/** u-axis angle of an oriented quad (flatter seed pick), normalized to [-90, 90] degrees. */
 private fun pumpQuadLongAngleDeg(q: ContentExpandUtils.OrientedQuad): Float {
-    val p = q.pts
-    if (p.size < 8) return 0f
-    var best = 0.0
-    var ang = 0f
-    for (i in 0 until 4) {
-        val j = (i + 1) % 4
-        val dx = (p[j * 2] - p[i * 2]).toDouble()
-        val dy = (p[j * 2 + 1] - p[i * 2 + 1]).toDouble()
-        val len = kotlin.math.hypot(dx, dy)
-        if (len > best) {
-            best = len
-            ang = Math.toDegrees(kotlin.math.atan2(dy, dx)).toFloat()
-        }
-    }
-    var a = ang
-    while (a > 90f) a -= 180f
-    while (a < -90f) a += 180f
-    return a
+    return q.uAngleDeg()
 }
 
 /** Four LINE annotations along the quad edges (photo pixels). */

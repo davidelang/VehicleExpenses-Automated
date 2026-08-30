@@ -387,6 +387,10 @@ object ContentExpandUtils {
         fun longAxisBw(): Float =
             OrientedBox.fromQuad(this)?.uSpan()?.coerceAtLeast(1f) ?: 0f
 
+        /** u-axis angle after flatter-edge pick, folded to [-90, 90]. */
+        fun uAngleDeg(): Float =
+            OrientedBox.fromQuad(this)?.longAngleDeg() ?: 0f
+
         fun area(): Float {
             // shoelace
             var a = 0f
@@ -1298,9 +1302,8 @@ object ContentExpandUtils {
 
         fun withOfficialQuad(seed: OrientedQuad, official: OrientedQuad): InkSweep {
             val sb = OrientedBox.fromQuad(seed) ?: return this
-            val ob = OrientedBox.fromQuad(official) ?: return this
-            val uv = sb.localAabb(ob)
-            return withOfficialUv(uv[2], uv[3], uv[0], uv[1])
+            val ext = sb.withPts(official.pts)
+            return withOfficialUv(ext.v0, ext.v1, ext.u0, ext.u1)
         }
     }
 
@@ -1773,7 +1776,7 @@ object ContentExpandUtils {
         sPx: Int,
     ): OrientedQuad {
         val sb = OrientedBox.fromQuad(seed) ?: return walked
-        val wb = OrientedBox.fromQuad(walked) ?: return walked
+        val wb = sb.withPts(walked.pts)
         val seedBh = sb.vSpan().coerceAtLeast(1f)
         val capPx = max(1, (SEG7_VERT_CAP_FRAC * seedBh).roundToInt())
         val kPad = if (k <= 0f) 0 else max(1, (k * max(1, sPx)).roundToInt())
@@ -1782,17 +1785,18 @@ object ContentExpandUtils {
         val padNeg = min(kPad.toFloat(), max(0f, capPx - walkNeg))
         val padPos = min(kPad.toFloat(), max(0f, capPx - walkPos))
         return OrientedBox(
-            wb.cx, wb.cy, wb.ux, wb.uy, wb.vx, wb.vy,
+            sb.cx, sb.cy, sb.ux, sb.uy, sb.vx, sb.vy,
             wb.u0, wb.u1, wb.v0 - padNeg, wb.v1 + padPos,
         ).toQuad()
     }
 
-    /** Extra unofficial L/R pad along `±u` by [horizFrac] × short-axis `bh`. T/B (`v`) unchanged. */
-    fun padOrientedU(q: OrientedQuad, horizFrac: Float): OrientedQuad {
-        val box = OrientedBox.fromQuad(q) ?: return q
-        val pad = horizFrac * box.vSpan().coerceAtLeast(1f)
+    /** Extra unofficial L/R pad along `±u` by [horizFrac] × seed short-axis `bh`. T/B (`v`) unchanged. */
+    fun padOrientedU(q: OrientedQuad, horizFrac: Float, seed: OrientedQuad? = null): OrientedQuad {
+        val frame = OrientedBox.fromQuad(seed ?: q) ?: return q
+        val box = if (seed != null) frame.withPts(q.pts) else frame
+        val pad = horizFrac * frame.vSpan().coerceAtLeast(1f)
         return OrientedBox(
-            box.cx, box.cy, box.ux, box.uy, box.vx, box.vy,
+            frame.cx, frame.cy, frame.ux, frame.uy, frame.vx, frame.vy,
             box.u0 - pad, box.u1 + pad, box.v0, box.v1,
         ).toQuad()
     }
@@ -1831,7 +1835,12 @@ object ContentExpandUtils {
         }
         return seeds.mapIndexed { i, q ->
             val bh = if (seedBhs != null && seedBhs.size > i) seedBhs[i] else 0f
-            jumpRetractOrientedUKotlin(gray, q, opts, uv, chromaMode, bh)
+            val seedOrig = if (seedQuadsOrig != null && seedQuadsOrig.size >= (i + 1) * 8) {
+                OrientedQuad(FloatArray(8) { k -> seedQuadsOrig[i * 8 + k] })
+            } else {
+                null
+            }
+            jumpRetractOrientedUKotlin(gray, q, opts, uv, chromaMode, bh, seedOrig)
         }
     }
 
@@ -1855,8 +1864,10 @@ object ContentExpandUtils {
         uv: Mat? = null,
         chromaMode: Int = 0,
         seedBh: Float = 0f,
+        seedOrig: OrientedQuad? = null,
     ): OrientedQuad {
-        val box = OrientedBox.fromQuad(seed) ?: return seed
+        val frame = OrientedBox.fromQuad(seedOrig ?: seed) ?: return seed
+        val box = if (seedOrig != null) frame.withPts(seed.pts) else frame
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
         val imgW = gray.cols()
         val imgH = gray.rows()
@@ -3947,6 +3958,23 @@ object ContentExpandUtils {
             return (dx * ux + dy * uy) to (dx * vx + dy * vy)
         }
 
+        /** Project [pts] (n×2) into this seed frame; keep ux,uy,vx,vy. */
+        fun withPts(pts: FloatArray): OrientedBox {
+            var nu0 = Float.POSITIVE_INFINITY
+            var nu1 = Float.NEGATIVE_INFINITY
+            var nv0 = Float.POSITIVE_INFINITY
+            var nv1 = Float.NEGATIVE_INFINITY
+            val n = min(4, pts.size / 2)
+            for (i in 0 until n) {
+                val (u, v) = proj(pts[i * 2], pts[i * 2 + 1])
+                if (u < nu0) nu0 = u
+                if (u > nu1) nu1 = u
+                if (v < nv0) nv0 = v
+                if (v > nv1) nv1 = v
+            }
+            return OrientedBox(cx, cy, ux, uy, vx, vy, nu0, nu1, nv0, nv1)
+        }
+
         fun cornerImage(i: Int): Pair<Float, Float> {
             val u = if (i == 0 || i == 3) u0 else u1
             val v = if (i == 0 || i == 1) v0 else v1
@@ -4025,7 +4053,10 @@ object ContentExpandUtils {
             fun fromQuad(q: OrientedQuad): OrientedBox? {
                 val p = q.pts
                 if (p.size < 8) return null
-                var best = 0.0
+                // u = edge closest to horizontal (|atan2| folded to [0, 90°]); tie → longer.
+                // v = +90° from u, flipped so vy ≥ 0 (v1 = lower flatter side).
+                var bestAng = 1e9
+                var bestLen = 0.0
                 var ux = 1f
                 var uy = 0f
                 for (i in 0 until 4) {
@@ -4033,17 +4064,25 @@ object ContentExpandUtils {
                     val dx = (p[j * 2] - p[i * 2]).toDouble()
                     val dy = (p[j * 2 + 1] - p[i * 2 + 1]).toDouble()
                     val len = hypot(dx, dy)
-                    if (len > best) {
-                        best = len
-                        if (len > 1e-3) {
-                            ux = (dx / len).toFloat()
-                            uy = (dy / len).toFloat()
-                        }
+                    if (len < 1e-3) continue
+                    var ang = abs(atan2(dy, dx))
+                    if (ang > Math.PI / 2.0) ang = Math.PI - ang
+                    val closer = ang < bestAng - 1e-6
+                    val tieLonger = abs(ang - bestAng) <= 1e-6 && len > bestLen
+                    if (closer || tieLonger) {
+                        bestAng = ang
+                        bestLen = len
+                        ux = (dx / len).toFloat()
+                        uy = (dy / len).toFloat()
                     }
                 }
-                if (best < 2.0) return null
-                val vx = -uy
-                val vy = ux
+                if (bestLen < 2.0) return null
+                var vx = -uy
+                var vy = ux
+                if (vy < 0f) {
+                    vx = -vx
+                    vy = -vy
+                }
                 var cx = 0f
                 var cy = 0f
                 for (i in 0 until 4) {

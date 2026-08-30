@@ -3047,23 +3047,31 @@ struct OriBox {
 };
 
 static bool oriFromQuad(const float* p, OriBox* b) {
-    double best = 0.0;
+    // u = edge closest to horizontal (|atan2| folded to [0, 90°]); tie → longer.
+    // v = +90° from u, flipped so vy ≥ 0 (v1 = lower flatter side).
+    double bestAng = 1e9;
+    double bestLen = 0.0;
     float ux = 1.f, uy = 0.f;
     for (int i = 0; i < 4; ++i) {
         const int j = (i + 1) & 3;
         const double dx = static_cast<double>(p[j * 2] - p[i * 2]);
         const double dy = static_cast<double>(p[j * 2 + 1] - p[i * 2 + 1]);
         const double len = std::hypot(dx, dy);
-        if (len > best) {
-            best = len;
-            if (len > 1e-3) {
-                ux = static_cast<float>(dx / len);
-                uy = static_cast<float>(dy / len);
-            }
+        if (len < 1e-3) continue;
+        double ang = std::fabs(std::atan2(dy, dx));
+        if (ang > 1.5707963267948966) ang = 3.141592653589793 - ang;
+        const bool closer = ang < bestAng - 1e-6;
+        const bool tieLonger = std::fabs(ang - bestAng) <= 1e-6 && len > bestLen;
+        if (closer || tieLonger) {
+            bestAng = ang;
+            bestLen = len;
+            ux = static_cast<float>(dx / len);
+            uy = static_cast<float>(dy / len);
         }
     }
-    if (best < 2.0) return false;
-    const float vx = -uy, vy = ux;
+    if (bestLen < 2.0) return false;
+    float vx = -uy, vy = ux;
+    if (vy < 0.f) { vx = -vx; vy = -vy; }
     float cx = 0.f, cy = 0.f;
     for (int i = 0; i < 4; ++i) {
         cx += p[i * 2];
@@ -3087,6 +3095,22 @@ static bool oriFromQuad(const float* p, OriBox* b) {
     b->vx = vx; b->vy = vy;
     b->u0 = u0; b->u1 = u1; b->v0 = v0; b->v1 = v1;
     return true;
+}
+
+static void oriExtentsInFrame(const OriBox& frame, const float* p,
+    float* u0, float* u1, float* v0, float* v1) {
+    float a0 = 1e30f, a1 = -1e30f, b0 = 1e30f, b1 = -1e30f;
+    for (int i = 0; i < 4; ++i) {
+        const float dx = p[i * 2] - frame.cx;
+        const float dy = p[i * 2 + 1] - frame.cy;
+        const float u = dx * frame.ux + dy * frame.uy;
+        const float v = dx * frame.vx + dy * frame.vy;
+        if (u < a0) a0 = u;
+        if (u > a1) a1 = u;
+        if (v < b0) b0 = v;
+        if (v > b1) b1 = v;
+    }
+    *u0 = a0; *u1 = a1; *v0 = b0; *v1 = b1;
 }
 
 static void oriToQuad(const OriBox& b, float* out) {
@@ -3698,7 +3722,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
         OriBox box{};
         const float* in = quads.data() + i * 8;
         float* op = out.data() + i * 8;
-        if (!oriFromQuad(in, &box)) {
+        OriBox seedBox{};
+        bool haveSeed = false;
+        if (seedQuadArr && env->GetArrayLength(seedQuadArr) >= (i + 1) * 8) {
+            jfloat sq[8] = {};
+            env->GetFloatArrayRegion(seedQuadArr, i * 8, 8, sq);
+            haveSeed = oriFromQuad(sq, &seedBox);
+        }
+        if (haveSeed) {
+            box = seedBox;
+            oriExtentsInFrame(seedBox, in, &box.u0, &box.u1, &box.v0, &box.v1);
+            if (box.u1 - box.u0 < 2.f || box.v1 - box.v0 < 2.f) {
+                for (int k = 0; k < 8; ++k) op[k] = in[k];
+                continue;
+            }
+        } else if (!oriFromQuad(in, &box)) {
             for (int k = 0; k < 8; ++k) op[k] = in[k];
             continue;
         }
@@ -3712,13 +3750,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
             jfloat sp = 0.f;
             env->GetFloatArrayRegion(sPxArr, i, 1, &sp);
             sPx = sp;
-        }
-        OriBox seedBox{};
-        bool haveSeed = false;
-        if (seedQuadArr && env->GetArrayLength(seedQuadArr) >= (i + 1) * 8) {
-            jfloat sq[8] = {};
-            env->GetFloatArrayRegion(seedQuadArr, i * 8, 8, sq);
-            haveSeed = oriFromQuad(sq, &seedBox);
         }
         const float vSpan = std::max(1.f, box.v1 - box.v0);
         const int jx = std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan)));
