@@ -9094,3 +9094,7 @@ Look-ink crop is seed L/R and min/max T/B of seed vs 7seg walk (not blanket 2.5Ã
 ## 2026-08-30 - Phase 2: poison overlay + per-section JSON (0519)
 
 Native RGB overlay on poison dump (black / green clean ink / red poison no-ink / yellow ink-in-poison). Per-seed JSON bandTop/bandBot + CC x,y,w,h,noPeak,thr,nInk. HTML Look ink + Poison side by side, same crop/red lines. A.p untouched. Do not deploy.
+
+## 2026-08-30 - CODE LANDED: look-ink-seed48-poison-dump-20260830-0519
+
+Look-ink crop = seed + walked extras; seed band 48px; red seed T/B lines. Poison RGB overlay (green/red/yellow) + JSON bandTop/CC noPeak. Rec stays 48. A.p untouched. Do not deploy.
