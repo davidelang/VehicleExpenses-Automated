@@ -1559,6 +1559,7 @@ suspend fun runPumpExperiment(
                     snapshotLookInk(
                         seeds, segs.map { it.rect }, imgW, imgH, branch,
                         poisonRgb, segs.map { it.poison },
+                        segs.map { it.tele },
                     )
                     if (!poisonRgb.empty()) poisonRgb.release()
                     val walks = seeds.indices.map { i ->
@@ -2214,6 +2215,14 @@ suspend fun runPumpExperiment(
                             segs.map { it.quad.toAabb() },
                             imgW, imgH, branch,
                             poisonRgb, segs.map { it.poison },
+                            segs.mapIndexed { i, s ->
+                                val t = s.tele ?: return@mapIndexed null
+                                val seed = seedQuads.getOrNull(i) ?: return@mapIndexed t
+                                t.copy(
+                                    landTop = if (t.gapJumpTop) seed.imageYAtV(t.landTop).toFloat() else t.landTop,
+                                    landBot = if (t.gapJumpBot) seed.imageYAtV(t.landBot).toFloat() else t.landBot,
+                                )
+                            },
                         )
                         if (!poisonRgb.empty()) poisonRgb.release()
                         val seedBhs = FloatArray(seedQuads.size) { seedQuads[it].shortAxisBh() }
@@ -3779,6 +3788,7 @@ private suspend fun snapshotLookInk(
     branch: PumpBranch,
     poisonRgb: org.opencv.core.Mat? = null,
     poisons: List<ContentExpandUtils.PoisonDump?> = emptyList(),
+    teles: List<ContentExpandUtils.Seg7Telemetry?> = emptyList(),
 ) {
     val dump = NativePaddleEngine.bufferSetB.s
     if (dump.mat.empty() || dump.mat.rows() < imgH || dump.mat.cols() < imgW) return
@@ -3796,7 +3806,8 @@ private suspend fun snapshotLookInk(
         jpegW = ((jpegW + 1) / 2) * 2
         jpegH = jpegH.coerceIn(2, 3072)
         jpegW = jpegW.coerceIn(2, 4000)
-        val anns = listOf(
+        val tele = teles.getOrNull(i)
+        val anns = mutableListOf(
             SnapshotAnnotation(
                 crop.left, s.top, crop.right, s.top,
                 Shape.LINE, Color.RED, 2,
@@ -3806,6 +3817,24 @@ private suspend fun snapshotLookInk(
                 Shape.LINE, Color.RED, 2,
             ),
         )
+        if (tele != null && tele.gapJumpTop) {
+            val y = kotlin.math.round(tele.landTop).toInt()
+            anns.add(
+                SnapshotAnnotation(
+                    crop.left, y, crop.right, y,
+                    Shape.LINE, Color.YELLOW, 2,
+                ),
+            )
+        }
+        if (tele != null && tele.gapJumpBot) {
+            val y = kotlin.math.round(tele.landBot).toInt()
+            anns.add(
+                SnapshotAnnotation(
+                    crop.left, y, crop.right, y,
+                    Shape.LINE, Color.YELLOW, 2,
+                ),
+            )
+        }
         val (b64, _) = OcrUtils.takeSnapshot(
             dump, crop, jpegW, jpegH, anns, null, NativePaddleEngine.bufferSetA,
         )
@@ -3815,6 +3844,10 @@ private suspend fun snapshotLookInk(
             .put("lookInkB64", b64)
             .put("recW", jpegW)
             .put("recH", jpegH)
+        if (tele != null) {
+            j.put("gapJumpTop", tele.gapJumpTop)
+            j.put("gapJumpBot", tele.gapJumpBot)
+        }
         val pd = poisons.getOrNull(i)
         if (pd != null) {
             j.put("bandTop", pd.bandTop)
@@ -3913,7 +3946,13 @@ private fun pLookInkHtml(br: PumpBranch): String {
                 ccBits.append("cc${k + 1} noPeak=${cc.optBoolean("noPeak")} nInk=${cc.optInt("nInk")}")
             }
         }
-        val meta = "bandTop=$bandTop bandBot=$bandBot" +
+        val gjt = c.optBoolean("gapJumpTop", false)
+        val gjb = c.optBoolean("gapJumpBot", false)
+        val gapCap = buildString {
+            if (gjt) append(" gapJumpTop")
+            if (gjb) append(" gapJumpBot")
+        }
+        val meta = "bandTop=$bandTop bandBot=$bandBot$gapCap" +
             if (ccBits.isNotEmpty()) " $ccBits" else ""
         val poiImg = if (!poi.isNullOrEmpty()) {
             "<img src='data:image/jpeg;base64,$poi' " +

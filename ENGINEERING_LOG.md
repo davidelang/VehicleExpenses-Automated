@@ -9122,3 +9122,7 @@ Off-seed look uses clean/tint only (no PoisonReg bbox/thr extrusion). Local Otsu
 ## 2026-08-30 - Phase 1: one-shot gap jump walk + tele (1247)
 
 AABB+rot 7seg: consecutive hasBar then at most one 0.5s empty bridge per side (usedGap). Retract empty edge still inward-only. Telemetry gap_jump_top/bot + land. No leapfrog gap=0 reset. Do not deploy.
+
+## 2026-08-30 - Phase 2: look-ink yellow gap-land line (1247)
+
+Look-ink JPEG: red seed T/B; yellow full-width at landed hasBar when gap_jump used. Caption gapJumpTop/gapJumpBot. No yellow if no jump. Do not deploy.

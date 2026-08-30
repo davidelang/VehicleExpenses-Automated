@@ -391,6 +391,12 @@ object ContentExpandUtils {
         fun uAngleDeg(): Float =
             OrientedBox.fromQuad(this)?.longAngleDeg() ?: 0f
 
+        fun imageYAtV(v: Float): Int {
+            val b = OrientedBox.fromQuad(this) ?: return v.roundToInt()
+            val u = (b.u0 + b.u1) * 0.5f
+            return (b.cy + u * b.uy + v * b.vy).roundToInt()
+        }
+
         fun area(): Float {
             // shoelace
             var a = 0f
