@@ -1440,6 +1440,7 @@ object ContentExpandUtils {
         scratch: Mat? = null,
         boundStrategy: Int = 0,
         tightInsetPx: Int = 16,
+        combine: Mat? = null,
     ): List<Seg7Expand>? {
         val mode = if (chromaMode >= 0) chromaMode else if (chroma) 1 else 0
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
@@ -1460,7 +1461,7 @@ object ContentExpandUtils {
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val r = NativeImageUtils.seg7ManyNative(
             gray, uv, packed, mode, gapFrac, minSeedHsToFreeze, scratch,
-            boundStrategy, tightInsetPx, tele, sweepBuf,
+            boundStrategy, tightInsetPx, tele, sweepBuf, combine,
         ) ?: return null
         if (r.size < seeds.size * 8) return null
         val sweeps = parseInkSweeps(sweepBuf, seeds.size)
@@ -1715,6 +1716,7 @@ object ContentExpandUtils {
         scratch: Mat? = null,
         boundStrategy: Int = 0,
         tightInsetPx: Int = 16,
+        combine: Mat? = null,
     ): List<Seg7OrientedExpand> {
         if (seeds.isEmpty()) return emptyList()
         val packed = FloatArray(seeds.size * 8)
@@ -1729,7 +1731,7 @@ object ContentExpandUtils {
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val native = NativeImageUtils.seg7OrientedManyNative(
             gray, uv, packed, chromaMode, scratch,
-            boundStrategy, tightInsetPx, tele, sweepBuf,
+            boundStrategy, tightInsetPx, tele, sweepBuf, combine,
         )
         if (native != null && native.size >= seeds.size * 9) {
             val sweeps = parseInkSweeps(sweepBuf, seeds.size)

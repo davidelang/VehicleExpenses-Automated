@@ -44,6 +44,7 @@ body { font-family: sans-serif; margin: 0; }
 body.hide-orig-details .orig-details { display: none; }
 body.hide-dump-details .dump-details { display: none; }
 body.hide-rec-crops .rec-crops { display: none; }
+body.hide-look-ink-crops .look-ink-crops { display: none; }
 $hideCols
 .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }
 .stat { font-size: 10px; color: #666; }
@@ -53,7 +54,8 @@ $hideCols
 
     fun toolbar(kind: Kind, columnLabels: List<String>, metaHtml: String): String {
         val rec = if (kind == Kind.PUMP) {
-            """<label class="ctl"><input type="checkbox" class="ve-rec-crops" checked> Rec crops</label>"""
+            """<label class="ctl"><input type="checkbox" class="ve-rec-crops" checked> Rec crops</label>
+    <label class="ctl"><input type="checkbox" class="ve-look-ink" checked> Look ink</label>"""
         } else ""
         val checks = StringBuilder()
         columnLabels.forEachIndexed { i, lab ->
@@ -164,13 +166,15 @@ $hideCols
     if (HAS_REC) {
       var rec = document.querySelector('.ve-rec-crops');
       document.body.classList.toggle('hide-rec-crops', rec && !rec.checked);
+      var lookInk = document.querySelector('.ve-look-ink');
+      document.body.classList.toggle('hide-look-ink-crops', lookInk && !lookInk.checked);
     }
     applyWidth();
     save();
   }
   function save() {
     try {
-      var st = { cols: {}, orig: true, dump: true, rec: true, unlim: false, max: 500 };
+      var st = { cols: {}, orig: true, dump: true, rec: true, lookInk: true, unlim: false, max: 500 };
       var src = topBar();
       if (src) {
         src.querySelectorAll('input[data-col]').forEach(function(cb) {
@@ -180,11 +184,13 @@ $hideCols
       var orig = document.querySelector('.ve-orig-details');
       var dump = document.querySelector('.ve-dump-details');
       var rec = document.querySelector('.ve-rec-crops');
+      var lookInk = document.querySelector('.ve-look-ink');
       var unlim = document.querySelector('.ve-col-unlim');
       var colMax = document.querySelector('.ve-col-max');
       if (orig) st.orig = orig.checked;
       if (dump) st.dump = dump.checked;
       if (rec) st.rec = rec.checked;
+      if (lookInk) st.lookInk = lookInk.checked;
       if (unlim) st.unlim = unlim.checked;
       if (colMax) st.max = parseInt(colMax.value, 10) || 500;
       localStorage.setItem(KEY, JSON.stringify(st));
@@ -204,6 +210,7 @@ $hideCols
       document.querySelectorAll('.ve-orig-details').forEach(function(el) { if (st.orig !== undefined) el.checked = !!st.orig; });
       document.querySelectorAll('.ve-dump-details').forEach(function(el) { if (st.dump !== undefined) el.checked = !!st.dump; });
       document.querySelectorAll('.ve-rec-crops').forEach(function(el) { if (st.rec !== undefined) el.checked = !!st.rec; });
+      document.querySelectorAll('.ve-look-ink').forEach(function(el) { if (st.lookInk !== undefined) el.checked = !!st.lookInk; });
       document.querySelectorAll('.ve-col-unlim').forEach(function(el) { if (st.unlim !== undefined) el.checked = !!st.unlim; });
       document.querySelectorAll('.ve-col-max').forEach(function(el) { if (st.max) el.value = st.max; });
     } catch (e) {}

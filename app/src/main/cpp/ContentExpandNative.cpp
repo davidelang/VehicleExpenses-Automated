@@ -1928,7 +1928,8 @@ static void seg7One(
     int tightInsetPx = 16,
     Seg7Tele* tele = nullptr,
     bool keepColorStats = false,
-    InkSweepPack* sweepOut = nullptr
+    InkSweepPack* sweepOut = nullptr,
+    cv::Mat* inkDump = nullptr
 ) {
     if (boundStrategy == 1) {
         const int ins = std::max(1, tightInsetPx);
@@ -1959,6 +1960,18 @@ static void seg7One(
     const int localB = sb - nt;
     const int sPx = fillPoisonLookRaster(
         seedY, look, localT, 0, srcIsBin, gm, fallback, &lookBin);
+    if (inkDump && !lookBin.empty() && inkDump->type() == CV_8UC1 &&
+        inkDump->rows >= imgH && inkDump->cols >= imgW) {
+        const int x0 = std::max(0, sl);
+        const int y0 = std::max(0, nt);
+        const int x1 = std::min(imgW, sl + lookBin.cols);
+        const int y1 = std::min(imgH, nt + lookBin.rows);
+        if (x1 > x0 && y1 > y0) {
+            cv::Mat srcR = lookBin(cv::Rect(x0 - sl, y0 - nt, x1 - x0, y1 - y0));
+            cv::Mat dstR = (*inkDump)(cv::Rect(x0, y0, x1 - x0, y1 - y0));
+            cv::bitwise_or(dstR, srcR, dstR);
+        }
+    }
     const int glareW = gm * std::max(sPx, 4);
     const int vSW = sPx;
     const int hSW = vertPeakSW(lookBin, seedH);
@@ -2802,7 +2815,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr, jint chromaMode,
     jfloat gapFrac, jfloat minSeedHsToFreeze,
     jint boundStrategy, jint tightInsetPx,
-    jfloatArray teleArr, jintArray sweepArr
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -2821,6 +2834,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     const int glareMult = 11;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
+    auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
+    if (inkDump && scratchFits(inkDump, imgW, imgH)) inkDump->setTo(0);
     if (useChromaMag) {
         if (scratchFits(scratch, imgW, imgH)) {
             fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
@@ -2853,14 +2868,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
                     gapFrac, minSeedHsToFreeze, glareMult,
                     boundStrategy, tightInsetPx, &tele, true,
-                    &sweeps[static_cast<size_t>(i)]);
+                    &sweeps[static_cast<size_t>(i)], inkDump);
             } else {
                 if (ok && skipTintWalk(adaptive, tele)) tele.method = 0.f;
                 seg7One(*gray, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
                     gapFrac, minSeedHsToFreeze, 11,
                     boundStrategy, tightInsetPx, &tele, ok && adaptive,
-                    &sweeps[static_cast<size_t>(i)]);
+                    &sweeps[static_cast<size_t>(i)], inkDump);
             }
         } else {
             const cv::Mat* src = gray;
@@ -2871,7 +2886,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
             seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
                 false, gapFrac, minSeedHsToFreeze, 11,
                 boundStrategy, tightInsetPx, &tele, false,
-                &sweeps[static_cast<size_t>(i)]);
+                &sweeps[static_cast<size_t>(i)], inkDump);
         }
         const int o = i * 8;
         out[o] = ol; out[o + 1] = ot; out[o + 2] = orr; out[o + 3] = ob;
@@ -3211,7 +3226,8 @@ static void seg7OrientedOne(
     bool srcIsBin = false,
     Seg7Tele* tele = nullptr,
     bool keepColorStats = false,
-    InkSweepPack* sweepOut = nullptr
+    InkSweepPack* sweepOut = nullptr,
+    cv::Mat* inkDump = nullptr
 ) {
     if (boundStrategy == 1) {
         const float ins = static_cast<float>(std::max(1, tightInsetPx));
@@ -3265,6 +3281,27 @@ static void seg7OrientedOne(
     const int ySeed1 = static_cast<int>(std::lround(seed.v1 - lookV0));
     const int sPx = fillPoisonLookRaster(
         seedY, look, ySeed0, 0, srcIsBin, 11, fallback, &lookBin);
+    if (inkDump && !lookBin.empty() && inkDump->type() == CV_8UC1 &&
+        inkDump->rows >= imgH && inkDump->cols >= imgW) {
+        float pts[8];
+        oriToQuad(seed, pts);
+        float minx = pts[0], maxx = pts[0], miny = pts[1], maxy = pts[1];
+        for (int k = 1; k < 4; ++k) {
+            minx = std::min(minx, pts[k * 2]);
+            maxx = std::max(maxx, pts[k * 2]);
+            miny = std::min(miny, pts[k * 2 + 1]);
+            maxy = std::max(maxy, pts[k * 2 + 1]);
+        }
+        const int x0 = std::max(0, static_cast<int>(std::floor(minx)));
+        const int y0 = std::max(0, static_cast<int>(std::floor(lookV0)));
+        const int x1 = std::min(imgW, x0 + lookBin.cols);
+        const int y1 = std::min(imgH, y0 + lookBin.rows);
+        if (x1 > x0 && y1 > y0) {
+            cv::Mat srcR = lookBin(cv::Rect(0, 0, x1 - x0, y1 - y0));
+            cv::Mat dstR = (*inkDump)(cv::Rect(x0, y0, x1 - x0, y1 - y0));
+            cv::bitwise_or(dstR, srcR, dstR);
+        }
+    }
     const int glareW = 11 * std::max(sPx, 4);
     *sPxOut = static_cast<float>(std::max(1, sPx));
     const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
@@ -3527,7 +3564,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode,
     jint boundStrategy, jint tightInsetPx,
-    jfloatArray teleArr, jintArray sweepArr
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -3544,6 +3581,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
     const bool adaptive = chromaMode == 4;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
+    auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
+    if (inkDump && scratchFits(inkDump, imgW, imgH)) inkDump->setTo(0);
     if (useChroma) {
         if (scratchFits(scratch, imgW, imgH)) {
             fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
@@ -3605,7 +3644,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
         float sPx = 2.f;
         seg7OrientedOne(*src, box, imgW, imgH, op, &sPx,
             boundStrategy, tightInsetPx, srcIsBin, &tele, keepColor,
-            &sweeps[static_cast<size_t>(i)]);
+            &sweeps[static_cast<size_t>(i)], inkDump);
         op[8] = sPx;
         storeTeleArr(env, teleArr, i, tele);
     }

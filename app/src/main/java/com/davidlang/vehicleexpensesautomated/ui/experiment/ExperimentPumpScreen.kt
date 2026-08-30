@@ -782,6 +782,7 @@ suspend fun runPumpExperiment(
             val imgH = probedH
             masterBuffer.resize(imgW, imgH)
             NativePaddleEngine.bufferSetA.resize(imgW, imgH)
+            NativePaddleEngine.bufferSetB.resize(imgW, imgH)
             val meta = ImageIngestionProvider.ingestFromFile(context, file.absolutePath, masterBuffer.p)
 
             val root = PumpBranch("Root")
@@ -1535,6 +1536,7 @@ suspend fun runPumpExperiment(
                         scratch = workspace.s.mat,
                         boundStrategy = boundStrategy,
                         tightInsetPx = tightInsetPx,
+                        combine = NativePaddleEngine.bufferSetB.s.mat,
                     ) ?: seeds.map { r ->
                         when (expandMode) {
                             2, 3 -> ContentExpandUtils.expand7segFromSeed(
@@ -1550,6 +1552,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
+                    snapshotLookInk(seeds, imgW, imgH, branch)
                     val walks = seeds.indices.map { i ->
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
                     }
@@ -2192,7 +2195,9 @@ suspend fun runPumpExperiment(
                             scratch = workspace.s.mat,
                             boundStrategy = boundStrategy,
                             tightInsetPx = tightInsetPx,
+                            combine = NativePaddleEngine.bufferSetB.s.mat,
                         )
+                        snapshotLookInk(seedQuads.map { it.toAabb() }, imgW, imgH, branch)
                         val seedBhs = FloatArray(seedQuads.size) { seedQuads[it].shortAxisBh() }
                         val seedQuadsOrig = FloatArray(seedQuads.size * 8)
                         seedQuads.forEachIndexed { i, q ->
@@ -3751,6 +3756,82 @@ private const val PUMP_SMALL_TARGET_W = 180
 private const val PUMP_PER_RED_TARGET_W = 120
 private const val PER_PHOTO_FRAGMENT_BUFFER_BYTES = 4 * 1024 * 1024
 
+private fun lookInkStripRect(seed: android.graphics.Rect, imgW: Int, imgH: Int): android.graphics.Rect {
+    val seedH = (seed.bottom - seed.top).coerceAtLeast(1)
+    val vLook = kotlin.math.round(2.5f * seedH).toInt() + 2
+    return android.graphics.Rect(
+        seed.left.coerceIn(0, imgW),
+        (seed.top - vLook).coerceAtLeast(0),
+        seed.right.coerceIn(0, imgW),
+        (seed.bottom + vLook).coerceAtMost(imgH),
+    )
+}
+
+/** Combined 255 look plane on B.s (seed + look strip). Scratch for JPEG is A.s — never B. */
+private suspend fun snapshotLookInk(
+    seeds: List<android.graphics.Rect>,
+    imgW: Int,
+    imgH: Int,
+    branch: PumpBranch,
+) {
+    val dump = NativePaddleEngine.bufferSetB.s
+    if (dump.mat.empty() || dump.mat.rows() < imgH || dump.mat.cols() < imgW) return
+    dump.clearChroma()
+    val arr = org.json.JSONArray()
+    seeds.forEachIndexed { i, s ->
+        val crop = lookInkStripRect(s, imgW, imgH)
+        if (crop.width() < 2 || crop.height() < 2) return@forEachIndexed
+        val (b64, _) = OcrUtils.takeSnapshot(
+            dump, crop, 0, 48, emptyList(), null, NativePaddleEngine.bufferSetA,
+        )
+        if (b64.isEmpty()) return@forEachIndexed
+        val roiW = crop.width().coerceAtLeast(1)
+        val roiH = crop.height().coerceAtLeast(1)
+        var recW = (48f * roiW / roiH).toInt()
+        recW = ((recW + 1) / 2) * 2
+        recW = recW.coerceIn(2, 4000)
+        arr.put(
+            org.json.JSONObject()
+                .put("label", "box${i + 1}")
+                .put("lookInkB64", b64)
+                .put("recW", recW)
+                .put("recH", 48),
+        )
+    }
+    if (arr.length() > 0) branch.metadata["look_ink"] = arr.toString()
+}
+
+private fun pLookInkHtml(br: PumpBranch): String {
+    val raw = br.metadata["look_ink"] ?: return ""
+    val arr = try {
+        org.json.JSONArray(raw)
+    } catch (_: Exception) {
+        return ""
+    }
+    if (arr.length() == 0) return ""
+    val sb = StringBuilder()
+    sb.append("<div class='look-ink-crops' style='margin-top:6px;text-align:left;'><b>Look ink</b>")
+    sb.append("<div style='display:flex;flex-wrap:wrap;gap:3px;'>")
+    var any = false
+    for (j in 0 until arr.length()) {
+        val c = arr.optJSONObject(j) ?: continue
+        val b64 = c.optString("lookInkB64")
+        if (b64.isNullOrEmpty()) continue
+        any = true
+        val lab = c.optString("label")
+        val recW = c.optInt("recW", 0)
+        val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
+        sb.append(
+            "<div style='flex:0 0 auto;font-size:9px;'>" +
+                "<img src='data:image/jpeg;base64,$b64' " +
+                "style='height:48px;$wCss max-width:none;image-rendering:pixelated;'>" +
+                "<br>$lab</div>",
+        )
+    }
+    sb.append("</div></div>")
+    return if (any) sb.toString() else ""
+}
+
 /** Rec buffers from costVolDecisionData_Paddle (scaleVariants and/or candidates). */
 private fun pRecBuffersHtml(br: PumpBranch): String {
     val raw = br.metadata["costVolDecisionData_Paddle"] ?: return ""
@@ -4085,7 +4166,7 @@ private fun pBuildHtmlRowDynamic(
             // red-only + full PD pair (when branch populates the key from explicit helper call)
             val redOnly = br.images["PD_red_only"] ?: ""
             val full = br.images["PD"] ?: ""
-            appendLine("<td data-col=\"$colIdx\"><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><div class='dump-details'><small>Red boxes only (after filter)</small><br><small>All annotations (red+blue+orange) as before</small>$sHtml$teleHtml</div>${pRecBuffersHtml(br)}</td>")
+            appendLine("<td data-col=\"$colIdx\"><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><div class='dump-details'><small>Red boxes only (after filter)</small><br><small>All annotations (red+blue+orange) as before</small>$sHtml$teleHtml</div>${pLookInkHtml(br)}${pRecBuffersHtml(br)}</td>")
             colIdx++
         } else if (br.images.containsKey("rawC")) {
             val raw = br.images["rawC"] ?: ""
@@ -4115,10 +4196,10 @@ private fun pBuildHtmlRowDynamic(
                 }
             }
             perRedHtml.append("</tr></table>")
-            appendLine("<td data-col=\"$colIdx\"><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'><div class='dump-details'><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:100%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:100%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:100%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:100%;'><br><small>After</small></td></tr></table>$perRedHtml$sHtml$teleHtml</div>${pRecBuffersHtml(br)}</td>")
+            appendLine("<td data-col=\"$colIdx\"><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'><div class='dump-details'><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:100%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:100%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:100%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:100%;'><br><small>After</small></td></tr></table>$perRedHtml$sHtml$teleHtml</div>${pLookInkHtml(br)}${pRecBuffersHtml(br)}</td>")
             colIdx++
         } else {
-            appendLine("<td data-col=\"$colIdx\"><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'><div class='dump-details'>$sHtml$teleHtml</div>${pRecBuffersHtml(br)}</td>")
+            appendLine("<td data-col=\"$colIdx\"><b>$name Paddle:</b><br><img src='data:image/jpeg;base64,$pdB64'><div class='dump-details'>$sHtml$teleHtml</div>${pLookInkHtml(br)}${pRecBuffersHtml(br)}</td>")
             colIdx++
         }
     }
