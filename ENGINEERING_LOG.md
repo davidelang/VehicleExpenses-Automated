@@ -9202,3 +9202,7 @@ Energy AABB, oriented 7seg, oriented energy: if either axis < 4 after inset, lea
 ## 2026-08-30 - Phase 2: dump encode cannot abort (1549)
 
 packLookInkPng / packSeedBinJpeg wrap resize+imencode in cv::Exception/std::exception catch; 64-bit dim check skip if >65000. Do not deploy.
+
+## 2026-08-30 - CODE LANDED: skip-tiny-seed-no-abort-dump-20260830-1549
+
+Seeds with either axis < 4 px stay at the det box (energy AABB, oriented 7seg/energy). Dump encode catch + 64-bit dim skip so resize/imencode cannot SIGABRT. Walk for seeds >= 4 px unchanged. Do not deploy.
