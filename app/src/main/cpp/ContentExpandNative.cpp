@@ -2230,6 +2230,60 @@ static void applyThrKeep(
     }
 }
 
+static float p50YRows(const cv::Mat& y, int y0, int y1) {
+    if (y.empty() || y1 <= y0) return 0.f;
+    y0 = std::max(0, y0);
+    y1 = std::min(y.rows, y1);
+    std::vector<uint8_t> vals;
+    vals.reserve(static_cast<size_t>(std::max(0, y1 - y0) * y.cols));
+    for (int yy = y0; yy < y1; ++yy) {
+        const uint8_t* p = y.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < y.cols; ++xx) vals.push_back(p[xx]);
+    }
+    if (vals.empty()) return 0.f;
+    std::sort(vals.begin(), vals.end());
+    return static_cast<float>(vals[vals.size() / 2]);
+}
+
+static float dInkFromBin(const cv::Mat& y, const cv::Mat& bin) {
+    double sI = 0.0, sB = 0.0;
+    int nI = 0, nB = 0;
+    for (int yy = 0; yy < y.rows; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* bp = bin.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < y.cols; ++xx) {
+            if (bp[xx]) { sI += yp[xx]; ++nI; }
+            else { sB += yp[xx]; ++nB; }
+        }
+    }
+    if (nI <= 0 || nB <= 0) return 0.f;
+    return static_cast<float>(sI / nI - sB / nB);
+}
+
+static void orBrightBands(const cv::Mat& y, const cv::Mat& firstBin, int sPx, cv::Mat* poison) {
+    if (!poison || y.empty() || firstBin.empty()) return;
+    const int h = y.rows, w = y.cols;
+    const int bandH = std::max(sPx, static_cast<int>(std::lround(0.12f * static_cast<float>(h))));
+    if (bandH < 1 || h < bandH * 3) return;
+    const float lim = std::max(16.f, 0.5f * std::fabs(dInkFromBin(y, firstBin)));
+    const float medI = p50YRows(y, bandH, h - bandH);
+    const float medT = p50YRows(y, 0, bandH);
+    const float medB = p50YRows(y, h - bandH, h);
+    auto paint = [&](int y0, int y1) {
+        for (int yy = y0; yy < y1; ++yy) {
+            uint8_t* op = poison->ptr<uint8_t>(yy);
+            for (int xx = 0; xx < w; ++xx) op[xx] = 255;
+        }
+    };
+    if (std::fabs(medT - medI) >= lim) paint(0, bandH);
+    if (std::fabs(medB - medI) >= lim) paint(h - bandH, h);
+}
+
+static void orBin(cv::Mat* dst, const cv::Mat& src) {
+    if (!dst || dst->empty() || src.empty() || dst->size() != src.size()) return;
+    cv::bitwise_or(*dst, src, *dst);
+}
+
 /** Seed-ROI Y Otsu + poison map; chroma samples clean + agreeing poison ink. */
 static int seedInkBinY(
     const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut,
@@ -2251,85 +2305,12 @@ static int seedInkBinY(
     const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedH)));
     if (sr <= sl || sb <= st) return fallback;
     cv::Mat roi = y(cv::Range(st, sb), cv::Range(sl, sr));
-    cv::Mat bin;
-    const double otsu = cv::threshold(roi, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-    if (otsuOut) *otsuOut = otsu;
-    const int nPix = seedW * seedH;
-    int nz = cv::countNonZero(bin);
-    float inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
-    bool inverted = false;
-    if (inkFrac >= 0.45f) {
-        cv::bitwise_not(bin, bin);
-        nz = cv::countNonZero(bin);
-        inkFrac = nPix > 0 ? nz / static_cast<float>(nPix) : 0.f;
-        inverted = true;
-    }
-    if (invertedOut) *invertedOut = inverted;
-    fillSaltPepper(&bin);
-    HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
-    const int v0 = hh0.peak;
-    const bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
-    cv::Mat poison;
-    fillPoisonMask(bin, v0, needFb0, seedW, glareMult, &poison);
-    cv::Mat keepClean(seedH, seedW, CV_8UC1);
-    for (int yy = 0; yy < seedH; ++yy) {
-        const uint8_t* pp = poison.ptr<uint8_t>(yy);
-        uint8_t* kp = keepClean.ptr<uint8_t>(yy);
-        for (int xx = 0; xx < seedW; ++xx) kp[xx] = pp[xx] ? 0 : 255;
-    }
-    double cleanThr = otsu;
-    bool cleanDark = !inverted;
-    float cleanInkFrac = 0.f;
-    cv::Mat sample;
-    const bool haveClean = otsuKeep(roi, keepClean, &cleanThr, &cleanDark, &cleanInkFrac);
-    if (haveClean) {
-        applyThrKeep(roi, keepClean, cleanThr, cleanDark, &sample);
-        fillSaltPepper(&sample);
-        if (otsuOut) *otsuOut = cleanThr;
-        if (invertedOut) *invertedOut = !cleanDark;
-    } else {
-        sample = cv::Mat::zeros(seedH, seedW, CV_8UC1);
-    }
-    HorizSW hhC = horizPeakSW(sample, seedH, seedW);
-    const int v0Clean = hhC.peak;
-    const bool needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
-    const int sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
-    cv::Mat labels, stats, centroids;
-    const int nLab = cv::connectedComponentsWithStats(poison, labels, stats, centroids, 8);
-    for (int i = 1; i < nLab; ++i) {
-        cv::Mat keepR = cv::Mat::zeros(seedH, seedW, CV_8UC1);
-        int nR = 0;
-        for (int yy = 0; yy < seedH; ++yy) {
-            const int* lp = labels.ptr<int>(yy);
-            uint8_t* kp = keepR.ptr<uint8_t>(yy);
-            for (int xx = 0; xx < seedW; ++xx) {
-                if (lp[xx] == i) { kp[xx] = 255; ++nR; }
-            }
-        }
-        if (nR < 2) continue;
-        double rThr = 0.0;
-        bool rDark = true;
-        float rFrac = 0.f;
-        if (!otsuKeep(roi, keepR, &rThr, &rDark, &rFrac)) continue;
-        cv::Mat rBin;
-        applyThrKeep(roi, keepR, rThr, rDark, &rBin);
-        fillSaltPepper(&rBin);
-        HorizSW hhR = horizPeakSW(rBin, seedH, seedW);
-        const int v0P = hhR.peak;
-        const bool needFbP = strokeNeedFb(hhR, v0P, seedW, rFrac);
-        const bool noPeak = v0P <= 4 || needFbP;
-        const bool agree = !noPeak && strokesAgree(v0P, v0Clean);
-        if (agree) {
-            for (int yy = 0; yy < seedH; ++yy) {
-                const uint8_t* rp = rBin.ptr<uint8_t>(yy);
-                uint8_t* sp = sample.ptr<uint8_t>(yy);
-                for (int xx = 0; xx < seedW; ++xx) {
-                    if (rp[xx]) sp[xx] = 255;
-                }
-            }
-        }
-    }
-    *binOut = sample;
+    cv::Mat combined;
+    const int sPx = fillPoisonLookRaster(
+        roi, roi, 0, 0, false, glareMult, fallback, &combined);
+    if (otsuOut) *otsuOut = 0.0;
+    if (invertedOut) *invertedOut = false;
+    *binOut = combined;
     return std::max(1, sPx);
 }
 
@@ -2408,8 +2389,10 @@ static int fillPoisonLookRaster(
     HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
     const int v0 = hh0.peak;
     const bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
+    const int sPx0 = (v0 > 4 && !needFb0) ? v0 : fallback;
     cv::Mat poison;
     fillPoisonMask(bin, v0, needFb0, seedW, glareMult, &poison);
+    if (!srcIsBin) orBrightBands(seedY, bin, sPx0, &poison);
     cv::Mat keepClean(seedH, seedW, CV_8UC1);
     for (int yy = 0; yy < seedH; ++yy) {
         const uint8_t* pp = poison.ptr<uint8_t>(yy);
@@ -2446,6 +2429,8 @@ static int fillPoisonLookRaster(
         ? (cv::countNonZero(sample) / static_cast<float>(std::max(1, seedH * seedW)))
         : cleanInkFrac);
     const int sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+    cv::Mat combined = cv::Mat::zeros(seedH, seedW, CV_8UC1);
+    if (v0Clean > 4) orBin(&combined, sample);
     cv::Mat labels, stats, centroids;
     const int nLab = cv::connectedComponentsWithStats(poison, labels, stats, centroids, 8);
     std::vector<PoisonReg> regs(static_cast<size_t>(std::max(0, nLab)));
@@ -2465,8 +2450,9 @@ static int fillPoisonLookRaster(
             }
         }
         if (nR < 2) { r.noPeak = true; regs[static_cast<size_t>(i)] = r; continue; }
+        cv::Mat rBin;
         if (srcIsBin) {
-            cv::Mat rBin = cv::Mat::zeros(seedH, seedW, CV_8UC1);
+            rBin = cv::Mat::zeros(seedH, seedW, CV_8UC1);
             for (int yy = 0; yy < seedH; ++yy) {
                 const uint8_t* bp = bin.ptr<uint8_t>(yy);
                 const uint8_t* kp = keepR.ptr<uint8_t>(yy);
@@ -2475,10 +2461,7 @@ static int fillPoisonLookRaster(
             }
             fillSaltPepper(&rBin);
             HorizSW hhR = horizPeakSW(rBin, seedH, seedW);
-            const int v0P = hhR.peak;
-            const float rFrac = nR > 0
-                ? cv::countNonZero(rBin) / static_cast<float>(nR) : 0.f;
-            r.noPeak = v0P <= 4 || strokeNeedFb(hhR, v0P, seedW, rFrac);
+            r.noPeak = hhR.peak <= 4;
             r.thr = 127.0;
             r.dark = !inverted;
         } else {
@@ -2490,15 +2473,14 @@ static int fillPoisonLookRaster(
                 regs[static_cast<size_t>(i)] = r;
                 continue;
             }
-            cv::Mat rBin;
             applyThrKeep(seedY, keepR, rThr, rDark, &rBin);
             fillSaltPepper(&rBin);
             HorizSW hhR = horizPeakSW(rBin, seedH, seedW);
-            const int v0P = hhR.peak;
-            r.noPeak = v0P <= 4 || strokeNeedFb(hhR, v0P, seedW, rFrac);
+            r.noPeak = hhR.peak <= 4;
             r.thr = rThr;
             r.dark = rDark;
         }
+        if (!r.noPeak) orBin(&combined, rBin);
         regs[static_cast<size_t>(i)] = r;
     }
     const int lh = lookY.rows, lw = lookY.cols;
@@ -2508,33 +2490,42 @@ static int fillPoisonLookRaster(
         const int sy = y - ySeed0;
         for (int x = 0; x < lw; ++x) {
             const int sx = x - xSeed0;
-            int lab = 0;
             if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
-                lab = labels.ptr<int>(sy)[sx];
-            } else if (sx >= 0 && sx < seedW) {
-                for (int i = 1; i < nLab; ++i) {
-                    const PoisonReg& r = regs[static_cast<size_t>(i)];
-                    if (sx >= r.x0 && sx < r.x1) { lab = i; break; }
-                }
-            }
-            if (lab > 0 && lab < nLab && regs[static_cast<size_t>(lab)].noPeak) {
-                op[x] = 0;
+                op[x] = combined.ptr<uint8_t>(sy)[sx];
                 continue;
             }
+            int lab = 0;
+            if (sx >= 0 && sx < seedW) {
+                for (int i = 1; i < nLab; ++i) {
+                    const PoisonReg& r = regs[static_cast<size_t>(i)];
+                    if (sx < r.x0 || sx >= r.x1) continue;
+                    if (sy < 0 && r.y0 == 0) { lab = i; break; }
+                    if (sy >= seedH && r.y1 >= seedH) { lab = i; break; }
+                }
+            }
+            if (lab > 0 && lab < nLab) {
+                const PoisonReg& r = regs[static_cast<size_t>(lab)];
+                if (r.noPeak) { op[x] = 0; continue; }
+                if (srcIsBin) {
+                    uint8_t v = yp[x];
+                    if (inverted) v = static_cast<uint8_t>(255 - v);
+                    op[x] = v;
+                    continue;
+                }
+                const bool ink = r.dark ? (static_cast<double>(yp[x]) <= r.thr)
+                                        : (static_cast<double>(yp[x]) > r.thr);
+                op[x] = ink ? 255 : 0;
+                continue;
+            }
+            if (v0Clean <= 4) { op[x] = 0; continue; }
             if (srcIsBin) {
                 uint8_t v = yp[x];
                 if (inverted) v = static_cast<uint8_t>(255 - v);
                 op[x] = v;
                 continue;
             }
-            double thr = cleanThr;
-            bool dark = cleanDark;
-            if (lab > 0 && lab < nLab) {
-                thr = regs[static_cast<size_t>(lab)].thr;
-                dark = regs[static_cast<size_t>(lab)].dark;
-            }
-            const bool ink = dark ? (static_cast<double>(yp[x]) <= thr)
-                                  : (static_cast<double>(yp[x]) > thr);
+            const bool ink = cleanDark ? (static_cast<double>(yp[x]) <= cleanThr)
+                                       : (static_cast<double>(yp[x]) > cleanThr);
             op[x] = ink ? 255 : 0;
         }
     }

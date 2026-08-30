@@ -9050,3 +9050,11 @@ docs/PUMP_EXPERIMENT_FLOWS.md: one paragraph — per-region stroke peak, no-peak
 ## 2026-08-29 - CODE LANDED: seed-poison-stroke-agree-run-20260829-1453
 
 Poison map + v0_clean / v0_poison; no-peak=0; unified look raster; hasBar [minRun,glareW]; dropWideRuns. Pixel walk C++ only. 1040 skipTint also landed. Do not deploy.
+
+## 2026-08-29 - Execute start: poison-combine-ink-buffer-20260829-2316
+
+Five-step poison combine: brightness T/B bands + fat CCs; per-section Otsu; OR into one 255 plane; walk on that. Dump like rec on B.s in later phase. A.p untouched. Do not deploy.
+
+## 2026-08-29 - Phase 1: five-step OR combine (2316)
+
+fillPoisonLookRaster: fat/wide CCs union T/B brightness bands (p50 vs interior ≥ max(16, 0.5|dInk|), height max(sPx, 0.12 seedH)). Per-section Otsu on all Y in the area; peak>4 ORs into one 255 plane. Walk/retract on that after dropWideRuns. seedInkBinY uses the same combine. Do not deploy.
