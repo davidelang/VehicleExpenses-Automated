@@ -9170,3 +9170,11 @@ Unofficial horiz_pad at each ink k=0..4; official still k=0; PD extra blue = k=0
 ## 2026-08-30 - CODE LANDED: horiz-pad-all-k-20260830-1430
 
 Unofficial horiz_pad OCR at each ink k=0..4 (s=k, ±0.5× that k box H). Official/classify/PD blue still k=0 pad overlay. skipExtraK skips extra k and its pad. Energy columns still one pad. Do not deploy.
+
+## 2026-08-30 - Execute start: look-ink-one-composite-20260830-1517
+
+Dump-only: one look-ink composite per seed (bright walk ink, dim poison/drop-wide). Walk/combine/dropWide/hasBar unchanged. Do not deploy.
+
+## 2026-08-30 - Phase 1: look-ink overlay after drop-wide (1517)
+
+fillPoisonLookRaster paints 5-state BGR after dropWideRuns (white/green surviving ink; dim red/blue/grey poison and dropped). lookBin walk still post-drop. No yellow as ink-in-poison. Do not deploy.

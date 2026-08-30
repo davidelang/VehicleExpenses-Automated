@@ -2689,24 +2689,35 @@ static int fillPoisonLookRaster(
         }
     }
     fillSaltPepper(lookBin);
+    const int glareW = (glareMult > 0 ? glareMult : 11) * std::max(sPx, 4);
+    cv::Mat beforeDrop;
+    if (overlayRgb) lookBin->copyTo(beforeDrop);
+    dropWideRuns(lookBin, glareW);
     if (overlayRgb) {
         overlayRgb->create(lh, lw, CV_8UC3);
         overlayRgb->setTo(0);
+        const cv::Vec3b dimRed(0, 0, 64);
+        const cv::Vec3b dimBlue(80, 0, 0);
+        const cv::Vec3b dimGrey(48, 48, 48);
+        const cv::Vec3b green(0, 255, 0);
+        const cv::Vec3b white(255, 255, 255);
         for (int y = 0; y < lh; ++y) {
-            const uint8_t* bp = lookBin->ptr<uint8_t>(y);
+            const uint8_t* after = lookBin->ptr<uint8_t>(y);
+            const uint8_t* before = beforeDrop.ptr<uint8_t>(y);
             cv::Vec3b* op = overlayRgb->ptr<cv::Vec3b>(y);
             const int sy = y - ySeed0;
             for (int x = 0; x < lw; ++x) {
                 const int sx = x - xSeed0;
-                const bool ink = bp[x] != 0;
                 bool pois = false;
                 if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
                     pois = poison.ptr<uint8_t>(sy)[sx] != 0;
                 }
-                if (pois && ink) op[x] = cv::Vec3b(0, 255, 255);
-                else if (pois) op[x] = cv::Vec3b(0, 0, 255);
-                else if (ink) op[x] = cv::Vec3b(0, 255, 0);
-                else op[x] = cv::Vec3b(0, 0, 0);
+                const bool inkBefore = before[x] != 0;
+                const bool inkAfter = after[x] != 0;
+                const bool dropped = inkBefore && !inkAfter;
+                if (pois && !inkBefore) op[x] = dimRed;
+                if (dropped) op[x] = pois ? dimBlue : dimGrey;
+                if (inkAfter) op[x] = pois ? green : white;
             }
         }
     }
@@ -2728,8 +2739,6 @@ static int fillPoisonLookRaster(
             statsOut->ccs.push_back(c);
         }
     }
-    const int glareW = (glareMult > 0 ? glareMult : 11) * std::max(sPx, 4);
-    dropWideRuns(lookBin, glareW);
     return std::max(1, sPx);
 }
 
