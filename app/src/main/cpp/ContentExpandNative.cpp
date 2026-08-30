@@ -2579,29 +2579,6 @@ static int fillPoisonLookRaster(
                 op[x] = combined.ptr<uint8_t>(sy)[sx];
                 continue;
             }
-            int lab = 0;
-            if (sx >= 0 && sx < seedW) {
-                for (int i = 1; i < nLab; ++i) {
-                    const PoisonReg& r = regs[static_cast<size_t>(i)];
-                    if (sx < r.x0 || sx >= r.x1) continue;
-                    if (sy < 0 && r.y0 == 0) { lab = i; break; }
-                    if (sy >= seedH && r.y1 >= seedH) { lab = i; break; }
-                }
-            }
-            if (lab > 0 && lab < nLab) {
-                const PoisonReg& r = regs[static_cast<size_t>(lab)];
-                if (r.noPeak) { op[x] = 0; continue; }
-                if (srcIsBin) {
-                    uint8_t v = yp[x];
-                    if (inverted) v = static_cast<uint8_t>(255 - v);
-                    op[x] = v;
-                    continue;
-                }
-                const bool ink = r.dark ? (static_cast<double>(yp[x]) <= r.thr)
-                                        : (static_cast<double>(yp[x]) > r.thr);
-                op[x] = ink ? 255 : 0;
-                continue;
-            }
             if (v0Clean <= 4) { op[x] = 0; continue; }
             if (srcIsBin) {
                 uint8_t v = yp[x];
@@ -2628,13 +2605,6 @@ static int fillPoisonLookRaster(
                 bool pois = false;
                 if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
                     pois = poison.ptr<uint8_t>(sy)[sx] != 0;
-                } else if (sx >= 0 && sx < seedW) {
-                    for (int i = 1; i < nLab; ++i) {
-                        const PoisonReg& r = regs[static_cast<size_t>(i)];
-                        if (sx < r.x0 || sx >= r.x1) continue;
-                        if (sy < 0 && r.y0 == 0) { pois = true; break; }
-                        if (sy >= seedH && r.y1 >= seedH) { pois = true; break; }
-                    }
                 }
                 if (pois && ink) op[x] = cv::Vec3b(0, 255, 255);
                 else if (pois) op[x] = cv::Vec3b(0, 0, 255);

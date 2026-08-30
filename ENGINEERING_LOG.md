@@ -9098,3 +9098,11 @@ Native RGB overlay on poison dump (black / green clean ink / red poison no-ink /
 ## 2026-08-30 - CODE LANDED: look-ink-seed48-poison-dump-20260830-0519
 
 Look-ink crop = seed + walked extras; seed band 48px; red seed T/B lines. Poison RGB overlay (green/red/yellow) + JSON bandTop/CC noPeak. Rec stays 48. A.p untouched. Do not deploy.
+
+## 2026-08-30 - Execute start: poison-ink-inside-object-only-20260830-0827
+
+Off-seed look no longer uses poison blob bbox/thr. Local Otsu stays on poison pixels (keepR) inside the seed; look-strip outside seed uses clean/tint only. Overlay extra-seed not yellow/red from edge-touching blobs. Do not change 11×/3× detect or tight/retract loops. Do not deploy.
+
+## 2026-08-30 - Phase 1: extra-seed look uses clean only (0827)
+
+fillPoisonLookRaster: deleted off-seed PoisonReg bbox/thr extrusion (no y0==0 / y1>=seedH look lookup). Look rows outside the seed use cleanThr/srcIsBin only. Overlay pois only on seed poison mask. Inside-seed keepR OR unchanged. Do not deploy.
