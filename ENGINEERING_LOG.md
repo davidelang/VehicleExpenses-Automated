@@ -9086,3 +9086,7 @@ FLOWS: seed uv frozen; u = flatter edge; bottom = lower flatter side (vy≥0). S
 ## 2026-08-30 - CODE LANDED: rot-uv-horizontal-bottom-20260830-0518
 
 Seed uv frozen (u=flatter edge, vy≥0). Jump/pad/horiz_pad do not re-pick from walked corners. Row 6 walked angle stays ~2.8°; horiz_pad 0.5 grows width. AABB/k=0/poison-combine/50% retract unchanged. Do not deploy.
+
+## 2026-08-30 - Phase 1: look-ink seed 48px + walked extras + red lines (0519)
+
+Look-ink crop is seed L/R and min/max T/B of seed vs 7seg walk (not blanket 2.5×). JPEG scale so seed band is 48px; extras keep that px/row. Red LINE at seed T/B. HTML height = JPEG. Rec buffers stay 48. Do not deploy.

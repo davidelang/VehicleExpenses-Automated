@@ -45,6 +45,7 @@ body.hide-orig-details .orig-details { display: none; }
 body.hide-dump-details .dump-details { display: none; }
 body.hide-rec-crops .rec-crops { display: none; }
 body.hide-look-ink-crops .look-ink-crops { display: none; }
+.look-ink-crops img { max-width: none !important; height: auto; image-rendering: pixelated; }
 $hideCols
 .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }
 .stat { font-size: 10px; color: #666; }

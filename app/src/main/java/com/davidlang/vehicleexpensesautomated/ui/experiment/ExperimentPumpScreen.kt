@@ -1552,7 +1552,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    snapshotLookInk(seeds, imgW, imgH, branch)
+                    snapshotLookInk(seeds, segs.map { it.rect }, imgW, imgH, branch)
                     val walks = seeds.indices.map { i ->
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
                     }
@@ -2197,7 +2197,11 @@ suspend fun runPumpExperiment(
                             tightInsetPx = tightInsetPx,
                             combine = NativePaddleEngine.bufferSetB.s.mat,
                         )
-                        snapshotLookInk(seedQuads.map { it.toAabb() }, imgW, imgH, branch)
+                        snapshotLookInk(
+                            seedQuads.map { it.toAabb() },
+                            segs.map { it.quad.toAabb() },
+                            imgW, imgH, branch,
+                        )
                         val seedBhs = FloatArray(seedQuads.size) { seedQuads[it].shortAxisBh() }
                         val seedQuadsOrig = FloatArray(seedQuads.size * 8)
                         seedQuads.forEachIndexed { i, q ->
@@ -3739,20 +3743,23 @@ private const val PUMP_SMALL_TARGET_W = 180
 private const val PUMP_PER_RED_TARGET_W = 120
 private const val PER_PHOTO_FRAGMENT_BUFFER_BYTES = 4 * 1024 * 1024
 
-private fun lookInkStripRect(seed: android.graphics.Rect, imgW: Int, imgH: Int): android.graphics.Rect {
-    val seedH = (seed.bottom - seed.top).coerceAtLeast(1)
-    val vLook = kotlin.math.round(2.5f * seedH).toInt() + 2
-    return android.graphics.Rect(
-        seed.left.coerceIn(0, imgW),
-        (seed.top - vLook).coerceAtLeast(0),
-        seed.right.coerceIn(0, imgW),
-        (seed.bottom + vLook).coerceAtMost(imgH),
-    )
+private fun lookInkStripRect(
+    seed: android.graphics.Rect,
+    walked: android.graphics.Rect,
+    imgW: Int,
+    imgH: Int,
+): android.graphics.Rect {
+    val t = minOf(seed.top, walked.top).coerceAtLeast(0)
+    val b = maxOf(seed.bottom, walked.bottom).coerceAtMost(imgH)
+    val l = seed.left.coerceIn(0, imgW)
+    val r = seed.right.coerceIn(0, imgW)
+    return android.graphics.Rect(l, t, r.coerceAtLeast(l + 1), b.coerceAtLeast(t + 1))
 }
 
-/** Combined 255 look plane on B.s (seed + look strip). Scratch for JPEG is A.s — never B. */
+/** Combined 255 look on B.s: seed band = 48px; extras 1:1 with that scale. Scratch = A.s. */
 private suspend fun snapshotLookInk(
     seeds: List<android.graphics.Rect>,
+    walked: List<android.graphics.Rect>,
     imgW: Int,
     imgH: Int,
     branch: PumpBranch,
@@ -3762,23 +3769,37 @@ private suspend fun snapshotLookInk(
     dump.clearChroma()
     val arr = org.json.JSONArray()
     seeds.forEachIndexed { i, s ->
-        val crop = lookInkStripRect(s, imgW, imgH)
+        val wlk = walked.getOrNull(i) ?: s
+        val crop = lookInkStripRect(s, wlk, imgW, imgH)
         if (crop.width() < 2 || crop.height() < 2) return@forEachIndexed
+        val seedH = (s.bottom - s.top).coerceAtLeast(1)
+        val scale = 48f / seedH
+        var jpegH = kotlin.math.round(crop.height() * scale).toInt()
+        var jpegW = kotlin.math.round(crop.width() * scale).toInt()
+        jpegH = ((jpegH + 1) / 2) * 2
+        jpegW = ((jpegW + 1) / 2) * 2
+        jpegH = jpegH.coerceIn(2, 3072)
+        jpegW = jpegW.coerceIn(2, 4000)
+        val anns = listOf(
+            SnapshotAnnotation(
+                crop.left, s.top, crop.right, s.top,
+                Shape.LINE, Color.RED, 2,
+            ),
+            SnapshotAnnotation(
+                crop.left, s.bottom, crop.right, s.bottom,
+                Shape.LINE, Color.RED, 2,
+            ),
+        )
         val (b64, _) = OcrUtils.takeSnapshot(
-            dump, crop, 0, 48, emptyList(), null, NativePaddleEngine.bufferSetA,
+            dump, crop, jpegW, jpegH, anns, null, NativePaddleEngine.bufferSetA,
         )
         if (b64.isEmpty()) return@forEachIndexed
-        val roiW = crop.width().coerceAtLeast(1)
-        val roiH = crop.height().coerceAtLeast(1)
-        var recW = (48f * roiW / roiH).toInt()
-        recW = ((recW + 1) / 2) * 2
-        recW = recW.coerceIn(2, 4000)
         arr.put(
             org.json.JSONObject()
                 .put("label", "box${i + 1}")
                 .put("lookInkB64", b64)
-                .put("recW", recW)
-                .put("recH", 48),
+                .put("recW", jpegW)
+                .put("recH", jpegH),
         )
     }
     if (arr.length() > 0) branch.metadata["look_ink"] = arr.toString()
@@ -3803,11 +3824,13 @@ private fun pLookInkHtml(br: PumpBranch): String {
         any = true
         val lab = c.optString("label")
         val recW = c.optInt("recW", 0)
+        val recH = c.optInt("recH", 0)
         val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
+        val hCss = if (recH > 0) "height:${recH}px;" else "height:auto;"
         sb.append(
             "<div style='flex:0 0 auto;font-size:9px;'>" +
                 "<img src='data:image/jpeg;base64,$b64' " +
-                "style='height:48px;$wCss max-width:none;image-rendering:pixelated;'>" +
+                "style='$hCss$wCss max-width:none;image-rendering:pixelated;'>" +
                 "<br>$lab</div>",
         )
     }
