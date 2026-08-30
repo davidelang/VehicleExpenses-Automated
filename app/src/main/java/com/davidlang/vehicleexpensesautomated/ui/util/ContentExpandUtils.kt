@@ -2119,8 +2119,11 @@ object ContentExpandUtils {
         if (box == null || src.empty() || src.type() != CvType.CV_8UC1) {
             return Seg7OrientedExpand(seedQ, failStroke())
         }
-        val wu = max(4, box.uSpan().roundToInt())
-        val hv = max(4, box.vSpan().roundToInt())
+        if (box.uSpan() < 4f || box.vSpan() < 4f) {
+            return Seg7OrientedExpand(seedQ, failStroke())
+        }
+        val wu = max(1, box.uSpan().roundToInt())
+        val hv = max(1, box.vSpan().roundToInt())
         val seedMat = Mat.zeros(hv, wu, CvType.CV_8UC1)
         val look = Mat()
         val lookBin = Mat()
@@ -3505,6 +3508,7 @@ object ContentExpandUtils {
             if (r - l > 2 * ins + 2) { l += ins; r -= ins }
             if (b - t > 2 * ins + 2) { t += ins; b -= ins }
         }
+        if (r - l < 4 || b - t < 4) return AabbExpand(Rect(l, t, r, b), false)
         val cap = max(1, (maxFrac * max(1, seed.height())).roundToInt())
         val gx = Mat(); val gy = Mat(); val eng = Mat()
         Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
@@ -3736,6 +3740,7 @@ object ContentExpandUtils {
             if (r - l > 2 * ins + 2) { l += ins; r -= ins }
             if (b - t > 2 * ins + 2) { t += ins; b -= ins }
         }
+        if (r - l < 4 || b - t < 4) return AabbExpand(Rect(l, t, r, b), false)
         val cap = max(1, (maxFrac * max(1, seed.height())).roundToInt())
         val c = chromaMagU8(y, uv)
         val cF = Mat()

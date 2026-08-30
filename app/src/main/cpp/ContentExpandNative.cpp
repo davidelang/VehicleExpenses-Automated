@@ -554,6 +554,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
         if (bh > 2.f * ins + 2.f) bh -= 2.f * ins;
     }
     const float seedCx = cx, seedCy = cy, seedBw = bw, seedBh0 = bh;
+    if (bw < 4.f || bh < 4.f) {
+        jfloat out[13] = {
+            cx, cy, bw, bh, fr.angDeg,
+            0.f, 0.f, 0.f, 0.f,
+            0.f, 0.f, 0.f, 0.f,
+        };
+        jfloatArray arr = env->NewFloatArray(13);
+        if (!arr) return nullptr;
+        env->SetFloatArrayRegion(arr, 0, 13, out);
+        return arr;
+    }
 
     double baseSum = 0.0;
     int baseN = 0;
@@ -1672,6 +1683,22 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
         }
         const int seedL = l, seedT = t, seedR = r, seedB = b;
         const int seedH = std::max(1, b - t);
+        const int seedW = std::max(1, r - l);
+        if (seedH < 4 || seedW < 4) {
+            const int o = i * 11;
+            out[o + 0] = seedL;
+            out[o + 1] = seedT;
+            out[o + 2] = seedR;
+            out[o + 3] = seedB;
+            out[o + 4] = seedL;
+            out[o + 5] = seedT;
+            out[o + 6] = seedR;
+            out[o + 7] = seedB;
+            out[o + 8] = 0;
+            out[o + 9] = 0;
+            out[o + 10] = 0;
+            continue;
+        }
         const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * seedH)));
         const int il = l + 2, it = t + 2, ir = r - 2, ib = b - 2;
         const double base = (ir > il && ib > it)
@@ -3535,11 +3562,13 @@ static void seg7OrientedOne(
     }
     oriToQuad(seed, outPts8);
     const float seedBh = std::max(1.f, seed.v1 - seed.v0);
+    const float seedBw = std::max(1.f, seed.u1 - seed.u0);
     const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedBh)));
     *sPxOut = static_cast<float>(fallback);
     if (src.empty() || src.type() != CV_8UC1) return;
-    const int wu = std::max(4, static_cast<int>(std::lround(seed.u1 - seed.u0)));
-    const int hv = std::max(4, static_cast<int>(std::lround(seed.v1 - seed.v0)));
+    if (seedBh < 4.f || seedBw < 4.f) return;
+    const int wu = std::max(1, static_cast<int>(std::lround(seed.u1 - seed.u0)));
+    const int hv = std::max(1, static_cast<int>(std::lround(seed.v1 - seed.v0)));
     cv::Mat seedMat(hv, wu, CV_8UC1);
     for (int y = 0; y < hv; ++y) {
         const float v = seed.v0 + (y + 0.5f) / hv * (seed.v1 - seed.v0);

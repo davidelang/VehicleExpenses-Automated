@@ -9190,3 +9190,11 @@ Replace two-dump look-ink paragraph with one-image legend (bright ink vs dim poi
 ## 2026-08-30 - CODE LANDED: look-ink-one-composite-20260830-1517
 
 One look-ink PNG per seed from local overlay after dropWide (white/green walk ink; dim red/blue/grey poison and dropped). Cyan T/B, yellow gap-land. No B.s snapshot, no poisonB64 sibling. Walk/combine/hasBar unchanged. Do not deploy.
+
+## 2026-08-30 - Execute start: skip-tiny-seed-no-abort-dump-20260830-1549
+
+Skip seeds with either axis < 4 px (energy AABB + oriented 7seg). Encode dump try/catch so resize/imencode cannot SIGABRT. Walk for seeds >= 4 px unchanged. Do not deploy.
+
+## 2026-08-30 - Phase 1: skip seed axis < 4 (1549)
+
+Energy AABB, oriented 7seg, oriented energy: if either axis < 4 after inset, leave seed, no walk/dump. Oriented no longer upsamples tiny span to 4. Do not deploy.
