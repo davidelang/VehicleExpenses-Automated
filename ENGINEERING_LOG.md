@@ -9142,3 +9142,7 @@ Consecutive hasBar then one gap jump <= 0.5s; at most one per side. Mixed fail (
 ## 2026-08-30 - Phase 2: thresh lookBin in dump-details (0154)
 
 inkSweep threshB64 JPEG of seed lookBin (AABB crop; oriented seed rows; energy mag>=thr). Longest side <=400, quality 70. boxN thresh under sparkline. Hide with dump-details. Do not deploy.
+
+## 2026-08-30 - CODE LANDED: 1247 one-shot gap + 0154 HTML Rows/thresh reds
+
+One-shot gap jump <= 0.5s (at most one per side); yellow land line; HTML Rows filter; Mixed fail (76); threshB64 seed lookBin in dump-details. Official k=0 / G-- / 11x poison unchanged. Do not deploy.
