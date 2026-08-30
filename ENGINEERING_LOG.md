@@ -9082,3 +9082,7 @@ oriFromQuad/fromQuad: u = edge closest to horizontal (tie → longer); v flipped
 ## 2026-08-30 - Phase 2: FLOWS.md rot uv freeze (0518)
 
 FLOWS: seed uv frozen; u = flatter edge; bottom = lower flatter side (vy≥0). Sides move, orientation does not. Do not deploy.
+
+## 2026-08-30 - CODE LANDED: rot-uv-horizontal-bottom-20260830-0518
+
+Seed uv frozen (u=flatter edge, vy≥0). Jump/pad/horiz_pad do not re-pick from walked corners. Row 6 walked angle stays ~2.8°; horiz_pad 0.5 grows width. AABB/k=0/poison-combine/50% retract unchanged. Do not deploy.
