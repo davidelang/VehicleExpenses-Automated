@@ -18,6 +18,9 @@ object ExperimentReportHtml {
         val hideCols = (1..40).joinToString("\n") { n ->
             """body.hide-col-$n #report [data-col="$n"] { display: none !important; }"""
         }
+        val hidePhotos = (1..200).joinToString("\n") { n ->
+            """body.hide-photo-$n #report tr[data-photo="$n"] { display: none !important; }"""
+        }
         return """
 <style>
 body { font-family: sans-serif; margin: 0; }
@@ -47,6 +50,7 @@ body.hide-rec-crops .rec-crops { display: none; }
 body.hide-look-ink-crops .look-ink-crops { display: none; }
 .look-ink-crops img { max-width: none !important; height: auto; image-rendering: pixelated; }
 $hideCols
+$hidePhotos
 .ocr-step { margin-bottom: 4px; border-bottom: 1px solid #eee; font-size: 18px; text-align: left; }
 .stat { font-size: 10px; color: #666; }
 </style>
@@ -81,6 +85,7 @@ $hideCols
     <label class="ctl">Column max width
       <input type="number" class="ve-col-max" value="500" min="80" step="10" style="width:4.5em;"> px</label>
     <label class="ctl"><input type="checkbox" class="ve-col-unlim"> unlimited</label>
+    <label class="ctl">Rows <input class="ve-rows" type="text" placeholder="all" style="width:12em;"></label>
   </div>
   <div class="row" id="col-checks">$checks</div>
 </div>
@@ -111,10 +116,37 @@ $hideCols
     document.querySelectorAll('tr[data-photo]').forEach(function(tr) {
       const p = tr.getAttribute('data-photo');
       if (seen[p]) return;
+      if (document.body.classList.contains('hide-photo-' + p)) return;
       seen[p] = 1;
       out.push(tr);
     });
     return out;
+  }
+  function parseRows(s) {
+    s = (s || '').trim();
+    if (!s || s === 'all' || s === '*') return null;
+    const toks = s.split(/[^\d\-]+/).filter(Boolean);
+    const set = {};
+    var any = false;
+    toks.forEach(function(t) {
+      const m = t.match(/^(\d+)-(\d+)$/);
+      if (m) {
+        var a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+        if (a > b) { var tmp = a; a = b; b = tmp; }
+        for (var i = a; i <= b; i++) { set[i] = 1; any = true; }
+      } else if (/^\d+$/.test(t)) {
+        set[parseInt(t, 10)] = 1;
+        any = true;
+      }
+    });
+    return any ? set : null;
+  }
+  function applyRows() {
+    var inp = document.querySelector('.ve-rows');
+    var set = parseRows(inp ? inp.value : '');
+    for (var n = 1; n <= 200; n++) {
+      document.body.classList.toggle('hide-photo-' + n, !!(set && !set[n]));
+    }
   }
   function currentIndex() {
     const rows = photoStarts();
@@ -170,12 +202,13 @@ $hideCols
       var lookInk = document.querySelector('.ve-look-ink');
       document.body.classList.toggle('hide-look-ink-crops', lookInk && !lookInk.checked);
     }
+    applyRows();
     applyWidth();
     save();
   }
   function save() {
     try {
-      var st = { cols: {}, orig: true, dump: true, rec: true, lookInk: true, unlim: false, max: 500 };
+      var st = { cols: {}, orig: true, dump: true, rec: true, lookInk: true, unlim: false, max: 500, rows: '' };
       var src = topBar();
       if (src) {
         src.querySelectorAll('input[data-col]').forEach(function(cb) {
@@ -188,12 +221,14 @@ $hideCols
       var lookInk = document.querySelector('.ve-look-ink');
       var unlim = document.querySelector('.ve-col-unlim');
       var colMax = document.querySelector('.ve-col-max');
+      var rows = document.querySelector('.ve-rows');
       if (orig) st.orig = orig.checked;
       if (dump) st.dump = dump.checked;
       if (rec) st.rec = rec.checked;
       if (lookInk) st.lookInk = lookInk.checked;
       if (unlim) st.unlim = unlim.checked;
       if (colMax) st.max = parseInt(colMax.value, 10) || 500;
+      if (rows) st.rows = rows.value;
       localStorage.setItem(KEY, JSON.stringify(st));
     } catch (e) {}
   }
@@ -214,6 +249,7 @@ $hideCols
       document.querySelectorAll('.ve-look-ink').forEach(function(el) { if (st.lookInk !== undefined) el.checked = !!st.lookInk; });
       document.querySelectorAll('.ve-col-unlim').forEach(function(el) { if (st.unlim !== undefined) el.checked = !!st.unlim; });
       document.querySelectorAll('.ve-col-max').forEach(function(el) { if (st.max) el.value = st.max; });
+      document.querySelectorAll('.ve-rows').forEach(function(el) { if (st.rows !== undefined) el.value = st.rows; });
     } catch (e) {}
   }
   function inBar(el) { return el && el.closest && el.closest('.ve-bar'); }
@@ -223,6 +259,7 @@ $hideCols
   document.addEventListener('input', function(e) {
     var t = e.target;
     if (t && t.classList && t.classList.contains('ve-col-max')) applyWidth();
+    if (t && t.classList && t.classList.contains('ve-rows')) apply();
   });
   document.addEventListener('click', function(e) {
     var t = e.target;

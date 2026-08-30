@@ -9126,3 +9126,7 @@ AABB+rot 7seg: consecutive hasBar then at most one 0.5s empty bridge per side (u
 ## 2026-08-30 - Phase 2: look-ink yellow gap-land line (1247)
 
 Look-ink JPEG: red seed T/B; yellow full-width at landed hasBar when gap_jump used. Caption gapJumpTop/gapJumpBot. No yellow if no jump. Do not deploy.
+
+## 2026-08-30 - Phase 3: HTML Rows filter (1247 / 0154)
+
+Toolbar Rows field; tokens split on /[^\d\-]+/; 1-10 ranges; empty/all/* shows all. CSS hide-photo-1..200. Prev/next skip hidden. Persist. Pump/alignment/multiscale. Do not deploy.
