@@ -339,6 +339,7 @@ struct InkSweepPack {
     std::vector<int> vScores;
     std::vector<int> hScores;
     std::vector<uint8_t> threshJpeg;
+    std::vector<uint8_t> lookInkPng;
 };
 
 struct PoisonCcPack {
@@ -400,6 +401,9 @@ static void writeSweepArr(JNIEnv* env, jintArray arr, const std::vector<InkSweep
         const int nJ = static_cast<int>(p.threshJpeg.size());
         buf.push_back(nJ);
         for (uint8_t b : p.threshJpeg) buf.push_back(b);
+        const int nP = static_cast<int>(p.lookInkPng.size());
+        buf.push_back(nP);
+        for (uint8_t b : p.lookInkPng) buf.push_back(b);
     }
     const jint n = std::min(cap, static_cast<jint>(buf.size()));
     env->SetIntArrayRegion(arr, 0, n, buf.data());
@@ -428,6 +432,52 @@ static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
     std::vector<uint8_t> jpg;
     if (cv::imencode(".jpg", bgr, jpg, params) && !jpg.empty() && jpg.size() <= 16000) {
         out->threshJpeg = std::move(jpg);
+    }
+}
+
+static void packLookInkPng(
+    const cv::Mat& overlay, int cropT, int cropB,
+    int seedT, int seedB, int landTop, int landBot, int seedH,
+    InkSweepPack* out
+) {
+    if (!out || overlay.empty() || overlay.type() != CV_8UC3) return;
+    cropT = std::max(0, cropT);
+    cropB = std::min(overlay.rows, cropB);
+    if (cropB <= cropT || overlay.cols < 1) return;
+    cv::Mat crop = overlay(cv::Range(cropT, cropB), cv::Range(0, overlay.cols));
+    const int sh = std::max(1, seedH);
+    const double sc = 48.0 / static_cast<double>(sh);
+    int nw = std::max(2, static_cast<int>(std::lround(crop.cols * sc)));
+    int nh = std::max(2, static_cast<int>(std::lround(crop.rows * sc)));
+    nw = (nw + 1) / 2 * 2;
+    nh = (nh + 1) / 2 * 2;
+    nw = std::min(nw, 4000);
+    nh = std::min(nh, 3072);
+    cv::Mat scaled;
+    cv::resize(crop, scaled, cv::Size(nw, nh), 0, 0, cv::INTER_NEAREST);
+    auto yAt = [&](int ly) {
+        int y = static_cast<int>(std::lround((ly - cropT) * sc));
+        if (y < 0) y = 0;
+        if (y >= nh) y = nh - 1;
+        return y;
+    };
+    const cv::Scalar cyan(255, 255, 0);
+    const cv::Scalar yellow(0, 255, 255);
+    const int yT = yAt(seedT);
+    const int yB = yAt(std::max(seedT, seedB - 1));
+    cv::line(scaled, cv::Point(0, yT), cv::Point(nw, yT), cyan, 2);
+    cv::line(scaled, cv::Point(0, yB), cv::Point(nw, yB), cyan, 2);
+    if (landTop >= cropT && landTop < cropB) {
+        const int y = yAt(landTop);
+        cv::line(scaled, cv::Point(0, y), cv::Point(nw, y), yellow, 2);
+    }
+    if (landBot >= cropT && landBot < cropB) {
+        const int y = yAt(landBot);
+        cv::line(scaled, cv::Point(0, y), cv::Point(nw, y), yellow, 2);
+    }
+    std::vector<uint8_t> png;
+    if (cv::imencode(".png", scaled, png) && !png.empty() && png.size() <= 48000) {
+        out->lookInkPng = std::move(png);
     }
 }
 
@@ -2088,7 +2138,7 @@ static void seg7One(
     PoisonStats stLocal;
     const int sPx = fillPoisonLookRaster(
         seedY, look, localT, 0, srcIsBin, gm, fallback, &lookBin,
-        poisonDump ? &overlay : nullptr, poisonStats ? &stLocal : nullptr);
+        &overlay, poisonStats ? &stLocal : nullptr);
     if (poisonStats) *poisonStats = stLocal;
     if (inkDump && !lookBin.empty() && inkDump->type() == CV_8UC1 &&
         inkDump->rows >= imgH && inkDump->cols >= imgW) {
@@ -2245,6 +2295,11 @@ static void seg7One(
             src, true, 0.0, true, 0, lookBin, nt,
             sl, st, sr, sb, *ot, *ob, imgW, imgH, minRun,
             static_cast<float>(sPx), sweepOut);
+        const int cropT = std::min(t, localT);
+        const int cropB = std::max(b, localB);
+        packLookInkPng(
+            overlay, cropT, cropB, localT, localB,
+            landTop, landBot, seedH, sweepOut);
     }
 }
 
@@ -3523,7 +3578,7 @@ static void seg7OrientedOne(
     PoisonStats stLocal;
     const int sPx = fillPoisonLookRaster(
         seedY, look, ySeed0, 0, srcIsBin, 11, fallback, &lookBin,
-        poisonDump ? &overlay : nullptr, poisonStats ? &stLocal : nullptr);
+        &overlay, poisonStats ? &stLocal : nullptr);
     if (poisonStats) *poisonStats = stLocal;
     if (inkDump && !lookBin.empty() && inkDump->type() == CV_8UC1 &&
         inkDump->rows >= imgH && inkDump->cols >= imgW) {
@@ -3689,6 +3744,15 @@ static void seg7OrientedOne(
                 seedSweep, v0, v1, imgW, imgH, minRun, *sPxOut, sweepOut);
         } catch (const cv::Exception&) {
         }
+        const int y0 = static_cast<int>(std::lround(v0 - lookV0));
+        const int y1 = static_cast<int>(std::lround(v1 - lookV0));
+        const int cropT = std::min(y0, ySeed0);
+        const int cropB = std::max(y1, ySeed1);
+        const int lT = gapJumpTop ? static_cast<int>(std::lround(landTop - lookV0)) : -1;
+        const int lB = gapJumpBot ? static_cast<int>(std::lround(landBot - lookV0)) : -1;
+        packLookInkPng(
+            overlay, cropT, cropB, ySeed0, ySeed1, lT, lB,
+            std::max(1, static_cast<int>(std::lround(seedBh))), sweepOut);
     }
     seed.v0 = v0;
     seed.v1 = v1;

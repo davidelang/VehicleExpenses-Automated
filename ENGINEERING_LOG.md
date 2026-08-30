@@ -9178,3 +9178,7 @@ Dump-only: one look-ink composite per seed (bright walk ink, dim poison/drop-wid
 ## 2026-08-30 - Phase 1: look-ink overlay after drop-wide (1517)
 
 fillPoisonLookRaster paints 5-state BGR after dropWideRuns (white/green surviving ink; dim red/blue/grey poison and dropped). lookBin walk still post-drop. No yellow as ink-in-poison. Do not deploy.
+
+## 2026-08-30 - Phase 2: one look-ink PNG per seed (1517)
+
+Per-seed overlay PNG (seed+walk, 48px seed, cyan T/B, yellow land). HTML one img; drop poisonB64 and B.s snapshot. Caption minRun/sPx/glareW. Do not deploy.

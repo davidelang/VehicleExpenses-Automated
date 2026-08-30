@@ -1284,6 +1284,7 @@ object ContentExpandUtils {
         val jumpL: Int = -1,
         val jumpR: Int = -1,
         val threshJpeg: ByteArray? = null,
+        val lookInkPng: ByteArray? = null,
     ) {
         fun withOfficial(r: Rect): InkSweep {
             val vs = vScores.size
@@ -1316,7 +1317,7 @@ object ContentExpandUtils {
 
     fun inkSweepBuf(n: Int, imgW: Int, imgH: Int): IntArray {
         val span = (imgW.coerceAtLeast(1) + imgH.coerceAtLeast(1)) * 8
-        val per = 12 + span + 16384
+        val per = 12 + span + 49152
         return IntArray((1 + n.coerceAtLeast(0) * per).coerceAtLeast(1))
     }
 
@@ -1383,12 +1384,21 @@ object ContentExpandUtils {
                     jpeg = ByteArray(nJ) { a[p++].toByte() }
                 }
             }
+            var png: ByteArray? = null
+            if (p < a.size) {
+                val nP = a[p++]
+                if (nP < 0 || p + nP > a.size) break
+                if (nP > 0) {
+                    png = ByteArray(nP) { a[p++].toByte() }
+                }
+            }
             if (i < n) {
                 out[i] = InkSweep(
                     thr, sPx, minRun, energyRatio,
                     vOrigin, hOrigin, v0, v1, h0, h1,
                     vScores, hScores,
                     threshJpeg = jpeg,
+                    lookInkPng = png,
                 )
             }
         }
