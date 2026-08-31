@@ -9230,3 +9230,7 @@ takeSnapshot fit-inside dest (A.s width × 48). snapshotLookInk flushes JPEG to 
 ## 2026-08-30 - Phase 1: look-ink fit-inside + JPEG flush (2224)
 
 takeSnapshot uniform fit into dest (A.s width × 48); no independent 4000/3072 coerce. snapshotLookInk writes look_ink/*.jpg and JSON paths only. FLOWS updated. Do not deploy.
+
+## 2026-08-30 - CODE LANDED: look-ink-fit-snapshot-flush-20260830-2224
+
+takeSnapshot fit-inside dest (A.s width × 48, uniform). Look-ink JPEGs on disk under look_ink/; JSON/HTML paths only, no b64. Native/walk unchanged. Do not deploy.
