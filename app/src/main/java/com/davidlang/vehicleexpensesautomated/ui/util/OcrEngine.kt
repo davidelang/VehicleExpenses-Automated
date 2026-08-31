@@ -303,13 +303,34 @@ object OcrUtils {
                     val safeW = min(roiW, srcW - safeLeft).coerceAtLeast(1)
                     val safeH = min(roiH, srcH - safeTop).coerceAtLeast(1)
                     val sub = source.submat(org.opencv.core.Rect(safeLeft, safeTop, safeW, safeH))
-                    val graySub = if (sub.channels() == 4) {
-                        val g = org.opencv.core.Mat()
-                        Imgproc.cvtColor(sub, g, Imgproc.COLOR_RGBA2GRAY)
-                        g
-                    } else sub
-                    Imgproc.resize(graySub, bufferSet.c[snapCropId].mat, bufferSet.c[snapCropId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-                    if (graySub !== sub) graySub.release()
+                    val dest = bufferSet.c[snapCropId]
+                    if (sub.channels() >= 3) {
+                        val bgr = if (sub.channels() == 4) {
+                            val b = org.opencv.core.Mat()
+                            Imgproc.cvtColor(sub, b, Imgproc.COLOR_RGBA2BGR)
+                            b
+                        } else sub
+                        val scaled = org.opencv.core.Mat()
+                        Imgproc.resize(bgr, scaled, dest.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                        val yuv = org.opencv.core.Mat()
+                        Imgproc.cvtColor(scaled, yuv, Imgproc.COLOR_BGR2YUV)
+                        val chans = ArrayList<org.opencv.core.Mat>(3)
+                        Core.split(yuv, chans)
+                        chans[0].copyTo(dest.mat)
+                        val uh = org.opencv.core.Mat()
+                        val vh = org.opencv.core.Mat()
+                        Imgproc.resize(chans[1], uh, dest.uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                        Imgproc.resize(chans[2], vh, dest.uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                        Core.merge(listOf(uh, vh), dest.uvMat)
+                        uh.release(); vh.release()
+                        chans.forEach { it.release() }
+                        yuv.release()
+                        scaled.release()
+                        if (bgr !== sub) bgr.release()
+                    } else {
+                        Imgproc.resize(sub, dest.mat, dest.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
+                        dest.uvMat.setTo(org.opencv.core.Scalar(128.0, 128.0))
+                    }
                     sub.release()
                 }
                 is BufferSet.Slice -> {

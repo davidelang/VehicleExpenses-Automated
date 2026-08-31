@@ -463,7 +463,7 @@ object NativeImageUtils {
         gapFrac: Float, minSeedHsToFreeze: Float,
         boundStrategy: Int, tightInsetPx: Int,
         teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
-        poisonPtr: Long, poisonArr: IntArray?,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): IntArray?
     private external fun nativeJumpMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, boxes: IntArray, chromaMode: Int,
@@ -485,7 +485,8 @@ object NativeImageUtils {
         tele: FloatArray? = null,
         sweep: IntArray? = null,
         combine: Mat? = null,
-        poisonRgb: Mat? = null,
+        overlayY: Mat? = null,
+        overlayUv: Mat? = null,
         poisonStats: IntArray? = null,
     ): IntArray? {
         if (gray.empty()) return null
@@ -494,7 +495,7 @@ object NativeImageUtils {
         return nativeSeg7Many(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
             gapFrac, minSeedHsToFreeze, boundStrategy, tightInsetPx, teleArr, sweep,
-            combine?.nativeObj ?: 0L, poisonRgb?.nativeObj ?: 0L, poisonStats,
+            combine?.nativeObj ?: 0L, overlayY?.nativeObj ?: 0L, overlayUv?.nativeObj ?: 0L, poisonStats,
         )
     }
 
@@ -518,7 +519,7 @@ object NativeImageUtils {
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray, chromaMode: Int,
         boundStrategy: Int, tightInsetPx: Int,
         teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
-        poisonPtr: Long, poisonArr: IntArray?,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): FloatArray?
     private external fun nativeJumpOrientedMany(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, quads: FloatArray, chromaMode: Int,
@@ -536,7 +537,8 @@ object NativeImageUtils {
         tele: FloatArray? = null,
         sweep: IntArray? = null,
         combine: Mat? = null,
-        poisonRgb: Mat? = null,
+        overlayY: Mat? = null,
+        overlayUv: Mat? = null,
         poisonStats: IntArray? = null,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return null
@@ -545,7 +547,7 @@ object NativeImageUtils {
         return nativeSeg7OrientedMany(
             gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
             boundStrategy, tightInsetPx, teleArr, sweep, combine?.nativeObj ?: 0L,
-            poisonRgb?.nativeObj ?: 0L, poisonStats,
+            overlayY?.nativeObj ?: 0L, overlayUv?.nativeObj ?: 0L, poisonStats,
         )
     }
 

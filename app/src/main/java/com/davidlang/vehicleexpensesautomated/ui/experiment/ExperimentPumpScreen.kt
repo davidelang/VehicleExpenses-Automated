@@ -1530,46 +1530,55 @@ suspend fun runPumpExperiment(
                             h.rect.right.toInt(), h.rect.bottom.toInt(),
                         )
                     }
-                    val poisonRgb = org.opencv.core.Mat()
-                    val poisonBuf = ContentExpandUtils.poisonStatsBuf(seeds.size)
-                    val segs = ContentExpandUtils.expand7segFromSeedMany(
-                        workspace.p.mat,
-                        if (expandMode != 0) workspace.p.uvMat else null,
-                        seeds,
-                        chroma = expandMode == 1,
-                        k = 0f,
-                        chromaMode = expandMode,
-                        gapFrac = gapFrac,
-                        minSeedHsToFreeze = minSeedHsToFreeze,
-                        scratch = workspace.s.mat,
-                        boundStrategy = boundStrategy,
-                        tightInsetPx = tightInsetPx,
-                        combine = NativePaddleEngine.bufferSetB.s.mat,
-                        poisonRgb = poisonRgb,
-                        poisonStats = poisonBuf,
-                    ) ?: seeds.map { r ->
-                        when (expandMode) {
-                            2, 3 -> ContentExpandUtils.expand7segFromSeed(
-                                workspace.p.mat, r, k = 0f, doHorizontal = false,
-                                gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
-                            )
-                            1 -> ContentExpandUtils.expand7segFromSeedChroma(
-                                workspace.p.mat, workspace.p.uvMat, r, k = 0f,
-                            )
-                            else -> ContentExpandUtils.expand7segFromSeed(
-                                workspace.p.mat, r, k = 0f, doHorizontal = false,
-                                gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
-                            )
-                        }
+                    val bSet = NativePaddleEngine.bufferSetB
+                    if (bSet.p.mat.cols() != imgW || bSet.p.mat.rows() != imgH) {
+                        bSet.resize(imgW, imgH)
                     }
-                    snapshotLookInk(
-                        seeds, segs.map { it.rect }, imgW, imgH, branch,
-                        segs.map { it.poison },
-                        segs.map { it.tele },
-                        segs.map { it.sweep },
-                        segs.map { it.stroke },
-                    )
-                    if (!poisonRgb.empty()) poisonRgb.release()
+                    branch.metadata.remove("look_ink")
+                    val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
+                    seeds.forEach { seed ->
+                        val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
+                        val one = ContentExpandUtils.expand7segFromSeedMany(
+                            workspace.p.mat,
+                            if (expandMode != 0) workspace.p.uvMat else null,
+                            listOf(seed),
+                            chroma = expandMode == 1,
+                            k = 0f,
+                            chromaMode = expandMode,
+                            gapFrac = gapFrac,
+                            minSeedHsToFreeze = minSeedHsToFreeze,
+                            scratch = workspace.s.mat,
+                            boundStrategy = boundStrategy,
+                            tightInsetPx = tightInsetPx,
+                            combine = bSet.s.mat,
+                            overlayY = bSet.p.mat,
+                            overlayUv = bSet.p.uvMat,
+                            poisonStats = poisonBuf,
+                        ) ?: listOf(
+                            when (expandMode) {
+                                2, 3 -> ContentExpandUtils.expand7segFromSeed(
+                                    workspace.p.mat, seed, k = 0f, doHorizontal = false,
+                                    gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
+                                )
+                                1 -> ContentExpandUtils.expand7segFromSeedChroma(
+                                    workspace.p.mat, workspace.p.uvMat, seed, k = 0f,
+                                )
+                                else -> ContentExpandUtils.expand7segFromSeed(
+                                    workspace.p.mat, seed, k = 0f, doHorizontal = false,
+                                    gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
+                                )
+                            },
+                        )
+                        val seg = one.first()
+                        segs.add(seg)
+                        snapshotLookInk(
+                            listOf(seed), listOf(seg.rect), imgW, imgH, branch,
+                            listOf(seg.poison),
+                            listOf(seg.tele),
+                            listOf(seg.sweep),
+                            listOf(seg.stroke),
+                        )
+                    }
                     val walks = seeds.indices.map { i ->
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
                     }
@@ -2241,30 +2250,39 @@ suspend fun runPumpExperiment(
                             retractClearFrac = 0.30f,
                             energyRatio = 0.65f,
                         )
-                        val poisonRgb = org.opencv.core.Mat()
-                        val poisonBuf = ContentExpandUtils.poisonStatsBuf(seedQuads.size)
-                        val segs = ContentExpandUtils.expand7segFromOrientedSeedMany(
-                            gray,
-                            if (expandMode != 0) workspace.p.uvMat else null,
-                            seedQuads,
-                            chromaMode = expandMode,
-                            scratch = workspace.s.mat,
-                            boundStrategy = boundStrategy,
-                            tightInsetPx = tightInsetPx,
-                            combine = NativePaddleEngine.bufferSetB.s.mat,
-                            poisonRgb = poisonRgb,
-                            poisonStats = poisonBuf,
-                        )
-                        snapshotLookInk(
-                            seedQuads.map { it.toAabb() },
-                            segs.map { it.quad.toAabb() },
-                            imgW, imgH, branch,
-                            segs.map { it.poison },
-                            segs.map { it.tele },
-                            segs.map { it.sweep },
-                            segs.map { it.stroke },
-                        )
-                        if (!poisonRgb.empty()) poisonRgb.release()
+                        val bSet = NativePaddleEngine.bufferSetB
+                        if (bSet.p.mat.cols() != imgW || bSet.p.mat.rows() != imgH) {
+                            bSet.resize(imgW, imgH)
+                        }
+                        branch.metadata.remove("look_ink")
+                        val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
+                        seedQuads.forEach { q ->
+                            val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
+                            val one = ContentExpandUtils.expand7segFromOrientedSeedMany(
+                                gray,
+                                if (expandMode != 0) workspace.p.uvMat else null,
+                                listOf(q),
+                                chromaMode = expandMode,
+                                scratch = workspace.s.mat,
+                                boundStrategy = boundStrategy,
+                                tightInsetPx = tightInsetPx,
+                                combine = bSet.s.mat,
+                                overlayY = bSet.p.mat,
+                                overlayUv = bSet.p.uvMat,
+                                poisonStats = poisonBuf,
+                            )
+                            val seg = one.first()
+                            segs.add(seg)
+                            snapshotLookInk(
+                                listOf(q.toAabb()),
+                                listOf(seg.quad.toAabb()),
+                                imgW, imgH, branch,
+                                listOf(seg.poison),
+                                listOf(seg.tele),
+                                listOf(seg.sweep),
+                                listOf(seg.stroke),
+                            )
+                        }
                         val seedBhs = FloatArray(seedQuads.size) { seedQuads[it].shortAxisBh() }
                         val seedQuadsOrig = FloatArray(seedQuads.size * 8)
                         seedQuads.forEachIndexed { i, q ->
@@ -3865,8 +3883,20 @@ private const val PUMP_SMALL_TARGET_W = 180
 private const val PUMP_PER_RED_TARGET_W = 120
 private const val PER_PHOTO_FRAGMENT_BUFFER_BYTES = 4 * 1024 * 1024
 
-/** Per-seed look-ink PNG from native overlay (seed+walk strip, 48px seed scale). */
-private fun snapshotLookInk(
+private fun lookInkStripRect(
+    seed: android.graphics.Rect,
+    walk: android.graphics.Rect,
+): android.graphics.Rect {
+    return android.graphics.Rect(
+        seed.left,
+        min(seed.top, walk.top),
+        seed.right,
+        max(seed.bottom, walk.bottom),
+    )
+}
+
+/** Per-seed look-ink JPEG from B.p via takeSnapshot (seed band 48 px). */
+private suspend fun snapshotLookInk(
     seeds: List<android.graphics.Rect>,
     walked: List<android.graphics.Rect>,
     imgW: Int,
@@ -3877,26 +3907,54 @@ private fun snapshotLookInk(
     sweeps: List<ContentExpandUtils.InkSweep?> = emptyList(),
     strokes: List<ContentExpandUtils.StrokeWidthInSeed?> = emptyList(),
 ) {
-    val arr = org.json.JSONArray()
-    seeds.forEachIndexed { i, _ ->
-        val png = sweeps.getOrNull(i)?.lookInkPng
-        if (png == null || png.isEmpty()) return@forEachIndexed
-        val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        android.graphics.BitmapFactory.decodeByteArray(png, 0, png.size, opts)
-        val recW = opts.outWidth.coerceAtLeast(0)
-        val recH = opts.outHeight.coerceAtLeast(0)
-        val b64 = Base64.encodeToString(png, Base64.NO_WRAP)
-        if (b64.isEmpty()) return@forEachIndexed
+    val arr = try {
+        org.json.JSONArray(branch.metadata["look_ink"] ?: "[]")
+    } catch (_: Exception) {
+        org.json.JSONArray()
+    }
+    val boxBase = arr.length()
+    seeds.forEachIndexed { i, seed ->
+        val walk = walked.getOrNull(i) ?: seed
+        val strip = lookInkStripRect(seed, walk)
+        if (strip.width() < 1 || strip.height() < 1) return@forEachIndexed
+        val seedH = seed.height().coerceAtLeast(1)
+        val div = max(seedH, 12)
+        val sc = 48f / div.toFloat()
+        val tw = (strip.width() * sc).toInt().coerceAtLeast(2)
+        val th = (strip.height() * sc).toInt().coerceAtLeast(2)
+        val anns = ArrayList<SnapshotAnnotation>(4)
+        val yT = seed.top.coerceIn(0, imgH - 1)
+        val yB = (seed.bottom - 1).coerceAtLeast(seed.top).coerceIn(0, imgH - 1)
+        val x0 = strip.left.coerceIn(0, imgW - 1)
+        val x1 = (strip.right - 1).coerceAtLeast(strip.left).coerceIn(0, imgW - 1)
+        anns.add(SnapshotAnnotation(x0, yT, x1, yT, Shape.LINE, Color.CYAN, 2))
+        anns.add(SnapshotAnnotation(x0, yB, x1, yB, Shape.LINE, Color.CYAN, 2))
         val tele = teles.getOrNull(i)
+        if (tele != null) {
+            if (tele.gapJumpTop) {
+                val y = tele.landTop.toInt().coerceIn(0, imgH - 1)
+                anns.add(SnapshotAnnotation(x0, y, x1, y, Shape.LINE, Color.YELLOW, 2))
+            }
+            if (tele.gapJumpBot) {
+                val y = tele.landBot.toInt().coerceIn(0, imgH - 1)
+                anns.add(SnapshotAnnotation(x0, y, x1, y, Shape.LINE, Color.YELLOW, 2))
+            }
+        }
+        val (b64, _) = OcrUtils.takeSnapshot(
+            NativePaddleEngine.bufferSetB.p, strip, tw, th, anns, null, NativePaddleEngine.bufferSetA,
+        )
+        if (b64.isEmpty()) return@forEachIndexed
+        val recW = tw.coerceIn(2, 4000)
+        val recH = th.coerceIn(2, 3072)
         val sweep = sweeps.getOrNull(i)
         val stroke = strokes.getOrNull(i)
         val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
         val minRun = sweep?.minRun ?: 0
         val glareW = 11 * max(sPx, 4)
         val j = org.json.JSONObject()
-            .put("label", "box${i + 1}")
+            .put("label", "box${boxBase + i + 1}")
             .put("lookInkB64", b64)
-            .put("lookInkMime", "image/png")
+            .put("lookInkMime", "image/jpeg")
             .put("recW", recW)
             .put("recH", recH)
             .put("minRun", minRun)

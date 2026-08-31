@@ -340,7 +340,6 @@ struct InkSweepPack {
     std::vector<int> vScores;
     std::vector<int> hScores;
     std::vector<uint8_t> threshJpeg;
-    std::vector<uint8_t> lookInkPng;
 };
 
 struct PoisonCcPack {
@@ -402,9 +401,6 @@ static void writeSweepArr(JNIEnv* env, jintArray arr, const std::vector<InkSweep
         const int nJ = static_cast<int>(p.threshJpeg.size());
         buf.push_back(nJ);
         for (uint8_t b : p.threshJpeg) buf.push_back(b);
-        const int nP = static_cast<int>(p.lookInkPng.size());
-        buf.push_back(nP);
-        for (uint8_t b : p.lookInkPng) buf.push_back(b);
     }
     const jint n = std::min(cap, static_cast<jint>(buf.size()));
     env->SetIntArrayRegion(arr, 0, n, buf.data());
@@ -437,59 +433,6 @@ static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
         std::vector<uint8_t> jpg;
         if (cv::imencode(".jpg", bgr, jpg, params) && !jpg.empty() && jpg.size() <= 16000) {
             out->threshJpeg = std::move(jpg);
-        }
-    } catch (const cv::Exception&) {
-    } catch (const std::exception&) {
-    }
-}
-
-static void packLookInkPng(
-    const cv::Mat& overlay, int cropT, int cropB,
-    int seedT, int seedB, int landTop, int landBot, int seedH,
-    InkSweepPack* out
-) {
-    if (!out || overlay.empty() || overlay.type() != CV_8UC3) return;
-    try {
-        cropT = std::max(0, cropT);
-        cropB = std::min(overlay.rows, cropB);
-        if (cropB <= cropT || overlay.cols < 1) return;
-        cv::Mat crop = overlay(cv::Range(cropT, cropB), cv::Range(0, overlay.cols));
-        const int sh = std::max(1, seedH);
-        const double sc = 48.0 / static_cast<double>(sh);
-        const int64_t nw64 = std::llround(static_cast<double>(crop.cols) * sc);
-        const int64_t nh64 = std::llround(static_cast<double>(crop.rows) * sc);
-        if (nw64 < 1 || nh64 < 1 || nw64 > 65000 || nh64 > 65000) return;
-        int nw = static_cast<int>(nw64);
-        int nh = static_cast<int>(nh64);
-        nw = std::max(2, (nw + 1) / 2 * 2);
-        nh = std::max(2, (nh + 1) / 2 * 2);
-        nw = std::min(nw, 4000);
-        nh = std::min(nh, 3072);
-        cv::Mat scaled;
-        cv::resize(crop, scaled, cv::Size(nw, nh), 0, 0, cv::INTER_NEAREST);
-        auto yAt = [&](int ly) {
-            int y = static_cast<int>(std::lround((ly - cropT) * sc));
-            if (y < 0) y = 0;
-            if (y >= nh) y = nh - 1;
-            return y;
-        };
-        const cv::Scalar cyan(255, 255, 0);
-        const cv::Scalar yellow(0, 255, 255);
-        const int yT = yAt(seedT);
-        const int yB = yAt(std::max(seedT, seedB - 1));
-        cv::line(scaled, cv::Point(0, yT), cv::Point(nw, yT), cyan, 2);
-        cv::line(scaled, cv::Point(0, yB), cv::Point(nw, yB), cyan, 2);
-        if (landTop >= cropT && landTop < cropB) {
-            const int y = yAt(landTop);
-            cv::line(scaled, cv::Point(0, y), cv::Point(nw, y), yellow, 2);
-        }
-        if (landBot >= cropT && landBot < cropB) {
-            const int y = yAt(landBot);
-            cv::line(scaled, cv::Point(0, y), cv::Point(nw, y), yellow, 2);
-        }
-        std::vector<uint8_t> png;
-        if (cv::imencode(".png", scaled, png) && !png.empty() && png.size() <= 48000) {
-            out->lookInkPng = std::move(png);
         }
     } catch (const cv::Exception&) {
     } catch (const std::exception&) {
@@ -1954,7 +1897,8 @@ static bool rowHasStrokeBar(const cv::Mat& bin, int y, int minRun, int glareW);
 static int fillPoisonLookRaster(
     const cv::Mat& seedY, const cv::Mat& lookY, int ySeed0, int xSeed0,
     bool srcIsBin, int glareMult, int fallback, cv::Mat* lookBin,
-    cv::Mat* overlayRgb = nullptr, PoisonStats* statsOut = nullptr);
+    cv::Mat* overlayY = nullptr, cv::Mat* overlayUv = nullptr,
+    int ovX = 0, int ovY = 0, PoisonStats* statsOut = nullptr);
 
 static void fillAabbLookSweep(
     const cv::Mat& src, bool srcIsBin, double otsu, bool darkInk, int glareW,
@@ -2146,7 +2090,8 @@ static void seg7One(
     bool keepColorStats = false,
     InkSweepPack* sweepOut = nullptr,
     cv::Mat* inkDump = nullptr,
-    cv::Mat* poisonDump = nullptr,
+    cv::Mat* overlayY = nullptr,
+    cv::Mat* overlayUv = nullptr,
     PoisonStats* poisonStats = nullptr
 ) {
     if (boundStrategy == 1) {
@@ -2173,43 +2118,24 @@ static void seg7One(
     cv::Mat look = src(cv::Range(nt, nb), cv::Range(sl, sr));
     cv::Mat seedY;
     src(cv::Range(st, sb), cv::Range(sl, sr)).copyTo(seedY);
+    cv::Mat lookBinLocal;
     cv::Mat lookBin;
-    cv::Mat overlay;
+    const bool bsRoi = inkDump && inkDump->type() == CV_8UC1 &&
+        inkDump->rows >= imgH && inkDump->cols >= imgW &&
+        nb > nt && sr > sl && nt >= 0 && sl >= 0 && nb <= inkDump->rows && sr <= inkDump->cols;
+    if (bsRoi) {
+        lookBin = (*inkDump)(cv::Range(nt, nb), cv::Range(sl, sr));
+    } else {
+        lookBinLocal.create(nb - nt, sr - sl, CV_8UC1);
+        lookBin = lookBinLocal;
+    }
     const int localT = st - nt;
     const int localB = sb - nt;
     PoisonStats stLocal;
     const int sPx = fillPoisonLookRaster(
         seedY, look, localT, 0, srcIsBin, gm, fallback, &lookBin,
-        &overlay, poisonStats ? &stLocal : nullptr);
+        overlayY, overlayUv, sl, nt, poisonStats ? &stLocal : nullptr);
     if (poisonStats) *poisonStats = stLocal;
-    if (inkDump && !lookBin.empty() && inkDump->type() == CV_8UC1 &&
-        inkDump->rows >= imgH && inkDump->cols >= imgW) {
-        const int x0 = std::max(0, sl);
-        const int y0 = std::max(0, nt);
-        const int x1 = std::min(imgW, sl + lookBin.cols);
-        const int y1 = std::min(imgH, nt + lookBin.rows);
-        if (x1 > x0 && y1 > y0) {
-            cv::Mat srcR = lookBin(cv::Rect(x0 - sl, y0 - nt, x1 - x0, y1 - y0));
-            cv::Mat dstR = (*inkDump)(cv::Rect(x0, y0, x1 - x0, y1 - y0));
-            cv::bitwise_or(dstR, srcR, dstR);
-        }
-    }
-    if (poisonDump && !overlay.empty() && overlay.type() == CV_8UC3) {
-        if (poisonDump->empty() || poisonDump->type() != CV_8UC3 ||
-            poisonDump->rows < imgH || poisonDump->cols < imgW) {
-            poisonDump->create(imgH, imgW, CV_8UC3);
-            poisonDump->setTo(0);
-        }
-        const int x0 = std::max(0, sl);
-        const int y0 = std::max(0, nt);
-        const int x1 = std::min(imgW, sl + overlay.cols);
-        const int y1 = std::min(imgH, nt + overlay.rows);
-        if (x1 > x0 && y1 > y0) {
-            cv::Mat srcR = overlay(cv::Rect(x0 - sl, y0 - nt, x1 - x0, y1 - y0));
-            cv::Mat dstR = (*poisonDump)(cv::Rect(x0, y0, x1 - x0, y1 - y0));
-            srcR.copyTo(dstR);
-        }
-    }
     const int glareW = gm * std::max(sPx, 4);
     const int vSW = sPx;
     const int hSW = vertPeakSW(lookBin, seedH);
@@ -2337,11 +2263,6 @@ static void seg7One(
             src, true, 0.0, true, 0, lookBin, nt,
             sl, st, sr, sb, *ot, *ob, imgW, imgH, minRun,
             static_cast<float>(sPx), sweepOut);
-        const int cropT = std::min(t, localT);
-        const int cropB = std::max(b, localB);
-        packLookInkPng(
-            overlay, cropT, cropB, localT, localB,
-            landTop, landBot, seedH, sweepOut);
     }
 }
 
@@ -2628,14 +2549,36 @@ static bool rowHasStrokeBar(const cv::Mat& bin, int y, int minRun, int glareW) {
     return false;
 }
 
+static void yuvPut(
+    cv::Mat* yPlane, cv::Mat* uvPlane, int x, int y,
+    uint8_t Y, uint8_t U, uint8_t V
+) {
+    if (yPlane && y >= 0 && y < yPlane->rows && x >= 0 && x < yPlane->cols) {
+        yPlane->ptr<uint8_t>(y)[x] = Y;
+    }
+    if (uvPlane && uvPlane->type() == CV_8UC2 && uvPlane->rows > 0 && uvPlane->cols > 0) {
+        int uy = y / 2;
+        int ux = x / 2;
+        if (uy < 0) uy = 0;
+        if (ux < 0) ux = 0;
+        if (uy >= uvPlane->rows) uy = uvPlane->rows - 1;
+        if (ux >= uvPlane->cols) ux = uvPlane->cols - 1;
+        uvPlane->ptr<cv::Vec2b>(uy)[ux] = cv::Vec2b(U, V);
+    }
+}
+
 /** One look raster: clean vs per-poison rule; runs ignore region edges. Returns sPx. */
 static int fillPoisonLookRaster(
     const cv::Mat& seedY, const cv::Mat& lookY, int ySeed0, int xSeed0,
     bool srcIsBin, int glareMult, int fallback, cv::Mat* lookBin,
-    cv::Mat* overlayRgb, PoisonStats* statsOut
+    cv::Mat* overlayY, cv::Mat* overlayUv, int ovX, int ovY, PoisonStats* statsOut
 ) {
     const int seedH = seedY.rows, seedW = seedY.cols;
-    lookBin->create(lookY.rows, lookY.cols, CV_8UC1);
+    if (!lookBin) return std::max(1, fallback);
+    if (lookBin->empty() || lookBin->rows != lookY.rows || lookBin->cols != lookY.cols ||
+        lookBin->type() != CV_8UC1) {
+        lookBin->create(lookY.rows, lookY.cols, CV_8UC1);
+    }
     lookBin->setTo(0);
     if (seedH < 1 || seedW < 1 || lookY.empty()) return std::max(1, fallback);
     cv::Mat bin;
@@ -2787,21 +2730,28 @@ static int fillPoisonLookRaster(
     }
     fillSaltPepper(lookBin);
     const int glareW = (glareMult > 0 ? glareMult : 11) * std::max(sPx, 4);
-    cv::Mat beforeDrop;
-    if (overlayRgb) lookBin->copyTo(beforeDrop);
-    dropWideRuns(lookBin, glareW);
-    if (overlayRgb) {
-        overlayRgb->create(lh, lw, CV_8UC3);
-        overlayRgb->setTo(0);
-        const cv::Vec3b dimRed(0, 0, 64);
-        const cv::Vec3b dimBlue(80, 0, 0);
-        const cv::Vec3b dimGrey(48, 48, 48);
-        const cv::Vec3b green(0, 255, 0);
-        const cv::Vec3b white(255, 255, 255);
+    const bool paintOv = overlayY && overlayY->type() == CV_8UC1 &&
+        overlayY->rows > 0 && overlayY->cols > 0;
+    if (paintOv) {
+        const int y0 = std::max(0, ovY);
+        const int y1 = std::min(overlayY->rows, ovY + lh);
+        const int x0 = std::max(0, ovX);
+        const int x1 = std::min(overlayY->cols, ovX + lw);
+        if (y1 > y0 && x1 > x0) {
+            (*overlayY)(cv::Range(y0, y1), cv::Range(x0, x1)).setTo(0);
+        }
+        if (overlayUv && overlayUv->type() == CV_8UC2 &&
+            overlayUv->rows > 0 && overlayUv->cols > 0) {
+            const int uy0 = std::max(0, ovY / 2);
+            const int ux0 = std::max(0, ovX / 2);
+            const int uy1 = std::min(overlayUv->rows, (ovY + lh + 1) / 2);
+            const int ux1 = std::min(overlayUv->cols, (ovX + lw + 1) / 2);
+            if (uy1 > uy0 && ux1 > ux0) {
+                (*overlayUv)(cv::Range(uy0, uy1), cv::Range(ux0, ux1)).setTo(cv::Scalar(128, 128));
+            }
+        }
         for (int y = 0; y < lh; ++y) {
-            const uint8_t* after = lookBin->ptr<uint8_t>(y);
-            const uint8_t* before = beforeDrop.ptr<uint8_t>(y);
-            cv::Vec3b* op = overlayRgb->ptr<cv::Vec3b>(y);
+            const uint8_t* before = lookBin->ptr<uint8_t>(y);
             const int sy = y - ySeed0;
             for (int x = 0; x < lw; ++x) {
                 const int sx = x - xSeed0;
@@ -2810,11 +2760,35 @@ static int fillPoisonLookRaster(
                     pois = poison.ptr<uint8_t>(sy)[sx] != 0;
                 }
                 const bool inkBefore = before[x] != 0;
-                const bool inkAfter = after[x] != 0;
-                const bool dropped = inkBefore && !inkAfter;
-                if (pois && !inkBefore) op[x] = dimRed;
-                if (dropped) op[x] = pois ? dimBlue : dimGrey;
-                if (inkAfter) op[x] = pois ? green : white;
+                uint8_t Y = 0, U = 128, V = 128;
+                if (pois && !inkBefore) { Y = 19; U = 117; V = 160; }
+                if (inkBefore) {
+                    if (pois) { Y = 150; U = 44; V = 21; }
+                    else { Y = 255; U = 128; V = 128; }
+                }
+                yuvPut(overlayY, overlayUv, ovX + x, ovY + y, Y, U, V);
+            }
+        }
+    }
+    dropWideRuns(lookBin, glareW);
+    if (paintOv) {
+        for (int y = 0; y < lh; ++y) {
+            const uint8_t* after = lookBin->ptr<uint8_t>(y);
+            const int sy = y - ySeed0;
+            for (int x = 0; x < lw; ++x) {
+                if (after[x] != 0) continue;
+                const int iy = ovY + y;
+                const int ix = ovX + x;
+                if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
+                const uint8_t Y0 = overlayY->ptr<uint8_t>(iy)[ix];
+                if (Y0 < 140) continue;
+                const int sx = x - xSeed0;
+                bool pois = false;
+                if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
+                    pois = poison.ptr<uint8_t>(sy)[sx] != 0;
+                }
+                if (pois) yuvPut(overlayY, overlayUv, ix, iy, 9, 168, 121);
+                else yuvPut(overlayY, overlayUv, ix, iy, 48, 128, 128);
             }
         }
     }
@@ -3107,7 +3081,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     jfloat gapFrac, jfloat minSeedHsToFreeze,
     jint boundStrategy, jint tightInsetPx,
     jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
-    jlong poisonPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -3127,15 +3101,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
-    auto* poisonDump = reinterpret_cast<cv::Mat*>(poisonPtr);
+    auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
+    auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
     if (inkDump && scratchFits(inkDump, imgW, imgH)) inkDump->setTo(0);
-    if (poisonDump) {
-        if (poisonDump->empty() || poisonDump->type() != CV_8UC3 ||
-            poisonDump->rows < imgH || poisonDump->cols < imgW) {
-            poisonDump->create(imgH, imgW, CV_8UC3);
-        }
-        poisonDump->setTo(0);
-    }
     std::vector<PoisonStats> poisonPacks;
     poisonPacks.resize(static_cast<size_t>(n));
     if (useChromaMag) {
@@ -3170,7 +3138,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
                     gapFrac, minSeedHsToFreeze, glareMult,
                     boundStrategy, tightInsetPx, &tele, true,
-                    &sweeps[static_cast<size_t>(i)], inkDump, poisonDump,
+                    &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
                     &poisonPacks[static_cast<size_t>(i)]);
             } else {
                 if (ok && skipTintWalk(adaptive, tele)) tele.method = 0.f;
@@ -3178,7 +3146,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
                     gapFrac, minSeedHsToFreeze, 11,
                     boundStrategy, tightInsetPx, &tele, ok && adaptive,
-                    &sweeps[static_cast<size_t>(i)], inkDump, poisonDump,
+                    &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
                     &poisonPacks[static_cast<size_t>(i)]);
             }
         } else {
@@ -3190,7 +3158,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
             seg7One(*src, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
                 false, gapFrac, minSeedHsToFreeze, 11,
                 boundStrategy, tightInsetPx, &tele, false,
-                &sweeps[static_cast<size_t>(i)], inkDump, poisonDump,
+                &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
                 &poisonPacks[static_cast<size_t>(i)]);
         }
         const int o = i * 8;
@@ -3563,7 +3531,8 @@ static void seg7OrientedOne(
     bool keepColorStats = false,
     InkSweepPack* sweepOut = nullptr,
     cv::Mat* inkDump = nullptr,
-    cv::Mat* poisonDump = nullptr,
+    cv::Mat* overlayY = nullptr,
+    cv::Mat* overlayUv = nullptr,
     PoisonStats* poisonStats = nullptr
 ) {
     if (boundStrategy == 1) {
@@ -3616,52 +3585,26 @@ static void seg7OrientedOne(
     cv::Mat seedY;
     seedMat.copyTo(seedY);
     cv::Mat lookBin;
-    cv::Mat overlay;
     const int ySeed0 = static_cast<int>(std::lround(seed.v0 - lookV0));
     const int ySeed1 = static_cast<int>(std::lround(seed.v1 - lookV0));
+    float ptsDump[8];
+    oriToQuad(seed, ptsDump);
+    float minx = ptsDump[0];
+    for (int k = 1; k < 4; ++k) minx = std::min(minx, ptsDump[k * 2]);
+    const int x0 = std::max(0, static_cast<int>(std::floor(minx)));
+    const int y0 = std::max(0, static_cast<int>(std::floor(lookV0)));
     PoisonStats stLocal;
     const int sPx = fillPoisonLookRaster(
         seedY, look, ySeed0, 0, srcIsBin, 11, fallback, &lookBin,
-        &overlay, poisonStats ? &stLocal : nullptr);
+        overlayY, overlayUv, x0, y0, poisonStats ? &stLocal : nullptr);
     if (poisonStats) *poisonStats = stLocal;
     if (inkDump && !lookBin.empty() && inkDump->type() == CV_8UC1 &&
         inkDump->rows >= imgH && inkDump->cols >= imgW) {
-        float pts[8];
-        oriToQuad(seed, pts);
-        float minx = pts[0], maxx = pts[0], miny = pts[1], maxy = pts[1];
-        for (int k = 1; k < 4; ++k) {
-            minx = std::min(minx, pts[k * 2]);
-            maxx = std::max(maxx, pts[k * 2]);
-            miny = std::min(miny, pts[k * 2 + 1]);
-            maxy = std::max(maxy, pts[k * 2 + 1]);
-        }
-        const int x0 = std::max(0, static_cast<int>(std::floor(minx)));
-        const int y0 = std::max(0, static_cast<int>(std::floor(lookV0)));
         const int x1 = std::min(imgW, x0 + lookBin.cols);
         const int y1 = std::min(imgH, y0 + lookBin.rows);
         if (x1 > x0 && y1 > y0) {
             cv::Mat srcR = lookBin(cv::Rect(0, 0, x1 - x0, y1 - y0));
             cv::Mat dstR = (*inkDump)(cv::Rect(x0, y0, x1 - x0, y1 - y0));
-            cv::bitwise_or(dstR, srcR, dstR);
-        }
-    }
-    if (poisonDump && !overlay.empty() && overlay.type() == CV_8UC3) {
-        if (poisonDump->empty() || poisonDump->type() != CV_8UC3 ||
-            poisonDump->rows < imgH || poisonDump->cols < imgW) {
-            poisonDump->create(imgH, imgW, CV_8UC3);
-            poisonDump->setTo(0);
-        }
-        float pts[8];
-        oriToQuad(seed, pts);
-        float minx = pts[0];
-        for (int k = 1; k < 4; ++k) minx = std::min(minx, pts[k * 2]);
-        const int x0 = std::max(0, static_cast<int>(std::floor(minx)));
-        const int y0 = std::max(0, static_cast<int>(std::floor(lookV0)));
-        const int x1 = std::min(imgW, x0 + overlay.cols);
-        const int y1 = std::min(imgH, y0 + overlay.rows);
-        if (x1 > x0 && y1 > y0) {
-            cv::Mat srcR = overlay(cv::Rect(0, 0, x1 - x0, y1 - y0));
-            cv::Mat dstR = (*poisonDump)(cv::Rect(x0, y0, x1 - x0, y1 - y0));
             srcR.copyTo(dstR);
         }
     }
@@ -3788,15 +3731,6 @@ static void seg7OrientedOne(
                 seedSweep, v0, v1, imgW, imgH, minRun, *sPxOut, sweepOut);
         } catch (const cv::Exception&) {
         }
-        const int y0 = static_cast<int>(std::lround(v0 - lookV0));
-        const int y1 = static_cast<int>(std::lround(v1 - lookV0));
-        const int cropT = std::min(y0, ySeed0);
-        const int cropB = std::max(y1, ySeed1);
-        const int lT = gapJumpTop ? static_cast<int>(std::lround(landTop - lookV0)) : -1;
-        const int lB = gapJumpBot ? static_cast<int>(std::lround(landBot - lookV0)) : -1;
-        packLookInkPng(
-            overlay, cropT, cropB, ySeed0, ySeed1, lT, lB,
-            std::max(1, static_cast<int>(std::lround(seedBh))), sweepOut);
     }
     seed.v0 = v0;
     seed.v1 = v1;
@@ -3945,7 +3879,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode,
     jint boundStrategy, jint tightInsetPx,
     jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
-    jlong poisonPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -3963,15 +3897,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
-    auto* poisonDump = reinterpret_cast<cv::Mat*>(poisonPtr);
+    auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
+    auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
     if (inkDump && scratchFits(inkDump, imgW, imgH)) inkDump->setTo(0);
-    if (poisonDump) {
-        if (poisonDump->empty() || poisonDump->type() != CV_8UC3 ||
-            poisonDump->rows < imgH || poisonDump->cols < imgW) {
-            poisonDump->create(imgH, imgW, CV_8UC3);
-        }
-        poisonDump->setTo(0);
-    }
     std::vector<PoisonStats> poisonPacks;
     poisonPacks.resize(static_cast<size_t>(n));
     if (useChroma) {
@@ -4035,7 +3963,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
         float sPx = 2.f;
         seg7OrientedOne(*src, box, imgW, imgH, op, &sPx,
             boundStrategy, tightInsetPx, srcIsBin, &tele, keepColor,
-            &sweeps[static_cast<size_t>(i)], inkDump, poisonDump,
+            &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
             &poisonPacks[static_cast<size_t>(i)]);
         op[8] = sPx;
         storeTeleArr(env, teleArr, i, tele);

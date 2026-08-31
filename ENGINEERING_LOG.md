@@ -9206,3 +9206,11 @@ packLookInkPng / packSeedBinJpeg wrap resize+imencode in cv::Exception/std::exce
 ## 2026-08-30 - CODE LANDED: skip-tiny-seed-no-abort-dump-20260830-1549
 
 Seeds with either axis < 4 px stay at the det box (energy AABB, oriented 7seg/energy). Dump encode catch + 64-bit dim skip so resize/imencode cannot SIGABRT. Walk for seeds >= 4 px unchanged. Do not deploy.
+
+## 2026-08-30 - Execute start: look-ink-b-crops-takesnapshot-20260830-1931
+
+Dump only: look-ink from B.p/B.s crops + takeSnapshot. Delete packLookInkPng and poisonRgb heaps. Walk/poison/hasBar/<4 skip unchanged. Do not deploy.
+
+## 2026-08-30 - Phase 1: look-ink B.p/B.s crops + takeSnapshot (1931)
+
+Dump uses B.s lookBin ROI and B.p five-state YUV; takeSnapshot scales + cyan/yellow. Deleted packLookInkPng, lookInkPng, poisonRgb BGR heaps. Per-seed n=1 native then snapshot. Do not deploy.
