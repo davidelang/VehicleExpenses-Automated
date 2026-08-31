@@ -666,3 +666,8 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan: `dev-ai-interaction/plans/launcher-pin-permission-mode-ask-20260829-0437-plan.md`
 - Phase 1: `.grok/lib/grok-launch-common.sh` always passes `--permission-mode "${GROK_PERMISSION_MODE:-default}"` so role user `~/.grok/config.toml` `always-approve` does not leak. `GROK_PERMISSION_MODE` still overrides.
 - Out of scope: user configs, `[skills].disabled`, `update-rules` sweep.
+
+## 2026-08-30 - Closed plan contract + fresh execute context
+
+- Plan: `dev-ai-interaction/plans/closed-plan-contract-and-fresh-execute-20260830-1934-plan.md`
+- Phase 1: `dedicated-planner.md` + `execution-subagent.md` — closed Critical Files; no greps/`unless` in the approved file; completeness = named in-scope only.
