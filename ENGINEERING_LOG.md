@@ -676,3 +676,8 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - Plan: `dev-ai-interaction/plans/closed-plan-contract-and-fresh-execute-20260830-1934-plan.md`
 - Phase 2: `.grok/prompts/role-coder.md` — spawn `execution-subagent.md` `isolation=none` in this worktree, or fresh `./run-grok-coder` (no `-c`). Parent does not grep the app.
+
+## 2026-08-30 - Closed Critical Files in AGENT_MANDATES + AGENTS VE-wins
+
+- Plan: `dev-ai-interaction/plans/closed-plan-contract-and-fresh-execute-20260830-1934-plan.md`
+- Phase 3: `AGENT_MANDATES.md` §4 completeness = closed Critical Files; §7 plan-content one-liner. `AGENTS.md` VE-wins: execute body fresh child or fresh coder process; planner still `GROK_SUBAGENTS=0`.
