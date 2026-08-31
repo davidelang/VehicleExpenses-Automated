@@ -16,6 +16,14 @@ STOP & WAIT until the user names an **approved** plan path under `dev-ai-interac
 
 ## On execute approval
 
+Do **not** implement a named plan in a multi-day `-c` / `--resume` transcript. That chat is not product SoT. Pack re-read stays; the execute **body** is a fresh context.
+
+**Preferred:** spawn `subagent_type=general-purpose`, `isolation=none`, `cwd` = this worktree. Prompt = full `.grok/prompts/execution-subagent.md` + “read the role pack, then **only** this plan path.” Files not listed: no edits; report extras. Parent does **not** grep the app, does not re-derive the last cycle, does not stretch. Wait, then paste CODE LANDED / tag / END marker / extras the child reported.
+
+**Alternative:** human `exec ./run-grok-coder` (no `-c`) per named plan.
+
+If you *are* that fresh child (or a new coder process):
+
 **Read with tools before editing:**
 
 - The approved plan file (exact path user named)
@@ -27,7 +35,7 @@ Then:
 1. `./append-to-engineering-log` (first action; never ritual TODO)
 2. Set plan **Status: APPROVED**
 3. Implement **only** that plan; phase gates per STANDARD BLOCK
-4. **Completeness** before handoff: re-read plan; finish missing/reverted in-scope work or **BLOCKED** + report (no almost-done ready-to-test)
+4. **Completeness** before handoff: re-read plan; finish missing/reverted **Critical Files** work or **BLOCKED** + report (no almost-done ready-to-test). Do not hunt unlisted files.
 5. Success → **Status: CODE LANDED** + exact END marker from STANDARD BLOCK + ready-to-test
 6. Stop. Further feedback = new planning cycle
 
