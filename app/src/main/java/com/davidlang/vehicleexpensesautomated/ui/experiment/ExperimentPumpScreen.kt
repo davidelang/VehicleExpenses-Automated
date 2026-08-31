@@ -1577,6 +1577,7 @@ suspend fun runPumpExperiment(
                             listOf(seg.tele),
                             listOf(seg.sweep),
                             listOf(seg.stroke),
+                            reportDir, timestamp, fullRow, branch.name,
                         )
                     }
                     val walks = seeds.indices.map { i ->
@@ -2281,6 +2282,7 @@ suspend fun runPumpExperiment(
                                 listOf(seg.tele),
                                 listOf(seg.sweep),
                                 listOf(seg.stroke),
+                                reportDir, timestamp, fullRow, branch.name,
                             )
                         }
                         val seedBhs = FloatArray(seedQuads.size) { seedQuads[it].shortAxisBh() }
@@ -3895,7 +3897,7 @@ private fun lookInkStripRect(
     )
 }
 
-/** Per-seed look-ink JPEG from B.p via takeSnapshot (seed band 48 px). */
+/** Per-seed look-ink JPEG from B.p via takeSnapshot (fit-inside A.s width × 48). */
 private suspend fun snapshotLookInk(
     seeds: List<android.graphics.Rect>,
     walked: List<android.graphics.Rect>,
@@ -3906,6 +3908,10 @@ private suspend fun snapshotLookInk(
     teles: List<ContentExpandUtils.Seg7Telemetry?> = emptyList(),
     sweeps: List<ContentExpandUtils.InkSweep?> = emptyList(),
     strokes: List<ContentExpandUtils.StrokeWidthInSeed?> = emptyList(),
+    reportDir: File,
+    timestamp: String,
+    fullRow: Int,
+    flowName: String,
 ) {
     val arr = try {
         org.json.JSONArray(branch.metadata["look_ink"] ?: "[]")
@@ -3913,15 +3919,13 @@ private suspend fun snapshotLookInk(
         org.json.JSONArray()
     }
     val boxBase = arr.length()
+    val lookInkDir = File(reportDir, "look_ink")
+    if (!lookInkDir.exists()) lookInkDir.mkdirs()
+    val flowSafe = flowName.replace(Regex("[^A-Za-z0-9._-]+"), "_")
     seeds.forEachIndexed { i, seed ->
         val walk = walked.getOrNull(i) ?: seed
         val strip = lookInkStripRect(seed, walk)
         if (strip.width() < 1 || strip.height() < 1) return@forEachIndexed
-        val seedH = seed.height().coerceAtLeast(1)
-        val div = max(seedH, 12)
-        val sc = 48f / div.toFloat()
-        val tw = (strip.width() * sc).toInt().coerceAtLeast(2)
-        val th = (strip.height() * sc).toInt().coerceAtLeast(2)
         val anns = ArrayList<SnapshotAnnotation>(4)
         val yT = seed.top.coerceIn(0, imgH - 1)
         val yB = (seed.bottom - 1).coerceAtLeast(seed.top).coerceIn(0, imgH - 1)
@@ -3941,19 +3945,25 @@ private suspend fun snapshotLookInk(
             }
         }
         val (b64, _) = OcrUtils.takeSnapshot(
-            NativePaddleEngine.bufferSetB.p, strip, tw, th, anns, null, NativePaddleEngine.bufferSetA,
+            NativePaddleEngine.bufferSetB.p, strip, NativePaddleEngine.bufferSetA.s.width, 48, anns, null, NativePaddleEngine.bufferSetA,
         )
         if (b64.isEmpty()) return@forEachIndexed
-        val recW = tw.coerceIn(2, 4000)
-        val recH = th.coerceIn(2, 3072)
+        val jpeg = Base64.decode(b64, Base64.NO_WRAP)
+        val boxN = boxBase + i + 1
+        val fileName = "${fullRow}_${flowSafe}_${timestamp}_box$boxN.jpg"
+        File(lookInkDir, fileName).writeBytes(jpeg)
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
+        val recW = opts.outWidth.coerceAtLeast(0)
+        val recH = opts.outHeight.coerceAtLeast(0)
         val sweep = sweeps.getOrNull(i)
         val stroke = strokes.getOrNull(i)
         val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
         val minRun = sweep?.minRun ?: 0
         val glareW = 11 * max(sPx, 4)
         val j = org.json.JSONObject()
-            .put("label", "box${boxBase + i + 1}")
-            .put("lookInkB64", b64)
+            .put("label", "box$boxN")
+            .put("lookInkFile", fileName)
             .put("lookInkMime", "image/jpeg")
             .put("recW", recW)
             .put("recH", recH)
@@ -3998,15 +4008,14 @@ private fun pLookInkHtml(br: PumpBranch): String {
     var any = false
     for (j in 0 until arr.length()) {
         val c = arr.optJSONObject(j) ?: continue
-        val b64 = c.optString("lookInkB64")
-        if (b64.isNullOrEmpty()) continue
+        val file = c.optString("lookInkFile")
+        if (file.isNullOrEmpty()) continue
         any = true
         val lab = c.optString("label")
         val recW = c.optInt("recW", 0)
         val recH = c.optInt("recH", 0)
         val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
         val hCss = if (recH > 0) "height:${recH}px;" else "height:auto;"
-        val mime = c.optString("lookInkMime", "image/png").ifBlank { "image/png" }
         val bandTop = c.optBoolean("bandTop", false)
         val bandBot = c.optBoolean("bandBot", false)
         val ccs = c.optJSONArray("ccs")
@@ -4031,7 +4040,7 @@ private fun pLookInkHtml(br: PumpBranch): String {
             if (ccBits.isNotEmpty()) " $ccBits" else ""
         sb.append(
             "<div style='flex:0 0 auto;font-size:9px;'>" +
-                "<img src='data:$mime;base64,$b64' " +
+                "<img src='look_ink/$file' " +
                 "style='$hCss$wCss max-width:none;image-rendering:pixelated;'>" +
                 "<br>$lab $meta</div>",
         )

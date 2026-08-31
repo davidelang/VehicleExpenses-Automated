@@ -264,15 +264,27 @@ object OcrUtils {
             finalW = roiW; finalH = roiH
         }
 
-        Log.d("ExperimentPump", "takeSnapshot: buffer pointed at ${srcW}x${srcH} (roi ${roiW}x${roiH}) target size ${targetW}x${targetH} (0=unlimited) final ${finalW}x${finalH}")
+        val destW = if (scratchYuv != null) scratchYuv.s.width else 4096
+        val destH = if (scratchYuv != null) scratchYuv.s.height else 4096
+        val boxW = min(if (targetW > 0) targetW else destW, min(destW, 4096))
+        val boxH = min(if (targetH > 0) targetH else destH, min(destH, 4096))
+        if (finalW > boxW || finalH > boxH) {
+            val sx = boxW.toFloat() / finalW.toFloat()
+            val sy = boxH.toFloat() / finalH.toFloat()
+            val s = min(sx, sy)
+            finalW = (finalW * s).toInt()
+            finalH = (finalH * s).toInt()
+        }
 
-        // 2-pixel alignment for YUV
+        // 2-pixel alignment for YUV (after fit; keep dest)
         finalW = ((finalW + 1) / 2) * 2
         finalH = ((finalH + 1) / 2) * 2
+        if (finalW > destW) finalW = (destW / 2) * 2
+        if (finalH > destH) finalH = (destH / 2) * 2
+        finalW = finalW.coerceAtLeast(2)
+        finalH = finalH.coerceAtLeast(2)
 
-        // Safety cap. Display images for pump reports must use the PUMP_*_TARGET consts from ExperimentPumpScreen to match CSS containers.
-        finalW = finalW.coerceIn(2, 4000)
-        finalH = finalH.coerceIn(2, 3072)
+        Log.d("ExperimentPump", "takeSnapshot: buffer pointed at ${srcW}x${srcH} (roi ${roiW}x${roiH}) target size ${targetW}x${targetH} (0=unlimited) final ${finalW}x${finalH}")
 
         // Allocation padding (32x2)
         val allocW = ((finalW + 31) / 32) * 32

@@ -9222,3 +9222,11 @@ HTML look ink: B.p 1:1 overlay; takeSnapshot 48 px seed JPEG; no PNG heap. Do no
 ## 2026-08-30 - CODE LANDED: look-ink-b-crops-takesnapshot-20260830-1931
 
 Look-ink dump is B.p/B.s crops + takeSnapshot JPEG (48 px seed). No packLookInkPng / poisonRgb heaps. Per-seed snapshot. Walk/<4 skip unchanged. Do not deploy.
+
+## 2026-08-30 - Execute start: look-ink-fit-snapshot-flush-20260830-2224
+
+takeSnapshot fit-inside dest (A.s width × 48). snapshotLookInk flushes JPEG to reportDir/look_ink/, JSON paths only. Native/walk unchanged. Do not deploy.
+
+## 2026-08-30 - Phase 1: look-ink fit-inside + JPEG flush (2224)
+
+takeSnapshot uniform fit into dest (A.s width × 48); no independent 4000/3072 coerce. snapshotLookInk writes look_ink/*.jpg and JSON paths only. FLOWS updated. Do not deploy.
