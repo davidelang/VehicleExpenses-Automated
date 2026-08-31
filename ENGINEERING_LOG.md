@@ -9218,3 +9218,7 @@ Dump uses B.s lookBin ROI and B.p five-state YUV; takeSnapshot scales + cyan/yel
 ## 2026-08-30 - Phase 2: FLOWS look-ink B.p + takeSnapshot (1931)
 
 HTML look ink: B.p 1:1 overlay; takeSnapshot 48 px seed JPEG; no PNG heap. Do not deploy.
+
+## 2026-08-30 - CODE LANDED: look-ink-b-crops-takesnapshot-20260830-1931
+
+Look-ink dump is B.p/B.s crops + takeSnapshot JPEG (48 px seed). No packLookInkPng / poisonRgb heaps. Per-seed snapshot. Walk/<4 skip unchanged. Do not deploy.
