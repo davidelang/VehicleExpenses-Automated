@@ -9214,3 +9214,7 @@ Dump only: look-ink from B.p/B.s crops + takeSnapshot. Delete packLookInkPng and
 ## 2026-08-30 - Phase 1: look-ink B.p/B.s crops + takeSnapshot (1931)
 
 Dump uses B.s lookBin ROI and B.p five-state YUV; takeSnapshot scales + cyan/yellow. Deleted packLookInkPng, lookInkPng, poisonRgb BGR heaps. Per-seed n=1 native then snapshot. Do not deploy.
+
+## 2026-08-30 - Phase 2: FLOWS look-ink B.p + takeSnapshot (1931)
+
+HTML look ink: B.p 1:1 overlay; takeSnapshot 48 px seed JPEG; no PNG heap. Do not deploy.
