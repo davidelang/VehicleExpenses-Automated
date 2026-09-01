@@ -449,6 +449,7 @@ object ContentExpandUtils {
                         opts.freezeHorzDuringVert, opts.enableJump,
                         opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac,
                         opts.boundStrategy, opts.tightInsetPx, sweepBuf,
+                        try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null },
                     )
                 }
             } catch (_: Throwable) {
@@ -542,19 +543,10 @@ object ContentExpandUtils {
         val vx = -uy
         val vy = ux
 
-        val gx = Mat(); val gy = Mat(); val eng = Mat()
-        Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
-        Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
-        Core.magnitude(gx, gy, eng)
-        gx.release(); gy.release()
+        val eng = fillEnergyLookOrNull(gray) ?: return OrientedExpand(seed, false)
 
-        fun sampleEnergy(px: Float, py: Float): Double {
-            val x = px.roundToInt().coerceIn(0, imgW - 1)
-            val y = py.roundToInt().coerceIn(0, imgH - 1)
-            val buf = FloatArray(1)
-            eng.get(y, x, buf)
-            return buf[0].toDouble()
-        }
+        fun sampleEnergy(px: Float, py: Float): Double =
+            sampleU8(eng, px, py, imgW, imgH).toDouble()
 
         fun stripEnergy(duSign: Float, dvSign: Float, alongU: Boolean): Double {
             // Strip just outside edge: if alongU, outside ±u face; else outside ±v face
@@ -804,7 +796,6 @@ object ContentExpandUtils {
         } else {
             null
         }
-        eng.release()
         val extraLook = if (recordVertEnergy) lookAhead else 0
         val (countQuad, countInfo) = countPullbackOriented(
             gray, seed, finalQuad, extraLook, stopUp, stopDown,
@@ -1087,37 +1078,27 @@ object ContentExpandUtils {
         val imgW = gray.cols()
         val imgH = gray.rows()
         val s = clip(seed, imgW, imgH)
-        val gx = Mat()
-        val gy = Mat()
-        val eng = Mat()
-        Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
-        Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
-        Core.magnitude(gx, gy, eng)
-        gx.release()
-        gy.release()
-        try {
-            fun meanE(sl: Rect): Double {
-                val c = clip(sl, imgW, imgH)
-                if (c.width() <= 0 || c.height() <= 0) return 0.0
-                val roi = eng.submat(c.top, c.bottom, c.left, c.right)
-                val m = Core.mean(roi).`val`[0]
-                roi.release()
-                return m
-            }
-            val il = s.left + 2
-            val it = s.top + 2
-            val ir = s.right - 2
-            val ib = s.bottom - 2
-            val base = if (ir > il && ib > it) meanE(Rect(il, it, ir, ib)) else meanE(s)
-            val thr = opts.energyRatio * max(base, 1e-3)
-            val cap = max(1, (opts.maxFrac * max(1, s.height())).roundToInt())
-            return jumpRetractHorizontalOnEnergy(
-                eng, s, imgW, imgH, thr, cap, opts.jumpFrac, opts.retractClearFrac,
-                seedH,
-            )
-        } finally {
-            eng.release()
+        val eng = scratch ?: fillEnergyLookOrNull(gray) ?: return seed
+        if (scratch != null && !NativeImageUtils.fillEnergyLookU8(gray, eng)) return seed
+        fun meanE(sl: Rect): Double {
+            val c = clip(sl, imgW, imgH)
+            if (c.width() <= 0 || c.height() <= 0) return 0.0
+            val roi = eng.submat(c.top, c.bottom, c.left, c.right)
+            val m = Core.mean(roi).`val`[0]
+            roi.release()
+            return m
         }
+        val il = s.left + 2
+        val it = s.top + 2
+        val ir = s.right - 2
+        val ib = s.bottom - 2
+        val base = if (ir > il && ib > it) meanE(Rect(il, it, ir, ib)) else meanE(s)
+        val thr = opts.energyRatio * max(base, 1e-3)
+        val cap = max(1, (opts.maxFrac * max(1, s.height())).roundToInt())
+        return jumpRetractHorizontalOnEnergy(
+            eng, s, imgW, imgH, thr, cap, opts.jumpFrac, opts.retractClearFrac,
+            seedH,
+        )
     }
 
     /**
@@ -2163,19 +2144,22 @@ object ContentExpandUtils {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
         val imgW = gray.cols()
         val imgH = gray.rows()
-        val gx = Mat()
-        val gy = Mat()
-        val eng = Mat()
         val cU8 = if (chromaMode == 1 && uv != null && !uv.empty()) chromaMagU8(gray, uv) else null
+        val ownEng: Boolean
+        val eng: Mat
         if (cU8 != null && medianInteriorU8(cU8, seed) >= 8.0) {
+            eng = Mat()
             cU8.convertTo(eng, CvType.CV_32F)
+            ownEng = true
         } else {
-            Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
-            Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
-            Core.magnitude(gx, gy, eng)
+            val look = fillEnergyLookOrNull(gray)
+            if (look == null) {
+                cU8?.release()
+                return seed
+            }
+            eng = look
+            ownEng = false
         }
-        gx.release()
-        gy.release()
         cU8?.release()
         try {
             val vSpan0 = (box.v1 - box.v0).coerceAtLeast(1f)
@@ -2268,7 +2252,7 @@ object ContentExpandUtils {
                 u0, u1, box.v0, box.v1,
             ).toQuad()
         } finally {
-            eng.release()
+            if (ownEng) eng.release()
         }
     }
 
@@ -2278,6 +2262,55 @@ object ContentExpandUtils {
         val iy = y.toInt().coerceIn(0, imgH - 1)
         val row = m.get(iy, ix) ?: return 0
         return row[0].toInt() and 0xFF
+    }
+
+    private fun bufferSetALook(): Mat? =
+        try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null }
+
+    /** Fill U8 energy look into A.s. Null if scratch missing or fill fails — no float fallback. */
+    private fun fillEnergyLookOrNull(gray: Mat): Mat? {
+        val dest = bufferSetALook() ?: return null
+        return if (NativeImageUtils.fillEnergyLookU8(gray, dest)) dest else null
+    }
+
+    /** hypot(U8 look, float plane) in place on [f32]. No extra Y float Sobel. */
+    private fun hypotU8LookIntoF32(look: Mat, f32: Mat, imgW: Int, imgH: Int) {
+        val u8 = ByteArray(imgW)
+        val fl = FloatArray(imgW)
+        for (yy in 0 until imgH) {
+            look.get(yy, 0, u8)
+            f32.get(yy, 0, fl)
+            for (x in 0 until imgW) {
+                val a = (u8[x].toInt() and 0xFF).toDouble()
+                fl[x] = hypot(a, fl[x].toDouble()).toFloat()
+            }
+            f32.put(yy, 0, fl)
+        }
+    }
+
+    /** 3×3 Sobel gx, gy in registers (same weights as C++ sobelGxGyU8). */
+    private fun sobelGxGyU8At(gray: Mat, x: Int, y: Int, imgW: Int, imgH: Int): Pair<Int, Int> {
+        fun at(xx: Int, yy: Int): Int {
+            val buf = ByteArray(1)
+            gray.get(yy.coerceIn(0, imgH - 1), xx.coerceIn(0, imgW - 1), buf)
+            return buf[0].toInt() and 0xFF
+        }
+        val p00 = at(x - 1, y - 1)
+        val p01 = at(x, y - 1)
+        val p02 = at(x + 1, y - 1)
+        val p10 = at(x - 1, y)
+        val p12 = at(x + 1, y)
+        val p20 = at(x - 1, y + 1)
+        val p21 = at(x, y + 1)
+        val p22 = at(x + 1, y + 1)
+        val gx = -p00 + p02 - 2 * p10 + 2 * p12 - p20 + p22
+        val gy = -p00 - 2 * p01 - p02 + p20 + 2 * p21 + p22
+        return gx to gy
+    }
+
+    private fun gxAbsAtU8(gray: Mat, x: Int, y: Int, imgW: Int, imgH: Int): Float {
+        val (gx, _) = sobelGxGyU8At(gray, x, y, imgW, imgH)
+        return if (gx < 0) (-gx).toFloat() else gx.toFloat()
     }
 
     /** Seed-interior median on the u/v grid (same as JNI medianInteriorU8). Not AABB. */
@@ -2901,6 +2934,7 @@ object ContentExpandUtils {
             opts.maxFrac, opts.energyRatio, opts.freezeHorzDuringVert, opts.enableJump,
             opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac, opts.chi2K,
             opts.boundStrategy, opts.tightInsetPx, tele, sweepBuf,
+            try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null },
         ) ?: return null
         if (r.size < seeds.size * 11) return null
         val sweeps = parseInkSweeps(sweepBuf, seeds.size)
@@ -3308,6 +3342,17 @@ object ContentExpandUtils {
         return out
     }
 
+    private fun gxAbsRowFromU8(gray: Mat, y: Int, l: Int, r: Int, imgW: Int, imgH: Int): FloatArray {
+        val ya = y.coerceIn(0, imgH - 1)
+        val xa = l.coerceAtLeast(0)
+        val xb = r.coerceAtMost(imgW)
+        val w = (xb - xa).coerceAtLeast(0)
+        if (w <= 0) return FloatArray(0)
+        val out = FloatArray(w)
+        for (i in 0 until w) out[i] = gxAbsAtU8(gray, xa + i, ya, imgW, imgH)
+        return out
+    }
+
     private fun seedGxP90(gx: Mat, seed: Rect, imgW: Int, imgH: Int): Double {
         val c = clip(seed, imgW, imgH)
         if (c.width() < 2 || c.height() < 2) return 8.0
@@ -3318,6 +3363,22 @@ object ContentExpandUtils {
         for (y in c.top until c.bottom) {
             gx.get(y, c.left, row)
             for (v in row) buf[i++] = v
+        }
+        buf.sort()
+        val idx = ((n - 1) * 0.90).toInt().coerceIn(0, n - 1)
+        return buf[idx].toDouble()
+    }
+
+    private fun seedGxP90FromU8(gray: Mat, seed: Rect, imgW: Int, imgH: Int): Double {
+        val c = clip(seed, imgW, imgH)
+        if (c.width() < 2 || c.height() < 2) return 8.0
+        val n = c.width() * c.height()
+        val buf = FloatArray(n)
+        var i = 0
+        for (yy in c.top until c.bottom) {
+            for (xx in c.left until c.right) {
+                buf[i++] = gxAbsAtU8(gray, xx, yy, imgW, imgH)
+            }
         }
         buf.sort()
         val idx = ((n - 1) * 0.90).toInt().coerceIn(0, n - 1)
@@ -3383,10 +3444,7 @@ object ContentExpandUtils {
         val imgH = gray.rows()
         val s = clip(seed, imgW, imgH)
         val e = clip(exist, imgW, imgH)
-        val gx = Mat()
-        Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
-        Core.absdiff(gx, Scalar(0.0), gx)
-        val p90 = seedGxP90(gx, s, imgW, imgH)
+        val p90 = seedGxP90FromU8(gray, s, imgW, imgH)
         val gxThr = max(8.0, 0.55 * p90)
         val look = extraLook.coerceAtLeast(0)
         val y0 = (min(s.top, e.top) - look).coerceAtLeast(0)
@@ -3394,9 +3452,8 @@ object ContentExpandUtils {
         val n = (y1 - y0).coerceAtLeast(1)
         val raw = DoubleArray(n)
         for (i in 0 until n) {
-            raw[i] = runCount(gxAbsRow(gx, y0 + i, s.left, s.right, imgW, imgH), gxThr.toFloat()).toDouble()
+            raw[i] = runCount(gxAbsRowFromU8(gray, y0 + i, s.left, s.right, imgW, imgH), gxThr.toFloat()).toDouble()
         }
-        gx.release()
         val sh = max(1, s.height())
         val sm = smooth1d(raw, sigma = max(1.0, 0.04 * sh))
         val st = (s.top - y0).coerceIn(0, n - 2)
@@ -3542,18 +3599,11 @@ object ContentExpandUtils {
         val vSeedPos = seedBh * 0.5f
         val vExistNeg = eV0
         val vExistPos = eV1
-        val gx = Mat()
-        val gy = Mat()
-        Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
-        Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
-        val gxv = FloatArray(1)
-        val gyv = FloatArray(1)
         fun duAbs(px: Float, py: Float): Float {
             val x = px.roundToInt().coerceIn(0, imgW - 1)
             val y = py.roundToInt().coerceIn(0, imgH - 1)
-            gx.get(y, x, gxv)
-            gy.get(y, x, gyv)
-            return abs(gxv[0] * ux + gyv[0] * uy)
+            val (gxi, gyi) = sobelGxGyU8At(gray, x, y, imgW, imgH)
+            return abs(gxi * ux + gyi * uy)
         }
         val nU = max(4, seedBw.roundToInt())
         val seedBuf = ArrayList<Float>(max(8, nU * max(1, seedBh.roundToInt())))
@@ -3578,8 +3628,6 @@ object ContentExpandUtils {
         val v1 = kotlin.math.ceil(max(vSeedPos, vExistPos) + look).toInt()
         val n = v1 - v0
         if (n < 2) {
-            gx.release()
-            gy.release()
             val aabb = exist.toAabb()
             return exist to CountPullInfo(
                 pulledTop = false, pulledBot = false,
@@ -3604,8 +3652,6 @@ object ContentExpandUtils {
             }
             raw[i] = runCount(row, gxThr.toFloat()).toDouble()
         }
-        gx.release()
-        gy.release()
         val sh = max(1, seedBh.roundToInt())
         val sm = smooth1d(raw, sigma = max(1.0, 0.04 * sh))
         val st = (vSeedNeg - v0).roundToInt().coerceIn(0, n - 2)
@@ -3792,16 +3838,7 @@ object ContentExpandUtils {
         }
         if (r - l < 4 || b - t < 4) return AabbExpand(Rect(l, t, r, b), false)
         val cap = max(1, (maxFrac * max(1, seed.height())).roundToInt())
-        val gx = Mat(); val gy = Mat(); val eng = Mat()
-        Imgproc.Sobel(gray, gx, CvType.CV_32F, 1, 0, 3)
-        Imgproc.Sobel(gray, gy, CvType.CV_32F, 0, 1, 3)
-        when (vertKind) {
-            VertEnergyKind.MAGNITUDE, VertEnergyKind.CHI2 ->
-                Core.magnitude(gx, gy, eng)
-            VertEnergyKind.GX, VertEnergyKind.XYCUT_GX ->
-                Core.absdiff(gx, Scalar(0.0), eng)
-        }
-        gx.release(); gy.release()
+        val eng = fillEnergyLookOrNull(gray) ?: return AabbExpand(Rect(l, t, r, b), false)
         fun meanE(sl: Rect): Double {
             val c = clip(sl, imgW, imgH)
             if (c.width() <= 0 || c.height() <= 0) return 0.0
@@ -3984,7 +4021,6 @@ object ContentExpandUtils {
         } else {
             null
         }
-        eng.release()
         val extraLook = if (recordVertEnergy) lookAhead else 0
         val (countRect, countInfo) = countPullbackVertical(
             gray, seed, finalRect, extraLook, stopUp, stopDown,
@@ -4024,30 +4060,22 @@ object ContentExpandUtils {
         }
         if (r - l < 4 || b - t < 4) return AabbExpand(Rect(l, t, r, b), false)
         val cap = max(1, (maxFrac * max(1, seed.height())).roundToInt())
+        val lookY = fillEnergyLookOrNull(y) ?: return AabbExpand(Rect(l, t, r, b), false)
         val c = chromaMagU8(y, uv)
         val cF = Mat()
         c.convertTo(cF, CvType.CV_32F)
-        val gxY = Mat(); val gyY = Mat(); val magY = Mat()
-        val gxC = Mat(); val gyC = Mat(); val magC = Mat()
+        val gxC = Mat(); val gyC = Mat()
         val vertEng = Mat()
-        val absGxY = Mat(); val absGxC = Mat()
-        Imgproc.Sobel(y, gxY, CvType.CV_32F, 1, 0, 3)
-        Imgproc.Sobel(y, gyY, CvType.CV_32F, 0, 1, 3)
-        Core.magnitude(gxY, gyY, magY)
         Imgproc.Sobel(cF, gxC, CvType.CV_32F, 1, 0, 3)
         Imgproc.Sobel(cF, gyC, CvType.CV_32F, 0, 1, 3)
-        Core.magnitude(gxC, gyC, magC)
         when (vertKind) {
             VertEnergyKind.MAGNITUDE, VertEnergyKind.CHI2 ->
-                Core.magnitude(magY, magC, vertEng)
-            VertEnergyKind.GX, VertEnergyKind.XYCUT_GX -> {
-                Core.absdiff(gxY, Scalar(0.0), absGxY)
-                Core.absdiff(gxC, Scalar(0.0), absGxC)
-                Core.magnitude(absGxY, absGxC, vertEng)
-            }
+                Core.magnitude(gxC, gyC, vertEng)
+            VertEnergyKind.GX, VertEnergyKind.XYCUT_GX ->
+                Core.absdiff(gxC, Scalar(0.0), vertEng)
         }
-        gxY.release(); gyY.release(); gxC.release(); gyC.release()
-        magC.release(); cF.release(); absGxY.release(); absGxC.release()
+        hypotU8LookIntoF32(lookY, vertEng, imgW, imgH)
+        gxC.release(); gyC.release(); cF.release()
         fun meanE(eng: Mat, sl: Rect): Double {
             val cl = clip(sl, imgW, imgH)
             if (cl.width() <= 0 || cl.height() <= 0) return 0.0
@@ -4150,7 +4178,6 @@ object ContentExpandUtils {
         }
         val finalRect = clip(Rect(l, t, r, b), imgW, imgH)
         vertEng.release()
-        magY.release()
         c.release()
         val (countRect, countInfo) = countPullbackVertical(
             y, seed, finalRect, 0, stopUp, stopDown,
@@ -4183,15 +4210,23 @@ object ContentExpandUtils {
         val grayU8 = ByteArray(w * h)
         val sobelU16 = ByteArray(w * h * 2)
         val gpix = ByteArray(1)
-        val epix = FloatArray(1)
+        val epixF = FloatArray(1)
+        val epixU8 = ByteArray(1)
+        val lookU8 = eng.type() == CvType.CV_8UC1
         var gi = 0
         var si = 0
         for (y in t until b) {
             for (x in l until r) {
                 gray.get(y, x, gpix)
                 grayU8[gi++] = gpix[0]
-                eng.get(y, x, epix)
-                val v = (epix[0] * VERT_ENERGY_RAW_SCALE).roundToInt().coerceIn(0, 65535)
+                val raw = if (lookU8) {
+                    eng.get(y, x, epixU8)
+                    (epixU8[0].toInt() and 0xFF).toFloat()
+                } else {
+                    eng.get(y, x, epixF)
+                    epixF[0]
+                }
+                val v = (raw * VERT_ENERGY_RAW_SCALE).roundToInt().coerceIn(0, 65535)
                 sobelU16[si++] = (v and 0xff).toByte()
                 sobelU16[si++] = ((v shr 8) and 0xff).toByte()
             }
