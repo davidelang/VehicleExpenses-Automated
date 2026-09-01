@@ -2320,6 +2320,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
     return energyOrientOnLook(env, grayPtr, seeds, walkEnergyOrientExpand, sweepArr, scratchPtr);
 }
 
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientRetract(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jfloatArray seedsArr, jintArray sweepArr, jlong scratchPtr
+) {
+    return energyOrientOnLook(env, grayPtr, seedsArr, walkEnergyOrientRetract, sweepArr, scratchPtr);
+}
+
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbGrowMany(
     JNIEnv* env, jobject /*thiz*/,
@@ -4997,6 +5005,58 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7O
     if (!arr) return nullptr;
     env->SetFloatArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
     return arr;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientTight(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+) {
+    jfloatArray seeds = insetEnergyOrientSeeds16(env, seedsArr);
+    if (!seeds) seeds = seedsArr;
+    return Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7OrientedMany(
+        env, thiz, grayPtr, uvPtr, scratchPtr, seeds, 0, 0, 16,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientRetract(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+) {
+    return Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7OrientedMany(
+        env, thiz, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 2, 16,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientTight(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+) {
+    jfloatArray seeds = insetEnergyOrientSeeds16(env, seedsArr);
+    if (!seeds) seeds = seedsArr;
+    return Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7OrientedMany(
+        env, thiz, grayPtr, uvPtr, scratchPtr, seeds, 4, 0, 16,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientRetract(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+) {
+    return Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7OrientedMany(
+        env, thiz, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 2, 16,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL

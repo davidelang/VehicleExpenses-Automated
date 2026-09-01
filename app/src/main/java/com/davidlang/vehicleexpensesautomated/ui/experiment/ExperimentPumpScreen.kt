@@ -3714,6 +3714,37 @@ suspend fun runPumpExperiment(
                     energyOrientNative = native,
                     boundNote = boundNote,
                 )
+                fun rotInkOrient(
+                    name: String,
+                    expand: (
+                        org.opencv.core.Mat,
+                        org.opencv.core.Mat?,
+                        List<ContentExpandUtils.OrientedQuad>,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        IntArray?,
+                    ) -> List<ContentExpandUtils.Seg7OrientedExpand>,
+                    chromaNote: String?,
+                    boundNote: String?,
+                ) = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    name,
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = false,
+                    useOriented = true,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = rotExpandMaxFrac,
+                    vertSweep = emptyList(),
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertPadFrac = 0.0f,
+                    orientInk = expand,
+                    chromaNote = chromaNote,
+                    boundNote = boundNote,
+                )
                 fun rotEnergy(bound: Int, name: String) = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
                     "$name: product oriented det + interior-energy; bound=$bound; jump ±u",
@@ -3797,13 +3828,37 @@ suspend fun runPumpExperiment(
                     NativeImageUtils::energyOrientTightNative,
                     "tight",
                 )
-                val procRotEnergyRetract = rotEnergy(2, "rot-energy-retract")
+                val procRotEnergyRetract = rotEnergyOrient(
+                    "rot-energy-retract",
+                    NativeImageUtils::energyOrientRetractNative,
+                    "edge-retract",
+                )
                 val procRotGrayBase = rotGray(0, "rot-gray-base")
-                val procRotGrayTight = rotGray(1, "rot-gray-tight")
-                val procRotGrayRetract = rotGray(2, "rot-gray-retract")
+                val procRotGrayTight = rotInkOrient(
+                    "rot-gray-tight: product oriented det + greyscale Otsu 7seg",
+                    ContentExpandUtils::expandGrayOrientTight,
+                    null,
+                    "tight",
+                )
+                val procRotGrayRetract = rotInkOrient(
+                    "rot-gray-retract: product oriented det + greyscale Otsu 7seg",
+                    ContentExpandUtils::expandGrayOrientRetract,
+                    null,
+                    "edge-retract",
+                )
                 val procRotColorBase = rotColor(0, "rot-color-base")
-                val procRotColorTight = rotColor(1, "rot-color-tight")
-                val procRotColorRetract = rotColor(2, "rot-color-retract")
+                val procRotColorTight = rotInkOrient(
+                    "rot-color-tight: product oriented det + color_adaptive 7seg",
+                    ContentExpandUtils::expandColorOrientTight,
+                    "color_adaptive",
+                    "tight",
+                )
+                val procRotColorRetract = rotInkOrient(
+                    "rot-color-retract: product oriented det + color_adaptive 7seg",
+                    ContentExpandUtils::expandColorOrientRetract,
+                    "color_adaptive",
+                    "edge-retract",
+                )
                 val flowProcessors = buildList {
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
                     add("Set ink-energy-tight" to procInkEnergyTight)

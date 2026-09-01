@@ -540,6 +540,15 @@ object NativeImageUtils {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
         return nativeEnergyOrientTight(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
     }
+    private external fun nativeEnergyOrientRetract(
+        grayPtr: Long, seeds: FloatArray, sweepArr: IntArray?, scratchPtr: Long,
+    ): FloatArray?
+    fun energyOrientRetractNative(
+        gray: Mat, seeds: FloatArray, sweep: IntArray?, scratch: Mat?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        return nativeEnergyOrientRetract(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
+    }
 
     fun energyAabbRetractNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
@@ -715,6 +724,68 @@ object NativeImageUtils {
             boundStrategy, tightInsetPx, teleArr, sweep, combine?.nativeObj ?: 0L,
             overlayY?.nativeObj ?: 0L, overlayUv?.nativeObj ?: 0L, poisonStats,
         )
+    }
+
+    private external fun nativeGrayOrientTight(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): FloatArray?
+    private external fun nativeGrayOrientRetract(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): FloatArray?
+    private external fun nativeColorOrientTight(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): FloatArray?
+    private external fun nativeColorOrientRetract(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): FloatArray?
+
+    private fun orientPtrs(
+        gray: Mat, uv: Mat?, scratch: Mat?, combine: Mat?, overlayY: Mat?, overlayUv: Mat?,
+    ): LongArray = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+
+    fun grayOrientTightNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayOrientTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+    }
+    fun grayOrientRetractNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayOrientRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+    }
+    fun colorOrientTightNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+    }
+    fun colorOrientRetractNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
     }
 
     /** Packed n×8 quads. Jump-retract along ±u. scratch = BufferSet.s. */

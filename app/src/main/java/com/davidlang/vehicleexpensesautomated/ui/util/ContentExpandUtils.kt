@@ -1913,6 +1913,91 @@ object ContentExpandUtils {
      * 7seg walk along the red **normals** (`±v`) in source pixels. Frozen `u` span.
      * Does not pad or jump; caller uses [padOrientedByStrokes] then [jumpRetractOrientedU].
      */
+    private fun expandOrient7seg(
+        gray: Mat,
+        uv: Mat?,
+        seeds: List<OrientedQuad>,
+        scratch: Mat?,
+        combine: Mat?,
+        overlayY: Mat?,
+        overlayUv: Mat?,
+        poisonStats: IntArray?,
+        native: (
+            Mat, Mat?, FloatArray, Mat?, FloatArray, IntArray, Mat?, Mat?, Mat?, IntArray?,
+        ) -> FloatArray?,
+    ): List<Seg7OrientedExpand> {
+        if (seeds.isEmpty()) return emptyList()
+        val packed = FloatArray(seeds.size * 8)
+        seeds.forEachIndexed { i, q ->
+            val p = q.pts
+            val o = i * 8
+            for (k in 0 until 8) packed[o + k] = p[k]
+        }
+        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
+        val r = try {
+            native(gray, uv, packed, scratch, tele, sweepBuf, combine, overlayY, overlayUv, poisonStats)
+        } catch (_: Throwable) {
+            null
+        }
+        if (r == null || r.size < seeds.size * 9) {
+            return seeds.map { Seg7OrientedExpand(it, strokeWidthInSeed(gray, it.toAabb())) }
+        }
+        val sweeps = parseInkSweeps(sweepBuf, seeds.size)
+        val poisons = parsePoisonStats(poisonStats, seeds.size)
+        return seeds.indices.map { i ->
+            val o = i * 9
+            val pts = FloatArray(8) { k -> r[o + k] }
+            val sPx = max(1, r[o + 8].roundToInt())
+            Seg7OrientedExpand(
+                OrientedQuad(pts),
+                StrokeWidthInSeed(
+                    sPx = sPx, vSW = SEG7_MIN_STROKE, hSW = SEG7_MIN_STROKE,
+                    inkFrac = 0f, darkInk = true, usedFallback = false,
+                    droppedGlare = 0, otsuThr = 0, seed = Rect(),
+                ),
+                parseSeg7Tele(tele, i),
+                sweeps.getOrNull(i),
+                poisons.getOrNull(i),
+            )
+        }
+    }
+
+    fun expandGrayOrientTight(
+        gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7OrientedExpand> = expandOrient7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::grayOrientTightNative,
+    )
+    fun expandGrayOrientRetract(
+        gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7OrientedExpand> = expandOrient7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::grayOrientRetractNative,
+    )
+    fun expandColorOrientTight(
+        gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7OrientedExpand> = expandOrient7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::colorOrientTightNative,
+    )
+    fun expandColorOrientRetract(
+        gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7OrientedExpand> = expandOrient7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::colorOrientRetractNative,
+    )
+
     fun expand7segFromOrientedSeedMany(
         gray: Mat,
         uv: Mat?,
