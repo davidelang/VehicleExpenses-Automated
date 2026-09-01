@@ -726,6 +726,7 @@ suspend fun runPumpExperiment(
     jsonWriter.write(jsonHeader)
     logHeapState(context, "after-json-header-write")
     Log.i("PUMP_JSON", "wrote header early, total_photos=$total")
+    val journal = PumpProgressJournal(reportDir, timestamp)
 
     val experimentRecSet = NativePaddleEngine.recBufferSet
     val masterBuffer = BufferSet(4096, 4096)
@@ -767,14 +768,28 @@ suspend fun runPumpExperiment(
     }
 
     try {
+    journal.append("RUN_START") {
+        put("total", total)
+        put("version", BuildConfig.VERSION_NAME)
+    }
     photos.forEachIndexed { index, file ->
         val fullRow = allPhotos.indexOfFirst { it.name == file.name } + 1
         try {
+            journal.append("PHOTO_START") {
+                put("photo", index)
+                put("line", fullRow)
+                put("file", file.name)
+            }
             onLog("Processing ${index + 1}/$total: ${file.name} (line $fullRow)")
 
             val (probedW, probedH) = ImageIngestionProvider.probeDimensions(context, file.absolutePath)
             if (probedW <= 0 || probedH <= 0) {
                 android.util.Log.e("ExperimentPump", "Invalid probe ${probedW}x$probedH for ${file.name}; skipping photo")
+                journal.append("PHOTO_END") {
+                    put("photo", index)
+                    put("line", fullRow)
+                    put("file", file.name)
+                }
                 return@forEachIndexed
             }
             val imgW = probedW
@@ -865,7 +880,7 @@ suspend fun runPumpExperiment(
             // Dynamic Flow Processing
             // Phase 2 dispatch: list-based (flowName, processor) pairs — not index-aligned. Only entries in `flows`
             // are run; the catalog below maps every defined processor by exact flow name.
-            flows.forEach { flowName ->
+            flows.forEachIndexed { col, flowName ->
                 val branch = root.getBranch(flowName)
                 val tFlowStart = System.currentTimeMillis()
                 val tSetupStart = System.currentTimeMillis()
@@ -3575,7 +3590,22 @@ suspend fun runPumpExperiment(
                     ?: error("No processor registered for flow: $flowName")
 
                 tDiscoveryWrapperStart = System.currentTimeMillis()
+                journal.append("COLUMN_START") {
+                    put("col", col)
+                    put("flow", flowName)
+                    put("photo", index)
+                    put("line", fullRow)
+                    put("file", file.name)
+                }
+                val tCol0 = System.currentTimeMillis()
                 processor(workspace, branch, discoveryDetails, imgW, imgH)
+                journal.append("COLUMN_END") {
+                    put("col", col)
+                    put("flow", flowName)
+                    put("elapsed_ms", System.currentTimeMillis() - tCol0)
+                    put("photo", index)
+                    put("line", fullRow)
+                }
                 branch.metadata["t_discovery_wrapper_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
                 // t_discovery_wrapper_ms covers the main body processor / 4-scale discovery call (distinct from inner per-scale t_pd_inference_* / t_pd_native_post_*) for A/B gap attribution
 
@@ -3626,6 +3656,11 @@ suspend fun runPumpExperiment(
             if (!firstPhoto) jsonWriter.write(",\n") else firstPhoto = false
             appendJsonObject(jsonWriter, photoJson, 2, 0)
             jsonWriter.flush()
+            journal.append("PHOTO_END") {
+                put("photo", index)
+                put("line", fullRow)
+                put("file", file.name)
+            }
 
             fragFile.delete()
             Log.i("PUMP_FRAG", "streamed row $fullRow to main JSON, deleted frag (size was $fragSize)")
@@ -3650,8 +3685,10 @@ suspend fun runPumpExperiment(
             Log.w("PUMP_FRAG", "partial run - JSON may be incomplete (no final footer) at row $fullRow")
         }
     }
+        journal.append("RUN_END")
     } finally {
         closePumpHtml()
+        journal.close()
     }
 
     jsonWriter.write(jsonFooter)
