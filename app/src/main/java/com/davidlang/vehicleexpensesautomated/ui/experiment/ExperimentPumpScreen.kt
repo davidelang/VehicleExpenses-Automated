@@ -3722,7 +3722,12 @@ suspend fun runPumpExperiment(
                     chromaNote = "color_adaptive",
                     boundNote = "tight",
                 )
-                val procInkColorRetract = inkColor(2, "ink-color-retract")
+                val procInkColorRetract = makeInkAabbProc(
+                    "ink-color-retract: product det + color_adaptive 7seg; OCR k=0..4; official k=0",
+                    ContentExpandUtils::expandColorAabbRetract,
+                    chromaNote = "color_adaptive",
+                    boundNote = "edge-retract",
+                )
                 val procRotEnergyBase = rotEnergy(0, "rot-energy-base")
                 val procRotEnergyTight = rotEnergy(1, "rot-energy-tight")
                 val procRotEnergyRetract = rotEnergy(2, "rot-energy-retract")
