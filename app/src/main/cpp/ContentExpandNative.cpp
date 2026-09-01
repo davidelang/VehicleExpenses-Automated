@@ -3774,6 +3774,113 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
+static jintArray aabbColorMany(
+    JNIEnv* env,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jint boundStrategy, jint tightInsetPx,
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) {
+        return env->NewIntArray(0);
+    }
+    const jint n4 = env->GetArrayLength(seedsArr);
+    if (n4 <= 0 || n4 % 4 != 0) return env->NewIntArray(0);
+    std::vector<jint> seeds(static_cast<size_t>(n4));
+    env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
+    try {
+    const int imgW = gray->cols, imgH = gray->rows;
+    const int n = n4 / 4;
+    const int glareMult = 11;
+    const jfloat gapFrac = 0.5f;
+    const jfloat minSeedHsToFreeze = 0.f;
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
+    auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
+    auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
+    auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
+    if (inkDump && scratchFits(inkDump, imgW, imgH)) inkDump->setTo(0);
+    std::vector<PoisonStats> poisonPacks;
+    poisonPacks.resize(static_cast<size_t>(n));
+    std::vector<jint> out(static_cast<size_t>(n) * 8, 0);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        int l = seeds[static_cast<size_t>(i) * 4], t = seeds[static_cast<size_t>(i) * 4 + 1];
+        int r = seeds[static_cast<size_t>(i) * 4 + 2], b = seeds[static_cast<size_t>(i) * 4 + 3];
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        const int seedL = l, seedT = t, seedR = r, seedB = b;
+        int ol, ot, orr, ob, sPx, vSW, hSW, fb;
+        Seg7Tele tele{};
+        tele.method = 4.f;
+        cv::Mat localTint;
+        const int seedH = std::max(1, b - t);
+        const int xPadGuess = std::max(1, static_cast<int>(std::lround(
+            0.40f * 2.5f * static_cast<float>(seedH) * static_cast<float>(kJumpMax + 1))));
+        cv::Mat* tintDst = (inkDump && scratchFits(inkDump, imgW, imgH))
+            ? inkDump
+            : (scratchFits(scratch, imgW, imgH) ? scratch : &localTint);
+        const bool ok = uv && fillChromaTintMask(
+            *gray, *uv, l, t, r, b, tintDst, glareMult, xPadGuess, true, &tele);
+        if (ok && tintDst && !tintDst->empty() && !skipTintWalk(true, tele)) {
+            seg7One(*tintDst, l, t, r, b, imgW, imgH,
+                &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
+                gapFrac, minSeedHsToFreeze, glareMult, boundStrategy, tightInsetPx, &tele, true,
+                &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
+                &poisonPacks[static_cast<size_t>(i)]);
+            aabbJumpOnLook(tintDst, &ol, ot, &orr, ob, imgW, imgH,
+                seedT, seedB, seedL, seedR, sPx);
+        } else {
+            if (ok && skipTintWalk(true, tele)) tele.method = 0.f;
+            seg7One(*gray, l, t, r, b, imgW, imgH,
+                &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
+                gapFrac, minSeedHsToFreeze, 11, boundStrategy, tightInsetPx, &tele, ok,
+                &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
+                &poisonPacks[static_cast<size_t>(i)]);
+            aabbJumpOnLook(inkDump, &ol, ot, &orr, ob, imgW, imgH,
+                seedT, seedB, seedL, seedR, sPx);
+        }
+        const int o = i * 8;
+        out[static_cast<size_t>(o)] = ol;
+        out[static_cast<size_t>(o) + 1] = ot;
+        out[static_cast<size_t>(o) + 2] = orr;
+        out[static_cast<size_t>(o) + 3] = ob;
+        out[static_cast<size_t>(o) + 4] = sPx;
+        out[static_cast<size_t>(o) + 5] = vSW;
+        out[static_cast<size_t>(o) + 6] = hSW;
+        out[static_cast<size_t>(o) + 7] = fb;
+        storeTeleArr(env, teleArr, i, tele);
+    }
+    writeSweepArr(env, sweepArr, sweeps);
+    writePoisonArr(env, poisonArr, poisonPacks);
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return aabb7segSeedsOut(env, seeds);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+    } catch (const cv::Exception&) {
+        return aabb7segSeedsOut(env, seeds);
+    } catch (const std::exception&) {
+        return aabb7segSeedsOut(env, seeds);
+    }
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbTight(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+) {
+    jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
+    if (!seeds) seeds = seedsArr;
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seeds, 0, 16,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+}
+
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpMany(
     JNIEnv* env, jobject /*thiz*/,

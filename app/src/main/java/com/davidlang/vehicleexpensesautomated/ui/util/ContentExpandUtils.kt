@@ -1592,6 +1592,15 @@ object ContentExpandUtils {
         NativeImageUtils::grayAabbRetractNative,
     )
 
+    fun expandColorAabbTight(
+        gray: Mat, uv: Mat?, seeds: List<Rect>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7Expand> = expandAabb7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::colorAabbTightNative,
+    )
+
     /**
      * Freeze seed width on the vertical walk. From seed T/B grow while a 1px
      * strip (seed columns only) has an ink run ≥ 0.5`s`. Peek up to
