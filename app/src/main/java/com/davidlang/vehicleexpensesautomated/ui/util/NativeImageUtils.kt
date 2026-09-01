@@ -556,6 +556,11 @@ object NativeImageUtils {
         teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): IntArray?
+    private external fun nativeGrayAabbRetract(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): IntArray?
 
     fun grayAabbTightNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
@@ -565,6 +570,15 @@ object NativeImageUtils {
         if (gray.empty()) return IntArray(0)
         val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
         return nativeGrayAabbTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+    }
+    fun grayAabbRetractNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayAabbRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
     }
 
     private external fun nativeSeg7Many(

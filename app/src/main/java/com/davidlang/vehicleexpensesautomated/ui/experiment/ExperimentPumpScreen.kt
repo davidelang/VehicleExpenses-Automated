@@ -3710,7 +3710,11 @@ suspend fun runPumpExperiment(
                     ContentExpandUtils::expandGrayAabbTight,
                     boundNote = "tight",
                 )
-                val procInkGrayRetract = inkGray(2, "ink-gray-retract")
+                val procInkGrayRetract = makeInkAabbProc(
+                    "ink-gray-retract: product det + greyscale Otsu 7seg; OCR k=0..4; official k=0",
+                    ContentExpandUtils::expandGrayAabbRetract,
+                    boundNote = "edge-retract",
+                )
                 val procInkColorBase = inkColor(0, "ink-color-base")
                 val procInkColorTight = inkColor(1, "ink-color-tight")
                 val procInkColorRetract = inkColor(2, "ink-color-retract")
