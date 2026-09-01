@@ -100,6 +100,46 @@ static void fillRunHists(const cv::Mat& bin, int* histH, int* histV) {
     }
 }
 
+static void fillRunHists(
+    const cv::Mat& look, int l, int t, int r, int b, double thr,
+    int* histH, int* histV
+) {
+    for (int i = 0; i < kRunHistBins; ++i) {
+        histH[i] = 0;
+        histV[i] = 0;
+    }
+    if (look.empty() || look.type() != CV_8UC1) return;
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > look.cols) r = look.cols;
+    if (b > look.rows) b = look.rows;
+    if (r <= l || b <= t || !histH || !histV) return;
+    const float thrF = static_cast<float>(thr);
+    for (int y = t; y < b; ++y) {
+        const uint8_t* p = look.ptr<uint8_t>(y);
+        int run = 0;
+        for (int x = l; x <= r; ++x) {
+            const bool on = x < r && static_cast<float>(p[x]) >= thrF;
+            if (on) ++run;
+            else if (run > 0) {
+                addRunHist(run, histH);
+                run = 0;
+            }
+        }
+    }
+    for (int x = l; x < r; ++x) {
+        int run = 0;
+        for (int y = t; y <= b; ++y) {
+            const bool on = y < b && static_cast<float>(look.ptr<uint8_t>(y)[x]) >= thrF;
+            if (on) ++run;
+            else if (run > 0) {
+                addRunHist(run, histV);
+                run = 0;
+            }
+        }
+    }
+}
+
 static void packSeg7Tele(const Seg7Tele& t, float* dst) {
     dst[0] = t.method;
     dst[1] = t.yInk;
@@ -448,40 +488,6 @@ static void packSeedLookRows(const cv::Mat& lookBin, int y0, int y1, InkSweepPac
     packSeedBinJpeg(lookBin(cv::Range(y0, y1), cv::Range(0, lookBin.cols)), out);
 }
 
-static void packSeedEnergyRect(
-    const cv::Mat& mag, int l, int t, int r, int b, float thr, InkSweepPack* out
-) {
-    if (!out || mag.empty()) return;
-    const int imgH = mag.rows;
-    const int imgW = mag.cols;
-    if (l < 0) l = 0;
-    if (t < 0) t = 0;
-    if (r > imgW) r = imgW;
-    if (b > imgH) b = imgH;
-    if (r <= l || b <= t) return;
-    cv::Mat bin(b - t, r - l, CV_8UC1);
-    if (mag.type() == CV_8UC1) {
-        for (int y = t; y < b; ++y) {
-            const uint8_t* ep = mag.ptr<uint8_t>(y);
-            uint8_t* op = bin.ptr<uint8_t>(y - t);
-            for (int x = l; x < r; ++x) {
-                op[x - l] = static_cast<float>(ep[x]) >= thr ? 255 : 0;
-            }
-        }
-    } else if (mag.type() == CV_32F) {
-        for (int y = t; y < b; ++y) {
-            const float* ep = mag.ptr<float>(y);
-            uint8_t* op = bin.ptr<uint8_t>(y - t);
-            for (int x = l; x < r; ++x) {
-                op[x - l] = ep[x] >= thr ? 255 : 0;
-            }
-        }
-    } else {
-        return;
-    }
-    packSeedBinJpeg(bin, out);
-}
-
 static void fillOrientedEnergySweep(
     const cv::Mat& mag, const Frame& fr,
     float seedCx, float seedCy, float seedBw, float seedBh,
@@ -492,7 +498,7 @@ static bool fillEnergyLookU8(const cv::Mat& gray, cv::Mat* dst);
 static cv::Mat* energyLookAs(jlong scratchPtr, const cv::Mat& gray);
 static void sobelGxGyU8(const cv::Mat& gray, int x, int y, int* gx, int* gy);
 static void countPullYFromU8Gray(
-    const cv::Mat& gray, int sl, int st, int sr, int sb,
+    const cv::Mat& look, int sl, int st, int sr, int sb,
     int el, int et, int er, int eb,
     int imgW, int imgH, bool stopUpEnergy, bool stopDownEnergy,
     int* ct, int* cb, int* pulledT, int* pulledB
@@ -1209,25 +1215,6 @@ static void fillOrientedEnergySweep(
         }
         out->hScores.push_back(static_cast<int>(std::lround(c > 0 ? s / c : 0.0)));
     }
-    const int wu = std::max(1, static_cast<int>(std::lround(seedBw)));
-    const int hv = std::max(1, static_cast<int>(std::lround(seedBh)));
-    cv::Mat seedBin(hv, wu, CV_8UC1);
-    const float thrF = static_cast<float>(thr);
-    for (int y = 0; y < hv; ++y) {
-        uint8_t* row = seedBin.ptr<uint8_t>(y);
-        const float vv = ((y + 0.5f) / hv - 0.5f) * seedBh;
-        for (int x = 0; x < wu; ++x) {
-            const float uu = ((x + 0.5f) / wu - 0.5f) * seedBw;
-            const float px = seedCx + uu * fr.ux + vv * fr.vx;
-            const float py = seedCy + uu * fr.uy + vv * fr.vy;
-            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) {
-                row[x] = 0;
-                continue;
-            }
-            row[x] = sampleEnergy(mag, px, py, fr.imgW, fr.imgH) >= thrF ? 255 : 0;
-        }
-    }
-    packSeedBinJpeg(seedBin, out);
 }
 
 static void fillAabbEnergySweep(
@@ -1273,7 +1260,6 @@ static void fillAabbEnergySweep(
         out->hScores.push_back(static_cast<int>(
             std::lround(meanRectF(hEng, x, st, x + 1, sb, imgW, imgH))));
     }
-    packSeedEnergyRect(vertEng, sl, st, sr, sb, static_cast<float>(thr), out);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -1352,7 +1338,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFillE
 }
 
 static void countPullYFromU8Gray(
-    const cv::Mat& gray, int sl, int st, int sr, int sb,
+    const cv::Mat& look, int sl, int st, int sr, int sb,
     int el, int et, int er, int eb,
     int imgW, int imgH, bool stopUpEnergy, bool stopDownEnergy,
     int* ct, int* cb, int* pulledT, int* pulledB
@@ -1361,36 +1347,48 @@ static void countPullYFromU8Gray(
     *cb = eb;
     *pulledT = 0;
     *pulledB = 0;
-    if (sr <= sl || sb <= st || gray.empty() || gray.type() != CV_8UC1) return;
-    const int sw = sr - sl;
-    auto absGx = [&](int x, int y) -> float {
-        int gx = 0, gy = 0;
-        sobelGxGyU8(gray, x, y, &gx, &gy);
-        (void)gy;
-        return static_cast<float>(std::abs(gx));
-    };
-    std::vector<float> buf;
-    buf.reserve(std::max(1, (sb - st) * sw));
+    if (sr <= sl || sb <= st || look.empty() || look.type() != CV_8UC1) return;
+    int hist[256] = {};
+    int nPix = 0;
     for (int y = st; y < sb; ++y) {
-        for (int x = sl; x < sr; ++x) buf.push_back(absGx(x, y));
+        const uint8_t* p = look.ptr<uint8_t>(y);
+        for (int x = sl; x < sr; ++x) {
+            hist[p[x]]++;
+            ++nPix;
+        }
     }
-    double p90 = 8.0;
-    if (buf.size() >= 2) {
-        std::vector<float> s = buf;
-        std::sort(s.begin(), s.end());
-        const int idx = static_cast<int>((s.size() - 1) * 0.90);
-        p90 = s[std::max(0, std::min(idx, static_cast<int>(s.size()) - 1))];
+    double p90 = 1.0;
+    if (nPix >= 2) {
+        const int target = static_cast<int>((nPix - 1) * 0.90);
+        int acc = 0;
+        p90 = 255.0;
+        for (int v = 0; v < 256; ++v) {
+            acc += hist[v];
+            if (acc > target) {
+                p90 = static_cast<double>(v);
+                break;
+            }
+        }
     }
-    const double gxThr = std::max(8.0, 0.55 * p90);
+    const int thr = std::max(1, static_cast<int>(0.55 * p90));
     const int y0 = std::max(0, std::min(st, et));
     const int y1 = std::min(imgH, std::max(sb, eb));
     const int n = std::max(1, y1 - y0);
-    std::vector<double> raw(n, 0.0);
-    std::vector<float> row(static_cast<size_t>(sw));
+    std::vector<double> raw(static_cast<size_t>(n), 0.0);
+    constexpr int minRun = 3;
     for (int i = 0; i < n; ++i) {
         const int y = y0 + i;
-        for (int x = 0; x < sw; ++x) row[static_cast<size_t>(x)] = absGx(sl + x, y);
-        raw[static_cast<size_t>(i)] = runCountRow(row.data(), sw, static_cast<float>(gxThr));
+        const uint8_t* p = look.ptr<uint8_t>(y);
+        int cnt = 0, run = 0;
+        for (int x = sl; x < sr; ++x) {
+            if (p[x] >= thr) ++run;
+            else {
+                if (run >= minRun) ++cnt;
+                run = 0;
+            }
+        }
+        if (run >= minRun) ++cnt;
+        raw[static_cast<size_t>(i)] = static_cast<double>(cnt);
     }
     const int sh = std::max(1, sb - st);
     std::vector<double> sm;
@@ -1692,7 +1690,7 @@ static jintArray energyAabbOnLook(
         if (r <= l) r = std::min(imgW, l + 1);
         if (b <= t) b = std::min(imgH, t + 1);
         int ct = t, cb = b, pT = 0, pB = 0;
-        countPullYFromU8Gray(*gray, seedL, seedT, seedR, seedB, l, t, r, b,
+        countPullYFromU8Gray(*look, seedL, seedT, seedR, seedB, l, t, r, b,
                    imgW, imgH, stopUpE, stopDownE, &ct, &cb, &pT, &pB);
         const int o = i * 11;
         out[static_cast<size_t>(o) + 0] = l;
@@ -1728,15 +1726,7 @@ static jintArray energyAabbOnLook(
         const int ht = std::max(0, t - 2), hb = std::min(imgH, b + 2);
         const int hl = std::max(0, l), hr = std::min(imgW, r);
         if (hb > ht && hr > hl && !vertEng.empty() && vertEng.type() == CV_8UC1) {
-            cv::Mat eBin(hb - ht, hr - hl, CV_8UC1);
-            for (int yy = ht; yy < hb; ++yy) {
-                uint8_t* op = eBin.ptr<uint8_t>(yy - ht);
-                const uint8_t* ep = vertEng.ptr<uint8_t>(yy);
-                for (int xx = hl; xx < hr; ++xx) {
-                    op[xx - hl] = static_cast<float>(ep[xx]) >= thr ? 255 : 0;
-                }
-            }
-            fillRunHists(eBin, tele.histH, tele.histV);
+            fillRunHists(vertEng, hl, ht, hr, hb, thr, tele.histH, tele.histV);
         }
         storeTeleArr(env, teleArr, i, tele);
         fillAabbEnergySweep(
