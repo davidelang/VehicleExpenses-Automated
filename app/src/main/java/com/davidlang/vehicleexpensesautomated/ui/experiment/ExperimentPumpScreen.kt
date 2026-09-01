@@ -2432,9 +2432,14 @@ suspend fun runPumpExperiment(
                             tightInsetPx = tightInsetPx,
                         )
                         expDiag = seedQuads.map { seed ->
-                            ContentExpandUtils.expandOrientedDiagnose(
+                            val d = ContentExpandUtils.expandOrientedDiagnose(
                                 gray, seed, expandOpts, energyOrientNative,
                             )
+                            val jpeg = OcrUtils.takeSnapshotJpeg(
+                                workspace.s, seed.toAabb(), PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H,
+                                emptyList(), null, NativePaddleEngine.bufferSetB,
+                            ).first
+                            if (jpeg.isEmpty()) d else d.copy(sweep = d.sweep?.copy(threshJpeg = jpeg))
                         }
                         expandedQuads = expDiag.map { it.quad }
                         hitCaps = expDiag.map { it.hitVertCap }
@@ -3053,7 +3058,15 @@ suspend fun runPumpExperiment(
                             val uv = workspace.p.uvMat
                             val energyFn = aabbFn
                             val expDiag = if (energyFn != null) {
-                                energyFn(gray, uv, redPixelList)
+                                val expanded = energyFn(gray, uv, redPixelList)
+                                expanded.mapIndexed { i, d ->
+                                    val seed = redPixelList.getOrNull(i) ?: return@mapIndexed d
+                                    val jpeg = OcrUtils.takeSnapshotJpeg(
+                                        workspace.s, seed, PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H,
+                                        emptyList(), null, NativePaddleEngine.bufferSetB,
+                                    ).first
+                                    if (jpeg.isEmpty()) d else d.copy(sweep = d.sweep?.copy(threshJpeg = jpeg))
+                                }
                             } else {
                                 ContentExpandUtils.expandDiagnoseMany(
                                     gray,
