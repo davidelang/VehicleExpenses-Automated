@@ -530,6 +530,17 @@ object NativeImageUtils {
             gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
         )
     }
+    private external fun nativeEnergyOrientTight(
+        grayPtr: Long, seeds: FloatArray, sweepArr: IntArray?, scratchPtr: Long,
+    ): FloatArray?
+
+    fun energyOrientTightNative(
+        gray: Mat, seeds: FloatArray, sweep: IntArray?, scratch: Mat?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        return nativeEnergyOrientTight(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
+    }
+
     fun energyAabbRetractNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
         tele: FloatArray?, sweep: IntArray?, scratch: Mat?,

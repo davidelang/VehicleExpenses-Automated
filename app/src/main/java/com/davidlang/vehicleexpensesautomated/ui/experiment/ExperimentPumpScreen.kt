@@ -2264,6 +2264,17 @@ suspend fun runPumpExperiment(
                     chromaMode: Int = 0,
                     boundStrategy: Int = 0,
                     tightInsetPx: Int = 16,
+                    energyOrientNative: ((org.opencv.core.Mat, FloatArray, IntArray?, org.opencv.core.Mat?) -> FloatArray?)? = null,
+                    orientInk: ((
+                        org.opencv.core.Mat,
+                        org.opencv.core.Mat?,
+                        List<ContentExpandUtils.OrientedQuad>,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        IntArray?,
+                    ) -> List<ContentExpandUtils.Seg7OrientedExpand>)? = null,
                 ) {
                     fun hunkFromAabb(r: android.graphics.Rect): PumpHunk =
                         PumpHunk(
@@ -2352,7 +2363,7 @@ suspend fun runPumpExperiment(
                     val inkJumpOptsRot: ContentExpandUtils.ExpandOptions?
                     var rotInkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList()
                     val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
-                    if (seg7Stroke) {
+                    if (orientInk != null || seg7Stroke) {
                         val jumpOpts = ContentExpandUtils.ExpandOptions(
                             maxFrac = 0.4f,
                             enableJump = true,
@@ -2368,19 +2379,32 @@ suspend fun runPumpExperiment(
                         val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
                         seedQuads.forEach { q ->
                             val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
-                            val one = ContentExpandUtils.expand7segFromOrientedSeedMany(
-                                gray,
-                                if (expandMode != 0) workspace.p.uvMat else null,
-                                listOf(q),
-                                chromaMode = expandMode,
-                                scratch = workspace.s.mat,
-                                boundStrategy = boundStrategy,
-                                tightInsetPx = tightInsetPx,
-                                combine = bSet.s.mat,
-                                overlayY = bSet.p.mat,
-                                overlayUv = bSet.p.uvMat,
-                                poisonStats = poisonBuf,
-                            )
+                            val one = if (orientInk != null) {
+                                orientInk(
+                                    gray,
+                                    workspace.p.uvMat,
+                                    listOf(q),
+                                    workspace.s.mat,
+                                    bSet.s.mat,
+                                    bSet.p.mat,
+                                    bSet.p.uvMat,
+                                    poisonBuf,
+                                )
+                            } else {
+                                ContentExpandUtils.expand7segFromOrientedSeedMany(
+                                    gray,
+                                    if (expandMode != 0) workspace.p.uvMat else null,
+                                    listOf(q),
+                                    chromaMode = expandMode,
+                                    scratch = workspace.s.mat,
+                                    boundStrategy = boundStrategy,
+                                    tightInsetPx = tightInsetPx,
+                                    combine = bSet.s.mat,
+                                    overlayY = bSet.p.mat,
+                                    overlayUv = bSet.p.uvMat,
+                                    poisonStats = poisonBuf,
+                                )
+                            }
                             val seg = one.first()
                             segs.add(seg)
                             snapshotLookInk(
@@ -2402,15 +2426,19 @@ suspend fun runPumpExperiment(
                             for (k in 0 until 8) seedQuadsOrig[o + k] = p[k]
                         }
                         val sPxs = FloatArray(segs.size) { segs[it].stroke.sPx.toFloat() }
-                        val jumpedQuads = ContentExpandUtils.jumpRetractOrientedUMany(
-                            gray, segs.map { it.quad }, jumpOpts,
-                            uv = if (expandMode != 0) workspace.p.uvMat else null,
-                            chromaMode = expandMode,
-                            scratch = workspace.s.mat,
-                            seedBhs = seedBhs,
-                            seedQuadsOrig = seedQuadsOrig,
-                            sPxs = sPxs,
-                        )
+                        val jumpedQuads = if (orientInk != null) {
+                            segs.map { it.quad }
+                        } else {
+                            ContentExpandUtils.jumpRetractOrientedUMany(
+                                gray, segs.map { it.quad }, jumpOpts,
+                                uv = if (expandMode != 0) workspace.p.uvMat else null,
+                                chromaMode = expandMode,
+                                scratch = workspace.s.mat,
+                                seedBhs = seedBhs,
+                                seedQuadsOrig = seedQuadsOrig,
+                                sPxs = sPxs,
+                            )
+                        }
                         fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> {
                             return segs.indices.map { i ->
                                 ContentExpandUtils.padOrientedByStrokes(
@@ -2464,7 +2492,9 @@ suspend fun runPumpExperiment(
                             tightInsetPx = tightInsetPx,
                         )
                         expDiag = seedQuads.map { seed ->
-                            ContentExpandUtils.expandOrientedDiagnose(gray, seed, expandOpts)
+                            ContentExpandUtils.expandOrientedDiagnose(
+                                gray, seed, expandOpts, energyOrientNative,
+                            )
                         }
                         expandedQuads = expDiag.map { it.quad }
                         hitCaps = expDiag.map { it.hitVertCap }
@@ -2519,7 +2549,7 @@ suspend fun runPumpExperiment(
                     val energyCands: List<RedBoxOcrCandidate>
                     val energyCv: CostVolClassifyResult
                     val tOcrE0 = System.currentTimeMillis()
-                    if (seg7Stroke && inkJumpOptsRot != null) {
+                    if ((seg7Stroke || orientInk != null) && inkJumpOptsRot != null) {
                         val opts = inkJumpOptsRot
                         fun inkQuadsForK(kk: Float): List<ContentExpandUtils.OrientedQuad> {
                             return inkWalkSeeds.indices.map { i ->
@@ -2894,6 +2924,17 @@ suspend fun runPumpExperiment(
                     boundStrategy: Int = 0,
                     tightInsetPx: Int = 16,
                     aabbEnergy: ((org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<ContentExpandUtils.AabbExpand>)? = null,
+                    energyOrientNative: ((org.opencv.core.Mat, FloatArray, IntArray?, org.opencv.core.Mat?) -> FloatArray?)? = null,
+                    orientInk: ((
+                        org.opencv.core.Mat,
+                        org.opencv.core.Mat?,
+                        List<ContentExpandUtils.OrientedQuad>,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        IntArray?,
+                    ) -> List<ContentExpandUtils.Seg7OrientedExpand>)? = null,
                     boundNote: String? = null,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit =
                     { ws, br, det, w, h ->
@@ -2986,6 +3027,8 @@ suspend fun runPumpExperiment(
                                     chromaMode = chromaMode,
                                     boundStrategy = boundStrategy,
                                     tightInsetPx = tightInsetPx,
+                                    energyOrientNative = energyOrientNative,
+                                    orientInk = orientInk,
                                 )
                             } else {
                             detScales.forEach { scale ->
@@ -3651,6 +3694,26 @@ suspend fun runPumpExperiment(
                     chromaMode = 4,
                     boundStrategy = bound,
                 )
+                fun rotEnergyOrient(
+                    name: String,
+                    native: (org.opencv.core.Mat, FloatArray, IntArray?, org.opencv.core.Mat?) -> FloatArray?,
+                    boundNote: String?,
+                ) = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "$name: product oriented det + interior-energy; jump ±u",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = false,
+                    useOriented = true,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = rotExpandMaxFrac,
+                    vertSweep = emptyList(),
+                    energyRatio = 0.65f,
+                    freezeHorzDuringVert = true,
+                    vertPadFrac = 0.0f,
+                    energyOrientNative = native,
+                    boundNote = boundNote,
+                )
                 fun rotEnergy(bound: Int, name: String) = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
                     "$name: product oriented det + interior-energy; bound=$bound; jump ±u",
@@ -3729,7 +3792,11 @@ suspend fun runPumpExperiment(
                     boundNote = "edge-retract",
                 )
                 val procRotEnergyBase = rotEnergy(0, "rot-energy-base")
-                val procRotEnergyTight = rotEnergy(1, "rot-energy-tight")
+                val procRotEnergyTight = rotEnergyOrient(
+                    "rot-energy-tight",
+                    NativeImageUtils::energyOrientTightNative,
+                    "tight",
+                )
                 val procRotEnergyRetract = rotEnergy(2, "rot-energy-retract")
                 val procRotGrayBase = rotGray(0, "rot-gray-base")
                 val procRotGrayTight = rotGray(1, "rot-gray-tight")

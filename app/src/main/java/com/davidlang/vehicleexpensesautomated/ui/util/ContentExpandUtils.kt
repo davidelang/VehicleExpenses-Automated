@@ -416,6 +416,7 @@ object ContentExpandUtils {
         gray: Mat,
         seed: OrientedQuad,
         opts: ExpandOptions = ExpandOptions(),
+        energyNative: ((Mat, FloatArray, IntArray?, Mat?) -> FloatArray?)? = null,
     ): OrientedExpand {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return OrientedExpand(seed, false)
         val imgW = gray.cols()
@@ -423,13 +424,33 @@ object ContentExpandUtils {
         if (!opts.recordVertEnergy) {
             val sweepBuf = inkSweepBuf(1, imgW, imgH)
             val nativeExp = try {
-                NativeImageUtils.expandOrientedNative(
-                    gray, seed.pts,
-                    opts.maxFrac, opts.energyRatio,
-                    opts.freezeHorzDuringVert, opts.enableJump,
-                    opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac,
-                    opts.boundStrategy, opts.tightInsetPx, sweepBuf,
-                )
+                if (energyNative != null) {
+                    val many = energyNative(
+                        gray, seed.pts, sweepBuf,
+                        try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null },
+                    )
+                    if (many != null && many.size >= 13) {
+                        NativeImageUtils.OrientedExpandNative(
+                            cx = many[0], cy = many[1], bw = many[2], bh = many[3],
+                            angDeg = many[4],
+                            stepsVNeg = many[5].toInt(), stepsVPos = many[6].toInt(),
+                            padV = many[7].toInt(),
+                            hitVertCap = many[8] >= 0.5f,
+                            stopEnergyUp = many[9], stopEnergyDown = many[10],
+                            base = many[11], thr = many[12],
+                        )
+                    } else {
+                        null
+                    }
+                } else {
+                    NativeImageUtils.expandOrientedNative(
+                        gray, seed.pts,
+                        opts.maxFrac, opts.energyRatio,
+                        opts.freezeHorzDuringVert, opts.enableJump,
+                        opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac,
+                        opts.boundStrategy, opts.tightInsetPx, sweepBuf,
+                    )
+                }
             } catch (_: Throwable) {
                 null
             }

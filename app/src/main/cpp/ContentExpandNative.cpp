@@ -218,6 +218,7 @@ static bool frameFromQuad(const float* pts, Frame* f) {
 }
 
 static inline float magAt(const cv::Mat& mag, int x, int y) {
+    if (mag.type() == CV_8UC1) return static_cast<float>(mag.ptr<uint8_t>(y)[x]);
     return mag.ptr<float>(y)[x];
 }
 
@@ -2013,6 +2014,310 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
     jfloatArray teleArr, jintArray sweepArr, jlong scratchPtr
 ) {
     return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyRetract, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr);
+}
+
+static jfloatArray energyOrientSeedOut(JNIEnv* env, const jfloat pts[8]) {
+    Frame fr{};
+    if (!frameFromQuad(pts, &fr)) return env->NewFloatArray(0);
+    jfloat out[13] = {
+        fr.cx, fr.cy, fr.bw, fr.bh, fr.angDeg,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+    };
+    jfloatArray arr = env->NewFloatArray(13);
+    if (!arr) return env->NewFloatArray(0);
+    env->SetFloatArrayRegion(arr, 0, 13, out);
+    return arr;
+}
+
+static void walkEnergyOrientExpand(
+    const cv::Mat& mag, const Frame& fr,
+    int cap, double thr, bool freezeHorz,
+    float* cx, float* cy, float* bw, float* bh,
+    int* stepsVNeg, int* stepsVPos,
+    bool* allowVNeg, bool* allowVPos
+) {
+    auto strip = [&](float du, float dv, bool alongU) {
+        return stripEnergy(mag, fr, *cx, *cy, *bw, *bh, du, dv, alongU);
+    };
+    *allowVNeg = strip(0.f, -1.f, false) >= thr;
+    *allowVPos = strip(0.f, +1.f, false) >= thr;
+    *stepsVNeg = 0;
+    *stepsVPos = 0;
+    for (int step = 0; step < cap; ++step) {
+        bool grew = false;
+        if (!freezeHorz) {
+            if (strip(-1.f, 0.f, true) >= thr) {
+                *cx -= 0.5f * fr.ux; *cy -= 0.5f * fr.uy; *bw += 1.f; grew = true;
+            }
+            if (strip(+1.f, 0.f, true) >= thr) {
+                *cx += 0.5f * fr.ux; *cy += 0.5f * fr.uy; *bw += 1.f; grew = true;
+            }
+        }
+        if (*allowVNeg && strip(0.f, -1.f, false) >= thr) {
+            *cx -= 0.5f * fr.vx; *cy -= 0.5f * fr.vy; *bh += 1.f; ++*stepsVNeg; grew = true;
+        }
+        if (*allowVPos && strip(0.f, +1.f, false) >= thr) {
+            *cx += 0.5f * fr.vx; *cy += 0.5f * fr.vy; *bh += 1.f; ++*stepsVPos; grew = true;
+        }
+        if (!grew) break;
+    }
+}
+
+static void walkEnergyOrientRetract(
+    const cv::Mat& mag, const Frame& fr,
+    int cap, double thr, bool /*freezeHorz*/,
+    float* cx, float* cy, float* bw, float* bh,
+    int* stepsVNeg, int* stepsVPos,
+    bool* allowVNeg, bool* allowVPos
+) {
+    auto strip = [&](float du, float dv, bool alongU) {
+        return stripEnergy(mag, fr, *cx, *cy, *bw, *bh, du, dv, alongU);
+    };
+    auto onEdgeV = [&](float dvSign) {
+        return stripEnergy(mag, fr, *cx, *cy, *bw, std::max(2.f, *bh - 1.f),
+            0.f, dvSign, false);
+    };
+    const float seedBh = *bh;
+    *stepsVNeg = 0;
+    *stepsVPos = 0;
+    if (onEdgeV(-1.f) >= thr) {
+        while (*stepsVNeg < cap && strip(0.f, -1.f, false) >= thr) {
+            *cx -= 0.5f * fr.vx; *cy -= 0.5f * fr.vy; *bh += 1.f; ++*stepsVNeg;
+        }
+        *allowVNeg = *stepsVNeg > 0;
+    } else {
+        const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedBh)));
+        int nRetr = 0;
+        while (*bh > 2.f && nRetr < maxRetractPx && onEdgeV(-1.f) < thr) {
+            *cx += 0.5f * fr.vx; *cy += 0.5f * fr.vy; *bh -= 1.f; ++nRetr;
+        }
+        *allowVNeg = false;
+    }
+    if (onEdgeV(+1.f) >= thr) {
+        while (*stepsVPos < cap && strip(0.f, +1.f, false) >= thr) {
+            *cx += 0.5f * fr.vx; *cy += 0.5f * fr.vy; *bh += 1.f; ++*stepsVPos;
+        }
+        *allowVPos = *stepsVPos > 0;
+    } else {
+        const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedBh)));
+        int nRetr = 0;
+        while (*bh > 2.f && nRetr < maxRetractPx && onEdgeV(+1.f) < thr) {
+            *cx -= 0.5f * fr.vx; *cy -= 0.5f * fr.vy; *bh -= 1.f; ++nRetr;
+        }
+        *allowVPos = false;
+    }
+}
+
+using WalkEnergyOrientFn = void (*)(
+    const cv::Mat&, const Frame&,
+    int, double, bool,
+    float*, float*, float*, float*,
+    int*, int*, bool*, bool*);
+
+static jfloatArray runEnergyOrientOne(
+    JNIEnv* env, jlong grayPtr, jfloatArray seedPts, WalkEnergyOrientFn walk,
+    jintArray sweepArr, jlong scratchPtr
+) {
+    const jfloat maxFrac = 0.4f;
+    const jfloat energyRatio = 0.65f;
+    const bool freezeHorz = false;
+    const jfloat jumpFrac = 0.40f;
+    const jfloat retractClearFrac = 0.30f;
+    const jfloat vertPadFrac = 0.f;
+    if (!seedPts || env->GetArrayLength(seedPts) < 8) return env->NewFloatArray(0);
+    jfloat pts[8];
+    env->GetFloatArrayRegion(seedPts, 0, 8, pts);
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1) {
+        return energyOrientSeedOut(env, pts);
+    }
+    try {
+    Frame fr{};
+    if (!frameFromQuad(pts, &fr)) return energyOrientSeedOut(env, pts);
+    fr.imgW = gray->cols;
+    fr.imgH = gray->rows;
+    cv::Mat* look = energyLookAs(scratchPtr, *gray);
+    if (!look || !fillEnergyLookU8(*gray, look)) return energyOrientSeedOut(env, pts);
+    const cv::Mat& mag = *look;
+    float cx = fr.cx, cy = fr.cy, bw = fr.bw, bh = fr.bh;
+    const float seedCx = cx, seedCy = cy, seedBw = bw, seedBh0 = bh;
+    if (bw < 4.f || bh < 4.f) {
+        jfloat out[13] = { cx, cy, bw, bh, fr.angDeg, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
+        jfloatArray arr = env->NewFloatArray(13);
+        if (!arr) return energyOrientSeedOut(env, pts);
+        env->SetFloatArrayRegion(arr, 0, 13, out);
+        return arr;
+    }
+    double baseSum = 0.0;
+    int baseN = 0;
+    const int nu = std::max(4, static_cast<int>(std::lround(bw * 0.6f)));
+    const int nv = std::max(3, static_cast<int>(std::lround(bh * 0.6f)));
+    for (int iu = 0; iu < nu; ++iu) {
+        for (int iv = 0; iv < nv; ++iv) {
+            const float u = ((iu + 0.5f) / nu - 0.5f) * bw * 0.7f;
+            const float v = ((iv + 0.5f) / nv - 0.5f) * bh * 0.7f;
+            const float px = cx + u * fr.ux + v * fr.vx;
+            const float py = cy + u * fr.uy + v * fr.vy;
+            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
+            baseSum += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
+            ++baseN;
+        }
+    }
+    const double base = baseSum / std::max(baseN, 1);
+    const double thr = energyRatio * std::max(base, 1e-3);
+    const float seedBh = bh;
+    const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * seedBh)));
+    int stepsVNeg = 0, stepsVPos = 0;
+    bool allowVNeg = false, allowVPos = false;
+    if (walk) {
+        walk(mag, fr, cap, thr, freezeHorz,
+            &cx, &cy, &bw, &bh, &stepsVNeg, &stepsVPos, &allowVNeg, &allowVPos);
+    }
+    auto strip = [&](float du, float dv, bool alongU) {
+        return stripEnergy(mag, fr, cx, cy, bw, bh, du, dv, alongU);
+    };
+    int padV = 0;
+    if (vertPadFrac > 0.f) {
+        padV = std::max(1, static_cast<int>(std::lround(vertPadFrac * seedBh)));
+        if (allowVNeg) { cx -= 0.5f * fr.vx * padV; cy -= 0.5f * fr.vy * padV; bh += static_cast<float>(padV); }
+        if (allowVPos) { cx += 0.5f * fr.vx * padV; cy += 0.5f * fr.vy * padV; bh += static_cast<float>(padV); }
+    }
+    {
+        const float floorBw = bw, floorCx = cx, floorCy = cy;
+        const float j = std::max(1.f, jumpFrac * bh);
+        bw += 2.f * j;
+        const bool stillText = strip(-1.f, 0.f, true) >= thr || strip(+1.f, 0.f, true) >= thr;
+        if (stillText) {
+            for (int step = 0; step < cap; ++step) {
+                bool grew = false;
+                if (strip(-1.f, 0.f, true) >= thr) { cx -= 0.5f * fr.ux; cy -= 0.5f * fr.uy; bw += 1.f; grew = true; }
+                if (strip(+1.f, 0.f, true) >= thr) { cx += 0.5f * fr.ux; cy += 0.5f * fr.uy; bw += 1.f; grew = true; }
+                if (!grew) break;
+            }
+        } else {
+            while (bw > floorBw + 0.5f && strip(-1.f, 0.f, true) < thr) { cx += 0.5f * fr.ux; cy += 0.5f * fr.uy; bw -= 1.f; }
+            while (bw > floorBw + 0.5f && strip(+1.f, 0.f, true) < thr) { cx -= 0.5f * fr.ux; cy -= 0.5f * fr.uy; bw -= 1.f; }
+            if (bw < floorBw) { bw = floorBw; cx = floorCx; cy = floorCy; }
+            const float clear = std::max(1.f, retractClearFrac * bh);
+            bw += 2.f * clear;
+        }
+    }
+    const int hitVertCap = (stepsVNeg >= cap || stepsVPos >= cap) ? 1 : 0;
+    const float halfSeed = seedBh * 0.5f;
+    auto stripAtSeedV = [&](float offsetFromCenterV) {
+        const int n = std::max(4, static_cast<int>(std::lround(fr.bw)));
+        double sum = 0.0; int cnt = 0;
+        for (int i = 0; i < n; ++i) {
+            const float t = (i + 0.5f) / n - 0.5f;
+            const float u = t * fr.bw;
+            const float px = fr.cx + u * fr.ux + offsetFromCenterV * fr.vx;
+            const float py = fr.cy + u * fr.uy + offsetFromCenterV * fr.vy;
+            if (px < 0 || py < 0 || px >= fr.imgW || py >= fr.imgH) continue;
+            sum += sampleEnergy(mag, px, py, fr.imgW, fr.imgH);
+            ++cnt;
+        }
+        return cnt > 0 ? sum / cnt : 0.0;
+    };
+    const float stopUpE = static_cast<float>(stripAtSeedV(-halfSeed - stepsVNeg - 1.f));
+    const float stopDownE = static_cast<float>(stripAtSeedV(halfSeed + stepsVPos + 1.f));
+    jfloat out[13] = {
+        cx, cy, bw, bh, fr.angDeg,
+        static_cast<jfloat>(stepsVNeg), static_cast<jfloat>(stepsVPos),
+        static_cast<jfloat>(padV), static_cast<jfloat>(hitVertCap),
+        stopUpE, stopDownE, static_cast<jfloat>(base), static_cast<jfloat>(thr),
+    };
+    try {
+        InkSweepPack pack;
+        fillOrientedEnergySweep(
+            mag, fr, seedCx, seedCy, seedBw, seedBh0,
+            std::max(1, static_cast<int>(std::lround(bh))),
+            energyRatio, thr, jumpFrac, &pack);
+        std::vector<InkSweepPack> packs;
+        packs.push_back(std::move(pack));
+        writeSweepArr(env, sweepArr, packs);
+    } catch (const cv::Exception&) {
+    }
+    jfloatArray arr = env->NewFloatArray(13);
+    if (!arr) return energyOrientSeedOut(env, pts);
+    env->SetFloatArrayRegion(arr, 0, 13, out);
+    return arr;
+    } catch (const cv::Exception&) {
+        return energyOrientSeedOut(env, pts);
+    } catch (const std::exception&) {
+        return energyOrientSeedOut(env, pts);
+    }
+}
+
+static jfloatArray insetEnergyOrientSeeds16(JNIEnv* env, jfloatArray seedsArr) {
+    if (!seedsArr) return nullptr;
+    const jint n8 = env->GetArrayLength(seedsArr);
+    if (n8 <= 0 || n8 % 8 != 0) return nullptr;
+    std::vector<jfloat> s(static_cast<size_t>(n8));
+    env->GetFloatArrayRegion(seedsArr, 0, n8, s.data());
+    const int n = n8 / 8;
+    const float ins = 16.f;
+    for (int i = 0; i < n; ++i) {
+        Frame fr{};
+        if (!frameFromQuad(s.data() + i * 8, &fr)) continue;
+        if (fr.bw > 2.f * ins + 2.f) fr.bw -= 2.f * ins;
+        if (fr.bh > 2.f * ins + 2.f) fr.bh -= 2.f * ins;
+        const float hu = fr.bw * 0.5f;
+        const float hv = fr.bh * 0.5f;
+        auto setc = [&](int k, float u, float v) {
+            s[static_cast<size_t>(i) * 8 + k * 2] = fr.cx + u * fr.ux + v * fr.vx;
+            s[static_cast<size_t>(i) * 8 + k * 2 + 1] = fr.cy + u * fr.uy + v * fr.vy;
+        };
+        setc(0, -hu, -hv);
+        setc(1, +hu, -hv);
+        setc(2, +hu, +hv);
+        setc(3, -hu, +hv);
+    }
+    jfloatArray out = env->NewFloatArray(n8);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, n8, s.data());
+    return out;
+}
+
+static jfloatArray energyOrientOnLook(
+    JNIEnv* env, jlong grayPtr, jfloatArray seedsArr, WalkEnergyOrientFn walk, jintArray sweepArr,
+    jlong scratchPtr
+) {
+    if (!seedsArr) return env->NewFloatArray(0);
+    const jint n8 = env->GetArrayLength(seedsArr);
+    if (n8 <= 0 || n8 % 8 != 0) return env->NewFloatArray(0);
+    const int n = n8 / 8;
+    std::vector<jfloat> all(static_cast<size_t>(n) * 13, 0.f);
+    for (int i = 0; i < n; ++i) {
+        jfloat one[8];
+        env->GetFloatArrayRegion(seedsArr, i * 8, 8, one);
+        jfloatArray oneArr = env->NewFloatArray(8);
+        if (!oneArr) continue;
+        env->SetFloatArrayRegion(oneArr, 0, 8, one);
+        jfloatArray r = runEnergyOrientOne(env, grayPtr, oneArr, walk, i == 0 ? sweepArr : nullptr, scratchPtr);
+        if (r && env->GetArrayLength(r) >= 13) {
+            env->GetFloatArrayRegion(r, 0, 13, all.data() + i * 13);
+        } else {
+            Frame fr{};
+            if (frameFromQuad(one, &fr)) {
+                jfloat* d = all.data() + static_cast<size_t>(i) * 13;
+                d[0] = fr.cx; d[1] = fr.cy; d[2] = fr.bw; d[3] = fr.bh; d[4] = fr.angDeg;
+            }
+        }
+    }
+    jfloatArray out = env->NewFloatArray(static_cast<jint>(all.size()));
+    if (!out) return env->NewFloatArray(0);
+    env->SetFloatArrayRegion(out, 0, static_cast<jint>(all.size()), all.data());
+    return out;
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientTight(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jfloatArray seedsArr, jintArray sweepArr, jlong scratchPtr
+) {
+    jfloatArray seeds = insetEnergyOrientSeeds16(env, seedsArr);
+    if (!seeds) seeds = seedsArr;
+    return energyOrientOnLook(env, grayPtr, seeds, walkEnergyOrientExpand, sweepArr, scratchPtr);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
