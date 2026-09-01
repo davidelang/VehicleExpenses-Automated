@@ -484,27 +484,6 @@ object NativeImageUtils {
     private external fun nativeExpandByCharacterAwareDiagnostic(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): Array<Any>?
     private external fun nativeExpandByUniformity(matPtr: Long, l: Int, t: Int, r: Int, b: Int, threshold: Float): IntArray?
     private external fun nativeChromaMag(yPtr: Long, uvPtr: Long, dstPtr: Long): Boolean
-    private external fun nativeAabbGrowMany(
-        grayPtr: Long,
-        uvPtr: Long,
-        seeds: IntArray,
-        chroma: Boolean,
-        vertKind: Int,
-        maxFrac: Float,
-        energyRatio: Float,
-        freezeHorz: Boolean,
-        enableJump: Boolean,
-        jumpFrac: Float,
-        retractClearFrac: Float,
-        vertPadFrac: Float,
-        chi2K: Float,
-        boundStrategy: Int,
-        tightInsetPx: Int,
-        teleArr: FloatArray?,
-        sweepArr: IntArray?,
-        scratchPtr: Long,
-    ): IntArray?
-
     fun chromaMagNative(y: Mat, uv: Mat, dst: Mat): Boolean {
         if (y.empty() || dst.empty()) return false
         return nativeChromaMag(y.nativeObj, uv.nativeObj, dst.nativeObj)
@@ -699,99 +678,6 @@ object NativeImageUtils {
         return nativeColorAabbExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
     }
 
-    private external fun nativeSeg7Many(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray, chromaMode: Int,
-        gapFrac: Float, minSeedHsToFreeze: Float,
-        boundStrategy: Int, tightInsetPx: Int,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-    ): IntArray?
-    private external fun nativeJumpMany(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, boxes: IntArray, chromaMode: Int,
-        maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
-        seedHArr: IntArray?,
-        seedRectArr: IntArray?,
-        sPxArr: IntArray?,
-    ): IntArray?
-
-    fun seg7ManyNative(gray: Mat, uv: Mat?, seeds: IntArray, chroma: Boolean): IntArray? {
-        return seg7ManyNative(gray, uv, seeds, if (chroma) 1 else 0)
-    }
-
-    /** chromaMode: 0 gray, 1 chromaMag, 2/3 tint, 4 color_adaptive. boundStrategy: 0 baseline, 1 tight, 2 edge-retract. */
-    fun seg7ManyNative(
-        gray: Mat, uv: Mat?, seeds: IntArray, chromaMode: Int,
-        gapFrac: Float = 0.5f, minSeedHsToFreeze: Float = 0f, scratch: Mat? = null,
-        boundStrategy: Int = 0, tightInsetPx: Int = 16,
-        tele: FloatArray? = null,
-        sweep: IntArray? = null,
-        combine: Mat? = null,
-        overlayY: Mat? = null,
-        overlayUv: Mat? = null,
-        poisonStats: IntArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return null
-        val n = seeds.size / 4
-        val teleArr = tele ?: if (n > 0) FloatArray(n * SEG7_TELE_N) else null
-        return nativeSeg7Many(
-            gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
-            gapFrac, minSeedHsToFreeze, boundStrategy, tightInsetPx, teleArr, sweep,
-            combine?.nativeObj ?: 0L, overlayY?.nativeObj ?: 0L, overlayUv?.nativeObj ?: 0L, poisonStats,
-        )
-    }
-
-    /** chromaMode: 0 Y Sobel, 1 chromaMag, 2/3 tintMask. scratch = BufferSet.s (no per-box alloc). */
-    fun jumpManyNative(
-        gray: Mat, boxes: IntArray,
-        maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
-        uv: Mat? = null, chromaMode: Int = 0, scratch: Mat? = null,
-        seedHs: IntArray? = null,
-        seedRects: IntArray? = null,
-        sPxs: IntArray? = null,
-    ): IntArray? {
-        if (gray.empty()) return null
-        return nativeJumpMany(
-            gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, boxes, chromaMode,
-            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedHs, seedRects, sPxs,
-        )
-    }
-
-    private external fun nativeSeg7OrientedMany(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray, chromaMode: Int,
-        boundStrategy: Int, tightInsetPx: Int,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
-        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
-    ): FloatArray?
-    private external fun nativeJumpOrientedMany(
-        grayPtr: Long, uvPtr: Long, scratchPtr: Long, quads: FloatArray, chromaMode: Int,
-        maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
-        seedBhArr: FloatArray?,
-        seedQuadArr: FloatArray?,
-        sPxArr: FloatArray?,
-    ): FloatArray?
-
-    /** Packed n×8 seed quads → n×9 (walked 8-float quad + sPx). chromaMode 0 Y, 1 chromaMag, 2/3 tint, 4 color_adaptive. */
-    fun seg7OrientedManyNative(
-        gray: Mat, uv: Mat?, seeds: FloatArray, chromaMode: Int,
-        scratch: Mat? = null,
-        boundStrategy: Int = 0, tightInsetPx: Int = 16,
-        tele: FloatArray? = null,
-        sweep: IntArray? = null,
-        combine: Mat? = null,
-        overlayY: Mat? = null,
-        overlayUv: Mat? = null,
-        poisonStats: IntArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || seeds.isEmpty()) return null
-        val n = seeds.size / 8
-        val teleArr = tele ?: if (n > 0) FloatArray(n * SEG7_TELE_N) else null
-        return nativeSeg7OrientedMany(
-            gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, seeds, chromaMode,
-            boundStrategy, tightInsetPx, teleArr, sweep, combine?.nativeObj ?: 0L,
-            overlayY?.nativeObj ?: 0L, overlayUv?.nativeObj ?: 0L, poisonStats,
-        )
-    }
-
     private external fun nativeGrayOrientTight(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
         teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
@@ -885,68 +771,6 @@ object NativeImageUtils {
     }
 
     /** Packed n×8 quads. Jump-retract along ±u. scratch = BufferSet.s. */
-    fun jumpOrientedManyNative(
-        gray: Mat, quads: FloatArray,
-        maxFrac: Float, energyRatio: Float, jumpFrac: Float, retractClearFrac: Float,
-        uv: Mat? = null, chromaMode: Int = 0, scratch: Mat? = null,
-        seedBhs: FloatArray? = null,
-        seedQuads: FloatArray? = null,
-        sPxs: FloatArray? = null,
-    ): FloatArray? {
-        if (gray.empty() || quads.isEmpty()) return null
-        return nativeJumpOrientedMany(
-            gray.nativeObj, uv?.nativeObj ?: 0L, scratch?.nativeObj ?: 0L, quads, chromaMode,
-            maxFrac, energyRatio, jumpFrac, retractClearFrac, seedBhs, seedQuads, sPxs,
-        )
-    }
-
-    fun aabbGrowManyNative(
-        gray: Mat,
-        uv: Mat?,
-        seeds: IntArray,
-        chroma: Boolean,
-        vertKind: Int,
-        maxFrac: Float,
-        energyRatio: Float,
-        freezeHorz: Boolean,
-        enableJump: Boolean,
-        jumpFrac: Float,
-        retractClearFrac: Float,
-        vertPadFrac: Float,
-        chi2K: Float,
-        boundStrategy: Int = 0,
-        tightInsetPx: Int = 16,
-        tele: FloatArray? = null,
-        sweep: IntArray? = null,
-        scratch: Mat? = null,
-    ): IntArray? {
-        if (gray.empty()) return null
-        val n = seeds.size / 4
-        val teleArr = tele ?: if (n > 0) FloatArray(n * SEG7_TELE_N) else null
-        return nativeAabbGrowMany(
-            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, chroma, vertKind,
-            maxFrac, energyRatio, freezeHorz, enableJump,
-            jumpFrac, retractClearFrac, vertPadFrac, chi2K,
-            boundStrategy, tightInsetPx, teleArr, sweep,
-            scratch?.nativeObj ?: 0L,
-        )
-    }
-
-    private external fun nativeExpandOriented(
-        matPtr: Long,
-        seedPts: FloatArray,
-        maxFrac: Float,
-        energyRatio: Float,
-        freezeHorz: Boolean,
-        enableJump: Boolean,
-        jumpFrac: Float,
-        retractClearFrac: Float,
-        vertPadFrac: Float,
-        boundStrategy: Int,
-        tightInsetPx: Int,
-        sweepArr: IntArray?,
-        scratchPtr: Long,
-    ): FloatArray?
     private external fun nativeCountPullbackOriented(
         matPtr: Long,
         seedPts: FloatArray,
@@ -974,37 +798,6 @@ object NativeImageUtils {
         val base: Float,
         val thr: Float,
     )
-
-    fun expandOrientedNative(
-        gray: Mat,
-        seedPts: FloatArray,
-        maxFrac: Float,
-        energyRatio: Float,
-        freezeHorz: Boolean,
-        enableJump: Boolean,
-        jumpFrac: Float,
-        retractClearFrac: Float,
-        vertPadFrac: Float,
-        boundStrategy: Int = 0,
-        tightInsetPx: Int = 16,
-        sweep: IntArray? = null,
-        scratch: Mat? = null,
-    ): OrientedExpandNative? {
-        val r = nativeExpandOriented(
-            gray.nativeObj, seedPts, maxFrac, energyRatio,
-            freezeHorz, enableJump, jumpFrac, retractClearFrac, vertPadFrac,
-            boundStrategy, tightInsetPx, sweep,
-            scratch?.nativeObj ?: 0L,
-        ) ?: return null
-        if (r.size < 13) return null
-        return OrientedExpandNative(
-            cx = r[0], cy = r[1], bw = r[2], bh = r[3], angDeg = r[4],
-            stepsVNeg = r[5].toInt(), stepsVPos = r[6].toInt(), padV = r[7].toInt(),
-            hitVertCap = r[8] >= 0.5f,
-            stopEnergyUp = r[9], stopEnergyDown = r[10],
-            base = r[11], thr = r[12],
-        )
-    }
 
     data class OrientedCountNative(
         val pulledTop: Boolean,

@@ -1648,24 +1648,7 @@ suspend fun runPumpExperiment(
                     branch.metadata.remove("look_ink")
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     seeds.forEach { seed ->
-                        val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
-                        val one = ContentExpandUtils.expand7segFromSeedMany(
-                            workspace.p.mat,
-                            if (expandMode != 0) workspace.p.uvMat else null,
-                            listOf(seed),
-                            chroma = expandMode == 1,
-                            k = 0f,
-                            chromaMode = expandMode,
-                            gapFrac = gapFrac,
-                            minSeedHsToFreeze = minSeedHsToFreeze,
-                            scratch = workspace.s.mat,
-                            boundStrategy = boundStrategy,
-                            tightInsetPx = tightInsetPx,
-                            combine = bSet.s.mat,
-                            overlayY = bSet.p.mat,
-                            overlayUv = bSet.p.uvMat,
-                            poisonStats = poisonBuf,
-                        ) ?: listOf(
+                        val one = listOf(
                             ContentExpandUtils.Seg7Expand(
                                 seed,
                                 ContentExpandUtils.strokeWidthInSeed(workspace.p.mat, seed),
@@ -1687,24 +1670,7 @@ suspend fun runPumpExperiment(
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
                     }
                     val walked = walks.map { it.second }
-                    val seedHs = IntArray(seeds.size) { seeds[it].height() }
-                    val seedRects = IntArray(seeds.size * 4)
-                    seeds.forEachIndexed { i, s ->
-                        seedRects[i * 4] = s.left
-                        seedRects[i * 4 + 1] = s.top
-                        seedRects[i * 4 + 2] = s.right
-                        seedRects[i * 4 + 3] = s.bottom
-                    }
-                    val sPxs = IntArray(segs.size) { segs[it].stroke.sPx }
-                    val jumpedOnce = ContentExpandUtils.jumpRetractHorizontalMany(
-                        workspace.p.mat, walked, jumpOpts,
-                        uv = if (expandMode != 0) workspace.p.uvMat else null,
-                        chromaMode = expandMode,
-                        scratch = workspace.s.mat,
-                        seedHs = seedHs,
-                        seedRects = seedRects,
-                        sPxs = sPxs,
-                    ) ?: walked
+                    val jumpedOnce = walked
                     fun inkBoxesFor(kk: Float): List<android.graphics.Rect> {
                         return walks.indices.map { i ->
                             ContentExpandUtils.padVertByStrokes(
@@ -1778,11 +1744,7 @@ suspend fun runPumpExperiment(
                             seedHs[seedHsI++] = sh
                         }
                     }
-                    val jumped = ContentExpandUtils.jumpRetractHorizontalMany(
-                        workspace.p.mat, pads, jumpOpts,
-                        scratch = workspace.s.mat,
-                        seedHs = seedHs,
-                    ) ?: pads
+                    val jumped = pads
                     customBlueG = jumped.map { j ->
                         PumpHunk(
                             "",
@@ -2396,18 +2358,11 @@ suspend fun runPumpExperiment(
                                     poisonBuf,
                                 )
                             } else {
-                                ContentExpandUtils.expand7segFromOrientedSeedMany(
-                                    gray,
-                                    if (expandMode != 0) workspace.p.uvMat else null,
-                                    listOf(q),
-                                    chromaMode = expandMode,
-                                    scratch = workspace.s.mat,
-                                    boundStrategy = boundStrategy,
-                                    tightInsetPx = tightInsetPx,
-                                    combine = bSet.s.mat,
-                                    overlayY = bSet.p.mat,
-                                    overlayUv = bSet.p.uvMat,
-                                    poisonStats = poisonBuf,
+                                listOf(
+                                    ContentExpandUtils.Seg7OrientedExpand(
+                                        q,
+                                        ContentExpandUtils.strokeWidthInSeed(gray, q.toAabb()),
+                                    ),
                                 )
                             }
                             val seg = one.first()
@@ -2423,27 +2378,7 @@ suspend fun runPumpExperiment(
                                 reportDir, timestamp, fullRow, branch.name,
                             )
                         }
-                        val seedBhs = FloatArray(seedQuads.size) { seedQuads[it].shortAxisBh() }
-                        val seedQuadsOrig = FloatArray(seedQuads.size * 8)
-                        seedQuads.forEachIndexed { i, q ->
-                            val p = q.pts
-                            val o = i * 8
-                            for (k in 0 until 8) seedQuadsOrig[o + k] = p[k]
-                        }
-                        val sPxs = FloatArray(segs.size) { segs[it].stroke.sPx.toFloat() }
-                        val jumpedQuads = if (orientInk != null) {
-                            segs.map { it.quad }
-                        } else {
-                            ContentExpandUtils.jumpRetractOrientedUMany(
-                                gray, segs.map { it.quad }, jumpOpts,
-                                uv = if (expandMode != 0) workspace.p.uvMat else null,
-                                chromaMode = expandMode,
-                                scratch = workspace.s.mat,
-                                seedBhs = seedBhs,
-                                seedQuadsOrig = seedQuadsOrig,
-                                sPxs = sPxs,
-                            )
-                        }
+                        val jumpedQuads = segs.map { it.quad }
                         fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> {
                             return segs.indices.map { i ->
                                 ContentExpandUtils.padOrientedByStrokes(

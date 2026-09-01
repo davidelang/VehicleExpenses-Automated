@@ -745,74 +745,6 @@ object ContentExpandUtils {
         ratioExpand(seed, v, horiz, imgW, imgH)
 
     /**
-     * L/R jump-retract only (no height walk). Native jump; null → seed.
-     * [seed] is the box to jump from (e.g. a G-vert-padded AABB). Cap = [ExpandOptions.maxFrac]×seedH.
-     */
-    fun jumpRetractHorizontalMany(
-        gray: Mat,
-        boxes: List<Rect>,
-        opts: ExpandOptions,
-        uv: Mat? = null,
-        chromaMode: Int = 0,
-        scratch: Mat? = null,
-        seedHs: IntArray? = null,
-        seedRects: IntArray? = null,
-        sPxs: IntArray? = null,
-    ): List<Rect>? {
-        if (gray.empty() || gray.type() != CvType.CV_8UC1) return boxes
-        if (boxes.isEmpty()) return emptyList()
-        val imgW = gray.cols()
-        val imgH = gray.rows()
-        val packed = IntArray(boxes.size * 4)
-        boxes.forEachIndexed { i, s0 ->
-            val s = clip(s0, imgW, imgH)
-            packed[i * 4] = s.left
-            packed[i * 4 + 1] = s.top
-            packed[i * 4 + 2] = s.right
-            packed[i * 4 + 3] = s.bottom
-        }
-        val packedSeeds = if (seedRects != null && seedRects.size >= boxes.size * 4) {
-            val out = IntArray(boxes.size * 4)
-            for (i in boxes.indices) {
-                val s = clip(
-                    Rect(
-                        seedRects[i * 4], seedRects[i * 4 + 1],
-                        seedRects[i * 4 + 2], seedRects[i * 4 + 3],
-                    ),
-                    imgW, imgH,
-                )
-                out[i * 4] = s.left
-                out[i * 4 + 1] = s.top
-                out[i * 4 + 2] = s.right
-                out[i * 4 + 3] = s.bottom
-            }
-            out
-        } else {
-            seedRects
-        }
-        val r = NativeImageUtils.jumpManyNative(
-            gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
-            uv, chromaMode, scratch, seedHs, packedSeeds, sPxs,
-        ) ?: return null
-        if (r.size < boxes.size * 4) return null
-        return boxes.indices.map { i ->
-            clip(Rect(r[i * 4], r[i * 4 + 1], r[i * 4 + 2], r[i * 4 + 3]), imgW, imgH)
-        }
-    }
-
-    fun jumpRetractHorizontal(
-        gray: Mat, seed: Rect, opts: ExpandOptions,
-        uv: Mat? = null, chromaMode: Int = 0, scratch: Mat? = null,
-        seedH: Int = 0,
-    ): Rect {
-        val seedHs = if (seedH > 0) intArrayOf(seedH) else null
-        val many = jumpRetractHorizontalMany(gray, listOf(seed), opts, uv, chromaMode, scratch, seedHs)
-        if (many != null && many.size == 1) return many[0]
-        if (gray.empty() || gray.type() != CvType.CV_8UC1) return seed
-        return clip(seed, gray.cols(), gray.rows())
-    }
-
-    /**
      * Seed-local 7-seg stroke width. Otsu on the red ROI only (default dark ink);
      * flip to bright if dark is not the minority ([SEG7_INK_FLIP_FRAC]).
      * Drop CCs wider than 11× first-pass `s` (glare sheets) then odo H-path:
@@ -1342,99 +1274,6 @@ object ContentExpandUtils {
     )
 
     /**
-     * Freeze seed width on the vertical walk. From seed T/B grow while a 1px
-     * strip (seed columns only) has an ink run ≥ 0.5`s`. Peek up to
-     * [SEG7_GAP_FRAC]`s` outside the red; freeze that side if the peek is empty.
-     * Stop after a gap ≥ [SEG7_GAP_FRAC]`s` or [SEG7_VERT_CAP_FRAC]×seedH per
-     * side (safety). Does **not** pad; caller uses [padVertByStrokes] for k=0 official (0 pad) / k>0 extra.
-     * Horizontal jump-retract is the caller's job ([jumpRetractHorizontal]).
-     */
-    fun expand7segFromSeedMany(
-        gray: Mat,
-        uv: Mat?,
-        seeds: List<Rect>,
-        chroma: Boolean,
-        k: Float = SEG7_K,
-        j: Float = SEG7_J,
-        chromaMode: Int = -1,
-        gapFrac: Float = SEG7_GAP_FRAC,
-        minSeedHsToFreeze: Float = 0f,
-        scratch: Mat? = null,
-        boundStrategy: Int = 0,
-        tightInsetPx: Int = 16,
-        combine: Mat? = null,
-        overlayY: Mat? = null,
-        overlayUv: Mat? = null,
-        poisonStats: IntArray? = null,
-    ): List<Seg7Expand>? {
-        val mode = if (chromaMode >= 0) chromaMode else if (chroma) 1 else 0
-        if (gray.empty() || gray.type() != CvType.CV_8UC1) {
-            return seeds.map { Seg7Expand(it, strokeWidthInSeed(gray, it), k, j) }
-        }
-        if (seeds.isEmpty()) return emptyList()
-        val imgW = gray.cols()
-        val imgH = gray.rows()
-        val packed = IntArray(seeds.size * 4)
-        seeds.forEachIndexed { i, s0 ->
-            val s = clip(s0, imgW, imgH)
-            packed[i * 4] = s.left
-            packed[i * 4 + 1] = s.top
-            packed[i * 4 + 2] = s.right
-            packed[i * 4 + 3] = s.bottom
-        }
-        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
-        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
-        val r = NativeImageUtils.seg7ManyNative(
-            gray, uv, packed, mode, gapFrac, minSeedHsToFreeze, scratch,
-            boundStrategy, tightInsetPx, tele, sweepBuf, combine, overlayY, overlayUv, poisonStats,
-        ) ?: return null
-        if (r.size < seeds.size * 8) return null
-        val sweeps = parseInkSweeps(sweepBuf, seeds.size)
-        val poisons = parsePoisonStats(poisonStats, seeds.size)
-        return seeds.indices.map { i ->
-            val o = i * 8
-            val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
-            val sPx = max(1, r[o + 4])
-            val vSW = r[o + 5]
-            val hSW = r[o + 6]
-            val fb = r[o + 7] != 0
-            val seed = clip(seeds[i], imgW, imgH)
-            Seg7Expand(
-                rect,
-                StrokeWidthInSeed(
-                    sPx = sPx, vSW = vSW, hSW = hSW,
-                    inkFrac = 0f, darkInk = true, usedFallback = fb,
-                    droppedGlare = 0, otsuThr = 0, seed = seed,
-                ),
-                k, j,
-                parseSeg7Tele(tele, i),
-                sweeps.getOrNull(i),
-                poisons.getOrNull(i),
-            )
-        }
-    }
-
-    fun expand7segFromSeed(
-        gray: Mat,
-        seed: Rect,
-        k: Float = SEG7_K,
-        j: Float = SEG7_J,
-        @Suppress("UNUSED_PARAMETER") doHorizontal: Boolean = false,
-        gapFrac: Float = SEG7_GAP_FRAC,
-        minSeedHsToFreeze: Float = 0f,
-    ): Seg7Expand {
-        val many = expand7segFromSeedMany(
-            gray, null, listOf(seed), chroma = false, k, j,
-            gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
-        )
-        if (many != null && many.size == 1) return many[0]
-        val stroke = strokeWidthInSeed(gray, seed)
-        val rect = if (gray.empty() || gray.type() != CvType.CV_8UC1) seed
-        else clip(seed, gray.cols(), gray.rows())
-        return Seg7Expand(rect, stroke, k, j)
-    }
-
-    /**
      * Per-luma chroma magnitude, 8UC1, same size as [y]. NV21 [uv] is 8UC2
      * (128=neutral), typically 4:2:0 half-res. Each Y pixel samples the covering
      * even 4:2:0 site: `min(255, hypot(U-128, V-128))`. Caller releases the Mat.
@@ -1446,30 +1285,6 @@ object ContentExpandUtils {
         if (y.empty() || w <= 0 || h <= 0) return out
         NativeImageUtils.chromaMagNative(y, uv, out)
         return out
-    }
-
-    /**
-     * Ink walk on chromaMag (high chroma = ink). Same gap/peek/cap as
-     * [expand7segFromSeed]. If seed median chromaMag &lt; 8, Y fallback
-     * ([expand7segFromSeed] on luma) for white LCD.
-     */
-    fun expand7segFromSeedChroma(
-        y: Mat,
-        uv: Mat,
-        seed: Rect,
-        k: Float = SEG7_K,
-        j: Float = SEG7_J,
-        chromaMode: Int = 1,
-    ): Seg7Expand {
-        val many = expand7segFromSeedMany(
-            y, uv, listOf(seed), chroma = chromaMode != 0, k, j, chromaMode = chromaMode,
-            gapFrac = SEG7_GAP_FRAC, minSeedHsToFreeze = 0f,
-        )
-        if (many != null && many.size == 1) return many[0]
-        val stroke = strokeWidthInSeed(y, seed)
-        val rect = if (y.empty() || y.type() != CvType.CV_8UC1) seed
-        else clip(seed, y.cols(), y.rows())
-        return Seg7Expand(rect, stroke, k, j)
     }
 
     /**
@@ -1614,70 +1429,6 @@ object ContentExpandUtils {
         NativeImageUtils::colorOrientExpandNative,
     )
 
-    fun expand7segFromOrientedSeedMany(
-        gray: Mat,
-        uv: Mat?,
-        seeds: List<OrientedQuad>,
-        chromaMode: Int = 0,
-        scratch: Mat? = null,
-        boundStrategy: Int = 0,
-        tightInsetPx: Int = 16,
-        combine: Mat? = null,
-        overlayY: Mat? = null,
-        overlayUv: Mat? = null,
-        poisonStats: IntArray? = null,
-    ): List<Seg7OrientedExpand> {
-        if (seeds.isEmpty()) return emptyList()
-        val packed = FloatArray(seeds.size * 8)
-        seeds.forEachIndexed { i, q ->
-            val p = q.pts
-            val o = i * 8
-            for (k in 0 until 8) packed[o + k] = p[k]
-        }
-        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
-        val imgW = gray.cols()
-        val imgH = gray.rows()
-        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
-        val native = NativeImageUtils.seg7OrientedManyNative(
-            gray, uv, packed, chromaMode, scratch,
-            boundStrategy, tightInsetPx, tele, sweepBuf, combine, overlayY, overlayUv, poisonStats,
-        )
-        if (native != null && native.size >= seeds.size * 9) {
-            val sweeps = parseInkSweeps(sweepBuf, seeds.size)
-            val poisons = parsePoisonStats(poisonStats, seeds.size)
-            return seeds.indices.map { i ->
-                val o = i * 9
-                val pts = FloatArray(8) { k -> native[o + k] }
-                val sPx = max(1, native[o + 8].roundToInt())
-                Seg7OrientedExpand(
-                    OrientedQuad(pts),
-                    StrokeWidthInSeed(
-                        sPx = sPx, vSW = SEG7_MIN_STROKE, hSW = SEG7_MIN_STROKE,
-                        inkFrac = 0f, darkInk = true, usedFallback = false,
-                        droppedGlare = 0, otsuThr = 0, seed = Rect(),
-                    ),
-                    parseSeg7Tele(tele, i),
-                    sweeps.getOrNull(i),
-                    poisons.getOrNull(i),
-                )
-            }
-        }
-        return seeds.map { q ->
-            val aabb = q.toAabb()
-            val stroke = if (gray.empty()) {
-                StrokeWidthInSeed(
-                    sPx = max(2, (SEG7_FALLBACK_H_FRAC * q.shortAxisBh()).roundToInt()),
-                    vSW = SEG7_MIN_STROKE, hSW = SEG7_MIN_STROKE,
-                    inkFrac = 0f, darkInk = true, usedFallback = true,
-                    droppedGlare = 0, otsuThr = 0, seed = aabb,
-                )
-            } else {
-                strokeWidthInSeed(gray, aabb)
-            }
-            Seg7OrientedExpand(q, stroke)
-        }
-    }
-
     /** k-pad along `±v`, remaining [SEG7_VERT_CAP_FRAC]×seed `bh` per side. Frozen sides still pad. */
     fun padOrientedByStrokes(
         walked: OrientedQuad,
@@ -1710,54 +1461,6 @@ object ContentExpandUtils {
             box.u0 - pad, box.u1 + pad, box.v0, box.v1,
         ).toQuad()
     }
-
-    /**
-     * Jump-retract along `±u` (long axis) in source. Same energy jump / grow-if-text /
-     * retract / retractClear as AABB [jumpRetractHorizontal]. Does not AABB the box.
-     */
-    fun jumpRetractOrientedUMany(
-        gray: Mat,
-        seeds: List<OrientedQuad>,
-        opts: ExpandOptions,
-        uv: Mat? = null,
-        chromaMode: Int = 0,
-        scratch: Mat? = null,
-        seedBhs: FloatArray? = null,
-        seedQuadsOrig: FloatArray? = null,
-        sPxs: FloatArray? = null,
-    ): List<OrientedQuad> {
-        if (seeds.isEmpty()) return emptyList()
-        val packed = FloatArray(seeds.size * 8)
-        seeds.forEachIndexed { i, q ->
-            val p = q.pts
-            val o = i * 8
-            for (k in 0 until 8) packed[o + k] = p[k]
-        }
-        val native = NativeImageUtils.jumpOrientedManyNative(
-            gray, packed, opts.maxFrac, opts.energyRatio, opts.jumpFrac, opts.retractClearFrac,
-            uv, chromaMode, scratch, seedBhs, seedQuadsOrig, sPxs,
-        )
-        if (native != null && native.size >= seeds.size * 8) {
-            return seeds.indices.map { i ->
-                val o = i * 8
-                OrientedQuad(FloatArray(8) { k -> native[o + k] })
-            }
-        }
-        return seeds
-    }
-
-    fun jumpRetractOrientedU(
-        gray: Mat,
-        seed: OrientedQuad,
-        opts: ExpandOptions,
-        uv: Mat? = null,
-        chromaMode: Int = 0,
-        scratch: Mat? = null,
-        seedBh: Float = 0f,
-    ): OrientedQuad = jumpRetractOrientedUMany(
-        gray, listOf(seed), opts, uv, chromaMode, scratch,
-        seedBhs = if (seedBh > 0f) floatArrayOf(seedBh) else null,
-    ).firstOrNull() ?: seed
     private fun dropWideComponents(bin: Mat, glareW: Int) {
         if (bin.empty() || glareW <= 0) return
         val labels = Mat()
