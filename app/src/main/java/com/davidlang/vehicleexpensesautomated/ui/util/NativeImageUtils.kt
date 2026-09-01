@@ -502,12 +502,20 @@ object NativeImageUtils {
         tightInsetPx: Int,
         teleArr: FloatArray?,
         sweepArr: IntArray?,
+        scratchPtr: Long,
     ): IntArray?
 
     fun chromaMagNative(y: Mat, uv: Mat, dst: Mat): Boolean {
         if (y.empty() || dst.empty()) return false
         return nativeChromaMag(y.nativeObj, uv.nativeObj, dst.nativeObj)
     }
+
+    fun fillEnergyLookU8(gray: Mat, dest: Mat): Boolean {
+        if (gray.empty() || dest.empty()) return false
+        return nativeFillEnergyLookU8(gray.nativeObj, dest.nativeObj)
+    }
+
+    private external fun nativeFillEnergyLookU8(grayPtr: Long, destPtr: Long): Boolean
 
     const val SEG7_HIST_BINS: Int = 32
     const val SEG7_TELE_N: Int = 21 + SEG7_HIST_BINS * 2
@@ -822,6 +830,7 @@ object NativeImageUtils {
         tightInsetPx: Int = 16,
         tele: FloatArray? = null,
         sweep: IntArray? = null,
+        scratch: Mat? = null,
     ): IntArray? {
         if (gray.empty()) return null
         val n = seeds.size / 4
@@ -831,6 +840,7 @@ object NativeImageUtils {
             maxFrac, energyRatio, freezeHorz, enableJump,
             jumpFrac, retractClearFrac, vertPadFrac, chi2K,
             boundStrategy, tightInsetPx, teleArr, sweep,
+            scratch?.nativeObj ?: 0L,
         )
     }
 
@@ -847,6 +857,7 @@ object NativeImageUtils {
         boundStrategy: Int,
         tightInsetPx: Int,
         sweepArr: IntArray?,
+        scratchPtr: Long,
     ): FloatArray?
     private external fun nativeCountPullbackOriented(
         matPtr: Long,
@@ -889,11 +900,13 @@ object NativeImageUtils {
         boundStrategy: Int = 0,
         tightInsetPx: Int = 16,
         sweep: IntArray? = null,
+        scratch: Mat? = null,
     ): OrientedExpandNative? {
         val r = nativeExpandOriented(
             gray.nativeObj, seedPts, maxFrac, energyRatio,
             freezeHorz, enableJump, jumpFrac, retractClearFrac, vertPadFrac,
             boundStrategy, tightInsetPx, sweep,
+            scratch?.nativeObj ?: 0L,
         ) ?: return null
         if (r.size < 13) return null
         return OrientedExpandNative(

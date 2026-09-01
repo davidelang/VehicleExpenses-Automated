@@ -451,7 +451,7 @@ static void packSeedLookRows(const cv::Mat& lookBin, int y0, int y1, InkSweepPac
 static void packSeedEnergyRect(
     const cv::Mat& mag, int l, int t, int r, int b, float thr, InkSweepPack* out
 ) {
-    if (!out || mag.empty() || mag.type() != CV_32F) return;
+    if (!out || mag.empty()) return;
     const int imgH = mag.rows;
     const int imgW = mag.cols;
     if (l < 0) l = 0;
@@ -460,12 +460,24 @@ static void packSeedEnergyRect(
     if (b > imgH) b = imgH;
     if (r <= l || b <= t) return;
     cv::Mat bin(b - t, r - l, CV_8UC1);
-    for (int y = t; y < b; ++y) {
-        const float* ep = mag.ptr<float>(y);
-        uint8_t* op = bin.ptr<uint8_t>(y - t);
-        for (int x = l; x < r; ++x) {
-            op[x - l] = ep[x] >= thr ? 255 : 0;
+    if (mag.type() == CV_8UC1) {
+        for (int y = t; y < b; ++y) {
+            const uint8_t* ep = mag.ptr<uint8_t>(y);
+            uint8_t* op = bin.ptr<uint8_t>(y - t);
+            for (int x = l; x < r; ++x) {
+                op[x - l] = static_cast<float>(ep[x]) >= thr ? 255 : 0;
+            }
         }
+    } else if (mag.type() == CV_32F) {
+        for (int y = t; y < b; ++y) {
+            const float* ep = mag.ptr<float>(y);
+            uint8_t* op = bin.ptr<uint8_t>(y - t);
+            for (int x = l; x < r; ++x) {
+                op[x - l] = ep[x] >= thr ? 255 : 0;
+            }
+        }
+    } else {
+        return;
     }
     packSeedBinJpeg(bin, out);
 }
@@ -475,6 +487,15 @@ static void fillOrientedEnergySweep(
     float seedCx, float seedCy, float seedBw, float seedBh,
     int walkedH, float energyRatio, double thr, float jumpFrac,
     InkSweepPack* out
+);
+static bool fillEnergyLookU8(const cv::Mat& gray, cv::Mat* dst);
+static cv::Mat* energyLookAs(jlong scratchPtr, const cv::Mat& gray);
+static void sobelGxGyU8(const cv::Mat& gray, int x, int y, int* gx, int* gy);
+static void countPullYFromU8Gray(
+    const cv::Mat& gray, int sl, int st, int sr, int sb,
+    int el, int et, int er, int eb,
+    int imgW, int imgH, bool stopUpEnergy, bool stopDownEnergy,
+    int* ct, int* cb, int* pulledT, int* pulledB
 );
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -486,7 +507,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     jboolean freezeHorz, jboolean enableJump,
     jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac,
     jint boundStrategy, jint tightInsetPx,
-    jintArray sweepArr
+    jintArray sweepArr,
+    jlong scratchPtr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
@@ -499,12 +521,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     fr.imgW = gray->cols;
     fr.imgH = gray->rows;
 
-    cv::Mat gx, gy, mag;
-    cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
-    cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
-    cv::magnitude(gx, gy, mag);
-    gx.release();
-    gy.release();
+    cv::Mat* look = energyLookAs(scratchPtr, *gray);
+    if (!look || !fillEnergyLookU8(*gray, look)) return nullptr;
+    const cv::Mat& mag = *look;
 
     float cx = fr.cx, cy = fr.cy, bw = fr.bw, bh = fr.bh;
     if (boundStrategy == 1) {
@@ -797,9 +816,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCount
     const float vExistNeg = eV0;
     const float vExistPos = eV1;
 
-    cv::Mat gx, gy;
-    cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
-    cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
     auto duAbs = [&](float px, float py) -> float {
         int x = static_cast<int>(std::lround(px));
         int y = static_cast<int>(std::lround(py));
@@ -807,9 +823,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCount
         if (y < 0) y = 0;
         if (x >= seedFr.imgW) x = seedFr.imgW - 1;
         if (y >= seedFr.imgH) y = seedFr.imgH - 1;
-        const float gxv = gx.ptr<float>(y)[x];
-        const float gyv = gy.ptr<float>(y)[x];
-        return std::fabs(gxv * ux + gyv * uy);
+        int gxi = 0, gyi = 0;
+        sobelGxGyU8(*gray, x, y, &gxi, &gyi);
+        return std::fabs(static_cast<float>(gxi) * ux + static_cast<float>(gyi) * uy);
     };
 
     const int nU = std::max(4, static_cast<int>(std::lround(seedBw)));
@@ -846,8 +862,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCount
         }
         raw[i] = static_cast<double>(runCount(row, static_cast<float>(gxThr)));
     }
-    gx.release();
-    gy.release();
 
     const int sh = std::max(1, static_cast<int>(std::lround(seedBh)));
     std::vector<double> sm;
@@ -1544,7 +1558,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeChrom
 }
 
 /** 3×3 Sobel weights (ksize=3) at one pixel; gx/gy in registers (about ±1020). */
-static inline void sobelGxGyU8(const cv::Mat& gray, int x, int y, int* gx, int* gy) {
+static void sobelGxGyU8(const cv::Mat& gray, int x, int y, int* gx, int* gy) {
     const int h = gray.rows, w = gray.cols;
     auto at = [&](int yy, int xx) -> int {
         if (xx < 0) xx = 0;
@@ -1589,6 +1603,17 @@ static cv::Mat* energyLookAs(jlong scratchPtr, const cv::Mat& gray) {
     const int h = gray.rows, w = gray.cols;
     if (s && !s->empty() && s->type() == CV_8UC1 && s->rows >= h && s->cols >= w) return s;
     return nullptr;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFillEnergyLookU8(
+    JNIEnv* /*env*/, jobject /*thiz*/,
+    jlong grayPtr, jlong destPtr
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    auto* dest = reinterpret_cast<cv::Mat*>(destPtr);
+    if (!gray || !dest) return JNI_FALSE;
+    return fillEnergyLookU8(*gray, dest) ? JNI_TRUE : JNI_FALSE;
 }
 
 static void countPullYFromU8Gray(
@@ -2339,7 +2364,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
     jboolean freezeHorz, jboolean enableJump,
     jfloat jumpFrac, jfloat retractClearFrac, jfloat vertPadFrac, jfloat chi2K,
     jint boundStrategy, jint tightInsetPx,
-    jfloatArray teleArr, jintArray sweepArr
+    jfloatArray teleArr, jintArray sweepArr,
+    jlong scratchPtr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1) return nullptr;
@@ -2354,18 +2380,19 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
     std::vector<jint> seeds(n4);
     env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
 
-    cv::Mat gxY, gyY, magY, gxAbs;
-    cv::Sobel(*gray, gxY, CV_32F, 1, 0, 3);
-    cv::Sobel(*gray, gyY, CV_32F, 0, 1, 3);
-    cv::magnitude(gxY, gyY, magY);
-    cv::absdiff(gxY, cv::Scalar(0.0), gxAbs);
-
-    cv::Mat cMag, cF, gxC, gyC, magC, vertEng;
+    cv::Mat magY;
+    cv::Mat cMag, magC, vertEng;
     const bool useChroma = chroma == JNI_TRUE;
+    if (!useChroma) {
+        cv::Mat* yLook = energyLookAs(scratchPtr, *gray);
+        if (!yLook || !fillEnergyLookU8(*gray, yLook)) return nullptr;
+        magY = *yLook;
+    }
     if (useChroma) {
         auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
         cv::Mat uvRef = uv ? *uv : cv::Mat();
         fillChromaMag(*gray, uvRef, &cMag);
+        cv::Mat cF, gxC, gyC;
         cMag.convertTo(cF, CV_32F);
         cv::Sobel(cF, gxC, CV_32F, 1, 0, 3);
         cv::Sobel(cF, gyC, CV_32F, 0, 1, 3);
@@ -2378,31 +2405,25 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
     // vertKind: 0 MAG, 1 GX, 2 XYCUT, 3 CHI2
     if (vertKind == 1 || vertKind == 2) {
         if (useChroma) {
-            cv::Mat absGxY, absGxC;
-            cv::absdiff(gxY, cv::Scalar(0.0), absGxY);
-            cv::Mat gxC2, gyC2;
-            cv::Mat cF2;
+            cv::Mat gxC2, gyC2, absGxC, cF2;
             cMag.convertTo(cF2, CV_32F);
             cv::Sobel(cF2, gxC2, CV_32F, 1, 0, 3);
             cv::absdiff(gxC2, cv::Scalar(0.0), absGxC);
-            cv::magnitude(absGxY, absGxC, vertEng);
+            absGxC.copyTo(vertEng);
             cF2.release();
             gxC2.release();
             gyC2.release();
-            absGxY.release();
             absGxC.release();
         } else {
-            gxAbs.copyTo(vertEng);
+            vertEng = magY;
         }
     } else {
         if (useChroma) {
-            cv::magnitude(magY, magC, vertEng);
+            magC.copyTo(vertEng);
         } else {
-            magY.copyTo(vertEng);
+            vertEng = magY;
         }
     }
-    gxY.release();
-    gyY.release();
     magC.release();
 
     const cv::Mat* chi2Src = useChroma ? &cMag : gray;
@@ -2543,7 +2564,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
         if (r <= l) r = std::min(imgW, l + 1);
         if (b <= t) b = std::min(imgH, t + 1);
         int ct = t, cb = b, pT = 0, pB = 0;
-        countPullY(gxAbs, seedL, seedT, seedR, seedB, l, t, r, b,
+        countPullYFromU8Gray(*gray, seedL, seedT, seedR, seedB, l, t, r, b,
                    imgW, imgH, stopUpE, stopDownE, &ct, &cb, &pT, &pB);
         const int o = i * 11;
         out[o + 0] = l;
@@ -2580,13 +2601,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
         tele.fRight = static_cast<float>(kFlagUnchanged);
         const int ht = std::max(0, t - 2), hb = std::min(imgH, b + 2);
         const int hl = std::max(0, l), hr = std::min(imgW, r);
-        if (hb > ht && hr > hl && !vertEng.empty() && vertEng.type() == CV_32F) {
+        if (hb > ht && hr > hl && !vertEng.empty() &&
+            (vertEng.type() == CV_32F || vertEng.type() == CV_8UC1)) {
             cv::Mat eBin(hb - ht, hr - hl, CV_8UC1);
             for (int yy = ht; yy < hb; ++yy) {
                 uint8_t* op = eBin.ptr<uint8_t>(yy - ht);
-                const float* ep = vertEng.ptr<float>(yy);
-                for (int xx = hl; xx < hr; ++xx) {
-                    op[xx - hl] = ep[xx] >= static_cast<float>(thr) ? 255 : 0;
+                if (vertEng.type() == CV_8UC1) {
+                    const uint8_t* ep = vertEng.ptr<uint8_t>(yy);
+                    for (int xx = hl; xx < hr; ++xx) {
+                        op[xx - hl] = static_cast<float>(ep[xx]) >= static_cast<float>(thr) ? 255 : 0;
+                    }
+                } else {
+                    const float* ep = vertEng.ptr<float>(yy);
+                    for (int xx = hl; xx < hr; ++xx) {
+                        op[xx - hl] = ep[xx] >= static_cast<float>(thr) ? 255 : 0;
+                    }
                 }
             }
             fillRunHists(eBin, tele.histH, tele.histV);
@@ -2599,7 +2628,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbG
     }
     writeSweepArr(env, sweepArr, sweeps);
     magY.release();
-    gxAbs.release();
     vertEng.release();
     cMag.release();
     jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
@@ -4223,17 +4251,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpM
     env->GetIntArrayRegion(boxesArr, 0, n4, boxes.data());
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
-    cv::Mat gx, gy, magY;
-    cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
-    cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
-    cv::magnitude(gx, gy, magY);
-    gx.release();
-    gy.release();
+    cv::Mat magY;
     cv::Mat localMag;
     cv::Mat* cMag = nullptr;
     const bool useChromaMag = chromaMode == 1;
     const bool useTint = chromaMode == 2 || chromaMode == 3 || chromaMode == 4;
     const bool adaptive = chromaMode == 4;
+    if (!useChromaMag && !useTint) {
+        cv::Mat* yLook = energyLookAs(scratchPtr, *gray);
+        if (!yLook || !fillEnergyLookU8(*gray, yLook)) return nullptr;
+        magY = *yLook;
+    }
     if (useChromaMag) {
         if (scratchFits(scratch, imgW, imgH)) {
             fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
@@ -5077,17 +5105,17 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpO
     env->GetFloatArrayRegion(quadsArr, 0, n8, quads.data());
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
-    cv::Mat gx, gy, magY;
-    cv::Sobel(*gray, gx, CV_32F, 1, 0, 3);
-    cv::Sobel(*gray, gy, CV_32F, 0, 1, 3);
-    cv::magnitude(gx, gy, magY);
-    gx.release();
-    gy.release();
+    cv::Mat magY;
     cv::Mat localMag;
     cv::Mat* cMag = nullptr;
     const bool useChromaMag = chromaMode == 1;
     const bool useTint = chromaMode == 2 || chromaMode == 3 || chromaMode == 4;
     const bool adaptive = chromaMode == 4;
+    if (!useChromaMag && !useTint) {
+        cv::Mat* yLook = energyLookAs(scratchPtr, *gray);
+        if (!yLook || !fillEnergyLookU8(*gray, yLook)) return nullptr;
+        magY = *yLook;
+    }
     if (useChromaMag) {
         if (scratchFits(scratch, imgW, imgH)) {
             fillChromaMag(*gray, uv ? *uv : cv::Mat(), scratch);
