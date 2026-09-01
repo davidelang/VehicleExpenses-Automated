@@ -516,6 +516,10 @@ object NativeImageUtils {
         grayPtr: Long, uvPtr: Long, seeds: IntArray,
         teleArr: FloatArray?, sweepArr: IntArray?, scratchPtr: Long,
     ): IntArray?
+    private external fun nativeEnergyAabbRetract(
+        grayPtr: Long, uvPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, scratchPtr: Long,
+    ): IntArray?
 
     fun energyAabbTightNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
@@ -523,6 +527,15 @@ object NativeImageUtils {
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
         return nativeEnergyAabbTight(
+            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
+        )
+    }
+    fun energyAabbRetractNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        tele: FloatArray?, sweep: IntArray?, scratch: Mat?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        return nativeEnergyAabbRetract(
             gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
         )
     }

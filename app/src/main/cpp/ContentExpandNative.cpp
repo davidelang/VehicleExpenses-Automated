@@ -1765,6 +1765,42 @@ static void walkEnergyExpand(
     *fBot = (*b > seedB) ? kFlagNormalExpand : kFlagBlockedGap;
 }
 
+static void walkEnergyRetract(
+    const cv::Mat& look, int imgW, int imgH, int cap, double thr, bool freezeHorz,
+    int seedL, int seedT, int seedR, int seedB,
+    int* l, int* t, int* r, int* b, bool* allowUp, bool* allowDown,
+    int* fTop, int* fBot
+) {
+    (void)freezeHorz;
+    (void)seedL;
+    (void)seedR;
+    const int seedH = std::max(1, seedB - seedT);
+    const int maxRetractPx = std::max(1, static_cast<int>(std::lround(kVertRetractCapFrac * seedH)));
+    auto edgeInk = [&](int sl, int st, int sr, int sb) {
+        return meanRectF(look, sl, st, sr, sb, imgW, imgH) >= thr;
+    };
+    if (edgeInk(*l, *t, *r, *t + 1)) {
+        while (*t > 0 && seedT - (*t - 1) <= cap && edgeInk(*l, *t - 1, *r, *t)) --*t;
+        *fTop = *t < seedT ? kFlagNormalExpand : kFlagUnchanged;
+    } else {
+        while (*t < *b - 1 && (*t - seedT) < maxRetractPx && !edgeInk(*l, *t, *r, *t + 1)) ++*t;
+        if (*t > seedT && edgeInk(*l, *t, *r, *t + 1)) *fTop = kFlagNormalRetract;
+        else if (*t - seedT >= maxRetractPx) *fTop = kFlagBlocked10pct;
+        else *fTop = kFlagNormalRetract;
+    }
+    if (edgeInk(*l, *b - 1, *r, *b)) {
+        while (*b < imgH && *b - seedB < cap && edgeInk(*l, *b, *r, *b + 1)) ++*b;
+        *fBot = *b > seedB ? kFlagNormalExpand : kFlagUnchanged;
+    } else {
+        while (*b > *t + 1 && (seedB - *b) < maxRetractPx && !edgeInk(*l, *b - 1, *r, *b)) --*b;
+        if (*b < seedB && edgeInk(*l, *b - 1, *r, *b)) *fBot = kFlagNormalRetract;
+        else if (seedB - *b >= maxRetractPx) *fBot = kFlagBlocked10pct;
+        else *fBot = kFlagNormalRetract;
+    }
+    *allowUp = *t < seedT;
+    *allowDown = *b > seedB;
+}
+
 using WalkEnergyFn = void (*)(
     const cv::Mat&, int, int, int, double, bool,
     int, int, int, int,
@@ -1968,6 +2004,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
     jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
     if (!seeds) seeds = seedsArr;
     return energyAabbOnLook(env, grayPtr, uvPtr, seeds, walkEnergyExpand, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbRetract(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jintArray seedsArr,
+    jfloatArray teleArr, jintArray sweepArr, jlong scratchPtr
+) {
+    return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyRetract, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL

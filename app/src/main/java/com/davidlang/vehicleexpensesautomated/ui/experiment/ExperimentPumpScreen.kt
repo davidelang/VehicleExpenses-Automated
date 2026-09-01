@@ -3572,7 +3572,7 @@ suspend fun runPumpExperiment(
                 )
                 val procInkEnergyBase = inkEnergy(0, "ink-energy-base")
                 val procInkEnergyTight = inkEnergyAabb("ink-energy-tight", ContentExpandUtils::expandEnergyAabbTight, "tight")
-                val procInkEnergyRetract = inkEnergy(2, "ink-energy-retract")
+                val procInkEnergyRetract = inkEnergyAabb("ink-energy-retract", ContentExpandUtils::expandEnergyAabbRetract, "edge-retract")
                 val procInkGrayBase = inkGray(0, "ink-gray-base")
                 val procInkGrayTight = inkGray(1, "ink-gray-tight")
                 val procInkGrayRetract = inkGray(2, "ink-gray-retract")

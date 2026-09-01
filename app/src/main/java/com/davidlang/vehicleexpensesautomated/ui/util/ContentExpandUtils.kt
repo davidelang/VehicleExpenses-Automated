@@ -2638,6 +2638,10 @@ object ContentExpandUtils {
         gray: Mat, uv: Mat?, seeds: List<Rect>,
     ): List<AabbExpand> = expandEnergyAabbMany(gray, uv, seeds, NativeImageUtils::energyAabbTightNative)
 
+    fun expandEnergyAabbRetract(
+        gray: Mat, uv: Mat?, seeds: List<Rect>,
+    ): List<AabbExpand> = expandEnergyAabbMany(gray, uv, seeds, NativeImageUtils::energyAabbRetractNative)
+
     /**
      * Many-seed AABB energy (one Sobel/chromaMag per photo). Null → caller Kotlin fallback.
      * Live path when [ExpandOptions.recordVertEnergy] is false.
