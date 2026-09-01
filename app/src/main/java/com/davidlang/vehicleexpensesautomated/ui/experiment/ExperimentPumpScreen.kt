@@ -2793,6 +2793,8 @@ suspend fun runPumpExperiment(
                     chromaMode: Int = 0,
                     boundStrategy: Int = 0,
                     tightInsetPx: Int = 16,
+                    aabbEnergy: ((org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<ContentExpandUtils.AabbExpand>)? = null,
+                    boundNote: String? = null,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit =
                     { ws, br, det, w, h ->
                         val workspace = ws
@@ -2830,6 +2832,10 @@ suspend fun runPumpExperiment(
                         branch.metadata["content_expand_freeze_horz"] = freezeHorzDuringVert.toString()
                         branch.metadata["content_expand_vert_energy"] = vertEnergy.name
                         branch.metadata["content_expand_vert_pad"] = vertPadFrac.toString()
+                        if (boundNote != null) {
+                            branch.metadata["content_expand_bound"] = boundNote
+                            branch.metadata["content_expand_tight_inset_px"] = "16"
+                        }
                         if (chromaMode == 4) {
                             branch.metadata["content_expand_chroma"] = "color_adaptive"
                         } else if (chromaExpand) {
@@ -2948,19 +2954,24 @@ suspend fun runPumpExperiment(
                             )
                             val tExpand0 = System.currentTimeMillis()
                             val uv = workspace.p.uvMat
-                            val expDiag = ContentExpandUtils.expandDiagnoseMany(
-                                gray,
-                                if (chromaExpand) uv else null,
-                                redPixelList,
-                                mode,
-                                expandOpts,
-                            ) ?: redPixelList.map { seed ->
-                                if (chromaExpand) {
-                                    ContentExpandUtils.expandDiagnoseChroma(
-                                        gray, uv, seed, mode, expandOpts,
-                                    )
-                                } else {
-                                    ContentExpandUtils.expandDiagnose(gray, seed, mode, expandOpts)
+                            val energyFn = aabbEnergy
+                            val expDiag = if (energyFn != null) {
+                                energyFn(gray, uv, redPixelList)
+                            } else {
+                                ContentExpandUtils.expandDiagnoseMany(
+                                    gray,
+                                    if (chromaExpand) uv else null,
+                                    redPixelList,
+                                    mode,
+                                    expandOpts,
+                                ) ?: redPixelList.map { seed ->
+                                    if (chromaExpand) {
+                                        ContentExpandUtils.expandDiagnoseChroma(
+                                            gray, uv, seed, mode, expandOpts,
+                                        )
+                                    } else {
+                                        ContentExpandUtils.expandDiagnose(gray, seed, mode, expandOpts)
+                                    }
                                 }
                             }
                             branch.metadata["t_expand_ms"] =
@@ -3458,6 +3469,23 @@ suspend fun runPumpExperiment(
                     val aPdI = getAnns(lastReds, Color.RED, 2) + getAnns(lastBlueHunks, Color.BLUE, 4) + getAnns(lastOrangeHunks, Color.rgb(255, 165, 0), 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdI, null, workspace).first
                 }
+                fun inkEnergyAabb(
+                    name: String,
+                    aabb: (org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<ContentExpandUtils.AabbExpand>,
+                    boundNote: String?,
+                ) = makeContentExpandProc(
+                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
+                    "$name: product det + interior-energy AABB; jump; maxFrac=0.4",
+                    expDetAsset = null,
+                    enableJump = true,
+                    doDeskew = true,
+                    useOriented = false,
+                    ocrScales = pJumpOcrScales,
+                    maxFrac = alignedExpandMaxFrac,
+                    energyRatio = 0.65f,
+                    aabbEnergy = aabb,
+                    boundNote = boundNote,
+                )
                 fun inkEnergy(bound: Int, name: String) = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
                     "$name: product det + interior-energy AABB; bound=$bound; jump; maxFrac=0.4",
@@ -3543,7 +3571,7 @@ suspend fun runPumpExperiment(
                     boundStrategy = bound,
                 )
                 val procInkEnergyBase = inkEnergy(0, "ink-energy-base")
-                val procInkEnergyTight = inkEnergy(1, "ink-energy-tight")
+                val procInkEnergyTight = inkEnergyAabb("ink-energy-tight", ContentExpandUtils::expandEnergyAabbTight, "tight")
                 val procInkEnergyRetract = inkEnergy(2, "ink-energy-retract")
                 val procInkGrayBase = inkGray(0, "ink-gray-base")
                 val procInkGrayTight = inkGray(1, "ink-gray-tight")

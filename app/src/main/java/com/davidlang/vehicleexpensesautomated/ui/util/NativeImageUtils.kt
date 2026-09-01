@@ -512,6 +512,21 @@ object NativeImageUtils {
     const val SEG7_HIST_BINS: Int = 32
     const val SEG7_TELE_N: Int = 21 + SEG7_HIST_BINS * 2
 
+    private external fun nativeEnergyAabbTight(
+        grayPtr: Long, uvPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, scratchPtr: Long,
+    ): IntArray?
+
+    fun energyAabbTightNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        tele: FloatArray?, sweep: IntArray?, scratch: Mat?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        return nativeEnergyAabbTight(
+            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
+        )
+    }
+
     private external fun nativeSeg7Many(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray, chromaMode: Int,
         gapFrac: Float, minSeedHsToFreeze: Float,

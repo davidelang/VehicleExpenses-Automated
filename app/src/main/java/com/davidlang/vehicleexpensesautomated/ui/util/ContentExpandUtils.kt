@@ -2573,6 +2573,72 @@ object ContentExpandUtils {
     }
 
     /**
+     * Many-seed AABB energy U8 look in A.s. Native fail → seed boxes.
+     * Do not retarget [expandDiagnoseMany] onto this recipe.
+     */
+    private fun expandEnergyAabbMany(
+        gray: Mat,
+        uv: Mat?,
+        seeds: List<Rect>,
+        native: (Mat, Mat?, IntArray, FloatArray?, IntArray?, Mat?) -> IntArray?,
+    ): List<AabbExpand> {
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) {
+            return seeds.map { AabbExpand(it, false) }
+        }
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        if (seeds.isEmpty()) return emptyList()
+        val packed = IntArray(seeds.size * 4)
+        seeds.forEachIndexed { i, s ->
+            val c = clip(s, imgW, imgH)
+            packed[i * 4] = c.left
+            packed[i * 4 + 1] = c.top
+            packed[i * 4 + 2] = c.right
+            packed[i * 4 + 3] = c.bottom
+        }
+        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
+        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
+        val scratch = try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null }
+        val r = try {
+            native(gray, uv, packed, tele, sweepBuf, scratch)
+        } catch (_: Throwable) {
+            null
+        } ?: return seeds.map { AabbExpand(clip(it, imgW, imgH), false) }
+        if (r.size < seeds.size * 11) {
+            return seeds.map { AabbExpand(clip(it, imgW, imgH), false) }
+        }
+        val sweeps = parseInkSweeps(sweepBuf, seeds.size)
+        return seeds.indices.map { i ->
+            val o = i * 11
+            val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
+            val cr = clip(Rect(r[o + 4], r[o + 5], r[o + 6], r[o + 7]), imgW, imgH)
+            AabbExpand(
+                rect,
+                r[o + 8] != 0,
+                null,
+                cr,
+                CountPullInfo(
+                    pulledTop = r[o + 9] != 0,
+                    pulledBot = r[o + 10] != 0,
+                    cSeed = 0.0,
+                    countThr = 0.0,
+                    gxThr = 0.0,
+                    tBefore = rect.top,
+                    bBefore = rect.bottom,
+                    tAfter = cr.top,
+                    bAfter = cr.bottom,
+                ),
+                parseSeg7Tele(tele, i),
+                sweeps.getOrNull(i),
+            )
+        }
+    }
+
+    fun expandEnergyAabbTight(
+        gray: Mat, uv: Mat?, seeds: List<Rect>,
+    ): List<AabbExpand> = expandEnergyAabbMany(gray, uv, seeds, NativeImageUtils::energyAabbTightNative)
+
+    /**
      * Many-seed AABB energy (one Sobel/chromaMag per photo). Null → caller Kotlin fallback.
      * Live path when [ExpandOptions.recordVertEnergy] is false.
      */

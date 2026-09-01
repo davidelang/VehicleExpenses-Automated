@@ -1542,6 +1542,434 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeChrom
     return fillChromaMag(*y, *uv, dst) ? JNI_TRUE : JNI_FALSE;
 }
 
+/** 3×3 Sobel weights (ksize=3) at one pixel; gx/gy in registers (about ±1020). */
+static inline void sobelGxGyU8(const cv::Mat& gray, int x, int y, int* gx, int* gy) {
+    const int h = gray.rows, w = gray.cols;
+    auto at = [&](int yy, int xx) -> int {
+        if (xx < 0) xx = 0;
+        if (yy < 0) yy = 0;
+        if (xx >= w) xx = w - 1;
+        if (yy >= h) yy = h - 1;
+        return gray.ptr<uint8_t>(yy)[xx];
+    };
+    const int p00 = at(y - 1, x - 1), p01 = at(y - 1, x), p02 = at(y - 1, x + 1);
+    const int p10 = at(y, x - 1), p12 = at(y, x + 1);
+    const int p20 = at(y + 1, x - 1), p21 = at(y + 1, x), p22 = at(y + 1, x + 1);
+    *gx = -p00 + p02 - 2 * p10 + 2 * p12 - p20 + p22;
+    *gy = -p00 - 2 * p01 - p02 + p20 + 2 * p21 + p22;
+}
+
+/** Energy look: min(255, (|gx|+|gy|) >> 3) into dst (A.s). No float mag, no dest create. */
+static bool fillEnergyLookU8(const cv::Mat& gray, cv::Mat* dst) {
+    if (gray.empty() || gray.type() != CV_8UC1 || !dst) return false;
+    const int h = gray.rows, w = gray.cols;
+    if (dst->empty() || dst->type() != CV_8UC1 || dst->rows < h || dst->cols < w) {
+        return false;
+    }
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* r0 = gray.ptr<uint8_t>(y > 0 ? y - 1 : 0);
+        const uint8_t* r1 = gray.ptr<uint8_t>(y);
+        const uint8_t* r2 = gray.ptr<uint8_t>(y + 1 < h ? y + 1 : h - 1);
+        uint8_t* d = dst->ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
+            const int xm = x > 0 ? x - 1 : 0;
+            const int xp = x + 1 < w ? x + 1 : w - 1;
+            const int gx = -r0[xm] + r0[xp] - 2 * r1[xm] + 2 * r1[xp] - r2[xm] + r2[xp];
+            const int gy = -r0[xm] - 2 * r0[x] - r0[xp] + r2[xm] + 2 * r2[x] + r2[xp];
+            const int mag = (gx < 0 ? -gx : gx) + (gy < 0 ? -gy : gy);
+            d[x] = static_cast<uint8_t>(std::min(255, mag >> 3));
+        }
+    }
+    return true;
+}
+
+static cv::Mat* energyLookAs(jlong scratchPtr, const cv::Mat& gray) {
+    auto* s = reinterpret_cast<cv::Mat*>(scratchPtr);
+    const int h = gray.rows, w = gray.cols;
+    if (s && !s->empty() && s->type() == CV_8UC1 && s->rows >= h && s->cols >= w) return s;
+    return nullptr;
+}
+
+static void countPullYFromU8Gray(
+    const cv::Mat& gray, int sl, int st, int sr, int sb,
+    int el, int et, int er, int eb,
+    int imgW, int imgH, bool stopUpEnergy, bool stopDownEnergy,
+    int* ct, int* cb, int* pulledT, int* pulledB
+) {
+    *ct = et;
+    *cb = eb;
+    *pulledT = 0;
+    *pulledB = 0;
+    if (sr <= sl || sb <= st || gray.empty() || gray.type() != CV_8UC1) return;
+    const int sw = sr - sl;
+    auto absGx = [&](int x, int y) -> float {
+        int gx = 0, gy = 0;
+        sobelGxGyU8(gray, x, y, &gx, &gy);
+        (void)gy;
+        return static_cast<float>(std::abs(gx));
+    };
+    std::vector<float> buf;
+    buf.reserve(std::max(1, (sb - st) * sw));
+    for (int y = st; y < sb; ++y) {
+        for (int x = sl; x < sr; ++x) buf.push_back(absGx(x, y));
+    }
+    double p90 = 8.0;
+    if (buf.size() >= 2) {
+        std::vector<float> s = buf;
+        std::sort(s.begin(), s.end());
+        const int idx = static_cast<int>((s.size() - 1) * 0.90);
+        p90 = s[std::max(0, std::min(idx, static_cast<int>(s.size()) - 1))];
+    }
+    const double gxThr = std::max(8.0, 0.55 * p90);
+    const int y0 = std::max(0, std::min(st, et));
+    const int y1 = std::min(imgH, std::max(sb, eb));
+    const int n = std::max(1, y1 - y0);
+    std::vector<double> raw(n, 0.0);
+    std::vector<float> row(static_cast<size_t>(sw));
+    for (int i = 0; i < n; ++i) {
+        const int y = y0 + i;
+        for (int x = 0; x < sw; ++x) row[static_cast<size_t>(x)] = absGx(sl + x, y);
+        raw[static_cast<size_t>(i)] = runCountRow(row.data(), sw, static_cast<float>(gxThr));
+    }
+    const int sh = std::max(1, sb - st);
+    std::vector<double> sm;
+    smooth1d(raw, std::max(1.0, 0.04 * sh), &sm);
+    int sti = st - y0;
+    int sbi = sb - y0;
+    if (sti < 0) sti = 0;
+    if (sti > n - 2) sti = std::max(0, n - 2);
+    if (sbi < sti + 1) sbi = sti + 1;
+    if (sbi > n) sbi = n;
+    std::vector<double> seedVals(sm.begin() + sti, sm.begin() + sbi);
+    std::sort(seedVals.begin(), seedVals.end());
+    const double cSeed = seedVals[seedVals.size() / 2];
+    int te = et - y0;
+    int be = eb - y0;
+    if (te < 0) te = 0;
+    if (te > sti) te = sti;
+    if (be < sbi) be = sbi;
+    if (be > n) be = n;
+    int top = te, bot = be;
+    int pT = 0, pB = 0;
+    if (cSeed >= 1.0) {
+        const double cThr = 0.45 * cSeed;
+        for (int i = sti - 1; i >= te; --i) {
+            const double left = (i == 0) ? sm[static_cast<size_t>(i)] : sm[static_cast<size_t>(i - 1)];
+            const double right = (i == n - 1) ? sm[static_cast<size_t>(i)] : sm[static_cast<size_t>(i + 1)];
+            if (sm[static_cast<size_t>(i)] < cThr && sm[static_cast<size_t>(i)] <= left &&
+                sm[static_cast<size_t>(i)] <= right) {
+                top = i;
+                pT = 1;
+                break;
+            }
+        }
+        for (int i = sbi; i < be; ++i) {
+            const double left = (i == 0) ? sm[static_cast<size_t>(i)] : sm[static_cast<size_t>(i - 1)];
+            const double right = (i == n - 1) ? sm[static_cast<size_t>(i)] : sm[static_cast<size_t>(i + 1)];
+            if (sm[static_cast<size_t>(i)] < cThr && sm[static_cast<size_t>(i)] <= left &&
+                sm[static_cast<size_t>(i)] <= right) {
+                bot = i;
+                pB = 1;
+                break;
+            }
+        }
+    }
+    top = std::min(top, sti);
+    bot = std::max(bot, sbi);
+    const double cThr = 0.45 * cSeed;
+    const int clearSteps = std::max(1, static_cast<int>(std::lround(0.10 * sh)));
+    const int growSteps = std::max(1, static_cast<int>(std::lround(0.08 * sh)));
+    const bool allowGrow = (eb - et) <= 2.4f * sh;
+    const double tipTop = (te >= 0 && te < n) ? sm[static_cast<size_t>(te)] : 0.0;
+    double tipBot = 0.0;
+    if (be - 1 >= 0 && be - 1 < n) tipBot = sm[static_cast<size_t>(be - 1)];
+    else if (be >= 0 && be < n) tipBot = sm[static_cast<size_t>(be)];
+    const int idxLo = std::min(0, te - growSteps);
+    const int idxHi = std::max(n, be + growSteps);
+    int topPad = top, botPad = bot;
+    bool grewT = false, grewB = false;
+    padCountTip(pT != 0, stopUpEnergy, tipTop, cThr, te, top, sti, false,
+                clearSteps, growSteps, idxLo, idxHi, allowGrow, &topPad, &grewT);
+    padCountTip(pB != 0, stopDownEnergy, tipBot, cThr, be, bot, sbi, true,
+                clearSteps, growSteps, idxLo, idxHi, allowGrow, &botPad, &grewB);
+    top = std::min(topPad, sti);
+    bot = std::max(botPad, sbi);
+    if (bot < top + 1) bot = std::max(top + 1, sbi);
+    *ct = std::max(0, std::min(imgH, y0 + top));
+    *cb = std::max(*ct + 1, std::min(imgH, y0 + bot));
+    *pulledT = pT;
+    *pulledB = pB;
+    (void)el;
+    (void)er;
+}
+
+static jintArray aabbEnergySeedsOut(JNIEnv* env, const std::vector<jint>& seeds) {
+    const int n = static_cast<int>(seeds.size()) / 4;
+    if (n <= 0) return env->NewIntArray(0);
+    std::vector<jint> out(static_cast<size_t>(n) * 11, 0);
+    for (int i = 0; i < n; ++i) {
+        const int o = i * 11;
+        const int sl = seeds[static_cast<size_t>(i) * 4];
+        const int st = seeds[static_cast<size_t>(i) * 4 + 1];
+        const int sr = seeds[static_cast<size_t>(i) * 4 + 2];
+        const int sb = seeds[static_cast<size_t>(i) * 4 + 3];
+        out[static_cast<size_t>(o)] = sl;
+        out[static_cast<size_t>(o) + 1] = st;
+        out[static_cast<size_t>(o) + 2] = sr;
+        out[static_cast<size_t>(o) + 3] = sb;
+        out[static_cast<size_t>(o) + 4] = sl;
+        out[static_cast<size_t>(o) + 5] = st;
+        out[static_cast<size_t>(o) + 6] = sr;
+        out[static_cast<size_t>(o) + 7] = sb;
+    }
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return env->NewIntArray(0);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+}
+
+static void walkEnergyExpand(
+    const cv::Mat& look, int imgW, int imgH, int cap, double thr, bool freezeHorz,
+    int seedL, int seedT, int seedR, int seedB,
+    int* l, int* t, int* r, int* b, bool* allowUp, bool* allowDown,
+    int* fTop, int* fBot
+) {
+    (void)seedL; (void)seedR;
+    *allowUp = *t > 0 && meanRectF(look, *l, *t - 1, *r, *t, imgW, imgH) >= thr;
+    *allowDown = *b < imgH && meanRectF(look, *l, *b, *r, *b + 1, imgW, imgH) >= thr;
+    for (int k = 0; k < cap; ++k) {
+        bool grew = false;
+        if (*allowUp && *t > 0 &&
+            meanRectF(look, *l, *t - 1, *r, *t, imgW, imgH) >= thr) {
+            --*t;
+            grew = true;
+        }
+        if (*allowDown && *b < imgH &&
+            meanRectF(look, *l, *b, *r, *b + 1, imgW, imgH) >= thr) {
+            ++*b;
+            grew = true;
+        }
+        if (!freezeHorz) {
+            if (*l > 0 && meanRectF(look, *l - 1, *t, *l, *b, imgW, imgH) >= thr) {
+                --*l;
+                grew = true;
+            }
+            if (*r < imgW && meanRectF(look, *r, *t, *r + 1, *b, imgW, imgH) >= thr) {
+                ++*r;
+                grew = true;
+            }
+        }
+        if (!grew) break;
+    }
+    *fTop = (*t < seedT) ? kFlagNormalExpand : kFlagBlockedGap;
+    *fBot = (*b > seedB) ? kFlagNormalExpand : kFlagBlockedGap;
+}
+
+using WalkEnergyFn = void (*)(
+    const cv::Mat&, int, int, int, double, bool,
+    int, int, int, int,
+    int*, int*, int*, int*, bool*, bool*, int*, int*);
+
+static jintArray insetAabbSeeds16(JNIEnv* env, jlong grayPtr, jintArray seedsArr) {
+    if (!seedsArr) return nullptr;
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    const int imgW = (gray && !gray->empty()) ? gray->cols : 0;
+    const int imgH = (gray && !gray->empty()) ? gray->rows : 0;
+    const jint n4 = env->GetArrayLength(seedsArr);
+    if (n4 <= 0 || n4 % 4 != 0) return nullptr;
+    std::vector<jint> s(static_cast<size_t>(n4));
+    env->GetIntArrayRegion(seedsArr, 0, n4, s.data());
+    const int n = n4 / 4;
+    const int ins = 16;
+    for (int i = 0; i < n; ++i) {
+        int l = s[static_cast<size_t>(i) * 4], t = s[static_cast<size_t>(i) * 4 + 1];
+        int r = s[static_cast<size_t>(i) * 4 + 2], b = s[static_cast<size_t>(i) * 4 + 3];
+        if (imgW > 0) {
+            if (l < 0) l = 0;
+            if (t < 0) t = 0;
+            if (r > imgW) r = imgW;
+            if (b > imgH) b = imgH;
+        }
+        if (r - l > 2 * ins + 2) { l += ins; r -= ins; }
+        if (b - t > 2 * ins + 2) { t += ins; b -= ins; }
+        s[static_cast<size_t>(i) * 4] = l;
+        s[static_cast<size_t>(i) * 4 + 1] = t;
+        s[static_cast<size_t>(i) * 4 + 2] = r;
+        s[static_cast<size_t>(i) * 4 + 3] = b;
+    }
+    jintArray out = env->NewIntArray(n4);
+    if (!out) return nullptr;
+    env->SetIntArrayRegion(out, 0, n4, s.data());
+    return out;
+}
+
+static jintArray energyAabbOnLook(
+    JNIEnv* env,
+    jlong grayPtr, jlong uvPtr,
+    jintArray seedsArr,
+    WalkEnergyFn walk,
+    jfloat maxFrac, jfloat energyRatio,
+    jfloat jumpFrac, jfloat retractClearFrac,
+    jfloatArray teleArr, jintArray sweepArr,
+    jlong scratchPtr
+) {
+    const jboolean freezeHorz = JNI_FALSE;
+    const jfloat vertPadFrac = 0.f;
+    (void)uvPtr;
+    if (!seedsArr) return env->NewIntArray(0);
+    const jint n4 = env->GetArrayLength(seedsArr);
+    if (n4 <= 0 || n4 % 4 != 0) {
+        return env->NewIntArray(0);
+    }
+    const int n = n4 / 4;
+    std::vector<jint> seeds(static_cast<size_t>(n4));
+    env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1) {
+        return aabbEnergySeedsOut(env, seeds);
+    }
+    try {
+    const int imgW = gray->cols, imgH = gray->rows;
+
+    cv::Mat* look = energyLookAs(scratchPtr, *gray);
+    if (!look || !fillEnergyLookU8(*gray, look)) return aabbEnergySeedsOut(env, seeds);
+    const cv::Mat& vertEng = *look;
+    std::vector<jint> out(static_cast<size_t>(n) * 11, 0);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        int l = seeds[static_cast<size_t>(i) * 4 + 0];
+        int t = seeds[static_cast<size_t>(i) * 4 + 1];
+        int r = seeds[static_cast<size_t>(i) * 4 + 2];
+        int b = seeds[static_cast<size_t>(i) * 4 + 3];
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l) r = std::min(imgW, l + 1);
+        if (b <= t) b = std::min(imgH, t + 1);
+        const int seedL = l, seedT = t, seedR = r, seedB = b;
+        const int seedH = std::max(1, b - t);
+        const int seedW = std::max(1, r - l);
+        if (seedH < 4 || seedW < 4) {
+            const int o = i * 11;
+            out[static_cast<size_t>(o) + 0] = seedL;
+            out[static_cast<size_t>(o) + 1] = seedT;
+            out[static_cast<size_t>(o) + 2] = seedR;
+            out[static_cast<size_t>(o) + 3] = seedB;
+            out[static_cast<size_t>(o) + 4] = seedL;
+            out[static_cast<size_t>(o) + 5] = seedT;
+            out[static_cast<size_t>(o) + 6] = seedR;
+            out[static_cast<size_t>(o) + 7] = seedB;
+            continue;
+        }
+        const int cap = std::max(1, static_cast<int>(std::lround(maxFrac * seedH)));
+        const int il = l + 2, it = t + 2, ir = r - 2, ib = b - 2;
+        const double base = (ir > il && ib > it)
+            ? meanRectF(vertEng, il, it, ir, ib, imgW, imgH)
+            : meanRectF(vertEng, l, t, r, b, imgW, imgH);
+        const double thr = energyRatio * std::max(base, 1e-3);
+        const double jumpThr = thr;
+        bool allowUp = false, allowDown = false;
+        int walkT = 0, walkB = 0;
+        int fTop = kFlagUnchanged, fBot = kFlagUnchanged;
+        walk(vertEng, imgW, imgH, cap, thr, freezeHorz == JNI_TRUE,
+            seedL, seedT, seedR, seedB,
+            &l, &t, &r, &b, &allowUp, &allowDown, &fTop, &fBot);
+        walkT = seedT - t;
+        walkB = b - seedB;
+        if (vertPadFrac > 0.f) {
+            const int extra = std::max(1, static_cast<int>(std::lround(vertPadFrac * seedH)));
+            if (allowUp) t = std::max(0, t - extra);
+            if (allowDown) b = std::min(imgH, b + extra);
+        }
+        const int hit = (walkT >= cap || walkB >= cap) ? 1 : 0;
+        const bool stopUpE = walkT < cap;
+        const bool stopDownE = walkB < cap;
+        jumpRetractH(vertEng, &l, t, &r, b, imgW, imgH, jumpThr, cap,
+                     jumpFrac, retractClearFrac, seedH);
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        if (r <= l) r = std::min(imgW, l + 1);
+        if (b <= t) b = std::min(imgH, t + 1);
+        int ct = t, cb = b, pT = 0, pB = 0;
+        countPullYFromU8Gray(*gray, seedL, seedT, seedR, seedB, l, t, r, b,
+                   imgW, imgH, stopUpE, stopDownE, &ct, &cb, &pT, &pB);
+        const int o = i * 11;
+        out[static_cast<size_t>(o) + 0] = l;
+        out[static_cast<size_t>(o) + 1] = t;
+        out[static_cast<size_t>(o) + 2] = r;
+        out[static_cast<size_t>(o) + 3] = b;
+        out[static_cast<size_t>(o) + 4] = l;
+        out[static_cast<size_t>(o) + 5] = ct;
+        out[static_cast<size_t>(o) + 6] = r;
+        out[static_cast<size_t>(o) + 7] = cb;
+        out[static_cast<size_t>(o) + 8] = hit;
+        out[static_cast<size_t>(o) + 9] = pT;
+        out[static_cast<size_t>(o) + 10] = pB;
+        (void)fTop;
+        (void)fBot;
+        Seg7Tele tele{};
+        tele.method = 1.f;
+        tele.yInk = static_cast<float>(
+            meanRectF(*gray, seedL, seedT, seedR, seedB, imgW, imgH));
+        const double yBgT = meanRectF(*gray, seedL, std::max(0, seedT - 1), seedR, seedT, imgW, imgH);
+        const double yBgB = meanRectF(*gray, seedL, seedB, seedR, std::min(imgH, seedB + 1), imgW, imgH);
+        tele.yBg = static_cast<float>(0.5 * (yBgT + yBgB));
+        tele.dInk = tele.yInk - tele.yBg;
+        tele.sPx = static_cast<float>(std::max(1, seedH / 12));
+        tele.dTop = static_cast<float>(t - seedT);
+        tele.dBot = static_cast<float>(b - seedB);
+        tele.dLeft = static_cast<float>(l - seedL);
+        tele.dRight = static_cast<float>(r - seedR);
+        tele.fTop = static_cast<float>(fTop);
+        tele.fBot = static_cast<float>(fBot);
+        tele.fLeft = static_cast<float>(kFlagUnchanged);
+        tele.fRight = static_cast<float>(kFlagUnchanged);
+        const int ht = std::max(0, t - 2), hb = std::min(imgH, b + 2);
+        const int hl = std::max(0, l), hr = std::min(imgW, r);
+        if (hb > ht && hr > hl && !vertEng.empty() && vertEng.type() == CV_8UC1) {
+            cv::Mat eBin(hb - ht, hr - hl, CV_8UC1);
+            for (int yy = ht; yy < hb; ++yy) {
+                uint8_t* op = eBin.ptr<uint8_t>(yy - ht);
+                const uint8_t* ep = vertEng.ptr<uint8_t>(yy);
+                for (int xx = hl; xx < hr; ++xx) {
+                    op[xx - hl] = static_cast<float>(ep[xx]) >= thr ? 255 : 0;
+                }
+            }
+            fillRunHists(eBin, tele.histH, tele.histV);
+        }
+        storeTeleArr(env, teleArr, i, tele);
+        fillAabbEnergySweep(
+            vertEng, vertEng, seedL, seedT, seedR, seedB,
+            std::max(1, b - t), imgW, imgH, energyRatio, thr, jumpFrac,
+            &sweeps[static_cast<size_t>(i)]);
+    }
+    writeSweepArr(env, sweepArr, sweeps);
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return aabbEnergySeedsOut(env, seeds);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+    } catch (const cv::Exception&) {
+        return aabbEnergySeedsOut(env, seeds);
+    } catch (const std::exception&) {
+        return aabbEnergySeedsOut(env, seeds);
+    }
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbTight(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jintArray seedsArr,
+    jfloatArray teleArr, jintArray sweepArr, jlong scratchPtr
+) {
+    jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
+    if (!seeds) seeds = seedsArr;
+    return energyAabbOnLook(env, grayPtr, uvPtr, seeds, walkEnergyExpand, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr);
+}
+
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeAabbGrowMany(
     JNIEnv* env, jobject /*thiz*/,
