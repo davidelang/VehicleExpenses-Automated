@@ -1666,19 +1666,11 @@ suspend fun runPumpExperiment(
                             overlayUv = bSet.p.uvMat,
                             poisonStats = poisonBuf,
                         ) ?: listOf(
-                            when (expandMode) {
-                                2, 3 -> ContentExpandUtils.expand7segFromSeed(
-                                    workspace.p.mat, seed, k = 0f, doHorizontal = false,
-                                    gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
-                                )
-                                1 -> ContentExpandUtils.expand7segFromSeedChroma(
-                                    workspace.p.mat, workspace.p.uvMat, seed, k = 0f,
-                                )
-                                else -> ContentExpandUtils.expand7segFromSeed(
-                                    workspace.p.mat, seed, k = 0f, doHorizontal = false,
-                                    gapFrac = gapFrac, minSeedHsToFreeze = minSeedHsToFreeze,
-                                )
-                            },
+                            ContentExpandUtils.Seg7Expand(
+                                seed,
+                                ContentExpandUtils.strokeWidthInSeed(workspace.p.mat, seed),
+                                k = 0f,
+                            ),
                         )
                         val seg = one.first()
                         segs.add(seg)
@@ -1712,15 +1704,7 @@ suspend fun runPumpExperiment(
                         seedHs = seedHs,
                         seedRects = seedRects,
                         sPxs = sPxs,
-                    ) ?: walked.mapIndexed { i, it ->
-                        ContentExpandUtils.jumpRetractHorizontal(
-                            workspace.p.mat, it, jumpOpts,
-                            uv = if (expandMode != 0) workspace.p.uvMat else null,
-                            chromaMode = expandMode,
-                            scratch = workspace.s.mat,
-                            seedH = seedHs[i],
-                        )
-                    }
+                    ) ?: walked
                     fun inkBoxesFor(kk: Float): List<android.graphics.Rect> {
                         return walks.indices.map { i ->
                             ContentExpandUtils.padVertByStrokes(
@@ -1798,12 +1782,7 @@ suspend fun runPumpExperiment(
                         workspace.p.mat, pads, jumpOpts,
                         scratch = workspace.s.mat,
                         seedHs = seedHs,
-                    ) ?: pads.mapIndexed { i, it ->
-                        ContentExpandUtils.jumpRetractHorizontal(
-                            workspace.p.mat, it, jumpOpts, scratch = workspace.s.mat,
-                            seedH = seedHs[i],
-                        )
-                    }
+                    ) ?: pads
                     customBlueG = jumped.map { j ->
                         PumpHunk(
                             "",
