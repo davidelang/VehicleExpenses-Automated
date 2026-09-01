@@ -558,12 +558,38 @@ object NativeImageUtils {
         return nativeEnergyOrientRetract(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
     }
 
+    private external fun nativeEnergyOrientExpand(
+        grayPtr: Long, seeds: FloatArray, sweepArr: IntArray?, scratchPtr: Long,
+    ): FloatArray?
+
+    fun energyOrientExpandNative(
+        gray: Mat, seeds: FloatArray, sweep: IntArray?, scratch: Mat?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        return nativeEnergyOrientExpand(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
+    }
+
     fun energyAabbRetractNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
         tele: FloatArray?, sweep: IntArray?, scratch: Mat?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
         return nativeEnergyAabbRetract(
+            gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
+        )
+    }
+
+    private external fun nativeEnergyAabbExpand(
+        grayPtr: Long, uvPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, scratchPtr: Long,
+    ): IntArray?
+
+    fun energyAabbExpandNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        tele: FloatArray?, sweep: IntArray?, scratch: Mat?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        return nativeEnergyAabbExpand(
             gray.nativeObj, uv?.nativeObj ?: 0L, seeds, tele, sweep, scratch?.nativeObj ?: 0L,
         )
     }
@@ -609,6 +635,22 @@ object NativeImageUtils {
         return nativeGrayAabbRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
     }
 
+    private external fun nativeGrayAabbExpand(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): IntArray?
+
+    fun grayAabbExpandNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayAabbExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+    }
+
     private external fun nativeColorAabbTight(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
         teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
@@ -639,6 +681,22 @@ object NativeImageUtils {
         if (gray.empty()) return IntArray(0)
         val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
         return nativeColorAabbRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+    }
+
+    private external fun nativeColorAabbExpand(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): IntArray?
+
+    fun colorAabbExpandNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorAabbExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
     }
 
     private external fun nativeSeg7Many(
@@ -794,6 +852,36 @@ object NativeImageUtils {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
         val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
         return nativeColorOrientRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+    }
+
+    private external fun nativeGrayOrientExpand(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): FloatArray?
+    private external fun nativeColorOrientExpand(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): FloatArray?
+
+    fun grayOrientExpandNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayOrientExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+    }
+    fun colorOrientExpandNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
     }
 
     /** Packed n×8 quads. Jump-retract along ±u. scratch = BufferSet.s. */

@@ -1314,6 +1314,24 @@ object ContentExpandUtils {
         NativeImageUtils::colorAabbRetractNative,
     )
 
+    fun expandGrayAabbExpand(
+        gray: Mat, uv: Mat?, seeds: List<Rect>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7Expand> = expandAabb7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::grayAabbExpandNative,
+    )
+
+    fun expandColorAabbExpand(
+        gray: Mat, uv: Mat?, seeds: List<Rect>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7Expand> = expandAabb7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::colorAabbExpandNative,
+    )
+
     /**
      * Freeze seed width on the vertical walk. From seed T/B grow while a 1px
      * strip (seed columns only) has an ink run ≥ 0.5`s`. Peek up to
@@ -1568,6 +1586,23 @@ object ContentExpandUtils {
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
         NativeImageUtils::colorOrientRetractNative,
+    )
+
+    fun expandGrayOrientExpand(
+        gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7OrientedExpand> = expandOrient7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::grayOrientExpandNative,
+    )
+    fun expandColorOrientExpand(
+        gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7OrientedExpand> = expandOrient7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::colorOrientExpandNative,
     )
 
     fun expand7segFromOrientedSeedMany(
@@ -1998,6 +2033,10 @@ object ContentExpandUtils {
     fun expandEnergyAabbRetract(
         gray: Mat, uv: Mat?, seeds: List<Rect>,
     ): List<AabbExpand> = expandEnergyAabbMany(gray, uv, seeds, NativeImageUtils::energyAabbRetractNative)
+
+    fun expandEnergyAabbExpand(
+        gray: Mat, uv: Mat?, seeds: List<Rect>,
+    ): List<AabbExpand> = expandEnergyAabbMany(gray, uv, seeds, NativeImageUtils::energyAabbExpandNative)
 
     /**
      * Many-seed AABB energy. Null → caller seed (no Kotlin pixel walk).
