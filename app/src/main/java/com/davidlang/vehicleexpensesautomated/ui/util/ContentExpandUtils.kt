@@ -442,14 +442,23 @@ object ContentExpandUtils {
                         null
                     }
                 } else {
-                    NativeImageUtils.expandOrientedNative(
-                        gray, seed.pts,
-                        opts.maxFrac, opts.energyRatio,
-                        opts.freezeHorzDuringVert, opts.enableJump,
-                        opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac,
-                        opts.boundStrategy, opts.tightInsetPx, sweepBuf,
+                    val many = NativeImageUtils.energyOrientExpandNative(
+                        gray, seed.pts, sweepBuf,
                         try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null },
                     )
+                    if (many != null && many.size >= 13) {
+                        NativeImageUtils.OrientedExpandNative(
+                            cx = many[0], cy = many[1], bw = many[2], bh = many[3],
+                            angDeg = many[4],
+                            stepsVNeg = many[5].toInt(), stepsVPos = many[6].toInt(),
+                            padV = many[7].toInt(),
+                            hitVertCap = many[8] >= 0.5f,
+                            stopEnergyUp = many[9], stopEnergyDown = many[10],
+                            base = many[11], thr = many[12],
+                        )
+                    } else {
+                        null
+                    }
                 }
             } catch (_: Throwable) {
                 null
@@ -1966,7 +1975,6 @@ object ContentExpandUtils {
 
     /**
      * Many-seed AABB energy U8 look in A.s. Native fail → seed boxes.
-     * Do not retarget [expandDiagnoseMany] onto this recipe.
      */
     private fun expandEnergyAabbMany(
         gray: Mat,
@@ -2039,8 +2047,8 @@ object ContentExpandUtils {
     ): List<AabbExpand> = expandEnergyAabbMany(gray, uv, seeds, NativeImageUtils::energyAabbExpandNative)
 
     /**
-     * Many-seed AABB energy. Null → caller seed (no Kotlin pixel walk).
-     * Live path when [ExpandOptions.recordVertEnergy] is false.
+     * Many-seed AABB energy. INTERIOR_ENERGY live path uses Expand recipe.
+     * Null when traces are on (skip JNI). Native fail → seed boxes.
      */
     fun expandDiagnoseMany(
         gray: Mat,
@@ -2050,61 +2058,7 @@ object ContentExpandUtils {
         opts: ExpandOptions,
     ): List<AabbExpand>? {
         if (mode != Mode.INTERIOR_ENERGY || opts.recordVertEnergy) return null
-        if (gray.empty() || gray.type() != CvType.CV_8UC1) {
-            return seeds.map { AabbExpand(it, false) }
-        }
-        val imgW = gray.cols()
-        val imgH = gray.rows()
-        if (seeds.isEmpty()) return emptyList()
-        val packed = IntArray(seeds.size * 4)
-        seeds.forEachIndexed { i, s ->
-            val c = clip(s, imgW, imgH)
-            packed[i * 4] = c.left
-            packed[i * 4 + 1] = c.top
-            packed[i * 4 + 2] = c.right
-            packed[i * 4 + 3] = c.bottom
-        }
-        val vk = when (opts.vertEnergy) {
-            VertEnergyKind.MAGNITUDE -> 0
-            VertEnergyKind.GX -> 1
-            VertEnergyKind.XYCUT_GX -> 2
-            VertEnergyKind.CHI2 -> 3
-        }
-        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
-        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
-        val r = NativeImageUtils.aabbGrowManyNative(
-            gray, uv, packed, uv != null, vk,
-            opts.maxFrac, opts.energyRatio, opts.freezeHorzDuringVert, opts.enableJump,
-            opts.jumpFrac, opts.retractClearFrac, opts.vertPadFrac, opts.chi2K,
-            opts.boundStrategy, opts.tightInsetPx, tele, sweepBuf,
-            try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null },
-        ) ?: return null
-        if (r.size < seeds.size * 11) return null
-        val sweeps = parseInkSweeps(sweepBuf, seeds.size)
-        return seeds.indices.map { i ->
-            val o = i * 11
-            val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
-            val cr = clip(Rect(r[o + 4], r[o + 5], r[o + 6], r[o + 7]), imgW, imgH)
-            AabbExpand(
-                rect,
-                r[o + 8] != 0,
-                null,
-                cr,
-                CountPullInfo(
-                    pulledTop = r[o + 9] != 0,
-                    pulledBot = r[o + 10] != 0,
-                    cSeed = 0.0,
-                    countThr = 0.0,
-                    gxThr = 0.0,
-                    tBefore = rect.top,
-                    bBefore = rect.bottom,
-                    tAfter = cr.top,
-                    bAfter = cr.bottom,
-                ),
-                parseSeg7Tele(tele, i),
-                sweeps.getOrNull(i),
-            )
-        }
+        return expandEnergyAabbExpand(gray, uv, seeds)
     }
 
     fun expand(

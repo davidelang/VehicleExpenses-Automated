@@ -2072,6 +2072,37 @@ suspend fun runPumpExperiment(
                         }
                     }
             }
+                fun makeInkAabbProc(
+                    assemblyNote: String,
+                    expandMany: (
+                        org.opencv.core.Mat,
+                        org.opencv.core.Mat?,
+                        List<android.graphics.Rect>,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        IntArray?,
+                    ) -> List<ContentExpandUtils.Seg7Expand>,
+                    chromaNote: String? = null,
+                    boundNote: String? = null,
+                    boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats: Boolean = false,
+                    hmThresh: Float = HEAT_THR_U8_GE1,
+                    expDetAsset: String? = null,
+                    detScales: List<Int> = prodDetScales,
+                ) = makeGProc(
+                    emptyList(),
+                    assemblyNote,
+                    boxMode = boxMode,
+                    dumpHeats = dumpHeats,
+                    hmThresh = hmThresh,
+                    expDetAsset = expDetAsset,
+                    detScales = detScales,
+                    inkExpand = expandMany,
+                    chromaNote = chromaNote,
+                    boundNote = boundNote,
+                )
                 val procGMinusMinus = makeGProc(
                     SET_G_MINUS_MINUS_VERT_FACTORS,
                     "G-- shared k=4 [0.1,0.3,0.4,1.1]; experiment product-det ref; u8≥1; horiz=0.5",
@@ -2080,14 +2111,9 @@ suspend fun runPumpExperiment(
                     horizFactor = SET_G_HORIZ_FACTOR,
                     hmThresh = HEAT_THR_U8_GE1,
                 )
-                val procProdInk = makeGProc(
-                    emptyList(),
+                val procProdInk = makeInkAabbProc(
                     "ink-prod: product det + seed-ROI s; walk once; OCR k=0..4; official k=0; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = null,
-                    seg7Stroke = true,
+                    ContentExpandUtils::expandGrayAabbExpand,
                 )
                 // Horiz-reach A/B: same discovery as G-- (verts, thr, box mode); only horizFactor changes.
                 val procHorizByFactor: Map<Float, suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit> =
@@ -2918,6 +2944,16 @@ suspend fun runPumpExperiment(
                     chromaNote: String? = null,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit =
                     { ws, br, det, w, h ->
+                        val aabbFn = aabbEnergy ?: if (!useOriented) {
+                            ContentExpandUtils::expandEnergyAabbExpand
+                        } else {
+                            null
+                        }
+                        val orientNativeFn = energyOrientNative ?: if (useOriented && orientInk == null) {
+                            NativeImageUtils::energyOrientExpandNative
+                        } else {
+                            energyOrientNative
+                        }
                         val workspace = ws
                         val branch = br
                         val discoveryDetails = det
@@ -3010,7 +3046,7 @@ suspend fun runPumpExperiment(
                                     chromaMode = chromaMode,
                                     boundStrategy = boundStrategy,
                                     tightInsetPx = tightInsetPx,
-                                    energyOrientNative = energyOrientNative,
+                                    energyOrientNative = orientNativeFn,
                                     orientInk = orientInk,
                                 )
                             } else {
@@ -3080,7 +3116,7 @@ suspend fun runPumpExperiment(
                             )
                             val tExpand0 = System.currentTimeMillis()
                             val uv = workspace.p.uvMat
-                            val energyFn = aabbEnergy
+                            val energyFn = aabbFn
                             val expDiag = if (energyFn != null) {
                                 energyFn(gray, uv, redPixelList)
                             } else {
@@ -3351,38 +3387,21 @@ suspend fun runPumpExperiment(
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
                     vertPadFrac = 0.0f,
-                    seg7Stroke = true,
+                    orientInk = ContentExpandUtils::expandGrayOrientExpand,
                 )
-                val procInkProdColor = makeGProc(
-                    emptyList(),
+                val procInkProdColor = makeInkAabbProc(
                     "ink-prod-color: product det + chromaMag 7seg (median<8 Y fallback); OCR k=0..4; official k=0",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = null,
-                    seg7Stroke = true,
-                    chromaExpand = true,
+                    ContentExpandUtils::expandColorAabbExpand,
+                    chromaNote = "true",
                 )
-                val procInkProdColor2 = makeGProc(
-                    emptyList(),
+                val procInkProdColor2 = makeInkAabbProc(
                     "ink-prod-color2: product det + chroma tintMask 7seg (u_p·u_ink / Y polarity); OCR k=0..4; official k=0",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = null,
-                    seg7Stroke = true,
-                    chromaMode = 2,
+                    ContentExpandUtils::expandColorAabbExpand,
+                    chromaNote = "color2",
                 )
-                val procInkProdWalk2 = makeGProc(
-                    emptyList(),
+                val procInkProdWalk2 = makeInkAabbProc(
                     "ink-prod-walk2: product det + 7seg walk gap/peek 2.0s; freeze empty peek only if seedH>=4s; OCR k=0..4; official k=0",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = null,
-                    seg7Stroke = true,
-                    gapFrac = 2.0f,
-                    minSeedHsToFreeze = 4f,
+                    ContentExpandUtils::expandGrayAabbExpand,
                 )
                 val procJumpProdColor = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -3394,7 +3413,7 @@ suspend fun runPumpExperiment(
                     ocrScales = pJumpOcrScales,
                     maxFrac = alignedExpandMaxFrac,
                     energyRatio = 0.65f,
-                    chromaExpand = true,
+                    aabbEnergy = ContentExpandUtils::expandEnergyAabbExpand,
                 )
                 val procRotInkProdColor = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
@@ -3409,8 +3428,8 @@ suspend fun runPumpExperiment(
                     energyRatio = 0.65f,
                     freezeHorzDuringVert = true,
                     vertPadFrac = 0.0f,
-                    seg7Stroke = true,
-                    chromaExpand = true,
+                    orientInk = ContentExpandUtils::expandColorOrientExpand,
+                    chromaNote = "true",
                 )
                 // Hybrid helpers: current-pass discovery+filter+prune; append stage blue OCR to combined lists.
                 suspend fun hybridRunDiscoveryStage(
@@ -3595,37 +3614,6 @@ suspend fun runPumpExperiment(
                     val aPdI = getAnns(lastReds, Color.RED, 2) + getAnns(lastBlueHunks, Color.BLUE, 4) + getAnns(lastOrangeHunks, Color.rgb(255, 165, 0), 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdI, null, workspace).first
                 }
-                fun makeInkAabbProc(
-                    assemblyNote: String,
-                    expandMany: (
-                        org.opencv.core.Mat,
-                        org.opencv.core.Mat?,
-                        List<android.graphics.Rect>,
-                        org.opencv.core.Mat?,
-                        org.opencv.core.Mat?,
-                        org.opencv.core.Mat?,
-                        org.opencv.core.Mat?,
-                        IntArray?,
-                    ) -> List<ContentExpandUtils.Seg7Expand>,
-                    chromaNote: String? = null,
-                    boundNote: String? = null,
-                    boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats: Boolean = false,
-                    hmThresh: Float = HEAT_THR_U8_GE1,
-                    expDetAsset: String? = null,
-                    detScales: List<Int> = prodDetScales,
-                ) = makeGProc(
-                    emptyList(),
-                    assemblyNote,
-                    boxMode = boxMode,
-                    dumpHeats = dumpHeats,
-                    hmThresh = hmThresh,
-                    expDetAsset = expDetAsset,
-                    detScales = detScales,
-                    inkExpand = expandMany,
-                    chromaNote = chromaNote,
-                    boundNote = boundNote,
-                )
                 fun inkEnergyAabb(
                     name: String,
                     aabb: (org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<ContentExpandUtils.AabbExpand>,
