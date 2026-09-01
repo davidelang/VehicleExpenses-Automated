@@ -540,6 +540,33 @@ object NativeImageUtils {
         )
     }
 
+    private fun aabbPtrs(
+        gray: Mat, uv: Mat?, scratch: Mat?, combine: Mat?, overlayY: Mat?, overlayUv: Mat?,
+    ): LongArray = longArrayOf(
+        gray.nativeObj,
+        uv?.nativeObj ?: 0L,
+        scratch?.nativeObj ?: 0L,
+        combine?.nativeObj ?: 0L,
+        overlayY?.nativeObj ?: 0L,
+        overlayUv?.nativeObj ?: 0L,
+    )
+
+    private external fun nativeGrayAabbTight(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+    ): IntArray?
+
+    fun grayAabbTightNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeGrayAabbTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+    }
+
     private external fun nativeSeg7Many(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray, chromaMode: Int,
         gapFrac: Float, minSeedHsToFreeze: Float,

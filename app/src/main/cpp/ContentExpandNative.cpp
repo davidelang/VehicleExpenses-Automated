@@ -3647,6 +3647,122 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeSeg7M
     return arr;
 }
 
+static jintArray aabb7segSeedsOut(JNIEnv* env, const std::vector<jint>& seeds) {
+    const int n = static_cast<int>(seeds.size()) / 4;
+    std::vector<jint> out(static_cast<size_t>(n) * 8, 0);
+    for (int i = 0; i < n; ++i) {
+        const int o = i * 8;
+        out[static_cast<size_t>(o)] = seeds[static_cast<size_t>(i) * 4];
+        out[static_cast<size_t>(o) + 1] = seeds[static_cast<size_t>(i) * 4 + 1];
+        out[static_cast<size_t>(o) + 2] = seeds[static_cast<size_t>(i) * 4 + 2];
+        out[static_cast<size_t>(o) + 3] = seeds[static_cast<size_t>(i) * 4 + 3];
+        out[static_cast<size_t>(o) + 4] = 2;
+        out[static_cast<size_t>(o) + 5] = 4;
+        out[static_cast<size_t>(o) + 6] = 4;
+        out[static_cast<size_t>(o) + 7] = 1;
+    }
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return env->NewIntArray(0);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+}
+
+static void aabbJumpOnLook(
+    cv::Mat* look, int* l, int t, int* r, int b,
+    int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx
+) {
+    if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
+    const int maxIn = maxInSeedRunRows(*look, seedT, seedB, seedL, seedR);
+    const int minRun = usedMinRun(sPx, maxIn);
+    if (minRun < 1) return;
+    jumpRetractH(
+        *look, l, t, r, b, imgW, imgH, 0.0, 1, 0.40f, 0.30f,
+        std::max(1, seedB - seedT), look, seedT, seedB, minRun);
+}
+
+static jintArray aabbGrayMany(
+    JNIEnv* env,
+    jlong grayPtr, jlong /*uvPtr*/, jlong /*scratchPtr*/, jintArray seedsArr,
+    jint boundStrategy, jint tightInsetPx,
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+) {
+    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
+    if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) {
+        return env->NewIntArray(0);
+    }
+    const jint n4 = env->GetArrayLength(seedsArr);
+    if (n4 <= 0 || n4 % 4 != 0) return env->NewIntArray(0);
+    std::vector<jint> seeds(static_cast<size_t>(n4));
+    env->GetIntArrayRegion(seedsArr, 0, n4, seeds.data());
+    try {
+    const int imgW = gray->cols, imgH = gray->rows;
+    const int n = n4 / 4;
+    const jfloat gapFrac = 0.5f;
+    const jfloat minSeedHsToFreeze = 0.f;
+    auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
+    auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
+    auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
+    if (inkDump && scratchFits(inkDump, imgW, imgH)) inkDump->setTo(0);
+    std::vector<PoisonStats> poisonPacks;
+    poisonPacks.resize(static_cast<size_t>(n));
+    std::vector<jint> out(static_cast<size_t>(n) * 8, 0);
+    std::vector<InkSweepPack> sweeps;
+    sweeps.resize(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        int l = seeds[static_cast<size_t>(i) * 4], t = seeds[static_cast<size_t>(i) * 4 + 1];
+        int r = seeds[static_cast<size_t>(i) * 4 + 2], b = seeds[static_cast<size_t>(i) * 4 + 3];
+        if (l < 0) l = 0;
+        if (t < 0) t = 0;
+        if (r > imgW) r = imgW;
+        if (b > imgH) b = imgH;
+        const int seedL = l, seedT = t, seedR = r, seedB = b;
+        int ol, ot, orr, ob, sPx, vSW, hSW, fb;
+        Seg7Tele tele{};
+        tele.method = 0.f;
+        seg7One(*gray, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
+            false, gapFrac, minSeedHsToFreeze, 11, boundStrategy, tightInsetPx, &tele, false,
+            &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
+            &poisonPacks[static_cast<size_t>(i)]);
+        aabbJumpOnLook(inkDump, &ol, ot, &orr, ob, imgW, imgH,
+            seedT, seedB, seedL, seedR, sPx);
+        const int o = i * 8;
+        out[static_cast<size_t>(o)] = ol;
+        out[static_cast<size_t>(o) + 1] = ot;
+        out[static_cast<size_t>(o) + 2] = orr;
+        out[static_cast<size_t>(o) + 3] = ob;
+        out[static_cast<size_t>(o) + 4] = sPx;
+        out[static_cast<size_t>(o) + 5] = vSW;
+        out[static_cast<size_t>(o) + 6] = hSW;
+        out[static_cast<size_t>(o) + 7] = fb;
+        storeTeleArr(env, teleArr, i, tele);
+    }
+    writeSweepArr(env, sweepArr, sweeps);
+    writePoisonArr(env, poisonArr, poisonPacks);
+    jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
+    if (!arr) return aabb7segSeedsOut(env, seeds);
+    env->SetIntArrayRegion(arr, 0, static_cast<jint>(out.size()), out.data());
+    return arr;
+    } catch (const cv::Exception&) {
+        return aabb7segSeedsOut(env, seeds);
+    } catch (const std::exception&) {
+        return aabb7segSeedsOut(env, seeds);
+    }
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbTight(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+) {
+    jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
+    if (!seeds) seeds = seedsArr;
+    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seeds, 0, 16,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+}
+
 extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeJumpMany(
     JNIEnv* env, jobject /*thiz*/,

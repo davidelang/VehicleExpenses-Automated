@@ -1496,6 +1496,93 @@ object ContentExpandUtils {
         val poison: PoisonDump? = null,
     )
 
+    private fun unpackAabb7seg(
+        seeds: List<Rect>,
+        r: IntArray?,
+        tele: FloatArray,
+        sweepBuf: IntArray,
+        poisonStats: IntArray?,
+        imgW: Int,
+        imgH: Int,
+        k: Float,
+        j: Float,
+    ): List<Seg7Expand> {
+        if (r == null || r.size < seeds.size * 8) {
+            return seeds.map { Seg7Expand(clip(it, imgW, imgH), strokeWidthInSeed(Mat(), it), k, j) }
+        }
+        val sweeps = parseInkSweeps(sweepBuf, seeds.size)
+        val poisons = parsePoisonStats(poisonStats, seeds.size)
+        return seeds.indices.map { i ->
+            val o = i * 8
+            val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
+            val sPx = max(1, r[o + 4])
+            val vSW = r[o + 5]
+            val hSW = r[o + 6]
+            val fb = r[o + 7] != 0
+            val seed = clip(seeds[i], imgW, imgH)
+            Seg7Expand(
+                rect,
+                StrokeWidthInSeed(
+                    sPx = sPx, vSW = vSW, hSW = hSW,
+                    inkFrac = 0f, darkInk = true, usedFallback = fb,
+                    droppedGlare = 0, otsuThr = 0, seed = seed,
+                ),
+                k, j,
+                parseSeg7Tele(tele, i),
+                sweeps.getOrNull(i),
+                poisons.getOrNull(i),
+            )
+        }
+    }
+
+    private fun expandAabb7seg(
+        gray: Mat,
+        uv: Mat?,
+        seeds: List<Rect>,
+        scratch: Mat?,
+        combine: Mat?,
+        overlayY: Mat?,
+        overlayUv: Mat?,
+        poisonStats: IntArray?,
+        native: (
+            Mat, Mat?, IntArray, Mat?, FloatArray, IntArray, Mat?, Mat?, Mat?, IntArray?,
+        ) -> IntArray?,
+        k: Float = SEG7_K,
+        j: Float = SEG7_J,
+    ): List<Seg7Expand> {
+        if (gray.empty() || gray.type() != CvType.CV_8UC1) {
+            return seeds.map { Seg7Expand(it, strokeWidthInSeed(gray, it), k, j) }
+        }
+        if (seeds.isEmpty()) return emptyList()
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val packed = IntArray(seeds.size * 4)
+        seeds.forEachIndexed { i, s0 ->
+            val s = clip(s0, imgW, imgH)
+            packed[i * 4] = s.left
+            packed[i * 4 + 1] = s.top
+            packed[i * 4 + 2] = s.right
+            packed[i * 4 + 3] = s.bottom
+        }
+        val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
+        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
+        val r = try {
+            native(gray, uv, packed, scratch, tele, sweepBuf, combine, overlayY, overlayUv, poisonStats)
+        } catch (_: Throwable) {
+            null
+        }
+        return unpackAabb7seg(seeds, r, tele, sweepBuf, poisonStats, imgW, imgH, k, j)
+    }
+
+    fun expandGrayAabbTight(
+        gray: Mat, uv: Mat?, seeds: List<Rect>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7Expand> = expandAabb7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::grayAabbTightNative,
+    )
+
     /**
      * Freeze seed width on the vertical walk. From seed T/B grow while a 1px
      * strip (seed columns only) has an ink run ≥ 0.5`s`. Peek up to

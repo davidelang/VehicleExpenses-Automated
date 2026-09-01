@@ -1368,6 +1368,18 @@ suspend fun runPumpExperiment(
                     minSeedHsToFreeze: Float = 0f,
                     boundStrategy: Int = 0,
                     tightInsetPx: Int = 16,
+                    inkExpand: ((
+                        org.opencv.core.Mat,
+                        org.opencv.core.Mat?,
+                        List<android.graphics.Rect>,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        IntArray?,
+                    ) -> List<ContentExpandUtils.Seg7Expand>)? = null,
+                    chromaNote: String? = null,
+                    boundNote: String? = null,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit = { ws: BufferSet, br: PumpBranch, det: MutableMap<String, MutableMap<Int, List<PumpHunk>>>, w: Int, h: Int ->
                     val workspace = ws
                     val branch = br
@@ -1526,7 +1538,95 @@ suspend fun runPumpExperiment(
                 val inkJumpOpts: ContentExpandUtils.ExpandOptions?
                 var makeGInkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList()
                 val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
-                if (seg7Stroke) {
+                val inkFn = inkExpand
+                if (chromaNote != null) {
+                    branch.metadata["content_expand_chroma"] = chromaNote
+                }
+                if (boundNote != null) {
+                    branch.metadata["content_expand_bound"] = boundNote
+                    branch.metadata["content_expand_tight_inset_px"] = "16"
+                }
+                if (inkFn != null) {
+                    val jumpOpts = ContentExpandUtils.ExpandOptions(
+                        maxFrac = 0.4f,
+                        enableJump = true,
+                        jumpFrac = 0.40f,
+                        retractClearFrac = 0.30f,
+                        energyRatio = 0.65f,
+                    )
+                    val tExp0 = System.currentTimeMillis()
+                    val seeds = pdHunksRawTotal.map { h ->
+                        android.graphics.Rect(
+                            h.rect.left.toInt(), h.rect.top.toInt(),
+                            h.rect.right.toInt(), h.rect.bottom.toInt(),
+                        )
+                    }
+                    val bSet = NativePaddleEngine.bufferSetB
+                    if (bSet.p.mat.cols() != imgW || bSet.p.mat.rows() != imgH) {
+                        bSet.resize(imgW, imgH)
+                    }
+                    branch.metadata.remove("look_ink")
+                    val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
+                    seeds.forEach { seed ->
+                        val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
+                        val one = inkFn(
+                            workspace.p.mat,
+                            workspace.p.uvMat,
+                            listOf(seed),
+                            workspace.s.mat,
+                            bSet.s.mat,
+                            bSet.p.mat,
+                            bSet.p.uvMat,
+                            poisonBuf,
+                        )
+                        val seg = one.first()
+                        segs.add(seg)
+                        snapshotLookInk(
+                            listOf(seed), listOf(seg.rect), imgW, imgH, branch,
+                            listOf(seg.poison),
+                            listOf(seg.tele),
+                            listOf(seg.sweep),
+                            listOf(seg.stroke),
+                            reportDir, timestamp, fullRow, branch.name,
+                        )
+                    }
+                    val walks = seeds.indices.map { i ->
+                        Triple(seeds[i], segs[i].rect, segs[i].stroke)
+                    }
+                    val jumpedOnce = walks.map { it.second }
+                    fun inkBoxesFor(kk: Float): List<android.graphics.Rect> {
+                        return walks.indices.map { i ->
+                            ContentExpandUtils.padVertByStrokes(
+                                jumpedOnce[i], walks[i].first, kk,
+                                walks[i].third.sPx, imgW, imgH,
+                            )
+                        }
+                    }
+                    val official = inkBoxesFor(0f)
+                    makeGInkSweeps = segs.indices.map { i ->
+                        segs[i].sweep?.withOfficial(official[i])
+                    }
+                    customBlueG = official.map { e ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                e.left.toFloat(), e.top.toFloat(),
+                                e.right.toFloat(), e.bottom.toFloat(),
+                            ),
+                        )
+                    }
+                    customOrangeG = emptyList()
+                    seg7Strokes = walks.map { it.third }
+                    inkWalkSeeds = walks.map { it.first }
+                    inkWalkBoxes = jumpedOnce
+                    inkJumpOpts = jumpOpts
+                    branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
+                    storeSeg7Tele(branch, segs.map { it.tele })
+                    branch.metadata["seg7_k"] = "0,1,2,3,4"
+                    branch.metadata["seg7_k_official"] = "0"
+                    branch.metadata["t_expand_ms"] =
+                        (System.currentTimeMillis() - tExp0).toString()
+                } else if (seg7Stroke) {
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
@@ -1756,7 +1856,7 @@ suspend fun runPumpExperiment(
                 val cvG = PumpCostVolUtils.classifyCostVolFromBoxOcr(gCands)
                 val inkVariants = JSONArray()
                 var horizPadHunks: List<PumpHunk> = emptyList()
-                if (seg7Stroke && inkJumpOpts != null && inkWalkSeeds.isNotEmpty()) {
+                if ((seg7Stroke || inkFn != null) && inkJumpOpts != null && inkWalkSeeds.isNotEmpty()) {
                     val opts = inkJumpOpts
                     fun inkRectsFor(kk: Float): List<android.graphics.Rect> {
                         return inkWalkSeeds.indices.map { i ->
@@ -1910,7 +2010,7 @@ suspend fun runPumpExperiment(
                     volCand = cvG.volCand,
                     finalCost = cvG.cost,
                     finalVol = cvG.vol,
-                    assembly = if (seg7Stroke) mapOf(
+                    assembly = if (seg7Stroke || inkFn != null) mapOf(
                         "method" to "7seg_stroke",
                         "k" to listOf(0, 1, 2, 3, 4),
                         "kOfficial" to 0,
@@ -1975,7 +2075,7 @@ suspend fun runPumpExperiment(
                     inkSweeps = makeGInkSweeps,
                 )
                 doBOrDRedOnlyImage()
-                val aPdG = if (horizJump || seg7Stroke) {
+                val aPdG = if (horizJump || seg7Stroke || inkFn != null) {
                     getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) +
                         getAnns(horizPadHunks, Color.BLUE, 4)
                 } else {
@@ -3469,6 +3569,37 @@ suspend fun runPumpExperiment(
                     val aPdI = getAnns(lastReds, Color.RED, 2) + getAnns(lastBlueHunks, Color.BLUE, 4) + getAnns(lastOrangeHunks, Color.rgb(255, 165, 0), 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdI, null, workspace).first
                 }
+                fun makeInkAabbProc(
+                    assemblyNote: String,
+                    expandMany: (
+                        org.opencv.core.Mat,
+                        org.opencv.core.Mat?,
+                        List<android.graphics.Rect>,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        org.opencv.core.Mat?,
+                        IntArray?,
+                    ) -> List<ContentExpandUtils.Seg7Expand>,
+                    chromaNote: String? = null,
+                    boundNote: String? = null,
+                    boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                    dumpHeats: Boolean = false,
+                    hmThresh: Float = HEAT_THR_U8_GE1,
+                    expDetAsset: String? = null,
+                    detScales: List<Int> = prodDetScales,
+                ) = makeGProc(
+                    emptyList(),
+                    assemblyNote,
+                    boxMode = boxMode,
+                    dumpHeats = dumpHeats,
+                    hmThresh = hmThresh,
+                    expDetAsset = expDetAsset,
+                    detScales = detScales,
+                    inkExpand = expandMany,
+                    chromaNote = chromaNote,
+                    boundNote = boundNote,
+                )
                 fun inkEnergyAabb(
                     name: String,
                     aabb: (org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<ContentExpandUtils.AabbExpand>,
@@ -3574,7 +3705,11 @@ suspend fun runPumpExperiment(
                 val procInkEnergyTight = inkEnergyAabb("ink-energy-tight", ContentExpandUtils::expandEnergyAabbTight, "tight")
                 val procInkEnergyRetract = inkEnergyAabb("ink-energy-retract", ContentExpandUtils::expandEnergyAabbRetract, "edge-retract")
                 val procInkGrayBase = inkGray(0, "ink-gray-base")
-                val procInkGrayTight = inkGray(1, "ink-gray-tight")
+                val procInkGrayTight = makeInkAabbProc(
+                    "ink-gray-tight: product det + greyscale Otsu 7seg; OCR k=0..4; official k=0",
+                    ContentExpandUtils::expandGrayAabbTight,
+                    boundNote = "tight",
+                )
                 val procInkGrayRetract = inkGray(2, "ink-gray-retract")
                 val procInkColorBase = inkColor(0, "ink-color-base")
                 val procInkColorTight = inkColor(1, "ink-color-tight")
