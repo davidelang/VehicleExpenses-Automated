@@ -3643,40 +3643,6 @@ suspend fun runPumpExperiment(
                     aabbEnergy = aabb,
                     boundNote = boundNote,
                 )
-                fun inkEnergy(bound: Int, name: String) = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "$name: product det + interior-energy AABB; bound=$bound; jump; maxFrac=0.4",
-                    expDetAsset = null,
-                    enableJump = true,
-                    doDeskew = true,
-                    useOriented = false,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = alignedExpandMaxFrac,
-                    energyRatio = 0.65f,
-                    boundStrategy = bound,
-                )
-                fun inkGray(bound: Int, name: String) = makeGProc(
-                    emptyList(),
-                    "$name: product det + greyscale Otsu 7seg; bound=$bound; OCR k=0..4; official k=0",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = null,
-                    seg7Stroke = true,
-                    chromaMode = 0,
-                    boundStrategy = bound,
-                )
-                fun inkColor(bound: Int, name: String) = makeGProc(
-                    emptyList(),
-                    "$name: product det + color_adaptive 7seg; bound=$bound; OCR k=0..4; official k=0",
-                    boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                    dumpHeats = false,
-                    hmThresh = HEAT_THR_U8_GE1,
-                    expDetAsset = null,
-                    seg7Stroke = true,
-                    chromaMode = 4,
-                    boundStrategy = bound,
-                )
                 fun rotEnergyOrient(
                     name: String,
                     native: (org.opencv.core.Mat, FloatArray, IntArray?, org.opencv.core.Mat?) -> FloatArray?,
@@ -3728,60 +3694,13 @@ suspend fun runPumpExperiment(
                     chromaNote = chromaNote,
                     boundNote = boundNote,
                 )
-                fun rotEnergy(bound: Int, name: String) = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "$name: product oriented det + interior-energy; bound=$bound; jump ±u",
-                    expDetAsset = null,
-                    enableJump = true,
-                    doDeskew = false,
-                    useOriented = true,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = rotExpandMaxFrac,
-                    vertSweep = emptyList(),
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertPadFrac = 0.0f,
-                    seg7Stroke = false,
-                    boundStrategy = bound,
-                )
-                fun rotGray(bound: Int, name: String) = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "$name: product oriented det + greyscale Otsu 7seg; bound=$bound",
-                    expDetAsset = null,
-                    enableJump = true,
-                    doDeskew = false,
-                    useOriented = true,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = rotExpandMaxFrac,
-                    vertSweep = emptyList(),
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertPadFrac = 0.0f,
-                    seg7Stroke = true,
-                    chromaMode = 0,
-                    boundStrategy = bound,
-                )
-                fun rotColor(bound: Int, name: String) = makeContentExpandProc(
-                    ContentExpandUtils.Mode.INTERIOR_ENERGY,
-                    "$name: product oriented det + color_adaptive 7seg; bound=$bound",
-                    expDetAsset = null,
-                    enableJump = true,
-                    doDeskew = false,
-                    useOriented = true,
-                    ocrScales = pJumpOcrScales,
-                    maxFrac = rotExpandMaxFrac,
-                    vertSweep = emptyList(),
-                    energyRatio = 0.65f,
-                    freezeHorzDuringVert = true,
-                    vertPadFrac = 0.0f,
-                    seg7Stroke = true,
-                    chromaMode = 4,
-                    boundStrategy = bound,
-                )
-                val procInkEnergyBase = inkEnergy(0, "ink-energy-base")
+                val procInkEnergyBase = inkEnergyAabb("ink-energy-base", ContentExpandUtils::expandEnergyAabbExpand, null)
                 val procInkEnergyTight = inkEnergyAabb("ink-energy-tight", ContentExpandUtils::expandEnergyAabbTight, "tight")
                 val procInkEnergyRetract = inkEnergyAabb("ink-energy-retract", ContentExpandUtils::expandEnergyAabbRetract, "edge-retract")
-                val procInkGrayBase = inkGray(0, "ink-gray-base")
+                val procInkGrayBase = makeInkAabbProc(
+                    "ink-gray-base: product det + greyscale Otsu 7seg; OCR k=0..4; official k=0",
+                    ContentExpandUtils::expandGrayAabbExpand,
+                )
                 val procInkGrayTight = makeInkAabbProc(
                     "ink-gray-tight: product det + greyscale Otsu 7seg; OCR k=0..4; official k=0",
                     ContentExpandUtils::expandGrayAabbTight,
@@ -3792,7 +3711,11 @@ suspend fun runPumpExperiment(
                     ContentExpandUtils::expandGrayAabbRetract,
                     boundNote = "edge-retract",
                 )
-                val procInkColorBase = inkColor(0, "ink-color-base")
+                val procInkColorBase = makeInkAabbProc(
+                    "ink-color-base: product det + color_adaptive 7seg; OCR k=0..4; official k=0",
+                    ContentExpandUtils::expandColorAabbExpand,
+                    chromaNote = "color_adaptive",
+                )
                 val procInkColorTight = makeInkAabbProc(
                     "ink-color-tight: product det + color_adaptive 7seg; OCR k=0..4; official k=0",
                     ContentExpandUtils::expandColorAabbTight,
@@ -3805,7 +3728,11 @@ suspend fun runPumpExperiment(
                     chromaNote = "color_adaptive",
                     boundNote = "edge-retract",
                 )
-                val procRotEnergyBase = rotEnergy(0, "rot-energy-base")
+                val procRotEnergyBase = rotEnergyOrient(
+                    "rot-energy-base",
+                    NativeImageUtils::energyOrientExpandNative,
+                    null,
+                )
                 val procRotEnergyTight = rotEnergyOrient(
                     "rot-energy-tight",
                     NativeImageUtils::energyOrientTightNative,
@@ -3816,7 +3743,12 @@ suspend fun runPumpExperiment(
                     NativeImageUtils::energyOrientRetractNative,
                     "edge-retract",
                 )
-                val procRotGrayBase = rotGray(0, "rot-gray-base")
+                val procRotGrayBase = rotInkOrient(
+                    "rot-gray-base: product oriented det + greyscale Otsu 7seg",
+                    ContentExpandUtils::expandGrayOrientExpand,
+                    null,
+                    null,
+                )
                 val procRotGrayTight = rotInkOrient(
                     "rot-gray-tight: product oriented det + greyscale Otsu 7seg",
                     ContentExpandUtils::expandGrayOrientTight,
@@ -3829,7 +3761,12 @@ suspend fun runPumpExperiment(
                     null,
                     "edge-retract",
                 )
-                val procRotColorBase = rotColor(0, "rot-color-base")
+                val procRotColorBase = rotInkOrient(
+                    "rot-color-base: product oriented det + color_adaptive 7seg",
+                    ContentExpandUtils::expandColorOrientExpand,
+                    "color_adaptive",
+                    null,
+                )
                 val procRotColorTight = rotInkOrient(
                     "rot-color-tight: product oriented det + color_adaptive 7seg",
                     ContentExpandUtils::expandColorOrientTight,
