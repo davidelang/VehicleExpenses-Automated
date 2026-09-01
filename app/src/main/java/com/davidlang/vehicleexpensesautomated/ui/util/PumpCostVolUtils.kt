@@ -497,7 +497,7 @@ object PumpCostVolUtils {
             .put("digits", c.digits)
             .put("asisProbs", c.asisProbs)
             .put("digitsProbs", c.digitsProbs)
-        if (c.recB64.isNotEmpty()) j.put("recB64", c.recB64)
+        if (c.recB64.isNotEmpty()) j.put("_htmlRec", c.recB64)
         if (c.recW > 0) j.put("recW", c.recW)
         if (c.recH > 0) j.put("recH", c.recH)
         c.rect?.let { j.put("rect", rectToJson(it)) }

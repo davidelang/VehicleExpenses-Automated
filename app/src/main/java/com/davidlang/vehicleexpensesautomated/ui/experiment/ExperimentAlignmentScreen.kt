@@ -40,6 +40,7 @@ import com.davidlang.vehicleexpensesautomated.ui.vehicle.VehicleViewModel
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -512,14 +513,37 @@ suspend fun runAlignmentExperiment(
     val footerHtml = ExperimentReportHtml.footer(
         ExperimentReportHtml.Kind.ALIGNMENT, alignColLabels, alignMetaHtml,
     )
-    var firstJsonResult = true
-    var alignHtmlClosed = false
-    fun closeAlignHtml() {
-        if (alignHtmlClosed) return
-        currentFile.appendText(footerHtml)
-        alignHtmlClosed = true
+    val cellsDir = File(reportDir, "align_cells_$timestamp").also { it.mkdirs() }
+    val cursorFile = File(reportDir, "align_cursor_$timestamp.txt")
+    cursorFile.writeText("0")
+    val nCells = total
+    val cellOrder = (1..nCells).map { ReportCellRef(it, sortA = it) }
+    val skeleton = buildString {
+        photos.forEachIndexed { i, f ->
+            val id = i + 1
+            val line = subsetMap?.get(f.name) ?: (i + 1)
+            append(ReportCollapser.htmlBegin(id))
+            append(
+                "<tr data-photo='$line'><td colspan='${alignColLabels.size}'>" +
+                    "<span class='stat pending'>… ${ReportCollapser.idTag(id)}</span></td></tr>\n",
+            )
+            append(ReportCollapser.htmlEnd(id))
+        }
     }
+    currentFile.appendText(skeleton)
+    currentFile.appendText(footerHtml)
+    val collapser = ReportCollapser(
+        htmlFile = currentFile,
+        cellsDir = cellsDir,
+        cursorFile = cursorFile,
+        nCells = nCells,
+        cellOrder = cellOrder,
+        onLog = onLog,
+    )
+    var firstJsonResult = true
 
+    coroutineScope {
+    val collapseJob = collapser.start(this)
     try {
     photos.forEachIndexed { index, file ->
         val originalLineNumber = subsetMap?.get(file.name) ?: (index + 1)
@@ -814,7 +838,7 @@ suspend fun runAlignmentExperiment(
                     tilt, deskewResA, pipelines, meta.diagnostic
                 )
 
-                currentFile.appendText(rowHtml)
+                ReportCollapser.publishCell(cellsDir, index + 1, rowHtml, "{}")
 
                 val photoJson = serializePhotoResultToJson(
                     originalLineNumber, imgW, imgH, imgW, imgH, meta.isDegraded,
@@ -856,7 +880,13 @@ suspend fun runAlignmentExperiment(
         }
     }
     } finally {
-        closeAlignHtml()
+        collapser.requestFinal("alignment final collapse")
+        try {
+            collapseJob.join()
+        } catch (_: CancellationException) {
+        }
+        collapser.drainAll()
+    }
     }
     jsonFile.appendText("\n  ]\n}")
 
