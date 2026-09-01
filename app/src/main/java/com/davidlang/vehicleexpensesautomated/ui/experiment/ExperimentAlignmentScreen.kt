@@ -485,7 +485,7 @@ suspend fun runAlignmentExperiment(
 
     NativePaddleEngine.initializeGlobalBuffers(context)
     val experimentRecSet320x48 = NativePaddleEngine.recBufferSet
-    val experimentDetSet512x128 = BufferSet(512, 128)
+    val experimentDetSet512x128 = NativePaddleEngine.square608
 
     // Report columns: product det × 3 expand (char-aware / P / valley). J / L / V only.
     // Shared on every column: PreferLen(vehicle digit count), prefer-Bin final pick, source-border rec.
@@ -861,7 +861,7 @@ suspend fun runAlignmentExperiment(
     jsonFile.appendText("\n  ]\n}")
 
     logHeapState(context, "runExperiment:end")
-    experimentDetSet512x128.release()
+
     vehicleBufferSets.values.forEach { it.release() }
     vehicleBufferSets.clear()
     Log.i(TAG, "runAlignmentExperiment:end json=${jsonFile.absolutePath} total=$total")
@@ -1299,32 +1299,36 @@ internal suspend fun runBinTrialsPaddle(
         Log.i("HIST_DIAG", "after threshold+flip vehicle=$vehicleId p=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()}")
         NativeImageUtils.logMatHeader(odoBuffer.p.mat, "odo_p_after_flip_v$vehicleId")
 
-        val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
-        val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
-        val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
-
-        experimentDetSet512x128.p.clear()
-        val dCrId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId].mat, experimentDetSet512x128.c[dCrId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+        val dest = NativePaddleEngine.square608
+        val S = dest.width
+        val srcW = odoBuffer.p.mat.cols()
+        val srcH = odoBuffer.p.mat.rows()
+        val currentLong = maxOf(srcW, srcH)
+        val packScale = if (currentLong <= S) 1.0f else S.toFloat() / currentLong
+        val innerW = (srcW * packScale).toInt().coerceAtLeast(1)
+        val innerH = (srcH * packScale).toInt().coerceAtLeast(1)
+        NativeImageUtils.scalePackedU8(
+            odoBuffer.p.mat, (dest.s as BufferSet.Instance).tensorBindRaw(), S, innerW, innerH,
+        )
+        val detRes = paddleEngine.detect(dest, S, S, copyHeatmap = false)
         var tFullB = if (detRes != null) {
-            val invScale = 1.0f / detSc
+            val invScaleX = srcW.toFloat() / innerW
+            val invScaleY = srcH.toFloat() / innerH
             detRes.nativeBoxes.map { box ->
                 val points = box.points
-                val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScale.toDouble()).toInt()
-                val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScale.toDouble()).toInt()
-                val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScale.toDouble()).toInt()
-                val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScale.toDouble()).toInt()
+                val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScaleX.toDouble()).toInt()
+                val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScaleY.toDouble()).toInt()
+                val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScaleX.toDouble()).toInt()
+                val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScaleY.toDouble()).toInt()
                 val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
                 val scaledPoints = FloatArray(8)
                 for (i in 0 until 8) {
-                    scaledPoints[i] = points[i] * invScale
+                    scaledPoints[i] = points[i] * if (i % 2 == 0) invScaleX else invScaleY
                 }
                 val angle = 0f
                 TextBlock("", bounds, angle, confidence = box.confidence)
             }
         } else emptyList<TextBlock>()
-        experimentDetSet512x128.c[dCrId].release()
 
         var tRawB = tFullB.filter { b1 ->
             tFullB.none { b2 -> b1 !== b2 && b2.boundingBox.contains(b1.boundingBox.left + 5, b1.boundingBox.top + 5, b1.boundingBox.right - 5, b1.boundingBox.bottom - 5) }
@@ -1405,28 +1409,28 @@ internal suspend fun runBinTrialsPaddle(
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 1)
             NativeImageUtils.filterComponents(odoBuffer.p.mat, vSW_red, hSW_red, 2)
 
-            experimentDetSet512x128.p.clear()
-            val dCrId2 = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-            org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[dCrId2].mat, experimentDetSet512x128.c[dCrId2].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-            val detRes2 = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+            NativeImageUtils.scalePackedU8(
+                odoBuffer.p.mat, (dest.s as BufferSet.Instance).tensorBindRaw(), S, innerW, innerH,
+            )
+            val detRes2 = paddleEngine.detect(dest, S, S, copyHeatmap = false)
             tFullB = if (detRes2 != null) {
-                val invScale = 1.0f / detSc
+                val invScaleX = srcW.toFloat() / innerW
+                val invScaleY = srcH.toFloat() / innerH
                 detRes2.nativeBoxes.map { box ->
                     val points = box.points
-                    val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScale.toDouble()).toInt()
-                    val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScale.toDouble()).toInt()
-                    val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScale.toDouble()).toInt()
-                    val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScale.toDouble()).toInt()
+                    val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScaleX.toDouble()).toInt()
+                    val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScaleY.toDouble()).toInt()
+                    val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScaleX.toDouble()).toInt()
+                    val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScaleY.toDouble()).toInt()
                     val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
                     val scaledPoints = FloatArray(8)
                     for (i in 0 until 8) {
-                        scaledPoints[i] = points[i] * invScale
+                        scaledPoints[i] = points[i] * if (i % 2 == 0) invScaleX else invScaleY
                     }
                     val angle = 0f
                     TextBlock("", bounds, angle, confidence = box.confidence)
                 }
             } else emptyList<TextBlock>()
-            experimentDetSet512x128.c[dCrId2].release()
 
             rb = tFullB.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() } ?: rb
             Log.i("HIST_DIAG", "postFilter vehicle=$vehicleId odo=${odoBuffer.p.mat.cols()}x${odoBuffer.p.mat.rows()} bb=${rb.boundingBox} factor=$thresholdFactor fullMat=true")
@@ -2334,31 +2338,36 @@ internal suspend fun runPaddleValleyIterative(
         }
 
         if (stage != "Bin" && stage != "Bin-Trials") {
-            val detSc = minOf(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
-        val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
-        val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
-
-        val detCropId = experimentDetSet512x128.createCrop(0, 0, fw, fh)
-        org.opencv.imgproc.Imgproc.resize(odoBuffer.p.mat, experimentDetSet512x128.c[detCropId].mat, experimentDetSet512x128.c[detCropId].mat.size(), 0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA)
-        val detRes = paddleEngine.detect(experimentDetSet512x128.p, copyHeatmap = false)
+            val dest = NativePaddleEngine.square608
+            val S = dest.width
+            val srcW = odoBuffer.p.mat.cols()
+            val srcH = odoBuffer.p.mat.rows()
+            val currentLong = maxOf(srcW, srcH)
+            val packScale = if (currentLong <= S) 1.0f else S.toFloat() / currentLong
+            val innerW = (srcW * packScale).toInt().coerceAtLeast(1)
+            val innerH = (srcH * packScale).toInt().coerceAtLeast(1)
+            NativeImageUtils.scalePackedU8(
+                odoBuffer.p.mat, (dest.s as BufferSet.Instance).tensorBindRaw(), S, innerW, innerH,
+            )
+        val detRes = paddleEngine.detect(dest, S, S, copyHeatmap = false)
         val rawB = if (detRes != null) {
-            val invScale = 1.0f / detSc
+            val invScaleX = srcW.toFloat() / innerW
+            val invScaleY = srcH.toFloat() / innerH
             detRes.nativeBoxes.map { box ->
                 val points = box.points
-                val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScale.toDouble()).toInt()
-                val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScale.toDouble()).toInt()
-                val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScale.toDouble()).toInt()
-                val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScale.toDouble()).toInt()
+                val minX = Math.floor((minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScaleX.toDouble()).toInt()
+                val minY = Math.floor((minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScaleY.toDouble()).toInt()
+                val maxX = Math.ceil((maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScaleX.toDouble()).toInt()
+                val maxY = Math.ceil((maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScaleY.toDouble()).toInt()
                 val bounds = android.graphics.Rect(minX, minY, maxX, maxY)
                 val scaledPoints = FloatArray(8)
                 for (i in 0 until 8) {
-                    scaledPoints[i] = points[i] * invScale
+                    scaledPoints[i] = points[i] * if (i % 2 == 0) invScaleX else invScaleY
                 }
                 val angle = 0f
                 TextBlock("", bounds, angle, confidence = box.confidence)
             }
         } else emptyList<TextBlock>()
-        experimentDetSet512x128.c[detCropId].release()
 
         // Red → orange expand by column axis:
         //   char-aware (J/O) | P INTERIOR_ENERGY+jump (L/N) | valley (V/W)

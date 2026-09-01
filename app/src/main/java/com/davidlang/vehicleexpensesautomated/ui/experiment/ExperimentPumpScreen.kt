@@ -728,8 +728,7 @@ suspend fun runPumpExperiment(
     Log.i("PUMP_JSON", "wrote header early, total_photos=$total")
 
     val experimentRecSet = NativePaddleEngine.recBufferSet
-    val experimentDetSet512x128 = BufferSet(512, 128)
-    val masterBuffer = BufferSet(1, 1)
+    val masterBuffer = BufferSet(4096, 4096)
 
     val flows = listOf(
         "Set G-- (4 pass, none, calculated)",
@@ -1403,10 +1402,10 @@ suspend fun runPumpExperiment(
                     val targetH = (srcH * scaleFactor).toInt()
                     val targetLongEdge = max(targetW, targetH)
 
-                    val (outerId, innerId) = prepareScale(workspace, scale)
+                    PumpCostVolUtils.prepareScale(workspace, scale)
                     val heatFile = photoHeatDir?.let { File(it, "scale${scale}_heatmap.u8z") }
-                    val paddleResults = runDiscoveryPaddle(
-                        workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata,
+                    val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(
+                        workspace, paddleEngine, targetW, targetH, scale, branch.metadata,
                         boxMode = boxMode,
                         heatDumpU8z = heatFile,
                         hmThresh = hmThresh,
@@ -1423,9 +1422,6 @@ suspend fun runPumpExperiment(
                     pdHunksExpTotal.addAll(exp)
                     pdHunksMaxTotal.addAll(maxExt)
                     pdHunksNativeTotal.addAll(native)
-
-                    workspace.c[innerId].release()
-                    workspace.c[outerId].release()
 
                     discoveryDetails["Paddle Raw"]!![scale] = raw
                     discoveryDetails["Paddle Expanded"]!![scale] = exp
@@ -2172,19 +2168,19 @@ suspend fun runPumpExperiment(
                             if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
                         val targetW = (srcW * scaleFactor).toInt().coerceAtLeast(2)
                         val targetH = (srcH * scaleFactor).toInt().coerceAtLeast(2)
-                        val (outerId, innerId) = prepareScale(workspace, scale)
-                        val outer = workspace.c[outerId]
-                        val masterW = outer.width.coerceAtLeast(1)
-                        val masterH = outer.height.coerceAtLeast(1)
+                        PumpCostVolUtils.prepareScale(workspace, scale)
+                        val dest = NativePaddleEngine.deskewSetFor(scale)
+                        val S = dest.width
                         val fullW = workspace.p.width
                         val fullH = workspace.p.height
                         Log.i(
                             TAG,
-                            "pump_rot_detect scale=$scale content=${targetW}x$targetH " +
-                                "slice=${masterW}x$masterH",
+                            "pump_rot_detect scale=$scale content=${targetW}x$targetH packed=${S}x$S",
                         )
                         val detRes = paddleEngine.detect(
-                            outer,
+                            dest,
+                            targetW = S,
+                            targetH = S,
                             copyHeatmap = false,
                             boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                             hmThresh = HEAT_THR_U8_GE1,
@@ -2211,8 +2207,6 @@ suspend fun runPumpExperiment(
                         discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
                         discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
                         discoveryDetails["Paddle Native"]!![scale] = scaleHunks
-                        workspace.c[innerId].release()
-                        workspace.c[outerId].release()
                     }
                     branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
 
@@ -2881,9 +2875,9 @@ suspend fun runPumpExperiment(
                                     if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
                                 val targetW = (srcW * scaleFactor).toInt()
                                 val targetH = (srcH * scaleFactor).toInt()
-                                val (outerId, innerId) = prepareScale(workspace, scale)
-                                val paddleResults = runDiscoveryPaddle(
-                                    workspace, outerId, paddleEngine, targetW, targetH,
+                                PumpCostVolUtils.prepareScale(workspace, scale)
+                                val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(
+                                    workspace, paddleEngine, targetW, targetH,
                                     scale, branch.metadata,
                                     boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                                     hmThresh = HEAT_THR_U8_GE1,
@@ -2894,8 +2888,6 @@ suspend fun runPumpExperiment(
                                 pdHunksExpTotal.addAll(paddleResults[2])
                                 pdHunksMaxTotal.addAll(paddleResults[3])
                                 pdHunksNativeTotal.addAll(paddleResults[4])
-                                workspace.c[innerId].release()
-                                workspace.c[outerId].release()
                                 discoveryDetails["Paddle Raw"]!![scale] = paddleResults[1]
                                 discoveryDetails["Paddle Expanded"]!![scale] = paddleResults[2]
                                 discoveryDetails["Paddle Max Extent"]!![scale] = paddleResults[3]
@@ -3289,15 +3281,13 @@ suspend fun runPumpExperiment(
                         val targetW = (srcW * scaleFactor).toInt()
                         val targetH = (srcH * scaleFactor).toInt()
                         val targetLongEdge = max(targetW, targetH)
-                        val (outerId, innerId) = prepareScale(workspace, scale)
-                        val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale, branch.metadata)
+                        PumpCostVolUtils.prepareScale(workspace, scale)
+                        val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(workspace, paddleEngine, targetW, targetH, scale, branch.metadata)
                         pdHunksDetectedTotal.addAll(paddleResults[0])
                         pdHunksRawTotal.addAll(paddleResults[1])
                         pdHunksExpTotal.addAll(paddleResults[2])
                         pdHunksMaxTotal.addAll(paddleResults[3])
                         pdHunksNativeTotal.addAll(paddleResults[4])
-                        workspace.c[innerId].release()
-                        workspace.c[outerId].release()
                         discoveryDetails["Paddle Raw"]!![scale] = paddleResults[1]
                         discoveryDetails["Paddle Expanded"]!![scale] = paddleResults[2]
                         discoveryDetails["Paddle Max Extent"]!![scale] = paddleResults[3]
@@ -3669,7 +3659,6 @@ suspend fun runPumpExperiment(
     logHeapState(context, "after-json-close")
     Log.i("PUMP_JSON", "wrote JSON footer and closed main JSON file")
 
-    experimentDetSet512x128.release()
     masterBuffer.release()
     Log.i(TAG, "runPumpExperiment:end json=${jsonFile.absolutePath} total=$total")
     jsonFile
@@ -3944,11 +3933,10 @@ private suspend fun snapshotLookInk(
                 anns.add(SnapshotAnnotation(x0, y, x1, y, Shape.LINE, Color.YELLOW, 2))
             }
         }
-        val (b64, _) = OcrUtils.takeSnapshot(
+        val (jpeg, _) = OcrUtils.takeSnapshotJpeg(
             NativePaddleEngine.bufferSetB.p, strip, NativePaddleEngine.bufferSetA.s.width, 48, anns, null, NativePaddleEngine.bufferSetA,
         )
-        if (b64.isEmpty()) return@forEachIndexed
-        val jpeg = Base64.decode(b64, Base64.NO_WRAP)
+        if (jpeg.isEmpty()) return@forEachIndexed
         val boxN = boxBase + i + 1
         val fileName = "${fullRow}_${flowSafe}_${timestamp}_box$boxN.jpg"
         File(lookInkDir, fileName).writeBytes(jpeg)
@@ -4457,173 +4445,6 @@ private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Cont
             }
         }
     } catch (e: Exception) { Log.e(TAG, "Failed to extract zip", e); false }
-}
-
-
-private fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int> {
-    val srcW = buffer.p.width
-    val srcH = buffer.p.height
-    val currentLongEdge = max(srcW, srcH)
-
-    val scale = if (currentLongEdge <= targetLongEdge) 1.0f else targetLongEdge.toFloat() / currentLongEdge
-    val targetW = (srcW * scale).toInt()
-    val targetH = (srcH * scale).toInt()
-
-    val alignedW = ((targetW + 31) / 32) * 32
-    val alignedH = ((targetH + 31) / 32) * 32
-
-    Log.d(TAG, "prepareScale: target=$targetLongEdge -> ${targetW}x${targetH} (Aligned: ${alignedW}x${alignedH})")
-
-    val outerId = buffer.s.createCrop(0, 0, alignedW, alignedH)
-    buffer.c[outerId].clear()
-
-    val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
-    Imgproc.resize(buffer.p.mat, buffer.c[innerId].mat, buffer.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-
-    return Pair(outerId, innerId)
-}
-
-private suspend fun runDiscoveryPaddle(
-    buffer: BufferSet,
-    id: Int,
-    paddleEngine: NativePaddleEngine,
-    contentW: Int,
-    contentH: Int,
-    scale: Int,
-    metadata: MutableMap<String, String>? = null,
-    boxMode: Int = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-    heatDumpU8z: File? = null,
-    hmThresh: Float = HEAT_THR_U8_GE1,
-    maskDilatePasses: Int = 0,
-): List<List<PumpHunk>> {
-    Log.i(TAG, "pump_detect_call scale=$scale content=${contentW}x$contentH slice=${buffer.c[id].width}x${buffer.c[id].height}")
-    ProcessMemProbe.log("pump_before_detect_scale=$scale")
-    val res = paddleEngine.detect(
-        buffer.c[id],
-        copyHeatmap = false,
-        boxMode = boxMode,
-        heatDumpU8z = heatDumpU8z,
-        hmThresh = hmThresh,
-        maskDilatePasses = maskDilatePasses,
-    ) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
-    ProcessMemProbe.log("pump_after_detect_scale=$scale n_boxes=${res.nativeBoxes.size}")
-    if (metadata != null) {
-        metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
-        metadata["t_pd_inference_${scale}"] = res.metadata["t_inference_ms"] ?: "0"
-        metadata["heatmap_box_mode_${scale}"] = res.metadata["box_mode"] ?: boxMode.toString()
-        metadata["heatmap_post_path_${scale}"] = res.metadata["heatmap_post_path"] ?: "unknown"
-        metadata["hm_thresh_${scale}"] = res.metadata["hm_thresh"] ?: hmThresh.toString()
-        metadata["mask_dilate_passes_${scale}"] = res.metadata["mask_dilate_passes"] ?: maskDilatePasses.toString()
-        metadata["heatmap_cell_px_${scale}"] = NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
-        if (heatDumpU8z != null) metadata["heat_dump_${scale}"] = heatDumpU8z.name
-    }
-
-    val masterW = buffer.c[id].width; val masterH = buffer.c[id].height
-
-    val hist = res.heatmapHist ?: IntArray(0)
-    if (metadata != null && hist.isNotEmpty()) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
-    val rawRects = res.nativeBoxes.map { box ->
-        val p = box.points
-        val minX = minOf(p[0], p[2], p[4], p[6]).toInt()
-        val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
-        val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
-        val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
-        android.graphics.Rect(minX, minY, maxX, maxY)
-    }
-
-    // Pre-redbox detected hunks (tFullB equivalent from alignment Set J runBinTrialsPaddle).
-    // These are the raw objects from the detector (pre +1/denest/nonNested that produce the "raw red" tRawB-equivalent level).
-    // Used only for Set C: 1px white anns (to show each detected hunk) + as the "hunks" source for per-red overlap + Y-extend derivation of blue/orange.
-    // (The pdHunksRawTotal level remains the post-redbox "RED raw boxes" for display/anns/crops/mask.)
-    val hunksDetected = mutableListOf<PumpHunk>()
-    // Explicit pixel upscale once at ingest to full workspace/photo pixel space (using buffer full dims vs content/detect size).
-    // Replaces the prior worthless ICRS roundtrip (content for pixelToIcrs + full for later icrsToPixel); direct scale here.
-    // All pd* hunks now hold full pixel values in .rect from the start.
-    val fullW = buffer.p.width; val fullH = buffer.p.height
-    rawRects.forEach { r ->
-        val ml = r.left.toInt().coerceIn(0, masterW - 1)
-        val mt = r.top.toInt().coerceIn(0, masterH - 1)
-        val mr = r.right.toInt().coerceIn(0, masterW - 1)
-        val mb = r.bottom.toInt().coerceIn(0, masterH - 1)
-        val fl = ml * fullW.toFloat() / contentW
-        val ft = mt * fullH.toFloat() / contentH
-        val fr = mr * fullW.toFloat() / contentW
-        val fb = mb * fullH.toFloat() / contentH
-        hunksDetected.add(PumpHunk("", RectF(fl, ft, fr, fb)))
-    }
-
-    // Nest filter on native packed boxes. Cell halo is applied in C++ packHeatmapBoxes
-    // (kPaddleDetHeatCellPx), not a Kotlin AABB pad after the fact.
-    val nonNestedRects = rawRects.filter { r1 ->
-        rawRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
-    }
-
-    // 1. Consolidate Raw Character Fragments (75% overlap rule) on de-nested native reds.
-    val consolidated = OdometerOcrUtils.consolidateRects(nonNestedRects, 0.75f)
-
-    val hunksRaw = mutableListOf<PumpHunk>()
-    val hunksExpanded = mutableListOf<PumpHunk>()
-    val hunksMaxExtent = mutableListOf<PumpHunk>()
-    val hunksNative = mutableListOf<PumpHunk>()
-
-    // Build raw hunks from the non-nested native rects (pre-consolidate) so the RED raw boxes
-    // in reports are the packed detections. Explicit upscale (full/content) once for full photo pixels.
-    nonNestedRects.forEach { rect ->
-        val ml = rect.left.toInt().coerceIn(0, masterW - 1)
-        val mt = rect.top.toInt().coerceIn(0, masterH - 1)
-        val mr = rect.right.toInt().coerceIn(0, masterW - 1)
-        val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
-        val rawRect = android.graphics.Rect(ml, mt, mr, mb)
-
-        val fl = ml * fullW.toFloat() / contentW
-        val ft = mt * fullH.toFloat() / contentH
-        val fr = mr * fullW.toFloat() / contentW
-        val fb = mb * fullH.toFloat() / contentH
-        hunksRaw.add(PumpHunk("", RectF(fl, ft, fr, fb)))
-    }
-
-    consolidated.forEach { rect ->
-        // Convert to absolute master pixels (coords still in the outer/crop space)
-        val ml = rect.left.toInt().coerceIn(0, masterW - 1)
-        val mt = rect.top.toInt().coerceIn(0, masterH - 1)
-        val mr = rect.right.toInt().coerceIn(0, masterW - 1)
-        val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
-        val rawRect = android.graphics.Rect(ml, mt, mr, mb)
-
-        // 2. Perform Native Expansion (with Height-Relative Jump-Out and Retraction)
-        val (retractedRect, maxExtentRect) = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
-
-        // Capture Expanded/Retracted result -- explicit upscale to full pixel space (no content-size ICRS).
-        val fl = retractedRect.left * fullW.toFloat() / contentW
-        val ft = retractedRect.top * fullH.toFloat() / contentH
-        val fr = retractedRect.right * fullW.toFloat() / contentW
-        val fb = retractedRect.bottom * fullH.toFloat() / contentH
-        hunksExpanded.add(PumpHunk("", RectF(fl, ft, fr, fb)))
-
-        // Capture Max Extent reach (Yellow tier)
-        val yfl = maxExtentRect.left * fullW.toFloat() / contentW
-        val yft = maxExtentRect.top * fullH.toFloat() / contentH
-        val yfr = maxExtentRect.right * fullW.toFloat() / contentW
-        val yfb = maxExtentRect.bottom * fullH.toFloat() / contentH
-        hunksMaxExtent.add(PumpHunk("", RectF(yfl, yft, yfr, yfb)))
-    }
-
-    // Capture Native Results (Phase 2 A/B) -- explicit upscale using full/content ratio (no ICRS).
-    res.nativeBoxes.forEach { box ->
-        // Points are in input Mat pixels (crop-relative)
-        val scaleX = fullW.toFloat() / contentW
-        val scaleY = fullH.toFloat() / contentH
-        var minX = Float.MAX_VALUE; var maxX = Float.MIN_VALUE
-        var minY = Float.MAX_VALUE; var maxY = Float.MIN_VALUE
-        box.points.toList().chunked(2).forEach { (px, py) ->
-            val sx = px * scaleX; val sy = py * scaleY
-            if (sx < minX) minX = sx; if (sx > maxX) maxX = sx
-            if (sy < minY) minY = sy; if (sy > maxY) maxY = sy
-        }
-        hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
-    }
-
-    return listOf(hunksDetected, hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
 }
 
 

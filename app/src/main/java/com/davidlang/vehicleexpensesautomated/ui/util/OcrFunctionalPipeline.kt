@@ -215,7 +215,7 @@ object OcrFunctionalPipeline {
             // 3) Deskew — same sign as Quick Fill (cameraRotation=0): totalAngle = -optAngle
             val tDeskew0 = System.currentTimeMillis()
             val deskewAngle = -angleDeg
-            OdometerOcrUtils.rotate(master, deskewAngle, evenW, evenH)
+            OdometerOcrUtils.rotate(master, deskewAngle)
             val deskewMs = System.currentTimeMillis() - tDeskew0
             val frameW = master.width
             val frameH = master.height

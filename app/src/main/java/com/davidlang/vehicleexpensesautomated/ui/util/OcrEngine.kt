@@ -20,7 +20,6 @@ import kotlin.math.max
 import kotlin.math.min
 import org.opencv.core.*
 import org.opencv.imgcodecs.Imgcodecs
-import org.opencv.imgproc.Imgproc
 
 /**
  * Represents a single hunk of text found by an OCR engine.
@@ -221,7 +220,26 @@ object OcrUtils {
         annotations: List<Any> = emptyList(),
         scratchArgb: Bitmap? = null,
         scratchYuv: BufferSet? = null
-    ): Pair<String, Long> = withContext(Dispatchers.IO) {
+    ): Pair<String, Long> {
+        val (jpeg, t) = takeSnapshotJpeg(source, sourceRect, targetW, targetH, annotations, scratchArgb, scratchYuv)
+        val b64 = if (jpeg.isEmpty()) {
+            ""
+        } else {
+            android.util.Base64.encodeToString(jpeg, android.util.Base64.NO_WRAP)
+        }
+        return Pair(b64, t)
+    }
+
+    /** Native dest-crop JPEG bytes. Missing scratch or native fail → empty. */
+    suspend fun takeSnapshotJpeg(
+        source: Any,
+        sourceRect: Rect? = null,
+        targetW: Int = 0,
+        targetH: Int = 0,
+        annotations: List<Any> = emptyList(),
+        scratchArgb: Bitmap? = null,
+        scratchYuv: BufferSet? = null
+    ): Pair<ByteArray, Long> = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         val srcW: Int
         val srcH: Int
@@ -286,78 +304,37 @@ object OcrUtils {
 
         Log.d("ExperimentPump", "takeSnapshot: buffer pointed at ${srcW}x${srcH} (roi ${roiW}x${roiH}) target size ${targetW}x${targetH} (0=unlimited) final ${finalW}x${finalH}")
 
-        // Allocation padding (32x2)
-        val allocW = ((finalW + 31) / 32) * 32
-        val allocH = ((finalH + 1) / 2) * 2
-
-        val bufferSet = scratchYuv ?: BufferSet(allocW, allocH)
-        val workspace = if (scratchYuv != null) bufferSet.s else bufferSet.p
-
-        workspace.clear()
+        if (scratchYuv == null) {
+            return@withContext Pair(ByteArray(0), System.currentTimeMillis() - tStart)
+        }
+        val bufferSet = scratchYuv
+        val workspace = bufferSet.s
         val snapCropId = workspace.createCrop(0, 0, finalW, finalH)
-        // Red box crop must be done by caller only (createCrop on the red rect pixel coords after pump optimization), then pass crop[id] (Slice) as source to takeSnapshot. This pattern is required. The pixel-vs-ICRS / ICRS-at-boundary optimization is pump red box only and must not affect alignment or other experiments' ICRS sourceRect usage on full buffers for diagnostic crops. takeSnapshot's internal output crop creation (snapCropId) is unchanged from alignment-tested behavior.
 
         try {
-            when (source) {
+            val dest = bufferSet.c[snapCropId]
+            val scaled = when (source) {
+                is BufferSet.Slice -> NativeImageUtils.scaleYuvRoi(
+                    source.mat, source.uvMat, roi, dest.mat, dest.uvMat,
+                )
+                is org.opencv.core.Mat -> {
+                    if (source.type() != CvType.CV_8UC1) false
+                    else NativeImageUtils.scaleYuvRoi(source, null, roi, dest.mat, dest.uvMat)
+                }
                 is Bitmap -> {
                     val localScratch = scratchArgb ?: Bitmap.createBitmap(finalW, finalH, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(localScratch)
                     canvas.drawColor(Color.BLACK, PorterDuff.Mode.SRC)
                     canvas.drawBitmap(source, roi, Rect(0, 0, finalW, finalH), Paint(Paint.FILTER_BITMAP_FLAG))
-
-                    // Direct sync to Mat
-                    NativeImageUtils.syncMatFromArgb(localScratch, bufferSet.c[snapCropId].mat)
+                    NativeImageUtils.syncMatFromArgb(localScratch, dest.mat)
+                    dest.uvMat.setTo(org.opencv.core.Scalar(128.0, 128.0))
                     if (scratchArgb == null) localScratch.recycle()
+                    true
                 }
-                is org.opencv.core.Mat -> {
-                    val safeLeft = max(0, min(roi.left, srcW - 1))
-                    val safeTop = max(0, min(roi.top, srcH - 1))
-                    val safeW = min(roiW, srcW - safeLeft).coerceAtLeast(1)
-                    val safeH = min(roiH, srcH - safeTop).coerceAtLeast(1)
-                    val sub = source.submat(org.opencv.core.Rect(safeLeft, safeTop, safeW, safeH))
-                    val dest = bufferSet.c[snapCropId]
-                    if (sub.channels() >= 3) {
-                        val bgr = if (sub.channels() == 4) {
-                            val b = org.opencv.core.Mat()
-                            Imgproc.cvtColor(sub, b, Imgproc.COLOR_RGBA2BGR)
-                            b
-                        } else sub
-                        val scaled = org.opencv.core.Mat()
-                        Imgproc.resize(bgr, scaled, dest.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-                        val yuv = org.opencv.core.Mat()
-                        Imgproc.cvtColor(scaled, yuv, Imgproc.COLOR_BGR2YUV)
-                        val chans = ArrayList<org.opencv.core.Mat>(3)
-                        Core.split(yuv, chans)
-                        chans[0].copyTo(dest.mat)
-                        val uh = org.opencv.core.Mat()
-                        val vh = org.opencv.core.Mat()
-                        Imgproc.resize(chans[1], uh, dest.uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-                        Imgproc.resize(chans[2], vh, dest.uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-                        Core.merge(listOf(uh, vh), dest.uvMat)
-                        uh.release(); vh.release()
-                        chans.forEach { it.release() }
-                        yuv.release()
-                        scaled.release()
-                        if (bgr !== sub) bgr.release()
-                    } else {
-                        Imgproc.resize(sub, dest.mat, dest.mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-                        dest.uvMat.setTo(org.opencv.core.Scalar(128.0, 128.0))
-                    }
-                    sub.release()
-                }
-                is BufferSet.Slice -> {
-                    val safeLeft = max(0, min(roi.left, srcW - 1))
-                    val safeTop = max(0, min(roi.top, srcH - 1))
-                    val safeW = min(roiW, srcW - safeLeft).coerceAtLeast(1)
-                    val safeH = min(roiH, srcH - safeTop).coerceAtLeast(1)
-                    val subY = source.mat.submat(org.opencv.core.Rect(safeLeft, safeTop, safeW, safeH))
-                    Imgproc.resize(subY, bufferSet.c[snapCropId].mat, bufferSet.c[snapCropId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-
-                    val subUV = source.uvMat.submat(org.opencv.core.Rect(safeLeft / 2, safeTop / 2, safeW / 2, safeH / 2))
-                    Imgproc.resize(subUV, bufferSet.c[snapCropId].uvMat, bufferSet.c[snapCropId].uvMat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-
-                    subY.release(); subUV.release()
-                }
+                else -> false
+            }
+            if (!scaled) {
+                return@withContext Pair(ByteArray(0), System.currentTimeMillis() - tStart)
             }
 
             val pixelAnns = mutableListOf<SnapshotAnnotation>()
@@ -385,11 +362,10 @@ object OcrUtils {
             }
 
             NativeImageUtils.drawYuvAnnotations(bufferSet.c[snapCropId].yuv, scaledAnns)
-            val b64 = NativeImageUtils.compressYuvToBase64(bufferSet.c[snapCropId].yuv, 80)
-            Pair(b64, System.currentTimeMillis() - tStart)
+            val jpeg = NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
+            Pair(jpeg, System.currentTimeMillis() - tStart)
         } finally {
             bufferSet.c[snapCropId].release()
-            if (scratchYuv == null) bufferSet.release()
         }
     }
 

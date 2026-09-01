@@ -501,39 +501,254 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeDumpD
     return env->NewStringUTF(buf);
 }
 
+/** Standing JPEG BGR plane; grows, never released per call. Dest-crop sized. */
+static cv::Mat g_jpegBgr;
+
+static cv::Mat jpegBgrScratch(int w, int h) {
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    if (g_jpegBgr.empty() || g_jpegBgr.type() != CV_8UC3 ||
+        g_jpegBgr.rows < h || g_jpegBgr.cols < w) {
+        g_jpegBgr.create(
+            std::max(h, g_jpegBgr.rows),
+            std::max(w, g_jpegBgr.cols),
+            CV_8UC3);
+    }
+    return g_jpegBgr(cv::Rect(0, 0, w, h));
+}
+
+static void yuvToBgrPixel(int Y, int U, int V, cv::Vec3b* out) {
+    int r = Y + static_cast<int>(1.402 * (V - 128));
+    int g = Y - static_cast<int>(0.344136 * (U - 128) + 0.714136 * (V - 128));
+    int b = Y + static_cast<int>(1.772 * (U - 128));
+    (*out)[0] = static_cast<uint8_t>(std::max(0, std::min(255, b)));
+    (*out)[1] = static_cast<uint8_t>(std::max(0, std::min(255, g)));
+    (*out)[2] = static_cast<uint8_t>(std::max(0, std::min(255, r)));
+}
+
+static bool encodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, int quality, std::vector<uint8_t>* out) {
+    if (!out || y.empty() || y.type() != CV_8UC1) return false;
+    const int w = y.cols, h = y.rows;
+    if (w < 1 || h < 1) return false;
+    cv::Mat bgr = jpegBgrScratch(w, h);
+    const bool hasUv = !uv.empty() && uv.type() == CV_8UC2 && uv.rows >= (h + 1) / 2 && uv.cols >= (w + 1) / 2;
+    for (int yy = 0; yy < h; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* uvp = hasUv ? uv.ptr<uint8_t>(yy / 2) : nullptr;
+        cv::Vec3b* dp = bgr.ptr<cv::Vec3b>(yy);
+        for (int xx = 0; xx < w; ++xx) {
+            int U = 128, V = 128;
+            if (uvp) {
+                const int ux = (xx / 2) * 2;
+                V = uvp[ux];
+                U = uvp[ux + 1];
+            }
+            yuvToBgrPixel(yp[xx], U, V, &dp[xx]);
+        }
+    }
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
+    return cv::imencode(".jpg", bgr, *out, params);
+}
+
+static bool encodeYuvPlanesJpeg(
+    const uint8_t* yData, const uint8_t* uData, const uint8_t* vData,
+    int w, int h, int stride, int quality, std::vector<uint8_t>* out
+) {
+    if (!out || !yData || w < 1 || h < 1) return false;
+    cv::Mat bgr = jpegBgrScratch(w, h);
+    for (int y = 0; y < h; ++y) {
+        cv::Vec3b* dp = bgr.ptr<cv::Vec3b>(y);
+        const uint8_t* yp = yData + y * stride;
+        for (int x = 0; x < w; ++x) {
+            int U = 128, V = 128;
+            if (uData && vData) {
+                const int i = (y / 2) * stride + (x / 2) * 2;
+                V = vData[i];
+                U = uData[i];
+            }
+            yuvToBgrPixel(yp[x], U, V, &dp[x]);
+        }
+    }
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
+    return cv::imencode(".jpg", bgr, *out, params);
+}
+
+static void scalePlaneU8(const cv::Mat& src, int sl, int st, int sr, int sb, cv::Mat* dst) {
+    const int dw = dst->cols, dh = dst->rows;
+    const int sw = std::max(1, sr - sl);
+    const int sh = std::max(1, sb - st);
+    const int srcW = src.cols, srcH = src.rows;
+    for (int y = 0; y < dh; ++y) {
+        int y0 = st + y * sh / dh;
+        int y1 = st + (y + 1) * sh / dh;
+        if (y1 <= y0) y1 = y0 + 1;
+        if (y0 < 0) y0 = 0;
+        if (y1 > srcH) y1 = srcH;
+        if (y0 >= y1) { y0 = std::max(0, srcH - 1); y1 = srcH; }
+        uint8_t* d = dst->ptr<uint8_t>(y);
+        for (int x = 0; x < dw; ++x) {
+            int x0 = sl + x * sw / dw;
+            int x1 = sl + (x + 1) * sw / dw;
+            if (x1 <= x0) x1 = x0 + 1;
+            if (x0 < 0) x0 = 0;
+            if (x1 > srcW) x1 = srcW;
+            if (x0 >= x1) { x0 = std::max(0, srcW - 1); x1 = srcW; }
+            int sum = 0, n = 0;
+            for (int yy = y0; yy < y1; ++yy) {
+                const uint8_t* p = src.ptr<uint8_t>(yy);
+                for (int xx = x0; xx < x1; ++xx) {
+                    sum += p[xx];
+                    ++n;
+                }
+            }
+            d[x] = n > 0 ? static_cast<uint8_t>(sum / n) : 0;
+        }
+    }
+}
+
+static void scalePlaneUv(const cv::Mat& src, int sl, int st, int sr, int sb, cv::Mat* dst) {
+    const int dw = dst->cols, dh = dst->rows;
+    const int sw = std::max(1, sr - sl);
+    const int sh = std::max(1, sb - st);
+    const int srcW = src.cols, srcH = src.rows;
+    for (int y = 0; y < dh; ++y) {
+        int y0 = st + y * sh / dh;
+        int y1 = st + (y + 1) * sh / dh;
+        if (y1 <= y0) y1 = y0 + 1;
+        if (y0 < 0) y0 = 0;
+        if (y1 > srcH) y1 = srcH;
+        if (y0 >= y1) { y0 = std::max(0, srcH - 1); y1 = srcH; }
+        uint8_t* d = dst->ptr<uint8_t>(y);
+        for (int x = 0; x < dw; ++x) {
+            int x0 = sl + x * sw / dw;
+            int x1 = sl + (x + 1) * sw / dw;
+            if (x1 <= x0) x1 = x0 + 1;
+            if (x0 < 0) x0 = 0;
+            if (x1 > srcW) x1 = srcW;
+            if (x0 >= x1) { x0 = std::max(0, srcW - 1); x1 = srcW; }
+            int sumU = 0, sumV = 0, n = 0;
+            for (int yy = y0; yy < y1; ++yy) {
+                const uint8_t* p = src.ptr<uint8_t>(yy);
+                for (int xx = x0; xx < x1; ++xx) {
+                    sumV += p[xx * 2];
+                    sumU += p[xx * 2 + 1];
+                    ++n;
+                }
+            }
+            if (n > 0) {
+                d[x * 2] = static_cast<uint8_t>(sumV / n);
+                d[x * 2 + 1] = static_cast<uint8_t>(sumU / n);
+            } else {
+                d[x * 2] = 128;
+                d[x * 2 + 1] = 128;
+            }
+        }
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeScalePackedU8(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong srcYPtr, jobject dstBuf, jint S, jint innerW, jint innerH
+) {
+    auto* srcY = reinterpret_cast<cv::Mat*>(srcYPtr);
+    if (!srcY || srcY->empty() || srcY->type() != CV_8UC1 || !dstBuf || S < 1) return JNI_FALSE;
+    if (innerW < 1) innerW = 1;
+    if (innerH < 1) innerH = 1;
+    if (innerW > S || innerH > S) return JNI_FALSE;
+    void* data = env->GetDirectBufferAddress(dstBuf);
+    if (!data) return JNI_FALSE;
+    const jlong cap = env->GetDirectBufferCapacity(dstBuf);
+    const jlong need = static_cast<jlong>(S) * static_cast<jlong>(S);
+    if (cap < need) return JNI_FALSE;
+    std::memset(data, 0, static_cast<size_t>(need));
+    cv::Mat inner(innerH, innerW, CV_8UC1, data, static_cast<size_t>(S));
+    scalePlaneU8(*srcY, 0, 0, srcY->cols, srcY->rows, &inner);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeWrapPackedU8(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong matPtr, jobject buf, jint S
+) {
+    auto* m = reinterpret_cast<cv::Mat*>(matPtr);
+    if (!m || !buf || S < 1) return JNI_FALSE;
+    void* data = env->GetDirectBufferAddress(buf);
+    if (!data) return JNI_FALSE;
+    const jlong cap = env->GetDirectBufferCapacity(buf);
+    const jlong need = static_cast<jlong>(S) * static_cast<jlong>(S);
+    if (cap < need) return JNI_FALSE;
+    *m = cv::Mat(S, S, CV_8UC1, data, static_cast<size_t>(S));
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeScaleYuvRoi(
+    JNIEnv* /*env*/, jobject /*thiz*/,
+    jlong srcYPtr, jlong srcUvPtr,
+    jint sl, jint st, jint sr, jint sb,
+    jlong dstYPtr, jlong dstUvPtr
+) {
+    auto* srcY = reinterpret_cast<cv::Mat*>(srcYPtr);
+    auto* dstY = reinterpret_cast<cv::Mat*>(dstYPtr);
+    auto* dstUv = reinterpret_cast<cv::Mat*>(dstUvPtr);
+    if (!srcY || srcY->empty() || srcY->type() != CV_8UC1 || !dstY || dstY->empty() ||
+        dstY->type() != CV_8UC1) {
+        return JNI_FALSE;
+    }
+    const int imgW = srcY->cols, imgH = srcY->rows;
+    int l = sl, t = st, r = sr, b = sb;
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > imgW) r = imgW;
+    if (b > imgH) b = imgH;
+    if (r <= l) r = std::min(imgW, l + 1);
+    if (b <= t) b = std::min(imgH, t + 1);
+    scalePlaneU8(*srcY, l, t, r, b, dstY);
+    if (dstUv && !dstUv->empty() && dstUv->type() == CV_8UC2) {
+        auto* srcUv = reinterpret_cast<cv::Mat*>(srcUvPtr);
+        if (srcUv && !srcUv->empty() && srcUv->type() == CV_8UC2) {
+            const int ul = l / 2, ut = t / 2, ur = (r + 1) / 2, ub = (b + 1) / 2;
+            scalePlaneUv(*srcUv, ul, ut, ur, ub, dstUv);
+        } else {
+            dstUv->setTo(cv::Scalar(128, 128));
+        }
+    }
+    return JNI_TRUE;
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEncodeYuvMatJpeg(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong yPtr, jlong uvPtr, jint quality
+) {
+    auto* y = reinterpret_cast<cv::Mat*>(yPtr);
+    auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
+    std::vector<uint8_t> buf;
+    cv::Mat empty;
+    if (!encodeYuvMatJpeg(y ? *y : empty, uv ? *uv : empty, quality, &buf) || buf.empty()) {
+        return env->NewByteArray(0);
+    }
+    jbyteArray arr = env->NewByteArray(static_cast<jint>(buf.size()));
+    if (!arr) return env->NewByteArray(0);
+    env->SetByteArrayRegion(arr, 0, static_cast<jint>(buf.size()),
+        reinterpret_cast<const jbyte*>(buf.data()));
+    return arr;
+}
+
 JNIEXPORT jstring JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeCompressYuvToBase64(
-    JNIEnv* env, jobject thiz, jobject yBuf, jobject uBuf, jobject vBuf, jint w, jint h, jint stride, jint quality) {
-    
+    JNIEnv* env, jobject /*thiz*/, jobject yBuf, jobject uBuf, jobject vBuf, jint w, jint h, jint stride, jint quality) {
     uint8_t* yData = (uint8_t*)env->GetDirectBufferAddress(yBuf);
     uint8_t* uData = (uint8_t*)env->GetDirectBufferAddress(uBuf);
     uint8_t* vData = (uint8_t*)env->GetDirectBufferAddress(vBuf);
-
-    if (!yData || !uData || !vData) return env->NewStringUTF("");
-
-    cv::Mat bgr(h, w, CV_8UC3);
-    for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-            uint8_t Y = yData[y * stride + x];
-            uint8_t V = vData[(y/2) * stride + (x/2)*2];
-            uint8_t U = uData[(y/2) * stride + (x/2)*2];
-            
-            int r = Y + 1.402 * (V - 128);
-            int g = Y - 0.344136 * (U - 128) - 0.714136 * (V - 128);
-            int b = Y + 1.772 * (U - 128);
-            
-            cv::Vec3b& pixel = bgr.at<cv::Vec3b>(y, x);
-            pixel[0] = (uint8_t)std::max(0, std::min(255, b));
-            pixel[1] = (uint8_t)std::max(0, std::min(255, g));
-            pixel[2] = (uint8_t)std::max(0, std::min(255, r));
-        }
-    }
-
+    if (!yData) return env->NewStringUTF("");
     std::vector<uint8_t> buf;
-    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
-    cv::imencode(".jpg", bgr, buf, params);
-
-    std::string b64 = base64_encode(buf.data(), buf.size());
+    if (!encodeYuvPlanesJpeg(yData, uData, vData, w, h, stride, quality, &buf) || buf.empty()) {
+        return env->NewStringUTF("");
+    }
+    std::string b64 = base64_encode(buf.data(), static_cast<unsigned int>(buf.size()));
     return env->NewStringUTF(b64.c_str());
 }
 
@@ -674,8 +889,9 @@ static struct {
     jbyteArray arr_global;
     jbyte* elems;
     jboolean is_copy;
+    jobject buf_global;
     int held;
-} g_tensor_u8_share = {nullptr, nullptr, JNI_FALSE, 0};
+} g_tensor_u8_share = {nullptr, nullptr, JNI_FALSE, nullptr, 0};
 
 static void release_tensor_u8_share(JNIEnv* env) {
     if (!g_tensor_u8_share.held) return;
@@ -686,9 +902,13 @@ static void release_tensor_u8_share(JNIEnv* env) {
     if (g_tensor_u8_share.arr_global) {
         env->DeleteGlobalRef(g_tensor_u8_share.arr_global);
     }
+    if (g_tensor_u8_share.buf_global) {
+        env->DeleteGlobalRef(g_tensor_u8_share.buf_global);
+    }
     g_tensor_u8_share.arr_global = nullptr;
     g_tensor_u8_share.elems = nullptr;
     g_tensor_u8_share.is_copy = JNI_FALSE;
+    g_tensor_u8_share.buf_global = nullptr;
     g_tensor_u8_share.held = 0;
 }
 
@@ -735,6 +955,39 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeShare
 
     LOGI("shareTensorInputU8 offset=%d nbytes=%d isCopy=%d", (int)offset, (int)nbytes, (int)isCopy);
     return isCopy ? 2 : 1;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeShareTensorInputU8Direct(
+    JNIEnv* env, jclass, jobject jtensor, jobject buf, jint offset, jint nbytes) {
+    if (!jtensor || !buf || offset < 0 || nbytes <= 0) return 0;
+    release_tensor_u8_share(env);
+
+    jclass cls = env->GetObjectClass(jtensor);
+    jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
+    if (env->ExceptionCheck() || !fid) {
+        env->ExceptionClear();
+        return 0;
+    }
+    jlong nativePtr = env->GetLongField(jtensor, fid);
+    if (nativePtr == 0) return 0;
+    auto* uptr = reinterpret_cast<std::unique_ptr<paddle::lite_api::Tensor>*>(nativePtr);
+    if (!uptr || !(*uptr)) return 0;
+
+    void* base = env->GetDirectBufferAddress(buf);
+    if (!base) return 0;
+    const jlong cap = env->GetDirectBufferCapacity(buf);
+    if (static_cast<jlong>(offset) + static_cast<jlong>(nbytes) > cap) return 0;
+
+    void* data = reinterpret_cast<uint8_t*>(base) + static_cast<size_t>(offset);
+    (*uptr)->ShareExternalMemory(
+        data, static_cast<size_t>(nbytes), paddle::lite_api::TargetType::kHost);
+
+    g_tensor_u8_share.buf_global = env->NewGlobalRef(buf);
+    g_tensor_u8_share.held = 1;
+
+    LOGI("shareTensorInputU8Direct offset=%d nbytes=%d", (int)offset, (int)nbytes);
+    return 1;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -1122,25 +1375,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     // --- PHASE 1: EXPAND OUT (Move while range is high) ---
     while (minY > 0) {
         int r = getRange((int)minX, (int)maxX, (int)minY - 1, true);
-        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) range=%d", (int)minY - 1, r);
         if (r < THRESHOLD) break;
         minY -= 1.0;
     }
     while (maxY < maxH - 1) {
         int r = getRange((int)minX, (int)maxX, (int)maxY + 1, true);
-        LOGE("EXPAND_TRACE: [OUT] Y=%d (H) range=%d", (int)maxY + 1, r);
         if (r < THRESHOLD) break;
         maxY += 1.0;
     }
     while (minX > 0) {
         int r = getRange((int)minY, (int)maxY, (int)minX - 1, false);
-        LOGE("EXPAND_TRACE: [OUT] X=%d (V) range=%d", (int)minX - 1, r);
         if (r < THRESHOLD) break;
         minX -= 1.0;
     }
     while (maxX < maxW - 1) {
         int r = getRange((int)minY, (int)maxY, (int)maxX + 1, false);
-        LOGE("EXPAND_TRACE: [OUT] X=%d (V) range=%d", (int)maxX + 1, r);
         if (r < THRESHOLD) break;
         maxX += 1.0;
     }
@@ -1157,25 +1406,21 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     // --- PHASE 2: PULL BACK IN (Stop on content or original floor) ---
     while (minY < maxY && minY < floorT) {
         int r = getRange((int)minX, (int)maxX, (int)minY, true);
-        LOGE("EXPAND_TRACE: [IN] Y=%d (H) range=%d", (int)minY, r);
         if (r >= THRESHOLD) break;
         minY += 1.0;
     }
     while (maxY > minY && maxY > floorB) {
         int r = getRange((int)minX, (int)maxX, (int)maxY, true);
-        LOGE("EXPAND_TRACE: [IN] Y=%d (H) range=%d", (int)maxY, r);
         if (r >= THRESHOLD) break;
         maxY -= 1.0;
     }
     while (minX < maxX && minX < floorL) {
         int r = getRange((int)minY, (int)maxY, (int)minX, false);
-        LOGE("EXPAND_TRACE: [IN] X=%d (V) range=%d", (int)minX, r);
         if (r >= THRESHOLD) break;
         minX += 1.0;
     }
     while (maxX > minX && maxX > floorR) {
         int r = getRange((int)minY, (int)maxY, (int)maxX, false);
-        LOGE("EXPAND_TRACE: [IN] X=%d (V) range=%d", (int)maxX, r);
         if (r >= THRESHOLD) break;
         maxX -= 1.0;
     }

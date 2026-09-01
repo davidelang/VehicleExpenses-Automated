@@ -6,7 +6,6 @@ import android.graphics.RectF
 import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
-import org.opencv.imgproc.Imgproc
 import kotlin.math.max
 import kotlin.math.min
 
@@ -712,25 +711,32 @@ object PumpCostVolUtils {
     }
 
     fun prepareScale(buffer: BufferSet, targetLongEdge: Int): Pair<Int, Int> {
+        val dest = NativePaddleEngine.deskewSetFor(targetLongEdge)
+        val S = dest.width
+        val letterEdge = min(targetLongEdge, S)
         val srcW = buffer.p.width
         val srcH = buffer.p.height
         val currentLongEdge = max(srcW, srcH)
-        val scale = if (currentLongEdge <= targetLongEdge) 1.0f else targetLongEdge.toFloat() / currentLongEdge
-        val targetW = (srcW * scale).toInt()
-        val targetH = (srcH * scale).toInt()
+        val scale = if (currentLongEdge <= letterEdge) 1.0f else letterEdge.toFloat() / currentLongEdge
+        val targetW = (srcW * scale).toInt().coerceAtLeast(1)
+        val targetH = (srcH * scale).toInt().coerceAtLeast(1)
         val alignedW = ((targetW + 31) / 32) * 32
         val alignedH = ((targetH + 31) / 32) * 32
-        Log.d(TAG, "prepareScale: target=$targetLongEdge -> ${targetW}x${targetH} (Aligned: ${alignedW}x${alignedH})")
-        val outerId = buffer.s.createCrop(0, 0, alignedW, alignedH)
-        buffer.c[outerId].clear()
-        val innerId = buffer.s.createCrop(0, 0, targetW, targetH)
-        Imgproc.resize(buffer.p.mat, buffer.c[innerId].mat, buffer.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-        return Pair(outerId, innerId)
+        Log.d(TAG, "prepareScale: request=$targetLongEdge destS=$S -> ${targetW}x${targetH} (Aligned: ${alignedW}x${alignedH})")
+        if (alignedW > S || alignedH > S) {
+            Log.e(TAG, "prepareScale: aligned ${alignedW}x${alignedH} exceeds packed S=$S")
+            return Pair(0, 0)
+        }
+        val raw = (dest.s as BufferSet.Instance).tensorBindRaw()
+        if (!NativeImageUtils.scalePackedU8(buffer.p.mat, raw, S, targetW, targetH)) {
+            Log.e(TAG, "prepareScale: packed scale failed S=$S inner=${targetW}x$targetH")
+            return Pair(0, 0)
+        }
+        return Pair(targetW, targetH)
     }
 
     suspend fun runDiscoveryPaddle(
         buffer: BufferSet,
-        id: Int,
         paddleEngine: NativePaddleEngine,
         contentW: Int,
         contentH: Int,
@@ -743,9 +749,13 @@ object PumpCostVolUtils {
         detTiers: Map<Int, com.baidu.paddle.lite.PaddlePredictor>? = null,
         detTiersInt8: Map<Int, ByteArray>? = null,
     ): List<List<PumpHunk>> {
+        val dest = NativePaddleEngine.deskewSetFor(scale)
+        val S = dest.width
         // copyHeatmap=false: campaign only needs boxes; floatData/getFloatData crashes on uint8 heatmaps
         val res = paddleEngine.detect(
-            buffer.c[id],
+            dest,
+            targetW = S,
+            targetH = S,
             copyHeatmap = false,
             boxMode = boxMode,
             heatDumpU8z = heatDumpU8z,
@@ -764,8 +774,8 @@ object PumpCostVolUtils {
             metadata["mask_dilate_passes_${scale}"] = res.metadata["mask_dilate_passes"] ?: maskDilatePasses.toString()
             metadata["heatmap_cell_px_${scale}"] = NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
         }
-        val masterW = buffer.c[id].width
-        val masterH = buffer.c[id].height
+        val masterW = S
+        val masterH = S
         val hist = res.heatmapHist ?: IntArray(0)
         if (metadata != null && hist.isNotEmpty()) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
         val rawRects = res.nativeBoxes.map { box ->
@@ -815,7 +825,15 @@ object PumpCostVolUtils {
             val mr = rect.right.toInt().coerceIn(0, masterW - 1)
             val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
             val rawRect = Rect(ml, mt, mr, mb)
-            val (retractedRect, maxExtentRect) = NativeImageUtils.expandByUniformity(buffer.c[id].mat, rawRect)
+            val packed = NativeImageUtils.wrapPackedU8(
+                (dest.s as BufferSet.Instance).tensorBindRaw(),
+                S,
+            )
+            val (retractedRect, maxExtentRect) = try {
+                NativeImageUtils.expandByUniformity(packed, rawRect)
+            } finally {
+                packed.release()
+            }
             val fl = retractedRect.left * fullW.toFloat() / contentW
             val ft = retractedRect.top * fullH.toFloat() / contentH
             val fr = retractedRect.right * fullW.toFloat() / contentW
@@ -980,13 +998,11 @@ object PumpCostVolUtils {
             val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
             val targetW = (srcW * scaleFactor).toInt()
             val targetH = (srcH * scaleFactor).toInt()
-            val (outerId, innerId) = prepareScale(workspace, scale)
-            val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale)
+            prepareScale(workspace, scale)
+            val paddleResults = runDiscoveryPaddle(workspace, paddleEngine, targetW, targetH, scale)
             pdHunksRawTotal.addAll(paddleResults[1])
             pdHunksExpTotal.addAll(paddleResults[2])
             pdHunksMaxTotal.addAll(paddleResults[3])
-            workspace.c[innerId].release()
-            workspace.c[outerId].release()
             NativePaddleEngine.heartbeat("det_scale_done scale=$scale")
         }
 
@@ -1120,13 +1136,11 @@ object PumpCostVolUtils {
             val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
             val targetW = (srcW * scaleFactor).toInt()
             val targetH = (srcH * scaleFactor).toInt()
-            val (outerId, innerId) = prepareScale(workspace, scale)
-            val paddleResults = runDiscoveryPaddle(workspace, outerId, paddleEngine, targetW, targetH, scale)
+            prepareScale(workspace, scale)
+            val paddleResults = runDiscoveryPaddle(workspace, paddleEngine, targetW, targetH, scale)
             pdHunksRawTotal.addAll(paddleResults[1])
             pdHunksExpTotal.addAll(paddleResults[2])
             pdHunksMaxTotal.addAll(paddleResults[3])
-            workspace.c[innerId].release()
-            workspace.c[outerId].release()
         }
         doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
         doCrossScaleRedboxFilter(pdHunksExpTotal, imgW, imgH)

@@ -163,18 +163,19 @@ object HeatmapStageDump {
                     val workspace = BufferSet(srcW, srcH)
                     master.p.mat.copyTo(workspace.p.mat)
                     try {
-                        val (outerId, _) = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val outer = workspace.c[outerId]
-                        val maxEdge = max(outer.width, outer.height)
-                        // Single-tier if available; else letterbox side used by tiled large det (2048).
-                        val tier = NativePaddleEngine.TIER_SCALES.filter { it >= maxEdge }.minOrNull()
-                            ?: NativePaddleEngine.DET_LARGE_OUTER
+                        PumpCostVolUtils.prepareScale(workspace, scale)
+                        val dest = NativePaddleEngine.deskewSetFor(scale)
+                        val tier = dest.width
                         val feed = ByteArray(tier * tier)
-                        NativeImageUtils.populateMonoUInt8(outer.mat, feed, tier, tier)
+                        val raw = (dest.s as BufferSet.Instance).tensorBindRaw()
+                        val dup = raw.duplicate()
+                        dup.clear()
+                        dup.limit(tier * tier)
+                        dup.get(feed)
                         scaleJo
                             .put("tier", tier)
-                            .put("outer_w", outer.width)
-                            .put("outer_h", outer.height)
+                            .put("outer_w", tier)
+                            .put("outer_h", tier)
                             .put("content_w", targetW)
                             .put("content_h", targetH)
                             .put("feed_sha256", sha256(feed))
@@ -194,7 +195,7 @@ object HeatmapStageDump {
                         }
 
                         val t0 = System.currentTimeMillis()
-                        val det = paddleEngine.detect(outer, copyHeatmap = true)
+                        val det = paddleEngine.detect(dest, targetW = tier, targetH = tier, copyHeatmap = true)
                         scaleJo.put("t_det_ms", System.currentTimeMillis() - t0)
 
                         if (det == null) {
@@ -277,10 +278,6 @@ object HeatmapStageDump {
                                 0f
                             }
                             scaleJo.put("paddle_cpp_angle", angle.toDouble())
-                        }
-                        try {
-                            workspace.c[outerId].release()
-                        } catch (_: Throwable) {
                         }
                     } finally {
                         workspace.release()

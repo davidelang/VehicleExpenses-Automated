@@ -194,7 +194,7 @@ object AlignmentSetJRunner {
         val paddleEngine = NativePaddleEngine(context)
         NativePaddleEngine.initializeGlobalBuffers(context)
         val experimentRecSet320x48 = NativePaddleEngine.recBufferSet
-        val experimentDetSet512x128 = BufferSet(512, 128)
+        val experimentDetSet512x128 = NativePaddleEngine.square608
         val hMap = mutableMapOf<String, OcrHarnessResult>()
         val refinementTraces = mutableMapOf<String, RefinementTrace>()
         val iterativeStages = listOf("Raw", "Bin-Trials")
@@ -219,7 +219,6 @@ object AlignmentSetJRunner {
                 pipelineKey = "set_j",
             )
         } finally {
-            experimentDetSet512x128.release()
             vehicleBufferSets.values.forEach { it.release() }
         }
 

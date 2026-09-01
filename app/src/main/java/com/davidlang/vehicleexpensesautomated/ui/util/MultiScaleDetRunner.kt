@@ -1361,8 +1361,7 @@ object MultiScaleDetRunner {
                         val contentH = (srcH * scaleFactor).toInt().coerceAtLeast(1)
                         val (ovNum, ovDen) = overlapNumDenForDomain(ref.domain)
 
-                        var outerId = -1
-                        var innerId = -1
+                        var packedHdr: Mat? = null
                         try {
                             workspace.resize(contentW, contentH)
                             workspace.clearCrops()
@@ -1374,10 +1373,12 @@ object MultiScaleDetRunner {
                                 0.0,
                                 Imgproc.INTER_AREA,
                             )
-                            val ids = PumpCostVolUtils.prepareScale(workspace, le)
-                            outerId = ids.first
-                            innerId = ids.second
-                            val outer = workspace.c[outerId]
+                            PumpCostVolUtils.prepareScale(workspace, le)
+                            val dest = NativePaddleEngine.deskewSetFor(le)
+                            packedHdr = NativeImageUtils.wrapPackedU8(
+                                (dest.s as BufferSet.Instance).tensorBindRaw(),
+                                dest.width,
+                            )
                             val outerSide = outerSideForScale(le)
                             onLog(
                                 "DETECT_BEGIN id=${c.id} $mName outer=$le strategy=$feedStrat " +
@@ -1389,7 +1390,7 @@ object MultiScaleDetRunner {
                             val det = try {
                                 withDetectMemSampling(c.id, onLog, intervalMs = 250L) {
                                     slot!!.detect(
-                                        outer.mat,
+                                        packedHdr!!,
                                         contentW,
                                         contentH,
                                         outerSide = outerSide,
@@ -1526,17 +1527,9 @@ object MultiScaleDetRunner {
                                 publishCell(cellsDir, c.id, htmlBody, jsonBody)
                             }
                         } finally {
-                            if (innerId >= 0) {
-                                try {
-                                    workspace.c[innerId].release()
-                                } catch (_: Throwable) {
-                                }
-                            }
-                            if (outerId >= 0) {
-                                try {
-                                    workspace.c[outerId].release()
-                                } catch (_: Throwable) {
-                                }
+                            try {
+                                packedHdr?.release()
+                            } catch (_: Throwable) {
                             }
                             flushCellScratch()
                         }

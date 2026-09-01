@@ -121,6 +121,40 @@ object NativeImageUtils {
         )
     }
 
+    /** Packed S×S scale of src Y into dest DirectByteBuffer[0, S²] (inner top-left; rest 0). */
+    fun scalePackedU8(srcY: Mat, destRaw: ByteBuffer, s: Int, innerW: Int, innerH: Int): Boolean {
+        if (srcY.empty() || s < 1) return false
+        destRaw.clear()
+        return nativeScalePackedU8(srcY.nativeObj, destRaw, s, innerW, innerH)
+    }
+
+    /** Header Mat on packed s.raw (S×S, step S). Does not own pixels. */
+    fun wrapPackedU8(destRaw: ByteBuffer, s: Int): Mat {
+        val m = Mat()
+        destRaw.clear()
+        if (!nativeWrapPackedU8(m.nativeObj, destRaw, s)) {
+            m.release()
+            return Mat()
+        }
+        return m
+    }
+
+    /** Scale src Y/UV ROI into dest crop (already sized). No third-plane alloc. */
+    fun scaleYuvRoi(srcY: Mat, srcUv: Mat?, roi: android.graphics.Rect, dstY: Mat, dstUv: Mat): Boolean {
+        if (srcY.empty() || dstY.empty()) return false
+        return nativeScaleYuvRoi(
+            srcY.nativeObj, srcUv?.nativeObj ?: 0L,
+            roi.left, roi.top, roi.right, roi.bottom,
+            dstY.nativeObj, dstUv.nativeObj,
+        )
+    }
+
+    /** JPEG bytes of dest-crop YUV. Native fail → empty. */
+    fun encodeYuvMatJpeg(y: Mat, uv: Mat?, quality: Int): ByteArray {
+        if (y.empty()) return ByteArray(0)
+        return nativeEncodeYuvMatJpeg(y.nativeObj, uv?.nativeObj ?: 0L, quality) ?: ByteArray(0)
+    }
+
     /**
      * High-performance ingestion from JPEG file directly to BufferSet YUV planes.
      * Bypasses Java heap Bitmaps.
@@ -390,6 +424,16 @@ object NativeImageUtils {
     private external fun nativeIngestDngToYuv(path: String, handlePtr: Long): Boolean
     private external fun nativeDumpDngDevelopStages(path: String, rgbPath: String, yPath: String): String
     private external fun nativeCompressYuvToBase64(yBuf: ByteBuffer, uBuf: ByteBuffer, vBuf: ByteBuffer, w: Int, h: Int, stride: Int, quality: Int): String
+    private external fun nativeScalePackedU8(
+        srcYPtr: Long, dstBuf: ByteBuffer, s: Int, innerW: Int, innerH: Int,
+    ): Boolean
+    private external fun nativeWrapPackedU8(matPtr: Long, buf: ByteBuffer, s: Int): Boolean
+    private external fun nativeScaleYuvRoi(
+        srcYPtr: Long, srcUvPtr: Long,
+        sl: Int, st: Int, sr: Int, sb: Int,
+        dstYPtr: Long, dstUvPtr: Long,
+    ): Boolean
+    private external fun nativeEncodeYuvMatJpeg(yPtr: Long, uvPtr: Long, quality: Int): ByteArray?
     private external fun nativePopulateMonoTensor(srcMatPtr: Long, dstTensor: FloatArray, tensorW: Int, tensorH: Int, mean: Float, std: Float)
     private external fun nativeQuantizeMonoHandleToInt8(srcHandle: Long, dstHandle: Long, tensorW: Int, tensorH: Int, srcW: Int, srcH: Int)
     private external fun nativePopulateMonoInt8Xor(srcMatPtr: Long, dstTensor: ByteArray, tensorW: Int, tensorH: Int)
@@ -412,6 +456,9 @@ object NativeImageUtils {
     fun shareTensorInputU8(tensor: Any, data: ByteArray, offset: Int, nbytes: Int): Int =
         nativeShareTensorInputU8(tensor, data, offset, nbytes)
 
+    fun shareTensorInputU8(tensor: Any, data: ByteBuffer, offset: Int, nbytes: Int): Int =
+        nativeShareTensorInputU8Direct(tensor, data, offset, nbytes)
+
     fun releaseSharedTensorInputU8() {
         nativeReleaseSharedTensorInputU8()
     }
@@ -419,6 +466,13 @@ object NativeImageUtils {
     private external fun nativeShareTensorInputU8(
         tensor: Any,
         data: ByteArray,
+        offset: Int,
+        nbytes: Int,
+    ): Int
+
+    private external fun nativeShareTensorInputU8Direct(
+        tensor: Any,
+        data: ByteBuffer,
         offset: Int,
         nbytes: Int,
     ): Int

@@ -132,12 +132,7 @@ object OcrHarness {
             val (optAngle, optTime) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
             
             val totalAngle = cameraRotationDegrees.toFloat() - optAngle
-            val imgW = masterBuffer.width
-            val imgH = masterBuffer.height
-            val targetW = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgH else imgW
-            val targetH = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgW else imgH
-            
-            val rotTime = OdometerOcrUtils.rotate(masterBuffer, totalAngle, targetW, targetH)
+            val rotTime = OdometerOcrUtils.rotate(masterBuffer, totalAngle)
             
             jsonDebug?.apply {
                 addProperty("camera_rotation", cameraRotationDegrees)
@@ -409,16 +404,14 @@ object OcrHarness {
             val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
             val targetW = (srcW * scaleFactor).toInt()
             val targetH = (srcH * scaleFactor).toInt()
-            val (outerId, innerId) = PumpCostVolUtils.prepareScale(workspace, scale)
+            PumpCostVolUtils.prepareScale(workspace, scale)
             val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(
-                workspace, outerId, paddleEngine, targetW, targetH, scale,
+                workspace, paddleEngine, targetW, targetH, scale,
                 hmThresh = HEAT_THR_U8_GE1,
             )
             pdHunksRawTotal.addAll(paddleResults[1])
             pdHunksExpTotal.addAll(paddleResults[2])
             pdHunksMaxTotal.addAll(paddleResults[3])
-            workspace.c[innerId].release()
-            workspace.c[outerId].release()
         }
 
         PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
@@ -475,11 +468,7 @@ object OcrHarness {
 
             val (optAngle, _) = OdometerOcrUtils.calculatePaddleAngleOptimized(masterBuffer.p)
             val totalAngle = cameraRotationDegrees.toFloat() - optAngle
-            val imgW = masterBuffer.width
-            val imgH = masterBuffer.height
-            val targetW = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgH else imgW
-            val targetH = if (cameraRotationDegrees == 90 || cameraRotationDegrees == 270) imgW else imgH
-            OdometerOcrUtils.rotate(masterBuffer, totalAngle, targetW, targetH)
+            OdometerOcrUtils.rotate(masterBuffer, totalAngle)
             val deskewBmp = masterBuffer.p.toBitmap()
             onStage?.invoke("Deskewed", deskewBmp)
             val overlay = QfPumpLiveOverlay(deskewBmp)
@@ -666,7 +655,6 @@ object OcrHarness {
         )
 
         val odoBuffer = NativePaddleEngine.getOdoBuffer(context, vehicle)
-        val detBuffer = NativePaddleEngine.detBufferSet
         val recBuffer = NativePaddleEngine.recBufferSet
         val paddleEngine = NativePaddleEngine(context, "Numeric")
 
@@ -680,36 +668,42 @@ object OcrHarness {
         }
 
         suspend fun detectBoxesOnOdo(): List<TextBlock> {
-            val detSc = kotlin.math.min(512f / odoBuffer.p.mat.cols(), 128f / odoBuffer.p.mat.rows())
-            val fw = (odoBuffer.p.mat.cols() * detSc).toInt().coerceAtMost(512)
-            val fh = (odoBuffer.p.mat.rows() * detSc).toInt().coerceAtMost(128)
-            detBuffer.p.clear()
-            val dCrId = detBuffer.createCrop(0, 0, fw, fh)
-            org.opencv.imgproc.Imgproc.resize(
-                odoBuffer.p.mat, detBuffer.c[dCrId].mat, detBuffer.c[dCrId].mat.size(),
-                0.0, 0.0, org.opencv.imgproc.Imgproc.INTER_AREA,
+            val dest = NativePaddleEngine.square608
+            val S = dest.width
+            val srcW = odoBuffer.p.mat.cols()
+            val srcH = odoBuffer.p.mat.rows()
+            val currentLong = maxOf(srcW, srcH)
+            val scale = if (currentLong <= S) 1.0f else S.toFloat() / currentLong
+            val innerW = (srcW * scale).toInt().coerceAtLeast(1)
+            val innerH = (srcH * scale).toInt().coerceAtLeast(1)
+            NativeImageUtils.scalePackedU8(
+                odoBuffer.p.mat,
+                (dest.s as BufferSet.Instance).tensorBindRaw(),
+                S,
+                innerW,
+                innerH,
             )
-            val detRes = paddleEngine.detect(detBuffer.p, copyHeatmap = false)
+            val detRes = paddleEngine.detect(dest, S, S, copyHeatmap = false)
             val boxes = if (detRes != null) {
-                val invScale = 1.0f / detSc
+                val invScaleX = srcW.toFloat() / innerW
+                val invScaleY = srcH.toFloat() / innerH
                 detRes.nativeBoxes.map { box ->
                     val points = box.points
                     val minX = Math.floor(
-                        (minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScale.toDouble(),
+                        (minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) - 8.0) * invScaleX.toDouble(),
                     ).toInt()
                     val minY = Math.floor(
-                        (minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScale.toDouble(),
+                        (minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) - 8.0) * invScaleY.toDouble(),
                     ).toInt()
                     val maxX = Math.ceil(
-                        (maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScale.toDouble(),
+                        (maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) + 8.0) * invScaleX.toDouble(),
                     ).toInt()
                     val maxY = Math.ceil(
-                        (maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScale.toDouble(),
+                        (maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) + 8.0) * invScaleY.toDouble(),
                     ).toInt()
                     TextBlock("", Rect(minX, minY, maxX, maxY), 0f, confidence = box.confidence)
                 }
             } else emptyList()
-            detBuffer.c[dCrId].release()
             return boxes
         }
 

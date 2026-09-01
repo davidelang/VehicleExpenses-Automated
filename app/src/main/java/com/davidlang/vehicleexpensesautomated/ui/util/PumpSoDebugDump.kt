@@ -180,25 +180,30 @@ object PumpSoDebugDump {
             val scaleFactor = if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
             val targetW = (srcW * scaleFactor).toInt()
             val targetH = (srcH * scaleFactor).toInt()
-            val (outerId, innerId) = PumpCostVolUtils.prepareScale(workspace, scale)
-
-            val outer = workspace.c[outerId]
+            PumpCostVolUtils.prepareScale(workspace, scale)
+            val dest = NativePaddleEngine.deskewSetFor(scale)
+            val tier = dest.width
             val prefix = "03_scale${scale}"
-            saveMono(outer.mat, File(outDir, "${prefix}_det_input.png"))
-            saveMonoPgm(outer.mat, File(outDir, "${prefix}_det_input.pgm"))
+            val packed = NativeImageUtils.wrapPackedU8(
+                (dest.s as BufferSet.Instance).tensorBindRaw(),
+                tier,
+            )
+            saveMono(packed, File(outDir, "${prefix}_det_input.png"))
+            saveMonoPgm(packed, File(outDir, "${prefix}_det_input.pgm"))
 
-            // Also dump the exact square tier feed the engine builds (top-left pad).
-            val tier = NativePaddleEngine.TIER_SCALES.filter { it >= max(outer.width, outer.height) }.minOrNull()
-                ?: 2560
             val feed = ByteArray(tier * tier)
-            NativeImageUtils.populateMonoUInt8(outer.mat, feed, tier, tier)
+            val raw = (dest.s as BufferSet.Instance).tensorBindRaw()
+            val dup = raw.duplicate()
+            dup.clear()
+            dup.limit(tier * tier)
+            dup.get(feed)
             File(outDir, "${prefix}_feed_u8_${tier}x${tier}.bin").writeBytes(feed)
             writeText(
                 File(outDir, "${prefix}_feed.meta.json"),
                 JSONObject()
                     .put("tier", tier)
-                    .put("outer_w", outer.width)
-                    .put("outer_h", outer.height)
+                    .put("outer_w", tier)
+                    .put("outer_h", tier)
                     .put("content_w", targetW)
                     .put("content_h", targetH)
                     .put("feed_sum", feed.fold(0L) { a, b -> a + (b.toInt() and 0xff) })
@@ -206,14 +211,15 @@ object PumpSoDebugDump {
                     .toString(2),
             )
 
-            val det = paddleEngine.detect(outer, copyHeatmap = true)
+            val det = paddleEngine.detect(dest, targetW = tier, targetH = tier, copyHeatmap = true)
+            packed.release()
             val detJson = JSONObject()
                 .put("scale", scale)
                 .put("tier", tier)
                 .put("target_w", targetW)
                 .put("target_h", targetH)
-                .put("outer_w", outer.width)
-                .put("outer_h", outer.height)
+                .put("outer_w", tier)
+                .put("outer_h", tier)
             if (det == null) {
                 detJson.put("error", "detect returned null")
                 writeText(File(outDir, "${prefix}_det.json"), detJson.toString(2))
@@ -262,7 +268,7 @@ object PumpSoDebugDump {
                 // Product discovery path (boxes mapped to full image) for red-box filter
                 val metaMap = mutableMapOf<String, String>()
                 val paddleResults = PumpCostVolUtils.runDiscoveryPaddle(
-                    workspace, outerId, paddleEngine, targetW, targetH, scale, metaMap,
+                    workspace, paddleEngine, targetW, targetH, scale, metaMap,
                 )
                 pdHunksRawTotal.addAll(paddleResults[1])
                 val discMeta = JSONObject()
@@ -279,8 +285,6 @@ object PumpSoDebugDump {
                         .toString(2),
                 )
             }
-            workspace.c[innerId].release()
-            workspace.c[outerId].release()
         }
 
         // --- redbox filter + classify (Set G) ---

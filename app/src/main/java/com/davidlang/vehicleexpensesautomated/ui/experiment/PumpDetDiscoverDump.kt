@@ -207,20 +207,20 @@ object PumpDetDiscoverDump {
             if (currentLongEdge <= scale) 1.0f else scale.toFloat() / currentLongEdge
         val targetW = (srcW * scaleFactor).toInt().coerceAtLeast(2)
         val targetH = (srcH * scaleFactor).toInt().coerceAtLeast(2)
-        val (outerId, innerId) = PumpCostVolUtils.prepareScale(workspace, scale)
-        try {
-            val outer = workspace.c[outerId]
-            val masterW = outer.width.coerceAtLeast(1)
-            val masterH = outer.height.coerceAtLeast(1)
-            val fullW = workspace.p.width
-            val fullH = workspace.p.height
-            val det = engine.detect(
-                outer,
-                copyHeatmap = false,
-                boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                hmThresh = HEAT_THR_U8_GE1,
-                maskDilatePasses = 0,
-            )
+        PumpCostVolUtils.prepareScale(workspace, scale)
+        val dest = NativePaddleEngine.deskewSetFor(scale)
+        val S = dest.width
+        val fullW = workspace.p.width
+        val fullH = workspace.p.height
+        val det = engine.detect(
+            dest,
+            targetW = S,
+            targetH = S,
+            copyHeatmap = false,
+            boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+            hmThresh = HEAT_THR_U8_GE1,
+            maskDilatePasses = 0,
+        )
             val cropBoxes = ArrayList<CropBox>()
             det?.nativeBoxes.orEmpty().take(NATIVE_CAP).forEach { box ->
                 val p = box.points
@@ -237,15 +237,8 @@ object PumpDetDiscoverDump {
                     ),
                 )
             }
-            val sx: Float
-            val sy: Float
-            if (rotPath) {
-                sx = fullW.toFloat() / masterW
-                sy = fullH.toFloat() / masterH
-            } else {
-                sx = fullW.toFloat() / targetW
-                sy = fullH.toFloat() / targetH
-            }
+            val sx = fullW.toFloat() / targetW
+            val sy = fullH.toFloat() / targetH
             fun toPhoto(c: CropBox): PhotoBox {
                 val pts = FloatArray(8)
                 for (i in 0 until 4) {
@@ -276,10 +269,6 @@ object PumpDetDiscoverDump {
                 }.map { toPhoto(it) }
             }
             return native to denest
-        } finally {
-            workspace.c[innerId].release()
-            workspace.c[outerId].release()
-        }
     }
 
     private fun recipeJson(

@@ -158,27 +158,25 @@ object PreprocessStageDump {
                     val workspace = BufferSet(srcW, srcH)
                     master.p.mat.copyTo(workspace.p.mat)
                     try {
-                        val (outerId, _) = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val outer = workspace.c[outerId]
-                        val tier = NativePaddleEngine.TIER_SCALES.filter {
-                            it >= max(outer.width, outer.height)
-                        }.minOrNull() ?: 2560
+                        PumpCostVolUtils.prepareScale(workspace, scale)
+                        val dest = NativePaddleEngine.deskewSetFor(scale)
+                        val tier = dest.width
                         val feed = ByteArray(tier * tier)
-                        NativeImageUtils.populateMonoUInt8(outer.mat, feed, tier, tier)
+                        val raw = (dest.s as BufferSet.Instance).tensorBindRaw()
+                        val dup = raw.duplicate()
+                        dup.clear()
+                        dup.limit(tier * tier)
+                        dup.get(feed)
                         scaleJo
                             .put("tier", tier)
-                            .put("outer_w", outer.width)
-                            .put("outer_h", outer.height)
+                            .put("outer_w", tier)
+                            .put("outer_h", tier)
                             .put("content_w", targetW)
                             .put("content_h", targetH)
                             .put("feed_sha256", sha256(feed))
                             .put("feed_crc32", crc32(feed))
                             .put("feed_sum", feed.fold(0L) { a, b -> a + (b.toInt() and 0xff) })
                         File(sub, "scale${scale}_feed_u8_${tier}x${tier}.bin").writeBytes(feed)
-                        try {
-                            workspace.c[outerId].release()
-                        } catch (_: Throwable) {
-                        }
                     } finally {
                         workspace.release()
                     }

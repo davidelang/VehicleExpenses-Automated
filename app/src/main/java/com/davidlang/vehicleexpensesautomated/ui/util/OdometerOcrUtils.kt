@@ -100,69 +100,27 @@ object OdometerOcrUtils {
 
     /**
      * @param longEdgeTarget long-edge letterbox size for det heatmap used for angle
-     *   (alignment + pump experiments: 256; production default 2048).
+     *   (alignment + pump experiments: 256; production default maps to the 608 set).
      */
     suspend fun calculateAverageTextAngle(input: Any, longEdgeTarget: Int = 2048): DeskewResult {
         val t0 = System.currentTimeMillis()
         val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
-
-        // 1. Optimized Paddle Path (Benchmark/Production Version)
         val (optAngle, optTime) = calculatePaddleAngleOptimized(input, pTargetSize)
-
-        // 2. Unified Preparation for Legacy Path (Bitmap or BufferSet.Slice)
-        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
-
-        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
-        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
-
-        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
-        val targetW = (srcW * pScale).toInt()
-        val targetH = (srcH * pScale).toInt()
-
-        // 32-px Aligned Letterboxing
-        val alignedW = ((targetW + 31) / 32) * 32
-        val alignedH = ((targetH + 31) / 32) * 32
-
-        bufferSet.p.clear()
-        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
-        bufferSet.c[outerId].clear() // Padding
-
-        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
-
-        // 3. Native Resize into workspace (top-left) - Legacy uses INTER_AREA
-        if (input is Bitmap) {
-            val argbMat = Mat()
-            org.opencv.android.Utils.bitmapToMat(input, argbMat)
-            val gray = Mat()
-            Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
-            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-            argbMat.release(); gray.release()
-        } else {
-            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-        }
-
-        bufferSet.c[innerId].release()
-
+        val pack = packDeskewLetterbox(input, pTargetSize)
         val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
 
-        // 4. ML Kit Path
         val tMl0 = System.currentTimeMillis()
-        val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
+        val mlRes = deskewMlKit(pack.dest.p.nv21, pack.dest.p.width, pack.dest.p.height, pack.pScale)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
 
-        // 5. Paddle Path (Combined V3 Kotlin + C++ Native)
         val tPd0 = System.currentTimeMillis()
-        val pdRes = deskewPaddleDual(bufferSet.c[outerId].mat, alignedW, alignedH, pScale)
+        val pdRes = deskewPaddleDual(pack)
         val tPd = System.currentTimeMillis() - tPd0
         results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
 
-        bufferSet.c[outerId].release()
-
-        val mlAngle = mlRes.angle
         val paddleCppAngle = pdRes.metadata["paddle_cpp_angle"]?.toFloatOrNull() ?: 0f
-
         return DeskewResult(
             angle = mlRes.angle.coerceIn(-20f, 20f),
             mlAngle = mlRes.angle,
@@ -185,47 +143,13 @@ object OdometerOcrUtils {
     suspend fun calculateDeskewAngleMlOnly(input: Any, longEdgeTarget: Int = 2048): DeskewResult {
         val t0 = System.currentTimeMillis()
         val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
-        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
-
-        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
-        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
-
-        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
-        val targetW = (srcW * pScale).toInt()
-        val targetH = (srcH * pScale).toInt()
-
-        val alignedW = ((targetW + 31) / 32) * 32
-        val alignedH = ((targetH + 31) / 32) * 32
-
-        bufferSet.p.clear()
-        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
-        bufferSet.c[outerId].clear()
-
-        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
-
-        if (input is Bitmap) {
-            val argbMat = Mat()
-            org.opencv.android.Utils.bitmapToMat(input, argbMat)
-            val gray = Mat()
-            Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
-            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-            argbMat.release(); gray.release()
-        } else {
-            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-        }
-
-        bufferSet.c[innerId].release()
-
+        val pack = packDeskewLetterbox(input, pTargetSize)
         val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
-
         val tMl0 = System.currentTimeMillis()
-        val mlRes = deskewMlKit(bufferSet.p.nv21, bufferSet.p.width, bufferSet.p.height, pScale)
+        val mlRes = deskewMlKit(pack.dest.p.nv21, pack.dest.p.width, pack.dest.p.height, pack.pScale)
         val tMl = System.currentTimeMillis() - tMl0
         results["ML Kit"] = mlRes.copy(timesMs = listOf(tPrep, tMl))
-
-        bufferSet.c[outerId].release()
-
         return DeskewResult(
             angle = mlRes.angle.coerceIn(-20f, 20f),
             mlAngle = mlRes.angle,
@@ -245,54 +169,19 @@ object OdometerOcrUtils {
 
     /**
      * @param longEdgeTarget long-edge letterbox for paddle det angle
-     *   (pump experiment: 256; production default 2048).
+     *   (pump experiment: 256; production default maps to the 608 set).
      */
     suspend fun calculateDeskewAnglePaddleOnly(input: Any, longEdgeTarget: Int = 2048): DeskewResult {
         val t0 = System.currentTimeMillis()
         val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
-        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
-
-        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
-        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
-
-        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
-        val targetW = (srcW * pScale).toInt()
-        val targetH = (srcH * pScale).toInt()
-
-        val alignedW = ((targetW + 31) / 32) * 32
-        val alignedH = ((targetH + 31) / 32) * 32
-
-        bufferSet.p.clear()
-        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
-        bufferSet.c[outerId].clear()
-
-        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
-
-        if (input is Bitmap) {
-            val argbMat = Mat()
-            org.opencv.android.Utils.bitmapToMat(input, argbMat)
-            val gray = Mat()
-            Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
-            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-            argbMat.release(); gray.release()
-        } else {
-            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_AREA)
-        }
-
-        bufferSet.c[innerId].release()
-
+        val pack = packDeskewLetterbox(input, pTargetSize)
         val tPrep = System.currentTimeMillis() - t0
         val results = mutableMapOf<String, EngineResult>()
-
         val tPd0 = System.currentTimeMillis()
-        val pdRes = deskewPaddleDual(bufferSet.c[outerId].mat, alignedW, alignedH, pScale)
+        val pdRes = deskewPaddleDual(pack)
         val tPd = System.currentTimeMillis() - tPd0
         results["Paddle V3"] = pdRes.copy(timesMs = listOf(tPrep, tPd))
-
-        bufferSet.c[outerId].release()
-
         val paddleCppAngle = pdRes.metadata["paddle_cpp_angle"]?.toFloatOrNull() ?: 0f
-
         return DeskewResult(
             angle = paddleCppAngle.coerceIn(-20f, 20f),
             mlAngle = 0f,
@@ -313,32 +202,10 @@ object OdometerOcrUtils {
 
     suspend fun calculatePaddleAngleOptimized(input: Any, longEdgeTarget: Int = 2048): Pair<Float, Long> {
         val t0 = System.currentTimeMillis()
-        val pTargetSize = longEdgeTarget.coerceIn(64, 2048)
-        val bufferSet = NativePaddleEngine.deskewBufferSetLarge
-        val srcW = if (input is Bitmap) input.width else (input as BufferSet.Slice).width
-        val srcH = if (input is Bitmap) input.height else (input as BufferSet.Slice).height
-        val pScale = Math.min(pTargetSize.toFloat() / srcW, pTargetSize.toFloat() / srcH)
-        val targetW = (srcW * pScale).toInt(); val targetH = (srcH * pScale).toInt()
-        val alignedW = ((targetW + 31) / 32) * 32; val alignedH = ((targetH + 31) / 32) * 32
-        
-        bufferSet.p.clear()
-        val outerId = bufferSet.createCrop(0, 0, alignedW, alignedH)
-        val innerId = bufferSet.createCrop(0, 0, targetW, targetH)
-        
-        if (input is Bitmap) {
-            val argbMat = Mat(); org.opencv.android.Utils.bitmapToMat(input, argbMat)
-            val gray = Mat(); Imgproc.cvtColor(argbMat, gray, Imgproc.COLOR_RGBA2GRAY)
-            Imgproc.resize(gray, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
-            argbMat.release(); gray.release()
-        } else {
-            Imgproc.resize((input as BufferSet.Slice).mat, bufferSet.c[innerId].mat, bufferSet.c[innerId].mat.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
-        }
-
+        val pack = packDeskewLetterbox(input, longEdgeTarget.coerceIn(64, 2048))
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return Pair(0f, 0L)
-        val det = paddleEngine.detect(bufferSet.c[outerId].mat, alignedW, alignedH, copyHeatmap = false)
+        val det = paddleEngine.detect(pack.dest, pack.S, pack.S, copyHeatmap = false)
         val cppAngle = det?.deskewAngleCpp(0.20f) ?: 0f
-
-        bufferSet.c[innerId].release(); bufferSet.c[outerId].release()
         return Pair(cppAngle, System.currentTimeMillis() - t0)
     }
 
@@ -398,11 +265,62 @@ object OdometerOcrUtils {
     }
 
 
-    private suspend fun deskewPaddleDual(resizedMat: Mat, pWidth: Int, pHeight: Int, pScale: Float): EngineResult {
+    private data class DeskewPack(
+        val dest: BufferSet,
+        val S: Int,
+        val innerW: Int,
+        val innerH: Int,
+        val pScale: Float,
+        val srcW: Int,
+        val srcH: Int,
+    )
+
+    /** Packed letterbox into the 256 or 608 standing square. S = dest.width. */
+    private fun packDeskewLetterbox(input: Any, longEdgeTarget: Int): DeskewPack {
+        val dest = NativePaddleEngine.deskewSetFor(longEdgeTarget)
+        val S = dest.width
+        val letterEdge = minOf(longEdgeTarget.coerceIn(64, 2048), S)
+        val srcW: Int
+        val srcH: Int
+        val srcY: Mat
+        var tmpGray: Mat? = null
+        var tmpArgb: Mat? = null
+        when (input) {
+            is Bitmap -> {
+                srcW = input.width
+                srcH = input.height
+                tmpArgb = Mat()
+                org.opencv.android.Utils.bitmapToMat(input, tmpArgb)
+                tmpGray = Mat()
+                Imgproc.cvtColor(tmpArgb, tmpGray, Imgproc.COLOR_RGBA2GRAY)
+                srcY = tmpGray
+            }
+            is BufferSet.Slice -> {
+                srcW = input.width
+                srcH = input.height
+                srcY = input.mat
+            }
+            else -> throw IllegalArgumentException("Unsupported deskew input: ${input.javaClass.name}")
+        }
+        val currentLong = maxOf(srcW, srcH)
+        val scale = if (currentLong <= letterEdge) 1.0f else letterEdge.toFloat() / currentLong
+        val innerW = (srcW * scale).toInt().coerceAtLeast(1)
+        val innerH = (srcH * scale).toInt().coerceAtLeast(1)
+        val pScale = minOf(innerW.toFloat() / srcW, innerH.toFloat() / srcH)
+        val rawS = (dest.s as BufferSet.Instance).tensorBindRaw()
+        val rawP = (dest.p as BufferSet.Instance).tensorBindRaw()
+        NativeImageUtils.scalePackedU8(srcY, rawS, S, innerW, innerH)
+        NativeImageUtils.scalePackedU8(srcY, rawP, S, innerW, innerH)
+        tmpGray?.release()
+        tmpArgb?.release()
+        return DeskewPack(dest, S, innerW, innerH, pScale, srcW, srcH)
+    }
+
+    private suspend fun deskewPaddleDual(pack: DeskewPack): EngineResult {
         val paddleEngine = VehicleExpensesApplication.anchoredEngineV3 ?: return EngineResult(0f, emptyList())
 
         val tDet0 = System.currentTimeMillis()
-        val det = paddleEngine.detect(resizedMat, pWidth, pHeight, copyHeatmap = false) ?: return EngineResult(0f, emptyList())
+        val det = paddleEngine.detect(pack.dest, pack.S, pack.S, copyHeatmap = false) ?: return EngineResult(0f, emptyList())
         val tDetOnly = System.currentTimeMillis() - tDet0
 
         // Parallel Angle Calculation
@@ -413,18 +331,19 @@ object OdometerOcrUtils {
         val newMeta = det.metadata.toMutableMap()
         newMeta["paddle_cpp_angle"] = cppAngle.toString()
 
-        val invScale = 1.0f / pScale
+        val invScaleX = pack.srcW.toFloat() / pack.innerW
+        val invScaleY = pack.srcH.toFloat() / pack.innerH
         val cppBlocks = det.nativeBoxes.map { box ->
             val points = box.points
-            val minX = minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) * invScale
-            val minY = minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) * invScale
-            val maxX = maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) * invScale
-            val maxY = maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) * invScale
+            val minX = minOf(minOf(points[0], points[2]), minOf(points[4], points[6])) * invScaleX
+            val minY = minOf(minOf(points[1], points[3]), minOf(points[5], points[7])) * invScaleY
+            val maxX = maxOf(maxOf(points[0], points[2]), maxOf(points[4], points[6])) * invScaleX
+            val maxY = maxOf(maxOf(points[1], points[3]), maxOf(points[5], points[7])) * invScaleY
             val bounds = android.graphics.Rect(minX.toInt(), minY.toInt(), maxX.toInt(), maxY.toInt())
 
             val scaledPoints = FloatArray(8)
             for (i in 0 until 8) {
-                scaledPoints[i] = points[i] * invScale
+                scaledPoints[i] = points[i] * if (i % 2 == 0) invScaleX else invScaleY
             }
             val angle = calculateBoxAngle(scaledPoints)
             TextBlock("", bounds, angle, confidence = box.confidence)
@@ -1249,22 +1168,17 @@ object OdometerOcrUtils {
         return HistStats(intensityLow, intensityHigh, p80, bins)
     }
 
-    suspend fun rotate(set: BufferSet, angle: Float): Long {
-        return rotate(set, angle, set.width, set.height)
-    }
-
-    suspend fun rotate(set: BufferSet, angle: Float, targetW: Int, targetH: Int): Long = withContext(Dispatchers.IO) {
+    suspend fun rotate(set: BufferSet, angle: Float): Long = withContext(Dispatchers.IO) {
         val tRot0 = System.currentTimeMillis()
         val src = set.p.mat
+        val dst = set.s.mat
         val srcUv = set.p.uvMat
-
-        val tempMat = org.opencv.core.Mat()
-        val tempUv = org.opencv.core.Mat()
+        val dstUv = set.s.uvMat
 
         val matrixLocal = android.graphics.Matrix()
         matrixLocal.postTranslate(-src.cols() / 2f, -src.rows() / 2f)
         matrixLocal.postRotate(angle)
-        matrixLocal.postTranslate(targetW / 2f, targetH / 2f)
+        matrixLocal.postTranslate(src.cols() / 2f, src.rows() / 2f)
         val values = FloatArray(9)
         matrixLocal.getValues(values)
 
@@ -1272,32 +1186,24 @@ object OdometerOcrUtils {
         rotMat.put(0, 0, values[0].toDouble(), values[1].toDouble(), values[2].toDouble())
         rotMat.put(1, 0, values[3].toDouble(), values[4].toDouble(), values[5].toDouble())
 
-        // Warp Y to tempMat
-        val dstSize = org.opencv.core.Size(targetW.toDouble(), targetH.toDouble())
-        tempMat.create(dstSize, src.type())
-        org.opencv.imgproc.Imgproc.warpAffine(src, tempMat, rotMat, dstSize, org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(0.0))
+        org.opencv.imgproc.Imgproc.warpAffine(
+            src, dst, rotMat, src.size(),
+            org.opencv.imgproc.Imgproc.INTER_LINEAR,
+            org.opencv.core.Core.BORDER_CONSTANT,
+            org.opencv.core.Scalar(0.0),
+        )
 
-        // Warp UV to tempUv
         val uvScaleMat = rotMat.clone()
         uvScaleMat.put(0, 2, rotMat.get(0, 2)[0] / 2.0)
         uvScaleMat.put(1, 2, rotMat.get(1, 2)[0] / 2.0)
-        val uvDstSize = org.opencv.core.Size((targetW / 2).toDouble(), (targetH / 2).toDouble())
-        tempUv.create(uvDstSize, srcUv.type())
-        org.opencv.imgproc.Imgproc.warpAffine(srcUv, tempUv, uvScaleMat, uvDstSize, org.opencv.imgproc.Imgproc.INTER_LINEAR, org.opencv.core.Core.BORDER_CONSTANT, org.opencv.core.Scalar(128.0, 128.0))
+        org.opencv.imgproc.Imgproc.warpAffine(
+            srcUv, dstUv, uvScaleMat, srcUv.size(),
+            org.opencv.imgproc.Imgproc.INTER_LINEAR,
+            org.opencv.core.Core.BORDER_CONSTANT,
+            org.opencv.core.Scalar(128.0, 128.0),
+        )
 
-        // Resize the set and copy
-        set.resize(targetW, targetH)
-
-        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE src empty=${src.empty()} cols=${src.cols()} rows=${src.rows()}")
-        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE tempMat empty=${tempMat.empty()} cols=${tempMat.cols()} rows=${tempMat.rows()}")
-        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE set.p.mat empty=${set.p.mat.empty()} cols=${set.p.mat.cols()} rows=${set.p.mat.rows()}")
-        tempMat.copyTo(set.p.mat)
-        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE tempUv empty=${tempUv.empty()} cols=${tempUv.cols()} rows=${tempUv.rows()}")
-        Log.d("ALIGN_BUF_DIAG", "DIAG_ROTATE_COPYTO_PRE set.p.uvMat empty=${set.p.uvMat.empty()} cols=${set.p.uvMat.cols()} rows=${set.p.uvMat.rows()}")
-        tempUv.copyTo(set.p.uvMat)
-
-        tempMat.release()
-        tempUv.release()
+        set.flip()
         rotMat.release()
         uvScaleMat.release()
 

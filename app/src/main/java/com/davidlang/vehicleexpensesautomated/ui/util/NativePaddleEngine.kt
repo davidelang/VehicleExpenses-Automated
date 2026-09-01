@@ -71,13 +71,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val ALLOWED_DIGITS: Set<Int> = (1..10).toSet()
         val ALLOWED_DIGITS_DECIMAL: Set<Int> = (1..10).toSet() + setOf(93)
 
-        // Det predictors: one Lite instance per square tier (weights + activation pool).
-        // Heatmap-stage A/B 2026-08-09: **full-square 2048** (useTiledLargeDet=false) so we can
-        // compare heat/CRC/t_det_ms against the prior tiled gallery (det_mode=tiled_3x3_1024).
-        // When useTiledLargeDet=true: maxEdge>1024 uses 3×3×1024 max-merge (no 2048 predictor).
+        // Det predictors: one Lite instance per standing square (256 + 608). Same det.nb,
+        // resized input. 224 letterbox packs into the 256 set. 2048/4096 are canvases only.
         // Multi-scale experiment uses its own MonoDetPredictor, not this map.
         // Must stay inside det opt dynamic range (currently mono 64…4096).
-        val TIER_SCALES = listOf(224, 608, 1024, 2048)
+        val TIER_SCALES = listOf(256, 608)
         /** Outer letterbox side when content long-edge exceeds max single-tier / tiled outer. */
         const val DET_LARGE_OUTER = 2048
         const val DET_TILE = 1024
@@ -210,7 +208,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         private var _bufferSetA: BufferSet? = null
         private var _bufferSetB: BufferSet? = null
         private var _deskewBufferSetLarge: BufferSet? = null
-        private var _detBufferSet: BufferSet? = null
+        private var _square256: BufferSet? = null
+        private var _square608: BufferSet? = null
         private var _recBufferSet: BufferSet? = null
         private val vehicleOdoBuffers = mutableMapOf<Int, BufferSet>()
         private var _bufferLarge: FloatArray? = null
@@ -236,7 +235,18 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val bufferSetA: BufferSet get() = _bufferSetA!!
         val bufferSetB: BufferSet get() = _bufferSetB!!
         val deskewBufferSetLarge: BufferSet get() = _deskewBufferSetLarge!!
-        val detBufferSet: BufferSet get() = _detBufferSet!!
+        val square256: BufferSet get() = _square256!!
+        val square608: BufferSet get() = _square608!!
+        /** Odo/product 608² square. Replaces 512×128. */
+        val detBufferSet: BufferSet get() = square608
+
+        /**
+         * Standing square for packed deskew/det letterbox.
+         * 224 and 256 → 256²; anything larger → 608². 2048 canvas is not a det square.
+         */
+        fun deskewSetFor(longEdge: Int): BufferSet {
+            return if (longEdge <= 256) square256 else square608
+        }
         val recBufferSet: BufferSet get() = _recBufferSet!!
         private val bufferLarge: FloatArray get() = _bufferLarge!!
         val sharedBmp2048: Bitmap get() = _sharedBmp2048!!
@@ -346,7 +356,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             _deskewBufferSetLarge!!.p.clearChroma()
             _deskewBufferSetLarge!!.s.clearChroma()
 
-            _detBufferSet = BufferSet(512, 128)
+            _square256 = BufferSet(256, 256)
+            _square608 = BufferSet(608, 608)
             _recBufferSet = BufferSet(REC_CANVAS_W, REC_CANVAS_H)
 
             _bufferLarge = FloatArray(1 * 2048 * 2048) // Native is now exclusively 1-channel (Mono)
@@ -600,10 +611,20 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         detTiersInt8: Map<Int, ByteArray>? = null,
     ): DetectionResult? {
         val tPop0 = System.nanoTime()
-        val w: Int; val h: Int; val srcMat: Mat
-        when (input) {
-            is BufferSet.Slice -> { w = input.width; h = input.height; srcMat = input.mat }
-            is Mat -> { w = targetW ?: input.cols(); h = targetH ?: input.rows(); srcMat = input }
+        val packedSet = input as? BufferSet
+        val w: Int
+        val h: Int
+        val srcMat: Mat?
+        when {
+            packedSet != null -> {
+                val S = max(targetW ?: 0, targetH ?: 0)
+                if (S < 1) throw IllegalArgumentException("detect(BufferSet) needs scale")
+                w = S
+                h = S
+                srcMat = null
+            }
+            input is BufferSet.Slice -> { w = input.width; h = input.height; srcMat = input.mat }
+            input is Mat -> { w = targetW ?: input.cols(); h = targetH ?: input.rows(); srcMat = input }
             else -> throw IllegalArgumentException("Unsupported input type for detect")
         }
         val tiers = detTiers ?: sharedTiers
@@ -613,9 +634,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         val maxEdge = max(targetW ?: w, targetH ?: h)
         // Smallest single-tier that fits; if content exceeds max tier and tiling is on → 3×3×1024.
         val singleTier = TIER_SCALES.filter { it >= maxEdge }.minOrNull()
-        if (singleTier == null && useTiledLargeDet) {
+        if (packedSet == null && singleTier == null && useTiledLargeDet) {
             return detectTiledLarge(
-                srcMat = srcMat,
+                srcMat = srcMat!!,
                 contentW = w,
                 contentH = h,
                 tPop0 = tPop0,
@@ -628,12 +649,15 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 detTiersInt8 = tiersInt8,
             )
         }
-        val tierScale = singleTier ?: TIER_SCALES.maxOrNull()!!
+        val tierScale = if (packedSet != null) w else (singleTier ?: TIER_SCALES.maxOrNull()!!)
         heartbeat("det_begin tier=$tierScale ${w}x$h path=$activeProductPathId")
         val predictor = tiers[tierScale] ?: return null
         val int8Data = tiersInt8[tierScale] ?: return null
-        java.util.Arrays.fill(int8Data, 0.toByte())
-        NativeImageUtils.populateMonoUInt8(srcMat, int8Data, tierScale, tierScale)
+        var shareHeld = false
+        if (packedSet == null) {
+            java.util.Arrays.fill(int8Data, 0.toByte())
+            NativeImageUtils.populateMonoUInt8(srcMat!!, int8Data, tierScale, tierScale)
+        }
 
         val tPop = (System.nanoTime() - tPop0) / 1_000_000.0
 
@@ -645,7 +669,24 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             try {
                 val tJniIn0 = System.nanoTime()
                 val inputTensor = predictor.getInput(0)
-                requireSetData(inputTensor.setData(int8Data), "det uint8 tier=$tierScale")
+                if (packedSet != null) {
+                    val nbytes = tierScale * tierScale
+                    val raw = (packedSet.s as BufferSet.Instance).tensorBindRaw()
+                    val shareRc = NativeImageUtils.shareTensorInputU8(inputTensor, raw, 0, nbytes)
+                    if (shareRc > 0) {
+                        shareHeld = true
+                    } else {
+                        Log.w("PaddleDetect", "ShareExternal packed S=$tierScale returned 0; setData fallback")
+                        java.util.Arrays.fill(int8Data, 0.toByte())
+                        val dup = raw.duplicate()
+                        dup.clear()
+                        if (dup.remaining() < nbytes || int8Data.size < nbytes) return@withSampling null
+                        dup.get(int8Data, 0, nbytes)
+                        requireSetData(inputTensor.setData(int8Data), "det uint8 packed fallback tier=$tierScale")
+                    }
+                } else {
+                    requireSetData(inputTensor.setData(int8Data), "det uint8 tier=$tierScale")
+                }
                 val tJniIn = (System.nanoTime() - tJniIn0) / 1_000_000.0
 
                 val tInfer0 = System.nanoTime()
@@ -743,6 +784,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             } catch (t: Throwable) {
                 Log.e("PaddleDetect", "Detection failed", t)
                 null
+            } finally {
+                if (shareHeld) NativeImageUtils.releaseSharedTensorInputU8()
             }
         }
     }
