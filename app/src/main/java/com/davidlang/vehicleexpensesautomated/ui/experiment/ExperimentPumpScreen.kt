@@ -2936,6 +2936,7 @@ suspend fun runPumpExperiment(
                         IntArray?,
                     ) -> List<ContentExpandUtils.Seg7OrientedExpand>)? = null,
                     boundNote: String? = null,
+                    chromaNote: String? = null,
                 ): suspend (BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int) -> Unit =
                     { ws, br, det, w, h ->
                         val workspace = ws
@@ -2976,6 +2977,9 @@ suspend fun runPumpExperiment(
                         if (boundNote != null) {
                             branch.metadata["content_expand_bound"] = boundNote
                             branch.metadata["content_expand_tight_inset_px"] = "16"
+                        }
+                        if (chromaNote != null) {
+                            branch.metadata["content_expand_chroma"] = chromaNote
                         }
                         if (chromaMode == 4) {
                             branch.metadata["content_expand_chroma"] = "color_adaptive"
