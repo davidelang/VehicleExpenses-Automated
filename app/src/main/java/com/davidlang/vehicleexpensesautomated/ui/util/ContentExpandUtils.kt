@@ -1757,9 +1757,11 @@ object ContentExpandUtils {
         }
         val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
-        val scratch = try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null }
         val r = try {
-            native(gray, uv, packed, tele, sweepBuf, scratch)
+            native(
+                gray, uv, packed, tele, sweepBuf,
+                try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null },
+            )
         } catch (_: Throwable) {
             null
         } ?: return seeds.map { AabbExpand(clip(it, imgW, imgH), false) }

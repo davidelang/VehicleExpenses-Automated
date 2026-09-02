@@ -1676,31 +1676,45 @@ suspend fun runPumpExperiment(
                             h.rect.right.toInt(), h.rect.bottom.toInt(),
                         )
                     }
-                    val bSet = NativePaddleEngine.bufferSetB
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
-                    val objPlane = masterBuffer.s.mat
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     var exhausted = false
+                    var nextInk = 255
+                    var nextNon = 1
+                    var inkLo = 255
+                    val isColor = expandMode != 0
                     seeds.forEachIndexed { si, seed ->
                         if (exhausted) return@forEachIndexed
                         val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
+                        if (poisonBuf.size >= 3) {
+                            poisonBuf[0] = nextInk
+                            poisonBuf[1] = nextNon
+                            poisonBuf[2] = inkLo
+                        }
                         val one = inkFn(
-                            workspace.p.mat,
-                            workspace.p.uvMat,
+                            NativePaddleEngine.bufferSetA.p.mat,
+                            if (isColor) NativePaddleEngine.bufferSetA.p.uvMat
+                            else NativePaddleEngine.bufferSetB.s.mat,
                             listOf(seed),
-                            workspace.s.mat,
-                            objPlane,
-                            bSet.p.mat,
-                            bSet.p.uvMat,
+                            NativePaddleEngine.bufferSetA.s.mat,
+                            masterBuffer.s.mat,
+                            NativePaddleEngine.bufferSetB.p.mat,
+                            if (isColor) NativePaddleEngine.bufferSetB.s.mat
+                            else NativePaddleEngine.bufferSetB.p.uvMat,
                             poisonBuf,
                         )
                         val seg = one.first()
                         segs.add(seg)
+                        if (poisonBuf.size >= 3) {
+                            nextInk = poisonBuf[poisonBuf.size - 3]
+                            nextNon = poisonBuf[poisonBuf.size - 2]
+                            inkLo = poisonBuf[poisonBuf.size - 1]
+                        }
                         val pd = seg.poison
                         if (pd?.classChange == true) {
                             val dumpSeed = File(objImgRoot, "r${fullRow}_c${col}_box${si + 1}.png")
-                            dumpObjectPlanePng(objPlane, dumpSeed)
+                            dumpObjectPlanePng(masterBuffer.s.mat, dumpSeed)
                             branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
                         }
                         if (pd?.bandH == -1) {
@@ -1724,7 +1738,7 @@ suspend fun runPumpExperiment(
                         )
                     }
                     val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
-                    dumpObjectPlanePng(objPlane, dumpFinal)
+                    dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
                     branch.metadata["object_dump_final"] = dumpFinal.name
                     val walks = seeds.indices.map { i ->
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
@@ -1778,7 +1792,6 @@ suspend fun runPumpExperiment(
                             h.rect.right.toInt(), h.rect.bottom.toInt(),
                         )
                     }
-                    val bSet = NativePaddleEngine.bufferSetB
                     branch.metadata.remove("look_ink")
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     seeds.forEach { seed ->
@@ -2464,7 +2477,6 @@ suspend fun runPumpExperiment(
                         captureRedboxData(pdHunksRawTotal, workspace, branch)
                     }
 
-                    val gray = workspace.p.mat
                     val seedQuads = kept.toList()
                     val tExpand0 = System.currentTimeMillis()
                     val expDiag: List<ContentExpandUtils.OrientedExpand>
@@ -2484,41 +2496,56 @@ suspend fun runPumpExperiment(
                             retractClearFrac = 0.30f,
                             energyRatio = 0.65f,
                         )
-                        val bSet = NativePaddleEngine.bufferSetB
                         branch.metadata.remove("look_ink")
                         val colIdx = flows.indexOf(branch.name).let { if (it < 0) 0 else it }
                         masterBuffer.s.clear()
-                        val objPlane = masterBuffer.s.mat
                         val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
                         var rotExhausted = false
+                        var nextInk = 255
+                        var nextNon = 1
+                        var inkLo = 255
+                        val isColor = expandMode != 0
                         seedQuads.forEachIndexed { si, q ->
                             if (rotExhausted) return@forEachIndexed
                             val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
+                            if (poisonBuf.size >= 3) {
+                                poisonBuf[0] = nextInk
+                                poisonBuf[1] = nextNon
+                                poisonBuf[2] = inkLo
+                            }
                             val one = if (orientInk != null) {
                                 orientInk(
-                                    gray,
-                                    workspace.p.uvMat,
+                                    masterBuffer.p.mat,
+                                    masterBuffer.p.uvMat,
                                     listOf(q),
-                                    bSet.s.mat,
-                                    objPlane,
-                                    bSet.p.mat,
-                                    bSet.p.uvMat,
+                                    NativePaddleEngine.bufferSetB.s.mat,
+                                    masterBuffer.s.mat,
+                                    NativePaddleEngine.bufferSetB.p.mat,
+                                    if (isColor) NativePaddleEngine.bufferSetA.s.mat
+                                    else NativePaddleEngine.bufferSetB.p.uvMat,
                                     poisonBuf,
                                 )
                             } else {
                                 listOf(
                                     ContentExpandUtils.Seg7OrientedExpand(
                                         q,
-                                        ContentExpandUtils.strokeWidthInSeed(gray, q.toAabb()),
+                                        ContentExpandUtils.strokeWidthInSeed(
+                                            masterBuffer.p.mat, q.toAabb(),
+                                        ),
                                     ),
                                 )
                             }
                             val seg = one.first()
                             segs.add(seg)
+                            if (poisonBuf.size >= 3) {
+                                nextInk = poisonBuf[poisonBuf.size - 3]
+                                nextNon = poisonBuf[poisonBuf.size - 2]
+                                inkLo = poisonBuf[poisonBuf.size - 1]
+                            }
                             val pd = seg.poison
                             if (pd?.classChange == true) {
                                 val dumpSeed = File(objImgRoot, "r${fullRow}_c${colIdx}_box${si + 1}.png")
-                                dumpObjectPlanePng(objPlane, dumpSeed)
+                                dumpObjectPlanePng(masterBuffer.s.mat, dumpSeed)
                                 branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
                             }
                             if (pd?.bandH == -1) {
@@ -2539,7 +2566,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                         val dumpFinal = File(objImgRoot, "r${fullRow}_c${colIdx}_final.png")
-                        dumpObjectPlanePng(objPlane, dumpFinal)
+                        dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
                         branch.metadata["object_dump_final"] = dumpFinal.name
                         val jumpedQuads = segs.map { it.quad }
                         fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> {
@@ -2596,7 +2623,7 @@ suspend fun runPumpExperiment(
                         )
                         expDiag = seedQuads.map { seed ->
                             val d = ContentExpandUtils.expandOrientedDiagnose(
-                                gray, seed, expandOpts, energyOrientNative,
+                                masterBuffer.p.mat, seed, expandOpts, energyOrientNative,
                             )
                             val jpeg = OcrUtils.takeSnapshotJpeg(
                                 workspace.s, seed.toAabb(), PUMP_CROP_TARGET_W, PUMP_CROP_TARGET_H,
@@ -2701,7 +2728,7 @@ suspend fun runPumpExperiment(
                             val ocrP = if (ocrQuads.isEmpty()) {
                                 PumpRectOcrLists(emptyList(), emptyList())
                             } else {
-                                ocrPumpOrientedQuads(ocrQuads, gray, imgW, imgH)
+                                ocrPumpOrientedQuads(ocrQuads, masterBuffer.p.mat, imgW, imgH)
                             }
                             nOcr += ocrQuads.size
                             val ocrAt = HashMap<Int, Int>(ocrIdx.size)
@@ -2740,7 +2767,7 @@ suspend fun runPumpExperiment(
                             val rects = quads.map { it.toAabb() }
                             val candsK: List<RedBoxOcrCandidate>
                             if (kk == 0f) {
-                                val ocrK = ocrPumpOrientedQuads(quads, gray, imgW, imgH)
+                                val ocrK = ocrPumpOrientedQuads(quads, masterBuffer.p.mat, imgW, imgH)
                                 nOcr += quads.size
                                 candsK = buildRedBoxCandidates(
                                     rects, ocrK.asis, ocrK.digits,
@@ -2767,7 +2794,7 @@ suspend fun runPumpExperiment(
                                 val ocrK = if (ocrQuads.isEmpty()) {
                                     PumpRectOcrLists(emptyList(), emptyList())
                                 } else {
-                                    ocrPumpOrientedQuads(ocrQuads, gray, imgW, imgH)
+                                    ocrPumpOrientedQuads(ocrQuads, masterBuffer.p.mat, imgW, imgH)
                                 }
                                 nOcr += ocrQuads.size
                                 val ocrAt = HashMap<Int, Int>(ocrIdx.size)
@@ -2821,7 +2848,7 @@ suspend fun runPumpExperiment(
                         branch.metadata["n_count_pull"] = "0"
                     } else {
                         energyRects = expandedQuads.map { it.toAabb() }
-                        val energyOcr = ocrPumpOrientedQuads(expandedQuads, gray, imgW, imgH)
+                        val energyOcr = ocrPumpOrientedQuads(expandedQuads, masterBuffer.p.mat, imgW, imgH)
                         energyCands = buildRedBoxCandidates(
                             energyRects, energyOcr.asis, energyOcr.digits,
                             energyOcr.asisProbs, energyOcr.digitsProbs, energyOcr.recB64,
@@ -2837,7 +2864,7 @@ suspend fun runPumpExperiment(
                         val countQuads = expDiag.map { it.countQuad }
                         val countRects = countQuads.map { it.toAabb() }
                         val tOcrC0 = System.currentTimeMillis()
-                        val countOcr = ocrPumpOrientedQuads(countQuads, gray, imgW, imgH)
+                        val countOcr = ocrPumpOrientedQuads(countQuads, masterBuffer.p.mat, imgW, imgH)
                         branch.metadata["t_ocr_count_ms"] =
                             (System.currentTimeMillis() - tOcrC0).toString()
                         branch.metadata["n_ocr_count"] = countQuads.size.toString()
@@ -2886,7 +2913,7 @@ suspend fun runPumpExperiment(
                             ContentExpandUtils.padOrientedU(q, 0.5f, seedQuads.getOrNull(i))
                         }
                         val horizPadRects = pdPadQuads.map { it.toAabb() }
-                        val horizPadOcr = ocrPumpOrientedQuads(pdPadQuads, gray, imgW, imgH)
+                        val horizPadOcr = ocrPumpOrientedQuads(pdPadQuads, masterBuffer.p.mat, imgW, imgH)
                         val horizPadCands = buildRedBoxCandidates(
                             horizPadRects, horizPadOcr.asis, horizPadOcr.digits,
                             horizPadOcr.asisProbs, horizPadOcr.digitsProbs, horizPadOcr.recB64,
@@ -2910,7 +2937,7 @@ suspend fun runPumpExperiment(
                             ContentExpandUtils.calculatedOriented(it, vv, SET_G_HORIZ_FACTOR)
                         }
                         val rV = qV.map { it.toAabb() }
-                        val oV = ocrPumpOrientedQuads(qV, gray, imgW, imgH)
+                        val oV = ocrPumpOrientedQuads(qV, masterBuffer.p.mat, imgW, imgH)
                         val cV = buildRedBoxCandidates(
                             rV, oV.asis, oV.digits, oV.asisProbs, oV.digitsProbs, oV.recB64,
                             recWList = oV.recW, recHList = oV.recH,
@@ -3213,7 +3240,6 @@ suspend fun runPumpExperiment(
                                 captureRedboxData(pdHunksRawTotal, workspace, branch)
                             }
 
-                            val gray = workspace.p.mat
                             val expandOpts = ContentExpandUtils.ExpandOptions(
                                 maxFrac = maxFrac,
                                 enableJump = enableJump,
@@ -3228,10 +3254,13 @@ suspend fun runPumpExperiment(
                                 tightInsetPx = tightInsetPx,
                             )
                             val tExpand0 = System.currentTimeMillis()
-                            val uv = workspace.p.uvMat
                             val energyFn = aabbFn
                             val expDiag = if (energyFn != null) {
-                                val expanded = energyFn(gray, uv, redPixelList)
+                                val expanded = energyFn(
+                                    NativePaddleEngine.bufferSetA.p.mat,
+                                    NativePaddleEngine.bufferSetA.p.uvMat,
+                                    redPixelList,
+                                )
                                 val withJpeg = expanded.mapIndexed { i, d ->
                                     val seed = redPixelList.getOrNull(i) ?: return@mapIndexed d
                                     val jpeg = OcrUtils.takeSnapshotJpeg(
@@ -3252,18 +3281,23 @@ suspend fun runPumpExperiment(
                                 withJpeg
                             } else {
                                 ContentExpandUtils.expandDiagnoseMany(
-                                    gray,
-                                    if (chromaExpand) uv else null,
+                                    NativePaddleEngine.bufferSetA.p.mat,
+                                    if (chromaExpand) NativePaddleEngine.bufferSetA.p.uvMat else null,
                                     redPixelList,
                                     mode,
                                     expandOpts,
                                 ) ?: redPixelList.map { seed ->
                                     if (chromaExpand) {
                                         ContentExpandUtils.expandDiagnoseChroma(
-                                            gray, uv, seed, mode, expandOpts,
+                                            NativePaddleEngine.bufferSetA.p.mat,
+                                            NativePaddleEngine.bufferSetA.p.uvMat,
+                                            seed, mode, expandOpts,
                                         )
                                     } else {
-                                        ContentExpandUtils.expandDiagnose(gray, seed, mode, expandOpts)
+                                        ContentExpandUtils.expandDiagnose(
+                                            NativePaddleEngine.bufferSetA.p.mat,
+                                            seed, mode, expandOpts,
+                                        )
                                     }
                                 }
                             }
