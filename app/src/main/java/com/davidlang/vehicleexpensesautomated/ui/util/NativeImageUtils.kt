@@ -693,11 +693,13 @@ object NativeImageUtils {
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
         teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
     ): FloatArray?
     private external fun nativeColorOrientRetract(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
         teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
     ): FloatArray?
 
     private fun orientPtrs(
@@ -726,19 +728,27 @@ object NativeImageUtils {
         gray: Mat, uv: Mat?, seeds: FloatArray,
         scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
         val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorOrientTight(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+        return nativeColorOrientTight(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L,
+        )
     }
     fun colorOrientRetractNative(
         gray: Mat, uv: Mat?, seeds: FloatArray,
         scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
         val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorOrientRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+        return nativeColorOrientRetract(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L,
+        )
     }
 
     private external fun nativeGrayOrientExpand(
@@ -750,6 +760,7 @@ object NativeImageUtils {
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
         teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
     ): FloatArray?
 
     fun grayOrientExpandNative(
@@ -765,10 +776,14 @@ object NativeImageUtils {
         gray: Mat, uv: Mat?, seeds: FloatArray,
         scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
         val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
-        return nativeColorOrientExpand(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats)
+        return nativeColorOrientExpand(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L,
+        )
     }
 
     /** Packed n×8 quads. Jump-retract along ±u. scratch = BufferSet.s. */

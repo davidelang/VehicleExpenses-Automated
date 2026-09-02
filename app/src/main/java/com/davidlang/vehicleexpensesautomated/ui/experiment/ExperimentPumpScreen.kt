@@ -2398,6 +2398,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         org.opencv.core.Mat?,
                         IntArray?,
+                        org.opencv.core.Mat?,
                     ) -> List<ContentExpandUtils.Seg7OrientedExpand>)? = null,
                 ) {
                     fun hunkFromAabb(r: android.graphics.Rect): PumpHunk =
@@ -2524,6 +2525,7 @@ suspend fun runPumpExperiment(
                                     if (isColor) NativePaddleEngine.bufferSetA.p.mat
                                     else NativePaddleEngine.bufferSetA.s.mat,
                                     poisonBuf,
+                                    if (isColor) NativePaddleEngine.bufferSetA.s.mat else null,
                                 )
                             } else {
                                 listOf(
@@ -3079,6 +3081,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         org.opencv.core.Mat?,
                         IntArray?,
+                        org.opencv.core.Mat?,
                     ) -> List<ContentExpandUtils.Seg7OrientedExpand>)? = null,
                     boundNote: String? = null,
                     chromaNote: String? = null,
@@ -3827,6 +3830,7 @@ suspend fun runPumpExperiment(
                         org.opencv.core.Mat?,
                         org.opencv.core.Mat?,
                         IntArray?,
+                        org.opencv.core.Mat?,
                     ) -> List<ContentExpandUtils.Seg7OrientedExpand>,
                     chromaNote: String?,
                     boundNote: String?,

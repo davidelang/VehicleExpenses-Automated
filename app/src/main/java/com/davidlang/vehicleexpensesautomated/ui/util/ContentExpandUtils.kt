@@ -1393,8 +1393,9 @@ object ContentExpandUtils {
         overlayUv: Mat?,
         poisonStats: IntArray?,
         native: (
-            Mat, Mat?, FloatArray, Mat?, FloatArray, ShortArray, Mat?, Mat?, Mat?, IntArray?,
+            Mat, Mat?, FloatArray, Mat?, FloatArray, ShortArray, Mat?, Mat?, Mat?, IntArray?, Mat?,
         ) -> FloatArray?,
+        tint: Mat? = null,
     ): List<Seg7OrientedExpand> {
         if (seeds.isEmpty()) return emptyList()
         val packed = FloatArray(seeds.size * 8)
@@ -1408,7 +1409,10 @@ object ContentExpandUtils {
         val imgH = gray.rows()
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
         val r = try {
-            native(gray, uv, packed, scratch, tele, sweepBuf, combine, overlayY, overlayUv, poisonStats)
+            native(
+                gray, uv, packed, scratch, tele, sweepBuf, combine, overlayY, overlayUv,
+                poisonStats, tint,
+            )
         } catch (_: Throwable) {
             null
         }
@@ -1439,50 +1443,65 @@ object ContentExpandUtils {
         gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
         scratch: Mat? = null, combine: Mat? = null,
         overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+        tint: Mat? = null,
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
-        NativeImageUtils::grayOrientTightNative,
+        { g, u, pk, sc, te, sw, comb, oy, ouv, ps, _ ->
+            NativeImageUtils.grayOrientTightNative(g, u, pk, sc, te, sw, comb, oy, ouv, ps)
+        },
+        tint,
     )
     fun expandGrayOrientRetract(
         gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
         scratch: Mat? = null, combine: Mat? = null,
         overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+        tint: Mat? = null,
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
-        NativeImageUtils::grayOrientRetractNative,
+        { g, u, pk, sc, te, sw, comb, oy, ouv, ps, _ ->
+            NativeImageUtils.grayOrientRetractNative(g, u, pk, sc, te, sw, comb, oy, ouv, ps)
+        },
+        tint,
     )
     fun expandColorOrientTight(
         gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
         scratch: Mat? = null, combine: Mat? = null,
         overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+        tint: Mat? = null,
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
-        NativeImageUtils::colorOrientTightNative,
+        NativeImageUtils::colorOrientTightNative, tint,
     )
     fun expandColorOrientRetract(
         gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
         scratch: Mat? = null, combine: Mat? = null,
         overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+        tint: Mat? = null,
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
-        NativeImageUtils::colorOrientRetractNative,
+        NativeImageUtils::colorOrientRetractNative, tint,
     )
 
     fun expandGrayOrientExpand(
         gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
         scratch: Mat? = null, combine: Mat? = null,
         overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+        tint: Mat? = null,
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
-        NativeImageUtils::grayOrientExpandNative,
+        { g, u, pk, sc, te, sw, comb, oy, ouv, ps, _ ->
+            NativeImageUtils.grayOrientExpandNative(g, u, pk, sc, te, sw, comb, oy, ouv, ps)
+        },
+        tint,
     )
     fun expandColorOrientExpand(
         gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
         scratch: Mat? = null, combine: Mat? = null,
         overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+        tint: Mat? = null,
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
-        NativeImageUtils::colorOrientExpandNative,
+        NativeImageUtils::colorOrientExpandNative, tint,
     )
 
     /** k-pad along `±v`, remaining [SEG7_VERT_CAP_FRAC]×seed `bh` per side. Frozen sides still pad. */

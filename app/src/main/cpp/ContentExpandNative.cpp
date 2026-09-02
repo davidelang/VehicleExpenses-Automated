@@ -4741,7 +4741,8 @@ static jfloatArray seg7OrientedMany(
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode,
     jint boundStrategy, jint tightInsetPx,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr = 0
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -4763,8 +4764,7 @@ static jfloatArray seg7OrientedMany(
     cv::Mat* ovUv = asUV(overlayUv);
     cv::Mat* lookBinHost = asU8(overlayUv);
     cv::Mat* rotPoison = asU8(overlayY);
-    cv::Mat* tintPlane = nullptr;
-    if (useTint) tintPlane = asU8(overlayY);
+    cv::Mat* tintPlane = asU8(reinterpret_cast<cv::Mat*>(tintPtr));
     std::vector<PoisonStats> poisonPacks;
     poisonPacks.resize(static_cast<size_t>(n));
     if (useChroma) {
@@ -4893,13 +4893,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr
 ) {
     jfloatArray seeds = insetEnergyOrientSeeds16(env, seedsArr);
     if (!seeds) seeds = seedsArr;
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seeds, 4, 0, 16,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -4907,11 +4908,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr
 ) {
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 2, 16,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -4919,10 +4921,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr
 ) {
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 0, 16,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr);
 }
 
