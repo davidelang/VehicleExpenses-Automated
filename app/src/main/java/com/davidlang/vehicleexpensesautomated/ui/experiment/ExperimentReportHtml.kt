@@ -48,6 +48,7 @@ body.hide-orig-details .orig-details { display: none; }
 body.hide-dump-details .dump-details { display: none; }
 body.hide-rec-crops .rec-crops { display: none; }
 body.hide-look-ink-crops .look-ink-crops { display: none; }
+body.hide-results .results-col { display: none !important; }
 .look-ink-crops img { max-width: none !important; height: auto; image-rendering: pixelated; }
 $hideCols
 $hidePhotos
@@ -60,11 +61,14 @@ $hidePhotos
     fun toolbar(kind: Kind, columnLabels: List<String>, metaHtml: String): String {
         val rec = if (kind == Kind.PUMP) {
             """<label class="ctl"><input type="checkbox" class="ve-rec-crops" checked> Rec crops</label>
-    <label class="ctl"><input type="checkbox" class="ve-look-ink" checked> Look ink</label>"""
+    <label class="ctl"><input type="checkbox" class="ve-look-ink" checked> Look ink</label>
+    <label class="ctl"><input type="checkbox" class="ve-results" checked> Results</label>"""
         } else ""
         val checks = StringBuilder()
+        val last = columnLabels.size - 1
         columnLabels.forEachIndexed { i, lab ->
             if (i == 0) return@forEachIndexed
+            if (kind == Kind.PUMP && i == last) return@forEachIndexed
             val esc = lab.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             checks.append(
                 """<label class="ctl"><input type="checkbox" checked data-col="$i">$esc</label>""",
@@ -201,6 +205,8 @@ $hidePhotos
       document.body.classList.toggle('hide-rec-crops', rec && !rec.checked);
       var lookInk = document.querySelector('.ve-look-ink');
       document.body.classList.toggle('hide-look-ink-crops', lookInk && !lookInk.checked);
+      var results = document.querySelector('.ve-results');
+      document.body.classList.toggle('hide-results', results && !results.checked);
     }
     applyRows();
     applyWidth();
@@ -208,7 +214,7 @@ $hidePhotos
   }
   function save() {
     try {
-      var st = { cols: {}, orig: true, dump: true, rec: true, lookInk: true, unlim: false, max: 500, rows: '' };
+      var st = { cols: {}, orig: true, dump: true, rec: true, lookInk: true, results: true, unlim: false, max: 500, rows: '' };
       var src = topBar();
       if (src) {
         src.querySelectorAll('input[data-col]').forEach(function(cb) {
@@ -219,6 +225,7 @@ $hidePhotos
       var dump = document.querySelector('.ve-dump-details');
       var rec = document.querySelector('.ve-rec-crops');
       var lookInk = document.querySelector('.ve-look-ink');
+      var results = document.querySelector('.ve-results');
       var unlim = document.querySelector('.ve-col-unlim');
       var colMax = document.querySelector('.ve-col-max');
       var rows = document.querySelector('.ve-rows');
@@ -226,6 +233,7 @@ $hidePhotos
       if (dump) st.dump = dump.checked;
       if (rec) st.rec = rec.checked;
       if (lookInk) st.lookInk = lookInk.checked;
+      if (results) st.results = results.checked;
       if (unlim) st.unlim = unlim.checked;
       if (colMax) st.max = parseInt(colMax.value, 10) || 500;
       if (rows) st.rows = rows.value;
@@ -247,6 +255,7 @@ $hidePhotos
       document.querySelectorAll('.ve-dump-details').forEach(function(el) { if (st.dump !== undefined) el.checked = !!st.dump; });
       document.querySelectorAll('.ve-rec-crops').forEach(function(el) { if (st.rec !== undefined) el.checked = !!st.rec; });
       document.querySelectorAll('.ve-look-ink').forEach(function(el) { if (st.lookInk !== undefined) el.checked = !!st.lookInk; });
+      document.querySelectorAll('.ve-results').forEach(function(el) { if (st.results !== undefined) el.checked = !!st.results; });
       document.querySelectorAll('.ve-col-unlim').forEach(function(el) { if (st.unlim !== undefined) el.checked = !!st.unlim; });
       document.querySelectorAll('.ve-col-max').forEach(function(el) { if (st.max) el.value = st.max; });
       document.querySelectorAll('.ve-rows').forEach(function(el) { if (st.rows !== undefined) el.value = st.rows; });
@@ -292,11 +301,16 @@ $hidePhotos
     fun documentHead(title: String, kind: Kind): String =
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\"/><title>$title</title>\n${css()}\n${script(kind)}</head><body>\n"
 
-    fun tableOpen(headerCells: List<String>): String {
+    fun tableOpen(headerCells: List<String>, resultsLast: Boolean = false): String {
         val sb = StringBuilder()
         sb.append("<table id=\"report\"><thead><tr>")
+        val last = headerCells.size - 1
         headerCells.forEachIndexed { i, lab ->
-            sb.append("<th data-col=\"$i\">$lab</th>")
+            if (resultsLast && i == last) {
+                sb.append("<th class=\"results-col\">$lab</th>")
+            } else {
+                sb.append("<th data-col=\"$i\">$lab</th>")
+            }
         }
         sb.append("</tr></thead><tbody>\n")
         return sb.toString()

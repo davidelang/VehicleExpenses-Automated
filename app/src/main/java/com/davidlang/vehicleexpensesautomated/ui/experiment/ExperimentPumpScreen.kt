@@ -90,6 +90,9 @@ private fun pruneRedPixelsTopN(rects: MutableList<Rect>, context: Context, imgH:
     PumpCostVolUtils.pruneRectsToTopN(rects, PumpOcrSettings.maxRedBoxes(context), imgH)
 }
 
+/** Keep [captureRedboxData]; off this plan. */
+private const val CAPTURE_REDBOX_DATA = false
+
 private fun rectJson(r: Rect): JSONObject =
     JSONObject().put("l", r.left).put("t", r.top).put("r", r.right).put("b", r.bottom)
 
@@ -909,6 +912,19 @@ suspend fun runPumpExperiment(
                 PumpCostVolUtils.doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
             }
 
+            var photoTilt = 0f
+            val tPhotoDeskew0 = System.currentTimeMillis()
+            NativePaddleEngine.bufferSetA.p.mat.setTo(org.opencv.core.Scalar(0.0))
+            masterBuffer.p.mat.copyTo(NativePaddleEngine.bufferSetA.p.mat)
+            if (!masterBuffer.p.uvMat.empty() && !NativePaddleEngine.bufferSetA.p.uvMat.empty()) {
+                masterBuffer.p.uvMat.copyTo(NativePaddleEngine.bufferSetA.p.uvMat)
+            }
+            val deskewOnce = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(
+                NativePaddleEngine.bufferSetA.p, longEdgeTarget = 256,
+            )
+            photoTilt = -deskewOnce.paddleCppAngle
+            OdometerOcrUtils.rotate(NativePaddleEngine.bufferSetA, photoTilt)
+            root.metadata["t_deskew_once_ms"] = (System.currentTimeMillis() - tPhotoDeskew0).toString()
 
             // Dynamic Flow Processing
             // Phase 2 dispatch: list-based (flowName, processor) pairs — not index-aligned. Only entries in `flows`
@@ -917,9 +933,11 @@ suspend fun runPumpExperiment(
                 val branch = root.getBranch(flowName)
                 val tFlowStart = System.currentTimeMillis()
                 val tSetupStart = System.currentTimeMillis()
-                val workspace = NativePaddleEngine.bufferSetA
-                masterBuffer.p.mat.copyTo(workspace.p.mat)
-                masterBuffer.p.uvMat.copyTo(workspace.p.uvMat)
+                val workspace = if (flowName.contains("rot-", ignoreCase = true)) {
+                    masterBuffer
+                } else {
+                    NativePaddleEngine.bufferSetA
+                }
 
                 val discoveryDetails = mutableMapOf<String, MutableMap<Int, List<PumpHunk>>>().apply {
                     put("Paddle Raw", mutableMapOf())
@@ -1425,9 +1443,7 @@ suspend fun runPumpExperiment(
                     pdHunksMaxTotal.clear()
                     pdHunksNativeTotal.clear()
                     val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p, longEdgeTarget = 256)
-                    val tilt = -deskewRes.paddleCppAngle
-                    OdometerOcrUtils.rotate(workspace, tilt)
+                    val tilt = photoTilt
                     branch.metadata["tilt"] = "%.2f".format(tilt)
                     branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
                     branch.metadata["heatmap_box_mode"] = if (boxMode == NativeImageUtils.HEATMAP_BOX_AABB) "aabb" else "minAreaRect"
@@ -1545,7 +1561,9 @@ suspend fun runPumpExperiment(
                 })
                 branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
                 // For all sets (prune now applies in every proc A/B/C/D/E/F/G) the proc stubs + thin if calls + helpers will see the pruned <=4 in the lists for "other processing" (blue, anns, OCR, red-only, and the post-prune display hists for C/E).
-                captureRedboxData(pdHunksRawTotal, workspace, branch)  // common for G (redboxData + n_per_red_hists)
+                if (CAPTURE_REDBOX_DATA) {
+                    captureRedboxData(pdHunksRawTotal, workspace, branch)
+                }
 
                 // The optimizations (pixel Rects for red working lists, 4px/1024x48 aspect OCR in helpers, crop for hists in the C/E display capture here) apply to *any of the paddle sets that they could apply to* (all red-derived paths per user clarification). Prune-to-4 limitation applies in all procs now. Early probe for C/E now only does polarity on initial (cheap combined mask); the 4 post-prune capture provides the filtered redboxData + redboxHistC_* for display/JSON (fixing the 30 histograms issue).
 
@@ -1595,9 +1613,6 @@ suspend fun runPumpExperiment(
                         )
                     }
                     val bSet = NativePaddleEngine.bufferSetB
-                    if (bSet.p.mat.cols() != imgW || bSet.p.mat.rows() != imgH) {
-                        bSet.resize(imgW, imgH)
-                    }
                     branch.metadata.remove("look_ink")
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     seeds.forEach { seed ->
@@ -1676,9 +1691,6 @@ suspend fun runPumpExperiment(
                         )
                     }
                     val bSet = NativePaddleEngine.bufferSetB
-                    if (bSet.p.mat.cols() != imgW || bSet.p.mat.rows() != imgH) {
-                        bSet.resize(imgW, imgH)
-                    }
                     branch.metadata.remove("look_ink")
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     seeds.forEach { seed ->
@@ -2350,7 +2362,9 @@ suspend fun runPumpExperiment(
                     pdHunksRawTotal.addAll(seedHunks)
                     pdHunksDetectedTotal.clear()
                     pdHunksDetectedTotal.addAll(seedHunks)
-                    captureRedboxData(pdHunksRawTotal, workspace, branch)
+                    if (CAPTURE_REDBOX_DATA) {
+                        captureRedboxData(pdHunksRawTotal, workspace, branch)
+                    }
 
                     val gray = workspace.p.mat
                     val seedQuads = kept.toList()
@@ -2373,9 +2387,6 @@ suspend fun runPumpExperiment(
                             energyRatio = 0.65f,
                         )
                         val bSet = NativePaddleEngine.bufferSetB
-                        if (bSet.p.mat.cols() != imgW || bSet.p.mat.rows() != imgH) {
-                            bSet.resize(imgW, imgH)
-                        }
                         branch.metadata.remove("look_ink")
                         val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
                         seedQuads.forEach { q ->
@@ -2947,9 +2958,7 @@ suspend fun runPumpExperiment(
                         val tDeskewStart = System.currentTimeMillis()
                         val tilt: Float
                         if (doDeskew) {
-                            val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p, longEdgeTarget = 256)
-                            tilt = -deskewRes.paddleCppAngle
-                            OdometerOcrUtils.rotate(workspace, tilt)
+                            tilt = photoTilt
                             branch.metadata["tilt"] = "%.2f".format(tilt)
                         } else {
                             tilt = 0f
@@ -3077,7 +3086,9 @@ suspend fun runPumpExperiment(
                                     ),
                                 )
                             })
-                            captureRedboxData(pdHunksRawTotal, workspace, branch)
+                            if (CAPTURE_REDBOX_DATA) {
+                                captureRedboxData(pdHunksRawTotal, workspace, branch)
+                            }
 
                             val gray = workspace.p.mat
                             val expandOpts = ContentExpandUtils.ExpandOptions(
@@ -3536,9 +3547,7 @@ suspend fun runPumpExperiment(
                     pdHunksMaxTotal.clear()
                     pdHunksNativeTotal.clear()
                     val tDeskewStart = System.currentTimeMillis()
-                    val deskewRes = OdometerOcrUtils.calculateDeskewAnglePaddleOnly(workspace.p, longEdgeTarget = 256)
-                    val tilt = -deskewRes.paddleCppAngle
-                    OdometerOcrUtils.rotate(workspace, tilt)
+                    val tilt = photoTilt
                     branch.metadata["tilt"] = "%.2f".format(tilt)
                     branch.metadata["t_deskew_ms"] = (System.currentTimeMillis() - tDeskewStart).toString()
                     val combinedBluePixel = mutableListOf<android.graphics.Rect>()
@@ -3552,7 +3561,9 @@ suspend fun runPumpExperiment(
                     var lastReds = listOf<PumpHunk>()
                     val tGStart = System.currentTimeMillis()
                     lastReds = hybridRunDiscoveryStage(workspace, discoveryDetails, branch, imgW, imgH)
-                    captureRedboxData(lastReds, workspace, branch)
+                    if (CAPTURE_REDBOX_DATA) {
+                        captureRedboxData(lastReds, workspace, branch)
+                    }
                     hybridAppendStageOcr(lastReds, iGVert, combinedBluePixel, combinedAsis, combinedDigits, combinedAsisProbs, combinedDigitsProbs, lastBlueHunks, lastOrangeHunks, imgW, imgH)
                     branch.metadata["t_hybrid_g_ms"] = (System.currentTimeMillis() - tGStart).toString()
                     val tHistStart = System.currentTimeMillis()
@@ -3838,7 +3849,8 @@ suspend fun runPumpExperiment(
                 tDeskew = 0L, // Combined in flows
                 tilt = deskewResA.angle,
                 deskewHtml = deskewHtml,
-                diagnostic = meta.diagnostic
+                diagnostic = meta.diagnostic,
+                maxRedBoxes = PumpOcrSettings.maxRedBoxes(context),
             )
 
             Log.d("PUMP_HTML", "row=$fullRow rowHtml.len=${rowHtml.length}")
@@ -4431,6 +4443,139 @@ private fun seedVRowsInWarp(
     return yT to yB
 }
 
+private fun pLookInkArr(br: PumpBranch): org.json.JSONArray {
+    val raw = br.metadata["look_ink"] ?: return org.json.JSONArray()
+    return try {
+        org.json.JSONArray(raw)
+    } catch (_: Exception) {
+        org.json.JSONArray()
+    }
+}
+
+private fun pLookInkBoxHtml(br: PumpBranch, k: Int): String {
+    val arr = pLookInkArr(br)
+    for (j in 0 until arr.length()) {
+        val c = arr.optJSONObject(j) ?: continue
+        val lab = c.optString("label")
+        if (lab != "box$k" && lab != "box${k}") continue
+        val b64 = c.optString("lookInkB64")
+        if (b64.isNullOrEmpty()) return ""
+        val recW = c.optInt("recW", 0)
+        val recH = c.optInt("recH", 0)
+        val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
+        val hCss = if (recH > 0) "height:${recH}px;" else "height:auto;"
+        return "<img src='data:image/jpeg;base64,$b64' style='$hCss$wCss max-width:none;image-rendering:pixelated;'><br>$lab"
+    }
+    return ""
+}
+
+private fun pOfficialRecBoxHtml(br: PumpBranch, k: Int): String {
+    val data = try {
+        org.json.JSONObject(br.metadata["costVolDecisionData_Paddle"] ?: return "")
+    } catch (_: Exception) {
+        return ""
+    }
+    val want = "box$k"
+    fun fromCands(cands: org.json.JSONArray?): String {
+        if (cands == null) return ""
+        for (j in 0 until cands.length()) {
+            val c = cands.optJSONObject(j) ?: continue
+            if (c.optString("label") != want) continue
+            val b64 = c.optString("_htmlRec")
+            if (b64.isNullOrEmpty()) return ""
+            val recW = c.optInt("recW", 0)
+            val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
+            val asis = c.optString("asis")
+            val dig = c.optString("digits")
+            return "<img src='data:image/jpeg;base64,$b64' style='height:48px;$wCss max-width:none;image-rendering:pixelated;'><br>$want <span style='font-size:12px;'>asis=$asis dig=$dig</span>"
+        }
+        return ""
+    }
+    val variants = data.optJSONArray("scaleVariants")
+    if (variants != null) {
+        for (i in 0 until variants.length()) {
+            val v = variants.optJSONObject(i) ?: continue
+            val kind = v.optString("kind")
+            val s = v.optDouble("s", Double.NaN)
+            val officialInk = kind == "ink" && (s.isNaN() || s == 0.0)
+            if (!officialInk && kind != "energy") continue
+            val hit = fromCands(v.optJSONArray("candidates"))
+            if (hit.isNotEmpty()) return hit
+        }
+    }
+    return fromCands(data.optJSONArray("candidates"))
+}
+
+private fun pRecExtraHtml(br: PumpBranch): String {
+    val raw = br.metadata["costVolDecisionData_Paddle"] ?: return ""
+    val data = try {
+        org.json.JSONObject(raw)
+    } catch (_: Exception) {
+        return ""
+    }
+    val sb = StringBuilder()
+    fun emitCands(cands: org.json.JSONArray, heading: String) {
+        var any = false
+        val chunk = StringBuilder()
+        chunk.append("<div><small>$heading</small></div>")
+        chunk.append("<div style='display:flex;flex-wrap:wrap;gap:3px;'>")
+        for (j in 0 until cands.length()) {
+            val c = cands.optJSONObject(j) ?: continue
+            val b64 = c.optString("_htmlRec")
+            if (b64.isNullOrEmpty()) continue
+            any = true
+            val lab = c.optString("label")
+            val asis = c.optString("asis")
+            val dig = c.optString("digits")
+            val recW = c.optInt("recW", 0)
+            val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
+            chunk.append(
+                "<div style='flex:0 0 auto;font-size:9px;'>" +
+                    "<img src='data:image/jpeg;base64,$b64' " +
+                    "style='height:48px;$wCss max-width:none;image-rendering:pixelated;'>" +
+                    "<br>$lab <span style='font-size:12px;'>asis=$asis dig=$dig</span></div>",
+            )
+        }
+        chunk.append("</div>")
+        if (any) sb.append(chunk)
+    }
+    val variants = data.optJSONArray("scaleVariants")
+    if (variants != null && variants.length() > 0) {
+        var header = false
+        for (i in 0 until variants.length()) {
+            val v = variants.optJSONObject(i) ?: continue
+            val kind = v.optString("kind")
+            if (kind == "energy_or_g") continue
+            val s = v.optDouble("s", Double.NaN)
+            val officialInk = kind == "ink" && (s.isNaN() || s == 0.0)
+            if (officialInk || kind == "energy") continue
+            val cands = v.optJSONArray("candidates") ?: continue
+            if (!header) {
+                sb.append("<div class='rec-crops' style='margin-top:6px;text-align:left;'><b>Rec extra</b>")
+                header = true
+            }
+            emitCands(cands, recVariantHeading(kind, v))
+        }
+        if (header) sb.append("</div>")
+    }
+    return sb.toString()
+}
+
+private fun pChosenSeedLabels(br: PumpBranch): Pair<String, String> {
+    val data = try {
+        org.json.JSONObject(br.metadata["costVolDecisionData_Paddle"] ?: return "" to "")
+    } catch (_: Exception) {
+        return "" to ""
+    }
+    val chosen = data.optJSONObject("chosen") ?: return "" to ""
+    fun lab(key: String): String {
+        val o = chosen.optJSONObject(key) ?: return ""
+        val s = o.optString("label")
+        return s.removePrefix("box")
+    }
+    return lab("cost") to lab("vol")
+}
+
 private fun pLookInkHtml(br: PumpBranch): String {
     val raw = br.metadata["look_ink"] ?: return ""
     val arr = try {
@@ -4610,7 +4755,7 @@ private fun pumpColumnLabels(flows: List<String>): List<String> {
     sorted.forEach { flow ->
         labels.add("$flow Paddle")
     }
-    labels.add("Final Comparison")
+    labels.add("Results")
     return labels
 }
 
@@ -4850,7 +4995,7 @@ private fun pBuildHtmlHeader(
     appendLine("<h1>Pump Extraction Experiment</h1>")
     appendLine("<p>$metaHtml</p>")
     append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.PUMP, colLabels, metaHtml))
-    append(ExperimentReportHtml.tableOpen(colLabels))
+    append(ExperimentReportHtml.tableOpen(colLabels, resultsLast = true))
     appendLine("<!-- total=$total device=$device version=$version -->")
 }
 
@@ -4864,9 +5009,9 @@ private fun pBuildHtmlRowDynamic(
     tDeskew: Long,
     tilt: Float,
     deskewHtml: String,
-    diagnostic: String = ""
+    diagnostic: String = "",
+    maxRedBoxes: Int = PumpOcrSettings.DEFAULT_MAX_RED_BOXES,
 ): String = buildString {
-    // fix-remaining-report-issues-20260619-plan: whitelist t_total_flow_ms + minimal essentials only; full timing stays in JSON
     val htmlMetaWhitelist = setOf("t_total_flow_ms", "img_w", "img_h")
     val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) ->
         k in htmlMetaWhitelist && v.length <= 100
@@ -4874,18 +5019,26 @@ private fun pBuildHtmlRowDynamic(
     val rowHtml = if (isDegraded) "<span style='color:red;'>Res: ${imgW}x${imgH} (DEGRADED)</span>" else "Res: ${imgW}x${imgH}"
     val diagHtml = if (diagnostic.isNotEmpty() || metaHtml.isNotEmpty()) "<br><small>Native: $diagnostic</small><br>$metaHtml" else ""
     val img = root.images
-
     val perSetTilts = root.subBranches.toSortedMap().entries
         .joinToString(" | ") { (name, br) ->
             val t = br.metadata["tilt"] ?: "?"
             val q = br.metadata["quad_angle_med"]
             if (q != null) "$name: $t° (quad $q°)" else "$name: $t°"
         }
-    appendLine("<tr id=\"ve-row-$rowIndex\" data-photo=\"$rowIndex\"><td data-col=\"0\"><b>#$rowIndex</b><br><small>$fileName</small><div class=\"orig-details\"><br><small>$rowHtml</small>$diagHtml<br><span style=\"font-size:6px\"><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts<table style='width:100%; border:none;'><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr><tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr><tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span></div></td>")
+    append("<tr id=\"ve-row-$rowIndex\" data-photo=\"$rowIndex\">")
+    append("<td data-col=\"0\"><b>#$rowIndex</b><br><small>$fileName</small>")
+    append("<div class=\"orig-details\" id=\"ve-r$rowIndex-c0-orig-details\"><br><small>$rowHtml</small>$diagHtml")
+    append("<br><span style=\"font-size:6px\"><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts")
+    append("<table style='width:100%; border:none;'><tr style='border:none;'>")
+    append("<td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td>")
+    append("<td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr>")
+    append("<tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td>")
+    append("<td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr>")
+    append("<tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span></div></td>")
 
     var colIdx = 1
+    val nKeep = maxRedBoxes.coerceIn(PumpOcrSettings.MIN_MAX_RED_BOXES, PumpOcrSettings.MAX_MAX_RED_BOXES)
     root.subBranches.toSortedMap().forEach { (name, br) ->
-        val pdB64 = br.images["PD"] ?: ""
         val sPerRed = br.metadata["s_per_red"]
         val sHtml = if (!sPerRed.isNullOrBlank() && sPerRed.length <= 100) {
             "<br><small>s=$sPerRed</small>"
@@ -4893,58 +5046,56 @@ private fun pBuildHtmlRowDynamic(
             ""
         }
         val teleHtml = pSeg7TeleHtml(br)
-        if (br.images.containsKey("PD_red_only")) {
-            // red-only + full PD pair (when branch populates the key from explicit helper call)
-            val redOnly = br.images["PD_red_only"] ?: ""
-            val full = br.images["PD"] ?: ""
-            appendLine("<td data-col=\"$colIdx\">${pColumnTitle(name, br)}<br><img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'><img src='data:image/jpeg;base64,$full' style='max-width:100%;'><div class='dump-details'><small>Red boxes only (after filter)</small><br><small>All annotations (red+blue+orange) as before</small>$sHtml$teleHtml</div>${pLookInkHtml(br)}${pRecBuffersHtml(br)}</td>")
-            colIdx++
-        } else if (br.images.containsKey("rawC")) {
-            val raw = br.images["rawC"] ?: ""
-            val pushed = br.images["pushedC"] ?: ""
-            val hB = br.images["histBeforeC"] ?: ""
-            val hA = br.images["histAfterC"] ?: ""
-            // Per-redbox hists + labels from redboxDataC (h/w/area pixels + bins for analysis)
-            // Dual visuals per red entry (red rect snapshot from crop + histogram snapshot from plot); 3-wide table, stacked h/w/area labels.
-            // (Removed outdated "YUV direct jpeg visuals per plan" / "YUV direct is the target" note.)
-            val rdataStr = br.metadata["redboxDataC"] ?: "[]"
-            val rdata = try { org.json.JSONArray(rdataStr) } catch (e: Exception) { org.json.JSONArray() }
-            // fix-4box-report-issues-20260619-plan: summary-only per-red text in HTML (full base64 in JSON metadata)
-            val perRedHtml = StringBuilder()
-            perRedHtml.append("<div style='margin-top:4px;'><b>Per Red Box Summary (${rdata.length()} boxes; see JSON for full data):</b></div>")
-            val sortedData = (0 until rdata.length()).map { rdata.getJSONObject(it) }.sortedByDescending { it.getInt("area") }
-            val numCols = 3
-            perRedHtml.append("<table style='width:100%; border:none; font-size:10px;'><tr>")
-            for (j in sortedData.indices) {
-                val s = sortedData[j]
-                val ii = s.getInt("index")
-                val hh = s.getInt("h")
-                val ww = s.getInt("w")
-                val aa = s.getInt("area")
-                perRedHtml.append("<td style='border:none; padding:2px; vertical-align:top; width:33%; text-align:center;'><small>box${ii + 1}: h=${hh} w=${ww} area=${aa}</small></td>")
-                if ((j + 1) % numCols == 0 && j < sortedData.size - 1) {
-                    perRedHtml.append("</tr><tr>")
-                }
-            }
-            perRedHtml.append("</tr></table>")
-            appendLine("<td data-col=\"$colIdx\">${pColumnTitle(name, br)}<br><img src='data:image/jpeg;base64,$pdB64'><div class='dump-details'><table style='width:100%; border:none; font-size:11px;'><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$raw' style='max-width:100%;'><br><small>Raw</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$pushed' style='max-width:100%;'><br><small>Valley-Pushed (few brightness vals)</small></td></tr><tr><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hB' style='max-width:100%;'><br><small>Before</small></td><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,$hA' style='max-width:100%;'><br><small>After</small></td></tr></table>$perRedHtml$sHtml$teleHtml</div>${pLookInkHtml(br)}${pRecBuffersHtml(br)}</td>")
-            colIdx++
-        } else {
-            appendLine("<td data-col=\"$colIdx\">${pColumnTitle(name, br)}<br><img src='data:image/jpeg;base64,$pdB64'><div class='dump-details'>$sHtml$teleHtml</div>${pLookInkHtml(br)}${pRecBuffersHtml(br)}</td>")
-            colIdx++
+        val redOnly = br.images["PD_red_only"] ?: ""
+        val full = br.images["PD"] ?: ""
+        append("<td data-col=\"$colIdx\">${pColumnTitle(name, br)}")
+        append("<div id=\"ve-r$rowIndex-c$colIdx-pd-red\">")
+        if (redOnly.isNotEmpty()) {
+            append("<img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'>")
         }
+        append("</div>")
+        append("<div id=\"ve-r$rowIndex-c$colIdx-pd-full\">")
+        if (full.isNotEmpty()) {
+            append("<img src='data:image/jpeg;base64,$full' style='max-width:100%;'>")
+        }
+        append("</div>")
+        for (k in 1..nKeep) {
+            append("<div class='look-ink-crops' id=\"ve-r$rowIndex-c$colIdx-look-ink-box$k\">")
+            append(pLookInkBoxHtml(br, k))
+            append("</div>")
+            append("<div class='rec-crops' id=\"ve-r$rowIndex-c$colIdx-rec-box$k\">")
+            append(pOfficialRecBoxHtml(br, k))
+            append("</div>")
+        }
+        append(pRecExtraHtml(br))
+        append("<div class='dump-details' id=\"ve-r$rowIndex-c$colIdx-dump-details\">$sHtml$teleHtml</div>")
+        append("</td>")
+        colIdx++
     }
 
-    appendLine("<td data-col=\"$colIdx\"><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
+    append("<td class=\"results-col\"><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
+    var resCol = 1
     root.subBranches.toSortedMap().forEach { (name, br) ->
+        val ks = pChosenSeedLabels(br)
         br.pathResults.forEach { (eng, res) ->
-            appendLine("<tr><td>$name:$eng</td>")
-            appendLine("<td><b>${res.cost}</b>" + (if (res.costB64.isNotEmpty()) "<br><img src='data:image/jpeg;base64,${res.costB64}' style='width:150px;'>" else "") + "</td>")
-            appendLine("<td><b>${res.vol}</b>" + (if (res.volB64.isNotEmpty()) "<br><img src='data:image/jpeg;base64,${res.volB64}' style='width:150px;'>" else "") + "</td>")
-            appendLine("</tr>")
+            append("<tr data-col=\"$resCol\"><td>$name:$eng</td>")
+            val costK = ks.first
+            val volK = ks.second
+            append("<td><b>${res.cost}</b>")
+            if (costK.isNotEmpty()) append(" <small>k=$costK</small>")
+            if (res.costB64.isNotEmpty()) {
+                append("<br><img src='data:image/jpeg;base64,${res.costB64}' style='width:150px;'>")
+            }
+            append("</td><td><b>${res.vol}</b>")
+            if (volK.isNotEmpty()) append(" <small>k=$volK</small>")
+            if (res.volB64.isNotEmpty()) {
+                append("<br><img src='data:image/jpeg;base64,${res.volB64}' style='width:150px;'>")
+            }
+            append("</td></tr>")
         }
+        resCol++
     }
-    appendLine("</table></td></tr>")
+    append("</table></td></tr>\n")
 }
 
 private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
