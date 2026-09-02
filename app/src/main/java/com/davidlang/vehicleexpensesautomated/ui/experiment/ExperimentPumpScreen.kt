@@ -59,6 +59,7 @@ import java.util.*
 import java.util.zip.ZipInputStream
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 private const val TAG = "ExperimentPump"
 
@@ -4123,12 +4124,31 @@ private const val PER_PHOTO_FRAGMENT_BUFFER_BYTES = 4 * 1024 * 1024
 private fun lookInkStripRect(
     seed: android.graphics.Rect,
     walk: android.graphics.Rect,
+    sPx: Int = 0,
+    imgW: Int = 0,
+    imgH: Int = 0,
+    k4Horiz: Boolean = false,
 ): android.graphics.Rect {
+    if (!k4Horiz || imgW < 1 || imgH < 1) {
+        return android.graphics.Rect(
+            seed.left,
+            min(seed.top, walk.top),
+            seed.right,
+            max(seed.bottom, walk.bottom),
+        )
+    }
+    val k4 = ContentExpandUtils.padVertByStrokes(walk, seed, 4f, max(1, sPx), imgW, imgH)
+    val t = min(min(seed.top, walk.top), k4.top)
+    val b = max(max(seed.bottom, walk.bottom), k4.bottom)
+    val l0 = min(min(seed.left, walk.left), k4.left)
+    val r0 = max(max(seed.right, walk.right), k4.right)
+    val h = max(1, b - t)
+    val pad = (0.5f * h).roundToInt()
     return android.graphics.Rect(
-        seed.left,
-        min(seed.top, walk.top),
-        seed.right,
-        max(seed.bottom, walk.bottom),
+        (l0 - pad).coerceAtLeast(0),
+        t.coerceAtLeast(0),
+        (r0 + pad).coerceAtMost(imgW).coerceAtLeast((l0 - pad).coerceAtLeast(0) + 1),
+        b.coerceAtMost(imgH).coerceAtLeast(t.coerceAtLeast(0) + 1),
     )
 }
 
@@ -4159,7 +4179,10 @@ private suspend fun snapshotLookInk(
     val boxBase = arr.length()
     seeds.forEachIndexed { i, seed ->
         val walk = walked.getOrNull(i) ?: seed
-        val strip = lookInkStripRect(seed, walk)
+        val stroke = strokes.getOrNull(i)
+        val sweep = sweeps.getOrNull(i)
+        val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
+        val strip = lookInkStripRect(seed, walk, sPx, imgW, imgH, k4Horiz = !energyLook)
         if (strip.width() < 1 || strip.height() < 1) return@forEachIndexed
         val anns = ArrayList<SnapshotAnnotation>(4)
         val yT = seed.top.coerceIn(0, imgH - 1)
@@ -4188,9 +4211,6 @@ private suspend fun snapshotLookInk(
         BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
         val recW = opts.outWidth.coerceAtLeast(0)
         val recH = opts.outHeight.coerceAtLeast(0)
-        val sweep = sweeps.getOrNull(i)
-        val stroke = strokes.getOrNull(i)
-        val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
         val minRun = sweep?.minRun ?: 0
         val glareW = 11 * max(sPx, 4)
         val j = org.json.JSONObject()
