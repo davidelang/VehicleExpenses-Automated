@@ -3064,55 +3064,94 @@ static int fillPoisonLookRaster(
     };
     const bool plusFill = (ySeed0 > 0 || ySeed0 + seedH < lh);
     if (plusFill) {
-        if (v0Clean > 4) {
-            const int vPad = 4 * sPx;
-            const int plusH = seedH + 8 * sPx;
-            const int padX = plusH;
-            const int plusT = std::max(0, ySeed0 - vPad);
-            const int plusB = std::min(lh, ySeed0 + seedH + vPad);
-            const int plusL = std::max(0, xSeed0 - padX);
-            const int plusR = std::min(lw, xSeed0 + seedW + padX);
-            if (plusB > plusT && plusR > plusL) {
-                for (int y = plusT; y < plusB; ++y) {
-                    uint8_t* op = lookBin->ptr<uint8_t>(y);
-                    for (int x = plusL; x < plusR; ++x) op[x] = lookInkAt(y, x);
+        auto fillPlusRect = [&](int plusT, int plusB, int plusL, int plusR) {
+            if (plusB <= plusT || plusR <= plusL) return;
+            for (int y = plusT; y < plusB; ++y) {
+                uint8_t* op = lookBin->ptr<uint8_t>(y);
+                uint8_t* pp = lookPoison.ptr<uint8_t>(y);
+                for (int x = plusL; x < plusR; ++x) {
+                    const bool inSeed = (y >= ySeed0 && y < ySeed0 + seedH &&
+                        x >= xSeed0 && x < xSeed0 + seedW);
+                    op[x] = lookInkAt(y, x);
+                    if (!inSeed) pp[x] = 0;
                 }
-                cv::Mat plusBin = (*lookBin)(cv::Range(plusT, plusB), cv::Range(plusL, plusR));
-                fillSaltPepper(&plusBin);
-                cv::Mat plusPoison;
-                fillPoisonMask(plusBin, std::max(sPx, 4), false, seedW, glareMult, &plusPoison);
-                const int runLim = 3 * std::max(1, sPx);
-                const int plusW = plusR - plusL;
-                for (int y = plusT; y < plusB; ++y) {
-                    uint8_t* op = lookBin->ptr<uint8_t>(y);
-                    uint8_t* pp = lookPoison.ptr<uint8_t>(y);
-                    const uint8_t* fat = plusPoison.ptr<uint8_t>(y - plusT);
+            }
+            cv::Mat plusBin = (*lookBin)(cv::Range(plusT, plusB), cv::Range(plusL, plusR));
+            fillSaltPepper(&plusBin);
+            cv::Mat plusPoison;
+            fillPoisonMask(plusBin, std::max(sPx, 4), false, seedW, glareMult, &plusPoison);
+            const int runLim = 3 * std::max(1, sPx);
+            const int plusW = plusR - plusL;
+            for (int y = plusT; y < plusB; ++y) {
+                uint8_t* op = lookBin->ptr<uint8_t>(y);
+                uint8_t* pp = lookPoison.ptr<uint8_t>(y);
+                const uint8_t* fat = plusPoison.ptr<uint8_t>(y - plusT);
+                for (int x = plusL; x < plusR; ++x) {
+                    const int px = x - plusL;
+                    const bool inSeed = (y >= ySeed0 && y < ySeed0 + seedH &&
+                        x >= xSeed0 && x < xSeed0 + seedW);
+                    if (fat[px]) {
+                        op[x] = 0;
+                        if (!inSeed) pp[x] = 255;
+                    }
+                }
+                const int maxRun = maxInkRunRow(*lookBin, y, plusL, plusR);
+                int nInk = 0;
+                for (int x = plusL; x < plusR; ++x) if (op[x]) ++nInk;
+                if (maxRun > runLim ||
+                    nInk > static_cast<int>(0.50f * static_cast<float>(plusW))) {
                     for (int x = plusL; x < plusR; ++x) {
-                        const int px = x - plusL;
                         const bool inSeed = (y >= ySeed0 && y < ySeed0 + seedH &&
                             x >= xSeed0 && x < xSeed0 + seedW);
-                        if (fat[px]) {
-                            op[x] = 0;
-                            if (!inSeed) pp[x] = 255;
-                        }
-                    }
-                    const int maxRun = maxInkRunRow(*lookBin, y, plusL, plusR);
-                    int nInk = 0;
-                    for (int x = plusL; x < plusR; ++x) if (op[x]) ++nInk;
-                    if (maxRun > runLim ||
-                        nInk > static_cast<int>(0.50f * static_cast<float>(plusW))) {
-                        for (int x = plusL; x < plusR; ++x) {
-                            const bool inSeed = (y >= ySeed0 && y < ySeed0 + seedH &&
-                                x >= xSeed0 && x < xSeed0 + seedW);
-                            if (inSeed) continue;
-                            if (op[x]) pp[x] = 255;
-                            op[x] = 0;
-                        }
+                        if (inSeed) continue;
+                        if (op[x]) pp[x] = 255;
+                        op[x] = 0;
                     }
                 }
             }
+            stampSeedCombined();
+        };
+        if (v0Clean > 4) {
+            const int ring = 4 * sPx;
+            const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+            const int capTop = std::max(0, ySeed0 - capPx);
+            const int capBot = std::min(lh, ySeed0 + seedH + capPx);
+            int extraTop = ring;
+            int extraBot = ring;
+            auto plusBounds = [&](int* t, int* b, int* l, int* r) {
+                const int plusH = seedH + extraTop + extraBot;
+                *t = std::max(capTop, ySeed0 - extraTop);
+                *b = std::min(capBot, ySeed0 + seedH + extraBot);
+                *l = std::max(0, xSeed0 - plusH);
+                *r = std::min(lw, xSeed0 + seedW + plusH);
+            };
+            int plusT = 0, plusB = 0, plusL = 0, plusR = 0;
+            plusBounds(&plusT, &plusB, &plusL, &plusR);
+            fillPlusRect(plusT, plusB, plusL, plusR);
+            const int glareWHas = (glareMult > 0 ? glareMult : 11) * std::max(sPx, 4);
+            const int minRun = usedMinRun(
+                sPx, maxInSeedRunRows(*lookBin, ySeed0, ySeed0 + seedH, xSeed0, xSeed0 + seedW));
+            auto hasBar = [&](int y) {
+                return rowHasStrokeBar(*lookBin, y, minRun, glareWHas);
+            };
+            for (int g = 0; g < 32; ++g) {
+                bool wantTop = plusT > capTop && hasBar(plusT);
+                bool wantBot = plusB < capBot && plusB > 0 && hasBar(plusB - 1);
+                if (!wantTop && !wantBot) break;
+                if (wantTop) extraTop += ring;
+                if (wantBot) extraBot += ring;
+                int nt = 0, nb = 0, nl = 0, nr = 0;
+                plusBounds(&nt, &nb, &nl, &nr);
+                if (nt == plusT && nb == plusB && nl == plusL && nr == plusR) break;
+                plusT = nt;
+                plusB = nb;
+                plusL = nl;
+                plusR = nr;
+                fillPlusRect(plusT, plusB, plusL, plusR);
+            }
+        } else {
+            stampSeedCombined();
         }
-        stampSeedCombined();
     } else {
         for (int y = 0; y < lh; ++y) {
             uint8_t* op = lookBin->ptr<uint8_t>(y);
