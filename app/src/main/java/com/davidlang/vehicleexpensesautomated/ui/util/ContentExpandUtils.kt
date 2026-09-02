@@ -415,7 +415,7 @@ object ContentExpandUtils {
         gray: Mat,
         seed: OrientedQuad,
         opts: ExpandOptions = ExpandOptions(),
-        energyNative: ((Mat, FloatArray, IntArray?, Mat?) -> FloatArray?)? = null,
+        energyNative: ((Mat, FloatArray, ShortArray?, Mat?) -> FloatArray?)? = null,
     ): OrientedExpand {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) return OrientedExpand(seed, false)
         val imgW = gray.cols()
@@ -976,10 +976,11 @@ object ContentExpandUtils {
         }
     }
 
-    fun inkSweepBuf(n: Int, imgW: Int, imgH: Int): IntArray {
-        val span = (imgW.coerceAtLeast(1) + imgH.coerceAtLeast(1)) * 8
-        val per = 12 + span + 16384
-        return IntArray((1 + n.coerceAtLeast(0) * per).coerceAtLeast(1))
+    fun inkSweepBuf(n: Int, imgW: Int, imgH: Int): ShortArray {
+        val axis = min(4096, max(imgW.coerceAtLeast(1), imgH.coerceAtLeast(1)))
+        val span = axis * 2
+        val per = 12 + span + 256
+        return ShortArray((1 + n.coerceAtLeast(0) * per).coerceAtLeast(1))
     }
 
     fun poisonStatsBuf(n: Int): IntArray = IntArray(1 + n.coerceAtLeast(0) * 256)
@@ -1015,31 +1016,31 @@ object ContentExpandUtils {
         return out
     }
 
-    fun parseInkSweeps(a: IntArray?, n: Int): List<InkSweep?> {
+    fun parseInkSweeps(a: ShortArray?, n: Int): List<InkSweep?> {
         val out = MutableList<InkSweep?>(n) { null }
         if (a == null || a.isEmpty() || n <= 0) return out
         var p = 0
-        val nBox = a[p++]
+        val nBox = a[p++].toInt()
         for (i in 0 until nBox) {
             if (p + 12 > a.size) break
-            val thr = a[p++] / 1000f
+            val thr = a[p++].toInt() / 1000f
             val sPx = a[p++].toFloat()
-            val minRun = a[p++]
-            val energyRatio = a[p++] / 1000f
-            val vOrigin = a[p++]
-            val hOrigin = a[p++]
-            val v0 = a[p++]
-            val v1 = a[p++]
-            val nV = a[p++]
-            val h0 = a[p++]
-            val h1 = a[p++]
-            val nH = a[p++]
+            val minRun = a[p++].toInt()
+            val energyRatio = a[p++].toInt() / 1000f
+            val vOrigin = a[p++].toInt()
+            val hOrigin = a[p++].toInt()
+            val v0 = a[p++].toInt()
+            val v1 = a[p++].toInt()
+            val nV = a[p++].toInt()
+            val h0 = a[p++].toInt()
+            val h1 = a[p++].toInt()
+            val nH = a[p++].toInt()
             if (nV < 0 || nH < 0 || p + nV + nH > a.size) break
-            val vScores = IntArray(nV) { a[p++] }
-            val hScores = IntArray(nH) { a[p++] }
+            val vScores = IntArray(nV) { a[p++].toInt() }
+            val hScores = IntArray(nH) { a[p++].toInt() }
             var jpeg: ByteArray? = null
             if (p < a.size) {
-                val nJ = a[p++]
+                val nJ = a[p++].toInt()
                 if (nJ < 0 || p + nJ > a.size) break
                 if (nJ > 0) {
                     jpeg = ByteArray(nJ) { a[p++].toByte() }
@@ -1162,7 +1163,7 @@ object ContentExpandUtils {
         seeds: List<Rect>,
         r: IntArray?,
         tele: FloatArray,
-        sweepBuf: IntArray,
+        sweepBuf: ShortArray,
         poisonStats: IntArray?,
         imgW: Int,
         imgH: Int,
@@ -1207,7 +1208,7 @@ object ContentExpandUtils {
         overlayUv: Mat?,
         poisonStats: IntArray?,
         native: (
-            Mat, Mat?, IntArray, Mat?, FloatArray, IntArray, Mat?, Mat?, Mat?, IntArray?,
+            Mat, Mat?, IntArray, Mat?, FloatArray, ShortArray, Mat?, Mat?, Mat?, IntArray?,
         ) -> IntArray?,
         k: Float = SEG7_K,
         j: Float = SEG7_J,
@@ -1354,7 +1355,7 @@ object ContentExpandUtils {
         overlayUv: Mat?,
         poisonStats: IntArray?,
         native: (
-            Mat, Mat?, FloatArray, Mat?, FloatArray, IntArray, Mat?, Mat?, Mat?, IntArray?,
+            Mat, Mat?, FloatArray, Mat?, FloatArray, ShortArray, Mat?, Mat?, Mat?, IntArray?,
         ) -> FloatArray?,
     ): List<Seg7OrientedExpand> {
         if (seeds.isEmpty()) return emptyList()
@@ -1700,7 +1701,7 @@ object ContentExpandUtils {
         gray: Mat,
         uv: Mat?,
         seeds: List<Rect>,
-        native: (Mat, Mat?, IntArray, FloatArray?, IntArray?, Mat?) -> IntArray?,
+        native: (Mat, Mat?, IntArray, FloatArray?, ShortArray?, Mat?) -> IntArray?,
     ): List<AabbExpand> {
         if (gray.empty() || gray.type() != CvType.CV_8UC1) {
             return seeds.map { AabbExpand(it, false) }

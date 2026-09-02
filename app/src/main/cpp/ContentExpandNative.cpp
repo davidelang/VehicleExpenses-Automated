@@ -418,35 +418,35 @@ static void writePoisonArr(JNIEnv* env, jintArray arr, const std::vector<PoisonS
     env->SetIntArrayRegion(arr, 0, n, buf.data());
 }
 
-static void writeSweepArr(JNIEnv* env, jintArray arr, const std::vector<InkSweepPack>& packs) {
+static void writeSweepArr(JNIEnv* env, jshortArray arr, const std::vector<InkSweepPack>& packs) {
     if (!env || !arr) return;
-    const jint cap = env->GetArrayLength(arr);
+    const jsize cap = env->GetArrayLength(arr);
     if (cap < 1) return;
-    std::vector<jint> buf;
-    buf.push_back(static_cast<jint>(packs.size()));
+    std::vector<jshort> buf;
+    buf.push_back(static_cast<jshort>(packs.size()));
     for (const auto& p : packs) {
         const int nV = static_cast<int>(p.vScores.size());
         const int nH = static_cast<int>(p.hScores.size());
-        buf.push_back(static_cast<jint>(std::lround(p.thr * 1000.f)));
-        buf.push_back(static_cast<jint>(std::lround(p.sPx)));
-        buf.push_back(p.minRun);
-        buf.push_back(static_cast<jint>(std::lround(p.energyRatio * 1000.f)));
-        buf.push_back(p.vOrigin);
-        buf.push_back(p.hOrigin);
-        buf.push_back(p.v0);
-        buf.push_back(p.v1);
-        buf.push_back(nV);
-        buf.push_back(p.h0);
-        buf.push_back(p.h1);
-        buf.push_back(nH);
-        buf.insert(buf.end(), p.vScores.begin(), p.vScores.end());
-        buf.insert(buf.end(), p.hScores.begin(), p.hScores.end());
+        buf.push_back(static_cast<jshort>(std::lround(p.thr * 1000.f)));
+        buf.push_back(static_cast<jshort>(std::lround(p.sPx)));
+        buf.push_back(static_cast<jshort>(p.minRun));
+        buf.push_back(static_cast<jshort>(std::lround(p.energyRatio * 1000.f)));
+        buf.push_back(static_cast<jshort>(p.vOrigin));
+        buf.push_back(static_cast<jshort>(p.hOrigin));
+        buf.push_back(static_cast<jshort>(p.v0));
+        buf.push_back(static_cast<jshort>(p.v1));
+        buf.push_back(static_cast<jshort>(nV));
+        buf.push_back(static_cast<jshort>(p.h0));
+        buf.push_back(static_cast<jshort>(p.h1));
+        buf.push_back(static_cast<jshort>(nH));
+        for (int s : p.vScores) buf.push_back(static_cast<jshort>(s));
+        for (int s : p.hScores) buf.push_back(static_cast<jshort>(s));
         const int nJ = static_cast<int>(p.threshJpeg.size());
-        buf.push_back(nJ);
-        for (uint8_t b : p.threshJpeg) buf.push_back(b);
+        buf.push_back(static_cast<jshort>(nJ));
+        for (uint8_t b : p.threshJpeg) buf.push_back(static_cast<jshort>(b));
     }
-    const jint n = std::min(cap, static_cast<jint>(buf.size()));
-    env->SetIntArrayRegion(arr, 0, n, buf.data());
+    const jsize n = std::min(cap, static_cast<jsize>(buf.size()));
+    env->SetShortArrayRegion(arr, 0, n, buf.data());
 }
 
 static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
@@ -1702,7 +1702,7 @@ static jintArray energyAabbOnLook(
     WalkEnergyFn walk,
     jfloat maxFrac, jfloat energyRatio,
     jfloat jumpFrac, jfloat retractClearFrac,
-    jfloatArray teleArr, jintArray sweepArr,
+    jfloatArray teleArr, jshortArray sweepArr,
     jlong scratchPtr
 ) {
     const jboolean freezeHorz = JNI_FALSE;
@@ -1847,7 +1847,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbTight(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jintArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong scratchPtr
+    jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
 ) {
     jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
     if (!seeds) seeds = seedsArr;
@@ -1858,7 +1858,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbRetract(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jintArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong scratchPtr
+    jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
 ) {
     return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyRetract, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr);
 }
@@ -1867,7 +1867,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyAabbExpand(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jintArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong scratchPtr
+    jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
 ) {
     return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyExpand, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr);
 }
@@ -1972,7 +1972,7 @@ using WalkEnergyOrientFn = void (*)(
 
 static jfloatArray runEnergyOrientOne(
     JNIEnv* env, jlong grayPtr, jfloatArray seedPts, WalkEnergyOrientFn walk,
-    jintArray sweepArr, jlong scratchPtr
+    jshortArray sweepArr, jlong scratchPtr
 ) {
     const jfloat maxFrac = 0.4f;
     const jfloat energyRatio = 0.65f;
@@ -2135,7 +2135,7 @@ static jfloatArray insetEnergyOrientSeeds16(JNIEnv* env, jfloatArray seedsArr) {
 }
 
 static jfloatArray energyOrientOnLook(
-    JNIEnv* env, jlong grayPtr, jfloatArray seedsArr, WalkEnergyOrientFn walk, jintArray sweepArr,
+    JNIEnv* env, jlong grayPtr, jfloatArray seedsArr, WalkEnergyOrientFn walk, jshortArray sweepArr,
     jlong scratchPtr
 ) {
     if (!seedsArr) return env->NewFloatArray(0);
@@ -2169,7 +2169,7 @@ static jfloatArray energyOrientOnLook(
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientTight(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jfloatArray seedsArr, jintArray sweepArr, jlong scratchPtr
+    jlong grayPtr, jfloatArray seedsArr, jshortArray sweepArr, jlong scratchPtr
 ) {
     jfloatArray seeds = insetEnergyOrientSeeds16(env, seedsArr);
     if (!seeds) seeds = seedsArr;
@@ -2179,7 +2179,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientRetract(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jfloatArray seedsArr, jintArray sweepArr, jlong scratchPtr
+    jlong grayPtr, jfloatArray seedsArr, jshortArray sweepArr, jlong scratchPtr
 ) {
     return energyOrientOnLook(env, grayPtr, seedsArr, walkEnergyOrientRetract, sweepArr, scratchPtr);
 }
@@ -2187,7 +2187,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
 extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnergyOrientExpand(
     JNIEnv* env, jobject /*thiz*/,
-    jlong grayPtr, jfloatArray seedsArr, jintArray sweepArr, jlong scratchPtr
+    jlong grayPtr, jfloatArray seedsArr, jshortArray sweepArr, jlong scratchPtr
 ) {
     return energyOrientOnLook(env, grayPtr, seedsArr, walkEnergyOrientExpand, sweepArr, scratchPtr);
 }
@@ -3814,7 +3814,7 @@ static jintArray aabbGrayMany(
     JNIEnv* env,
     jlong grayPtr, jlong /*uvPtr*/, jlong scratchPtr, jintArray seedsArr,
     jint boundStrategy, jint tightInsetPx,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
@@ -3892,7 +3892,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbTight(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
@@ -3905,7 +3905,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbRetract(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 16,
@@ -3916,7 +3916,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayAabbExpand(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 16,
@@ -3927,7 +3927,7 @@ static jintArray aabbColorMany(
     JNIEnv* env,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jint boundStrategy, jint tightInsetPx,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
@@ -4026,7 +4026,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbTight(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
@@ -4039,7 +4039,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbRetract(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 16,
@@ -4050,7 +4050,7 @@ extern "C" JNIEXPORT jintArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbExpand(
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 16,
@@ -4628,7 +4628,7 @@ static jfloatArray seg7OrientedMany(
     JNIEnv* env,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr, jint chromaMode,
     jint boundStrategy, jint tightInsetPx,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
@@ -4730,7 +4730,7 @@ extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientTight(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     jfloatArray seeds = insetEnergyOrientSeeds16(env, seedsArr);
@@ -4744,7 +4744,7 @@ extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientRetract(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     return seg7OrientedMany(
@@ -4756,7 +4756,7 @@ extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayOrientExpand(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     return seg7OrientedMany(
@@ -4768,7 +4768,7 @@ extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientTight(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     jfloatArray seeds = insetEnergyOrientSeeds16(env, seedsArr);
@@ -4782,7 +4782,7 @@ extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientRetract(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     return seg7OrientedMany(
@@ -4794,7 +4794,7 @@ extern "C" JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientExpand(
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
-    jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     return seg7OrientedMany(

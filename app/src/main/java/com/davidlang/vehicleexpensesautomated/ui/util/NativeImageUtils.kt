@@ -502,16 +502,16 @@ object NativeImageUtils {
 
     private external fun nativeEnergyAabbTight(
         grayPtr: Long, uvPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, scratchPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, scratchPtr: Long,
     ): IntArray?
     private external fun nativeEnergyAabbRetract(
         grayPtr: Long, uvPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, scratchPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, scratchPtr: Long,
     ): IntArray?
 
     fun energyAabbTightNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
-        tele: FloatArray?, sweep: IntArray?, scratch: Mat?,
+        tele: FloatArray?, sweep: ShortArray?, scratch: Mat?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
         return nativeEnergyAabbTight(
@@ -519,31 +519,31 @@ object NativeImageUtils {
         )
     }
     private external fun nativeEnergyOrientTight(
-        grayPtr: Long, seeds: FloatArray, sweepArr: IntArray?, scratchPtr: Long,
+        grayPtr: Long, seeds: FloatArray, sweepArr: ShortArray?, scratchPtr: Long,
     ): FloatArray?
 
     fun energyOrientTightNative(
-        gray: Mat, seeds: FloatArray, sweep: IntArray?, scratch: Mat?,
+        gray: Mat, seeds: FloatArray, sweep: ShortArray?, scratch: Mat?,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
         return nativeEnergyOrientTight(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
     }
     private external fun nativeEnergyOrientRetract(
-        grayPtr: Long, seeds: FloatArray, sweepArr: IntArray?, scratchPtr: Long,
+        grayPtr: Long, seeds: FloatArray, sweepArr: ShortArray?, scratchPtr: Long,
     ): FloatArray?
     fun energyOrientRetractNative(
-        gray: Mat, seeds: FloatArray, sweep: IntArray?, scratch: Mat?,
+        gray: Mat, seeds: FloatArray, sweep: ShortArray?, scratch: Mat?,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
         return nativeEnergyOrientRetract(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
     }
 
     private external fun nativeEnergyOrientExpand(
-        grayPtr: Long, seeds: FloatArray, sweepArr: IntArray?, scratchPtr: Long,
+        grayPtr: Long, seeds: FloatArray, sweepArr: ShortArray?, scratchPtr: Long,
     ): FloatArray?
 
     fun energyOrientExpandNative(
-        gray: Mat, seeds: FloatArray, sweep: IntArray?, scratch: Mat?,
+        gray: Mat, seeds: FloatArray, sweep: ShortArray?, scratch: Mat?,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
         return nativeEnergyOrientExpand(gray.nativeObj, seeds, sweep, scratch?.nativeObj ?: 0L)
@@ -551,7 +551,7 @@ object NativeImageUtils {
 
     fun energyAabbRetractNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
-        tele: FloatArray?, sweep: IntArray?, scratch: Mat?,
+        tele: FloatArray?, sweep: ShortArray?, scratch: Mat?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
         return nativeEnergyAabbRetract(
@@ -561,12 +561,12 @@ object NativeImageUtils {
 
     private external fun nativeEnergyAabbExpand(
         grayPtr: Long, uvPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, scratchPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, scratchPtr: Long,
     ): IntArray?
 
     fun energyAabbExpandNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
-        tele: FloatArray?, sweep: IntArray?, scratch: Mat?,
+        tele: FloatArray?, sweep: ShortArray?, scratch: Mat?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
         return nativeEnergyAabbExpand(
@@ -587,18 +587,18 @@ object NativeImageUtils {
 
     private external fun nativeGrayAabbTight(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): IntArray?
     private external fun nativeGrayAabbRetract(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): IntArray?
 
     fun grayAabbTightNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
@@ -607,7 +607,7 @@ object NativeImageUtils {
     }
     fun grayAabbRetractNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
@@ -617,13 +617,13 @@ object NativeImageUtils {
 
     private external fun nativeGrayAabbExpand(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): IntArray?
 
     fun grayAabbExpandNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
@@ -633,13 +633,13 @@ object NativeImageUtils {
 
     private external fun nativeColorAabbTight(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): IntArray?
 
     fun colorAabbTightNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
@@ -649,13 +649,13 @@ object NativeImageUtils {
 
     private external fun nativeColorAabbRetract(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): IntArray?
 
     fun colorAabbRetractNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
@@ -665,13 +665,13 @@ object NativeImageUtils {
 
     private external fun nativeColorAabbExpand(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): IntArray?
 
     fun colorAabbExpandNative(
         gray: Mat, uv: Mat?, seeds: IntArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): IntArray? {
         if (gray.empty()) return IntArray(0)
@@ -681,22 +681,22 @@ object NativeImageUtils {
 
     private external fun nativeGrayOrientTight(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): FloatArray?
     private external fun nativeGrayOrientRetract(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): FloatArray?
     private external fun nativeColorOrientTight(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): FloatArray?
     private external fun nativeColorOrientRetract(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): FloatArray?
 
@@ -706,7 +706,7 @@ object NativeImageUtils {
 
     fun grayOrientTightNative(
         gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
@@ -715,7 +715,7 @@ object NativeImageUtils {
     }
     fun grayOrientRetractNative(
         gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
@@ -724,7 +724,7 @@ object NativeImageUtils {
     }
     fun colorOrientTightNative(
         gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
@@ -733,7 +733,7 @@ object NativeImageUtils {
     }
     fun colorOrientRetractNative(
         gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
@@ -743,18 +743,18 @@ object NativeImageUtils {
 
     private external fun nativeGrayOrientExpand(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): FloatArray?
     private external fun nativeColorOrientExpand(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
-        teleArr: FloatArray?, sweepArr: IntArray?, dumpPtr: Long,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
         overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
     ): FloatArray?
 
     fun grayOrientExpandNative(
         gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
@@ -763,7 +763,7 @@ object NativeImageUtils {
     }
     fun colorOrientExpandNative(
         gray: Mat, uv: Mat?, seeds: FloatArray,
-        scratch: Mat?, tele: FloatArray?, sweep: IntArray?,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
         combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
     ): FloatArray? {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
