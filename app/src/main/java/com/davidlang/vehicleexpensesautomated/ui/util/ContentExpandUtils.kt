@@ -1011,7 +1011,39 @@ object ContentExpandUtils {
                 )
             }
             if (!ok) break
-            if (i < n) out[i] = PoisonDump(bandTop, bandBot, bandH, ccs)
+            var inkLo = 0
+            var nextNon = 0
+            var seedIndex = 0
+            var nSeeds = 0
+            var classChange = false
+            var phase = ""
+            val vis = ArrayList<PoisonCc>(ccs.size)
+            for (cc in ccs) {
+                if (cc.x == -1) {
+                    inkLo = cc.y
+                    nextNon = cc.w
+                    seedIndex = cc.h
+                    nSeeds = if (cc.noPeak) 1 else 0
+                    classChange = cc.thr != 0
+                    phase = when (cc.nInk) {
+                        1 -> "ink"
+                        2 -> "non-ink"
+                        3 -> "plus-ROI"
+                        4 -> "poison"
+                        5 -> "walk"
+                        6 -> "scratch"
+                        else -> ""
+                    }
+                } else {
+                    vis.add(cc)
+                }
+            }
+            if (i < n) {
+                out[i] = PoisonDump(
+                    bandTop, bandBot, bandH, vis,
+                    inkLo, nextNon, seedIndex, nSeeds, classChange, phase,
+                )
+            }
         }
         return out
     }
@@ -1147,6 +1179,12 @@ object ContentExpandUtils {
         val bandBot: Boolean,
         val bandH: Int,
         val ccs: List<PoisonCc>,
+        val inkLo: Int = 0,
+        val nextNonInk: Int = 0,
+        val seedIndex: Int = 0,
+        val nSeeds: Int = 0,
+        val classChange: Boolean = false,
+        val phase: String = "",
     )
 
     data class Seg7Expand(

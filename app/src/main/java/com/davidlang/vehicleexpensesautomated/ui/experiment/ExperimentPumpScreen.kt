@@ -788,18 +788,49 @@ suspend fun runPumpExperiment(
     val cellsDir = File(reportDir, "pump_cells_$timestamp").also { it.mkdirs() }
     val cursorFile = File(reportDir, "pump_cursor_$timestamp.txt")
     cursorFile.writeText("0")
-    val nCells = total
+    val nKeepSlots = PumpOcrSettings.maxRedBoxes(context).coerceIn(
+        PumpOcrSettings.MIN_MAX_RED_BOXES, PumpOcrSettings.MAX_MAX_RED_BOXES,
+    )
+    val flowSorted = flows.toSortedSet().toList()
+    val slotNames = pumpSlotNames(nKeepSlots, flowSorted.size)
+    val nSlots = slotNames.size
+    val nCells = total * nSlots
     val cellOrder = (1..nCells).map { ReportCellRef(it, sortA = it) }
+    val imgRel = "pump_imgs_$timestamp"
     val skeleton = buildString {
         photos.forEachIndexed { i, f ->
-            val id = i + 1
             val line = allPhotos.indexOfFirst { it.name == f.name } + 1
-            append(ReportCollapser.htmlBegin(id))
-            append(
-                "<tr data-photo='$line'><td colspan='${pumpColLabels.size}'>" +
-                    "<span class='stat pending'>… ${ReportCollapser.idTag(id)}</span></td></tr>\n",
-            )
-            append(ReportCollapser.htmlEnd(id))
+            append("<tr data-photo='$line'>")
+            append("<td data-col=\"0\"><b>#$line</b><br><small>${f.name}</small>")
+            val origId = i * nSlots + 1
+            append("<div class=\"orig-details\" id=\"ve-r$line-c0-orig-details\">")
+            append(ReportCollapser.htmlBegin(origId))
+            append(ReportCollapser.htmlEnd(origId))
+            append("</div></td>")
+            flowSorted.forEachIndexed { fi, _ ->
+                val colIdx = fi + 1
+                append("<td data-col=\"$colIdx\">")
+                fun emitSlot(slot: String, htmlId: String) {
+                    val sid = i * nSlots + slotNames.indexOf(slot) + 1
+                    append("<div id=\"$htmlId\">")
+                    append(ReportCollapser.htmlBegin(sid))
+                    append(ReportCollapser.htmlEnd(sid))
+                    append("</div>")
+                }
+                emitSlot("c$colIdx-pd-red", "ve-r$line-c$colIdx-pd-red")
+                emitSlot("c$colIdx-pd-full", "ve-r$line-c$colIdx-pd-full")
+                for (k in 1..nKeepSlots) {
+                    emitSlot("c$colIdx-look-ink-box$k", "ve-r$line-c$colIdx-look-ink-box$k")
+                    emitSlot("c$colIdx-rec-box$k", "ve-r$line-c$colIdx-rec-box$k")
+                }
+                emitSlot("c$colIdx-dump", "ve-r$line-c$colIdx-dump-details")
+                append("</td>")
+            }
+            val resId = i * nSlots + slotNames.indexOf("results") + 1
+            append("<td class=\"results-col\">")
+            append(ReportCollapser.htmlBegin(resId))
+            append(ReportCollapser.htmlEnd(resId))
+            append("</td></tr>\n")
         }
     }
     currentFile.appendText(skeleton)
@@ -1645,15 +1676,22 @@ suspend fun runPumpExperiment(
                         )
                         val seg = one.first()
                         segs.add(seg)
-                        val dumpSeed = File(objImgRoot, "r${fullRow}_c${col}_box${si + 1}.png")
-                        dumpObjectPlanePng(objPlane, dumpSeed)
-                        branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
-                        if (seg.poison?.bandH == -1) {
+                        val pd = seg.poison
+                        if (pd?.classChange == true) {
+                            val dumpSeed = File(objImgRoot, "r${fullRow}_c${col}_box${si + 1}.png")
+                            dumpObjectPlanePng(objPlane, dumpSeed)
+                            branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
+                        }
+                        if (pd?.bandH == -1) {
                             exhausted = true
-                            val msg = "object_id_exhausted col=$col seed=$si n=${seeds.size} phase=poison/walk"
+                            val phase = pd.phase.ifBlank { "poison/walk" }
+                            val msg = "object_id_exhausted col=$col seed=$si n=${seeds.size} " +
+                                "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
                             Log.e(TAG, msg)
                             onLog(msg)
                             branch.metadata["object_id_exhausted"] = msg
+                            branch.metadata["object_abort_html"] =
+                                "<small style='color:#c00'>$msg</small>"
                         }
                         snapshotLookInk(
                             listOf(seed), listOf(seg.rect), imgW, imgH, branch,
@@ -2427,16 +2465,21 @@ suspend fun runPumpExperiment(
                         )
                         val bSet = NativePaddleEngine.bufferSetB
                         branch.metadata.remove("look_ink")
+                        val colIdx = flows.indexOf(branch.name).let { if (it < 0) 0 else it }
+                        masterBuffer.s.clear()
+                        val objPlane = masterBuffer.s.mat
                         val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
-                        seedQuads.forEach { q ->
+                        var rotExhausted = false
+                        seedQuads.forEachIndexed { si, q ->
+                            if (rotExhausted) return@forEachIndexed
                             val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
                             val one = if (orientInk != null) {
                                 orientInk(
                                     gray,
                                     workspace.p.uvMat,
                                     listOf(q),
-                                    workspace.s.mat,
                                     bSet.s.mat,
+                                    objPlane,
                                     bSet.p.mat,
                                     bSet.p.uvMat,
                                     poisonBuf,
@@ -2451,12 +2494,32 @@ suspend fun runPumpExperiment(
                             }
                             val seg = one.first()
                             segs.add(seg)
+                            val pd = seg.poison
+                            if (pd?.classChange == true) {
+                                val dumpSeed = File(objImgRoot, "r${fullRow}_c${colIdx}_box${si + 1}.png")
+                                dumpObjectPlanePng(objPlane, dumpSeed)
+                                branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
+                            }
+                            if (pd?.bandH == -1) {
+                                rotExhausted = true
+                                val phase = pd.phase.ifBlank { "poison/walk" }
+                                val msg = "object_id_exhausted col=$colIdx seed=$si n=${seedQuads.size} " +
+                                    "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
+                                Log.e(TAG, msg)
+                                onLog(msg)
+                                branch.metadata["object_id_exhausted"] = msg
+                                branch.metadata["object_abort_html"] =
+                                    "<small style='color:#c00'>$msg</small>"
+                            }
                             snapshotLookInkOriented(
                                 q, seg.quad, imgW, imgH, branch,
                                 seg.poison, seg.tele, seg.sweep, seg.stroke,
                                 reportDir, timestamp, fullRow, branch.name,
                             )
                         }
+                        val dumpFinal = File(objImgRoot, "r${fullRow}_c${colIdx}_final.png")
+                        dumpObjectPlanePng(objPlane, dumpFinal)
+                        branch.metadata["object_dump_final"] = dumpFinal.name
                         val jumpedQuads = segs.map { it.quad }
                         fun inkQuadsFor(kk: Float): List<ContentExpandUtils.OrientedQuad> {
                             return segs.indices.map { i ->
@@ -3878,22 +3941,24 @@ suspend fun runPumpExperiment(
             )
             val deskewHtml = deskewResA.engines.map { (k, v) -> "$k: ${v.angle}&deg; (${v.timesMs.sum()}ms)" }.joinToString("<br>")
 
-            val rowHtml = pBuildHtmlRowDynamic(
+            pPublishPumpSlots(
                 rowIndex = fullRow,
+                photoIndex0 = index,
                 fileName = file.name,
                 imgW = imgW,
                 imgH = imgH,
                 isDegraded = meta.isDegraded,
                 root = root,
-                tDeskew = 0L, // Combined in flows
-                tilt = deskewResA.angle,
+                tDeskew = 0L,
                 deskewHtml = deskewHtml,
                 diagnostic = meta.diagnostic,
-                maxRedBoxes = PumpOcrSettings.maxRedBoxes(context),
+                maxRedBoxes = nKeepSlots,
+                imgDir = objImgRoot,
+                imgRel = imgRel,
+                cellsDir = cellsDir,
+                slotNames = slotNames,
+                nSlots = nSlots,
             )
-
-            Log.d("PUMP_HTML", "row=$fullRow rowHtml.len=${rowHtml.length}")
-            ReportCollapser.publishCell(cellsDir, index + 1, rowHtml, "{}")
 
             val photoJson = pSerializePhotoResultToJson(
                 fullRow, imgW, imgH, imgW, imgH, meta.isDegraded, meta.diagnostic, deskewResA, tSnapOrig, 0L, file.name, root, originalHistogram
@@ -4217,6 +4282,11 @@ private suspend fun snapshotLookInk(
     scratchYuv: BufferSet = NativePaddleEngine.bufferSetA,
     energyLook: Boolean = false,
 ) {
+    if (energyLook || flowName.contains("energy", ignoreCase = true) ||
+        flowName.contains("G--")
+    ) {
+        return
+    }
     val arr = try {
         org.json.JSONArray(branch.metadata["look_ink"] ?: "[]")
     } catch (_: Exception) {
@@ -4267,9 +4337,12 @@ private suspend fun snapshotLookInk(
         val recH = opts.outHeight.coerceAtLeast(0)
         val minRun = sweep?.minRun ?: 0
         val glareW = 11 * max(sPx, 4)
+        val imgDir = File(reportDir, "pump_imgs_$timestamp").also { it.mkdirs() }
+        val fname = "r${fullRow}_${flowName.filter { it.isLetterOrDigit() || it == '-' }.take(24)}_look_box$boxN.jpg"
+        File(imgDir, fname).writeBytes(jpeg)
         val j = org.json.JSONObject()
             .put("label", "box$boxN")
-            .put("lookInkB64", Base64.encodeToString(jpeg, Base64.NO_WRAP))
+            .put("lookInkFile", fname)
             .put("lookInkMime", "image/jpeg")
             .put("lookKind", if (energyLook) "energy" else "7seg")
             .put("row", fullRow)
@@ -4413,9 +4486,12 @@ private suspend fun snapshotLookInkOriented(
     val recH = opts.outHeight.coerceAtLeast(0)
     val minRun = sweep?.minRun ?: 0
     val glareW = 11 * max(sPx, 4)
+    val imgDir = File(reportDir, "pump_imgs_$timestamp").also { it.mkdirs() }
+    val fname = "r${fullRow}_${flowName.filter { it.isLetterOrDigit() || it == '-' }.take(24)}_look_box$boxN.jpg"
+    File(imgDir, fname).writeBytes(jpeg)
     val j = org.json.JSONObject()
         .put("label", "box$boxN")
-        .put("lookInkB64", Base64.encodeToString(jpeg, Base64.NO_WRAP))
+        .put("lookInkFile", fname)
         .put("lookInkMime", "image/jpeg")
         .put("lookKind", "7seg")
         .put("row", fullRow)
@@ -4494,24 +4570,26 @@ private fun pLookInkArr(br: PumpBranch): org.json.JSONArray {
     }
 }
 
-private fun pLookInkBoxHtml(br: PumpBranch, k: Int): String {
+private fun pLookInkBoxHtml(br: PumpBranch, k: Int, imgRel: String): String {
     val arr = pLookInkArr(br)
     for (j in 0 until arr.length()) {
         val c = arr.optJSONObject(j) ?: continue
         val lab = c.optString("label")
         if (lab != "box$k" && lab != "box${k}") continue
-        val b64 = c.optString("lookInkB64")
-        if (b64.isNullOrEmpty()) return ""
+        val file = c.optString("lookInkFile")
+        if (file.isNullOrEmpty()) return ""
         val recW = c.optInt("recW", 0)
         val recH = c.optInt("recH", 0)
         val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
         val hCss = if (recH > 0) "height:${recH}px;" else "height:auto;"
-        return "<img src='data:image/jpeg;base64,$b64' style='$hCss$wCss max-width:none;image-rendering:pixelated;'><br>$lab"
+        return pumpImgTag("$imgRel/$file", "$hCss$wCss", lab)
     }
     return ""
 }
 
-private fun pOfficialRecBoxHtml(br: PumpBranch, k: Int): String {
+private fun pOfficialRecBoxHtml(
+    br: PumpBranch, k: Int, imgDir: File, rowIndex: Int, colIdx: Int,
+): String {
     val data = try {
         org.json.JSONObject(br.metadata["costVolDecisionData_Paddle"] ?: return "")
     } catch (_: Exception) {
@@ -4529,7 +4607,9 @@ private fun pOfficialRecBoxHtml(br: PumpBranch, k: Int): String {
             val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
             val asis = c.optString("asis")
             val dig = c.optString("digits")
-            return "<img src='data:image/jpeg;base64,$b64' style='height:48px;$wCss max-width:none;image-rendering:pixelated;'><br>$want <span style='font-size:12px;'>asis=$asis dig=$dig</span>"
+            val src = pumpPersistJpeg(imgDir, "r${rowIndex}_c${colIdx}_rec_box$k.jpg", b64)
+            val cap = "$want <span style='font-size:12px;'>asis=$asis dig=$dig</span>"
+            return pumpImgTag(src, "height:48px;$wCss", cap)
         }
         return ""
     }
@@ -4548,7 +4628,7 @@ private fun pOfficialRecBoxHtml(br: PumpBranch, k: Int): String {
     return fromCands(data.optJSONArray("candidates"))
 }
 
-private fun pRecExtraHtml(br: PumpBranch): String {
+private fun pRecExtraHtml(br: PumpBranch, imgDir: File, rowIndex: Int, colIdx: Int): String {
     val raw = br.metadata["costVolDecisionData_Paddle"] ?: return ""
     val data = try {
         org.json.JSONObject(raw)
@@ -4571,11 +4651,12 @@ private fun pRecExtraHtml(br: PumpBranch): String {
             val dig = c.optString("digits")
             val recW = c.optInt("recW", 0)
             val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
+            val src = pumpPersistJpeg(imgDir, "r${rowIndex}_c${colIdx}_recextra_${lab}.jpg", b64)
+            val cap = "$lab <span style='font-size:12px;'>asis=$asis dig=$dig</span>"
             chunk.append(
                 "<div style='flex:0 0 auto;font-size:9px;'>" +
-                    "<img src='data:image/jpeg;base64,$b64' " +
-                    "style='height:48px;$wCss max-width:none;image-rendering:pixelated;'>" +
-                    "<br>$lab <span style='font-size:12px;'>asis=$asis dig=$dig</span></div>",
+                    pumpImgTag(src, "height:48px;$wCss", cap) +
+                    "</div>",
             )
         }
         chunk.append("</div>")
@@ -4789,6 +4870,39 @@ private fun stripJpegDupes(value: Any?): Any? {
         }
         else -> return value
     }
+}
+
+private fun pumpSlotNames(nKeep: Int, nFlows: Int): List<String> {
+    val out = mutableListOf("orig-details")
+    for (c in 1..nFlows) {
+        out.add("c$c-pd-red")
+        out.add("c$c-pd-full")
+        for (k in 1..nKeep) {
+            out.add("c$c-look-ink-box$k")
+            out.add("c$c-rec-box$k")
+        }
+        out.add("c$c-dump")
+    }
+    out.add("results")
+    return out
+}
+
+private fun pumpPersistJpeg(dir: File, name: String, b64: String): String {
+    if (b64.isEmpty()) return ""
+    return try {
+        val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+        if (bytes.isEmpty()) return ""
+        File(dir, name).writeBytes(bytes)
+        "${dir.name}/$name"
+    } catch (_: Throwable) {
+        ""
+    }
+}
+
+private fun pumpImgTag(src: String, style: String, cap: String = ""): String {
+    if (src.isEmpty()) return ""
+    val capHtml = if (cap.isEmpty()) "" else "<br>$cap"
+    return "<img src='$src' style='$style max-width:none;image-rendering:pixelated;'>$capHtml"
 }
 
 private fun pumpColumnLabels(flows: List<String>): List<String> {
@@ -5041,19 +5155,30 @@ private fun pBuildHtmlHeader(
     appendLine("<!-- total=$total device=$device version=$version -->")
 }
 
-private fun pBuildHtmlRowDynamic(
+private fun pPublishPumpSlots(
     rowIndex: Int,
+    photoIndex0: Int,
     fileName: String,
     imgW: Int,
     imgH: Int,
     isDegraded: Boolean,
     root: PumpBranch,
     tDeskew: Long,
-    tilt: Float,
     deskewHtml: String,
     diagnostic: String = "",
-    maxRedBoxes: Int = PumpOcrSettings.DEFAULT_MAX_RED_BOXES,
-): String = buildString {
+    maxRedBoxes: Int,
+    imgDir: File,
+    imgRel: String,
+    cellsDir: File,
+    slotNames: List<String>,
+    nSlots: Int,
+) {
+    fun pub(slot: String, html: String) {
+        val si = slotNames.indexOf(slot)
+        if (si < 0) return
+        val id = photoIndex0 * nSlots + si + 1
+        ReportCollapser.publishCell(cellsDir, id, html, "{}")
+    }
     val htmlMetaWhitelist = setOf("t_total_flow_ms", "img_w", "img_h")
     val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) ->
         k in htmlMetaWhitelist && v.length <= 100
@@ -5067,20 +5192,28 @@ private fun pBuildHtmlRowDynamic(
             val q = br.metadata["quad_angle_med"]
             if (q != null) "$name: $t° (quad $q°)" else "$name: $t°"
         }
-    append("<tr id=\"ve-row-$rowIndex\" data-photo=\"$rowIndex\">")
-    append("<td data-col=\"0\"><b>#$rowIndex</b><br><small>$fileName</small>")
-    append("<div class=\"orig-details\" id=\"ve-r$rowIndex-c0-orig-details\"><br><small>$rowHtml</small>$diagHtml")
-    append("<br><span style=\"font-size:6px\"><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts")
-    append("<table style='width:100%; border:none;'><tr style='border:none;'>")
-    append("<td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["before"]}'><br><small>Orig</small></td>")
-    append("<td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist1"]}'><br><small>Hist 1</small></td></tr>")
-    append("<tr style='border:none;'><td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["after"]}'><br><small>Stretch</small></td>")
-    append("<td style='border:none; padding:1px;'><img src='data:image/jpeg;base64,${img["hist2"]}'><br><small>Hist 2</small></td></tr>")
-    append("<tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span></div></td>")
+    val origSb = StringBuilder()
+    origSb.append("<br><small>$rowHtml</small>$diagHtml")
+    origSb.append("<br><span style=\"font-size:6px\"><b>Deskew Time:</b> ${tDeskew}ms<br><b>Tilt per set:</b> $perSetTilts")
+    origSb.append("<table style='width:100%; border:none;'><tr style='border:none;'>")
+    val before = pumpPersistJpeg(imgDir, "r${rowIndex}_orig_before.jpg", img["before"] ?: "")
+    val hist1 = pumpPersistJpeg(imgDir, "r${rowIndex}_orig_hist1.jpg", img["hist1"] ?: "")
+    val after = pumpPersistJpeg(imgDir, "r${rowIndex}_orig_after.jpg", img["after"] ?: "")
+    val hist2 = pumpPersistJpeg(imgDir, "r${rowIndex}_orig_hist2.jpg", img["hist2"] ?: "")
+    origSb.append("<td style='border:none; padding:1px;'>${pumpImgTag(before, "", "Orig")}</td>")
+    origSb.append("<td style='border:none; padding:1px;'>${pumpImgTag(hist1, "", "Hist 1")}</td></tr>")
+    origSb.append("<tr style='border:none;'><td style='border:none; padding:1px;'>${pumpImgTag(after, "", "Stretch")}</td>")
+    origSb.append("<td style='border:none; padding:1px;'>${pumpImgTag(hist2, "", "Hist 2")}</td></tr>")
+    origSb.append("<tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span>")
+    pub("orig-details", origSb.toString())
 
     var colIdx = 1
     val nKeep = maxRedBoxes.coerceIn(PumpOcrSettings.MIN_MAX_RED_BOXES, PumpOcrSettings.MAX_MAX_RED_BOXES)
+    val skipLook = { name: String ->
+        name.contains("energy", ignoreCase = true) || name.contains("G--")
+    }
     root.subBranches.toSortedMap().forEach { (name, br) ->
+        val abortHtml = br.metadata["object_abort_html"].orEmpty()
         val sPerRed = br.metadata["s_per_red"]
         val sHtml = if (!sPerRed.isNullOrBlank() && sPerRed.length <= 100) {
             "<br><small>s=$sPerRed</small>"
@@ -5088,56 +5221,65 @@ private fun pBuildHtmlRowDynamic(
             ""
         }
         val teleHtml = pSeg7TeleHtml(br)
-        val redOnly = br.images["PD_red_only"] ?: ""
-        val full = br.images["PD"] ?: ""
-        append("<td data-col=\"$colIdx\">${pColumnTitle(name, br)}")
-        append("<div id=\"ve-r$rowIndex-c$colIdx-pd-red\">")
-        if (redOnly.isNotEmpty()) {
-            append("<img src='data:image/jpeg;base64,$redOnly' style='max-width:100%;'>")
-        }
-        append("</div>")
-        append("<div id=\"ve-r$rowIndex-c$colIdx-pd-full\">")
-        if (full.isNotEmpty()) {
-            append("<img src='data:image/jpeg;base64,$full' style='max-width:100%;'>")
-        }
-        append("</div>")
+        val dumpFinal = br.metadata["object_dump_final"].orEmpty()
+        val redOnly = pumpPersistJpeg(
+            imgDir, "r${rowIndex}_c${colIdx}_pd_red.jpg", br.images["PD_red_only"] ?: "",
+        )
+        val full = pumpPersistJpeg(
+            imgDir, "r${rowIndex}_c${colIdx}_pd_full.jpg", br.images["PD"] ?: "",
+        )
+        pub("c$colIdx-pd-red", pColumnTitle(name, br) + pumpImgTag(redOnly, "max-width:100%;"))
+        pub("c$colIdx-pd-full", pumpImgTag(full, "max-width:100%;"))
         for (k in 1..nKeep) {
-            append("<div class='look-ink-crops' id=\"ve-r$rowIndex-c$colIdx-look-ink-box$k\">")
-            append(pLookInkBoxHtml(br, k))
-            append("</div>")
-            append("<div class='rec-crops' id=\"ve-r$rowIndex-c$colIdx-rec-box$k\">")
-            append(pOfficialRecBoxHtml(br, k))
-            append("</div>")
+            val look = if (skipLook(name)) {
+                ""
+            } else {
+                val body = pLookInkBoxHtml(br, k, imgRel)
+                if (body.isNotEmpty()) body else abortHtml
+            }
+            val rec = pOfficialRecBoxHtml(br, k, imgDir, rowIndex, colIdx)
+            val recBody = if (rec.isNotEmpty()) rec else abortHtml
+            pub("c$colIdx-look-ink-box$k", look)
+            pub("c$colIdx-rec-box$k", recBody)
         }
-        append(pRecExtraHtml(br))
-        append("<div class='dump-details' id=\"ve-r$rowIndex-c$colIdx-dump-details\">$sHtml$teleHtml</div>")
-        append("</td>")
+        val dumpBits = StringBuilder()
+        dumpBits.append(sHtml).append(teleHtml)
+        if (dumpFinal.isNotEmpty() && !skipLook(name)) {
+            dumpBits.append(pumpImgTag("$imgRel/$dumpFinal", "max-width:100%;", "U8 final"))
+        }
+        dumpBits.append(pRecExtraHtml(br, imgDir, rowIndex, colIdx))
+        if (abortHtml.isNotEmpty()) dumpBits.append(abortHtml)
+        pub("c$colIdx-dump", dumpBits.toString())
         colIdx++
     }
 
-    append("<td class=\"results-col\"><table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
+    val resSb = StringBuilder()
+    resSb.append("<table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
     var resCol = 1
     root.subBranches.toSortedMap().forEach { (name, br) ->
         val ks = pChosenSeedLabels(br)
         br.pathResults.forEach { (eng, res) ->
-            append("<tr data-col=\"$resCol\"><td>$name:$eng</td>")
+            resSb.append("<tr data-col=\"$resCol\"><td>$name:$eng</td>")
             val costK = ks.first
             val volK = ks.second
-            append("<td><b>${res.cost}</b>")
-            if (costK.isNotEmpty()) append(" <small>k=$costK</small>")
+            resSb.append("<td><b>${res.cost}</b>")
+            if (costK.isNotEmpty()) resSb.append(" <small>k=$costK</small>")
             if (res.costB64.isNotEmpty()) {
-                append("<br><img src='data:image/jpeg;base64,${res.costB64}' style='width:150px;'>")
+                val src = pumpPersistJpeg(imgDir, "r${rowIndex}_c${resCol}_${eng}_cost.jpg", res.costB64)
+                resSb.append("<br>").append(pumpImgTag(src, "width:150px;"))
             }
-            append("</td><td><b>${res.vol}</b>")
-            if (volK.isNotEmpty()) append(" <small>k=$volK</small>")
+            resSb.append("</td><td><b>${res.vol}</b>")
+            if (volK.isNotEmpty()) resSb.append(" <small>k=$volK</small>")
             if (res.volB64.isNotEmpty()) {
-                append("<br><img src='data:image/jpeg;base64,${res.volB64}' style='width:150px;'>")
+                val src = pumpPersistJpeg(imgDir, "r${rowIndex}_c${resCol}_${eng}_vol.jpg", res.volB64)
+                resSb.append("<br>").append(pumpImgTag(src, "width:150px;"))
             }
-            append("</td></tr>")
+            resSb.append("</td></tr>")
         }
         resCol++
     }
-    append("</table></td></tr>\n")
+    resSb.append("</table>")
+    pub("results", resSb.toString())
 }
 
 private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
