@@ -710,6 +710,19 @@ static bool scratchFits(const cv::Mat* s, int w, int h) {
     return s && !s->empty() && s->type() == CV_8UC1 && s->rows >= h && s->cols >= w;
 }
 
+/** Zeroed 8UC1 ROI of [plane] at (x,y). Empty if it does not fit. */
+static cv::Mat planeRoi8u(cv::Mat* plane, int x, int y, int w, int h) {
+    if (!plane || plane->empty() || plane->type() != CV_8UC1 || w < 1 || h < 1) {
+        return cv::Mat();
+    }
+    if (x < 0 || y < 0 || x + w > plane->cols || y + h > plane->rows) {
+        return cv::Mat();
+    }
+    cv::Mat r = (*plane)(cv::Rect(x, y, w, h));
+    r.setTo(0);
+    return r;
+}
+
 static bool fillChromaMag(const cv::Mat& y, const cv::Mat& uv, cv::Mat* dst) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
@@ -2172,6 +2185,7 @@ static int fillPoisonLookRaster(
     bool srcIsBin, int glareMult, int fallback, cv::Mat* lookBin,
     cv::Mat* overlayY = nullptr, cv::Mat* overlayUv = nullptr,
     int ovX = 0, int ovY = 0, PoisonStats* statsOut = nullptr,
+    cv::Mat* scratch = nullptr,
     bool overlayUvMap = false,
     float ovCx = 0.f, float ovCy = 0.f,
     float ovUx = 0.f, float ovUy = 0.f,
@@ -2370,7 +2384,8 @@ static void seg7One(
     cv::Mat* inkDump = nullptr,
     cv::Mat* overlayY = nullptr,
     cv::Mat* overlayUv = nullptr,
-    PoisonStats* poisonStats = nullptr
+    PoisonStats* poisonStats = nullptr,
+    cv::Mat* scratch = nullptr
 ) {
     if (boundStrategy == 1) {
         const int ins = std::max(1, tightInsetPx);
@@ -2412,7 +2427,7 @@ static void seg7One(
     PoisonStats stLocal;
     const int sPx = fillPoisonLookRaster(
         seedY, look, localT, 0, srcIsBin, gm, fallback, &lookBin,
-        overlayY, overlayUv, sl, nt, poisonStats ? &stLocal : nullptr);
+        overlayY, overlayUv, sl, nt, poisonStats ? &stLocal : nullptr, scratch);
     if (poisonStats) *poisonStats = stLocal;
     const int glareW = gm * std::max(sPx, 4);
     const int vSW = sPx;
@@ -2648,11 +2663,14 @@ static bool otsuKeep(
     const cv::Mat& y, const cv::Mat& keep, double* thr, bool* dark, float* inkFrac
 ) {
     std::vector<uint8_t> vals;
-    vals.reserve(static_cast<size_t>(y.rows * y.cols));
-    for (int yy = 0; yy < y.rows; ++yy) {
+    const int kh = std::min(y.rows, keep.rows);
+    const int kw = std::min(y.cols, keep.cols);
+    if (kh < 1 || kw < 1) return false;
+    vals.reserve(static_cast<size_t>(kh * kw));
+    for (int yy = 0; yy < kh; ++yy) {
         const uint8_t* yp = y.ptr<uint8_t>(yy);
         const uint8_t* kp = keep.ptr<uint8_t>(yy);
-        for (int xx = 0; xx < y.cols; ++xx) {
+        for (int xx = 0; xx < kw; ++xx) {
             if (kp[xx]) vals.push_back(yp[xx]);
         }
     }
@@ -2677,13 +2695,19 @@ static bool otsuKeep(
 static void applyThrKeep(
     const cv::Mat& y, const cv::Mat& keep, double thr, bool dark, cv::Mat* out
 ) {
-    out->create(y.rows, y.cols, CV_8UC1);
+    if (!out) return;
+    const int h = y.rows, w = y.cols;
+    if (out->empty() || out->rows != h || out->cols != w || out->type() != CV_8UC1) {
+        out->create(h, w, CV_8UC1);
+    }
     out->setTo(0);
-    for (int yy = 0; yy < y.rows; ++yy) {
+    const int kh = std::min(h, keep.rows);
+    const int kw = std::min(w, keep.cols);
+    for (int yy = 0; yy < kh; ++yy) {
         const uint8_t* yp = y.ptr<uint8_t>(yy);
         const uint8_t* kp = keep.ptr<uint8_t>(yy);
         uint8_t* op = out->ptr<uint8_t>(yy);
-        for (int xx = 0; xx < y.cols; ++xx) {
+        for (int xx = 0; xx < kw; ++xx) {
             if (!kp[xx]) continue;
             const bool ink = dark ? (static_cast<double>(yp[xx]) <= thr)
                                   : (static_cast<double>(yp[xx]) > thr);
@@ -2850,6 +2874,7 @@ static int fillPoisonLookRaster(
     const cv::Mat& seedY, const cv::Mat& lookY, int ySeed0, int xSeed0,
     bool srcIsBin, int glareMult, int fallback, cv::Mat* lookBin,
     cv::Mat* overlayY, cv::Mat* overlayUv, int ovX, int ovY, PoisonStats* statsOut,
+    cv::Mat* scratch,
     bool overlayUvMap,
     float ovCx, float ovCy,
     float ovUx, float ovUy,
@@ -2937,7 +2962,12 @@ static int fillPoisonLookRaster(
         const int nFirst = cv::countNonZero(bin);
         if (nFirst > 0 &&
             cv::countNonZero(poison) >= static_cast<int>(0.60f * static_cast<float>(nFirst))) {
-            cv::Mat keep2(seedH, seedW, CV_8UC1);
+            cv::Mat keep2Local;
+            cv::Mat keep2 = planeRoi8u(scratch, 0, 0, seedW, seedH);
+            if (keep2.empty()) {
+                keep2Local.create(seedH, seedW, CV_8UC1);
+                keep2 = keep2Local;
+            }
             for (int yy = 0; yy < seedH; ++yy) {
                 const uint8_t* yp = seedY.ptr<uint8_t>(yy);
                 const uint8_t* kp = keepClean.ptr<uint8_t>(yy);
@@ -2949,12 +2979,20 @@ static int fillPoisonLookRaster(
             double thr2 = 0.0;
             bool dark2 = true;
             float frac2 = 0.f;
-            cv::Mat sample2;
+            cv::Mat sample2Local;
+            cv::Mat sample2 = planeRoi8u(
+                (overlayY && (!scratch || overlayY->data != scratch->data)) ? overlayY : nullptr,
+                0, 0, seedW, seedH);
+            if (sample2.empty()) sample2 = planeRoi8u(scratch, 0, seedH, seedW, seedH);
+            if (sample2.empty()) {
+                sample2Local.create(seedH, seedW, CV_8UC1);
+                sample2 = sample2Local;
+            }
             if (otsuKeep(seedY, keep2, &thr2, &dark2, &frac2)) {
                 applyThrKeep(seedY, keep2, thr2, dark2, &sample2);
                 fillSaltPepper(&sample2);
                 if (dark2 && frac2 >= 0.05f && frac2 <= 0.42f) {
-                    sample = sample2;
+                    sample2.copyTo(sample);
                     cleanThr = thr2;
                     cleanDark = dark2;
                     cleanInkFrac = frac2;
@@ -2977,24 +3015,47 @@ static int fillPoisonLookRaster(
         r.y0 = stats.at<int>(i, cv::CC_STAT_TOP);
         r.x1 = r.x0 + stats.at<int>(i, cv::CC_STAT_WIDTH);
         r.y1 = r.y0 + stats.at<int>(i, cv::CC_STAT_HEIGHT);
-        cv::Mat keepR = cv::Mat::zeros(seedH, seedW, CV_8UC1);
+        const int rw = r.x1 - r.x0;
+        const int rh = r.y1 - r.y0;
+        if (rw < 1 || rh < 1) { r.noPeak = true; regs[static_cast<size_t>(i)] = r; continue; }
+        cv::Mat localKeep, localBin;
+        cv::Mat keepR = planeRoi8u(scratch, 0, 0, rw, rh);
+        if (keepR.empty()) keepR = planeRoi8u(overlayY, 0, 0, rw, rh);
+        if (keepR.empty()) {
+            localKeep.create(rh, rw, CV_8UC1);
+            localKeep.setTo(0);
+            keepR = localKeep;
+        }
         int nR = 0;
-        for (int yy = 0; yy < seedH; ++yy) {
+        for (int yy = r.y0; yy < r.y1; ++yy) {
             const int* lp = labels.ptr<int>(yy);
-            uint8_t* kp = keepR.ptr<uint8_t>(yy);
-            for (int xx = 0; xx < seedW; ++xx) {
-                if (lp[xx] == i) { kp[xx] = 255; ++nR; }
+            uint8_t* kp = keepR.ptr<uint8_t>(yy - r.y0);
+            for (int xx = r.x0; xx < r.x1; ++xx) {
+                if (lp[xx] == i) { kp[xx - r.x0] = 255; ++nR; }
             }
         }
         if (nR < 2) { r.noPeak = true; regs[static_cast<size_t>(i)] = r; continue; }
-        cv::Mat rBin;
+        cv::Mat rBin = planeRoi8u(scratch, 0, rh, rw, rh);
+        if (rBin.empty() || rBin.data == keepR.data) {
+            if (overlayY && scratch && overlayY->data != scratch->data) {
+                rBin = planeRoi8u(overlayY, 0, 0, rw, rh);
+            }
+        }
+        if (rBin.empty() || rBin.data == keepR.data) rBin = planeRoi8u(overlayY, 0, rh, rw, rh);
+        if (rBin.empty() || rBin.data == keepR.data) {
+            localBin.create(rh, rw, CV_8UC1);
+            localBin.setTo(0);
+            rBin = localBin;
+        }
         if (srcIsBin) {
-            rBin = cv::Mat::zeros(seedH, seedW, CV_8UC1);
-            for (int yy = 0; yy < seedH; ++yy) {
+            rBin.setTo(0);
+            for (int yy = r.y0; yy < r.y1; ++yy) {
                 const uint8_t* bp = bin.ptr<uint8_t>(yy);
-                const uint8_t* kp = keepR.ptr<uint8_t>(yy);
-                uint8_t* rp = rBin.ptr<uint8_t>(yy);
-                for (int xx = 0; xx < seedW; ++xx) if (kp[xx] && bp[xx]) rp[xx] = 255;
+                const uint8_t* kp = keepR.ptr<uint8_t>(yy - r.y0);
+                uint8_t* rp = rBin.ptr<uint8_t>(yy - r.y0);
+                for (int xx = r.x0; xx < r.x1; ++xx) {
+                    if (kp[xx - r.x0] && bp[xx]) rp[xx - r.x0] = 255;
+                }
             }
             fillSaltPepper(&rBin);
             HorizSW hhR = horizPeakSW(rBin, seedH, seedW);
@@ -3005,12 +3066,13 @@ static int fillPoisonLookRaster(
             double rThr = 0.0;
             bool rDark = true;
             float rFrac = 0.f;
-            if (!otsuKeep(seedY, keepR, &rThr, &rDark, &rFrac)) {
+            cv::Mat seedRoi = seedY(cv::Range(r.y0, r.y1), cv::Range(r.x0, r.x1));
+            if (!otsuKeep(seedRoi, keepR, &rThr, &rDark, &rFrac)) {
                 r.noPeak = true;
                 regs[static_cast<size_t>(i)] = r;
                 continue;
             }
-            applyThrKeep(seedY, keepR, rThr, rDark, &rBin);
+            applyThrKeep(seedRoi, keepR, rThr, rDark, &rBin);
             fillSaltPepper(&rBin);
             HorizSW hhR = horizPeakSW(rBin, seedH, seedW);
             r.noPeak = hhR.peak <= 4;
@@ -3018,7 +3080,10 @@ static int fillPoisonLookRaster(
             r.dark = rDark;
         }
         r.nInk = cv::countNonZero(rBin);
-        if (!r.noPeak) orBin(&combined, rBin);
+        if (!r.noPeak) {
+            cv::Mat combRoi = combined(cv::Range(r.y0, r.y1), cv::Range(r.x0, r.x1));
+            orBin(&combRoi, rBin);
+        }
         regs[static_cast<size_t>(i)] = r;
     }
     if (!srcIsBin && cv::countNonZero(combined) == 0 && haveClean && cleanDark &&
@@ -3027,8 +3092,17 @@ static int fillPoisonLookRaster(
         orBin(&combined, sample);
     }
     const int lh = lookY.rows, lw = lookY.cols;
-    cv::Mat lookPoison(lh, lw, CV_8UC1);
-    lookPoison.setTo(0);
+    cv::Mat lookPoisonLocal;
+    cv::Mat lookPoison;
+    if (scratchFits(scratch, lw, lh) &&
+        !(overlayY && scratch && overlayY->data == scratch->data)) {
+        lookPoison = (*scratch)(cv::Rect(0, 0, lw, lh));
+        lookPoison.setTo(0);
+    } else {
+        lookPoisonLocal.create(lh, lw, CV_8UC1);
+        lookPoisonLocal.setTo(0);
+        lookPoison = lookPoisonLocal;
+    }
     for (int yy = 0; yy < seedH; ++yy) {
         const int sy = yy + ySeed0;
         if (sy < 0 || sy >= lh) continue;
@@ -3554,7 +3628,7 @@ static void aabbJumpOnLook(
 
 static jintArray aabbGrayMany(
     JNIEnv* env,
-    jlong grayPtr, jlong /*uvPtr*/, jlong /*scratchPtr*/, jintArray seedsArr,
+    jlong grayPtr, jlong /*uvPtr*/, jlong scratchPtr, jintArray seedsArr,
     jint boundStrategy, jint tightInsetPx,
     jfloatArray teleArr, jintArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
@@ -3572,6 +3646,7 @@ static jintArray aabbGrayMany(
     const int n = n4 / 4;
     const jfloat gapFrac = 0.5f;
     const jfloat minSeedHsToFreeze = 0.f;
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
     auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
     auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
@@ -3595,7 +3670,7 @@ static jintArray aabbGrayMany(
         seg7One(*gray, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
             false, gapFrac, minSeedHsToFreeze, 11, boundStrategy, tightInsetPx, &tele, false,
             &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
-            &poisonPacks[static_cast<size_t>(i)]);
+            &poisonPacks[static_cast<size_t>(i)], scratch);
         aabbJumpOnLook(inkDump, &ol, ot, &orr, ob, imgW, imgH,
             seedT, seedB, seedL, seedR, sPx);
         const int o = i * 8;
@@ -3707,6 +3782,7 @@ static jintArray aabbColorMany(
         cv::Mat* tintDst = (inkDump && scratchFits(inkDump, imgW, imgH))
             ? inkDump
             : (scratchFits(scratch, imgW, imgH) ? scratch : &localTint);
+        cv::Mat* poisonScratch = (tintDst == scratch) ? overlayY : scratch;
         const bool ok = uv && fillChromaTintMask(
             *gray, *uv, l, t, r, b, tintDst, glareMult, xPadGuess, true, &tele);
         if (ok && tintDst && !tintDst->empty() && !skipTintWalk(true, tele)) {
@@ -3714,7 +3790,7 @@ static jintArray aabbColorMany(
                 &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
                 gapFrac, minSeedHsToFreeze, glareMult, boundStrategy, tightInsetPx, &tele, true,
                 &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
-                &poisonPacks[static_cast<size_t>(i)]);
+                &poisonPacks[static_cast<size_t>(i)], poisonScratch);
             aabbJumpOnLook(tintDst, &ol, ot, &orr, ob, imgW, imgH,
                 seedT, seedB, seedL, seedR, sPx);
         } else {
@@ -3723,7 +3799,7 @@ static jintArray aabbColorMany(
                 &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
                 gapFrac, minSeedHsToFreeze, 11, boundStrategy, tightInsetPx, &tele, ok,
                 &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
-                &poisonPacks[static_cast<size_t>(i)]);
+                &poisonPacks[static_cast<size_t>(i)], poisonScratch);
             aabbJumpOnLook(inkDump, &ol, ot, &orr, ob, imgW, imgH,
                 seedT, seedB, seedL, seedR, sPx);
         }
@@ -4005,7 +4081,8 @@ static void seg7OrientedOne(
     cv::Mat* inkDump = nullptr,
     cv::Mat* overlayY = nullptr,
     cv::Mat* overlayUv = nullptr,
-    PoisonStats* poisonStats = nullptr
+    PoisonStats* poisonStats = nullptr,
+    cv::Mat* scratch = nullptr
 ) {
     if (boundStrategy == 1) {
         const float ins = static_cast<float>(std::max(1, tightInsetPx));
@@ -4068,7 +4145,7 @@ static void seg7OrientedOne(
     PoisonStats stLocal;
     const int sPx = fillPoisonLookRaster(
         seedY, look, ySeed0, 0, srcIsBin, 11, fallback, &lookBin,
-        overlayY, overlayUv, 0, 0, poisonStats ? &stLocal : nullptr,
+        overlayY, overlayUv, 0, 0, poisonStats ? &stLocal : nullptr, scratch,
         true, seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
         seed.u0, seed.u1, lookV0);
     if (poisonStats) *poisonStats = stLocal;
@@ -4434,10 +4511,11 @@ static jfloatArray seg7OrientedMany(
             src = cMag;
         }
         float sPx = 2.f;
+        cv::Mat* poisonScratch = (src == scratch || cMag == scratch) ? overlayY : scratch;
         seg7OrientedOne(*src, box, imgW, imgH, op, &sPx,
             boundStrategy, tightInsetPx, srcIsBin, &tele, keepColor,
             &sweeps[static_cast<size_t>(i)], inkDump, overlayY, overlayUv,
-            &poisonPacks[static_cast<size_t>(i)]);
+            &poisonPacks[static_cast<size_t>(i)], poisonScratch);
         op[8] = sPx;
         storeTeleArr(env, teleArr, i, tele);
     }
