@@ -86,6 +86,7 @@ object NativeImageUtils {
                 0xFF0000 -> Triple(76.0, 84.0, 255.0)   // Red
                 0xFFA500 -> Triple(173.0, 42.0, 191.0)  // Orange
                 0x0000FF -> Triple(29.0, 255.0, 107.0)  // Blue
+                0x00FFFF -> Triple(179.0, 171.0, 1.0)   // Cyan
                 else -> Triple(255.0, 128.0, 128.0)     // Default White
             }
 

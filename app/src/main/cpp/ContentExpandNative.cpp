@@ -2190,7 +2190,7 @@ static void fillAabbLookSweep(
     const int seedH = std::max(1, sb - st);
     const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
     const int walkedH = std::max(1, walkedB - walkedT);
-    const int xPad = std::max(1, static_cast<int>(std::lround(0.40f * walkedH * (kJumpMax + 1))));
+    const int xPad = std::max(1, static_cast<int>(std::lround(0.50f * walkedH * (kJumpMax + 1))));
     const int y0 = std::max(0, st - capPx);
     const int y1 = std::min(imgH, sb + capPx);
     const int x0 = std::max(0, sl - xPad);
@@ -3414,7 +3414,7 @@ static void aabbJumpOnLook(
     const int minRun = usedMinRun(sPx, maxIn);
     if (minRun < 1) return;
     jumpRetractH(
-        *look, l, t, r, b, imgW, imgH, 0.0, 1, 0.40f, 0.30f,
+        *look, l, t, r, b, imgW, imgH, 0.0, 1, 0.50f, 0.30f,
         std::max(1, seedB - seedT), look, seedT, seedB, minRun);
 }
 
@@ -3569,7 +3569,7 @@ static jintArray aabbColorMany(
         cv::Mat localTint;
         const int seedH = std::max(1, b - t);
         const int xPadGuess = std::max(1, static_cast<int>(std::lround(
-            0.40f * 2.5f * static_cast<float>(seedH) * static_cast<float>(kJumpMax + 1))));
+            0.50f * 2.5f * static_cast<float>(seedH) * static_cast<float>(kJumpMax + 1))));
         cv::Mat* tintDst = (inkDump && scratchFits(inkDump, imgW, imgH))
             ? inkDump
             : (scratchFits(scratch, imgW, imgH) ? scratch : &localTint);

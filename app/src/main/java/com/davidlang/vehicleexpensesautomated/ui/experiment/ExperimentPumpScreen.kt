@@ -1577,7 +1577,7 @@ suspend fun runPumpExperiment(
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
-                        jumpFrac = 0.40f,
+                        jumpFrac = 0.50f,
                         retractClearFrac = 0.30f,
                         energyRatio = 0.65f,
                     )
@@ -1651,13 +1651,14 @@ suspend fun runPumpExperiment(
                     storeSeg7Tele(branch, segs.map { it.tele })
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "0"
+                    branch.metadata["seg7_jump_frac"] = "0.50"
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                 } else if (seg7Stroke) {
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
-                        jumpFrac = 0.40f,
+                        jumpFrac = 0.50f,
                         retractClearFrac = 0.30f,
                         energyRatio = 0.65f,
                     )
@@ -1731,7 +1732,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["seg7_vert_cap_frac"] = ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
                     branch.metadata["seg7_gap_frac"] = gapFrac.toString()
                     branch.metadata["seg7_freeze_min_hs"] = minSeedHsToFreeze.toString()
-                    branch.metadata["seg7_jump_frac"] = "0.40"
+                    branch.metadata["seg7_jump_frac"] = "0.50"
                     branch.metadata["seg7_retract_clear_frac"] = "0.30"
                     if (expandMode == 4) {
                         branch.metadata["content_expand_chroma"] = "color_adaptive"
@@ -1997,7 +1998,7 @@ suspend fun runPumpExperiment(
                         "droppedGlare" to seg7Strokes.map { it.droppedGlare },
                         "vertFactors" to emptyList<Float>(),
                         "horiz" to "jump",
-                        "jumpFrac" to 0.40f,
+                        "jumpFrac" to 0.50f,
                         "retractClearFrac" to 0.30f,
                         "energyRatio" to 0.65f,
                         "maxFrac" to 0.4f,
@@ -2361,7 +2362,7 @@ suspend fun runPumpExperiment(
                         val jumpOpts = ContentExpandUtils.ExpandOptions(
                             maxFrac = 0.4f,
                             enableJump = true,
-                            jumpFrac = 0.40f,
+                            jumpFrac = 0.50f,
                             retractClearFrac = 0.30f,
                             energyRatio = 0.65f,
                         )
@@ -2433,7 +2434,7 @@ suspend fun runPumpExperiment(
                             ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
                         branch.metadata["seg7_gap_frac"] =
                             ContentExpandUtils.SEG7_GAP_FRAC.toString()
-                        branch.metadata["seg7_jump_frac"] = "0.40"
+                        branch.metadata["seg7_jump_frac"] = "0.50"
                         branch.metadata["seg7_retract_clear_frac"] = "0.30"
                         branch.metadata["content_expand_oriented_7seg"] = "true"
                         if (expandMode == 4) {
@@ -2817,7 +2818,7 @@ suspend fun runPumpExperiment(
                             "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
                             "sPx" to inkStrokes.map { it.sPx },
                             "enableJump" to true,
-                            "jumpFrac" to 0.40f,
+                            "jumpFrac" to 0.50f,
                             "retractClearFrac" to 0.30f,
                             "energyRatio" to 0.65f,
                             "maxRetractFrac" to 0.50f,
