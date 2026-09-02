@@ -57,6 +57,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
@@ -744,8 +745,13 @@ suspend fun runPumpExperiment(
     val jsonHeader = "{\n  \"timestamp\": \"$timestamp\",\n${ExperimentReportMeta.jsonFields()},\n  \"device\": \"$deviceModel\",\n  \"total_photos\": $total,\n  \"results\": [\n"
     val jsonFooter = "\n  ]\n}"
     var firstPhoto = true
-    val jsonWriter = jsonFile.bufferedWriter()
-    jsonWriter.write(jsonHeader)
+    val jsonFos = FileOutputStream(jsonFile)
+    fun jsonSyncStr(s: String) {
+        jsonFos.write(s.toByteArray(Charsets.UTF_8))
+        jsonFos.flush()
+        jsonFos.fd.sync()
+    }
+    jsonSyncStr(jsonHeader)
     logHeapState(context, "after-json-header-write")
     Log.i("PUMP_JSON", "wrote header early, total_photos=$total")
     val journal = PumpProgressJournal(reportDir, timestamp)
@@ -882,6 +888,21 @@ suspend fun runPumpExperiment(
             val (beforeB64, tSnapOrig) = OcrUtils.takeSnapshot(masterBuffer.p, null, PUMP_SMALL_TARGET_W, 0, emptyList(), null, masterBuffer)
             root.images["before"] = beforeB64
             root.images["hist1"] = generateHistogramB64(masterBuffer.p.mat, 0.40f)
+            pPublishOrigDetails(
+                rowIndex = fullRow,
+                photoIndex0 = index,
+                imgW = imgW,
+                imgH = imgH,
+                isDegraded = meta.isDegraded,
+                root = root,
+                tDeskew = 0L,
+                deskewHtml = "",
+                diagnostic = meta.diagnostic,
+                imgDir = objImgRoot,
+                cellsDir = cellsDir,
+                slotNames = slotNames,
+                nSlots = nSlots,
+            )
 
             var originalHistogram = JSONArray()
 
@@ -3923,6 +3944,22 @@ suspend fun runPumpExperiment(
                     put("photo", index)
                     put("line", fullRow)
                 }
+                val sortedCol = flowSorted.indexOf(flowName) + 1
+                if (sortedCol > 0) {
+                    pPublishFlowColumn(
+                        rowIndex = fullRow,
+                        photoIndex0 = index,
+                        name = flowName,
+                        br = branch,
+                        colIdx = sortedCol,
+                        maxRedBoxes = nKeepSlots,
+                        imgDir = objImgRoot,
+                        imgRel = imgRel,
+                        cellsDir = cellsDir,
+                        slotNames = slotNames,
+                        nSlots = nSlots,
+                    )
+                }
                 branch.metadata["t_discovery_wrapper_ms"] = (System.currentTimeMillis() - tDiscoveryWrapperStart).toString()
                 // t_discovery_wrapper_ms covers the main body processor / 4-scale discovery call (distinct from inner per-scale t_pd_inference_* / t_pd_native_post_*) for A/B gap attribution
 
@@ -3941,10 +3978,9 @@ suspend fun runPumpExperiment(
             )
             val deskewHtml = deskewResA.engines.map { (k, v) -> "$k: ${v.angle}&deg; (${v.timesMs.sum()}ms)" }.joinToString("<br>")
 
-            pPublishPumpSlots(
+            pPublishOrigDetails(
                 rowIndex = fullRow,
                 photoIndex0 = index,
-                fileName = file.name,
                 imgW = imgW,
                 imgH = imgH,
                 isDegraded = meta.isDegraded,
@@ -3952,9 +3988,16 @@ suspend fun runPumpExperiment(
                 tDeskew = 0L,
                 deskewHtml = deskewHtml,
                 diagnostic = meta.diagnostic,
-                maxRedBoxes = nKeepSlots,
                 imgDir = objImgRoot,
-                imgRel = imgRel,
+                cellsDir = cellsDir,
+                slotNames = slotNames,
+                nSlots = nSlots,
+            )
+            pPublishResultsSlots(
+                rowIndex = fullRow,
+                photoIndex0 = index,
+                root = root,
+                imgDir = objImgRoot,
                 cellsDir = cellsDir,
                 slotNames = slotNames,
                 nSlots = nSlots,
@@ -3973,9 +4016,10 @@ suspend fun runPumpExperiment(
             val fragSize = fragFile.length()
             Log.i("PUMP_FRAG", "row=$fullRow frag size=$fragSize bytes")
 
-            if (!firstPhoto) jsonWriter.write(",\n") else firstPhoto = false
-            appendJsonObject(jsonWriter, photoJson, 2, 0)
-            jsonWriter.flush()
+            val photoSb = StringBuilder()
+            if (!firstPhoto) photoSb.append(",\n") else firstPhoto = false
+            appendJsonObject(photoSb, photoJson, 2, 0)
+            jsonSyncStr(photoSb.toString())
             journal.append("PHOTO_END") {
                 put("photo", index)
                 put("line", fullRow)
@@ -4017,8 +4061,12 @@ suspend fun runPumpExperiment(
     }
     }
 
-    jsonWriter.write(jsonFooter)
-    jsonWriter.close()
+    jsonSyncStr(jsonFooter)
+    try {
+        jsonFos.fd.sync()
+    } catch (_: Exception) {
+    }
+    jsonFos.close()
     logHeapState(context, "after-json-close")
     Log.i("PUMP_JSON", "wrote JSON footer and closed main JSON file")
 
@@ -5155,10 +5203,23 @@ private fun pBuildHtmlHeader(
     appendLine("<!-- total=$total device=$device version=$version -->")
 }
 
-private fun pPublishPumpSlots(
+private fun pPublishSlot(
+    slotNames: List<String>,
+    photoIndex0: Int,
+    nSlots: Int,
+    cellsDir: File,
+    slot: String,
+    html: String,
+) {
+    val si = slotNames.indexOf(slot)
+    if (si < 0) return
+    val id = photoIndex0 * nSlots + si + 1
+    ReportCollapser.publishCell(cellsDir, id, html, "{}")
+}
+
+private fun pPublishOrigDetails(
     rowIndex: Int,
     photoIndex0: Int,
-    fileName: String,
     imgW: Int,
     imgH: Int,
     isDegraded: Boolean,
@@ -5166,19 +5227,11 @@ private fun pPublishPumpSlots(
     tDeskew: Long,
     deskewHtml: String,
     diagnostic: String = "",
-    maxRedBoxes: Int,
     imgDir: File,
-    imgRel: String,
     cellsDir: File,
     slotNames: List<String>,
     nSlots: Int,
 ) {
-    fun pub(slot: String, html: String) {
-        val si = slotNames.indexOf(slot)
-        if (si < 0) return
-        val id = photoIndex0 * nSlots + si + 1
-        ReportCollapser.publishCell(cellsDir, id, html, "{}")
-    }
     val htmlMetaWhitelist = setOf("t_total_flow_ms", "img_w", "img_h")
     val metaHtml = root.subBranches.values.flatMap { it.metadata.entries }.filter { (k, v) ->
         k in htmlMetaWhitelist && v.length <= 100
@@ -5205,54 +5258,78 @@ private fun pPublishPumpSlots(
     origSb.append("<tr style='border:none;'><td style='border:none; padding:1px;'>${pumpImgTag(after, "", "Stretch")}</td>")
     origSb.append("<td style='border:none; padding:1px;'>${pumpImgTag(hist2, "", "Hist 2")}</td></tr>")
     origSb.append("<tr style='border:none;'><td colspan='2' style='border:none; padding:1px; text-align:left; font-size:6px;'><small>$deskewHtml</small></td></tr></table></span>")
-    pub("orig-details", origSb.toString())
+    pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "orig-details", origSb.toString())
+}
 
-    var colIdx = 1
+private fun pPublishFlowColumn(
+    rowIndex: Int,
+    photoIndex0: Int,
+    name: String,
+    br: PumpBranch,
+    colIdx: Int,
+    maxRedBoxes: Int,
+    imgDir: File,
+    imgRel: String,
+    cellsDir: File,
+    slotNames: List<String>,
+    nSlots: Int,
+) {
     val nKeep = maxRedBoxes.coerceIn(PumpOcrSettings.MIN_MAX_RED_BOXES, PumpOcrSettings.MAX_MAX_RED_BOXES)
-    val skipLook = { name: String ->
-        name.contains("energy", ignoreCase = true) || name.contains("G--")
+    val skipLook = name.contains("energy", ignoreCase = true) || name.contains("G--")
+    val abortHtml = br.metadata["object_abort_html"].orEmpty()
+    val sPerRed = br.metadata["s_per_red"]
+    val sHtml = if (!sPerRed.isNullOrBlank() && sPerRed.length <= 100) {
+        "<br><small>s=$sPerRed</small>"
+    } else {
+        ""
     }
-    root.subBranches.toSortedMap().forEach { (name, br) ->
-        val abortHtml = br.metadata["object_abort_html"].orEmpty()
-        val sPerRed = br.metadata["s_per_red"]
-        val sHtml = if (!sPerRed.isNullOrBlank() && sPerRed.length <= 100) {
-            "<br><small>s=$sPerRed</small>"
-        } else {
+    val teleHtml = pSeg7TeleHtml(br)
+    val dumpFinal = br.metadata["object_dump_final"].orEmpty()
+    val redOnly = pumpPersistJpeg(
+        imgDir, "r${rowIndex}_c${colIdx}_pd_red.jpg", br.images["PD_red_only"] ?: "",
+    )
+    val full = pumpPersistJpeg(
+        imgDir, "r${rowIndex}_c${colIdx}_pd_full.jpg", br.images["PD"] ?: "",
+    )
+    pPublishSlot(
+        slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-pd-red",
+        pColumnTitle(name, br) + pumpImgTag(redOnly, "max-width:100%;"),
+    )
+    pPublishSlot(
+        slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-pd-full",
+        pumpImgTag(full, "max-width:100%;"),
+    )
+    for (k in 1..nKeep) {
+        val look = if (skipLook) {
             ""
+        } else {
+            val body = pLookInkBoxHtml(br, k, imgRel)
+            if (body.isNotEmpty()) body else abortHtml
         }
-        val teleHtml = pSeg7TeleHtml(br)
-        val dumpFinal = br.metadata["object_dump_final"].orEmpty()
-        val redOnly = pumpPersistJpeg(
-            imgDir, "r${rowIndex}_c${colIdx}_pd_red.jpg", br.images["PD_red_only"] ?: "",
-        )
-        val full = pumpPersistJpeg(
-            imgDir, "r${rowIndex}_c${colIdx}_pd_full.jpg", br.images["PD"] ?: "",
-        )
-        pub("c$colIdx-pd-red", pColumnTitle(name, br) + pumpImgTag(redOnly, "max-width:100%;"))
-        pub("c$colIdx-pd-full", pumpImgTag(full, "max-width:100%;"))
-        for (k in 1..nKeep) {
-            val look = if (skipLook(name)) {
-                ""
-            } else {
-                val body = pLookInkBoxHtml(br, k, imgRel)
-                if (body.isNotEmpty()) body else abortHtml
-            }
-            val rec = pOfficialRecBoxHtml(br, k, imgDir, rowIndex, colIdx)
-            val recBody = if (rec.isNotEmpty()) rec else abortHtml
-            pub("c$colIdx-look-ink-box$k", look)
-            pub("c$colIdx-rec-box$k", recBody)
-        }
-        val dumpBits = StringBuilder()
-        dumpBits.append(sHtml).append(teleHtml)
-        if (dumpFinal.isNotEmpty() && !skipLook(name)) {
-            dumpBits.append(pumpImgTag("$imgRel/$dumpFinal", "max-width:100%;", "U8 final"))
-        }
-        dumpBits.append(pRecExtraHtml(br, imgDir, rowIndex, colIdx))
-        if (abortHtml.isNotEmpty()) dumpBits.append(abortHtml)
-        pub("c$colIdx-dump", dumpBits.toString())
-        colIdx++
+        val rec = pOfficialRecBoxHtml(br, k, imgDir, rowIndex, colIdx)
+        val recBody = if (rec.isNotEmpty()) rec else abortHtml
+        pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-look-ink-box$k", look)
+        pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-rec-box$k", recBody)
     }
+    val dumpBits = StringBuilder()
+    dumpBits.append(sHtml).append(teleHtml)
+    if (dumpFinal.isNotEmpty() && !skipLook) {
+        dumpBits.append(pumpImgTag("$imgRel/$dumpFinal", "max-width:100%;", "U8 final"))
+    }
+    dumpBits.append(pRecExtraHtml(br, imgDir, rowIndex, colIdx))
+    if (abortHtml.isNotEmpty()) dumpBits.append(abortHtml)
+    pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-dump", dumpBits.toString())
+}
 
+private fun pPublishResultsSlots(
+    rowIndex: Int,
+    photoIndex0: Int,
+    root: PumpBranch,
+    imgDir: File,
+    cellsDir: File,
+    slotNames: List<String>,
+    nSlots: Int,
+) {
     val resSb = StringBuilder()
     resSb.append("<table class='res-table'><tr><th>Path</th><th>Cost</th><th>Volume</th></tr>")
     var resCol = 1
@@ -5279,7 +5356,7 @@ private fun pPublishPumpSlots(
         resCol++
     }
     resSb.append("</table>")
-    pub("results", resSb.toString())
+    pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "results", resSb.toString())
 }
 
 private suspend fun pExtractZipToPhotos(uri: Uri, targetDir: File, context: Context): Boolean = withContext(Dispatchers.IO) {
