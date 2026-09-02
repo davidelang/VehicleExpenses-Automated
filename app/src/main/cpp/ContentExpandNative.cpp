@@ -3027,26 +3027,105 @@ static int fillPoisonLookRaster(
         orBin(&combined, sample);
     }
     const int lh = lookY.rows, lw = lookY.cols;
-    for (int y = 0; y < lh; ++y) {
-        const uint8_t* yp = lookY.ptr<uint8_t>(y);
-        uint8_t* op = lookBin->ptr<uint8_t>(y);
-        const int sy = y - ySeed0;
-        for (int x = 0; x < lw; ++x) {
-            const int sx = x - xSeed0;
-            if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
-                op[x] = combined.ptr<uint8_t>(sy)[sx];
-                continue;
+    cv::Mat lookPoison(lh, lw, CV_8UC1);
+    lookPoison.setTo(0);
+    for (int yy = 0; yy < seedH; ++yy) {
+        const int sy = yy + ySeed0;
+        if (sy < 0 || sy >= lh) continue;
+        const uint8_t* pp = poison.ptr<uint8_t>(yy);
+        uint8_t* lp = lookPoison.ptr<uint8_t>(sy);
+        for (int xx = 0; xx < seedW; ++xx) {
+            const int sx = xx + xSeed0;
+            if (sx < 0 || sx >= lw) continue;
+            lp[sx] = pp[xx];
+        }
+    }
+    auto lookInkAt = [&](int y, int x) -> uint8_t {
+        const uint8_t v = lookY.ptr<uint8_t>(y)[x];
+        if (srcIsBin) {
+            return inverted ? static_cast<uint8_t>(255 - v) : v;
+        }
+        const bool ink = cleanDark ? (static_cast<double>(v) <= cleanThr)
+                                   : (static_cast<double>(v) > cleanThr);
+        return ink ? 255 : 0;
+    };
+    auto stampSeedCombined = [&]() {
+        for (int yy = 0; yy < seedH; ++yy) {
+            const int sy = yy + ySeed0;
+            if (sy < 0 || sy >= lh) continue;
+            const uint8_t* cp = combined.ptr<uint8_t>(yy);
+            uint8_t* op = lookBin->ptr<uint8_t>(sy);
+            for (int xx = 0; xx < seedW; ++xx) {
+                const int sx = xx + xSeed0;
+                if (sx < 0 || sx >= lw) continue;
+                op[sx] = cp[xx];
             }
-            if (v0Clean <= 4) { op[x] = 0; continue; }
-            if (srcIsBin) {
-                uint8_t v = yp[x];
-                if (inverted) v = static_cast<uint8_t>(255 - v);
-                op[x] = v;
-                continue;
+        }
+    };
+    const bool plusFill = (ySeed0 > 0 || ySeed0 + seedH < lh);
+    if (plusFill) {
+        if (v0Clean > 4) {
+            const int vPad = 4 * sPx;
+            const int plusH = seedH + 8 * sPx;
+            const int padX = plusH;
+            const int plusT = std::max(0, ySeed0 - vPad);
+            const int plusB = std::min(lh, ySeed0 + seedH + vPad);
+            const int plusL = std::max(0, xSeed0 - padX);
+            const int plusR = std::min(lw, xSeed0 + seedW + padX);
+            if (plusB > plusT && plusR > plusL) {
+                for (int y = plusT; y < plusB; ++y) {
+                    uint8_t* op = lookBin->ptr<uint8_t>(y);
+                    for (int x = plusL; x < plusR; ++x) op[x] = lookInkAt(y, x);
+                }
+                cv::Mat plusBin = (*lookBin)(cv::Range(plusT, plusB), cv::Range(plusL, plusR));
+                fillSaltPepper(&plusBin);
+                cv::Mat plusPoison;
+                fillPoisonMask(plusBin, std::max(sPx, 4), false, seedW, glareMult, &plusPoison);
+                const int runLim = 3 * std::max(1, sPx);
+                const int plusW = plusR - plusL;
+                for (int y = plusT; y < plusB; ++y) {
+                    uint8_t* op = lookBin->ptr<uint8_t>(y);
+                    uint8_t* pp = lookPoison.ptr<uint8_t>(y);
+                    const uint8_t* fat = plusPoison.ptr<uint8_t>(y - plusT);
+                    for (int x = plusL; x < plusR; ++x) {
+                        const int px = x - plusL;
+                        const bool inSeed = (y >= ySeed0 && y < ySeed0 + seedH &&
+                            x >= xSeed0 && x < xSeed0 + seedW);
+                        if (fat[px]) {
+                            op[x] = 0;
+                            if (!inSeed) pp[x] = 255;
+                        }
+                    }
+                    const int maxRun = maxInkRunRow(*lookBin, y, plusL, plusR);
+                    int nInk = 0;
+                    for (int x = plusL; x < plusR; ++x) if (op[x]) ++nInk;
+                    if (maxRun > runLim ||
+                        nInk > static_cast<int>(0.50f * static_cast<float>(plusW))) {
+                        for (int x = plusL; x < plusR; ++x) {
+                            const bool inSeed = (y >= ySeed0 && y < ySeed0 + seedH &&
+                                x >= xSeed0 && x < xSeed0 + seedW);
+                            if (inSeed) continue;
+                            if (op[x]) pp[x] = 255;
+                            op[x] = 0;
+                        }
+                    }
+                }
             }
-            const bool ink = cleanDark ? (static_cast<double>(yp[x]) <= cleanThr)
-                                       : (static_cast<double>(yp[x]) > cleanThr);
-            op[x] = ink ? 255 : 0;
+        }
+        stampSeedCombined();
+    } else {
+        for (int y = 0; y < lh; ++y) {
+            uint8_t* op = lookBin->ptr<uint8_t>(y);
+            const int sy = y - ySeed0;
+            for (int x = 0; x < lw; ++x) {
+                const int sx = x - xSeed0;
+                if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
+                    op[x] = combined.ptr<uint8_t>(sy)[sx];
+                    continue;
+                }
+                if (v0Clean <= 4) { op[x] = 0; continue; }
+                op[x] = lookInkAt(y, x);
+            }
         }
     }
     fillSaltPepper(lookBin);
@@ -3086,13 +3165,9 @@ static int fillPoisonLookRaster(
         }
         for (int y = 0; y < lh; ++y) {
             const uint8_t* before = lookBin->ptr<uint8_t>(y);
-            const int sy = y - ySeed0;
+            const uint8_t* poisRow = lookPoison.ptr<uint8_t>(y);
             for (int x = 0; x < lw; ++x) {
-                const int sx = x - xSeed0;
-                bool pois = false;
-                if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
-                    pois = poison.ptr<uint8_t>(sy)[sx] != 0;
-                }
+                const bool pois = poisRow[x] != 0;
                 const bool inkBefore = before[x] != 0;
                 uint8_t Y = 0, U = 128, V = 128;
                 if (pois && !inkBefore) { Y = 19; U = 117; V = 160; }
@@ -3110,7 +3185,7 @@ static int fillPoisonLookRaster(
     if (paintOv) {
         for (int y = 0; y < lh; ++y) {
             const uint8_t* after = lookBin->ptr<uint8_t>(y);
-            const int sy = y - ySeed0;
+            const uint8_t* poisRow = lookPoison.ptr<uint8_t>(y);
             for (int x = 0; x < lw; ++x) {
                 if (after[x] != 0) continue;
                 int iy = 0, ix = 0;
@@ -3118,12 +3193,7 @@ static int fillPoisonLookRaster(
                 if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
                 const uint8_t Y0 = overlayY->ptr<uint8_t>(iy)[ix];
                 if (Y0 < 140) continue;
-                const int sx = x - xSeed0;
-                bool pois = false;
-                if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
-                    pois = poison.ptr<uint8_t>(sy)[sx] != 0;
-                }
-                if (pois) yuvPut(overlayY, overlayUv, ix, iy, 9, 168, 121);
+                if (poisRow[x]) yuvPut(overlayY, overlayUv, ix, iy, 9, 168, 121);
                 else yuvPut(overlayY, overlayUv, ix, iy, 48, 128, 128);
             }
         }
