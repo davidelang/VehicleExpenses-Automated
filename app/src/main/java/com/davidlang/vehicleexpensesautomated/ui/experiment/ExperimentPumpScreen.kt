@@ -20,6 +20,10 @@ import android.util.Log
 import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import org.opencv.core.Core
+import org.opencv.core.Mat
+import org.opencv.core.MatOfPoint2f
+import org.opencv.core.Point
 import org.opencv.imgproc.Imgproc
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -2396,14 +2400,9 @@ suspend fun runPumpExperiment(
                             }
                             val seg = one.first()
                             segs.add(seg)
-                            snapshotLookInk(
-                                listOf(q.toAabb()),
-                                listOf(seg.quad.toAabb()),
-                                imgW, imgH, branch,
-                                listOf(seg.poison),
-                                listOf(seg.tele),
-                                listOf(seg.sweep),
-                                listOf(seg.stroke),
+                            snapshotLookInkOriented(
+                                q, seg.quad, imgW, imgH, branch,
+                                seg.poison, seg.tele, seg.sweep, seg.stroke,
                                 reportDir, timestamp, fullRow, branch.name,
                             )
                         }
@@ -4247,6 +4246,136 @@ private suspend fun snapshotLookInk(
         arr.put(j)
     }
     if (arr.length() > 0) branch.metadata["look_ink"] = arr.toString()
+}
+
+/** Rot look-ink: warp B.p 5-state of k=4+0.5H quad (same BL pivot as rec). */
+private suspend fun snapshotLookInkOriented(
+    seed: ContentExpandUtils.OrientedQuad,
+    walked: ContentExpandUtils.OrientedQuad,
+    imgW: Int,
+    imgH: Int,
+    branch: PumpBranch,
+    poison: ContentExpandUtils.PoisonDump?,
+    tele: ContentExpandUtils.Seg7Telemetry?,
+    sweep: ContentExpandUtils.InkSweep?,
+    stroke: ContentExpandUtils.StrokeWidthInSeed?,
+    reportDir: File,
+    timestamp: String,
+    fullRow: Int,
+    flowName: String,
+) {
+    val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
+    val k4 = ContentExpandUtils.padOrientedByStrokes(walked, seed, 4f, max(1, sPx))
+    val cropQ = ContentExpandUtils.padOrientedU(k4, 0.5f, seed)
+    val dest = Mat()
+    val ok = try {
+        ContentExpandUtils.warpQuadToHorizontalStrip(
+            NativePaddleEngine.bufferSetB.p.mat, cropQ, dest, 48,
+        )
+    } catch (_: Throwable) {
+        false
+    }
+    if (!ok || dest.empty() || dest.cols() < 8 || dest.rows() < 8) {
+        dest.release()
+        return
+    }
+    val destW = dest.cols()
+    val destH = dest.rows()
+    val (yT, yB) = seedVRowsInWarp(seed, cropQ, destW, destH)
+    val anns = listOf(
+        SnapshotAnnotation(0, yT, destW - 1, yT, Shape.LINE, Color.CYAN, 2),
+        SnapshotAnnotation(0, yB, destW - 1, yB, Shape.LINE, Color.CYAN, 2),
+    )
+    val jpeg = try {
+        OcrUtils.takeSnapshotJpeg(
+            dest, null, destW, destH, anns, null, NativePaddleEngine.bufferSetA,
+        ).first
+    } finally {
+        dest.release()
+    }
+    if (jpeg.isEmpty()) return
+    val arr = try {
+        org.json.JSONArray(branch.metadata["look_ink"] ?: "[]")
+    } catch (_: Exception) {
+        org.json.JSONArray()
+    }
+    val boxN = arr.length() + 1
+    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, opts)
+    val recW = opts.outWidth.coerceAtLeast(0)
+    val recH = opts.outHeight.coerceAtLeast(0)
+    val minRun = sweep?.minRun ?: 0
+    val glareW = 11 * max(sPx, 4)
+    val j = org.json.JSONObject()
+        .put("label", "box$boxN")
+        .put("lookInkB64", Base64.encodeToString(jpeg, Base64.NO_WRAP))
+        .put("lookInkMime", "image/jpeg")
+        .put("lookKind", "7seg")
+        .put("row", fullRow)
+        .put("flow", flowName)
+        .put("recW", recW)
+        .put("recH", recH)
+        .put("minRun", minRun)
+        .put("sPx", sPx)
+        .put("glareW", glareW)
+    if (tele != null) {
+        j.put("gapJumpTop", tele.gapJumpTop)
+        j.put("gapJumpBot", tele.gapJumpBot)
+    }
+    if (poison != null) {
+        j.put("bandTop", poison.bandTop)
+        j.put("bandBot", poison.bandBot)
+        j.put("bandH", poison.bandH)
+        val ccArr = org.json.JSONArray()
+        poison.ccs.forEach { cc ->
+            ccArr.put(
+                org.json.JSONObject()
+                    .put("x", cc.x).put("y", cc.y).put("w", cc.w).put("h", cc.h)
+                    .put("noPeak", cc.noPeak).put("thr", cc.thr).put("nInk", cc.nInk),
+            )
+        }
+        j.put("ccs", ccArr)
+    }
+    arr.put(j)
+    branch.metadata["look_ink"] = arr.toString()
+}
+
+private fun seedVRowsInWarp(
+    seed: ContentExpandUtils.OrientedQuad,
+    crop: ContentExpandUtils.OrientedQuad,
+    destW: Int,
+    destH: Int,
+): Pair<Int, Int> {
+    val co = ContentExpandUtils.orderQuadForWarp(crop) ?: return 0 to destH - 1
+    val so = ContentExpandUtils.orderQuadForWarp(seed) ?: return 0 to destH - 1
+    val src = MatOfPoint2f(
+        Point(co[0].toDouble(), co[1].toDouble()),
+        Point(co[2].toDouble(), co[3].toDouble()),
+        Point(co[4].toDouble(), co[5].toDouble()),
+        Point(co[6].toDouble(), co[7].toDouble()),
+    )
+    val dst = MatOfPoint2f(
+        Point(0.0, 0.0),
+        Point((destW - 1).toDouble(), 0.0),
+        Point((destW - 1).toDouble(), (destH - 1).toDouble()),
+        Point(0.0, (destH - 1).toDouble()),
+    )
+    val m = Imgproc.getPerspectiveTransform(src, dst)
+    val seedPts = MatOfPoint2f(
+        Point(so[0].toDouble(), so[1].toDouble()),
+        Point(so[6].toDouble(), so[7].toDouble()),
+    )
+    val out = MatOfPoint2f()
+    Core.perspectiveTransform(seedPts, out, m)
+    val a = out.toArray()
+    val yT = a[0].y.roundToInt().coerceIn(0, destH - 1)
+    val yB = a[1].y.roundToInt().coerceIn(0, destH - 1)
+    m.release()
+    src.release()
+    dst.release()
+    seedPts.release()
+    out.release()
+    return yT to yB
 }
 
 private fun pLookInkHtml(br: PumpBranch): String {

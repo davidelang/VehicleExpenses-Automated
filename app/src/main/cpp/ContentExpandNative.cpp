@@ -2171,7 +2171,12 @@ static int fillPoisonLookRaster(
     const cv::Mat& seedY, const cv::Mat& lookY, int ySeed0, int xSeed0,
     bool srcIsBin, int glareMult, int fallback, cv::Mat* lookBin,
     cv::Mat* overlayY = nullptr, cv::Mat* overlayUv = nullptr,
-    int ovX = 0, int ovY = 0, PoisonStats* statsOut = nullptr);
+    int ovX = 0, int ovY = 0, PoisonStats* statsOut = nullptr,
+    bool overlayUvMap = false,
+    float ovCx = 0.f, float ovCy = 0.f,
+    float ovUx = 0.f, float ovUy = 0.f,
+    float ovVx = 0.f, float ovVy = 0.f,
+    float ovU0 = 0.f, float ovU1 = 0.f, float ovLookV0 = 0.f);
 
 static void fillAabbLookSweep(
     const cv::Mat& src, bool srcIsBin, double otsu, bool darkInk, int glareW,
@@ -2844,7 +2849,12 @@ static void yuvPut(
 static int fillPoisonLookRaster(
     const cv::Mat& seedY, const cv::Mat& lookY, int ySeed0, int xSeed0,
     bool srcIsBin, int glareMult, int fallback, cv::Mat* lookBin,
-    cv::Mat* overlayY, cv::Mat* overlayUv, int ovX, int ovY, PoisonStats* statsOut
+    cv::Mat* overlayY, cv::Mat* overlayUv, int ovX, int ovY, PoisonStats* statsOut,
+    bool overlayUvMap,
+    float ovCx, float ovCy,
+    float ovUx, float ovUy,
+    float ovVx, float ovVy,
+    float ovU0, float ovU1, float ovLookV0
 ) {
     const int seedH = seedY.rows, seedW = seedY.cols;
     if (!lookBin) return std::max(1, fallback);
@@ -3043,22 +3053,35 @@ static int fillPoisonLookRaster(
     const int glareW = (glareMult > 0 ? glareMult : 11) * std::max(sPx, 4);
     const bool paintOv = overlayY && overlayY->type() == CV_8UC1 &&
         overlayY->rows > 0 && overlayY->cols > 0;
-    if (paintOv) {
-        const int y0 = std::max(0, ovY);
-        const int y1 = std::min(overlayY->rows, ovY + lh);
-        const int x0 = std::max(0, ovX);
-        const int x1 = std::min(overlayY->cols, ovX + lw);
-        if (y1 > y0 && x1 > x0) {
-            (*overlayY)(cv::Range(y0, y1), cv::Range(x0, x1)).setTo(0);
+    auto overlayXY = [&](int x, int y, int* ix, int* iy) {
+        if (overlayUvMap) {
+            const float u = ovU0 + (x + 0.5f) / static_cast<float>(std::max(1, lw)) * (ovU1 - ovU0);
+            const float v = ovLookV0 + (y + 0.5f);
+            *ix = static_cast<int>(std::lround(ovCx + u * ovUx + v * ovVx));
+            *iy = static_cast<int>(std::lround(ovCy + u * ovUy + v * ovVy));
+        } else {
+            *ix = ovX + x;
+            *iy = ovY + y;
         }
-        if (overlayUv && overlayUv->type() == CV_8UC2 &&
-            overlayUv->rows > 0 && overlayUv->cols > 0) {
-            const int uy0 = std::max(0, ovY / 2);
-            const int ux0 = std::max(0, ovX / 2);
-            const int uy1 = std::min(overlayUv->rows, (ovY + lh + 1) / 2);
-            const int ux1 = std::min(overlayUv->cols, (ovX + lw + 1) / 2);
-            if (uy1 > uy0 && ux1 > ux0) {
-                (*overlayUv)(cv::Range(uy0, uy1), cv::Range(ux0, ux1)).setTo(cv::Scalar(128, 128));
+    };
+    if (paintOv) {
+        if (!overlayUvMap) {
+            const int y0 = std::max(0, ovY);
+            const int y1 = std::min(overlayY->rows, ovY + lh);
+            const int x0 = std::max(0, ovX);
+            const int x1 = std::min(overlayY->cols, ovX + lw);
+            if (y1 > y0 && x1 > x0) {
+                (*overlayY)(cv::Range(y0, y1), cv::Range(x0, x1)).setTo(0);
+            }
+            if (overlayUv && overlayUv->type() == CV_8UC2 &&
+                overlayUv->rows > 0 && overlayUv->cols > 0) {
+                const int uy0 = std::max(0, ovY / 2);
+                const int ux0 = std::max(0, ovX / 2);
+                const int uy1 = std::min(overlayUv->rows, (ovY + lh + 1) / 2);
+                const int ux1 = std::min(overlayUv->cols, (ovX + lw + 1) / 2);
+                if (uy1 > uy0 && ux1 > ux0) {
+                    (*overlayUv)(cv::Range(uy0, uy1), cv::Range(ux0, ux1)).setTo(cv::Scalar(128, 128));
+                }
             }
         }
         for (int y = 0; y < lh; ++y) {
@@ -3077,7 +3100,9 @@ static int fillPoisonLookRaster(
                     if (pois) { Y = 150; U = 44; V = 21; }
                     else { Y = 255; U = 128; V = 128; }
                 }
-                yuvPut(overlayY, overlayUv, ovX + x, ovY + y, Y, U, V);
+                int ix = 0, iy = 0;
+                overlayXY(x, y, &ix, &iy);
+                yuvPut(overlayY, overlayUv, ix, iy, Y, U, V);
             }
         }
     }
@@ -3088,8 +3113,8 @@ static int fillPoisonLookRaster(
             const int sy = y - ySeed0;
             for (int x = 0; x < lw; ++x) {
                 if (after[x] != 0) continue;
-                const int iy = ovY + y;
-                const int ix = ovX + x;
+                int iy = 0, ix = 0;
+                overlayXY(x, y, &ix, &iy);
                 if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
                 const uint8_t Y0 = overlayY->ptr<uint8_t>(iy)[ix];
                 if (Y0 < 140) continue;
@@ -3934,7 +3959,9 @@ static void seg7OrientedOne(
     PoisonStats stLocal;
     const int sPx = fillPoisonLookRaster(
         seedY, look, ySeed0, 0, srcIsBin, 11, fallback, &lookBin,
-        overlayY, overlayUv, x0, y0, poisonStats ? &stLocal : nullptr);
+        overlayY, overlayUv, 0, 0, poisonStats ? &stLocal : nullptr,
+        true, seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
+        seed.u0, seed.u1, lookV0);
     if (poisonStats) *poisonStats = stLocal;
     if (inkDump && !lookBin.empty() && inkDump->type() == CV_8UC1 &&
         inkDump->rows >= imgH && inkDump->cols >= imgW) {
