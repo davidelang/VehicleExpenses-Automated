@@ -926,7 +926,7 @@ suspend fun runPumpExperiment(
 
             var photoTilt = 0f
             val tPhotoDeskew0 = System.currentTimeMillis()
-            NativePaddleEngine.bufferSetA.p.mat.setTo(org.opencv.core.Scalar(0.0))
+            NativePaddleEngine.bufferSetA.p.clear()
             masterBuffer.p.mat.copyTo(NativePaddleEngine.bufferSetA.p.mat)
             if (!masterBuffer.p.uvMat.empty() && !NativePaddleEngine.bufferSetA.p.uvMat.empty()) {
                 masterBuffer.p.uvMat.copyTo(NativePaddleEngine.bufferSetA.p.uvMat)
@@ -1626,8 +1626,8 @@ suspend fun runPumpExperiment(
                     }
                     val bSet = NativePaddleEngine.bufferSetB
                     branch.metadata.remove("look_ink")
+                    masterBuffer.s.clear()
                     val objPlane = masterBuffer.s.mat
-                    if (!objPlane.empty()) objPlane.setTo(org.opencv.core.Scalar(0.0))
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     var exhausted = false
                     seeds.forEachIndexed { si, seed ->
