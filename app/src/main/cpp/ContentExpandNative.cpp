@@ -4398,7 +4398,8 @@ static void seg7OrientedOne(
     cv::Mat* scratch = nullptr,
     ObjPack* objPack = nullptr,
     int seedIndex = 0,
-    cv::Mat* poisonPlane = nullptr
+    cv::Mat* poisonPlane = nullptr,
+    cv::Mat* lookBinPlane = nullptr
 ) {
     if (boundStrategy == 1) {
         const float ins = static_cast<float>(std::max(1, tightInsetPx));
@@ -4427,21 +4428,9 @@ static void seg7OrientedOne(
     cv::Mat seedY;
     cv::Mat* work = asU8(scratch);
     if (!work) return;
-    if (!scratchFits(work, wu * 2, lookH) || !scratchFits(work, wu, lookH + hv)) return;
-    look = planeView8u(work, wu, 0, wu, lookH);
-    seedY = planeView8u(work, 0, lookH, wu, hv);
-    if (look.empty() || seedY.empty()) return;
-    for (int y = 0; y < hv; ++y) {
-        const float v = seed.v0 + (y + 0.5f) / hv * (seed.v1 - seed.v0);
-        uint8_t* row = seedY.ptr<uint8_t>(y);
-        for (int x = 0; x < wu; ++x) {
-            const float u = seed.u0 + (x + 0.5f) / wu * (seed.u1 - seed.u0);
-            const float px = seed.cx + u * seed.ux + v * seed.vx;
-            const float py = seed.cy + u * seed.uy + v * seed.vy;
-            const int g = sampleU8Trunc(src, px, py, imgW, imgH);
-            row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
-        }
-    }
+    if (!scratchFits(work, wu, lookH)) return;
+    look = planeView8u(work, 0, 0, wu, lookH);
+    if (look.empty()) return;
     for (int y = 0; y < lookH; ++y) {
         const float v = lookV0 + (y + 0.5f);
         uint8_t* row = look.ptr<uint8_t>(y);
@@ -4453,10 +4442,18 @@ static void seg7OrientedOne(
             row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
         }
     }
-    cv::Mat lookBin = planeRoi8u(work, 0, 0, wu, lookH);
+    int ySeed0 = static_cast<int>(std::lround(seed.v0 - lookV0));
+    if (ySeed0 < 0) ySeed0 = 0;
+    if (ySeed0 >= lookH) ySeed0 = lookH - 1;
+    int ySeed1 = ySeed0 + hv;
+    if (ySeed1 > lookH) ySeed1 = lookH;
+    if (ySeed1 <= ySeed0) ySeed1 = std::min(lookH, ySeed0 + 1);
+    seedY = planeView8u(&look, 0, ySeed0, wu, ySeed1 - ySeed0);
+    if (seedY.empty()) return;
+    cv::Mat* lookBinHost = asU8(lookBinPlane);
+    if (!lookBinHost) return;
+    cv::Mat lookBin = planeRoi8u(lookBinHost, 0, 0, wu, lookH);
     if (lookBin.empty()) return;
-    const int ySeed0 = static_cast<int>(std::lround(seed.v0 - lookV0));
-    const int ySeed1 = static_cast<int>(std::lround(seed.v1 - lookV0));
     PoisonStats stLocal;
     cv::Mat* objPlane = asU8(inkDump);
     if (objPlane && (objPlane->cols < imgW || objPlane->rows < imgH)) objPlane = nullptr;
@@ -4764,10 +4761,10 @@ static jfloatArray seg7OrientedMany(
     auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
     auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
     cv::Mat* ovUv = asUV(overlayUv);
-    cv::Mat* tintPlane = asU8(overlayUv);
-    if (!tintPlane) tintPlane = asU8(overlayY);
+    cv::Mat* lookBinHost = asU8(overlayUv);
     cv::Mat* rotPoison = asU8(overlayY);
-    if (!useTint && asU8(overlayUv)) rotPoison = asU8(overlayUv);
+    cv::Mat* tintPlane = nullptr;
+    if (useTint) tintPlane = asU8(overlayY);
     std::vector<PoisonStats> poisonPacks;
     poisonPacks.resize(static_cast<size_t>(n));
     if (useChroma) {
@@ -4833,7 +4830,8 @@ static jfloatArray seg7OrientedMany(
         seg7OrientedOne(*src, box, imgW, imgH, op, &sPx,
             boundStrategy, tightInsetPx, srcIsBin, &tele, keepColor,
             &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
-            &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, rotPoison);
+            &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, rotPoison,
+            lookBinHost);
         if (objPack.abort) {
             poisonPacks[static_cast<size_t>(i)].bandH = -1;
             appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
