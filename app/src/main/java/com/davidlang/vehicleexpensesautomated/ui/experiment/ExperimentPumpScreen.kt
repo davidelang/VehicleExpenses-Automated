@@ -93,6 +93,15 @@ private fun pruneRedPixelsTopN(rects: MutableList<Rect>, context: Context, imgH:
 /** Keep [captureRedboxData]; off this plan. */
 private const val CAPTURE_REDBOX_DATA = false
 
+private fun dumpObjectPlanePng(plane: org.opencv.core.Mat, file: File): Boolean {
+    if (plane.empty()) return false
+    return try {
+        org.opencv.imgcodecs.Imgcodecs.imwrite(file.absolutePath, plane)
+    } catch (_: Throwable) {
+        false
+    }
+}
+
 private fun rectJson(r: Rect): JSONObject =
     JSONObject().put("l", r.left).put("t", r.top).put("r", r.right).put("b", r.bottom)
 
@@ -761,6 +770,9 @@ suspend fun runPumpExperiment(
     )
     val heatDumpRoot by lazy {
         File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
+    }
+    val objImgRoot by lazy {
+        File(reportDir, "pump_imgs_$timestamp").also { it.mkdirs() }
     }
 
     val pumpColLabels = pumpColumnLabels(flows)
@@ -1614,21 +1626,35 @@ suspend fun runPumpExperiment(
                     }
                     val bSet = NativePaddleEngine.bufferSetB
                     branch.metadata.remove("look_ink")
+                    val objPlane = masterBuffer.s.mat
+                    if (!objPlane.empty()) objPlane.setTo(org.opencv.core.Scalar(0.0))
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
-                    seeds.forEach { seed ->
+                    var exhausted = false
+                    seeds.forEachIndexed { si, seed ->
+                        if (exhausted) return@forEachIndexed
                         val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
                         val one = inkFn(
                             workspace.p.mat,
                             workspace.p.uvMat,
                             listOf(seed),
                             workspace.s.mat,
-                            bSet.s.mat,
+                            objPlane,
                             bSet.p.mat,
                             bSet.p.uvMat,
                             poisonBuf,
                         )
                         val seg = one.first()
                         segs.add(seg)
+                        val dumpSeed = File(objImgRoot, "r${fullRow}_c${col}_box${si + 1}.png")
+                        dumpObjectPlanePng(objPlane, dumpSeed)
+                        branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
+                        if (seg.poison?.bandH == -1) {
+                            exhausted = true
+                            val msg = "object_id_exhausted col=$col seed=$si n=${seeds.size} phase=poison/walk"
+                            Log.e(TAG, msg)
+                            onLog(msg)
+                            branch.metadata["object_id_exhausted"] = msg
+                        }
                         snapshotLookInk(
                             listOf(seed), listOf(seg.rect), imgW, imgH, branch,
                             listOf(seg.poison),
@@ -1638,6 +1664,9 @@ suspend fun runPumpExperiment(
                             reportDir, timestamp, fullRow, branch.name,
                         )
                     }
+                    val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
+                    dumpObjectPlanePng(objPlane, dumpFinal)
+                    branch.metadata["object_dump_final"] = dumpFinal.name
                     val walks = seeds.indices.map { i ->
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
                     }
