@@ -238,7 +238,8 @@ object OcrUtils {
         targetH: Int = 0,
         annotations: List<Any> = emptyList(),
         scratchArgb: Bitmap? = null,
-        scratchYuv: BufferSet? = null
+        scratchYuv: BufferSet? = null,
+        sourceQuad: ContentExpandUtils.OrientedQuad? = null,
     ): Pair<ByteArray, Long> = withContext(Dispatchers.IO) {
         val tStart = System.currentTimeMillis()
         val srcW: Int
@@ -313,15 +314,21 @@ object OcrUtils {
 
         try {
             val dest = bufferSet.c[snapCropId]
-            val scaled = when (source) {
-                is BufferSet.Slice -> NativeImageUtils.scaleYuvRoi(
+            val scaled = when {
+                sourceQuad != null && source is org.opencv.core.Mat &&
+                    source.type() == CvType.CV_8UC1 -> {
+                    ContentExpandUtils.warpQuadToHorizontalStrip(
+                        source, sourceQuad, dest.mat, targetH = 0,
+                    )
+                }
+                source is BufferSet.Slice -> NativeImageUtils.scaleYuvRoi(
                     source.mat, source.uvMat, roi, dest.mat, dest.uvMat,
                 )
-                is org.opencv.core.Mat -> {
+                source is org.opencv.core.Mat -> {
                     if (source.type() != CvType.CV_8UC1) false
                     else NativeImageUtils.scaleYuvRoi(source, null, roi, dest.mat, dest.uvMat)
                 }
-                is Bitmap -> {
+                source is Bitmap -> {
                     val localScratch = scratchArgb ?: Bitmap.createBitmap(finalW, finalH, Bitmap.Config.ARGB_8888)
                     val canvas = Canvas(localScratch)
                     canvas.drawColor(Color.BLACK, PorterDuff.Mode.SRC)

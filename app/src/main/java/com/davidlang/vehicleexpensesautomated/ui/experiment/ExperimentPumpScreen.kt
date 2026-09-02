@@ -2226,16 +2226,26 @@ suspend fun runPumpExperiment(
                         val pad = kotlin.math.ceil(4.0 / rSc.toDouble()).toInt().coerceAtLeast(1)
                         val qPad = q.padUv(pad)
                         experimentRecSet.p.clear()
-                        val dest = org.opencv.core.Mat()
+                        val nativeH = qPad.shortAxisBh().roundToInt().coerceAtLeast(1)
+                        val nativeW = qPad.longAxisBw().roundToInt().coerceAtLeast(1)
+                        val work = NativePaddleEngine.bufferSetB
+                        val nativeId = work.s.createCrop(0, 0, nativeW, nativeH)
+                        val nativeMat = work.c[nativeId].mat
                         val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                            gray, qPad, dest, targetH = 48,
+                            gray, qPad, nativeMat, targetH = 0,
                         )
-                        if (!ok || dest.empty()) {
-                            dest.release()
+                        if (!ok || nativeMat.empty()) {
+                            work.c[nativeId].release()
                             return OcrOne("?" to "", "?" to "", "", 0, 0)
                         }
-                        val fed = RecBufferFeed.feedPreparedStripNoBlackPad(dest, experimentRecSet)
-                        dest.release()
+                        val recH = RecBufferFeed.DEFAULT_REC_H.coerceAtMost(nativeH)
+                        val recW = ((nativeW.toFloat() * recH / nativeH).roundToInt()).coerceAtLeast(1)
+                        val recId = experimentRecSet.p.createCrop(0, 0, recW, recH)
+                        ContentExpandUtils.downscaleStripArea(
+                            nativeMat, experimentRecSet.c[recId].mat, recW, recH,
+                        )
+                        work.c[nativeId].release()
+                        val fed = RecBufferFeed.Result(1f, 0, recId, recW, recH)
                         val snap = PumpCostVolUtils.snapRecCrop(
                             experimentRecSet, fed.recCropId, fed.targetW, fed.targetH,
                         )
@@ -4359,18 +4369,21 @@ private suspend fun snapshotLookInkOriented(
     flowName: String,
 ) {
     val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
-    val (cropQ, seedBh, plusH) = plusOrientedCrop(seed, walked, sPx)
-    val targetH = (plusH * 96f / seedBh).roundToInt().coerceAtLeast(8)
-    val dest = Mat()
+    val (cropQ, _, _) = plusOrientedCrop(seed, walked, sPx)
+    val nativeH = cropQ.shortAxisBh().roundToInt().coerceAtLeast(1)
+    val nativeW = cropQ.longAxisBw().roundToInt().coerceAtLeast(1)
+    val work = NativePaddleEngine.bufferSetB
+    val cropId = work.s.createCrop(0, 0, nativeW, nativeH)
+    val dest = work.c[cropId].mat
     val ok = try {
         ContentExpandUtils.warpQuadToHorizontalStrip(
-            NativePaddleEngine.bufferSetB.p.mat, cropQ, dest, targetH,
+            work.p.mat, cropQ, dest, targetH = 0,
         )
     } catch (_: Throwable) {
         false
     }
-    if (!ok || dest.empty() || dest.cols() < 8 || dest.rows() < 8) {
-        dest.release()
+    if (!ok || dest.empty() || dest.cols() < 1 || dest.rows() < 1) {
+        work.c[cropId].release()
         return
     }
     val destW = dest.cols()
@@ -4385,7 +4398,7 @@ private suspend fun snapshotLookInkOriented(
             dest, null, destW, destH, anns, null, NativePaddleEngine.bufferSetA,
         ).first
     } finally {
-        dest.release()
+        work.c[cropId].release()
     }
     if (jpeg.isEmpty()) return
     val arr = try {

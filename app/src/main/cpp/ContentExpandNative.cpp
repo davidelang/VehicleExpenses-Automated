@@ -4297,10 +4297,22 @@ static void seg7OrientedOne(
     if (seedBh < 4.f || seedBw < 4.f) return;
     const int wu = std::max(1, static_cast<int>(std::lround(seed.u1 - seed.u0)));
     const int hv = std::max(1, static_cast<int>(std::lround(seed.v1 - seed.v0)));
-    cv::Mat seedMat(hv, wu, CV_8UC1);
+    const float cap = 2.5f * seedBh;
+    const int vLook = std::max(1, static_cast<int>(std::lround(cap)) + 2);
+    const float lookV0 = seed.v0 - static_cast<float>(vLook);
+    const float lookV1 = seed.v1 + static_cast<float>(vLook);
+    const int lookH = std::max(1, static_cast<int>(std::lround(lookV1 - lookV0)));
+    cv::Mat look;
+    cv::Mat seedY;
+    cv::Mat* work = nullptr;
+    if (inkDump && scratchFits(inkDump, wu, lookH + hv)) work = inkDump;
+    else if (scratchFits(scratch, wu, lookH + hv)) work = scratch;
+    if (!work) return;
+    look = (*work)(cv::Rect(0, 0, wu, lookH));
+    seedY = (*work)(cv::Rect(0, lookH, wu, hv));
     for (int y = 0; y < hv; ++y) {
         const float v = seed.v0 + (y + 0.5f) / hv * (seed.v1 - seed.v0);
-        uint8_t* row = seedMat.ptr<uint8_t>(y);
+        uint8_t* row = seedY.ptr<uint8_t>(y);
         for (int x = 0; x < wu; ++x) {
             const float u = seed.u0 + (x + 0.5f) / wu * (seed.u1 - seed.u0);
             const float px = seed.cx + u * seed.ux + v * seed.vx;
@@ -4309,12 +4321,6 @@ static void seg7OrientedOne(
             row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
         }
     }
-    const float cap = 2.5f * seedBh;
-    const int vLook = std::max(1, static_cast<int>(std::lround(cap)) + 2);
-    const float lookV0 = seed.v0 - static_cast<float>(vLook);
-    const float lookV1 = seed.v1 + static_cast<float>(vLook);
-    const int lookH = std::max(1, static_cast<int>(std::lround(lookV1 - lookV0)));
-    cv::Mat look(lookH, wu, CV_8UC1);
     for (int y = 0; y < lookH; ++y) {
         const float v = lookV0 + (y + 0.5f);
         uint8_t* row = look.ptr<uint8_t>(y);
@@ -4326,8 +4332,6 @@ static void seg7OrientedOne(
             row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
         }
     }
-    cv::Mat seedY;
-    seedMat.copyTo(seedY);
     cv::Mat lookBin;
     const int ySeed0 = static_cast<int>(std::lround(seed.v0 - lookV0));
     const int ySeed1 = static_cast<int>(std::lround(seed.v1 - lookV0));

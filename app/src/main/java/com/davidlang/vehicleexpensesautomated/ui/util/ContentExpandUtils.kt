@@ -608,31 +608,38 @@ object ContentExpandUtils {
     }
 
     /**
-     * Warp [quad] to a horizontal strip of height [targetH] (recognition buffer).
-     * Pivot BL, flatten the rightward side (BL→BR → +x). INTER_CUBIC, BORDER_CONSTANT black.
-     * Returns filled rec mat size targetW×targetH (caller owns dest content via [dest]).
+     * Warp [quad] into [dest] at **native** u/v size (no dest-height floor).
+     * Pivot BL, flatten BL→BR to +x. INTER_CUBIC, BORDER_CONSTANT black.
+     * If [dest] is already sized, that size is used. Caller INTER_AREA downscales to rec 48.
      */
     fun warpQuadToHorizontalStrip(
         gray: Mat,
         quad: OrientedQuad,
         dest: Mat,
-        targetH: Int = 48,
+        targetH: Int = 0,
         maxW: Int = NativePaddleEngine.REC_CANVAS_W,
     ): Boolean {
-        if (gray.empty() || targetH < 8) return false
+        if (gray.empty()) return false
         val order = orderQuadForWarp(quad) ?: return false
-        // order: TL, TR, BR, BL (pivot BL; flatten BL→BR to +x)
         val wSrc = hypot(
             (order[2] - order[0]).toDouble(),
             (order[3] - order[1]).toDouble(),
-        ).toFloat().coerceAtLeast(2f)
+        ).toFloat().coerceAtLeast(1f)
         val hSrc = hypot(
             (order[6] - order[0]).toDouble(),
             (order[7] - order[1]).toDouble(),
-        ).toFloat().coerceAtLeast(2f)
-        val scale = targetH / hSrc
-        val rawW = (wSrc * scale).roundToInt().coerceAtLeast(8)
-        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(maxW).coerceAtLeast(32)
+        ).toFloat().coerceAtLeast(1f)
+        val nativeW = wSrc.roundToInt().coerceAtLeast(1).coerceAtMost(maxW)
+        val nativeH = hSrc.roundToInt().coerceAtLeast(1)
+        val outW: Int
+        val outH: Int
+        if (!dest.empty() && dest.cols() >= 1 && dest.rows() >= 1 && targetH <= 0) {
+            outW = dest.cols()
+            outH = dest.rows()
+        } else {
+            outW = nativeW
+            outH = nativeH
+        }
         val src = MatOfPoint2f(
             Point(order[0].toDouble(), order[1].toDouble()),
             Point(order[2].toDouble(), order[3].toDouble()),
@@ -641,17 +648,27 @@ object ContentExpandUtils {
         )
         val dst = MatOfPoint2f(
             Point(0.0, 0.0),
-            Point(targetW - 1.0, 0.0),
-            Point(targetW - 1.0, targetH - 1.0),
-            Point(0.0, targetH - 1.0),
+            Point((outW - 1).toDouble().coerceAtLeast(0.0), 0.0),
+            Point((outW - 1).toDouble().coerceAtLeast(0.0), (outH - 1).toDouble().coerceAtLeast(0.0)),
+            Point(0.0, (outH - 1).toDouble().coerceAtLeast(0.0)),
         )
         val m = Imgproc.getPerspectiveTransform(src, dst)
         Imgproc.warpPerspective(
-            gray, dest, m, Size(targetW.toDouble(), targetH.toDouble()),
+            gray, dest, m, Size(outW.toDouble(), outH.toDouble()),
             Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0),
         )
         m.release(); src.release(); dst.release()
-        return !dest.empty() && dest.cols() >= 8 && dest.rows() >= 8
+        return !dest.empty() && dest.cols() >= 1 && dest.rows() >= 1
+    }
+
+    /** INTER_AREA [src] into [dest] sized [targetW]×[targetH] (rec 48). */
+    fun downscaleStripArea(src: Mat, dest: Mat, targetW: Int, targetH: Int): Boolean {
+        if (src.empty() || targetW < 1 || targetH < 1) return false
+        Imgproc.resize(
+            src, dest, Size(targetW.toDouble(), targetH.toDouble()),
+            0.0, 0.0, Imgproc.INTER_AREA,
+        )
+        return !dest.empty()
     }
 
     /**
