@@ -2504,7 +2504,6 @@ suspend fun runPumpExperiment(
                         var nextInk = 255
                         var nextNon = 1
                         var inkLo = 255
-                        val isColor = expandMode != 0
                         seedQuads.forEachIndexed { si, q ->
                             if (rotExhausted) return@forEachIndexed
                             val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
@@ -2521,8 +2520,7 @@ suspend fun runPumpExperiment(
                                     NativePaddleEngine.bufferSetB.s.mat,
                                     masterBuffer.s.mat,
                                     NativePaddleEngine.bufferSetB.p.mat,
-                                    if (isColor) NativePaddleEngine.bufferSetA.s.mat
-                                    else NativePaddleEngine.bufferSetB.p.uvMat,
+                                    NativePaddleEngine.bufferSetA.s.mat,
                                     poisonBuf,
                                 )
                             } else {
