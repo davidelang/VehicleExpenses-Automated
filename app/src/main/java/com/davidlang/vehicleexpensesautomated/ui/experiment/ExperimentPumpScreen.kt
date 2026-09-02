@@ -61,6 +61,7 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.zip.ZipInputStream
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -4136,19 +4137,14 @@ private fun lookInkStripRect(
             max(seed.bottom, walk.bottom),
         )
     }
-    val k4 = ContentExpandUtils.padVertByStrokes(walk, seed, 4f, max(1, sPx), imgW, imgH)
-    val t = min(min(seed.top, walk.top), k4.top)
-    val b = max(max(seed.bottom, walk.bottom), k4.bottom)
-    val l0 = min(min(seed.left, walk.left), k4.left)
-    val r0 = max(max(seed.right, walk.right), k4.right)
-    val h = max(1, b - t)
-    val pad = (0.5f * h).roundToInt()
-    return android.graphics.Rect(
-        (l0 - pad).coerceAtLeast(0),
-        t.coerceAtLeast(0),
-        (r0 + pad).coerceAtMost(imgW).coerceAtLeast((l0 - pad).coerceAtLeast(0) + 1),
-        b.coerceAtMost(imgH).coerceAtLeast(t.coerceAtLeast(0) + 1),
-    )
+    val vPad = 4 * max(1, sPx)
+    val t = min(seed.top - vPad, walk.top).coerceAtLeast(0)
+    val b = max(seed.bottom + vPad, walk.bottom).coerceAtMost(imgH).coerceAtLeast(t + 1)
+    val plusH = max(1, b - t)
+    val padX = plusH
+    val l = (seed.left - padX).coerceAtLeast(0)
+    val r = (seed.right + padX).coerceAtMost(imgW).coerceAtLeast(l + 1)
+    return android.graphics.Rect(l, t, r, b)
 }
 
 /** Per-seed look-ink JPEG; spliced into HTML as data URI (no look_ink/ folder). */
@@ -4201,8 +4197,16 @@ private suspend fun snapshotLookInk(
                 anns.add(SnapshotAnnotation(x0, y, x1, y, Shape.LINE, Color.YELLOW, 2))
             }
         }
+        val (destW, destH) = if (energyLook) {
+            NativePaddleEngine.bufferSetA.s.width to 48
+        } else {
+            val seedH = max(1, seed.height())
+            val scale = 96f / seedH
+            (strip.width() * scale).roundToInt().coerceAtLeast(1) to
+                (strip.height() * scale).roundToInt().coerceAtLeast(1)
+        }
         val (jpeg, _) = OcrUtils.takeSnapshotJpeg(
-            source, strip, NativePaddleEngine.bufferSetA.s.width, 48, anns, null, scratchYuv,
+            source, strip, destW, destH, anns, null, scratchYuv,
         )
         if (jpeg.isEmpty()) return@forEachIndexed
         val boxN = boxBase + i + 1
@@ -4248,7 +4252,56 @@ private suspend fun snapshotLookInk(
     if (arr.length() > 0) branch.metadata["look_ink"] = arr.toString()
 }
 
-/** Rot look-ink: warp B.p 5-state of k=4+0.5H quad (same BL pivot as rec). */
+/** Plus-ROI in the seed warp frame: 4×sPx on ±v, union walk v, padU = plusH. */
+private fun plusOrientedCrop(
+    seed: ContentExpandUtils.OrientedQuad,
+    walked: ContentExpandUtils.OrientedQuad,
+    sPx: Int,
+): Triple<ContentExpandUtils.OrientedQuad, Float, Float> {
+    val so = ContentExpandUtils.orderQuadForWarp(seed)
+        ?: return Triple(walked, 1f, 1f)
+    val wp = walked.pts
+    val tlx = so[0]
+    val tly = so[1]
+    val ux = so[2] - so[0]
+    val uy = so[3] - so[1]
+    val vx = so[6] - so[0]
+    val vy = so[7] - so[1]
+    val uLen = hypot(ux.toDouble(), uy.toDouble()).toFloat().coerceAtLeast(1f)
+    val vLen = hypot(vx.toDouble(), vy.toDouble()).toFloat().coerceAtLeast(1f)
+    val unx = ux / uLen
+    val uny = uy / uLen
+    val vnx = vx / vLen
+    val vny = vy / vLen
+    var wV0 = Float.POSITIVE_INFINITY
+    var wV1 = Float.NEGATIVE_INFINITY
+    val n = min(4, wp.size / 2)
+    for (i in 0 until n) {
+        val v = (wp[i * 2] - tlx) * vnx + (wp[i * 2 + 1] - tly) * vny
+        if (v < wV0) wV0 = v
+        if (v > wV1) wV1 = v
+    }
+    val vPad = 4f * max(1, sPx)
+    val v0 = min(-vPad, wV0)
+    val v1 = max(vLen + vPad, wV1)
+    val plusH = (v1 - v0).coerceAtLeast(1f)
+    val u0 = -plusH
+    val u1 = uLen + plusH
+    fun c(u: Float, v: Float) = floatArrayOf(
+        tlx + u * unx + v * vnx,
+        tly + u * uny + v * vny,
+    )
+    val a = c(u0, v0)
+    val b = c(u1, v0)
+    val d = c(u1, v1)
+    val e = c(u0, v1)
+    val crop = ContentExpandUtils.OrientedQuad(
+        floatArrayOf(a[0], a[1], b[0], b[1], d[0], d[1], e[0], e[1]),
+    )
+    return Triple(crop, vLen, plusH)
+}
+
+/** Rot look-ink: warp B.p 5-state of plus-ROI (seed v → 96 px, same BL pivot as rec). */
 private suspend fun snapshotLookInkOriented(
     seed: ContentExpandUtils.OrientedQuad,
     walked: ContentExpandUtils.OrientedQuad,
@@ -4265,12 +4318,12 @@ private suspend fun snapshotLookInkOriented(
     flowName: String,
 ) {
     val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
-    val k4 = ContentExpandUtils.padOrientedByStrokes(walked, seed, 4f, max(1, sPx))
-    val cropQ = ContentExpandUtils.padOrientedU(k4, 0.5f, seed)
+    val (cropQ, seedBh, plusH) = plusOrientedCrop(seed, walked, sPx)
+    val targetH = (plusH * 96f / seedBh).roundToInt().coerceAtLeast(8)
     val dest = Mat()
     val ok = try {
         ContentExpandUtils.warpQuadToHorizontalStrip(
-            NativePaddleEngine.bufferSetB.p.mat, cropQ, dest, 48,
+            NativePaddleEngine.bufferSetB.p.mat, cropQ, dest, targetH,
         )
     } catch (_: Throwable) {
         false
