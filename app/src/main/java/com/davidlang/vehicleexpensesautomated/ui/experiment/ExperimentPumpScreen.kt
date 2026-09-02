@@ -2316,7 +2316,7 @@ suspend fun runPumpExperiment(
                     chromaMode: Int = 0,
                     boundStrategy: Int = 0,
                     tightInsetPx: Int = 16,
-                    energyOrientNative: ((org.opencv.core.Mat, FloatArray, IntArray?, org.opencv.core.Mat?) -> FloatArray?)? = null,
+                    energyOrientNative: ((org.opencv.core.Mat, FloatArray, ShortArray?, org.opencv.core.Mat?) -> FloatArray?)? = null,
                     orientInk: ((
                         org.opencv.core.Mat,
                         org.opencv.core.Mat?,
@@ -2958,7 +2958,7 @@ suspend fun runPumpExperiment(
                     boundStrategy: Int = 0,
                     tightInsetPx: Int = 16,
                     aabbEnergy: ((org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<ContentExpandUtils.AabbExpand>)? = null,
-                    energyOrientNative: ((org.opencv.core.Mat, FloatArray, IntArray?, org.opencv.core.Mat?) -> FloatArray?)? = null,
+                    energyOrientNative: ((org.opencv.core.Mat, FloatArray, ShortArray?, org.opencv.core.Mat?) -> FloatArray?)? = null,
                     orientInk: ((
                         org.opencv.core.Mat,
                         org.opencv.core.Mat?,
@@ -3680,7 +3680,7 @@ suspend fun runPumpExperiment(
                 )
                 fun rotEnergyOrient(
                     name: String,
-                    native: (org.opencv.core.Mat, FloatArray, IntArray?, org.opencv.core.Mat?) -> FloatArray?,
+                    native: (org.opencv.core.Mat, FloatArray, ShortArray?, org.opencv.core.Mat?) -> FloatArray?,
                     boundNote: String?,
                 ) = makeContentExpandProc(
                     ContentExpandUtils.Mode.INTERIOR_ENERGY,
