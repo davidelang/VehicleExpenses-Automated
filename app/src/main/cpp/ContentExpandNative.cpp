@@ -2918,11 +2918,44 @@ static int fillPoisonLookRaster(
         }
     }
     HorizSW hhC = horizPeakSW(sample, seedH, seedW);
-    const int v0Clean = hhC.peak;
-    const bool needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, srcIsBin
+    int v0Clean = hhC.peak;
+    bool needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, srcIsBin
         ? (cv::countNonZero(sample) / static_cast<float>(std::max(1, seedH * seedW)))
         : cleanInkFrac);
-    const int sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+    int sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+    if (!srcIsBin && inverted && haveClean && !cleanDark) {
+        const int nFirst = cv::countNonZero(bin);
+        if (nFirst > 0 &&
+            cv::countNonZero(poison) >= static_cast<int>(0.60f * static_cast<float>(nFirst))) {
+            cv::Mat keep2(seedH, seedW, CV_8UC1);
+            for (int yy = 0; yy < seedH; ++yy) {
+                const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                const uint8_t* kp = keepClean.ptr<uint8_t>(yy);
+                uint8_t* o = keep2.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < seedW; ++xx) {
+                    o[xx] = (kp[xx] && static_cast<double>(yp[xx]) <= cleanThr) ? 255 : 0;
+                }
+            }
+            double thr2 = 0.0;
+            bool dark2 = true;
+            float frac2 = 0.f;
+            cv::Mat sample2;
+            if (otsuKeep(seedY, keep2, &thr2, &dark2, &frac2)) {
+                applyThrKeep(seedY, keep2, thr2, dark2, &sample2);
+                fillSaltPepper(&sample2);
+                if (dark2 && frac2 >= 0.05f && frac2 <= 0.42f) {
+                    sample = sample2;
+                    cleanThr = thr2;
+                    cleanDark = dark2;
+                    cleanInkFrac = frac2;
+                    hhC = horizPeakSW(sample, seedH, seedW);
+                    v0Clean = hhC.peak;
+                    needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
+                    sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+                }
+            }
+        }
+    }
     cv::Mat combined = cv::Mat::zeros(seedH, seedW, CV_8UC1);
     if (v0Clean > 4) orBin(&combined, sample);
     cv::Mat labels, stats, centroids;
@@ -2977,6 +3010,11 @@ static int fillPoisonLookRaster(
         r.nInk = cv::countNonZero(rBin);
         if (!r.noPeak) orBin(&combined, rBin);
         regs[static_cast<size_t>(i)] = r;
+    }
+    if (!srcIsBin && cv::countNonZero(combined) == 0 && haveClean && cleanDark &&
+        cleanInkFrac >= 0.05f && cleanInkFrac <= 0.40f &&
+        dInkFromBin(seedY, sample) <= -10.f) {
+        orBin(&combined, sample);
     }
     const int lh = lookY.rows, lw = lookY.cols;
     for (int y = 0; y < lh; ++y) {
