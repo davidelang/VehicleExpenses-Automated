@@ -2770,28 +2770,39 @@ static void fillPoisonMask(
     const int longH = (glareMult > 0 ? glareMult : 11) * vRef;
     const int thinW = std::max(1, static_cast<int>(std::lround(0.25f * static_cast<float>(seedW))));
     const bool weak = v0 <= 4 || needFb;
-    std::vector<int> vr(static_cast<size_t>(std::max(1, h)), 0);
+    const int n = std::max(1, h * w);
+    std::vector<int> vrun(static_cast<size_t>(n), 0);
+    std::vector<int> hrun(static_cast<size_t>(n), 0);
     for (int x = 0; x < w; ++x) {
         int y = 0;
         while (y < h) {
-            if (!bin.ptr<uint8_t>(y)[x]) { vr[static_cast<size_t>(y)] = 0; ++y; continue; }
+            if (!bin.ptr<uint8_t>(y)[x]) { ++y; continue; }
             const int y0 = y;
             while (y < h && bin.ptr<uint8_t>(y)[x]) ++y;
             const int len = y - y0;
-            for (int k = y0; k < y; ++k) vr[static_cast<size_t>(k)] = len;
+            for (int k = y0; k < y; ++k) vrun[static_cast<size_t>(k * w + x)] = len;
         }
-        for (int y = 0; y < h; ++y) {
-            const uint8_t* bp = bin.ptr<uint8_t>(y);
+    }
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* bp = bin.ptr<uint8_t>(y);
+        int x = 0;
+        while (x < w) {
+            if (!bp[x]) { ++x; continue; }
+            const int x0 = x;
+            while (x < w && bp[x]) ++x;
+            const int len = x - x0;
+            for (int k = x0; k < x; ++k) hrun[static_cast<size_t>(y * w + k)] = len;
+        }
+    }
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* bp = bin.ptr<uint8_t>(y);
+        uint8_t* pp = poison->ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
             if (!bp[x]) continue;
-            int a = x, b = x;
-            while (a > 0 && bp[a - 1]) --a;
-            while (b + 1 < w && bp[b + 1]) ++b;
-            const int hrun = b - a + 1;
-            const int vrun = vr[static_cast<size_t>(y)];
-            const int mn = std::min(hrun, vrun);
-            if (mn > fat || hrun > longH || (weak && hrun > thinW)) {
-                poison->ptr<uint8_t>(y)[x] = 255;
-            }
+            const int hr = hrun[static_cast<size_t>(y * w + x)];
+            const int vr = vrun[static_cast<size_t>(y * w + x)];
+            const int mn = std::min(hr, vr);
+            if (mn > fat || hr > longH || (weak && hr > thinW)) pp[x] = 255;
         }
     }
 }
@@ -2835,7 +2846,7 @@ static void applyThrKeep(
     if (!out) return;
     const int h = y.rows, w = y.cols;
     if (out->empty() || out->rows != h || out->cols != w || out->type() != CV_8UC1) {
-        out->create(h, w, CV_8UC1);
+        return;
     }
     out->setTo(0);
     const int kh = std::min(h, keep.rows);
@@ -3106,7 +3117,9 @@ static void paintLookOverlay(
             *iy = ovY + y;
         }
     };
-    if (!overlayUvMap) {
+    const bool alias = lookBin.data && overlayY->datastart &&
+        lookBin.datastart == overlayY->datastart;
+    if (!overlayUvMap && !alias) {
         const int y0 = std::max(0, ovY);
         const int y1 = std::min(overlayY->rows, ovY + lh);
         const int x0 = std::max(0, ovX);
@@ -3142,6 +3155,7 @@ static void paintLookOverlay(
             yuvPut(overlayY, overlayUv, ix, iy, Y, U, V);
         }
     }
+    if (alias) return;
     for (int y = 0; y < lh; ++y) {
         const uint8_t* after = lookBin.ptr<uint8_t>(y);
         const uint8_t* poisRow = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
@@ -3200,8 +3214,7 @@ static int fillPoisonLookRaster(
     if (!lookBin) return std::max(1, fallback);
     if (lookBin->empty() || lookBin->rows != lookY.rows || lookBin->cols != lookY.cols ||
         lookBin->type() != CV_8UC1) {
-        cv::Mat placed = planeRoi8u(overlayY, 0, 0, lookY.cols, lookY.rows);
-        if (placed.empty()) placed = planeRoi8u(scratch, 0, 0, lookY.cols, lookY.rows);
+        cv::Mat placed = planeRoi8u(scratch, 0, 0, lookY.cols, lookY.rows);
         if (placed.empty()) {
             if (objPack) {
                 objPack->abort = true;
@@ -3215,11 +3228,7 @@ static int fillPoisonLookRaster(
     lookBin->setTo(0);
     if (seedH < 1 || seedW < 1 || lookY.empty()) return std::max(1, fallback);
     auto seedTemp = [&](int band) {
-        cv::Mat r = planeRoi8u(scratch, 0, band * seedH, seedW, seedH);
-        if (r.empty() && overlayY && lookBin && overlayY->data != lookBin->data) {
-            r = planeRoi8u(overlayY, 0, band * seedH, seedW, seedH);
-        }
-        return r;
+        return planeRoi8u(scratch, 0, band * seedH, seedW, seedH);
     };
     auto abortScratch = [&]() {
         if (objPack) {
@@ -3321,11 +3330,6 @@ static int fillPoisonLookRaster(
             cv::Mat keep2 = seedTemp(5);
             if (keep2.empty()) keep2 = planeRoi8u(scratch, 0, 0, seedW, seedH);
             cv::Mat sample2 = seedTemp(6);
-            if (sample2.empty()) {
-                sample2 = planeRoi8u(
-                    (overlayY && lookBin && overlayY->data != lookBin->data) ? overlayY : nullptr,
-                    0, 0, seedW, seedH);
-            }
             if (!keep2.empty() && !sample2.empty()) {
             for (int yy = 0; yy < seedH; ++yy) {
                 const uint8_t* yp = seedY.ptr<uint8_t>(yy);
@@ -3401,7 +3405,6 @@ static int fillPoisonLookRaster(
         const int rh = r.y1 - r.y0;
         if (rw < 1 || rh < 1) { r.noPeak = true; regs[static_cast<size_t>(i)] = r; continue; }
         cv::Mat keepR = planeRoi8u(scratch, 0, 0, rw, rh);
-        if (keepR.empty()) keepR = planeRoi8u(overlayY, 0, 0, rw, rh);
         if (keepR.empty()) { r.noPeak = true; regs[static_cast<size_t>(i)] = r; continue; }
         int nR = 0;
         for (int yy = r.y0; yy < r.y1; ++yy) {
@@ -3413,12 +3416,6 @@ static int fillPoisonLookRaster(
         }
         if (nR < 2) { r.noPeak = true; regs[static_cast<size_t>(i)] = r; continue; }
         cv::Mat rBin = planeRoi8u(scratch, 0, rh, rw, rh);
-        if (rBin.empty() || rBin.data == keepR.data) {
-            if (overlayY && scratch && overlayY->data != scratch->data) {
-                rBin = planeRoi8u(overlayY, 0, 0, rw, rh);
-            }
-        }
-        if (rBin.empty() || rBin.data == keepR.data) rBin = planeRoi8u(overlayY, 0, rh, rw, rh);
         if (rBin.empty() || rBin.data == keepR.data) {
             r.noPeak = true;
             regs[static_cast<size_t>(i)] = r;
@@ -3483,12 +3480,6 @@ static int fillPoisonLookRaster(
         lookPoison = (*scratch)(cv::Rect(0, 0, lw, lh));
         lookPoison.setTo(0);
     }
-    if (lookPoison.empty()) {
-        lookPoison = planeRoi8u(overlayY, 0, 0, lw, lh);
-        if (!lookPoison.empty() && lookBin && lookPoison.data == lookBin->data) {
-            lookPoison = cv::Mat();
-        }
-    }
     if (!lookPoison.empty()) {
         for (int yy = 0; yy < seedH; ++yy) {
             const int sy = yy + ySeed0;
@@ -3543,10 +3534,6 @@ static int fillPoisonLookRaster(
             const int plusH = plusB - plusT, plusW = plusR - plusL;
             cv::Mat plusPoison = planeRoi8u(scratch, 0, std::max(lh, 5 * seedH), plusW, plusH);
             if (plusPoison.empty()) plusPoison = planeRoi8u(scratch, lw, 0, plusW, plusH);
-            if (plusPoison.empty()) plusPoison = planeRoi8u(overlayY, 0, 0, plusW, plusH);
-            if (!plusPoison.empty() && lookBin && plusPoison.data == lookBin->data) {
-                plusPoison = cv::Mat();
-            }
             if (!plusPoison.empty()) {
                 fillPoisonMask(plusBin, std::max(sPx, 4), false, seedW, glareMult, &plusPoison);
             }
