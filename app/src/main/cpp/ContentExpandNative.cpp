@@ -2827,9 +2827,25 @@ static void fillPoisonMask(
     const int longH = (glareMult > 0 ? glareMult : 11) * vRef;
     const int thinW = std::max(1, static_cast<int>(std::lround(0.25f * static_cast<float>(seedW))));
     const bool weak = v0 <= 4 || needFb;
-    const int n = std::max(1, h * w);
-    std::vector<int> vrun(static_cast<size_t>(n), 0);
-    std::vector<int> hrun(static_cast<size_t>(n), 0);
+    // Two bin passes: H then V. poison U8: 0 clean, 1 fat-H candidate, 255 poison.
+    // Same as min(hr,vr)>fat || hr>longH || (weak && hr>thinW). No HxW int maps.
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* bp = bin.ptr<uint8_t>(y);
+        uint8_t* pp = poison->ptr<uint8_t>(y);
+        int x = 0;
+        while (x < w) {
+            if (!bp[x]) { ++x; continue; }
+            const int x0 = x;
+            while (x < w && bp[x]) ++x;
+            const int len = x - x0;
+            uint8_t mark = 0;
+            if (len > longH || (weak && len > thinW)) mark = 255;
+            else if (len > fat) mark = 1;
+            if (mark) {
+                for (int k = x0; k < x; ++k) pp[k] = mark;
+            }
+        }
+    }
     for (int x = 0; x < w; ++x) {
         int y = 0;
         while (y < h) {
@@ -2837,29 +2853,18 @@ static void fillPoisonMask(
             const int y0 = y;
             while (y < h && bin.ptr<uint8_t>(y)[x]) ++y;
             const int len = y - y0;
-            for (int k = y0; k < y; ++k) vrun[static_cast<size_t>(k * w + x)] = len;
+            if (len > fat) {
+                for (int k = y0; k < y; ++k) {
+                    uint8_t* pp = poison->ptr<uint8_t>(k);
+                    if (pp[x] == 1) pp[x] = 255;
+                }
+            }
         }
     }
     for (int y = 0; y < h; ++y) {
-        const uint8_t* bp = bin.ptr<uint8_t>(y);
-        int x = 0;
-        while (x < w) {
-            if (!bp[x]) { ++x; continue; }
-            const int x0 = x;
-            while (x < w && bp[x]) ++x;
-            const int len = x - x0;
-            for (int k = x0; k < x; ++k) hrun[static_cast<size_t>(y * w + k)] = len;
-        }
-    }
-    for (int y = 0; y < h; ++y) {
-        const uint8_t* bp = bin.ptr<uint8_t>(y);
         uint8_t* pp = poison->ptr<uint8_t>(y);
         for (int x = 0; x < w; ++x) {
-            if (!bp[x]) continue;
-            const int hr = hrun[static_cast<size_t>(y * w + x)];
-            const int vr = vrun[static_cast<size_t>(y * w + x)];
-            const int mn = std::min(hr, vr);
-            if (mn > fat || hr > longH || (weak && hr > thinW)) pp[x] = 255;
+            if (pp[x] == 1) pp[x] = 0;
         }
     }
 }
@@ -4030,9 +4035,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
-    jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
-    if (!seeds) seeds = seedsArr;
-    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seeds, 0, 16,
+    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 16,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
