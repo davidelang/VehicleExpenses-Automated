@@ -4469,6 +4469,163 @@ suspend fun runPumpExperiment(
                         aPd, null, workspace,
                     ).first
                 }
+
+                /** Warp master.p quad → A.p crop, RecBufferFeed that crop into rec 48. */
+                suspend fun ocrPumpOrientedFlattenAp(
+                    quads: List<ContentExpandUtils.OrientedQuad>,
+                    gray: org.opencv.core.Mat,
+                ): PumpRectOcrLists {
+                    data class OcrOne(
+                        val asis: Pair<String, String>,
+                        val digits: Pair<String, String>,
+                        val snap: String,
+                        val recW: Int,
+                        val recH: Int,
+                    )
+                    suspend fun ocrOne(q: ContentExpandUtils.OrientedQuad): OcrOne {
+                        if (q.shortAxisBh() < 2f || q.longAxisBw() < 2f) {
+                            return OcrOne("?" to "", "?" to "", "", 0, 0)
+                        }
+                        val nativeH = q.shortAxisBh().roundToInt().coerceAtLeast(1)
+                        val nativeW = q.longAxisBw().roundToInt().coerceAtLeast(1)
+                            .coerceAtMost(NativePaddleEngine.REC_CANVAS_W)
+                        val ap = NativePaddleEngine.bufferSetA
+                        val nativeId = ap.p.createCrop(0, 0, nativeW, nativeH)
+                        val nativeMat = ap.c[nativeId].mat
+                        val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
+                            gray, q, nativeMat, targetH = 0,
+                        )
+                        if (!ok || nativeMat.empty()) {
+                            ap.c[nativeId].release()
+                            return OcrOne("?" to "", "?" to "", "", 0, 0)
+                        }
+                        val fed = RecBufferFeed.feedSourceBorderHeightStrip(
+                            nativeMat, 0, 0, nativeMat.cols(), nativeMat.rows(),
+                            experimentRecSet,
+                            targetH = RecBufferFeed.DEFAULT_REC_H,
+                        )
+                        ap.c[nativeId].release()
+                        val snap = PumpCostVolUtils.snapRecCrop(
+                            experimentRecSet, fed.recCropId, fed.targetW, fed.targetH,
+                        )
+                        val asisRes = paddleEngine.recognize(experimentRecSet.c[fed.recCropId])
+                        val digitsRes = paddleEngine.recognizeNumericDecimal(
+                            experimentRecSet.c[fed.recCropId],
+                        )
+                        experimentRecSet.c[fed.recCropId].release()
+                        val asis = pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
+                        val digs = pumpOcrCleanAndProbs(digitsRes.debugText, digitsRes.perCharProbs)
+                        return OcrOne(asis, digs, snap, fed.targetW, fed.targetH)
+                    }
+                    val asis = ArrayList<String>(quads.size)
+                    val digits = ArrayList<String>(quads.size)
+                    val asisProbs = ArrayList<String>(quads.size)
+                    val digitsProbs = ArrayList<String>(quads.size)
+                    val recB64 = ArrayList<String>(quads.size)
+                    val recW = ArrayList<Int>(quads.size)
+                    val recH = ArrayList<Int>(quads.size)
+                    for (q in quads) {
+                        val one = ocrOne(q)
+                        asis.add(one.asis.first); asisProbs.add(one.asis.second)
+                        digits.add(one.digits.first); digitsProbs.add(one.digits.second)
+                        recB64.add(one.snap)
+                        recW.add(one.recW)
+                        recH.add(one.recH)
+                    }
+                    return PumpRectOcrLists(
+                        asis = asis,
+                        digits = digits,
+                        asisProbs = asisProbs,
+                        digitsProbs = digitsProbs,
+                        recB64 = recB64,
+                        recW = recW,
+                        recH = recH,
+                    )
+                }
+
+                fun collectRotOrientedQuads(
+                    workspace: BufferSet,
+                    branch: PumpBranch,
+                    discoveryDetails: MutableMap<String, MutableMap<Int, List<PumpHunk>>>,
+                    growCells: Int,
+                    imgH: Int,
+                ): List<ContentExpandUtils.OrientedQuad> {
+                    fun hunkFromAabb(r: android.graphics.Rect): PumpHunk =
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+                    val collected = ArrayList<ContentExpandUtils.OrientedQuad>()
+                    prodDetScales.forEach { scale ->
+                        val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
+                        val contentW = prepared.first
+                        val contentH = prepared.second
+                        if (contentW < 1 || contentH < 1) return@forEach
+                        val dest = NativePaddleEngine.deskewSetFor(scale)
+                        val S = dest.width
+                        val detRes = paddleEngine.detect(
+                            dest,
+                            targetW = S,
+                            targetH = S,
+                            copyHeatmap = false,
+                            boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
+                            hmThresh = HEAT_THR_U8_GE1,
+                            maskDilatePasses = 0,
+                            growCells = growCells,
+                            scratchY = NativePaddleEngine.bufferSetA.p.mat,
+                        )
+                        branch.metadata["t_pd_inference_$scale"] =
+                            detRes?.metadata?.get("t_inference_ms") ?: "0"
+                        branch.metadata["t_pd_native_post_$scale"] =
+                            detRes?.metadata?.get("t_native_post_ms") ?: "0"
+                        branch.metadata["heatmap_post_path_$scale"] =
+                            detRes?.metadata?.get("heatmap_post_path") ?: "unknown"
+                        branch.metadata["heatmap_box_mode_$scale"] =
+                            detRes?.metadata?.get("box_mode") ?: "minAreaRect"
+                        val hist = detRes?.heatmapHist ?: IntArray(0)
+                        if (hist.isNotEmpty()) {
+                            branch.metadata["heatmap_hist_$scale"] =
+                                JSONArray(hist.toList()).toString()
+                        }
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val scaleHunks = mutableListOf<PumpHunk>()
+                        detRes?.nativeBoxes?.forEach { box ->
+                            val p = box.points
+                            if (p.size < 8) return@forEach
+                            val q = FloatArray(8)
+                            for (i in 0 until 4) {
+                                q[i * 2] = p[i * 2] * fullW / contentW
+                                q[i * 2 + 1] = p[i * 2 + 1] * fullH / contentH
+                            }
+                            val oq = ContentExpandUtils.orientedFromPoints8(q)
+                            collected.add(oq)
+                            scaleHunks.add(hunkFromAabb(oq.toAabb()))
+                        }
+                        pdHunksRawTotal.addAll(scaleHunks)
+                        pdHunksDetectedTotal.addAll(scaleHunks)
+                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
+                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                    }
+                    branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+                    val maxN = PumpOcrSettings.maxRedBoxes(context)
+                    val kept = ContentExpandUtils.pruneOrientedQuads(collected, maxN, imgH)
+                    pdHunksRawTotal.clear()
+                    pdHunksRawTotal.addAll(kept.map { hunkFromAabb(it.toAabb()) })
+                    pdHunksDetectedTotal.clear()
+                    pdHunksDetectedTotal.addAll(pdHunksRawTotal)
+                    branch.metadata["n_reds_after_prune"] = pdHunksRawTotal.size.toString()
+                    if (CAPTURE_REDBOX_DATA) {
+                        captureRedboxData(pdHunksRawTotal, workspace, branch)
+                    }
+                    return kept
+                }
+
                 val procRotEnergyTight: suspend (
                     BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
                 ) -> Unit = { ws, br, det, w, h ->
@@ -4835,7 +4992,7 @@ suspend fun runPumpExperiment(
                     boundNote: String,
                     isColor: Boolean,
                     chromaNote: String?,
-                    expand: (
+                    inkExpandFn: (
                         org.opencv.core.Mat,
                         org.opencv.core.Mat?,
                         List<ContentExpandUtils.OrientedQuad>,
@@ -4891,7 +5048,7 @@ suspend fun runPumpExperiment(
                             poisonBuf[1] = nextNon
                             poisonBuf[2] = inkLo
                         }
-                        val one = expand(
+                        val one = inkExpandFn(
                             workspace.p.mat,
                             if (isColor) workspace.p.uvMat
                             else NativePaddleEngine.bufferSetB.s.mat,
@@ -5310,161 +5467,6 @@ suspend fun runPumpExperiment(
                     )
                 }
 
-                /** Warp master.p quad → A.p crop, RecBufferFeed that crop into rec 48. */
-                suspend fun ocrPumpOrientedFlattenAp(
-                    quads: List<ContentExpandUtils.OrientedQuad>,
-                    gray: org.opencv.core.Mat,
-                ): PumpRectOcrLists {
-                    data class OcrOne(
-                        val asis: Pair<String, String>,
-                        val digits: Pair<String, String>,
-                        val snap: String,
-                        val recW: Int,
-                        val recH: Int,
-                    )
-                    suspend fun ocrOne(q: ContentExpandUtils.OrientedQuad): OcrOne {
-                        if (q.shortAxisBh() < 2f || q.longAxisBw() < 2f) {
-                            return OcrOne("?" to "", "?" to "", "", 0, 0)
-                        }
-                        val nativeH = q.shortAxisBh().roundToInt().coerceAtLeast(1)
-                        val nativeW = q.longAxisBw().roundToInt().coerceAtLeast(1)
-                            .coerceAtMost(NativePaddleEngine.REC_CANVAS_W)
-                        val ap = NativePaddleEngine.bufferSetA
-                        val nativeId = ap.p.createCrop(0, 0, nativeW, nativeH)
-                        val nativeMat = ap.c[nativeId].mat
-                        val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
-                            gray, q, nativeMat, targetH = 0,
-                        )
-                        if (!ok || nativeMat.empty()) {
-                            ap.c[nativeId].release()
-                            return OcrOne("?" to "", "?" to "", "", 0, 0)
-                        }
-                        val fed = RecBufferFeed.feedSourceBorderHeightStrip(
-                            nativeMat, 0, 0, nativeMat.cols(), nativeMat.rows(),
-                            experimentRecSet,
-                            targetH = RecBufferFeed.DEFAULT_REC_H,
-                        )
-                        ap.c[nativeId].release()
-                        val snap = PumpCostVolUtils.snapRecCrop(
-                            experimentRecSet, fed.recCropId, fed.targetW, fed.targetH,
-                        )
-                        val asisRes = paddleEngine.recognize(experimentRecSet.c[fed.recCropId])
-                        val digitsRes = paddleEngine.recognizeNumericDecimal(
-                            experimentRecSet.c[fed.recCropId],
-                        )
-                        experimentRecSet.c[fed.recCropId].release()
-                        val asis = pumpOcrCleanAndProbs(asisRes.debugText, asisRes.perCharProbs)
-                        val digs = pumpOcrCleanAndProbs(digitsRes.debugText, digitsRes.perCharProbs)
-                        return OcrOne(asis, digs, snap, fed.targetW, fed.targetH)
-                    }
-                    val asis = ArrayList<String>(quads.size)
-                    val digits = ArrayList<String>(quads.size)
-                    val asisProbs = ArrayList<String>(quads.size)
-                    val digitsProbs = ArrayList<String>(quads.size)
-                    val recB64 = ArrayList<String>(quads.size)
-                    val recW = ArrayList<Int>(quads.size)
-                    val recH = ArrayList<Int>(quads.size)
-                    for (q in quads) {
-                        val one = ocrOne(q)
-                        asis.add(one.asis.first); asisProbs.add(one.asis.second)
-                        digits.add(one.digits.first); digitsProbs.add(one.digits.second)
-                        recB64.add(one.snap)
-                        recW.add(one.recW)
-                        recH.add(one.recH)
-                    }
-                    return PumpRectOcrLists(
-                        asis = asis,
-                        digits = digits,
-                        asisProbs = asisProbs,
-                        digitsProbs = digitsProbs,
-                        recB64 = recB64,
-                        recW = recW,
-                        recH = recH,
-                    )
-                }
-
-                fun collectRotOrientedQuads(
-                    workspace: BufferSet,
-                    branch: PumpBranch,
-                    discoveryDetails: MutableMap<String, MutableMap<Int, List<PumpHunk>>>,
-                    growCells: Int,
-                    imgH: Int,
-                ): List<ContentExpandUtils.OrientedQuad> {
-                    fun hunkFromAabb(r: android.graphics.Rect): PumpHunk =
-                        PumpHunk(
-                            "",
-                            RectF(
-                                r.left.toFloat(), r.top.toFloat(),
-                                r.right.toFloat(), r.bottom.toFloat(),
-                            ),
-                        )
-                    val collected = ArrayList<ContentExpandUtils.OrientedQuad>()
-                    prodDetScales.forEach { scale ->
-                        val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
-                        val contentW = prepared.first
-                        val contentH = prepared.second
-                        if (contentW < 1 || contentH < 1) return@forEach
-                        val dest = NativePaddleEngine.deskewSetFor(scale)
-                        val S = dest.width
-                        val detRes = paddleEngine.detect(
-                            dest,
-                            targetW = S,
-                            targetH = S,
-                            copyHeatmap = false,
-                            boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
-                            hmThresh = HEAT_THR_U8_GE1,
-                            maskDilatePasses = 0,
-                            growCells = growCells,
-                            scratchY = NativePaddleEngine.bufferSetA.p.mat,
-                        )
-                        branch.metadata["t_pd_inference_$scale"] =
-                            detRes?.metadata?.get("t_inference_ms") ?: "0"
-                        branch.metadata["t_pd_native_post_$scale"] =
-                            detRes?.metadata?.get("t_native_post_ms") ?: "0"
-                        branch.metadata["heatmap_post_path_$scale"] =
-                            detRes?.metadata?.get("heatmap_post_path") ?: "unknown"
-                        branch.metadata["heatmap_box_mode_$scale"] =
-                            detRes?.metadata?.get("box_mode") ?: "minAreaRect"
-                        val hist = detRes?.heatmapHist ?: IntArray(0)
-                        if (hist.isNotEmpty()) {
-                            branch.metadata["heatmap_hist_$scale"] =
-                                JSONArray(hist.toList()).toString()
-                        }
-                        val fullW = workspace.p.width
-                        val fullH = workspace.p.height
-                        val scaleHunks = mutableListOf<PumpHunk>()
-                        detRes?.nativeBoxes?.forEach { box ->
-                            val p = box.points
-                            if (p.size < 8) return@forEach
-                            val q = FloatArray(8)
-                            for (i in 0 until 4) {
-                                q[i * 2] = p[i * 2] * fullW / contentW
-                                q[i * 2 + 1] = p[i * 2 + 1] * fullH / contentH
-                            }
-                            val oq = ContentExpandUtils.orientedFromPoints8(q)
-                            collected.add(oq)
-                            scaleHunks.add(hunkFromAabb(oq.toAabb()))
-                        }
-                        pdHunksRawTotal.addAll(scaleHunks)
-                        pdHunksDetectedTotal.addAll(scaleHunks)
-                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
-                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
-                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
-                    }
-                    branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
-                    val maxN = PumpOcrSettings.maxRedBoxes(context)
-                    val kept = ContentExpandUtils.pruneOrientedQuads(collected, maxN, imgH)
-                    pdHunksRawTotal.clear()
-                    pdHunksRawTotal.addAll(kept.map { hunkFromAabb(it.toAabb()) })
-                    pdHunksDetectedTotal.clear()
-                    pdHunksDetectedTotal.addAll(pdHunksRawTotal)
-                    branch.metadata["n_reds_after_prune"] = pdHunksRawTotal.size.toString()
-                    if (CAPTURE_REDBOX_DATA) {
-                        captureRedboxData(pdHunksRawTotal, workspace, branch)
-                    }
-                    return kept
-                }
 
                 /**
                  * Rot column: independent of AABB discovery. One minAreaRect detect per
