@@ -3074,13 +3074,15 @@ static int seedInkBinY(
     const int seedW = std::max(1, sr - sl);
     const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedH)));
     if (sr <= sl || sb <= st) return fallback;
+    if (!binOut || binOut->empty() || binOut->type() != CV_8UC1 ||
+        binOut->rows != seedH || binOut->cols != seedW) {
+        return fallback;
+    }
     cv::Mat roi = y(cv::Range(st, sb), cv::Range(sl, sr));
-    cv::Mat combined;
     const int sPx = fillPoisonLookRaster(
-        roi, roi, 0, 0, false, glareMult, fallback, &combined);
+        roi, roi, 0, 0, false, glareMult, fallback, binOut);
     if (otsuOut) *otsuOut = 0.0;
     if (invertedOut) *invertedOut = false;
-    *binOut = combined;
     return std::max(1, sPx);
 }
 
@@ -3700,16 +3702,14 @@ static bool fillChromaTintMask(
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
     const bool reuse = scratchFits(dst, w, h);
-    if (!reuse) {
-        dst->create(h, w, CV_8UC1);
-        dst->setTo(0);
-    }
+    if (!reuse) return false;
     if (sl < 0) sl = 0;
     if (st < 0) st = 0;
     if (sr > w) sr = w;
     if (sb > h) sb = h;
     if (sr <= sl || sb <= st) return false;
-    cv::Mat seedBin;
+    cv::Mat seedBin = (*dst)(cv::Range(st, sb), cv::Range(sl, sr));
+    if (seedBin.empty() || seedBin.type() != CV_8UC1) return false;
     double otsuY = 0.0;
     const int sPx = seedInkBinY(y, sl, st, sr, sb, &seedBin, glareMult, &otsuY);
     if (seedBin.empty()) return false;
@@ -4169,9 +4169,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
-    jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
-    if (!seeds) seeds = seedsArr;
-    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seeds, 0, 16,
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 16,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
