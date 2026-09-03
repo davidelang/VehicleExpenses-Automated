@@ -5050,14 +5050,13 @@ suspend fun runPumpExperiment(
                         }
                         val one = inkExpandFn(
                             workspace.p.mat,
-                            if (isColor) workspace.p.uvMat
-                            else NativePaddleEngine.bufferSetB.s.mat,
+                            if (isColor) workspace.p.uvMat else null,
                             listOf(q),
-                            NativePaddleEngine.bufferSetA.p.mat,
-                            masterBuffer.s.mat,
-                            NativePaddleEngine.bufferSetB.p.mat,
                             if (isColor) NativePaddleEngine.bufferSetB.s.mat
                             else NativePaddleEngine.bufferSetA.s.mat,
+                            masterBuffer.s.mat,
+                            NativePaddleEngine.bufferSetB.p.mat,
+                            NativePaddleEngine.bufferSetB.s.mat,
                             poisonBuf,
                             if (isColor) NativePaddleEngine.bufferSetA.s.mat else null,
                         )
@@ -5090,7 +5089,7 @@ suspend fun runPumpExperiment(
                             listOf(seg.poison), listOf(seg.tele), listOf(seg.sweep), listOf(seg.stroke),
                             reportDir, timestamp, fullRow, branch.name,
                             source = NativePaddleEngine.bufferSetB.p,
-                            scratchYuv = NativePaddleEngine.bufferSetA,
+                            scratchYuv = NativePaddleEngine.bufferSetB,
                             recPad = true,
                         )
                     }
