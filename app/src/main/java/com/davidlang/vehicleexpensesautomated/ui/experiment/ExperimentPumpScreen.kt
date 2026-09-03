@@ -3698,6 +3698,395 @@ suspend fun runPumpExperiment(
                         aPd, null, workspace,
                     ).first
                 }
+                val procInkColorTight: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    pdHunksDetectedTotal.clear()
+                    pdHunksRawTotal.clear()
+                    pdHunksExpTotal.clear()
+                    pdHunksMaxTotal.clear()
+                    pdHunksNativeTotal.clear()
+                    val tDeskewStart = System.currentTimeMillis()
+                    val tilt = photoTilt
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] =
+                        (System.currentTimeMillis() - tDeskewStart).toString()
+                    branch.metadata["heatmap_box_mode"] = "aabb"
+                    branch.metadata["heatmap_grow_cells"] = "0"
+                    branch.metadata["hm_thresh"] = HEAT_THR_U8_GE1.toString()
+                    branch.metadata["hm_thresh_note"] = "u8>=1"
+                    branch.metadata["mask_dilate_passes"] = "0"
+                    branch.metadata["heatmap_cell_px"] =
+                        NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
+                    branch.metadata["product_path"] = NativePaddleEngine.activeProductPathId
+                    branch.metadata["product_dir"] = NativePaddleEngine.activeProductDir
+                    branch.metadata["det_model"] = "product_det"
+                    branch.metadata["content_expand_bound"] = "tight"
+                    branch.metadata["content_expand_chroma"] = "color_adaptive"
+                    prodDetScales.forEach { scale ->
+                        val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
+                        val contentW = prepared.first
+                        val contentH = prepared.second
+                        if (contentW < 1 || contentH < 1) return@forEach
+                        val dest = NativePaddleEngine.deskewSetFor(scale)
+                        val S = dest.width
+                        val detRes = paddleEngine.detect(
+                            dest,
+                            targetW = S,
+                            targetH = S,
+                            copyHeatmap = false,
+                            boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
+                            hmThresh = HEAT_THR_U8_GE1,
+                            maskDilatePasses = 0,
+                            growCells = 0,
+                        )
+                        branch.metadata["t_pd_inference_$scale"] =
+                            detRes?.metadata?.get("t_inference_ms") ?: "0"
+                        branch.metadata["t_pd_native_post_$scale"] =
+                            detRes?.metadata?.get("t_native_post_ms") ?: "0"
+                        branch.metadata["heatmap_post_path_$scale"] =
+                            detRes?.metadata?.get("heatmap_post_path") ?: "unknown"
+                        branch.metadata["heatmap_box_mode_$scale"] =
+                            detRes?.metadata?.get("box_mode") ?: "aabb"
+                        val hist = detRes?.heatmapHist ?: IntArray(0)
+                        if (hist.isNotEmpty()) {
+                            branch.metadata["heatmap_hist_$scale"] =
+                                JSONArray(hist.toList()).toString()
+                        }
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val scaleHunks = mutableListOf<PumpHunk>()
+                        detRes?.nativeBoxes?.forEach { box ->
+                            val p = box.points
+                            if (p.size < 8) return@forEach
+                            val minX = minOf(p[0], p[2], p[4], p[6]).toInt()
+                            val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
+                            val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
+                            val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
+                            val ml = minX.coerceIn(0, (S - 1).coerceAtLeast(0))
+                            val mt = minY.coerceIn(0, (S - 1).coerceAtLeast(0))
+                            val mr = maxX.coerceIn(0, (S - 1).coerceAtLeast(0))
+                            val mb = maxY.coerceIn(0, (S - 1).coerceAtLeast(0))
+                            val fl = ml * fullW.toFloat() / contentW
+                            val ft = mt * fullH.toFloat() / contentH
+                            val fr = mr * fullW.toFloat() / contentW
+                            val fb = mb * fullH.toFloat() / contentH
+                            scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
+                        }
+                        pdHunksRawTotal.addAll(scaleHunks)
+                        pdHunksDetectedTotal.addAll(scaleHunks)
+                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
+                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                    }
+                    branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                    branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                    val redPixelList = pdHunksRawTotal.map { hunk ->
+                        android.graphics.Rect(
+                            hunk.rect.left.toInt(), hunk.rect.top.toInt(),
+                            hunk.rect.right.toInt(), hunk.rect.bottom.toInt(),
+                        )
+                    }.toMutableList()
+                    doCrossScaleRedboxFilterPixel(redPixelList)
+                    pruneRedPixelsTopN(redPixelList, context, imgH)
+                    pdHunksRawTotal.clear()
+                    pdHunksRawTotal.addAll(redPixelList.map { r ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+                    })
+                    branch.metadata["n_reds_after_prune"] = pdHunksRawTotal.size.toString()
+                    if (CAPTURE_REDBOX_DATA) {
+                        captureRedboxData(pdHunksRawTotal, workspace, branch)
+                    }
+                    val tExp0 = System.currentTimeMillis()
+                    val seeds = redPixelList
+                    branch.metadata.remove("look_ink")
+                    masterBuffer.s.clear()
+                    val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
+                    var exhausted = false
+                    var nextInk = 255
+                    var nextNon = 1
+                    var inkLo = 255
+                    seeds.forEachIndexed { si, seed ->
+                        if (exhausted) return@forEachIndexed
+                        val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
+                        if (poisonBuf.size >= 3) {
+                            poisonBuf[0] = nextInk
+                            poisonBuf[1] = nextNon
+                            poisonBuf[2] = inkLo
+                        }
+                        val one = ContentExpandUtils.expandColorAabbTight(
+                            NativePaddleEngine.bufferSetA.p.mat,
+                            NativePaddleEngine.bufferSetA.p.uvMat,
+                            listOf(seed),
+                            NativePaddleEngine.bufferSetA.s.mat,
+                            masterBuffer.s.mat,
+                            NativePaddleEngine.bufferSetB.p.mat,
+                            NativePaddleEngine.bufferSetB.s.mat,
+                            poisonBuf,
+                        )
+                        val seg = one.first()
+                        segs.add(seg)
+                        if (poisonBuf.size >= 3) {
+                            nextInk = poisonBuf[poisonBuf.size - 3]
+                            nextNon = poisonBuf[poisonBuf.size - 2]
+                            inkLo = poisonBuf[poisonBuf.size - 1]
+                        }
+                        val pd = seg.poison
+                        if (pd?.classChange == true) {
+                            val dumpSeed = File(objImgRoot, "r${fullRow}_c${col}_box${si + 1}.png")
+                            dumpObjectPlanePng(masterBuffer.s.mat, dumpSeed)
+                            branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
+                        }
+                        if (pd?.bandH == -1) {
+                            exhausted = true
+                            val phase = pd.phase.ifBlank { "poison/walk" }
+                            val msg = "object_id_exhausted col=$col seed=$si n=${seeds.size} " +
+                                "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
+                            Log.e(TAG, msg)
+                            onLog(msg)
+                            branch.metadata["object_id_exhausted"] = msg
+                            branch.metadata["object_abort_html"] =
+                                "<small style='color:#c00'>$msg</small>"
+                        }
+                        snapshotLookInk(
+                            listOf(seed), listOf(seg.rect), imgW, imgH, branch,
+                            listOf(seg.poison),
+                            listOf(seg.tele),
+                            listOf(seg.sweep),
+                            listOf(seg.stroke),
+                            reportDir, timestamp, fullRow, branch.name,
+                            source = NativePaddleEngine.bufferSetB.p,
+                            scratchYuv = NativePaddleEngine.bufferSetA,
+                            recPad = true,
+                        )
+                    }
+                    val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
+                    dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
+                    branch.metadata["object_dump_final"] = dumpFinal.name
+                    val walks = segs.indices.map { i ->
+                        Triple(seeds[i], segs[i].rect, segs[i].stroke)
+                    }
+                    val jumpedOnce = walks.map { it.second }
+                    fun inkBoxesFor(kk: Float): List<android.graphics.Rect> {
+                        return walks.indices.map { i ->
+                            ContentExpandUtils.padVertByStrokes(
+                                jumpedOnce[i], walks[i].first, kk,
+                                walks[i].third.sPx, imgW, imgH,
+                            )
+                        }
+                    }
+                    val official = inkBoxesFor(0f)
+                    val officialHunks = official.map { e ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                e.left.toFloat(), e.top.toFloat(),
+                                e.right.toFloat(), e.bottom.toFloat(),
+                            ),
+                        )
+                    }
+                    val strokes = walks.map { it.third }
+                    branch.metadata["s_per_red"] = strokes.joinToString(",") { it.sPx.toString() }
+                    storeSeg7Tele(branch, segs.map { it.tele })
+                    branch.metadata["seg7_k"] = "0,1,2,3,4"
+                    branch.metadata["seg7_k_official"] = "0"
+                    branch.metadata["seg7_jump_frac"] = "0.50"
+                    branch.metadata["t_expand_ms"] =
+                        (System.currentTimeMillis() - tExp0).toString()
+                    val variants = JSONArray()
+                    val tOcr0 = System.currentTimeMillis()
+                    val ocr0 = ocrPumpRectsAsisAndDigits(official)
+                    val cands0 = buildRedBoxCandidates(
+                        official, ocr0.asis, ocr0.digits, ocr0.asisProbs, ocr0.digitsProbs,
+                        ocr0.recB64, recWList = ocr0.recW, recHList = ocr0.recH,
+                    )
+                    val cv0 = PumpCostVolUtils.classifyCostVolFromBoxOcr(cands0)
+                    variants.put(
+                        ocrScaleVariantJson(
+                            0f, official, official.map { ContentExpandUtils.orientedFromAabb(it) },
+                            cands0, cv0, kind = "ink",
+                        ),
+                    )
+                    var nOcr = official.size
+                    val skipExtraK = BooleanArray(cands0.size) { i ->
+                        val asis = cands0[i].asis
+                        asis.any { it.isLetter() } && asis.none { it.isDigit() }
+                    }
+                    branch.metadata["seg7_skip_extra_k_letter"] =
+                        skipExtraK.count { it }.toString()
+                    suspend fun emitHorizPad(
+                        s: Float,
+                        kRects: List<android.graphics.Rect>,
+                        skip: BooleanArray?,
+                    ): List<android.graphics.Rect> {
+                        val padRects = kRects.map {
+                            ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                        }
+                        val ocrIdx = ArrayList<Int>()
+                        val ocrRects = ArrayList<android.graphics.Rect>()
+                        padRects.indices.forEach { i ->
+                            if (skip == null || i >= skip.size || !skip[i]) {
+                                ocrIdx.add(i)
+                                ocrRects.add(padRects[i])
+                            }
+                        }
+                        val ocrP = if (ocrRects.isEmpty()) {
+                            PumpRectOcrLists(emptyList(), emptyList())
+                        } else {
+                            ocrPumpRectsAsisAndDigits(ocrRects)
+                        }
+                        nOcr += ocrRects.size
+                        val ocrAt = HashMap<Int, Int>(ocrIdx.size)
+                        ocrIdx.forEachIndexed { j, i -> ocrAt[i] = j }
+                        val candsP = padRects.indices.map { i ->
+                            val j = ocrAt[i]
+                            if (j == null) {
+                                RedBoxOcrCandidate("box${i + 1}", "", "", rect = padRects[i])
+                            } else {
+                                RedBoxOcrCandidate(
+                                    "box${i + 1}",
+                                    ocrP.asis.getOrElse(j) { "" },
+                                    ocrP.digits.getOrElse(j) { "" },
+                                    ocrP.asisProbs.getOrElse(j) { "" },
+                                    ocrP.digitsProbs.getOrElse(j) { "" },
+                                    padRects[i],
+                                    ocrP.recB64.getOrElse(j) { "" },
+                                    ocrP.recW.getOrElse(j) { 0 },
+                                    ocrP.recH.getOrElse(j) { 0 },
+                                )
+                            }
+                        }
+                        val cvP = PumpCostVolUtils.classifyCostVolFromBoxOcr(candsP)
+                        variants.put(
+                            ocrScaleVariantJson(
+                                s, padRects,
+                                padRects.map { ContentExpandUtils.orientedFromAabb(it) },
+                                candsP, cvP, kind = "horiz_pad",
+                            ),
+                        )
+                        return padRects
+                    }
+                    val pad0 = emitHorizPad(0f, official, null)
+                    val padHunks = pad0.map { r ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+                    }
+                    for (kk in listOf(1f, 2f, 3f, 4f)) {
+                        val rects = inkBoxesFor(kk)
+                        val ocrIdx = ArrayList<Int>()
+                        val ocrRects = ArrayList<android.graphics.Rect>()
+                        rects.indices.forEach { i ->
+                            if (i >= skipExtraK.size || !skipExtraK[i]) {
+                                ocrIdx.add(i)
+                                ocrRects.add(rects[i])
+                            }
+                        }
+                        val ocrK = if (ocrRects.isEmpty()) {
+                            PumpRectOcrLists(emptyList(), emptyList())
+                        } else {
+                            ocrPumpRectsAsisAndDigits(ocrRects)
+                        }
+                        nOcr += ocrRects.size
+                        val ocrAt = HashMap<Int, Int>(ocrIdx.size)
+                        ocrIdx.forEachIndexed { j, i -> ocrAt[i] = j }
+                        val candsK = rects.indices.map { i ->
+                            val j = ocrAt[i]
+                            if (j == null) {
+                                val src = cands0.getOrElse(i) {
+                                    RedBoxOcrCandidate("box${i + 1}", "", "")
+                                }
+                                src.copy(
+                                    label = "box${i + 1}",
+                                    rect = rects[i],
+                                    recB64 = "",
+                                    recW = 0,
+                                    recH = 0,
+                                )
+                            } else {
+                                RedBoxOcrCandidate(
+                                    "box${i + 1}",
+                                    ocrK.asis.getOrElse(j) { "" },
+                                    ocrK.digits.getOrElse(j) { "" },
+                                    ocrK.asisProbs.getOrElse(j) { "" },
+                                    ocrK.digitsProbs.getOrElse(j) { "" },
+                                    rects[i],
+                                    ocrK.recB64.getOrElse(j) { "" },
+                                    ocrK.recW.getOrElse(j) { 0 },
+                                    ocrK.recH.getOrElse(j) { 0 },
+                                )
+                            }
+                        }
+                        val cvK = PumpCostVolUtils.classifyCostVolFromBoxOcr(candsK)
+                        variants.put(
+                            ocrScaleVariantJson(
+                                kk, rects, rects.map { ContentExpandUtils.orientedFromAabb(it) },
+                                candsK, cvK, kind = "ink",
+                            ),
+                        )
+                        emitHorizPad(kk, rects, skipExtraK)
+                    }
+                    branch.metadata["n_ocr_energy"] = nOcr.toString()
+                    val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
+                    branch.metadata["t_ocr_ms"] = tOcrAll
+                    branch.metadata["t_ocr_energy_ms"] = tOcrAll
+                    branch.pathResults["Paddle"] = getFinal(
+                        officialHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
+                        experimentRecSet, paddleEngine, context, imgW, imgH, cands0,
+                    )
+                    branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                        reds = redPixelList,
+                        ocrSourceRects = official,
+                        candidates = cands0,
+                        costCand = cv0.costCand,
+                        volCand = cv0.volCand,
+                        finalCost = cv0.cost,
+                        finalVol = cv0.vol,
+                        assembly = mapOf(
+                            "method" to "7seg_stroke",
+                            "k" to listOf(0, 1, 2, 3, 4),
+                            "kOfficial" to 0,
+                            "heatmapBoxMode" to "aabb",
+                            "heatmapGrowCells" to 0,
+                            "hmThresh" to HEAT_THR_U8_GE1,
+                            "hmThreshNote" to "u8>=1",
+                            "sPx" to strokes.map { it.sPx },
+                            "jumpFrac" to 0.50f,
+                            "chroma" to "color_adaptive",
+                            "note" to "ink-color-tight: AABB grow 0; tint A.s; look B.s; overlay B.p; k=0..4",
+                            "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
+                        ),
+                        oranges = emptyList(),
+                        scaleVariants = variants,
+                        inkSweeps = segs.indices.map { i ->
+                            segs[i].sweep?.withOfficial(official.getOrNull(i) ?: segs[i].rect)
+                        },
+                    )
+                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
+                        getAnns(officialHunks, Color.BLUE, 4) +
+                        getAnns(padHunks, Color.BLUE, 4)
+                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, workspace,
+                    ).first
+                }
                 val procProdInk = makeInkAabbProc(
                     "ink-prod: product det + seed-ROI s; walk once; OCR k=0..4; official k=0; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
                     ContentExpandUtils::expandGrayAabbExpand,
@@ -5326,12 +5715,6 @@ suspend fun runPumpExperiment(
                     "ink-color-base: product det + color_adaptive 7seg; OCR k=0..4; official k=0",
                     ContentExpandUtils::expandColorAabbExpand,
                     chromaNote = "color_adaptive",
-                )
-                val procInkColorTight = makeInkAabbProc(
-                    "ink-color-tight: product det + color_adaptive 7seg; OCR k=0..4; official k=0",
-                    ContentExpandUtils::expandColorAabbTight,
-                    chromaNote = "color_adaptive",
-                    boundNote = "tight",
                 )
                 val procInkColorRetract = makeInkAabbProc(
                     "ink-color-retract: product det + color_adaptive 7seg; OCR k=0..4; official k=0",
