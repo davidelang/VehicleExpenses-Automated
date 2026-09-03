@@ -590,7 +590,7 @@ static cv::Mat packJpegScratch(int w, int h) {
     return g_packJpegU8(cv::Rect(0, 0, w, h));
 }
 
-bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out);
+extern "C" bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out);
 
 static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
     if (!out || bin.empty() || bin.type() != CV_8UC1) return;
