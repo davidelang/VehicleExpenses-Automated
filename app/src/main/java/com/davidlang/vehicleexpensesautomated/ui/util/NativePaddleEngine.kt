@@ -1044,7 +1044,6 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(
                 outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
-                growCells = growCells,
             )
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
             val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
