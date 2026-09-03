@@ -2660,6 +2660,270 @@ suspend fun runPumpExperiment(
                         aPd, null, workspace,
                     ).first
                 }
+                val procInkEnergyRetract: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    val workspace = ws
+                    val branch = br
+                    val discoveryDetails = det
+                    val imgW = w
+                    val imgH = h
+                    pdHunksDetectedTotal.clear()
+                    pdHunksRawTotal.clear()
+                    pdHunksExpTotal.clear()
+                    pdHunksMaxTotal.clear()
+                    pdHunksNativeTotal.clear()
+                    val tDeskewStart = System.currentTimeMillis()
+                    val tilt = photoTilt
+                    branch.metadata["tilt"] = "%.2f".format(tilt)
+                    branch.metadata["t_deskew_ms"] =
+                        (System.currentTimeMillis() - tDeskewStart).toString()
+                    branch.metadata["heatmap_box_mode"] = "aabb"
+                    branch.metadata["heatmap_grow_cells"] = "1"
+                    branch.metadata["hm_thresh"] = HEAT_THR_U8_GE1.toString()
+                    branch.metadata["hm_thresh_note"] = "u8>=1"
+                    branch.metadata["mask_dilate_passes"] = "0"
+                    branch.metadata["heatmap_cell_px"] =
+                        NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
+                    branch.metadata["product_path"] = NativePaddleEngine.activeProductPathId
+                    branch.metadata["product_dir"] = NativePaddleEngine.activeProductDir
+                    branch.metadata["det_model"] = "product_det"
+                    branch.metadata["content_expand_mode"] =
+                        ContentExpandUtils.Mode.INTERIOR_ENERGY.name
+                    branch.metadata["content_expand_bound"] = "edge-retract"
+                    prodDetScales.forEach { scale ->
+                        val prepared = PumpCostVolUtils.prepareScale(workspace, scale)
+                        val contentW = prepared.first
+                        val contentH = prepared.second
+                        if (contentW < 1 || contentH < 1) return@forEach
+                        val dest = NativePaddleEngine.deskewSetFor(scale)
+                        val S = dest.width
+                        val detRes = paddleEngine.detect(
+                            dest,
+                            targetW = S,
+                            targetH = S,
+                            copyHeatmap = false,
+                            boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
+                            hmThresh = HEAT_THR_U8_GE1,
+                            maskDilatePasses = 0,
+                            growCells = 1,
+                        )
+                        branch.metadata["t_pd_inference_$scale"] =
+                            detRes?.metadata?.get("t_inference_ms") ?: "0"
+                        branch.metadata["t_pd_native_post_$scale"] =
+                            detRes?.metadata?.get("t_native_post_ms") ?: "0"
+                        branch.metadata["heatmap_post_path_$scale"] =
+                            detRes?.metadata?.get("heatmap_post_path") ?: "unknown"
+                        branch.metadata["heatmap_box_mode_$scale"] =
+                            detRes?.metadata?.get("box_mode") ?: "aabb"
+                        val hist = detRes?.heatmapHist ?: IntArray(0)
+                        if (hist.isNotEmpty()) {
+                            branch.metadata["heatmap_hist_$scale"] =
+                                JSONArray(hist.toList()).toString()
+                        }
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val scaleHunks = mutableListOf<PumpHunk>()
+                        detRes?.nativeBoxes?.forEach { box ->
+                            val p = box.points
+                            if (p.size < 8) return@forEach
+                            val minX = minOf(p[0], p[2], p[4], p[6]).toInt()
+                            val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
+                            val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
+                            val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
+                            val ml = minX.coerceIn(0, (S - 1).coerceAtLeast(0))
+                            val mt = minY.coerceIn(0, (S - 1).coerceAtLeast(0))
+                            val mr = maxX.coerceIn(0, (S - 1).coerceAtLeast(0))
+                            val mb = maxY.coerceIn(0, (S - 1).coerceAtLeast(0))
+                            val fl = ml * fullW.toFloat() / contentW
+                            val ft = mt * fullH.toFloat() / contentH
+                            val fr = mr * fullW.toFloat() / contentW
+                            val fb = mb * fullH.toFloat() / contentH
+                            scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
+                        }
+                        pdHunksRawTotal.addAll(scaleHunks)
+                        pdHunksDetectedTotal.addAll(scaleHunks)
+                        discoveryDetails["Paddle Raw"]!![scale] = scaleHunks
+                        discoveryDetails["Paddle Expanded"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Max Extent"]!![scale] = emptyList()
+                        discoveryDetails["Paddle Native"]!![scale] = emptyList()
+                    }
+                    branch.discoveryDetails = serializeDiscoveryDetails(discoveryDetails)
+                    doCrossScaleRedboxFilter(pdHunksRawTotal, imgW, imgH)
+                    branch.metadata["n_reds_after_filter"] = pdHunksRawTotal.size.toString()
+                    val redPixelList = pdHunksRawTotal.map { hunk ->
+                        android.graphics.Rect(
+                            hunk.rect.left.toInt(), hunk.rect.top.toInt(),
+                            hunk.rect.right.toInt(), hunk.rect.bottom.toInt(),
+                        )
+                    }.toMutableList()
+                    doCrossScaleRedboxFilterPixel(redPixelList)
+                    pruneRedPixelsTopN(redPixelList, context, imgH)
+                    pdHunksRawTotal.clear()
+                    pdHunksRawTotal.addAll(redPixelList.map { r ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+                    })
+                    branch.metadata["n_reds_after_prune"] = pdHunksRawTotal.size.toString()
+                    if (CAPTURE_REDBOX_DATA) {
+                        captureRedboxData(pdHunksRawTotal, workspace, branch)
+                    }
+                    val tExpand0 = System.currentTimeMillis()
+                    NativeImageUtils.fillEnergyLookU8(
+                        NativePaddleEngine.bufferSetA.p.mat,
+                        NativePaddleEngine.bufferSetA.s.mat,
+                    )
+                    val expDiag = ContentExpandUtils.expandEnergyAabbRetract(
+                        NativePaddleEngine.bufferSetA.p.mat,
+                        null,
+                        redPixelList,
+                    )
+                    branch.metadata["t_expand_ms"] =
+                        (System.currentTimeMillis() - tExpand0).toString()
+                    snapshotLookInk(
+                        redPixelList, expDiag.map { it.rect }, imgW, imgH, branch,
+                        emptyList(), expDiag.map { it.tele }, expDiag.map { it.sweep },
+                        emptyList(),
+                        reportDir, timestamp, fullRow, branch.name,
+                        source = NativePaddleEngine.bufferSetA.s.mat,
+                        scratchYuv = NativePaddleEngine.bufferSetB,
+                        energyLook = true,
+                    )
+                    val expandedBase = expDiag.map { it.rect }
+                    val hitCaps = expDiag.map { it.hitVertCap }
+                    branch.metadata["n_hit_cap"] = hitCaps.count { it }.toString()
+                    branch.metadata["n_ocr_energy"] = expandedBase.size.toString()
+                    storeSeg7Tele(branch, expDiag.map { it.tele })
+                    val variants = JSONArray()
+                    val tOcrE0 = System.currentTimeMillis()
+                    val energyOcr = ocrPumpRectsAsisAndDigits(expandedBase)
+                    branch.metadata["t_ocr_energy_ms"] =
+                        (System.currentTimeMillis() - tOcrE0).toString()
+                    val energyCands = buildRedBoxCandidates(
+                        expandedBase, energyOcr.asis, energyOcr.digits,
+                        energyOcr.asisProbs, energyOcr.digitsProbs, energyOcr.recB64,
+                        recWList = energyOcr.recW, recHList = energyOcr.recH,
+                    )
+                    val energyCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(energyCands)
+                    variants.put(
+                        ocrScaleVariantJson(
+                            1.0f, expandedBase, emptyList(), energyCands, energyCv,
+                            kind = "energy", hitCaps = hitCaps,
+                        ),
+                    )
+                    val countRects = expDiag.map { it.rectCount }
+                    val tOcrC0 = System.currentTimeMillis()
+                    val countOcr = ocrPumpRectsAsisAndDigits(countRects)
+                    branch.metadata["t_ocr_count_ms"] =
+                        (System.currentTimeMillis() - tOcrC0).toString()
+                    branch.metadata["n_ocr_count"] = countRects.size.toString()
+                    branch.metadata["n_count_pull"] =
+                        expDiag.count { it.countPull?.pulled == true }.toString()
+                    branch.metadata["count_pulled"] = expDiag.joinToString(",") { d ->
+                        val c = d.countPull
+                        when {
+                            c == null -> "0"
+                            c.pulledTop && c.pulledBot -> "tb"
+                            c.pulledTop -> "t"
+                            c.pulledBot -> "b"
+                            else -> "0"
+                        }
+                    }
+                    val countCands = buildRedBoxCandidates(
+                        countRects, countOcr.asis, countOcr.digits,
+                        countOcr.asisProbs, countOcr.digitsProbs, countOcr.recB64,
+                        recWList = countOcr.recW, recHList = countOcr.recH,
+                    )
+                    val countCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(countCands)
+                    variants.put(
+                        ocrScaleVariantJson(
+                            1.0f, countRects, emptyList(), countCands, countCv,
+                            kind = "energy_count", hitCaps = hitCaps,
+                        ),
+                    )
+                    val aabbHorizPad = expandedBase.map {
+                        ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                    }
+                    val aabbPadOcr = ocrPumpRectsAsisAndDigits(aabbHorizPad)
+                    val aabbPadCands = buildRedBoxCandidates(
+                        aabbHorizPad, aabbPadOcr.asis, aabbPadOcr.digits,
+                        aabbPadOcr.asisProbs, aabbPadOcr.digitsProbs, aabbPadOcr.recB64,
+                        recWList = aabbPadOcr.recW, recHList = aabbPadOcr.recH,
+                    )
+                    val aabbPadCv = PumpCostVolUtils.classifyCostVolFromBoxOcr(aabbPadCands)
+                    variants.put(
+                        ocrScaleVariantJson(
+                            0.5f, aabbHorizPad, emptyList(), aabbPadCands, aabbPadCv,
+                            kind = "horiz_pad",
+                        ),
+                    )
+                    val tOcrE = branch.metadata["t_ocr_energy_ms"]?.toLongOrNull() ?: 0L
+                    branch.metadata["t_ocr_ms"] = tOcrE.toString()
+                    val blueHunks = expandedBase.map { r ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+                    }
+                    branch.pathResults["Paddle"] = getFinal(
+                        blueHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
+                        experimentRecSet, paddleEngine, context, imgW, imgH, energyCands,
+                    )
+                    branch.metadata["costVolDecisionData_Paddle"] = buildCostVolDecisionDataJson(
+                        reds = redPixelList,
+                        ocrSourceRects = expandedBase,
+                        candidates = energyCands,
+                        costCand = energyCv.costCand,
+                        volCand = energyCv.volCand,
+                        finalCost = energyCv.cost,
+                        finalVol = energyCv.vol,
+                        assembly = mapOf(
+                            "method" to "content_expand",
+                            "contentExpandMode" to ContentExpandUtils.Mode.INTERIOR_ENERGY.name,
+                            "heatmapBoxMode" to "aabb",
+                            "heatmapGrowCells" to 1,
+                            "hmThresh" to HEAT_THR_U8_GE1,
+                            "hmThreshNote" to "u8>=1",
+                            "finalKind" to "energy",
+                            "hitVertCap" to hitCaps,
+                            "energyRatio" to 0.65f,
+                            "countPull" to "gx-run-count valley + one-dir pad; scaleVariants kind=energy_count",
+                            "maxRetractFrac" to 0.50f,
+                            "note" to "ink-energy-retract: AABB grow 1; V retract-or-expand then H; rec-pad look-ink",
+                            "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
+                        ),
+                        oranges = emptyList(),
+                        scaleVariants = variants,
+                        inkSweeps = expDiag.indices.map { i ->
+                            val r = expandedBase.getOrNull(i) ?: return@map expDiag[i].sweep
+                            expDiag[i].sweep?.withOfficial(r)
+                        },
+                    )
+                    val padBlueHunks = aabbHorizPad.map { r ->
+                        PumpHunk(
+                            "",
+                            RectF(
+                                r.left.toFloat(), r.top.toFloat(),
+                                r.right.toFloat(), r.bottom.toFloat(),
+                            ),
+                        )
+                    }
+                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
+                        getAnns(blueHunks, Color.BLUE, 4) +
+                        getAnns(padBlueHunks, Color.BLUE, 4)
+                    branch.images["PD"] = OcrUtils.takeSnapshot(
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, workspace,
+                    ).first
+                }
                 val procProdInk = makeInkAabbProc(
                     "ink-prod: product det + seed-ROI s; walk once; OCR k=0..4; official k=0; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
                     ContentExpandUtils::expandGrayAabbExpand,
@@ -4280,7 +4544,6 @@ suspend fun runPumpExperiment(
                     boundNote = boundNote,
                 )
                 val procInkEnergyBase = inkEnergyAabb("ink-energy-base", ContentExpandUtils::expandEnergyAabbExpand, null)
-                val procInkEnergyRetract = inkEnergyAabb("ink-energy-retract", ContentExpandUtils::expandEnergyAabbRetract, "edge-retract")
                 val procInkGrayBase = makeInkAabbProc(
                     "ink-gray-base: product det + greyscale Otsu 7seg; OCR k=0..4; official k=0",
                     ContentExpandUtils::expandGrayAabbExpand,
