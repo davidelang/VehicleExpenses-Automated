@@ -4426,10 +4426,9 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(kk, rects, skipExtraK)
                     }
-                    branch.metadata["n_ocr_energy"] = nOcr.toString()
+                    branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
                     branch.metadata["t_ocr_ms"] = tOcrAll
-                    branch.metadata["t_ocr_energy_ms"] = tOcrAll
                     branch.pathResults["Paddle"] = getFinal(
                         officialHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, cands0,
