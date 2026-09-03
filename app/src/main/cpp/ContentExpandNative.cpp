@@ -1959,7 +1959,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
     jlong grayPtr, jlong uvPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
 ) {
-    return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyRetract, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr);
+    return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyRetract, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr, JNI_TRUE);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
