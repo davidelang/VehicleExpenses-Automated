@@ -432,6 +432,10 @@ object NativeImageUtils {
         return nativeHeatmapToUInt8Array(tensor)
     }
 
+    fun veRssSetPath(path: String) {
+        nativeVeRssSetPath(path)
+    }
+
     private external fun nativeSyncMatFromArgb(bitmap: Bitmap, matPtr: Long)
     private external fun nativeSyncMatToArgb(matPtr: Long, bitmap: Bitmap)
     private external fun nativeIngestArgbToYuv(bitmap: Bitmap, handlePtr: Long)
@@ -932,6 +936,7 @@ object NativeImageUtils {
     ): Float
     private external fun nativeHeatmapToFloatArray(tensor: Any): FloatArray?
     private external fun nativeHeatmapToUInt8Array(tensor: Any): ByteArray?
+    private external fun nativeVeRssSetPath(path: String)
 
     // --------------------------------------------------------
     // SET H MODULAR PIPELINE — New granular JNI bindings.

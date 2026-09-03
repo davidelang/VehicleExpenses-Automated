@@ -797,6 +797,7 @@ suspend fun runPumpExperiment(
     val pumpColLabels = pumpColumnLabels(flows)
     val pumpMetaHtml =
         "<b>Run:</b> $timestamp | <b>Device:</b> $deviceModel | <b>Version:</b> ${BuildConfig.VERSION_NAME} | <b>Total:</b> $total"
+    NativeImageUtils.veRssSetPath(File(reportDir, "ve-rss.log").absolutePath)
     val currentFile = File(reportDir, "pump_report_${timestamp}.html")
     currentFile.writeText(
         pBuildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, deviceModel, pumpColLabels, pumpMetaHtml),
@@ -2969,6 +2970,7 @@ suspend fun runPumpExperiment(
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
+                        ProcessMemProbe.log("gray-tight before_det scale=$scale")
                         val detRes = paddleEngine.detect(
                             dest,
                             targetW = S,
@@ -3061,6 +3063,7 @@ suspend fun runPumpExperiment(
                             poisonBuf[1] = nextNon
                             poisonBuf[2] = inkLo
                         }
+                        ProcessMemProbe.log("gray-tight before_expand seed=$si")
                         val one = ContentExpandUtils.expandGrayAabbTight(
                             NativePaddleEngine.bufferSetA.p.mat,
                             NativePaddleEngine.bufferSetB.s.mat,

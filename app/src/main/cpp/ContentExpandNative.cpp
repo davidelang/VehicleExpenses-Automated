@@ -8,7 +8,10 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <mutex>
+#include <unistd.h>
 #include <vector>
+#include <cstdlib>
 #include <android/log.h>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ContentExpandNative", __VA_ARGS__)
@@ -29,6 +32,105 @@ static bool veAllocLog(const char* tag, size_t bytes, int rows, int cols, int ty
         return false;
     }
     return true;
+}
+
+static char g_rssPath[512];
+static long g_lastRssKb = -1;
+static std::mutex g_rssMu;
+
+static long veRssKb() {
+    FILE* f = fopen("/proc/self/statm", "r");
+    if (!f) return -1;
+    unsigned long size = 0, rss = 0;
+    const int n = fscanf(f, "%lu %lu", &size, &rss);
+    fclose(f);
+    if (n != 2) return -1;
+    long page = sysconf(_SC_PAGESIZE);
+    if (page < 1) page = 4096;
+    return static_cast<long>(rss * (page / 1024));
+}
+
+static void veRssLog(const char* tag, const char* extra = nullptr) {
+    const long kb = veRssKb();
+    long delta = 0;
+    bool jump = false;
+    {
+        std::lock_guard<std::mutex> lock(g_rssMu);
+        if (g_lastRssKb >= 0 && kb >= 0) delta = kb - g_lastRssKb;
+        jump = delta >= 128 * 1024;
+        if (kb >= 0) g_lastRssKb = kb;
+        if (g_rssPath[0]) {
+            FILE* out = fopen(g_rssPath, "a");
+            if (out) {
+                fprintf(out, "tag=%s rssKb=%ld deltaKb=%ld%s%s\n",
+                        tag ? tag : "?", kb, delta,
+                        extra && extra[0] ? " " : "",
+                        extra && extra[0] ? extra : "");
+                fclose(out);
+            }
+        }
+    }
+    if (jump) {
+        LOGE("veRss JUMP tag=%s rssKb=%ld deltaKb=%ld %s",
+             tag ? tag : "?", kb, delta, extra ? extra : "");
+    } else {
+        LOGI("veRss tag=%s rssKb=%ld deltaKb=%ld %s",
+             tag ? tag : "?", kb, delta, extra ? extra : "");
+    }
+}
+
+extern "C" void* __real_malloc(size_t);
+extern "C" void* __real_calloc(size_t, size_t);
+extern "C" void* __real_realloc(void*, size_t);
+
+extern "C" void* __wrap_malloc(size_t n) {
+    if (n > kVeAllocCap) {
+        LOGE("veMalloc FAIL bytes=%zu >64MiB", n);
+        return nullptr;
+    }
+    if (n >= 1024ull * 1024ull) LOGI("veMalloc bytes=%zu", n);
+    return __real_malloc(n);
+}
+
+extern "C" void* __wrap_calloc(size_t nmemb, size_t sz) {
+    size_t n = 0;
+    if (sz != 0 && nmemb > kVeAllocCap / sz) {
+        LOGE("veMalloc FAIL calloc nmemb=%zu sz=%zu >64MiB", nmemb, sz);
+        return nullptr;
+    }
+    n = nmemb * sz;
+    if (n > kVeAllocCap) {
+        LOGE("veMalloc FAIL bytes=%zu >64MiB", n);
+        return nullptr;
+    }
+    if (n >= 1024ull * 1024ull) LOGI("veMalloc bytes=%zu", n);
+    return __real_calloc(nmemb, sz);
+}
+
+extern "C" void* __wrap_realloc(void* p, size_t n) {
+    if (n > kVeAllocCap) {
+        LOGE("veMalloc FAIL realloc bytes=%zu >64MiB", n);
+        return nullptr;
+    }
+    if (n >= 1024ull * 1024ull) LOGI("veMalloc bytes=%zu", n);
+    return __real_realloc(p, n);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeVeRssSetPath(
+    JNIEnv* env, jobject, jstring path) {
+    std::lock_guard<std::mutex> lock(g_rssMu);
+    if (!path) {
+        g_rssPath[0] = 0;
+        return;
+    }
+    const char* p = env->GetStringUTFChars(path, nullptr);
+    if (!p) {
+        g_rssPath[0] = 0;
+        return;
+    }
+    std::snprintf(g_rssPath, sizeof(g_rssPath), "%s", p);
+    env->ReleaseStringUTFChars(path, p);
 }
 
 static constexpr int kRunHistBins = 32;
@@ -2435,6 +2537,7 @@ static void fillAabbLookSweep(
     InkSweepPack* out
 ) {
     if (!out || src.empty()) return;
+    veRssLog("sweep", "enter");
     if (sl < 0) sl = 0;
     if (st < 0) st = 0;
     if (sr > imgW) sr = imgW;
@@ -2469,6 +2572,7 @@ static void fillAabbLookSweep(
         out->vScores.push_back(sc);
     }
     packSeedLookRows(lookBin, st - nt, sb - nt, out);
+    veRssLog("sweep", "after packSeedLookRows");
     if (x1 <= x0) return;
     auto pixInk = [&](int y, int x) -> bool {
         if (y < 0 || y >= src.rows || x < 0 || x >= src.cols) return false;
@@ -2682,6 +2786,17 @@ static void seg7One(
     cv::Mat* overlayY8 = asU8(overlayY);
     cv::Mat* overlayUv2 = asUV(overlayUv);
     cv::Mat* pois = asU8(poisonPlane);
+    {
+        char extra[256];
+        std::snprintf(extra, sizeof extra,
+            "lookW=%d lookH=%d seedW=%d seedH=%d imgW=%d imgH=%d lookBin=%dx%d t=%d step=%zu scratch=%dx%d t=%d poisonPlane=%dx%d",
+            lookW, lookH, seedW, seedH, imgW, imgH,
+            lookBin.rows, lookBin.cols, lookBin.type(), lookBin.empty() ? 0 : lookBin.step[0],
+            lookPlane ? lookPlane->rows : -1, lookPlane ? lookPlane->cols : -1,
+            lookPlane ? lookPlane->type() : -1,
+            pois ? pois->rows : -1, pois ? pois->cols : -1);
+        veRssLog("seg7_look", extra);
+    }
     const int sPx = fillPoisonLookRaster(
         seedY, look, localT, 0, srcIsBin, gm, fallback, &lookBin,
         overlayY8, overlayUv2, sl, nt, poisonStats ? &stLocal : nullptr, lookPlane,
@@ -2785,6 +2900,7 @@ static void seg7One(
     aabbJumpOnLook(
         &lookBin, ol, *ot, oright, *ob, imgW, imgH,
         st, sb, sl, sr, sPx, sl, nt);
+    veRssLog("walk_paint", nullptr);
     if (*ol < 0) *ol = 0;
     if (*oright > imgW) *oright = imgW;
     if (*oright <= *ol) *oright = std::min(imgW, *ol + 1);
@@ -3399,6 +3515,14 @@ static int fillPoisonLookRaster(
     } else if (asU8(overlayY)) {
         lookPoison = planeRoi8u(overlayY, ovX, ovY, lw, lh);
     }
+    {
+        char extra[160];
+        std::snprintf(extra, sizeof extra,
+            "lookBin=%dx%d t=%d lookPoison=%dx%d t=%d lw=%d lh=%d",
+            lookBin->rows, lookBin->cols, lookBin->type(),
+            lookPoison.rows, lookPoison.cols, lookPoison.type(), lw, lh);
+        veRssLog("poison_placed", extra);
+    }
     cv::Mat bin = planeView8u(lookBin, xSeed0, ySeed0, seedW, seedH);
     if (bin.empty()) {
         abortScratch();
@@ -3478,6 +3602,7 @@ static int fillPoisonLookRaster(
         return std::max(1, fallback);
     }
     fillPoisonMask(bin, v0, needFb0, seedW, glareMult, &poison);
+    veRssLog("poison_mask", nullptr);
     bool bandTop = false, bandBot = false;
     int bandH = 0;
     if (!srcIsBin) orBrightBands(seedY, bin, sPx0, &poison, &bandTop, &bandBot, &bandH);
@@ -3567,6 +3692,7 @@ static int fillPoisonLookRaster(
             poison, objPlane, ovX + xSeed0, ovY + ySeed0, sPx, seedIndex, objPack,
             overlayUvMap, ovCx, ovCy, ovUx, ovUy, ovVx, ovVy, ovU0, ovU1, ovLookV0,
             xSeed0, ySeed0, lookY.cols);
+        veRssLog("poison_flood", nullptr);
     }
 
     if (!srcIsBin && cv::countNonZero(combined) == 0 && haveClean && cleanDark &&
@@ -3609,10 +3735,19 @@ static int fillPoisonLookRaster(
         }
     };
     const bool plusFill = (ySeed0 > 0 || ySeed0 + seedH < lh);
+    int plusN = 0;
     if (plusFill) {
         auto fillPlusRect = [&](int plusT, int plusB, int plusL, int plusR) {
             if (plusB <= plusT || plusR <= plusL) return;
             const int plusH0 = plusB - plusT, plusW0 = plusR - plusL;
+            char ptag[32];
+            std::snprintf(ptag, sizeof ptag, "plus_%d", plusN);
+            ++plusN;
+            {
+                char extra[64];
+                std::snprintf(extra, sizeof extra, "begin plusW=%d plusH=%d", plusW0, plusH0);
+                veRssLog(ptag, extra);
+            }
             if (!veAllocLog("fillPlusRect", veMatBytes(plusH0, plusW0, CV_8UC1),
                     plusH0, plusW0, CV_8UC1)) {
                 return;
@@ -3663,6 +3798,11 @@ static int fillPoisonLookRaster(
                 }
             }
             stampSeedCombined();
+            {
+                char extra[32];
+                std::snprintf(extra, sizeof extra, "end plusW=%d plusH=%d", plusW0, plusH0);
+                veRssLog(ptag, extra);
+            }
         };
         if (v0Clean > 4) {
             const int ring = 4 * sPx;
@@ -3705,6 +3845,7 @@ static int fillPoisonLookRaster(
         } else {
             stampSeedCombined();
         }
+        veRssLog("plus_done", nullptr);
     } else {
         for (int y = 0; y < lh; ++y) {
             uint8_t* op = lookBin->ptr<uint8_t>(y);
@@ -4045,6 +4186,11 @@ static jintArray aabbGrayMany(
     try {
     const int imgW = gray->cols, imgH = gray->rows;
     const int n = n4 / 4;
+    {
+        char extra[96];
+        std::snprintf(extra, sizeof extra, "imgW=%d imgH=%d nSeeds=%d", imgW, imgH, n);
+        veRssLog("aabb_enter", extra);
+    }
     const jfloat gapFrac = 0.5f;
     const jfloat minSeedHsToFreeze = 0.f;
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
@@ -4078,6 +4224,11 @@ static jintArray aabbGrayMany(
             false, gapFrac, minSeedHsToFreeze, 11, boundStrategy, tightInsetPx, &tele, false,
             &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
             &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, poisonPlane);
+        {
+            char extra[64];
+            std::snprintf(extra, sizeof extra, "seed=%d", i);
+            veRssLog("seed_done", extra);
+        }
         if (objPack.abort) {
             poisonPacks[static_cast<size_t>(i)].bandH = -1;
             appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
