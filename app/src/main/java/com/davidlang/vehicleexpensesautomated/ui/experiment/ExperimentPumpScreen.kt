@@ -2317,7 +2317,7 @@ suspend fun runPumpExperiment(
                             ),
                         )
                     })
-                    branch.metadata["n_reds_after_prune4"] = pdHunksRawTotal.size.toString()
+                    branch.metadata["n_reds_after_prune"] = pdHunksRawTotal.size.toString()
                     if (CAPTURE_REDBOX_DATA) {
                         captureRedboxData(pdHunksRawTotal, workspace, branch)
                     }
@@ -2343,10 +2343,8 @@ suspend fun runPumpExperiment(
                     val ocrG = ocrPumpRectsAsisAndDigits(customBluePixelG)
                     val tOcr = (System.currentTimeMillis() - tOcr0).toString()
                     branch.metadata["t_ocr_ms"] = tOcr
-                    branch.metadata["n_ocr_energy"] = customBluePixelG.size.toString()
-                    branch.metadata["n_ocr_g"] = "0"
-                    branch.metadata["t_ocr_energy_ms"] = tOcr
-                    branch.metadata["t_ocr_g_ms"] = "0"
+                    branch.metadata["n_ocr_g"] = customBluePixelG.size.toString()
+                    branch.metadata["t_ocr_g_ms"] = tOcr
                     branch.metadata["t_expand_ms"] = "0"
                     val gCands = buildRedBoxCandidates(
                         customBluePixelG, ocrG.asis, ocrG.digits, ocrG.asisProbs,
@@ -2387,7 +2385,6 @@ suspend fun runPumpExperiment(
                         ),
                         oranges = orangePixelG,
                     )
-                    doBOrDRedOnlyImage()
                     val aPdG = getAnns(pdHunksRawTotal, Color.RED, 2) +
                         getAnns(customBlueG, Color.BLUE, 4) +
                         getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
@@ -3268,10 +3265,9 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(kk, rects, skipExtraK)
                     }
-                    branch.metadata["n_ocr_energy"] = nOcr.toString()
+                    branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
                     branch.metadata["t_ocr_ms"] = tOcrAll
-                    branch.metadata["t_ocr_energy_ms"] = tOcrAll
                     branch.pathResults["Paddle"] = getFinal(
                         officialHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, cands0,
@@ -3655,10 +3651,9 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(kk, rects, skipExtraK)
                     }
-                    branch.metadata["n_ocr_energy"] = nOcr.toString()
+                    branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
                     branch.metadata["t_ocr_ms"] = tOcrAll
-                    branch.metadata["t_ocr_energy_ms"] = tOcrAll
                     branch.pathResults["Paddle"] = getFinal(
                         officialHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, cands0,
@@ -4043,10 +4038,9 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(kk, rects, skipExtraK)
                     }
-                    branch.metadata["n_ocr_energy"] = nOcr.toString()
+                    branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
                     branch.metadata["t_ocr_ms"] = tOcrAll
-                    branch.metadata["t_ocr_energy_ms"] = tOcrAll
                     branch.pathResults["Paddle"] = getFinal(
                         officialHunks, "Paddle", tilt, pdHunksRawTotal, workspace,
                         experimentRecSet, paddleEngine, context, imgW, imgH, cands0,
