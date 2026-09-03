@@ -2460,25 +2460,33 @@ static void fillAabbLookSweep(
     }
     packSeedLookRows(lookBin, st - nt, sb - nt, out);
     if (x1 <= x0) return;
-    cv::Mat wide;
-    if (st >= 0 && sb <= imgH && sb > st && x1 > x0) {
-        cv::Mat strip = src(cv::Range(st, sb), cv::Range(x0, x1));
-        if (srcIsBin) {
-            strip.copyTo(wide);
-        } else {
-            const int ttype = darkInk ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
-            cv::threshold(strip, wide, otsu, 255, ttype);
-        }
-        if (!wide.empty() && glareW > 0) dropWide(&wide, glareW);
-    }
+    auto pixInk = [&](int y, int x) -> bool {
+        if (y < 0 || y >= src.rows || x < 0 || x >= src.cols) return false;
+        const uint8_t v = src.ptr<uint8_t>(y)[x];
+        if (srcIsBin) return v != 0;
+        return darkInk
+            ? (static_cast<double>(v) <= otsu)
+            : (static_cast<double>(v) > otsu);
+    };
     out->hScores.reserve(static_cast<size_t>(x1 - x0));
     for (int x = x0; x < x1; ++x) {
-        int sc = 0;
-        if (!wide.empty()) {
-            const int lx = x - x0;
-            sc = maxInkRunCol(wide, lx, 0, wide.rows);
+        int best = 0, run = 0;
+        for (int y = st; y < sb; ++y) {
+            bool on = pixInk(y, x);
+            if (on && glareW > 0) {
+                int xl = x, xr = x + 1;
+                while (xl > x0 && pixInk(y, xl - 1)) --xl;
+                while (xr < x1 && pixInk(y, xr)) ++xr;
+                if (xr - xl > glareW) on = false;
+            }
+            if (on) {
+                ++run;
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
         }
-        out->hScores.push_back(sc);
+        out->hScores.push_back(best);
     }
 }
 
@@ -2567,6 +2575,7 @@ static void fillSaltPepper(cv::Mat* bin) {
     }
 }
 
+__attribute__((unused))
 static void dropWide(cv::Mat* bin, int glareW) {
     if (glareW <= 0 || bin->empty()) return;
     cv::Mat labels, stats, centroids;
@@ -2909,37 +2918,74 @@ static void fillPoisonMask(
     }
 }
 
-static bool otsuKeep(
-    const cv::Mat& y, const cv::Mat& keep, double* thr, bool* dark, float* inkFrac
-) {
-    std::vector<uint8_t> vals;
-    const int kh = std::min(y.rows, keep.rows);
-    const int kw = std::min(y.cols, keep.cols);
-    if (kh < 1 || kw < 1) return false;
-    vals.reserve(static_cast<size_t>(kh * kw));
-    for (int yy = 0; yy < kh; ++yy) {
-        const uint8_t* yp = y.ptr<uint8_t>(yy);
-        const uint8_t* kp = keep.ptr<uint8_t>(yy);
-        for (int xx = 0; xx < kw; ++xx) {
-            if (kp[xx]) vals.push_back(yp[xx]);
+static double otsuThrFromHist(const int hist[256], int n) {
+    if (n < 2) return 0.0;
+    double sum = 0.0;
+    for (int i = 0; i < 256; ++i) sum += static_cast<double>(i) * hist[i];
+    double sumB = 0.0;
+    int wB = 0;
+    double maxVar = -1.0;
+    int thr = 0;
+    for (int t = 0; t < 256; ++t) {
+        wB += hist[t];
+        if (wB == 0) continue;
+        const int wF = n - wB;
+        if (wF == 0) break;
+        sumB += static_cast<double>(t) * hist[t];
+        const double mB = sumB / wB;
+        const double mF = (sum - sumB) / wF;
+        const double d = mB - mF;
+        const double var = static_cast<double>(wB) * static_cast<double>(wF) * d * d;
+        if (var >= maxVar) {
+            maxVar = var;
+            thr = t;
         }
     }
-    if (vals.size() < 2) return false;
-    cv::Mat col(1, static_cast<int>(vals.size()), CV_8UC1);
-    uint8_t* cp = col.ptr<uint8_t>(0);
-    for (size_t i = 0; i < vals.size(); ++i) cp[i] = vals[i];
-    cv::Mat b;
-    *thr = cv::threshold(col, b, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-    int nz = cv::countNonZero(b);
-    *inkFrac = nz / static_cast<float>(vals.size());
+    return static_cast<double>(thr);
+}
+
+static bool otsuHistOnKeep(
+    const cv::Mat& y, const cv::Mat& mask, bool keepIfMaskOn, double yCeil,
+    double* thr, bool* dark, float* inkFrac
+) {
+    int hist[256] = {};
+    int n = 0;
+    const int kh = std::min(y.rows, mask.rows);
+    const int kw = std::min(y.cols, mask.cols);
+    if (kh < 1 || kw < 1) return false;
+    for (int yy = 0; yy < kh; ++yy) {
+        const uint8_t* yp = y.ptr<uint8_t>(yy);
+        const uint8_t* mp = mask.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < kw; ++xx) {
+            if (keepIfMaskOn) {
+                if (!mp[xx]) continue;
+            } else {
+                if (mp[xx]) continue;
+            }
+            if (yCeil >= 0.0 && static_cast<double>(yp[xx]) > yCeil) continue;
+            hist[yp[xx]]++;
+            ++n;
+        }
+    }
+    if (n < 2) return false;
+    *thr = otsuThrFromHist(hist, n);
+    const int ti = static_cast<int>(*thr);
+    int nz = 0;
+    for (int i = 0; i <= ti && i < 256; ++i) nz += hist[i];
+    *inkFrac = nz / static_cast<float>(n);
     *dark = true;
     if (*inkFrac >= 0.45f) {
         *dark = false;
-        cv::bitwise_not(b, b);
-        nz = cv::countNonZero(b);
-        *inkFrac = nz / static_cast<float>(vals.size());
+        nz = n - nz;
+        *inkFrac = nz / static_cast<float>(n);
     }
     return true;
+}
+
+static bool otsuKeep(
+    const cv::Mat& y, const cv::Mat& keep, double* thr, bool* dark, float* inkFrac
+) {
+    return otsuHistOnKeep(y, keep, true, -1.0, thr, dark, inkFrac);
 }
 
 static void applyThrKeep(
@@ -2971,36 +3017,7 @@ static bool otsuKeepPoison0(
     const cv::Mat& y, const cv::Mat& poison, double* thr, bool* dark, float* inkFrac,
     double yCeil = -1.0
 ) {
-    std::vector<uint8_t> vals;
-    const int kh = std::min(y.rows, poison.rows);
-    const int kw = std::min(y.cols, poison.cols);
-    if (kh < 1 || kw < 1) return false;
-    vals.reserve(static_cast<size_t>(kh * kw));
-    for (int yy = 0; yy < kh; ++yy) {
-        const uint8_t* yp = y.ptr<uint8_t>(yy);
-        const uint8_t* pp = poison.ptr<uint8_t>(yy);
-        for (int xx = 0; xx < kw; ++xx) {
-            if (pp[xx]) continue;
-            if (yCeil >= 0.0 && static_cast<double>(yp[xx]) > yCeil) continue;
-            vals.push_back(yp[xx]);
-        }
-    }
-    if (vals.size() < 2) return false;
-    cv::Mat col(1, static_cast<int>(vals.size()), CV_8UC1);
-    uint8_t* cp = col.ptr<uint8_t>(0);
-    for (size_t i = 0; i < vals.size(); ++i) cp[i] = vals[i];
-    cv::Mat b;
-    *thr = cv::threshold(col, b, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-    int nz = cv::countNonZero(b);
-    *inkFrac = nz / static_cast<float>(vals.size());
-    *dark = true;
-    if (*inkFrac >= 0.45f) {
-        *dark = false;
-        cv::bitwise_not(b, b);
-        nz = cv::countNonZero(b);
-        *inkFrac = nz / static_cast<float>(vals.size());
-    }
-    return true;
+    return otsuHistOnKeep(y, poison, false, yCeil, thr, dark, inkFrac);
 }
 
 static void applyThrKeepPoison0(
@@ -3380,23 +3397,64 @@ static int fillPoisonLookRaster(
     double otsu = 0.0;
     bool inverted = false;
     float inkFrac = 0.f;
+    const int bh = std::min(seedY.rows, bin.rows);
+    const int bw = std::min(seedY.cols, bin.cols);
     if (srcIsBin) {
-        seedY.copyTo(bin);
-        inkFrac = (seedH * seedW) > 0
-            ? cv::countNonZero(bin) / static_cast<float>(seedH * seedW) : 0.f;
+        int nz = 0;
+        const int nPix = std::max(1, seedH * seedW);
+        for (int yy = 0; yy < bh; ++yy) {
+            const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+            uint8_t* op = bin.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < bw; ++xx) {
+                op[xx] = yp[xx];
+                if (op[xx]) ++nz;
+            }
+        }
+        inkFrac = nz / static_cast<float>(nPix);
         if (inkFrac >= 0.45f) {
-            cv::bitwise_not(bin, bin);
-            inkFrac = cv::countNonZero(bin) / static_cast<float>(std::max(1, seedH * seedW));
             inverted = true;
+            nz = 0;
+            for (int yy = 0; yy < bh; ++yy) {
+                uint8_t* op = bin.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < bw; ++xx) {
+                    op[xx] = static_cast<uint8_t>(255 - op[xx]);
+                    if (op[xx]) ++nz;
+                }
+            }
+            inkFrac = nz / static_cast<float>(nPix);
         }
     } else {
-        otsu = cv::threshold(seedY, bin, 0, 255, cv::THRESH_BINARY_INV | cv::THRESH_OTSU);
-        inkFrac = (seedH * seedW) > 0
-            ? cv::countNonZero(bin) / static_cast<float>(seedH * seedW) : 0.f;
+        int hist[256] = {};
+        int n = 0;
+        for (int yy = 0; yy < bh; ++yy) {
+            const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < bw; ++xx) {
+                hist[yp[xx]]++;
+                ++n;
+            }
+        }
+        const int nPix = std::max(1, n);
+        otsu = n >= 2 ? otsuThrFromHist(hist, n) : 0.0;
+        const int ti = static_cast<int>(otsu);
+        int nz = 0;
+        for (int i = 0; i <= ti && i < 256; ++i) nz += hist[i];
+        inkFrac = nz / static_cast<float>(nPix);
+        bool dark = true;
         if (inkFrac >= 0.45f) {
-            cv::bitwise_not(bin, bin);
-            inkFrac = cv::countNonZero(bin) / static_cast<float>(std::max(1, seedH * seedW));
             inverted = true;
+            dark = false;
+            nz = nPix - nz;
+            inkFrac = nz / static_cast<float>(nPix);
+        }
+        for (int yy = 0; yy < bh; ++yy) {
+            const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+            uint8_t* op = bin.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < bw; ++xx) {
+                const bool ink = dark
+                    ? (static_cast<int>(yp[xx]) <= ti)
+                    : (static_cast<int>(yp[xx]) > ti);
+                op[xx] = ink ? 255 : 0;
+            }
         }
     }
     fillSaltPepper(&bin);
@@ -3500,29 +3558,7 @@ static int fillPoisonLookRaster(
             overlayUvMap, ovCx, ovCy, ovUx, ovUy, ovVx, ovVy, ovU0, ovU1, ovLookV0,
             xSeed0, ySeed0, lookY.cols);
     }
-    cv::Mat labels, stats, centroids;
-    int nLab = 0;
-    if (!objPack) {
-        if (!veAllocLog("poison_cc", veMatBytes(poison.rows, poison.cols, CV_32S),
-                poison.rows, poison.cols, CV_32S)) {
-            return std::max(1, sPx);
-        }
-        nLab = cv::connectedComponentsWithStats(poison, labels, stats, centroids, 8);
-    }
-    std::vector<PoisonReg> regs(static_cast<size_t>(std::max(0, nLab)));
-    for (int i = 1; i < nLab; ++i) {
-        PoisonReg r;
-        r.x0 = stats.at<int>(i, cv::CC_STAT_LEFT);
-        r.y0 = stats.at<int>(i, cv::CC_STAT_TOP);
-        r.x1 = r.x0 + stats.at<int>(i, cv::CC_STAT_WIDTH);
-        r.y1 = r.y0 + stats.at<int>(i, cv::CC_STAT_HEIGHT);
-        const int rw = r.x1 - r.x0;
-        const int rh = r.y1 - r.y0;
-        if (rw < 1 || rh < 1) { r.noPeak = true; regs[static_cast<size_t>(i)] = r; continue; }
-        r.noPeak = true;
-        r.nInk = 0;
-        regs[static_cast<size_t>(i)] = r;
-    }
+
     if (!srcIsBin && cv::countNonZero(combined) == 0 && haveClean && cleanDark &&
         cleanInkFrac >= 0.05f && cleanInkFrac <= 0.40f) {
         applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &combined);
@@ -3688,18 +3724,6 @@ static int fillPoisonLookRaster(
         statsOut->bandBot = bandBot ? 1 : 0;
         statsOut->bandH = bandH;
         statsOut->ccs.clear();
-        for (int i = 1; i < nLab; ++i) {
-            const PoisonReg& r = regs[static_cast<size_t>(i)];
-            PoisonCcPack c;
-            c.x = r.x0;
-            c.y = r.y0;
-            c.w = r.x1 - r.x0;
-            c.h = r.y1 - r.y0;
-            c.noPeak = r.noPeak ? 1 : 0;
-            c.thr = static_cast<int>(std::lround(r.thr));
-            c.nInk = r.nInk;
-            statsOut->ccs.push_back(c);
-        }
     }
     return std::max(1, sPx);
 }
@@ -4429,32 +4453,42 @@ static void fillOrientedLookSweep(
     if (uEnd <= uStart) return;
     const int wu = std::max(1, uEnd - uStart);
     const int hv = std::max(1, static_cast<int>(std::lround(seed.v1 - seed.v0)));
-    cv::Mat wide(hv, wu, CV_8UC1);
-    for (int y = 0; y < hv; ++y) {
-        const float v = seed.v0 + (y + 0.5f) / hv * (seed.v1 - seed.v0);
-        uint8_t* row = wide.ptr<uint8_t>(y);
-        for (int x = 0; x < wu; ++x) {
-            const float u = static_cast<float>(uStart) + x + 0.5f;
-            const float px = seed.cx + u * seed.ux + v * seed.vx;
-            const float py = seed.cy + u * seed.uy + v * seed.vy;
-            const int g = sampleU8Trunc(src, px, py, imgW, imgH);
-            row[x] = static_cast<uint8_t>(g >= 0 ? g : 0);
+    auto pixInk = [&](int iy, int ix) -> bool {
+        if (iy < 0 || iy >= hv || ix < 0 || ix >= wu) return false;
+        const float v = seed.v0 + (iy + 0.5f) / hv * (seed.v1 - seed.v0);
+        const float u = static_cast<float>(uStart) + ix + 0.5f;
+        const float px = seed.cx + u * seed.ux + v * seed.vx;
+        const float py = seed.cy + u * seed.uy + v * seed.vy;
+        const int g = sampleU8Trunc(src, px, py, imgW, imgH);
+        if (g < 0) return false;
+        if (srcIsBin) {
+            const uint8_t vv = static_cast<uint8_t>(g);
+            const uint8_t b = invertedBin ? static_cast<uint8_t>(255 - vv) : vv;
+            return b != 0;
         }
-    }
-    cv::Mat wideBin;
-    if (srcIsBin) {
-        wide.copyTo(wideBin);
-        if (invertedBin) cv::bitwise_not(wideBin, wideBin);
-    } else {
-        const int ttype = dark ? cv::THRESH_BINARY_INV : cv::THRESH_BINARY;
-        cv::threshold(wide, wideBin, otsu, 255, ttype);
-    }
-    if (!wideBin.empty() && glareW > 0) dropWide(&wideBin, glareW);
+        return dark
+            ? (static_cast<double>(g) <= otsu)
+            : (static_cast<double>(g) > otsu);
+    };
     out->hScores.reserve(static_cast<size_t>(wu));
     for (int x = 0; x < wu; ++x) {
-        int sc = 0;
-        if (!wideBin.empty()) sc = maxInkRunCol(wideBin, x, 0, wideBin.rows);
-        out->hScores.push_back(sc);
+        int best = 0, run = 0;
+        for (int y = 0; y < hv; ++y) {
+            bool on = pixInk(y, x);
+            if (on && glareW > 0) {
+                int xl = x, xr = x + 1;
+                while (xl > 0 && pixInk(y, xl - 1)) --xl;
+                while (xr < wu && pixInk(y, xr)) ++xr;
+                if (xr - xl > glareW) on = false;
+            }
+            if (on) {
+                ++run;
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
+        }
+        out->hScores.push_back(best);
     }
 }
 
