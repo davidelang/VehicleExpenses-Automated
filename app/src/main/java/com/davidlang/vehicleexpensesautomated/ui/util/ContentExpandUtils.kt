@@ -1482,6 +1482,134 @@ object ContentExpandUtils {
         NativeImageUtils::colorOrientRetractNative, tint,
     )
 
+    private fun expandEnergyOrientMany(
+        gray: Mat,
+        seeds: List<OrientedQuad>,
+        native: (Mat, FloatArray, ShortArray?, Mat?) -> FloatArray?,
+    ): List<OrientedExpand> {
+        if (gray.empty() || gray.type() != CvType.CV_8UC1 || seeds.isEmpty()) {
+            return seeds.map { OrientedExpand(it, false) }
+        }
+        val imgW = gray.cols()
+        val imgH = gray.rows()
+        val packed = FloatArray(seeds.size * 8)
+        seeds.forEachIndexed { i, q ->
+            val p = q.pts
+            val o = i * 8
+            for (k in 0 until 8) packed[o + k] = p[k]
+        }
+        val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
+        val scratch = try { NativePaddleEngine.bufferSetA.s.mat } catch (_: Throwable) { null }
+        val many = try {
+            native(gray, packed, sweepBuf, scratch)
+        } catch (_: Throwable) {
+            null
+        }
+        if (many == null || many.size < seeds.size * 13) {
+            return seeds.map { OrientedExpand(it, false) }
+        }
+        val sweeps = parseInkSweeps(sweepBuf, seeds.size)
+        return seeds.indices.map { i ->
+            val o = i * 13
+            val nativeExp = NativeImageUtils.OrientedExpandNative(
+                cx = many[o], cy = many[o + 1], bw = many[o + 2], bh = many[o + 3],
+                angDeg = many[o + 4],
+                stepsVNeg = many[o + 5].toInt(), stepsVPos = many[o + 6].toInt(),
+                padV = many[o + 7].toInt(),
+                hitVertCap = many[o + 8] >= 0.5f,
+                stopEnergyUp = many[o + 9], stopEnergyDown = many[o + 10],
+                base = many[o + 11], thr = many[o + 12],
+            )
+            val finalQuad = orientedFromCenter(
+                nativeExp.cx, nativeExp.cy, nativeExp.bw, nativeExp.bh, nativeExp.angDeg,
+            )
+            val seed = seeds[i]
+            val seedRr = minAreaFromQuad(seed)
+            var seedBh = nativeExp.bh
+            if (seedRr != null) {
+                var bw = seedRr.size.width.toFloat()
+                var bh = seedRr.size.height.toFloat()
+                if (bw < bh) {
+                    val tmp = bw; bw = bh; bh = tmp
+                }
+                seedBh = bh.coerceAtLeast(2f)
+            }
+            val cap = max(1, (0.4f * seedBh).roundToInt())
+            val stopUp = nativeExp.stepsVNeg < cap
+            val stopDown = nativeExp.stepsVPos < cap
+            val nativeCnt = try {
+                NativeImageUtils.countPullbackOrientedNative(
+                    gray, seed.pts, finalQuad.pts, 0,
+                    stopUp, stopDown,
+                    COUNT_CLEAR_FRAC, COUNT_GROW_FRAC, COUNT_GROW_MAX_H_FRAC,
+                )
+            } catch (_: Throwable) {
+                null
+            }
+            val (countQuad, countInfo) = if (nativeCnt != null) {
+                val newV = ((nativeCnt.vNegAfter + nativeCnt.vPosAfter) * 0.5).toFloat()
+                val newBh = (nativeCnt.vPosAfter - nativeCnt.vNegAfter).toFloat().coerceAtLeast(2f)
+                val rad = Math.toRadians(nativeCnt.angDeg.toDouble())
+                val ux = cos(rad).toFloat()
+                val uy = sin(rad).toFloat()
+                val vx = -uy
+                val vy = ux
+                val newCx = nativeCnt.seedCx + nativeCnt.existCu * ux + newV * vx
+                val newCy = nativeCnt.seedCy + nativeCnt.existCu * uy + newV * vy
+                val cq = orientedFromCenter(newCx, newCy, nativeCnt.existBw, newBh, nativeCnt.angDeg)
+                val existAabb = finalQuad.toAabb()
+                val countAabb = cq.toAabb()
+                cq to CountPullInfo(
+                    pulledTop = nativeCnt.pulledTop,
+                    pulledBot = nativeCnt.pulledBot,
+                    cSeed = nativeCnt.cSeed,
+                    countThr = nativeCnt.countThr,
+                    gxThr = nativeCnt.gxThr,
+                    tBefore = existAabb.top,
+                    bBefore = existAabb.bottom,
+                    tAfter = countAabb.top,
+                    bAfter = countAabb.bottom,
+                    y0 = nativeCnt.y0,
+                    counts = nativeCnt.counts,
+                    axis = "v",
+                    vNegBefore = nativeCnt.vNegBefore,
+                    vPosBefore = nativeCnt.vPosBefore,
+                    vNegAfter = nativeCnt.vNegAfter,
+                    vPosAfter = nativeCnt.vPosAfter,
+                    grewTop = nativeCnt.grewTop,
+                    grewBot = nativeCnt.grewBot,
+                    padTop = nativeCnt.padTop,
+                    padBot = nativeCnt.padBot,
+                )
+            } else {
+                val existAabb = finalQuad.toAabb()
+                finalQuad to CountPullInfo(
+                    pulledTop = false, pulledBot = false,
+                    cSeed = 0.0, countThr = 0.0, gxThr = 0.0,
+                    tBefore = existAabb.top, bBefore = existAabb.bottom,
+                    tAfter = existAabb.top, bAfter = existAabb.bottom,
+                    axis = "v",
+                )
+            }
+            OrientedExpand(
+                finalQuad, nativeExp.hitVertCap, null, countQuad, countInfo,
+                sweeps.getOrNull(i),
+            )
+        }
+    }
+
+    fun expandEnergyOrientTight(
+        gray: Mat, seeds: List<OrientedQuad>,
+    ): List<OrientedExpand> = expandEnergyOrientMany(
+        gray, seeds, NativeImageUtils::energyOrientTightNative,
+    )
+
+    fun expandEnergyOrientRetract(
+        gray: Mat, seeds: List<OrientedQuad>,
+    ): List<OrientedExpand> = expandEnergyOrientMany(
+        gray, seeds, NativeImageUtils::energyOrientRetractNative,
+    )
+
     fun expandGrayOrientExpand(
         gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
         scratch: Mat? = null, combine: Mat? = null,
