@@ -83,9 +83,11 @@ extern "C" void* __real_malloc(size_t);
 extern "C" void* __real_calloc(size_t, size_t);
 extern "C" void* __real_realloc(void*, size_t);
 
+static constexpr size_t kVeWrapFail = 512ull * 1024ull * 1024ull;
+
 extern "C" void* __wrap_malloc(size_t n) {
-    if (n > kVeAllocCap) {
-        LOGE("veMalloc FAIL bytes=%zu >64MiB", n);
+    if (n >= kVeWrapFail) {
+        LOGE("veMalloc FAIL bytes=%zu >=512MiB", n);
         return nullptr;
     }
     if (n >= 1024ull * 1024ull) LOGI("veMalloc bytes=%zu", n);
@@ -94,13 +96,13 @@ extern "C" void* __wrap_malloc(size_t n) {
 
 extern "C" void* __wrap_calloc(size_t nmemb, size_t sz) {
     size_t n = 0;
-    if (sz != 0 && nmemb > kVeAllocCap / sz) {
-        LOGE("veMalloc FAIL calloc nmemb=%zu sz=%zu >64MiB", nmemb, sz);
+    if (sz != 0 && nmemb > kVeWrapFail / sz) {
+        LOGE("veMalloc FAIL calloc nmemb=%zu sz=%zu >=512MiB", nmemb, sz);
         return nullptr;
     }
     n = nmemb * sz;
-    if (n > kVeAllocCap) {
-        LOGE("veMalloc FAIL bytes=%zu >64MiB", n);
+    if (n >= kVeWrapFail) {
+        LOGE("veMalloc FAIL bytes=%zu >=512MiB", n);
         return nullptr;
     }
     if (n >= 1024ull * 1024ull) LOGI("veMalloc bytes=%zu", n);
@@ -108,8 +110,8 @@ extern "C" void* __wrap_calloc(size_t nmemb, size_t sz) {
 }
 
 extern "C" void* __wrap_realloc(void* p, size_t n) {
-    if (n > kVeAllocCap) {
-        LOGE("veMalloc FAIL realloc bytes=%zu >64MiB", n);
+    if (n >= kVeWrapFail) {
+        LOGE("veMalloc FAIL realloc bytes=%zu >=512MiB", n);
         return nullptr;
     }
     if (n >= 1024ull * 1024ull) LOGI("veMalloc bytes=%zu", n);
@@ -588,32 +590,38 @@ static cv::Mat packJpegScratch(int w, int h) {
     return g_packJpegU8(cv::Rect(0, 0, w, h));
 }
 
+bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out);
+
 static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
     if (!out || bin.empty() || bin.type() != CV_8UC1) return;
     try {
         const int w = bin.cols;
         const int h = bin.rows;
         if (w < 1 || h < 1) return;
-        const cv::Mat* src = &bin;
-        cv::Mat resized;
+        int nw = w;
+        int nh = h;
         const int longSide = std::max(w, h);
         if (longSide > 400) {
             const double sc = 400.0 / static_cast<double>(longSide);
             const int64_t nw64 = std::llround(static_cast<double>(w) * sc);
             const int64_t nh64 = std::llround(static_cast<double>(h) * sc);
             if (nw64 < 1 || nh64 < 1 || nw64 > 65000 || nh64 > 65000) return;
-            int nw = static_cast<int>(nw64);
-            int nh = static_cast<int>(nh64);
-            nw = std::max(2, (nw + 1) / 2 * 2);
-            nh = std::max(2, (nh + 1) / 2 * 2);
-            resized = packJpegScratch(nw, nh);
-            if (resized.empty()) return;
-            cv::resize(bin, resized, resized.size(), 0, 0, cv::INTER_NEAREST);
-            src = &resized;
+            nw = std::max(2, (static_cast<int>(nw64) + 1) / 2 * 2);
+            nh = std::max(2, (static_cast<int>(nh64) + 1) / 2 * 2);
         }
-        std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 70};
+        cv::Mat dest = packJpegScratch(nw, nh);
+        if (dest.empty() || dest.rows < nh || dest.cols < nw) return;
+        for (int y = 0; y < nh; ++y) {
+            const int sy = std::min(h - 1, y * h / nh);
+            const uint8_t* sp = bin.ptr<uint8_t>(sy);
+            uint8_t* dp = dest.ptr<uint8_t>(y);
+            for (int x = 0; x < nw; ++x) {
+                const int sx = std::min(w - 1, x * w / nw);
+                dp[x] = sp[sx];
+            }
+        }
         std::vector<uint8_t> jpg;
-        if (cv::imencode(".jpg", *src, jpg, params) && !jpg.empty() && jpg.size() <= 16000) {
+        if (veEncodeGrayJpegU8(dest, &jpg) && !jpg.empty() && jpg.size() <= 16000) {
             out->threshJpeg = std::move(jpg);
         }
     } catch (const cv::Exception&) {

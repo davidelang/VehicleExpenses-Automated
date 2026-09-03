@@ -624,6 +624,25 @@ static bool encodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, int quality, s
     return cv::imencode(".jpg", bgr, *out, params);
 }
 
+bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out) {
+    if (!out || u8.empty() || u8.type() != CV_8UC1) return false;
+    const int w = u8.cols, h = u8.rows;
+    if (w < 1 || h < 1) return false;
+    if (std::max(w, h) > 400) return false;
+    cv::Mat bgr = jpegBgrScratch(w, h);
+    if (bgr.empty() || bgr.rows < h || bgr.cols < w) return false;
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* yp = u8.ptr<uint8_t>(y);
+        cv::Vec3b* dp = bgr.ptr<cv::Vec3b>(y);
+        for (int x = 0; x < w; ++x) {
+            const uint8_t g = yp[x];
+            dp[x] = cv::Vec3b(g, g, g);
+        }
+    }
+    std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 70};
+    return cv::imencode(".jpg", bgr, *out, params);
+}
+
 static bool encodeYuvPlanesJpeg(
     const uint8_t* yData, const uint8_t* uData, const uint8_t* vData,
     int w, int h, int stride, int quality, std::vector<uint8_t>* out
