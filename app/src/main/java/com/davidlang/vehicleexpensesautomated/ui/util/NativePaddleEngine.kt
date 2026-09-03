@@ -611,6 +611,8 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         detTiersInt8: Map<Int, ByteArray>? = null,
         /** 0 = no 4×4 cell grow (energy-tight); 1 = production default. */
         growCells: Int = 1,
+        /** Optional A.p Y for heat mask + CC labels. Null = today's heap. */
+        scratchY: Mat? = null,
     ): DetectionResult? {
         val tPop0 = System.nanoTime()
         val packedSet = input as? BufferSet
@@ -711,6 +713,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val nativeRes = NativeImageUtils.processHeatmap(
                     outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
                     growCells = growCells,
+                    scratchY = scratchY,
                 )
                 val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
                 val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()

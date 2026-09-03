@@ -360,9 +360,12 @@ object NativeImageUtils {
         maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
         /** 0 = CC AABB as-is; 1 = grow one 4×4 det cell (production default). */
         growCells: Int = 1,
+        /** Optional A.p Y: mask + CC labels headers when bytes ≥ 5×heat. Null = heap. */
+        scratchY: Mat? = null,
     ): FloatArray? {
         return nativeProcessHeatmap(
             tensor, threshold, minArea, boxMode, maskDilatePasses, maxBoxes, growCells,
+            scratchY?.nativeObj ?: 0L,
         )
     }
 
@@ -897,6 +900,7 @@ object NativeImageUtils {
         maskDilatePasses: Int,
         maxBoxes: Int,
         growCells: Int,
+        scratchPtr: Long,
     ): FloatArray?
     private external fun nativeProcessHeatmapU8(
         heatU8: ByteArray,

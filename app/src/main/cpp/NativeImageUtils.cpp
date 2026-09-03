@@ -1761,24 +1761,42 @@ static void packHeatmapBoxes(
             vertices[2] = cv::Point2f(x1, y1);
             vertices[3] = cv::Point2f(x0, y1);
         } else {
-            // Flat CV_32SC2 of on-label points (ABI-stable vs std::vector<Point>).
-            cv::Mat points(area, 1, CV_32SC2);
-            int idx = 0;
+            // Boundary pixels of this CC in the stats bbox → stack hull (no points(area) Mat).
+            auto onLab = [&](int x, int y) -> bool {
+                if ((unsigned)x >= (unsigned)w || (unsigned)y >= (unsigned)h) return false;
+                return labels.ptr<int>(y)[x] == l;
+            };
+            auto isEdge = [&](int x, int y) -> bool {
+                return !onLab(x - 1, y) || !onLab(x + 1, y) ||
+                       !onLab(x, y - 1) || !onLab(x, y + 1);
+            };
+            int nBound = 0;
             for (int y = top; y < top + height; ++y) {
+                const int* row = labels.ptr<int>(y);
                 for (int x = left; x < left + width; ++x) {
-                    if (labels.at<int>(y, x) == l) {
-                        if (idx < area) {
-                            points.at<cv::Point>(idx++) = cv::Point(x, y);
-                        }
-                    }
+                    if (row[x] != l) continue;
+                    if (isEdge(x, y)) ++nBound;
                 }
             }
-            if (idx < area) {
-                points = points.rowRange(0, idx);
+            if (nBound < 1) continue;
+            const int stride = nBound > 4096 ? (nBound + 4095) / 4096 : 1;
+            cv::Point pts[4096];
+            int nPts = 0;
+            int seen = 0;
+            for (int y = top; y < top + height; ++y) {
+                const int* row = labels.ptr<int>(y);
+                for (int x = left; x < left + width; ++x) {
+                    if (row[x] != l) continue;
+                    if (!isEdge(x, y)) continue;
+                    if ((seen % stride) == 0 && nPts < 4096) {
+                        pts[nPts++] = cv::Point(x, y);
+                    }
+                    ++seen;
+                }
             }
-            if (points.empty()) continue;
-
-            cv::RotatedRect rect = cv::minAreaRect(points);
+            if (nPts < 1) continue;
+            cv::Mat pointsHdr(nPts, 1, CV_32SC2, pts);
+            cv::RotatedRect rect = cv::minAreaRect(pointsHdr);
             // Grow along the quad axes (not AABB) so tilted reds get the same 4×4 cell.
             rect.size.width += 2.f * (float)cell;
             rect.size.height += 2.f * (float)cell;
@@ -1864,14 +1882,32 @@ static void dilateMaskPasses(cv::Mat& mask, int passes) {
     LOGI("dilateMaskPasses: pure 3x3 max applied passes=%d size=%dx%d", passes, mask.cols, mask.rows);
 }
 
+// Wrap mask (8UC1) then labels (CV_32S) as headers on scratch Y (A.p). Need ≥ 5*h*w bytes,
+// labels 4-byte aligned after the mask. Returns false → caller keeps today's heap Mats.
+static bool wrapHeatScratch(jlong scratchPtr, int h, int w, cv::Mat* maskOut, cv::Mat* labelsOut) {
+    if (scratchPtr == 0 || !maskOut || !labelsOut || h <= 0 || w <= 0) return false;
+    auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
+    if (!scratch || scratch->empty() || !scratch->data || !scratch->isContinuous()) return false;
+    const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
+    const size_t labelsOff = (n + 3u) & ~static_cast<size_t>(3u);
+    const size_t need = labelsOff + 4u * n;
+    const size_t have = scratch->total() * scratch->elemSize();
+    if (have < need) return false;
+    uchar* base = scratch->data;
+    *maskOut = cv::Mat(h, w, CV_8UC1, base);
+    *labelsOut = cv::Mat(h, w, CV_32S, base + labelsOff);
+    return true;
+}
+
 // boxMode: 0 = minAreaRect on on-mask pixels (production); 1 = axis-aligned CC stats box (AABB).
 // maskDilatePasses: morph dilate iterations on binary thr mask before CC (experiment L/M).
 // kUInt8 product heatmaps: thr/CC/geometry/hist entirely on u8 — no float heat buffer.
 // float/fp16: convert once via tensorToFloatHeatmap (legacy path).
+// scratchPtr: optional A.p Y nativeObj. When it fits, mask+labels are headers on it (no heap).
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmap(
     JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold, jfloat minArea, jint boxMode,
-    jint maskDilatePasses, jint maxBoxes, jint growCells) {
+    jint maskDilatePasses, jint maxBoxes, jint growCells, jlong scratchPtr) {
 
     jclass cls = env->GetObjectClass(tensor);
     jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
@@ -1917,7 +1953,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         // t=0 → thrU=0 → u≥1 (matches prior float path on u/255).
         const double thrU = static_cast<double>(threshold) * 255.0;
         cv::Mat heatU8(h, w, CV_8UC1, const_cast<uint8_t*>(data));
-        cv::Mat mask;
+        cv::Mat mask, labels;
+        wrapHeatScratch(scratchPtr, h, w, &mask, &labels);
         cv::threshold(heatU8, mask, thrU, 255.0, cv::THRESH_BINARY);
         // mask is already CV_8U from 8-bit threshold.
         dilateMaskPasses(mask, (int)maskDilatePasses);
@@ -1925,7 +1962,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
             LOGI("nativeProcessHeatmap: u8 maskDilatePasses=%d", (int)maskDilatePasses);
         }
 
-        cv::Mat labels, stats, centroids;
+        cv::Mat stats, centroids;
         int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
         // conf in [0,1] like float path: mean(u8)/255
         packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatU8, 1.0f / 255.0f, &results, boxCap, (int)growCells);
@@ -1951,15 +1988,23 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
              data[0], data[1], data[2], data[3]);
 
         cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
-        cv::Mat mask;
-        cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
-        mask.convertTo(mask, CV_8U);
+        cv::Mat mask, labels;
+        const bool scratchOk = wrapHeatScratch(scratchPtr, h, w, &mask, &labels);
+        if (scratchOk) {
+            uchar* mptr = mask.ptr<uchar>(0);
+            for (size_t i = 0; i < n; ++i) {
+                mptr[i] = data[i] > threshold ? (uchar)255 : (uchar)0;
+            }
+        } else {
+            cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
+            mask.convertTo(mask, CV_8U);
+        }
         dilateMaskPasses(mask, (int)maskDilatePasses);
         if (maskDilatePasses > 0) {
             LOGI("nativeProcessHeatmap: float maskDilatePasses=%d", (int)maskDilatePasses);
         }
 
-        cv::Mat labels, stats, centroids;
+        cv::Mat stats, centroids;
         int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
         packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatmap, 1.0f, &results, boxCap, (int)growCells);
 
