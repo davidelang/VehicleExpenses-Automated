@@ -105,6 +105,7 @@ class ReportCollapser(
             "COLLAPSE drainAll merged=$total cursor=$cursor/$nCells " +
                 "ready_beyond=${hasReadyBeyond(cursor)}",
         )
+        deleteEmptyPumpImgDirs()
     }
 
     /**
@@ -246,6 +247,7 @@ class ReportCollapser(
             return
         }
 
+        val toDelete = ArrayList<File>()
         val tmp = File(src.parentFile, src.name + ".tmp")
         tmp.delete()
         java.io.RandomAccessFile(src, "r").use { rafIn ->
@@ -263,17 +265,9 @@ class ReportCollapser(
                     writeFully(outCh, bMark)
                     val body = bodyFile(cid)
                     if (body.isFile) {
-                        FileInputStream(body).use { bin ->
-                            val bch = bin.channel
-                            var off = 0L
-                            var rem = bch.size()
-                            while (rem > 0) {
-                                val n = bch.transferTo(off, rem, outCh)
-                                if (n <= 0) break
-                                off += n
-                                rem -= n
-                            }
-                        }
+                        val inlined = inlineCellHtml(body, src.parentFile)
+                        writeFully(outCh, inlined.bytes)
+                        toDelete.addAll(inlined.files)
                     }
                     writeFully(outCh, eMark)
                     pos = eAt + eMark.size
@@ -289,13 +283,88 @@ class ReportCollapser(
         if (src.exists() && !src.renameTo(bak)) {
             Log.w(TAG, "rename src→bak failed ${src.name}")
         }
-        if (!tmp.renameTo(src)) {
+        val replaced = if (!tmp.renameTo(src)) {
             tmp.inputStream().use { inp ->
                 FileOutputStream(src).use { out -> inp.copyTo(out, 64 * 1024) }
             }
             tmp.delete()
+            src.isFile
+        } else {
+            true
         }
         bak.delete()
+        if (replaced) {
+            for (f in toDelete) {
+                if (f.isFile && !f.delete()) {
+                    Log.w(TAG, "inline delete failed ${f.path}")
+                }
+            }
+        }
+    }
+
+    private data class InlinedCell(val bytes: ByteArray, val files: List<File>)
+
+    /** Relative img src → data URI. Cells are small; do not load the report. */
+    private fun inlineCellHtml(body: File, reportDir: File?): InlinedCell {
+        val text = body.readText(Charsets.UTF_8)
+        if (reportDir == null) return InlinedCell(text.toByteArray(Charsets.UTF_8), emptyList())
+        val inlined = ArrayList<File>()
+        val out = StringBuilder(text.length + 64)
+        var i = 0
+        while (i < text.length) {
+            val q1 = text.indexOf("src='", i)
+            val q2 = text.indexOf("src=\"", i)
+            val useSingle = when {
+                q1 < 0 && q2 < 0 -> -1
+                q1 < 0 -> 1
+                q2 < 0 -> 0
+                q1 < q2 -> 0
+                else -> 1
+            }
+            if (useSingle < 0) {
+                out.append(text, i, text.length)
+                break
+            }
+            val start = if (useSingle == 0) q1 else q2
+            val quote = if (useSingle == 0) '\'' else '"'
+            val prefixLen = 5
+            out.append(text, i, start)
+            val valStart = start + prefixLen
+            val valEnd = text.indexOf(quote, valStart)
+            if (valEnd < 0) {
+                out.append(text, start, text.length)
+                break
+            }
+            val srcVal = text.substring(valStart, valEnd)
+            out.append("src=").append(quote)
+            if (srcVal.startsWith("data:") || srcVal.contains("..")) {
+                out.append(srcVal)
+            } else {
+                val f = File(reportDir, srcVal)
+                if (f.isFile) {
+                    val mime = if (srcVal.endsWith(".png", ignoreCase = true)) "image/png" else "image/jpeg"
+                    val b64 = java.util.Base64.getEncoder().encodeToString(f.readBytes())
+                    out.append("data:").append(mime).append(";base64,").append(b64)
+                    inlined.add(f)
+                } else {
+                    Log.w(TAG, "missing sidecar $srcVal")
+                    out.append(srcVal)
+                }
+            }
+            out.append(quote)
+            i = valEnd + 1
+        }
+        return InlinedCell(out.toString().toByteArray(Charsets.UTF_8), inlined)
+    }
+
+    private fun deleteEmptyPumpImgDirs() {
+        val dir = htmlFile.parentFile ?: return
+        val kids = dir.listFiles() ?: return
+        for (d in kids) {
+            if (!d.isDirectory || !d.name.startsWith("pump_imgs_")) continue
+            val leftover = d.listFiles()
+            if (leftover != null && leftover.isEmpty()) d.delete()
+        }
     }
 
     private fun transferRange(
