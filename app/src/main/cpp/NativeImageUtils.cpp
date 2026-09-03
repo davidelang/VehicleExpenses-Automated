@@ -19,6 +19,23 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "NativeImageUtils", __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "NativeImageUtils", __VA_ARGS__)
 
+static constexpr size_t kVeAllocCap = 64ull * 1024ull * 1024ull;
+
+static size_t veMatBytes(int rows, int cols, int type) {
+    if (rows < 0 || cols < 0) return kVeAllocCap + 1;
+    return static_cast<size_t>(rows) * static_cast<size_t>(cols) * CV_ELEM_SIZE(type);
+}
+
+static bool veAllocLog(const char* tag, size_t bytes, int rows, int cols, int type) {
+    LOGI("veAllocLog tag=%s bytes=%zu rows=%d cols=%d type=%d", tag, bytes, rows, cols, type);
+    if (bytes > kVeAllocCap) {
+        LOGE("veAllocLog FAIL tag=%s bytes=%zu >64MiB rows=%d cols=%d type=%d",
+             tag, bytes, rows, cols, type);
+        return false;
+    }
+    return true;
+}
+
 static void logMatHeader(const char* tag, const cv::Mat* m) {
     if (!m) { LOGI("MAT_HEADER: %s null", tag); return; }
     LOGI("MAT_HEADER: %s cols=%d rows=%d dims=%d type=%d ch=%d flags=0x%x step0=%zu step1=%zu data=%p datastart=%p dataend=%p cont=%d empty=%d",
@@ -509,10 +526,13 @@ static cv::Mat jpegBgrScratch(int w, int h) {
     if (h < 1) h = 1;
     if (g_jpegBgr.empty() || g_jpegBgr.type() != CV_8UC3 ||
         g_jpegBgr.rows < h || g_jpegBgr.cols < w) {
-        g_jpegBgr.create(
-            std::max(h, g_jpegBgr.rows),
-            std::max(w, g_jpegBgr.cols),
-            CV_8UC3);
+        const int nr = std::max(h, g_jpegBgr.rows);
+        const int nc = std::max(w, g_jpegBgr.cols);
+        const size_t bytes = veMatBytes(nr, nc, CV_8UC3);
+        if (!veAllocLog("jpegBgrScratch", bytes, nr, nc, CV_8UC3)) {
+            return cv::Mat();
+        }
+        g_jpegBgr.create(nr, nc, CV_8UC3);
     }
     return g_jpegBgr(cv::Rect(0, 0, w, h));
 }
@@ -531,6 +551,7 @@ static bool encodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, int quality, s
     const int w = y.cols, h = y.rows;
     if (w < 1 || h < 1) return false;
     cv::Mat bgr = jpegBgrScratch(w, h);
+    if (bgr.empty() || bgr.rows < h || bgr.cols < w) return false;
     const bool hasUv = !uv.empty() && uv.type() == CV_8UC2 && uv.rows >= (h + 1) / 2 && uv.cols >= (w + 1) / 2;
     for (int yy = 0; yy < h; ++yy) {
         const uint8_t* yp = y.ptr<uint8_t>(yy);
@@ -556,6 +577,7 @@ static bool encodeYuvPlanesJpeg(
 ) {
     if (!out || !yData || w < 1 || h < 1) return false;
     cv::Mat bgr = jpegBgrScratch(w, h);
+    if (bgr.empty() || bgr.rows < h || bgr.cols < w) return false;
     for (int y = 0; y < h; ++y) {
         cv::Vec3b* dp = bgr.ptr<cv::Vec3b>(y);
         const uint8_t* yp = yData + y * stride;
@@ -1954,7 +1976,15 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         const double thrU = static_cast<double>(threshold) * 255.0;
         cv::Mat heatU8(h, w, CV_8UC1, const_cast<uint8_t*>(data));
         cv::Mat mask, labels;
-        wrapHeatScratch(scratchPtr, h, w, &mask, &labels);
+        const bool scratchOk = wrapHeatScratch(scratchPtr, h, w, &mask, &labels);
+        if (!scratchOk) {
+            if (!veAllocLog("heat_heap_mask", veMatBytes(h, w, CV_8UC1), h, w, CV_8UC1)) {
+                return nullptr;
+            }
+            if (!veAllocLog("heat_heap_labels", veMatBytes(h, w, CV_32S), h, w, CV_32S)) {
+                return nullptr;
+            }
+        }
         cv::threshold(heatU8, mask, thrU, 255.0, cv::THRESH_BINARY);
         // mask is already CV_8U from 8-bit threshold.
         dilateMaskPasses(mask, (int)maskDilatePasses);
@@ -1990,6 +2020,14 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
         cv::Mat mask, labels;
         const bool scratchOk = wrapHeatScratch(scratchPtr, h, w, &mask, &labels);
+        if (!scratchOk) {
+            if (!veAllocLog("heat_heap_mask", veMatBytes(h, w, CV_8UC1), h, w, CV_8UC1)) {
+                return nullptr;
+            }
+            if (!veAllocLog("heat_heap_labels", veMatBytes(h, w, CV_32S), h, w, CV_32S)) {
+                return nullptr;
+            }
+        }
         if (scratchOk) {
             uchar* mptr = mask.ptr<uchar>(0);
             for (size_t i = 0; i < n; ++i) {

@@ -97,6 +97,18 @@ private const val CAPTURE_REDBOX_DATA = false
 
 private fun dumpObjectPlanePng(plane: org.opencv.core.Mat, file: File): Boolean {
     if (plane.empty()) return false
+    val rows = plane.rows()
+    val cols = plane.cols()
+    val type = plane.type()
+    val bytes = plane.total() * plane.elemSize()
+    Log.i("veAllocLog", "tag=dumpObjectPlanePng bytes=$bytes rows=$rows cols=$cols type=$type")
+    if (bytes > 64L * 1024L * 1024L) {
+        Log.e(
+            "veAllocLog",
+            "FAIL tag=dumpObjectPlanePng bytes=$bytes >64MiB rows=$rows cols=$cols type=$type",
+        )
+        return false
+    }
     return try {
         org.opencv.imgcodecs.Imgcodecs.imwrite(file.absolutePath, plane)
     } catch (_: Throwable) {

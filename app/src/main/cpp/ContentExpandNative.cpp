@@ -12,6 +12,24 @@
 #include <android/log.h>
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "ContentExpandNative", __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "ContentExpandNative", __VA_ARGS__)
+
+static constexpr size_t kVeAllocCap = 64ull * 1024ull * 1024ull;
+
+static size_t veMatBytes(int rows, int cols, int type) {
+    if (rows < 0 || cols < 0) return kVeAllocCap + 1;
+    return static_cast<size_t>(rows) * static_cast<size_t>(cols) * CV_ELEM_SIZE(type);
+}
+
+static bool veAllocLog(const char* tag, size_t bytes, int rows, int cols, int type) {
+    LOGI("veAllocLog tag=%s bytes=%zu rows=%d cols=%d type=%d", tag, bytes, rows, cols, type);
+    if (bytes > kVeAllocCap) {
+        LOGE("veAllocLog FAIL tag=%s bytes=%zu >64MiB rows=%d cols=%d type=%d",
+             tag, bytes, rows, cols, type);
+        return false;
+    }
+    return true;
+}
 
 static constexpr int kRunHistBins = 32;
 static constexpr int kSeg7TeleN = 21 + kRunHistBins * 2;
@@ -888,7 +906,12 @@ static bool fillChromaMag(const cv::Mat& y, const cv::Mat& uv, cv::Mat* dst) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
     const bool reuse = scratchFits(dst, w, h);
-    if (!reuse) dst->create(h, w, CV_8UC1);
+    if (!reuse) {
+        if (!veAllocLog("fillChromaMag", veMatBytes(h, w, CV_8UC1), h, w, CV_8UC1)) {
+            return false;
+        }
+        dst->create(h, w, CV_8UC1);
+    }
     if (uv.empty() || uv.type() != CV_8UC2 || uv.rows <= 0 || uv.cols <= 0) {
         if (reuse) (*dst)(cv::Rect(0, 0, w, h)).setTo(0);
         else dst->setTo(0);
@@ -2599,6 +2622,11 @@ static void seg7One(
     *ol = sl; *ot = st; *oright = sr; *ob = sb;
     const int seedH = std::max(1, sb - st);
     const int seedW = std::max(1, sr - sl);
+    LOGI("veAllocLog tag=seg7One seedW=%d seedH=%d imgW=%d imgH=%d",
+         seedW, seedH, imgW, imgH);
+    if (!veAllocLog("seg7One", veMatBytes(imgH, imgW, CV_8UC1), imgH, imgW, CV_8UC1)) {
+        return;
+    }
     const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedH)));
     *sPxOut = fallback;
     *vSWOut = 4;
@@ -2612,6 +2640,13 @@ static void seg7One(
     const int nt = std::max(0, st - vLook);
     const int nb = std::min(imgH, sb + vLook);
     if (sr <= sl || nb <= nt) return;
+    const int lookH = nb - nt;
+    const int lookW = sr - sl;
+    LOGI("veAllocLog tag=seg7One lookW=%d lookH=%d seedW=%d seedH=%d imgW=%d imgH=%d",
+         lookW, lookH, seedW, seedH, imgW, imgH);
+    if (!veAllocLog("seg7One_look", veMatBytes(lookH, lookW, CV_8UC1), lookH, lookW, CV_8UC1)) {
+        return;
+    }
     cv::Mat look = src(cv::Range(nt, nb), cv::Range(sl, sr));
     cv::Mat seedY = src(cv::Range(st, sb), cv::Range(sl, sr));
     cv::Mat lookBin;
@@ -3466,7 +3501,14 @@ static int fillPoisonLookRaster(
             xSeed0, ySeed0, lookY.cols);
     }
     cv::Mat labels, stats, centroids;
-    const int nLab = objPack ? 0 : cv::connectedComponentsWithStats(poison, labels, stats, centroids, 8);
+    int nLab = 0;
+    if (!objPack) {
+        if (!veAllocLog("poison_cc", veMatBytes(poison.rows, poison.cols, CV_32S),
+                poison.rows, poison.cols, CV_32S)) {
+            return std::max(1, sPx);
+        }
+        nLab = cv::connectedComponentsWithStats(poison, labels, stats, centroids, 8);
+    }
     std::vector<PoisonReg> regs(static_cast<size_t>(std::max(0, nLab)));
     for (int i = 1; i < nLab; ++i) {
         PoisonReg r;
@@ -3524,6 +3566,11 @@ static int fillPoisonLookRaster(
     if (plusFill) {
         auto fillPlusRect = [&](int plusT, int plusB, int plusL, int plusR) {
             if (plusB <= plusT || plusR <= plusL) return;
+            const int plusH0 = plusB - plusT, plusW0 = plusR - plusL;
+            if (!veAllocLog("fillPlusRect", veMatBytes(plusH0, plusW0, CV_8UC1),
+                    plusH0, plusW0, CV_8UC1)) {
+                return;
+            }
             for (int y = plusT; y < plusB; ++y) {
                 uint8_t* op = lookBin->ptr<uint8_t>(y);
                 uint8_t* pp = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
@@ -3670,6 +3717,9 @@ static bool fillGrayJumpLook(
     if (sr <= sl || sb <= st) return false;
     const bool reuse = scratchFits(dst, w, h);
     if (!reuse) {
+        if (!veAllocLog("fillGrayJumpLook", veMatBytes(h, w, CV_8UC1), h, w, CV_8UC1)) {
+            return false;
+        }
         dst->create(h, w, CV_8UC1);
     }
     dst->setTo(0);
