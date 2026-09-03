@@ -36,6 +36,63 @@ static bool veAllocLog(const char* tag, size_t bytes, int rows, int cols, int ty
     return true;
 }
 
+static cv::Mat g_jpegBgr;
+static cv::Mat jpegBgrScratch(int w, int h);
+
+/** BT.601-ish 8U (OpenCV I420 scale) into handle Y + NV21 VU. rgb=true if src is RGB. */
+static bool color3ToHandleYuv(const cv::Mat& c3, BufferSetHandle* handle, bool rgb) {
+    if (!handle || !handle->yMat || !handle->uvMat || c3.empty() || c3.type() != CV_8UC3) {
+        return false;
+    }
+    const int w = (int)handle->width, h = (int)handle->height;
+    if (c3.cols != w || c3.rows != h) return false;
+    cv::Mat& yM = *handle->yMat;
+    cv::Mat& uvM = *handle->uvMat;
+    if (yM.rows < h || yM.cols < w || yM.type() != CV_8UC1) return false;
+    if (uvM.rows < h / 2 || uvM.cols < w / 2 || uvM.type() != CV_8UC2) return false;
+    auto yuv1 = [&](int R, int G, int B, int* Y, int* U, int* V) {
+        *Y = (4899 * R + 9617 * G + 1868 * B + 8192) >> 14;
+        *V = ((8192 * R - 6860 * G - 1332 * B + 8192) >> 14) + 128;
+        *U = ((-2765 * R - 5427 * G + 8192 * B + 8192) >> 14) + 128;
+        if (*Y < 0) *Y = 0; if (*Y > 255) *Y = 255;
+        if (*U < 0) *U = 0; if (*U > 255) *U = 255;
+        if (*V < 0) *V = 0; if (*V > 255) *V = 255;
+    };
+    for (int y = 0; y < h; ++y) {
+        const uchar* p = c3.ptr<uchar>(y);
+        uint8_t* yp = yM.ptr<uint8_t>(y);
+        for (int x = 0; x < w; ++x) {
+            int B = p[x * 3 + 0], G = p[x * 3 + 1], R = p[x * 3 + 2];
+            if (rgb) { const int t = B; B = R; R = t; }
+            int Y, U, V;
+            yuv1(R, G, B, &Y, &U, &V);
+            yp[x] = (uint8_t)Y;
+        }
+    }
+    for (int y = 0; y < h; y += 2) {
+        const uchar* p0 = c3.ptr<uchar>(y);
+        const uchar* p1 = c3.ptr<uchar>(y + 1 < h ? y + 1 : y);
+        cv::Vec2b* uv = uvM.ptr<cv::Vec2b>(y / 2);
+        for (int x = 0; x < w; x += 2) {
+            int Rs = 0, Gs = 0, Bs = 0, n = 0;
+            for (int dy = 0; dy < 2; ++dy) {
+                const uchar* p = dy ? p1 : p0;
+                for (int dx = 0; dx < 2 && x + dx < w; ++dx) {
+                    int B = p[(x + dx) * 3 + 0], G = p[(x + dx) * 3 + 1], R = p[(x + dx) * 3 + 2];
+                    if (rgb) { const int t = B; B = R; R = t; }
+                    Rs += R; Gs += G; Bs += B; ++n;
+                }
+            }
+            if (n < 1) n = 1;
+            int Y, U, V;
+            yuv1(Rs / n, Gs / n, Bs / n, &Y, &U, &V);
+            uv[x / 2][0] = (uint8_t)V;
+            uv[x / 2][1] = (uint8_t)U;
+        }
+    }
+    return true;
+}
+
 static void logMatHeader(const char* tag, const cv::Mat* m) {
     if (!m) { LOGI("MAT_HEADER: %s null", tag); return; }
     LOGI("MAT_HEADER: %s cols=%d rows=%d dims=%d type=%d ch=%d flags=0x%x step0=%zu step1=%zu data=%p datastart=%p dataend=%p cont=%d empty=%d",
@@ -231,42 +288,32 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeTestI
 JNIEXPORT jboolean JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeIngestJpegToYuv(
     JNIEnv* env, jobject thiz, jstring path, jlong handlePtr) {
-    
-    const char* nativePath = env->GetStringUTFChars(path, nullptr);
-    cv::Mat bgr = cv::imread(nativePath, cv::IMREAD_COLOR);
-    env->ReleaseStringUTFChars(path, nativePath);
-    
-    if (bgr.empty()) return JNI_FALSE;
-    
     auto* handle = reinterpret_cast<BufferSetHandle*>(handlePtr);
     if (!handle) return JNI_FALSE;
-    
-    if (handle->width != (size_t)bgr.cols || handle->height != (size_t)bgr.rows) {
+    const int w = (int)handle->width, h = (int)handle->height;
+    if (w < 1 || h < 1) return JNI_FALSE;
+
+    const char* nativePath = env->GetStringUTFChars(path, nullptr);
+    if (!nativePath) return JNI_FALSE;
+    FILE* f = fopen(nativePath, "rb");
+    env->ReleaseStringUTFChars(path, nativePath);
+    if (!f) return JNI_FALSE;
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return JNI_FALSE; }
+    const long n = ftell(f);
+    if (n < 1 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return JNI_FALSE; }
+    std::vector<uchar> fileBuf(static_cast<size_t>(n));
+    const size_t got = fread(fileBuf.data(), 1, fileBuf.size(), f);
+    fclose(f);
+    if (got != fileBuf.size()) return JNI_FALSE;
+
+    cv::Mat dest = jpegBgrScratch(w, h);
+    if (dest.empty()) return JNI_FALSE;
+    cv::Mat decoded = cv::imdecode(fileBuf, cv::IMREAD_COLOR, &g_jpegBgr);
+    if (decoded.empty() || decoded.cols != w || decoded.rows != h ||
+        decoded.type() != CV_8UC3) {
         return JNI_FALSE;
     }
-    
-    // 1. Convert to YUV I420 (YYYY U V)
-    cv::Mat i420;
-    cv::cvtColor(bgr, i420, cv::COLOR_BGR2YUV_I420);
-    
-    // 2. Perform in-place C++ Interleaving into NV21
-    size_t ySize = handle->width * handle->height;
-    size_t uvSize = ySize / 4;
-    
-    // Copy Y Plane directly
-    std::memcpy(handle->data, i420.data, ySize);
-    
-    // Interleave U and V planes into VUVU...
-    uint8_t* dst_uv = handle->data + ySize;
-    uint8_t* src_u = i420.data + ySize;
-    uint8_t* src_v = src_u + uvSize;
-    
-    for (size_t i = 0; i < uvSize; ++i) {
-        dst_uv[i * 2] = src_v[i];
-        dst_uv[i * 2 + 1] = src_u[i];
-    }
-    
-    return JNI_TRUE;
+    return color3ToHandleYuv(decoded, handle, false) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jstring JNICALL
@@ -352,28 +399,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeInges
         return JNI_FALSE;
     }
     
-    // We now have RGB bytes. Wrap them in a Mat.
+    // We now have RGB bytes. Wrap them in a Mat (libraw buffer, not OpenCV dest).
     cv::Mat rgb(image->height, image->width, CV_8UC3, image->data);
-    
-    // 1. Convert to YUV I420 (Planar 4:2:0)
-    cv::Mat i420;
-    cv::cvtColor(rgb, i420, cv::COLOR_RGB2YUV_I420);
-    
-    // 2. Perform in-place C++ Interleaving into NV21
-    size_t ySize = handle->width * handle->height;
-    size_t uvSize = ySize / 4;
-    
-    // Copy Y Plane directly
-    std::memcpy(handle->data, i420.data, ySize);
-    
-    // Interleave U and V planes into VUVU...
-    uint8_t* dst_uv = handle->data + ySize;
-    uint8_t* src_u = i420.data + ySize;
-    uint8_t* src_v = src_u + uvSize;
-    
-    for (size_t i = 0; i < uvSize; ++i) {
-        dst_uv[i * 2] = src_v[i];
-        dst_uv[i * 2 + 1] = src_u[i];
+    if (!color3ToHandleYuv(rgb, handle, true)) {
+        LibRaw::dcraw_clear_mem(image);
+        RawProcessor.recycle();
+        return JNI_FALSE;
     }
     
     auto t4 = std::chrono::high_resolution_clock::now();
@@ -519,8 +550,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeDumpD
 }
 
 /** Standing JPEG BGR plane; grows, never released per call. Dest-crop sized. */
-static cv::Mat g_jpegBgr;
-
 static cv::Mat jpegBgrScratch(int w, int h) {
     if (w < 1) w = 1;
     if (h < 1) h = 1;
