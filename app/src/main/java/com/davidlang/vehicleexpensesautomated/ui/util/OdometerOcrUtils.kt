@@ -40,6 +40,63 @@ import org.opencv.imgproc.Imgproc
 import java.util.Collections
 
 object OdometerOcrUtils {
+    private val odoGrayU8 = Mat()
+    private val odoFiltU8 = Mat()
+
+    private fun standingU8(m: Mat, h: Int, w: Int): Mat? {
+        if (h < 1 || w < 1) return null
+        if (m.empty() || m.type() != CvType.CV_8UC1 || m.rows() < h || m.cols() < w) {
+            m.create(h, w, CvType.CV_8UC1)
+        }
+        if (m.empty()) return null
+        return m.submat(0, h, 0, w)
+    }
+
+    private fun wrapBitmapToGrayU8(bitmap: Bitmap, dest: Mat): Boolean {
+        val h = bitmap.height
+        val w = bitmap.width
+        val crop = standingU8(dest, h, w) ?: return false
+        try {
+            val gray = ByteArray(w * h)
+            if (bitmap.config == Bitmap.Config.ALPHA_8) {
+                bitmap.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(gray))
+            } else {
+                val argb = IntArray(w * h)
+                bitmap.getPixels(argb, 0, w, 0, 0, w, h)
+                for (i in argb.indices) {
+                    val p = argb[i]
+                    val r = (p ushr 16) and 0xff
+                    val g = (p ushr 8) and 0xff
+                    val b = p and 0xff
+                    gray[i] = ((77 * r + 150 * g + 29 * b) shr 8).toByte()
+                }
+            }
+            crop.put(0, 0, gray)
+            return true
+        } finally {
+            crop.release()
+        }
+    }
+
+    private fun grayU8ToBitmap(src: Mat, bitmap: Bitmap) {
+        val h = bitmap.height
+        val w = bitmap.width
+        val crop = src.submat(0, h, 0, w)
+        val gray = ByteArray(w * h)
+        crop.get(0, 0, gray)
+        crop.release()
+        if (bitmap.config == Bitmap.Config.ALPHA_8) {
+            bitmap.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(gray))
+        } else {
+            val argb = IntArray(w * h)
+            for (i in gray.indices) {
+                val g = gray[i].toInt() and 0xff
+                argb[i] = (0xff shl 24) or (g shl 16) or (g shl 8) or g
+            }
+            bitmap.setPixels(argb, 0, w, 0, 0, w, h)
+        }
+    }
+
     data class HistMarker(val value: Double, val color: Int)
     data class HistStats(val intensityLow: Double, val intensityHigh: Double, val p80: Double, val rawBins: FloatArray)
     fun clusterRects(fragments: List<android.graphics.Rect>): List<android.graphics.Rect> {
@@ -541,61 +598,48 @@ object OdometerOcrUtils {
 
     fun applyGrayscaleInPlace(bitmap: Bitmap) {
         if (bitmap.config == Bitmap.Config.ALPHA_8) return
-        val mat = Mat()
-        org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat()
-        Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
-        // Convert back to ARGB_8888 in-place
-        Imgproc.cvtColor(gray, mat, Imgproc.COLOR_GRAY2RGBA)
-        org.opencv.android.Utils.matToBitmap(mat, bitmap)
-        mat.release(); gray.release()
+        if (!wrapBitmapToGrayU8(bitmap, odoGrayU8)) return
+        grayU8ToBitmap(odoGrayU8, bitmap)
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun applyBilateralInPlace(bitmap: Bitmap, scratchBmp: Bitmap) {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
-            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
+        val h = bitmap.height
+        val w = bitmap.width
+        if (!wrapBitmapToGrayU8(bitmap, odoGrayU8)) return
+        val src = standingU8(odoGrayU8, h, w) ?: return
+        val dst = standingU8(odoFiltU8, h, w) ?: run {
+            src.release()
+            return
         }
-        val gray = Mat()
-        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY) else src.copyTo(gray)
-        val filtered = Mat()
-        Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
-
-        if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmap(filtered, bitmap)
-        } else {
-            val outMat = Mat(); Imgproc.cvtColor(filtered, outMat, Imgproc.COLOR_GRAY2RGBA)
-            org.opencv.android.Utils.matToBitmap(outMat, scratchBmp)
-            Canvas(bitmap).drawBitmap(scratchBmp, 0f, 0f, null)
-            outMat.release()
-        }
-        src.release(); gray.release(); filtered.release()
+        Imgproc.bilateralFilter(src, dst, 5, 75.0, 75.0)
+        src.release()
+        grayU8ToBitmap(odoFiltU8, bitmap)
+        dst.release()
     }
 
     fun applyGrayscale(bitmap: Bitmap): Bitmap {
         if (bitmap.config == Bitmap.Config.ALPHA_8) return bitmap
-        val mat = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, mat)
-        val gray = Mat(); Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGB2GRAY)
-        val out = Bitmap.createBitmap(gray.cols(), gray.rows(), Bitmap.Config.ARGB_8888)
-        org.opencv.android.Utils.matToBitmap(gray, out)
-        mat.release(); gray.release(); return out
+        if (!wrapBitmapToGrayU8(bitmap, odoGrayU8)) return bitmap
+        grayU8ToBitmap(odoGrayU8, bitmap)
+        return bitmap
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun applyBilateral(bitmap: Bitmap, argbScratch: Bitmap? = null): Bitmap {
-        val src = if (bitmap.config == Bitmap.Config.ALPHA_8) bitmapToMat(bitmap) else {
-            val m = Mat(); org.opencv.android.Utils.bitmapToMat(bitmap, m); m
+        val h = bitmap.height
+        val w = bitmap.width
+        if (!wrapBitmapToGrayU8(bitmap, odoGrayU8)) return bitmap
+        val src = standingU8(odoGrayU8, h, w) ?: return bitmap
+        val dst = standingU8(odoFiltU8, h, w) ?: run {
+            src.release()
+            return bitmap
         }
-        val gray = Mat()
-        if (src.channels() > 1) Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGB2GRAY) else src.copyTo(gray)
-        val filtered = Mat()
-        Imgproc.bilateralFilter(gray, filtered, 5, 75.0, 75.0)
-
-        // Phase 115: In-place update
-        if (bitmap.config == Bitmap.Config.ALPHA_8) {
-            matToBitmap(filtered, bitmap)
-        } else {
-            org.opencv.android.Utils.matToBitmap(filtered, bitmap)
-        }
-        src.release(); gray.release(); filtered.release(); return bitmap
+        Imgproc.bilateralFilter(src, dst, 5, 75.0, 75.0)
+        src.release()
+        grayU8ToBitmap(odoFiltU8, bitmap)
+        dst.release()
+        return bitmap
     }
     fun applyContrastStretch(mat: Mat, floorPercentile: Float) {
         val hist = Mat()

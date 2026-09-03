@@ -7,7 +7,6 @@ import android.graphics.Rect
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.opencv.imgproc.Imgproc
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.abs
@@ -189,21 +188,8 @@ object OcrFunctionalPipeline {
             try {
                 NativeImageUtils.ingestArgbToYuv(input, master.p)
             } catch (t: Throwable) {
-                Log.w(TAG, "ingestArgbToYuv failed, fallback bitmapToMat+cvtColor: ${t.message}")
-                val argb = org.opencv.core.Mat()
-                org.opencv.android.Utils.bitmapToMat(input, argb)
-                val gray = org.opencv.core.Mat()
-                Imgproc.cvtColor(argb, gray, Imgproc.COLOR_RGBA2GRAY)
-                if (gray.cols() != evenW || gray.rows() != evenH) {
-                    val padded = org.opencv.core.Mat(evenH, evenW, gray.type(), org.opencv.core.Scalar(255.0))
-                    gray.copyTo(padded.submat(0, imgH, 0, imgW))
-                    padded.copyTo(master.p.mat)
-                    padded.release()
-                } else {
-                    gray.copyTo(master.p.mat)
-                }
-                argb.release()
-                gray.release()
+                Log.w(TAG, "ingestArgbToYuv failed: ${t.message}")
+                return@withContext fail("ingest_failed", tTotal, t.message ?: "ingestArgbToYuv")
             }
 
             // 2) Angle from Paddle heatmap (production optimized deskew)

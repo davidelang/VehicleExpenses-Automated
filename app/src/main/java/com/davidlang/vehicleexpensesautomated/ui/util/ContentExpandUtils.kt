@@ -1996,10 +1996,13 @@ object ContentExpandUtils {
         val imgH = gray.rows()
         val s = clip(seed, imgW, imgH)
         return when (mode) {
-            Mode.DUAL_SAUVOLA -> growOnMask(
-                gray, s, dualInkMask(gray), opts.maxFrac, opts.minInkFrac,
-                opts.enableJump, opts.jumpFrac, opts.jumpVertPadPx, opts.retractClearFrac,
-            )
+            Mode.DUAL_SAUVOLA -> {
+                val ink = dualInkMask(gray) ?: return s
+                growOnMask(
+                    gray, s, ink, opts.maxFrac, opts.minInkFrac,
+                    opts.enableJump, opts.jumpFrac, opts.jumpVertPadPx, opts.retractClearFrac,
+                )
+            }
             Mode.INTERIOR_ENERGY -> expandDiagnose(gray, seed, mode, opts).rect
             Mode.EDGE_RING -> growOnEdges(
                 gray, s, opts.maxFrac, opts.minEdgeRatio,
@@ -2007,8 +2010,9 @@ object ContentExpandUtils {
             )
             Mode.V025_THEN_DUAL -> {
                 val blue = ratioExpand(s, v = 0.25f, horiz = 0.5f, imgW, imgH)
+                val ink = dualInkMask(gray) ?: return s
                 growOnMask(
-                    gray, blue, dualInkMask(gray), maxFrac = 0.5f, minFrac = opts.minInkFrac,
+                    gray, blue, ink, maxFrac = 0.5f, minFrac = opts.minInkFrac,
                     enableJump = opts.enableJump, jumpFrac = opts.jumpFrac,
                     jumpVertPadPx = opts.jumpVertPadPx, retractClearFrac = opts.retractClearFrac,
                 )
@@ -2027,9 +2031,21 @@ object ContentExpandUtils {
         return Rect(nl, nt, nr, nb)
     }
 
-    private fun dualInkMask(gray: Mat): Mat {
-        val dark = Mat()
-        val light = Mat()
+    private fun u8Crop(src: Mat?, h: Int, w: Int): Mat? {
+        if (src == null || src.empty() || src.type() != CvType.CV_8UC1) return null
+        if (src.rows() < h || src.cols() < w) return null
+        return src.submat(0, h, 0, w)
+    }
+
+    private fun dualInkMask(gray: Mat): Mat? {
+        val h = gray.rows()
+        val w = gray.cols()
+        val bSet = try { NativePaddleEngine.bufferSetB } catch (_: Throwable) { return null }
+        val dark = u8Crop(bSet.p.mat, h, w) ?: return null
+        val light = u8Crop(bSet.s.mat, h, w) ?: run {
+            dark.release()
+            return null
+        }
         Imgproc.adaptiveThreshold(
             gray, dark, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
             Imgproc.THRESH_BINARY_INV, 31, 5.0
@@ -2038,13 +2054,12 @@ object ContentExpandUtils {
             gray, light, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
             Imgproc.THRESH_BINARY, 31, 5.0
         )
-        val ink = Mat()
-        Core.max(dark, light, ink)
-        dark.release(); light.release()
+        Core.max(dark, light, dark)
+        light.release()
         val k = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
-        Imgproc.morphologyEx(ink, ink, Imgproc.MORPH_OPEN, k)
+        Imgproc.morphologyEx(dark, dark, Imgproc.MORPH_OPEN, k)
         k.release()
-        return ink
+        return dark
     }
 
     private fun growOnMask(
@@ -2132,9 +2147,13 @@ object ContentExpandUtils {
         val imgW = gray.cols(); val imgH = gray.rows()
         var l = seed.left; var t = seed.top; var r = seed.right; var b = seed.bottom
         val cap = max(1, (maxFrac * max(1, seed.height())).roundToInt())
-        val eq = Mat()
+        val bSet = try { NativePaddleEngine.bufferSetB } catch (_: Throwable) { return seed }
+        val eq = u8Crop(bSet.p.mat, imgH, imgW) ?: return seed
+        val edges = u8Crop(bSet.s.mat, imgH, imgW) ?: run {
+            eq.release()
+            return seed
+        }
         Imgproc.equalizeHist(gray, eq)
-        val edges = Mat()
         Imgproc.Canny(eq, edges, 40.0, 120.0)
         eq.release()
         fun dens(sl: Rect): Double {

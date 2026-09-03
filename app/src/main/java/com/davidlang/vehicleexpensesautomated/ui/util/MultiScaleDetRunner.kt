@@ -2195,48 +2195,15 @@ object MultiScaleDetRunner {
         val scale = if (fullW > PREVIEW_MAX_W) PREVIEW_MAX_W.toFloat() / fullW else 1.0f
         val pw = max(1, (fullW * scale).roundToInt())
         val ph = max(1, (fullH * scale).roundToInt())
-        val graySmall = Mat()
-        Imgproc.resize(gray, graySmall, Size(pw.toDouble(), ph.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
-        val bgr = Mat()
-        Imgproc.cvtColor(graySmall, bgr, Imgproc.COLOR_GRAY2BGR)
-        graySmall.release()
-
-        if (heatU8 != null && heatW > 0 && heatH > 0 && contentW > 0 && contentH > 0 &&
-            heatU8.size >= heatW * heatH
+        val destFull = try { NativePaddleEngine.bufferSetB.s.mat } catch (_: Throwable) { return "" }
+        if (destFull.empty() || destFull.type() != CvType.CV_8UC1 ||
+            destFull.rows() < ph || destFull.cols() < pw
         ) {
-            try {
-                // Content heat → preview only (never materialize fullW×fullH float).
-                val heatMat = Mat(heatH, heatW, CvType.CV_8UC1)
-                heatMat.put(0, 0, heatU8)
-                val cW = min(contentW, heatW)
-                val cH = min(contentH, heatH)
-                val contentHeat = heatMat.submat(0, cH, 0, cW)
-                val heatPrev = Mat()
-                Imgproc.resize(
-                    contentHeat,
-                    heatPrev,
-                    Size(pw.toDouble(), ph.toDouble()),
-                    0.0,
-                    0.0,
-                    Imgproc.INTER_LINEAR,
-                )
-                contentHeat.release()
-                heatMat.release()
-                // u8 heat: on if value > 0 (matches HEAT_THR_U8_GE1 / production G-dense).
-                val mask = Mat()
-                Core.compare(heatPrev, Scalar(0.0), mask, Core.CMP_GT)
-                heatPrev.release()
-                val redLayer = Mat(ph, pw, CvType.CV_8UC3, Scalar(0.0, 0.0, 220.0))
-                val blended = Mat()
-                Core.addWeighted(bgr, 0.55, redLayer, 0.45, 0.0, blended)
-                blended.copyTo(bgr, mask)
-                blended.release()
-                redLayer.release()
-                mask.release()
-            } catch (t: Throwable) {
-                Log.w(TAG, "heat fill skip: ${t.message}")
-            }
+            return ""
         }
+        val graySmall = destFull.submat(0, ph, 0, pw)
+        Imgproc.resize(gray, graySmall, Size(pw.toDouble(), ph.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+        // Heat-fill skipped: no empty graySmall/bgr/blended dests.
 
         fun mapR(r: Rect): org.opencv.core.Rect {
             val l = (r.left * scale).roundToInt().coerceIn(0, pw - 1)
@@ -2248,40 +2215,37 @@ object MultiScaleDetRunner {
         for (r in reds) {
             val o = mapR(r)
             Imgproc.rectangle(
-                bgr,
+                graySmall,
                 Point(o.x.toDouble(), o.y.toDouble()),
                 Point((o.x + o.width).toDouble(), (o.y + o.height).toDouble()),
-                Scalar(0.0, 0.0, 255.0),
+                Scalar(255.0),
                 2,
             )
         }
         for (b in blues) {
             val o = mapR(b)
             Imgproc.rectangle(
-                bgr,
+                graySmall,
                 Point(o.x.toDouble(), o.y.toDouble()),
                 Point((o.x + o.width).toDouble(), (o.y + o.height).toDouble()),
-                Scalar(255.0, 0.0, 0.0), // BGR blue
+                Scalar(180.0),
                 2,
             )
         }
         for (or in oranges) {
             val o = mapR(or)
             Imgproc.rectangle(
-                bgr,
+                graySmall,
                 Point(o.x.toDouble(), o.y.toDouble()),
                 Point((o.x + o.width).toDouble(), (o.y + o.height).toDouble()),
-                Scalar(0.0, 165.0, 255.0), // BGR orange
+                Scalar(220.0),
                 2,
             )
         }
 
-        val rgb = Mat()
-        Imgproc.cvtColor(bgr, rgb, Imgproc.COLOR_BGR2RGB)
-        bgr.release()
         val bmp = Bitmap.createBitmap(pw, ph, Bitmap.Config.ARGB_8888)
-        Utils.matToBitmap(rgb, bmp)
-        rgb.release()
+        Utils.matToBitmap(graySmall, bmp)
+        graySmall.release()
         val b64 = OcrUtils.bitmapToBase64(bmp, 72)
         bmp.recycle()
         return b64
