@@ -360,7 +360,7 @@ object NativeImageUtils {
         maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
         /** 0 = CC AABB as-is; 1 = grow one 4×4 det cell (production default). */
         growCells: Int = 1,
-        /** Optional A.p Y: mask + CC labels headers when bytes ≥ 5×heat. Null = heap. */
+        /** A.p Y: mask + CC labels + edges headers. Null = JNI fail (no heap). */
         scratchY: Mat? = null,
     ): FloatArray? {
         return nativeProcessHeatmap(
@@ -382,10 +382,11 @@ object NativeImageUtils {
         maskDilatePasses: Int = 0,
         maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
         growCells: Int = 1,
+        scratchY: Mat? = null,
     ): FloatArray? {
         return nativeProcessHeatmapU8(
             heatU8, width, height, threshold, minArea, boxMode, maskDilatePasses, maxBoxes,
-            growCells,
+            growCells, scratchY?.nativeObj ?: 0L,
         )
     }
 
@@ -400,13 +401,19 @@ object NativeImageUtils {
      * Production: Hough lines on thresholded heat (phase-2 GT winner `hough_thr0.2`);
      * falls back to legacy CC + minAreaRect 0.5° buckets if no lines.
      */
-    fun heatmapToAngle(tensor: Any, threshold: Float): Float {
-        return nativeHeatmapToAngle(tensor, threshold)
+    fun heatmapToAngle(tensor: Any, threshold: Float, scratchY: Mat? = null): Float {
+        return nativeHeatmapToAngle(tensor, threshold, scratchY?.nativeObj ?: 0L)
     }
 
     /** Deskew angle from host u8 heat plane (tiled det). thr is float on heat in [0,1] (u8/255). */
-    fun heatmapToAngleU8(heatU8: ByteArray, width: Int, height: Int, threshold: Float): Float {
-        return nativeHeatmapToAngleU8(heatU8, width, height, threshold)
+    fun heatmapToAngleU8(
+        heatU8: ByteArray,
+        width: Int,
+        height: Int,
+        threshold: Float,
+        scratchY: Mat? = null,
+    ): Float {
+        return nativeHeatmapToAngleU8(heatU8, width, height, threshold, scratchY?.nativeObj ?: 0L)
     }
 
     /**
@@ -912,10 +919,17 @@ object NativeImageUtils {
         maskDilatePasses: Int,
         maxBoxes: Int,
         growCells: Int,
+        scratchPtr: Long,
     ): FloatArray?
     private external fun nativeLastHeatmapPostPath(): String?
-    private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
-    private external fun nativeHeatmapToAngleU8(heatU8: ByteArray, width: Int, height: Int, threshold: Float): Float
+    private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float, scratchPtr: Long): Float
+    private external fun nativeHeatmapToAngleU8(
+        heatU8: ByteArray,
+        width: Int,
+        height: Int,
+        threshold: Float,
+        scratchPtr: Long,
+    ): Float
     private external fun nativeHeatmapToFloatArray(tensor: Any): FloatArray?
     private external fun nativeHeatmapToUInt8Array(tensor: Any): ByteArray?
 

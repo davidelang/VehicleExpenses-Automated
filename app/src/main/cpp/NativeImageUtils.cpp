@@ -1528,10 +1528,39 @@ static float normAnglePm45(float ang) {
     return ang;
 }
 
+static bool wrapHeatScratch(jlong scratchPtr, int h, int w,
+                            cv::Mat* maskOut, cv::Mat* labelsOut, cv::Mat* edgesOut);
+static float heatAngleFromLabels(
+    const cv::Mat& labels, const cv::Mat& stats, int numLabels, int w, int h,
+    const float* heatF, const uint8_t* heatU);
+
+static float houghMedianPm45(const std::vector<cv::Vec2f>& lines) {
+    std::vector<float> angs;
+    angs.reserve(std::min<size_t>(lines.size(), 200));
+    const size_t nTake = std::min<size_t>(lines.size(), 200);
+    for (size_t i = 0; i < nTake; ++i) {
+        const float deg = static_cast<float>(lines[i][1] * 180.0 / CV_PI) - 90.0f;
+        angs.push_back(normAnglePm45(deg));
+    }
+    std::vector<float> near;
+    near.reserve(angs.size());
+    for (float a : angs) {
+        if (std::fabs(a) < 30.0f) near.push_back(a);
+    }
+    const std::vector<float>& use = near.empty() ? angs : near;
+    if (use.empty()) return 0.0f;
+    std::vector<float> sorted = use;
+    std::sort(sorted.begin(), sorted.end());
+    const size_t mid = sorted.size() / 2;
+    if (sorted.size() % 2 == 1) return sorted[mid];
+    return 0.5f * (sorted[mid - 1] + sorted[mid]);
+}
+
 // Production deskew angle from det heatmap (phase-2 GT winner: hough_thr0.2).
 // Fallback: legacy CC + minAreaRect + 0.5° weighted buckets if Hough finds no lines.
 // Must not throw: OpenCV exceptions on the JNI path abort the process (uncaught).
-static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold) {
+// mask/labels/edges live on A.p wrap; missing scratch → 0 (JNI fail).
+static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold, jlong scratchPtr) {
     try {
         const int h = heatmap.rows;
         const int w = heatmap.cols;
@@ -1542,10 +1571,11 @@ static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold
             return 0.0f;
         }
 
-        // --- Primary: Hough lines on Canny of thresholded heat (matches estimators.py) ---
-        // Explicit CV_8UC1 binary (0/255). Do NOT pass MatExpr (e.g. mask8>0) into OpenCV
-        // algorithms — connectedComponentsWithStats rejects it (unsupported array type / abort).
-        cv::Mat mask8(h, w, CV_8UC1);
+        cv::Mat mask8, labels, edges;
+        if (!wrapHeatScratch(scratchPtr, h, w, &mask8, &labels, &edges)) {
+            LOGE("heatmapToAngle: wrapHeatScratch failed h=%d w=%d", h, w);
+            return 0.0f;
+        }
         {
             const float* src = heatmap.ptr<float>(0);
             uint8_t* dst = mask8.ptr<uint8_t>(0);
@@ -1554,86 +1584,17 @@ static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold
                 dst[i] = (src[i] > threshold) ? 255 : 0;
             }
         }
-        cv::Mat edges;
         cv::Canny(mask8, edges, 50, 150);
         const int houghThr = std::max(40, static_cast<int>(std::min(h, w) * 0.05));
         std::vector<cv::Vec2f> lines;
         cv::HoughLines(edges, lines, 1.0, CV_PI / 180.0, houghThr);
 
-        if (!lines.empty()) {
-            std::vector<float> angs;
-            angs.reserve(std::min<size_t>(lines.size(), 200));
-            const size_t nTake = std::min<size_t>(lines.size(), 200);
-            for (size_t i = 0; i < nTake; ++i) {
-                // OpenCV: theta is normal angle; line orientation ≈ theta - 90°
-                const float deg = static_cast<float>(lines[i][1] * 180.0 / CV_PI) - 90.0f;
-                angs.push_back(normAnglePm45(deg));
-            }
-            std::vector<float> near;
-            near.reserve(angs.size());
-            for (float a : angs) {
-                if (std::fabs(a) < 30.0f) near.push_back(a);
-            }
-            const std::vector<float>& use = near.empty() ? angs : near;
-            std::vector<float> sorted = use;
-            std::sort(sorted.begin(), sorted.end());
-            const size_t mid = sorted.size() / 2;
-            if (sorted.size() % 2 == 1) {
-                return sorted[mid];
-            }
-            return 0.5f * (sorted[mid - 1] + sorted[mid]);
-        }
+        if (!lines.empty()) return houghMedianPm45(lines);
 
-        // --- Fallback: legacy weighted 0.5° buckets (previous production) ---
-        cv::Mat labels, stats, centroids;
+        cv::Mat stats, centroids;
         const int numLabels =
             cv::connectedComponentsWithStats(mask8, labels, stats, centroids, 8, CV_32S);
-        if (numLabels <= 1) return 0.0f;
-
-        std::map<int, double> buckets;
-        for (int l = 1; l < numLabels; ++l) {
-            const int area = stats.at<int>(l, cv::CC_STAT_AREA);
-            if (area < 10) continue;
-
-            const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
-            const int top = stats.at<int>(l, cv::CC_STAT_TOP);
-            const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
-            const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
-
-            cv::Mat points(area, 1, CV_32SC2);
-            int idx = 0;
-            double sumHeatmap = 0.0;
-            for (int y = top; y < top + height; ++y) {
-                for (int x = left; x < left + width; ++x) {
-                    if (labels.at<int>(y, x) == l) {
-                        if (idx < area) {
-                            points.at<cv::Point>(idx++) = cv::Point(x, y);
-                        }
-                        sumHeatmap += static_cast<double>(heatmap.at<float>(y, x));
-                    }
-                }
-            }
-            if (idx < area) points = points.rowRange(0, idx);
-            if (points.empty()) continue;
-
-            const cv::RotatedRect rrect = cv::minAreaRect(points);
-            const float angle = calculateAngle(rrect);
-            const double confidence = sumHeatmap / static_cast<double>(idx);
-            const int bucketIdx = static_cast<int>(std::round(angle * 2.0f));
-            const double weight = static_cast<double>(cv::arcLength(points, true)) * confidence;
-            buckets[bucketIdx] += weight;
-        }
-        if (buckets.empty()) return 0.0f;
-
-        int bestBucket = 0;
-        double maxWeight = -1.0;
-        for (const auto& entry : buckets) {
-            if (entry.second > maxWeight) {
-                maxWeight = entry.second;
-                bestBucket = entry.first;
-            }
-        }
-        return static_cast<float>(bestBucket) / 2.0f;
+        return heatAngleFromLabels(labels, stats, numLabels, w, h, heatmap.ptr<float>(0), nullptr);
     } catch (const cv::Exception& e) {
         LOGE("heatmapToAngle OpenCV: %s", e.what());
         return 0.0f;
@@ -1648,7 +1609,7 @@ static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold
 
 JNIEXPORT jfloat JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToAngle(
-    JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold) {
+    JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold, jlong scratchPtr) {
 
     jclass cls = env->GetObjectClass(tensor);
     jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
@@ -1673,7 +1634,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     const float* data = heatBuf.data();
 
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
-    return heatmapToAngleHoughOrBucket(heatmap, threshold);
+    return heatmapToAngleHoughOrBucket(heatmap, threshold, scratchPtr);
 }
 
 // Return full heatmap as float[] for Java (safe for float32 / uint8 / fp16).
@@ -1894,10 +1855,13 @@ static void packHeatmapBoxes(
 // (v0.98-71 abort; v0.98-72+ try/catch left L/M as silent no-ops → identical reds). Pure C++
 // 3x3 max avoids that ABI path. Scale note: growth is in *heatmap* pixels then mapped to
 // full-res (e.g. ~2 heat-px at 224 → tens of full-image px after ICRS upscale).
-static void dilateMaskPasses(cv::Mat& mask, int passes) {
+static void dilateMaskPasses(cv::Mat& mask, cv::Mat& buf, int passes) {
     if (passes <= 0 || mask.empty() || mask.type() != CV_8UC1) return;
+    if (buf.empty() || buf.type() != CV_8UC1 || buf.rows != mask.rows || buf.cols != mask.cols) {
+        LOGE("dilateMaskPasses: wrap ping-pong missing size=%dx%d", mask.cols, mask.rows);
+        return;
+    }
     if (passes > 32) passes = 32;  // hard safety
-    cv::Mat buf(mask.size(), CV_8UC1);
     cv::Mat* a = &mask;
     cv::Mat* b = &buf;
     for (int p = 0; p < passes; ++p) {
@@ -1933,28 +1897,124 @@ static void dilateMaskPasses(cv::Mat& mask, int passes) {
     LOGI("dilateMaskPasses: pure 3x3 max applied passes=%d size=%dx%d", passes, mask.cols, mask.rows);
 }
 
-// Wrap mask (8UC1) then labels (CV_32S) as headers on scratch Y (A.p). Need ≥ 5*h*w bytes,
-// labels 4-byte aligned after the mask. Returns false → caller keeps today's heap Mats.
-static bool wrapHeatScratch(jlong scratchPtr, int h, int w, cv::Mat* maskOut, cv::Mat* labelsOut) {
-    if (scratchPtr == 0 || !maskOut || !labelsOut || h <= 0 || w <= 0) return false;
+// Wrap mask (8UC1) then labels (CV_32S) then edges (8UC1) as headers on scratch Y (A.p).
+// Need ≥ ~6*h*w bytes (labels 4-byte aligned after the mask). No heap fallback.
+static bool wrapHeatScratch(jlong scratchPtr, int h, int w,
+                            cv::Mat* maskOut, cv::Mat* labelsOut, cv::Mat* edgesOut) {
+    if (scratchPtr == 0 || !maskOut || !labelsOut || !edgesOut || h <= 0 || w <= 0) return false;
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     if (!scratch || scratch->empty() || !scratch->data || !scratch->isContinuous()) return false;
     const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
     const size_t labelsOff = (n + 3u) & ~static_cast<size_t>(3u);
-    const size_t need = labelsOff + 4u * n;
+    const size_t edgesOff = labelsOff + 4u * n;
+    const size_t need = edgesOff + n;
     const size_t have = scratch->total() * scratch->elemSize();
     if (have < need) return false;
     uchar* base = scratch->data;
     *maskOut = cv::Mat(h, w, CV_8UC1, base);
     *labelsOut = cv::Mat(h, w, CV_32S, base + labelsOff);
+    *edgesOut = cv::Mat(h, w, CV_8UC1, base + edgesOff);
     return true;
+}
+
+// CC boundary subsample into stack pts[4096] (no points(area) Mat). Returns nPts.
+static int heatLabelEdgePts(
+    const cv::Mat& labels, int l, int left, int top, int width, int height, int w, int h,
+    cv::Point* pts) {
+    auto onLab = [&](int x, int y) -> bool {
+        if ((unsigned)x >= (unsigned)w || (unsigned)y >= (unsigned)h) return false;
+        return labels.ptr<int>(y)[x] == l;
+    };
+    auto isEdge = [&](int x, int y) -> bool {
+        return !onLab(x - 1, y) || !onLab(x + 1, y) ||
+               !onLab(x, y - 1) || !onLab(x, y + 1);
+    };
+    int nBound = 0;
+    for (int y = top; y < top + height; ++y) {
+        const int* row = labels.ptr<int>(y);
+        for (int x = left; x < left + width; ++x) {
+            if (row[x] != l) continue;
+            if (isEdge(x, y)) ++nBound;
+        }
+    }
+    if (nBound < 1) return 0;
+    const int stride = nBound > 4096 ? (nBound + 4095) / 4096 : 1;
+    int nPts = 0;
+    int seen = 0;
+    for (int y = top; y < top + height; ++y) {
+        const int* row = labels.ptr<int>(y);
+        for (int x = left; x < left + width; ++x) {
+            if (row[x] != l) continue;
+            if (!isEdge(x, y)) continue;
+            if ((seen % stride) == 0 && nPts < 4096) {
+                pts[nPts++] = cv::Point(x, y);
+            }
+            ++seen;
+        }
+    }
+    return nPts;
+}
+
+static float heatBestBucketAngle(const std::map<int, double>& buckets) {
+    if (buckets.empty()) return 0.0f;
+    int bestBucket = 0;
+    double maxWeight = -1.0;
+    for (const auto& entry : buckets) {
+        if (entry.second > maxWeight) {
+            maxWeight = entry.second;
+            bestBucket = entry.first;
+        }
+    }
+    return static_cast<float>(bestBucket) / 2.0f;
+}
+
+// minAreaRect 0.5° buckets from CC labels; heatF XOR heatU. Walks labels in place.
+static float heatAngleFromLabels(
+    const cv::Mat& labels, const cv::Mat& stats, int numLabels, int w, int h,
+    const float* heatF, const uint8_t* heatU) {
+    if (numLabels <= 1) return 0.0f;
+    std::map<int, double> buckets;
+    for (int l = 1; l < numLabels; ++l) {
+        const int area = stats.at<int>(l, cv::CC_STAT_AREA);
+        if (area < 10) continue;
+        const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
+        const int top = stats.at<int>(l, cv::CC_STAT_TOP);
+        const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
+        const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
+        cv::Point pts[4096];
+        const int nPts = heatLabelEdgePts(labels, l, left, top, width, height, w, h, pts);
+        if (nPts < 1) continue;
+        cv::Mat pointsHdr(nPts, 1, CV_32SC2, pts);
+        const cv::RotatedRect rrect = cv::minAreaRect(pointsHdr);
+        const float angle = calculateAngle(rrect);
+        double sum = 0.0;
+        int nOn = 0;
+        for (int y = top; y < top + height; ++y) {
+            const int* row = labels.ptr<int>(y);
+            for (int x = left; x < left + width; ++x) {
+                if (row[x] != l) continue;
+                const size_t i = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
+                if (heatF) sum += static_cast<double>(heatF[i]);
+                else if (heatU) sum += static_cast<double>(heatU[i]);
+                ++nOn;
+            }
+        }
+        if (nOn < 1) continue;
+        const double confidence = heatF
+            ? (sum / static_cast<double>(nOn))
+            : ((sum / 255.0) / static_cast<double>(nOn));
+        const int bucketIdx = static_cast<int>(std::round(angle * 2.0f));
+        const double weight = static_cast<double>(cv::arcLength(pointsHdr, true)) * confidence;
+        buckets[bucketIdx] += weight;
+    }
+    return heatBestBucketAngle(buckets);
 }
 
 // boxMode: 0 = minAreaRect on on-mask pixels (production); 1 = axis-aligned CC stats box (AABB).
 // maskDilatePasses: morph dilate iterations on binary thr mask before CC (experiment L/M).
 // kUInt8 product heatmaps: thr/CC/geometry/hist entirely on u8 — no float heat buffer.
 // float/fp16: convert once via tensorToFloatHeatmap (legacy path).
-// scratchPtr: optional A.p Y nativeObj. When it fits, mask+labels are headers on it (no heap).
+// scratchPtr: A.p Y nativeObj. mask+labels+edges are headers on it. Missing wrap → fail.
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmap(
     JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold, jfloat minArea, jint boxMode,
@@ -2004,19 +2064,13 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         // t=0 → thrU=0 → u≥1 (matches prior float path on u/255).
         const double thrU = static_cast<double>(threshold) * 255.0;
         cv::Mat heatU8(h, w, CV_8UC1, const_cast<uint8_t*>(data));
-        cv::Mat mask, labels;
-        const bool scratchOk = wrapHeatScratch(scratchPtr, h, w, &mask, &labels);
-        if (!scratchOk) {
-            if (!veAllocLog("heat_heap_mask", veMatBytes(h, w, CV_8UC1), h, w, CV_8UC1)) {
-                return nullptr;
-            }
-            if (!veAllocLog("heat_heap_labels", veMatBytes(h, w, CV_32S), h, w, CV_32S)) {
-                return nullptr;
-            }
+        cv::Mat mask, labels, edges;
+        if (!wrapHeatScratch(scratchPtr, h, w, &mask, &labels, &edges)) {
+            LOGE("nativeProcessHeatmap: wrapHeatScratch failed u8 h=%d w=%d", h, w);
+            return nullptr;
         }
         cv::threshold(heatU8, mask, thrU, 255.0, cv::THRESH_BINARY);
-        // mask is already CV_8U from 8-bit threshold.
-        dilateMaskPasses(mask, (int)maskDilatePasses);
+        dilateMaskPasses(mask, edges, (int)maskDilatePasses);
         if (maskDilatePasses > 0) {
             LOGI("nativeProcessHeatmap: u8 maskDilatePasses=%d", (int)maskDilatePasses);
         }
@@ -2047,26 +2101,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
              data[0], data[1], data[2], data[3]);
 
         cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
-        cv::Mat mask, labels;
-        const bool scratchOk = wrapHeatScratch(scratchPtr, h, w, &mask, &labels);
-        if (!scratchOk) {
-            if (!veAllocLog("heat_heap_mask", veMatBytes(h, w, CV_8UC1), h, w, CV_8UC1)) {
-                return nullptr;
-            }
-            if (!veAllocLog("heat_heap_labels", veMatBytes(h, w, CV_32S), h, w, CV_32S)) {
-                return nullptr;
-            }
+        cv::Mat mask, labels, edges;
+        if (!wrapHeatScratch(scratchPtr, h, w, &mask, &labels, &edges)) {
+            LOGE("nativeProcessHeatmap: wrapHeatScratch failed float h=%d w=%d", h, w);
+            return nullptr;
         }
-        if (scratchOk) {
-            uchar* mptr = mask.ptr<uchar>(0);
-            for (size_t i = 0; i < n; ++i) {
-                mptr[i] = data[i] > threshold ? (uchar)255 : (uchar)0;
-            }
-        } else {
-            cv::threshold(heatmap, mask, threshold, 255.0, cv::THRESH_BINARY);
-            mask.convertTo(mask, CV_8U);
+        uchar* mptr = mask.ptr<uchar>(0);
+        for (size_t i = 0; i < n; ++i) {
+            mptr[i] = data[i] > threshold ? (uchar)255 : (uchar)0;
         }
-        dilateMaskPasses(mask, (int)maskDilatePasses);
+        dilateMaskPasses(mask, edges, (int)maskDilatePasses);
         if (maskDilatePasses > 0) {
             LOGI("nativeProcessHeatmap: float maskDilatePasses=%d", (int)maskDilatePasses);
         }
@@ -2094,7 +2138,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmapU8(
     JNIEnv* env, jobject thiz, jbyteArray heatU8, jint w, jint h, jfloat threshold,
-    jfloat minArea, jint boxMode, jint maskDilatePasses, jint maxBoxes, jint growCells) {
+    jfloat minArea, jint boxMode, jint maskDilatePasses, jint maxBoxes, jint growCells,
+    jlong scratchPtr) {
     if (!heatU8 || w <= 0 || h <= 0) return nullptr;
     const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
     if (n > 64u * 1024u * 1024u) return nullptr;
@@ -2112,11 +2157,16 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 
     const double thrU = static_cast<double>(threshold) * 255.0;
     cv::Mat heatMat(h, w, CV_8UC1, const_cast<uint8_t*>(data));
-    cv::Mat mask;
+    cv::Mat mask, labels, edges;
+    if (!wrapHeatScratch(scratchPtr, h, w, &mask, &labels, &edges)) {
+        LOGE("nativeProcessHeatmapU8: wrapHeatScratch failed h=%d w=%d", h, w);
+        env->ReleaseByteArrayElements(heatU8, raw, JNI_ABORT);
+        return nullptr;
+    }
     cv::threshold(heatMat, mask, thrU, 255.0, cv::THRESH_BINARY);
-    dilateMaskPasses(mask, (int)maskDilatePasses);
+    dilateMaskPasses(mask, edges, (int)maskDilatePasses);
 
-    cv::Mat labels, stats, centroids;
+    cv::Mat stats, centroids;
     int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
     packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatMat, 1.0f / 255.0f, &results, boxCap, (int)growCells);
 
@@ -2143,7 +2193,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 // Must not throw: uncaught cv::Exception aborts the process.
 JNIEXPORT jfloat JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatmapToAngleU8(
-    JNIEnv* env, jobject thiz, jbyteArray heatU8, jint w, jint h, jfloat threshold) {
+    JNIEnv* env, jobject thiz, jbyteArray heatU8, jint w, jint h, jfloat threshold, jlong scratchPtr) {
     if (!heatU8 || w < 8 || h < 8) return 0.f;
     const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
     if (n > 64u * 1024u * 1024u) return 0.f;
@@ -2154,95 +2204,27 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 
     float result = 0.f;
     try {
-        // OpenCV THRESH_BINARY uses >: thrU=0 → u≥1; thrU=1 → u≥2.
         const double thrU = static_cast<double>(threshold) * 255.0;
         cv::Mat heatMat(h, w, CV_8UC1, const_cast<uint8_t*>(data));
-        cv::Mat mask8;
+        cv::Mat mask8, labels, edges;
+        if (!wrapHeatScratch(scratchPtr, h, w, &mask8, &labels, &edges)) {
+            LOGE("heatmapToAngleU8: wrapHeatScratch failed h=%d w=%d", h, w);
+            env->ReleaseByteArrayElements(heatU8, raw, JNI_ABORT);
+            return 0.f;
+        }
         cv::threshold(heatMat, mask8, thrU, 255.0, cv::THRESH_BINARY);
-        // Ensure true CV_8UC1 continuous (not MatExpr) for CC/Hough.
-        if (mask8.type() != CV_8UC1) {
-            mask8.convertTo(mask8, CV_8UC1);
-        }
-        if (!mask8.isContinuous()) {
-            mask8 = mask8.clone();
-        }
-
-        cv::Mat edges;
         cv::Canny(mask8, edges, 50, 150);
         const int houghThr = std::max(40, static_cast<int>(std::min(h, w) * 0.05));
         std::vector<cv::Vec2f> lines;
         cv::HoughLines(edges, lines, 1.0, CV_PI / 180.0, houghThr);
 
         if (!lines.empty()) {
-            std::vector<float> angs;
-            angs.reserve(std::min<size_t>(lines.size(), 200));
-            const size_t nTake = std::min<size_t>(lines.size(), 200);
-            for (size_t i = 0; i < nTake; ++i) {
-                const float deg = static_cast<float>(lines[i][1] * 180.0 / CV_PI) - 90.0f;
-                angs.push_back(normAnglePm45(deg));
-            }
-            std::vector<float> near;
-            near.reserve(angs.size());
-            for (float a : angs) {
-                if (std::fabs(a) < 30.0f) near.push_back(a);
-            }
-            const std::vector<float>& use = near.empty() ? angs : near;
-            std::vector<float> sorted = use;
-            std::sort(sorted.begin(), sorted.end());
-            const size_t mid = sorted.size() / 2;
-            if (sorted.size() % 2 == 1) {
-                result = sorted[mid];
-            } else if (!sorted.empty()) {
-                result = 0.5f * (sorted[mid - 1] + sorted[mid]);
-            }
+            result = houghMedianPm45(lines);
         } else {
-            // Fallback: CC + minAreaRect 0.5° buckets (u8 confidence = sum u / (255*n))
-            cv::Mat labels, stats, centroids;
+            cv::Mat stats, centroids;
             const int numLabels =
                 cv::connectedComponentsWithStats(mask8, labels, stats, centroids, 8, CV_32S);
-            if (numLabels > 1) {
-                std::map<int, double> buckets;
-                for (int l = 1; l < numLabels; ++l) {
-                    const int area = stats.at<int>(l, cv::CC_STAT_AREA);
-                    if (area < 10) continue;
-                    const int left = stats.at<int>(l, cv::CC_STAT_LEFT);
-                    const int top = stats.at<int>(l, cv::CC_STAT_TOP);
-                    const int width = stats.at<int>(l, cv::CC_STAT_WIDTH);
-                    const int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
-                    cv::Mat points(area, 1, CV_32SC2);
-                    int idx = 0;
-                    double sumU = 0.0;
-                    for (int y = top; y < top + height; ++y) {
-                        for (int x = left; x < left + width; ++x) {
-                            if (labels.at<int>(y, x) == l) {
-                                if (idx < area) {
-                                    points.at<cv::Point>(idx++) = cv::Point(x, y);
-                                }
-                                sumU += static_cast<double>(data[static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)]);
-                            }
-                        }
-                    }
-                    if (idx < area) points = points.rowRange(0, idx);
-                    if (points.empty()) continue;
-                    const cv::RotatedRect rrect = cv::minAreaRect(points);
-                    const float angle = calculateAngle(rrect);
-                    const double confidence = (sumU / 255.0) / static_cast<double>(idx);
-                    const int bucketIdx = static_cast<int>(std::round(angle * 2.0f));
-                    const double weight = static_cast<double>(cv::arcLength(points, true)) * confidence;
-                    buckets[bucketIdx] += weight;
-                }
-                if (!buckets.empty()) {
-                    int bestBucket = 0;
-                    double maxWeight = -1.0;
-                    for (const auto& entry : buckets) {
-                        if (entry.second > maxWeight) {
-                            maxWeight = entry.second;
-                            bestBucket = entry.first;
-                        }
-                    }
-                    result = static_cast<float>(bestBucket) / 2.0f;
-                }
-            }
+            result = heatAngleFromLabels(labels, stats, numLabels, w, h, nullptr, data);
         }
     } catch (const cv::Exception& e) {
         LOGE("heatmapToAngleU8 OpenCV: %s", e.what());

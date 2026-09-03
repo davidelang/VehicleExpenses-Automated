@@ -42,8 +42,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     ) {
         /** Deskew / Hough angle from tensor or tiled host heat. */
         fun deskewAngleCpp(threshold: Float = 0.20f): Float {
-            outputTensor?.let { return NativeImageUtils.heatmapToAngle(it, threshold) }
-            heatU8?.let { return NativeImageUtils.heatmapToAngleU8(it, width, height, threshold) }
+            val scratch = bufferSetA.p.mat
+            outputTensor?.let { return NativeImageUtils.heatmapToAngle(it, threshold, scratch) }
+            heatU8?.let {
+                return NativeImageUtils.heatmapToAngleU8(it, width, height, threshold, scratch)
+            }
             return 0f
         }
     }
@@ -611,9 +614,10 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         detTiersInt8: Map<Int, ByteArray>? = null,
         /** 0 = no 4×4 cell grow (energy-tight); 1 = production default. */
         growCells: Int = 1,
-        /** Optional A.p Y for heat mask + CC labels. Null = today's heap. */
+        /** A.p Y for heat mask + CC labels + edges. Null = bufferSetA.p. */
         scratchY: Mat? = null,
     ): DetectionResult? {
+        val heatScratch = scratchY ?: bufferSetA.p.mat
         val tPop0 = System.nanoTime()
         val packedSet = input as? BufferSet
         val w: Int
@@ -652,6 +656,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 detTiers = tiers,
                 detTiersInt8 = tiersInt8,
                 growCells = growCells,
+                scratchY = heatScratch,
             )
         }
         val tierScale = if (packedSet != null) w else (singleTier ?: TIER_SCALES.maxOrNull()!!)
@@ -713,7 +718,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val nativeRes = NativeImageUtils.processHeatmap(
                     outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
                     growCells = growCells,
-                    scratchY = scratchY,
+                    scratchY = heatScratch,
                 )
                 val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
                 val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
@@ -814,7 +819,9 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         detTiers: Map<Int, PaddlePredictor> = sharedTiers,
         detTiersInt8: Map<Int, ByteArray> = sharedTiersInt8,
         growCells: Int = 1,
+        scratchY: Mat? = null,
     ): DetectionResult? {
+        val heatScratch = scratchY ?: bufferSetA.p.mat
         val outer = DET_LARGE_OUTER
         val tile = DET_TILE
         val stride = DET_TILE_STRIDE
@@ -907,6 +914,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val nativeRes = NativeImageUtils.processHeatmapU8(
                     combined, outer, outer, hmThresh, 10f, boxMode, maskDilatePasses,
                     growCells = growCells,
+                    scratchY = heatScratch,
                 )
                 val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
                 val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
@@ -1047,6 +1055,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(
                 outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
+                scratchY = bufferSetA.p.mat,
             )
             val tNativePost = (System.nanoTime() - tNativePost0) / 1_000_000.0
             val heatmapPostPath = NativeImageUtils.lastHeatmapPostPath()
