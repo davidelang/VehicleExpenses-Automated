@@ -1730,8 +1730,13 @@ static void packHeatmapBoxes(
     const cv::Mat& confMat,
     float confScale,
     std::vector<float>* results,
-    int maxBoxes) {
+    int maxBoxes,
+    int growCells = 1) {
     const int boxCap = maxBoxes > 0 ? maxBoxes : 200;
+    int gc = growCells;
+    if (gc < 0) gc = 0;
+    if (gc > 1) gc = 1;
+    const int cell = gc * kPaddleDetHeatCellPx;
     int count = 0;
     for (int l = 1; l < numLabels; ++l) {
         if (count >= boxCap) break;
@@ -1745,9 +1750,8 @@ static void packHeatmapBoxes(
         int height = stats.at<int>(l, cv::CC_STAT_HEIGHT);
 
         cv::Point2f vertices[4];
-        const int cell = kPaddleDetHeatCellPx;
         if (useAabb) {
-            // Axis-aligned min/max of on-mask pixels, then one 4×4 cell outward.
+            // Axis-aligned min/max of on-mask pixels, then growCells×4×4 outward (0 = tight).
             const float x0 = (float)std::max(0, left - cell);
             const float y0 = (float)std::max(0, top - cell);
             const float x1 = (float)std::min(w, left + width + cell);
@@ -1867,7 +1871,7 @@ static void dilateMaskPasses(cv::Mat& mask, int passes) {
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmap(
     JNIEnv* env, jobject thiz, jobject tensor, jfloat threshold, jfloat minArea, jint boxMode,
-    jint maskDilatePasses, jint maxBoxes) {
+    jint maskDilatePasses, jint maxBoxes, jint growCells) {
 
     jclass cls = env->GetObjectClass(tensor);
     jfieldID fid = env->GetFieldID(cls, "cppTensorPointer", "J");
@@ -1924,7 +1928,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
         cv::Mat labels, stats, centroids;
         int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
         // conf in [0,1] like float path: mean(u8)/255
-        packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatU8, 1.0f / 255.0f, &results, boxCap);
+        packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatU8, 1.0f / 255.0f, &results, boxCap, (int)growCells);
 
         float hist[100] = {0};
         for (size_t i = 0; i < n; ++i) {
@@ -1957,7 +1961,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 
         cv::Mat labels, stats, centroids;
         int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
-        packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatmap, 1.0f, &results, boxCap);
+        packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatmap, 1.0f, &results, boxCap, (int)growCells);
 
         float hist[100] = {0};
         for (size_t i = 0; i < n; ++i) {
@@ -1978,7 +1982,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 JNIEXPORT jfloatArray JNICALL
 Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProcessHeatmapU8(
     JNIEnv* env, jobject thiz, jbyteArray heatU8, jint w, jint h, jfloat threshold,
-    jfloat minArea, jint boxMode, jint maskDilatePasses, jint maxBoxes) {
+    jfloat minArea, jint boxMode, jint maskDilatePasses, jint maxBoxes, jint growCells) {
     if (!heatU8 || w <= 0 || h <= 0) return nullptr;
     const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
     if (n > 64u * 1024u * 1024u) return nullptr;
@@ -2002,7 +2006,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeProce
 
     cv::Mat labels, stats, centroids;
     int numLabels = cv::connectedComponentsWithStats(mask, labels, stats, centroids, 8, CV_32S);
-    packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatMat, 1.0f / 255.0f, &results, boxCap);
+    packHeatmapBoxes(labels, stats, numLabels, w, h, minArea, useAabb, heatMat, 1.0f / 255.0f, &results, boxCap, (int)growCells);
 
     float hist[100] = {0};
     for (size_t i = 0; i < n; ++i) {

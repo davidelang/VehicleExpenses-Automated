@@ -1775,6 +1775,24 @@ static jintArray insetAabbSeeds16(JNIEnv* env, jlong grayPtr, jintArray seedsArr
     return out;
 }
 
+static void walkEnergyHorz(
+    const cv::Mat& look, int imgW, int imgH, int cap, double thr,
+    int* l, int* t, int* r, int* b
+) {
+    for (int k = 0; k < cap; ++k) {
+        bool grew = false;
+        if (*l > 0 && meanRectF(look, *l - 1, *t, *l, *b, imgW, imgH) >= thr) {
+            --*l;
+            grew = true;
+        }
+        if (*r < imgW && meanRectF(look, *r, *t, *r + 1, *b, imgW, imgH) >= thr) {
+            ++*r;
+            grew = true;
+        }
+        if (!grew) break;
+    }
+}
+
 static jintArray energyAabbOnLook(
     JNIEnv* env,
     jlong grayPtr, jlong uvPtr,
@@ -1783,9 +1801,9 @@ static jintArray energyAabbOnLook(
     jfloat maxFrac, jfloat energyRatio,
     jfloat jumpFrac, jfloat retractClearFrac,
     jfloatArray teleArr, jshortArray sweepArr,
-    jlong scratchPtr
+    jlong scratchPtr,
+    jboolean freezeHorz = JNI_FALSE
 ) {
-    const jboolean freezeHorz = JNI_FALSE;
     const jfloat vertPadFrac = 0.f;
     (void)uvPtr;
     if (!seedsArr) return env->NewIntArray(0);
@@ -1858,6 +1876,9 @@ static jintArray energyAabbOnLook(
         const int hit = (walkT >= cap || walkB >= cap) ? 1 : 0;
         const bool stopUpE = walkT < cap;
         const bool stopDownE = walkB < cap;
+        if (freezeHorz == JNI_TRUE) {
+            walkEnergyHorz(vertEng, imgW, imgH, cap, thr, &l, &t, &r, &b);
+        }
         jumpRetractH(vertEng, &l, t, &r, b, imgW, imgH, jumpThr, cap,
                      jumpFrac, retractClearFrac, seedH);
         if (l < 0) l = 0;
@@ -1929,9 +1950,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
     jlong grayPtr, jlong uvPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong scratchPtr
 ) {
-    jintArray seeds = insetAabbSeeds16(env, grayPtr, seedsArr);
-    if (!seeds) seeds = seedsArr;
-    return energyAabbOnLook(env, grayPtr, uvPtr, seeds, walkEnergyExpand, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr);
+    return energyAabbOnLook(env, grayPtr, uvPtr, seedsArr, walkEnergyExpand, 0.4f, 0.65f, 0.40f, 0.30f, teleArr, sweepArr, scratchPtr, JNI_TRUE);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL

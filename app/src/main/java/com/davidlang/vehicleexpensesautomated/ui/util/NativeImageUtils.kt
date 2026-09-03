@@ -358,8 +358,12 @@ object NativeImageUtils {
         maskDilatePasses: Int = 0,
         /** Hard cap on packed boxes after minArea filter (native packHeatmapBoxes). */
         maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
+        /** 0 = CC AABB as-is; 1 = grow one 4×4 det cell (production default). */
+        growCells: Int = 1,
     ): FloatArray? {
-        return nativeProcessHeatmap(tensor, threshold, minArea, boxMode, maskDilatePasses, maxBoxes)
+        return nativeProcessHeatmap(
+            tensor, threshold, minArea, boxMode, maskDilatePasses, maxBoxes, growCells,
+        )
     }
 
     /**
@@ -374,9 +378,11 @@ object NativeImageUtils {
         boxMode: Int = HEATMAP_BOX_MIN_AREA_RECT,
         maskDilatePasses: Int = 0,
         maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
+        growCells: Int = 1,
     ): FloatArray? {
         return nativeProcessHeatmapU8(
             heatU8, width, height, threshold, minArea, boxMode, maskDilatePasses, maxBoxes,
+            growCells,
         )
     }
 
@@ -890,6 +896,7 @@ object NativeImageUtils {
         boxMode: Int,
         maskDilatePasses: Int,
         maxBoxes: Int,
+        growCells: Int,
     ): FloatArray?
     private external fun nativeProcessHeatmapU8(
         heatU8: ByteArray,
@@ -900,6 +907,7 @@ object NativeImageUtils {
         boxMode: Int,
         maskDilatePasses: Int,
         maxBoxes: Int,
+        growCells: Int,
     ): FloatArray?
     private external fun nativeLastHeatmapPostPath(): String?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float): Float
