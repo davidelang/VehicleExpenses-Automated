@@ -38,6 +38,21 @@ static bool veAllocLog(const char* tag, size_t bytes, int rows, int cols, int ty
 
 static cv::Mat g_jpegBgr;
 static cv::Mat jpegBgrScratch(int w, int h);
+static cv::Mat g_ccLabels;
+
+static bool ccLabelsScratch(int h, int w, cv::Mat* out) {
+    if (!out || h < 1 || w < 1) return false;
+    if (g_ccLabels.empty() || g_ccLabels.type() != CV_32S ||
+        g_ccLabels.rows < h || g_ccLabels.cols < w) {
+        const int nr = std::max(h, g_ccLabels.rows);
+        const int nc = std::max(w, g_ccLabels.cols);
+        const size_t bytes = veMatBytes(nr, nc, CV_32S);
+        if (!veAllocLog("g_ccLabels", bytes, nr, nc, CV_32S)) return false;
+        g_ccLabels.create(nr, nc, CV_32S);
+    }
+    *out = g_ccLabels(cv::Rect(0, 0, w, h));
+    return true;
+}
 
 /** BT.601-ish 8U (OpenCV I420 scale) into handle Y + NV21 VU. rgb=true if src is RGB. */
 static bool color3ToHandleYuv(const cv::Mat& c3, BufferSetHandle* handle, bool rgb) {
@@ -149,7 +164,9 @@ std::string matToBase64(const cv::Mat& mat, int quality = 95) {
 }
 
 void filterComponents(cv::Mat& mat, float vSW, float hSW, int mode) {
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat.rows, mat.cols, &labels)) return;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(mat, labels, stats, centroids, 8);
     for (int i = 1; i < nLabels; ++i) {
         int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
@@ -158,11 +175,18 @@ void filterComponents(cv::Mat& mat, float vSW, float hSW, int mode) {
         if (mode == 0) remove = (w < 0.5 * vSW && h <= 0.75 * hSW);
         else if (mode == 1) remove = (w < 0.5 * vSW);
         else if (mode == 2) remove = (h <= 0.75 * hSW);
-        
+
         if (remove) {
-            cv::Rect rect(stats.at<int>(i, cv::CC_STAT_LEFT), stats.at<int>(i, cv::CC_STAT_TOP), w, h);
-            cv::Mat mask = (labels(rect) == i);
-            mat(rect).setTo(0, mask);
+            const int id = i;
+            const int left = stats.at<int>(i, cv::CC_STAT_LEFT);
+            const int top = stats.at<int>(i, cv::CC_STAT_TOP);
+            for (int y = top; y < top + h; ++y) {
+                int* lab = labels.ptr<int>(y) + left;
+                uchar* pix = mat.ptr<uchar>(y) + left;
+                for (int x = 0; x < w; ++x) {
+                    if (lab[x] == id) pix[x] = 0;
+                }
+            }
         }
     }
 }
@@ -3144,7 +3168,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeExpan
     int minVertRun  = std::max(1, (int)(hSW * 0.5f));  
 
     // 2. Find connected components with stats
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return nullptr;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
     // 3. Union bounding boxes of valid components that intersect the starting box
@@ -3198,7 +3224,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeFindA
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return nullptr;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
     std::vector<int> boxes;
@@ -3230,7 +3258,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGetAl
     auto* mat = reinterpret_cast<cv::Mat*>(matPtr);
     if (!mat || mat->empty() || mat->type() != CV_8UC1) return nullptr;
 
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return nullptr;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
 
     const int nObjects = nLabels - 1;
@@ -3264,7 +3294,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
     long long msInitialCc = 0, msHoriz = 0, msVert = 0, msReCc = 0, msSmallFilter = 0;
 
     // Object detection (CC): populate per-pixel labels buffer before any filters (Set J semantics).
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return nullptr;
+    cv::Mat stats, centroids;
     auto tCc0 = std::chrono::high_resolution_clock::now();
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
     msInitialCc = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -3726,7 +3758,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeConne
     while (changed && pass < 3) {
         changed = false;
         pass++;
-        cv::Mat labels, stats, centroids;
+        cv::Mat labels;
+        if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) break;
+        cv::Mat stats, centroids;
         int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
         if (nLabels <= 2) break;
 
@@ -3795,7 +3829,9 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeBlack
 
     __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: Start. vSW=%.2f, hSW=%.2f, Size=%dx%d", vSW, hSW, mat->cols, mat->rows);
 
-    cv::Mat labels, stats, centroids;
+    cv::Mat labels;
+    if (!ccLabelsScratch(mat->rows, mat->cols, &labels)) return;
+    cv::Mat stats, centroids;
     int nLabels = cv::connectedComponentsWithStats(*mat, labels, stats, centroids, 8);
     if (nLabels <= 2) {
         __android_log_print(ANDROID_LOG_INFO, "NativeImage", "ROLLING: Too few labels (%d). Exiting.", nLabels);
