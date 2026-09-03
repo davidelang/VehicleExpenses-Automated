@@ -823,77 +823,97 @@ object ContentExpandUtils {
         if (seedH < 4 || seedW < 4) return fail()
 
         val roi = gray.submat(s.top, s.bottom, s.left, s.right)
-        val bin = Mat()
-        val labels = Mat()
-        val stats = Mat()
-        val centroids = Mat()
         try {
-            val thr = Imgproc.threshold(
-                roi, bin, 0.0, 255.0,
-                Imgproc.THRESH_BINARY_INV or Imgproc.THRESH_OTSU,
-            ).toInt()
             val nPix = seedW * seedH
-            var nz = Core.countNonZero(bin)
+            val rows = Array(seedH) { ByteArray(seedW) }
+            val hist = IntArray(256)
+            for (y in 0 until seedH) {
+                roi.get(y, 0, rows[y])
+                for (x in 0 until seedW) {
+                    hist[rows[y][x].toInt() and 0xff]++
+                }
+            }
+            var sum = 0.0
+            for (i in 0..255) sum += i * hist[i].toDouble()
+            var sumB = 0.0
+            var wB = 0
+            var maxVar = -1.0
+            var thr = 0
+            for (t in 0..255) {
+                wB += hist[t]
+                if (wB == 0) continue
+                val wF = nPix - wB
+                if (wF == 0) break
+                sumB += t * hist[t].toDouble()
+                val mB = sumB / wB
+                val mF = (sum - sumB) / wF
+                val d = mB - mF
+                val vr = wB.toDouble() * wF * d * d
+                if (vr >= maxVar) {
+                    maxVar = vr
+                    thr = t
+                }
+            }
+            var nz = 0
+            for (i in 0..thr) nz += hist[i]
             var inkFrac = if (nPix > 0) nz.toFloat() / nPix else 0f
             var darkInk = true
             if (inkFrac >= SEG7_INK_FLIP_FRAC) {
-                Core.bitwise_not(bin, bin)
-                nz = Core.countNonZero(bin)
-                inkFrac = if (nPix > 0) nz.toFloat() / nPix else 0f
                 darkInk = false
+                nz = nPix - nz
+                inkFrac = if (nPix > 0) nz.toFloat() / nPix else 0f
             }
-
-            fun measure(mask: Mat): Pair<Int, Int> {
-                val hh = horizRunHist(mask)
-                val vh = vertRunHist(mask)
-                val maxV = max(35, (seedH * 0.50f).toInt())
-                val maxH = max(20, (seedH * 0.40f).toInt())
-                return peakCapped(hh.hist, SEG7_MIN_STROKE, maxV) to
-                    peakCapped(vh, SEG7_MIN_STROKE, maxH)
+            fun inkAt(y: Int, x: Int): Boolean {
+                val v = rows[y][x].toInt() and 0xff
+                return if (darkInk) v <= thr else v > thr
             }
-
-            val (v0, h0) = measure(bin)
-            var dropped = 0
-            val glareW = SEG7_GLARE_WIDTH_MULT * max(v0, SEG7_MIN_STROKE)
-            if (glareW > 0 && !bin.empty()) {
-                val nLab = Imgproc.connectedComponentsWithStats(bin, labels, stats, centroids, 8)
-                if (nLab > 1) {
-                    val drop = BooleanArray(nLab)
-                    for (i in 1 until nLab) {
-                        val w = stats.get(i, Imgproc.CC_STAT_WIDTH)[0].toInt()
-                        if (w > glareW) {
-                            drop[i] = true
-                            dropped++
-                        }
-                    }
-                    if (dropped > 0) {
-                        val labRow = IntArray(seedW)
-                        val pixRow = ByteArray(seedW)
-                        for (y in 0 until seedH) {
-                            labels.get(y, 0, labRow)
-                            bin.get(y, 0, pixRow)
-                            for (x in 0 until seedW) {
-                                val id = labRow[x]
-                                if (id in drop.indices && drop[id]) pixRow[x] = 0
-                            }
-                            bin.put(y, 0, pixRow)
-                        }
+            val hhHist = IntArray(seedW + 1)
+            var nNonSpan = 0
+            var maxRun = 0
+            for (y in 0 until seedH) {
+                var run = 0
+                fun close() {
+                    if (run <= 0) return
+                    if (run != seedW) {
+                        hhHist[run]++
+                        nNonSpan++
+                        if (run > maxRun) maxRun = run
                     }
                 }
+                for (x in 0 until seedW) {
+                    if (inkAt(y, x)) run++
+                    else if (run > 0) {
+                        close()
+                        run = 0
+                    }
+                }
+                if (run > 0) close()
             }
-            val hh = horizRunHist(bin)
-            val vh = vertRunHist(bin)
+            val vhHist = IntArray(seedH + 1)
+            for (x in 0 until seedW) {
+                var run = 0
+                for (y in 0 until seedH) {
+                    if (inkAt(y, x)) {
+                        run++
+                    } else if (run > 0) {
+                        if (run != seedH) vhHist[run]++
+                        run = 0
+                    }
+                }
+                if (run > 0 && run != seedH) vhHist[run]++
+            }
             val maxV = max(35, (seedH * 0.50f).toInt())
             val maxH = max(20, (seedH * 0.40f).toInt())
-            val vSW = if (dropped > 0) peakCapped(hh.hist, SEG7_MIN_STROKE, maxV) else v0
-            val hSW = if (dropped > 0) peakCapped(vh, SEG7_MIN_STROKE, maxH) else h0
+            val vSW = peakCapped(hhHist, SEG7_MIN_STROKE, maxV)
+            val hSW = peakCapped(vhHist, SEG7_MIN_STROKE, maxH)
+            val dropped = 0
             val lo = max(1, (0.7f * vSW).roundToInt())
             val hi = max(lo, (1.3f * vSW).roundToInt())
             var band = 0
-            val hiClamp = min(hi, hh.hist.size - 1)
-            for (k in lo..hiClamp) band += hh.hist[k]
-            val strokeShare = if (hh.nNonSpan > 0) band.toFloat() / hh.nNonSpan else 0f
-            val maxRunOverW = hh.maxRun.toFloat() / seedW
+            val hiClamp = min(hi, hhHist.size - 1)
+            for (k in lo..hiClamp) band += hhHist[k]
+            val strokeShare = if (nNonSpan > 0) band.toFloat() / nNonSpan else 0f
+            val maxRunOverW = maxRun.toFloat() / seedW
             val needFallback = vSW <= SEG7_MIN_STROKE ||
                 inkFrac >= SEG7_INK_FLIP_FRAC ||
                 strokeShare < 0.30f ||
@@ -917,14 +937,10 @@ object ContentExpandUtils {
                 maxRunOverW = maxRunOverW,
                 vhAgree = vhAgree,
             )
-        } catch (t: Throwable) {
+        } catch (_: Throwable) {
             return fail()
         } finally {
             roi.release()
-            bin.release()
-            labels.release()
-            stats.release()
-            centroids.release()
         }
     }
 
