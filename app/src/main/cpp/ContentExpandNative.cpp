@@ -469,13 +469,31 @@ static void writeSweepArr(JNIEnv* env, jshortArray arr, const std::vector<InkSwe
     env->SetShortArrayRegion(arr, 0, n, buf.data());
 }
 
+static cv::Mat g_packJpegU8;
+
+static cv::Mat packJpegScratch(int w, int h) {
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    if (g_packJpegU8.empty() || g_packJpegU8.type() != CV_8UC1 ||
+        g_packJpegU8.rows < h || g_packJpegU8.cols < w) {
+        const int nr = std::max(h, g_packJpegU8.rows);
+        const int nc = std::max(w, g_packJpegU8.cols);
+        if (!veAllocLog("packJpegScratch", veMatBytes(nr, nc, CV_8UC1), nr, nc, CV_8UC1)) {
+            return cv::Mat();
+        }
+        g_packJpegU8.create(nr, nc, CV_8UC1);
+    }
+    return g_packJpegU8(cv::Rect(0, 0, w, h));
+}
+
 static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
     if (!out || bin.empty() || bin.type() != CV_8UC1) return;
     try {
         const int w = bin.cols;
         const int h = bin.rows;
         if (w < 1 || h < 1) return;
-        cv::Mat small;
+        const cv::Mat* src = &bin;
+        cv::Mat resized;
         const int longSide = std::max(w, h);
         if (longSide > 400) {
             const double sc = 400.0 / static_cast<double>(longSide);
@@ -486,15 +504,14 @@ static void packSeedBinJpeg(const cv::Mat& bin, InkSweepPack* out) {
             int nh = static_cast<int>(nh64);
             nw = std::max(2, (nw + 1) / 2 * 2);
             nh = std::max(2, (nh + 1) / 2 * 2);
-            cv::resize(bin, small, cv::Size(nw, nh), 0, 0, cv::INTER_NEAREST);
-        } else {
-            small = bin;
+            resized = packJpegScratch(nw, nh);
+            if (resized.empty()) return;
+            cv::resize(bin, resized, resized.size(), 0, 0, cv::INTER_NEAREST);
+            src = &resized;
         }
-        cv::Mat bgr;
-        cv::cvtColor(small, bgr, cv::COLOR_GRAY2BGR);
         std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 70};
         std::vector<uint8_t> jpg;
-        if (cv::imencode(".jpg", bgr, jpg, params) && !jpg.empty() && jpg.size() <= 16000) {
+        if (cv::imencode(".jpg", *src, jpg, params) && !jpg.empty() && jpg.size() <= 16000) {
             out->threshJpeg = std::move(jpg);
         }
     } catch (const cv::Exception&) {
@@ -905,16 +922,9 @@ static void storeObjPack(JNIEnv* env, jintArray arr, const ObjPack& p) {
 static bool fillChromaMag(const cv::Mat& y, const cv::Mat& uv, cv::Mat* dst) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
-    const bool reuse = scratchFits(dst, w, h);
-    if (!reuse) {
-        if (!veAllocLog("fillChromaMag", veMatBytes(h, w, CV_8UC1), h, w, CV_8UC1)) {
-            return false;
-        }
-        dst->create(h, w, CV_8UC1);
-    }
+    if (!scratchFits(dst, w, h)) return false;
     if (uv.empty() || uv.type() != CV_8UC2 || uv.rows <= 0 || uv.cols <= 0) {
-        if (reuse) (*dst)(cv::Rect(0, 0, w, h)).setTo(0);
-        else dst->setTo(0);
+        (*dst)(cv::Rect(0, 0, w, h)).setTo(0);
         return true;
     }
     const int uvH = uv.rows, uvW = uv.cols;
@@ -3739,25 +3749,17 @@ static bool fillGrayJumpLook(
     if (sr > w) sr = w;
     if (sb > h) sb = h;
     if (sr <= sl || sb <= st) return false;
-    const bool reuse = scratchFits(dst, w, h);
-    if (!reuse) {
-        if (!veAllocLog("fillGrayJumpLook", veMatBytes(h, w, CV_8UC1), h, w, CV_8UC1)) {
-            return false;
-        }
-        dst->create(h, w, CV_8UC1);
-    }
+    if (!scratchFits(dst, w, h)) return false;
     dst->setTo(0);
     const int xl = std::max(0, sl - std::max(0, xPad));
     const int xr = std::min(w, sr + std::max(0, xPad));
     if (xr <= xl) return false;
-    cv::Mat seedY, lookY, stripBin;
-    y(cv::Range(st, sb), cv::Range(sl, sr)).copyTo(seedY);
-    y(cv::Range(st, sb), cv::Range(xl, xr)).copyTo(lookY);
+    cv::Mat seedY = y(cv::Range(st, sb), cv::Range(sl, sr));
+    cv::Mat lookY = y(cv::Range(st, sb), cv::Range(xl, xr));
+    cv::Mat strip = (*dst)(cv::Rect(xl, st, xr - xl, sb - st));
     const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * (sb - st))));
-    fillPoisonLookRaster(seedY, lookY, 0, sl - xl, false, 11, fallback, &stripBin);
-    if (stripBin.empty()) return false;
-    stripBin.copyTo((*dst)(cv::Rect(xl, st, xr - xl, sb - st)));
-    return true;
+    fillPoisonLookRaster(seedY, lookY, 0, sl - xl, false, 11, fallback, &strip);
+    return !strip.empty();
 }
 
 /**
