@@ -830,20 +830,33 @@ suspend fun runPumpExperiment(
             flowSorted.forEachIndexed { fi, _ ->
                 val colIdx = fi + 1
                 append("<td data-col=\"$colIdx\">")
-                fun emitSlot(slot: String, htmlId: String) {
+                fun emitSlot(slot: String, htmlId: String, cls: String = "") {
                     val sid = i * nSlots + slotNames.indexOf(slot) + 1
-                    append("<div id=\"$htmlId\">")
+                    val clsAttr = if (cls.isEmpty()) "" else " class=\"$cls\""
+                    append("<div id=\"$htmlId\"$clsAttr>")
                     append(ReportCollapser.htmlBegin(sid))
                     append(ReportCollapser.htmlEnd(sid))
                     append("</div>")
                 }
                 emitSlot("c$colIdx-pd-red", "ve-r$line-c$colIdx-pd-red")
                 emitSlot("c$colIdx-pd-full", "ve-r$line-c$colIdx-pd-full")
+                emitSlot("c$colIdx-overlay-full", "ve-r$line-c$colIdx-overlay-full", "overlay-full")
                 for (k in 1..nKeepSlots) {
-                    emitSlot("c$colIdx-look-ink-box$k", "ve-r$line-c$colIdx-look-ink-box$k")
-                    emitSlot("c$colIdx-rec-box$k", "ve-r$line-c$colIdx-rec-box$k")
+                    emitSlot(
+                        "c$colIdx-look-ink-box$k",
+                        "ve-r$line-c$colIdx-look-ink-box$k",
+                        "look-ink-crops",
+                    )
                 }
-                emitSlot("c$colIdx-dump", "ve-r$line-c$colIdx-dump-details")
+                for (k in 1..nKeepSlots) {
+                    emitSlot(
+                        "c$colIdx-rec-box$k",
+                        "ve-r$line-c$colIdx-rec-box$k",
+                        "rec-crops",
+                    )
+                }
+                emitSlot("c$colIdx-rec-extra", "ve-r$line-c$colIdx-rec-extra", "rec-crops")
+                emitSlot("c$colIdx-dump", "ve-r$line-c$colIdx-dump-details", "dump-details")
                 append("</td>")
             }
             val resId = i * nSlots + slotNames.indexOf("results") + 1
@@ -8092,10 +8105,10 @@ private fun pumpSlotNames(nKeep: Int, nFlows: Int): List<String> {
     for (c in 1..nFlows) {
         out.add("c$c-pd-red")
         out.add("c$c-pd-full")
-        for (k in 1..nKeep) {
-            out.add("c$c-look-ink-box$k")
-            out.add("c$c-rec-box$k")
-        }
+        out.add("c$c-overlay-full")
+        for (k in 1..nKeep) out.add("c$c-look-ink-box$k")
+        for (k in 1..nKeep) out.add("c$c-rec-box$k")
+        out.add("c$c-rec-extra")
         out.add("c$c-dump")
     }
     out.add("results")
@@ -8442,7 +8455,7 @@ private fun pPublishFlowColumn(
     nSlots: Int,
 ) {
     val nKeep = maxRedBoxes.coerceIn(PumpOcrSettings.MIN_MAX_RED_BOXES, PumpOcrSettings.MAX_MAX_RED_BOXES)
-    val skipLook = name.contains("energy", ignoreCase = true) || name.contains("G--")
+    val skipLook = name.contains("G--")
     val abortHtml = br.metadata["object_abort_html"].orEmpty()
     val sPerRed = br.metadata["s_per_red"]
     val sHtml = if (!sPerRed.isNullOrBlank() && sPerRed.length <= 100) {
@@ -8458,6 +8471,9 @@ private fun pPublishFlowColumn(
     val full = pumpPersistJpeg(
         imgDir, "r${rowIndex}_c${colIdx}_pd_full.jpg", br.images["PD"] ?: "",
     )
+    val overlay = pumpPersistJpeg(
+        imgDir, "r${rowIndex}_c${colIdx}_overlay.jpg", br.images["overlay"] ?: "",
+    )
     pPublishSlot(
         slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-pd-red",
         pColumnTitle(name, br) + pumpImgTag(redOnly, "max-width:100%;"),
@@ -8466,6 +8482,10 @@ private fun pPublishFlowColumn(
         slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-pd-full",
         pumpImgTag(full, "max-width:100%;"),
     )
+    pPublishSlot(
+        slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-overlay-full",
+        if (overlay.isEmpty()) "" else pumpImgTag(overlay, "max-width:100%;"),
+    )
     for (k in 1..nKeep) {
         val look = if (skipLook) {
             ""
@@ -8473,17 +8493,22 @@ private fun pPublishFlowColumn(
             val body = pLookInkBoxHtml(br, k, imgRel)
             if (body.isNotEmpty()) body else abortHtml
         }
+        pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-look-ink-box$k", look)
+    }
+    for (k in 1..nKeep) {
         val rec = pOfficialRecBoxHtml(br, k, imgDir, rowIndex, colIdx)
         val recBody = if (rec.isNotEmpty()) rec else abortHtml
-        pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-look-ink-box$k", look)
         pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-rec-box$k", recBody)
     }
+    pPublishSlot(
+        slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-rec-extra",
+        pRecExtraHtml(br, imgDir, rowIndex, colIdx),
+    )
     val dumpBits = StringBuilder()
     dumpBits.append(sHtml).append(teleHtml)
     if (dumpFinal.isNotEmpty() && !skipLook) {
         dumpBits.append(pumpImgTag("$imgRel/$dumpFinal", "max-width:100%;", "U8 final"))
     }
-    dumpBits.append(pRecExtraHtml(br, imgDir, rowIndex, colIdx))
     if (abortHtml.isNotEmpty()) dumpBits.append(abortHtml)
     pPublishSlot(slotNames, photoIndex0, nSlots, cellsDir, "c$colIdx-dump", dumpBits.toString())
 }

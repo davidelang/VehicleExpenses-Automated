@@ -48,6 +48,7 @@ body.hide-orig-details .orig-details { display: none; }
 body.hide-dump-details .dump-details { display: none; }
 body.hide-rec-crops .rec-crops { display: none; }
 body.hide-look-ink-crops .look-ink-crops { display: none; }
+body.hide-overlay .overlay-full { display: none; }
 body.hide-results .results-col { display: none !important; }
 .look-ink-crops img { max-width: none !important; height: auto; image-rendering: pixelated; }
 $hideCols
@@ -60,8 +61,9 @@ $hidePhotos
 
     fun toolbar(kind: Kind, columnLabels: List<String>, metaHtml: String): String {
         val rec = if (kind == Kind.PUMP) {
-            """<label class="ctl"><input type="checkbox" class="ve-rec-crops" checked> Rec crops</label>
+            """<label class="ctl"><input type="checkbox" class="ve-overlay" checked> Overlay</label>
     <label class="ctl"><input type="checkbox" class="ve-look-ink" checked> Look ink</label>
+    <label class="ctl"><input type="checkbox" class="ve-rec-crops" checked> Rec crops</label>
     <label class="ctl"><input type="checkbox" class="ve-results" checked> Results</label>"""
         } else ""
         val checks = StringBuilder()
@@ -205,6 +207,8 @@ $hidePhotos
       document.body.classList.toggle('hide-rec-crops', rec && !rec.checked);
       var lookInk = document.querySelector('.ve-look-ink');
       document.body.classList.toggle('hide-look-ink-crops', lookInk && !lookInk.checked);
+      var overlay = document.querySelector('.ve-overlay');
+      document.body.classList.toggle('hide-overlay', overlay && !overlay.checked);
       var results = document.querySelector('.ve-results');
       document.body.classList.toggle('hide-results', results && !results.checked);
     }
@@ -214,7 +218,7 @@ $hidePhotos
   }
   function save() {
     try {
-      var st = { cols: {}, orig: true, dump: true, rec: true, lookInk: true, results: true, unlim: false, max: 500, rows: '' };
+      var st = { cols: {}, orig: true, dump: true, rec: true, lookInk: true, overlay: true, results: true, unlim: false, max: 500, rows: '' };
       var src = topBar();
       if (src) {
         src.querySelectorAll('input[data-col]').forEach(function(cb) {
@@ -225,6 +229,7 @@ $hidePhotos
       var dump = document.querySelector('.ve-dump-details');
       var rec = document.querySelector('.ve-rec-crops');
       var lookInk = document.querySelector('.ve-look-ink');
+      var overlay = document.querySelector('.ve-overlay');
       var results = document.querySelector('.ve-results');
       var unlim = document.querySelector('.ve-col-unlim');
       var colMax = document.querySelector('.ve-col-max');
@@ -233,6 +238,7 @@ $hidePhotos
       if (dump) st.dump = dump.checked;
       if (rec) st.rec = rec.checked;
       if (lookInk) st.lookInk = lookInk.checked;
+      if (overlay) st.overlay = overlay.checked;
       if (results) st.results = results.checked;
       if (unlim) st.unlim = unlim.checked;
       if (colMax) st.max = parseInt(colMax.value, 10) || 500;
@@ -255,6 +261,7 @@ $hidePhotos
       document.querySelectorAll('.ve-dump-details').forEach(function(el) { if (st.dump !== undefined) el.checked = !!st.dump; });
       document.querySelectorAll('.ve-rec-crops').forEach(function(el) { if (st.rec !== undefined) el.checked = !!st.rec; });
       document.querySelectorAll('.ve-look-ink').forEach(function(el) { if (st.lookInk !== undefined) el.checked = !!st.lookInk; });
+      document.querySelectorAll('.ve-overlay').forEach(function(el) { if (st.overlay !== undefined) el.checked = !!st.overlay; });
       document.querySelectorAll('.ve-results').forEach(function(el) { if (st.results !== undefined) el.checked = !!st.results; });
       document.querySelectorAll('.ve-col-unlim').forEach(function(el) { if (st.unlim !== undefined) el.checked = !!st.unlim; });
       document.querySelectorAll('.ve-col-max').forEach(function(el) { if (st.max) el.value = st.max; });
