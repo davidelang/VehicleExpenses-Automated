@@ -1724,7 +1724,7 @@ suspend fun runPumpExperiment(
                         val one = inkFn(
                             NativePaddleEngine.bufferSetA.p.mat,
                             if (isColor) NativePaddleEngine.bufferSetA.p.uvMat
-                            else NativePaddleEngine.bufferSetB.s.mat,
+                            else null,
                             listOf(seed),
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
@@ -1757,14 +1757,6 @@ suspend fun runPumpExperiment(
                             branch.metadata["object_abort_html"] =
                                 "<small style='color:#c00'>$msg</small>"
                         }
-                        snapshotLookInk(
-                            listOf(seed), listOf(seg.rect), imgW, imgH, branch,
-                            listOf(seg.poison),
-                            listOf(seg.tele),
-                            listOf(seg.sweep),
-                            listOf(seg.stroke),
-                            reportDir, timestamp, fullRow, branch.name,
-                        )
                     }
                     val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
                     dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
@@ -1833,14 +1825,6 @@ suspend fun runPumpExperiment(
                         )
                         val seg = one.first()
                         segs.add(seg)
-                        snapshotLookInk(
-                            listOf(seed), listOf(seg.rect), imgW, imgH, branch,
-                            listOf(seg.poison),
-                            listOf(seg.tele),
-                            listOf(seg.sweep),
-                            listOf(seg.stroke),
-                            reportDir, timestamp, fullRow, branch.name,
-                        )
                     }
                     val walks = seeds.indices.map { i ->
                         Triple(seeds[i], segs[i].rect, segs[i].stroke)
@@ -3094,7 +3078,7 @@ suspend fun runPumpExperiment(
                         ProcessMemProbe.log("gray-tight before_expand seed=$si")
                         val one = ContentExpandUtils.expandGrayAabbTight(
                             NativePaddleEngine.bufferSetA.p.mat,
-                            NativePaddleEngine.bufferSetB.s.mat,
+                            null,
                             listOf(seed),
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
@@ -3135,7 +3119,6 @@ suspend fun runPumpExperiment(
                             reportDir, timestamp, fullRow, branch.name,
                             source = NativePaddleEngine.bufferSetB.p,
                             scratchYuv = NativePaddleEngine.bufferSetB,
-                            recPad = true,
                         )
                     }
                     snapshotOverlayFull(
@@ -3486,7 +3469,7 @@ suspend fun runPumpExperiment(
                         }
                         val one = ContentExpandUtils.expandGrayAabbRetract(
                             NativePaddleEngine.bufferSetA.p.mat,
-                            NativePaddleEngine.bufferSetB.s.mat,
+                            null,
                             listOf(seed),
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
@@ -3527,7 +3510,6 @@ suspend fun runPumpExperiment(
                             reportDir, timestamp, fullRow, branch.name,
                             source = NativePaddleEngine.bufferSetB.p,
                             scratchYuv = NativePaddleEngine.bufferSetB,
-                            recPad = true,
                         )
                     }
                     snapshotOverlayFull(
@@ -3920,7 +3902,6 @@ suspend fun runPumpExperiment(
                             reportDir, timestamp, fullRow, branch.name,
                             source = NativePaddleEngine.bufferSetB.p,
                             scratchYuv = NativePaddleEngine.bufferSetB,
-                            recPad = true,
                         )
                     }
                     snapshotOverlayFull(
@@ -4314,7 +4295,6 @@ suspend fun runPumpExperiment(
                             reportDir, timestamp, fullRow, branch.name,
                             source = NativePaddleEngine.bufferSetB.p,
                             scratchYuv = NativePaddleEngine.bufferSetB,
-                            recPad = true,
                         )
                     }
                     snapshotOverlayFull(
@@ -5710,13 +5690,13 @@ suspend fun runPumpExperiment(
                             val one = if (orientInk != null) {
                                 orientInk(
                                     masterBuffer.p.mat,
-                                    masterBuffer.p.uvMat,
+                                    if (isColor) masterBuffer.p.uvMat else null,
                                     listOf(q),
-                                    NativePaddleEngine.bufferSetB.s.mat,
+                                    if (isColor) NativePaddleEngine.bufferSetB.s.mat
+                                    else NativePaddleEngine.bufferSetA.s.mat,
                                     masterBuffer.s.mat,
                                     NativePaddleEngine.bufferSetB.p.mat,
-                                    if (isColor) NativePaddleEngine.bufferSetA.p.mat
-                                    else NativePaddleEngine.bufferSetA.s.mat,
+                                    NativePaddleEngine.bufferSetB.p.uvMat,
                                     poisonBuf,
                                     if (isColor) NativePaddleEngine.bufferSetA.s.mat else null,
                                 )
@@ -5758,6 +5738,7 @@ suspend fun runPumpExperiment(
                                 q, seg.quad, imgW, imgH, branch,
                                 seg.poison, seg.tele, seg.sweep, seg.stroke,
                                 reportDir, timestamp, fullRow, branch.name,
+                                isColor = isColor,
                             )
                         }
                         val dumpFinal = File(objImgRoot, "r${fullRow}_c${colIdx}_final.png")
@@ -7582,13 +7563,9 @@ private suspend fun snapshotLookInk(
     fullRow: Int,
     flowName: String,
     source: Any = NativePaddleEngine.bufferSetB.p,
-    scratchYuv: BufferSet = NativePaddleEngine.bufferSetA,
+    scratchYuv: BufferSet = NativePaddleEngine.bufferSetB,
     energyLook: Boolean = false,
-    recPad: Boolean = false,
 ) {
-    if (flowName.contains("G--")) {
-        return
-    }
     val arr = try {
         org.json.JSONArray(branch.metadata["look_ink"] ?: "[]")
     } catch (_: Exception) {
@@ -7638,9 +7615,12 @@ private suspend fun snapshotLookInk(
             ),
         )
         val seedH = max(1, seed.height())
-        val scale = 96f / seedH
-        val destH0 = (strip.height() * scale).roundToInt().coerceAtLeast(1)
-        val destW0 = (strip.width() * destH0 / max(1, strip.height())).coerceAtLeast(1)
+        val stripH = max(1, strip.height())
+        val stripW = max(1, strip.width())
+        val rawH = ceil(stripH * 96.0 / seedH).toInt()
+        val destH0 = ((rawH + 1) / 2) * 2
+        val rawW = ceil(stripW.toDouble() * destH0 / stripH).toInt()
+        val destW0 = ((rawW + 1) / 2) * 2
         val tele = teles.getOrNull(i)
         val jpeg = pumpEncodeSnapshot(
             source, strip, destW0, destH0, anns, scratchYuv,
@@ -7936,19 +7916,19 @@ private suspend fun snapshotLookInkOriented(
     val seedH = seed.shortAxisBh().coerceAtLeast(1f)
     val stripH = cropQ.shortAxisBh().coerceAtLeast(1f)
     val stripW = cropQ.longAxisBw().coerceAtLeast(1f)
-    val scale = 96f / seedH
-    var destH = (stripH * scale).roundToInt().coerceAtLeast(2)
-    var destW = (stripW * destH / stripH).roundToInt().coerceAtLeast(2)
-    destW = (destW + 1) / 2 * 2
-    destH = (destH + 1) / 2 * 2
+    val rawH = ceil(stripH * 96.0 / seedH).toInt()
+    var destH = ((rawH + 1) / 2) * 2
+    val rawW = ceil(stripW.toDouble() * destH / stripH).toInt()
+    var destW = ((rawW + 1) / 2) * 2
     val destSet = if (isColor) {
         NativePaddleEngine.bufferSetA
     } else {
         NativePaddleEngine.bufferSetB
     }
-    destW = destW.coerceAtMost((destSet.s.width / 2) * 2).coerceAtLeast(2)
-    destH = destH.coerceAtMost((destSet.s.height / 2) * 2).coerceAtLeast(2)
-    val cropId = destSet.s.createCrop(0, 0, destW, destH)
+    val destSlice = if (isColor) destSet.p else destSet.s
+    destW = destW.coerceAtMost((destSlice.width / 2) * 2).coerceAtLeast(2)
+    destH = destH.coerceAtMost((destSlice.height / 2) * 2).coerceAtLeast(2)
+    val cropId = destSlice.createCrop(0, 0, destW, destH)
     val dest = destSet.c[cropId]
     val ok = try {
         ContentExpandUtils.warpQuadToHorizontalStrip(
