@@ -21,9 +21,11 @@ import com.davidlang.vehicleexpensesautomated.VehicleExpensesApplication
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import org.opencv.core.Core
+import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
+import org.opencv.core.Scalar
 import org.opencv.imgproc.Imgproc
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -2557,6 +2559,7 @@ suspend fun runPumpExperiment(
                         NativePaddleEngine.bufferSetA.s.mat,
                         NativePaddleEngine.bufferSetB,
                         branch,
+                        energyVis = true,
                     )
                     val expandedBase = expDiag.map { it.rect }
                     val hitCaps = expDiag.map { it.hitVertCap }
@@ -2826,6 +2829,7 @@ suspend fun runPumpExperiment(
                         NativePaddleEngine.bufferSetA.s.mat,
                         NativePaddleEngine.bufferSetB,
                         branch,
+                        energyVis = true,
                     )
                     val expandedBase = expDiag.map { it.rect }
                     val hitCaps = expDiag.map { it.hitVertCap }
@@ -3130,7 +3134,7 @@ suspend fun runPumpExperiment(
                             listOf(seg.stroke),
                             reportDir, timestamp, fullRow, branch.name,
                             source = NativePaddleEngine.bufferSetB.p,
-                            scratchYuv = NativePaddleEngine.bufferSetA,
+                            scratchYuv = NativePaddleEngine.bufferSetB,
                             recPad = true,
                         )
                     }
@@ -3522,7 +3526,7 @@ suspend fun runPumpExperiment(
                             listOf(seg.stroke),
                             reportDir, timestamp, fullRow, branch.name,
                             source = NativePaddleEngine.bufferSetB.p,
-                            scratchYuv = NativePaddleEngine.bufferSetA,
+                            scratchYuv = NativePaddleEngine.bufferSetB,
                             recPad = true,
                         )
                     }
@@ -3915,7 +3919,7 @@ suspend fun runPumpExperiment(
                             listOf(seg.stroke),
                             reportDir, timestamp, fullRow, branch.name,
                             source = NativePaddleEngine.bufferSetB.p,
-                            scratchYuv = NativePaddleEngine.bufferSetA,
+                            scratchYuv = NativePaddleEngine.bufferSetB,
                             recPad = true,
                         )
                     }
@@ -4309,7 +4313,7 @@ suspend fun runPumpExperiment(
                             listOf(seg.stroke),
                             reportDir, timestamp, fullRow, branch.name,
                             source = NativePaddleEngine.bufferSetB.p,
-                            scratchYuv = NativePaddleEngine.bufferSetA,
+                            scratchYuv = NativePaddleEngine.bufferSetB,
                             recPad = true,
                         )
                     }
@@ -4746,6 +4750,7 @@ suspend fun runPumpExperiment(
                         NativePaddleEngine.bufferSetA.s.mat,
                         NativePaddleEngine.bufferSetB,
                         branch,
+                        energyVis = true,
                     )
                     val expandedQuads = expDiag.map { it.quad }
                     val hitCaps = expDiag.map { it.hitVertCap }
@@ -4929,6 +4934,7 @@ suspend fun runPumpExperiment(
                         NativePaddleEngine.bufferSetA.s.mat,
                         NativePaddleEngine.bufferSetB,
                         branch,
+                        energyVis = true,
                     )
                     val expandedQuads = expDiag.map { it.quad }
                     val hitCaps = expDiag.map { it.hitVertCap }
@@ -5157,13 +5163,11 @@ suspend fun runPumpExperiment(
                             branch.metadata["object_abort_html"] =
                                 "<small style='color:#c00'>$msg</small>"
                         }
-                        snapshotLookInk(
-                            listOf(q.toAabb()), listOf(seg.quad.toAabb()), imgW, imgH, branch,
-                            listOf(seg.poison), listOf(seg.tele), listOf(seg.sweep), listOf(seg.stroke),
+                        snapshotLookInkOriented(
+                            q, seg.quad, imgW, imgH, branch,
+                            seg.poison, seg.tele, seg.sweep, seg.stroke,
                             reportDir, timestamp, fullRow, branch.name,
-                            source = NativePaddleEngine.bufferSetB.p,
-                            scratchYuv = NativePaddleEngine.bufferSetB,
-                            recPad = true,
+                            isColor = isColor,
                         )
                     }
                     snapshotOverlayFull(
@@ -7468,16 +7472,98 @@ private fun lookInkStripRect(
     return android.graphics.Rect(l, t, r, b)
 }
 
+/** Dest-crop JPEG on scratch.s. visGain (energy ×8) applies to dest Y only, not source. */
+private fun pumpEncodeSnapshot(
+    source: Any,
+    sourceRect: android.graphics.Rect?,
+    destW: Int,
+    destH: Int,
+    anns: List<SnapshotAnnotation>,
+    scratchYuv: BufferSet,
+    visGain: Int = 1,
+): ByteArray {
+    var fw = destW.coerceAtLeast(2)
+    var fh = destH.coerceAtLeast(2)
+    fw = (fw + 1) / 2 * 2
+    fh = (fh + 1) / 2 * 2
+    val maxW = scratchYuv.s.width
+    val maxH = scratchYuv.s.height
+    if (fw > maxW) fw = (maxW / 2) * 2
+    if (fh > maxH) fh = (maxH / 2) * 2
+    fw = fw.coerceAtLeast(2)
+    fh = fh.coerceAtLeast(2)
+    val cropId = scratchYuv.s.createCrop(0, 0, fw, fh)
+    try {
+        val dest = scratchYuv.c[cropId]
+        val srcY: Mat
+        val srcUv: Mat?
+        val srcW: Int
+        val srcH: Int
+        when (source) {
+            is BufferSet.Slice -> {
+                srcY = source.mat
+                srcUv = source.uvMat
+                srcW = source.width
+                srcH = source.height
+            }
+            is Mat -> {
+                if (source.type() != CvType.CV_8UC1) return ByteArray(0)
+                srcY = source
+                srcUv = null
+                srcW = source.cols()
+                srcH = source.rows()
+            }
+            else -> return ByteArray(0)
+        }
+        val roi = sourceRect ?: android.graphics.Rect(0, 0, srcW, srcH)
+        if (roi.width() < 1 || roi.height() < 1) return ByteArray(0)
+        val ok = NativeImageUtils.scaleYuvRoi(srcY, srcUv, roi, dest.mat, dest.uvMat)
+        if (!ok) return ByteArray(0)
+        if (visGain != 1) {
+            dest.mat.convertTo(dest.mat, CvType.CV_8UC1, visGain.toDouble())
+        }
+        if (anns.isNotEmpty()) {
+            val sx = fw.toFloat() / roi.width()
+            val sy = fh.toFloat() / roi.height()
+            val scaled = anns.map { ann ->
+                ann.copy(
+                    x1 = ((ann.x1 - roi.left) * sx).toInt(),
+                    y1 = ((ann.y1 - roi.top) * sy).toInt(),
+                    x2 = ((ann.x2 - roi.left) * sx).toInt(),
+                    y2 = ((ann.y2 - roi.top) * sy).toInt(),
+                )
+            }
+            NativeImageUtils.drawYuvAnnotations(dest.yuv, scaled)
+        }
+        return NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
+    } finally {
+        scratchYuv.c[cropId].release()
+    }
+}
+
 /** Full-frame overlay JPEG (no box anns). Dest is scratch.s origin — call before PD dest. */
 private suspend fun snapshotOverlayFull(
     source: Any,
     scratchYuv: BufferSet,
     branch: PumpBranch,
+    energyVis: Boolean = false,
 ) {
-    branch.images["overlay"] = OcrUtils.takeSnapshot(
-        source, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
-        emptyList(), null, scratchYuv,
-    ).first
+    if (energyVis) {
+        val jpeg = pumpEncodeSnapshot(
+            source, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+            emptyList(), scratchYuv, visGain = 8,
+        )
+        branch.images["overlay"] = if (jpeg.isEmpty()) {
+            ""
+        } else {
+            Base64.encodeToString(jpeg, Base64.NO_WRAP)
+        }
+    } else {
+        branch.images["overlay"] = OcrUtils.takeSnapshot(
+            source, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+            emptyList(), null, scratchYuv,
+        ).first
+    }
 }
 
 /** Per-seed look-ink JPEG; spliced into HTML as data URI (no look_ink/ folder). */
@@ -7551,11 +7637,14 @@ private suspend fun snapshotLookInk(
                 Shape.RECTANGLE, Color.YELLOW, 2,
             ),
         )
-        val destH0 = RecBufferFeed.DEFAULT_REC_H
+        val seedH = max(1, seed.height())
+        val scale = 96f / seedH
+        val destH0 = (strip.height() * scale).roundToInt().coerceAtLeast(1)
         val destW0 = (strip.width() * destH0 / max(1, strip.height())).coerceAtLeast(1)
         val tele = teles.getOrNull(i)
-        val (jpeg, _) = OcrUtils.takeSnapshotJpeg(
-            source, strip, destW0, destH0, anns, null, scratchYuv,
+        val jpeg = pumpEncodeSnapshot(
+            source, strip, destW0, destH0, anns, scratchYuv,
+            visGain = if (energyLook) 8 else 1,
         )
         if (jpeg.isEmpty()) return@forEachIndexed
         val boxN = boxBase + i + 1
@@ -7653,7 +7742,175 @@ private fun plusOrientedCrop(
     return Triple(crop, vLen, plusH)
 }
 
-/** Rot look-ink: warp B.p 5-state of plus-ROI (seed v → 96 px, same BL pivot as rec). */
+private fun orientedLookUnionCrop(
+    seed: ContentExpandUtils.OrientedQuad,
+    official: ContentExpandUtils.OrientedQuad,
+    walked: ContentExpandUtils.OrientedQuad,
+    k4: ContentExpandUtils.OrientedQuad,
+): Pair<ContentExpandUtils.OrientedQuad, Int>? {
+    val so = ContentExpandUtils.orderQuadForWarp(seed) ?: return null
+    val tlx = so[0]
+    val tly = so[1]
+    val ux = so[2] - so[0]
+    val uy = so[3] - so[1]
+    val vx = so[6] - so[0]
+    val vy = so[7] - so[1]
+    val uLen = hypot(ux.toDouble(), uy.toDouble()).toFloat().coerceAtLeast(1f)
+    val vLen = hypot(vx.toDouble(), vy.toDouble()).toFloat().coerceAtLeast(1f)
+    val unx = ux / uLen
+    val uny = uy / uLen
+    val vnx = vx / vLen
+    val vny = vy / vLen
+    var u0 = Float.POSITIVE_INFINITY
+    var u1 = Float.NEGATIVE_INFINITY
+    var v0 = Float.POSITIVE_INFINITY
+    var v1 = Float.NEGATIVE_INFINITY
+    fun accum(q: ContentExpandUtils.OrientedQuad) {
+        val p = q.pts
+        val n = min(4, p.size / 2)
+        for (i in 0 until n) {
+            val dx = p[i * 2] - tlx
+            val dy = p[i * 2 + 1] - tly
+            val u = dx * unx + dy * uny
+            val v = dx * vnx + dy * vny
+            if (u < u0) u0 = u
+            if (u > u1) u1 = u
+            if (v < v0) v0 = v
+            if (v > v1) v1 = v
+        }
+    }
+    accum(seed)
+    accum(official)
+    accum(walked)
+    accum(k4)
+    val cropH = (v1 - v0).coerceAtLeast(1f)
+    val pad = ceil(
+        RecBufferFeed.DEFAULT_BORDER_PX.toDouble() * cropH / RecBufferFeed.DEFAULT_REC_H,
+    ).toInt().coerceAtLeast(1)
+    u0 -= pad
+    u1 += pad
+    v0 -= pad
+    v1 += pad
+    fun c(u: Float, v: Float) = floatArrayOf(
+        tlx + u * unx + v * vnx,
+        tly + u * uny + v * vny,
+    )
+    val a = c(u0, v0)
+    val b = c(u1, v0)
+    val d = c(u1, v1)
+    val e = c(u0, v1)
+    val crop = ContentExpandUtils.OrientedQuad(
+        floatArrayOf(a[0], a[1], b[0], b[1], d[0], d[1], e[0], e[1]),
+    )
+    return crop to pad
+}
+
+private fun growOrientedByPad(
+    seed: ContentExpandUtils.OrientedQuad,
+    q: ContentExpandUtils.OrientedQuad,
+    pad: Int,
+): ContentExpandUtils.OrientedQuad {
+    val so = ContentExpandUtils.orderQuadForWarp(seed) ?: return q
+    val tlx = so[0]
+    val tly = so[1]
+    val ux = so[2] - so[0]
+    val uy = so[3] - so[1]
+    val vx = so[6] - so[0]
+    val vy = so[7] - so[1]
+    val uLen = hypot(ux.toDouble(), uy.toDouble()).toFloat().coerceAtLeast(1f)
+    val vLen = hypot(vx.toDouble(), vy.toDouble()).toFloat().coerceAtLeast(1f)
+    val unx = ux / uLen
+    val uny = uy / uLen
+    val vnx = vx / vLen
+    val vny = vy / vLen
+    var u0 = Float.POSITIVE_INFINITY
+    var u1 = Float.NEGATIVE_INFINITY
+    var v0 = Float.POSITIVE_INFINITY
+    var v1 = Float.NEGATIVE_INFINITY
+    val p = q.pts
+    val n = min(4, p.size / 2)
+    for (i in 0 until n) {
+        val dx = p[i * 2] - tlx
+        val dy = p[i * 2 + 1] - tly
+        val u = dx * unx + dy * uny
+        val v = dx * vnx + dy * vny
+        if (u < u0) u0 = u
+        if (u > u1) u1 = u
+        if (v < v0) v0 = v
+        if (v > v1) v1 = v
+    }
+    val padF = pad.toFloat()
+    u0 -= padF
+    u1 += padF
+    v0 -= padF
+    v1 += padF
+    fun c(u: Float, v: Float) = floatArrayOf(
+        tlx + u * unx + v * vnx,
+        tly + u * uny + v * vny,
+    )
+    val a = c(u0, v0)
+    val b = c(u1, v0)
+    val d = c(u1, v1)
+    val e = c(u0, v1)
+    return ContentExpandUtils.OrientedQuad(
+        floatArrayOf(a[0], a[1], b[0], b[1], d[0], d[1], e[0], e[1]),
+    )
+}
+
+private fun destAabbOfQuad(
+    q: ContentExpandUtils.OrientedQuad,
+    crop: ContentExpandUtils.OrientedQuad,
+    destW: Int,
+    destH: Int,
+): android.graphics.Rect {
+    val co = ContentExpandUtils.orderQuadForWarp(crop)
+        ?: return android.graphics.Rect(0, 0, destW, destH)
+    val src = MatOfPoint2f(
+        Point(co[0].toDouble(), co[1].toDouble()),
+        Point(co[2].toDouble(), co[3].toDouble()),
+        Point(co[4].toDouble(), co[5].toDouble()),
+        Point(co[6].toDouble(), co[7].toDouble()),
+    )
+    val dst = MatOfPoint2f(
+        Point(0.0, 0.0),
+        Point((destW - 1).toDouble().coerceAtLeast(0.0), 0.0),
+        Point((destW - 1).toDouble().coerceAtLeast(0.0), (destH - 1).toDouble().coerceAtLeast(0.0)),
+        Point(0.0, (destH - 1).toDouble().coerceAtLeast(0.0)),
+    )
+    val m = Imgproc.getPerspectiveTransform(src, dst)
+    val pts = q.pts
+    val n = min(4, pts.size / 2)
+    val inPts = MatOfPoint2f(
+        *Array(n) { i -> Point(pts[i * 2].toDouble(), pts[i * 2 + 1].toDouble()) },
+    )
+    val out = MatOfPoint2f()
+    Core.perspectiveTransform(inPts, out, m)
+    val arr = out.toArray()
+    var minX = destW
+    var minY = destH
+    var maxX = 0
+    var maxY = 0
+    for (pt in arr) {
+        val x = pt.x.roundToInt()
+        val y = pt.y.roundToInt()
+        if (x < minX) minX = x
+        if (y < minY) minY = y
+        if (x > maxX) maxX = x
+        if (y > maxY) maxY = y
+    }
+    m.release()
+    src.release()
+    dst.release()
+    inPts.release()
+    out.release()
+    minX = minX.coerceIn(0, (destW - 1).coerceAtLeast(0))
+    minY = minY.coerceIn(0, (destH - 1).coerceAtLeast(0))
+    maxX = maxX.coerceAtLeast(minX + 1).coerceAtMost(destW)
+    maxY = maxY.coerceAtLeast(minY + 1).coerceAtMost(destH)
+    return android.graphics.Rect(minX, minY, maxX, maxY)
+}
+
+/** Rot look-ink: warp B.p of union crop; dest not look-bin; seed → 96 px; dest-space rects. */
 private suspend fun snapshotLookInkOriented(
     seed: ContentExpandUtils.OrientedQuad,
     walked: ContentExpandUtils.OrientedQuad,
@@ -7668,38 +7925,68 @@ private suspend fun snapshotLookInkOriented(
     timestamp: String,
     fullRow: Int,
     flowName: String,
+    isColor: Boolean = false,
 ) {
     val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
-    val (cropQ, _, _) = plusOrientedCrop(seed, walked, sPx)
-    val nativeH = cropQ.shortAxisBh().roundToInt().coerceAtLeast(1)
-    val nativeW = cropQ.longAxisBw().roundToInt().coerceAtLeast(1)
-    val work = NativePaddleEngine.bufferSetB
-    val cropId = work.s.createCrop(0, 0, nativeW, nativeH)
-    val dest = work.c[cropId].mat
+    val official = ContentExpandUtils.padOrientedByStrokes(walked, seed, 0f, sPx)
+    val k4 = ContentExpandUtils.padOrientedByStrokes(walked, seed, 4f, sPx)
+    val union = orientedLookUnionCrop(seed, official, walked, k4) ?: return
+    val cropQ = union.first
+    val pad = union.second
+    val seedH = seed.shortAxisBh().coerceAtLeast(1f)
+    val stripH = cropQ.shortAxisBh().coerceAtLeast(1f)
+    val stripW = cropQ.longAxisBw().coerceAtLeast(1f)
+    val scale = 96f / seedH
+    var destH = (stripH * scale).roundToInt().coerceAtLeast(2)
+    var destW = (stripW * destH / stripH).roundToInt().coerceAtLeast(2)
+    destW = (destW + 1) / 2 * 2
+    destH = (destH + 1) / 2 * 2
+    val destSet = if (isColor) {
+        NativePaddleEngine.bufferSetA
+    } else {
+        NativePaddleEngine.bufferSetB
+    }
+    destW = destW.coerceAtMost((destSet.s.width / 2) * 2).coerceAtLeast(2)
+    destH = destH.coerceAtMost((destSet.s.height / 2) * 2).coerceAtLeast(2)
+    val cropId = destSet.s.createCrop(0, 0, destW, destH)
+    val dest = destSet.c[cropId]
     val ok = try {
         ContentExpandUtils.warpQuadToHorizontalStrip(
-            work.p.mat, cropQ, dest, targetH = 0,
+            NativePaddleEngine.bufferSetB.p.mat, cropQ, dest.mat, targetH = 0,
         )
     } catch (_: Throwable) {
         false
     }
-    if (!ok || dest.empty() || dest.cols() < 1 || dest.rows() < 1) {
-        work.c[cropId].release()
+    if (!ok || dest.mat.empty() || dest.mat.cols() < 1 || dest.mat.rows() < 1) {
+        destSet.c[cropId].release()
         return
     }
-    val destW = dest.cols()
-    val destH = dest.rows()
-    val (yT, yB) = seedVRowsInWarp(seed, cropQ, destW, destH)
+    destW = dest.mat.cols()
+    destH = dest.mat.rows()
+    dest.uvMat.setTo(Scalar(128.0, 128.0))
+    val yellowQ = growOrientedByPad(seed, walked, pad)
+    val redR = destAabbOfQuad(seed, cropQ, destW, destH)
+    val blueR = destAabbOfQuad(official, cropQ, destW, destH)
+    val yellowR = destAabbOfQuad(yellowQ, cropQ, destW, destH)
     val anns = listOf(
-        SnapshotAnnotation(0, yT, destW - 1, yT, Shape.LINE, Color.CYAN, 2),
-        SnapshotAnnotation(0, yB, destW - 1, yB, Shape.LINE, Color.CYAN, 2),
+        SnapshotAnnotation(
+            redR.left, redR.top, redR.right, redR.bottom,
+            Shape.RECTANGLE, Color.RED, 2,
+        ),
+        SnapshotAnnotation(
+            blueR.left, blueR.top, blueR.right, blueR.bottom,
+            Shape.RECTANGLE, Color.BLUE, 4,
+        ),
+        SnapshotAnnotation(
+            yellowR.left, yellowR.top, yellowR.right, yellowR.bottom,
+            Shape.RECTANGLE, Color.YELLOW, 2,
+        ),
     )
+    NativeImageUtils.drawYuvAnnotations(dest.yuv, anns)
     val jpeg = try {
-        OcrUtils.takeSnapshotJpeg(
-            dest, null, destW, destH, anns, null, NativePaddleEngine.bufferSetA,
-        ).first
+        NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
     } finally {
-        work.c[cropId].release()
+        destSet.c[cropId].release()
     }
     if (jpeg.isEmpty()) return
     val arr = try {
