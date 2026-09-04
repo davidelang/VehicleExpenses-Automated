@@ -77,8 +77,8 @@ object RecBufferFeed {
     }
 
     /**
-     * Pump-style height-locked strip: scale so height → [targetH] (usually 48), width to
-     * 32-aligned value ≤ [maxW], with source-border instead of black 4px inset.
+     * Pump-style height-locked strip: scale so height → [targetH] (usually 48),
+     * width isotropic (`subW/subH`). 32-align is empty canvas to the right, not a scale.
      *
      * @return [Result] including [Result.recCropId] that caller must [BufferSet.Slice.release]
      */
@@ -108,23 +108,36 @@ object RecBufferFeed {
         val subH = (sB - sT).coerceAtLeast(1)
         val sub = srcMat.submat(org.opencv.core.Rect(sL, sT, subW, subH))
         val scale = targetH.toFloat() / subH
-        val rawW = (subW * scale).toInt()
-        val maxContentW = (recBuffer.p.width).coerceAtMost(maxW)
-        val targetW = ((rawW + 31) / 32 * 32).coerceAtMost(maxContentW).coerceAtLeast(32)
-        val th = targetH.coerceAtMost(recBuffer.p.height)
+        fun even(n: Int): Int = if (n % 2 == 0) n else n + 1
+        val ch = targetH.coerceAtMost(recBuffer.p.height)
+        val maxContentW = recBuffer.p.width.coerceAtMost(maxW)
+        var srcW = subW
+        var srcL = 0
+        var cw = even((srcW * scale).toInt().coerceAtLeast(1))
+        if (cw > maxContentW) {
+            srcW = (maxContentW / scale).toInt().coerceAtLeast(1).coerceAtMost(subW)
+            srcL = ((subW - srcW) / 2).coerceAtLeast(0)
+            cw = even((srcW * scale).toInt().coerceAtLeast(2)).coerceAtMost(maxContentW)
+            if (cw % 2 != 0) cw = (cw - 1).coerceAtLeast(2)
+        }
+        val srcRoi = sub.submat(0, subH, srcL, srcL + srcW)
         recBuffer.p.clear()
-        val recCropId = recBuffer.createCrop(0, 0, targetW, th)
-        val interp = if (subW > targetW) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
+        val canvasW = ((cw + 31) / 32 * 32).coerceAtMost(recBuffer.p.width).coerceAtLeast(cw)
+        val recCropId = recBuffer.createCrop(0, 0, canvasW, ch)
+        val destContent = recBuffer.c[recCropId].mat.submat(0, ch, 0, cw)
+        val interp = if (srcW > cw) Imgproc.INTER_AREA else Imgproc.INTER_LINEAR
         Imgproc.resize(
-            sub,
-            recBuffer.c[recCropId].mat,
-            Size(targetW.toDouble(), th.toDouble()),
+            srcRoi,
+            destContent,
+            Size(cw.toDouble(), ch.toDouble()),
             0.0,
             0.0,
             interp,
         )
+        destContent.release()
+        srcRoi.release()
         sub.release()
-        return Result(rScContent, pad, recCropId, targetW, th)
+        return Result(rScContent, pad, recCropId, canvasW, ch)
     }
 
     fun feedSourceBorderHeightStrip(
