@@ -3011,8 +3011,8 @@ static void fillPoisonMask(
     const int longH = (glareMult > 0 ? glareMult : 11) * vRef;
     const int thinW = std::max(1, static_cast<int>(std::lround(0.25f * static_cast<float>(seedW))));
     const bool weak = v0 <= 4 || needFb;
-    // Two bin passes: H then V. poison U8: 0 clean, 1 fat-H candidate, 255 poison.
-    // Same as min(hr,vr)>fat || hr>longH || (weak && hr>thinW). No HxW int maps.
+    // 0 clean, 1 H-candidate, 255 poison. longH/weak mark 1 (not 255).
+    // Fat V promotes 1→255. Thin scratch: H>longH and V<vRef → 255. Leftover 1→0.
     for (int y = 0; y < h; ++y) {
         const uint8_t* bp = bin.ptr<uint8_t>(y);
         uint8_t* pp = poison->ptr<uint8_t>(y);
@@ -3023,8 +3023,7 @@ static void fillPoisonMask(
             while (x < w && bp[x]) ++x;
             const int len = x - x0;
             uint8_t mark = 0;
-            if (len > longH || (weak && len > thinW)) mark = 255;
-            else if (len > fat) mark = 1;
+            if (len > longH || (weak && len > thinW) || len > fat) mark = 1;
             if (mark) {
                 for (int k = x0; k < x; ++k) pp[k] = mark;
             }
@@ -3042,6 +3041,25 @@ static void fillPoisonMask(
                     uint8_t* pp = poison->ptr<uint8_t>(k);
                     if (pp[x] == 1) pp[x] = 255;
                 }
+            }
+        }
+    }
+    for (int y = 0; y < h; ++y) {
+        const uint8_t* bp = bin.ptr<uint8_t>(y);
+        uint8_t* pp = poison->ptr<uint8_t>(y);
+        int x = 0;
+        while (x < w) {
+            if (!bp[x]) { ++x; continue; }
+            const int x0 = x;
+            while (x < w && bp[x]) ++x;
+            const int hlen = x - x0;
+            if (hlen <= longH) continue;
+            for (int k = x0; k < x; ++k) {
+                int yt = y;
+                int yb = y;
+                while (yt > 0 && bin.ptr<uint8_t>(yt - 1)[k]) --yt;
+                while (yb + 1 < h && bin.ptr<uint8_t>(yb + 1)[k]) ++yb;
+                if (yb - yt + 1 < vRef) pp[k] = 255;
             }
         }
     }
