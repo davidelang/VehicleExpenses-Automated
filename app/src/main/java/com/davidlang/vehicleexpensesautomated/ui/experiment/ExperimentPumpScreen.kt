@@ -2540,6 +2540,11 @@ suspend fun runPumpExperiment(
                         scratchYuv = NativePaddleEngine.bufferSetB,
                         energyLook = true,
                     )
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetA.s.mat,
+                        NativePaddleEngine.bufferSetB,
+                        branch,
+                    )
                     val expandedBase = expDiag.map { it.rect }
                     val hitCaps = expDiag.map { it.hitVertCap }
                     branch.metadata["n_hit_cap"] = hitCaps.count { it }.toString()
@@ -2804,6 +2809,11 @@ suspend fun runPumpExperiment(
                         scratchYuv = NativePaddleEngine.bufferSetB,
                         energyLook = true,
                     )
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetA.s.mat,
+                        NativePaddleEngine.bufferSetB,
+                        branch,
+                    )
                     val expandedBase = expDiag.map { it.rect }
                     val hitCaps = expDiag.map { it.hitVertCap }
                     branch.metadata["n_hit_cap"] = hitCaps.count { it }.toString()
@@ -3050,6 +3060,7 @@ suspend fun runPumpExperiment(
                     val seeds = redPixelList
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
+                    NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     var exhausted = false
                     var nextInk = 255
@@ -3110,6 +3121,11 @@ suspend fun runPumpExperiment(
                             recPad = true,
                         )
                     }
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetB.p,
+                        workspace,
+                        branch,
+                    )
                     val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
                     dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
                     branch.metadata["object_dump_final"] = dumpFinal.name
@@ -3318,8 +3334,8 @@ suspend fun runPumpExperiment(
                         getAnns(officialHunks, Color.BLUE, 4) +
                         getAnns(padHunks, Color.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
-                        NativePaddleEngine.bufferSetB.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
-                        aPd, null, NativePaddleEngine.bufferSetA,
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, workspace,
                     ).first
                 }
                 val procInkGrayRetract: suspend (
@@ -3437,6 +3453,7 @@ suspend fun runPumpExperiment(
                     val seeds = redPixelList
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
+                    NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     var exhausted = false
                     var nextInk = 255
@@ -3496,6 +3513,11 @@ suspend fun runPumpExperiment(
                             recPad = true,
                         )
                     }
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetB.p,
+                        workspace,
+                        branch,
+                    )
                     val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
                     dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
                     branch.metadata["object_dump_final"] = dumpFinal.name
@@ -3704,8 +3726,8 @@ suspend fun runPumpExperiment(
                         getAnns(officialHunks, Color.BLUE, 4) +
                         getAnns(padHunks, Color.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
-                        NativePaddleEngine.bufferSetB.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
-                        aPd, null, NativePaddleEngine.bufferSetA,
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, workspace,
                     ).first
                 }
                 val procInkColorTight: suspend (
@@ -3824,6 +3846,7 @@ suspend fun runPumpExperiment(
                     val seeds = redPixelList
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
+                    NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     var exhausted = false
                     var nextInk = 255
@@ -3844,7 +3867,7 @@ suspend fun runPumpExperiment(
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
                             NativePaddleEngine.bufferSetB.p.mat,
-                            NativePaddleEngine.bufferSetB.s.mat,
+                            NativePaddleEngine.bufferSetB.p.uvMat,
                             poisonBuf,
                         )
                         val seg = one.first()
@@ -3883,6 +3906,11 @@ suspend fun runPumpExperiment(
                             recPad = true,
                         )
                     }
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetB.p,
+                        workspace,
+                        branch,
+                    )
                     val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
                     dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
                     branch.metadata["object_dump_final"] = dumpFinal.name
@@ -4092,8 +4120,8 @@ suspend fun runPumpExperiment(
                         getAnns(officialHunks, Color.BLUE, 4) +
                         getAnns(padHunks, Color.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
-                        NativePaddleEngine.bufferSetB.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
-                        aPd, null, NativePaddleEngine.bufferSetA,
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, workspace,
                     ).first
                 }
                 val procInkColorRetract: suspend (
@@ -4212,6 +4240,7 @@ suspend fun runPumpExperiment(
                     val seeds = redPixelList
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
+                    NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     var exhausted = false
                     var nextInk = 255
@@ -4232,7 +4261,7 @@ suspend fun runPumpExperiment(
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
                             NativePaddleEngine.bufferSetB.p.mat,
-                            NativePaddleEngine.bufferSetB.s.mat,
+                            NativePaddleEngine.bufferSetB.p.uvMat,
                             poisonBuf,
                         )
                         val seg = one.first()
@@ -4271,6 +4300,11 @@ suspend fun runPumpExperiment(
                             recPad = true,
                         )
                     }
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetB.p,
+                        workspace,
+                        branch,
+                    )
                     val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
                     dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
                     branch.metadata["object_dump_final"] = dumpFinal.name
@@ -4480,8 +4514,8 @@ suspend fun runPumpExperiment(
                         getAnns(officialHunks, Color.BLUE, 4) +
                         getAnns(padHunks, Color.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
-                        NativePaddleEngine.bufferSetB.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
-                        aPd, null, NativePaddleEngine.bufferSetA,
+                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, workspace,
                     ).first
                 }
 
@@ -4695,6 +4729,11 @@ suspend fun runPumpExperiment(
                         scratchYuv = NativePaddleEngine.bufferSetB,
                         energyLook = true,
                     )
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetA.s.mat,
+                        NativePaddleEngine.bufferSetB,
+                        branch,
+                    )
                     val expandedQuads = expDiag.map { it.quad }
                     val hitCaps = expDiag.map { it.hitVertCap }
                     branch.metadata["n_hit_cap"] = hitCaps.count { it }.toString()
@@ -4873,6 +4912,11 @@ suspend fun runPumpExperiment(
                         scratchYuv = NativePaddleEngine.bufferSetB,
                         energyLook = true,
                     )
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetA.s.mat,
+                        NativePaddleEngine.bufferSetB,
+                        branch,
+                    )
                     val expandedQuads = expDiag.map { it.quad }
                     val hitCaps = expDiag.map { it.hitVertCap }
                     branch.metadata["n_hit_cap"] = hitCaps.count { it }.toString()
@@ -5050,6 +5094,7 @@ suspend fun runPumpExperiment(
                     val tExp0 = System.currentTimeMillis()
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
+                    NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
                     var exhausted = false
                     var nextInk = 255
@@ -5071,7 +5116,7 @@ suspend fun runPumpExperiment(
                             else NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
                             NativePaddleEngine.bufferSetB.p.mat,
-                            NativePaddleEngine.bufferSetB.s.mat,
+                            NativePaddleEngine.bufferSetB.p.uvMat,
                             poisonBuf,
                             if (isColor) NativePaddleEngine.bufferSetA.s.mat else null,
                         )
@@ -5108,6 +5153,11 @@ suspend fun runPumpExperiment(
                             recPad = true,
                         )
                     }
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetB.p,
+                        NativePaddleEngine.bufferSetA,
+                        branch,
+                    )
                     val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
                     dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
                     branch.metadata["object_dump_final"] = dumpFinal.name
@@ -7405,6 +7455,18 @@ private fun lookInkStripRect(
     return android.graphics.Rect(l, t, r, b)
 }
 
+/** Full-frame overlay JPEG (no box anns). Dest is scratch.s origin — call before PD dest. */
+private suspend fun snapshotOverlayFull(
+    source: Any,
+    scratchYuv: BufferSet,
+    branch: PumpBranch,
+) {
+    branch.images["overlay"] = OcrUtils.takeSnapshot(
+        source, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+        emptyList(), null, scratchYuv,
+    ).first
+}
+
 /** Per-seed look-ink JPEG; spliced into HTML as data URI (no look_ink/ folder). */
 private suspend fun snapshotLookInk(
     seeds: List<android.graphics.Rect>,
@@ -7425,9 +7487,7 @@ private suspend fun snapshotLookInk(
     energyLook: Boolean = false,
     recPad: Boolean = false,
 ) {
-    if (!energyLook && (flowName.contains("energy", ignoreCase = true) ||
-            flowName.contains("G--"))
-    ) {
+    if (flowName.contains("G--")) {
         return
     }
     val arr = try {
@@ -7441,58 +7501,48 @@ private suspend fun snapshotLookInk(
         val stroke = strokes.getOrNull(i)
         val sweep = sweeps.getOrNull(i)
         val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
-        val strip = if (energyLook) {
-            val uL = min(seed.left, walk.left)
-            val uT = min(seed.top, walk.top)
-            val uR = max(seed.right, walk.right)
-            val uB = max(seed.bottom, walk.bottom)
-            val unionH = max(1, uB - uT)
-            val rSc = RecBufferFeed.DEFAULT_REC_H.toFloat() / unionH
-            val pad = ceil(RecBufferFeed.DEFAULT_BORDER_PX.toDouble() / rSc.toDouble())
-                .toInt().coerceAtLeast(1)
-            android.graphics.Rect(
-                (uL - pad).coerceAtLeast(0),
-                (uT - pad).coerceAtLeast(0),
-                (uR + pad).coerceAtMost(imgW).coerceAtLeast(1),
-                (uB + pad).coerceAtMost(imgH).coerceAtLeast(1),
-            )
-        } else if (recPad) {
-            val k4 = ContentExpandUtils.padVertByStrokes(walk, seed, 4f, sPx, imgW, imgH)
-            ContentExpandUtils.calculatedAabb(k4, 0f, 0.5f, imgW, imgH)
-        } else {
-            lookInkStripRect(seed, walk, sPx, imgW, imgH, k4Horiz = true)
-        }
+        val official = ContentExpandUtils.padVertByStrokes(walk, seed, 0f, sPx, imgW, imgH)
+        val k4 = ContentExpandUtils.padVertByStrokes(walk, seed, 4f, sPx, imgW, imgH)
+        val uL = minOf(seed.left, official.left, walk.left, k4.left)
+        val uT = minOf(seed.top, official.top, walk.top, k4.top)
+        val uR = maxOf(seed.right, official.right, walk.right, k4.right)
+        val uB = maxOf(seed.bottom, official.bottom, walk.bottom, k4.bottom)
+        val cropH = max(1, uB - uT)
+        val pad = ceil(
+            RecBufferFeed.DEFAULT_BORDER_PX.toDouble() * cropH / RecBufferFeed.DEFAULT_REC_H,
+        ).toInt().coerceAtLeast(1)
+        val strip = android.graphics.Rect(
+            (uL - pad).coerceAtLeast(0),
+            (uT - pad).coerceAtLeast(0),
+            (uR + pad).coerceAtMost(imgW).coerceAtLeast(1),
+            (uB + pad).coerceAtMost(imgH).coerceAtLeast(1),
+        )
         if (strip.width() < 1 || strip.height() < 1) return@forEachIndexed
-        val anns = ArrayList<SnapshotAnnotation>(4)
-        val yT = seed.top.coerceIn(0, imgH - 1)
-        val yB = (seed.bottom - 1).coerceAtLeast(seed.top).coerceIn(0, imgH - 1)
-        val x0 = strip.left.coerceIn(0, imgW - 1)
-        val x1 = (strip.right - 1).coerceAtLeast(strip.left).coerceIn(0, imgW - 1)
-        anns.add(SnapshotAnnotation(x0, yT, x1, yT, Shape.LINE, Color.CYAN, 2))
-        anns.add(SnapshotAnnotation(x0, yB, x1, yB, Shape.LINE, Color.CYAN, 2))
+        val yellow = android.graphics.Rect(
+            (walk.left - pad).coerceAtLeast(0),
+            (walk.top - pad).coerceAtLeast(0),
+            (walk.right + pad).coerceAtMost(imgW).coerceAtLeast(1),
+            (walk.bottom + pad).coerceAtMost(imgH).coerceAtLeast(1),
+        )
+        val anns = listOf(
+            SnapshotAnnotation(
+                seed.left, seed.top, seed.right, seed.bottom,
+                Shape.RECTANGLE, Color.RED, 2,
+            ),
+            SnapshotAnnotation(
+                official.left, official.top, official.right, official.bottom,
+                Shape.RECTANGLE, Color.BLUE, 4,
+            ),
+            SnapshotAnnotation(
+                yellow.left, yellow.top, yellow.right, yellow.bottom,
+                Shape.RECTANGLE, Color.YELLOW, 2,
+            ),
+        )
+        val destH0 = RecBufferFeed.DEFAULT_REC_H
+        val destW0 = (strip.width() * destH0 / max(1, strip.height())).coerceAtLeast(1)
         val tele = teles.getOrNull(i)
-        if (!energyLook && tele != null) {
-            if (tele.gapJumpTop) {
-                val y = tele.landTop.toInt().coerceIn(0, imgH - 1)
-                anns.add(SnapshotAnnotation(x0, y, x1, y, Shape.LINE, Color.YELLOW, 2))
-            }
-            if (tele.gapJumpBot) {
-                val y = tele.landBot.toInt().coerceIn(0, imgH - 1)
-                anns.add(SnapshotAnnotation(x0, y, x1, y, Shape.LINE, Color.YELLOW, 2))
-            }
-        }
-        val (destW, destH) = if (energyLook) {
-            val destH0 = RecBufferFeed.DEFAULT_REC_H
-            val destW0 = (strip.width() * destH0 / max(1, strip.height())).coerceAtLeast(1)
-            destW0 to destH0
-        } else {
-            val seedH = max(1, seed.height())
-            val scale = 96f / seedH
-            (strip.width() * scale).roundToInt().coerceAtLeast(1) to
-                (strip.height() * scale).roundToInt().coerceAtLeast(1)
-        }
         val (jpeg, _) = OcrUtils.takeSnapshotJpeg(
-            source, strip, destW, destH, anns, null, scratchYuv,
+            source, strip, destW0, destH0, anns, null, scratchYuv,
         )
         if (jpeg.isEmpty()) return@forEachIndexed
         val boxN = boxBase + i + 1
