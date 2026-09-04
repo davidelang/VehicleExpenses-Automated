@@ -587,7 +587,8 @@ static cv::Mat packJpegScratch(int w, int h) {
         }
         g_packJpegU8.create(nr, nc, CV_8UC1);
     }
-    return g_packJpegU8(cv::Rect(0, 0, w, h));
+    if (!g_packJpegU8.data) return cv::Mat();
+    return cv::Mat(h, w, CV_8UC1, g_packJpegU8.data);
 }
 
 extern "C" bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out);

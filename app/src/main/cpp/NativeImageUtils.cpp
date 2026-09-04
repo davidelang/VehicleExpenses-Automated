@@ -587,7 +587,8 @@ static cv::Mat jpegBgrScratch(int w, int h) {
         }
         g_jpegBgr.create(nr, nc, CV_8UC3);
     }
-    return g_jpegBgr(cv::Rect(0, 0, w, h));
+    if (!g_jpegBgr.data) return cv::Mat();
+    return cv::Mat(h, w, CV_8UC3, g_jpegBgr.data);
 }
 
 static void yuvToBgrPixel(int Y, int U, int V, cv::Vec3b* out) {
@@ -620,6 +621,7 @@ static bool encodeYuvMatJpeg(const cv::Mat& y, const cv::Mat& uv, int quality, s
             yuvToBgrPixel(yp[xx], U, V, &dp[xx]);
         }
     }
+    if (!bgr.isContinuous()) return false;
     std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
     return cv::imencode(".jpg", bgr, *out, params);
 }
@@ -639,6 +641,7 @@ bool veEncodeGrayJpegU8(const cv::Mat& u8, std::vector<uint8_t>* out) {
             dp[x] = cv::Vec3b(g, g, g);
         }
     }
+    if (!bgr.isContinuous()) return false;
     std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, 70};
     return cv::imencode(".jpg", bgr, *out, params);
 }
@@ -663,6 +666,7 @@ static bool encodeYuvPlanesJpeg(
             yuvToBgrPixel(yp[x], U, V, &dp[x]);
         }
     }
+    if (!bgr.isContinuous()) return false;
     std::vector<int> params = {cv::IMWRITE_JPEG_QUALITY, quality};
     return cv::imencode(".jpg", bgr, *out, params);
 }
