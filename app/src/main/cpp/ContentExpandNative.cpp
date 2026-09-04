@@ -3460,29 +3460,19 @@ static void paintLookOverlay(
         for (int x = 0; x < lw; ++x) {
             const bool pois = poisRow && poisRow[x] != 0;
             const bool inkBefore = before[x] != 0;
-            uint8_t Y = 0, U = 128, V = 128;
-            if (pois && !inkBefore) { Y = 19; U = 117; V = 160; }
+            if (!pois && !inkBefore) continue;
+            uint8_t Y;
+            uint8_t U;
+            uint8_t Vch;
             if (inkBefore) {
-                if (pois) { Y = 150; U = 44; V = 21; }
-                else { Y = 255; U = 128; V = 128; }
+                if (pois) { Y = 150; U = 44; Vch = 21; }
+                else { Y = 255; U = 128; Vch = 128; }
+            } else {
+                Y = 19; U = 117; Vch = 160;
             }
             int ix = 0, iy = 0;
             overlayXY(x, y, &ix, &iy);
-            yuvPut(overlayY, overlayUv, ix, iy, Y, U, V);
-        }
-    }
-    for (int y = 0; y < lh; ++y) {
-        const uint8_t* after = lookBin.ptr<uint8_t>(y);
-        const uint8_t* poisRow = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
-        for (int x = 0; x < lw; ++x) {
-            if (after[x] != 0) continue;
-            int iy = 0, ix = 0;
-            overlayXY(x, y, &ix, &iy);
-            if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
-            const uint8_t Y0 = overlayY->ptr<uint8_t>(iy)[ix];
-            if (Y0 < 140) continue;
-            if (poisRow && poisRow[x]) yuvPut(overlayY, overlayUv, ix, iy, 9, 168, 121);
-            else yuvPut(overlayY, overlayUv, ix, iy, 48, 128, 128);
+            yuvPut(overlayY, overlayUv, ix, iy, Y, U, Vch);
         }
     }
 }
