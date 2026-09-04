@@ -3318,8 +3318,8 @@ suspend fun runPumpExperiment(
                         getAnns(officialHunks, Color.BLUE, 4) +
                         getAnns(padHunks, Color.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
-                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
-                        aPd, null, workspace,
+                        NativePaddleEngine.bufferSetB.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, NativePaddleEngine.bufferSetA,
                     ).first
                 }
                 val procInkGrayRetract: suspend (
@@ -3704,8 +3704,8 @@ suspend fun runPumpExperiment(
                         getAnns(officialHunks, Color.BLUE, 4) +
                         getAnns(padHunks, Color.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
-                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
-                        aPd, null, workspace,
+                        NativePaddleEngine.bufferSetB.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, NativePaddleEngine.bufferSetA,
                     ).first
                 }
                 val procInkColorTight: suspend (
@@ -4092,8 +4092,8 @@ suspend fun runPumpExperiment(
                         getAnns(officialHunks, Color.BLUE, 4) +
                         getAnns(padHunks, Color.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
-                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
-                        aPd, null, workspace,
+                        NativePaddleEngine.bufferSetB.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, NativePaddleEngine.bufferSetA,
                     ).first
                 }
                 val procInkColorRetract: suspend (
@@ -4480,8 +4480,8 @@ suspend fun runPumpExperiment(
                         getAnns(officialHunks, Color.BLUE, 4) +
                         getAnns(padHunks, Color.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
-                        workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
-                        aPd, null, workspace,
+                        NativePaddleEngine.bufferSetB.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
+                        aPd, null, NativePaddleEngine.bufferSetA,
                     ).first
                 }
 
@@ -7441,7 +7441,7 @@ private suspend fun snapshotLookInk(
         val stroke = strokes.getOrNull(i)
         val sweep = sweeps.getOrNull(i)
         val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
-        val strip = if (energyLook || recPad) {
+        val strip = if (energyLook) {
             val uL = min(seed.left, walk.left)
             val uT = min(seed.top, walk.top)
             val uR = max(seed.right, walk.right)
@@ -7456,6 +7456,9 @@ private suspend fun snapshotLookInk(
                 (uR + pad).coerceAtMost(imgW).coerceAtLeast(1),
                 (uB + pad).coerceAtMost(imgH).coerceAtLeast(1),
             )
+        } else if (recPad) {
+            val k4 = ContentExpandUtils.padVertByStrokes(walk, seed, 4f, sPx, imgW, imgH)
+            ContentExpandUtils.calculatedAabb(k4, 0f, 0.5f, imgW, imgH)
         } else {
             lookInkStripRect(seed, walk, sPx, imgW, imgH, k4Horiz = true)
         }
