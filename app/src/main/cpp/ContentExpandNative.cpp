@@ -3461,6 +3461,8 @@ static void paintLookOverlay(
             const bool pois = poisRow && poisRow[x] != 0;
             const bool inkBefore = before[x] != 0;
             if (!pois && !inkBefore) continue;
+            int ix = 0, iy = 0;
+            overlayXY(x, y, &ix, &iy);
             uint8_t Y;
             uint8_t U;
             uint8_t Vch;
@@ -3468,10 +3470,10 @@ static void paintLookOverlay(
                 if (pois) { Y = 150; U = 44; Vch = 21; }
                 else { Y = 255; U = 128; Vch = 128; }
             } else {
+                if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
+                if (overlayY->ptr<uint8_t>(iy)[ix] >= 140) continue;
                 Y = 19; U = 117; Vch = 160;
             }
-            int ix = 0, iy = 0;
-            overlayXY(x, y, &ix, &iy);
             yuvPut(overlayY, overlayUv, ix, iy, Y, U, Vch);
         }
     }
