@@ -4727,7 +4727,8 @@ static void fillOrientedLookSweep(
 static void jumpOrientedOne(
     const cv::Mat& mag, OriBox* box, int imgW, int imgH,
     float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
-    float seedBh, const cv::Mat* lookBin, float seedV0, float seedV1, int minRun);
+    float seedBh, const cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
+    float lookV0 = 0.f);
 
 static void seg7OrientedOne(
     const cv::Mat& src, OriBox seed, int imgW, int imgH,
@@ -4814,6 +4815,21 @@ static void seg7OrientedOne(
         objPlane, objPack, seedIndex,
         true, seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
         seed.u0, seed.u1, lookV0, &lookPoison, false, poisonPlane);
+    if (tele && !keepColorStats) {
+        float yi = 0.f, yb = 0.f;
+        int ni = 0, nbg = 0;
+        for (int y = 0; y < lookBin.rows; ++y) {
+            const uint8_t* bp = lookBin.ptr<uint8_t>(y);
+            const uint8_t* lp = look.ptr<uint8_t>(y);
+            for (int x = 0; x < lookBin.cols; ++x) {
+                if (bp[x]) { yi += lp[x]; ++ni; }
+                else { yb += lp[x]; ++nbg; }
+            }
+        }
+        tele->yInk = ni > 0 ? yi / static_cast<float>(ni) : 0.f;
+        tele->yBg = nbg > 0 ? yb / static_cast<float>(nbg) : 0.f;
+        tele->dInk = tele->yInk - tele->yBg;
+    }
     look.setTo(0);
     if (poisonStats) *poisonStats = stLocal;
     const int glareW = 11 * std::max(sPx, 4);
@@ -4917,27 +4933,11 @@ static void seg7OrientedOne(
     seed.v0 = v0;
     seed.v1 = v1;
     if (doHorzJump) {
-        const cv::Mat* ink = srcIsBin ? &src : nullptr;
         jumpOrientedOne(
             src, &seed, imgW, imgH, 0.4f, 0.65f, 0.50f, 0.30f, seedBh,
-            ink, seed.v0, seed.v1, srcIsBin ? minRun : 0);
+            &lookBin, seed.v0, seed.v1, minRun, lookV0);
     }
     if (tele) {
-        if (!keepColorStats) {
-            float yi = 0.f, yb = 0.f;
-            int ni = 0, nbg = 0;
-            for (int y = 0; y < lookBin.rows; ++y) {
-                const uint8_t* bp = lookBin.ptr<uint8_t>(y);
-                const uint8_t* lp = look.ptr<uint8_t>(y);
-                for (int x = 0; x < lookBin.cols; ++x) {
-                    if (bp[x]) { yi += lp[x]; ++ni; }
-                    else { yb += lp[x]; ++nbg; }
-                }
-            }
-            tele->yInk = ni > 0 ? yi / static_cast<float>(ni) : 0.f;
-            tele->yBg = nbg > 0 ? yb / static_cast<float>(nbg) : 0.f;
-            tele->dInk = tele->yInk - tele->yBg;
-        }
         tele->otsuThr = 0.f;
         tele->sPx = *sPxOut;
         tele->dTop = v0 - origV0;
@@ -5001,7 +5001,8 @@ static void jumpOrientedOne(
     const cv::Mat& mag, OriBox* box, int imgW, int imgH,
     float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
     float seedBh,
-    const cv::Mat* lookBin, float seedV0, float seedV1, int minRun
+    const cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
+    float lookV0
 ) {
     (void)maxFrac;
     (void)retractClearFrac;
@@ -5021,15 +5022,22 @@ static void jumpOrientedOne(
         sv1 = box->v1;
     }
     const bool useInk = lookBin && !lookBin->empty() && lookBin->type() == CV_8UC1 && minRun > 0;
+    const float mapU0 = box->u0;
+    const float mapU1 = box->u1;
+    const float mapUSpan = std::max(1.f, mapU1 - mapU0);
+    const int bw = useInk ? lookBin->cols : 0;
+    const int bh = useInk ? lookBin->rows : 0;
     auto faceHas = [&](float u) -> bool {
+        if (!useInk || bw < 1 || bh < 1) return false;
         const int n = std::max(4, static_cast<int>(std::lround(sv1 - sv0)));
         int best = 0, run = 0;
         for (int i = 0; i < n; ++i) {
             const float v = sv0 + (i + 0.5f) / n * (sv1 - sv0);
-            const float px = box->cx + u * box->ux + v * box->vx;
-            const float py = box->cy + u * box->uy + v * box->vy;
-            const int g = sampleU8Trunc(*lookBin, px, py, imgW, imgH);
-            if (g > 0) {
+            const int ix = static_cast<int>(std::lround((u - mapU0) / mapUSpan * static_cast<float>(bw)));
+            const int iy = static_cast<int>(std::lround(v - lookV0));
+            const bool on = ix >= 0 && ix < bw && iy >= 0 && iy < bh &&
+                lookBin->ptr<uint8_t>(iy)[ix] != 0;
+            if (on) {
                 ++run;
                 if (run > best) best = run;
             } else {
