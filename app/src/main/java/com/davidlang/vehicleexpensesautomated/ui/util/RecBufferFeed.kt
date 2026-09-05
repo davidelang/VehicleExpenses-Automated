@@ -137,7 +137,7 @@ object RecBufferFeed {
         destContent.release()
         srcRoi.release()
         sub.release()
-        return Result(rScContent, pad, recCropId, canvasW, ch)
+        return Result(rScContent, pad, recCropId, cw, ch)
     }
 
     fun feedSourceBorderHeightStrip(

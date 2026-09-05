@@ -8123,13 +8123,11 @@ private fun pOfficialRecBoxHtml(
             if (c.optString("label") != want) continue
             val b64 = c.optString("_htmlRec")
             if (b64.isNullOrEmpty()) return ""
-            val recW = c.optInt("recW", 0)
-            val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
             val asis = c.optString("asis")
             val dig = c.optString("digits")
             val src = pumpPersistJpeg(imgDir, "r${rowIndex}_c${colIdx}_rec_box$k.jpg", b64)
             val cap = "$want <span style='font-size:12px;'>asis=$asis dig=$dig</span>"
-            return pumpImgTag(src, "height:48px;$wCss", cap)
+            return pumpImgTag(src, "height:48px;width:auto;", cap)
         }
         return ""
     }
@@ -8169,13 +8167,11 @@ private fun pRecExtraHtml(br: PumpBranch, imgDir: File, rowIndex: Int, colIdx: I
             val lab = c.optString("label")
             val asis = c.optString("asis")
             val dig = c.optString("digits")
-            val recW = c.optInt("recW", 0)
-            val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
             val src = pumpPersistJpeg(imgDir, "r${rowIndex}_c${colIdx}_recextra_${lab}.jpg", b64)
             val cap = "$lab <span style='font-size:12px;'>asis=$asis dig=$dig</span>"
             chunk.append(
                 "<div style='flex:0 0 auto;font-size:9px;'>" +
-                    pumpImgTag(src, "height:48px;$wCss", cap) +
+                    pumpImgTag(src, "height:48px;width:auto;", cap) +
                     "</div>",
             )
         }

@@ -866,11 +866,15 @@ object PumpCostVolUtils {
         targetW: Int,
         targetH: Int,
     ): String = try {
+        val dest = recBuffer.c[recCropId]
+        val cw = targetW.coerceAtLeast(2).coerceAtMost(dest.width.coerceAtLeast(2))
+        val ch = targetH.coerceAtLeast(2).coerceAtMost(dest.height.coerceAtLeast(2))
+        val roi = android.graphics.Rect(0, 0, cw, ch)
         OcrUtils.takeSnapshot(
-            recBuffer.c[recCropId],
-            null,
-            targetW.coerceAtLeast(2),
-            targetH.coerceAtLeast(2),
+            dest,
+            roi,
+            0,
+            0,
             emptyList(),
             null,
             recBuffer,
