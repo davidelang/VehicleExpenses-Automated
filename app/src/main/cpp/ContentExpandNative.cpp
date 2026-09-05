@@ -4773,10 +4773,10 @@ static void seg7OrientedOne(
     const int lookH = std::max(1, static_cast<int>(std::lround(lookV1 - lookV0)));
     cv::Mat look;
     cv::Mat seedY;
-    cv::Mat* work = asU8(scratch);
-    if (!work) return;
-    if (!scratchFits(work, wu, lookH)) return;
-    look = planeView8u(work, 0, 0, wu, lookH);
+    cv::Mat* ovY = asU8(overlayY);
+    if (!ovY) return;
+    if (!scratchFits(ovY, wu, lookH)) return;
+    look = planeView8u(ovY, 0, 0, wu, lookH);
     if (look.empty()) return;
     for (int y = 0; y < lookH; ++y) {
         const float v = lookV0 + (y + 0.5f);
@@ -4797,11 +4797,11 @@ static void seg7OrientedOne(
     if (ySeed1 <= ySeed0) ySeed1 = std::min(lookH, ySeed0 + 1);
     seedY = planeView8u(&look, 0, ySeed0, wu, ySeed1 - ySeed0);
     if (seedY.empty()) return;
-    cv::Mat* lookBinHost = asU8(lookBinPlane);
-    if (!lookBinHost) lookBinHost = asU8(scratch);
+    cv::Mat* lookBinHost = asU8(scratch);
     if (!lookBinHost) return;
     cv::Mat lookBin = planeRoi8u(lookBinHost, 0, 0, wu, lookH);
     if (lookBin.empty()) return;
+    if (look.data == lookBin.data) return;
     PoisonStats stLocal;
     cv::Mat* objPlane = asU8(inkDump);
     if (objPlane && (objPlane->cols < imgW || objPlane->rows < imgH)) objPlane = nullptr;
@@ -4810,10 +4810,11 @@ static void seg7OrientedOne(
     cv::Mat lookPoison;
     const int sPx = fillPoisonLookRaster(
         seedY, look, ySeed0, 0, srcIsBin, 11, fallback, &lookBin,
-        overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, work,
+        overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookBinHost,
         objPlane, objPack, seedIndex,
         true, seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
         seed.u0, seed.u1, lookV0, &lookPoison, false, poisonPlane);
+    look.setTo(0);
     if (poisonStats) *poisonStats = stLocal;
     const int glareW = 11 * std::max(sPx, 4);
     *sPxOut = static_cast<float>(std::max(1, sPx));
@@ -5132,8 +5133,7 @@ static jfloatArray seg7OrientedMany(
     auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
     auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
     cv::Mat* ovUv = asUV(overlayUv);
-    cv::Mat* lookBinHost = asU8(overlayUv);
-    if (!lookBinHost) lookBinHost = asU8(scratch);
+    cv::Mat* lookBinHost = asU8(scratch);
     cv::Mat* rotPoison = asU8(uv);
     cv::Mat* tintPlane = asU8(reinterpret_cast<cv::Mat*>(tintPtr));
     std::vector<PoisonStats> poisonPacks;
