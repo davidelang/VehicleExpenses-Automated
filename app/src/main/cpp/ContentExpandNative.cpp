@@ -2844,20 +2844,25 @@ static void seg7One(
     const int vLook = capPx + 2;
     const int nt = std::max(0, st - vLook);
     const int nb = std::min(imgH, sb + vLook);
-    if (sr <= sl || nb <= nt) return;
+    const int xPad = std::max(1, static_cast<int>(std::lround(
+        0.50f * static_cast<float>(seedH) * static_cast<float>(kJumpMax + 1))));
+    const int lookL = std::max(0, sl - xPad);
+    const int lookR = std::min(imgW, sr + xPad);
+    if (lookR <= lookL || nb <= nt) return;
     const int lookH = nb - nt;
-    const int lookW = sr - sl;
+    const int lookW = lookR - lookL;
+    const int xSeed0 = sl - lookL;
     LOGI("veAllocLog tag=seg7One lookW=%d lookH=%d seedW=%d seedH=%d imgW=%d imgH=%d",
          lookW, lookH, seedW, seedH, imgW, imgH);
     if (!veAllocLog("seg7One_look", veMatBytes(lookH, lookW, CV_8UC1), lookH, lookW, CV_8UC1)) {
         return;
     }
-    cv::Mat look = src(cv::Range(nt, nb), cv::Range(sl, sr));
+    cv::Mat look = src(cv::Range(nt, nb), cv::Range(lookL, lookR));
     cv::Mat seedY = src(cv::Range(st, sb), cv::Range(sl, sr));
     cv::Mat lookBin;
     cv::Mat* lookPlane = asU8(scratch);
     if (lookPlane) {
-        lookBin = planeRoi8u(lookPlane, sl, nt, sr - sl, nb - nt);
+        lookBin = planeRoi8u(lookPlane, lookL, nt, lookW, lookH);
     }
     const int localT = st - nt;
     const int localB = sb - nt;
@@ -2881,8 +2886,8 @@ static void seg7One(
         veRssLog("seg7_look", extra);
     }
     const int sPx = fillPoisonLookRaster(
-        seedY, look, localT, 0, srcIsBin, gm, fallback, &lookBin,
-        overlayY8, overlayUv2, sl, nt, poisonStats ? &stLocal : nullptr, lookPlane,
+        seedY, look, localT, xSeed0, srcIsBin, gm, fallback, &lookBin,
+        overlayY8, overlayUv2, lookL, nt, poisonStats ? &stLocal : nullptr, lookPlane,
         objPlane, objPack, seedIndex, false,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
         pois, &lookInkAtPlane);
@@ -2896,7 +2901,8 @@ static void seg7One(
     *usedFb = (sPx == fallback) ? 1 : 0;
     const float gf = gapFrac > 0.f ? gapFrac : 0.5f;
     const int gapStop = std::max(1, static_cast<int>(std::lround(gf * sPx)));
-    const int minRun = usedMinRun(sPx, maxInSeedRunRows(lookBin, localT, localB, 0, lookBin.cols));
+    const int minRun = usedMinRun(
+        sPx, maxInSeedRunRows(lookBin, localT, localB, xSeed0, xSeed0 + seedW));
     auto hasBar = [&](int y) {
         return rowHasStrokeBar(lookBin, y, minRun, glareW);
     };
@@ -2996,7 +3002,7 @@ static void seg7One(
     int farL = *ol, farR = *oright;
     aabbJumpOnLook(
         &lookBin, ol, *ot, oright, *ob, imgW, imgH,
-        st, sb, sl, sr, sPx, sl, nt, &farL, &farR);
+        st, sb, sl, sr, sPx, lookL, nt, &farL, &farR);
     veRssLog("walk_paint", nullptr);
     if (*ol < 0) *ol = 0;
     if (*oright > imgW) *oright = imgW;
@@ -3007,8 +3013,12 @@ static void seg7One(
             const int y0s = std::max(0, localT);
             const int y1s = std::min(lookBin.rows, localB);
             if (y1s > y0s) {
-                cv::Mat seedInk = lookBin(cv::Range(y0s, y1s), cv::Range(0, lookBin.cols));
-                fillYInkBg(src, seedInk, sl, st, sPx, &yi, &yb);
+                const int x0s = std::max(0, xSeed0);
+                const int x1s = std::min(lookBin.cols, xSeed0 + seedW);
+                if (x1s > x0s) {
+                    cv::Mat seedInk = lookBin(cv::Range(y0s, y1s), cv::Range(x0s, x1s));
+                    fillYInkBg(src, seedInk, sl, st, sPx, &yi, &yb);
+                }
             }
             tele->yInk = yi;
             tele->yBg = yb;
@@ -3031,13 +3041,13 @@ static void seg7One(
         tele->farL = static_cast<float>(farL);
         tele->farR = static_cast<float>(farR);
         tele->nInkSeed = static_cast<float>(
-            countInkU8(lookInkAtPlane, 0, localT, lookInkAtPlane.cols, localB));
+            countInkU8(lookInkAtPlane, sl - lookL, localT, sr - lookL, localB));
         tele->nInkBlue = static_cast<float>(
-            countInkU8(lookInkAtPlane, *ol - sl, *ot - nt, *oright - sl, *ob - nt));
+            countInkU8(lookInkAtPlane, *ol - lookL, *ot - nt, *oright - lookL, *ob - nt));
         tele->nInkYellow = static_cast<float>(
             countInkU8(
-                lookInkAtPlane, farL - sl, std::min(st, *ot) - nt,
-                farR - sl, std::max(sb, *ob) - nt));
+                lookInkAtPlane, farL - lookL, std::min(st, *ot) - nt,
+                farR - lookL, std::max(sb, *ob) - nt));
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
     if (sweepOut && !lookBin.empty()) {
@@ -3047,7 +3057,7 @@ static void seg7One(
             static_cast<float>(sPx), sweepOut);
     }
     paintLookOverlay(
-        lookBin, lookPoison, overlayY8, overlayUv2, false, sl, nt,
+        lookBin, lookPoison, overlayY8, overlayUv2, false, lookL, nt,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f);
 }
 
