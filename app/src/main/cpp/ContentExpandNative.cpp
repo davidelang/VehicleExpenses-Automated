@@ -4822,7 +4822,8 @@ static void jumpOrientedOne(
     const cv::Mat& mag, OriBox* box, int imgW, int imgH,
     float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
     float seedBh, const cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
-    float lookV0 = 0.f, float* farU0 = nullptr, float* farU1 = nullptr);
+    float lookV0 = 0.f, float* farU0 = nullptr, float* farU1 = nullptr,
+    float lookU0 = 0.f, float lookU1 = 0.f);
 
 static void seg7OrientedOne(
     const cv::Mat& src, OriBox seed, int imgW, int imgH,
@@ -4866,18 +4867,69 @@ static void seg7OrientedOne(
     const float lookV0 = seed.v0 - static_cast<float>(vLook);
     const float lookV1 = seed.v1 + static_cast<float>(vLook);
     const int lookH = std::max(1, static_cast<int>(std::lround(lookV1 - lookV0)));
+    const float uPad = 0.50f * seedBh * static_cast<float>(kJumpMax + 1);
+    float lookU0 = seed.u0 - uPad;
+    float lookU1 = seed.u1 + uPad;
+    int lookW = std::max(wu, static_cast<int>(std::lround(lookU1 - lookU0)));
     cv::Mat look;
+    cv::Mat lookLocal;
     cv::Mat seedY;
-    cv::Mat* ovY = asU8(overlayY);
-    if (!ovY) return;
-    if (!scratchFits(ovY, wu, lookH)) return;
-    look = planeView8u(ovY, 0, 0, wu, lookH);
+    cv::Mat* lookBinHost = asU8(scratch);
+    if (!lookBinHost) return;
+    auto packTwo = [&](int w) -> int {
+        if (scratchFits(lookBinHost, 2 * w, lookH)) return 1;
+        if (scratchFits(lookBinHost, w, 2 * lookH)) return 2;
+        return 0;
+    };
+    int layout = packTwo(lookW);
+    if (!layout) {
+        int maxTwo = 0;
+        if (lookBinHost->rows >= lookH) maxTwo = std::max(maxTwo, lookBinHost->cols / 2);
+        if (lookBinHost->rows >= 2 * lookH) maxTwo = std::max(maxTwo, lookBinHost->cols);
+        if (maxTwo >= wu) {
+            lookW = std::max(wu, std::min(lookW, maxTwo));
+            layout = packTwo(lookW);
+        }
+    }
+    if (!layout) {
+        lookW = std::max(wu, lookW);
+        if (!scratchFits(lookBinHost, lookW, lookH)) {
+            lookW = std::max(wu, std::min(lookW, lookBinHost->cols));
+            if (!scratchFits(lookBinHost, lookW, lookH)) {
+                lookW = wu;
+                if (!scratchFits(lookBinHost, lookW, lookH)) return;
+            }
+        }
+    }
+    if (lookW <= wu) {
+        lookW = wu;
+        lookU0 = seed.u0;
+        lookU1 = seed.u1;
+    } else {
+        const float half = 0.5f * static_cast<float>(lookW - wu);
+        lookU0 = seed.u0 - half;
+        lookU1 = seed.u1 + half;
+    }
+    if (!veAllocLog("seg7Ori_look", veMatBytes(lookH, lookW, CV_8UC1), lookH, lookW, CV_8UC1)) {
+        return;
+    }
+    cv::Mat lookBin = planeRoi8u(lookBinHost, 0, 0, lookW, lookH);
+    if (lookBin.empty()) return;
+    if (layout == 1) {
+        look = planeRoi8u(lookBinHost, lookW, 0, lookW, lookH);
+    } else if (layout == 2) {
+        look = planeRoi8u(lookBinHost, 0, lookH, lookW, lookH);
+    } else {
+        lookLocal.create(lookH, lookW, CV_8UC1);
+        look = lookLocal;
+    }
     if (look.empty()) return;
+    if (look.data == lookBin.data) return;
     for (int y = 0; y < lookH; ++y) {
         const float v = lookV0 + (y + 0.5f);
         uint8_t* row = look.ptr<uint8_t>(y);
-        for (int x = 0; x < wu; ++x) {
-            const float u = seed.u0 + (x + 0.5f) / wu * (seed.u1 - seed.u0);
+        for (int x = 0; x < lookW; ++x) {
+            const float u = lookU0 + (x + 0.5f) / static_cast<float>(lookW) * (lookU1 - lookU0);
             const float px = seed.cx + u * seed.ux + v * seed.vx;
             const float py = seed.cy + u * seed.uy + v * seed.vy;
             const int g = sampleU8Trunc(src, px, py, imgW, imgH);
@@ -4890,13 +4942,11 @@ static void seg7OrientedOne(
     int ySeed1 = ySeed0 + hv;
     if (ySeed1 > lookH) ySeed1 = lookH;
     if (ySeed1 <= ySeed0) ySeed1 = std::min(lookH, ySeed0 + 1);
-    seedY = planeView8u(&look, 0, ySeed0, wu, ySeed1 - ySeed0);
+    const int xSeed0 = std::max(0, std::min(lookW - wu,
+        static_cast<int>(std::lround((seed.u0 - lookU0) /
+            std::max(1.f, lookU1 - lookU0) * static_cast<float>(lookW)))));
+    seedY = planeView8u(&look, xSeed0, ySeed0, wu, ySeed1 - ySeed0);
     if (seedY.empty()) return;
-    cv::Mat* lookBinHost = asU8(scratch);
-    if (!lookBinHost) return;
-    cv::Mat lookBin = planeRoi8u(lookBinHost, 0, 0, wu, lookH);
-    if (lookBin.empty()) return;
-    if (look.data == lookBin.data) return;
     PoisonStats stLocal;
     cv::Mat* objPlane = asU8(inkDump);
     if (objPlane && (objPlane->cols < imgW || objPlane->rows < imgH)) objPlane = nullptr;
@@ -4905,11 +4955,11 @@ static void seg7OrientedOne(
     cv::Mat lookPoison;
     cv::Mat lookInkAtPlane;
     const int sPx = fillPoisonLookRaster(
-        seedY, look, ySeed0, 0, srcIsBin, 9, fallback, &lookBin,
+        seedY, look, ySeed0, xSeed0, srcIsBin, 9, fallback, &lookBin,
         overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookBinHost,
         objPlane, objPack, seedIndex,
         true, seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
-        seed.u0, seed.u1, lookV0, &lookPoison, false, poisonPlane, &lookInkAtPlane);
+        lookU0, lookU1, lookV0, &lookPoison, false, poisonPlane, &lookInkAtPlane);
     if (tele && !keepColorStats) {
         float yi = 0.f, yb = 0.f;
         int ni = 0, nbg = 0;
@@ -4925,12 +4975,12 @@ static void seg7OrientedOne(
         tele->yBg = nbg > 0 ? yb / static_cast<float>(nbg) : 0.f;
         tele->dInk = tele->yInk - tele->yBg;
     }
-    look.setTo(0);
     if (poisonStats) *poisonStats = stLocal;
     const int glareW = 9 * std::max(sPx, 4);
     *sPxOut = static_cast<float>(std::max(1, sPx));
     const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
-    const int minRun = usedMinRun(sPx, maxInSeedRunRows(lookBin, ySeed0, ySeed1, 0, lookBin.cols));
+    const int minRun = usedMinRun(
+        sPx, maxInSeedRunRows(lookBin, ySeed0, ySeed1, xSeed0, xSeed0 + wu));
     auto hasBar = [&](float v) {
         const int y = static_cast<int>(std::lround(v - lookV0));
         if (y < 0 || y >= lookBin.rows) return false;
@@ -5031,7 +5081,8 @@ static void seg7OrientedOne(
     if (doHorzJump) {
         jumpOrientedOne(
             src, &seed, imgW, imgH, 0.4f, 0.65f, 0.50f, 0.30f, seedBh,
-            &lookBin, seed.v0, seed.v1, minRun, lookV0, &farU0, &farU1);
+            &lookBin, seed.v0, seed.v1, minRun, lookV0, &farU0, &farU1,
+            lookU0, lookU1);
     }
     if (tele) {
         tele->otsuThr = 0.f;
@@ -5050,16 +5101,16 @@ static void seg7OrientedOne(
         tele->landBot = gapJumpBot ? landBot : 0.f;
         tele->farL = farU0;
         tele->farR = farU1;
-        const float uSpan = std::max(1.f, seedU1 - seedU0);
+        const float uSpan = std::max(1.f, lookU1 - lookU0);
         const int inkW = lookInkAtPlane.cols;
         auto uToX = [&](float u) -> int {
-            return static_cast<int>(std::lround((u - seedU0) / uSpan * static_cast<float>(inkW)));
+            return static_cast<int>(std::lround((u - lookU0) / uSpan * static_cast<float>(inkW)));
         };
         auto vToY = [&](float v) -> int {
             return static_cast<int>(std::lround(v - lookV0));
         };
         tele->nInkSeed = static_cast<float>(
-            countInkU8(lookInkAtPlane, 0, ySeed0, inkW, ySeed1));
+            countInkU8(lookInkAtPlane, xSeed0, ySeed0, xSeed0 + wu, ySeed1));
         tele->nInkBlue = static_cast<float>(
             countInkU8(lookInkAtPlane, uToX(seed.u0), vToY(v0), uToX(seed.u1), vToY(v1)));
         tele->nInkYellow = static_cast<float>(
@@ -5081,7 +5132,7 @@ static void seg7OrientedOne(
     paintLookOverlay(
         lookBin, lookPoison, overlayY8, overlayUv2, true, 0, 0,
         seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
-        seed.u0, seed.u1, lookV0);
+        lookU0, lookU1, lookV0);
 }
 
 static double meanUFace(
@@ -5116,7 +5167,8 @@ static void jumpOrientedOne(
     float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
     float seedBh,
     const cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
-    float lookV0, float* farU0, float* farU1
+    float lookV0, float* farU0, float* farU1,
+    float lookU0, float lookU1
 ) {
     (void)maxFrac;
     (void)retractClearFrac;
@@ -5136,8 +5188,8 @@ static void jumpOrientedOne(
         sv1 = box->v1;
     }
     const bool useInk = lookBin && !lookBin->empty() && lookBin->type() == CV_8UC1 && minRun > 0;
-    const float mapU0 = box->u0;
-    const float mapU1 = box->u1;
+    const float mapU0 = (lookU1 > lookU0 + 1.f) ? lookU0 : box->u0;
+    const float mapU1 = (lookU1 > lookU0 + 1.f) ? lookU1 : box->u1;
     const float mapUSpan = std::max(1.f, mapU1 - mapU0);
     const int bw = useInk ? lookBin->cols : 0;
     const int bh = useInk ? lookBin->rows : 0;
@@ -5292,8 +5344,26 @@ static jfloatArray seg7OrientedMany(
         bool srcIsBin = false;
         bool keepColor = false;
         if (useTint && uv) {
+            OriBox padBox = box;
+            if (boundStrategy == 1) {
+                const float ins = static_cast<float>(std::max(1, tightInsetPx));
+                if (padBox.u1 - padBox.u0 > 2.f * ins + 2.f) {
+                    padBox.u0 += ins; padBox.u1 -= ins;
+                }
+                if (padBox.v1 - padBox.v0 > 2.f * ins + 2.f) {
+                    padBox.v0 += ins; padBox.v1 -= ins;
+                }
+            }
+            const float seedBhT = std::max(1.f, padBox.v1 - padBox.v0);
+            const float capT = 2.5f * seedBhT;
+            const int vLookT = std::max(1, static_cast<int>(std::lround(capT)) + 2);
+            const float uPadT = 0.50f * seedBhT * static_cast<float>(kJumpMax + 1);
+            padBox.u0 -= uPadT;
+            padBox.u1 += uPadT;
+            padBox.v0 -= static_cast<float>(vLookT);
+            padBox.v1 += static_cast<float>(vLookT);
             float pts[8];
-            oriToQuad(box, pts);
+            oriToQuad(padBox, pts);
             float minx = pts[0], maxx = pts[0], miny = pts[1], maxy = pts[1];
             for (int k = 1; k < 4; ++k) {
                 minx = std::min(minx, pts[k * 2]);
