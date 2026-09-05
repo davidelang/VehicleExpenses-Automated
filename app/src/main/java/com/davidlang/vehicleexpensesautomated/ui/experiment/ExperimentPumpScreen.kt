@@ -1724,7 +1724,7 @@ suspend fun runPumpExperiment(
                         val one = inkFn(
                             NativePaddleEngine.bufferSetA.p.mat,
                             if (isColor) NativePaddleEngine.bufferSetA.p.uvMat
-                            else null,
+                            else NativePaddleEngine.bufferSetB.s.mat,
                             listOf(seed),
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
@@ -3078,7 +3078,7 @@ suspend fun runPumpExperiment(
                         ProcessMemProbe.log("gray-tight before_expand seed=$si")
                         val one = ContentExpandUtils.expandGrayAabbTight(
                             NativePaddleEngine.bufferSetA.p.mat,
-                            null,
+                            NativePaddleEngine.bufferSetB.s.mat,
                             listOf(seed),
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
@@ -3469,7 +3469,7 @@ suspend fun runPumpExperiment(
                         }
                         val one = ContentExpandUtils.expandGrayAabbRetract(
                             NativePaddleEngine.bufferSetA.p.mat,
-                            null,
+                            NativePaddleEngine.bufferSetB.s.mat,
                             listOf(seed),
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
@@ -3866,7 +3866,7 @@ suspend fun runPumpExperiment(
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
                             NativePaddleEngine.bufferSetB.p.mat,
-                            NativePaddleEngine.bufferSetB.p.uvMat,
+                            NativePaddleEngine.bufferSetB.s.mat,
                             poisonBuf,
                         )
                         val seg = one.first()
@@ -4259,7 +4259,7 @@ suspend fun runPumpExperiment(
                             NativePaddleEngine.bufferSetA.s.mat,
                             masterBuffer.s.mat,
                             NativePaddleEngine.bufferSetB.p.mat,
-                            NativePaddleEngine.bufferSetB.p.uvMat,
+                            NativePaddleEngine.bufferSetB.s.mat,
                             poisonBuf,
                         )
                         val seg = one.first()
@@ -5109,7 +5109,7 @@ suspend fun runPumpExperiment(
                         }
                         val one = inkExpandFn(
                             workspace.p.mat,
-                            if (isColor) workspace.p.uvMat else null,
+                            if (isColor) workspace.p.uvMat else NativePaddleEngine.bufferSetB.s.mat,
                             listOf(q),
                             if (isColor) NativePaddleEngine.bufferSetB.s.mat
                             else NativePaddleEngine.bufferSetA.s.mat,
@@ -5690,7 +5690,7 @@ suspend fun runPumpExperiment(
                             val one = if (orientInk != null) {
                                 orientInk(
                                     masterBuffer.p.mat,
-                                    if (isColor) masterBuffer.p.uvMat else null,
+                                    if (isColor) masterBuffer.p.uvMat else NativePaddleEngine.bufferSetB.s.mat,
                                     listOf(q),
                                     if (isColor) NativePaddleEngine.bufferSetB.s.mat
                                     else NativePaddleEngine.bufferSetA.s.mat,

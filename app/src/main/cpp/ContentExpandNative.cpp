@@ -1004,6 +1004,18 @@ static cv::Mat* asUV(cv::Mat* m) {
     return (m && !m->empty() && m->type() == CV_8UC2) ? m : nullptr;
 }
 
+/** NV21 UV view of a packed full-frame Y plane (BufferSet Instance layout). */
+static cv::Mat* asUvFromY(cv::Mat* y, cv::Mat* storage) {
+    if (!storage || !y || y->empty() || y->type() != CV_8UC1) return nullptr;
+    if ((y->rows & 1) || (y->cols & 1)) return nullptr;
+    if (y->step[0] != static_cast<size_t>(y->cols)) return nullptr;
+    *storage = cv::Mat(
+        y->rows / 2, y->cols / 2, CV_8UC2,
+        y->data + static_cast<size_t>(y->rows) * static_cast<size_t>(y->cols),
+        static_cast<size_t>(y->cols));
+    return asUV(storage);
+}
+
 /** Prefix of poison IntArray: nextInk, nextNon, inkLo. Zeros keep defaults. */
 static void loadObjPack(JNIEnv* env, jintArray arr, ObjPack* p) {
     if (!env || !arr || !p) return;
@@ -3460,21 +3472,24 @@ static void paintLookOverlay(
         for (int x = 0; x < lw; ++x) {
             const bool pois = poisRow && poisRow[x] != 0;
             const bool inkBefore = before[x] != 0;
-            if (!pois && !inkBefore) continue;
+            if (!(pois && !inkBefore)) continue;
             int ix = 0, iy = 0;
             overlayXY(x, y, &ix, &iy);
-            uint8_t Y;
-            uint8_t U;
-            uint8_t Vch;
-            if (inkBefore) {
-                if (pois) { Y = 150; U = 44; Vch = 21; }
-                else { Y = 255; U = 128; Vch = 128; }
-            } else {
-                if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
-                if (overlayY->ptr<uint8_t>(iy)[ix] >= 140) continue;
-                Y = 19; U = 117; Vch = 160;
-            }
-            yuvPut(overlayY, overlayUv, ix, iy, Y, U, Vch);
+            if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
+            if (overlayY->ptr<uint8_t>(iy)[ix] >= 140) continue;
+            yuvPut(overlayY, overlayUv, ix, iy, 105, 202, 255);
+        }
+    }
+    for (int y = 0; y < lh; ++y) {
+        const uint8_t* before = lookBin.ptr<uint8_t>(y);
+        const uint8_t* poisRow = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
+        for (int x = 0; x < lw; ++x) {
+            if (before[x] == 0) continue;
+            const bool pois = poisRow && poisRow[x] != 0;
+            int ix = 0, iy = 0;
+            overlayXY(x, y, &ix, &iy);
+            if (pois) yuvPut(overlayY, overlayUv, ix, iy, 150, 44, 21);
+            else yuvPut(overlayY, overlayUv, ix, iy, 255, 128, 128);
         }
     }
 }
@@ -3531,8 +3546,10 @@ static int fillPoisonLookRaster(
         if (poisHost) lookPoison = planeRoi8u(poisHost, 0, 0, lw, lh);
     } else if (poisHost) {
         lookPoison = planeRoi8u(poisHost, ovX, ovY, lw, lh);
-    } else if (asU8(overlayY)) {
-        lookPoison = planeRoi8u(overlayY, ovX, ovY, lw, lh);
+    }
+    if (lookPoison.empty()) {
+        lookPoison.create(lh, lw, CV_8UC1);
+        lookPoison.setTo(0);
     }
     {
         char extra[160];
@@ -4338,10 +4355,15 @@ static jintArray aabbColorMany(
     auto* inkDump = reinterpret_cast<cv::Mat*>(dumpPtr);
     auto* overlayY = reinterpret_cast<cv::Mat*>(overlayYPtr);
     auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
-    cv::Mat* lookPlane = asU8(overlayUv);
-    if (!lookPlane) lookPlane = asU8(scratch);
-    cv::Mat* poisonPlane = asU8(overlayY);
+    cv::Mat* lookPlane = asU8(scratch);
+    if (!lookPlane) lookPlane = asU8(overlayUv);
+    cv::Mat* poisonPlane = asU8(overlayUv);
+    if (poisonPlane && lookPlane && poisonPlane->data == lookPlane->data) {
+        poisonPlane = nullptr;
+    }
+    cv::Mat yUv;
     cv::Mat* ovUv = asUV(overlayUv);
+    if (!ovUv) ovUv = asUvFromY(overlayY, &yUv);
     std::vector<PoisonStats> poisonPacks;
     poisonPacks.resize(static_cast<size_t>(n));
     std::vector<jint> out(static_cast<size_t>(n) * 8, 0);
@@ -4738,6 +4760,7 @@ static void seg7OrientedOne(
     seedY = planeView8u(&look, 0, ySeed0, wu, ySeed1 - ySeed0);
     if (seedY.empty()) return;
     cv::Mat* lookBinHost = asU8(lookBinPlane);
+    if (!lookBinHost) lookBinHost = asU8(scratch);
     if (!lookBinHost) return;
     cv::Mat lookBin = planeRoi8u(lookBinHost, 0, 0, wu, lookH);
     if (lookBin.empty()) return;
@@ -5059,7 +5082,8 @@ static jfloatArray seg7OrientedMany(
     auto* overlayUv = reinterpret_cast<cv::Mat*>(overlayUvPtr);
     cv::Mat* ovUv = asUV(overlayUv);
     cv::Mat* lookBinHost = asU8(overlayUv);
-    cv::Mat* rotPoison = asU8(overlayY);
+    if (!lookBinHost) lookBinHost = asU8(scratch);
+    cv::Mat* rotPoison = asU8(uv);
     cv::Mat* tintPlane = asU8(reinterpret_cast<cv::Mat*>(tintPtr));
     std::vector<PoisonStats> poisonPacks;
     poisonPacks.resize(static_cast<size_t>(n));
