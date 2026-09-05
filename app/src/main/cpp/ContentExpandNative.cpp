@@ -2736,6 +2736,31 @@ static void dropWide(cv::Mat* bin, int glareW) {
     }
 }
 
+static void dropTallCCs(cv::Mat* bin, int maxH) {
+    if (!bin || bin->empty() || maxH <= 0) return;
+    cv::Mat labels, stats, centroids;
+    const int nLab = cv::connectedComponentsWithStats(*bin, labels, stats, centroids, 8);
+    if (nLab <= 1) return;
+    std::vector<char> drop(nLab, 0);
+    int dropped = 0;
+    for (int i = 1; i < nLab; ++i) {
+        const int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        if (h > maxH) {
+            drop[i] = 1;
+            ++dropped;
+        }
+    }
+    if (!dropped) return;
+    for (int y = 0; y < bin->rows; ++y) {
+        const int* lp = labels.ptr<int>(y);
+        uint8_t* bp = bin->ptr<uint8_t>(y);
+        for (int x = 0; x < bin->cols; ++x) {
+            const int id = lp[x];
+            if (id >= 0 && id < nLab && drop[id]) bp[x] = 0;
+        }
+    }
+}
+
 static void seg7One(
     const cv::Mat& src, int sl, int st, int sr, int sb,
     int imgW, int imgH,
@@ -2889,28 +2914,41 @@ static void seg7One(
         }
         if (fBot == kFlagUnchanged) fBot = kFlagBlockedGap;
     };
-    if (boundStrategy == 2) {
-        if (hasBar(localT)) {
+    auto walkV = [&]() {
+        t = localT;
+        b = localB;
+        fTop = kFlagUnchanged;
+        fBot = kFlagUnchanged;
+        gapJumpTop = 0;
+        gapJumpBot = 0;
+        landTop = -1;
+        landBot = -1;
+        if (boundStrategy == 2) {
+            if (hasBar(localT)) {
+                expandTopOneShot();
+            } else {
+                while (t < b - 1 && (t - localT) < maxRetractPx && !hasBar(t)) ++t;
+                if (t > localT && hasBar(t)) fTop = kFlagNormalRetract;
+                else if (t - localT >= maxRetractPx) fTop = kFlagBlocked10pct;
+                else fTop = kFlagNormalRetract;
+            }
+            if (localB > 0 && hasBar(localB - 1)) {
+                expandBotOneShot();
+            } else {
+                while (b > t + 1 && (localB - b) < maxRetractPx && !hasBar(b - 1)) --b;
+                if (b < localB && localB > 0 && hasBar(b - 1)) fBot = kFlagNormalRetract;
+                else if (localB - b >= maxRetractPx) fBot = kFlagBlocked10pct;
+                else fBot = kFlagNormalRetract;
+            }
+        } else {
             expandTopOneShot();
-        } else {
-            while (t < b - 1 && (t - localT) < maxRetractPx && !hasBar(t)) ++t;
-            if (t > localT && hasBar(t)) fTop = kFlagNormalRetract;
-            else if (t - localT >= maxRetractPx) fTop = kFlagBlocked10pct;
-            else fTop = kFlagNormalRetract;
-        }
-        if (localB > 0 && hasBar(localB - 1)) {
             expandBotOneShot();
-        } else {
-            while (b > t + 1 && (localB - b) < maxRetractPx && !hasBar(b - 1)) --b;
-            if (b < localB && localB > 0 && hasBar(b - 1)) fBot = kFlagNormalRetract;
-            else if (localB - b >= maxRetractPx) fBot = kFlagBlocked10pct;
-            else fBot = kFlagNormalRetract;
         }
-    } else {
-        expandTopOneShot();
-        expandBotOneShot();
-    }
-    if (b <= t) b = std::min(t + 1, lookBin.rows);
+        if (b <= t) b = std::min(t + 1, lookBin.rows);
+    };
+    walkV();
+    dropTallCCs(&lookBin, 22 * std::max(1, sPx));
+    walkV();
     *ol = sl;
     *ot = nt + t;
     *oright = sr;
@@ -4838,29 +4876,42 @@ static void seg7OrientedOne(
         }
         if (fBot == kFlagUnchanged) fBot = kFlagBlockedGap;
     };
-    if (boundStrategy == 2) {
-        if (hasBar(v0)) {
-            expandNegOneShot();
-        } else {
-            while (v0 < v1 - 1.f && (v0 - seed.v0) < maxRetractPx && !hasBar(v0)) v0 += 1.f;
-            if (v0 > seed.v0 && hasBar(v0)) fTop = kFlagNormalRetract;
-            else if (v0 - seed.v0 >= maxRetractPx) fTop = kFlagBlocked10pct;
-            else fTop = kFlagNormalRetract;
-        }
-        if (hasBar(v1 - 1.f) || hasBar(v1)) {
-            expandPosOneShot();
-        } else {
-            while (v1 > v0 + 1.f && (seed.v1 - v1) < maxRetractPx && !hasBar(v1 - 1.f)) v1 -= 1.f;
-            if (v1 < seed.v1 && hasBar(v1 - 1.f)) fBot = kFlagNormalRetract;
-            else if (seed.v1 - v1 >= maxRetractPx) fBot = kFlagBlocked10pct;
-            else fBot = kFlagNormalRetract;
-        }
-    } else {
-        expandNegOneShot();
-        expandPosOneShot();
-    }
-    if (v1 < v0 + 2.f) v1 = v0 + 2.f;
     const float origV0 = seed.v0, origV1 = seed.v1;
+    auto walkV = [&]() {
+        v0 = origV0;
+        v1 = origV1;
+        fTop = kFlagUnchanged;
+        fBot = kFlagUnchanged;
+        gapJumpTop = 0;
+        gapJumpBot = 0;
+        landTop = 0.f;
+        landBot = 0.f;
+        if (boundStrategy == 2) {
+            if (hasBar(v0)) {
+                expandNegOneShot();
+            } else {
+                while (v0 < v1 - 1.f && (v0 - origV0) < maxRetractPx && !hasBar(v0)) v0 += 1.f;
+                if (v0 > origV0 && hasBar(v0)) fTop = kFlagNormalRetract;
+                else if (v0 - origV0 >= maxRetractPx) fTop = kFlagBlocked10pct;
+                else fTop = kFlagNormalRetract;
+            }
+            if (hasBar(v1 - 1.f) || hasBar(v1)) {
+                expandPosOneShot();
+            } else {
+                while (v1 > v0 + 1.f && (origV1 - v1) < maxRetractPx && !hasBar(v1 - 1.f)) v1 -= 1.f;
+                if (v1 < origV1 && hasBar(v1 - 1.f)) fBot = kFlagNormalRetract;
+                else if (origV1 - v1 >= maxRetractPx) fBot = kFlagBlocked10pct;
+                else fBot = kFlagNormalRetract;
+            }
+        } else {
+            expandNegOneShot();
+            expandPosOneShot();
+        }
+        if (v1 < v0 + 2.f) v1 = v0 + 2.f;
+    };
+    walkV();
+    dropTallCCs(&lookBin, 22 * std::max(1, sPx));
+    walkV();
     const float seedU0 = seed.u0, seedU1 = seed.u1;
     seed.v0 = v0;
     seed.v1 = v1;
