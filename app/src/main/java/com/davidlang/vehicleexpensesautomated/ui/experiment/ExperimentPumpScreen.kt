@@ -7639,7 +7639,7 @@ private suspend fun snapshotLookInk(
         val recW = opts.outWidth.coerceAtLeast(0)
         val recH = opts.outHeight.coerceAtLeast(0)
         val minRun = sweep?.minRun ?: 0
-        val glareW = 11 * max(sPx, 4)
+        val glareW = 9 * max(sPx, 4)
         val imgDir = File(reportDir, "pump_imgs_$timestamp").also { it.mkdirs() }
         val fname = "r${fullRow}_${flowName.filter { it.isLetterOrDigit() || it == '-' }.take(24)}_look_box$boxN.jpg"
         File(imgDir, fname).writeBytes(jpeg)
@@ -8055,7 +8055,7 @@ private suspend fun snapshotLookInkOriented(
     val recW = opts.outWidth.coerceAtLeast(0)
     val recH = opts.outHeight.coerceAtLeast(0)
     val minRun = sweep?.minRun ?: 0
-    val glareW = 11 * max(sPx, 4)
+    val glareW = 9 * max(sPx, 4)
     val imgDir = File(reportDir, "pump_imgs_$timestamp").also { it.mkdirs() }
     val fname = "r${fullRow}_${flowName.filter { it.isLetterOrDigit() || it == '-' }.take(24)}_look_box$boxN.jpg"
     File(imgDir, fname).writeBytes(jpeg)

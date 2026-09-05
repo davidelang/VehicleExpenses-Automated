@@ -2804,7 +2804,7 @@ static void seg7One(
     bool srcIsBin = false,
     float gapFrac = 0.5f,
     float minSeedHsToFreeze = 0.f,
-    int glareMult = 11,
+    int glareMult = 9,
     int boundStrategy = 0,
     int tightInsetPx = 16,
     Seg7Tele* tele = nullptr,
@@ -2839,7 +2839,7 @@ static void seg7One(
     *usedFb = 1;
     if (sr <= sl || sb <= st || src.empty() || src.type() != CV_8UC1) return;
     if (seedH < 4 || seedW < 4) return;
-    const int gm = glareMult > 0 ? glareMult : 11;
+    const int gm = glareMult > 0 ? glareMult : 9;
     const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
     const int vLook = capPx + 2;
     const int nt = std::max(0, st - vLook);
@@ -2984,7 +2984,7 @@ static void seg7One(
         if (b <= t) b = std::min(t + 1, lookBin.rows);
     };
     walkV();
-    dropTallCCs(&lookBin, 22 * std::max(1, sPx));
+    dropTallCCs(&lookBin, 18 * std::max(1, sPx));
     walkV();
     *ol = sl;
     *ot = nt + t;
@@ -3106,7 +3106,7 @@ static void fillPoisonMask(
     poison->setTo(0);
     const int vRef = std::max(v0, 4);
     const int fat = 3 * vRef;
-    const int longH = (glareMult > 0 ? glareMult : 11) * vRef;
+    const int longH = (glareMult > 0 ? glareMult : 9) * vRef;
     const int thinW = std::max(1, static_cast<int>(std::lround(0.25f * static_cast<float>(seedW))));
     const bool weak = v0 <= 4 || needFb;
     // 0 clean, 1 H-candidate, 255 poison. longH/weak mark 1 (not 255).
@@ -3365,7 +3365,7 @@ static void orBin(cv::Mat* dst, const cv::Mat& src) {
 /** Seed-ROI Y Otsu + poison map; chroma samples clean + agreeing poison ink. */
 static int seedInkBinY(
     const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut,
-    int glareMult = 11,
+    int glareMult = 9,
     double* otsuOut = nullptr,
     bool* invertedOut = nullptr
 ) {
@@ -3971,7 +3971,7 @@ static int fillPoisonLookRaster(
             int plusT = 0, plusB = 0, plusL = 0, plusR = 0;
             plusBounds(&plusT, &plusB, &plusL, &plusR);
             fillPlusRect(plusT, plusB, plusL, plusR);
-            const int glareWHas = (glareMult > 0 ? glareMult : 11) * std::max(sPx, 4);
+            const int glareWHas = (glareMult > 0 ? glareMult : 9) * std::max(sPx, 4);
             const int minRun = usedMinRun(
                 sPx, maxInSeedRunRows(*lookBin, ySeed0, ySeed0 + seedH, xSeed0, xSeed0 + seedW));
             auto hasBar = [&](int y) {
@@ -4012,7 +4012,7 @@ static int fillPoisonLookRaster(
         }
     }
     fillSaltPepper(lookBin);
-    const int glareW = (glareMult > 0 ? glareMult : 11) * std::max(sPx, 4);
+    const int glareW = (glareMult > 0 ? glareMult : 9) * std::max(sPx, 4);
     dropWideRuns(lookBin, glareW);
     if (lookPoisonOut) *lookPoisonOut = lookPoison;
     if (paintOverlay) {
@@ -4057,7 +4057,7 @@ static bool fillGrayJumpLook(
     cv::Mat lookY = y(cv::Range(st, sb), cv::Range(xl, xr));
     cv::Mat strip = (*dst)(cv::Rect(xl, st, xr - xl, sb - st));
     const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * (sb - st))));
-    fillPoisonLookRaster(seedY, lookY, 0, sl - xl, false, 11, fallback, &strip);
+    fillPoisonLookRaster(seedY, lookY, 0, sl - xl, false, 9, fallback, &strip);
     return !strip.empty();
 }
 
@@ -4074,7 +4074,7 @@ static bool fillChromaTintMask(
     const cv::Mat& y, const cv::Mat& uv,
     int sl, int st, int sr, int sb,
     cv::Mat* dst,
-    int glareMult = 11,
+    int glareMult = 9,
     int xPad = 0,
     bool adaptive = false,
     Seg7Tele* tele = nullptr
@@ -4379,7 +4379,7 @@ static jintArray aabbGrayMany(
         objPack.seenInk = 0;
         objPack.seenNon = 0;
         seg7One(*gray, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
-            false, gapFrac, minSeedHsToFreeze, 11, boundStrategy, tightInsetPx, &tele, false,
+            false, gapFrac, minSeedHsToFreeze, 9, boundStrategy, tightInsetPx, &tele, false,
             &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
             &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, poisonPlane);
         {
@@ -4469,7 +4469,7 @@ static jintArray aabbColorMany(
     try {
     const int imgW = gray->cols, imgH = gray->rows;
     const int n = n4 / 4;
-    const int glareMult = 11;
+    const int glareMult = 9;
     const jfloat gapFrac = 0.5f;
     const jfloat minSeedHsToFreeze = 0.f;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
@@ -4522,7 +4522,7 @@ static jintArray aabbColorMany(
             if (ok && skipTintWalk(true, tele)) tele.method = 0.f;
             seg7One(*gray, l, t, r, b, imgW, imgH,
                 &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
-                gapFrac, minSeedHsToFreeze, 11, boundStrategy, tightInsetPx, &tele, ok,
+                gapFrac, minSeedHsToFreeze, 9, boundStrategy, tightInsetPx, &tele, ok,
                 &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
                 &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane);
         }
@@ -4895,7 +4895,7 @@ static void seg7OrientedOne(
     cv::Mat lookPoison;
     cv::Mat lookInkAtPlane;
     const int sPx = fillPoisonLookRaster(
-        seedY, look, ySeed0, 0, srcIsBin, 11, fallback, &lookBin,
+        seedY, look, ySeed0, 0, srcIsBin, 9, fallback, &lookBin,
         overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookBinHost,
         objPlane, objPack, seedIndex,
         true, seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
@@ -4917,7 +4917,7 @@ static void seg7OrientedOne(
     }
     look.setTo(0);
     if (poisonStats) *poisonStats = stLocal;
-    const int glareW = 11 * std::max(sPx, 4);
+    const int glareW = 9 * std::max(sPx, 4);
     *sPxOut = static_cast<float>(std::max(1, sPx));
     const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
     const int minRun = usedMinRun(sPx, maxInSeedRunRows(lookBin, ySeed0, ySeed1, 0, lookBin.cols));
@@ -5012,7 +5012,7 @@ static void seg7OrientedOne(
         if (v1 < v0 + 2.f) v1 = v0 + 2.f;
     };
     walkV();
-    dropTallCCs(&lookBin, 22 * std::max(1, sPx));
+    dropTallCCs(&lookBin, 18 * std::max(1, sPx));
     walkV();
     const float seedU0 = seed.u0, seedU1 = seed.u1;
     seed.v0 = v0;
@@ -5296,7 +5296,7 @@ static jfloatArray seg7OrientedMany(
             const int sr = std::min(imgW, static_cast<int>(std::ceil(maxx)));
             const int sb = std::min(imgH, static_cast<int>(std::ceil(maxy)));
             cv::Mat* tintDst = tintPlane;
-            if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 11, 0,
+            if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 9, 0,
                     adaptive, &tele) && tintDst && !tintDst->empty()) {
                 keepColor = true;
                 if (skipTintWalk(adaptive, tele)) {
