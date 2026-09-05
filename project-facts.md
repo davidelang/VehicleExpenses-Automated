@@ -14,6 +14,7 @@ Read in full early on startup/new cycle.
 - `dev-ai-interaction/.planning-agent-prompt.txt` — optional planner prompt file
 - Pump BufferSet A/B who-writes-what: `dev-ai-interaction/research/bufferset-use.md` (inventory). Spec remains `docs/specs/BUFFER_SET_SPEC.md`.
 - Pump rot 7-seg dest/clear: photo is `A.p` (never JPEG/warp dest). Overlay is `B.p` (clear once per column, then accumulate). Look-ink dest is `B.s` origin crop after native (`clear` then warp from `B.p`). Rec flatten dest is `A.s` (`clear` then warp from `A.p`). Detail: `dev-ai-interaction/research/pump-rot-column-buffers-20260904-2206.md`.
+- Pump look-ink outlines: red = seed, blue = official (final walk after jump/retract), yellow = jump-far / retract-start (not the walk rect). Draw on the encode Mats (`dest.mat` / `dest.uvMat`). `AnnYuv` exhaustive `when` (includes WHITE); no `else` / unknown→white fallback.
 
 ## Device / crash logs
 - Prefer `adb logcat -d` (or device-specific) into sandbox once; analyze locally. Do **not** start broad `find … *.log` hunts on the host.
