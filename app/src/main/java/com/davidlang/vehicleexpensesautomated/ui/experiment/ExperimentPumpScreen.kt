@@ -4516,7 +4516,7 @@ suspend fun runPumpExperiment(
                     ).first
                 }
 
-                /** Warp master.p quad → A.p crop, RecBufferFeed that crop into rec 48. */
+                /** Warp source gray quad → A.s crop, RecBufferFeed that crop into rec 48. */
                 suspend fun ocrPumpOrientedFlattenAp(
                     quads: List<ContentExpandUtils.OrientedQuad>,
                     gray: org.opencv.core.Mat,
@@ -4536,8 +4536,10 @@ suspend fun runPumpExperiment(
                         val nativeW = q.longAxisBw().roundToInt().coerceAtLeast(1)
                             .coerceAtMost(NativePaddleEngine.REC_CANVAS_W)
                         val ap = NativePaddleEngine.bufferSetA
-                        val nativeId = ap.p.createCrop(0, 0, nativeW, nativeH)
-                        val nativeMat = ap.c[nativeId].mat
+                        val nativeId = ap.s.createCrop(0, 0, nativeW, nativeH)
+                        val dest = ap.c[nativeId]
+                        dest.clear()
+                        val nativeMat = dest.mat
                         val ok = ContentExpandUtils.warpQuadToHorizontalStrip(
                             gray, q, nativeMat, targetH = 0,
                         )
@@ -7946,16 +7948,12 @@ private suspend fun snapshotLookInkOriented(
     var destH = ((rawH + 1) / 2) * 2
     val rawW = ceil(stripW.toDouble() * destH / stripH).toInt()
     var destW = ((rawW + 1) / 2) * 2
-    val destSet = if (isColor) {
-        NativePaddleEngine.bufferSetA
-    } else {
-        NativePaddleEngine.bufferSetB
-    }
-    val destSlice = if (isColor) destSet.p else destSet.s
+    val destSlice = NativePaddleEngine.bufferSetB.s
     destW = destW.coerceAtMost((destSlice.width / 2) * 2).coerceAtLeast(2)
     destH = destH.coerceAtMost((destSlice.height / 2) * 2).coerceAtLeast(2)
     val cropId = destSlice.createCrop(0, 0, destW, destH)
-    val dest = destSet.c[cropId]
+    val dest = NativePaddleEngine.bufferSetB.c[cropId]
+    dest.clear()
     val ok = try {
         ContentExpandUtils.warpQuadToHorizontalStrip(
             NativePaddleEngine.bufferSetB.p.mat, cropQ, dest.mat, targetH = 0,
@@ -7964,12 +7962,44 @@ private suspend fun snapshotLookInkOriented(
         false
     }
     if (!ok || dest.mat.empty() || dest.mat.cols() < 1 || dest.mat.rows() < 1) {
-        destSet.c[cropId].release()
+        NativePaddleEngine.bufferSetB.c[cropId].release()
         return
     }
     destW = dest.mat.cols()
     destH = dest.mat.rows()
-    dest.uvMat.setTo(Scalar(128.0, 128.0))
+    val srcUv = NativePaddleEngine.bufferSetB.p.uvMat
+    val dstUv = dest.uvMat
+    if (!srcUv.empty() && !dstUv.empty() && dstUv.cols() >= 1 && dstUv.rows() >= 1) {
+        val order = ContentExpandUtils.orderQuadForWarp(cropQ)
+        if (order != null) {
+            val src = MatOfPoint2f(
+                Point(order[0] / 2.0, order[1] / 2.0),
+                Point(order[2] / 2.0, order[3] / 2.0),
+                Point(order[4] / 2.0, order[5] / 2.0),
+                Point(order[6] / 2.0, order[7] / 2.0),
+            )
+            val dstPts = MatOfPoint2f(
+                Point(0.0, 0.0),
+                Point((dstUv.cols() - 1).toDouble().coerceAtLeast(0.0), 0.0),
+                Point(
+                    (dstUv.cols() - 1).toDouble().coerceAtLeast(0.0),
+                    (dstUv.rows() - 1).toDouble().coerceAtLeast(0.0),
+                ),
+                Point(0.0, (dstUv.rows() - 1).toDouble().coerceAtLeast(0.0)),
+            )
+            val hm = Imgproc.getPerspectiveTransform(src, dstPts)
+            try {
+                Imgproc.warpPerspective(
+                    srcUv, dstUv, hm, dstUv.size(),
+                    Imgproc.INTER_LINEAR, Core.BORDER_CONSTANT, Scalar(128.0, 128.0),
+                )
+            } finally {
+                hm.release()
+                src.release()
+                dstPts.release()
+            }
+        }
+    }
     val redR = destAabbOfQuad(seed, cropQ, destW, destH)
     val blueR = destAabbOfQuad(official, cropQ, destW, destH)
     val yellowR = destAabbOfQuad(walked, cropQ, destW, destH)
@@ -7991,7 +8021,7 @@ private suspend fun snapshotLookInkOriented(
     val jpeg = try {
         NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
     } finally {
-        destSet.c[cropId].release()
+        NativePaddleEngine.bufferSetB.c[cropId].release()
     }
     if (jpeg.isEmpty()) return
     val arr = try {

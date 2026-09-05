@@ -653,6 +653,7 @@ object ContentExpandUtils {
             Point(0.0, (outH - 1).toDouble().coerceAtLeast(0.0)),
         )
         val m = Imgproc.getPerspectiveTransform(src, dst)
+        if (!dest.empty()) dest.setTo(Scalar(0.0))
         Imgproc.warpPerspective(
             gray, dest, m, Size(outW.toDouble(), outH.toDouble()),
             Imgproc.INTER_CUBIC, Core.BORDER_CONSTANT, Scalar(0.0),
