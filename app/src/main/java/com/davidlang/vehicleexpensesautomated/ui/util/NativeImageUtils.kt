@@ -568,7 +568,7 @@ object NativeImageUtils {
     private external fun nativeFillEnergyLookU8(grayPtr: Long, destPtr: Long): Boolean
 
     const val SEG7_HIST_BINS: Int = 32
-    const val SEG7_TELE_N: Int = 23 + SEG7_HIST_BINS * 2
+    const val SEG7_TELE_N: Int = 26 + SEG7_HIST_BINS * 2
 
     private external fun nativeEnergyAabbTight(
         grayPtr: Long, uvPtr: Long, seeds: IntArray,

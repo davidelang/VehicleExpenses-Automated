@@ -1131,6 +1131,9 @@ object ContentExpandUtils {
         val landBot: Float = 0f,
         val farL: Float = 0f,
         val farR: Float = 0f,
+        val nInkSeed: Float = 0f,
+        val nInkBlue: Float = 0f,
+        val nInkYellow: Float = 0f,
         val histH: IntArray,
         val histV: IntArray,
     )
@@ -1154,8 +1157,8 @@ object ContentExpandUtils {
         val bins = NativeImageUtils.SEG7_HIST_BINS
         val o = i * n
         if (o + n > a.size) return null
-        val histH = IntArray(bins) { b -> a[o + 23 + b].toInt() }
-        val histV = IntArray(bins) { b -> a[o + 23 + bins + b].toInt() }
+        val histH = IntArray(bins) { b -> a[o + 26 + b].toInt() }
+        val histV = IntArray(bins) { b -> a[o + 26 + bins + b].toInt() }
         return Seg7Telemetry(
             method = teleMethodName(a[o]),
             yInk = a[o + 1],
@@ -1180,6 +1183,9 @@ object ContentExpandUtils {
             landBot = a[o + 20],
             farL = a[o + 21],
             farR = a[o + 22],
+            nInkSeed = a[o + 23],
+            nInkBlue = a[o + 24],
+            nInkYellow = a[o + 25],
             histH = histH,
             histV = histV,
         )
