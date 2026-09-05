@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import java.nio.ByteBuffer
+import kotlin.math.max
 
 /**
  * Standalone high-performance image synchronization and processing utilities.
@@ -81,25 +82,26 @@ object NativeImageUtils {
         val uvMat = Mat(handle.height / 2, handle.width / 2, CvType.CV_8UC2, uvPlane.buffer, uvPlane.rowStride.toLong())
 
         annotations.forEach { ann ->
-            // Map ARGB colors to YUV scalars
-            val (yVal, uVal, vVal) = when (ann.color and 0x00FFFFFF) {
-                0xFF0000 -> Triple(76.0, 84.0, 255.0)   // Red
-                0xFFA500 -> Triple(173.0, 42.0, 191.0)  // Orange
-                0x0000FF -> Triple(29.0, 255.0, 107.0)  // Blue
-                0x00FFFF -> Triple(179.0, 171.0, 1.0)   // Cyan
-                else -> Triple(255.0, 128.0, 128.0)     // Default White
+            val (yVal, uVal, vVal) = when (ann.color) {
+                AnnYuv.RED -> Triple(AnnYuv.RED.y, AnnYuv.RED.u, AnnYuv.RED.v)
+                AnnYuv.ORANGE -> Triple(AnnYuv.ORANGE.y, AnnYuv.ORANGE.u, AnnYuv.ORANGE.v)
+                AnnYuv.BLUE -> Triple(AnnYuv.BLUE.y, AnnYuv.BLUE.u, AnnYuv.BLUE.v)
+                AnnYuv.CYAN -> Triple(AnnYuv.CYAN.y, AnnYuv.CYAN.u, AnnYuv.CYAN.v)
+                AnnYuv.YELLOW -> Triple(AnnYuv.YELLOW.y, AnnYuv.YELLOW.u, AnnYuv.YELLOW.v)
+                AnnYuv.WHITE -> Triple(AnnYuv.WHITE.y, AnnYuv.WHITE.u, AnnYuv.WHITE.v)
             }
 
             val p1 = Point(ann.x1.toDouble(), ann.y1.toDouble())
             val p2 = Point(ann.x2.toDouble(), ann.y2.toDouble())
-            val thickness = ann.strokeWidth
+            val yTh = max(1, ann.strokeWidth)
+            val uvTh = max(1, (ann.strokeWidth + 1) / 2)
 
             if (ann.shape == Shape.RECTANGLE) {
-                Imgproc.rectangle(yMat, p1, p2, Scalar(yVal), thickness)
-                Imgproc.rectangle(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), thickness / 2)
+                Imgproc.rectangle(yMat, p1, p2, Scalar(yVal), yTh)
+                Imgproc.rectangle(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), uvTh)
             } else {
-                Imgproc.line(yMat, p1, p2, Scalar(yVal), thickness)
-                Imgproc.line(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), thickness / 2)
+                Imgproc.line(yMat, p1, p2, Scalar(yVal), yTh)
+                Imgproc.line(uvMat, Point(p1.x / 2.0, p1.y / 2.0), Point(p2.x / 2.0, p2.y / 2.0), Scalar(vVal, uVal), uvTh)
             }
         }
 

@@ -1266,7 +1266,7 @@ private fun serializeAnnotations(anns: List<SnapshotAnnotation>): String {
         obj.put("x2", ann.x2)
         obj.put("y2", ann.y2)
         obj.put("shape", ann.shape.name)
-        obj.put("color", ann.color)
+        obj.put("color", ann.color.name)
         obj.put("strokeWidth", ann.strokeWidth)
         arr.put(obj)
     }
@@ -1367,7 +1367,7 @@ internal suspend fun runBinTrialsPaddle(
         val thresholdFactor = 128.0f
 
         val annsPre = mutableListOf<SnapshotAnnotation>()
-        tRawB.forEach { b -> annsPre.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
+        tRawB.forEach { b -> annsPre.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, AnnYuv.RED, 2)) }
         trialsMeta["trial_${vIdx}_red_boxes"] = tRawB.joinToString(";") { b -> "${b.boundingBox.left},${b.boundingBox.top}-${b.boundingBox.right},${b.boundingBox.bottom}" }
         trialsMeta["trial_${vIdx}_initial_red_rects"] = tRawB.joinToString(";") { b -> "${b.boundingBox.left},${b.boundingBox.top},${b.boundingBox.right},${b.boundingBox.bottom}" }
 
@@ -1663,10 +1663,10 @@ internal suspend fun runBinTrialsPaddle(
         val minP = if (tProbs.isNotEmpty()) tProbs.minOrNull() ?: 0f else 0f
 
         val annsPost = mutableListOf<SnapshotAnnotation>()
-        tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, android.graphics.Color.RED, 2)) }
+        tRawB.forEach { b -> annsPost.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, AnnYuv.RED, 2)) }
         // Blue = expand frags, orange = OCR cluster/union.
-        tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.BLUE, 2)) }
-        tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, android.graphics.Color.rgb(255, 165, 0), 2)) }
+        tFrags.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, AnnYuv.BLUE, 2)) }
+        tCons.forEach { b -> annsPost.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, AnnYuv.ORANGE, 2)) }
 
         val histsHtml = StringBuilder()
         if (useCharAware && valleyResults.isNotEmpty()) {
@@ -1675,14 +1675,14 @@ internal suspend fun runBinTrialsPaddle(
                 if (!mSlots.isNullOrEmpty()) {
                     val pts = mSlots.split(",").mapNotNull { it.toIntOrNull() }
                     for (i in 0 until pts.size step 4) {
-                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.WHITE, 1))
+                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, AnnYuv.WHITE, 1))
                     }
                 }
                 val fSlots = res.second["charaware_failed_slots"]
                 if (!fSlots.isNullOrEmpty()) {
                     val pts = fSlots.split(",").mapNotNull { it.toIntOrNull() }
                     for (i in 0 until pts.size step 4) {
-                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, android.graphics.Color.BLUE, 1))
+                        if (i + 3 < pts.size) annsPost.add(SnapshotAnnotation(pts[i], pts[i+1], pts[i+2], pts[i+3], Shape.RECTANGLE, AnnYuv.BLUE, 1))
                     }
                 }
             }
@@ -2490,8 +2490,8 @@ internal suspend fun runPaddleValleyIterative(
 
             currentOdoStr = odoB.toString().trim()
             val anns = mutableListOf<SnapshotAnnotation>()
-            rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, Color.RED, 2)) }
-            fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, Color.rgb(255, 165, 0), 2)) }
+            rawB.forEach { b -> anns.add(SnapshotAnnotation(b.boundingBox.left, b.boundingBox.top, b.boundingBox.right, b.boundingBox.bottom, Shape.RECTANGLE, AnnYuv.RED, 2)) }
+            fBoxes.forEach { b -> anns.add(SnapshotAnnotation(b.left, b.top, b.right, b.bottom, Shape.RECTANGLE, AnnYuv.ORANGE, 2)) }
 
             val (sB64, ts) = OcrUtils.takeSnapshot(odoBuffer.p, null, 320, 48, anns, null, NativePaddleEngine.bufferSetA)
             currentThumb = sB64

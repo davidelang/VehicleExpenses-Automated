@@ -1198,7 +1198,7 @@ suspend fun runPumpExperiment(
                         if (engine == "Paddle") {
                             // RED: Raw detections only (blue/orange removed to focus on red boxes for debugging)
                             pdRawForAnns.forEach { h ->
-                                anns.add(SnapshotAnnotation(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt(), Shape.RECTANGLE, Color.RED, 2))
+                                anns.add(SnapshotAnnotation(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt(), Shape.RECTANGLE, AnnYuv.RED, 2))
                             }
                             // BLUE and ORANGE temporarily disabled
                             // pdHunksExpTotal.forEach { ... BLUE }
@@ -1234,7 +1234,7 @@ suspend fun runPumpExperiment(
                 // (more t* for C/E valley/blue etc hoisted in later substeps or covered by early tFlowStart; assignments below use reassign or original inner vals where block scoped)
 
                 // Phase 0 hoist of getAnns (small local used by A viz + inside doBOrD*/doCOrE* helpers): moved early before proc defs so visible to proc lambdas (when full logic incl calls is duplicated into them) + do* (per plan "hoist ... getAnns, the doBOrD*/doCOrE* defs if referenced from procs"; do* large bodies left in place, copies included at dupe time per plan wording).
-                fun getAnns(list: List<PumpHunk>, color: Int, width: Int) = list.map { h ->
+                fun getAnns(list: List<PumpHunk>, color: AnnYuv, width: Int) = list.map { h ->
                     SnapshotAnnotation(h.rect.left.toInt(), h.rect.top.toInt(), h.rect.right.toInt(), h.rect.bottom.toInt(), Shape.RECTANGLE, color, width)
                 }
 
@@ -1476,7 +1476,7 @@ suspend fun runPumpExperiment(
 
                 suspend fun doBOrDRedOnlyImage() {
                     // Red-only image for Set B/D (per approved plan): clean view of post-filter reds only (no blue, no orange) so user can inspect redbox merging state without other annotations overlaid. Full image remains exactly "as is happening now". D mirrors B.
-                    val redAnnsOnly = getAnns(pdHunksRawTotal, Color.RED, 2)
+                    val redAnnsOnly = getAnns(pdHunksRawTotal, AnnYuv.RED, 2)
                     val redOnlyB64 = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, redAnnsOnly, null, workspace).first
                     branch.images["PD_red_only"] = redOnlyB64
                 }
@@ -2177,10 +2177,10 @@ suspend fun runPumpExperiment(
                 )
                 doBOrDRedOnlyImage()
                 val aPdG = if (horizJump || seg7Stroke || inkFn != null) {
-                    getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) +
-                        getAnns(horizPadHunks, Color.BLUE, 4)
+                    getAnns(pdHunksRawTotal, AnnYuv.RED, 2) + getAnns(customBlueG, AnnYuv.BLUE, 4) +
+                        getAnns(horizPadHunks, AnnYuv.BLUE, 4)
                 } else {
-                    getAnns(pdHunksRawTotal, Color.RED, 2) + getAnns(customBlueG, Color.BLUE, 4) + getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
+                    getAnns(pdHunksRawTotal, AnnYuv.RED, 2) + getAnns(customBlueG, AnnYuv.BLUE, 4) + getAnns(customOrangeG, AnnYuv.ORANGE, 2)
                 }
                 val baseB64G = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdG, null, workspace).first
                 branch.images["PD"] = baseB64G
@@ -2397,9 +2397,9 @@ suspend fun runPumpExperiment(
                         ),
                         oranges = orangePixelG,
                     )
-                    val aPdG = getAnns(pdHunksRawTotal, Color.RED, 2) +
-                        getAnns(customBlueG, Color.BLUE, 4) +
-                        getAnns(customOrangeG, Color.rgb(255, 165, 0), 2)
+                    val aPdG = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
+                        getAnns(customBlueG, AnnYuv.BLUE, 4) +
+                        getAnns(customOrangeG, AnnYuv.ORANGE, 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPdG, null, workspace,
@@ -2667,9 +2667,9 @@ suspend fun runPumpExperiment(
                             ),
                         )
                     }
-                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
-                        getAnns(blueHunks, Color.BLUE, 4) +
-                        getAnns(padBlueHunks, Color.BLUE, 4)
+                    val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
+                        getAnns(blueHunks, AnnYuv.BLUE, 4) +
+                        getAnns(padBlueHunks, AnnYuv.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -2937,9 +2937,9 @@ suspend fun runPumpExperiment(
                             ),
                         )
                     }
-                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
-                        getAnns(blueHunks, Color.BLUE, 4) +
-                        getAnns(padBlueHunks, Color.BLUE, 4)
+                    val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
+                        getAnns(blueHunks, AnnYuv.BLUE, 4) +
+                        getAnns(padBlueHunks, AnnYuv.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -3330,9 +3330,9 @@ suspend fun runPumpExperiment(
                             segs[i].sweep?.withOfficial(official.getOrNull(i) ?: segs[i].rect)
                         },
                     )
-                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
-                        getAnns(officialHunks, Color.BLUE, 4) +
-                        getAnns(padHunks, Color.BLUE, 4)
+                    val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
+                        getAnns(officialHunks, AnnYuv.BLUE, 4) +
+                        getAnns(padHunks, AnnYuv.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -3721,9 +3721,9 @@ suspend fun runPumpExperiment(
                             segs[i].sweep?.withOfficial(official.getOrNull(i) ?: segs[i].rect)
                         },
                     )
-                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
-                        getAnns(officialHunks, Color.BLUE, 4) +
-                        getAnns(padHunks, Color.BLUE, 4)
+                    val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
+                        getAnns(officialHunks, AnnYuv.BLUE, 4) +
+                        getAnns(padHunks, AnnYuv.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -4114,9 +4114,9 @@ suspend fun runPumpExperiment(
                             segs[i].sweep?.withOfficial(official.getOrNull(i) ?: segs[i].rect)
                         },
                     )
-                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
-                        getAnns(officialHunks, Color.BLUE, 4) +
-                        getAnns(padHunks, Color.BLUE, 4)
+                    val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
+                        getAnns(officialHunks, AnnYuv.BLUE, 4) +
+                        getAnns(padHunks, AnnYuv.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -4507,9 +4507,9 @@ suspend fun runPumpExperiment(
                             segs[i].sweep?.withOfficial(official.getOrNull(i) ?: segs[i].rect)
                         },
                     )
-                    val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
-                        getAnns(officialHunks, Color.BLUE, 4) +
-                        getAnns(padHunks, Color.BLUE, 4)
+                    val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
+                        getAnns(officialHunks, AnnYuv.BLUE, 4) +
+                        getAnns(padHunks, AnnYuv.BLUE, 4)
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -4848,9 +4848,9 @@ suspend fun runPumpExperiment(
                             expDiag[i].sweep?.withOfficialQuad(seedQuads[i], off)
                         },
                     )
-                    val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, Color.RED, 2) } +
-                        expandedQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) } +
-                        padQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
+                    val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) } +
+                        expandedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) } +
+                        padQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) }
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -5032,9 +5032,9 @@ suspend fun runPumpExperiment(
                             expDiag[i].sweep?.withOfficialQuad(seedQuads[i], off)
                         },
                     )
-                    val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, Color.RED, 2) } +
-                        expandedQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) } +
-                        padQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
+                    val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) } +
+                        expandedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) } +
+                        padQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) }
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -5348,9 +5348,9 @@ suspend fun runPumpExperiment(
                             segs[i].sweep?.withOfficialQuad(seedQuads[i], off)
                         },
                     )
-                    val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, Color.RED, 2) } +
-                        official.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) } +
-                        pad0.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
+                    val aPd = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) } +
+                        official.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) } +
+                        pad0.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) }
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -6194,14 +6194,14 @@ suspend fun runPumpExperiment(
                         scaleVariants = variants,
                         inkSweeps = rotInkSweeps,
                     )
-                    val redOnlyAnns = seedQuads.flatMap { pumpQuadEdgeAnns(it, Color.RED, 2) }
+                    val redOnlyAnns = seedQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.RED, 2) }
                     branch.images["PD_red_only"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         redOnlyAnns, null, workspace,
                     ).first
                     val aPd = redOnlyAnns +
-                        primaryQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) } +
-                        pdPadQuads.flatMap { pumpQuadEdgeAnns(it, Color.BLUE, 4) }
+                        primaryQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) } +
+                        pdPadQuads.flatMap { pumpQuadEdgeAnns(it, AnnYuv.BLUE, 4) }
                     branch.images["PD"] = OcrUtils.takeSnapshot(
                         workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                         aPd, null, workspace,
@@ -6636,9 +6636,9 @@ suspend fun runPumpExperiment(
                                     ),
                                 )
                             }
-                            val aPd = getAnns(pdHunksRawTotal, Color.RED, 2) +
-                                getAnns(blueHunks, Color.BLUE, 4) +
-                                getAnns(padBlueHunks, Color.BLUE, 4)
+                            val aPd = getAnns(pdHunksRawTotal, AnnYuv.RED, 2) +
+                                getAnns(blueHunks, AnnYuv.BLUE, 4) +
+                                getAnns(padBlueHunks, AnnYuv.BLUE, 4)
                             branch.images["PD"] = OcrUtils.takeSnapshot(
                                 workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H,
                                 aPd, null, workspace,
@@ -6941,7 +6941,7 @@ suspend fun runPumpExperiment(
                         oranges = orangePixelI
                     )
                     doBOrDRedOnlyImage()
-                    val aPdI = getAnns(lastReds, Color.RED, 2) + getAnns(lastBlueHunks, Color.BLUE, 4) + getAnns(lastOrangeHunks, Color.rgb(255, 165, 0), 2)
+                    val aPdI = getAnns(lastReds, AnnYuv.RED, 2) + getAnns(lastBlueHunks, AnnYuv.BLUE, 4) + getAnns(lastOrangeHunks, AnnYuv.ORANGE, 2)
                     branch.images["PD"] = OcrUtils.takeSnapshot(workspace.p, null, PUMP_PD_TARGET_W, PUMP_PD_TARGET_H, aPdI, null, workspace).first
                 }
                 fun inkEnergyAabb(
@@ -7343,7 +7343,7 @@ private fun pumpQuadLongAngleDeg(q: ContentExpandUtils.OrientedQuad): Float {
 /** Four LINE annotations along the quad edges (photo pixels). */
 private fun pumpQuadEdgeAnns(
     q: ContentExpandUtils.OrientedQuad,
-    color: Int,
+    color: AnnYuv,
     width: Int,
 ): List<SnapshotAnnotation> {
     val p = q.pts
@@ -7579,39 +7579,41 @@ private suspend fun snapshotLookInk(
         val sPx = stroke?.sPx ?: sweep?.sPx?.toInt() ?: 0
         val official = ContentExpandUtils.padVertByStrokes(walk, seed, 0f, sPx, imgW, imgH)
         val k4 = ContentExpandUtils.padVertByStrokes(walk, seed, 4f, sPx, imgW, imgH)
-        val uL = minOf(seed.left, official.left, walk.left, k4.left)
+        val k4H = max(1, k4.height())
+        val halfW = (0.5f * k4H).roundToInt()
+        val uL = (walk.left - halfW).coerceAtLeast(0)
+        val uR = (walk.right + halfW).coerceAtMost(imgW).coerceAtLeast(uL + 1)
         val uT = minOf(seed.top, official.top, walk.top, k4.top)
-        val uR = maxOf(seed.right, official.right, walk.right, k4.right)
         val uB = maxOf(seed.bottom, official.bottom, walk.bottom, k4.bottom)
         val cropH = max(1, uB - uT)
         val pad = ceil(
             RecBufferFeed.DEFAULT_BORDER_PX.toDouble() * cropH / RecBufferFeed.DEFAULT_REC_H,
         ).toInt().coerceAtLeast(1)
         val strip = android.graphics.Rect(
-            (uL - pad).coerceAtLeast(0),
+            uL,
             (uT - pad).coerceAtLeast(0),
-            (uR + pad).coerceAtMost(imgW).coerceAtLeast(1),
+            uR,
             (uB + pad).coerceAtMost(imgH).coerceAtLeast(1),
         )
         if (strip.width() < 1 || strip.height() < 1) return@forEachIndexed
         val yellow = android.graphics.Rect(
-            (walk.left - pad).coerceAtLeast(0),
-            (walk.top - pad).coerceAtLeast(0),
-            (walk.right + pad).coerceAtMost(imgW).coerceAtLeast(1),
-            (walk.bottom + pad).coerceAtMost(imgH).coerceAtLeast(1),
+            walk.left.coerceAtLeast(0),
+            walk.top.coerceAtLeast(0),
+            walk.right.coerceAtMost(imgW).coerceAtLeast(1),
+            walk.bottom.coerceAtMost(imgH).coerceAtLeast(1),
         )
         val anns = listOf(
             SnapshotAnnotation(
                 seed.left, seed.top, seed.right, seed.bottom,
-                Shape.RECTANGLE, Color.RED, 2,
+                Shape.RECTANGLE, AnnYuv.RED, 2,
             ),
             SnapshotAnnotation(
                 official.left, official.top, official.right, official.bottom,
-                Shape.RECTANGLE, Color.BLUE, 4,
+                Shape.RECTANGLE, AnnYuv.BLUE, 4,
             ),
             SnapshotAnnotation(
                 yellow.left, yellow.top, yellow.right, yellow.bottom,
-                Shape.RECTANGLE, Color.YELLOW, 2,
+                Shape.RECTANGLE, AnnYuv.YELLOW, 2,
             ),
         )
         val seedH = max(1, seed.height())
@@ -7763,12 +7765,37 @@ private fun orientedLookUnionCrop(
     accum(official)
     accum(walked)
     accum(k4)
+    var k4V0 = Float.POSITIVE_INFINITY
+    var k4V1 = Float.NEGATIVE_INFINITY
+    var wU0 = Float.POSITIVE_INFINITY
+    var wU1 = Float.NEGATIVE_INFINITY
+    fun span(q: ContentExpandUtils.OrientedQuad, onU: Boolean, onV: Boolean) {
+        val p = q.pts
+        val n = min(4, p.size / 2)
+        for (i in 0 until n) {
+            val dx = p[i * 2] - tlx
+            val dy = p[i * 2 + 1] - tly
+            val u = dx * unx + dy * uny
+            val v = dx * vnx + dy * vny
+            if (onU) {
+                if (u < wU0) wU0 = u
+                if (u > wU1) wU1 = u
+            }
+            if (onV) {
+                if (v < k4V0) k4V0 = v
+                if (v > k4V1) k4V1 = v
+            }
+        }
+    }
+    span(k4, onU = false, onV = true)
+    span(walked, onU = true, onV = false)
+    val k4V = (k4V1 - k4V0).coerceAtLeast(1f)
+    u0 = wU0 - 0.5f * k4V
+    u1 = wU1 + 0.5f * k4V
     val cropH = (v1 - v0).coerceAtLeast(1f)
     val pad = ceil(
         RecBufferFeed.DEFAULT_BORDER_PX.toDouble() * cropH / RecBufferFeed.DEFAULT_REC_H,
     ).toInt().coerceAtLeast(1)
-    u0 -= pad
-    u1 += pad
     v0 -= pad
     v1 += pad
     fun c(u: Float, v: Float) = floatArrayOf(
@@ -7912,7 +7939,6 @@ private suspend fun snapshotLookInkOriented(
     val k4 = ContentExpandUtils.padOrientedByStrokes(walked, seed, 4f, sPx)
     val union = orientedLookUnionCrop(seed, official, walked, k4) ?: return
     val cropQ = union.first
-    val pad = union.second
     val seedH = seed.shortAxisBh().coerceAtLeast(1f)
     val stripH = cropQ.shortAxisBh().coerceAtLeast(1f)
     val stripW = cropQ.longAxisBw().coerceAtLeast(1f)
@@ -7944,22 +7970,21 @@ private suspend fun snapshotLookInkOriented(
     destW = dest.mat.cols()
     destH = dest.mat.rows()
     dest.uvMat.setTo(Scalar(128.0, 128.0))
-    val yellowQ = growOrientedByPad(seed, walked, pad)
     val redR = destAabbOfQuad(seed, cropQ, destW, destH)
     val blueR = destAabbOfQuad(official, cropQ, destW, destH)
-    val yellowR = destAabbOfQuad(yellowQ, cropQ, destW, destH)
+    val yellowR = destAabbOfQuad(walked, cropQ, destW, destH)
     val anns = listOf(
         SnapshotAnnotation(
             redR.left, redR.top, redR.right, redR.bottom,
-            Shape.RECTANGLE, Color.RED, 2,
+            Shape.RECTANGLE, AnnYuv.RED, 2,
         ),
         SnapshotAnnotation(
             blueR.left, blueR.top, blueR.right, blueR.bottom,
-            Shape.RECTANGLE, Color.BLUE, 4,
+            Shape.RECTANGLE, AnnYuv.BLUE, 4,
         ),
         SnapshotAnnotation(
             yellowR.left, yellowR.top, yellowR.right, yellowR.bottom,
-            Shape.RECTANGLE, Color.YELLOW, 2,
+            Shape.RECTANGLE, AnnYuv.YELLOW, 2,
         ),
     )
     NativeImageUtils.drawYuvAnnotations(dest.yuv, anns)

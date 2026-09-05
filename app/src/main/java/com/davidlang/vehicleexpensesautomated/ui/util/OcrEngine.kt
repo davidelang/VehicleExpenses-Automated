@@ -148,10 +148,19 @@ data class OcrStepResult(
 
 enum class Shape { LINE, RECTANGLE }
 
+enum class AnnYuv(val y: Double, val u: Double, val v: Double) {
+    RED(76.0, 84.0, 255.0),
+    ORANGE(173.0, 42.0, 191.0),
+    BLUE(29.0, 255.0, 107.0),
+    CYAN(179.0, 171.0, 1.0),
+    YELLOW(226.0, 0.0, 149.0),
+    WHITE(255.0, 128.0, 128.0),
+}
+
 data class SnapshotAnnotation(
     val x1: Int, val y1: Int, val x2: Int, val y2: Int,
     val shape: Shape,
-    val color: Int, // ARGB color
+    val color: AnnYuv,
     val strokeWidth: Int
 )
 
@@ -196,7 +205,7 @@ object OcrUtils {
         val y1 = min(p1.y, p2.y).toInt().coerceIn(0, srcH)
         val x2 = max(p1.x, p2.x).toInt().coerceIn(0, srcW)
         val y2 = max(p1.y, p2.y).toInt().coerceIn(0, srcH)
-        return if (x1 < x2 && y1 < y2) SnapshotAnnotation(x1, y1, x2, y2, Shape.RECTANGLE, android.graphics.Color.RED, 2) else null
+        return if (x1 < x2 && y1 < y2) SnapshotAnnotation(x1, y1, x2, y2, Shape.RECTANGLE, AnnYuv.RED, 2) else null
     }
 
 
