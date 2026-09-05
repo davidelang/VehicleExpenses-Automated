@@ -7516,7 +7516,7 @@ private fun pumpEncodeSnapshot(
                     y2 = ((ann.y2 - roi.top) * sy).toInt(),
                 )
             }
-            NativeImageUtils.drawYuvAnnotations(dest.yuv, scaled)
+            NativeImageUtils.drawYuvAnnotations(dest.mat, dest.uvMat, scaled)
         }
         return NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
     } finally {
@@ -7598,13 +7598,20 @@ private suspend fun snapshotLookInk(
             (uB + pad).coerceAtMost(imgH).coerceAtLeast(1),
         )
         if (strip.width() < 1 || strip.height() < 1) return@forEachIndexed
+        val tele = teles.getOrNull(i)
+        val farL = (tele?.farL?.roundToInt() ?: walk.left).coerceAtLeast(0)
+        val farR = (tele?.farR?.roundToInt() ?: walk.right).coerceAtMost(imgW).coerceAtLeast(farL + 1)
         val yellow = android.graphics.Rect(
-            walk.left.coerceAtLeast(0),
-            walk.top.coerceAtLeast(0),
-            walk.right.coerceAtMost(imgW).coerceAtLeast(1),
-            walk.bottom.coerceAtMost(imgH).coerceAtLeast(1),
+            farL,
+            minOf(seed.top, walk.top).coerceAtLeast(0),
+            farR,
+            maxOf(seed.bottom, walk.bottom).coerceAtMost(imgH).coerceAtLeast(1),
         )
         val anns = listOf(
+            SnapshotAnnotation(
+                yellow.left, yellow.top, yellow.right, yellow.bottom,
+                Shape.RECTANGLE, AnnYuv.YELLOW, 2,
+            ),
             SnapshotAnnotation(
                 seed.left, seed.top, seed.right, seed.bottom,
                 Shape.RECTANGLE, AnnYuv.RED, 2,
@@ -7612,10 +7619,6 @@ private suspend fun snapshotLookInk(
             SnapshotAnnotation(
                 official.left, official.top, official.right, official.bottom,
                 Shape.RECTANGLE, AnnYuv.BLUE, 4,
-            ),
-            SnapshotAnnotation(
-                yellow.left, yellow.top, yellow.right, yellow.bottom,
-                Shape.RECTANGLE, AnnYuv.YELLOW, 2,
             ),
         )
         val seedH = max(1, seed.height())
@@ -7625,7 +7628,6 @@ private suspend fun snapshotLookInk(
         val destH0 = ((rawH + 1) / 2) * 2
         val rawW = ceil(stripW.toDouble() * destH0 / stripH).toInt()
         val destW0 = ((rawW + 1) / 2) * 2
-        val tele = teles.getOrNull(i)
         val jpeg = pumpEncodeSnapshot(
             source, strip, destW0, destH0, anns, scratchYuv,
             visGain = if (energyLook) 8 else 1,
@@ -8002,8 +8004,17 @@ private suspend fun snapshotLookInkOriented(
     }
     val redR = destAabbOfQuad(seed, cropQ, destW, destH)
     val blueR = destAabbOfQuad(official, cropQ, destW, destH)
-    val yellowR = destAabbOfQuad(walked, cropQ, destW, destH)
+    val yellowQ = if (tele != null) {
+        ContentExpandUtils.lookInkJumpFarQuad(seed, walked, tele.farL, tele.farR)
+    } else {
+        walked
+    }
+    val yellowR = destAabbOfQuad(yellowQ, cropQ, destW, destH)
     val anns = listOf(
+        SnapshotAnnotation(
+            yellowR.left, yellowR.top, yellowR.right, yellowR.bottom,
+            Shape.RECTANGLE, AnnYuv.YELLOW, 2,
+        ),
         SnapshotAnnotation(
             redR.left, redR.top, redR.right, redR.bottom,
             Shape.RECTANGLE, AnnYuv.RED, 2,
@@ -8012,12 +8023,8 @@ private suspend fun snapshotLookInkOriented(
             blueR.left, blueR.top, blueR.right, blueR.bottom,
             Shape.RECTANGLE, AnnYuv.BLUE, 4,
         ),
-        SnapshotAnnotation(
-            yellowR.left, yellowR.top, yellowR.right, yellowR.bottom,
-            Shape.RECTANGLE, AnnYuv.YELLOW, 2,
-        ),
     )
-    NativeImageUtils.drawYuvAnnotations(dest.yuv, anns)
+    NativeImageUtils.drawYuvAnnotations(dest.mat, dest.uvMat, anns)
     val jpeg = try {
         NativeImageUtils.encodeYuvMatJpeg(dest.mat, dest.uvMat, 80)
     } finally {

@@ -1129,6 +1129,8 @@ object ContentExpandUtils {
         val gapJumpBot: Boolean = false,
         val landTop: Float = 0f,
         val landBot: Float = 0f,
+        val farL: Float = 0f,
+        val farR: Float = 0f,
         val histH: IntArray,
         val histV: IntArray,
     )
@@ -1152,8 +1154,8 @@ object ContentExpandUtils {
         val bins = NativeImageUtils.SEG7_HIST_BINS
         val o = i * n
         if (o + n > a.size) return null
-        val histH = IntArray(bins) { b -> a[o + 21 + b].toInt() }
-        val histV = IntArray(bins) { b -> a[o + 21 + bins + b].toInt() }
+        val histH = IntArray(bins) { b -> a[o + 23 + b].toInt() }
+        val histV = IntArray(bins) { b -> a[o + 23 + bins + b].toInt() }
         return Seg7Telemetry(
             method = teleMethodName(a[o]),
             yInk = a[o + 1],
@@ -1176,6 +1178,8 @@ object ContentExpandUtils {
             gapJumpBot = a[o + 18] >= 0.5f,
             landTop = a[o + 19],
             landBot = a[o + 20],
+            farL = a[o + 21],
+            farR = a[o + 22],
             histH = histH,
             histV = histV,
         )
@@ -1668,6 +1672,23 @@ object ContentExpandUtils {
         return OrientedBox(
             sb.cx, sb.cy, sb.ux, sb.uy, sb.vx, sb.vy,
             wb.u0, wb.u1, wb.v0 - padNeg, wb.v1 + padPos,
+        ).toQuad()
+    }
+
+    /** Look-ink yellow: jump-far `u` and retract-start `v` (union of seed and walk). */
+    fun lookInkJumpFarQuad(
+        seed: OrientedQuad,
+        walked: OrientedQuad,
+        farU0: Float,
+        farU1: Float,
+    ): OrientedQuad {
+        val sb = OrientedBox.fromQuad(seed) ?: return walked
+        val wb = sb.withPts(walked.pts)
+        val u0 = min(farU0, farU1)
+        val u1 = max(farU0, farU1)
+        return OrientedBox(
+            sb.cx, sb.cy, sb.ux, sb.uy, sb.vx, sb.vy,
+            u0, u1, min(sb.v0, wb.v0), max(sb.v1, wb.v1),
         ).toQuad()
     }
 

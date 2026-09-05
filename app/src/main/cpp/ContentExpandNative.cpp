@@ -136,7 +136,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeVeRss
 }
 
 static constexpr int kRunHistBins = 32;
-static constexpr int kSeg7TeleN = 21 + kRunHistBins * 2;
+static constexpr int kSeg7TeleN = 23 + kRunHistBins * 2;
 
 enum : int {
     kFlagUnchanged = 0,
@@ -171,6 +171,8 @@ struct Seg7Tele {
     float gapJumpBot = 0.f;
     float landTop = 0.f;
     float landBot = 0.f;
+    float farL = 0.f;
+    float farR = 0.f;
     int histH[kRunHistBins]{};
     int histV[kRunHistBins]{};
 };
@@ -286,9 +288,11 @@ static void packSeg7Tele(const Seg7Tele& t, float* dst) {
     dst[18] = t.gapJumpBot;
     dst[19] = t.landTop;
     dst[20] = t.landBot;
+    dst[21] = t.farL;
+    dst[22] = t.farR;
     for (int i = 0; i < kRunHistBins; ++i) {
-        dst[21 + i] = static_cast<float>(t.histH[i]);
-        dst[21 + kRunHistBins + i] = static_cast<float>(t.histV[i]);
+        dst[23 + i] = static_cast<float>(t.histH[i]);
+        dst[23 + kRunHistBins + i] = static_cast<float>(t.histV[i]);
     }
 }
 
@@ -1109,6 +1113,7 @@ static void jumpRetractH(
     const cv::Mat& eng, int* l, int t, int* r, int b,
     int imgW, int imgH, double thr, int capPx, float jumpFrac, float retractClearFrac,
     int seedH = 0,
+    int* farL = nullptr, int* farR = nullptr,
     const cv::Mat* lookBin = nullptr, int seedT = 0, int seedB = 0, int minRun = 0,
     int lookOx = 0, int lookOy = 0
 ) {
@@ -1139,10 +1144,13 @@ static void jumpRetractH(
         }
         return meanRectF(eng, x, coreT, x + 1, coreB, imgW, imgH) >= thr;
     };
+    int probeL = *l;
+    int probeR = *r;
     int jumpsL = 0;
     while (*l > 0 && jumpsL < kJumpMax) {
         const int nextL = std::max(0, *l - jx);
         if (nextL >= *l) break;
+        probeL = nextL;
         if (colHas(nextL)) {
             *l = nextL;
             ++jumpsL;
@@ -1160,6 +1168,7 @@ static void jumpRetractH(
     while (*r < imgW && jumpsR < kJumpMax) {
         const int nextR = std::min(imgW, *r + jx);
         if (nextR <= *r) break;
+        probeR = nextR;
         if (colHas(nextR - 1)) {
             *r = nextR;
             ++jumpsR;
@@ -1175,6 +1184,8 @@ static void jumpRetractH(
         *r = newR;
         break;
     }
+    if (farL) *farL = probeL;
+    if (farR) *farR = probeR;
 }
 
 static void extrema1d(
@@ -2035,8 +2046,9 @@ static jintArray energyAabbOnLook(
         if (freezeHorz == JNI_TRUE) {
             walkEnergyHorz(vertEng, imgW, imgH, cap, thr, &l, &t, &r, &b);
         }
+        int farL = l, farR = r;
         jumpRetractH(vertEng, &l, t, &r, b, imgW, imgH, jumpThr, cap,
-                     jumpFrac, retractClearFrac, seedH);
+                     jumpFrac, retractClearFrac, seedH, &farL, &farR);
         if (l < 0) l = 0;
         if (t < 0) t = 0;
         if (r > imgW) r = imgW;
@@ -2077,6 +2089,8 @@ static jintArray energyAabbOnLook(
         tele.fBot = static_cast<float>(fBot);
         tele.fLeft = static_cast<float>(kFlagUnchanged);
         tele.fRight = static_cast<float>(kFlagUnchanged);
+        tele.farL = static_cast<float>(farL);
+        tele.farR = static_cast<float>(farR);
         const int ht = std::max(0, t - 2), hb = std::min(imgH, b + 2);
         const int hl = std::max(0, l), hr = std::min(imgW, r);
         if (hb > ht && hr > hl && !vertEng.empty() && vertEng.type() == CV_8UC1) {
@@ -2541,7 +2555,7 @@ static int fillPoisonLookRaster(
 static void aabbJumpOnLook(
     cv::Mat* look, int* l, int t, int* r, int b,
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
-    int lookOx = 0, int lookOy = 0);
+    int lookOx = 0, int lookOy = 0, int* farL = nullptr, int* farR = nullptr);
 static void paintLookOverlay(
     const cv::Mat& lookBin, const cv::Mat& lookPoison,
     cv::Mat* overlayY, cv::Mat* overlayUv,
@@ -2956,9 +2970,10 @@ static void seg7One(
     if (*ot < 0) *ot = 0;
     if (*ob > imgH) *ob = imgH;
     if (*ob <= *ot) *ob = std::min(imgH, *ot + 1);
+    int farL = *ol, farR = *oright;
     aabbJumpOnLook(
         &lookBin, ol, *ot, oright, *ob, imgW, imgH,
-        st, sb, sl, sr, sPx, sl, nt);
+        st, sb, sl, sr, sPx, sl, nt, &farL, &farR);
     veRssLog("walk_paint", nullptr);
     if (*ol < 0) *ol = 0;
     if (*oright > imgW) *oright = imgW;
@@ -2990,6 +3005,8 @@ static void seg7One(
         tele->gapJumpBot = gapJumpBot ? 1.f : 0.f;
         tele->landTop = landTop >= 0 ? static_cast<float>(nt + landTop) : 0.f;
         tele->landBot = landBot >= 0 ? static_cast<float>(nt + landBot) : 0.f;
+        tele->farL = static_cast<float>(farL);
+        tele->farR = static_cast<float>(farR);
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
     if (sweepOut && !lookBin.empty()) {
@@ -4208,7 +4225,7 @@ static double medianU8Rect(const cv::Mat& m, int l, int t, int r, int b) {
 static void aabbJumpOnLook(
     cv::Mat* look, int* l, int t, int* r, int b,
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
-    int lookOx, int lookOy
+    int lookOx, int lookOy, int* farL, int* farR
 ) {
     if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
     const int maxIn = maxInSeedRunRows(
@@ -4217,7 +4234,7 @@ static void aabbJumpOnLook(
     if (minRun < 1) return;
     jumpRetractH(
         *look, l, t, r, b, imgW, imgH, 0.0, 1, 0.50f, 0.30f,
-        std::max(1, seedB - seedT), look, seedT, seedB, minRun, lookOx, lookOy);
+        std::max(1, seedB - seedT), farL, farR, look, seedT, seedB, minRun, lookOx, lookOy);
 }
 
 }  // namespace
@@ -4728,7 +4745,7 @@ static void jumpOrientedOne(
     const cv::Mat& mag, OriBox* box, int imgW, int imgH,
     float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
     float seedBh, const cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
-    float lookV0 = 0.f);
+    float lookV0 = 0.f, float* farU0 = nullptr, float* farU1 = nullptr);
 
 static void seg7OrientedOne(
     const cv::Mat& src, OriBox seed, int imgW, int imgH,
@@ -4932,10 +4949,11 @@ static void seg7OrientedOne(
     const float seedU0 = seed.u0, seedU1 = seed.u1;
     seed.v0 = v0;
     seed.v1 = v1;
+    float farU0 = seed.u0, farU1 = seed.u1;
     if (doHorzJump) {
         jumpOrientedOne(
             src, &seed, imgW, imgH, 0.4f, 0.65f, 0.50f, 0.30f, seedBh,
-            &lookBin, seed.v0, seed.v1, minRun, lookV0);
+            &lookBin, seed.v0, seed.v1, minRun, lookV0, &farU0, &farU1);
     }
     if (tele) {
         tele->otsuThr = 0.f;
@@ -4952,6 +4970,8 @@ static void seg7OrientedOne(
         tele->gapJumpBot = gapJumpBot ? 1.f : 0.f;
         tele->landTop = gapJumpTop ? landTop : 0.f;
         tele->landBot = gapJumpBot ? landBot : 0.f;
+        tele->farL = farU0;
+        tele->farR = farU1;
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
     if (sweepOut) {
@@ -5002,7 +5022,7 @@ static void jumpOrientedOne(
     float maxFrac, float energyRatio, float jumpFrac, float retractClearFrac,
     float seedBh,
     const cv::Mat* lookBin, float seedV0, float seedV1, int minRun,
-    float lookV0
+    float lookV0, float* farU0, float* farU1
 ) {
     (void)maxFrac;
     (void)retractClearFrac;
@@ -5073,9 +5093,12 @@ static void jumpOrientedOne(
         std::max(1, static_cast<int>(std::lround(jumpFrac * vSpan))));
     float u0 = box->u0;
     float u1 = box->u1;
+    float probe0 = u0;
+    float probe1 = u1;
     int jumps0 = 0;
     while (jumps0 < kJumpMax) {
         const float next0 = u0 - jx;
+        probe0 = next0;
         if (hit(next0)) {
             u0 = next0;
             ++jumps0;
@@ -5092,6 +5115,7 @@ static void jumpOrientedOne(
     int jumps1 = 0;
     while (jumps1 < kJumpMax) {
         const float next1 = u1 + jx;
+        probe1 = next1;
         if (hit(next1)) {
             u1 = next1;
             ++jumps1;
@@ -5110,6 +5134,8 @@ static void jumpOrientedOne(
     if (u1 < u0 + 2.f) u1 = u0 + 2.f;
     box->u0 = u0;
     box->u1 = u1;
+    if (farU0) *farU0 = probe0;
+    if (farU1) *farU1 = probe1;
 }
 
 }  // namespace

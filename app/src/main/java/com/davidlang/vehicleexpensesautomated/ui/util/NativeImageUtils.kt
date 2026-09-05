@@ -110,6 +110,54 @@ object NativeImageUtils {
     }
 
     /**
+     * Draw on the Y/UV Mats that JPEG encode uses. Exhaustive [AnnYuv] `when`, no `else`.
+     * Y stroke `max(1,stroke)`; UV `max(1,(stroke+1)/2)`; UV [Scalar] is `(v,u)`.
+     */
+    fun drawYuvAnnotations(yMat: Mat, uvMat: Mat?, annotations: List<SnapshotAnnotation>) {
+        if (annotations.isEmpty() || yMat.empty()) return
+        val uv = if (uvMat != null && !uvMat.empty()) uvMat else null
+        annotations.forEach { ann ->
+            val (yVal, uVal, vVal) = when (ann.color) {
+                AnnYuv.RED -> Triple(AnnYuv.RED.y, AnnYuv.RED.u, AnnYuv.RED.v)
+                AnnYuv.ORANGE -> Triple(AnnYuv.ORANGE.y, AnnYuv.ORANGE.u, AnnYuv.ORANGE.v)
+                AnnYuv.BLUE -> Triple(AnnYuv.BLUE.y, AnnYuv.BLUE.u, AnnYuv.BLUE.v)
+                AnnYuv.CYAN -> Triple(AnnYuv.CYAN.y, AnnYuv.CYAN.u, AnnYuv.CYAN.v)
+                AnnYuv.YELLOW -> Triple(AnnYuv.YELLOW.y, AnnYuv.YELLOW.u, AnnYuv.YELLOW.v)
+                AnnYuv.WHITE -> Triple(AnnYuv.WHITE.y, AnnYuv.WHITE.u, AnnYuv.WHITE.v)
+            }
+
+            val p1 = Point(ann.x1.toDouble(), ann.y1.toDouble())
+            val p2 = Point(ann.x2.toDouble(), ann.y2.toDouble())
+            val yTh = max(1, ann.strokeWidth)
+            val uvTh = max(1, (ann.strokeWidth + 1) / 2)
+
+            if (ann.shape == Shape.RECTANGLE) {
+                Imgproc.rectangle(yMat, p1, p2, Scalar(yVal), yTh)
+                if (uv != null) {
+                    Imgproc.rectangle(
+                        uv,
+                        Point(p1.x / 2.0, p1.y / 2.0),
+                        Point(p2.x / 2.0, p2.y / 2.0),
+                        Scalar(vVal, uVal),
+                        uvTh,
+                    )
+                }
+            } else {
+                Imgproc.line(yMat, p1, p2, Scalar(yVal), yTh)
+                if (uv != null) {
+                    Imgproc.line(
+                        uv,
+                        Point(p1.x / 2.0, p1.y / 2.0),
+                        Point(p2.x / 2.0, p2.y / 2.0),
+                        Scalar(vVal, uVal),
+                        uvTh,
+                    )
+                }
+            }
+        }
+    }
+
+    /**
      * Encodes a YuvHandle directly to a Base64 JPEG string using high-performance JNI merge.
      */
     fun compressYuvToBase64(handle: BufferSet.YuvHandle, quality: Int): String {
@@ -520,7 +568,7 @@ object NativeImageUtils {
     private external fun nativeFillEnergyLookU8(grayPtr: Long, destPtr: Long): Boolean
 
     const val SEG7_HIST_BINS: Int = 32
-    const val SEG7_TELE_N: Int = 21 + SEG7_HIST_BINS * 2
+    const val SEG7_TELE_N: Int = 23 + SEG7_HIST_BINS * 2
 
     private external fun nativeEnergyAabbTight(
         grayPtr: Long, uvPtr: Long, seeds: IntArray,
