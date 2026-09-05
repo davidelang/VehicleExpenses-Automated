@@ -7659,6 +7659,19 @@ private suspend fun snapshotLookInk(
             j.put("gapJumpTop", tele.gapJumpTop)
             j.put("gapJumpBot", tele.gapJumpBot)
         }
+        val inkSeed: Int
+        val inkBlue: Int
+        val inkYellow: Int
+        if (energyLook) {
+            inkSeed = countU8Gt0(source, seed)
+            inkBlue = countU8Gt0(source, official)
+            inkYellow = countU8Gt0(source, yellow)
+        } else {
+            inkSeed = tele?.nInkSeed?.roundToInt() ?: 0
+            inkBlue = tele?.nInkBlue?.roundToInt() ?: 0
+            inkYellow = tele?.nInkYellow?.roundToInt() ?: 0
+        }
+        j.put("inkSeed", inkSeed).put("inkBlue", inkBlue).put("inkYellow", inkYellow)
         val pd = poisons.getOrNull(i)
         if (pd != null) {
             j.put("bandTop", pd.bandTop)
@@ -8062,6 +8075,9 @@ private suspend fun snapshotLookInkOriented(
         j.put("gapJumpTop", tele.gapJumpTop)
         j.put("gapJumpBot", tele.gapJumpBot)
     }
+    j.put("inkSeed", tele?.nInkSeed?.roundToInt() ?: 0)
+        .put("inkBlue", tele?.nInkBlue?.roundToInt() ?: 0)
+        .put("inkYellow", tele?.nInkYellow?.roundToInt() ?: 0)
     if (poison != null) {
         j.put("bandTop", poison.bandTop)
         j.put("bandBot", poison.bandBot)
@@ -8118,6 +8134,30 @@ private fun seedVRowsInWarp(
     return yT to yB
 }
 
+private fun lookInkCountCap(c: org.json.JSONObject): String {
+    return "inkSeed=${c.optInt("inkSeed", 0)} inkBlue=${c.optInt("inkBlue", 0)} inkYellow=${c.optInt("inkYellow", 0)}"
+}
+
+private fun countU8Gt0(source: Any, rect: android.graphics.Rect): Int {
+    val mat = when (source) {
+        is BufferSet.Slice -> source.mat
+        is Mat -> source
+        else -> return 0
+    }
+    if (mat.empty() || mat.type() != CvType.CV_8UC1) return 0
+    val l = rect.left.coerceAtLeast(0)
+    val t = rect.top.coerceAtLeast(0)
+    val r = rect.right.coerceAtMost(mat.cols())
+    val b = rect.bottom.coerceAtMost(mat.rows())
+    if (r <= l || b <= t) return 0
+    val roi = mat.submat(t, b, l, r)
+    return try {
+        Core.countNonZero(roi)
+    } finally {
+        roi.release()
+    }
+}
+
 private fun pLookInkArr(br: PumpBranch): org.json.JSONArray {
     val raw = br.metadata["look_ink"] ?: return org.json.JSONArray()
     return try {
@@ -8139,7 +8179,8 @@ private fun pLookInkBoxHtml(br: PumpBranch, k: Int, imgRel: String): String {
         val recH = c.optInt("recH", 0)
         val wCss = if (recW > 0) "width:${recW}px;" else "width:auto;"
         val hCss = if (recH > 0) "height:${recH}px;" else "height:auto;"
-        return pumpImgTag("$imgRel/$file", "$hCss$wCss", lab)
+        val cap = "$lab ${lookInkCountCap(c)}"
+        return pumpImgTag("$imgRel/$file", "$hCss$wCss", cap)
     }
     return ""
 }
@@ -8276,7 +8317,7 @@ private fun pLookInkHtml(br: PumpBranch): String {
         val hCss = if (recH > 0) "height:${recH}px;" else "height:auto;"
         val energy = c.optString("lookKind") == "energy"
         val meta = if (energy) {
-            "energy U8"
+            "${lookInkCountCap(c)} energy U8"
         } else {
             val bandTop = c.optBoolean("bandTop", false)
             val bandBot = c.optBoolean("bandBot", false)
@@ -8298,7 +8339,7 @@ private fun pLookInkHtml(br: PumpBranch): String {
             val minRun = c.optInt("minRun", 0)
             val sPx = c.optInt("sPx", 0)
             val glareW = c.optInt("glareW", 0)
-            "minRun=$minRun sPx=$sPx glareW=$glareW bandTop=$bandTop bandBot=$bandBot$gapCap" +
+            "${lookInkCountCap(c)} minRun=$minRun sPx=$sPx glareW=$glareW bandTop=$bandTop bandBot=$bandBot$gapCap" +
                 if (ccBits.isNotEmpty()) " $ccBits" else ""
         }
         sb.append(
