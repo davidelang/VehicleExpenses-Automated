@@ -3897,72 +3897,85 @@ static int fillPoisonLookRaster(
     const bool plusFill = (ySeed0 > 0 || ySeed0 + seedH < lh);
     int plusN = 0;
     if (plusFill) {
-        auto fillPlusRect = [&](int plusT, int plusB, int plusL, int plusR) {
-            if (plusB <= plusT || plusR <= plusL) return;
-            const int plusH0 = plusB - plusT, plusW0 = plusR - plusL;
+        auto rasterPlusBand = [&](int t, int b, int l, int r) {
+            if (t < 0) t = 0;
+            if (b > lh) b = lh;
+            if (l < 0) l = 0;
+            if (r > lw) r = lw;
+            if (b <= t || r <= l) return;
+            const int bh0 = b - t, bw0 = r - l;
             char ptag[32];
             std::snprintf(ptag, sizeof ptag, "plus_%d", plusN);
             ++plusN;
             {
                 char extra[64];
-                std::snprintf(extra, sizeof extra, "begin plusW=%d plusH=%d", plusW0, plusH0);
+                std::snprintf(extra, sizeof extra, "begin plusW=%d plusH=%d", bw0, bh0);
                 veRssLog(ptag, extra);
             }
-            if (!veAllocLog("fillPlusRect", veMatBytes(plusH0, plusW0, CV_8UC1),
-                    plusH0, plusW0, CV_8UC1)) {
+            if (!veAllocLog("fillPlusRect", veMatBytes(bh0, bw0, CV_8UC1),
+                    bh0, bw0, CV_8UC1)) {
                 return;
             }
-            for (int y = plusT; y < plusB; ++y) {
+            for (int y = t; y < b; ++y) {
                 uint8_t* op = lookBin->ptr<uint8_t>(y);
                 uint8_t* pp = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
-                for (int x = plusL; x < plusR; ++x) {
-                    const bool inSeed = (y >= ySeed0 && y < ySeed0 + seedH &&
-                        x >= xSeed0 && x < xSeed0 + seedW);
+                for (int x = l; x < r; ++x) {
                     op[x] = lookInkAt(y, x);
-                    if (pp && !inSeed) pp[x] = 0;
+                    if (pp) pp[x] = 0;
                 }
             }
-            cv::Mat plusBin = (*lookBin)(cv::Range(plusT, plusB), cv::Range(plusL, plusR));
+            cv::Mat plusBin = (*lookBin)(cv::Range(t, b), cv::Range(l, r));
             fillSaltPepper(&plusBin);
-            const int plusH = plusB - plusT, plusW = plusR - plusL;
-            cv::Mat plusPoison = planeView8u(&lookPoison, plusL, plusT, plusW, plusH);
+            cv::Mat plusPoison = planeView8u(&lookPoison, l, t, bw0, bh0);
             if (!plusPoison.empty()) {
                 fillPoisonMask(plusBin, std::max(sPx, 4), false, seedW, glareMult, &plusPoison);
             }
             const int runLim = 3 * std::max(1, sPx);
-            for (int y = plusT; y < plusB; ++y) {
+            const int halfLook = static_cast<int>(0.50f * static_cast<float>(lw));
+            for (int y = t; y < b; ++y) {
                 uint8_t* op = lookBin->ptr<uint8_t>(y);
                 uint8_t* pp = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
-                const uint8_t* fat = plusPoison.empty() ? nullptr : plusPoison.ptr<uint8_t>(y - plusT);
-                for (int x = plusL; x < plusR; ++x) {
-                    const int px = x - plusL;
-                    const bool inSeed = (y >= ySeed0 && y < ySeed0 + seedH &&
-                        x >= xSeed0 && x < xSeed0 + seedW);
+                const uint8_t* fat = plusPoison.empty() ? nullptr : plusPoison.ptr<uint8_t>(y - t);
+                for (int x = l; x < r; ++x) {
+                    const int px = x - l;
                     if (fat && fat[px]) {
                         op[x] = 0;
-                        if (pp && !inSeed) pp[x] = 255;
+                        if (pp) pp[x] = 255;
                     }
                 }
-                const int maxRun = maxInkRunRow(*lookBin, y, plusL, plusR);
+                const int maxRun = maxInkRunRow(*lookBin, y, 0, lw);
                 int nInk = 0;
-                for (int x = plusL; x < plusR; ++x) if (op[x]) ++nInk;
-                if (maxRun > runLim ||
-                    nInk > static_cast<int>(0.50f * static_cast<float>(plusW))) {
-                    for (int x = plusL; x < plusR; ++x) {
-                        const bool inSeed = (y >= ySeed0 && y < ySeed0 + seedH &&
-                            x >= xSeed0 && x < xSeed0 + seedW);
-                        if (inSeed) continue;
+                for (int x = 0; x < lw; ++x) if (op[x]) ++nInk;
+                if (maxRun > runLim || nInk > halfLook) {
+                    for (int x = l; x < r; ++x) {
                         if (pp && op[x]) pp[x] = 255;
                         op[x] = 0;
                     }
                 }
             }
-            stampSeedCombined();
             {
                 char extra[32];
-                std::snprintf(extra, sizeof extra, "end plusW=%d plusH=%d", plusW0, plusH0);
+                std::snprintf(extra, sizeof extra, "end plusW=%d plusH=%d", bw0, bh0);
                 veRssLog(ptag, extra);
             }
+        };
+        auto fillNewRings = [&](int t, int b, int l, int r, int pt, int pb, int pl, int pr) {
+            if (pb <= pt) {
+                rasterPlusBand(t, std::min(b, ySeed0), l, r);
+                rasterPlusBand(std::max(t, ySeed0 + seedH), b, l, r);
+                rasterPlusBand(
+                    std::max(t, ySeed0), std::min(b, ySeed0 + seedH), l, std::min(r, xSeed0));
+                rasterPlusBand(
+                    std::max(t, ySeed0), std::min(b, ySeed0 + seedH),
+                    std::max(l, xSeed0 + seedW), r);
+                return;
+            }
+            rasterPlusBand(t, pt, l, r);
+            rasterPlusBand(pb, b, l, r);
+            const int midT = std::max(t, pt);
+            const int midB = std::min(b, pb);
+            rasterPlusBand(midT, midB, l, pl);
+            rasterPlusBand(midT, midB, pr, r);
         };
         if (v0Clean > 4) {
             const int ring = 4 * sPx;
@@ -3972,15 +3985,15 @@ static int fillPoisonLookRaster(
             int extraTop = ring;
             int extraBot = ring;
             auto plusBounds = [&](int* t, int* b, int* l, int* r) {
-                const int plusH = seedH + extraTop + extraBot;
                 *t = std::max(capTop, ySeed0 - extraTop);
                 *b = std::min(capBot, ySeed0 + seedH + extraBot);
-                *l = std::max(0, xSeed0 - plusH);
-                *r = std::min(lw, xSeed0 + seedW + plusH);
+                *l = 0;
+                *r = lw;
             };
             int plusT = 0, plusB = 0, plusL = 0, plusR = 0;
             plusBounds(&plusT, &plusB, &plusL, &plusR);
-            fillPlusRect(plusT, plusB, plusL, plusR);
+            stampSeedCombined();
+            fillNewRings(plusT, plusB, plusL, plusR, plusT, plusT, plusL, plusL);
             const int glareWHas = (glareMult > 0 ? glareMult : 5) * std::max(sPx, 4);
             const int minRun = usedMinRun(
                 sPx, maxInSeedRunRows(*lookBin, ySeed0, ySeed0 + seedH, xSeed0, xSeed0 + seedW));
@@ -3996,11 +4009,11 @@ static int fillPoisonLookRaster(
                 int nt = 0, nb = 0, nl = 0, nr = 0;
                 plusBounds(&nt, &nb, &nl, &nr);
                 if (nt == plusT && nb == plusB && nl == plusL && nr == plusR) break;
+                fillNewRings(nt, nb, nl, nr, plusT, plusB, plusL, plusR);
                 plusT = nt;
                 plusB = nb;
                 plusL = nl;
                 plusR = nr;
-                fillPlusRect(plusT, plusB, plusL, plusR);
             }
         } else {
             stampSeedCombined();
