@@ -4010,7 +4010,8 @@ static bool fillChromaTintMask(
     int glareMult = 5,
     int xPad = 0,
     bool adaptive = false,
-    Seg7Tele* tele = nullptr
+    Seg7Tele* tele = nullptr,
+    int walkL = -1, int walkT = -1, int walkR = -1, int walkB = -1
 ) {
     if (y.empty() || y.type() != CV_8UC1 || !dst) return false;
     const int h = y.rows, w = y.cols;
@@ -4140,13 +4141,21 @@ static bool fillChromaTintMask(
     const float eps2 = kTintChromaEps * kTintChromaEps;
     const float dotThr2 = kTintDotThr * kTintDotThr;
 
-    const int seedH = std::max(1, sb - st);
-    const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
-    const int vLook = capPx + 2;
-    const int nt = std::max(0, st - vLook);
-    const int nb = std::min(h, sb + vLook);
-    const int xl = std::max(0, sl - std::max(0, xPad));
-    const int xr = std::min(w, sr + std::max(0, xPad));
+    int xl, xr, nt, nb;
+    if (walkR > walkL && walkB > walkT) {
+        xl = std::max(0, walkL);
+        nt = std::max(0, walkT);
+        xr = std::min(w, walkR);
+        nb = std::min(h, walkB);
+    } else {
+        const int seedH = std::max(1, sb - st);
+        const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
+        const int vLook = capPx + 2;
+        nt = std::max(0, st - vLook);
+        nb = std::min(h, sb + vLook);
+        xl = std::max(0, sl - std::max(0, xPad));
+        xr = std::min(w, sr + std::max(0, xPad));
+    }
     if (reuse && xr > xl && nb > nt) {
         (*dst)(cv::Rect(xl, nt, xr - xl, nb - nt)).setTo(0);
     }
@@ -5267,16 +5276,34 @@ static jfloatArray seg7OrientedMany(
         bool srcIsBin = false;
         bool keepColor = false;
         if (useTint && uv) {
-            OriBox padBox = box;
+            OriBox seedBox = box;
             if (boundStrategy == 1) {
                 const float ins = static_cast<float>(std::max(1, tightInsetPx));
-                if (padBox.u1 - padBox.u0 > 2.f * ins + 2.f) {
-                    padBox.u0 += ins; padBox.u1 -= ins;
+                if (seedBox.u1 - seedBox.u0 > 2.f * ins + 2.f) {
+                    seedBox.u0 += ins; seedBox.u1 -= ins;
                 }
-                if (padBox.v1 - padBox.v0 > 2.f * ins + 2.f) {
-                    padBox.v0 += ins; padBox.v1 -= ins;
+                if (seedBox.v1 - seedBox.v0 > 2.f * ins + 2.f) {
+                    seedBox.v0 += ins; seedBox.v1 -= ins;
                 }
             }
+            auto aabbOf = [&](const OriBox& b, int* l, int* t, int* r, int* bot) {
+                float pts[8];
+                oriToQuad(b, pts);
+                float minx = pts[0], maxx = pts[0], miny = pts[1], maxy = pts[1];
+                for (int k = 1; k < 4; ++k) {
+                    minx = std::min(minx, pts[k * 2]);
+                    maxx = std::max(maxx, pts[k * 2]);
+                    miny = std::min(miny, pts[k * 2 + 1]);
+                    maxy = std::max(maxy, pts[k * 2 + 1]);
+                }
+                *l = std::max(0, static_cast<int>(std::floor(minx)));
+                *t = std::max(0, static_cast<int>(std::floor(miny)));
+                *r = std::min(imgW, static_cast<int>(std::ceil(maxx)));
+                *bot = std::min(imgH, static_cast<int>(std::ceil(maxy)));
+            };
+            int sl = 0, st = 0, sr = 0, sb = 0;
+            aabbOf(seedBox, &sl, &st, &sr, &sb);
+            OriBox padBox = seedBox;
             const float seedBhT = std::max(1.f, padBox.v1 - padBox.v0);
             const float capT = 2.5f * seedBhT;
             const int vLookT = std::max(1, static_cast<int>(std::lround(capT)) + 2);
@@ -5285,22 +5312,11 @@ static jfloatArray seg7OrientedMany(
             padBox.u1 += uPadT;
             padBox.v0 -= static_cast<float>(vLookT);
             padBox.v1 += static_cast<float>(vLookT);
-            float pts[8];
-            oriToQuad(padBox, pts);
-            float minx = pts[0], maxx = pts[0], miny = pts[1], maxy = pts[1];
-            for (int k = 1; k < 4; ++k) {
-                minx = std::min(minx, pts[k * 2]);
-                maxx = std::max(maxx, pts[k * 2]);
-                miny = std::min(miny, pts[k * 2 + 1]);
-                maxy = std::max(maxy, pts[k * 2 + 1]);
-            }
-            const int sl = std::max(0, static_cast<int>(std::floor(minx)));
-            const int st = std::max(0, static_cast<int>(std::floor(miny)));
-            const int sr = std::min(imgW, static_cast<int>(std::ceil(maxx)));
-            const int sb = std::min(imgH, static_cast<int>(std::ceil(maxy)));
+            int wl = 0, wt = 0, wr = 0, wb = 0;
+            aabbOf(padBox, &wl, &wt, &wr, &wb);
             cv::Mat* tintDst = tintPlane;
             if (fillChromaTintMask(*gray, *uv, sl, st, sr, sb, tintDst, 5, 0,
-                    adaptive, &tele) && tintDst && !tintDst->empty()) {
+                    adaptive, &tele, wl, wt, wr, wb) && tintDst && !tintDst->empty()) {
                 keepColor = true;
                 if (skipTintWalk(adaptive, tele)) {
                     tele.method = 0.f;
