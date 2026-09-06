@@ -7679,6 +7679,7 @@ private suspend fun snapshotLookInk(
             j.put("nRetry", tele.nRetry.roundToInt())
             j.put("retryWhy", tele.retryWhy.roundToInt())
             j.put("nValley", tele.nValley.roundToInt())
+            putLookInkFillAttempts(j, tele)
         }
         val pd = poisons.getOrNull(i)
         if (pd != null) {
@@ -8093,6 +8094,7 @@ private suspend fun snapshotLookInkOriented(
         j.put("nRetry", tele.nRetry.roundToInt())
         j.put("retryWhy", tele.retryWhy.roundToInt())
         j.put("nValley", tele.nValley.roundToInt())
+        putLookInkFillAttempts(j, tele)
     }
     if (poison != null) {
         j.put("bandTop", poison.bandTop)
@@ -8150,8 +8152,45 @@ private fun seedVRowsInWarp(
     return yT to yB
 }
 
+private fun putLookInkFillAttempts(j: org.json.JSONObject, tele: ContentExpandUtils.Seg7Telemetry) {
+    j.put("nKeep", tele.nKeep.roundToInt())
+    j.put("nPoison", tele.nPoison.roundToInt())
+    j.put("firstThr", tele.firstThr.roundToInt())
+    val arr = org.json.JSONArray()
+    tele.attempts.forEachIndexed { i, a ->
+        arr.put(
+            org.json.JSONObject()
+                .put("i", i)
+                .put("kind", a.kind.roundToInt())
+                .put("firstThr", a.firstThr.roundToInt())
+                .put("thr", a.thr.roundToInt())
+                .put("dark", a.dark.roundToInt())
+                .put("flip", a.flip.roundToInt())
+                .put("nLookBin", a.nLookBin.roundToInt())
+                .put("nRecovered", a.nRecovered.roundToInt())
+                .put("fill", a.fill)
+                .put("nKeep", a.nKeep.roundToInt())
+                .put("nValley", a.nValley.roundToInt())
+                .put("nPoison", a.nPoison.roundToInt())
+                .put("sPx", a.sPx.roundToInt()),
+        )
+    }
+    j.put("attempts", arr)
+}
+
 private fun lookInkCountCap(c: org.json.JSONObject): String {
-    return "inkSeed=${c.optInt("inkSeed", 0)} inkBlue=${c.optInt("inkBlue", 0)} inkYellow=${c.optInt("inkYellow", 0)}"
+    val base = "inkSeed=${c.optInt("inkSeed", 0)} inkBlue=${c.optInt("inkBlue", 0)} inkYellow=${c.optInt("inkYellow", 0)}"
+    val att = c.optJSONArray("attempts") ?: return base
+    if (att.length() < 1) return base
+    val parts = ArrayList<String>(att.length())
+    for (i in 0 until att.length()) {
+        val a = att.optJSONObject(i) ?: continue
+        val fill = a.optDouble("fill", 0.0)
+        parts.add(
+            "$i:${a.optInt("kind")},${a.optInt("thr")},${String.format(java.util.Locale.US, "%.3f", fill)},${a.optInt("nKeep")},${a.optInt("nPoison")}",
+        )
+    }
+    return if (parts.isEmpty()) base else "$base ${parts.joinToString(" ")}"
 }
 
 private fun countU8Gt0(source: Any, rect: android.graphics.Rect): Int {
