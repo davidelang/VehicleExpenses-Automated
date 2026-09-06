@@ -3894,147 +3894,57 @@ static int fillPoisonLookRaster(
             }
         }
     };
-    const bool plusFill = (ySeed0 > 0 || ySeed0 + seedH < lh);
-    int plusN = 0;
-    if (plusFill) {
-        auto rasterPlusBand = [&](int t, int b, int l, int r) {
-            if (t < 0) t = 0;
-            if (b > lh) b = lh;
-            if (l < 0) l = 0;
-            if (r > lw) r = lw;
-            if (b <= t || r <= l) return;
-            const int bh0 = b - t, bw0 = r - l;
-            char ptag[32];
-            std::snprintf(ptag, sizeof ptag, "plus_%d", plusN);
-            ++plusN;
-            {
-                char extra[64];
-                std::snprintf(extra, sizeof extra, "begin plusW=%d plusH=%d", bw0, bh0);
-                veRssLog(ptag, extra);
+    for (int y = 0; y < lh; ++y) {
+        uint8_t* op = lookBin->ptr<uint8_t>(y);
+        const int sy = y - ySeed0;
+        const bool seedRow = sy >= 0 && sy < seedH;
+        for (int x = 0; x < lw; ++x) {
+            const int sx = x - xSeed0;
+            if (seedRow && sx >= 0 && sx < seedW) {
+                op[x] = combined.ptr<uint8_t>(sy)[sx];
+                continue;
             }
-            if (!veAllocLog("fillPlusRect", veMatBytes(bh0, bw0, CV_8UC1),
-                    bh0, bw0, CV_8UC1)) {
-                return;
-            }
-            for (int y = t; y < b; ++y) {
-                uint8_t* op = lookBin->ptr<uint8_t>(y);
-                uint8_t* pp = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
-                for (int x = l; x < r; ++x) {
-                    op[x] = lookInkAt(y, x);
-                    if (pp) pp[x] = 0;
-                }
-            }
-            cv::Mat plusBin = (*lookBin)(cv::Range(t, b), cv::Range(l, r));
-            fillSaltPepper(&plusBin);
-            cv::Mat plusPoison = planeView8u(&lookPoison, l, t, bw0, bh0);
-            if (!plusPoison.empty()) {
-                fillPoisonMask(plusBin, std::max(sPx, 4), false, seedW, glareMult, &plusPoison);
-            }
-            const int runLim = 3 * std::max(1, sPx);
-            const int halfLook = static_cast<int>(0.50f * static_cast<float>(lw));
-            for (int y = t; y < b; ++y) {
-                uint8_t* op = lookBin->ptr<uint8_t>(y);
-                uint8_t* pp = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
-                const uint8_t* fat = plusPoison.empty() ? nullptr : plusPoison.ptr<uint8_t>(y - t);
-                for (int x = l; x < r; ++x) {
-                    const int px = x - l;
-                    if (fat && fat[px]) {
-                        op[x] = 0;
-                        if (pp) pp[x] = 255;
-                    }
-                }
-                const int maxRun = maxInkRunRow(*lookBin, y, 0, lw);
-                int nInk = 0;
-                for (int x = 0; x < lw; ++x) if (op[x]) ++nInk;
-                if (maxRun > runLim || nInk > halfLook) {
-                    for (int x = l; x < r; ++x) {
-                        if (pp && op[x]) pp[x] = 255;
-                        op[x] = 0;
-                    }
-                }
-            }
-            {
-                char extra[32];
-                std::snprintf(extra, sizeof extra, "end plusW=%d plusH=%d", bw0, bh0);
-                veRssLog(ptag, extra);
-            }
-        };
-        auto fillNewRings = [&](int t, int b, int l, int r, int pt, int pb, int pl, int pr) {
-            if (pb <= pt) {
-                rasterPlusBand(t, std::min(b, ySeed0), l, r);
-                rasterPlusBand(std::max(t, ySeed0 + seedH), b, l, r);
-                rasterPlusBand(
-                    std::max(t, ySeed0), std::min(b, ySeed0 + seedH), l, std::min(r, xSeed0));
-                rasterPlusBand(
-                    std::max(t, ySeed0), std::min(b, ySeed0 + seedH),
-                    std::max(l, xSeed0 + seedW), r);
-                return;
-            }
-            rasterPlusBand(t, pt, l, r);
-            rasterPlusBand(pb, b, l, r);
-            const int midT = std::max(t, pt);
-            const int midB = std::min(b, pb);
-            rasterPlusBand(midT, midB, l, pl);
-            rasterPlusBand(midT, midB, pr, r);
-        };
-        if (v0Clean > 4) {
-            const int ring = 4 * sPx;
-            const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
-            const int capTop = std::max(0, ySeed0 - capPx);
-            const int capBot = std::min(lh, ySeed0 + seedH + capPx);
-            int extraTop = ring;
-            int extraBot = ring;
-            auto plusBounds = [&](int* t, int* b, int* l, int* r) {
-                *t = std::max(capTop, ySeed0 - extraTop);
-                *b = std::min(capBot, ySeed0 + seedH + extraBot);
-                *l = 0;
-                *r = lw;
-            };
-            int plusT = 0, plusB = 0, plusL = 0, plusR = 0;
-            plusBounds(&plusT, &plusB, &plusL, &plusR);
-            stampSeedCombined();
-            fillNewRings(plusT, plusB, plusL, plusR, plusT, plusT, plusL, plusL);
-            const int glareWHas = (glareMult > 0 ? glareMult : 5) * std::max(sPx, 4);
-            const int minRun = usedMinRun(
-                sPx, maxInSeedRunRows(*lookBin, ySeed0, ySeed0 + seedH, xSeed0, xSeed0 + seedW));
-            auto hasBar = [&](int y) {
-                return rowHasStrokeBar(*lookBin, y, minRun, glareWHas);
-            };
-            for (int g = 0; g < 32; ++g) {
-                bool wantTop = plusT > capTop && hasBar(plusT);
-                bool wantBot = plusB < capBot && plusB > 0 && hasBar(plusB - 1);
-                if (!wantTop && !wantBot) break;
-                if (wantTop) extraTop += ring;
-                if (wantBot) extraBot += ring;
-                int nt = 0, nb = 0, nl = 0, nr = 0;
-                plusBounds(&nt, &nb, &nl, &nr);
-                if (nt == plusT && nb == plusB && nl == plusL && nr == plusR) break;
-                fillNewRings(nt, nb, nl, nr, plusT, plusB, plusL, plusR);
-                plusT = nt;
-                plusB = nb;
-                plusL = nl;
-                plusR = nr;
-            }
-        } else {
-            stampSeedCombined();
-        }
-        veRssLog("plus_done", nullptr);
-    } else {
-        for (int y = 0; y < lh; ++y) {
-            uint8_t* op = lookBin->ptr<uint8_t>(y);
-            const int sy = y - ySeed0;
-            for (int x = 0; x < lw; ++x) {
-                const int sx = x - xSeed0;
-                if (sy >= 0 && sy < seedH && sx >= 0 && sx < seedW) {
-                    op[x] = combined.ptr<uint8_t>(sy)[sx];
-                    continue;
-                }
-                if (v0Clean <= 4) { op[x] = 0; continue; }
-                op[x] = lookInkAt(y, x);
-            }
+            if (v0Clean <= 4) { op[x] = 0; continue; }
+            op[x] = lookInkAt(y, x);
         }
     }
     fillSaltPepper(lookBin);
+    const int runLim = 3 * std::max(1, sPx);
+    const int halfSeed = static_cast<int>(0.50f * static_cast<float>(seedW));
+    for (int y = 0; y < lh; ++y) {
+        uint8_t* op = lookBin->ptr<uint8_t>(y);
+        uint8_t* pp = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
+        const int sy = y - ySeed0;
+        const bool seedRow = sy >= 0 && sy < seedH;
+        int nInk = 0;
+        int best = 0, run = 0;
+        for (int x = 0; x < lw; ++x) {
+            const int sx = x - xSeed0;
+            const bool inSeed = seedRow && sx >= 0 && sx < seedW;
+            if (inSeed) {
+                if (run > best) best = run;
+                run = 0;
+                continue;
+            }
+            if (op[x]) {
+                ++nInk;
+                ++run;
+                if (run > best) best = run;
+            } else {
+                run = 0;
+            }
+        }
+        if (run > best) best = run;
+        if (best <= runLim && nInk <= halfSeed) continue;
+        for (int x = 0; x < lw; ++x) {
+            const int sx = x - xSeed0;
+            const bool inSeed = seedRow && sx >= 0 && sx < seedW;
+            if (inSeed) continue;
+            if (pp && op[x]) pp[x] = 255;
+            op[x] = 0;
+        }
+    }
+    stampSeedCombined();
     const int glareW = (glareMult > 0 ? glareMult : 5) * std::max(sPx, 4);
     dropWideRuns(lookBin, glareW);
     if (lookPoisonOut) *lookPoisonOut = lookPoison;
