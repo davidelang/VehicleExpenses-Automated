@@ -4176,46 +4176,61 @@ static int fillPoisonLookRaster(
         fillKeepHist(hist64, &nKeep, &nValley, valleys);
         fillGate.nValley = nValley;
         recordAttempt(0);
-        if (fillGate.fill < fillLo || fillGate.fill > fillHi) {
-            fillGate.retryWhy = fillGate.fill < fillLo ? 1 : 2;
-            const bool wantMore = fillGate.retryWhy == 1;
+        if (fillGate.fill > fillHi) {
+            fillGate.retryWhy = 2;
+            fillGate.nRetry = 0;
+        } else if (fillGate.fill < fillLo) {
+            fillGate.retryWhy = 1;
+            fillGate.nRetry = 0;
+            const int nLookBin0 = fillGate.nLookBin;
             std::vector<int> tried;
             tried.push_back(static_cast<int>(std::lround(cleanThr)));
-            cv::Mat bestBin;
-            cv::Mat bestPoison;
-            bin.copyTo(bestBin);
-            poison.copyTo(bestPoison);
-            double bestThr = cleanThr;
-            bool bestDark = cleanDark;
-            bool bestHave = haveClean;
-            float bestFrac = cleanInkFrac;
-            double bestFirstThr = poisonFirstThr;
-            SeedFillGate bestGate;
-            copyFillGateChosen(fillGate, &bestGate);
-            float bestDist = std::fabs(fillGate.fill - 0.23f);
+            cv::Mat attempt0Bin;
+            cv::Mat attempt0Poison;
+            bin.copyTo(attempt0Bin);
+            poison.copyTo(attempt0Poison);
+            const double attempt0Thr = cleanThr;
+            const bool attempt0Dark = cleanDark;
+            const bool attempt0Have = haveClean;
+            const float attempt0Frac = cleanInkFrac;
+            const double attempt0FirstThr = poisonFirstThr;
+            SeedFillGate attempt0Gate;
+            copyFillGateChosen(fillGate, &attempt0Gate);
+            cv::Mat commitBin;
+            cv::Mat commitPoison;
+            double commitThr = cleanThr;
+            bool commitDark = cleanDark;
+            bool commitHave = haveClean;
+            float commitFrac = cleanInkFrac;
+            double commitFirstThr = poisonFirstThr;
+            SeedFillGate commitGate;
+            bool haveCommit = false;
             int extras = 0;
             auto noteAttempt = [&](int kind) -> bool {
                 fillGate.nRetry = extras;
-                fillGate.retryWhy = wantMore ? 1 : 2;
+                fillGate.retryWhy = 1;
                 fillGate.nValley = nValley;
                 recordAttempt(kind);
-                if (fillGate.fill >= fillLo && fillGate.fill <= fillHi) return true;
-                const float dist = std::fabs(fillGate.fill - 0.23f);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestThr = cleanThr;
-                    bestDark = cleanDark;
-                    bestHave = haveClean;
-                    bestFrac = cleanInkFrac;
-                    bestFirstThr = poisonFirstThr;
-                    copyFillGateChosen(fillGate, &bestGate);
-                    bin.copyTo(bestBin);
-                    poison.copyTo(bestPoison);
+                const bool inBandNow =
+                    fillGate.fill >= fillLo && fillGate.fill <= fillHi;
+                const bool emptyToInk =
+                    nLookBin0 == 0 && fillGate.nLookBin > 0;
+                if (inBandNow || emptyToInk) {
+                    haveCommit = true;
+                    bin.copyTo(commitBin);
+                    poison.copyTo(commitPoison);
+                    commitThr = cleanThr;
+                    commitDark = cleanDark;
+                    commitHave = haveClean;
+                    commitFrac = cleanInkFrac;
+                    commitFirstThr = poisonFirstThr;
+                    copyFillGateChosen(fillGate, &commitGate);
+                    if (inBandNow) return true;
                 }
                 return false;
             };
             bool inBand = false;
-            if (wantMore && nKeep < 2 && extras < 3) {
+            if (nKeep < 2 && extras < 3) {
                 float histAll[64] = {};
                 for (int yy = 0; yy < kh; ++yy) {
                     const uint8_t* yp = seedY.ptr<uint8_t>(yy);
@@ -4305,7 +4320,7 @@ static int fillPoisonLookRaster(
                     }
                     if (seen) continue;
                     const bool moreInk = cleanDark ? (thr > usedKeep) : (thr < usedKeep);
-                    if (wantMore != moreInk) continue;
+                    if (!moreInk) continue;
                     cands.push_back(thr);
                 }
                 std::sort(cands.begin(), cands.end(), [&](int a, int b) {
@@ -4332,16 +4347,27 @@ static int fillPoisonLookRaster(
                 }
             }
             if (!inBand) {
-                bestBin.copyTo(bin);
-                bestPoison.copyTo(poison);
-                cleanThr = bestThr;
-                cleanDark = bestDark;
-                haveClean = bestHave;
-                cleanInkFrac = bestFrac;
-                poisonFirstThr = bestFirstThr;
-                copyFillGateChosen(bestGate, &fillGate);
+                if (haveCommit) {
+                    commitBin.copyTo(bin);
+                    commitPoison.copyTo(poison);
+                    cleanThr = commitThr;
+                    cleanDark = commitDark;
+                    haveClean = commitHave;
+                    cleanInkFrac = commitFrac;
+                    poisonFirstThr = commitFirstThr;
+                    copyFillGateChosen(commitGate, &fillGate);
+                } else {
+                    attempt0Bin.copyTo(bin);
+                    attempt0Poison.copyTo(poison);
+                    cleanThr = attempt0Thr;
+                    cleanDark = attempt0Dark;
+                    haveClean = attempt0Have;
+                    cleanInkFrac = attempt0Frac;
+                    poisonFirstThr = attempt0FirstThr;
+                    copyFillGateChosen(attempt0Gate, &fillGate);
+                }
                 fillGate.nRetry = extras;
-                fillGate.retryWhy = wantMore ? 1 : 2;
+                fillGate.retryWhy = 1;
                 fillGate.nValley = nValley;
             }
         }
