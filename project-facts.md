@@ -16,7 +16,7 @@ Read in full early on startup/new cycle.
 - Pump rot 7-seg dest/clear: photo is `A.p` (never JPEG/warp dest). Overlay is `B.p` (clear once per column, then accumulate). Look-ink dest is `B.s` origin crop after native (`clear` then warp from `B.p`). Rec flatten dest is `A.s` (`clear` then warp from `A.p`). Detail: `dev-ai-interaction/research/pump-rot-column-buffers-20260904-2206.md`.
 - Pump rot 7-seg native look strip is seed-`u` plus the same jump pad as AABB look x-pad. Warp dest is scratch (not overlay Y / `B.p`).
 - Pump look-ink outlines: red = seed, blue = official (final walk after jump/retract), yellow = jump-far / retract-start (not the walk rect). Draw on the encode Mats (`dest.mat` / `dest.uvMat`). `AnnYuv` exhaustive `when` (includes WHITE); no `else` / unknown→white fallback.
-- Pump look-ink JSON/HTML: `inkSeed` / `inkBlue` / `inkYellow` are thr-ink pixel counts (includes poison-ink; not post-poison look-bin). 7seg `fill` = (nLookBin + nRecovered) / red area after poison (recovered = poison ink 8-connected to look-bin). Energy look-ink counts dest/energy U8 `>0` in the same three rects.
+- Pump look-ink JSON/HTML: `inkSeed` / `inkBlue` / `inkYellow` are thr-ink pixel counts (includes poison-ink; not post-poison look-bin). 7seg `fill` = (nLookBin + nRecovered) / red area after poison (recovered = poison ink 8-connected to look-bin). 7-seg look_ink has `attempts[]` (per-evaluate thr/fill/keep/poison); energy has none. Energy look-ink counts dest/energy U8 `>0` in the same three rects.
 
 ## Device / crash logs
 - Prefer `adb logcat -d` (or device-specific) into sandbox once; analyze locally. Do **not** start broad `find … *.log` hunts on the host.
