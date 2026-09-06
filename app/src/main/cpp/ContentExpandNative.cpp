@@ -136,7 +136,10 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeVeRss
 }
 
 static constexpr int kRunHistBins = 32;
-static constexpr int kSeg7TeleN = 26 + kRunHistBins * 2 + 6;
+static constexpr int kSeg7AttemptMax = 4;
+static constexpr int kSeg7AttemptF = 12;
+static constexpr int kSeg7TeleN =
+    26 + kRunHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF;
 
 enum : int {
     kFlagUnchanged = 0,
@@ -184,6 +187,11 @@ struct Seg7Tele {
     float nRetry = 0.f;
     float retryWhy = 0.f;
     float nValley = 0.f;
+    float nAttempts = 0.f;
+    float nKeep = 0.f;
+    float nPoison = 0.f;
+    float firstThr = 0.f;
+    float attempts[kSeg7AttemptMax][kSeg7AttemptF]{};
 };
 
 static int runLengthBin(int run) {
@@ -313,6 +321,13 @@ static void packSeg7Tele(const Seg7Tele& t, float* dst) {
     dst[histEnd + 3] = t.nRetry;
     dst[histEnd + 4] = t.retryWhy;
     dst[histEnd + 5] = t.nValley;
+    dst[histEnd + 6] = t.nAttempts;
+    for (int a = 0; a < kSeg7AttemptMax; ++a) {
+        const int b = histEnd + 7 + a * kSeg7AttemptF;
+        for (int f = 0; f < kSeg7AttemptF; ++f) {
+            dst[b + f] = t.attempts[a][f];
+        }
+    }
 }
 
 static int countInkU8(const cv::Mat& m, int l, int t, int r, int b) {
@@ -330,6 +345,21 @@ static int countInkU8(const cv::Mat& m, int l, int t, int r, int b) {
     return n;
 }
 
+struct SeedFillAttempt {
+    int kind = 0;
+    float firstThr = 0.f;
+    float thr = 0.f;
+    int dark = 0;
+    int flip = 0;
+    int nLookBin = 0;
+    int nRecovered = 0;
+    float fill = 0.f;
+    int nKeep = 0;
+    int nValley = 0;
+    int nPoison = 0;
+    int sPx = 0;
+};
+
 struct SeedFillGate {
     int nLookBin = 0;
     int nRecovered = 0;
@@ -337,7 +367,50 @@ struct SeedFillGate {
     int nRetry = 0;
     int retryWhy = 0;
     int nValley = 0;
+    int nKeep = 0;
+    int nPoison = 0;
+    float firstThr = 0.f;
+    int nAttempts = 0;
+    SeedFillAttempt attempts[kSeg7AttemptMax]{};
 };
+
+static void copyFillGateChosen(const SeedFillGate& src, SeedFillGate* dst) {
+    if (!dst) return;
+    dst->nLookBin = src.nLookBin;
+    dst->nRecovered = src.nRecovered;
+    dst->fill = src.fill;
+    dst->nRetry = src.nRetry;
+    dst->retryWhy = src.retryWhy;
+    dst->nValley = src.nValley;
+    dst->nKeep = src.nKeep;
+    dst->nPoison = src.nPoison;
+    dst->firstThr = src.firstThr;
+}
+
+static void packFillAttempts(const SeedFillGate& g, Seg7Tele* t) {
+    if (!t) return;
+    t->nAttempts = static_cast<float>(g.nAttempts);
+    t->nKeep = static_cast<float>(g.nKeep);
+    t->nPoison = static_cast<float>(g.nPoison);
+    t->firstThr = g.firstThr;
+    for (int i = 0; i < kSeg7AttemptMax; ++i) {
+        for (int f = 0; f < kSeg7AttemptF; ++f) t->attempts[i][f] = 0.f;
+        if (i >= g.nAttempts) continue;
+        const SeedFillAttempt& a = g.attempts[i];
+        t->attempts[i][0] = static_cast<float>(a.kind);
+        t->attempts[i][1] = a.firstThr;
+        t->attempts[i][2] = a.thr;
+        t->attempts[i][3] = static_cast<float>(a.dark);
+        t->attempts[i][4] = static_cast<float>(a.flip);
+        t->attempts[i][5] = static_cast<float>(a.nLookBin);
+        t->attempts[i][6] = static_cast<float>(a.nRecovered);
+        t->attempts[i][7] = a.fill;
+        t->attempts[i][8] = static_cast<float>(a.nKeep);
+        t->attempts[i][9] = static_cast<float>(a.nValley);
+        t->attempts[i][10] = static_cast<float>(a.nPoison);
+        t->attempts[i][11] = static_cast<float>(a.sPx);
+    }
+}
 
 static uint8_t lookInkAtY(
     const cv::Mat& lookY, int y, int x,
@@ -3238,6 +3311,7 @@ static void seg7One(
         tele->nRetry = static_cast<float>(fillGate.nRetry);
         tele->retryWhy = static_cast<float>(fillGate.retryWhy);
         tele->nValley = static_cast<float>(fillGate.nValley);
+        packFillAttempts(fillGate, tele);
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
     if (sweepOut && !lookBin.empty()) {
@@ -4011,7 +4085,9 @@ static int fillPoisonLookRaster(
         return n;
     };
     int nInkSeed = countSeedLookInk();
+    bool flipped = false;
     if (nInkSeed == 0 && !srcIsBin) {
+        flipped = true;
         cleanDark = !cleanDark;
         applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
         fillSaltPepper(&bin);
@@ -4028,38 +4104,78 @@ static int fillPoisonLookRaster(
     countSeedFillGate(
         bin, poison, lookY, xSeed0, ySeed0,
         srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+    double poisonFirstThr = srcIsBin ? 127.0 : otsu;
+    const float fillLo = 0.05f;
+    const float fillHi = 0.45f;
+    const int kh = std::min(seedH, std::min(seedY.rows, poison.rows));
+    const int kw = std::min(seedW, std::min(seedY.cols, poison.cols));
+    int nKeep = 0;
+    int nPoison = 0;
+    int nValley = 0;
+    auto countPoisonKeep = [&]() {
+        nKeep = 0;
+        nPoison = 0;
+        for (int yy = 0; yy < kh; ++yy) {
+            const uint8_t* pp = poison.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < kw; ++xx) {
+                if (pp[xx]) ++nPoison;
+                else ++nKeep;
+            }
+        }
+    };
+    auto recordAttempt = [&](int kind) {
+        if (fillGate.nAttempts >= kSeg7AttemptMax) return;
+        SeedFillAttempt& a = fillGate.attempts[fillGate.nAttempts];
+        a.kind = kind;
+        a.firstThr = static_cast<float>(poisonFirstThr);
+        a.thr = static_cast<float>(cleanThr);
+        a.dark = cleanDark ? 1 : 0;
+        a.flip = flipped ? 1 : 0;
+        a.nLookBin = fillGate.nLookBin;
+        a.nRecovered = fillGate.nRecovered;
+        a.fill = fillGate.fill;
+        a.nKeep = nKeep;
+        a.nValley = nValley;
+        a.nPoison = nPoison;
+        const HorizSW hhA = horizPeakSW(bin, seedH, seedW);
+        a.sPx = hhA.peak;
+        ++fillGate.nAttempts;
+        fillGate.nKeep = nKeep;
+        fillGate.nPoison = nPoison;
+        fillGate.firstThr = static_cast<float>(poisonFirstThr);
+        fillGate.nValley = nValley;
+    };
     if (!srcIsBin) {
-        const float fillLo = 0.05f;
-        const float fillHi = 0.45f;
-        const int kh = std::min(seedH, std::min(seedY.rows, poison.rows));
-        const int kw = std::min(seedW, std::min(seedY.cols, poison.cols));
         auto fillKeepHist = [&](float hist64[64], int* nKeepOut, int* nValleyOut,
             int valleys[64]) {
             for (int i = 0; i < 64; ++i) hist64[i] = 0.f;
-            int nKeep = 0;
+            int keep = 0;
+            nPoison = 0;
             for (int yy = 0; yy < kh; ++yy) {
                 const uint8_t* yp = seedY.ptr<uint8_t>(yy);
                 const uint8_t* pp = poison.ptr<uint8_t>(yy);
                 for (int xx = 0; xx < kw; ++xx) {
-                    if (pp[xx]) continue;
-                    ++nKeep;
+                    if (pp[xx]) {
+                        ++nPoison;
+                        continue;
+                    }
+                    ++keep;
                     int b = static_cast<int>(yp[xx]) / 4;
                     if (b < 0) b = 0;
                     if (b > 63) b = 63;
                     hist64[b] += 1.f;
                 }
             }
-            int nValley = 0;
-            findValleyMidpoints64(hist64, valleys, &nValley);
-            if (nKeepOut) *nKeepOut = nKeep;
-            if (nValleyOut) *nValleyOut = nValley;
+            int nv = 0;
+            findValleyMidpoints64(hist64, valleys, &nv);
+            if (nKeepOut) *nKeepOut = keep;
+            if (nValleyOut) *nValleyOut = nv;
         };
         float hist64[64] = {};
         int valleys[64];
-        int nValley = 0;
-        int nKeep = 0;
         fillKeepHist(hist64, &nKeep, &nValley, valleys);
         fillGate.nValley = nValley;
+        recordAttempt(0);
         if (fillGate.fill < fillLo || fillGate.fill > fillHi) {
             fillGate.retryWhy = fillGate.fill < fillLo ? 1 : 2;
             const bool wantMore = fillGate.retryWhy == 1;
@@ -4073,13 +4189,16 @@ static int fillPoisonLookRaster(
             bool bestDark = cleanDark;
             bool bestHave = haveClean;
             float bestFrac = cleanInkFrac;
-            SeedFillGate bestGate = fillGate;
+            double bestFirstThr = poisonFirstThr;
+            SeedFillGate bestGate;
+            copyFillGateChosen(fillGate, &bestGate);
             float bestDist = std::fabs(fillGate.fill - 0.23f);
             int extras = 0;
-            auto noteAttempt = [&]() -> bool {
+            auto noteAttempt = [&](int kind) -> bool {
                 fillGate.nRetry = extras;
                 fillGate.retryWhy = wantMore ? 1 : 2;
                 fillGate.nValley = nValley;
+                recordAttempt(kind);
                 if (fillGate.fill >= fillLo && fillGate.fill <= fillHi) return true;
                 const float dist = std::fabs(fillGate.fill - 0.23f);
                 if (dist < bestDist) {
@@ -4088,7 +4207,8 @@ static int fillPoisonLookRaster(
                     bestDark = cleanDark;
                     bestHave = haveClean;
                     bestFrac = cleanInkFrac;
-                    bestGate = fillGate;
+                    bestFirstThr = poisonFirstThr;
+                    copyFillGateChosen(fillGate, &bestGate);
                     bin.copyTo(bestBin);
                     poison.copyTo(bestPoison);
                 }
@@ -4164,11 +4284,12 @@ static int fillPoisonLookRaster(
                     }
                     ++extras;
                     tried.push_back(static_cast<int>(std::lround(cleanThr)));
+                    poisonFirstThr = static_cast<double>(firstThr);
                     countSeedFillGate(
                         bin, poison, lookY, xSeed0, ySeed0,
                         srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
                     fillKeepHist(hist64, &nKeep, &nValley, valleys);
-                    inBand = noteAttempt();
+                    inBand = noteAttempt(2);
                 }
             }
             if (!inBand && extras < 3) {
@@ -4204,7 +4325,7 @@ static int fillPoisonLookRaster(
                     countSeedFillGate(
                         bin, poison, lookY, xSeed0, ySeed0,
                         srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
-                    if (noteAttempt()) {
+                    if (noteAttempt(1)) {
                         inBand = true;
                         break;
                     }
@@ -4217,11 +4338,27 @@ static int fillPoisonLookRaster(
                 cleanDark = bestDark;
                 haveClean = bestHave;
                 cleanInkFrac = bestFrac;
-                fillGate = bestGate;
+                poisonFirstThr = bestFirstThr;
+                copyFillGateChosen(bestGate, &fillGate);
                 fillGate.nRetry = extras;
                 fillGate.retryWhy = wantMore ? 1 : 2;
                 fillGate.nValley = nValley;
             }
+        }
+    } else {
+        countPoisonKeep();
+        recordAttempt(0);
+    }
+    if (fillGate.nRetry > 0 || fillGate.fill < fillLo || fillGate.fill > fillHi) {
+        for (int i = 0; i < fillGate.nAttempts; ++i) {
+            const SeedFillAttempt& a = fillGate.attempts[i];
+            LOGI("fill_retry seed=%d i=%d kind=%d firstThr=%d thr=%d dark=%d flip=%d "
+                 "fill=%.3f nLook=%d nRec=%d nKeep=%d nVal=%d nPoi=%d sPx=%d why=%d",
+                seedIndex, i, a.kind,
+                static_cast<int>(std::lround(a.firstThr)),
+                static_cast<int>(std::lround(a.thr)),
+                a.dark, a.flip, a.fill, a.nLookBin, a.nRecovered,
+                a.nKeep, a.nValley, a.nPoison, a.sPx, fillGate.retryWhy);
         }
     }
     countSeedFillGate(
@@ -5461,6 +5598,7 @@ static void seg7OrientedOne(
         tele->nRetry = static_cast<float>(fillGate.nRetry);
         tele->retryWhy = static_cast<float>(fillGate.retryWhy);
         tele->nValley = static_cast<float>(fillGate.nValley);
+        packFillAttempts(fillGate, tele);
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
     if (sweepOut) {

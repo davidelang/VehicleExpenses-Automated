@@ -1142,6 +1142,26 @@ object ContentExpandUtils {
         val nRetry: Float = 0f,
         val retryWhy: Float = 0f,
         val nValley: Float = 0f,
+        val nAttempts: Float = 0f,
+        val nKeep: Float = 0f,
+        val nPoison: Float = 0f,
+        val firstThr: Float = 0f,
+        val attempts: List<Seg7FillAttempt> = emptyList(),
+    )
+
+    data class Seg7FillAttempt(
+        val kind: Float = 0f,
+        val firstThr: Float = 0f,
+        val thr: Float = 0f,
+        val dark: Float = 0f,
+        val flip: Float = 0f,
+        val nLookBin: Float = 0f,
+        val nRecovered: Float = 0f,
+        val fill: Float = 0f,
+        val nKeep: Float = 0f,
+        val nValley: Float = 0f,
+        val nPoison: Float = 0f,
+        val sPx: Float = 0f,
     )
 
     fun boundFlagName(v: Float): String = when (kotlin.math.round(v).toInt()) {
@@ -1200,7 +1220,43 @@ object ContentExpandUtils {
             nRetry = a[o + 26 + 2 * bins + 3],
             retryWhy = a[o + 26 + 2 * bins + 4],
             nValley = a[o + 26 + 2 * bins + 5],
-        )
+            nAttempts = a[o + 26 + 2 * bins + 6],
+            nKeep = 0f,
+            nPoison = 0f,
+            firstThr = 0f,
+            attempts = emptyList(),
+        ).let { raw ->
+            val histEnd = 26 + 2 * bins
+            val nAtt = raw.nAttempts.roundToInt().coerceIn(0, NativeImageUtils.SEG7_ATTEMPT_MAX)
+            val f = NativeImageUtils.SEG7_ATTEMPT_F
+            val atts = List(nAtt) { ai ->
+                val b = o + histEnd + 7 + ai * f
+                Seg7FillAttempt(
+                    kind = a[b],
+                    firstThr = a[b + 1],
+                    thr = a[b + 2],
+                    dark = a[b + 3],
+                    flip = a[b + 4],
+                    nLookBin = a[b + 5],
+                    nRecovered = a[b + 6],
+                    fill = a[b + 7],
+                    nKeep = a[b + 8],
+                    nValley = a[b + 9],
+                    nPoison = a[b + 10],
+                    sPx = a[b + 11],
+                )
+            }
+            val chosen = atts.firstOrNull {
+                kotlin.math.abs(it.fill - raw.fill) < 1e-5f &&
+                    it.nLookBin == raw.nLookBinSeed
+            } ?: atts.firstOrNull()
+            raw.copy(
+                attempts = atts,
+                nKeep = chosen?.nKeep ?: 0f,
+                nPoison = chosen?.nPoison ?: 0f,
+                firstThr = chosen?.firstThr ?: 0f,
+            )
+        }
     }
 
     data class PoisonCc(
