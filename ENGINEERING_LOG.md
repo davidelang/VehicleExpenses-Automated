@@ -681,3 +681,8 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - Plan: `dev-ai-interaction/plans/closed-plan-contract-and-fresh-execute-20260830-1934-plan.md`
 - Phase 3: `AGENT_MANDATES.md` §4 completeness = closed Critical Files; §7 plan-content one-liner. `AGENTS.md` VE-wins: execute body fresh child or fresh coder process; planner still `GROK_SUBAGENTS=0`.
+
+## 2026-09-05 - Land project skill check-upgrade
+
+- Plan: `dev-ai-interaction/plans/check-upgrade-project-skill-20260829-0450-plan.md`
+- Copy current sandbox skill to `.grok/skills/check-upgrade/SKILL.md` with `user-invocable: true`, closed enabled list, step-9 follow-on plan (no silent project-skill edits). Wire `update-rules.sh` FILES + `AGENTS.md` enabled table. Do not add to `[skills].disabled`.
