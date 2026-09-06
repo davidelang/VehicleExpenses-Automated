@@ -407,6 +407,54 @@ static void countSeedFillGate(
         static_cast<float>(std::max(1, area));
 }
 
+/** OR 8-connected recovered poison ink into seed look-bin (same BFS as count). */
+static void orRecoveredIntoBin(
+    cv::Mat* seedBin, const cv::Mat& poison,
+    const cv::Mat& lookY, int xSeed0, int ySeed0,
+    bool srcIsBin, bool inverted, bool cleanDark, double cleanThr
+) {
+    if (!seedBin || seedBin->empty() || seedBin->type() != CV_8UC1) return;
+    const int seedH = seedBin->rows, seedW = seedBin->cols;
+    if (seedH < 1 || seedW < 1) return;
+    const int area = seedH * seedW;
+    std::vector<uint8_t> vis(static_cast<size_t>(area), 0);
+    std::vector<int> q;
+    q.reserve(static_cast<size_t>(area));
+    for (int yy = 0; yy < seedH; ++yy) {
+        const uint8_t* bp = seedBin->ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedW; ++xx) {
+            if (!bp[xx]) continue;
+            vis[static_cast<size_t>(yy * seedW + xx)] = 1;
+            q.push_back(yy * seedW + xx);
+        }
+    }
+    static const int kDy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+    static const int kDx[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    size_t qi = 0;
+    while (qi < q.size()) {
+        const int idx = q[qi++];
+        const int cy = idx / seedW;
+        const int cx = idx % seedW;
+        for (int k = 0; k < 8; ++k) {
+            const int ny = cy + kDy[k];
+            const int nx = cx + kDx[k];
+            if (ny < 0 || nx < 0 || ny >= seedH || nx >= seedW) continue;
+            const int ni = ny * seedW + nx;
+            if (vis[static_cast<size_t>(ni)]) continue;
+            if (poison.empty() || ny >= poison.rows || nx >= poison.cols) continue;
+            if (!poison.ptr<uint8_t>(ny)[nx]) continue;
+            const int sy = ny + ySeed0;
+            const int sx = nx + xSeed0;
+            if (!lookInkAtY(lookY, sy, sx, srcIsBin, inverted, cleanDark, cleanThr)) {
+                continue;
+            }
+            vis[static_cast<size_t>(ni)] = 1;
+            seedBin->ptr<uint8_t>(ny)[nx] = 255;
+            q.push_back(ni);
+        }
+    }
+}
+
 /** 64-bin local-min midpoints; 3-bin smooth; rise both sides. Port of findValleyMidpoints. */
 static void findValleyMidpoints64(const float bins[64], int* out, int* nOut) {
     if (!out || !nOut) return;
@@ -3942,51 +3990,9 @@ static int fillPoisonLookRaster(
         useSample = true;
     }
     if (!useSample) bin.setTo(0);
-    cv::Mat combined = bin;
-    if (objPack && objPlane) {
-        uint8_t inkId = 0;
-        if (objAlloc(objPack, true, seedIndex, kKindInk, &inkId)) {
-            std::snprintf(objPack->phase, sizeof(objPack->phase), "walk");
-            for (int yy = 0; yy < seedH; ++yy) {
-                const uint8_t* cp = combined.ptr<uint8_t>(yy);
-                for (int xx = 0; xx < seedW; ++xx) {
-                    if (cp[xx]) {
-                        int ix = ovX + xSeed0 + xx, iy = ovY + ySeed0 + yy;
-                        if (overlayUvMap) {
-                            const float u = ovU0 + (xSeed0 + xx + 0.5f) /
-                                static_cast<float>(std::max(1, lookY.cols)) * (ovU1 - ovU0);
-                            const float v = ovLookV0 + (ySeed0 + yy + 0.5f);
-                            ix = static_cast<int>(std::lround(ovCx + u * ovUx + v * ovVx));
-                            iy = static_cast<int>(std::lround(ovCy + u * ovUy + v * ovVy));
-                        }
-                        objPut(objPlane, ix, iy, inkId, objPack);
-                    }
-                }
-            }
-        }
-        stampPoisonFlood(
-            poison, objPlane, ovX + xSeed0, ovY + ySeed0, sPx, seedIndex, objPack,
-            overlayUvMap, ovCx, ovCy, ovUx, ovUy, ovVx, ovVy, ovU0, ovU1, ovLookV0,
-            xSeed0, ySeed0, lookY.cols);
-        veRssLog("poison_flood", nullptr);
-    }
-
-    if (!srcIsBin && cv::countNonZero(combined) == 0 && haveClean && cleanDark &&
+    if (!srcIsBin && cv::countNonZero(bin) == 0 && haveClean && cleanDark &&
         cleanInkFrac >= 0.05f && cleanInkFrac <= 0.40f) {
-        applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &combined);
-    }
-    if (!lookPoison.empty()) {
-        for (int yy = 0; yy < seedH; ++yy) {
-            const int sy = yy + ySeed0;
-            if (sy < 0 || sy >= lh) continue;
-            const uint8_t* pp = poison.ptr<uint8_t>(yy);
-            uint8_t* lp = lookPoison.ptr<uint8_t>(sy);
-            for (int xx = 0; xx < seedW; ++xx) {
-                const int sx = xx + xSeed0;
-                if (sx < 0 || sx >= lw) continue;
-                lp[sx] = pp[xx];
-            }
-        }
+        applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
     }
     auto lookInkAt = [&](int y, int x) -> uint8_t {
         return lookInkAtY(lookY, y, x, srcIsBin, inverted, cleanDark, cleanThr);
@@ -4023,91 +4029,258 @@ static int fillPoisonLookRaster(
         bin, poison, lookY, xSeed0, ySeed0,
         srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
     if (!srcIsBin) {
-        float hist64[64] = {};
-        const int kh = std::min(seedH, std::min(seedY.rows, poison.rows));
-        const int kw = std::min(seedW, std::min(seedY.cols, poison.cols));
-        for (int yy = 0; yy < kh; ++yy) {
-            const uint8_t* yp = seedY.ptr<uint8_t>(yy);
-            const uint8_t* pp = poison.ptr<uint8_t>(yy);
-            for (int xx = 0; xx < kw; ++xx) {
-                if (pp[xx]) continue;
-                int b = static_cast<int>(yp[xx]) / 4;
-                if (b < 0) b = 0;
-                if (b > 63) b = 63;
-                hist64[b] += 1.f;
-            }
-        }
-        int valleys[64];
-        int nValley = 0;
-        findValleyMidpoints64(hist64, valleys, &nValley);
-        fillGate.nValley = nValley;
         const float fillLo = 0.05f;
         const float fillHi = 0.45f;
+        const int kh = std::min(seedH, std::min(seedY.rows, poison.rows));
+        const int kw = std::min(seedW, std::min(seedY.cols, poison.cols));
+        auto fillKeepHist = [&](float hist64[64], int* nKeepOut, int* nValleyOut,
+            int valleys[64]) {
+            for (int i = 0; i < 64; ++i) hist64[i] = 0.f;
+            int nKeep = 0;
+            for (int yy = 0; yy < kh; ++yy) {
+                const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                const uint8_t* pp = poison.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < kw; ++xx) {
+                    if (pp[xx]) continue;
+                    ++nKeep;
+                    int b = static_cast<int>(yp[xx]) / 4;
+                    if (b < 0) b = 0;
+                    if (b > 63) b = 63;
+                    hist64[b] += 1.f;
+                }
+            }
+            int nValley = 0;
+            findValleyMidpoints64(hist64, valleys, &nValley);
+            if (nKeepOut) *nKeepOut = nKeep;
+            if (nValleyOut) *nValleyOut = nValley;
+        };
+        float hist64[64] = {};
+        int valleys[64];
+        int nValley = 0;
+        int nKeep = 0;
+        fillKeepHist(hist64, &nKeep, &nValley, valleys);
+        fillGate.nValley = nValley;
         if (fillGate.fill < fillLo || fillGate.fill > fillHi) {
             fillGate.retryWhy = fillGate.fill < fillLo ? 1 : 2;
-            const int used0 = static_cast<int>(std::lround(cleanThr));
             const bool wantMore = fillGate.retryWhy == 1;
             std::vector<int> tried;
-            tried.push_back(used0);
-            std::vector<int> cands;
-            cands.reserve(static_cast<size_t>(nValley));
-            for (int v = 0; v < nValley; ++v) {
-                const int thr = valleys[v] * 4 + 2;
-                if (thr < 0 || thr > 255) continue;
-                bool seen = false;
-                for (int t : tried) {
-                    if (t == thr) { seen = true; break; }
-                }
-                if (seen) continue;
-                const bool moreInk = cleanDark ? (thr > used0) : (thr < used0);
-                if (wantMore != moreInk) continue;
-                cands.push_back(thr);
-            }
-            std::sort(cands.begin(), cands.end(), [&](int a, int b) {
-                const int da = std::abs(a - used0);
-                const int db = std::abs(b - used0);
-                if (da != db) return da < db;
-                return a < b;
-            });
+            tried.push_back(static_cast<int>(std::lround(cleanThr)));
             cv::Mat bestBin;
+            cv::Mat bestPoison;
             bin.copyTo(bestBin);
+            poison.copyTo(bestPoison);
             double bestThr = cleanThr;
+            bool bestDark = cleanDark;
+            bool bestHave = haveClean;
+            float bestFrac = cleanInkFrac;
             SeedFillGate bestGate = fillGate;
             float bestDist = std::fabs(fillGate.fill - 0.23f);
             int extras = 0;
-            for (int thr : cands) {
-                if (extras >= 3) break;
-                applyThrKeepPoison0(
-                    seedY, poison, static_cast<double>(thr), cleanDark, &bin);
-                fillSaltPepper(&bin);
-                ++extras;
-                tried.push_back(thr);
-                countSeedFillGate(
-                    bin, poison, lookY, xSeed0, ySeed0,
-                    srcIsBin, inverted, cleanDark, static_cast<double>(thr),
-                    &fillGate);
+            auto noteAttempt = [&]() -> bool {
                 fillGate.nRetry = extras;
                 fillGate.retryWhy = wantMore ? 1 : 2;
                 fillGate.nValley = nValley;
-                if (fillGate.fill >= fillLo && fillGate.fill <= fillHi) {
-                    cleanThr = static_cast<double>(thr);
-                    break;
-                }
+                if (fillGate.fill >= fillLo && fillGate.fill <= fillHi) return true;
                 const float dist = std::fabs(fillGate.fill - 0.23f);
                 if (dist < bestDist) {
                     bestDist = dist;
-                    bestThr = static_cast<double>(thr);
+                    bestThr = cleanThr;
+                    bestDark = cleanDark;
+                    bestHave = haveClean;
+                    bestFrac = cleanInkFrac;
                     bestGate = fillGate;
                     bin.copyTo(bestBin);
+                    poison.copyTo(bestPoison);
+                }
+                return false;
+            };
+            bool inBand = false;
+            if (wantMore && nKeep < 2 && extras < 3) {
+                float histAll[64] = {};
+                for (int yy = 0; yy < kh; ++yy) {
+                    const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                    for (int xx = 0; xx < kw; ++xx) {
+                        int b = static_cast<int>(yp[xx]) / 4;
+                        if (b < 0) b = 0;
+                        if (b > 63) b = 63;
+                        histAll[b] += 1.f;
+                    }
+                }
+                int vAll[64];
+                int nVA = 0;
+                findValleyMidpoints64(histAll, vAll, &nVA);
+                const int usedFirst = static_cast<int>(std::lround(otsu));
+                int firstThr = -1;
+                for (int v = 0; v < nVA; ++v) {
+                    const int thr = vAll[v] * 4 + 2;
+                    if (thr < 0 || thr > 255) continue;
+                    if (thr == usedFirst) continue;
+                    firstThr = thr;
+                    break;
+                }
+                if (firstThr >= 0) {
+                    int nz = 0, nPix = 0;
+                    for (int yy = 0; yy < kh; ++yy) {
+                        const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                        for (int xx = 0; xx < kw; ++xx) {
+                            ++nPix;
+                            if (static_cast<int>(yp[xx]) <= firstThr) ++nz;
+                        }
+                    }
+                    float frac = nz / static_cast<float>(std::max(1, nPix));
+                    bool dark = true;
+                    inverted = false;
+                    if (frac >= 0.45f) {
+                        inverted = true;
+                        dark = false;
+                        frac = 1.f - frac;
+                    }
+                    inkFrac = frac;
+                    for (int yy = 0; yy < bh; ++yy) {
+                        const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+                        uint8_t* op = bin.ptr<uint8_t>(yy);
+                        for (int xx = 0; xx < bw; ++xx) {
+                            const bool ink = dark
+                                ? (static_cast<int>(yp[xx]) <= firstThr)
+                                : (static_cast<int>(yp[xx]) > firstThr);
+                            op[xx] = ink ? 255 : 0;
+                        }
+                    }
+                    fillSaltPepper(&bin);
+                    HorizSW hhR = horizPeakSW(bin, seedH, seedW);
+                    const int v0R = hhR.peak;
+                    const bool needFbR = strokeNeedFb(hhR, v0R, seedW, inkFrac);
+                    const int sPxR = (v0R > 4 && !needFbR) ? v0R : fallback;
+                    fillPoisonMask(bin, v0R, needFbR, seedW, glareMult, &poison);
+                    orBrightBands(seedY, bin, sPxR, &poison, &bandTop, &bandBot, &bandH);
+                    haveClean = otsuKeepPoison0(
+                        seedY, poison, &cleanThr, &cleanDark, &cleanInkFrac);
+                    if (haveClean) {
+                        applyThrKeepPoison0(
+                            seedY, poison, cleanThr, cleanDark, &bin);
+                        fillSaltPepper(&bin);
+                    } else {
+                        bin.setTo(0);
+                    }
+                    ++extras;
+                    tried.push_back(static_cast<int>(std::lround(cleanThr)));
+                    countSeedFillGate(
+                        bin, poison, lookY, xSeed0, ySeed0,
+                        srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+                    fillKeepHist(hist64, &nKeep, &nValley, valleys);
+                    inBand = noteAttempt();
                 }
             }
-            if (fillGate.fill < fillLo || fillGate.fill > fillHi) {
+            if (!inBand && extras < 3) {
+                const int usedKeep = static_cast<int>(std::lround(cleanThr));
+                std::vector<int> cands;
+                cands.reserve(static_cast<size_t>(nValley));
+                for (int v = 0; v < nValley; ++v) {
+                    const int thr = valleys[v] * 4 + 2;
+                    if (thr < 0 || thr > 255) continue;
+                    bool seen = false;
+                    for (int t : tried) {
+                        if (t == thr) { seen = true; break; }
+                    }
+                    if (seen) continue;
+                    const bool moreInk = cleanDark ? (thr > usedKeep) : (thr < usedKeep);
+                    if (wantMore != moreInk) continue;
+                    cands.push_back(thr);
+                }
+                std::sort(cands.begin(), cands.end(), [&](int a, int b) {
+                    const int da = std::abs(a - usedKeep);
+                    const int db = std::abs(b - usedKeep);
+                    if (da != db) return da < db;
+                    return a < b;
+                });
+                for (int thr : cands) {
+                    if (extras >= 3) break;
+                    applyThrKeepPoison0(
+                        seedY, poison, static_cast<double>(thr), cleanDark, &bin);
+                    fillSaltPepper(&bin);
+                    ++extras;
+                    tried.push_back(thr);
+                    cleanThr = static_cast<double>(thr);
+                    countSeedFillGate(
+                        bin, poison, lookY, xSeed0, ySeed0,
+                        srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+                    if (noteAttempt()) {
+                        inBand = true;
+                        break;
+                    }
+                }
+            }
+            if (!inBand) {
                 bestBin.copyTo(bin);
+                bestPoison.copyTo(poison);
                 cleanThr = bestThr;
+                cleanDark = bestDark;
+                haveClean = bestHave;
+                cleanInkFrac = bestFrac;
                 fillGate = bestGate;
                 fillGate.nRetry = extras;
                 fillGate.retryWhy = wantMore ? 1 : 2;
                 fillGate.nValley = nValley;
+            }
+        }
+    }
+    countSeedFillGate(
+        bin, poison, lookY, xSeed0, ySeed0,
+        srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+    orRecoveredIntoBin(
+        &bin, poison, lookY, xSeed0, ySeed0,
+        srcIsBin, inverted, cleanDark, cleanThr);
+    cv::Mat combined;
+    bin.copyTo(combined);
+    hhC = horizPeakSW(combined, seedH, seedW);
+    v0Clean = hhC.peak;
+    needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, srcIsBin
+        ? (cv::countNonZero(combined) / static_cast<float>(std::max(1, seedH * seedW)))
+        : cleanInkFrac);
+    sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
+    useSample = v0Clean > 4;
+    if (!useSample && !srcIsBin && haveClean && cleanDark &&
+        cleanInkFrac >= 0.05f && cleanInkFrac <= 0.40f &&
+        dInkFromBin(seedY, combined) <= -10.f) {
+        useSample = true;
+    }
+    if (objPack && objPlane) {
+        uint8_t inkId = 0;
+        if (objAlloc(objPack, true, seedIndex, kKindInk, &inkId)) {
+            std::snprintf(objPack->phase, sizeof(objPack->phase), "walk");
+            for (int yy = 0; yy < seedH; ++yy) {
+                const uint8_t* cp = combined.ptr<uint8_t>(yy);
+                for (int xx = 0; xx < seedW; ++xx) {
+                    if (cp[xx]) {
+                        int ix = ovX + xSeed0 + xx, iy = ovY + ySeed0 + yy;
+                        if (overlayUvMap) {
+                            const float u = ovU0 + (xSeed0 + xx + 0.5f) /
+                                static_cast<float>(std::max(1, lookY.cols)) * (ovU1 - ovU0);
+                            const float v = ovLookV0 + (ySeed0 + yy + 0.5f);
+                            ix = static_cast<int>(std::lround(ovCx + u * ovUx + v * ovVx));
+                            iy = static_cast<int>(std::lround(ovCy + u * ovUy + v * ovVy));
+                        }
+                        objPut(objPlane, ix, iy, inkId, objPack);
+                    }
+                }
+            }
+        }
+        stampPoisonFlood(
+            poison, objPlane, ovX + xSeed0, ovY + ySeed0, sPx, seedIndex, objPack,
+            overlayUvMap, ovCx, ovCy, ovUx, ovUy, ovVx, ovVy, ovU0, ovU1, ovLookV0,
+            xSeed0, ySeed0, lookY.cols);
+        veRssLog("poison_flood", nullptr);
+    }
+    if (!lookPoison.empty()) {
+        for (int yy = 0; yy < seedH; ++yy) {
+            const int sy = yy + ySeed0;
+            if (sy < 0 || sy >= lh) continue;
+            const uint8_t* pp = poison.ptr<uint8_t>(yy);
+            uint8_t* lp = lookPoison.ptr<uint8_t>(sy);
+            for (int xx = 0; xx < seedW; ++xx) {
+                const int sx = xx + xSeed0;
+                if (sx < 0 || sx >= lw) continue;
+                lp[sx] = pp[xx];
             }
         }
     }
