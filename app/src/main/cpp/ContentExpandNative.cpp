@@ -407,6 +407,50 @@ static void countSeedFillGate(
         static_cast<float>(std::max(1, area));
 }
 
+/** 64-bin local-min midpoints; 3-bin smooth; rise both sides. Port of findValleyMidpoints. */
+static void findValleyMidpoints64(const float bins[64], int* out, int* nOut) {
+    if (!out || !nOut) return;
+    *nOut = 0;
+    if (!bins) return;
+    float smoothed[64];
+    for (int i = 0; i < 64; ++i) {
+        const int start = std::max(0, i - 1);
+        const int end = std::min(63, i + 1);
+        float s = 0.f;
+        int n = 0;
+        for (int j = start; j <= end; ++j) {
+            s += bins[j];
+            ++n;
+        }
+        smoothed[i] = s / static_cast<float>(std::max(1, n));
+    }
+    int seen[64];
+    int nSeen = 0;
+    int i = 1;
+    while (i < 63) {
+        if (smoothed[i] <= smoothed[i - 1] && smoothed[i] <= smoothed[i + 1]) {
+            const int startIdx = i;
+            while (i < 63 && smoothed[i + 1] == smoothed[startIdx]) ++i;
+            const int endIdx = i;
+            const bool risesLeft = smoothed[startIdx - 1] > smoothed[startIdx];
+            const bool risesRight =
+                endIdx < 63 && smoothed[endIdx + 1] > smoothed[endIdx];
+            if (risesLeft && risesRight) {
+                const int mid = (startIdx + endIdx) / 2;
+                bool dup = false;
+                for (int k = 0; k < nSeen; ++k) {
+                    if (seen[k] == mid) { dup = true; break; }
+                }
+                if (!dup && *nOut < 64) {
+                    seen[nSeen++] = mid;
+                    out[(*nOut)++] = mid;
+                }
+            }
+        }
+        ++i;
+    }
+}
+
 static void storeTeleArr(JNIEnv* env, jfloatArray teleArr, int i, const Seg7Tele& t) {
     if (!teleArr) return;
     const jint n = env->GetArrayLength(teleArr);
@@ -3978,6 +4022,95 @@ static int fillPoisonLookRaster(
     countSeedFillGate(
         bin, poison, lookY, xSeed0, ySeed0,
         srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+    if (!srcIsBin) {
+        float hist64[64] = {};
+        const int kh = std::min(seedH, std::min(seedY.rows, poison.rows));
+        const int kw = std::min(seedW, std::min(seedY.cols, poison.cols));
+        for (int yy = 0; yy < kh; ++yy) {
+            const uint8_t* yp = seedY.ptr<uint8_t>(yy);
+            const uint8_t* pp = poison.ptr<uint8_t>(yy);
+            for (int xx = 0; xx < kw; ++xx) {
+                if (pp[xx]) continue;
+                int b = static_cast<int>(yp[xx]) / 4;
+                if (b < 0) b = 0;
+                if (b > 63) b = 63;
+                hist64[b] += 1.f;
+            }
+        }
+        int valleys[64];
+        int nValley = 0;
+        findValleyMidpoints64(hist64, valleys, &nValley);
+        fillGate.nValley = nValley;
+        const float fillLo = 0.05f;
+        const float fillHi = 0.45f;
+        if (fillGate.fill < fillLo || fillGate.fill > fillHi) {
+            fillGate.retryWhy = fillGate.fill < fillLo ? 1 : 2;
+            const int used0 = static_cast<int>(std::lround(cleanThr));
+            const bool wantMore = fillGate.retryWhy == 1;
+            std::vector<int> tried;
+            tried.push_back(used0);
+            std::vector<int> cands;
+            cands.reserve(static_cast<size_t>(nValley));
+            for (int v = 0; v < nValley; ++v) {
+                const int thr = valleys[v] * 4 + 2;
+                if (thr < 0 || thr > 255) continue;
+                bool seen = false;
+                for (int t : tried) {
+                    if (t == thr) { seen = true; break; }
+                }
+                if (seen) continue;
+                const bool moreInk = cleanDark ? (thr > used0) : (thr < used0);
+                if (wantMore != moreInk) continue;
+                cands.push_back(thr);
+            }
+            std::sort(cands.begin(), cands.end(), [&](int a, int b) {
+                const int da = std::abs(a - used0);
+                const int db = std::abs(b - used0);
+                if (da != db) return da < db;
+                return a < b;
+            });
+            cv::Mat bestBin;
+            bin.copyTo(bestBin);
+            double bestThr = cleanThr;
+            SeedFillGate bestGate = fillGate;
+            float bestDist = std::fabs(fillGate.fill - 0.23f);
+            int extras = 0;
+            for (int thr : cands) {
+                if (extras >= 3) break;
+                applyThrKeepPoison0(
+                    seedY, poison, static_cast<double>(thr), cleanDark, &bin);
+                fillSaltPepper(&bin);
+                ++extras;
+                tried.push_back(thr);
+                countSeedFillGate(
+                    bin, poison, lookY, xSeed0, ySeed0,
+                    srcIsBin, inverted, cleanDark, static_cast<double>(thr),
+                    &fillGate);
+                fillGate.nRetry = extras;
+                fillGate.retryWhy = wantMore ? 1 : 2;
+                fillGate.nValley = nValley;
+                if (fillGate.fill >= fillLo && fillGate.fill <= fillHi) {
+                    cleanThr = static_cast<double>(thr);
+                    break;
+                }
+                const float dist = std::fabs(fillGate.fill - 0.23f);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestThr = static_cast<double>(thr);
+                    bestGate = fillGate;
+                    bin.copyTo(bestBin);
+                }
+            }
+            if (fillGate.fill < fillLo || fillGate.fill > fillHi) {
+                bestBin.copyTo(bin);
+                cleanThr = bestThr;
+                fillGate = bestGate;
+                fillGate.nRetry = extras;
+                fillGate.retryWhy = wantMore ? 1 : 2;
+                fillGate.nValley = nValley;
+            }
+        }
+    }
     if (fillGateOut) *fillGateOut = fillGate;
     auto stampSeedCombined = [&]() {
         for (int yy = 0; yy < seedH; ++yy) {
