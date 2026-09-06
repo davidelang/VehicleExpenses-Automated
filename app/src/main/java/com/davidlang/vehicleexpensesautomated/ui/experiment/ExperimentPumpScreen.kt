@@ -7672,6 +7672,14 @@ private suspend fun snapshotLookInk(
             inkYellow = tele?.nInkYellow?.roundToInt() ?: 0
         }
         j.put("inkSeed", inkSeed).put("inkBlue", inkBlue).put("inkYellow", inkYellow)
+        if (!energyLook && tele != null) {
+            j.put("nLookBinSeed", tele.nLookBinSeed.roundToInt())
+            j.put("nRecoveredSeed", tele.nRecoveredSeed.roundToInt())
+            j.put("fill", tele.fill)
+            j.put("nRetry", tele.nRetry.roundToInt())
+            j.put("retryWhy", tele.retryWhy.roundToInt())
+            j.put("nValley", tele.nValley.roundToInt())
+        }
         val pd = poisons.getOrNull(i)
         if (pd != null) {
             j.put("bandTop", pd.bandTop)
@@ -8078,6 +8086,14 @@ private suspend fun snapshotLookInkOriented(
     j.put("inkSeed", tele?.nInkSeed?.roundToInt() ?: 0)
         .put("inkBlue", tele?.nInkBlue?.roundToInt() ?: 0)
         .put("inkYellow", tele?.nInkYellow?.roundToInt() ?: 0)
+    if (tele != null) {
+        j.put("nLookBinSeed", tele.nLookBinSeed.roundToInt())
+        j.put("nRecoveredSeed", tele.nRecoveredSeed.roundToInt())
+        j.put("fill", tele.fill)
+        j.put("nRetry", tele.nRetry.roundToInt())
+        j.put("retryWhy", tele.retryWhy.roundToInt())
+        j.put("nValley", tele.nValley.roundToInt())
+    }
     if (poison != null) {
         j.put("bandTop", poison.bandTop)
         j.put("bandBot", poison.bandBot)

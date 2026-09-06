@@ -136,7 +136,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeVeRss
 }
 
 static constexpr int kRunHistBins = 32;
-static constexpr int kSeg7TeleN = 26 + kRunHistBins * 2;
+static constexpr int kSeg7TeleN = 26 + kRunHistBins * 2 + 6;
 
 enum : int {
     kFlagUnchanged = 0,
@@ -178,6 +178,12 @@ struct Seg7Tele {
     float nInkYellow = 0.f;
     int histH[kRunHistBins]{};
     int histV[kRunHistBins]{};
+    float nLookBinSeed = 0.f;
+    float nRecoveredSeed = 0.f;
+    float fill = 0.f;
+    float nRetry = 0.f;
+    float retryWhy = 0.f;
+    float nValley = 0.f;
 };
 
 static int runLengthBin(int run) {
@@ -300,6 +306,13 @@ static void packSeg7Tele(const Seg7Tele& t, float* dst) {
         dst[26 + i] = static_cast<float>(t.histH[i]);
         dst[26 + kRunHistBins + i] = static_cast<float>(t.histV[i]);
     }
+    const int histEnd = 26 + kRunHistBins * 2;
+    dst[histEnd + 0] = t.nLookBinSeed;
+    dst[histEnd + 1] = t.nRecoveredSeed;
+    dst[histEnd + 2] = t.fill;
+    dst[histEnd + 3] = t.nRetry;
+    dst[histEnd + 4] = t.retryWhy;
+    dst[histEnd + 5] = t.nValley;
 }
 
 static int countInkU8(const cv::Mat& m, int l, int t, int r, int b) {
@@ -315,6 +328,83 @@ static int countInkU8(const cv::Mat& m, int l, int t, int r, int b) {
         for (int x = l; x < r; ++x) if (p[x]) ++n;
     }
     return n;
+}
+
+struct SeedFillGate {
+    int nLookBin = 0;
+    int nRecovered = 0;
+    float fill = 0.f;
+    int nRetry = 0;
+    int retryWhy = 0;
+    int nValley = 0;
+};
+
+static uint8_t lookInkAtY(
+    const cv::Mat& lookY, int y, int x,
+    bool srcIsBin, bool inverted, bool cleanDark, double cleanThr
+) {
+    if (lookY.empty() || y < 0 || x < 0 || y >= lookY.rows || x >= lookY.cols) return 0;
+    const uint8_t v = lookY.ptr<uint8_t>(y)[x];
+    if (srcIsBin) {
+        return inverted ? static_cast<uint8_t>(255 - v) : v;
+    }
+    const bool ink = cleanDark ? (static_cast<double>(v) <= cleanThr)
+                               : (static_cast<double>(v) > cleanThr);
+    return ink ? 255 : 0;
+}
+
+static void countSeedFillGate(
+    const cv::Mat& seedBin, const cv::Mat& poison,
+    const cv::Mat& lookY, int xSeed0, int ySeed0,
+    bool srcIsBin, bool inverted, bool cleanDark, double cleanThr,
+    SeedFillGate* out
+) {
+    if (!out) return;
+    out->nLookBin = 0;
+    out->nRecovered = 0;
+    out->fill = 0.f;
+    const int seedH = seedBin.rows, seedW = seedBin.cols;
+    if (seedH < 1 || seedW < 1 || seedBin.type() != CV_8UC1) return;
+    const int area = seedH * seedW;
+    std::vector<uint8_t> vis(static_cast<size_t>(area), 0);
+    std::vector<int> q;
+    q.reserve(static_cast<size_t>(area));
+    for (int yy = 0; yy < seedH; ++yy) {
+        const uint8_t* bp = seedBin.ptr<uint8_t>(yy);
+        for (int xx = 0; xx < seedW; ++xx) {
+            if (!bp[xx]) continue;
+            ++out->nLookBin;
+            vis[static_cast<size_t>(yy * seedW + xx)] = 1;
+            q.push_back(yy * seedW + xx);
+        }
+    }
+    static const int kDy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+    static const int kDx[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    size_t qi = 0;
+    while (qi < q.size()) {
+        const int idx = q[qi++];
+        const int cy = idx / seedW;
+        const int cx = idx % seedW;
+        for (int k = 0; k < 8; ++k) {
+            const int ny = cy + kDy[k];
+            const int nx = cx + kDx[k];
+            if (ny < 0 || nx < 0 || ny >= seedH || nx >= seedW) continue;
+            const int ni = ny * seedW + nx;
+            if (vis[static_cast<size_t>(ni)]) continue;
+            if (poison.empty() || ny >= poison.rows || nx >= poison.cols) continue;
+            if (!poison.ptr<uint8_t>(ny)[nx]) continue;
+            const int sy = ny + ySeed0;
+            const int sx = nx + xSeed0;
+            if (!lookInkAtY(lookY, sy, sx, srcIsBin, inverted, cleanDark, cleanThr)) {
+                continue;
+            }
+            vis[static_cast<size_t>(ni)] = 1;
+            ++out->nRecovered;
+            q.push_back(ni);
+        }
+    }
+    out->fill = static_cast<float>(out->nLookBin + out->nRecovered) /
+        static_cast<float>(std::max(1, area));
 }
 
 static void storeTeleArr(JNIEnv* env, jfloatArray teleArr, int i, const Seg7Tele& t) {
@@ -2573,7 +2663,8 @@ static int fillPoisonLookRaster(
     float ovU0 = 0.f, float ovU1 = 0.f, float ovLookV0 = 0.f,
     cv::Mat* lookPoisonOut = nullptr, bool paintOverlay = true,
     cv::Mat* poisonPlane = nullptr,
-    cv::Mat* lookInkAtOut = nullptr);
+    cv::Mat* lookInkAtOut = nullptr,
+    SeedFillGate* fillGateOut = nullptr);
 static void aabbJumpOnLook(
     cv::Mat* look, int* l, int t, int* r, int b,
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
@@ -2871,6 +2962,7 @@ static void seg7One(
     if (objPlane && (objPlane->cols < imgW || objPlane->rows < imgH)) objPlane = nullptr;
     cv::Mat lookPoison;
     cv::Mat lookInkAtPlane;
+    SeedFillGate fillGate;
     cv::Mat* overlayY8 = asU8(overlayY);
     cv::Mat* overlayUv2 = asUV(overlayUv);
     cv::Mat* pois = asU8(poisonPlane);
@@ -2890,7 +2982,7 @@ static void seg7One(
         overlayY8, overlayUv2, lookL, nt, poisonStats ? &stLocal : nullptr, lookPlane,
         objPlane, objPack, seedIndex, false,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
-        pois, &lookInkAtPlane);
+        pois, &lookInkAtPlane, &fillGate);
     if (poisonStats) *poisonStats = stLocal;
     const int glareW = gm * std::max(sPx, 4);
     const int vSW = sPx;
@@ -3048,6 +3140,12 @@ static void seg7One(
             countInkU8(
                 lookInkAtPlane, farL - lookL, std::min(st, *ot) - nt,
                 farR - lookL, std::max(sb, *ob) - nt));
+        tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
+        tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
+        tele->fill = fillGate.fill;
+        tele->nRetry = static_cast<float>(fillGate.nRetry);
+        tele->retryWhy = static_cast<float>(fillGate.retryWhy);
+        tele->nValley = static_cast<float>(fillGate.nValley);
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
     if (sweepOut && !lookBin.empty()) {
@@ -3604,7 +3702,8 @@ static int fillPoisonLookRaster(
     float ovU0, float ovU1, float ovLookV0,
     cv::Mat* lookPoisonOut, bool paintOverlay,
     cv::Mat* poisonPlane,
-    cv::Mat* lookInkAtOut
+    cv::Mat* lookInkAtOut,
+    SeedFillGate* fillGateOut
 ) {
     const int seedH = seedY.rows, seedW = seedY.cols;
     if (!lookBin) return std::max(1, fallback);
@@ -3846,13 +3945,7 @@ static int fillPoisonLookRaster(
         }
     }
     auto lookInkAt = [&](int y, int x) -> uint8_t {
-        const uint8_t v = lookY.ptr<uint8_t>(y)[x];
-        if (srcIsBin) {
-            return inverted ? static_cast<uint8_t>(255 - v) : v;
-        }
-        const bool ink = cleanDark ? (static_cast<double>(v) <= cleanThr)
-                                   : (static_cast<double>(v) > cleanThr);
-        return ink ? 255 : 0;
+        return lookInkAtY(lookY, y, x, srcIsBin, inverted, cleanDark, cleanThr);
     };
     auto countSeedLookInk = [&]() -> int {
         int n = 0;
@@ -3881,6 +3974,11 @@ static int fillPoisonLookRaster(
             useSample = true;
         }
     }
+    SeedFillGate fillGate;
+    countSeedFillGate(
+        bin, poison, lookY, xSeed0, ySeed0,
+        srcIsBin, inverted, cleanDark, cleanThr, &fillGate);
+    if (fillGateOut) *fillGateOut = fillGate;
     auto stampSeedCombined = [&]() {
         for (int yy = 0; yy < seedH; ++yy) {
             const int sy = yy + ySeed0;
@@ -4886,12 +4984,14 @@ static void seg7OrientedOne(
     cv::Mat* overlayUv2 = asUV(overlayUv);
     cv::Mat lookPoison;
     cv::Mat lookInkAtPlane;
+    SeedFillGate fillGate;
     const int sPx = fillPoisonLookRaster(
         seedY, look, ySeed0, xSeed0, srcIsBin, 5, fallback, &lookBin,
         overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookBinHost,
         objPlane, objPack, seedIndex,
         true, seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
-        lookU0, lookU1, lookV0, &lookPoison, false, poisonPlane, &lookInkAtPlane);
+        lookU0, lookU1, lookV0, &lookPoison, false, poisonPlane, &lookInkAtPlane,
+        &fillGate);
     if (tele && !keepColorStats) {
         float yi = 0.f, yb = 0.f;
         int ni = 0, nbg = 0;
@@ -5049,6 +5149,12 @@ static void seg7OrientedOne(
             countInkU8(
                 lookInkAtPlane, uToX(farU0), vToY(std::min(origV0, v0)),
                 uToX(farU1), vToY(std::max(origV1, v1))));
+        tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
+        tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
+        tele->fill = fillGate.fill;
+        tele->nRetry = static_cast<float>(fillGate.nRetry);
+        tele->retryWhy = static_cast<float>(fillGate.retryWhy);
+        tele->nValley = static_cast<float>(fillGate.nValley);
         fillRunHists(lookBin, tele->histH, tele->histV);
     }
     if (sweepOut) {

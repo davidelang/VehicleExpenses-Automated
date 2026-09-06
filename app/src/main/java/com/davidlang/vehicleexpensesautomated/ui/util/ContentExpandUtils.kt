@@ -1136,6 +1136,12 @@ object ContentExpandUtils {
         val nInkYellow: Float = 0f,
         val histH: IntArray,
         val histV: IntArray,
+        val nLookBinSeed: Float = 0f,
+        val nRecoveredSeed: Float = 0f,
+        val fill: Float = 0f,
+        val nRetry: Float = 0f,
+        val retryWhy: Float = 0f,
+        val nValley: Float = 0f,
     )
 
     fun boundFlagName(v: Float): String = when (kotlin.math.round(v).toInt()) {
@@ -1188,6 +1194,12 @@ object ContentExpandUtils {
             nInkYellow = a[o + 25],
             histH = histH,
             histV = histV,
+            nLookBinSeed = a[o + 26 + 2 * bins],
+            nRecoveredSeed = a[o + 26 + 2 * bins + 1],
+            fill = a[o + 26 + 2 * bins + 2],
+            nRetry = a[o + 26 + 2 * bins + 3],
+            retryWhy = a[o + 26 + 2 * bins + 4],
+            nValley = a[o + 26 + 2 * bins + 5],
         )
     }
 
