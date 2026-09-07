@@ -5357,10 +5357,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 
 namespace {
 
-static bool isLookInkId(uint8_t v) {
-    return v == 254 || (v >= 128 && v <= 253);
-}
-
 struct OriBox {
     float cx, cy, ux, uy, vx, vy, u0, u1, v0, v1;
 };
