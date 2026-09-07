@@ -2839,7 +2839,13 @@ static void paintLookOverlay(
     cv::Mat* overlayY, cv::Mat* overlayUv,
     bool overlayUvMap, int ovX, int ovY,
     float ovCx, float ovCy, float ovUx, float ovUy,
-    float ovVx, float ovVy, float ovU0, float ovU1, float ovLookV0);
+    float ovVx, float ovVy, float ovU0, float ovU1, float ovLookV0,
+    bool clipToSeed = false,
+    float clipCx = 0.f, float clipCy = 0.f,
+    float clipUx = 0.f, float clipUy = 0.f,
+    float clipVx = 0.f, float clipVy = 0.f,
+    float clipU0 = 0.f, float clipU1 = 0.f,
+    float clipV0 = 0.f, float clipV1 = 0.f);
 
 static void fillAabbLookSweep(
     const cv::Mat& src, bool srcIsBin, double otsu, bool darkInk, int glareW,
@@ -3810,7 +3816,13 @@ static void paintLookOverlay(
     cv::Mat* overlayY, cv::Mat* overlayUv,
     bool overlayUvMap, int ovX, int ovY,
     float ovCx, float ovCy, float ovUx, float ovUy,
-    float ovVx, float ovVy, float ovU0, float ovU1, float ovLookV0
+    float ovVx, float ovVy, float ovU0, float ovU1, float ovLookV0,
+    bool clipToSeed,
+    float clipCx, float clipCy,
+    float clipUx, float clipUy,
+    float clipVx, float clipVy,
+    float clipU0, float clipU1,
+    float clipV0, float clipV1
 ) {
     if (!overlayY || overlayY->empty() || overlayY->type() != CV_8UC1) return;
     const int lh = lookBin.rows, lw = lookBin.cols;
@@ -3826,6 +3838,14 @@ static void paintLookOverlay(
             *iy = ovY + y;
         }
     };
+    auto inWalkSeed = [&](int ix, int iy) {
+        if (!clipToSeed) return true;
+        const float dx = (ix + 0.5f) - clipCx;
+        const float dy = (iy + 0.5f) - clipCy;
+        const float u = dx * clipUx + dy * clipUy;
+        const float v = dx * clipVx + dy * clipVy;
+        return u >= clipU0 && u <= clipU1 && v >= clipV0 && v <= clipV1;
+    };
     for (int y = 0; y < lh; ++y) {
         const uint8_t* before = lookBin.ptr<uint8_t>(y);
         const uint8_t* poisRow = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
@@ -3836,6 +3856,7 @@ static void paintLookOverlay(
             int ix = 0, iy = 0;
             overlayXY(x, y, &ix, &iy);
             if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
+            if (!inWalkSeed(ix, iy)) continue;
             if (overlayY->ptr<uint8_t>(iy)[ix] >= 140) continue;
             yuvPut(overlayY, overlayUv, ix, iy, 105, 202, 255);
         }
@@ -3848,6 +3869,7 @@ static void paintLookOverlay(
             const bool pois = poisRow && poisRow[x] != 0;
             int ix = 0, iy = 0;
             overlayXY(x, y, &ix, &iy);
+            if (!inWalkSeed(ix, iy)) continue;
             if (pois) yuvPut(overlayY, overlayUv, ix, iy, 150, 44, 21);
             else yuvPut(overlayY, overlayUv, ix, iy, 255, 128, 128);
         }
@@ -5692,7 +5714,10 @@ static void seg7OrientedOne(
     oriToQuad(seed, outPts8);
     paintLookOverlay(
         lookBin, lookPoison, overlayY8, overlayUv2, false, lookL, lookT,
-        0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f);
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        true,
+        seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
+        seed.u0, seed.u1, seed.v0, seed.v1);
 }
 
 static double meanUFace(
