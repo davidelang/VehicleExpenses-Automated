@@ -2259,6 +2259,10 @@ suspend fun runPumpExperiment(
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
                         val detRes = paddleEngine.detect(
                             dest,
                             targetW = S,
@@ -2267,6 +2271,9 @@ suspend fun runPumpExperiment(
                             boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
                         )
                         branch.metadata["t_pd_inference_$scale"] =
                             detRes?.metadata?.get("t_inference_ms") ?: "0"
@@ -2281,8 +2288,6 @@ suspend fun runPumpExperiment(
                             branch.metadata["heatmap_hist_$scale"] =
                                 JSONArray(hist.toList()).toString()
                         }
-                        val fullW = workspace.p.width
-                        val fullH = workspace.p.height
                         val scaleHunks = mutableListOf<PumpHunk>()
                         detRes?.nativeBoxes?.forEach { box ->
                             val p = box.points
@@ -2291,14 +2296,10 @@ suspend fun runPumpExperiment(
                             val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
                             val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
                             val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
-                            val ml = minX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mt = minY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mr = maxX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mb = maxY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val fl = ml * fullW.toFloat() / contentW
-                            val ft = mt * fullH.toFloat() / contentH
-                            val fr = mr * fullW.toFloat() / contentW
-                            val fb = mb * fullH.toFloat() / contentH
+                            val fl = minX.toFloat()
+                            val ft = minY.toFloat()
+                            val fr = maxX.toFloat()
+                            val fb = maxY.toFloat()
                             scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
@@ -2443,6 +2444,10 @@ suspend fun runPumpExperiment(
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
                         val detRes = paddleEngine.detect(
                             dest,
                             targetW = S,
@@ -2452,6 +2457,9 @@ suspend fun runPumpExperiment(
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
                             growCells = 0,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
                         )
                         branch.metadata["t_pd_inference_$scale"] =
                             detRes?.metadata?.get("t_inference_ms") ?: "0"
@@ -2466,8 +2474,6 @@ suspend fun runPumpExperiment(
                             branch.metadata["heatmap_hist_$scale"] =
                                 JSONArray(hist.toList()).toString()
                         }
-                        val fullW = workspace.p.width
-                        val fullH = workspace.p.height
                         val scaleHunks = mutableListOf<PumpHunk>()
                         detRes?.nativeBoxes?.forEach { box ->
                             val p = box.points
@@ -2476,14 +2482,10 @@ suspend fun runPumpExperiment(
                             val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
                             val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
                             val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
-                            val ml = minX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mt = minY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mr = maxX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mb = maxY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val fl = ml * fullW.toFloat() / contentW
-                            val ft = mt * fullH.toFloat() / contentH
-                            val fr = mr * fullW.toFloat() / contentW
-                            val fb = mb * fullH.toFloat() / contentH
+                            val fl = minX.toFloat()
+                            val ft = minY.toFloat()
+                            val fr = maxX.toFloat()
+                            val fb = maxY.toFloat()
                             scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
@@ -2713,6 +2715,10 @@ suspend fun runPumpExperiment(
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
                         val detRes = paddleEngine.detect(
                             dest,
                             targetW = S,
@@ -2722,6 +2728,9 @@ suspend fun runPumpExperiment(
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
                             growCells = 1,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
                         )
                         branch.metadata["t_pd_inference_$scale"] =
                             detRes?.metadata?.get("t_inference_ms") ?: "0"
@@ -2736,8 +2745,6 @@ suspend fun runPumpExperiment(
                             branch.metadata["heatmap_hist_$scale"] =
                                 JSONArray(hist.toList()).toString()
                         }
-                        val fullW = workspace.p.width
-                        val fullH = workspace.p.height
                         val scaleHunks = mutableListOf<PumpHunk>()
                         detRes?.nativeBoxes?.forEach { box ->
                             val p = box.points
@@ -2746,14 +2753,10 @@ suspend fun runPumpExperiment(
                             val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
                             val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
                             val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
-                            val ml = minX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mt = minY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mr = maxX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mb = maxY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val fl = ml * fullW.toFloat() / contentW
-                            val ft = mt * fullH.toFloat() / contentH
-                            val fr = mr * fullW.toFloat() / contentW
-                            val fb = mb * fullH.toFloat() / contentH
+                            val fl = minX.toFloat()
+                            val ft = minY.toFloat()
+                            val fr = maxX.toFloat()
+                            val fb = maxY.toFloat()
                             scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
@@ -2981,6 +2984,10 @@ suspend fun runPumpExperiment(
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
                         ProcessMemProbe.log("gray-tight before_det scale=$scale")
                         val detRes = paddleEngine.detect(
                             dest,
@@ -2991,6 +2998,9 @@ suspend fun runPumpExperiment(
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
                             growCells = 0,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
                         )
                         branch.metadata["t_pd_inference_$scale"] =
                             detRes?.metadata?.get("t_inference_ms") ?: "0"
@@ -3005,8 +3015,6 @@ suspend fun runPumpExperiment(
                             branch.metadata["heatmap_hist_$scale"] =
                                 JSONArray(hist.toList()).toString()
                         }
-                        val fullW = workspace.p.width
-                        val fullH = workspace.p.height
                         val scaleHunks = mutableListOf<PumpHunk>()
                         detRes?.nativeBoxes?.forEach { box ->
                             val p = box.points
@@ -3015,14 +3023,10 @@ suspend fun runPumpExperiment(
                             val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
                             val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
                             val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
-                            val ml = minX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mt = minY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mr = maxX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mb = maxY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val fl = ml * fullW.toFloat() / contentW
-                            val ft = mt * fullH.toFloat() / contentH
-                            val fr = mr * fullW.toFloat() / contentW
-                            val fb = mb * fullH.toFloat() / contentH
+                            val fl = minX.toFloat()
+                            val ft = minY.toFloat()
+                            val fr = maxX.toFloat()
+                            val fb = maxY.toFloat()
                             scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
@@ -3374,6 +3378,10 @@ suspend fun runPumpExperiment(
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
                         val detRes = paddleEngine.detect(
                             dest,
                             targetW = S,
@@ -3383,6 +3391,9 @@ suspend fun runPumpExperiment(
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
                             growCells = 1,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
                         )
                         branch.metadata["t_pd_inference_$scale"] =
                             detRes?.metadata?.get("t_inference_ms") ?: "0"
@@ -3397,8 +3408,6 @@ suspend fun runPumpExperiment(
                             branch.metadata["heatmap_hist_$scale"] =
                                 JSONArray(hist.toList()).toString()
                         }
-                        val fullW = workspace.p.width
-                        val fullH = workspace.p.height
                         val scaleHunks = mutableListOf<PumpHunk>()
                         detRes?.nativeBoxes?.forEach { box ->
                             val p = box.points
@@ -3407,14 +3416,10 @@ suspend fun runPumpExperiment(
                             val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
                             val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
                             val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
-                            val ml = minX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mt = minY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mr = maxX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mb = maxY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val fl = ml * fullW.toFloat() / contentW
-                            val ft = mt * fullH.toFloat() / contentH
-                            val fr = mr * fullW.toFloat() / contentW
-                            val fb = mb * fullH.toFloat() / contentH
+                            val fl = minX.toFloat()
+                            val ft = minY.toFloat()
+                            val fr = maxX.toFloat()
+                            val fb = maxY.toFloat()
                             scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
@@ -3766,6 +3771,10 @@ suspend fun runPumpExperiment(
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
                         val detRes = paddleEngine.detect(
                             dest,
                             targetW = S,
@@ -3775,6 +3784,9 @@ suspend fun runPumpExperiment(
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
                             growCells = 0,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
                         )
                         branch.metadata["t_pd_inference_$scale"] =
                             detRes?.metadata?.get("t_inference_ms") ?: "0"
@@ -3789,8 +3801,6 @@ suspend fun runPumpExperiment(
                             branch.metadata["heatmap_hist_$scale"] =
                                 JSONArray(hist.toList()).toString()
                         }
-                        val fullW = workspace.p.width
-                        val fullH = workspace.p.height
                         val scaleHunks = mutableListOf<PumpHunk>()
                         detRes?.nativeBoxes?.forEach { box ->
                             val p = box.points
@@ -3799,14 +3809,10 @@ suspend fun runPumpExperiment(
                             val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
                             val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
                             val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
-                            val ml = minX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mt = minY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mr = maxX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mb = maxY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val fl = ml * fullW.toFloat() / contentW
-                            val ft = mt * fullH.toFloat() / contentH
-                            val fr = mr * fullW.toFloat() / contentW
-                            val fb = mb * fullH.toFloat() / contentH
+                            val fl = minX.toFloat()
+                            val ft = minY.toFloat()
+                            val fr = maxX.toFloat()
+                            val fb = maxY.toFloat()
                             scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
@@ -4159,6 +4165,10 @@ suspend fun runPumpExperiment(
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
                         val detRes = paddleEngine.detect(
                             dest,
                             targetW = S,
@@ -4168,6 +4178,9 @@ suspend fun runPumpExperiment(
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
                             growCells = 1,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
                         )
                         branch.metadata["t_pd_inference_$scale"] =
                             detRes?.metadata?.get("t_inference_ms") ?: "0"
@@ -4182,8 +4195,6 @@ suspend fun runPumpExperiment(
                             branch.metadata["heatmap_hist_$scale"] =
                                 JSONArray(hist.toList()).toString()
                         }
-                        val fullW = workspace.p.width
-                        val fullH = workspace.p.height
                         val scaleHunks = mutableListOf<PumpHunk>()
                         detRes?.nativeBoxes?.forEach { box ->
                             val p = box.points
@@ -4192,14 +4203,10 @@ suspend fun runPumpExperiment(
                             val minY = minOf(p[1], p[3], p[5], p[7]).toInt()
                             val maxX = maxOf(p[0], p[2], p[4], p[6]).toInt()
                             val maxY = maxOf(p[1], p[3], p[5], p[7]).toInt()
-                            val ml = minX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mt = minY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mr = maxX.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val mb = maxY.coerceIn(0, (S - 1).coerceAtLeast(0))
-                            val fl = ml * fullW.toFloat() / contentW
-                            val ft = mt * fullH.toFloat() / contentH
-                            val fr = mr * fullW.toFloat() / contentW
-                            val fb = mb * fullH.toFloat() / contentH
+                            val fl = minX.toFloat()
+                            val ft = minY.toFloat()
+                            val fr = maxX.toFloat()
+                            val fb = maxY.toFloat()
                             scaleHunks.add(PumpHunk("", RectF(fl, ft, fr, fb)))
                         }
                         pdHunksRawTotal.addAll(scaleHunks)
@@ -4614,6 +4621,10 @@ suspend fun runPumpExperiment(
                         if (contentW < 1 || contentH < 1) return@forEach
                         val dest = NativePaddleEngine.deskewSetFor(scale)
                         val S = dest.width
+                        val fullW = workspace.p.width
+                        val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
                         val detRes = paddleEngine.detect(
                             dest,
                             targetW = S,
@@ -4624,6 +4635,9 @@ suspend fun runPumpExperiment(
                             maskDilatePasses = 0,
                             growCells = growCells,
                             scratchY = NativePaddleEngine.bufferSetA.p.mat,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
                         )
                         branch.metadata["t_pd_inference_$scale"] =
                             detRes?.metadata?.get("t_inference_ms") ?: "0"
@@ -4638,18 +4652,11 @@ suspend fun runPumpExperiment(
                             branch.metadata["heatmap_hist_$scale"] =
                                 JSONArray(hist.toList()).toString()
                         }
-                        val fullW = workspace.p.width
-                        val fullH = workspace.p.height
                         val scaleHunks = mutableListOf<PumpHunk>()
                         detRes?.nativeBoxes?.forEach { box ->
                             val p = box.points
                             if (p.size < 8) return@forEach
-                            val q = FloatArray(8)
-                            for (i in 0 until 4) {
-                                q[i * 2] = p[i * 2] * fullW / contentW
-                                q[i * 2 + 1] = p[i * 2 + 1] * fullH / contentH
-                            }
-                            val oq = ContentExpandUtils.orientedFromPoints8(q)
+                            val oq = ContentExpandUtils.orientedFromPoints8(p)
                             collected.add(oq)
                             scaleHunks.add(hunkFromAabb(oq.toAabb()))
                         }
@@ -5599,6 +5606,8 @@ suspend fun runPumpExperiment(
                         val S = dest.width
                         val fullW = workspace.p.width
                         val fullH = workspace.p.height
+                        val heatToPhoto =
+                            max(fullW, fullH).toFloat() / max(targetW, targetH).coerceAtLeast(1).toFloat()
                         Log.i(
                             TAG,
                             "pump_rot_detect scale=$scale content=${targetW}x$targetH packed=${S}x$S",
@@ -5611,6 +5620,9 @@ suspend fun runPumpExperiment(
                             boxMode = NativeImageUtils.HEATMAP_BOX_MIN_AREA_RECT,
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
+                            heatToPhoto = heatToPhoto,
+                            photoW = fullW,
+                            photoH = fullH,
                         )
                         branch.metadata["t_pd_inference_$scale"] =
                             detRes?.metadata?.get("t_inference_ms") ?: "0"
@@ -5620,12 +5632,7 @@ suspend fun runPumpExperiment(
                         detRes?.nativeBoxes?.forEach { box ->
                             val p = box.points
                             if (p.size < 8) return@forEach
-                            val q = FloatArray(8)
-                            for (i in 0 until 4) {
-                                q[i * 2] = p[i * 2] * fullW / targetW
-                                q[i * 2 + 1] = p[i * 2 + 1] * fullH / targetH
-                            }
-                            val oq = ContentExpandUtils.orientedFromPoints8(q)
+                            val oq = ContentExpandUtils.orientedFromPoints8(p)
                             collected.add(oq)
                             scaleHunks.add(hunkFromAabb(oq.toAabb()))
                         }

@@ -751,6 +751,10 @@ object PumpCostVolUtils {
     ): List<List<PumpHunk>> {
         val dest = NativePaddleEngine.deskewSetFor(scale)
         val S = dest.width
+        val fullW = buffer.p.width
+        val fullH = buffer.p.height
+        val heatToPhoto =
+            max(fullW, fullH).toFloat() / max(contentW, contentH).coerceAtLeast(1).toFloat()
         // copyHeatmap=false: campaign only needs boxes; floatData/getFloatData crashes on uint8 heatmaps
         val res = paddleEngine.detect(
             dest,
@@ -763,6 +767,9 @@ object PumpCostVolUtils {
             maskDilatePasses = maskDilatePasses,
             detTiers = detTiers,
             detTiersInt8 = detTiersInt8,
+            heatToPhoto = heatToPhoto,
+            photoW = fullW,
+            photoH = fullH,
         ) ?: return listOf(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
         if (metadata != null) {
             metadata["t_pd_native_post_${scale}"] = res.metadata["t_native_post_ms"] ?: "0"
@@ -774,8 +781,6 @@ object PumpCostVolUtils {
             metadata["mask_dilate_passes_${scale}"] = res.metadata["mask_dilate_passes"] ?: maskDilatePasses.toString()
             metadata["heatmap_cell_px_${scale}"] = NativeImageUtils.PADDLE_DET_HEAT_CELL_PX.toString()
         }
-        val masterW = S
-        val masterH = S
         val hist = res.heatmapHist ?: IntArray(0)
         if (metadata != null && hist.isNotEmpty()) metadata["heatmap_hist_${scale}"] = JSONArray(hist.toList()).toString()
         val rawRects = res.nativeBoxes.map { box ->
@@ -787,18 +792,13 @@ object PumpCostVolUtils {
             Rect(minX, minY, maxX, maxY)
         }
         val hunksDetected = mutableListOf<PumpHunk>()
-        val fullW = buffer.p.width
-        val fullH = buffer.p.height
         rawRects.forEach { r ->
-            val ml = r.left.toInt().coerceIn(0, masterW - 1)
-            val mt = r.top.toInt().coerceIn(0, masterH - 1)
-            val mr = r.right.toInt().coerceIn(0, masterW - 1)
-            val mb = r.bottom.toInt().coerceIn(0, masterH - 1)
-            val fl = ml * fullW.toFloat() / contentW
-            val ft = mt * fullH.toFloat() / contentH
-            val fr = mr * fullW.toFloat() / contentW
-            val fb = mb * fullH.toFloat() / contentH
-            hunksDetected.add(PumpHunk("", RectF(fl, ft, fr, fb)))
+            hunksDetected.add(
+                PumpHunk(
+                    "",
+                    RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat()),
+                ),
+            )
         }
         val nonNestedRects = rawRects.filter { r1 ->
             rawRects.none { r2 -> r1 != r2 && r2.contains(r1.left + 5, r1.top + 5, r1.right - 5, r1.bottom - 5) }
@@ -809,53 +809,65 @@ object PumpCostVolUtils {
         val hunksMaxExtent = mutableListOf<PumpHunk>()
         val hunksNative = mutableListOf<PumpHunk>()
         nonNestedRects.forEach { rect ->
-            val ml = rect.left.toInt().coerceIn(0, masterW - 1)
-            val mt = rect.top.toInt().coerceIn(0, masterH - 1)
-            val mr = rect.right.toInt().coerceIn(0, masterW - 1)
-            val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
-            val fl = ml * fullW.toFloat() / contentW
-            val ft = mt * fullH.toFloat() / contentH
-            val fr = mr * fullW.toFloat() / contentW
-            val fb = mb * fullH.toFloat() / contentH
-            hunksRaw.add(PumpHunk("", RectF(fl, ft, fr, fb)))
+            hunksRaw.add(
+                PumpHunk(
+                    "",
+                    RectF(
+                        rect.left.toFloat(), rect.top.toFloat(),
+                        rect.right.toFloat(), rect.bottom.toFloat(),
+                    ),
+                ),
+            )
         }
+        val inv = if (heatToPhoto > 0f) 1f / heatToPhoto else 1f
         consolidated.forEach { rect ->
-            val ml = rect.left.toInt().coerceIn(0, masterW - 1)
-            val mt = rect.top.toInt().coerceIn(0, masterH - 1)
-            val mr = rect.right.toInt().coerceIn(0, masterW - 1)
-            val mb = rect.bottom.toInt().coerceIn(0, masterH - 1)
-            val rawRect = Rect(ml, mt, mr, mb)
+            val heatRect = Rect(
+                (rect.left * inv).toInt(),
+                (rect.top * inv).toInt(),
+                (rect.right * inv).toInt(),
+                (rect.bottom * inv).toInt(),
+            )
             val packed = NativeImageUtils.wrapPackedU8(
                 (dest.s as BufferSet.Instance).tensorBindRaw(),
                 S,
             )
             val (retractedRect, maxExtentRect) = try {
-                NativeImageUtils.expandByUniformity(packed, rawRect)
+                NativeImageUtils.expandByUniformity(packed, heatRect)
             } finally {
                 packed.release()
             }
-            val fl = retractedRect.left * fullW.toFloat() / contentW
-            val ft = retractedRect.top * fullH.toFloat() / contentH
-            val fr = retractedRect.right * fullW.toFloat() / contentW
-            val fb = retractedRect.bottom * fullH.toFloat() / contentH
-            hunksExpanded.add(PumpHunk("", RectF(fl, ft, fr, fb)))
-            val yfl = maxExtentRect.left * fullW.toFloat() / contentW
-            val yft = maxExtentRect.top * fullH.toFloat() / contentH
-            val yfr = maxExtentRect.right * fullW.toFloat() / contentW
-            val yfb = maxExtentRect.bottom * fullH.toFloat() / contentH
-            hunksMaxExtent.add(PumpHunk("", RectF(yfl, yft, yfr, yfb)))
+            hunksExpanded.add(
+                PumpHunk(
+                    "",
+                    RectF(
+                        retractedRect.left * heatToPhoto,
+                        retractedRect.top * heatToPhoto,
+                        retractedRect.right * heatToPhoto,
+                        retractedRect.bottom * heatToPhoto,
+                    ),
+                ),
+            )
+            hunksMaxExtent.add(
+                PumpHunk(
+                    "",
+                    RectF(
+                        maxExtentRect.left * heatToPhoto,
+                        maxExtentRect.top * heatToPhoto,
+                        maxExtentRect.right * heatToPhoto,
+                        maxExtentRect.bottom * heatToPhoto,
+                    ),
+                ),
+            )
         }
         res.nativeBoxes.forEach { box ->
-            val scaleX = fullW.toFloat() / contentW
-            val scaleY = fullH.toFloat() / contentH
-            var minX = Float.MAX_VALUE; var maxX = Float.MIN_VALUE
-            var minY = Float.MAX_VALUE; var maxY = Float.MIN_VALUE
-            box.points.toList().chunked(2).forEach { (px, py) ->
-                val sx = px * scaleX; val sy = py * scaleY
-                if (sx < minX) minX = sx; if (sx > maxX) maxX = sx
-                if (sy < minY) minY = sy; if (sy > maxY) maxY = sy
-            }
-            hunksNative.add(PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)))
+            val p = box.points
+            val minX = minOf(p[0], p[2], p[4], p[6])
+            val minY = minOf(p[1], p[3], p[5], p[7])
+            val maxX = maxOf(p[0], p[2], p[4], p[6])
+            val maxY = maxOf(p[1], p[3], p[5], p[7])
+            hunksNative.add(
+                PumpHunk("Conf: %.2f".format(box.confidence), RectF(minX, minY, maxX, maxY)),
+            )
         }
         return listOf(hunksDetected, hunksRaw, hunksExpanded, hunksMaxExtent, hunksNative)
     }
