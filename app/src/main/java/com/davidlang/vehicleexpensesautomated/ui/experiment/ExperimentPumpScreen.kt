@@ -7965,16 +7965,26 @@ private suspend fun snapshotLookInkOriented(
     val k4 = ContentExpandUtils.padOrientedByStrokes(walked, seed, 4f, sPx)
     val union = orientedLookUnionCrop(seed, official, walked, k4) ?: return
     val cropQ = union.first
-    val seedH = seed.shortAxisBh().coerceAtLeast(1f)
-    val stripH = cropQ.shortAxisBh().coerceAtLeast(1f)
-    val stripW = cropQ.longAxisBw().coerceAtLeast(1f)
-    val rawH = ceil(stripH * 96.0 / seedH).toInt()
-    var destH = ((rawH + 1) / 2) * 2
-    val rawW = ceil(stripW.toDouble() * destH / stripH).toInt()
-    var destW = ((rawW + 1) / 2) * 2
+    val order = ContentExpandUtils.orderQuadForWarp(cropQ) ?: return
+    val wSrc = hypot(
+        (order[2] - order[0]).toDouble(),
+        (order[3] - order[1]).toDouble(),
+    ).toFloat().coerceAtLeast(1f)
+    val hSrc = hypot(
+        (order[6] - order[0]).toDouble(),
+        (order[7] - order[1]).toDouble(),
+    ).toFloat().coerceAtLeast(1f)
+    val seedBh = seed.shortAxisBh().coerceAtLeast(1f)
+    fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
+    var destH = even2(ceil(hSrc * 96.0 / seedBh).toInt())
+    var destW = even2(ceil(wSrc * 96.0 / seedBh).toInt())
     val destSlice = NativePaddleEngine.bufferSetB.s
-    destW = destW.coerceAtMost((destSlice.width / 2) * 2).coerceAtLeast(2)
-    destH = destH.coerceAtMost((destSlice.height / 2) * 2).coerceAtLeast(2)
+    val scale = min(
+        1.0,
+        min(destSlice.width.toDouble() / destW, destSlice.height.toDouble() / destH),
+    )
+    destW = even2((destW * scale).toInt())
+    destH = even2((destH * scale).toInt())
     val cropId = destSlice.createCrop(0, 0, destW, destH)
     val dest = NativePaddleEngine.bufferSetB.c[cropId]
     dest.clear()
