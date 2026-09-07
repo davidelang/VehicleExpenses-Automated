@@ -1305,6 +1305,7 @@ object ContentExpandUtils {
         val tele: Seg7Telemetry? = null,
         val sweep: InkSweep? = null,
         val poison: PoisonDump? = null,
+        val rectPad: Rect = rect,
     )
 
     private fun unpackAabb7seg(
@@ -1318,23 +1319,24 @@ object ContentExpandUtils {
         k: Float,
         j: Float,
     ): List<Seg7Expand> {
-        if (r == null || r.size < seeds.size * 8) {
+        if (r == null || r.size < seeds.size * 12) {
             return seeds.map { Seg7Expand(clip(it, imgW, imgH), strokeWidthInSeed(Mat(), it), k, j) }
         }
         val sweeps = parseInkSweeps(sweepBuf, seeds.size)
         val poisons = parsePoisonStats(poisonStats, seeds.size)
         return seeds.indices.map { i ->
-            val o = i * 8
+            val o = i * 12
             val rect = clip(Rect(r[o], r[o + 1], r[o + 2], r[o + 3]), imgW, imgH)
-            val sPx = max(1, r[o + 4])
-            val vSW = r[o + 5]
-            val hSW = r[o + 6]
-            val fb = r[o + 7] != 0
+            val rectPad = clip(Rect(r[o + 4], r[o + 5], r[o + 6], r[o + 7]), imgW, imgH)
+            val sPx = r[o + 8]
+            val vSW = r[o + 9]
+            val hSW = r[o + 10]
+            val fb = sPx < 1
             val seed = clip(seeds[i], imgW, imgH)
             Seg7Expand(
                 rect,
                 StrokeWidthInSeed(
-                    sPx = sPx, vSW = vSW, hSW = hSW,
+                    sPx = max(1, sPx), vSW = vSW, hSW = hSW,
                     inkFrac = 0f, darkInk = true, usedFallback = fb,
                     droppedGlare = 0, otsuThr = 0, seed = seed,
                 ),
@@ -1342,6 +1344,7 @@ object ContentExpandUtils {
                 parseSeg7Tele(tele, i),
                 sweeps.getOrNull(i),
                 poisons.getOrNull(i),
+                rectPad,
             )
         }
     }
@@ -1487,6 +1490,7 @@ object ContentExpandUtils {
         val tele: Seg7Telemetry? = null,
         val sweep: InkSweep? = null,
         val poison: PoisonDump? = null,
+        val quadPad: OrientedQuad = quad,
     )
 
     /**
@@ -1526,15 +1530,16 @@ object ContentExpandUtils {
         } catch (_: Throwable) {
             null
         }
-        if (r == null || r.size < seeds.size * 9) {
+        if (r == null || r.size < seeds.size * 18) {
             return seeds.map { Seg7OrientedExpand(it, strokeWidthInSeed(gray, it.toAabb())) }
         }
         val sweeps = parseInkSweeps(sweepBuf, seeds.size)
         val poisons = parsePoisonStats(poisonStats, seeds.size)
         return seeds.indices.map { i ->
-            val o = i * 9
+            val o = i * 18
             val pts = FloatArray(8) { k -> r[o + k] }
-            val sPx = max(1, r[o + 8].roundToInt())
+            val padPts = FloatArray(8) { k -> r[o + 8 + k] }
+            val sPx = max(1, r[o + 16].roundToInt())
             Seg7OrientedExpand(
                 OrientedQuad(pts),
                 StrokeWidthInSeed(
@@ -1545,6 +1550,7 @@ object ContentExpandUtils {
                 parseSeg7Tele(tele, i),
                 sweeps.getOrNull(i),
                 poisons.getOrNull(i),
+                OrientedQuad(padPts),
             )
         }
     }

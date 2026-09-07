@@ -1679,6 +1679,7 @@ suspend fun runPumpExperiment(
                 val seg7Strokes: List<ContentExpandUtils.StrokeWidthInSeed>
                 val inkWalkSeeds: List<android.graphics.Rect>
                 val inkWalkBoxes: List<android.graphics.Rect>
+                val inkWalkPads: List<android.graphics.Rect>
                 val inkJumpOpts: ContentExpandUtils.ExpandOptions?
                 var makeGInkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList()
                 val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
@@ -1773,7 +1774,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    val official = inkBoxesFor(0f)
+                    val official = segs.map { it.rect }
                     makeGInkSweeps = segs.indices.map { i ->
                         segs[i].sweep?.withOfficial(official[i])
                     }
@@ -1790,6 +1791,7 @@ suspend fun runPumpExperiment(
                     seg7Strokes = walks.map { it.third }
                     inkWalkSeeds = walks.map { it.first }
                     inkWalkBoxes = jumpedOnce
+                    inkWalkPads = segs.map { it.rectPad }
                     inkJumpOpts = jumpOpts
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
                     storeSeg7Tele(branch, segs.map { it.tele })
@@ -1839,7 +1841,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    val official = inkBoxesFor(0f)
+                    val official = segs.map { it.rect }
                     makeGInkSweeps = segs.indices.map { i ->
                         segs[i].sweep?.withOfficial(official[i])
                     }
@@ -1856,6 +1858,9 @@ suspend fun runPumpExperiment(
                     seg7Strokes = walks.map { it.third }
                     inkWalkSeeds = walks.map { it.first }
                     inkWalkBoxes = jumpedOnce
+                    inkWalkPads = official.map {
+                        ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                    }
                     inkJumpOpts = jumpOpts
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
                     storeSeg7Tele(branch, segs.map { it.tele })
@@ -1918,6 +1923,7 @@ suspend fun runPumpExperiment(
                     seg7Strokes = emptyList()
                     inkWalkSeeds = emptyList()
                     inkWalkBoxes = emptyList()
+                    inkWalkPads = emptyList()
                     inkJumpOpts = null
                 } else {
                     val pair = createBlueAndOrangeHunksFromReds(
@@ -1927,6 +1933,7 @@ suspend fun runPumpExperiment(
                     seg7Strokes = emptyList()
                     inkWalkSeeds = emptyList()
                     inkWalkBoxes = emptyList()
+                    inkWalkPads = emptyList()
                     inkJumpOpts = null
                 }
                 val customBluePixelG = customBlueG.map { bh ->
@@ -1982,12 +1989,9 @@ suspend fun runPumpExperiment(
                         skipExtraK.count { it }.toString()
                     suspend fun emitHorizPad(
                         s: Float,
-                        kRects: List<android.graphics.Rect>,
+                        padRects: List<android.graphics.Rect>,
                         skip: BooleanArray?,
                     ): List<android.graphics.Rect> {
-                        val padRects = kRects.map {
-                            ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
-                        }
                         val ocrIdx = ArrayList<Int>()
                         val ocrRects = ArrayList<android.graphics.Rect>()
                         padRects.indices.forEach { i ->
@@ -2034,7 +2038,7 @@ suspend fun runPumpExperiment(
                         )
                         return padRects
                     }
-                    val pad0 = emitHorizPad(0f, customBluePixelG, null)
+                    val pad0 = emitHorizPad(0f, inkWalkPads, null)
                     horizPadHunks = pad0.map { r ->
                         PumpHunk(
                             "",
@@ -2096,7 +2100,11 @@ suspend fun runPumpExperiment(
                                 kk, rects, quadsK, candsK, cvK, kind = "ink",
                             ),
                         )
-                        emitHorizPad(kk, rects, skipExtraK)
+                        emitHorizPad(
+                            kk,
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            skipExtraK,
+                        )
                     }
                     branch.metadata["n_ocr_energy"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
@@ -3145,7 +3153,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    val official = inkBoxesFor(0f)
+                    val official = segs.map { it.rect }
                     val officialHunks = official.map { e ->
                         PumpHunk(
                             "",
@@ -3186,12 +3194,9 @@ suspend fun runPumpExperiment(
                         skipExtraK.count { it }.toString()
                     suspend fun emitHorizPad(
                         s: Float,
-                        kRects: List<android.graphics.Rect>,
+                        padRects: List<android.graphics.Rect>,
                         skip: BooleanArray?,
                     ): List<android.graphics.Rect> {
-                        val padRects = kRects.map {
-                            ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
-                        }
                         val ocrIdx = ArrayList<Int>()
                         val ocrRects = ArrayList<android.graphics.Rect>()
                         padRects.indices.forEach { i ->
@@ -3236,7 +3241,7 @@ suspend fun runPumpExperiment(
                         )
                         return padRects
                     }
-                    val pad0 = emitHorizPad(0f, official, null)
+                    val pad0 = emitHorizPad(0f, segs.map { it.rectPad }, null)
                     val padHunks = pad0.map { r ->
                         PumpHunk(
                             "",
@@ -3298,7 +3303,11 @@ suspend fun runPumpExperiment(
                                 candsK, cvK, kind = "ink",
                             ),
                         )
-                        emitHorizPad(kk, rects, skipExtraK)
+                        emitHorizPad(
+                            kk,
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            skipExtraK,
+                        )
                     }
                     branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
@@ -3537,7 +3546,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    val official = inkBoxesFor(0f)
+                    val official = segs.map { it.rect }
                     val officialHunks = official.map { e ->
                         PumpHunk(
                             "",
@@ -3578,12 +3587,9 @@ suspend fun runPumpExperiment(
                         skipExtraK.count { it }.toString()
                     suspend fun emitHorizPad(
                         s: Float,
-                        kRects: List<android.graphics.Rect>,
+                        padRects: List<android.graphics.Rect>,
                         skip: BooleanArray?,
                     ): List<android.graphics.Rect> {
-                        val padRects = kRects.map {
-                            ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
-                        }
                         val ocrIdx = ArrayList<Int>()
                         val ocrRects = ArrayList<android.graphics.Rect>()
                         padRects.indices.forEach { i ->
@@ -3628,7 +3634,7 @@ suspend fun runPumpExperiment(
                         )
                         return padRects
                     }
-                    val pad0 = emitHorizPad(0f, official, null)
+                    val pad0 = emitHorizPad(0f, segs.map { it.rectPad }, null)
                     val padHunks = pad0.map { r ->
                         PumpHunk(
                             "",
@@ -3690,7 +3696,11 @@ suspend fun runPumpExperiment(
                                 candsK, cvK, kind = "ink",
                             ),
                         )
-                        emitHorizPad(kk, rects, skipExtraK)
+                        emitHorizPad(
+                            kk,
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            skipExtraK,
+                        )
                     }
                     branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
@@ -3930,7 +3940,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    val official = inkBoxesFor(0f)
+                    val official = segs.map { it.rect }
                     val officialHunks = official.map { e ->
                         PumpHunk(
                             "",
@@ -3971,12 +3981,9 @@ suspend fun runPumpExperiment(
                         skipExtraK.count { it }.toString()
                     suspend fun emitHorizPad(
                         s: Float,
-                        kRects: List<android.graphics.Rect>,
+                        padRects: List<android.graphics.Rect>,
                         skip: BooleanArray?,
                     ): List<android.graphics.Rect> {
-                        val padRects = kRects.map {
-                            ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
-                        }
                         val ocrIdx = ArrayList<Int>()
                         val ocrRects = ArrayList<android.graphics.Rect>()
                         padRects.indices.forEach { i ->
@@ -4021,7 +4028,7 @@ suspend fun runPumpExperiment(
                         )
                         return padRects
                     }
-                    val pad0 = emitHorizPad(0f, official, null)
+                    val pad0 = emitHorizPad(0f, segs.map { it.rectPad }, null)
                     val padHunks = pad0.map { r ->
                         PumpHunk(
                             "",
@@ -4083,7 +4090,11 @@ suspend fun runPumpExperiment(
                                 candsK, cvK, kind = "ink",
                             ),
                         )
-                        emitHorizPad(kk, rects, skipExtraK)
+                        emitHorizPad(
+                            kk,
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            skipExtraK,
+                        )
                     }
                     branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
@@ -4324,7 +4335,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    val official = inkBoxesFor(0f)
+                    val official = segs.map { it.rect }
                     val officialHunks = official.map { e ->
                         PumpHunk(
                             "",
@@ -4365,12 +4376,9 @@ suspend fun runPumpExperiment(
                         skipExtraK.count { it }.toString()
                     suspend fun emitHorizPad(
                         s: Float,
-                        kRects: List<android.graphics.Rect>,
+                        padRects: List<android.graphics.Rect>,
                         skip: BooleanArray?,
                     ): List<android.graphics.Rect> {
-                        val padRects = kRects.map {
-                            ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
-                        }
                         val ocrIdx = ArrayList<Int>()
                         val ocrRects = ArrayList<android.graphics.Rect>()
                         padRects.indices.forEach { i ->
@@ -4415,7 +4423,7 @@ suspend fun runPumpExperiment(
                         )
                         return padRects
                     }
-                    val pad0 = emitHorizPad(0f, official, null)
+                    val pad0 = emitHorizPad(0f, segs.map { it.rectPad }, null)
                     val padHunks = pad0.map { r ->
                         PumpHunk(
                             "",
@@ -4477,7 +4485,11 @@ suspend fun runPumpExperiment(
                                 candsK, cvK, kind = "ink",
                             ),
                         )
-                        emitHorizPad(kk, rects, skipExtraK)
+                        emitHorizPad(
+                            kk,
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            skipExtraK,
+                        )
                     }
                     branch.metadata["n_ocr"] = nOcr.toString()
                     val tOcrAll = (System.currentTimeMillis() - tOcr0).toString()
@@ -5175,7 +5187,7 @@ suspend fun runPumpExperiment(
                             )
                         }
                     }
-                    val official = inkQuadsFor(0f)
+                    val official = segs.map { it.quad }
                     val officialRects = official.map { it.toAabb() }
                     val officialHunks = officialRects.map { e ->
                         PumpHunk(
@@ -5216,12 +5228,9 @@ suspend fun runPumpExperiment(
                         skipExtraK.count { it }.toString()
                     suspend fun emitHorizPad(
                         s: Float,
-                        kQuads: List<ContentExpandUtils.OrientedQuad>,
+                        padQuads: List<ContentExpandUtils.OrientedQuad>,
                         skip: BooleanArray?,
                     ): List<ContentExpandUtils.OrientedQuad> {
-                        val padQuads = kQuads.map { q ->
-                            ContentExpandUtils.padOrientedU(q, 0.5f)
-                        }
                         val padRects = padQuads.map { it.toAabb() }
                         val ocrIdx = ArrayList<Int>()
                         val ocrQuads = ArrayList<ContentExpandUtils.OrientedQuad>()
@@ -5265,7 +5274,7 @@ suspend fun runPumpExperiment(
                         )
                         return padQuads
                     }
-                    val pad0 = emitHorizPad(0f, official, null)
+                    val pad0 = emitHorizPad(0f, segs.map { it.quadPad }, null)
                     for (kk in listOf(1f, 2f, 3f, 4f)) {
                         val quads = inkQuadsFor(kk)
                         val rects = quads.map { it.toAabb() }
@@ -5318,7 +5327,11 @@ suspend fun runPumpExperiment(
                                 kk, rects, quads, candsK, cvK, kind = "ink",
                             ),
                         )
-                        emitHorizPad(kk, quads, skipExtraK)
+                        emitHorizPad(
+                            kk,
+                            quads.map { ContentExpandUtils.padOrientedU(it, 0.5f) },
+                            skipExtraK,
+                        )
                     }
                     branch.metadata["n_ocr"] = nOcr.toString()
                     branch.metadata["t_ocr_ms"] =
@@ -5668,6 +5681,7 @@ suspend fun runPumpExperiment(
                     val inkStrokes: List<ContentExpandUtils.StrokeWidthInSeed>
                     val inkWalkSeeds: List<ContentExpandUtils.OrientedQuad>
                     val inkWalkBoxes: List<ContentExpandUtils.OrientedQuad>
+                    val inkWalkPadQuads: List<ContentExpandUtils.OrientedQuad>
                     val inkJumpOptsRot: ContentExpandUtils.ExpandOptions?
                     var rotInkSweeps: List<ContentExpandUtils.InkSweep?> = emptyList()
                     val expandMode = if (chromaMode != 0) chromaMode else if (chromaExpand) 1 else 0
@@ -5716,6 +5730,7 @@ suspend fun runPumpExperiment(
                                         ContentExpandUtils.strokeWidthInSeed(
                                             masterBuffer.p.mat, q.toAabb(),
                                         ),
+                                        quadPad = ContentExpandUtils.padOrientedU(q, 0.5f),
                                     ),
                                 )
                             }
@@ -5761,12 +5776,13 @@ suspend fun runPumpExperiment(
                                 )
                             }
                         }
-                        expandedQuads = inkQuadsFor(0f)
+                        expandedQuads = segs.map { it.quad }
                         hitCaps = expandedQuads.map { false }
                         inkStrokes = segs.map { it.stroke }
                         expDiag = emptyList()
                         inkWalkSeeds = seedQuads
                         inkWalkBoxes = jumpedQuads
+                        inkWalkPadQuads = segs.map { it.quadPad }
                         inkJumpOptsRot = jumpOpts
                         rotInkSweeps = segs.indices.map { i ->
                             val off = expandedQuads.getOrNull(i) ?: return@map segs[i].sweep
@@ -5831,6 +5847,7 @@ suspend fun runPumpExperiment(
                         inkStrokes = emptyList()
                         inkWalkSeeds = emptyList()
                         inkWalkBoxes = emptyList()
+                        inkWalkPadQuads = emptyList()
                         inkJumpOptsRot = null
                         rotInkSweeps = expDiag.indices.map { i ->
                             val off = expandedQuads.getOrNull(i) ?: return@map expDiag[i].sweep
@@ -5895,12 +5912,9 @@ suspend fun runPumpExperiment(
                         var skipExtraK = BooleanArray(0)
                         suspend fun emitRotHorizPad(
                             s: Float,
-                            kQuads: List<ContentExpandUtils.OrientedQuad>,
+                            padQuads: List<ContentExpandUtils.OrientedQuad>,
                             skip: BooleanArray?,
                         ): List<ContentExpandUtils.OrientedQuad> {
-                            val padQuads = kQuads.map { q ->
-                                ContentExpandUtils.padOrientedU(q, 0.5f)
-                            }
                             val padRects = padQuads.map { it.toAabb() }
                             val ocrIdx = ArrayList<Int>()
                             val ocrQuads = ArrayList<ContentExpandUtils.OrientedQuad>()
@@ -6020,7 +6034,10 @@ suspend fun runPumpExperiment(
                                 ),
                             )
                             val pads = emitRotHorizPad(
-                                kk, quads, if (kk == 0f) null else skipExtraK,
+                                kk,
+                                if (kk == 0f) inkWalkPadQuads
+                                else quads.map { ContentExpandUtils.padOrientedU(it, 0.5f) },
+                                if (kk == 0f) null else skipExtraK,
                             )
                             if (kk == 0f) pdPadQuads = pads
                         }

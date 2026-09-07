@@ -5061,19 +5061,60 @@ static void aabbJumpOnLook(
 
 }  // namespace
 
+/** 12 ints/seed: l0,t0,r0,b0, l1,t1,r1,b1, sPx, vSW, hSW, flags. l1..b1 = 0.5H, same t/b. */
+static void packAabb12(
+    std::vector<jint>& out, int i,
+    int l0, int t0, int r0, int b0,
+    int sPx, int vSW, int hSW, int flags,
+    int imgW, int imgH
+) {
+    if (l0 < 0) l0 = 0;
+    if (t0 < 0) t0 = 0;
+    if (r0 > imgW) r0 = imgW;
+    if (b0 > imgH) b0 = imgH;
+    const int o = i * 12;
+    out[static_cast<size_t>(o)] = l0;
+    out[static_cast<size_t>(o) + 1] = t0;
+    out[static_cast<size_t>(o) + 2] = r0;
+    out[static_cast<size_t>(o) + 3] = b0;
+    const int h = std::max(1, b0 - t0);
+    const int hp = static_cast<int>(std::lround(0.5f * static_cast<float>(h)));
+    int l1 = l0 - hp;
+    int r1 = r0 + hp;
+    if (l1 < 0) l1 = 0;
+    if (r1 > imgW) r1 = imgW;
+    if (r1 <= l1) r1 = std::min(imgW, l1 + 1);
+    out[static_cast<size_t>(o) + 4] = l1;
+    out[static_cast<size_t>(o) + 5] = t0;
+    out[static_cast<size_t>(o) + 6] = r1;
+    out[static_cast<size_t>(o) + 7] = b0;
+    out[static_cast<size_t>(o) + 8] = sPx;
+    out[static_cast<size_t>(o) + 9] = vSW;
+    out[static_cast<size_t>(o) + 10] = hSW;
+    out[static_cast<size_t>(o) + 11] = flags;
+}
+
 static jintArray aabb7segSeedsOut(JNIEnv* env, const std::vector<jint>& seeds) {
     const int n = static_cast<int>(seeds.size()) / 4;
-    std::vector<jint> out(static_cast<size_t>(n) * 8, 0);
+    std::vector<jint> out(static_cast<size_t>(n) * 12, 0);
     for (int i = 0; i < n; ++i) {
-        const int o = i * 8;
-        out[static_cast<size_t>(o)] = seeds[static_cast<size_t>(i) * 4];
-        out[static_cast<size_t>(o) + 1] = seeds[static_cast<size_t>(i) * 4 + 1];
-        out[static_cast<size_t>(o) + 2] = seeds[static_cast<size_t>(i) * 4 + 2];
-        out[static_cast<size_t>(o) + 3] = seeds[static_cast<size_t>(i) * 4 + 3];
-        out[static_cast<size_t>(o) + 4] = 2;
-        out[static_cast<size_t>(o) + 5] = 4;
-        out[static_cast<size_t>(o) + 6] = 4;
-        out[static_cast<size_t>(o) + 7] = 1;
+        const int l = seeds[static_cast<size_t>(i) * 4];
+        const int t = seeds[static_cast<size_t>(i) * 4 + 1];
+        const int r = seeds[static_cast<size_t>(i) * 4 + 2];
+        const int b = seeds[static_cast<size_t>(i) * 4 + 3];
+        const int o = i * 12;
+        out[static_cast<size_t>(o)] = l;
+        out[static_cast<size_t>(o) + 1] = t;
+        out[static_cast<size_t>(o) + 2] = r;
+        out[static_cast<size_t>(o) + 3] = b;
+        out[static_cast<size_t>(o) + 4] = l;
+        out[static_cast<size_t>(o) + 5] = t;
+        out[static_cast<size_t>(o) + 6] = r;
+        out[static_cast<size_t>(o) + 7] = b;
+        out[static_cast<size_t>(o) + 8] = 2;
+        out[static_cast<size_t>(o) + 9] = 4;
+        out[static_cast<size_t>(o) + 10] = 4;
+        out[static_cast<size_t>(o) + 11] = 0;
     }
     jintArray arr = env->NewIntArray(static_cast<jint>(out.size()));
     if (!arr) return env->NewIntArray(0);
@@ -5115,12 +5156,17 @@ static jintArray aabbGrayMany(
     cv::Mat* ovUv = asUV(overlayUv);
     std::vector<PoisonStats> poisonPacks;
     poisonPacks.resize(static_cast<size_t>(n));
-    std::vector<jint> out(static_cast<size_t>(n) * 8, 0);
+    std::vector<jint> out(static_cast<size_t>(n) * 12, 0);
     std::vector<InkSweepPack> sweeps;
     sweeps.resize(static_cast<size_t>(n));
     ObjPack objPack;
     loadObjPack(env, poisonArr, &objPack);
     for (int i = 0; i < n; ++i) {
+        objPack.abort = false;
+        objPack.classChange = 0;
+        objPack.seenInk = 0;
+        objPack.seenNon = 0;
+        objPack.phase[0] = '\0';
         int l = seeds[static_cast<size_t>(i) * 4], t = seeds[static_cast<size_t>(i) * 4 + 1];
         int r = seeds[static_cast<size_t>(i) * 4 + 2], b = seeds[static_cast<size_t>(i) * 4 + 3];
         if (l < 0) l = 0;
@@ -5131,9 +5177,6 @@ static jintArray aabbGrayMany(
         int ol, ot, orr, ob, sPx, vSW, hSW, fb;
         Seg7Tele tele{};
         tele.method = 0.f;
-        objPack.classChange = 0;
-        objPack.seenInk = 0;
-        objPack.seenNon = 0;
         seg7One(*gray, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
             false, gapFrac, minSeedHsToFreeze, 8, boundStrategy, tightInsetPx, &tele, false,
             &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
@@ -5145,19 +5188,10 @@ static jintArray aabbGrayMany(
         }
         if (objPack.abort) {
             poisonPacks[static_cast<size_t>(i)].bandH = -1;
-            appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
-            break;
         }
         appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
-        const int o = i * 8;
-        out[static_cast<size_t>(o)] = ol;
-        out[static_cast<size_t>(o) + 1] = ot;
-        out[static_cast<size_t>(o) + 2] = orr;
-        out[static_cast<size_t>(o) + 3] = ob;
-        out[static_cast<size_t>(o) + 4] = sPx;
-        out[static_cast<size_t>(o) + 5] = vSW;
-        out[static_cast<size_t>(o) + 6] = hSW;
-        out[static_cast<size_t>(o) + 7] = fb;
+        packAabb12(out, i, ol, ot, orr, ob, sPx, vSW, hSW, objPack.abort ? 1 : 0, imgW, imgH);
+        (void)fb;
         storeTeleArr(env, teleArr, i, tele);
     }
     writeSweepArr(env, sweepArr, sweeps);
@@ -5244,12 +5278,17 @@ static jintArray aabbColorMany(
     if (!ovUv) ovUv = asUvFromY(overlayY, &yUv);
     std::vector<PoisonStats> poisonPacks;
     poisonPacks.resize(static_cast<size_t>(n));
-    std::vector<jint> out(static_cast<size_t>(n) * 8, 0);
+    std::vector<jint> out(static_cast<size_t>(n) * 12, 0);
     std::vector<InkSweepPack> sweeps;
     sweeps.resize(static_cast<size_t>(n));
     ObjPack objPack;
     loadObjPack(env, poisonArr, &objPack);
     for (int i = 0; i < n; ++i) {
+        objPack.abort = false;
+        objPack.classChange = 0;
+        objPack.seenInk = 0;
+        objPack.seenNon = 0;
+        objPack.phase[0] = '\0';
         int l = seeds[static_cast<size_t>(i) * 4], t = seeds[static_cast<size_t>(i) * 4 + 1];
         int r = seeds[static_cast<size_t>(i) * 4 + 2], b = seeds[static_cast<size_t>(i) * 4 + 3];
         if (l < 0) l = 0;
@@ -5264,9 +5303,6 @@ static jintArray aabbColorMany(
         const int xPadGuess = std::max(1, static_cast<int>(std::lround(
             0.50f * 2.5f * static_cast<float>(seedH) * static_cast<float>(kJumpMax + 1))));
         cv::Mat* tintDst = asU8(scratch);
-        objPack.classChange = 0;
-        objPack.seenInk = 0;
-        objPack.seenNon = 0;
         const bool ok = uv && fillChromaTintMask(
             *gray, *uv, l, t, r, b, tintDst, glareMult, xPadGuess, true, &tele);
         if (ok && tintDst && !tintDst->empty() && !skipTintWalk(true, tele)) {
@@ -5293,19 +5329,10 @@ static jintArray aabbColorMany(
         }
         if (objPack.abort) {
             poisonPacks[static_cast<size_t>(i)].bandH = -1;
-            appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
-            break;
         }
         appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
-        const int o = i * 8;
-        out[static_cast<size_t>(o)] = ol;
-        out[static_cast<size_t>(o) + 1] = ot;
-        out[static_cast<size_t>(o) + 2] = orr;
-        out[static_cast<size_t>(o) + 3] = ob;
-        out[static_cast<size_t>(o) + 4] = sPx;
-        out[static_cast<size_t>(o) + 5] = vSW;
-        out[static_cast<size_t>(o) + 6] = hSW;
-        out[static_cast<size_t>(o) + 7] = fb;
+        packAabb12(out, i, ol, ot, orr, ob, sPx, vSW, hSW, objPack.abort ? 1 : 0, imgW, imgH);
+        (void)fb;
         storeTeleArr(env, teleArr, i, tele);
     }
     writeSweepArr(env, sweepArr, sweeps);
@@ -5437,6 +5464,18 @@ static void oriToQuad(const OriBox& b, float* out) {
     c(b.u1, b.v0, 2);
     c(b.u1, b.v1, 4);
     c(b.u0, b.v1, 6);
+}
+
+/** 18 floats/seed: 8 pts unexpanded, 8 pts 0.5H along u, sPx, flags. */
+static void packOri18(float* op, const OriBox& walked, float sPx, float flags) {
+    oriToQuad(walked, op);
+    OriBox pad = walked;
+    const float hp = 0.5f * std::max(1.f, walked.v1 - walked.v0);
+    pad.u0 -= hp;
+    pad.u1 += hp;
+    oriToQuad(pad, op + 8);
+    op[16] = sPx;
+    op[17] = flags;
 }
 
 static bool oriAabbClip(
@@ -6151,18 +6190,27 @@ static jfloatArray seg7OrientedMany(
             cMag = overlayY;
         }
     }
-    std::vector<jfloat> out(n * 9, 0.f);
+    std::vector<jfloat> out(n * 18, 0.f);
     std::vector<InkSweepPack> sweeps;
     sweeps.resize(static_cast<size_t>(n));
     ObjPack objPack;
     loadObjPack(env, poisonArr, &objPack);
     for (int i = 0; i < n; ++i) {
+        objPack.abort = false;
+        objPack.classChange = 0;
+        objPack.seenInk = 0;
+        objPack.seenNon = 0;
+        objPack.phase[0] = '\0';
         OriBox box{};
         const float* in = seeds.data() + i * 8;
-        float* op = out.data() + i * 9;
+        float* op = out.data() + i * 18;
         if (!oriFromQuad(in, &box)) {
-            for (int k = 0; k < 8; ++k) op[k] = in[k];
-            op[8] = 2.f;
+            for (int k = 0; k < 8; ++k) {
+                op[k] = in[k];
+                op[8 + k] = in[k];
+            }
+            op[16] = 2.f;
+            op[17] = 0.f;
             continue;
         }
         Seg7Tele tele{};
@@ -6245,11 +6293,17 @@ static jfloatArray seg7OrientedMany(
         }
         if (objPack.abort) {
             poisonPacks[static_cast<size_t>(i)].bandH = -1;
-            appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
-            break;
         }
         appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
-        op[8] = sPx;
+        const float flags = objPack.abort ? 1.f : 0.f;
+        OriBox walked{};
+        if (oriFromQuad(op, &walked)) {
+            packOri18(op, walked, sPx, flags);
+        } else {
+            for (int k = 0; k < 8; ++k) op[8 + k] = op[k];
+            op[16] = sPx;
+            op[17] = flags;
+        }
         storeTeleArr(env, teleArr, i, tele);
     }
     writeSweepArr(env, sweepArr, sweeps);
