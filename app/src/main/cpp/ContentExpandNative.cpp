@@ -5262,12 +5262,46 @@ static double medianInteriorU8(const cv::Mat& m, const OriBox& b, int w, int h) 
     return 0.5 * (vals[n / 2 - 1] + vals[n / 2]);
 }
 
+static int maxInkRunAlongU(
+    const cv::Mat& lookBin, const OriBox& seed, float v,
+    int imgW, int imgH, int lookL, int lookT, float u0, float u1
+) {
+    if (lookBin.empty() || lookBin.type() != CV_8UC1) return 0;
+    if (u1 < u0 + 1.f) u1 = u0 + 1.f;
+    const int n = std::max(4, static_cast<int>(std::lround(u1 - u0)));
+    int best = 0, run = 0;
+    for (int i = 0; i <= n; ++i) {
+        bool on = false;
+        if (i < n) {
+            const float u = u0 + (i + 0.5f) / static_cast<float>(n) * (u1 - u0);
+            const int px = static_cast<int>(std::lround(
+                seed.cx + u * seed.ux + v * seed.vx));
+            const int py = static_cast<int>(std::lround(
+                seed.cy + u * seed.uy + v * seed.vy));
+            if (px >= 0 && py >= 0 && px < imgW && py < imgH) {
+                const int lx = px - lookL;
+                const int ly = py - lookT;
+                on = lx >= 0 && ly >= 0 && lx < lookBin.cols &&
+                    ly < lookBin.rows && lookBin.ptr<uint8_t>(ly)[lx] != 0;
+            }
+        }
+        if (on) {
+            ++run;
+            if (run > best) best = run;
+        } else {
+            run = 0;
+        }
+    }
+    return best;
+}
+
 static void fillOrientedLookSweep(
     const cv::Mat& src, bool srcIsBin, double otsu, bool dark, bool invertedBin,
     int glareW, const cv::Mat& lookBin, float lookV0,
     const OriBox& seed, float walkedV0, float walkedV1,
     int imgW, int imgH, int minRun, float sPx,
-    InkSweepPack* out
+    InkSweepPack* out,
+    int lookL = 0, int lookT = 0
 ) {
     if (!out) return;
     const float seedBh = std::max(1.f, seed.v1 - seed.v0);
@@ -5291,12 +5325,10 @@ static void fillOrientedLookSweep(
     out->h1 = static_cast<int>(std::lround(seed.u1)) - uStart;
     out->vScores.reserve(static_cast<size_t>(vEnd - vStart));
     for (int v = vStart; v < vEnd; ++v) {
-        const int y = static_cast<int>(std::lround(static_cast<float>(v) - lookV0));
-        int sc = 0;
-        if (!lookBin.empty() && y >= 0 && y < lookBin.rows) {
-            sc = maxInkRunRow(lookBin, y, 0, lookBin.cols);
-        }
-        out->vScores.push_back(sc);
+        out->vScores.push_back(
+            maxInkRunAlongU(
+                lookBin, seed, static_cast<float>(v), imgW, imgH, lookL, lookT,
+                static_cast<float>(uStart), static_cast<float>(uEnd)));
     }
     packSeedLookRows(
         lookBin,
@@ -5464,8 +5496,13 @@ static void seg7OrientedOne(
     const int glareW = 5 * std::max(sPx, 4);
     *sPxOut = static_cast<float>(std::max(1, sPx));
     const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
-    const int minRun = usedMinRun(
-        sPx, maxInSeedRunRows(lookBin, ySeed0, ySeed1, xSeed0, xSeed0 + wu));
+    int bestURun = 0;
+    for (float vv = seed.v0; vv < seed.v1; vv += 1.f) {
+        const int r = maxInkRunAlongU(
+            lookBin, seed, vv, imgW, imgH, lookL, lookT, seed.u0, seed.u1);
+        if (r > bestURun) bestURun = r;
+    }
+    const int minRun = usedMinRun(sPx, bestURun);
     auto hasBar = [&](float v) {
         const float u0 = seed.u0;
         const float u1 = seed.u1 > seed.u0 + 1.f ? seed.u1 : seed.u0 + 1.f;
@@ -5647,7 +5684,8 @@ static void seg7OrientedOne(
             OriBox seedSweep = seed;
             fillOrientedLookSweep(
                 src, true, 0.0, true, false, 0, lookBin, lookV0,
-                seedSweep, v0, v1, imgW, imgH, minRun, *sPxOut, sweepOut);
+                seedSweep, v0, v1, imgW, imgH, minRun, *sPxOut, sweepOut,
+                lookL, lookT);
         } catch (const cv::Exception&) {
         }
     }
