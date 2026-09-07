@@ -97,6 +97,49 @@ private fun pruneRedPixelsTopN(rects: MutableList<Rect>, context: Context, imgH:
 /** Keep [captureRedboxData]; off this plan. */
 private const val CAPTURE_REDBOX_DATA = false
 
+private fun countU8Value(plane: org.opencv.core.Mat, value: Int): Int {
+    if (plane.empty() || plane.type() != org.opencv.core.CvType.CV_8UC1) return 0
+    val w = plane.cols()
+    val h = plane.rows()
+    val row = ByteArray(w)
+    var n = 0
+    for (y in 0 until h) {
+        plane.get(y, 0, row)
+        for (x in 0 until w) {
+            if (row[x].toInt() and 0xff == value) n++
+        }
+    }
+    return n
+}
+
+private fun recordIncompleteLookIds(
+    look: org.opencv.core.Mat,
+    objImgRoot: File,
+    fullRow: Int,
+    col: Int,
+    si: Int,
+    nSeeds: Int,
+    pd: ContentExpandUtils.PoisonDump,
+    branch: PumpBranch,
+    onLog: (String) -> Unit,
+) {
+    val dump = File(objImgRoot, "r${fullRow}_c${col}_box${si + 1}_incomplete.png")
+    dumpObjectPlanePng(look, dump)
+    val n255 = countU8Value(look, 255)
+    val gap = "${pd.inkLo}:${pd.nextNonInk}"
+    val phase = pd.phase.ifBlank { "poison/walk" }
+    val msg = "object_id_incomplete col=$col seed=$si n=$nSeeds " +
+        "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} n255=$n255 idGap=$gap phase=$phase"
+    Log.e(TAG, msg)
+    onLog(msg)
+    branch.metadata["object_id_incomplete"] = msg
+    branch.metadata["object_id_n255"] = n255.toString()
+    branch.metadata["object_id_gap"] = gap
+    branch.metadata["object_dump_incomplete_box${si + 1}"] = dump.name
+    branch.metadata["object_abort_html"] =
+        "<small style='color:#c00'>$msg</small>"
+}
+
 private fun dumpObjectPlanePng(plane: org.opencv.core.Mat, file: File): Boolean {
     if (plane.empty()) return false
     val rows = plane.rows()
@@ -1709,13 +1752,12 @@ suspend fun runPumpExperiment(
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
-                    var exhausted = false
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
                     val isColor = expandMode != 0
                     seeds.forEachIndexed { si, seed ->
-                        if (exhausted) return@forEachIndexed
+
                         val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
                         if (poisonBuf.size >= 3) {
                             poisonBuf[0] = nextInk
@@ -1748,15 +1790,10 @@ suspend fun runPumpExperiment(
                             branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
                         }
                         if (pd?.bandH == -1) {
-                            exhausted = true
-                            val phase = pd.phase.ifBlank { "poison/walk" }
-                            val msg = "object_id_exhausted col=$col seed=$si n=${seeds.size} " +
-                                "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
-                            Log.e(TAG, msg)
-                            onLog(msg)
-                            branch.metadata["object_id_exhausted"] = msg
-                            branch.metadata["object_abort_html"] =
-                                "<small style='color:#c00'>$msg</small>"
+                            recordIncompleteLookIds(
+                                NativePaddleEngine.bufferSetA.s.mat,
+                                objImgRoot, fullRow, col, si, seeds.size, pd, branch, onLog,
+                            )
                         }
                     }
                     val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
@@ -3075,12 +3112,11 @@ suspend fun runPumpExperiment(
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
-                    var exhausted = false
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
                     seeds.forEachIndexed { si, seed ->
-                        if (exhausted) return@forEachIndexed
+
                         val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
                         if (poisonBuf.size >= 3) {
                             poisonBuf[0] = nextInk
@@ -3112,15 +3148,10 @@ suspend fun runPumpExperiment(
                             branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
                         }
                         if (pd?.bandH == -1) {
-                            exhausted = true
-                            val phase = pd.phase.ifBlank { "poison/walk" }
-                            val msg = "object_id_exhausted col=$col seed=$si n=${seeds.size} " +
-                                "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
-                            Log.e(TAG, msg)
-                            onLog(msg)
-                            branch.metadata["object_id_exhausted"] = msg
-                            branch.metadata["object_abort_html"] =
-                                "<small style='color:#c00'>$msg</small>"
+                            recordIncompleteLookIds(
+                                NativePaddleEngine.bufferSetA.s.mat,
+                                objImgRoot, fullRow, col, si, seeds.size, pd, branch, onLog,
+                            )
                         }
                         snapshotLookInk(
                             listOf(seed), listOf(seg.rect), imgW, imgH, branch,
@@ -3469,12 +3500,11 @@ suspend fun runPumpExperiment(
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
-                    var exhausted = false
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
                     seeds.forEachIndexed { si, seed ->
-                        if (exhausted) return@forEachIndexed
+
                         val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
                         if (poisonBuf.size >= 3) {
                             poisonBuf[0] = nextInk
@@ -3505,15 +3535,10 @@ suspend fun runPumpExperiment(
                             branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
                         }
                         if (pd?.bandH == -1) {
-                            exhausted = true
-                            val phase = pd.phase.ifBlank { "poison/walk" }
-                            val msg = "object_id_exhausted col=$col seed=$si n=${seeds.size} " +
-                                "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
-                            Log.e(TAG, msg)
-                            onLog(msg)
-                            branch.metadata["object_id_exhausted"] = msg
-                            branch.metadata["object_abort_html"] =
-                                "<small style='color:#c00'>$msg</small>"
+                            recordIncompleteLookIds(
+                                NativePaddleEngine.bufferSetA.s.mat,
+                                objImgRoot, fullRow, col, si, seeds.size, pd, branch, onLog,
+                            )
                         }
                         snapshotLookInk(
                             listOf(seed), listOf(seg.rect), imgW, imgH, branch,
@@ -3863,12 +3888,11 @@ suspend fun runPumpExperiment(
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
-                    var exhausted = false
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
                     seeds.forEachIndexed { si, seed ->
-                        if (exhausted) return@forEachIndexed
+
                         val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
                         if (poisonBuf.size >= 3) {
                             poisonBuf[0] = nextInk
@@ -3899,15 +3923,10 @@ suspend fun runPumpExperiment(
                             branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
                         }
                         if (pd?.bandH == -1) {
-                            exhausted = true
-                            val phase = pd.phase.ifBlank { "poison/walk" }
-                            val msg = "object_id_exhausted col=$col seed=$si n=${seeds.size} " +
-                                "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
-                            Log.e(TAG, msg)
-                            onLog(msg)
-                            branch.metadata["object_id_exhausted"] = msg
-                            branch.metadata["object_abort_html"] =
-                                "<small style='color:#c00'>$msg</small>"
+                            recordIncompleteLookIds(
+                                NativePaddleEngine.bufferSetA.s.mat,
+                                objImgRoot, fullRow, col, si, seeds.size, pd, branch, onLog,
+                            )
                         }
                         snapshotLookInk(
                             listOf(seed), listOf(seg.rect), imgW, imgH, branch,
@@ -4258,12 +4277,11 @@ suspend fun runPumpExperiment(
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
-                    var exhausted = false
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
                     seeds.forEachIndexed { si, seed ->
-                        if (exhausted) return@forEachIndexed
+
                         val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
                         if (poisonBuf.size >= 3) {
                             poisonBuf[0] = nextInk
@@ -4294,15 +4312,10 @@ suspend fun runPumpExperiment(
                             branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
                         }
                         if (pd?.bandH == -1) {
-                            exhausted = true
-                            val phase = pd.phase.ifBlank { "poison/walk" }
-                            val msg = "object_id_exhausted col=$col seed=$si n=${seeds.size} " +
-                                "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
-                            Log.e(TAG, msg)
-                            onLog(msg)
-                            branch.metadata["object_id_exhausted"] = msg
-                            branch.metadata["object_abort_html"] =
-                                "<small style='color:#c00'>$msg</small>"
+                            recordIncompleteLookIds(
+                                NativePaddleEngine.bufferSetA.s.mat,
+                                objImgRoot, fullRow, col, si, seeds.size, pd, branch, onLog,
+                            )
                         }
                         snapshotLookInk(
                             listOf(seed), listOf(seg.rect), imgW, imgH, branch,
@@ -5116,12 +5129,11 @@ suspend fun runPumpExperiment(
                     masterBuffer.s.clear()
                     NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
-                    var exhausted = false
                     var nextInk = 255
                     var nextNon = 1
                     var inkLo = 255
                     seedQuads.forEachIndexed { si, q ->
-                        if (exhausted) return@forEachIndexed
+
                         val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
                         if (poisonBuf.size >= 3) {
                             poisonBuf[0] = nextInk
@@ -5154,15 +5166,11 @@ suspend fun runPumpExperiment(
                             branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
                         }
                         if (pd?.bandH == -1) {
-                            exhausted = true
-                            val phase = pd.phase.ifBlank { "poison/walk" }
-                            val msg = "object_id_exhausted col=$col seed=$si n=${seedQuads.size} " +
-                                "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
-                            Log.e(TAG, msg)
-                            onLog(msg)
-                            branch.metadata["object_id_exhausted"] = msg
-                            branch.metadata["object_abort_html"] =
-                                "<small style='color:#c00'>$msg</small>"
+                            recordIncompleteLookIds(
+                                if (isColor) NativePaddleEngine.bufferSetB.s.mat
+                                else NativePaddleEngine.bufferSetA.s.mat,
+                                objImgRoot, fullRow, col, si, seedQuads.size, pd, branch, onLog,
+                            )
                         }
                         snapshotLookInkOriented(
                             q, seg.quad, imgW, imgH, branch,
@@ -5697,13 +5705,11 @@ suspend fun runPumpExperiment(
                         val colIdx = flows.indexOf(branch.name).let { if (it < 0) 0 else it }
                         masterBuffer.s.clear()
                         val segs = ArrayList<ContentExpandUtils.Seg7OrientedExpand>(seedQuads.size)
-                        var rotExhausted = false
                         var nextInk = 255
                         var nextNon = 1
                         var inkLo = 255
                         val isColor = expandMode != 0
                         seedQuads.forEachIndexed { si, q ->
-                            if (rotExhausted) return@forEachIndexed
                             val poisonBuf = ContentExpandUtils.poisonStatsBuf(1)
                             if (poisonBuf.size >= 3) {
                                 poisonBuf[0] = nextInk
@@ -5748,15 +5754,11 @@ suspend fun runPumpExperiment(
                                 branch.metadata["object_dump_box${si + 1}"] = dumpSeed.name
                             }
                             if (pd?.bandH == -1) {
-                                rotExhausted = true
-                                val phase = pd.phase.ifBlank { "poison/walk" }
-                                val msg = "object_id_exhausted col=$colIdx seed=$si n=${seedQuads.size} " +
-                                    "inkLo=${pd.inkLo} nextNonInk=${pd.nextNonInk} phase=$phase"
-                                Log.e(TAG, msg)
-                                onLog(msg)
-                                branch.metadata["object_id_exhausted"] = msg
-                                branch.metadata["object_abort_html"] =
-                                    "<small style='color:#c00'>$msg</small>"
+                                recordIncompleteLookIds(
+                                    if (isColor) NativePaddleEngine.bufferSetB.s.mat
+                                    else NativePaddleEngine.bufferSetA.s.mat,
+                                    objImgRoot, fullRow, colIdx, si, seedQuads.size, pd, branch, onLog,
+                                )
                             }
                             snapshotLookInkOriented(
                                 q, seg.quad, imgW, imgH, branch,
