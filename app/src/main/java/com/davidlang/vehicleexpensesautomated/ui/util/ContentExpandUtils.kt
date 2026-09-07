@@ -1147,6 +1147,13 @@ object ContentExpandUtils {
         val nPoison: Float = 0f,
         val firstThr: Float = 0f,
         val attempts: List<Seg7FillAttempt> = emptyList(),
+        val deltaTop1: Float = 0f,
+        val deltaBot1: Float = 0f,
+        val flagTop1: String = "UNCHANGED",
+        val flagBot1: String = "UNCHANGED",
+        val gapJumpBot1: Boolean = false,
+        val nDropTall: Float = 0f,
+        val maxCcH: Float = 0f,
     )
 
     data class Seg7FillAttempt(
@@ -1250,11 +1257,19 @@ object ContentExpandUtils {
                 kotlin.math.abs(it.fill - raw.fill) < 1e-5f &&
                     it.nLookBin == raw.nLookBinSeed
             } ?: atts.firstOrNull()
+            val tail = histEnd + 7 + NativeImageUtils.SEG7_ATTEMPT_MAX * f
             raw.copy(
                 attempts = atts,
                 nKeep = chosen?.nKeep ?: 0f,
                 nPoison = chosen?.nPoison ?: 0f,
                 firstThr = chosen?.firstThr ?: 0f,
+                deltaTop1 = a[o + tail],
+                deltaBot1 = a[o + tail + 1],
+                flagTop1 = boundFlagName(a[o + tail + 2]),
+                flagBot1 = boundFlagName(a[o + tail + 3]),
+                gapJumpBot1 = a[o + tail + 4] >= 0.5f,
+                nDropTall = a[o + tail + 5],
+                maxCcH = a[o + tail + 6],
             )
         }
     }

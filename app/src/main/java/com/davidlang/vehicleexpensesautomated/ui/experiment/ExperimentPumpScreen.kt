@@ -8620,6 +8620,13 @@ private fun seg7TeleJson(t: ContentExpandUtils.Seg7Telemetry): JSONObject {
         .put("flag_right", t.flagRight)
         .put("gap_jump_top", if (t.gapJumpTop) 1 else 0)
         .put("gap_jump_bot", if (t.gapJumpBot) 1 else 0)
+        .put("delta_top_1", t.deltaTop1.toDouble())
+        .put("delta_bot_1", t.deltaBot1.toDouble())
+        .put("flag_top_1", t.flagTop1)
+        .put("flag_bot_1", t.flagBot1)
+        .put("gap_jump_bot_1", if (t.gapJumpBot1) 1 else 0)
+        .put("n_drop_tall", t.nDropTall.toDouble())
+        .put("max_cc_h", t.maxCcH.toDouble())
         .put("gap_land_top", t.landTop.toDouble())
         .put("gap_land_bot", t.landBot.toDouble())
         .put("hist_h", hh)
@@ -8788,14 +8795,22 @@ private fun pSeg7TeleHtml(br: PumpBranch): String {
         row2("d_ink", f1(o, "d_ink"), "mean_chroma", f1(o, "mean_chroma"))
         row2("u_ink_x", f1(o, "u_ink_x"), "u_ink_y", f1(o, "u_ink_y"))
         row2("s_px", f0(o, "s_px"), "otsu", f0(o, "otsu_thresh"))
+        row2("Δt1", f0(o, "delta_top_1"), "Δb1", f0(o, "delta_bot_1"))
         row2("Δt", f0(o, "delta_top"), "Δb", f0(o, "delta_bot"))
         row2("Δl", f0(o, "delta_left"), "Δr", f0(o, "delta_right"))
+        row2(
+            "flag T/B 1",
+            "${o.optString("flag_top_1")}/${o.optString("flag_bot_1")}",
+            "gap_bot_1",
+            o.optInt("gap_jump_bot_1").toString(),
+        )
         row2(
             "flag T/B",
             "${o.optString("flag_top")}/${o.optString("flag_bot")}",
             "flag L/R",
             "${o.optString("flag_left")}/${o.optString("flag_right")}",
         )
+        row2("n_drop_tall", f0(o, "n_drop_tall"), "max_cc_h", f0(o, "max_cc_h"))
         sb.append("</table>")
         val hh = o.optJSONArray("hist_h")
         val hv = o.optJSONArray("hist_v")
