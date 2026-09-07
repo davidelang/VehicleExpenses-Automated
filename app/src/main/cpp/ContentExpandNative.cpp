@@ -2869,7 +2869,6 @@ static int maxInSeedRunRows(
     return best;
 }
 
-static void dropWide(cv::Mat* bin, int glareW);
 static void fillSaltPepper(cv::Mat* bin);
 static bool rowHasStrokeBar(
     const cv::Mat& bin, int y, int minRun, int glareW, const ObjPack* pack = nullptr);
@@ -3033,7 +3032,7 @@ static int vertPeakSW(const cv::Mat& bin, int seedH, const ObjPack* pack = nullp
     return peakCapped(hist, 4, maxH);
 }
 
-/** One H pass then one V pass. Fill interior 0-runs with gap∈(0,4] and 2×gap≤leading ink. No iterate. */
+/** H-only. Fill interior 0-runs with gap∈(0,4] and 2×gap≤leading ink. No iterate. */
 static void fillSaltPepperLine(uint8_t* p, int n, int stride) {
     int i = 0;
     while (i < n) {
@@ -3229,32 +3228,6 @@ static void recoverStrokeNearInk(
     }
 }
 
-__attribute__((unused))
-static void dropWide(cv::Mat* bin, int glareW) {
-    if (glareW <= 0 || bin->empty()) return;
-    cv::Mat labels, stats, centroids;
-    const int nLab = cv::connectedComponentsWithStats(*bin, labels, stats, centroids, 8);
-    if (nLab <= 1) return;
-    std::vector<char> drop(nLab, 0);
-    int dropped = 0;
-    for (int i = 1; i < nLab; ++i) {
-        const int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
-        if (w > glareW) {
-            drop[i] = 1;
-            ++dropped;
-        }
-    }
-    if (!dropped) return;
-    for (int y = 0; y < bin->rows; ++y) {
-        const int* lp = labels.ptr<int>(y);
-        uint8_t* bp = bin->ptr<uint8_t>(y);
-        for (int x = 0; x < bin->cols; ++x) {
-            const int id = lp[x];
-            if (id >= 0 && id < nLab && drop[id]) bp[x] = 0;
-        }
-    }
-}
-
 static void seg7One(
     const cv::Mat& src, int sl, int st, int sr, int sb,
     int imgW, int imgH,
@@ -3295,7 +3268,6 @@ static void seg7One(
     *hSWOut = 0;
     *usedFb = 0;
     if (sr <= sl || sb <= st || src.empty() || src.type() != CV_8UC1) return;
-    if (seedH < 4 || seedW < 4) return;
     const int gm = glareMult > 0 ? glareMult : 8;
     const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
     const int vLook = capPx + 2;
@@ -3913,30 +3885,6 @@ struct PoisonReg {
     bool noPeak = true;
     int nInk = 0;
 };
-
-static void dropWideRuns(cv::Mat* bin, int glareW, cv::Mat* poison = nullptr) {
-    if (!bin || bin->empty() || glareW <= 0) return;
-    const int h = bin->rows, w = bin->cols;
-    cv::Mat* pois = (poison && !poison->empty() &&
-        poison->rows == h && poison->cols == w)
-        ? poison : nullptr;
-    for (int y = 0; y < h; ++y) {
-        uint8_t* p = bin->ptr<uint8_t>(y);
-        uint8_t* pp = pois ? pois->ptr<uint8_t>(y) : nullptr;
-        int x = 0;
-        while (x < w) {
-            if (!p[x]) { ++x; continue; }
-            const int x0 = x;
-            while (x < w && p[x]) ++x;
-            if (x - x0 > glareW) {
-                for (int k = x0; k < x; ++k) {
-                    p[k] = 0;
-                    if (pp) pp[k] = 255;
-                }
-            }
-        }
-    }
-}
 
 static bool rowHasStrokeBar(
     const cv::Mat& bin, int y, int minRun, int glareW, const ObjPack* pack
@@ -4716,28 +4664,30 @@ static int fillPoisonLookRaster(
             }
         }
     };
-    for (int y = 0; y < lh; ++y) {
-        uint8_t* op = lookBin->ptr<uint8_t>(y);
-        const int sy = y - ySeed0;
-        const bool seedRow = sy >= 0 && sy < seedH;
-        for (int x = 0; x < lw; ++x) {
-            const int sx = x - xSeed0;
-            if (seedRow && sx >= 0 && sx < seedW) {
-                op[x] = combined.ptr<uint8_t>(sy)[sx];
-                continue;
+    if (sPx >= 1) {
+        for (int y = 0; y < lh; ++y) {
+            uint8_t* op = lookBin->ptr<uint8_t>(y);
+            const int sy = y - ySeed0;
+            const bool seedRow = sy >= 0 && sy < seedH;
+            for (int x = 0; x < lw; ++x) {
+                const int sx = x - xSeed0;
+                if (seedRow && sx >= 0 && sx < seedW) {
+                    op[x] = combined.ptr<uint8_t>(sy)[sx];
+                    continue;
+                }
+                if (v0Clean <= 4) { op[x] = 0; continue; }
+                op[x] = lookInkAt(y, x);
             }
-            if (v0Clean <= 4) { op[x] = 0; continue; }
-            op[x] = lookInkAt(y, x);
         }
-    }
-    for (int y = 0; y < lh; ++y) {
-        uint8_t* op = lookBin->ptr<uint8_t>(y);
-        for (int x = 0; x < lw; ++x) {
-            if (op[x]) op[x] = 255;
+        for (int y = 0; y < lh; ++y) {
+            uint8_t* op = lookBin->ptr<uint8_t>(y);
+            for (int x = 0; x < lw; ++x) {
+                if (op[x]) op[x] = 255;
+            }
         }
+        fillSaltPepper(lookBin);
+        flood255LookIds(lookBin, sPx, objPack, seedIndex);
     }
-    fillSaltPepper(lookBin);
-    flood255LookIds(lookBin, sPx, objPack, seedIndex);
     if (lookPoisonOut) {
         lookPoison.create(lh, lw, CV_8UC1);
         lookPoison.setTo(0);
@@ -5697,10 +5647,8 @@ static void seg7OrientedOne(
     }
     oriToQuad(seed, outPts8);
     const float seedBh = std::max(1.f, seed.v1 - seed.v0);
-    const float seedBw = std::max(1.f, seed.u1 - seed.u0);
     *sPxOut = 0.f;
     if (src.empty() || src.type() != CV_8UC1) return;
-    if (seedBh < 4.f || seedBw < 4.f) return;
     const float cap = 2.5f * seedBh;
     const int vLook = std::max(1, static_cast<int>(std::lround(cap)) + 2);
     const float lookV = (seed.v1 - seed.v0) + 2.f * static_cast<float>(vLook);
