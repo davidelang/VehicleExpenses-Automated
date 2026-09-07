@@ -7790,6 +7790,7 @@ private fun orientedLookUnionCrop(
     accum(seed)
     accum(official)
     accum(walked)
+    accum(k4)
     var k4V0 = Float.POSITIVE_INFINITY
     var k4V1 = Float.NEGATIVE_INFINITY
     var wU0 = Float.POSITIVE_INFINITY
@@ -7965,6 +7966,7 @@ private suspend fun snapshotLookInkOriented(
     val union = orientedLookUnionCrop(seed, official, walked, k4) ?: return
     val cropQ = union.first
     val seedOrder = ContentExpandUtils.orderQuadForWarp(seed) ?: return
+    val cropOrder = ContentExpandUtils.orderQuadForWarp(cropQ) ?: return
     val wSeed = hypot(
         (seedOrder[2] - seedOrder[0]).toDouble(),
         (seedOrder[3] - seedOrder[1]).toDouble(),
@@ -7973,9 +7975,17 @@ private suspend fun snapshotLookInkOriented(
         (seedOrder[6] - seedOrder[0]).toDouble(),
         (seedOrder[7] - seedOrder[1]).toDouble(),
     ).coerceAtLeast(1.0)
+    val wUnion = hypot(
+        (cropOrder[2] - cropOrder[0]).toDouble(),
+        (cropOrder[3] - cropOrder[1]).toDouble(),
+    ).coerceAtLeast(1.0)
+    val hUnion = hypot(
+        (cropOrder[6] - cropOrder[0]).toDouble(),
+        (cropOrder[7] - cropOrder[1]).toDouble(),
+    ).coerceAtLeast(1.0)
     fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
-    var destH = even2(96)
-    var destW = even2((96.0 * wSeed / hSeed).toInt())
+    var destH = even2(ceil(hUnion * 96.0 / hSeed).toInt())
+    var destW = even2(ceil(wUnion * 96.0 / hSeed).toInt())
     val destSlice = NativePaddleEngine.bufferSetB.s
     val scale = min(
         1.0,
@@ -7987,12 +7997,18 @@ private suspend fun snapshotLookInkOriented(
     var dest = NativePaddleEngine.bufferSetB.c[cropId]
     if (dest.mat.cols() < destW || dest.width < destW) {
         destW = dest.mat.cols().coerceAtLeast(2)
-        destH = even2((destW * hSeed / wSeed).roundToInt())
-        if (dest.mat.rows() != destH || dest.height != destH) {
-            NativePaddleEngine.bufferSetB.c[cropId].release()
-            cropId = destSlice.createCrop(0, 0, destW, destH)
-            dest = NativePaddleEngine.bufferSetB.c[cropId]
-        }
+        destH = even2((destW * hUnion / wUnion).roundToInt())
+    }
+    if (dest.mat.rows() < destH || dest.height < destH) {
+        destH = dest.mat.rows().coerceAtLeast(2)
+        destW = even2((destH * wUnion / hUnion).roundToInt())
+    }
+    if (dest.mat.cols() != destW || dest.width != destW ||
+        dest.mat.rows() != destH || dest.height != destH
+    ) {
+        NativePaddleEngine.bufferSetB.c[cropId].release()
+        cropId = destSlice.createCrop(0, 0, destW, destH)
+        dest = NativePaddleEngine.bufferSetB.c[cropId]
     }
     dest.clear()
     val ok = try {
