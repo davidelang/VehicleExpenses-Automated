@@ -3152,11 +3152,10 @@ static void seg7One(
     if (!veAllocLog("seg7One", veMatBytes(imgH, imgW, CV_8UC1), imgH, imgW, CV_8UC1)) {
         return;
     }
-    const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedH)));
-    *sPxOut = fallback;
-    *vSWOut = 4;
-    *hSWOut = 4;
-    *usedFb = 1;
+    *sPxOut = 0;
+    *vSWOut = 0;
+    *hSWOut = 0;
+    *usedFb = 0;
     if (sr <= sl || sb <= st || src.empty() || src.type() != CV_8UC1) return;
     if (seedH < 4 || seedW < 4) return;
     const int gm = glareMult > 0 ? glareMult : 8;
@@ -3207,7 +3206,7 @@ static void seg7One(
         veRssLog("seg7_look", extra);
     }
     const int sPx = fillPoisonLookRaster(
-        seedY, look, localT, xSeed0, srcIsBin, gm, fallback, &lookBin,
+        seedY, look, localT, xSeed0, srcIsBin, gm, 0, &lookBin,
         overlayY8, overlayUv2, lookL, nt, poisonStats ? &stLocal : nullptr, lookPlane,
         objPlane, objPack, seedIndex, false,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
@@ -3219,7 +3218,8 @@ static void seg7One(
     *sPxOut = sPx;
     *vSWOut = vSW;
     *hSWOut = hSW;
-    *usedFb = (sPx == fallback) ? 1 : 0;
+    *usedFb = (sPx < 1) ? 1 : 0;
+    if (sPx < 1) return;
     const float gf = gapFrac > 0.f ? gapFrac : 0.5f;
     const int gapStop = std::max(1, static_cast<int>(std::lround(gf * sPx)));
     const int minRun = usedMinRun(
@@ -3731,18 +3731,17 @@ static int seedInkBinY(
     if (sb > h) sb = h;
     const int seedH = std::max(1, sb - st);
     const int seedW = std::max(1, sr - sl);
-    const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedH)));
-    if (sr <= sl || sb <= st) return fallback;
+    if (sr <= sl || sb <= st) return 0;
     if (!binOut || binOut->empty() || binOut->type() != CV_8UC1 ||
         binOut->rows != seedH || binOut->cols != seedW) {
-        return fallback;
+        return 0;
     }
     cv::Mat roi = y(cv::Range(st, sb), cv::Range(sl, sr));
     const int sPx = fillPoisonLookRaster(
-        roi, roi, 0, 0, false, glareMult, fallback, binOut);
+        roi, roi, 0, 0, false, glareMult, 0, binOut);
     if (otsuOut) *otsuOut = 0.0;
     if (invertedOut) *invertedOut = false;
-    return std::max(1, sPx);
+    return sPx;
 }
 
 struct PoisonReg {
@@ -3972,7 +3971,7 @@ static int fillPoisonLookRaster(
     SeedFillGate* fillGateOut
 ) {
     const int seedH = seedY.rows, seedW = seedY.cols;
-    if (!lookBin) return std::max(1, fallback);
+    if (!lookBin) return fallback;
     const int lh0 = lookY.rows, lw0 = lookY.cols;
     if (lookBin->empty() || lookBin->rows != lh0 || lookBin->cols != lw0 ||
         lookBin->type() != CV_8UC1) {
@@ -3988,12 +3987,12 @@ static int fillPoisonLookRaster(
                 objPack->abortSeed = seedIndex;
                 std::snprintf(objPack->phase, sizeof(objPack->phase), "scratch");
             }
-            return std::max(1, fallback);
+            return fallback;
         }
         *lookBin = placed;
     }
     lookBin->setTo(0);
-    if (seedH < 1 || seedW < 1 || lookY.empty()) return std::max(1, fallback);
+    if (seedH < 1 || seedW < 1 || lookY.empty()) return fallback;
     auto abortScratch = [&]() {
         if (objPack) {
             objPack->abort = true;
@@ -4024,7 +4023,7 @@ static int fillPoisonLookRaster(
     cv::Mat bin = planeView8u(lookBin, xSeed0, ySeed0, seedW, seedH);
     if (bin.empty()) {
         abortScratch();
-        return std::max(1, fallback);
+        return fallback;
     }
     double otsu = 0.0;
     bool inverted = false;
@@ -4097,7 +4096,7 @@ static int fillPoisonLookRaster(
     cv::Mat poison = planeView8u(&lookPoison, xSeed0, ySeed0, seedW, seedH);
     if (poison.empty()) {
         abortScratch();
-        return std::max(1, fallback);
+        return fallback;
     }
     fillPoisonMask(bin, v0, needFb0, seedW, glareMult, &poison);
     veRssLog("poison_mask", nullptr);
@@ -4600,7 +4599,7 @@ static int fillPoisonLookRaster(
             for (int x = 0; x < lw; ++x) op[x] = lookInkAt(y, x);
         }
     }
-    return std::max(1, sPx);
+    return sPx;
 }
 
 /** Gray Otsu look-strip on seed T/B, x padded for jump. Full-image U8 dst. */
@@ -4622,8 +4621,7 @@ static bool fillGrayJumpLook(
     cv::Mat seedY = y(cv::Range(st, sb), cv::Range(sl, sr));
     cv::Mat lookY = y(cv::Range(st, sb), cv::Range(xl, xr));
     cv::Mat strip = (*dst)(cv::Rect(xl, st, xr - xl, sb - st));
-    const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * (sb - st))));
-    fillPoisonLookRaster(seedY, lookY, 0, sl - xl, false, 8, fallback, &strip);
+    fillPoisonLookRaster(seedY, lookY, 0, sl - xl, false, 8, 0, &strip);
     return !strip.empty();
 }
 
@@ -4947,6 +4945,7 @@ static jintArray aabbGrayMany(
         if (t < 0) t = 0;
         if (r > imgW) r = imgW;
         if (b > imgH) b = imgH;
+        if (r <= l || b <= t) continue;
         int ol, ot, orr, ob, sPx, vSW, hSW, fb;
         Seg7Tele tele{};
         tele.method = 0.f;
@@ -5075,6 +5074,7 @@ static jintArray aabbColorMany(
         if (t < 0) t = 0;
         if (r > imgW) r = imgW;
         if (b > imgH) b = imgH;
+        if (r <= l || b <= t) continue;
         int ol, ot, orr, ob, sPx, vSW, hSW, fb;
         Seg7Tele tele{};
         tele.method = 4.f;
@@ -5482,8 +5482,7 @@ static void seg7OrientedOne(
     oriToQuad(seed, outPts8);
     const float seedBh = std::max(1.f, seed.v1 - seed.v0);
     const float seedBw = std::max(1.f, seed.u1 - seed.u0);
-    const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * seedBh)));
-    *sPxOut = static_cast<float>(fallback);
+    *sPxOut = 0.f;
     if (src.empty() || src.type() != CV_8UC1) return;
     if (seedBh < 4.f || seedBw < 4.f) return;
     const float cap = 2.5f * seedBh;
@@ -5537,7 +5536,7 @@ static void seg7OrientedOne(
     cv::Mat lookInkAtPlane;
     SeedFillGate fillGate;
     const int sPx = fillPoisonLookRaster(
-        seedY, look, ySeed0, xSeed0, srcIsBin, 8, fallback, &lookBin,
+        seedY, look, ySeed0, xSeed0, srcIsBin, 8, 0, &lookBin,
         overlayY8, overlayUv2, lookL, lookT, poisonStats ? &stLocal : nullptr, lookBinHost,
         objPlane, objPack, seedIndex,
         false, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
@@ -5559,8 +5558,9 @@ static void seg7OrientedOne(
         tele->dInk = tele->yInk - tele->yBg;
     }
     if (poisonStats) *poisonStats = stLocal;
+    *sPxOut = static_cast<float>(sPx);
+    if (sPx < 1) return;
     const int glareW = 8 * std::max(sPx, 4);
-    *sPxOut = static_cast<float>(std::max(1, sPx));
     const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
     int bestURun = 0;
     for (float vv = seed.v0; vv < seed.v1; vv += 1.f) {
