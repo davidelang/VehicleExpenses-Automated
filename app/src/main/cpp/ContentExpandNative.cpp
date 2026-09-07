@@ -139,7 +139,7 @@ static constexpr int kRunHistBins = 32;
 static constexpr int kSeg7AttemptMax = 4;
 static constexpr int kSeg7AttemptF = 12;
 static constexpr int kSeg7TeleN =
-    26 + kRunHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF;
+    26 + kRunHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF + 7;
 
 enum : int {
     kFlagUnchanged = 0,
@@ -192,6 +192,13 @@ struct Seg7Tele {
     float nPoison = 0.f;
     float firstThr = 0.f;
     float attempts[kSeg7AttemptMax][kSeg7AttemptF]{};
+    float dTop1 = 0.f;
+    float dBot1 = 0.f;
+    float fTop1 = 0.f;
+    float fBot1 = 0.f;
+    float gapJumpBot1 = 0.f;
+    float nDropTall = 0.f;
+    float maxCcH = 0.f;
 };
 
 static int runLengthBin(int run) {
@@ -328,6 +335,14 @@ static void packSeg7Tele(const Seg7Tele& t, float* dst) {
             dst[b + f] = t.attempts[a][f];
         }
     }
+    const int tail = histEnd + 7 + kSeg7AttemptMax * kSeg7AttemptF;
+    dst[tail + 0] = t.dTop1;
+    dst[tail + 1] = t.dBot1;
+    dst[tail + 2] = t.fTop1;
+    dst[tail + 3] = t.fBot1;
+    dst[tail + 4] = t.gapJumpBot1;
+    dst[tail + 5] = t.nDropTall;
+    dst[tail + 6] = t.maxCcH;
 }
 
 static int countInkU8(const cv::Mat& m, int l, int t, int r, int b) {
@@ -3034,20 +3049,29 @@ static void dropWide(cv::Mat* bin, int glareW) {
     }
 }
 
-static void dropTallCCs(cv::Mat* bin, int maxH, cv::Mat* poison = nullptr) {
+static void dropTallCCs(
+    cv::Mat* bin, int maxH, cv::Mat* poison = nullptr,
+    int* nDropOut = nullptr, int* maxCcHOut = nullptr
+) {
+    if (nDropOut) *nDropOut = 0;
+    if (maxCcHOut) *maxCcHOut = 0;
     if (!bin || bin->empty() || maxH <= 0) return;
     cv::Mat labels, stats, centroids;
     const int nLab = cv::connectedComponentsWithStats(*bin, labels, stats, centroids, 8);
     if (nLab <= 1) return;
     std::vector<char> drop(nLab, 0);
     int dropped = 0;
+    int maxCcH = 0;
     for (int i = 1; i < nLab; ++i) {
         const int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        if (h > maxCcH) maxCcH = h;
         if (h > maxH) {
             drop[i] = 1;
             ++dropped;
         }
     }
+    if (nDropOut) *nDropOut = dropped;
+    if (maxCcHOut) *maxCcHOut = maxCcH;
     if (!dropped) return;
     cv::Mat* pois = (poison && !poison->empty() &&
         poison->rows == bin->rows && poison->cols == bin->cols)
@@ -3100,7 +3124,7 @@ static void seg7One(
     bool srcIsBin = false,
     float gapFrac = 0.5f,
     float minSeedHsToFreeze = 0.f,
-    int glareMult = 5,
+    int glareMult = 8,
     int boundStrategy = 0,
     int tightInsetPx = 16,
     Seg7Tele* tele = nullptr,
@@ -3135,7 +3159,7 @@ static void seg7One(
     *usedFb = 1;
     if (sr <= sl || sb <= st || src.empty() || src.type() != CV_8UC1) return;
     if (seedH < 4 || seedW < 4) return;
-    const int gm = glareMult > 0 ? glareMult : 5;
+    const int gm = glareMult > 0 ? glareMult : 8;
     const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
     const int vLook = capPx + 2;
     const int nt = std::max(0, st - vLook);
@@ -3287,7 +3311,20 @@ static void seg7One(
         if (b <= t) b = std::min(t + 1, lookBin.rows);
     };
     walkV();
-    dropTallCCs(&lookBin, 10 * std::max(1, sPx), &lookPoison);
+    int nDropTall = 0, maxCcH = 0;
+    if (tele) {
+        tele->dTop1 = static_cast<float>(t - localT);
+        tele->dBot1 = static_cast<float>(b - localB);
+        tele->fTop1 = static_cast<float>(fTop);
+        tele->fBot1 = static_cast<float>(fBot);
+        tele->gapJumpBot1 = gapJumpBot ? 1.f : 0.f;
+    }
+    dropTallCCs(
+        &lookBin, 16 * std::max(1, sPx), &lookPoison, &nDropTall, &maxCcH);
+    if (tele) {
+        tele->nDropTall = static_cast<float>(nDropTall);
+        tele->maxCcH = static_cast<float>(maxCcH);
+    }
     walkV();
     *ol = sl;
     *ot = nt + t;
@@ -3420,7 +3457,7 @@ static void fillPoisonMask(
     poison->setTo(0);
     const int vRef = std::max(v0, 4);
     const int fat = 3 * vRef;
-    const int longH = (glareMult > 0 ? glareMult : 5) * vRef;
+    const int longH = (glareMult > 0 ? glareMult : 8) * vRef;
     const int thinW = std::max(1, static_cast<int>(std::lround(0.25f * static_cast<float>(seedW))));
     const bool weak = v0 <= 4 || needFb;
     // 0 clean, 1 H-candidate, 255 poison. longH/weak mark 1 (not 255).
@@ -3679,7 +3716,7 @@ static void orBin(cv::Mat* dst, const cv::Mat& src) {
 /** Seed-ROI Y Otsu + poison map; chroma samples clean + agreeing poison ink. */
 static int seedInkBinY(
     const cv::Mat& y, int sl, int st, int sr, int sb, cv::Mat* binOut,
-    int glareMult = 5,
+    int glareMult = 8,
     double* otsuOut = nullptr,
     bool* invertedOut = nullptr
 ) {
@@ -4541,7 +4578,7 @@ static int fillPoisonLookRaster(
     fillSaltPepper(lookBin);
     stampSeedCombined();
     dropSpeckleCCs(lookBin, sPx);
-    const int glareW = (glareMult > 0 ? glareMult : 5) * std::max(sPx, 4);
+    const int glareW = (glareMult > 0 ? glareMult : 8) * std::max(sPx, 4);
     dropWideRuns(lookBin, glareW, &lookPoison);
     if (lookPoisonOut) *lookPoisonOut = lookPoison;
     if (paintOverlay) {
@@ -4586,7 +4623,7 @@ static bool fillGrayJumpLook(
     cv::Mat lookY = y(cv::Range(st, sb), cv::Range(xl, xr));
     cv::Mat strip = (*dst)(cv::Rect(xl, st, xr - xl, sb - st));
     const int fallback = std::max(2, static_cast<int>(std::lround(0.08f * (sb - st))));
-    fillPoisonLookRaster(seedY, lookY, 0, sl - xl, false, 5, fallback, &strip);
+    fillPoisonLookRaster(seedY, lookY, 0, sl - xl, false, 8, fallback, &strip);
     return !strip.empty();
 }
 
@@ -4603,7 +4640,7 @@ static bool fillChromaTintMask(
     const cv::Mat& y, const cv::Mat& uv,
     int sl, int st, int sr, int sb,
     cv::Mat* dst,
-    int glareMult = 5,
+    int glareMult = 8,
     int xPad = 0,
     bool adaptive = false,
     Seg7Tele* tele = nullptr,
@@ -4917,7 +4954,7 @@ static jintArray aabbGrayMany(
         objPack.seenInk = 0;
         objPack.seenNon = 0;
         seg7One(*gray, l, t, r, b, imgW, imgH, &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb,
-            false, gapFrac, minSeedHsToFreeze, 5, boundStrategy, tightInsetPx, &tele, false,
+            false, gapFrac, minSeedHsToFreeze, 8, boundStrategy, tightInsetPx, &tele, false,
             &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
             &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, poisonPlane);
         {
@@ -5007,7 +5044,7 @@ static jintArray aabbColorMany(
     try {
     const int imgW = gray->cols, imgH = gray->rows;
     const int n = n4 / 4;
-    const int glareMult = 5;
+    const int glareMult = 8;
     const jfloat gapFrac = 0.5f;
     const jfloat minSeedHsToFreeze = 0.f;
     auto* uv = reinterpret_cast<cv::Mat*>(uvPtr);
@@ -5060,7 +5097,7 @@ static jintArray aabbColorMany(
                 tele.method = 0.f;
                 seg7One(*gray, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
-                    gapFrac, minSeedHsToFreeze, 5, boundStrategy, tightInsetPx, &tele, true,
+                    gapFrac, minSeedHsToFreeze, 8, boundStrategy, tightInsetPx, &tele, true,
                     &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
                     &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane);
             }
@@ -5068,7 +5105,7 @@ static jintArray aabbColorMany(
             if (ok && skipTintWalk(true, tele)) tele.method = 0.f;
             seg7One(*gray, l, t, r, b, imgW, imgH,
                 &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
-                gapFrac, minSeedHsToFreeze, 5, boundStrategy, tightInsetPx, &tele, ok,
+                gapFrac, minSeedHsToFreeze, 8, boundStrategy, tightInsetPx, &tele, ok,
                 &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
                 &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane);
         }
@@ -5500,7 +5537,7 @@ static void seg7OrientedOne(
     cv::Mat lookInkAtPlane;
     SeedFillGate fillGate;
     const int sPx = fillPoisonLookRaster(
-        seedY, look, ySeed0, xSeed0, srcIsBin, 5, fallback, &lookBin,
+        seedY, look, ySeed0, xSeed0, srcIsBin, 8, fallback, &lookBin,
         overlayY8, overlayUv2, lookL, lookT, poisonStats ? &stLocal : nullptr, lookBinHost,
         objPlane, objPack, seedIndex,
         false, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
@@ -5522,7 +5559,7 @@ static void seg7OrientedOne(
         tele->dInk = tele->yInk - tele->yBg;
     }
     if (poisonStats) *poisonStats = stLocal;
-    const int glareW = 5 * std::max(sPx, 4);
+    const int glareW = 8 * std::max(sPx, 4);
     *sPxOut = static_cast<float>(std::max(1, sPx));
     const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
     int bestURun = 0;
@@ -5646,7 +5683,20 @@ static void seg7OrientedOne(
         if (v1 < v0 + 2.f) v1 = v0 + 2.f;
     };
     walkV();
-    dropTallCCs(&lookBin, 10 * std::max(1, sPx), &lookPoison);
+    int nDropTall = 0, maxCcH = 0;
+    if (tele) {
+        tele->dTop1 = v0 - origV0;
+        tele->dBot1 = v1 - origV1;
+        tele->fTop1 = static_cast<float>(fTop);
+        tele->fBot1 = static_cast<float>(fBot);
+        tele->gapJumpBot1 = gapJumpBot ? 1.f : 0.f;
+    }
+    dropTallCCs(
+        &lookBin, 16 * std::max(1, sPx), &lookPoison, &nDropTall, &maxCcH);
+    if (tele) {
+        tele->nDropTall = static_cast<float>(nDropTall);
+        tele->maxCcH = static_cast<float>(maxCcH);
+    }
     walkV();
     const float seedU0 = seed.u0, seedU1 = seed.u1;
     seed.v0 = v0;
