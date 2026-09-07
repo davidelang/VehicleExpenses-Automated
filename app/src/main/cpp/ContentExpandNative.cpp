@@ -1168,6 +1168,8 @@ struct ObjPack {
     uint8_t nextInk = 255;
     uint8_t nextNon = 1;
     uint8_t inkLo = 255;
+    uint8_t lookNextInk = 253;
+    uint8_t lookNextNon = 1;
     bool abort = false;
     int abortSeed = -1;
     int classChange = 0;
@@ -1202,6 +1204,34 @@ static bool objAlloc(
         }
         *idOut = p->nextNon++;
         p->seenNon = 1;
+    }
+    p->kind[*idOut] = kind;
+    p->seedOf[*idOut] = static_cast<uint8_t>(std::max(0, seedIndex) & 255);
+    return true;
+}
+
+/** Look-plane ids only: ink 253--, poison 1++. Does not consume 255 (unscanned). */
+static bool lookAlloc(
+    ObjPack* p, bool ink, int seedIndex, uint8_t kind, uint8_t* idOut
+) {
+    if (!p || !idOut) return false;
+    if (p->abort) return false;
+    if (ink) {
+        if (p->lookNextInk <= p->lookNextNon) {
+            p->abort = true;
+            p->abortSeed = seedIndex;
+            std::snprintf(p->phase, sizeof(p->phase), "ink");
+            return false;
+        }
+        *idOut = p->lookNextInk--;
+    } else {
+        if (p->lookNextNon >= p->lookNextInk) {
+            p->abort = true;
+            p->abortSeed = seedIndex;
+            std::snprintf(p->phase, sizeof(p->phase), "non-ink");
+            return false;
+        }
+        *idOut = p->lookNextNon++;
     }
     p->kind[*idOut] = kind;
     p->seedOf[*idOut] = static_cast<uint8_t>(std::max(0, seedIndex) & 255);
@@ -3022,6 +3052,38 @@ static bool isLookInkId(uint8_t v) {
     return v == 254 || (v >= 128 && v <= 253);
 }
 
+static int maxBlobRunH(std::vector<int>& pix, int w) {
+    if (pix.empty()) return 0;
+    std::sort(pix.begin(), pix.end());
+    int best = 1, run = 1;
+    for (size_t i = 1; i < pix.size(); ++i) {
+        const int py = pix[i - 1] / w, px = pix[i - 1] % w;
+        const int y = pix[i] / w, x = pix[i] % w;
+        if (y == py && x == px + 1) ++run;
+        else run = 1;
+        if (run > best) best = run;
+    }
+    return best;
+}
+
+static int maxBlobRunV(std::vector<int>& pix, int w) {
+    if (pix.empty()) return 0;
+    std::sort(pix.begin(), pix.end(), [w](int a, int b) {
+        const int xa = a % w, xb = b % w;
+        if (xa != xb) return xa < xb;
+        return a / w < b / w;
+    });
+    int best = 1, run = 1;
+    for (size_t i = 1; i < pix.size(); ++i) {
+        const int px = pix[i - 1] % w, py = pix[i - 1] / w;
+        const int x = pix[i] % w, y = pix[i] / w;
+        if (x == px && y == py + 1) ++run;
+        else run = 1;
+        if (run > best) best = run;
+    }
+    return best;
+}
+
 static void flood255LookIds(cv::Mat* look, int sPx, ObjPack* pack, int seedIndex) {
     if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
     const int h = look->rows, w = look->cols;
@@ -3030,8 +3092,6 @@ static void flood255LookIds(cv::Mat* look, int sPx, ObjPack* pack, int seedIndex
     const int run16 = 16 * sPx;
     const int run3 = 3 * sPx;
     const int run2 = 2 * sPx;
-    uint8_t nextInk = 253;
-    uint8_t nextNon = 1;
     std::vector<int> st;
     st.reserve(256);
     std::vector<int> pix;
@@ -3070,48 +3130,19 @@ static void flood255LookIds(cv::Mat* look, int sPx, ObjPack* pack, int seedIndex
                 for (int i : pix) look->ptr<uint8_t>(i / w)[i % w] = 0;
                 continue;
             }
-            int maxHrun = 0, maxVrun = 0;
-            for (int yy = y0; yy < y1; ++yy) {
-                int run = 0;
-                const uint8_t* pr = look->ptr<uint8_t>(yy);
-                for (int xx = x0; xx <= x1; ++xx) {
-                    const bool on = xx < x1 && pr[xx] == 254;
-                    if (on) ++run;
-                    else {
-                        if (run > maxHrun) maxHrun = run;
-                        run = 0;
-                    }
-                }
-            }
-            for (int xx = x0; xx < x1; ++xx) {
-                int run = 0;
-                for (int yy = y0; yy <= y1; ++yy) {
-                    const bool on = yy < y1 && look->ptr<uint8_t>(yy)[xx] == 254;
-                    if (on) ++run;
-                    else {
-                        if (run > maxVrun) maxVrun = run;
-                        run = 0;
-                    }
-                }
-            }
+            const int maxHrun = maxBlobRunH(pix, w);
+            const int maxVrun = maxBlobRunV(pix, w);
             const bool poison = maxHrun > run6 || maxVrun > run16 ||
                 (maxHrun > run3 && maxVrun > run2);
-            if (poison) {
-                if (nextNon >= nextInk) {
-                    if (pack) {
-                        pack->abort = true;
-                        pack->abortSeed = seedIndex;
-                        std::snprintf(pack->phase, sizeof(pack->phase), "ink");
-                    }
-                    continue;
-                }
-                const uint8_t id = nextNon++;
-                if (pack) pack->kind[id] = kKindPoisonFat;
-                for (int i : pix) look->ptr<uint8_t>(i / w)[i % w] = id;
+            if (!poison) continue;
+            uint8_t id = 0;
+            if (!lookAlloc(pack, false, seedIndex, kKindPoisonFat, &id)) {
+                for (int i : pix) look->ptr<uint8_t>(i / w)[i % w] = 255;
+                return;
             }
+            for (int i : pix) look->ptr<uint8_t>(i / w)[i % w] = id;
         }
     }
-    (void)nextInk;
 }
 
 static void recoverStrokeNearInk(
@@ -5095,6 +5126,8 @@ static jintArray aabbGrayMany(
     loadObjPack(env, poisonArr, &objPack);
     for (int i = 0; i < n; ++i) {
         objPack.abort = false;
+        objPack.lookNextInk = 253;
+        objPack.lookNextNon = 1;
         objPack.classChange = 0;
         objPack.seenInk = 0;
         objPack.seenNon = 0;
@@ -5217,6 +5250,8 @@ static jintArray aabbColorMany(
     loadObjPack(env, poisonArr, &objPack);
     for (int i = 0; i < n; ++i) {
         objPack.abort = false;
+        objPack.lookNextInk = 253;
+        objPack.lookNextNon = 1;
         objPack.classChange = 0;
         objPack.seenInk = 0;
         objPack.seenNon = 0;
@@ -6129,6 +6164,8 @@ static jfloatArray seg7OrientedMany(
     loadObjPack(env, poisonArr, &objPack);
     for (int i = 0; i < n; ++i) {
         objPack.abort = false;
+        objPack.lookNextInk = 253;
+        objPack.lookNextNon = 1;
         objPack.classChange = 0;
         objPack.seenInk = 0;
         objPack.seenNon = 0;
