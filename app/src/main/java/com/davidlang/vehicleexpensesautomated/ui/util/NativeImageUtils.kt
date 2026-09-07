@@ -412,10 +412,14 @@ object NativeImageUtils {
         growCells: Int = 1,
         /** A.p Y: mask + CC labels + edges headers. Null = JNI fail (no heap). */
         scratchY: Mat? = null,
+        /** >0: pack vertices in photo px (max(photo)/max(content)). 0 = heat space. */
+        heatToPhoto: Float = 0f,
+        photoW: Int = 0,
+        photoH: Int = 0,
     ): FloatArray? {
         return nativeProcessHeatmap(
             tensor, threshold, minArea, boxMode, maskDilatePasses, maxBoxes, growCells,
-            scratchY?.nativeObj ?: 0L,
+            scratchY?.nativeObj ?: 0L, heatToPhoto, photoW, photoH,
         )
     }
 
@@ -433,10 +437,13 @@ object NativeImageUtils {
         maxBoxes: Int = HEATMAP_MAX_BOXES_DEFAULT,
         growCells: Int = 1,
         scratchY: Mat? = null,
+        heatToPhoto: Float = 0f,
+        photoW: Int = 0,
+        photoH: Int = 0,
     ): FloatArray? {
         return nativeProcessHeatmapU8(
             heatU8, width, height, threshold, minArea, boxMode, maskDilatePasses, maxBoxes,
-            growCells, scratchY?.nativeObj ?: 0L,
+            growCells, scratchY?.nativeObj ?: 0L, heatToPhoto, photoW, photoH,
         )
     }
 
@@ -965,6 +972,9 @@ object NativeImageUtils {
         maxBoxes: Int,
         growCells: Int,
         scratchPtr: Long,
+        heatToPhoto: Float,
+        photoW: Int,
+        photoH: Int,
     ): FloatArray?
     private external fun nativeProcessHeatmapU8(
         heatU8: ByteArray,
@@ -977,6 +987,9 @@ object NativeImageUtils {
         maxBoxes: Int,
         growCells: Int,
         scratchPtr: Long,
+        heatToPhoto: Float,
+        photoW: Int,
+        photoH: Int,
     ): FloatArray?
     private external fun nativeLastHeatmapPostPath(): String?
     private external fun nativeHeatmapToAngle(tensor: Any, threshold: Float, scratchPtr: Long): Float
