@@ -3068,7 +3068,7 @@ static void dropTallCCs(cv::Mat* bin, int maxH, cv::Mat* poison = nullptr) {
 
 static void dropSpeckleCCs(cv::Mat* bin, int sPx) {
     if (!bin || bin->empty() || sPx < 1) return;
-    const float lim = 0.5f * static_cast<float>(sPx);
+    const int minWh = std::max(1, sPx / 4);
     cv::Mat labels, stats, centroids;
     const int nLab = cv::connectedComponentsWithStats(*bin, labels, stats, centroids, 8);
     if (nLab <= 1) return;
@@ -3077,7 +3077,7 @@ static void dropSpeckleCCs(cv::Mat* bin, int sPx) {
     for (int i = 1; i < nLab; ++i) {
         const int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
         const int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
-        if (static_cast<float>(w) < lim && static_cast<float>(h) < lim) {
+        if (w < minWh && h < minWh) {
             drop[i] = 1;
             ++dropped;
         }
