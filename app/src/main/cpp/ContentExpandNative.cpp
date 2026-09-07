@@ -4179,7 +4179,7 @@ static int fillPoisonLookRaster(
         if (fillGate.fill > fillHi) {
             fillGate.retryWhy = 2;
             fillGate.nRetry = 0;
-        } else if (fillGate.fill < fillLo) {
+        } else if (fillGate.fill < fillLo || fillGate.nLookBin == 0) {
             fillGate.retryWhy = 1;
             fillGate.nRetry = 0;
             const int nLookBin0 = fillGate.nLookBin;
@@ -4230,7 +4230,7 @@ static int fillPoisonLookRaster(
                 return false;
             };
             bool inBand = false;
-            if (nKeep < 2 && extras < 3) {
+            if ((nKeep < 2 || nLookBin0 == 0) && extras < 3) {
                 float histAll[64] = {};
                 for (int yy = 0; yy < kh; ++yy) {
                     const uint8_t* yp = seedY.ptr<uint8_t>(yy);
@@ -4320,7 +4320,7 @@ static int fillPoisonLookRaster(
                     }
                     if (seen) continue;
                     const bool moreInk = cleanDark ? (thr > usedKeep) : (thr < usedKeep);
-                    if (!moreInk) continue;
+                    if (nLookBin0 != 0 && !moreInk) continue;
                     cands.push_back(thr);
                 }
                 std::sort(cands.begin(), cands.end(), [&](int a, int b) {
@@ -5027,6 +5027,14 @@ static jintArray aabbColorMany(
                 gapFrac, minSeedHsToFreeze, glareMult, boundStrategy, tightInsetPx, &tele, true,
                 &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
                 &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane);
+            if (tele.nLookBinSeed == 0.f && !objPack.abort) {
+                tele.method = 0.f;
+                seg7One(*gray, l, t, r, b, imgW, imgH,
+                    &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
+                    gapFrac, minSeedHsToFreeze, 5, boundStrategy, tightInsetPx, &tele, true,
+                    &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
+                    &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane);
+            }
         } else {
             if (ok && skipTintWalk(true, tele)) tele.method = 0.f;
             seg7One(*gray, l, t, r, b, imgW, imgH,
@@ -5931,6 +5939,14 @@ static jfloatArray seg7OrientedMany(
             &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
             &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, rotPoison,
             lookBinHost, doHorzJump);
+        if (srcIsBin && tele.nLookBinSeed == 0.f && !objPack.abort) {
+            tele.method = 0.f;
+            seg7OrientedOne(*gray, box, imgW, imgH, op, &sPx,
+                boundStrategy, tightInsetPx, false, &tele, keepColor,
+                &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
+                &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, rotPoison,
+                lookBinHost, doHorzJump);
+        }
         if (objPack.abort) {
             poisonPacks[static_cast<size_t>(i)].bandH = -1;
             appendObjMeta(&poisonPacks[static_cast<size_t>(i)], objPack, i, n);
