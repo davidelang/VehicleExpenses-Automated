@@ -7790,7 +7790,6 @@ private fun orientedLookUnionCrop(
     accum(seed)
     accum(official)
     accum(walked)
-    accum(k4)
     var k4V0 = Float.POSITIVE_INFINITY
     var k4V1 = Float.NEGATIVE_INFINITY
     var wU0 = Float.POSITIVE_INFINITY
@@ -7965,19 +7964,18 @@ private suspend fun snapshotLookInkOriented(
     val k4 = ContentExpandUtils.padOrientedByStrokes(walked, seed, 4f, sPx)
     val union = orientedLookUnionCrop(seed, official, walked, k4) ?: return
     val cropQ = union.first
-    val order = ContentExpandUtils.orderQuadForWarp(cropQ) ?: return
-    val wSrc = hypot(
-        (order[2] - order[0]).toDouble(),
-        (order[3] - order[1]).toDouble(),
-    ).toFloat().coerceAtLeast(1f)
-    val hSrc = hypot(
-        (order[6] - order[0]).toDouble(),
-        (order[7] - order[1]).toDouble(),
-    ).toFloat().coerceAtLeast(1f)
-    val seedBh = seed.shortAxisBh().coerceAtLeast(1f)
+    val seedOrder = ContentExpandUtils.orderQuadForWarp(seed) ?: return
+    val wSeed = hypot(
+        (seedOrder[2] - seedOrder[0]).toDouble(),
+        (seedOrder[3] - seedOrder[1]).toDouble(),
+    ).coerceAtLeast(1.0)
+    val hSeed = hypot(
+        (seedOrder[6] - seedOrder[0]).toDouble(),
+        (seedOrder[7] - seedOrder[1]).toDouble(),
+    ).coerceAtLeast(1.0)
     fun even2(v: Int) = ((v + 1) / 2 * 2).coerceAtLeast(2)
-    var destH = even2(ceil(hSrc * 96.0 / seedBh).toInt())
-    var destW = even2(ceil(wSrc * 96.0 / seedBh).toInt())
+    var destH = even2(96)
+    var destW = even2((96.0 * wSeed / hSeed).toInt())
     val destSlice = NativePaddleEngine.bufferSetB.s
     val scale = min(
         1.0,
@@ -7985,8 +7983,17 @@ private suspend fun snapshotLookInkOriented(
     )
     destW = even2((destW * scale).toInt())
     destH = even2((destH * scale).toInt())
-    val cropId = destSlice.createCrop(0, 0, destW, destH)
-    val dest = NativePaddleEngine.bufferSetB.c[cropId]
+    var cropId = destSlice.createCrop(0, 0, destW, destH)
+    var dest = NativePaddleEngine.bufferSetB.c[cropId]
+    if (dest.mat.cols() < destW || dest.width < destW) {
+        destW = dest.mat.cols().coerceAtLeast(2)
+        destH = even2((destW * hSeed / wSeed).roundToInt())
+        if (dest.mat.rows() != destH || dest.height != destH) {
+            NativePaddleEngine.bufferSetB.c[cropId].release()
+            cropId = destSlice.createCrop(0, 0, destW, destH)
+            dest = NativePaddleEngine.bufferSetB.c[cropId]
+        }
+    }
     dest.clear()
     val ok = try {
         ContentExpandUtils.warpQuadToHorizontalStrip(
