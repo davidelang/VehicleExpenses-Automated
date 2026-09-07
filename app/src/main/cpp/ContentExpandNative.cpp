@@ -3034,7 +3034,7 @@ static void dropWide(cv::Mat* bin, int glareW) {
     }
 }
 
-static void dropTallCCs(cv::Mat* bin, int maxH) {
+static void dropTallCCs(cv::Mat* bin, int maxH, cv::Mat* poison = nullptr) {
     if (!bin || bin->empty() || maxH <= 0) return;
     cv::Mat labels, stats, centroids;
     const int nLab = cv::connectedComponentsWithStats(*bin, labels, stats, centroids, 8);
@@ -3044,6 +3044,40 @@ static void dropTallCCs(cv::Mat* bin, int maxH) {
     for (int i = 1; i < nLab; ++i) {
         const int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
         if (h > maxH) {
+            drop[i] = 1;
+            ++dropped;
+        }
+    }
+    if (!dropped) return;
+    cv::Mat* pois = (poison && !poison->empty() &&
+        poison->rows == bin->rows && poison->cols == bin->cols)
+        ? poison : nullptr;
+    for (int y = 0; y < bin->rows; ++y) {
+        const int* lp = labels.ptr<int>(y);
+        uint8_t* bp = bin->ptr<uint8_t>(y);
+        uint8_t* pp = pois ? pois->ptr<uint8_t>(y) : nullptr;
+        for (int x = 0; x < bin->cols; ++x) {
+            const int id = lp[x];
+            if (id >= 0 && id < nLab && drop[id]) {
+                bp[x] = 0;
+                if (pp) pp[x] = 255;
+            }
+        }
+    }
+}
+
+static void dropSpeckleCCs(cv::Mat* bin, int sPx) {
+    if (!bin || bin->empty() || sPx < 1) return;
+    const float lim = 0.5f * static_cast<float>(sPx);
+    cv::Mat labels, stats, centroids;
+    const int nLab = cv::connectedComponentsWithStats(*bin, labels, stats, centroids, 8);
+    if (nLab <= 1) return;
+    std::vector<char> drop(nLab, 0);
+    int dropped = 0;
+    for (int i = 1; i < nLab; ++i) {
+        const int w = stats.at<int>(i, cv::CC_STAT_WIDTH);
+        const int h = stats.at<int>(i, cv::CC_STAT_HEIGHT);
+        if (static_cast<float>(w) < lim && static_cast<float>(h) < lim) {
             drop[i] = 1;
             ++dropped;
         }
@@ -3253,7 +3287,7 @@ static void seg7One(
         if (b <= t) b = std::min(t + 1, lookBin.rows);
     };
     walkV();
-    dropTallCCs(&lookBin, 10 * std::max(1, sPx));
+    dropTallCCs(&lookBin, 10 * std::max(1, sPx), &lookPoison);
     walkV();
     *ol = sl;
     *ot = nt + t;
@@ -3682,18 +3716,25 @@ struct PoisonReg {
     int nInk = 0;
 };
 
-static void dropWideRuns(cv::Mat* bin, int glareW) {
+static void dropWideRuns(cv::Mat* bin, int glareW, cv::Mat* poison = nullptr) {
     if (!bin || bin->empty() || glareW <= 0) return;
     const int h = bin->rows, w = bin->cols;
+    cv::Mat* pois = (poison && !poison->empty() &&
+        poison->rows == h && poison->cols == w)
+        ? poison : nullptr;
     for (int y = 0; y < h; ++y) {
         uint8_t* p = bin->ptr<uint8_t>(y);
+        uint8_t* pp = pois ? pois->ptr<uint8_t>(y) : nullptr;
         int x = 0;
         while (x < w) {
             if (!p[x]) { ++x; continue; }
             const int x0 = x;
             while (x < w && p[x]) ++x;
             if (x - x0 > glareW) {
-                for (int k = x0; k < x; ++k) p[k] = 0;
+                for (int k = x0; k < x; ++k) {
+                    p[k] = 0;
+                    if (pp) pp[k] = 255;
+                }
             }
         }
     }
@@ -4498,44 +4539,10 @@ static int fillPoisonLookRaster(
         }
     }
     fillSaltPepper(lookBin);
-    const int runLim = 3 * std::max(1, sPx);
-    const int halfSeed = static_cast<int>(0.50f * static_cast<float>(seedW));
-    for (int y = 0; y < lh; ++y) {
-        uint8_t* op = lookBin->ptr<uint8_t>(y);
-        uint8_t* pp = lookPoison.empty() ? nullptr : lookPoison.ptr<uint8_t>(y);
-        const int sy = y - ySeed0;
-        const bool seedRow = sy >= 0 && sy < seedH;
-        int nInk = 0;
-        int best = 0, run = 0;
-        for (int x = 0; x < lw; ++x) {
-            const int sx = x - xSeed0;
-            const bool inSeed = seedRow && sx >= 0 && sx < seedW;
-            if (inSeed) {
-                if (run > best) best = run;
-                run = 0;
-                continue;
-            }
-            if (op[x]) {
-                ++nInk;
-                ++run;
-                if (run > best) best = run;
-            } else {
-                run = 0;
-            }
-        }
-        if (run > best) best = run;
-        if (best <= runLim && nInk <= halfSeed) continue;
-        for (int x = 0; x < lw; ++x) {
-            const int sx = x - xSeed0;
-            const bool inSeed = seedRow && sx >= 0 && sx < seedW;
-            if (inSeed) continue;
-            if (pp && op[x]) pp[x] = 255;
-            op[x] = 0;
-        }
-    }
     stampSeedCombined();
+    dropSpeckleCCs(lookBin, sPx);
     const int glareW = (glareMult > 0 ? glareMult : 5) * std::max(sPx, 4);
-    dropWideRuns(lookBin, glareW);
+    dropWideRuns(lookBin, glareW, &lookPoison);
     if (lookPoisonOut) *lookPoisonOut = lookPoison;
     if (paintOverlay) {
         paintLookOverlay(
@@ -5639,7 +5646,7 @@ static void seg7OrientedOne(
         if (v1 < v0 + 2.f) v1 = v0 + 2.f;
     };
     walkV();
-    dropTallCCs(&lookBin, 10 * std::max(1, sPx));
+    dropTallCCs(&lookBin, 10 * std::max(1, sPx), &lookPoison);
     walkV();
     const float seedU0 = seed.u0, seedU1 = seed.u1;
     seed.v0 = v0;
