@@ -3138,8 +3138,6 @@ static void flood255LookIds(
     const int minWh = std::max(1, sPx / 4);
     const int run6 = 6 * sPx;
     const int run16 = 16 * sPx;
-    const int run3 = 3 * sPx;
-    const int run2 = 2 * sPx;
     std::vector<int> st;
     st.reserve(256);
     std::vector<int> pix;
@@ -3180,8 +3178,7 @@ static void flood255LookIds(
             }
             const int maxHrun = maxBlobRunH(pix, w);
             const int maxVrun = maxBlobRunV(pix, w);
-            const bool poison = maxHrun > run6 || maxVrun > run16 ||
-                (maxHrun > run3 && maxVrun > run2);
+            const bool poison = maxHrun > run6 || maxVrun > run16;
             if (!poison) continue;
             uint8_t id = 0;
             if (!lookAlloc(pack, false, seedIndex, kKindPoisonFat, &id)) {
@@ -5936,6 +5933,7 @@ static void seg7OrientedOne(
         if (fBot == kFlagUnchanged) fBot = kFlagBlockedGap;
     };
     const float origV0 = seed.v0, origV1 = seed.v1;
+    const float origU0 = seed.u0, origU1 = seed.u1;
     auto walkV = [&]() {
         v0 = origV0;
         v1 = origV1;
@@ -6058,7 +6056,7 @@ static void seg7OrientedOne(
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
         true,
         seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
-        seed.u0, seed.u1, seed.v0, seed.v1, objPack,
+        origU0, origU1, origV0, origV1, objPack,
         lookL, lookT, lookR, lookB);
 }
 
