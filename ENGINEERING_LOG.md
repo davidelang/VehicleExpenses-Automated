@@ -692,3 +692,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan Status: APPROVED → implementing
 - Scope: restamp TODO.md/project-facts.md to :ai-shared 664 in fix-perms + hooks/post-checkout; todo-append EACCES diagnosis; PERMISSIONS_MODEL restamp sentence
 - No update-rules / deploy-orchestration sweep
+
+## 2026-09-07 - Start execution: update-rules-fail-closed-stash-and-worktrees-20260907-1700-plan.md
+
+- Plan Status: APPROVED → implementing
+- Scope: fail-closed update-rules worktree allowlist + stash/commit guards; deploy-orchestration dest update-rules refuses staged unless --force; ERROR not WARN
+- No VE update-rules apply sweep; no deploy-orchestration --apply

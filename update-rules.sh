@@ -8,6 +8,8 @@
 #
 # Safety (default): do not clobber a worktree file that is "ahead" of orchestration
 # for that path. Use --force to publish orch over worktree anyway.
+# Stash-fail, extra staged paths, prunable / grok-worktrees / third_party/*/src /
+# foreign git-common-dir: skip that worktree (no copy, no commit) and exit non-zero.
 #   --dry-run   show actions only
 #   -f/--force  always take orchestration content when it differs
 #
@@ -373,8 +375,103 @@ STAMP_FILES=(
 
 # 4. Push updates to all other worktrees
 CURRENT_WT=$(git rev-parse --show-toplevel)
-# Get absolute paths of all worktrees from git
-WORKTREES=$(git worktree list --porcelain | grep "^worktree " | cut -d' ' -f2-)
+SOT_COMMON=$(git rev-parse --git-common-dir)
+case "$SOT_COMMON" in
+  /*) ;;
+  *) SOT_COMMON="$SOURCE_DIR/$SOT_COMMON" ;;
+esac
+SOT_COMMON=$(cd "$SOT_COMMON" && pwd)
+
+# Porcelain parse: path + prunable. Do not treat grok-worktrees, third_party
+# src, prunable, or foreign git-common-dir as sync targets.
+WT_PATHS=()
+WT_PRUNABLE=()
+_wt_path=""
+_wt_prunable=0
+_flush_wt() {
+  if [ -n "$_wt_path" ]; then
+    WT_PATHS+=("$_wt_path")
+    WT_PRUNABLE+=("$_wt_prunable")
+  fi
+  _wt_path=""
+  _wt_prunable=0
+}
+while IFS= read -r _line || [ -n "${_line:-}" ]; do
+  case "$_line" in
+    worktree\ *)
+      _flush_wt
+      _wt_path="${_line#worktree }"
+      ;;
+    prunable*)
+      _wt_prunable=1
+      ;;
+    "")
+      _flush_wt
+      ;;
+  esac
+done < <(git worktree list --porcelain)
+_flush_wt
+unset _line _wt_path _wt_prunable
+
+SKIP_SAFETY=0
+
+# Prints skip reason to stdout and returns 0 if this worktree must not be synced.
+worktree_skip_reason() {
+  local wt="$1" prunable="$2"
+  if [ "$prunable" = 1 ]; then
+    echo "prunable"
+    return 0
+  fi
+  case "$wt" in
+    */grok-worktrees|*/grok-worktrees/*)
+      echo "grok-worktrees pool"
+      return 0
+      ;;
+    */third_party/*/src|*/third_party/*/src/*)
+      echo "third_party src worktree"
+      return 0
+      ;;
+  esac
+  if [ ! -e "$wt/.git" ]; then
+    echo "no .git"
+    return 0
+  fi
+  if [ ! -f "$wt/.git" ] && [ ! -d "$wt/.git" ]; then
+    echo ".git is not a file or directory"
+    return 0
+  fi
+  local common
+  common=$(git -C "$wt" rev-parse --git-common-dir 2>/dev/null) || {
+    echo "cannot resolve git-common-dir"
+    return 0
+  }
+  case "$common" in
+    /*) ;;
+    *) common="$wt/$common" ;;
+  esac
+  common=$(cd "$common" 2>/dev/null && pwd) || {
+    echo "cannot canonicalize git-common-dir"
+    return 0
+  }
+  if [ "$common" != "$SOT_COMMON" ]; then
+    echo "git-common-dir $common != SoT $SOT_COMMON"
+    return 0
+  fi
+  return 1
+}
+
+COMMIT_EXTRAS=(
+  standard-plan-compliance-block.md
+  get-builds-tag.sh
+  run-grok
+  run-grok-planner
+  run-grok-master
+  run-grok-coder
+  run-grok-orchestrator
+  run-antigravity
+  run-antigravity-master
+  run-antigravity-planner
+)
 
 if [ "$DRY_RUN" -eq 1 ]; then
     echo ">>> would seed orch_root=$SOURCE_DIR into $SOURCE_DIR/project.config"
@@ -383,8 +480,18 @@ else
     echo ">>> seeded orch_root=$SOURCE_DIR into $SOURCE_DIR/project.config"
 fi
 
-for WT in $WORKTREES; do
+_wt_i=0
+while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
+    WT="${WT_PATHS[$_wt_i]}"
+    WT_IS_PRUNABLE="${WT_PRUNABLE[$_wt_i]}"
+    _wt_i=$((_wt_i + 1))
     if [ "$WT" == "$CURRENT_WT" ]; then
+        continue
+    fi
+
+    if _skip=$(worktree_skip_reason "$WT" "$WT_IS_PRUNABLE"); then
+        echo "ERROR: skip $WT — $_skip"
+        SKIP_SAFETY=$((SKIP_SAFETY + 1))
         continue
     fi
 
@@ -427,7 +534,9 @@ for WT in $WORKTREES; do
             if ( cd "$WT" && git stash push --staged --message "update-rules temp: preserve staged work before infra sync" --quiet ); then
                 stashed=1
             else
-                echo "  WARNING: stash failed in $WT"
+                echo "ERROR: stash failed in $WT — skip copy and commit"
+                SKIP_SAFETY=$((SKIP_SAFETY + 1))
+                continue
             fi
         fi
     fi
@@ -500,32 +609,64 @@ for WT in $WORKTREES; do
     fi
 
     (
-        cd "$WT" || exit
-        
-        git update-index --no-skip-worktree "${COPY_LIST[@]}" 2>/dev/null || true
-        chmod +w "${COPY_LIST[@]}" 2>/dev/null || true
+        cd "$WT" || exit 1
 
-        git add -f standard-plan-compliance-block.md get-builds-tag.sh \
-          run-grok-planner run-grok-master run-grok-coder run-grok-orchestrator run-grok \
-          run-antigravity run-antigravity-master run-antigravity-planner 2>&1 | cat || true
-        git add "${COPY_LIST[@]}" 2>&1 | cat || true
+        ALLOW_COMMIT=("${COPY_LIST[@]}")
+        for extra in "${COMMIT_EXTRAS[@]}"; do
+          [ -e "$extra" ] && ALLOW_COMMIT+=("$extra")
+        done
 
-        if ! git diff --staged --quiet; then
-            echo "Changes detected in $WT, committing..."
-            git commit -m "chore: Synchronize agent rules and infrastructure"
-        else
-            for extra in standard-plan-compliance-block.md run-grok-planner run-grok-master \
-                         run-antigravity run-antigravity-master run-antigravity-planner; do
-                if [ -f "$extra" ]; then
-                    git add -f "$extra" 2>&1 | cat || true
-                fi
-            done
-            if ! git diff --staged --quiet; then
-                echo "Changes (including new launchers/block) detected in $WT after extra pass, committing..."
-                git commit -m "chore: Synchronize agent rules and infrastructure"
-            else
-                echo "No changes needed for $WT."
+        git update-index --no-skip-worktree "${ALLOW_COMMIT[@]}" 2>/dev/null || true
+        chmod +w "${ALLOW_COMMIT[@]}" 2>/dev/null || true
+
+        add_failed=0
+        for f in "${ALLOW_COMMIT[@]}"; do
+          [ -e "$f" ] || continue
+          if ! git add -f -- "$f"; then
+            echo "ERROR: git add failed for $f in $WT"
+            add_failed=1
+          fi
+        done
+        if [ "$add_failed" -ne 0 ]; then
+          echo "ERROR: skip commit in $WT after add failure"
+          git reset >/dev/null 2>&1 || true
+          exit 2
+        fi
+
+        extra_staged=0
+        while IFS= read -r p; do
+          [ -n "$p" ] || continue
+          in_allow=0
+          for a in "${ALLOW_COMMIT[@]}"; do
+            if [ "$p" = "$a" ]; then
+              in_allow=1
+              break
             fi
+          done
+          if [ "$in_allow" -eq 0 ]; then
+            echo "ERROR: extra staged path $p in $WT — refusing commit"
+            extra_staged=1
+          fi
+        done < <(git diff --cached --name-only)
+
+        if [ "$extra_staged" -ne 0 ]; then
+          git reset >/dev/null 2>&1 || true
+          exit 2
+        fi
+
+        staged_only=()
+        while IFS= read -r p; do
+          [ -n "$p" ] && staged_only+=("$p")
+        done < <(git diff --cached --name-only)
+        if [ "${#staged_only[@]}" -eq 0 ]; then
+          echo "No changes needed for $WT."
+        else
+          echo "Changes detected in $WT, committing allowlist only..."
+          if ! git commit --only -- "${staged_only[@]}" -m "chore: Synchronize agent rules and infrastructure"; then
+            echo "ERROR: git commit --only failed in $WT"
+            git reset >/dev/null 2>&1 || true
+            exit 2
+          fi
         fi
 
         if [ "$stashed" -eq 1 ]; then
@@ -538,11 +679,10 @@ for WT in $WORKTREES; do
                 git status --short | cat
             fi
         fi
-    )
-
-    if [ "$DRY_RUN" -eq 1 ]; then
-      continue
-    fi
+    ) || {
+        echo "ERROR: infra commit skipped or failed in $WT"
+        SKIP_SAFETY=$((SKIP_SAFETY + 1))
+    }
 
     # Re-assert executables after commit (git may not preserve all mode bits in WT)
     for _exe in "$WT"/deploy "$WT"/build_app "$WT"/gradlew \
@@ -595,4 +735,8 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "Status: dry-run only (no files written, no commits)."
 else
   echo "Status: Worktrees processed from $SOURCE_DIR (skipped worktree-ahead/dirty paths unless --force)."
+fi
+if [ "$SKIP_SAFETY" -ne 0 ]; then
+  echo "ERROR: $SKIP_SAFETY worktree(s) skipped for safety (stash fail, extra staged, foreign/prunable/grok-worktrees/third_party src)."
+  exit 1
 fi

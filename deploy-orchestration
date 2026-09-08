@@ -4,6 +4,7 @@
 #
 # Per-host update-rules.sh stays on that host (project FILES). This command
 # never overwrites dest update-rules.sh.
+# Will not run dest update-rules on staged dest/worktrees unless --force (dangerous).
 #
 # Run as primary_user (dlang) from the VehicleExpenses orchestration root:
 #   ./deploy-orchestration --discover
@@ -248,6 +249,64 @@ file_dirty() {
   [[ -n "$(git_c "$dest" status --porcelain -- "$rel" 2>/dev/null)" ]]
 }
 
+# Dest update-rules: refuse staged trees unless --force. Skip prunable,
+# grok-worktrees, and third_party/*/src the same way VE update-rules does.
+dest_ur_worktree_ok() {
+  local dest="$1" wt="$2"
+  case "$wt" in
+    */grok-worktrees|*/grok-worktrees/*) return 1 ;;
+    */third_party/*/src|*/third_party/*/src/*) return 1 ;;
+  esac
+  [[ -f "$wt/.git" || -d "$wt/.git" ]] || return 1
+  local dest_common wt_common
+  dest_common=$(git_c "$dest" rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$dest_common" in
+    /*) ;;
+    *) dest_common="$dest/$dest_common" ;;
+  esac
+  dest_common=$(cd "$dest_common" 2>/dev/null && pwd) || return 1
+  wt_common=$(git -c "safe.directory=$wt" -c "safe.directory=*" -C "$wt" rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$wt_common" in
+    /*) ;;
+    *) wt_common="$wt/$wt_common" ;;
+  esac
+  wt_common=$(cd "$wt_common" 2>/dev/null && pwd) || return 1
+  [[ "$wt_common" == "$dest_common" ]]
+}
+
+dest_report_staged() {
+  local dest="$1"
+  local any=0 wt line wt_path prunable
+  wt_path=""
+  prunable=0
+  while IFS= read -r line || [[ -n "${line:-}" ]]; do
+    case "$line" in
+      worktree\ *)
+        if [[ -n "$wt_path" && "$prunable" -eq 0 ]] && dest_ur_worktree_ok "$dest" "$wt_path"; then
+          if [[ -n "$(git -c "safe.directory=$wt_path" -c "safe.directory=*" -C "$wt_path" diff --cached --name-only 2>/dev/null)" ]]; then
+            echo "  STAGED $wt_path"
+            git -c "safe.directory=$wt_path" -c "safe.directory=*" -C "$wt_path" diff --cached --name-only | sed 's/^/    /'
+            any=1
+          fi
+        fi
+        wt_path="${line#worktree }"
+        prunable=0
+        ;;
+      prunable*)
+        prunable=1
+        ;;
+    esac
+  done < <(git_c "$dest" worktree list --porcelain)
+  if [[ -n "$wt_path" && "$prunable" -eq 0 ]] && dest_ur_worktree_ok "$dest" "$wt_path"; then
+    if [[ -n "$(git -c "safe.directory=$wt_path" -c "safe.directory=*" -C "$wt_path" diff --cached --name-only 2>/dev/null)" ]]; then
+      echo "  STAGED $wt_path"
+      git -c "safe.directory=$wt_path" -c "safe.directory=*" -C "$wt_path" diff --cached --name-only | sed 's/^/    /'
+      any=1
+    fi
+  fi
+  [[ "$any" -eq 1 ]]
+}
+
 decide_copy() {
   local dest="$1" rel="$2"
   DECIDE=copy
@@ -343,22 +402,32 @@ for dest in "${DESTS[@]}"; do
   fi
 
   if [[ "$DO_UR" -eq 1 ]]; then
+    if dest_report_staged "$dest"; then
+      if [[ "$FORCE" -eq 0 ]]; then
+        echo "ERROR: dest $dest has staged changes; will not run update-rules (pass --force to override)" >&2
+        exit 1
+      fi
+      echo "  WARN: --force: running dest update-rules despite staged changes"
+    fi
     ur=("$dest/update-rules.sh")
     [[ "$DRY" -eq 1 ]] && ur+=(--dry-run)
     [[ "$FORCE" -eq 1 && "$DRY" -eq 0 ]] && ur+=(--force)
     echo "  RUN ${ur[*]}"
+    ur_ok=1
     if [[ "$DRY" -eq 1 ]]; then
       (cd "$dest" && bash ./update-rules.sh --dry-run) || {
-        echo "  WARN dest update-rules dry-run failed"
+        echo "ERROR: dest update-rules dry-run failed" >&2
         ANY_FAIL=1
+        ur_ok=0
       }
     else
       before=$(git_c "$dest" rev-parse HEAD)
       if ! (cd "$dest" && bash ./update-rules.sh ${FORCE:+--force}); then
-        echo "  WARN dest update-rules failed"
+        echo "ERROR: dest update-rules failed" >&2
         ANY_FAIL=1
+        ur_ok=0
       fi
-      if [[ "$DO_COMMIT" -eq 1 || "$DO_PUSH" -eq 1 ]]; then
+      if [[ "$ur_ok" -eq 1 && ( "$DO_COMMIT" -eq 1 || "$DO_PUSH" -eq 1 ) ]]; then
         while IFS= read -r wt; do
           [[ -n "$wt" ]] || continue
           if [[ -n "$(git_c "$wt" rev-list --count '@{u}..HEAD' 2>/dev/null)" ]] \
