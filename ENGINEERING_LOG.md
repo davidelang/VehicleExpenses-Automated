@@ -686,3 +686,9 @@ Policy: permission denials → report human / script residual; no creative worka
 
 - Plan: `dev-ai-interaction/plans/check-upgrade-project-skill-20260829-0450-plan.md`
 - Copy current sandbox skill to `.grok/skills/check-upgrade/SKILL.md` with `user-invocable: true`, closed enabled list, step-9 follow-on plan (no silent project-skill edits). Wire `update-rules.sh` FILES + `AGENTS.md` enabled table. Do not add to `[skills].disabled`.
+
+## 2026-09-07 - Start execution: planner-todo-append-ai-shared-664-20260907-1659-plan.md
+
+- Plan Status: APPROVED → implementing
+- Scope: restamp TODO.md/project-facts.md to :ai-shared 664 in fix-perms + hooks/post-checkout; todo-append EACCES diagnosis; PERMISSIONS_MODEL restamp sentence
+- No update-rules / deploy-orchestration sweep

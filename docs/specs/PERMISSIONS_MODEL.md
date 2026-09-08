@@ -40,7 +40,7 @@ All code, scripts, and docs must follow this. Changes require plan + approval.
 - **.git/**: `dlang:ai-shared 2770` (group can add objects).
 - **ENGINEERING_LOG.md**: `dlang:ai-shared 660` + `chattr +a` (kernel append-only). Set once (root only if needed to re-apply).
 - **append-to-engineering-log**: `dlang:ai-shared 2755` (setgid) — enforces format and only appends. Even ai-planner can use it because of setgid.
-- **TODO.md / project-facts.md**: `dlang:ai-shared 664` (not world-writable; group rw for planner + coders, other r).
+- **TODO.md / project-facts.md**: `dlang:ai-shared 664` (not world-writable; group rw for planner + coders, other r). `fix-perms` and `post-checkout` **must restamp** these two names to `:ai-shared` 664; **666 is a bug**, not a planner exception.
 - **Launchers and scripts** (run-*, build_app, deploy, etc.): `dlang:ai-shared 755` (or 2755 setgid where they need to provide egid for children).
 - **run-as-primary** (generic setuid helper, not named after any local account): owned by primary_user (e.g. dlang), mode 4755. Any process executing it gets euid of the file owner for keystore consistency. Source run-as-primary.c is tracked; binary is built locally and ignored.
 - **No world-writable (666) anywhere** except possibly temp.
@@ -124,7 +124,7 @@ See also `dev-ai-interaction/research/ndk-build-permission-failure-ai-coder-2026
 
 | Mechanism | May do | Must not |
 |-----------|--------|----------|
-| **`post-checkout`** | Soft `@@` warnings; on **branch** checkout only, light `chmod` on paths from `git diff --name-only old new` (worktree files; cap count) | Call `fix-perms` / `--all`; whole-tree `find`/`chown`; any chown/chmod under the **common** `.git` store (`objects`, `refs`, `HEAD`, `config`, …) |
+| **`post-checkout`** | Soft `@@` warnings; on **branch** checkout only, light `chmod` on paths from `git diff --name-only old new` (worktree files; cap count); restamp worktree-root `TODO.md` / `project-facts.md` to `:ai-shared` 664 | Call `fix-perms` / `--all`; `chmod 666` on TODO/facts; whole-tree `find`/`chown`; any chown/chmod under the **common** `.git` store (`objects`, `refs`, `HEAD`, `config`, …) |
 | **`fix-perms`** | Explicit recovery (human, `setup_agent` new worktree, rare systemic break) | Assign **`ai-code`** to common `.git`; `chmod 660` on a **directory** `.git` (strips search bit) |
 | **`fix-multiuser-git-hosts.sh`** | Canonical common-`.git` DAC repair (`ai-shared` 2770 setgid) | Be invoked from checkout hooks |
 
