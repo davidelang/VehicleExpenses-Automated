@@ -3126,7 +3126,8 @@ static int maxBlobRunV(std::vector<int>& pix, int w) {
 
 static void flood255LookIds(
     cv::Mat* look, int sPx, ObjPack* pack, int seedIndex,
-    int lookL = 0, int lookT = 0, int lookR = -1, int lookB = -1
+    int lookL = 0, int lookT = 0, int lookR = -1, int lookB = -1,
+    PoisonStats* stats = nullptr
 ) {
     if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
     const int h = look->rows, w = look->cols;
@@ -3180,6 +3181,17 @@ static void flood255LookIds(
             const int maxVrun = maxBlobRunV(pix, w);
             const bool poison = maxHrun > run6 || maxVrun > run16;
             if (!poison) continue;
+            if (stats && stats->ccs.size() < 16) {
+                PoisonCcPack cc;
+                cc.x = x0;
+                cc.y = y0;
+                cc.w = x1 - x0;
+                cc.h = y1 - y0;
+                cc.noPeak = 0;
+                cc.thr = maxHrun;
+                cc.nInk = maxVrun;
+                stats->ccs.push_back(cc);
+            }
             uint8_t id = 0;
             if (!lookAlloc(pack, false, seedIndex, kKindPoisonFat, &id)) {
                 for (int i : pix) look->ptr<uint8_t>(i / w)[i % w] = 255;
@@ -4786,7 +4798,7 @@ static int fillPoisonLookRaster(
             }
         }
         fillSaltPepperRect(lookBin, lookT, lookB, lookL, lookR);
-        flood255LookIds(lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB);
+        flood255LookIds(lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut);
     }
     if (lookPoisonOut) {
         lookPoison.create(lh, lw, CV_8UC1);
@@ -4811,7 +4823,6 @@ static int fillPoisonLookRaster(
         statsOut->bandTop = sc.bandTop ? 1 : 0;
         statsOut->bandBot = sc.bandBot ? 1 : 0;
         statsOut->bandH = sc.bandH;
-        statsOut->ccs.clear();
     }
     if (lookInkAtOut) {
         lookInkAtOut->create(lh, lw, CV_8UC1);

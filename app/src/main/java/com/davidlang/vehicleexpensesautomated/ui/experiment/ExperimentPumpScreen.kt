@@ -7714,10 +7714,20 @@ private suspend fun snapshotLookInk(
             j.put("bandH", pd.bandH)
             val ccArr = org.json.JSONArray()
             pd.ccs.forEach { cc ->
+                if (cc.x < 0) return@forEach
+                val hRun = cc.thr
+                val vRun = cc.nInk
+                val why = when {
+                    hRun > 6 * sPx && vRun > 16 * sPx -> "wide+tall"
+                    hRun > 6 * sPx -> "wide"
+                    vRun > 16 * sPx -> "tall"
+                    else -> ""
+                }
                 ccArr.put(
                     org.json.JSONObject()
                         .put("x", cc.x).put("y", cc.y).put("w", cc.w).put("h", cc.h)
-                        .put("noPeak", cc.noPeak).put("thr", cc.thr).put("nInk", cc.nInk),
+                        .put("noPeak", cc.noPeak).put("thr", cc.thr).put("nInk", cc.nInk)
+                        .put("hRun", hRun).put("vRun", vRun).put("why", why),
                 )
             }
             j.put("ccs", ccArr)
@@ -8161,10 +8171,20 @@ private suspend fun snapshotLookInkOriented(
         j.put("bandH", poison.bandH)
         val ccArr = org.json.JSONArray()
         poison.ccs.forEach { cc ->
+            if (cc.x < 0) return@forEach
+            val hRun = cc.thr
+            val vRun = cc.nInk
+            val why = when {
+                hRun > 6 * sPx && vRun > 16 * sPx -> "wide+tall"
+                hRun > 6 * sPx -> "wide"
+                vRun > 16 * sPx -> "tall"
+                else -> ""
+            }
             ccArr.put(
                 org.json.JSONObject()
                     .put("x", cc.x).put("y", cc.y).put("w", cc.w).put("h", cc.h)
-                    .put("noPeak", cc.noPeak).put("thr", cc.thr).put("nInk", cc.nInk),
+                    .put("noPeak", cc.noPeak).put("thr", cc.thr).put("nInk", cc.nInk)
+                    .put("hRun", hRun).put("vRun", vRun).put("why", why),
             )
         }
         j.put("ccs", ccArr)
