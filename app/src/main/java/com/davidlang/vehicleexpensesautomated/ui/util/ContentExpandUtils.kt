@@ -252,9 +252,8 @@ object ContentExpandUtils {
         val jumpVertPadPx: Int = 0,
         /** When true, [AabbExpand.energyTrace] records per-px vertical strip energy. */
         val recordVertEnergy: Boolean = false,
-        /** 0 baseline, 1 tight (inset [tightInsetPx]), 2 edge-retract 1px. */
+        /** 0 expand from seed edge, 2 edge-retract 1px. */
         val boundStrategy: Int = 0,
-        val tightInsetPx: Int = 16,
     )
 
     fun expand(

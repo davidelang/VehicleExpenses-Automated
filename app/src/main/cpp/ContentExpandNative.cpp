@@ -2209,39 +2209,6 @@ using WalkEnergyFn = void (*)(
     int, int, int, int,
     int*, int*, int*, int*, bool*, bool*, int*, int*);
 
-static jintArray insetAabbSeeds16(JNIEnv* env, jlong grayPtr, jintArray seedsArr) {
-    if (!seedsArr) return nullptr;
-    auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
-    const int imgW = (gray && !gray->empty()) ? gray->cols : 0;
-    const int imgH = (gray && !gray->empty()) ? gray->rows : 0;
-    const jint n4 = env->GetArrayLength(seedsArr);
-    if (n4 <= 0 || n4 % 4 != 0) return nullptr;
-    std::vector<jint> s(static_cast<size_t>(n4));
-    env->GetIntArrayRegion(seedsArr, 0, n4, s.data());
-    const int n = n4 / 4;
-    const int ins = 16;
-    for (int i = 0; i < n; ++i) {
-        int l = s[static_cast<size_t>(i) * 4], t = s[static_cast<size_t>(i) * 4 + 1];
-        int r = s[static_cast<size_t>(i) * 4 + 2], b = s[static_cast<size_t>(i) * 4 + 3];
-        if (imgW > 0) {
-            if (l < 0) l = 0;
-            if (t < 0) t = 0;
-            if (r > imgW) r = imgW;
-            if (b > imgH) b = imgH;
-        }
-        if (r - l > 2 * ins + 2) { l += ins; r -= ins; }
-        if (b - t > 2 * ins + 2) { t += ins; b -= ins; }
-        s[static_cast<size_t>(i) * 4] = l;
-        s[static_cast<size_t>(i) * 4 + 1] = t;
-        s[static_cast<size_t>(i) * 4 + 2] = r;
-        s[static_cast<size_t>(i) * 4 + 3] = b;
-    }
-    jintArray out = env->NewIntArray(n4);
-    if (!out) return nullptr;
-    env->SetIntArrayRegion(out, 0, n4, s.data());
-    return out;
-}
-
 static void walkEnergyHorz(
     const cv::Mat& look, int imgW, int imgH, int cap, double thr,
     int* l, int* t, int* r, int* b
@@ -2670,37 +2637,6 @@ static jfloatArray runEnergyOrientOne(
     } catch (const std::exception&) {
         return energyOrientSeedOut(env, pts);
     }
-}
-
-__attribute__((unused))
-static jfloatArray insetEnergyOrientSeeds16(JNIEnv* env, jfloatArray seedsArr) {
-    if (!seedsArr) return nullptr;
-    const jint n8 = env->GetArrayLength(seedsArr);
-    if (n8 <= 0 || n8 % 8 != 0) return nullptr;
-    std::vector<jfloat> s(static_cast<size_t>(n8));
-    env->GetFloatArrayRegion(seedsArr, 0, n8, s.data());
-    const int n = n8 / 8;
-    const float ins = 16.f;
-    for (int i = 0; i < n; ++i) {
-        Frame fr{};
-        if (!frameFromQuad(s.data() + i * 8, &fr)) continue;
-        if (fr.bw > 2.f * ins + 2.f) fr.bw -= 2.f * ins;
-        if (fr.bh > 2.f * ins + 2.f) fr.bh -= 2.f * ins;
-        const float hu = fr.bw * 0.5f;
-        const float hv = fr.bh * 0.5f;
-        auto setc = [&](int k, float u, float v) {
-            s[static_cast<size_t>(i) * 8 + k * 2] = fr.cx + u * fr.ux + v * fr.vx;
-            s[static_cast<size_t>(i) * 8 + k * 2 + 1] = fr.cy + u * fr.uy + v * fr.vy;
-        };
-        setc(0, -hu, -hv);
-        setc(1, +hu, -hv);
-        setc(2, +hu, +hv);
-        setc(3, -hu, +hv);
-    }
-    jfloatArray out = env->NewFloatArray(n8);
-    if (!out) return nullptr;
-    env->SetFloatArrayRegion(out, 0, n8, s.data());
-    return out;
 }
 
 static jfloatArray energyOrientOnLook(
@@ -3301,11 +3237,7 @@ static void seg7One(
     int seedIndex = 0,
     cv::Mat* poisonPlane = nullptr
 ) {
-    if (boundStrategy == 1) {
-        const int ins = std::max(1, tightInsetPx);
-        if (sr - sl > 2 * ins + 2) { sl += ins; sr -= ins; }
-        if (sb - st > 2 * ins + 2) { st += ins; sb -= ins; }
-    }
+    (void)tightInsetPx;
     *ol = sl; *ot = st; *oright = sr; *ob = sb;
     const int seedH = std::max(1, sb - st);
     const int seedW = std::max(1, sr - sl);
@@ -5266,7 +5198,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
-    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 16,
+    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
@@ -5277,7 +5209,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
-    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 16,
+    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
@@ -5288,7 +5220,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
-    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 16,
+    return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
@@ -5409,7 +5341,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
-    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 16,
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
@@ -5420,7 +5352,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
-    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 16,
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
@@ -5431,7 +5363,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
-    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 16,
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
@@ -5746,15 +5678,7 @@ static void seg7OrientedOne(
     cv::Mat* lookBinPlane = nullptr,
     bool doHorzJump = false
 ) {
-    if (boundStrategy == 1) {
-        const float ins = static_cast<float>(std::max(1, tightInsetPx));
-        if (seed.u1 - seed.u0 > 2.f * ins + 2.f) {
-            seed.u0 += ins; seed.u1 -= ins;
-        }
-        if (seed.v1 - seed.v0 > 2.f * ins + 2.f) {
-            seed.v0 += ins; seed.v1 -= ins;
-        }
-    }
+    (void)tightInsetPx;
     oriToQuad(seed, outPts8);
     const float seedBh = std::max(1.f, seed.v1 - seed.v0);
     *sPxOut = 0.f;
@@ -6065,7 +5989,7 @@ static void seg7OrientedOne(
     paintLookOverlay(
         lookBin, lookPoison, overlayY8, overlayUv2, false, 0, 0,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
-        true,
+        false,
         seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
         origU0, origU1, origV0, origV1, objPack,
         lookL, lookT, lookR, lookB);
@@ -6301,15 +6225,6 @@ static jfloatArray seg7OrientedMany(
         bool keepColor = false;
         if (useTint && uv) {
             OriBox seedBox = box;
-            if (boundStrategy == 1) {
-                const float ins = static_cast<float>(std::max(1, tightInsetPx));
-                if (seedBox.u1 - seedBox.u0 > 2.f * ins + 2.f) {
-                    seedBox.u0 += ins; seedBox.u1 -= ins;
-                }
-                if (seedBox.v1 - seedBox.v0 > 2.f * ins + 2.f) {
-                    seedBox.v0 += ins; seedBox.v1 -= ins;
-                }
-            }
             auto aabbOf = [&](const OriBox& b, int* l, int* t, int* r, int* bot) {
                 float pts[8];
                 oriToQuad(b, pts);
@@ -6428,7 +6343,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayO
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
 ) {
     return seg7OrientedMany(
-        env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0, 16,
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
 }
 
@@ -6467,7 +6382,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     jlong tintPtr
 ) {
     return seg7OrientedMany(
-        env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 0, 16,
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 0, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr);
 }
 

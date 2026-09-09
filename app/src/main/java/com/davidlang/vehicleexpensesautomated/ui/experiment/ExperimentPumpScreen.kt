@@ -1554,7 +1554,6 @@ suspend fun runPumpExperiment(
                     gapFrac: Float = ContentExpandUtils.SEG7_GAP_FRAC,
                     minSeedHsToFreeze: Float = 0f,
                     boundStrategy: Int = 0,
-                    tightInsetPx: Int = 16,
                     inkExpand: ((
                         org.opencv.core.Mat,
                         org.opencv.core.Mat?,
@@ -1732,7 +1731,6 @@ suspend fun runPumpExperiment(
                 }
                 if (boundNote != null) {
                     branch.metadata["content_expand_bound"] = boundNote
-                    branch.metadata["content_expand_tight_inset_px"] = "16"
                 }
                 if (inkFn != null) {
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
@@ -1920,7 +1918,6 @@ suspend fun runPumpExperiment(
                     if (boundStrategy != 0) {
                         branch.metadata["content_expand_bound"] =
                             if (boundStrategy == 2) "edge-retract" else "tight"
-                        branch.metadata["content_expand_tight_inset_px"] = tightInsetPx.toString()
                     }
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
@@ -5590,7 +5587,6 @@ suspend fun runPumpExperiment(
                     chromaExpand: Boolean = false,
                     chromaMode: Int = 0,
                     boundStrategy: Int = 0,
-                    tightInsetPx: Int = 16,
                     energyOrientNative: ((org.opencv.core.Mat, FloatArray, ShortArray?, org.opencv.core.Mat?) -> FloatArray?)? = null,
                     orientInk: ((
                         org.opencv.core.Mat,
@@ -5810,7 +5806,6 @@ suspend fun runPumpExperiment(
                         if (boundStrategy != 0) {
                             branch.metadata["content_expand_bound"] =
                                 if (boundStrategy == 2) "edge-retract" else "tight"
-                            branch.metadata["content_expand_tight_inset_px"] = tightInsetPx.toString()
                         }
                     } else {
                         val expandOpts = ContentExpandUtils.ExpandOptions(
@@ -5822,7 +5817,6 @@ suspend fun runPumpExperiment(
                             vertPadFrac = vertPadFrac,
                             recordVertEnergy = energyTraceOut != null,
                             boundStrategy = boundStrategy,
-                            tightInsetPx = tightInsetPx,
                         )
                         expDiag = seedQuads.map { seed ->
                             val d = ContentExpandUtils.expandOrientedDiagnose(
@@ -6265,7 +6259,6 @@ suspend fun runPumpExperiment(
                     chromaExpand: Boolean = false,
                     chromaMode: Int = 0,
                     boundStrategy: Int = 0,
-                    tightInsetPx: Int = 16,
                     aabbEnergy: ((org.opencv.core.Mat, org.opencv.core.Mat?, List<android.graphics.Rect>) -> List<ContentExpandUtils.AabbExpand>)? = null,
                     energyOrientNative: ((org.opencv.core.Mat, FloatArray, ShortArray?, org.opencv.core.Mat?) -> FloatArray?)? = null,
                     orientInk: ((
@@ -6328,7 +6321,6 @@ suspend fun runPumpExperiment(
                         branch.metadata["content_expand_vert_pad"] = vertPadFrac.toString()
                         if (boundNote != null) {
                             branch.metadata["content_expand_bound"] = boundNote
-                            branch.metadata["content_expand_tight_inset_px"] = "16"
                         }
                         if (chromaNote != null) {
                             branch.metadata["content_expand_chroma"] = chromaNote
@@ -6341,7 +6333,6 @@ suspend fun runPumpExperiment(
                         if (boundStrategy != 0) {
                             branch.metadata["content_expand_bound"] =
                                 if (boundStrategy == 2) "edge-retract" else "tight"
-                            branch.metadata["content_expand_tight_inset_px"] = tightInsetPx.toString()
                         }
                         if (vertEnergy == ContentExpandUtils.VertEnergyKind.CHI2) {
                             branch.metadata["content_expand_chi2_k"] = chi2K.toString()
@@ -6382,7 +6373,6 @@ suspend fun runPumpExperiment(
                                     chromaExpand = chromaExpand,
                                     chromaMode = chromaMode,
                                     boundStrategy = boundStrategy,
-                                    tightInsetPx = tightInsetPx,
                                     energyOrientNative = orientNativeFn,
                                     orientInk = orientInk,
                                 )
@@ -6450,7 +6440,6 @@ suspend fun runPumpExperiment(
                                 vertPadFrac = vertPadFrac,
                                 recordVertEnergy = energyTraceOut != null,
                                 boundStrategy = boundStrategy,
-                                tightInsetPx = tightInsetPx,
                             )
                             val tExpand0 = System.currentTimeMillis()
                             val energyFn = aabbFn
@@ -8366,11 +8355,12 @@ private fun pRecExtraHtml(br: PumpBranch, imgDir: File, rowIndex: Int, colIdx: I
         return ""
     }
     val sb = StringBuilder()
-    fun emitCands(cands: org.json.JSONArray, heading: String) {
+    fun emitCands(cands: org.json.JSONArray, heading: String, kind: String, s: Double) {
         var any = false
         val chunk = StringBuilder()
         chunk.append("<div><small>$heading</small></div>")
         chunk.append("<div style='display:flex;flex-wrap:wrap;gap:3px;'>")
+        val sTok = if (s.isNaN()) "na" else s.toString()
         for (j in 0 until cands.length()) {
             val c = cands.optJSONObject(j) ?: continue
             val b64 = c.optString("_htmlRec")
@@ -8379,7 +8369,11 @@ private fun pRecExtraHtml(br: PumpBranch, imgDir: File, rowIndex: Int, colIdx: I
             val lab = c.optString("label")
             val asis = c.optString("asis")
             val dig = c.optString("digits")
-            val src = pumpPersistJpeg(imgDir, "r${rowIndex}_c${colIdx}_recextra_${lab}.jpg", b64)
+            val src = pumpPersistJpeg(
+                imgDir,
+                "r${rowIndex}_c${colIdx}_recextra_${kind}_s${sTok}_${lab}.jpg",
+                b64,
+            )
             val cap = "$lab <span style='font-size:12px;'>asis=$asis dig=$dig</span>"
             chunk.append(
                 "<div style='flex:0 0 auto;font-size:9px;'>" +
@@ -8405,7 +8399,7 @@ private fun pRecExtraHtml(br: PumpBranch, imgDir: File, rowIndex: Int, colIdx: I
                 sb.append("<div class='rec-crops' style='margin-top:6px;text-align:left;'><b>Rec extra</b>")
                 header = true
             }
-            emitCands(cands, recVariantHeading(kind, v))
+            emitCands(cands, recVariantHeading(kind, v), kind, s)
         }
         if (header) sb.append("</div>")
     }
