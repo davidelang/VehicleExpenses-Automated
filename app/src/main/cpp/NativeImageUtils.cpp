@@ -1771,11 +1771,6 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
 // det is single-threaded per engine in practice). Values: "u8" | "float".
 static char g_lastHeatmapPostPath[16] = "unknown";
 
-// Paddle det head decides on 4×4 feed cells. The output tensor we threshold is often
-// already upsampled 1:1 with the feed, so heatW/feedW cannot reveal that. One "cell"
-// outward is this many pixels on *that output array* (far side of the 4×4), not 1.
-static const int kPaddleDetHeatCellPx = 4;
-
 // Shared geometry pack from connectedComponentsWithStats.
 // confScale: multiply mean of confMat ROI (1.0 for CV_32F heat in [0,1]; 1/255 for CV_8U heat).
 static void packHeatmapBoxes(
@@ -1798,7 +1793,7 @@ static void packHeatmapBoxes(
     int gc = growCells;
     if (gc < 0) gc = 0;
     if (gc > 1) gc = 1;
-    const int cell = gc * kPaddleDetHeatCellPx;
+    const int cell = gc;
     int count = 0;
     for (int l = 1; l < numLabels; ++l) {
         if (count >= boxCap) break;
@@ -1813,7 +1808,7 @@ static void packHeatmapBoxes(
 
         cv::Point2f vertices[4];
         if (useAabb) {
-            // Axis-aligned min/max of on-mask pixels, then growCells×4×4 outward (0 = tight).
+            // Axis-aligned min/max of on-mask pixels, then growCells heat pixels outward (0 = tight).
             const float x0 = (float)std::max(0, left - cell);
             const float y0 = (float)std::max(0, top - cell);
             const float x1 = (float)std::min(w, left + width + cell);
@@ -1859,7 +1854,7 @@ static void packHeatmapBoxes(
             if (nPts < 1) continue;
             cv::Mat pointsHdr(nPts, 1, CV_32SC2, pts);
             cv::RotatedRect rect = cv::minAreaRect(pointsHdr);
-            // Grow along the quad axes (not AABB) so tilted reds get the same 4×4 cell.
+            // Grow along the quad axes (not AABB) so tilted reds get the same 1 heat px.
             rect.size.width += 2.f * (float)cell;
             rect.size.height += 2.f * (float)cell;
             rect.points(vertices);

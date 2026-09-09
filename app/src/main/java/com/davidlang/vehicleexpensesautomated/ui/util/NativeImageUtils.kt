@@ -372,12 +372,10 @@ object NativeImageUtils {
     }
 
     /**
-     * Paddle det head operates on 4×4 feed cells. The tensor we threshold is often
-     * already upsampled 1:1 with the feed, so [heatW]/[feedW] cannot reveal that.
-     * One cell outward is this many pixels on that output array (far side of the
-     * 4×4), not 1. Applied in native `packHeatmapBoxes` for every heat→rect path.
+     * One grow cell is 1 pixel on the output heat array (`packHeatmapBoxes` `cell = gc`).
+     * Metadata `heatmap_cell_px` matches that native grow.
      */
-    const val PADDLE_DET_HEAT_CELL_PX: Int = 4
+    const val PADDLE_DET_HEAT_CELL_PX: Int = 1
 
     /** Production: rotated min-area rect on supra-threshold heat pixels. */
     const val HEATMAP_BOX_MIN_AREA_RECT: Int = 0
