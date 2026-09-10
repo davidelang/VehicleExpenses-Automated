@@ -18,7 +18,11 @@ STOP & WAIT until the user names an **approved** plan path under `dev-ai-interac
 
 Do **not** implement a named plan in a multi-day `-c` / `--resume` transcript. That chat is not product SoT. Pack re-read stays; the execute **body** is a fresh context.
 
-**Preferred:** spawn `subagent_type=general-purpose`, `isolation=none`, `cwd` = this worktree. Prompt = full `.grok/prompts/execution-subagent.md` + “read the role pack, then **only** this plan path.” Files not listed: no edits; report extras. Parent does **not** grep the app, does not re-derive the last cycle, does not stretch. Wait, then paste CODE LANDED / tag / END marker / extras the child reported.
+This long-lived coder session is the **organizer**. After pack re-read, **spawn** — do not edit app files in this session. Implementing the plan body here (`search_replace` / `write` on app/docs Critical Files) is a **protocol failure**.
+
+**Preferred:** `spawn_subagent` `subagent_type=general-purpose`, `isolation=none`, `cwd` = this worktree. Prompt = **full** `.grok/prompts/execution-subagent.md` + “read the role pack, then **only** this plan path.” Files not listed: no edits; report extras.
+
+**Forbidden in this parent session:** `search_replace` / `write` on app/docs Critical Files; `read_file` of `.jpg` / `.png` / overlay dumps; `resume_from` the last execute child (that re-bloats). Parent does **not** grep the app, does not re-derive the last cycle, does not stretch. Wait, then paste CODE LANDED / tag / END marker / extras the child reported.
 
 **Alternative:** human `exec ./run-grok-coder` (no `-c`) per named plan.
 

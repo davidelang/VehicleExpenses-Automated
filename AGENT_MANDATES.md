@@ -126,6 +126,7 @@ Product defaults (4.6 “just do reversible work,” native plan **`a`**, backgr
 - Built-in “do clear reversible local work without asking” **never** authorizes tracked non-sandbox edits. Named sandbox plan + magic path approval still required.
 - `ask_user_question` stays **on**. Answers inform the sandbox plan only — they are **not** magic approval and **not** permission to implement.
 - Planner launchers force `GROK_SUBAGENTS=0` and `GROK_WORKFLOWS=0` (explicit `=1` may override for debug). Coder launchers force `GROK_WORKFLOWS=0` only. Orch / bare / master are unset unless the human sets env.
+- User/config `default_reasoning_effort = "xhigh"` does **not** apply to `run-grok-coder` / `run-grok-master`: those launchers pin `--effort high` (`GROK_REASONING_EFFORT` overrides). Planner / orch / bare do not pass `--effort`. Execute **body** is a fresh spawn (`execution-subagent.md`, `isolation=none`) or a fresh coder process — not the long-lived parent transcript.
 - `grok -c` / `--resume` keeps the transcript and the session’s **stored** model. It does **not** upgrade 4.5 → 4.6. Switch with `/model grok-4.6` after resume. Role launchers without `-c` start a **new** session.
 
 ### 3.6 Skills

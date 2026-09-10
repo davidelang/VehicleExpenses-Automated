@@ -305,6 +305,22 @@ launch_grok_with_prompt() {
   local grok_permission_mode="${GROK_PERMISSION_MODE:-default}"
   echo "GROK_PERMISSION_MODE=${grok_permission_mode}"
 
+  # User-scope [models] default_reasoning_effort (xhigh on this host) must not
+  # override VE-wins “coder/master --effort high”. CLI wins.
+  # GROK_REASONING_EFFORT overrides; empty/0/off skips the flag.
+  # Planner/orch/primary: do not pass --effort (planner may keep xhigh).
+  # Spawned execute children inherit this parent session (no spawn effort arg).
+  local grok_effort_args=()
+  case "${ROLE_KEY:-}" in
+    coder|master)
+      local grok_effort="${GROK_REASONING_EFFORT:-high}"
+      if [[ -n "$grok_effort" && "$grok_effort" != "0" && "$grok_effort" != "off" ]]; then
+        grok_effort_args+=(--effort "$grok_effort")
+        echo "GROK_REASONING_EFFORT=${grok_effort}"
+      fi
+      ;;
+  esac
+
   local freeform_args=()
   case "${ROLE_KEY:-}" in
     primary|orchestrator)
@@ -368,6 +384,7 @@ launch_grok_with_prompt() {
       --no-alt-screen \
       --minimal \
       --permission-mode "${grok_permission_mode}" \
+      ${grok_effort_args[@]+"${grok_effort_args[@]}"} \
       ${freeform_args[@]+"${freeform_args[@]}"} \
       ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}
 }
