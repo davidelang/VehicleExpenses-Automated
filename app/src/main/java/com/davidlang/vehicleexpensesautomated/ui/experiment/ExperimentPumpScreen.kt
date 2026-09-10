@@ -8679,7 +8679,12 @@ private fun storeSeg7Tele(branch: PumpBranch, teles: List<ContentExpandUtils.Seg
     if (arr.length() > 0) branch.metadata["seg7_tele"] = arr.toString()
 }
 
-private fun histBinLabel(b: Int): String {
+private fun histBinLabel(b: Int, method: String = ""): String {
+    if (method == "gray" || method == "color_adaptive") {
+        val lo = 4 + 4 * b
+        val hi = 12 + 4 * b
+        return if (b >= 63) "$lo+" else "$lo-$hi"
+    }
     if (b <= 0) return "1-2"
     var hi = 2
     repeat(b) { hi *= 2 }
@@ -8862,7 +8867,7 @@ private fun pSeg7TeleHtml(br: PumpBranch): String {
             if (show.isNotEmpty()) {
                 sb.append("<table style='border-collapse:collapse;font-size:8px;margin:2px 0 6px;text-align:center;'>")
                 sb.append("<tr><th style='$th'>bin</th>")
-                for (b in show) sb.append("<th style='$cell'>${histBinLabel(b)}</th>")
+                for (b in show) sb.append("<th style='$cell'>${histBinLabel(b, o.optString("method"))}</th>")
                 sb.append("</tr><tr><th style='$th'>H</th>")
                 for (b in show) sb.append("<td style='$cell'>${hh?.optInt(b) ?: 0}</td>")
                 sb.append("</tr><tr><th style='$th'>V</th>")

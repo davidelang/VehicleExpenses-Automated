@@ -572,7 +572,7 @@ object NativeImageUtils {
 
     private external fun nativeFillEnergyLookU8(grayPtr: Long, destPtr: Long): Boolean
 
-    const val SEG7_HIST_BINS: Int = 32
+    const val SEG7_HIST_BINS: Int = 64
     const val SEG7_ATTEMPT_MAX: Int = 4
     const val SEG7_ATTEMPT_F: Int = 12
     const val SEG7_TELE_N: Int =

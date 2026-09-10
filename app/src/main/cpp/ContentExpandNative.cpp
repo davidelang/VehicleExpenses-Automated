@@ -135,7 +135,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeVeRss
     env->ReleaseStringUTFChars(path, p);
 }
 
-static constexpr int kRunHistBins = 32;
+static constexpr int kRunHistBins = 64;
+static constexpr int kRunHistLog2Bins = 32;
 static constexpr int kSeg7AttemptMax = 4;
 static constexpr int kSeg7AttemptF = 12;
 static constexpr int kSeg7TeleN =
@@ -204,13 +205,13 @@ struct Seg7Tele {
 static int runLengthBin(int run) {
     if (run < 1) run = 1;
     int hi = 2;
-    for (int b = 0; b < kRunHistBins - 1; ++b) {
+    for (int b = 0; b < kRunHistLog2Bins - 1; ++b) {
         if (run <= hi) return b;
         const int next = hi * 2;
-        if (next <= hi) return kRunHistBins - 1;
+        if (next <= hi) return kRunHistLog2Bins - 1;
         hi = next;
     }
-    return kRunHistBins - 1;
+    return kRunHistLog2Bins - 1;
 }
 
 static void addRunHist(int run, int* hist) {
@@ -1182,7 +1183,7 @@ static bool objAlloc(
     return true;
 }
 
-/** Look-plane ids only: ink 253--, poison 1++. Does not consume 255 (unscanned). */
+/** Look-plane ids only: ink 253--, poison 1++. 255 is default ink. Alloc still starts at 253. */
 static bool lookAlloc(
     ObjPack* p, bool ink, int seedIndex, uint8_t kind, uint8_t* idOut
 ) {
@@ -1211,8 +1212,9 @@ static bool lookAlloc(
 }
 
 static bool isLookInkId(uint8_t v, const ObjPack* pack = nullptr) {
-    if (v == 254) return true;
-    return v > 0 && v < 254 && pack && pack->kind[v] == kKindInk;
+    if (v >= 254) return true;
+    if (v == 0) return false;
+    return pack && pack->kind[v] == kKindInk;
 }
 
 static void objPut(
@@ -2704,16 +2706,98 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
 
 namespace {
 
-static int peakCapped(const std::vector<int>& hist, int minK, int maxK) {
-    int bestK = minK, bestV = 0;
-    const int hi = std::min(maxK, static_cast<int>(hist.size()) - 1);
-    for (int k = minK; k <= hi; ++k) {
-        if (hist[k] > bestV) {
-            bestV = hist[k];
-            bestK = k;
+static void addOverlapVotes(int k, int n, int* bins) {
+    if (k < 1 || n <= 0 || !bins) return;
+    for (int i = 0; i < kRunHistBins; ++i) {
+        const int lo = 4 + 4 * i;
+        const int hi = 12 + 4 * i;
+        const bool hit = (i == kRunHistBins - 1) ? (k >= lo) : (k >= lo && k <= hi);
+        if (hit) bins[i] += n;
+    }
+}
+
+static void votesOverlap(const std::vector<int>& raw, int* bins) {
+    if (!bins) return;
+    for (int i = 0; i < kRunHistBins; ++i) bins[i] = 0;
+    for (int k = 1; k < static_cast<int>(raw.size()); ++k) {
+        if (raw[k] > 0) addOverlapVotes(k, raw[k], bins);
+    }
+}
+
+static int peakFromOverlapBins(const int* bins, int minK, int maxK) {
+    if (!bins) return minK;
+    int bestI = -1, bestV = 0;
+    for (int i = 0; i < kRunHistBins; ++i) {
+        const int lo = 4 + 4 * i;
+        const int hi = (i == kRunHistBins - 1) ? 1000000 : 12 + 4 * i;
+        if (hi < minK || lo > maxK) continue;
+        if (bins[i] > bestV) {
+            bestV = bins[i];
+            bestI = i;
         }
     }
-    return bestV > 0 ? bestK : minK;
+    return (bestV > 0 && bestI >= 0) ? (8 + 4 * bestI) : minK;
+}
+
+static int peakCapped(const std::vector<int>& hist, int minK, int maxK) {
+    int ov[kRunHistBins];
+    votesOverlap(hist, ov);
+    return peakFromOverlapBins(ov, minK, maxK);
+}
+
+static void packOverlapStrokeTele(
+    const cv::Mat& lookBin,
+    int sl, int st, int sr, int sb,
+    int lookL, int lookT, int lookR, int lookB,
+    int seedH, int seedW, const ObjPack* pack,
+    int* histH, int* histV
+) {
+    if (!histH || !histV) return;
+    for (int i = 0; i < kRunHistBins; ++i) {
+        histH[i] = 0;
+        histV[i] = 0;
+    }
+    if (lookBin.empty() || lookBin.type() != CV_8UC1) return;
+    const int y0 = std::max(0, st);
+    const int y1 = std::min(lookBin.rows, sb);
+    const int x0 = std::max(0, sl);
+    const int x1 = std::min(lookBin.cols, sr);
+    std::vector<int> hraw(std::max(seedW + 1, 36), 0);
+    if (y1 > y0 && x1 > x0) {
+        for (int y = y0; y < y1; ++y) {
+            const uint8_t* p = lookBin.ptr<uint8_t>(y);
+            int run = 0;
+            for (int x = x0; x <= x1; ++x) {
+                const bool on = x < x1 && isLookInkId(p[x], pack);
+                if (on) ++run;
+                else if (run > 0) {
+                    if (run != seedW && run < static_cast<int>(hraw.size())) hraw[run]++;
+                    run = 0;
+                }
+            }
+        }
+    }
+    votesOverlap(hraw, histH);
+    const int ly0 = std::max(0, lookT);
+    const int ly1 = std::min(lookBin.rows, lookB);
+    const int lx0 = std::max(0, lookL);
+    const int lx1 = std::min(lookBin.cols, lookR);
+    const int lh = std::max(1, ly1 - ly0);
+    std::vector<int> vraw(std::max(lh + 1, 21), 0);
+    if (ly1 > ly0 && lx1 > lx0) {
+        for (int x = lx0; x < lx1; ++x) {
+            int run = 0;
+            for (int y = ly0; y <= ly1; ++y) {
+                const bool on = y < ly1 && isLookInkId(lookBin.ptr<uint8_t>(y)[x], pack);
+                if (on) ++run;
+                else if (run > 0) {
+                    if (run != lh && run < static_cast<int>(vraw.size())) vraw[run]++;
+                    run = 0;
+                }
+            }
+        }
+    }
+    votesOverlap(vraw, histV);
 }
 
 static int maxInkRunRow(
@@ -3310,7 +3394,52 @@ static void seg7One(
     *vSWOut = vSW;
     *hSWOut = hSW;
     *usedFb = (sPx < 1) ? 1 : 0;
-    if (sPx < 1) return;
+    if (sPx < 1) {
+        if (tele) {
+            if (!keepColorStats) {
+                float yi = 0.f, yb = 0.f;
+                const int y0s = std::max(0, st);
+                const int y1s = std::min(lookBin.rows, sb);
+                if (y1s > y0s) {
+                    const int x0s = std::max(0, sl);
+                    const int x1s = std::min(lookBin.cols, sr);
+                    if (x1s > x0s) {
+                        cv::Mat seedInk = lookBin(cv::Range(y0s, y1s), cv::Range(x0s, x1s));
+                        fillYInkBg(src, seedInk, sl, st, std::max(sPx, 0), &yi, &yb);
+                    }
+                }
+                tele->yInk = yi;
+                tele->yBg = yb;
+                tele->dInk = yi - yb;
+                tele->otsuThr = 0.f;
+            }
+            tele->sPx = static_cast<float>(sPx);
+            tele->dTop = 0.f;
+            tele->dBot = 0.f;
+            tele->dLeft = 0.f;
+            tele->dRight = 0.f;
+            tele->nInkSeed = static_cast<float>(
+                countInkU8(lookInkAtPlane, sl, st, sr, sb));
+            tele->nInkBlue = tele->nInkSeed;
+            tele->nInkYellow = tele->nInkSeed;
+            tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
+            tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
+            tele->fill = fillGate.fill;
+            tele->nRetry = static_cast<float>(fillGate.nRetry);
+            tele->retryWhy = static_cast<float>(fillGate.retryWhy);
+            tele->nValley = static_cast<float>(fillGate.nValley);
+            packFillAttempts(fillGate, tele);
+            packOverlapStrokeTele(
+                lookBin, sl, st, sr, sb, lookL, nt, lookR, nb,
+                seedH, seedW, objPack, tele->histH, tele->histV);
+        }
+        paintLookOverlay(
+            lookBin, lookPoison, overlayY8, overlayUv2, false, 0, 0,
+            0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+            false, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, objPack,
+            lookL, nt, lookR, nb);
+        return;
+    }
     const float gf = gapFrac > 0.f ? gapFrac : 0.5f;
     const int gapStop = std::max(1, static_cast<int>(std::lround(gf * sPx)));
     const int minRun = usedMinRun(
@@ -3504,8 +3633,9 @@ static void seg7One(
         tele->retryWhy = static_cast<float>(fillGate.retryWhy);
         tele->nValley = static_cast<float>(fillGate.nValley);
         packFillAttempts(fillGate, tele);
-        fillRunHists(
-            lookBin, lookL, nt, lookR, nb, objPack, tele->histH, tele->histV);
+        packOverlapStrokeTele(
+            lookBin, sl, st, sr, sb, lookL, nt, lookR, nb,
+            seedH, seedW, objPack, tele->histH, tele->histV);
     }
     if (sweepOut && !lookBin.empty()) {
         fillAabbLookSweep(
@@ -4000,7 +4130,6 @@ static int seedCombine255(
         dInkFromBin(seedY, bin) <= -10.f) {
         useSample = true;
     }
-    if (!useSample) bin.setTo(0);
     if (!srcIsBin && cv::countNonZero(bin) == 0 && haveClean && cleanDark &&
         cleanInkFrac >= 0.05f && cleanInkFrac <= 0.40f) {
         applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
@@ -4576,8 +4705,7 @@ static void paintLookOverlay(
             overlayXY(x, y, &ix, &iy);
             if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
             if (!inWalkSeed(ix, iy)) continue;
-            if (v == 254) yuvPut(overlayY, overlayUv, ix, iy, 255, 128, 128);
-            else if (v == 255) yuvPut(overlayY, overlayUv, ix, iy, 200, 128, 128);
+            if (v >= 254) yuvPut(overlayY, overlayUv, ix, iy, 255, 128, 128);
             else if (pack && pack->kind[v] == kKindInk) {
                 yuvPut(overlayY, overlayUv, ix, iy, 150, 44, 21);
             } else {
@@ -4708,7 +4836,7 @@ static int fillPoisonLookRaster(
         }
     }
     if (fillGateOut) *fillGateOut = sc.fillGate;
-    if (sPx >= 1 && !combined.empty()) {
+    if (!combined.empty()) {
         for (int y = lookT; y < lookB; ++y) {
             uint8_t* op = lookBin->ptr<uint8_t>(y);
             const int sy = y - ySeed0;
@@ -4719,8 +4847,8 @@ static int fillPoisonLookRaster(
                     op[x] = combined.ptr<uint8_t>(sy)[sx];
                     continue;
                 }
-                if (v0Clean <= 4) { op[x] = 0; continue; }
-                op[x] = lookInkAt(y, x);
+                if (sc.haveClean || v0Clean > 4) op[x] = lookInkAt(y, x);
+                else op[x] = 0;
             }
         }
         for (int y = lookT; y < lookB; ++y) {
@@ -4730,7 +4858,9 @@ static int fillPoisonLookRaster(
             }
         }
         fillSaltPepperRect(lookBin, lookT, lookB, lookL, lookR);
-        flood255LookIds(lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut);
+        if (sPx >= 1) {
+            flood255LookIds(lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut);
+        }
     }
     if (lookPoisonOut) {
         lookPoison.create(lh, lw, CV_8UC1);
@@ -5692,6 +5822,8 @@ static void seg7OrientedOne(
     const float lookV0 = seed.v0 - static_cast<float>(vLook);
     int sl = 0, st = 0, sr = 0, sb = 0;
     if (!oriAabbClip(seed, imgW, imgH, &sl, &st, &sr, &sb)) return;
+    const int seedH = std::max(1, sb - st);
+    const int seedW = std::max(1, sr - sl);
     OriBox padBox = seed;
     padBox.u0 -= uPad;
     padBox.u1 += uPad;
@@ -5747,7 +5879,37 @@ static void seg7OrientedOne(
     }
     if (poisonStats) *poisonStats = stLocal;
     *sPxOut = static_cast<float>(sPx);
-    if (sPx < 1) return;
+    if (sPx < 1) {
+        if (tele) {
+            tele->sPx = *sPxOut;
+            tele->dTop = 0.f;
+            tele->dBot = 0.f;
+            tele->dLeft = 0.f;
+            tele->dRight = 0.f;
+            tele->nInkSeed = static_cast<float>(
+                countInkU8(lookInkAtPlane, sl, st, sr, sb));
+            tele->nInkBlue = tele->nInkSeed;
+            tele->nInkYellow = tele->nInkSeed;
+            tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
+            tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
+            tele->fill = fillGate.fill;
+            tele->nRetry = static_cast<float>(fillGate.nRetry);
+            tele->retryWhy = static_cast<float>(fillGate.retryWhy);
+            tele->nValley = static_cast<float>(fillGate.nValley);
+            packFillAttempts(fillGate, tele);
+            packOverlapStrokeTele(
+                lookBin, sl, st, sr, sb, lookL, lookT, lookR, lookB,
+                seedH, seedW, objPack, tele->histH, tele->histV);
+        }
+        paintLookOverlay(
+            lookBin, lookPoison, overlayY8, overlayUv2, false, 0, 0,
+            0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+            false,
+            seed.cx, seed.cy, seed.ux, seed.uy, seed.vx, seed.vy,
+            seed.u0, seed.u1, seed.v0, seed.v1, objPack,
+            lookL, lookT, lookR, lookB);
+        return;
+    }
     const int glareW = 6 * std::max(sPx, 1);
     const int gapStop = std::max(1, static_cast<int>(std::lround(0.5f * sPx)));
     int bestURun = 0;
@@ -5972,8 +6134,9 @@ static void seg7OrientedOne(
         tele->retryWhy = static_cast<float>(fillGate.retryWhy);
         tele->nValley = static_cast<float>(fillGate.nValley);
         packFillAttempts(fillGate, tele);
-        fillRunHists(
-            lookBin, lookL, lookT, lookR, lookB, objPack, tele->histH, tele->histV);
+        packOverlapStrokeTele(
+            lookBin, sl, st, sr, sb, lookL, lookT, lookR, lookB,
+            seedH, seedW, objPack, tele->histH, tele->histV);
     }
     if (sweepOut) {
         try {
