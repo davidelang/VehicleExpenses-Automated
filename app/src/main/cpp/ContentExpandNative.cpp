@@ -5613,6 +5613,31 @@ static bool oriAabbClip(
     return *sr > *sl && *sb > *st;
 }
 
+/** Nonzero U8 inside OriBox u/v (inWalkSeed predicate). AABB clip = scan window only. */
+static int countInkU8InQuad(const cv::Mat& m, const OriBox& b, int imgW, int imgH) {
+    if (m.empty() || m.type() != CV_8UC1) return 0;
+    int l = 0, t = 0, r = 0, bot = 0;
+    if (!oriAabbClip(b, imgW, imgH, &l, &t, &r, &bot)) return 0;
+    if (l < 0) l = 0;
+    if (t < 0) t = 0;
+    if (r > m.cols) r = m.cols;
+    if (bot > m.rows) bot = m.rows;
+    if (r <= l || bot <= t) return 0;
+    int n = 0;
+    for (int y = t; y < bot; ++y) {
+        const uint8_t* p = m.ptr<uint8_t>(y);
+        for (int x = l; x < r; ++x) {
+            if (!p[x]) continue;
+            const float dx = (x + 0.5f) - b.cx;
+            const float dy = (y + 0.5f) - b.cy;
+            const float u = dx * b.ux + dy * b.uy;
+            const float v = dx * b.vx + dy * b.vy;
+            if (u >= b.u0 && u <= b.u1 && v >= b.v0 && v <= b.v1) ++n;
+        }
+    }
+    return n;
+}
+
 static inline bool inImgF(float px, float py, int w, int h) {
     return px >= 0.f && py >= 0.f && px < static_cast<float>(w) &&
         py < static_cast<float>(h);
@@ -5887,9 +5912,11 @@ static void seg7OrientedOne(
             tele->dLeft = 0.f;
             tele->dRight = 0.f;
             tele->nInkSeed = static_cast<float>(
-                countInkU8(lookInkAtPlane, sl, st, sr, sb));
-            tele->nInkBlue = tele->nInkSeed;
-            tele->nInkYellow = tele->nInkSeed;
+                countInkU8InQuad(lookInkAtPlane, seed, imgW, imgH));
+            tele->nInkBlue = static_cast<float>(
+                countInkU8InQuad(lookInkAtPlane, seed, imgW, imgH));
+            tele->nInkYellow = static_cast<float>(
+                countInkU8InQuad(lookInkAtPlane, seed, imgW, imgH));
             tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
             tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
             tele->fill = fillGate.fill;
@@ -6105,28 +6132,27 @@ static void seg7OrientedOne(
         tele->landBot = gapJumpBot ? landBot : 0.f;
         tele->farL = farU0;
         tele->farR = farU1;
-        auto uvToPhoto = [&](float u, float v, int* px, int* py) {
-            *px = static_cast<int>(std::lround(
-                seed.cx + u * seed.ux + v * seed.vx));
-            *py = static_cast<int>(std::lround(
-                seed.cy + u * seed.uy + v * seed.vy));
-        };
-        int bxl = 0, byt = 0, bxr = 0, byb = 0;
-        uvToPhoto(seed.u0, v0, &bxl, &byt);
-        uvToPhoto(seed.u1, v1, &bxr, &byb);
-        if (bxr < bxl) std::swap(bxl, bxr);
-        if (byb < byt) std::swap(byt, byb);
-        int yxl = 0, yyt = 0, yxr = 0, yyb = 0;
-        uvToPhoto(farU0, std::min(origV0, v0), &yxl, &yyt);
-        uvToPhoto(farU1, std::max(origV1, v1), &yxr, &yyb);
-        if (yxr < yxl) std::swap(yxl, yxr);
-        if (yyb < yyt) std::swap(yyt, yyb);
+        OriBox seedQ = seed;
+        seedQ.u0 = origU0;
+        seedQ.u1 = origU1;
+        seedQ.v0 = origV0;
+        seedQ.v1 = origV1;
+        OriBox blueQ = seed;
+        blueQ.u0 = seed.u0;
+        blueQ.u1 = seed.u1;
+        blueQ.v0 = v0;
+        blueQ.v1 = v1;
+        OriBox yellowQ = seed;
+        yellowQ.u0 = farU0;
+        yellowQ.u1 = farU1;
+        yellowQ.v0 = std::min(origV0, v0);
+        yellowQ.v1 = std::max(origV1, v1);
         tele->nInkSeed = static_cast<float>(
-            countInkU8(lookInkAtPlane, sl, st, sr, sb));
+            countInkU8InQuad(lookInkAtPlane, seedQ, imgW, imgH));
         tele->nInkBlue = static_cast<float>(
-            countInkU8(lookInkAtPlane, bxl, byt, bxr, byb));
+            countInkU8InQuad(lookInkAtPlane, blueQ, imgW, imgH));
         tele->nInkYellow = static_cast<float>(
-            countInkU8(lookInkAtPlane, yxl, yyt, yxr, yyb));
+            countInkU8InQuad(lookInkAtPlane, yellowQ, imgW, imgH));
         tele->nLookBinSeed = static_cast<float>(fillGate.nLookBin);
         tele->nRecoveredSeed = static_cast<float>(fillGate.nRecovered);
         tele->fill = fillGate.fill;
