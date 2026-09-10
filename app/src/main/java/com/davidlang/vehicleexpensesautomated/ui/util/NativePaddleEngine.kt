@@ -614,7 +614,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         detTiersInt8: Map<Int, ByteArray>? = null,
         /** 0 = no 4×4 cell grow (energy-tight); 1 = production default. */
         growCells: Int = 1,
-        /** A.p Y for heat mask + CC labels + edges. Null = bufferSetA.p. */
+        /** Non-packed: A.p Y. Packed detect ignores this and uses packedSet.s after run(). */
         scratchY: Mat? = null,
         heatToPhoto: Float = 0f,
         photoW: Int = 0,
@@ -721,10 +721,11 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
                 val tNativePost0 = System.nanoTime()
                 heartbeat("det_post tier=$tierScale")
                 // Product u8: thr 0 → on if u8≥1; thr 1/255 → on if u8≥2 (Set K A/B).
+                // Packed: labels live on spent det square .s (S×S = heat h×w), not A.p.
                 val nativeRes = NativeImageUtils.processHeatmap(
                     outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
                     growCells = growCells,
-                    scratchY = heatScratch,
+                    scratchY = if (packedSet != null) packedSet.s.mat else heatScratch,
                     heatToPhoto = heatToPhoto,
                     photoW = photoW,
                     photoH = photoH,
