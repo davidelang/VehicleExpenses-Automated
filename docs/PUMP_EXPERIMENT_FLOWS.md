@@ -175,7 +175,7 @@ Neither includes below-threshold ink; blue/orange expansion still searches crop 
 Product det heat is **kUInt8**. `nativeProcessHeatmap` takes the **u8 path** for both box modes:
 
 * thr on the u8 plane (`u > thr*255`; campaign thr=0 → u≥1)
-* `connectedComponentsWithStats` on the binary mask
+* heat CC is u8 8-flood on det `.s` (ids 1..254; no int32 labels / mask pack on A.p)
 * AABB stats box **or** minAreaRect of on-label pixels
 * conf = mean(u8 ROI)/255; hist bins match prior float hist of (u/255)
 
