@@ -4700,12 +4700,12 @@ static void paintLookOverlay(
         const uint8_t* ids = lookBin.ptr<uint8_t>(y);
         for (int x = winL; x < winR; ++x) {
             const uint8_t v = ids[x];
-            if (v == 0) continue;
             int ix = 0, iy = 0;
             overlayXY(x, y, &ix, &iy);
             if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
             if (!inWalkSeed(ix, iy)) continue;
-            if (v >= 254) yuvPut(overlayY, overlayUv, ix, iy, 255, 128, 128);
+            if (v == 0) yuvPut(overlayY, overlayUv, ix, iy, 0, 128, 128);
+            else if (v >= 254) yuvPut(overlayY, overlayUv, ix, iy, 255, 128, 128);
             else if (pack && pack->kind[v] == kKindInk) {
                 yuvPut(overlayY, overlayUv, ix, iy, 150, 44, 21);
             } else {
