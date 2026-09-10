@@ -2000,10 +2000,21 @@ static bool wrapHeatLabelsU8(jlong scratchPtr, int h, int w, cv::Mat* labelsOut)
 }
 
 // 8-connected BFS (same neighbor walk as poison flood255LookIds). Ids 1..254; 0 = background.
-// Stops starting new blobs at 254 or boxCap. on(x,y) is the heat/mask predicate (no separate mask plane).
-template <typename OnFn>
+// Stops starting new blobs at 254 or boxCap. Heat test is in-predicate (no packed threshold mask).
+// kind: 0 = heatU > thrU, 1 = heatF > thrF, 2 = mask plane != 0. Non-template: this TU is extern "C".
+static bool heatOnAt(int kind, int x, int y, int w,
+                     const uint8_t* heatU, double thrU, const float* heatF, float thrF,
+                     const uint8_t* mask) {
+    const size_t i = static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x);
+    if (kind == 2) return mask[i] != 0;
+    if (kind == 0) return static_cast<double>(heatU[i]) > thrU;
+    return heatF[i] > thrF;
+}
+
 static void floodHeatBlobsU8(
-    cv::Mat& labels, int w, int h, int boxCap, OnFn&& on, std::vector<HeatBlob>* blobs) {
+    cv::Mat& labels, int w, int h, int boxCap, int kind,
+    const uint8_t* heatU, double thrU, const float* heatF, float thrF, const uint8_t* mask,
+    std::vector<HeatBlob>* blobs) {
     labels.setTo(0);
     blobs->clear();
     std::vector<int> st;
@@ -2013,7 +2024,7 @@ static void floodHeatBlobsU8(
         uint8_t* row = labels.ptr<uint8_t>(y);
         for (int x = 0; x < w; ++x) {
             if (row[x] != 0) continue;
-            if (!on(x, y)) continue;
+            if (!heatOnAt(kind, x, y, w, heatU, thrU, heatF, thrF, mask)) continue;
             if (nextId > 254 || (int)blobs->size() >= boxCap) return;
             const uint8_t id = nextId++;
             st.clear();
@@ -2038,7 +2049,7 @@ static void floodHeatBlobsU8(
                         if ((unsigned)nx >= (unsigned)w || (unsigned)ny >= (unsigned)h) continue;
                         uint8_t* np = labels.ptr<uint8_t>(ny) + nx;
                         if (*np != 0) continue;
-                        if (!on(nx, ny)) continue;
+                        if (!heatOnAt(kind, nx, ny, w, heatU, thrU, heatF, thrF, mask)) continue;
                         *np = id;
                         st.push_back(ny * w + nx);
                     }
@@ -2065,14 +2076,9 @@ static bool heatMaybeDilateFlood(
     const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
     if (dilatePasses <= 0) {
         if (heatU) {
-            floodHeatBlobsU8(labels, w, h, boxCap, [&](int x, int y) {
-                return static_cast<double>(
-                    heatU[static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)]) > thrU;
-            }, blobs);
+            floodHeatBlobsU8(labels, w, h, boxCap, 0, heatU, thrU, nullptr, 0.f, nullptr, blobs);
         } else if (heatF) {
-            floodHeatBlobsU8(labels, w, h, boxCap, [&](int x, int y) {
-                return heatF[static_cast<size_t>(y) * static_cast<size_t>(w) + static_cast<size_t>(x)] > thrF;
-            }, blobs);
+            floodHeatBlobsU8(labels, w, h, boxCap, 1, nullptr, 0.0, heatF, thrF, nullptr, blobs);
         } else {
             return false;
         }
@@ -2091,9 +2097,7 @@ static bool heatMaybeDilateFlood(
         return false;
     }
     dilateMaskPasses(mask, buf, dilatePasses);
-    floodHeatBlobsU8(labels, w, h, boxCap, [&](int x, int y) {
-        return mask.ptr<uchar>(y)[x] != 0;
-    }, blobs);
+    floodHeatBlobsU8(labels, w, h, boxCap, 2, nullptr, 0.0, nullptr, 0.f, mask.ptr<uchar>(0), blobs);
     return true;
 }
 
