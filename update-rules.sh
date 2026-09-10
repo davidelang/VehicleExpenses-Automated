@@ -662,7 +662,7 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
           echo "No changes needed for $WT."
         else
           echo "Changes detected in $WT, committing allowlist only..."
-          if ! git commit --only -- "${staged_only[@]}" -m "chore: Synchronize agent rules and infrastructure"; then
+          if ! git commit --only -m "chore: Synchronize agent rules and infrastructure" -- "${staged_only[@]}"; then
             echo "ERROR: git commit --only failed in $WT"
             git reset >/dev/null 2>&1 || true
             exit 2
@@ -682,6 +682,7 @@ while [ "$_wt_i" -lt "${#WT_PATHS[@]}" ]; do
     ) || {
         echo "ERROR: infra commit skipped or failed in $WT"
         SKIP_SAFETY=$((SKIP_SAFETY + 1))
+        continue
     }
 
     # Re-assert executables after commit (git may not preserve all mode bits in WT)

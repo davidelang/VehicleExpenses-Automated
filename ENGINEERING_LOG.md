@@ -704,3 +704,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan Status: APPROVED → implementing
 - Scope: pin --effort high on run-grok-coder/master; harden organizer spawn (no parent implement, no images); §3.5a + AGENTS VE-wins + GROK.md
 - No update-rules / deploy-orchestration sweep
+
+## 2026-09-09 - Start execution: update-rules-commit-only-message-before-paths-20260909-2333-plan.md
+
+- Plan Status: APPROVED → implementing
+- Scope: git commit --only -m before --; skip fix-perms when infra commit subshell fails
+- No update-rules sweep this turn
