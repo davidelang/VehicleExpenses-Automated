@@ -1,0 +1,468 @@
+#!/usr/bin/env bash
+# deploy-orchestration — publish shared multi-agent policy to sibling orch hosts.
+# This is the only policy publisher (not deploy-landlock-fix / pack-launchers / …).
+#
+# Per-host update-rules.sh stays on that host (project FILES). This command
+# never overwrites dest update-rules.sh.
+# Will not run dest update-rules on staged dest/worktrees unless --force (dangerous).
+#
+# Run as primary_user (dlang) from the VehicleExpenses orchestration root:
+#   ./deploy-orchestration --discover
+#   ./deploy-orchestration --dry-run
+#   ./deploy-orchestration --apply
+#   ./deploy-orchestration --apply --commit
+#   ./deploy-orchestration --apply --commit --update-rules
+#   ./deploy-orchestration --apply --commit --update-rules --push
+#   ./deploy-orchestration --apply --repos remotetable,extractmail --commit
+#   ./deploy-orchestration --apply --repos /home/dlang/git/remotetable --commit
+#
+set -u
+umask 007
+
+usage() {
+  sed -n '2,16p' "$0"
+  echo
+  echo "Flags: --discover  --dry-run  --apply  --commit  --update-rules  --push  --force"
+  echo "       --repos name-or-/abs/path[,name...]   (repeatable)"
+  exit "${1:-0}"
+}
+
+DISCOVER=0
+DRY=0
+APPLY=0
+DO_COMMIT=0
+DO_UR=0
+DO_PUSH=0
+FORCE=0
+REPO_TOKENS=()
+
+add_repo_tokens() {
+  local raw="$1" t
+  IFS=',' read -r -a parts <<< "$raw"
+  for t in "${parts[@]}"; do
+    t="${t#"${t%%[![:space:]]*}"}"
+    t="${t%"${t##*[![:space:]]}"}"
+    [[ -n "$t" ]] && REPO_TOKENS+=("$t")
+  done
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --discover) DISCOVER=1; shift ;;
+    --dry-run) DRY=1; shift ;;
+    --apply) APPLY=1; shift ;;
+    --commit) DO_COMMIT=1; shift ;;
+    --update-rules) DO_UR=1; shift ;;
+    --push) DO_PUSH=1; shift ;;
+    -f|--force) FORCE=1; shift ;;
+    --repos)
+      [[ $# -ge 2 ]] || { echo "ERROR: --repos needs a value" >&2; exit 2; }
+      add_repo_tokens "$2"
+      shift 2
+      ;;
+    --repos=*)
+      add_repo_tokens "${1#--repos=}"
+      shift
+      ;;
+    -h|--help) usage 0 ;;
+    *) echo "unknown arg: $1 (try --help)" >&2; usage 2 ;;
+  esac
+done
+
+if [[ "$DO_PUSH" -eq 1 && "$DO_COMMIT" -eq 0 ]]; then
+  echo "ERROR: --push requires --commit" >&2
+  exit 2
+fi
+if [[ "$APPLY" -eq 1 && "$DRY" -eq 1 ]]; then
+  echo "ERROR: use only one of --dry-run / --apply" >&2
+  exit 2
+fi
+if [[ "$DISCOVER" -eq 0 && "$DRY" -eq 0 && "$APPLY" -eq 0 && "$DO_UR" -eq 0 ]]; then
+  echo "ERROR: pass --discover, --dry-run, --apply, and/or --update-rules" >&2
+  usage 2
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VE="$SCRIPT_DIR"
+if [[ ! -f "$VE/update-rules.sh" || ! -f "$VE/AGENT_MANDATES.md" ]]; then
+  echo "ERROR: $VE is not the VE orchestration root" >&2
+  exit 1
+fi
+
+cfg="$VE/project.config"
+if [[ ! -f "$cfg" ]]; then
+  echo "ERROR: missing $cfg" >&2
+  exit 1
+fi
+GIT_HOME=$(sed -n 's/^git_home=//p' "$cfg" | tr -d '\r' | head -1)
+PRIMARY_USER=$(sed -n 's/^primary_user=//p' "$cfg" | tr -d '\r' | head -1)
+PRIMARY_USER=${PRIMARY_USER:-dlang}
+if [[ -z "${GIT_HOME:-}" || "$GIT_HOME" == @@* || "$GIT_HOME" != /* ]]; then
+  echo "ERROR: project.config git_home= must be an absolute path" >&2
+  exit 1
+fi
+GIT_HOME="$(cd "$GIT_HOME" && pwd)"
+
+if [[ "$APPLY" -eq 1 || "$DO_COMMIT" -eq 1 || "$DO_PUSH" -eq 1 ]]; then
+  if [[ "$(id -un)" != "$PRIMARY_USER" ]]; then
+    echo "ERROR: --apply/--commit/--push must run as $PRIMARY_USER (got $(id -un))" >&2
+    exit 1
+  fi
+fi
+
+NEVER_COPY=(
+  update-rules.sh
+  build_app
+  deploy
+  gradle.properties
+  ve-env
+  sync-debug-keystores
+  fix-android-sdk-perms
+  ve-resolve-orch
+  project.config
+  docs/ENVIRONMENT_SETUP.md
+)
+
+in_never() {
+  local f="$1" x
+  for x in "${NEVER_COPY[@]}"; do
+    [[ "$f" == "$x" ]] && return 0
+  done
+  return 1
+}
+
+marker_count() {
+  local d="$1" n=0
+  [[ -f "$d/setup_agent.sh" ]] && n=$((n + 1))
+  [[ -f "$d/remove_worktree.sh" ]] && n=$((n + 1))
+  [[ -f "$d/AGENT_MANDATES.md" ]] && n=$((n + 1))
+  [[ -f "$d/AGENTS.md" ]] && n=$((n + 1))
+  echo "$n"
+}
+
+is_orch_host() {
+  local d="$1"
+  [[ -d "$d" ]] || return 1
+  [[ -f "$d/update-rules.sh" ]] || return 1
+  [[ "$(marker_count "$d")" -ge 2 ]] || return 1
+  local abs
+  abs="$(cd "$d" && pwd)"
+  [[ "$abs" != "$VE" ]] || return 1
+  return 0
+}
+
+discover_candidates() {
+  local d
+  for d in "$GIT_HOME"/*/; do
+    [[ -d "$d" ]] || continue
+    is_orch_host "$d" || continue
+    (cd "$d" && pwd)
+  done
+}
+
+resolve_repo_token() {
+  local tok="$1" dest
+  if [[ "$tok" == /* ]]; then
+    [[ -d "$tok" ]] || { echo "ERROR: --repos path not a directory: $tok" >&2; return 1; }
+    dest="$(cd "$tok" && pwd)"
+  elif [[ "$tok" != */* ]]; then
+    dest="$GIT_HOME/$tok"
+    [[ -d "$dest" ]] || { echo "ERROR: --repos $tok not under git_home=$GIT_HOME" >&2; return 1; }
+    dest="$(cd "$dest" && pwd)"
+  else
+    echo "ERROR: --repos wants a git_home basename or an absolute path (got $tok)" >&2
+    return 1
+  fi
+  if ! is_orch_host "$dest"; then
+    echo "ERROR: $dest is not an orchestration host (need update-rules.sh + two of setup_agent/remove_worktree/AGENT_MANDATES/AGENTS)" >&2
+    return 1
+  fi
+  printf '%s\n' "$dest"
+}
+
+git_c() {
+  local dest="$1"
+  shift
+  git -c "safe.directory=$dest" -c "safe.directory=*" -C "$dest" "$@"
+}
+
+build_policy_list() {
+  local dest="$1"
+  POLICY_FILES=()
+  local fixed=(
+    AGENT_MANDATES.md
+    AGENTS.md
+    GROK.md
+    GEMINI.md
+    MULTI_AGENT_USER_INSTRUCTIONS.md
+    MASTER_AGENT_MANDATE.md
+    new_agent_prompt
+    new_grok_agent_prompt
+    standard-plan-compliance-block.md
+    .grok/config.toml
+    install-merge-drivers.sh
+    merge-branch-into-master.sh
+    append-to-engineering-log
+    todo-append
+    todo-close
+    get-builds-tag.sh
+    setup_agent.sh
+    remove_worktree.sh
+    agent-landlock
+    landlock.config
+    landlock.config.example
+    landlock-smoke-matrix
+    landlock-write-probe
+    hooks/post-checkout
+    fix-perms
+    .grok/lib/grok-launch-common.sh
+    run-grok
+    run-grok-coder
+    run-grok-master
+    run-grok-orchestrator
+    run-grok-planner
+  )
+  local f
+  for f in "${fixed[@]}"; do
+    in_never "$f" && continue
+    [[ -f "$VE/$f" ]] || continue
+    [[ -f "$dest/$f" ]] || continue
+    POLICY_FILES+=("$f")
+  done
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    in_never "$f" && continue
+    [[ -f "$dest/$f" ]] || continue
+    POLICY_FILES+=("$f")
+  done < <(
+    (
+      cd "$VE" || exit 1
+      find .grok/hooks .grok/prompts .grok/agents -type f 2>/dev/null
+      find .grok/skills -type f -name SKILL.md 2>/dev/null
+      find git-merge-drivers -type f 2>/dev/null
+    ) | sed 's|^\./||' | sort -u
+  )
+}
+
+file_dirty() {
+  local dest="$1" rel="$2"
+  [[ -n "$(git_c "$dest" status --porcelain -- "$rel" 2>/dev/null)" ]]
+}
+
+# Dest update-rules: refuse staged trees unless --force. Skip prunable,
+# grok-worktrees, and third_party/*/src the same way VE update-rules does.
+dest_ur_worktree_ok() {
+  local dest="$1" wt="$2"
+  case "$wt" in
+    */grok-worktrees|*/grok-worktrees/*) return 1 ;;
+    */third_party/*/src|*/third_party/*/src/*) return 1 ;;
+  esac
+  [[ -f "$wt/.git" || -d "$wt/.git" ]] || return 1
+  local dest_common wt_common
+  dest_common=$(git_c "$dest" rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$dest_common" in
+    /*) ;;
+    *) dest_common="$dest/$dest_common" ;;
+  esac
+  dest_common=$(cd "$dest_common" 2>/dev/null && pwd) || return 1
+  wt_common=$(git -c "safe.directory=$wt" -c "safe.directory=*" -C "$wt" rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$wt_common" in
+    /*) ;;
+    *) wt_common="$wt/$wt_common" ;;
+  esac
+  wt_common=$(cd "$wt_common" 2>/dev/null && pwd) || return 1
+  [[ "$wt_common" == "$dest_common" ]]
+}
+
+dest_report_staged() {
+  local dest="$1"
+  local any=0 wt line wt_path prunable
+  wt_path=""
+  prunable=0
+  while IFS= read -r line || [[ -n "${line:-}" ]]; do
+    case "$line" in
+      worktree\ *)
+        if [[ -n "$wt_path" && "$prunable" -eq 0 ]] && dest_ur_worktree_ok "$dest" "$wt_path"; then
+          if [[ -n "$(git -c "safe.directory=$wt_path" -c "safe.directory=*" -C "$wt_path" diff --cached --name-only 2>/dev/null)" ]]; then
+            echo "  STAGED $wt_path"
+            git -c "safe.directory=$wt_path" -c "safe.directory=*" -C "$wt_path" diff --cached --name-only | sed 's/^/    /'
+            any=1
+          fi
+        fi
+        wt_path="${line#worktree }"
+        prunable=0
+        ;;
+      prunable*)
+        prunable=1
+        ;;
+    esac
+  done < <(git_c "$dest" worktree list --porcelain)
+  if [[ -n "$wt_path" && "$prunable" -eq 0 ]] && dest_ur_worktree_ok "$dest" "$wt_path"; then
+    if [[ -n "$(git -c "safe.directory=$wt_path" -c "safe.directory=*" -C "$wt_path" diff --cached --name-only 2>/dev/null)" ]]; then
+      echo "  STAGED $wt_path"
+      git -c "safe.directory=$wt_path" -c "safe.directory=*" -C "$wt_path" diff --cached --name-only | sed 's/^/    /'
+      any=1
+    fi
+  fi
+  [[ "$any" -eq 1 ]]
+}
+
+decide_copy() {
+  local dest="$1" rel="$2"
+  DECIDE=copy
+  REASON="differs"
+  if [[ ! -f "$VE/$rel" ]]; then
+    DECIDE=skip; REASON="source missing"; return
+  fi
+  if [[ ! -f "$dest/$rel" ]]; then
+    DECIDE=skip; REASON="dest missing (will not invent)"; return
+  fi
+  if cmp -s "$VE/$rel" "$dest/$rel"; then
+    DECIDE=skip; REASON="identical"; return
+  fi
+  if [[ "$FORCE" -eq 0 ]] && file_dirty "$dest" "$rel"; then
+    DECIDE=skip; REASON="DIRTY dest (use --force)"; return
+  fi
+}
+
+if [[ "$DISCOVER" -eq 1 ]]; then
+  echo "git_home=$GIT_HOME"
+  while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    echo "  $(basename "$d")  $d"
+  done < <(discover_candidates)
+  if [[ "$DRY" -eq 0 && "$APPLY" -eq 0 && "$DO_UR" -eq 0 ]]; then
+    exit 0
+  fi
+  echo
+fi
+
+DESTS=()
+if [[ "${#REPO_TOKENS[@]}" -gt 0 ]]; then
+  for t in "${REPO_TOKENS[@]}"; do
+    r=$(resolve_repo_token "$t") || exit 1
+    DESTS+=("$r")
+  done
+else
+  while IFS= read -r d; do
+    [[ -n "$d" ]] && DESTS+=("$d")
+  done < <(discover_candidates)
+fi
+
+echo "VE=$VE"
+echo "git_home=$GIT_HOME"
+echo "mode=$([ "$DRY" -eq 1 ] && echo dry-run || { [ "$APPLY" -eq 1 ] && echo apply || echo no-copy; })"
+echo "commit=$DO_COMMIT update-rules=$DO_UR push=$DO_PUSH force=$FORCE"
+echo
+
+if [[ "$APPLY" -eq 1 && "$DO_COMMIT" -eq 0 ]]; then
+  echo "WARN: --apply without --commit leaves dest working trees dirty (blocks dest ./build_app)."
+  echo
+fi
+
+PUSH_DIRS=()
+ANY_FAIL=0
+
+for dest in "${DESTS[@]}"; do
+  echo "-- $(basename "$dest")  $dest --"
+  if [[ "$DRY" -eq 1 || "$APPLY" -eq 1 ]]; then
+    build_policy_list "$dest"
+    copied=()
+    for f in "${POLICY_FILES[@]}"; do
+      decide_copy "$dest" "$f"
+      if [[ "$DECIDE" == skip ]]; then
+        if [[ "$REASON" != identical ]]; then
+          echo "  SKIP $f — $REASON"
+        fi
+        continue
+      fi
+      echo "  COPY $f — $REASON"
+      if [[ "$APPLY" -eq 1 ]]; then
+        mkdir -p "$dest/$(dirname "$f")"
+        cp -f "$VE/$f" "$dest/$f"
+        if [[ -x "$VE/$f" || "$f" == *.sh || "$f" == run-grok* || "$f" == git-merge-drivers/* || "$f" == agent-landlock ]]; then
+          chmod a+x "$dest/$f" 2>/dev/null || true
+        fi
+        copied+=("$f")
+      fi
+    done
+    if [[ "$APPLY" -eq 1 && "$DO_COMMIT" -eq 1 ]]; then
+      build_policy_list "$dest"
+      if [[ ${#POLICY_FILES[@]} -gt 0 ]]; then
+        git_c "$dest" add -- "${POLICY_FILES[@]}"
+        if git_c "$dest" diff --cached --quiet; then
+          echo "  nothing to commit"
+        else
+          git_c "$dest" commit -m "deploy-orchestration: shared policy from VE"
+          echo "  committed $(git_c "$dest" rev-parse --short HEAD)"
+          PUSH_DIRS+=("$dest")
+        fi
+      fi
+    fi
+  fi
+
+  if [[ "$DO_UR" -eq 1 ]]; then
+    if dest_report_staged "$dest"; then
+      if [[ "$FORCE" -eq 0 ]]; then
+        echo "ERROR: dest $dest has staged changes; will not run update-rules (pass --force to override)" >&2
+        exit 1
+      fi
+      echo "  WARN: --force: running dest update-rules despite staged changes"
+    fi
+    ur=("$dest/update-rules.sh")
+    [[ "$DRY" -eq 1 ]] && ur+=(--dry-run)
+    [[ "$FORCE" -eq 1 && "$DRY" -eq 0 ]] && ur+=(--force)
+    echo "  RUN ${ur[*]}"
+    ur_ok=1
+    if [[ "$DRY" -eq 1 ]]; then
+      (cd "$dest" && bash ./update-rules.sh --dry-run) || {
+        echo "ERROR: dest update-rules dry-run failed" >&2
+        ANY_FAIL=1
+        ur_ok=0
+      }
+    else
+      before=$(git_c "$dest" rev-parse HEAD)
+      if ! (cd "$dest" && bash ./update-rules.sh ${FORCE:+--force}); then
+        echo "ERROR: dest update-rules failed" >&2
+        ANY_FAIL=1
+        ur_ok=0
+      fi
+      if [[ "$ur_ok" -eq 1 && ( "$DO_COMMIT" -eq 1 || "$DO_PUSH" -eq 1 ) ]]; then
+        while IFS= read -r wt; do
+          [[ -n "$wt" ]] || continue
+          if [[ -n "$(git_c "$wt" rev-list --count '@{u}..HEAD' 2>/dev/null)" ]] \
+             && [[ "$(git_c "$wt" rev-list --count '@{u}..HEAD' 2>/dev/null)" != 0 ]]; then
+            PUSH_DIRS+=("$wt")
+          fi
+        done < <(git_c "$dest" worktree list --porcelain | awk '/^worktree /{print substr($0,10)}')
+      fi
+      unset before
+    fi
+  fi
+done
+
+if [[ "$DO_PUSH" -eq 1 ]]; then
+  # unique
+  seen=
+  for d in "${PUSH_DIRS[@]}"; do
+    case " $seen " in
+      *" $d "*) continue ;;
+    esac
+    seen+=" $d"
+    br=$(git_c "$d" rev-parse --abbrev-ref HEAD)
+    echo "PUSH $d ($br)"
+    if ! git_c "$d" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+      echo "ERROR: no upstream for $d ($br)" >&2
+      ANY_FAIL=1
+      continue
+    fi
+    if ! git_c "$d" push; then
+      echo "ERROR: git push failed in $d" >&2
+      ANY_FAIL=1
+    fi
+  done
+fi
+
+echo
+echo "Done. Dest update-rules.sh was never overwritten."
+exit "$ANY_FAIL"
