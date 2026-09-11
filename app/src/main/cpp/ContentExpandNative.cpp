@@ -5373,10 +5373,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
 ) {
     return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -5384,10 +5385,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
 ) {
     return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -5395,10 +5397,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayA
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
 ) {
     return aabbGrayMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
 }
 
 static jintArray aabbColorMany(
@@ -5518,10 +5521,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
 ) {
     return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -5529,10 +5533,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
 ) {
     return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -5540,10 +5545,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     JNIEnv* env, jobject /*thiz*/,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
 ) {
     return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
 }
 
 namespace {
@@ -6550,11 +6556,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayO
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
 ) {
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, 0, true);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, 0, true, histArr);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -6562,11 +6569,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayO
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
 ) {
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 2, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, 0, true);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, 0, true, histArr);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -6574,11 +6582,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeGrayO
     JNIEnv* env, jobject thiz,
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
 ) {
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, 0, false, histArr);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -6587,11 +6596,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
-    jlong tintPtr
+    jlong tintPtr,
+    jshortArray histArr
 ) {
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 0, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true, histArr);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -6600,11 +6610,12 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
-    jlong tintPtr
+    jlong tintPtr,
+    jshortArray histArr
 ) {
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 2, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true, histArr);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL
@@ -6613,10 +6624,11 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
-    jlong tintPtr
+    jlong tintPtr,
+    jshortArray histArr
 ) {
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 0, 0,
-        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr);
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, false, histArr);
 }
 

@@ -8640,6 +8640,8 @@ private fun pumpColumnLabels(flows: List<String>): List<String> {
 private fun seg7TeleJson(t: ContentExpandUtils.Seg7Telemetry): JSONObject {
     val hh = JSONArray(); t.histH.forEach { hh.put(it) }
     val hv = JSONArray(); t.histV.forEach { hv.put(it) }
+    val hgh = JSONArray(); t.histGapH.forEach { hgh.put(it) }
+    val hgv = JSONArray(); t.histGapV.forEach { hgv.put(it) }
     return JSONObject()
         .put("method", t.method)
         .put("y_ink", t.yInk.toDouble())
@@ -8671,6 +8673,8 @@ private fun seg7TeleJson(t: ContentExpandUtils.Seg7Telemetry): JSONObject {
         .put("gap_land_bot", t.landBot.toDouble())
         .put("hist_h", hh)
         .put("hist_v", hv)
+        .put("hist_gap_h", hgh)
+        .put("hist_gap_v", hgv)
 }
 
 private fun storeSeg7Tele(branch: PumpBranch, teles: List<ContentExpandUtils.Seg7Telemetry?>) {
@@ -8683,7 +8687,7 @@ private fun histBinLabel(b: Int, method: String = ""): String {
     if (method == "gray" || method == "color_adaptive") {
         val lo = 4 + 4 * b
         val hi = 12 + 4 * b
-        return if (b >= 63) "$lo+" else "$lo-$hi"
+        return if (b >= NativeImageUtils.SEG7_HIST_BINS - 1) "$lo+" else "$lo-$hi"
     }
     if (b <= 0) return "1-2"
     var hi = 2
@@ -8859,10 +8863,16 @@ private fun pSeg7TeleHtml(br: PumpBranch): String {
         sb.append("</table>")
         val hh = o.optJSONArray("hist_h")
         val hv = o.optJSONArray("hist_v")
-        val n = max(hh?.length() ?: 0, hv?.length() ?: 0)
+        val hgh = o.optJSONArray("hist_gap_h")
+        val hgv = o.optJSONArray("hist_gap_v")
+        val n = max(
+            max(hh?.length() ?: 0, hv?.length() ?: 0),
+            max(hgh?.length() ?: 0, hgv?.length() ?: 0),
+        )
         if (n > 0) {
             val show = (0 until n).filter { b ->
-                (hh?.optInt(b) ?: 0) > 0 || (hv?.optInt(b) ?: 0) > 0
+                (hh?.optInt(b) ?: 0) > 0 || (hv?.optInt(b) ?: 0) > 0 ||
+                    (hgh?.optInt(b) ?: 0) > 0 || (hgv?.optInt(b) ?: 0) > 0
             }
             if (show.isNotEmpty()) {
                 sb.append("<table style='border-collapse:collapse;font-size:8px;margin:2px 0 6px;text-align:center;'>")
@@ -8872,6 +8882,12 @@ private fun pSeg7TeleHtml(br: PumpBranch): String {
                 for (b in show) sb.append("<td style='$cell'>${hh?.optInt(b) ?: 0}</td>")
                 sb.append("</tr><tr><th style='$th'>V</th>")
                 for (b in show) sb.append("<td style='$cell'>${hv?.optInt(b) ?: 0}</td>")
+                if ((hgh?.length() ?: 0) > 0 || (hgv?.length() ?: 0) > 0) {
+                    sb.append("</tr><tr><th style='$th'>gap H</th>")
+                    for (b in show) sb.append("<td style='$cell'>${hgh?.optInt(b) ?: 0}</td>")
+                    sb.append("</tr><tr><th style='$th'>gap V</th>")
+                    for (b in show) sb.append("<td style='$cell'>${hgv?.optInt(b) ?: 0}</td>")
+                }
                 sb.append("</tr></table>")
             }
         }

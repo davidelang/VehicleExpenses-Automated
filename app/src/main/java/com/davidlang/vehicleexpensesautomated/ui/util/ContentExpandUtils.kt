@@ -1135,6 +1135,8 @@ object ContentExpandUtils {
         val nInkYellow: Float = 0f,
         val histH: IntArray,
         val histV: IntArray,
+        val histGapH: IntArray = intArrayOf(),
+        val histGapV: IntArray = intArrayOf(),
         val nLookBinSeed: Float = 0f,
         val nRecoveredSeed: Float = 0f,
         val fill: Float = 0f,
@@ -1184,13 +1186,29 @@ object ContentExpandUtils {
         else -> "gray"
     }
 
-    fun parseSeg7Tele(a: FloatArray, i: Int): Seg7Telemetry? {
+    fun parseSeg7Tele(a: FloatArray, i: Int, overlap: ShortArray? = null): Seg7Telemetry? {
         val n = NativeImageUtils.SEG7_TELE_N
+        val energyBins = NativeImageUtils.SEG7_ENERGY_HIST_BINS
         val bins = NativeImageUtils.SEG7_HIST_BINS
         val o = i * n
         if (o + n > a.size) return null
-        val histH = IntArray(bins) { b -> a[o + 26 + b].toInt() }
-        val histV = IntArray(bins) { b -> a[o + 26 + bins + b].toInt() }
+        val ovOff = i * bins * 4
+        val histH: IntArray
+        val histV: IntArray
+        val histGapH: IntArray
+        val histGapV: IntArray
+        if (overlap != null && ovOff + bins * 4 <= overlap.size) {
+            fun u16(p: Int) = overlap[p].toInt() and 0xFFFF
+            histH = IntArray(bins) { b -> u16(ovOff + b) }
+            histV = IntArray(bins) { b -> u16(ovOff + bins + b) }
+            histGapH = IntArray(bins) { b -> u16(ovOff + bins * 2 + b) }
+            histGapV = IntArray(bins) { b -> u16(ovOff + bins * 3 + b) }
+        } else {
+            histH = IntArray(energyBins) { b -> a[o + 26 + b].toInt() }
+            histV = IntArray(energyBins) { b -> a[o + 26 + energyBins + b].toInt() }
+            histGapH = IntArray(0)
+            histGapV = IntArray(0)
+        }
         return Seg7Telemetry(
             method = teleMethodName(a[o]),
             yInk = a[o + 1],
@@ -1220,19 +1238,21 @@ object ContentExpandUtils {
             nInkYellow = a[o + 25],
             histH = histH,
             histV = histV,
-            nLookBinSeed = a[o + 26 + 2 * bins],
-            nRecoveredSeed = a[o + 26 + 2 * bins + 1],
-            fill = a[o + 26 + 2 * bins + 2],
-            nRetry = a[o + 26 + 2 * bins + 3],
-            retryWhy = a[o + 26 + 2 * bins + 4],
-            nValley = a[o + 26 + 2 * bins + 5],
-            nAttempts = a[o + 26 + 2 * bins + 6],
+            histGapH = histGapH,
+            histGapV = histGapV,
+            nLookBinSeed = a[o + 26 + 2 * energyBins],
+            nRecoveredSeed = a[o + 26 + 2 * energyBins + 1],
+            fill = a[o + 26 + 2 * energyBins + 2],
+            nRetry = a[o + 26 + 2 * energyBins + 3],
+            retryWhy = a[o + 26 + 2 * energyBins + 4],
+            nValley = a[o + 26 + 2 * energyBins + 5],
+            nAttempts = a[o + 26 + 2 * energyBins + 6],
             nKeep = 0f,
             nPoison = 0f,
             firstThr = 0f,
             attempts = emptyList(),
         ).let { raw ->
-            val histEnd = 26 + 2 * bins
+            val histEnd = 26 + 2 * energyBins
             val nAtt = raw.nAttempts.roundToInt().coerceIn(0, NativeImageUtils.SEG7_ATTEMPT_MAX)
             val f = NativeImageUtils.SEG7_ATTEMPT_F
             val atts = List(nAtt) { ai ->
@@ -1317,6 +1337,7 @@ object ContentExpandUtils {
         imgH: Int,
         k: Float,
         j: Float,
+        overlap: ShortArray? = null,
     ): List<Seg7Expand> {
         if (r == null || r.size < seeds.size * 12) {
             return seeds.map { Seg7Expand(clip(it, imgW, imgH), strokeWidthInSeed(Mat(), it), k, j) }
@@ -1340,7 +1361,7 @@ object ContentExpandUtils {
                     droppedGlare = 0, otsuThr = 0, seed = seed,
                 ),
                 k, j,
-                parseSeg7Tele(tele, i),
+                parseSeg7Tele(tele, i, overlap),
                 sweeps.getOrNull(i),
                 poisons.getOrNull(i),
                 rectPad,
@@ -1358,7 +1379,7 @@ object ContentExpandUtils {
         overlayUv: Mat?,
         poisonStats: IntArray?,
         native: (
-            Mat, Mat?, IntArray, Mat?, FloatArray, ShortArray, Mat?, Mat?, Mat?, IntArray?,
+            Mat, Mat?, IntArray, Mat?, FloatArray, ShortArray, Mat?, Mat?, Mat?, IntArray?, ShortArray?,
         ) -> IntArray?,
         k: Float = SEG7_K,
         j: Float = SEG7_J,
@@ -1379,12 +1400,13 @@ object ContentExpandUtils {
         }
         val tele = FloatArray(seeds.size * NativeImageUtils.SEG7_TELE_N)
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
+        val overlap = ShortArray(seeds.size * NativeImageUtils.SEG7_HIST_BINS * 4)
         val r = try {
-            native(gray, uv, packed, scratch, tele, sweepBuf, combine, overlayY, overlayUv, poisonStats)
+            native(gray, uv, packed, scratch, tele, sweepBuf, combine, overlayY, overlayUv, poisonStats, overlap)
         } catch (_: Throwable) {
             null
         }
-        return unpackAabb7seg(seeds, r, tele, sweepBuf, poisonStats, imgW, imgH, k, j)
+        return unpackAabb7seg(seeds, r, tele, sweepBuf, poisonStats, imgW, imgH, k, j, overlap)
     }
 
     fun expandGrayAabbTight(
@@ -1506,7 +1528,7 @@ object ContentExpandUtils {
         overlayUv: Mat?,
         poisonStats: IntArray?,
         native: (
-            Mat, Mat?, FloatArray, Mat?, FloatArray, ShortArray, Mat?, Mat?, Mat?, IntArray?, Mat?,
+            Mat, Mat?, FloatArray, Mat?, FloatArray, ShortArray, Mat?, Mat?, Mat?, IntArray?, Mat?, ShortArray?,
         ) -> FloatArray?,
         tint: Mat? = null,
     ): List<Seg7OrientedExpand> {
@@ -1521,10 +1543,11 @@ object ContentExpandUtils {
         val imgW = gray.cols()
         val imgH = gray.rows()
         val sweepBuf = inkSweepBuf(seeds.size, imgW, imgH)
+        val overlap = ShortArray(seeds.size * NativeImageUtils.SEG7_HIST_BINS * 4)
         val r = try {
             native(
                 gray, uv, packed, scratch, tele, sweepBuf, combine, overlayY, overlayUv,
-                poisonStats, tint,
+                poisonStats, tint, overlap,
             )
         } catch (_: Throwable) {
             null
@@ -1546,7 +1569,7 @@ object ContentExpandUtils {
                     inkFrac = 0f, darkInk = true, usedFallback = false,
                     droppedGlare = 0, otsuThr = 0, seed = Rect(),
                 ),
-                parseSeg7Tele(tele, i),
+                parseSeg7Tele(tele, i, overlap),
                 sweeps.getOrNull(i),
                 poisons.getOrNull(i),
                 OrientedQuad(padPts),
@@ -1561,8 +1584,8 @@ object ContentExpandUtils {
         tint: Mat? = null,
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
-        { g, u, pk, sc, te, sw, comb, oy, ouv, ps, _ ->
-            NativeImageUtils.grayOrientTightNative(g, u, pk, sc, te, sw, comb, oy, ouv, ps)
+        { g, u, pk, sc, te, sw, comb, oy, ouv, ps, _, hist ->
+            NativeImageUtils.grayOrientTightNative(g, u, pk, sc, te, sw, comb, oy, ouv, ps, hist)
         },
         tint,
     )
@@ -1573,8 +1596,8 @@ object ContentExpandUtils {
         tint: Mat? = null,
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
-        { g, u, pk, sc, te, sw, comb, oy, ouv, ps, _ ->
-            NativeImageUtils.grayOrientRetractNative(g, u, pk, sc, te, sw, comb, oy, ouv, ps)
+        { g, u, pk, sc, te, sw, comb, oy, ouv, ps, _, hist ->
+            NativeImageUtils.grayOrientRetractNative(g, u, pk, sc, te, sw, comb, oy, ouv, ps, hist)
         },
         tint,
     )
@@ -1732,8 +1755,8 @@ object ContentExpandUtils {
         tint: Mat? = null,
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
-        { g, u, pk, sc, te, sw, comb, oy, ouv, ps, _ ->
-            NativeImageUtils.grayOrientExpandNative(g, u, pk, sc, te, sw, comb, oy, ouv, ps)
+        { g, u, pk, sc, te, sw, comb, oy, ouv, ps, _, hist ->
+            NativeImageUtils.grayOrientExpandNative(g, u, pk, sc, te, sw, comb, oy, ouv, ps, hist)
         },
         tint,
     )
