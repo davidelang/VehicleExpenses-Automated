@@ -1155,6 +1155,10 @@ object ContentExpandUtils {
         val gapJumpBot1: Boolean = false,
         val nDropTall: Float = 0f,
         val maxCcH: Float = 0f,
+        val dispKind: String = "",
+        val poisonHMul: Float = 0f,
+        val poisonVMul: Float = 0f,
+        val gapDriftP90S: Float = 0f,
     )
 
     data class Seg7FillAttempt(
@@ -1184,6 +1188,12 @@ object ContentExpandUtils {
         1 -> "energy"
         4 -> "color_adaptive"
         else -> "gray"
+    }
+
+    fun dispKindName(v: Float): String = when (kotlin.math.round(v).toInt()) {
+        0 -> "7seg"
+        1 -> "not"
+        else -> "unknown"
     }
 
     fun parseSeg7Tele(a: FloatArray, i: Int, overlap: ShortArray? = null): Seg7Telemetry? {
@@ -1289,6 +1299,10 @@ object ContentExpandUtils {
                 gapJumpBot1 = a[o + tail + 4] >= 0.5f,
                 nDropTall = a[o + tail + 5],
                 maxCcH = a[o + tail + 6],
+                dispKind = if (a[o + tail + 8] > 0f) dispKindName(a[o + tail + 7]) else "",
+                poisonHMul = a[o + tail + 8],
+                poisonVMul = a[o + tail + 9],
+                gapDriftP90S = a[o + tail + 10],
             )
         }
     }

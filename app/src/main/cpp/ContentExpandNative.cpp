@@ -141,7 +141,7 @@ static constexpr int kEnergyHistBins = 64;
 static constexpr int kSeg7AttemptMax = 4;
 static constexpr int kSeg7AttemptF = 12;
 static constexpr int kSeg7TeleN =
-    26 + kEnergyHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF + 7;
+    26 + kEnergyHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF + 11;
 
 struct OverlapHists {
     uint16_t inkH[kRunHistBins]{};
@@ -209,6 +209,10 @@ struct Seg7Tele {
     float gapJumpBot1 = 0.f;
     float nDropTall = 0.f;
     float maxCcH = 0.f;
+    float dispKind = 0.f;
+    float poisonHMul = 0.f;
+    float poisonVMul = 0.f;
+    float gapDriftP90S = 0.f;
 };
 
 static int runLengthBin(int run) {
@@ -321,6 +325,10 @@ static void packSeg7Tele(const Seg7Tele& t, float* dst) {
     dst[tail + 4] = t.gapJumpBot1;
     dst[tail + 5] = t.nDropTall;
     dst[tail + 6] = t.maxCcH;
+    dst[tail + 7] = t.dispKind;
+    dst[tail + 8] = t.poisonHMul;
+    dst[tail + 9] = t.poisonVMul;
+    dst[tail + 10] = t.gapDriftP90S;
 }
 
 static int countInkU8(const cv::Mat& m, int l, int t, int r, int b) {
@@ -2945,7 +2953,8 @@ static int fillPoisonLookRaster(
     cv::Mat* poisonPlane = nullptr,
     cv::Mat* lookInkAtOut = nullptr,
     SeedFillGate* fillGateOut = nullptr,
-    OverlapHists* histOut = nullptr);
+    OverlapHists* histOut = nullptr,
+    Seg7Tele* teleOut = nullptr);
 static void aabbJumpOnLook(
     cv::Mat* look, int* l, int t, int* r, int b,
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
@@ -3171,7 +3180,8 @@ static int maxBlobRunV(std::vector<int>& pix, int w) {
 static void flood255LookIds(
     cv::Mat* look, int sPx, ObjPack* pack, int seedIndex,
     int lookL = 0, int lookT = 0, int lookR = -1, int lookB = -1,
-    PoisonStats* stats = nullptr
+    PoisonStats* stats = nullptr,
+    int hMul = 7, int vMul = 16
 ) {
     if (!look || look->empty() || look->type() != CV_8UC1 || sPx < 1) return;
     const int h = look->rows, w = look->cols;
@@ -3181,8 +3191,8 @@ static void flood255LookIds(
     if (lookT < 0) lookT = 0;
     if (lookR <= lookL || lookB <= lookT) return;
     const int minWh = std::max(1, sPx / 4);
-    const int run6 = 6 * sPx;
-    const int run16 = 16 * sPx;
+    const int runH = hMul * sPx;
+    const int runV = vMul * sPx;
     std::vector<int> st;
     st.reserve(256);
     std::vector<int> pix;
@@ -3223,7 +3233,7 @@ static void flood255LookIds(
             }
             const int maxHrun = maxBlobRunH(pix, w);
             const int maxVrun = maxBlobRunV(pix, w);
-            const bool poison = maxHrun > run6 || maxVrun > run16;
+            const bool poison = maxHrun > runH || maxVrun > runV;
             if (!poison) continue;
             if (stats && stats->ccs.size() < 16) {
                 PoisonCcPack cc;
@@ -3407,7 +3417,7 @@ static void seg7One(
         overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookPlane,
         objPlane, objPack, seedIndex, false,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
-        pois, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr);
+        pois, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr, tele);
     if (poisonStats) *poisonStats = stLocal;
     const int glareW = 6 * std::max(sPx, 1);
     const int vSW = sPx;
@@ -4758,6 +4768,216 @@ static void paintLookOverlay(
     }
 }
 
+enum : int {
+    kDisp7seg = 0,
+    kDispNot = 1,
+    kDispUnknown = 2
+};
+
+struct SeedDispClass {
+    int kind = kDispUnknown;
+    int hMul = 7;
+    int vMul = 16;
+    float gapDriftP90S = 0.f;
+};
+
+struct SeedGapSpan {
+    int x0 = 0, x1 = 0;
+    int chain = -1;
+    int len() const { return x1 - x0; }
+    float cx() const { return 0.5f * static_cast<float>(x0 + x1); }
+};
+
+struct SeedGapChain {
+    int y0 = 0, y1 = 0;
+    float sumDg = 0.f;
+    bool hadJump = false;
+    std::vector<int> dgs;
+    int nRows() const { return y1 - y0 + 1; }
+};
+
+static void collectSeedRowGaps(const uint8_t* p, int n, std::vector<SeedGapSpan>* out) {
+    if (!out) return;
+    out->clear();
+    if (!p || n < 1) return;
+    bool seenInk = false;
+    int i = 0;
+    while (i < n) {
+        if (p[i] != 0) {
+            while (i < n && p[i] != 0) ++i;
+            seenInk = true;
+        } else {
+            const int a = i;
+            while (i < n && p[i] == 0) ++i;
+            if (seenInk && i < n) {
+                SeedGapSpan g;
+                g.x0 = a;
+                g.x1 = i;
+                out->push_back(g);
+            }
+        }
+    }
+}
+
+static SeedDispClass classifySeedGapDisp(const cv::Mat& combined, int sPx) {
+    SeedDispClass out;
+    if (sPx < 8 || combined.empty() || combined.type() != CV_8UC1) return out;
+    const int h = combined.rows, w = combined.cols;
+    if (h < 1 || w < 1) return out;
+    const float Sf = static_cast<float>(sPx);
+    const float stableMax = std::max(1.f, Sf / 4.f);
+    const float jumpMin = Sf / 2.f;
+    const float twoS = 2.f * Sf;
+    std::vector<SeedGapChain> chains;
+    std::vector<SeedGapSpan> prev;
+    std::vector<SeedGapSpan> cur;
+    int nGaps = 0;
+    std::vector<int> bucketN;
+    std::vector<int> bucketK;
+    auto addBucket = [&](int k) {
+        for (size_t i = 0; i < bucketK.size(); ++i) {
+            if (bucketK[i] == k) {
+                bucketN[i] += 1;
+                return;
+            }
+        }
+        bucketK.push_back(k);
+        bucketN.push_back(1);
+    };
+    const float halfS = 0.5f * Sf;
+    for (int y = 0; y < h; ++y) {
+        collectSeedRowGaps(combined.ptr<uint8_t>(y), w, &cur);
+        nGaps += static_cast<int>(cur.size());
+        for (const SeedGapSpan& g : cur) {
+            addBucket(static_cast<int>(std::lround(static_cast<float>(g.len()) / halfS)));
+        }
+        std::vector<char> usedP(prev.size(), 0);
+        std::vector<char> usedC(cur.size(), 0);
+        struct Cand { int pi; int ci; float ddx; };
+        std::vector<Cand> cands;
+        for (int ci = 0; ci < static_cast<int>(cur.size()); ++ci) {
+            const float ccx = cur[static_cast<size_t>(ci)].cx();
+            for (int pi = 0; pi < static_cast<int>(prev.size()); ++pi) {
+                const SeedGapSpan& pg = prev[static_cast<size_t>(pi)];
+                const SeedGapSpan& cg = cur[static_cast<size_t>(ci)];
+                if (cg.x0 >= pg.x1 || pg.x0 >= cg.x1) continue;
+                const float ddx = std::fabs(ccx - pg.cx());
+                if (ddx > twoS) continue;
+                Cand c;
+                c.pi = pi;
+                c.ci = ci;
+                c.ddx = ddx;
+                cands.push_back(c);
+            }
+        }
+        std::sort(cands.begin(), cands.end(), [](const Cand& a, const Cand& b) {
+            if (a.ddx != b.ddx) return a.ddx < b.ddx;
+            if (a.pi != b.pi) return a.pi < b.pi;
+            return a.ci < b.ci;
+        });
+        for (const Cand& c : cands) {
+            if (usedP[static_cast<size_t>(c.pi)] || usedC[static_cast<size_t>(c.ci)]) continue;
+            usedP[static_cast<size_t>(c.pi)] = 1;
+            usedC[static_cast<size_t>(c.ci)] = 1;
+            SeedGapSpan& pg = prev[static_cast<size_t>(c.pi)];
+            SeedGapSpan& cg = cur[static_cast<size_t>(c.ci)];
+            if (pg.chain < 0 || pg.chain >= static_cast<int>(chains.size())) continue;
+            SeedGapChain& ch = chains[static_cast<size_t>(pg.chain)];
+            const int dg = cg.len() - pg.len();
+            ch.dgs.push_back(dg);
+            ch.sumDg += static_cast<float>(dg);
+            ch.y1 = y;
+            if (std::fabs(static_cast<float>(dg)) >= jumpMin) ch.hadJump = true;
+            cg.chain = pg.chain;
+        }
+        for (int ci = 0; ci < static_cast<int>(cur.size()); ++ci) {
+            if (usedC[static_cast<size_t>(ci)]) continue;
+            SeedGapSpan& cg = cur[static_cast<size_t>(ci)];
+            SeedGapChain ch;
+            ch.y0 = y;
+            ch.y1 = y;
+            cg.chain = static_cast<int>(chains.size());
+            chains.push_back(ch);
+        }
+        prev.swap(cur);
+    }
+    int nStep = 0, nOther = 0;
+    bool anySlide = false;
+    std::vector<float> driftS;
+    for (const SeedGapChain& ch : chains) {
+        const int ns = static_cast<int>(ch.dgs.size());
+        if (ns > 0) {
+            driftS.push_back(std::fabs(ch.sumDg) / Sf);
+        }
+        if (!ch.hadJump && std::fabs(ch.sumDg) > twoS && ch.nRows() >= sPx) {
+            anySlide = true;
+        }
+        std::vector<char> isRamp(static_cast<size_t>(ns), 0);
+        int i = 0;
+        while (i < ns) {
+            if (std::abs(ch.dgs[static_cast<size_t>(i)]) > 2) {
+                ++i;
+                continue;
+            }
+            int j = i;
+            int sum = 0;
+            while (j < ns && std::abs(ch.dgs[static_cast<size_t>(j)]) <= 2) {
+                sum += ch.dgs[static_cast<size_t>(j)];
+                ++j;
+            }
+            const int nRun = j - i;
+            if (nRun <= sPx && std::abs(sum) <= sPx + sPx / 2) {
+                for (int k = i; k < j; ++k) isRamp[static_cast<size_t>(k)] = 1;
+            }
+            i = j;
+        }
+        for (int k = 0; k < ns; ++k) {
+            ++nStep;
+            const float ad = std::fabs(static_cast<float>(ch.dgs[static_cast<size_t>(k)]));
+            const bool jump = ad >= jumpMin;
+            const bool stable = ad <= stableMax;
+            const bool ramp = isRamp[static_cast<size_t>(k)] != 0;
+            if (!jump && !stable && !ramp) ++nOther;
+        }
+    }
+    if (!driftS.empty()) {
+        std::sort(driftS.begin(), driftS.end());
+        const int n = static_cast<int>(driftS.size());
+        int idx = static_cast<int>(std::ceil(0.9 * static_cast<double>(n))) - 1;
+        if (idx < 0) idx = 0;
+        if (idx >= n) idx = n - 1;
+        out.gapDriftP90S = driftS[static_cast<size_t>(idx)];
+    }
+    const bool fracOther = nStep > 0 && nOther * 4 >= nStep;
+    const bool isNot = anySlide || fracOther;
+    bool conc = false;
+    if (nGaps > 0 && !bucketN.empty()) {
+        std::vector<int> freq = bucketN;
+        std::sort(freq.begin(), freq.end(), [](int a, int b) { return a > b; });
+        int cov = 0, nb = 0;
+        for (int f : freq) {
+            if (nb >= 8) break;
+            cov += f;
+            ++nb;
+        }
+        conc = cov * 10 >= nGaps * 7;
+    }
+    if (isNot) {
+        out.kind = kDispNot;
+        out.hMul = 10;
+        out.vMul = 20;
+    } else if (nGaps >= 1 && conc) {
+        out.kind = kDisp7seg;
+        out.hMul = 7;
+        out.vMul = 16;
+    } else {
+        out.kind = kDispUnknown;
+        out.hMul = 7;
+        out.vMul = 16;
+    }
+    return out;
+}
+
 /** One look raster: clean vs per-poison rule; runs ignore region edges. Returns sPx. */
 static int fillPoisonLookRaster(
     const cv::Mat& src, cv::Mat* lookBin,
@@ -4776,7 +4996,8 @@ static int fillPoisonLookRaster(
     cv::Mat* poisonPlane,
     cv::Mat* lookInkAtOut,
     SeedFillGate* fillGateOut,
-    OverlapHists* histOut
+    OverlapHists* histOut,
+    Seg7Tele* teleOut
 ) {
     if (!lookBin || src.empty() || src.type() != CV_8UC1) return fallback;
     if (sl < 0) sl = 0;
@@ -4881,6 +5102,13 @@ static int fillPoisonLookRaster(
     }
     if (fillGateOut) *fillGateOut = sc.fillGate;
     if (histOut) *histOut = sc.overlap;
+    const SeedDispClass disp = classifySeedGapDisp(combined, sPx);
+    if (teleOut) {
+        teleOut->dispKind = static_cast<float>(disp.kind);
+        teleOut->poisonHMul = static_cast<float>(disp.hMul);
+        teleOut->poisonVMul = static_cast<float>(disp.vMul);
+        teleOut->gapDriftP90S = disp.gapDriftP90S;
+    }
     if (!combined.empty()) {
         for (int y = lookT; y < lookB; ++y) {
             uint8_t* op = lookBin->ptr<uint8_t>(y);
@@ -4904,7 +5132,9 @@ static int fillPoisonLookRaster(
         }
         fillSaltPepperRect(lookBin, lookT, lookB, lookL, lookR);
         if (sPx >= 1) {
-            flood255LookIds(lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut);
+            flood255LookIds(
+                lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut,
+                disp.hMul, disp.vMul);
         }
     }
     if (lookPoisonOut) {
@@ -5937,7 +6167,7 @@ static void seg7OrientedOne(
         overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookBinHost,
         objPlane, objPack, seedIndex, false,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
-        poisonPlane, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr);
+        poisonPlane, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr, tele);
     if (tele && !keepColorStats) {
         float yi = 0.f, yb = 0.f;
         int ni = 0, nbg = 0;
