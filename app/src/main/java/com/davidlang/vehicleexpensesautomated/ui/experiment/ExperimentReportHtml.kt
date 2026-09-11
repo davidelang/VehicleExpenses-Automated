@@ -1,5 +1,9 @@
 package com.davidlang.vehicleexpensesautomated.ui.experiment
 
+import android.content.Context
+import android.content.SharedPreferences
+import java.io.File
+
 /**
  * Shared experiment HTML chrome: sticky filters, column hide, prev/next photo,
  * 500px default column cap. kind = pump | alignment | multiscale.
@@ -8,10 +12,66 @@ object ExperimentReportHtml {
 
     enum class Kind { PUMP, ALIGNMENT, MULTISCALE }
 
+    const val PREFS_NAME = "vehicle_settings"
+    const val KEY_HTML_ROWS_PER_FILE = "experiment_html_rows_per_file"
+    const val DEFAULT_HTML_ROWS_PER_FILE = 50
+
     fun kindKey(kind: Kind): String = when (kind) {
         Kind.PUMP -> "pump"
         Kind.ALIGNMENT -> "alignment"
         Kind.MULTISCALE -> "multiscale"
+    }
+
+    /** Missing key → 50. Stored &lt; 0 → 0 (unlimited). */
+    fun htmlRowsPerFile(prefs: SharedPreferences): Int {
+        if (!prefs.contains(KEY_HTML_ROWS_PER_FILE)) return DEFAULT_HTML_ROWS_PER_FILE
+        val v = prefs.getInt(KEY_HTML_ROWS_PER_FILE, DEFAULT_HTML_ROWS_PER_FILE)
+        return if (v < 0) 0 else v
+    }
+
+    fun htmlRowsPerFile(context: Context): Int =
+        htmlRowsPerFile(context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE))
+
+    /** Unparsable or negative write → 0. */
+    fun sanitizeHtmlRowsPerFileWrite(raw: String): Int {
+        val v = raw.toIntOrNull() ?: return 0
+        return if (v < 0) 0 else v
+    }
+
+    fun nParts(nPhotos: Int, rowsPerFile: Int): Int {
+        if (nPhotos <= 0) return 1
+        if (rowsPerFile <= 0) return 1
+        return (nPhotos + rowsPerFile - 1) / rowsPerFile
+    }
+
+    fun partPad(nParts: Int): Int = maxOf(2, nParts.toString().length)
+
+    fun partFileName(reportStem: String, partIndex1: Int, nParts: Int): String {
+        val nn = partIndex1.toString().padStart(partPad(nParts), '0')
+        return "${reportStem}_part$nn.html"
+    }
+
+    fun partFile(dir: File, reportStem: String, partIndex1: Int, nParts: Int): File =
+        File(dir, partFileName(reportStem, partIndex1, nParts))
+
+    fun partIndex1ForPhoto(photoIndex0: Int, rowsPerFile: Int): Int {
+        if (rowsPerFile <= 0) return 1
+        return (photoIndex0 / rowsPerFile) + 1
+    }
+
+    /** Inclusive-exclusive photo-index ranges, 0 .. nPhotos-1. */
+    fun photoChunks(nPhotos: Int, rowsPerFile: Int): List<IntRange> {
+        val n = nPhotos.coerceAtLeast(0)
+        if (n == 0) return listOf(0 until 0)
+        if (rowsPerFile <= 0) return listOf(0 until n)
+        val chunks = ArrayList<IntRange>()
+        var start = 0
+        while (start < n) {
+            val end = minOf(start + rowsPerFile, n)
+            chunks.add(start until end)
+            start = end
+        }
+        return chunks
     }
 
     fun css(): String {
@@ -59,7 +119,14 @@ $hidePhotos
 """.trimIndent()
     }
 
-    fun toolbar(kind: Kind, columnLabels: List<String>, metaHtml: String): String {
+    fun toolbar(
+        kind: Kind,
+        columnLabels: List<String>,
+        metaHtml: String,
+        partIndex1: Int = 1,
+        nParts: Int = 1,
+        reportStem: String = "",
+    ): String {
         val rec = if (kind == Kind.PUMP) {
             """<label class="ctl"><input type="checkbox" class="ve-overlay" checked> Overlay</label>
     <label class="ctl"><input type="checkbox" class="ve-look-ink" checked> Look ink</label>
@@ -76,12 +143,24 @@ $hidePhotos
                 """<label class="ctl"><input type="checkbox" checked data-col="$i">$esc</label>""",
             )
         }
+        val prevPart = if (partIndex1 > 1) {
+            """<a href="${partFileName(reportStem, partIndex1 - 1, nParts)}">Prev part</a>"""
+        } else {
+            """<a>Prev part</a>"""
+        }
+        val nextPart = if (partIndex1 < nParts) {
+            """<a href="${partFileName(reportStem, partIndex1 + 1, nParts)}">Next part</a>"""
+        } else {
+            """<a>Next part</a>"""
+        }
         return """
 <div class="ve-bar">
   <div class="row">$metaHtml</div>
   <div class="row">
     <button type="button" class="ve-prev">Prev photo</button>
     <button type="button" class="ve-next">Next photo</button>
+    $prevPart
+    $nextPart
     <button type="button" class="ve-all">All columns</button>
     <button type="button" class="ve-none">No experiment columns</button>
     <label class="ctl"><input type="checkbox" class="ve-orig-details" checked>

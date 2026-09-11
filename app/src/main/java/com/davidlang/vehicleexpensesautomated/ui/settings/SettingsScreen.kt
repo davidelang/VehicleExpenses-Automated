@@ -28,6 +28,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.davidlang.vehicleexpensesautomated.data.email.EmailReceiptPrefs
 import com.davidlang.vehicleexpensesautomated.ui.components.RegisterPageHelp
 import com.davidlang.vehicleexpensesautomated.ui.fuel.FuelViewModel
+import com.davidlang.vehicleexpensesautomated.ui.experiment.ExperimentReportHtml
 import com.davidlang.vehicleexpensesautomated.ui.util.PumpOcrSettings
 import com.davidlang.vehicleexpensesautomated.ui.util.QuickFillDebugStore
 import com.davidlang.vehicleexpensesautomated.ui.util.VolumeUnits
@@ -104,6 +105,9 @@ fun SettingsScreen(navController: NavHostController) {
         mutableStateOf(
             prefs.getFloat(PumpOcrSettings.KEY_RATIO_BAND_HI, PumpOcrSettings.DEFAULT_RATIO_BAND_HI).toString(),
         )
+    }
+    var experimentHtmlRowsPerFile by remember {
+        mutableIntStateOf(ExperimentReportHtml.htmlRowsPerFile(prefs))
     }
     var darkModePref by remember { mutableStateOf(prefs.getString("dark_mode", "system") ?: "system") }
     var shutterSounds by remember { mutableStateOf(prefs.getBoolean("shutter_sounds", true)) }
@@ -228,6 +232,7 @@ fun SettingsScreen(navController: NavHostController) {
         pumpLabelYBandExtra,
         pumpRatioBandLo,
         pumpRatioBandHi,
+        experimentHtmlRowsPerFile,
     ) {
         val yExtra = pumpLabelYBandExtra.toFloatOrNull()
             ?.coerceIn(0f, 1f) ?: PumpOcrSettings.DEFAULT_LABEL_Y_BAND_EXTRA_FRACTION
@@ -256,6 +261,10 @@ fun SettingsScreen(navController: NavHostController) {
             putFloat(PumpOcrSettings.KEY_LABEL_Y_BAND_EXTRA_FRACTION, yExtra)
             putFloat(PumpOcrSettings.KEY_RATIO_BAND_LO, rLo)
             putFloat(PumpOcrSettings.KEY_RATIO_BAND_HI, maxOf(rLo, rHi))
+            putInt(
+                ExperimentReportHtml.KEY_HTML_ROWS_PER_FILE,
+                if (experimentHtmlRowsPerFile < 0) 0 else experimentHtmlRowsPerFile,
+            )
             apply()
         }
     }
@@ -695,6 +704,22 @@ fun SettingsScreen(navController: NavHostController) {
                 value = pumpRatioBandHi,
                 onValueChange = { pumpRatioBandHi = it },
                 label = { Text("Cost/vol ratio band high ($/gal)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Text(
+                "Photos per HTML part. 0 = unlimited (one _part01). Default 50.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth(),
+                softWrap = true,
+                maxLines = 4,
+            )
+            OutlinedTextField(
+                value = experimentHtmlRowsPerFile.toString(),
+                onValueChange = { text ->
+                    experimentHtmlRowsPerFile = ExperimentReportHtml.sanitizeHtmlRowsPerFileWrite(text)
+                },
+                label = { Text("Experiment HTML photos per file (0 = unlimited)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )

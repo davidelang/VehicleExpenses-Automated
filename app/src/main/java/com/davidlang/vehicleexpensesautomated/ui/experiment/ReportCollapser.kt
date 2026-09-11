@@ -26,7 +26,7 @@ data class ReportCellRef(
  * Tray stays on disk — never loads the report or a batch of bodies into RAM.
  */
 class ReportCollapser(
-    private val htmlFile: File,
+    private val htmlFileForId: (Int) -> File,
     private val cellsDir: File,
     private val cursorFile: File,
     private val nCells: Int,
@@ -36,6 +36,27 @@ class ReportCollapser(
     private val onStatus: ((phase: String, done: Int, total: Int, cursor: Int, detail: String) -> Unit)? = null,
     private val periodMs: Long = PERIOD_MS,
 ) {
+    constructor(
+        htmlFile: File,
+        cellsDir: File,
+        cursorFile: File,
+        nCells: Int,
+        cellOrder: List<ReportCellRef>,
+        onLog: (String) -> Unit,
+        sparseFile: File? = null,
+        onStatus: ((phase: String, done: Int, total: Int, cursor: Int, detail: String) -> Unit)? = null,
+        periodMs: Long = PERIOD_MS,
+    ) : this(
+        htmlFileForId = { htmlFile },
+        cellsDir = cellsDir,
+        cursorFile = cursorFile,
+        nCells = nCells,
+        cellOrder = cellOrder,
+        onLog = onLog,
+        sparseFile = sparseFile,
+        onStatus = onStatus,
+        periodMs = periodMs,
+    )
     private val byId: Map<Int, ReportCellRef> = cellOrder.associateBy { it.id }
     @Volatile var cursor: Int = 0
         private set
@@ -138,13 +159,16 @@ class ReportCollapser(
 
         onLog("COLLAPSE ids ${batch.first()}..${batch.last()} (n=${batch.size}) fileOrder=${fileOrder.size} stream")
 
-        multiSpliceStream(
-            src = htmlFile,
-            orderedIds = fileOrder,
-            begin = { htmlBegin(it) },
-            end = { htmlEnd(it) },
-            bodyFile = { File(cellsDir, "${idTag(it)}.html") },
-        )
+        val byFile = fileOrder.groupBy { htmlFileForId(it) }
+        for ((file, ids) in byFile) {
+            multiSpliceStream(
+                src = file,
+                orderedIds = ids,
+                begin = { htmlBegin(it) },
+                end = { htmlEnd(it) },
+                bodyFile = { File(cellsDir, "${idTag(it)}.html") },
+            )
+        }
         val sparse = sparseFile
         if (sparse != null) {
             multiSpliceSparseLines(
@@ -358,7 +382,7 @@ class ReportCollapser(
     }
 
     private fun deleteEmptyPumpImgDirs() {
-        val dir = htmlFile.parentFile ?: return
+        val dir = cellsDir.parentFile ?: return
         val kids = dir.listFiles() ?: return
         for (d in kids) {
             if (!d.isDirectory || !d.name.startsWith("pump_imgs_")) continue
