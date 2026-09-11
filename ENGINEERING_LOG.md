@@ -710,3 +710,9 @@ Policy: permission denials → report human / script residual; no creative worka
 - Plan Status: APPROVED → implementing
 - Scope: git commit --only -m before --; skip fix-perms when infra commit subshell fails
 - No update-rules sweep this turn
+
+## 2026-09-11 - Start execution: refuse-wrong-host-instructions-20260911-0258-plan.md
+
+- Plan Status: APPROVED → implementing
+- Scope: AGENT_MANDATES §7 + planner/coder/execute prompts: refuse work for a different git host; do not guess the intended session
+- No update-rules / deploy-orchestration sweep
