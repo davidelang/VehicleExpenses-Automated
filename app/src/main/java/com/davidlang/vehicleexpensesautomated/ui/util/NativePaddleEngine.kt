@@ -42,7 +42,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
     ) {
         /** Deskew / Hough angle from tensor or tiled host heat. */
         fun deskewAngleCpp(threshold: Float = 0.20f): Float {
-            val scratch = bufferSetA.p.mat
+            val scratch = bufferSetA.s.mat
             outputTensor?.let { return NativeImageUtils.heatmapToAngle(it, threshold, scratch) }
             heatU8?.let {
                 return NativeImageUtils.heatmapToAngleU8(it, width, height, threshold, scratch)
@@ -614,13 +614,13 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         detTiersInt8: Map<Int, ByteArray>? = null,
         /** 0 = no 4×4 cell grow (energy-tight); 1 = production default. */
         growCells: Int = 1,
-        /** Non-packed: A.p Y. Packed detect ignores this and uses packedSet.s after run(). */
+        /** Non-packed: A.s Y. Packed detect ignores this and uses packedSet.s after run(). */
         scratchY: Mat? = null,
         heatToPhoto: Float = 0f,
         photoW: Int = 0,
         photoH: Int = 0,
     ): DetectionResult? {
-        val heatScratch = scratchY ?: bufferSetA.p.mat
+        val heatScratch = scratchY ?: bufferSetA.s.mat
         val tPop0 = System.nanoTime()
         val packedSet = input as? BufferSet
         val w: Int
@@ -834,7 +834,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
         photoW: Int = 0,
         photoH: Int = 0,
     ): DetectionResult? {
-        val heatScratch = scratchY ?: bufferSetA.p.mat
+        val heatScratch = scratchY ?: bufferSetA.s.mat
         val outer = DET_LARGE_OUTER
         val tile = DET_TILE
         val stride = DET_TILE_STRIDE
@@ -1074,7 +1074,7 @@ class NativePaddleEngine(private val context: Context, private val variant: Stri
             val tNativePost0 = System.nanoTime()
             val nativeRes = NativeImageUtils.processHeatmap(
                 outputTensor, hmThresh, 10f, boxMode, maskDilatePasses,
-                scratchY = bufferSetA.p.mat,
+                scratchY = bufferSetA.s.mat,
                 heatToPhoto = heatToPhoto,
                 photoW = photoW,
                 photoH = photoH,

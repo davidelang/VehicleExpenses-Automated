@@ -4656,7 +4656,7 @@ suspend fun runPumpExperiment(
                             hmThresh = HEAT_THR_U8_GE1,
                             maskDilatePasses = 0,
                             growCells = growCells,
-                            scratchY = NativePaddleEngine.bufferSetA.p.mat,
+                            scratchY = NativePaddleEngine.bufferSetA.s.mat,
                             heatToPhoto = heatToPhoto,
                             photoW = fullW,
                             photoH = fullH,
