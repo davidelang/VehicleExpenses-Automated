@@ -1053,7 +1053,10 @@ object MultiScaleDetRunner {
         // Only tray is a subdirectory: cells/ holds pre-merge fragments, then is purged.
         val outDir = reportDir(context)
         val cellsDir = File(outDir, "cells").also { it.mkdirs() }
-        val htmlFile = File(outDir, "multi_scale_det_report_$ts.html")
+        val rowsPerFile = ExperimentReportHtml.htmlRowsPerFile(context)
+        val nParts = ExperimentReportHtml.nParts(nPhotos, rowsPerFile)
+        val chunks = ExperimentReportHtml.photoChunks(nPhotos, rowsPerFile)
+        val reportStem = "multi_scale_det_report_$ts"
         val sparseFile = File(outDir, "multi_scale_det_results_$ts.sparse")
         val statusFile = File(outDir, "multi_scale_det_status_$ts.json")
         val manifestFile = File(outDir, "multi_scale_det_manifest_$ts.json")
@@ -1088,7 +1091,14 @@ object MultiScaleDetRunner {
             manifestFile, ts, arch, models, photos, counts, nCells, matrix, passes,
             cellOrder, modelsCompute,
         )
-        writeSparseHtml(htmlFile, ts, arch, models, photos, counts, matrix, idByKey)
+        chunks.forEachIndexed { part0, photoRange ->
+            val partIndex1 = part0 + 1
+            val partFile = ExperimentReportHtml.partFile(outDir, reportStem, partIndex1, nParts)
+            writeSparseHtml(
+                partFile, ts, arch, models, photos, counts, matrix, idByKey,
+                photoRange, partIndex1, nParts, reportStem,
+            )
+        }
         writeSparseResults(sparseFile, ts, arch, models, photos, counts, cellOrder, matrix)
         // Pre-publish over-maxLite + domain-policy blanks so stage-1 matches compute.
         var preSkip = 0
@@ -1110,14 +1120,20 @@ object MultiScaleDetRunner {
         writeStatus(statusFile, ts, "stage1_done", preSkip, nCells, 0, "pre_skip=$preSkip")
 
         onLog(
-            "STAGE1 html=${htmlFile.name} sparse=${sparseFile.name} cells=$nCells " +
+            "STAGE1 html_parts=$nParts stem=$reportStem sparse=${sparseFile.name} cells=$nCells " +
                 "pre_skip_blank=$preSkip maxLite=" +
                 models.joinToString { "$it=${maxLiteSideForModel(it)}" },
         )
         logMem("after_stage1", onLog)
 
+        val piById = HashMap<Int, Int>(nCells)
+        for (c in cellOrder) piById[c.id] = c.pi
         val collapser = ReportCollapser(
-            htmlFile = htmlFile,
+            htmlFileForId = { id ->
+                val pi = piById[id] ?: 0
+                val partIndex1 = ExperimentReportHtml.partIndex1ForPhoto(pi, rowsPerFile)
+                ExperimentReportHtml.partFile(outDir, reportStem, partIndex1, nParts)
+            },
             cellsDir = cellsDir,
             cursorFile = cursorFile,
             nCells = nCells,
@@ -2018,6 +2034,10 @@ object MultiScaleDetRunner {
         counts: Map<String, Int>,
         matrix: List<ScaleTileRow>,
         idByKey: Map<Triple<Int, Int, Int>, Int>,
+        photoRange: IntRange,
+        partIndex1: Int,
+        nParts: Int,
+        reportStem: String,
     ) {
         val nRows = matrix.size
         val shorts = models.map { it.removePrefix("PP-OCR").removeSuffix("_det") }
@@ -2040,12 +2060,13 @@ object MultiScaleDetRunner {
             w.append(
                 ExperimentReportHtml.toolbar(
                     ExperimentReportHtml.Kind.MULTISCALE, colLabels, metaHtml,
+                    partIndex1 = partIndex1, nParts = nParts, reportStem = reportStem,
                 ),
             )
             w.append(ExperimentReportHtml.tableOpen(colLabels))
 
             try {
-            for (pi in photos.indices) {
+            for (pi in photoRange) {
                 val ref = photos[pi]
                 val photoNum = pi + 1
                 for (ri in matrix.indices) {

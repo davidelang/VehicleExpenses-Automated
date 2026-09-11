@@ -503,13 +503,6 @@ suspend fun runAlignmentExperiment(
     val alignColLabels = alignmentColumnLabels(pipelineNames, harnessEngineNames, emptyList())
     val alignMetaHtml =
         "<b>Run:</b> $timestamp | <b>Version:</b> ${BuildConfig.VERSION_NAME} | <b>Total:</b> $total"
-    val currentFile = File(reportDir, "alignment_report_${timestamp}.html")
-    currentFile.writeText(
-        buildHtmlHeader(
-            timestamp, total, BuildConfig.VERSION_NAME, emptyList(),
-            harnessEngineNames, pipelineNames, alignColLabels, alignMetaHtml,
-        ),
-    )
     val footerHtml = ExperimentReportHtml.footer(
         ExperimentReportHtml.Kind.ALIGNMENT, alignColLabels, alignMetaHtml,
     )
@@ -518,22 +511,42 @@ suspend fun runAlignmentExperiment(
     cursorFile.writeText("0")
     val nCells = total
     val cellOrder = (1..nCells).map { ReportCellRef(it, sortA = it) }
-    val skeleton = buildString {
-        photos.forEachIndexed { i, f ->
-            val id = i + 1
-            val line = subsetMap?.get(f.name) ?: (i + 1)
-            append(ReportCollapser.htmlBegin(id))
-            append(
-                "<tr data-photo='$line'><td colspan='${alignColLabels.size}'>" +
-                    "<span class='stat pending'>… ${ReportCollapser.idTag(id)}</span></td></tr>\n",
-            )
-            append(ReportCollapser.htmlEnd(id))
+    val rowsPerFile = ExperimentReportHtml.htmlRowsPerFile(context)
+    val nParts = ExperimentReportHtml.nParts(total, rowsPerFile)
+    val chunks = ExperimentReportHtml.photoChunks(total, rowsPerFile)
+    val reportStem = "alignment_report_$timestamp"
+    chunks.forEachIndexed { part0, photoRange ->
+        val partIndex1 = part0 + 1
+        val partFile = ExperimentReportHtml.partFile(reportDir, reportStem, partIndex1, nParts)
+        partFile.writeText(
+            buildHtmlHeader(
+                timestamp, total, BuildConfig.VERSION_NAME, emptyList(),
+                harnessEngineNames, pipelineNames, alignColLabels, alignMetaHtml,
+                partIndex1, nParts, reportStem,
+            ),
+        )
+        val skeleton = buildString {
+            for (i in photoRange) {
+                val f = photos[i]
+                val id = i + 1
+                val line = subsetMap?.get(f.name) ?: (i + 1)
+                append(ReportCollapser.htmlBegin(id))
+                append(
+                    "<tr data-photo='$line'><td colspan='${alignColLabels.size}'>" +
+                        "<span class='stat pending'>… ${ReportCollapser.idTag(id)}</span></td></tr>\n",
+                )
+                append(ReportCollapser.htmlEnd(id))
+            }
         }
+        partFile.appendText(skeleton)
+        partFile.appendText(footerHtml)
     }
-    currentFile.appendText(skeleton)
-    currentFile.appendText(footerHtml)
     val collapser = ReportCollapser(
-        htmlFile = currentFile,
+        htmlFileForId = { id ->
+            val photoIndex0 = id - 1
+            val partIndex1 = ExperimentReportHtml.partIndex1ForPhoto(photoIndex0, rowsPerFile)
+            ExperimentReportHtml.partFile(reportDir, reportStem, partIndex1, nParts)
+        },
         cellsDir = cellsDir,
         cursorFile = cursorFile,
         nCells = nCells,
@@ -1928,10 +1941,18 @@ private fun buildHtmlHeader(
     pipelineNames: List<String>,
     colLabels: List<String>,
     metaHtml: String,
+    partIndex1: Int,
+    nParts: Int,
+    reportStem: String,
 ): String = buildString {
     append(ExperimentReportHtml.documentHead("Deep Trace - $time", ExperimentReportHtml.Kind.ALIGNMENT))
     appendLine("<h1>OCR Refinement Experiment</h1><p>$metaHtml</p>")
-    append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.ALIGNMENT, colLabels, metaHtml))
+    append(
+        ExperimentReportHtml.toolbar(
+            ExperimentReportHtml.Kind.ALIGNMENT, colLabels, metaHtml,
+            partIndex1 = partIndex1, nParts = nParts, reportStem = reportStem,
+        ),
+    )
     append(ExperimentReportHtml.tableOpen(colLabels))
     appendLine("<!-- total=$total version=$version pipelines=${pipelineNames.size} harness=${harnessEngines.size} strategies=${strategies.size} -->")
 }

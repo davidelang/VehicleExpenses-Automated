@@ -843,10 +843,6 @@ suspend fun runPumpExperiment(
     val pumpMetaHtml =
         "<b>Run:</b> $timestamp | <b>Device:</b> $deviceModel | <b>Version:</b> ${BuildConfig.VERSION_NAME} | <b>Total:</b> $total"
     NativeImageUtils.veRssSetPath(File(reportDir, "ve-rss.log").absolutePath)
-    val currentFile = File(reportDir, "pump_report_${timestamp}.html")
-    currentFile.writeText(
-        pBuildHtmlHeader(timestamp, total, BuildConfig.VERSION_NAME, deviceModel, pumpColLabels, pumpMetaHtml),
-    )
     val footer = ExperimentReportHtml.footer(
         ExperimentReportHtml.Kind.PUMP, pumpColLabels, pumpMetaHtml,
     )
@@ -862,59 +858,78 @@ suspend fun runPumpExperiment(
     val nCells = total * nSlots
     val cellOrder = (1..nCells).map { ReportCellRef(it, sortA = it) }
     val imgRel = "pump_imgs_$timestamp"
-    val skeleton = buildString {
-        photos.forEachIndexed { i, f ->
-            val line = allPhotos.indexOfFirst { it.name == f.name } + 1
-            append("<tr data-photo='$line'>")
-            append("<td data-col=\"0\"><b>#$line</b><br><small>${f.name}</small>")
-            val origId = i * nSlots + 1
-            append("<div class=\"orig-details\" id=\"ve-r$line-c0-orig-details\">")
-            append(ReportCollapser.htmlBegin(origId))
-            append(ReportCollapser.htmlEnd(origId))
-            append("</div></td>")
-            flowSorted.forEachIndexed { fi, _ ->
-                val colIdx = fi + 1
-                append("<td data-col=\"$colIdx\">")
-                fun emitSlot(slot: String, htmlId: String, cls: String = "") {
-                    val sid = i * nSlots + slotNames.indexOf(slot) + 1
-                    val clsAttr = if (cls.isEmpty()) "" else " class=\"$cls\""
-                    append("<div id=\"$htmlId\"$clsAttr>")
-                    append(ReportCollapser.htmlBegin(sid))
-                    append(ReportCollapser.htmlEnd(sid))
-                    append("</div>")
+    val rowsPerFile = ExperimentReportHtml.htmlRowsPerFile(context)
+    val nParts = ExperimentReportHtml.nParts(total, rowsPerFile)
+    val chunks = ExperimentReportHtml.photoChunks(total, rowsPerFile)
+    val reportStem = "pump_report_$timestamp"
+    chunks.forEachIndexed { part0, photoRange ->
+        val partIndex1 = part0 + 1
+        val partFile = ExperimentReportHtml.partFile(reportDir, reportStem, partIndex1, nParts)
+        partFile.writeText(
+            pBuildHtmlHeader(
+                timestamp, total, BuildConfig.VERSION_NAME, deviceModel, pumpColLabels, pumpMetaHtml,
+                partIndex1, nParts, reportStem,
+            ),
+        )
+        val skeleton = buildString {
+            for (i in photoRange) {
+                val f = photos[i]
+                val line = allPhotos.indexOfFirst { it.name == f.name } + 1
+                append("<tr data-photo='$line'>")
+                append("<td data-col=\"0\"><b>#$line</b><br><small>${f.name}</small>")
+                val origId = i * nSlots + 1
+                append("<div class=\"orig-details\" id=\"ve-r$line-c0-orig-details\">")
+                append(ReportCollapser.htmlBegin(origId))
+                append(ReportCollapser.htmlEnd(origId))
+                append("</div></td>")
+                flowSorted.forEachIndexed { fi, _ ->
+                    val colIdx = fi + 1
+                    append("<td data-col=\"$colIdx\">")
+                    fun emitSlot(slot: String, htmlId: String, cls: String = "") {
+                        val sid = i * nSlots + slotNames.indexOf(slot) + 1
+                        val clsAttr = if (cls.isEmpty()) "" else " class=\"$cls\""
+                        append("<div id=\"$htmlId\"$clsAttr>")
+                        append(ReportCollapser.htmlBegin(sid))
+                        append(ReportCollapser.htmlEnd(sid))
+                        append("</div>")
+                    }
+                    emitSlot("c$colIdx-pd-red", "ve-r$line-c$colIdx-pd-red")
+                    emitSlot("c$colIdx-pd-full", "ve-r$line-c$colIdx-pd-full")
+                    emitSlot("c$colIdx-overlay-full", "ve-r$line-c$colIdx-overlay-full", "overlay-full")
+                    for (k in 1..nKeepSlots) {
+                        emitSlot(
+                            "c$colIdx-look-ink-box$k",
+                            "ve-r$line-c$colIdx-look-ink-box$k",
+                            "look-ink-crops",
+                        )
+                    }
+                    for (k in 1..nKeepSlots) {
+                        emitSlot(
+                            "c$colIdx-rec-box$k",
+                            "ve-r$line-c$colIdx-rec-box$k",
+                            "rec-crops",
+                        )
+                    }
+                    emitSlot("c$colIdx-rec-extra", "ve-r$line-c$colIdx-rec-extra", "rec-crops")
+                    emitSlot("c$colIdx-dump", "ve-r$line-c$colIdx-dump-details", "dump-details")
+                    append("</td>")
                 }
-                emitSlot("c$colIdx-pd-red", "ve-r$line-c$colIdx-pd-red")
-                emitSlot("c$colIdx-pd-full", "ve-r$line-c$colIdx-pd-full")
-                emitSlot("c$colIdx-overlay-full", "ve-r$line-c$colIdx-overlay-full", "overlay-full")
-                for (k in 1..nKeepSlots) {
-                    emitSlot(
-                        "c$colIdx-look-ink-box$k",
-                        "ve-r$line-c$colIdx-look-ink-box$k",
-                        "look-ink-crops",
-                    )
-                }
-                for (k in 1..nKeepSlots) {
-                    emitSlot(
-                        "c$colIdx-rec-box$k",
-                        "ve-r$line-c$colIdx-rec-box$k",
-                        "rec-crops",
-                    )
-                }
-                emitSlot("c$colIdx-rec-extra", "ve-r$line-c$colIdx-rec-extra", "rec-crops")
-                emitSlot("c$colIdx-dump", "ve-r$line-c$colIdx-dump-details", "dump-details")
-                append("</td>")
+                val resId = i * nSlots + slotNames.indexOf("results") + 1
+                append("<td class=\"results-col\">")
+                append(ReportCollapser.htmlBegin(resId))
+                append(ReportCollapser.htmlEnd(resId))
+                append("</td></tr>\n")
             }
-            val resId = i * nSlots + slotNames.indexOf("results") + 1
-            append("<td class=\"results-col\">")
-            append(ReportCollapser.htmlBegin(resId))
-            append(ReportCollapser.htmlEnd(resId))
-            append("</td></tr>\n")
         }
+        partFile.appendText(skeleton)
+        partFile.appendText(footer)
     }
-    currentFile.appendText(skeleton)
-    currentFile.appendText(footer)
     val collapser = ReportCollapser(
-        htmlFile = currentFile,
+        htmlFileForId = { id ->
+            val photoIndex0 = (id - 1) / nSlots
+            val partIndex1 = ExperimentReportHtml.partIndex1ForPhoto(photoIndex0, rowsPerFile)
+            ExperimentReportHtml.partFile(reportDir, reportStem, partIndex1, nParts)
+        },
         cellsDir = cellsDir,
         cursorFile = cursorFile,
         nCells = nCells,
@@ -8904,11 +8919,19 @@ private fun pBuildHtmlHeader(
     device: String,
     colLabels: List<String>,
     metaHtml: String,
+    partIndex1: Int,
+    nParts: Int,
+    reportStem: String,
 ): String = buildString {
     append(ExperimentReportHtml.documentHead("Pump Experiment - $time", ExperimentReportHtml.Kind.PUMP))
     appendLine("<h1>Pump Extraction Experiment</h1>")
     appendLine("<p>$metaHtml</p>")
-    append(ExperimentReportHtml.toolbar(ExperimentReportHtml.Kind.PUMP, colLabels, metaHtml))
+    append(
+        ExperimentReportHtml.toolbar(
+            ExperimentReportHtml.Kind.PUMP, colLabels, metaHtml,
+            partIndex1 = partIndex1, nParts = nParts, reportStem = reportStem,
+        ),
+    )
     append(ExperimentReportHtml.tableOpen(colLabels, resultsLast = true))
     appendLine("<!-- total=$total device=$device version=$version -->")
 }
