@@ -4696,21 +4696,44 @@ static void paintLookOverlay(
         return u >= clipU0 && u <= clipU1 && v >= clipV0 && v <= clipV1;
     };
     (void)lookPoison;
+    auto destIsInk = [&](int ix, int iy) -> bool {
+        const uint8_t Y = overlayY->ptr<uint8_t>(iy)[ix];
+        if (Y == 255) return true;
+        if (Y != 150) return false;
+        if (!overlayUv || overlayUv->empty() || overlayUv->type() != CV_8UC2) return true;
+        int uy = iy / 2;
+        int ux = ix / 2;
+        if (uy < 0) uy = 0;
+        if (ux < 0) ux = 0;
+        if (uy >= overlayUv->rows) uy = overlayUv->rows - 1;
+        if (ux >= overlayUv->cols) ux = overlayUv->cols - 1;
+        const cv::Vec2b uv = overlayUv->ptr<cv::Vec2b>(uy)[ux];
+        return uv[0] == 44 && uv[1] == 21;
+    };
     for (int y = winT; y < winB; ++y) {
         const uint8_t* ids = lookBin.ptr<uint8_t>(y);
         for (int x = winL; x < winR; ++x) {
             const uint8_t v = ids[x];
+            if (v == 0 || isLookInkId(v, pack)) continue;
             int ix = 0, iy = 0;
             overlayXY(x, y, &ix, &iy);
             if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
             if (!inWalkSeed(ix, iy)) continue;
-            if (v == 0) yuvPut(overlayY, overlayUv, ix, iy, 0, 128, 128);
-            else if (v >= 254) yuvPut(overlayY, overlayUv, ix, iy, 255, 128, 128);
-            else if (pack && pack->kind[v] == kKindInk) {
-                yuvPut(overlayY, overlayUv, ix, iy, 150, 44, 21);
-            } else {
-                yuvPut(overlayY, overlayUv, ix, iy, 105, 202, 255);
-            }
+            if (destIsInk(ix, iy)) continue;
+            yuvPut(overlayY, overlayUv, ix, iy, 105, 202, 255);
+        }
+    }
+    for (int y = winT; y < winB; ++y) {
+        const uint8_t* ids = lookBin.ptr<uint8_t>(y);
+        for (int x = winL; x < winR; ++x) {
+            const uint8_t v = ids[x];
+            if (!isLookInkId(v, pack)) continue;
+            int ix = 0, iy = 0;
+            overlayXY(x, y, &ix, &iy);
+            if (iy < 0 || iy >= overlayY->rows || ix < 0 || ix >= overlayY->cols) continue;
+            if (!inWalkSeed(ix, iy)) continue;
+            if (v >= 254) yuvPut(overlayY, overlayUv, ix, iy, 255, 128, 128);
+            else yuvPut(overlayY, overlayUv, ix, iy, 150, 44, 21);
         }
     }
 }
