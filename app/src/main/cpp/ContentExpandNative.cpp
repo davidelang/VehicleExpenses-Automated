@@ -135,12 +135,20 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeVeRss
     env->ReleaseStringUTFChars(path, p);
 }
 
-static constexpr int kRunHistBins = 64;
+static constexpr int kRunHistBins = 300;
 static constexpr int kRunHistLog2Bins = 32;
+static constexpr int kEnergyHistBins = 64;
 static constexpr int kSeg7AttemptMax = 4;
 static constexpr int kSeg7AttemptF = 12;
 static constexpr int kSeg7TeleN =
-    26 + kRunHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF + 7;
+    26 + kEnergyHistBins * 2 + 6 + 1 + kSeg7AttemptMax * kSeg7AttemptF + 7;
+
+struct OverlapHists {
+    uint16_t inkH[kRunHistBins]{};
+    uint16_t inkV[kRunHistBins]{};
+    uint16_t gapH[kRunHistBins]{};
+    uint16_t gapV[kRunHistBins]{};
+};
 
 enum : int {
     kFlagUnchanged = 0,
@@ -180,8 +188,9 @@ struct Seg7Tele {
     float nInkSeed = 0.f;
     float nInkBlue = 0.f;
     float nInkYellow = 0.f;
-    int histH[kRunHistBins]{};
-    int histV[kRunHistBins]{};
+    int histH[kEnergyHistBins]{};
+    int histV[kEnergyHistBins]{};
+    OverlapHists overlap{};
     float nLookBinSeed = 0.f;
     float nRecoveredSeed = 0.f;
     float fill = 0.f;
@@ -223,7 +232,7 @@ static void fillRunHists(
     const cv::Mat& look, int l, int t, int r, int b, double thr,
     int* histH, int* histV
 ) {
-    for (int i = 0; i < kRunHistBins; ++i) {
+    for (int i = 0; i < kRunHistLog2Bins; ++i) {
         histH[i] = 0;
         histV[i] = 0;
     }
@@ -286,11 +295,11 @@ static void packSeg7Tele(const Seg7Tele& t, float* dst) {
     dst[23] = t.nInkSeed;
     dst[24] = t.nInkBlue;
     dst[25] = t.nInkYellow;
-    for (int i = 0; i < kRunHistBins; ++i) {
+    for (int i = 0; i < kEnergyHistBins; ++i) {
         dst[26 + i] = static_cast<float>(t.histH[i]);
-        dst[26 + kRunHistBins + i] = static_cast<float>(t.histV[i]);
+        dst[26 + kEnergyHistBins + i] = static_cast<float>(t.histV[i]);
     }
-    const int histEnd = 26 + kRunHistBins * 2;
+    const int histEnd = 26 + kEnergyHistBins * 2;
     dst[histEnd + 0] = t.nLookBinSeed;
     dst[histEnd + 1] = t.nRecoveredSeed;
     dst[histEnd + 2] = t.fill;
@@ -564,6 +573,16 @@ static void storeTeleArr(JNIEnv* env, jfloatArray teleArr, int i, const Seg7Tele
     float buf[kSeg7TeleN];
     packSeg7Tele(t, buf);
     env->SetFloatArrayRegion(teleArr, off, kSeg7TeleN, buf);
+}
+
+static void writeOverlapHistArr(JNIEnv* env, jshortArray arr, int i, const OverlapHists& h) {
+    if (!arr) return;
+    const jint n = env->GetArrayLength(arr);
+    const int span = kRunHistBins * 4;
+    const int off = i * span;
+    if (off < 0 || off + span > n) return;
+    env->SetShortArrayRegion(
+        arr, off, span, reinterpret_cast<const jshort*>(&h));
 }
 
 static void fillYInkBg(
@@ -2707,12 +2726,71 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeEnerg
 namespace {
 
 static void addOverlapVotes(int k, int n, int* bins) {
-    if (k < 1 || n <= 0 || !bins) return;
+    if (k < 4 || n <= 0 || !bins) return;
     for (int i = 0; i < kRunHistBins; ++i) {
         const int lo = 4 + 4 * i;
         const int hi = 12 + 4 * i;
         const bool hit = (i == kRunHistBins - 1) ? (k >= lo) : (k >= lo && k <= hi);
         if (hit) bins[i] += n;
+    }
+}
+
+static void addOverlapVotesU16(int k, int n, uint16_t* bins) {
+    if (k < 4 || n <= 0 || !bins) return;
+    for (int i = 0; i < kRunHistBins; ++i) {
+        const int lo = 4 + 4 * i;
+        const int hi = 12 + 4 * i;
+        const bool hit = (i == kRunHistBins - 1) ? (k >= lo) : (k >= lo && k <= hi);
+        if (hit) {
+            const int a = static_cast<int>(bins[i]);
+            bins[i] = static_cast<uint16_t>(a + n > 65535 ? 65535 : a + n);
+        }
+    }
+}
+
+static void fillOverlapLine(
+    const uint8_t* p, int n, int stride, int fullSpan,
+    uint16_t* inkBins, uint16_t* gapBins
+) {
+    if (!p || n < 1 || stride < 1 || !inkBins || !gapBins) return;
+    bool seenInk = false;
+    int i = 0;
+    while (i < n) {
+        if (p[i * stride] != 0) {
+            int run = 0;
+            while (i < n && p[i * stride] != 0) {
+                ++run;
+                ++i;
+            }
+            if (run != fullSpan) addOverlapVotesU16(run, 1, inkBins);
+            seenInk = true;
+        } else {
+            int run = 0;
+            while (i < n && p[i * stride] == 0) {
+                ++run;
+                ++i;
+            }
+            if (seenInk && i < n) addOverlapVotesU16(run, 1, gapBins);
+        }
+    }
+}
+
+static void fillOverlapHists(
+    const cv::Mat& bin, int seedW, int seedH, OverlapHists* out
+) {
+    if (!out) return;
+    *out = OverlapHists{};
+    if (bin.empty() || bin.type() != CV_8UC1) return;
+    const int h = bin.rows, w = bin.cols;
+    if (h < 1 || w < 1) return;
+    const int spanW = seedW > 0 ? seedW : w;
+    const int spanH = seedH > 0 ? seedH : h;
+    for (int y = 0; y < h; ++y) {
+        fillOverlapLine(bin.ptr<uint8_t>(y), w, 1, spanW, out->inkH, out->gapH);
+    }
+    const int rowStep = static_cast<int>(bin.step[0]);
+    for (int x = 0; x < w; ++x) {
+        fillOverlapLine(bin.ptr<uint8_t>(0) + x, h, rowStep, spanH, out->inkV, out->gapV);
     }
 }
 
@@ -2743,61 +2821,6 @@ static int peakCapped(const std::vector<int>& hist, int minK, int maxK) {
     int ov[kRunHistBins];
     votesOverlap(hist, ov);
     return peakFromOverlapBins(ov, minK, maxK);
-}
-
-static void packOverlapStrokeTele(
-    const cv::Mat& lookBin,
-    int sl, int st, int sr, int sb,
-    int lookL, int lookT, int lookR, int lookB,
-    int seedH, int seedW, const ObjPack* pack,
-    int* histH, int* histV
-) {
-    if (!histH || !histV) return;
-    for (int i = 0; i < kRunHistBins; ++i) {
-        histH[i] = 0;
-        histV[i] = 0;
-    }
-    if (lookBin.empty() || lookBin.type() != CV_8UC1) return;
-    const int y0 = std::max(0, st);
-    const int y1 = std::min(lookBin.rows, sb);
-    const int x0 = std::max(0, sl);
-    const int x1 = std::min(lookBin.cols, sr);
-    std::vector<int> hraw(std::max(seedW + 1, 36), 0);
-    if (y1 > y0 && x1 > x0) {
-        for (int y = y0; y < y1; ++y) {
-            const uint8_t* p = lookBin.ptr<uint8_t>(y);
-            int run = 0;
-            for (int x = x0; x <= x1; ++x) {
-                const bool on = x < x1 && isLookInkId(p[x], pack);
-                if (on) ++run;
-                else if (run > 0) {
-                    if (run != seedW && run < static_cast<int>(hraw.size())) hraw[run]++;
-                    run = 0;
-                }
-            }
-        }
-    }
-    votesOverlap(hraw, histH);
-    const int ly0 = std::max(0, lookT);
-    const int ly1 = std::min(lookBin.rows, lookB);
-    const int lx0 = std::max(0, lookL);
-    const int lx1 = std::min(lookBin.cols, lookR);
-    const int lh = std::max(1, ly1 - ly0);
-    std::vector<int> vraw(std::max(lh + 1, 21), 0);
-    if (ly1 > ly0 && lx1 > lx0) {
-        for (int x = lx0; x < lx1; ++x) {
-            int run = 0;
-            for (int y = ly0; y <= ly1; ++y) {
-                const bool on = y < ly1 && isLookInkId(lookBin.ptr<uint8_t>(y)[x], pack);
-                if (on) ++run;
-                else if (run > 0) {
-                    if (run != lh && run < static_cast<int>(vraw.size())) vraw[run]++;
-                    run = 0;
-                }
-            }
-        }
-    }
-    votesOverlap(vraw, histV);
 }
 
 static int maxInkRunRow(
@@ -2865,7 +2888,7 @@ static void fillRunHists(
     const cv::Mat& lookBin, int lookL, int lookT, int lookR, int lookB,
     const ObjPack* pack, int* histH, int* histV
 ) {
-    for (int i = 0; i < kRunHistBins; ++i) {
+    for (int i = 0; i < kRunHistLog2Bins; ++i) {
         histH[i] = 0;
         histV[i] = 0;
     }
@@ -2921,7 +2944,8 @@ static int fillPoisonLookRaster(
     cv::Mat* lookPoisonOut = nullptr, bool paintOverlay = true,
     cv::Mat* poisonPlane = nullptr,
     cv::Mat* lookInkAtOut = nullptr,
-    SeedFillGate* fillGateOut = nullptr);
+    SeedFillGate* fillGateOut = nullptr,
+    OverlapHists* histOut = nullptr);
 static void aabbJumpOnLook(
     cv::Mat* look, int* l, int t, int* r, int b,
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
@@ -3383,7 +3407,7 @@ static void seg7One(
         overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookPlane,
         objPlane, objPack, seedIndex, false,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
-        pois, &lookInkAtPlane, &fillGate);
+        pois, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr);
     if (poisonStats) *poisonStats = stLocal;
     const int glareW = 6 * std::max(sPx, 1);
     const int vSW = sPx;
@@ -3429,9 +3453,6 @@ static void seg7One(
             tele->retryWhy = static_cast<float>(fillGate.retryWhy);
             tele->nValley = static_cast<float>(fillGate.nValley);
             packFillAttempts(fillGate, tele);
-            packOverlapStrokeTele(
-                lookBin, sl, st, sr, sb, lookL, nt, lookR, nb,
-                seedH, seedW, objPack, tele->histH, tele->histV);
         }
         paintLookOverlay(
             lookBin, lookPoison, overlayY8, overlayUv2, false, 0, 0,
@@ -3633,9 +3654,6 @@ static void seg7One(
         tele->retryWhy = static_cast<float>(fillGate.retryWhy);
         tele->nValley = static_cast<float>(fillGate.nValley);
         packFillAttempts(fillGate, tele);
-        packOverlapStrokeTele(
-            lookBin, sl, st, sr, sb, lookL, nt, lookR, nb,
-            seedH, seedW, objPack, tele->histH, tele->histV);
     }
     if (sweepOut && !lookBin.empty()) {
         fillAabbLookSweep(
@@ -3976,6 +3994,7 @@ struct SeedCombine {
     bool bandBot = false;
     int bandH = 0;
     SeedFillGate fillGate;
+    OverlapHists overlap{};
 };
 
 /** Seed-sized 255/0 combined + poison mask. Does not write lookBin. */
@@ -4488,6 +4507,7 @@ static int seedCombine255(
     out->bandBot = bandBot;
     out->bandH = bandH;
     out->fillGate = fillGate;
+    fillOverlapHists(combined, seedW, seedH, &out->overlap);
     return sPx;
 }
 
@@ -4755,7 +4775,8 @@ static int fillPoisonLookRaster(
     cv::Mat* lookPoisonOut, bool paintOverlay,
     cv::Mat* poisonPlane,
     cv::Mat* lookInkAtOut,
-    SeedFillGate* fillGateOut
+    SeedFillGate* fillGateOut,
+    OverlapHists* histOut
 ) {
     if (!lookBin || src.empty() || src.type() != CV_8UC1) return fallback;
     if (sl < 0) sl = 0;
@@ -4859,6 +4880,7 @@ static int fillPoisonLookRaster(
         }
     }
     if (fillGateOut) *fillGateOut = sc.fillGate;
+    if (histOut) *histOut = sc.overlap;
     if (!combined.empty()) {
         for (int y = lookT; y < lookB; ++y) {
             uint8_t* op = lookBin->ptr<uint8_t>(y);
@@ -5261,7 +5283,8 @@ static jintArray aabbGrayMany(
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jint boundStrategy, jint tightInsetPx,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr = nullptr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) {
@@ -5329,6 +5352,7 @@ static jintArray aabbGrayMany(
         packAabb12(out, i, ol, ot, orr, ob, sPx, vSW, hSW, objPack.abort ? 1 : 0, imgW, imgH);
         (void)fb;
         storeTeleArr(env, teleArr, i, tele);
+        writeOverlapHistArr(env, histArr, i, tele.overlap);
     }
     writeSweepArr(env, sweepArr, sweeps);
     writePoisonArr(env, poisonArr, poisonPacks);
@@ -5382,7 +5406,8 @@ static jintArray aabbColorMany(
     jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
     jint boundStrategy, jint tightInsetPx,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
-    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr = nullptr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) {
@@ -5472,6 +5497,7 @@ static jintArray aabbColorMany(
         packAabb12(out, i, ol, ot, orr, ob, sPx, vSW, hSW, objPack.abort ? 1 : 0, imgW, imgH);
         (void)fb;
         storeTeleArr(env, teleArr, i, tele);
+        writeOverlapHistArr(env, histArr, i, tele.overlap);
     }
     writeSweepArr(env, sweepArr, sweeps);
     writePoisonArr(env, poisonArr, poisonPacks);
@@ -5905,7 +5931,7 @@ static void seg7OrientedOne(
         overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookBinHost,
         objPlane, objPack, seedIndex, false,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
-        poisonPlane, &lookInkAtPlane, &fillGate);
+        poisonPlane, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr);
     if (tele && !keepColorStats) {
         float yi = 0.f, yb = 0.f;
         int ni = 0, nbg = 0;
@@ -5947,9 +5973,6 @@ static void seg7OrientedOne(
             tele->retryWhy = static_cast<float>(fillGate.retryWhy);
             tele->nValley = static_cast<float>(fillGate.nValley);
             packFillAttempts(fillGate, tele);
-            packOverlapStrokeTele(
-                lookBin, sl, st, sr, sb, lookL, lookT, lookR, lookB,
-                seedH, seedW, objPack, tele->histH, tele->histV);
         }
         paintLookOverlay(
             lookBin, lookPoison, overlayY8, overlayUv2, false, 0, 0,
@@ -6183,9 +6206,6 @@ static void seg7OrientedOne(
         tele->retryWhy = static_cast<float>(fillGate.retryWhy);
         tele->nValley = static_cast<float>(fillGate.nValley);
         packFillAttempts(fillGate, tele);
-        packOverlapStrokeTele(
-            lookBin, sl, st, sr, sb, lookL, lookT, lookR, lookB,
-            seedH, seedW, objPack, tele->histH, tele->histV);
     }
     if (sweepOut) {
         try {
@@ -6374,7 +6394,8 @@ static jfloatArray seg7OrientedMany(
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
     jlong tintPtr = 0,
-    bool doHorzJump = false
+    bool doHorzJump = false,
+    jshortArray histArr = nullptr
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -6513,6 +6534,7 @@ static jfloatArray seg7OrientedMany(
             op[17] = flags;
         }
         storeTeleArr(env, teleArr, i, tele);
+        writeOverlapHistArr(env, histArr, i, tele.overlap);
     }
     writeSweepArr(env, sweepArr, sweeps);
     writePoisonArr(env, poisonArr, poisonPacks);
