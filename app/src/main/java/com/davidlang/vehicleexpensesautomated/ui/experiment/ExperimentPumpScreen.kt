@@ -7688,6 +7688,12 @@ private suspend fun snapshotLookInk(
         if (tele != null) {
             j.put("gapJumpTop", tele.gapJumpTop)
             j.put("gapJumpBot", tele.gapJumpBot)
+            if (tele.dispKind.isNotEmpty()) {
+                j.put("dispKind", tele.dispKind)
+                j.put("poisonHMul", tele.poisonHMul.toDouble())
+                j.put("poisonVMul", tele.poisonVMul.toDouble())
+                j.put("gapDriftP90S", tele.gapDriftP90S.toDouble())
+            }
         }
         val inkSeed: Int
         val inkBlue: Int
@@ -7721,10 +7727,20 @@ private suspend fun snapshotLookInk(
                 if (cc.x < 0) return@forEach
                 val hRun = cc.thr
                 val vRun = cc.nInk
+                val hMul = if (!energyLook && tele != null && tele.dispKind.isNotEmpty()) {
+                    tele.poisonHMul.roundToInt().coerceAtLeast(1)
+                } else {
+                    6
+                }
+                val vMul = if (!energyLook && tele != null && tele.dispKind.isNotEmpty()) {
+                    tele.poisonVMul.roundToInt().coerceAtLeast(1)
+                } else {
+                    16
+                }
                 val why = when {
-                    hRun > 6 * sPx && vRun > 16 * sPx -> "wide+tall"
-                    hRun > 6 * sPx -> "wide"
-                    vRun > 16 * sPx -> "tall"
+                    hRun > hMul * sPx && vRun > vMul * sPx -> "wide+tall"
+                    hRun > hMul * sPx -> "wide"
+                    vRun > vMul * sPx -> "tall"
                     else -> ""
                 }
                 ccArr.put(
@@ -8156,6 +8172,12 @@ private suspend fun snapshotLookInkOriented(
     if (tele != null) {
         j.put("gapJumpTop", tele.gapJumpTop)
         j.put("gapJumpBot", tele.gapJumpBot)
+        if (tele.dispKind.isNotEmpty()) {
+            j.put("dispKind", tele.dispKind)
+            j.put("poisonHMul", tele.poisonHMul.toDouble())
+            j.put("poisonVMul", tele.poisonVMul.toDouble())
+            j.put("gapDriftP90S", tele.gapDriftP90S.toDouble())
+        }
     }
     j.put("inkSeed", tele?.nInkSeed?.roundToInt() ?: 0)
         .put("inkBlue", tele?.nInkBlue?.roundToInt() ?: 0)
@@ -8178,10 +8200,20 @@ private suspend fun snapshotLookInkOriented(
             if (cc.x < 0) return@forEach
             val hRun = cc.thr
             val vRun = cc.nInk
+            val hMul = if (tele != null && tele.dispKind.isNotEmpty()) {
+                tele.poisonHMul.roundToInt().coerceAtLeast(1)
+            } else {
+                6
+            }
+            val vMul = if (tele != null && tele.dispKind.isNotEmpty()) {
+                tele.poisonVMul.roundToInt().coerceAtLeast(1)
+            } else {
+                16
+            }
             val why = when {
-                hRun > 6 * sPx && vRun > 16 * sPx -> "wide+tall"
-                hRun > 6 * sPx -> "wide"
-                vRun > 16 * sPx -> "tall"
+                hRun > hMul * sPx && vRun > vMul * sPx -> "wide+tall"
+                hRun > hMul * sPx -> "wide"
+                vRun > vMul * sPx -> "tall"
                 else -> ""
             }
             ccArr.put(
@@ -8684,6 +8716,10 @@ private fun seg7TeleJson(t: ContentExpandUtils.Seg7Telemetry): JSONObject {
         .put("gap_jump_bot_1", if (t.gapJumpBot1) 1 else 0)
         .put("n_drop_tall", t.nDropTall.toDouble())
         .put("max_cc_h", t.maxCcH.toDouble())
+        .put("dispKind", t.dispKind)
+        .put("poisonHMul", t.poisonHMul.toDouble())
+        .put("poisonVMul", t.poisonVMul.toDouble())
+        .put("gapDriftP90S", t.gapDriftP90S.toDouble())
         .put("gap_land_top", t.landTop.toDouble())
         .put("gap_land_bot", t.landBot.toDouble())
         .put("hist_h", hh)
@@ -8875,6 +8911,8 @@ private fun pSeg7TeleHtml(br: PumpBranch): String {
             "${o.optString("flag_left")}/${o.optString("flag_right")}",
         )
         row2("n_drop_tall", f0(o, "n_drop_tall"), "max_cc_h", f0(o, "max_cc_h"))
+        row2("dispKind", o.optString("dispKind"), "gapDriftP90S", f1(o, "gapDriftP90S"))
+        row2("poisonHMul", f0(o, "poisonHMul"), "poisonVMul", f0(o, "poisonVMul"))
         sb.append("</table>")
         val hh = o.optJSONArray("hist_h")
         val hv = o.optJSONArray("hist_v")
