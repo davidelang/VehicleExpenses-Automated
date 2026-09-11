@@ -1576,7 +1576,9 @@ static float normAnglePm45(float ang) {
 }
 
 static bool wrapHeatScratch(jlong scratchPtr, int h, int w,
-                            cv::Mat* maskOut, cv::Mat* labelsOut, cv::Mat* edgesOut);
+                            cv::Mat* maskOut, cv::Mat* labelsOut, cv::Mat* edgesOut,
+                            const uchar* photoYData);
+static const uchar* bufferSetAPrimaryYData(JNIEnv* env);
 static float heatAngleFromLabels(
     const cv::Mat& labels, const cv::Mat& stats, int numLabels, int w, int h,
     const float* heatF, const uint8_t* heatU);
@@ -1606,8 +1608,9 @@ static float houghMedianPm45(const std::vector<cv::Vec2f>& lines) {
 // Production deskew angle from det heatmap (phase-2 GT winner: hough_thr0.2).
 // Fallback: legacy CC + minAreaRect + 0.5° weighted buckets if Hough finds no lines.
 // Must not throw: OpenCV exceptions on the JNI path abort the process (uncaught).
-// mask/labels/edges live on A.p wrap; missing scratch → 0 (JNI fail).
-static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold, jlong scratchPtr) {
+// mask/labels/edges live on caller scratch (A.s); never wrap A.p. Missing wrap → 0 (JNI fail).
+static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold, jlong scratchPtr,
+                                         const uchar* photoYData) {
     try {
         const int h = heatmap.rows;
         const int w = heatmap.cols;
@@ -1619,7 +1622,7 @@ static float heatmapToAngleHoughOrBucket(const cv::Mat& heatmap, float threshold
         }
 
         cv::Mat mask8, labels, edges;
-        if (!wrapHeatScratch(scratchPtr, h, w, &mask8, &labels, &edges)) {
+        if (!wrapHeatScratch(scratchPtr, h, w, &mask8, &labels, &edges, photoYData)) {
             LOGE("heatmapToAngle: wrapHeatScratch failed h=%d w=%d", h, w);
             return 0.0f;
         }
@@ -1681,7 +1684,7 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
     const float* data = heatBuf.data();
 
     cv::Mat heatmap(h, w, CV_32F, const_cast<float*>(data));
-    return heatmapToAngleHoughOrBucket(heatmap, threshold, scratchPtr);
+    return heatmapToAngleHoughOrBucket(heatmap, threshold, scratchPtr, bufferSetAPrimaryYData(env));
 }
 
 // Return full heatmap as float[] for Java (safe for float32 / uint8 / fp16).
@@ -1966,19 +1969,131 @@ static void dilateMaskPasses(cv::Mat& mask, cv::Mat& buf, int passes) {
     LOGI("dilateMaskPasses: pure 3x3 max applied passes=%d size=%dx%d", passes, mask.cols, mask.rows);
 }
 
-// Wrap mask (8UC1) then labels (CV_32S) then edges (8UC1) as headers on scratch Y (A.p).
-// Need ≥ ~6*h*w bytes (labels 4-byte aligned after the mask). No heap fallback.
+/** A.p luma .data (photo Y). Null if engine buffers are not up. */
+static const uchar* bufferSetAPrimaryYData(JNIEnv* env) {
+    if (!env) return nullptr;
+    jclass engineCls = env->FindClass(
+        "com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine");
+    if (!engineCls) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    jclass companionCls = env->FindClass(
+        "com/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine$Companion");
+    if (!companionCls) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(engineCls);
+        return nullptr;
+    }
+    jfieldID companionFid = env->GetStaticFieldID(
+        engineCls, "Companion",
+        "Lcom/davidlang/vehicleexpensesautomated/ui/util/NativePaddleEngine$Companion;");
+    if (!companionFid) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(engineCls);
+        env->DeleteLocalRef(companionCls);
+        return nullptr;
+    }
+    jobject companion = env->GetStaticObjectField(engineCls, companionFid);
+    env->DeleteLocalRef(engineCls);
+    if (!companion) {
+        env->DeleteLocalRef(companionCls);
+        return nullptr;
+    }
+    jmethodID getA = env->GetMethodID(
+        companionCls, "getBufferSetA",
+        "()Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet;");
+    env->DeleteLocalRef(companionCls);
+    if (!getA) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(companion);
+        return nullptr;
+    }
+    jobject bufA = env->CallObjectMethod(companion, getA);
+    env->DeleteLocalRef(companion);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    if (!bufA) return nullptr;
+    jclass bufCls = env->GetObjectClass(bufA);
+    jmethodID getP = env->GetMethodID(
+        bufCls, "getP",
+        "()Lcom/davidlang/vehicleexpensesautomated/ui/util/BufferSet$Slice;");
+    env->DeleteLocalRef(bufCls);
+    if (!getP) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(bufA);
+        return nullptr;
+    }
+    jobject sliceP = env->CallObjectMethod(bufA, getP);
+    env->DeleteLocalRef(bufA);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    if (!sliceP) return nullptr;
+    jclass sliceCls = env->GetObjectClass(sliceP);
+    jmethodID getMat = env->GetMethodID(sliceCls, "getMat", "()Lorg/opencv/core/Mat;");
+    env->DeleteLocalRef(sliceCls);
+    if (!getMat) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(sliceP);
+        return nullptr;
+    }
+    jobject matObj = env->CallObjectMethod(sliceP, getMat);
+    env->DeleteLocalRef(sliceP);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    if (!matObj) return nullptr;
+    jclass matCls = env->GetObjectClass(matObj);
+    jfieldID nativeObjFid = env->GetFieldID(matCls, "nativeObj", "J");
+    env->DeleteLocalRef(matCls);
+    if (!nativeObjFid) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(matObj);
+        return nullptr;
+    }
+    jlong ptr = env->GetLongField(matObj, nativeObjFid);
+    env->DeleteLocalRef(matObj);
+    auto* m = reinterpret_cast<cv::Mat*>(ptr);
+    if (!m || !m->data) return nullptr;
+    return m->data;
+}
+
+// Wrap mask (8UC1) then labels (CV_32S) then edges (8UC1) as headers on caller scratch Y (A.s).
+// Need ≥ ~6*h*w bytes (labels 4-byte aligned after the mask).
+// Refuse if scratch .data is A.p photo Y. Heap (Mat::create) only if have < need.
 static bool wrapHeatScratch(jlong scratchPtr, int h, int w,
-                            cv::Mat* maskOut, cv::Mat* labelsOut, cv::Mat* edgesOut) {
+                            cv::Mat* maskOut, cv::Mat* labelsOut, cv::Mat* edgesOut,
+                            const uchar* photoYData) {
     if (scratchPtr == 0 || !maskOut || !labelsOut || !edgesOut || h <= 0 || w <= 0) return false;
     auto* scratch = reinterpret_cast<cv::Mat*>(scratchPtr);
     if (!scratch || scratch->empty() || !scratch->data || !scratch->isContinuous()) return false;
+    if (photoYData && scratch->data == photoYData) {
+        LOGE("wrapHeatScratch: refuse A.p photo Y h=%d w=%d", h, w);
+        return false;
+    }
     const size_t n = static_cast<size_t>(h) * static_cast<size_t>(w);
     const size_t labelsOff = (n + 3u) & ~static_cast<size_t>(3u);
     const size_t edgesOff = labelsOff + 4u * n;
     const size_t need = edgesOff + n;
     const size_t have = scratch->total() * scratch->elemSize();
-    if (have < need) return false;
+    if (have < need) {
+        const size_t bytes = n + 4u * n + n;
+        if (!veAllocLog("heatScratchHeap", bytes, h, w, CV_8UC1)) return false;
+        maskOut->create(h, w, CV_8UC1);
+        labelsOut->create(h, w, CV_32S);
+        edgesOut->create(h, w, CV_8UC1);
+        if (maskOut->empty() || labelsOut->empty() || edgesOut->empty() ||
+            !maskOut->data || !labelsOut->data || !edgesOut->data) {
+            LOGE("wrapHeatScratch: heap create failed h=%d w=%d", h, w);
+            return false;
+        }
+        return true;
+    }
     uchar* base = scratch->data;
     *maskOut = cv::Mat(h, w, CV_8UC1, base);
     *labelsOut = cv::Mat(h, w, CV_32S, base + labelsOff);
@@ -2387,7 +2502,8 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeHeatm
         const double thrU = static_cast<double>(threshold) * 255.0;
         cv::Mat heatMat(h, w, CV_8UC1, const_cast<uint8_t*>(data));
         cv::Mat mask8, labels, edges;
-        if (!wrapHeatScratch(scratchPtr, h, w, &mask8, &labels, &edges)) {
+        if (!wrapHeatScratch(scratchPtr, h, w, &mask8, &labels, &edges,
+                             bufferSetAPrimaryYData(env))) {
             LOGE("heatmapToAngleU8: wrapHeatScratch failed h=%d w=%d", h, w);
             env->ReleaseByteArrayElements(heatU8, raw, JNI_ABORT);
             return 0.f;
