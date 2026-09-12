@@ -752,6 +752,42 @@ object NativeImageUtils {
         return nativeColorAabbRetract(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
     }
 
+    private external fun nativeColorAabbTightVsp(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+
+    fun colorAabbTightVspNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorAabbTightVsp(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+
+    private external fun nativeColorAabbRetractVsp(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        histArr: ShortArray?,
+    ): IntArray?
+
+    fun colorAabbRetractVspNative(
+        gray: Mat, uv: Mat?, seeds: IntArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        hist: ShortArray? = null,
+    ): IntArray? {
+        if (gray.empty()) return IntArray(0)
+        val p = aabbPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorAabbRetractVsp(p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats, hist)
+    }
+
     private external fun nativeColorAabbExpand(
         grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: IntArray,
         teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
@@ -845,6 +881,50 @@ object NativeImageUtils {
         if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
         val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
         return nativeColorOrientRetract(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L, hist,
+        )
+    }
+
+    private external fun nativeColorOrientTightVsp(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
+        histArr: ShortArray?,
+    ): FloatArray?
+    private external fun nativeColorOrientRetractVsp(
+        grayPtr: Long, uvPtr: Long, scratchPtr: Long, seeds: FloatArray,
+        teleArr: FloatArray?, sweepArr: ShortArray?, dumpPtr: Long,
+        overlayYPtr: Long, overlayUvPtr: Long, poisonArr: IntArray?,
+        tintPtr: Long,
+        histArr: ShortArray?,
+    ): FloatArray?
+
+    fun colorOrientTightVspNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientTightVsp(
+            p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
+            tint?.nativeObj ?: 0L, hist,
+        )
+    }
+    fun colorOrientRetractVspNative(
+        gray: Mat, uv: Mat?, seeds: FloatArray,
+        scratch: Mat?, tele: FloatArray?, sweep: ShortArray?,
+        combine: Mat?, overlayY: Mat?, overlayUv: Mat?, poisonStats: IntArray?,
+        tint: Mat? = null,
+        hist: ShortArray? = null,
+    ): FloatArray? {
+        if (gray.empty() || seeds.isEmpty()) return FloatArray(0)
+        val p = orientPtrs(gray, uv, scratch, combine, overlayY, overlayUv)
+        return nativeColorOrientRetractVsp(
             p[0], p[1], p[2], seeds, tele, sweep, p[3], p[4], p[5], poisonStats,
             tint?.nativeObj ?: 0L, hist,
         )

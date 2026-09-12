@@ -821,16 +821,16 @@ suspend fun runPumpExperiment(
         "Set G-- (4 pass, none, calculated)",
         "Set ink-energy-tight",
         "Set ink-energy-retract",
-        "Set ink-gray-tight",
-        "Set ink-gray-retract",
         "Set ink-color-tight",
         "Set ink-color-retract",
         "Set rot-energy-tight",
         "Set rot-energy-retract",
-        "Set rot-gray-tight",
-        "Set rot-gray-retract",
         "Set rot-color-tight",
         "Set rot-color-retract",
+        "Set ink-color-tight-vsp",
+        "Set ink-color-retract-vsp",
+        "Set rot-color-tight-vsp",
+        "Set rot-color-retract-vsp",
     )
     val heatDumpRoot by lazy {
         File(reportDir, "pump_heats_$timestamp").also { it.mkdirs() }
@@ -5434,6 +5434,38 @@ suspend fun runPumpExperiment(
                         "rot-color-retract: master.p u/v; grow 1; tint A.s; overlay look-ink rec-pad; k=0..4",
                     )
                 }
+                val procInkColorTightVsp = makeInkAabbProc(
+                    "ink-color-tight-vsp: AABB grow 0; tint A.s; virtual S&P; overlay look-ink rec-pad; k=0..4",
+                    ContentExpandUtils::expandColorAabbTightVsp,
+                    chromaNote = "color_adaptive",
+                    boundNote = "tight",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
+                )
+                val procInkColorRetractVsp = makeInkAabbProc(
+                    "ink-color-retract-vsp: AABB grow 1; tint A.s; virtual S&P; overlay look-ink rec-pad; k=0..4",
+                    ContentExpandUtils::expandColorAabbRetractVsp,
+                    chromaNote = "color_adaptive",
+                    boundNote = "edge-retract",
+                    boxMode = NativeImageUtils.HEATMAP_BOX_AABB,
+                )
+                val procRotColorTightVsp: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runRot7segColumn(
+                        ws, br, det, w, h, 0, "tight", true, "color_adaptive",
+                        ContentExpandUtils::expandColorOrientTightVsp,
+                        "rot-color-tight-vsp: master.p u/v; grow 0; tint A.s; virtual S&P; overlay look-ink rec-pad; k=0..4",
+                    )
+                }
+                val procRotColorRetractVsp: suspend (
+                    BufferSet, PumpBranch, MutableMap<String, MutableMap<Int, List<PumpHunk>>>, Int, Int,
+                ) -> Unit = { ws, br, det, w, h ->
+                    runRot7segColumn(
+                        ws, br, det, w, h, 1, "edge-retract", true, "color_adaptive",
+                        ContentExpandUtils::expandColorOrientRetractVsp,
+                        "rot-color-retract-vsp: master.p u/v; grow 1; tint A.s; virtual S&P; overlay look-ink rec-pad; k=0..4",
+                    )
+                }
                 val procProdInk = makeInkAabbProc(
                     "ink-prod: product det + seed-ROI s; walk once; OCR k=0..4; official k=0; gap/peek 0.5s; cap 2.5×seedH safety; jump-retract (no G-list)",
                     ContentExpandUtils::expandGrayAabbExpand,
@@ -7076,20 +7108,21 @@ suspend fun runPumpExperiment(
                     add("Set G-- (4 pass, none, calculated)" to procGMinusMinus)
                     add("Set ink-energy-tight" to procInkEnergyTight)
                     add("Set ink-energy-retract" to procInkEnergyRetract)
-                    add("Set ink-gray-tight" to procInkGrayTight)
-                    add("Set ink-gray-retract" to procInkGrayRetract)
                     add("Set ink-color-tight" to procInkColorTight)
                     add("Set ink-color-retract" to procInkColorRetract)
                     add("Set rot-energy-tight" to procRotEnergyTight)
                     add("Set rot-energy-retract" to procRotEnergyRetract)
-                    add("Set rot-gray-tight" to procRotGrayTight)
-                    add("Set rot-gray-retract" to procRotGrayRetract)
                     add("Set rot-color-tight" to procRotColorTight)
                     add("Set rot-color-retract" to procRotColorRetract)
+                    add("Set ink-color-tight-vsp" to procInkColorTightVsp)
+                    add("Set ink-color-retract-vsp" to procInkColorRetractVsp)
+                    add("Set rot-color-tight-vsp" to procRotColorTightVsp)
+                    add("Set rot-color-retract-vsp" to procRotColorRetractVsp)
                 }
-                // Parked (compiled, not scheduled): prior ink-prod/color/walk2/jump, P*, L/M, G-dense/K, *-base.
+                // Parked (compiled, not scheduled): gray 7seg, prior ink-prod/color/walk2/jump, P*, L/M, G-dense/K, *-base.
                 @Suppress("UNUSED_VARIABLE")
                 val parked = listOf(
+                    procInkGrayTight, procInkGrayRetract, procRotGrayTight, procRotGrayRetract,
                     procGDense, procK, procP, procPJump,
                     procPRot, procProdM65, procProdInk, procInkProdColor,
                     procInkProdColor2, procInkProdWalk2, procProdJump,
@@ -7751,6 +7784,11 @@ private suspend fun snapshotLookInk(
                 )
             }
             j.put("ccs", ccArr)
+            if (pd.vspSkip.isNotEmpty()) {
+                val skip = org.json.JSONObject()
+                pd.vspSkip.forEach { (k, v) -> skip.put(k, v) }
+                j.put("vspSkip", skip)
+            }
         }
         arr.put(j)
     }
@@ -8224,6 +8262,11 @@ private suspend fun snapshotLookInkOriented(
             )
         }
         j.put("ccs", ccArr)
+        if (poison.vspSkip.isNotEmpty()) {
+            val skip = org.json.JSONObject()
+            poison.vspSkip.forEach { (k, v) -> skip.put(k, v) }
+            j.put("vspSkip", skip)
+        }
     }
     arr.put(j)
     branch.metadata["look_ink"] = arr.toString()

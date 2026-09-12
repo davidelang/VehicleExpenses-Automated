@@ -806,6 +806,12 @@ struct PoisonStats {
     int inkLo = 0, nextNonInk = 0, seedIndex = 0, nSeeds = 0, classChange = 0;
     char phase[40]{};
     std::vector<PoisonCcPack> ccs;
+    int vspStroke = 0;
+    int vspDisp = 0;
+    int vspBarT = 0;
+    int vspBarB = 0;
+    int vspJumpL = 0;
+    int vspJumpR = 0;
 };
 
 static void writePoisonArr(JNIEnv* env, jintArray arr, const std::vector<PoisonStats>& packs) {
@@ -1286,6 +1292,14 @@ static void appendObjMeta(PoisonStats* s, const ObjPack& p, int seedIndex, int n
     c.thr = p.classChange;
     c.nInk = objPhaseCode(p.phase);
     s->ccs.push_back(c);
+    if (s->vspStroke || s->vspDisp || s->vspBarT || s->vspBarB ||
+        s->vspJumpL || s->vspJumpR) {
+        PoisonCcPack v;
+        v.x = -2;
+        v.y = s->vspStroke | (s->vspDisp << 4) | (s->vspBarT << 8) |
+            (s->vspBarB << 12) | (s->vspJumpL << 16) | (s->vspJumpR << 20);
+        s->ccs.push_back(v);
+    }
 }
 
 static bool rowHasInkId(
@@ -1434,8 +1448,11 @@ static double meanRectF(const cv::Mat& e, int l, int t, int r, int b, int W, int
 
 static constexpr int kJumpMax = 4;
 
+static bool vspSkipRun(int run, int lead);
+
 static int maxInkRunCol(
-    const cv::Mat& bin, int x, int y0, int y1, const ObjPack* pack = nullptr);
+    const cv::Mat& bin, int x, int y0, int y1, const ObjPack* pack = nullptr,
+    bool virtSp = false);
 
 static void jumpRetractH(
     const cv::Mat& eng, int* l, int t, int* r, int b,
@@ -2866,18 +2883,33 @@ static int maxInkRunRow(
 }
 
 static int maxInkRunCol(
-    const cv::Mat& bin, int x, int y0, int y1, const ObjPack* pack
+    const cv::Mat& bin, int x, int y0, int y1, const ObjPack* pack,
+    bool virtSp = false
 ) {
     if (x < 0 || x >= bin.cols) return 0;
-    int best = 0, run = 0;
+    int best = 0;
     const int yEnd = std::min(y1, bin.rows);
-    for (int y = std::max(0, y0); y < yEnd; ++y) {
-        if (isLookInkId(bin.ptr<uint8_t>(y)[x], pack)) {
-            ++run;
-            if (run > best) best = run;
-        } else {
-            run = 0;
+    int y = std::max(0, y0);
+    while (y < yEnd) {
+        if (!isLookInkId(bin.ptr<uint8_t>(y)[x], pack)) {
+            ++y;
+            continue;
         }
+        int run = 0;
+        while (true) {
+            while (y < yEnd && isLookInkId(bin.ptr<uint8_t>(y)[x], pack)) {
+                ++run;
+                ++y;
+            }
+            if (!virtSp || y >= yEnd) break;
+            const int gapStart = y;
+            while (y < yEnd && !isLookInkId(bin.ptr<uint8_t>(y)[x], pack)) ++y;
+            const int g = y - gapStart;
+            if (y < yEnd && vspSkipRun(g, run)) continue;
+            y = gapStart;
+            break;
+        }
+        if (run > best) best = run;
     }
     return best;
 }
@@ -2950,7 +2982,7 @@ static void fillRunHists(
 static void fillSaltPepper(cv::Mat* bin);
 static bool rowHasStrokeBar(
     const cv::Mat& bin, int y, int minRun, int glareW, const ObjPack* pack = nullptr,
-    int x0 = 0, int x1 = -1);
+    int x0 = 0, int x1 = -1, bool virtSp = false);
 static int fillPoisonLookRaster(
     const cv::Mat& src, cv::Mat* lookBin,
     int sl, int st, int sr, int sb,
@@ -2970,7 +3002,8 @@ static int fillPoisonLookRaster(
     cv::Mat* lookInkAtOut = nullptr,
     SeedFillGate* fillGateOut = nullptr,
     OverlapHists* histOut = nullptr,
-    Seg7Tele* teleOut = nullptr);
+    Seg7Tele* teleOut = nullptr,
+    bool virtSp = false);
 static void aabbJumpOnLook(
     cv::Mat* look, int* l, int t, int* r, int b,
     int imgW, int imgH, int seedT, int seedB, int seedL, int seedR, int sPx,
@@ -3074,22 +3107,39 @@ struct HorizSW {
     std::vector<int> hist;
 };
 
-static HorizSW horizPeakSW(const cv::Mat& bin, int seedH, int seedW) {
+static bool vspSkipRun(int run, int lead) {
+    return run > 0 && run <= 4 && 2 * run <= lead;
+}
+
+static HorizSW horizPeakSW(const cv::Mat& bin, int seedH, int seedW, bool virtSp = false) {
     HorizSW out;
     out.hist.assign(std::max(seedW + 1, 36), 0);
     for (int y = 0; y < bin.rows; ++y) {
         const uint8_t* p = bin.ptr<uint8_t>(y);
-        int run = 0;
-        for (int x = 0; x <= bin.cols; ++x) {
-            const bool on = x < bin.cols && p[x] != 0;
-            if (on) ++run;
-            else if (run > 0) {
-                if (run != seedW) {
-                    if (run < static_cast<int>(out.hist.size())) out.hist[run]++;
-                    ++out.nNonSpan;
-                    if (run > out.maxRun) out.maxRun = run;
+        int x = 0;
+        while (x < bin.cols) {
+            if (p[x] == 0) {
+                ++x;
+                continue;
+            }
+            int run = 0;
+            while (true) {
+                while (x < bin.cols && p[x] != 0) {
+                    ++run;
+                    ++x;
                 }
-                run = 0;
+                if (!virtSp || x >= bin.cols) break;
+                const int gapStart = x;
+                while (x < bin.cols && p[x] == 0) ++x;
+                const int g = x - gapStart;
+                if (x < bin.cols && vspSkipRun(g, run)) continue;
+                x = gapStart;
+                break;
+            }
+            if (run > 0 && run != seedW) {
+                if (run < static_cast<int>(out.hist.size())) out.hist[run]++;
+                ++out.nNonSpan;
+                if (run > out.maxRun) out.maxRun = run;
             }
         }
     }
@@ -3369,7 +3419,8 @@ static void seg7One(
     cv::Mat* scratch = nullptr,
     ObjPack* objPack = nullptr,
     int seedIndex = 0,
-    cv::Mat* poisonPlane = nullptr
+    cv::Mat* poisonPlane = nullptr,
+    bool virtSp = false
 ) {
     (void)tightInsetPx;
     *ol = sl; *ot = st; *oright = sr; *ob = sb;
@@ -3433,7 +3484,7 @@ static void seg7One(
         overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookPlane,
         objPlane, objPack, seedIndex, false,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
-        pois, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr, tele);
+        pois, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr, tele, virtSp);
     if (poisonStats) *poisonStats = stLocal;
     const int glareW = 6 * std::max(sPx, 1);
     const int vSW = sPx;
@@ -3621,6 +3672,30 @@ static void seg7One(
     aabbJumpOnLook(
         &lookBin, ol, *ot, oright, *ob, imgW, imgH,
         st, sb, sl, sr, sPx, 0, 0, &farL, &farR, objPack);
+    if (virtSp && poisonStats) {
+        const bool skipT = rowHasStrokeBar(
+            lookBin, st, minRun, glareW, objPack, lookL, lookR, true);
+        const bool rawT = rowHasStrokeBar(
+            lookBin, st, minRun, glareW, objPack, lookL, lookR, false);
+        if (skipT != rawT) poisonStats->vspBarT = skipT ? 1 : 2;
+        const int yBot = sb > st ? sb - 1 : st;
+        const bool skipB = rowHasStrokeBar(
+            lookBin, yBot, minRun, glareW, objPack, lookL, lookR, true);
+        const bool rawB = rowHasStrokeBar(
+            lookBin, yBot, minRun, glareW, objPack, lookL, lookR, false);
+        if (skipB != rawB) poisonStats->vspBarB = skipB ? 1 : 2;
+        const bool skipL = maxInkRunCol(
+            lookBin, farL, st, sb, objPack, true) >= minRun;
+        const bool rawL = maxInkRunCol(
+            lookBin, farL, st, sb, objPack, false) >= minRun;
+        if (skipL != rawL) poisonStats->vspJumpL = skipL ? 1 : 2;
+        const int xR = farR > 0 ? farR - 1 : farR;
+        const bool skipR = maxInkRunCol(
+            lookBin, xR, st, sb, objPack, true) >= minRun;
+        const bool rawR = maxInkRunCol(
+            lookBin, xR, st, sb, objPack, false) >= minRun;
+        if (skipR != rawR) poisonStats->vspJumpR = skipR ? 1 : 2;
+    }
     {
         int wt = *ot, wb = *ob;
         if (wb < wt) std::swap(wt, wb);
@@ -4027,7 +4102,7 @@ struct SeedCombine {
 static int seedCombine255(
     const cv::Mat& src, int sl, int st, int sr, int sb,
     bool srcIsBin, int glareMult, int fallback,
-    SeedCombine* out, int seedIndex = 0
+    SeedCombine* out, int seedIndex = 0, bool virtSp = false
 ) {
     if (!out || src.empty() || src.type() != CV_8UC1) return fallback;
     if (sl < 0) sl = 0;
@@ -4104,8 +4179,8 @@ static int seedCombine255(
             }
         }
     }
-    fillSaltPepper(&bin);
-    HorizSW hh0 = horizPeakSW(bin, seedH, seedW);
+    if (!virtSp) fillSaltPepper(&bin);
+    HorizSW hh0 = horizPeakSW(bin, seedH, seedW, virtSp);
     const int v0 = hh0.peak;
     const bool needFb0 = strokeNeedFb(hh0, v0, seedW, inkFrac);
     const int sPx0 = (v0 > 4 && !needFb0) ? v0 : fallback;
@@ -4134,12 +4209,12 @@ static int seedCombine255(
         haveClean = otsuKeepPoison0(seedY, poison, &cleanThr, &cleanDark, &cleanInkFrac);
         if (haveClean) {
             applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-            fillSaltPepper(&bin);
+            if (!virtSp) fillSaltPepper(&bin);
         } else {
             bin.setTo(0);
         }
     }
-    HorizSW hhC = horizPeakSW(bin, seedH, seedW);
+    HorizSW hhC = horizPeakSW(bin, seedH, seedW, virtSp);
     int v0Clean = hhC.peak;
     bool needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, srcIsBin
         ? (cv::countNonZero(bin) / static_cast<float>(std::max(1, seedH * seedW)))
@@ -4153,18 +4228,18 @@ static int seedCombine255(
             float frac2 = 0.f;
             if (otsuKeepPoison0(seedY, poison, &thr2, &dark2, &frac2, cleanThr)) {
                 applyThrKeepPoison0(seedY, poison, thr2, dark2, &bin, cleanThr);
-                fillSaltPepper(&bin);
+                if (!virtSp) fillSaltPepper(&bin);
                 if (dark2 && frac2 >= 0.05f && frac2 <= 0.42f) {
                     cleanThr = thr2;
                     cleanDark = dark2;
                     cleanInkFrac = frac2;
-                    hhC = horizPeakSW(bin, seedH, seedW);
+                    hhC = horizPeakSW(bin, seedH, seedW, virtSp);
                     v0Clean = hhC.peak;
                     needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
                     sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
                 } else {
                     applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-                    fillSaltPepper(&bin);
+                    if (!virtSp) fillSaltPepper(&bin);
                 }
             }
         }
@@ -4201,8 +4276,8 @@ static int seedCombine255(
         flipped = true;
         cleanDark = !cleanDark;
         applyThrKeepPoison0(seedY, poison, cleanThr, cleanDark, &bin);
-        fillSaltPepper(&bin);
-        hhC = horizPeakSW(bin, seedH, seedW);
+        if (!virtSp) fillSaltPepper(&bin);
+        hhC = horizPeakSW(bin, seedH, seedW, virtSp);
         v0Clean = hhC.peak;
         needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, cleanInkFrac);
         sPx = (v0Clean > 4 && !needFbClean) ? v0Clean : fallback;
@@ -4248,7 +4323,7 @@ static int seedCombine255(
         a.nKeep = nKeep;
         a.nValley = nValley;
         a.nPoison = nPoison;
-        const HorizSW hhA = horizPeakSW(bin, seedH, seedW);
+        const HorizSW hhA = horizPeakSW(bin, seedH, seedW, virtSp);
         a.sPx = hhA.peak;
         ++fillGate.nAttempts;
         fillGate.nKeep = nKeep;
@@ -4325,7 +4400,7 @@ static int seedCombine255(
                 recordAttempt(kind);
                 const bool inBandNow =
                     fillGate.fill >= fillLo && fillGate.fill <= fillHi;
-                const HorizSW hhNow = horizPeakSW(bin, seedH, seedW);
+                const HorizSW hhNow = horizPeakSW(bin, seedH, seedW, virtSp);
                 const int vNow = hhNow.peak;
                 const float fracNow = srcIsBin
                     ? (cv::countNonZero(bin) /
@@ -4413,8 +4488,8 @@ static int seedCombine255(
                             op[xx] = ink ? 255 : 0;
                         }
                     }
-                    fillSaltPepper(&bin);
-                    HorizSW hhR = horizPeakSW(bin, seedH, seedW);
+                    if (!virtSp) fillSaltPepper(&bin);
+                    HorizSW hhR = horizPeakSW(bin, seedH, seedW, virtSp);
                     const int v0R = hhR.peak;
                     const bool needFbR = strokeNeedFb(hhR, v0R, seedW, inkFrac);
                     const int sPxR = (v0R > 4 && !needFbR) ? v0R : fallback;
@@ -4425,7 +4500,7 @@ static int seedCombine255(
                     if (haveClean) {
                         applyThrKeepPoison0(
                             seedY, poison, cleanThr, cleanDark, &bin);
-                        fillSaltPepper(&bin);
+                        if (!virtSp) fillSaltPepper(&bin);
                     } else {
                         bin.setTo(0);
                     }
@@ -4470,7 +4545,7 @@ static int seedCombine255(
                     if (extras >= 3) break;
                     applyThrKeepPoison0(
                         seedY, poison, static_cast<double>(thr), cleanDark, &bin);
-                    fillSaltPepper(&bin);
+                    if (!virtSp) fillSaltPepper(&bin);
                     ++extras;
                     tried.push_back(thr);
                     cleanThr = static_cast<double>(thr);
@@ -4532,7 +4607,7 @@ static int seedCombine255(
         srcIsBin, inverted, cleanDark, cleanThr);
     cv::Mat combined;
     bin.copyTo(combined);
-    hhC = horizPeakSW(combined, seedH, seedW);
+    hhC = horizPeakSW(combined, seedH, seedW, virtSp);
     v0Clean = hhC.peak;
     needFbClean = !haveClean || strokeNeedFb(hhC, v0Clean, seedW, srcIsBin
         ? (cv::countNonZero(combined) / static_cast<float>(std::max(1, seedH * seedW)))
@@ -4609,21 +4684,34 @@ struct PoisonReg {
 
 static bool rowHasStrokeBar(
     const cv::Mat& bin, int y, int minRun, int glareW, const ObjPack* pack,
-    int x0, int x1
+    int x0, int x1, bool virtSp = false
 ) {
     if (y < 0 || y >= bin.rows) return false;
     const uint8_t* p = bin.ptr<uint8_t>(y);
     if (x0 < 0) x0 = 0;
     if (x1 < 0 || x1 > bin.cols) x1 = bin.cols;
     if (x1 <= x0) return false;
-    int run = 0;
-    for (int x = x0; x <= x1; ++x) {
-        const bool on = x < x1 && isLookInkId(p[x], pack);
-        if (on) ++run;
-        else if (run > 0) {
-            if (run >= minRun && run <= glareW) return true;
-            run = 0;
+    int x = x0;
+    while (x < x1) {
+        if (!isLookInkId(p[x], pack)) {
+            ++x;
+            continue;
         }
+        int run = 0;
+        while (true) {
+            while (x < x1 && isLookInkId(p[x], pack)) {
+                ++run;
+                ++x;
+            }
+            if (!virtSp || x >= x1) break;
+            const int gapStart = x;
+            while (x < x1 && !isLookInkId(p[x], pack)) ++x;
+            const int g = x - gapStart;
+            if (x < x1 && vspSkipRun(g, run)) continue;
+            x = gapStart;
+            break;
+        }
+        if (run >= minRun && run <= glareW) return true;
     }
     return false;
 }
@@ -4838,7 +4926,8 @@ struct SeedGapChain {
     int span() const { return maxW - minW; }
 };
 
-static void collectSeedRowGaps(const uint8_t* p, int n, std::vector<SeedGapSpan>* out) {
+static void collectSeedRowGaps(const uint8_t* p, int n, std::vector<SeedGapSpan>* out,
+    bool virtSp = false) {
     if (!out) return;
     out->clear();
     if (!p || n < 1) return;
@@ -4851,6 +4940,22 @@ static void collectSeedRowGaps(const uint8_t* p, int n, std::vector<SeedGapSpan>
         } else {
             const int a = i;
             while (i < n && p[i] == 0) ++i;
+            if (virtSp) {
+                while (i < n && p[i] != 0) {
+                    const int ink0 = i;
+                    while (i < n && p[i] != 0) ++i;
+                    const int s = i - ink0;
+                    const int leadGap = ink0 - a;
+                    int after = i;
+                    while (after < n && p[after] == 0) ++after;
+                    if (after > i && vspSkipRun(s, leadGap)) {
+                        i = after;
+                        continue;
+                    }
+                    i = ink0;
+                    break;
+                }
+            }
             if (seenInk && i < n) {
                 SeedGapSpan g;
                 g.x0 = a;
@@ -4875,7 +4980,7 @@ static int longestInkRun(const uint8_t* p, int n) {
     return longest;
 }
 
-static SeedDispClass classifySeedGapDisp(const cv::Mat& combined, int sPx) {
+static SeedDispClass classifySeedGapDisp(const cv::Mat& combined, int sPx, bool virtSp = false) {
     SeedDispClass out;
     out.kind = kDisp7seg;
     out.hMul = 7;
@@ -4959,7 +5064,7 @@ static SeedDispClass classifySeedGapDisp(const cv::Mat& combined, int sPx) {
                 prev.clear();
                 continue;
             }
-            collectSeedRowGaps(combined.ptr<uint8_t>(y), w, &cur);
+            collectSeedRowGaps(combined.ptr<uint8_t>(y), w, &cur, virtSp);
             nGaps[static_cast<size_t>(y - by0)] = static_cast<int>(cur.size());
             std::vector<char> usedP(prev.size(), 0);
             std::vector<char> usedC(cur.size(), 0);
@@ -5098,7 +5203,8 @@ static int fillPoisonLookRaster(
     cv::Mat* lookInkAtOut,
     SeedFillGate* fillGateOut,
     OverlapHists* histOut,
-    Seg7Tele* teleOut
+    Seg7Tele* teleOut,
+    bool virtSp
 ) {
     if (!lookBin || src.empty() || src.type() != CV_8UC1) return fallback;
     if (sl < 0) sl = 0;
@@ -5150,7 +5256,7 @@ static int fillPoisonLookRaster(
     }
     SeedCombine sc;
     const int sPx = seedCombine255(
-        src, sl, st, sr, sb, srcIsBin, glareMult, fallback, &sc, seedIndex);
+        src, sl, st, sr, sb, srcIsBin, glareMult, fallback, &sc, seedIndex, virtSp);
     cv::Mat& combined = sc.bin;
     cv::Mat& poison = sc.poison;
     const bool inverted = sc.inverted;
@@ -5203,7 +5309,24 @@ static int fillPoisonLookRaster(
     }
     if (fillGateOut) *fillGateOut = sc.fillGate;
     if (histOut) *histOut = sc.overlap;
-    const SeedDispClass disp = classifySeedGapDisp(combined, sPx);
+    const SeedDispClass disp = classifySeedGapDisp(combined, sPx, virtSp);
+    if (virtSp && statsOut) {
+        HorizSW rawSw = horizPeakSW(combined, seedH, seedW, false);
+        HorizSW skipSw = horizPeakSW(combined, seedH, seedW, true);
+        const float frac = srcIsBin
+            ? (cv::countNonZero(combined) /
+                static_cast<float>(std::max(1, seedH * seedW)))
+            : sc.cleanInkFrac;
+        const bool skipKeep = skipSw.peak > 4 &&
+            !strokeNeedFb(skipSw, skipSw.peak, seedW, frac);
+        const bool rawKeep = rawSw.peak > 4 &&
+            !strokeNeedFb(rawSw, rawSw.peak, seedW, frac);
+        if (skipKeep != rawKeep) statsOut->vspStroke = skipKeep ? 1 : 2;
+        const SeedDispClass rawDisp = classifySeedGapDisp(combined, sPx, false);
+        if (disp.kind != rawDisp.kind) {
+            statsOut->vspDisp = (disp.kind == kDisp7seg) ? 1 : 2;
+        }
+    }
     if (teleOut) {
         teleOut->dispKind = static_cast<float>(disp.kind);
         teleOut->poisonHMul = static_cast<float>(disp.hMul);
@@ -5231,7 +5354,7 @@ static int fillPoisonLookRaster(
                 if (op[x]) op[x] = 255;
             }
         }
-        fillSaltPepperRect(lookBin, lookT, lookB, lookL, lookR);
+        if (!virtSp) fillSaltPepperRect(lookBin, lookT, lookB, lookL, lookR);
         if (sPx >= 1) {
             flood255LookIds(
                 lookBin, sPx, objPack, seedIndex, lookL, lookT, lookR, lookB, statsOut,
@@ -5290,7 +5413,10 @@ static bool fillGrayJumpLook(
     const int xr = std::min(w, sr + std::max(0, xPad));
     if (xr <= xl) return false;
     fillPoisonLookRaster(
-        y, dst, sl, st, sr, sb, xl, st, xr, sb, false, 8, 0);
+        y, dst, sl, st, sr, sb, xl, st, xr, sb, false, 8, 0,
+        nullptr, nullptr, 0, 0, nullptr, nullptr, nullptr, nullptr, 0, false,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, nullptr, true,
+        nullptr, nullptr, nullptr, nullptr, nullptr, false);
     return true;
 }
 
@@ -5741,7 +5867,8 @@ static jintArray aabbColorMany(
     jint boundStrategy, jint tightInsetPx,
     jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
-    jshortArray histArr = nullptr
+    jshortArray histArr = nullptr,
+    bool virtSp = false
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) {
@@ -5807,14 +5934,16 @@ static jintArray aabbColorMany(
                 &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, true,
                 gapFrac, minSeedHsToFreeze, glareMult, boundStrategy, tightInsetPx, &tele, true,
                 &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
-                &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane);
+                &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane,
+                virtSp);
             if (tele.nLookBinSeed == 0.f && !objPack.abort) {
                 tele.method = 0.f;
                 seg7One(*gray, l, t, r, b, imgW, imgH,
                     &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
                     gapFrac, minSeedHsToFreeze, 8, boundStrategy, tightInsetPx, &tele, true,
                     &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
-                    &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane);
+                    &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane,
+                    virtSp);
             }
         } else {
             if (ok && skipTintWalk(true, tele)) tele.method = 0.f;
@@ -5822,7 +5951,8 @@ static jintArray aabbColorMany(
                 &ol, &ot, &orr, &ob, &sPx, &vSW, &hSW, &fb, false,
                 gapFrac, minSeedHsToFreeze, 8, boundStrategy, tightInsetPx, &tele, ok,
                 &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
-                &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane);
+                &poisonPacks[static_cast<size_t>(i)], lookPlane, &objPack, i, poisonPlane,
+                virtSp);
         }
         if (objPack.abort) {
             poisonPacks[static_cast<size_t>(i)].bandH = -1;
@@ -5869,6 +5999,30 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
 ) {
     return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbTightVsp(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr, true);
+}
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorAabbRetractVsp(
+    JNIEnv* env, jobject /*thiz*/,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jintArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jshortArray histArr
+) {
+    return aabbColorMany(env, grayPtr, uvPtr, scratchPtr, seedsArr, 2, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, histArr, true);
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -6217,7 +6371,8 @@ static void seg7OrientedOne(
     int seedIndex = 0,
     cv::Mat* poisonPlane = nullptr,
     cv::Mat* lookBinPlane = nullptr,
-    bool doHorzJump = false
+    bool doHorzJump = false,
+    bool virtSp = false
 ) {
     (void)tightInsetPx;
     oriToQuad(seed, outPts8);
@@ -6268,7 +6423,8 @@ static void seg7OrientedOne(
         overlayY8, overlayUv2, 0, 0, poisonStats ? &stLocal : nullptr, lookBinHost,
         objPlane, objPack, seedIndex, false,
         0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, &lookPoison, false,
-        poisonPlane, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr, tele);
+        poisonPlane, &lookInkAtPlane, &fillGate, tele ? &tele->overlap : nullptr, tele,
+        virtSp);
     if (tele && !keepColorStats) {
         float yi = 0.f, yb = 0.f;
         int ni = 0, nbg = 0;
@@ -6746,7 +6902,8 @@ static jfloatArray seg7OrientedMany(
     jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
     jlong tintPtr = 0,
     bool doHorzJump = false,
-    jshortArray histArr = nullptr
+    jshortArray histArr = nullptr,
+    bool virtSp = false
 ) {
     auto* gray = reinterpret_cast<cv::Mat*>(grayPtr);
     if (!gray || gray->empty() || gray->type() != CV_8UC1 || !seedsArr) return nullptr;
@@ -6862,14 +7019,14 @@ static jfloatArray seg7OrientedMany(
             boundStrategy, tightInsetPx, srcIsBin, &tele, keepColor,
             &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
             &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, rotPoison,
-            lookBinHost, doHorzJump);
+            lookBinHost, doHorzJump, virtSp);
         if (srcIsBin && tele.nLookBinSeed == 0.f && !objPack.abort) {
             tele.method = 0.f;
             seg7OrientedOne(*gray, box, imgW, imgH, op, &sPx,
                 boundStrategy, tightInsetPx, false, &tele, keepColor,
                 &sweeps[static_cast<size_t>(i)], inkDump, overlayY, ovUv,
                 &poisonPacks[static_cast<size_t>(i)], scratch, &objPack, i, rotPoison,
-                lookBinHost, doHorzJump);
+                lookBinHost, doHorzJump, virtSp);
         }
         if (objPack.abort) {
             poisonPacks[static_cast<size_t>(i)].bandH = -1;
@@ -6961,6 +7118,36 @@ Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColor
     return seg7OrientedMany(
         env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 2, 0,
         teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true, histArr);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientTightVsp(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 0, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true, histArr,
+        true);
+}
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_davidlang_vehicleexpensesautomated_ui_util_NativeImageUtils_nativeColorOrientRetractVsp(
+    JNIEnv* env, jobject thiz,
+    jlong grayPtr, jlong uvPtr, jlong scratchPtr, jfloatArray seedsArr,
+    jfloatArray teleArr, jshortArray sweepArr, jlong dumpPtr,
+    jlong overlayYPtr, jlong overlayUvPtr, jintArray poisonArr,
+    jlong tintPtr,
+    jshortArray histArr
+) {
+    return seg7OrientedMany(
+        env, grayPtr, uvPtr, scratchPtr, seedsArr, 4, 2, 0,
+        teleArr, sweepArr, dumpPtr, overlayYPtr, overlayUvPtr, poisonArr, tintPtr, true, histArr,
+        true);
 }
 
 extern "C" JNIEXPORT jfloatArray JNICALL

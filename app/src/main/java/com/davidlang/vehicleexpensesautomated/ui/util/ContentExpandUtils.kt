@@ -1034,6 +1034,7 @@ object ContentExpandUtils {
             var classChange = false
             var phase = ""
             val vis = ArrayList<PoisonCc>(ccs.size)
+            val vspSkip = linkedMapOf<String, String>()
             for (cc in ccs) {
                 if (cc.x == -1) {
                     inkLo = cc.y
@@ -1050,6 +1051,19 @@ object ContentExpandUtils {
                         6 -> "scratch"
                         else -> ""
                     }
+                } else if (cc.x == -2) {
+                    val pck = cc.y
+                    fun slot(shift: Int, a: String, b: String): String? = when ((pck shr shift) and 0xf) {
+                        1 -> a
+                        2 -> b
+                        else -> null
+                    }
+                    slot(0, "skip_keep_raw_fallback", "skip_fallback_raw_keep")?.let { vspSkip["strokeNeedFb"] = it }
+                    slot(4, "skip_7seg_raw_not", "skip_not_raw_7seg")?.let { vspSkip["dispKind"] = it }
+                    slot(8, "skip_yes_raw_no", "skip_no_raw_yes")?.let { vspSkip["hasBarT"] = it }
+                    slot(12, "skip_yes_raw_no", "skip_no_raw_yes")?.let { vspSkip["hasBarB"] = it }
+                    slot(16, "skip_ink_raw_miss", "skip_miss_raw_ink")?.let { vspSkip["jumpL"] = it }
+                    slot(20, "skip_ink_raw_miss", "skip_miss_raw_ink")?.let { vspSkip["jumpR"] = it }
                 } else {
                     vis.add(cc)
                 }
@@ -1057,7 +1071,7 @@ object ContentExpandUtils {
             if (i < n) {
                 out[i] = PoisonDump(
                     bandTop, bandBot, bandH, vis,
-                    inkLo, nextNon, seedIndex, nSeeds, classChange, phase,
+                    inkLo, nextNon, seedIndex, nSeeds, classChange, phase, vspSkip,
                 )
             }
         }
@@ -1328,6 +1342,7 @@ object ContentExpandUtils {
         val nSeeds: Int = 0,
         val classChange: Boolean = false,
         val phase: String = "",
+        val vspSkip: Map<String, String> = emptyMap(),
     )
 
     data class Seg7Expand(
@@ -1457,6 +1472,24 @@ object ContentExpandUtils {
     ): List<Seg7Expand> = expandAabb7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
         NativeImageUtils::colorAabbRetractNative,
+    )
+
+    fun expandColorAabbTightVsp(
+        gray: Mat, uv: Mat?, seeds: List<Rect>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7Expand> = expandAabb7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::colorAabbTightVspNative,
+    )
+
+    fun expandColorAabbRetractVsp(
+        gray: Mat, uv: Mat?, seeds: List<Rect>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+    ): List<Seg7Expand> = expandAabb7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::colorAabbRetractVspNative,
     )
 
     fun expandGrayAabbExpand(
@@ -1632,6 +1665,24 @@ object ContentExpandUtils {
     ): List<Seg7OrientedExpand> = expandOrient7seg(
         gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
         NativeImageUtils::colorOrientRetractNative, tint,
+    )
+    fun expandColorOrientTightVsp(
+        gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+        tint: Mat? = null,
+    ): List<Seg7OrientedExpand> = expandOrient7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::colorOrientTightVspNative, tint,
+    )
+    fun expandColorOrientRetractVsp(
+        gray: Mat, uv: Mat?, seeds: List<OrientedQuad>,
+        scratch: Mat? = null, combine: Mat? = null,
+        overlayY: Mat? = null, overlayUv: Mat? = null, poisonStats: IntArray? = null,
+        tint: Mat? = null,
+    ): List<Seg7OrientedExpand> = expandOrient7seg(
+        gray, uv, seeds, scratch, combine, overlayY, overlayUv, poisonStats,
+        NativeImageUtils::colorOrientRetractVspNative, tint,
     )
 
     private fun expandEnergyOrientMany(
