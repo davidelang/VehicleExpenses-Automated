@@ -593,7 +593,7 @@ object OdometerOcrUtils {
         }
         return filtered.map { block ->
             block.copy(text = cleanLandmarkString(block.text))
-        }.filter { it.text.length > 1 }.sortedBy { it.text }
+        }.filter { it.text.isNotEmpty() }.sortedBy { it.text }
     }
 
     fun applyGrayscaleInPlace(bitmap: Bitmap) {
@@ -1303,7 +1303,7 @@ object OdometerOcrUtils {
         val array = JSONArray()
         landmarks.forEach { block ->
             val cleaned = cleanLandmarkString(block.text)
-            if (cleaned.length > 1) {
+            if (cleaned.isNotEmpty()) {
                 val obj = JSONObject()
                 obj.put("text", cleaned)
                 val box = block.boundingBox
@@ -1337,7 +1337,7 @@ object OdometerOcrUtils {
             val runningCounts = mutableMapOf<String, Int>()
             res.textBlocks.forEach { block ->
                 val cleaned = cleanLandmarkString(block.text)
-                if (cleaned.length > 1) {
+                if (cleaned.isNotEmpty()) {
                     val isManual = block.boundingBox.width() == 0
                     val total = globalCounts[cleaned] ?: 0
 

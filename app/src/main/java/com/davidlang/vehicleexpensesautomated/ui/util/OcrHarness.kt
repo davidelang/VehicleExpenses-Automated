@@ -569,7 +569,7 @@ object OcrHarness {
 
         val cleanedBlocks = rawResult.textBlocks.map { block ->
             block.copy(text = OdometerOcrUtils.cleanLandmarkString(block.text))
-        }.filter { it.text.length > 1 }
+        }.filter { it.text.isNotEmpty() }
 
         val sanitizedResult = rawResult.copy(
             textBlocks = cleanedBlocks,
@@ -580,9 +580,8 @@ object OcrHarness {
     }
 
     private suspend fun performLandmarkDiscovery(slice: BufferSet.Slice, context: Context): Pair<OcrResult, List<TextBlock>> {
-        val ocr = MlKitEngine().recognize(slice)
-        val cleaned = ocr.textBlocks.map { it.copy(text = OdometerOcrUtils.cleanLandmarkString(it.text)) }.filter { it.text.length > 2 }
-        return Pair(ocr.copy(textBlocks = cleaned), cleaned)
+        val ocr = runDiscovery(slice, context)
+        return Pair(ocr, ocr.textBlocks)
     }
 
     /**
