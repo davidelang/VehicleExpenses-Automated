@@ -1764,6 +1764,7 @@ suspend fun runPumpExperiment(
                     }
                     branch.metadata.remove("look_ink")
                     masterBuffer.s.clear()
+                    NativePaddleEngine.bufferSetB.p.clear()
                     val segs = ArrayList<ContentExpandUtils.Seg7Expand>(seeds.size)
                     var nextInk = 255
                     var nextNon = 1
@@ -1808,7 +1809,22 @@ suspend fun runPumpExperiment(
                                 objImgRoot, fullRow, col, si, seeds.size, pd, branch, onLog,
                             )
                         }
+                        snapshotLookInk(
+                            listOf(seed), listOf(seg.rect), imgW, imgH, branch,
+                            listOf(seg.poison),
+                            listOf(seg.tele),
+                            listOf(seg.sweep),
+                            listOf(seg.stroke),
+                            reportDir, timestamp, fullRow, branch.name,
+                            source = NativePaddleEngine.bufferSetB.p,
+                            scratchYuv = NativePaddleEngine.bufferSetB,
+                        )
                     }
+                    snapshotOverlayFull(
+                        NativePaddleEngine.bufferSetB.p,
+                        workspace,
+                        branch,
+                    )
                     val dumpFinal = File(objImgRoot, "r${fullRow}_c${col}_final.png")
                     dumpObjectPlanePng(masterBuffer.s.mat, dumpFinal)
                     branch.metadata["object_dump_final"] = dumpFinal.name
