@@ -1751,7 +1751,7 @@ suspend fun runPumpExperiment(
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
-                        jumpFrac = 0.50f,
+                        jumpFrac = 0.60f,
                         retractClearFrac = 0.30f,
                         energyRatio = 0.65f,
                     )
@@ -1847,14 +1847,14 @@ suspend fun runPumpExperiment(
                     storeSeg7Tele(branch, segs.map { it.tele })
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "0"
-                    branch.metadata["seg7_jump_frac"] = "0.50"
+                    branch.metadata["seg7_jump_frac"] = "0.60"
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                 } else if (seg7Stroke) {
                     val jumpOpts = ContentExpandUtils.ExpandOptions(
                         maxFrac = 0.4f,
                         enableJump = true,
-                        jumpFrac = 0.50f,
+                        jumpFrac = 0.60f,
                         retractClearFrac = 0.30f,
                         energyRatio = 0.65f,
                     )
@@ -1909,7 +1909,7 @@ suspend fun runPumpExperiment(
                     inkWalkSeeds = walks.map { it.first }
                     inkWalkBoxes = jumpedOnce
                     inkWalkPads = official.map {
-                        ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                        ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH)
                     }
                     inkJumpOpts = jumpOpts
                     branch.metadata["s_per_red"] = seg7Strokes.joinToString(",") { it.sPx.toString() }
@@ -1919,7 +1919,7 @@ suspend fun runPumpExperiment(
                     branch.metadata["seg7_vert_cap_frac"] = ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
                     branch.metadata["seg7_gap_frac"] = gapFrac.toString()
                     branch.metadata["seg7_freeze_min_hs"] = minSeedHsToFreeze.toString()
-                    branch.metadata["seg7_jump_frac"] = "0.50"
+                    branch.metadata["seg7_jump_frac"] = "0.60"
                     branch.metadata["seg7_retract_clear_frac"] = "0.30"
                     if (expandMode == 4) {
                         branch.metadata["content_expand_chroma"] = "color_adaptive"
@@ -2151,7 +2151,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH) },
                             skipExtraK,
                         )
                     }
@@ -2187,7 +2187,7 @@ suspend fun runPumpExperiment(
                         "droppedGlare" to seg7Strokes.map { it.droppedGlare },
                         "vertFactors" to emptyList<Float>(),
                         "horiz" to "jump",
-                        "jumpFrac" to 0.50f,
+                        "jumpFrac" to 0.60f,
                         "retractClearFrac" to 0.30f,
                         "energyRatio" to 0.65f,
                         "maxFrac" to 0.4f,
@@ -2657,7 +2657,7 @@ suspend fun runPumpExperiment(
                         ),
                     )
                     val aabbHorizPad = expandedBase.map {
-                        ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                        ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH)
                     }
                     val aabbPadOcr = ocrPumpRectsAsisAndDigits(aabbHorizPad)
                     val aabbPadCands = buildRedBoxCandidates(
@@ -2928,7 +2928,7 @@ suspend fun runPumpExperiment(
                         ),
                     )
                     val aabbHorizPad = expandedBase.map {
-                        ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                        ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH)
                     }
                     val aabbPadOcr = ocrPumpRectsAsisAndDigits(aabbHorizPad)
                     val aabbPadCands = buildRedBoxCandidates(
@@ -3211,7 +3211,7 @@ suspend fun runPumpExperiment(
                     storeSeg7Tele(branch, segs.map { it.tele })
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "0"
-                    branch.metadata["seg7_jump_frac"] = "0.50"
+                    branch.metadata["seg7_jump_frac"] = "0.60"
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                     val variants = JSONArray()
@@ -3348,7 +3348,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH) },
                             skipExtraK,
                         )
                     }
@@ -3376,7 +3376,7 @@ suspend fun runPumpExperiment(
                             "hmThresh" to HEAT_THR_U8_GE1,
                             "hmThreshNote" to "u8>=1",
                             "sPx" to strokes.map { it.sPx },
-                            "jumpFrac" to 0.50f,
+                            "jumpFrac" to 0.60f,
                             "note" to "ink-gray-tight: AABB grow 0; overlay look-ink rec-pad; k=0..4",
                             "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
                         ),
@@ -3598,7 +3598,7 @@ suspend fun runPumpExperiment(
                     storeSeg7Tele(branch, segs.map { it.tele })
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "0"
-                    branch.metadata["seg7_jump_frac"] = "0.50"
+                    branch.metadata["seg7_jump_frac"] = "0.60"
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                     val variants = JSONArray()
@@ -3735,7 +3735,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH) },
                             skipExtraK,
                         )
                     }
@@ -3763,7 +3763,7 @@ suspend fun runPumpExperiment(
                             "hmThresh" to HEAT_THR_U8_GE1,
                             "hmThreshNote" to "u8>=1",
                             "sPx" to strokes.map { it.sPx },
-                            "jumpFrac" to 0.50f,
+                            "jumpFrac" to 0.60f,
                             "note" to "ink-gray-retract: AABB grow 1; V retract-or-expand then H; overlay look-ink rec-pad; k=0..4",
                             "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
                         ),
@@ -3986,7 +3986,7 @@ suspend fun runPumpExperiment(
                     storeSeg7Tele(branch, segs.map { it.tele })
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "0"
-                    branch.metadata["seg7_jump_frac"] = "0.50"
+                    branch.metadata["seg7_jump_frac"] = "0.60"
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                     val variants = JSONArray()
@@ -4123,7 +4123,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH) },
                             skipExtraK,
                         )
                     }
@@ -4151,7 +4151,7 @@ suspend fun runPumpExperiment(
                             "hmThresh" to HEAT_THR_U8_GE1,
                             "hmThreshNote" to "u8>=1",
                             "sPx" to strokes.map { it.sPx },
-                            "jumpFrac" to 0.50f,
+                            "jumpFrac" to 0.60f,
                             "chroma" to "color_adaptive",
                             "note" to "ink-color-tight: AABB grow 0; tint A.s; look B.s; overlay B.p; k=0..4",
                             "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
@@ -4375,7 +4375,7 @@ suspend fun runPumpExperiment(
                     storeSeg7Tele(branch, segs.map { it.tele })
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "0"
-                    branch.metadata["seg7_jump_frac"] = "0.50"
+                    branch.metadata["seg7_jump_frac"] = "0.60"
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                     val variants = JSONArray()
@@ -4512,7 +4512,7 @@ suspend fun runPumpExperiment(
                         )
                         emitHorizPad(
                             kk,
-                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH) },
+                            rects.map { ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH) },
                             skipExtraK,
                         )
                     }
@@ -4540,7 +4540,7 @@ suspend fun runPumpExperiment(
                             "hmThresh" to HEAT_THR_U8_GE1,
                             "hmThreshNote" to "u8>=1",
                             "sPx" to strokes.map { it.sPx },
-                            "jumpFrac" to 0.50f,
+                            "jumpFrac" to 0.60f,
                             "chroma" to "color_adaptive",
                             "note" to "ink-color-retract: AABB grow 1; V retract-or-expand then H; tint A.s; overlay look-ink rec-pad; k=0..4",
                             "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
@@ -5223,7 +5223,7 @@ suspend fun runPumpExperiment(
                     storeSeg7Tele(branch, segs.map { it.tele })
                     branch.metadata["seg7_k"] = "0,1,2,3,4"
                     branch.metadata["seg7_k_official"] = "0"
-                    branch.metadata["seg7_jump_frac"] = "0.50"
+                    branch.metadata["seg7_jump_frac"] = "0.60"
                     branch.metadata["t_expand_ms"] =
                         (System.currentTimeMillis() - tExp0).toString()
                     val variants = JSONArray()
@@ -5377,7 +5377,7 @@ suspend fun runPumpExperiment(
                             "hmThresh" to HEAT_THR_U8_GE1,
                             "hmThreshNote" to "u8>=1",
                             "sPx" to strokes.map { it.sPx },
-                            "jumpFrac" to 0.50f,
+                            "jumpFrac" to 0.60f,
                             "note" to note,
                             "inkTelemetry" to JSONArray(branch.metadata["seg7_tele"] ?: "[]"),
                         ),
@@ -5708,7 +5708,7 @@ suspend fun runPumpExperiment(
                         val jumpOpts = ContentExpandUtils.ExpandOptions(
                             maxFrac = 0.4f,
                             enableJump = true,
-                            jumpFrac = 0.50f,
+                            jumpFrac = 0.60f,
                             retractClearFrac = 0.30f,
                             energyRatio = 0.65f,
                         )
@@ -5810,7 +5810,7 @@ suspend fun runPumpExperiment(
                             ContentExpandUtils.SEG7_VERT_CAP_FRAC.toString()
                         branch.metadata["seg7_gap_frac"] =
                             ContentExpandUtils.SEG7_GAP_FRAC.toString()
-                        branch.metadata["seg7_jump_frac"] = "0.50"
+                        branch.metadata["seg7_jump_frac"] = "0.60"
                         branch.metadata["seg7_retract_clear_frac"] = "0.30"
                         branch.metadata["content_expand_oriented_7seg"] = "true"
                         if (expandMode == 4) {
@@ -6187,7 +6187,7 @@ suspend fun runPumpExperiment(
                             "gapFrac" to ContentExpandUtils.SEG7_GAP_FRAC,
                             "sPx" to inkStrokes.map { it.sPx },
                             "enableJump" to true,
-                            "jumpFrac" to 0.50f,
+                            "jumpFrac" to 0.60f,
                             "retractClearFrac" to 0.30f,
                             "energyRatio" to 0.65f,
                             "maxRetractFrac" to 0.50f,
@@ -6578,7 +6578,7 @@ suspend fun runPumpExperiment(
                             branch.metadata["t_ocr_g_ms"] = "0"
                             branch.metadata["n_ocr_g"] = "0"
                             val aabbHorizPad = expandedBase.map {
-                                ContentExpandUtils.calculatedAabb(it, 0f, 0.5f, imgW, imgH)
+                                ContentExpandUtils.calculatedAabb(it, 0f, 0.6f, imgW, imgH)
                             }
                             val aabbPadOcr = ocrPumpRectsAsisAndDigits(aabbHorizPad)
                             val aabbPadCands = buildRedBoxCandidates(

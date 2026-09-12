@@ -1485,12 +1485,21 @@ static void jumpRetractH(
             ++jumpsL;
             continue;
         }
+        int foundL = *l;
+        bool hitL = false;
         for (int cur = nextL + 1; cur < *l; ++cur) {
             if (colHas(cur)) {
-                *l = cur;
+                foundL = cur;
+                hitL = true;
                 break;
             }
         }
+        if (useInk && hitL) {
+            *l = foundL;
+            ++jumpsL;
+            continue;
+        }
+        if (hitL) *l = foundL;
         break;
     }
     int jumpsR = 0;
@@ -1504,13 +1513,20 @@ static void jumpRetractH(
             continue;
         }
         int newR = *r;
+        bool hitR = false;
         for (int cur = nextR - 2; cur >= *r; --cur) {
             if (colHas(cur)) {
                 newR = cur + 1;
+                hitR = true;
                 break;
             }
         }
-        *r = newR;
+        if (useInk && hitR) {
+            *r = newR;
+            ++jumpsR;
+            continue;
+        }
+        if (hitR) *r = newR;
         break;
     }
     if (farL) *farL = probeL;
@@ -2994,7 +3010,7 @@ static void fillAabbLookSweep(
     const int seedH = std::max(1, sb - st);
     const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedH)));
     const int walkedH = std::max(1, walkedB - walkedT);
-    const int xPad = std::max(1, static_cast<int>(std::lround(0.50f * walkedH * (kJumpMax + 1))));
+    const int xPad = std::max(1, static_cast<int>(std::lround(0.60f * walkedH * (kJumpMax + 1))));
     const int y0 = std::max(0, st - capPx);
     const int y1 = std::min(imgH, sb + capPx);
     const int x0 = std::max(0, sl - xPad);
@@ -5526,13 +5542,13 @@ static void aabbJumpOnLook(
     const int minRun = usedMinRun(sPx, maxIn);
     if (minRun < 1) return;
     jumpRetractH(
-        *look, l, t, r, b, imgW, imgH, 0.0, 1, 0.50f, 0.30f,
+        *look, l, t, r, b, imgW, imgH, 0.0, 1, 0.60f, 0.30f,
         std::max(1, seedB - seedT), farL, farR, look, seedT, seedB, minRun, lookOx, lookOy, pack);
 }
 
 }  // namespace
 
-/** 12 ints/seed: l0,t0,r0,b0, l1,t1,r1,b1, sPx, vSW, hSW, flags. l1..b1 = 0.5H, same t/b. */
+/** 12 ints/seed: l0,t0,r0,b0, l1,t1,r1,b1, sPx, vSW, hSW, flags. l1..b1 = 0.6H, same t/b. */
 static void packAabb12(
     std::vector<jint>& out, int i,
     int l0, int t0, int r0, int b0,
@@ -5549,7 +5565,7 @@ static void packAabb12(
     out[static_cast<size_t>(o) + 2] = r0;
     out[static_cast<size_t>(o) + 3] = b0;
     const int h = std::max(1, b0 - t0);
-    const int hp = static_cast<int>(std::lround(0.5f * static_cast<float>(h)));
+    const int hp = static_cast<int>(std::lround(0.6f * static_cast<float>(h)));
     int l1 = l0 - hp;
     int r1 = r0 + hp;
     if (l1 < 0) l1 = 0;
@@ -5782,7 +5798,7 @@ static jintArray aabbColorMany(
         tele.method = 4.f;
         const int seedH = std::max(1, b - t);
         const int xPadGuess = std::max(1, static_cast<int>(std::lround(
-            0.50f * 2.5f * static_cast<float>(seedH) * static_cast<float>(kJumpMax + 1))));
+            0.60f * 2.5f * static_cast<float>(seedH) * static_cast<float>(kJumpMax + 1))));
         cv::Mat* tintDst = asU8(scratch);
         const bool ok = uv && fillChromaTintMask(
             *gray, *uv, l, t, r, b, tintDst, glareMult, xPadGuess, true, &tele);
@@ -6106,7 +6122,7 @@ static void fillOrientedLookSweep(
     const float seedBh = std::max(1.f, seed.v1 - seed.v0);
     const int capPx = std::max(1, static_cast<int>(std::lround(2.5f * seedBh)));
     const int walkedH = std::max(1, static_cast<int>(std::lround(walkedV1 - walkedV0)));
-    const int xPad = std::max(1, static_cast<int>(std::lround(0.40f * walkedH * (kJumpMax + 1))));
+    const int xPad = std::max(1, static_cast<int>(std::lround(0.60f * walkedH * (kJumpMax + 1))));
     const int vStart = static_cast<int>(std::lround(seed.v0)) - capPx;
     const int vEnd = static_cast<int>(std::lround(seed.v1)) + capPx;
     const int uStart = static_cast<int>(std::lround(seed.u0)) - xPad;
@@ -6471,7 +6487,7 @@ static void seg7OrientedOne(
     float farU0 = seed.u0, farU1 = seed.u1;
     if (doHorzJump) {
         jumpOrientedOne(
-            src, &seed, imgW, imgH, 0.4f, 0.65f, 0.50f, 0.30f, seedBh,
+            src, &seed, imgW, imgH, 0.4f, 0.65f, 0.60f, 0.30f, seedBh,
             &lookBin, seed.v0, seed.v1, minRun, lookV0,
             &farU0, &farU1, lookU0, lookU1, 0, 0, objPack);
     }
@@ -6672,11 +6688,19 @@ static void jumpOrientedOne(
             ++jumps0;
             continue;
         }
+        bool hit0 = false;
+        float found0 = u0;
         for (float cur = next0 + 1.f; cur < u0; cur += 1.f) {
             if (hit(cur)) {
-                u0 = cur;
+                found0 = cur;
+                hit0 = true;
                 break;
             }
+        }
+        if (hit0) {
+            u0 = found0;
+            ++jumps0;
+            continue;
         }
         break;
     }
@@ -6689,14 +6713,20 @@ static void jumpOrientedOne(
             ++jumps1;
             continue;
         }
+        bool hit1 = false;
         float new1 = u1;
         for (float cur = next1 - 1.f; cur > u1; cur -= 1.f) {
             if (hit(cur)) {
                 new1 = cur;
+                hit1 = true;
                 break;
             }
         }
-        u1 = new1;
+        if (hit1) {
+            u1 = new1;
+            ++jumps1;
+            continue;
+        }
         break;
     }
     if (u1 < u0 + 2.f) u1 = u0 + 2.f;
@@ -6800,7 +6830,7 @@ static jfloatArray seg7OrientedMany(
             const float seedBhT = std::max(1.f, padBox.v1 - padBox.v0);
             const float capT = 2.5f * seedBhT;
             const int vLookT = std::max(1, static_cast<int>(std::lround(capT)) + 2);
-            const float uPadT = 0.50f * seedBhT * static_cast<float>(kJumpMax + 1);
+            const float uPadT = 0.60f * seedBhT * static_cast<float>(kJumpMax + 1);
             padBox.u0 -= uPadT;
             padBox.u1 += uPadT;
             padBox.v0 -= static_cast<float>(vLookT);
