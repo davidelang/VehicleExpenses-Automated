@@ -1031,7 +1031,7 @@ private fun serializePhotoResultToJson(
         val landmarksArray = JSONArray()
         photoResult.pathways["set_j"]?.discoveryResult?.textBlocks?.forEach { block ->
             val cleanedText = OdometerOcrUtils.cleanLandmarkString(block.text)
-            if (cleanedText.length > 1) {
+            if (cleanedText.isNotEmpty()) {
                 landmarksArray.put(JSONObject().apply {
                     put("text", cleanedText)
                     val icrs = IcrsMath.pixelToIcrs(block.boundingBox.centerX().toFloat(), block.boundingBox.centerY().toFloat(), safeW, safeH)
